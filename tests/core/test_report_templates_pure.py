@@ -1010,7 +1010,7 @@ class TestTemplateBasic:
         mock_raw.side_effect = raw_side_effect
 
         from mtdata.core.report_templates.basic import template_basic
-        _ = template_basic("EURUSD", 12, None, {})
+        _ = template_basic("EURUSD", 12, None, {"fast_defaults": True})
 
         assert len(barrier_params) == 2
         for params in barrier_params:
@@ -1026,6 +1026,7 @@ class TestTemplateBasic:
             assert params["vol_sl_multiplier"] == 1.7
             assert params["vol_sl_steps"] == 9
             assert params["vol_floor_pct"] == 0.2
+            assert params["fast_defaults"] is True
             assert params["refine"] is False
             assert params["refine_radius"] == 0.3
             assert params["refine_steps"] == 5
@@ -1038,6 +1039,7 @@ class TestTemplateBasic:
             "sl_steps",
             "return_grid",
             "output_mode",
+            "fast_defaults",
             "refine",
             "refine_radius",
             "refine_steps",

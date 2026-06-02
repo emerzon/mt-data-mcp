@@ -854,6 +854,8 @@ def template_basic(  # noqa: C901
     base_params = dict(p.get('params') or {})
     base_params.setdefault('spread_bps', 1.0)
     base_params.setdefault('slippage_bps', 0.5)
+    if 'fast_defaults' in p:
+        base_params.setdefault('fast_defaults', bool(p.get('fast_defaults')))
     base_params.setdefault('tp_min', float(p.get('tp_min', 0.25)))
     base_params.setdefault('tp_max', float(p.get('tp_max', 1.5)))
     base_params.setdefault('tp_steps', int(p.get('tp_steps', 7)))
@@ -905,7 +907,6 @@ def template_basic(  # noqa: C901
         grid_style=str(p.get('grid_style', 'fixed')),
         preset=p.get('grid_preset', p.get('preset')),
         search_profile=str(p.get('search_profile', 'medium')),
-        fast_defaults=bool(p.get('fast_defaults', False)),
         direction='long',
     )
     grid_short = _get_raw_result(forecast_barrier_optimize,
@@ -920,7 +921,6 @@ def template_basic(  # noqa: C901
         grid_style=str(p.get('grid_style', 'fixed')),
         preset=p.get('grid_preset', p.get('preset')),
         search_profile=str(p.get('search_profile', 'medium')),
-        fast_defaults=bool(p.get('fast_defaults', False)),
         direction='short',
     )
     sec_bar: Dict[str, Any] = {}
