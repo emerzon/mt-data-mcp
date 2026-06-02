@@ -8,7 +8,7 @@ from unittest.mock import patch
 import pytest
 
 import mtdata.core.market_depth as market_depth_mod
-from mtdata.core._mcp_tools import get_tool_functions
+from mtdata.core._mcp_tools import get_tool_functions, registered_tool_catalog
 from mtdata.core.market_depth import market_depth_fetch, market_ticker
 from mtdata.utils.mt5 import MT5ConnectionError
 
@@ -20,6 +20,22 @@ def _raw_market_depth_fetch(symbol: str, spread: bool = False, require_dom: bool
 
 def _raw_market_ticker(symbol: str, *, detail: str = "full", price_field=None):
     return market_ticker.__wrapped__(symbol, detail=detail, price_field=price_field)
+
+
+def _tool_catalog_row(name: str) -> dict:
+    catalog = registered_tool_catalog()
+    rows = catalog.get("tools")
+    assert isinstance(rows, list)
+    row = next(
+        (
+            item
+            for item in rows
+            if isinstance(item, dict) and item.get("name") == name
+        ),
+        None,
+    )
+    assert row is not None
+    return row
 
 
 @pytest.fixture(autouse=True)
@@ -620,6 +636,28 @@ def test_market_depth_returns_env_gate_error_when_disabled(monkeypatch) -> None:
         "Set MTDATA_ENABLE_MARKET_DEPTH_FETCH=1 to enable it."
     )
     assert out["recommended_alternative"] == "market_ticker"
+
+
+def test_tools_catalog_marks_market_depth_disabled(monkeypatch) -> None:
+    monkeypatch.delenv("MTDATA_ENABLE_MARKET_DEPTH_FETCH", raising=False)
+
+    row = _tool_catalog_row("market_depth_fetch")
+
+    assert row["category"] == "market"
+    assert row["enabled"] is False
+    assert row["status"] == "disabled"
+    assert row["enable_env"] == "MTDATA_ENABLE_MARKET_DEPTH_FETCH"
+    assert row["recommended_alternative"] == "market_ticker"
+
+
+def test_tools_catalog_marks_market_depth_enabled(monkeypatch) -> None:
+    monkeypatch.setenv("MTDATA_ENABLE_MARKET_DEPTH_FETCH", "1")
+
+    row = _tool_catalog_row("market_depth_fetch")
+
+    assert row["enabled"] is True
+    assert row["enable_env"] == "MTDATA_ENABLE_MARKET_DEPTH_FETCH"
+    assert "status" not in row
 
 
 def test_market_depth_tool_not_registered_when_env_disabled(monkeypatch) -> None:

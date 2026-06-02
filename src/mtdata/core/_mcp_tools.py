@@ -6,6 +6,7 @@ import asyncio
 import inspect
 import logging
 import math
+import os
 import types
 from dataclasses import dataclass
 from functools import wraps as _wraps
@@ -49,6 +50,7 @@ _NO_TIMEOUT_TOOLS = frozenset(
     }
 )
 _PUBLIC_OUTPUT_PARAMS = PUBLIC_OUTPUT_PARAMS
+_MARKET_DEPTH_FETCH_ENV = "MTDATA_ENABLE_MARKET_DEPTH_FETCH"
 
 
 @dataclass
@@ -196,7 +198,12 @@ def _tool_catalog_category(name: str, func: Any) -> str:
         return "trading"
     if name.startswith("forecast_") or name.startswith("strategy_"):
         return "forecast"
-    if name.startswith("finviz_") or name in {"market_scan", "market_ticker", "market_status"}:
+    if name.startswith("finviz_") or name in {
+        "market_depth_fetch",
+        "market_scan",
+        "market_ticker",
+        "market_status",
+    }:
         return "market"
     if name.startswith("symbols_"):
         return "symbols"
@@ -250,6 +257,47 @@ def _tool_catalog_parameters(func: Any) -> Dict[str, str]:
     return out
 
 
+def _market_depth_fetch_catalog_state() -> Dict[str, Any]:
+    enabled = str(os.getenv(_MARKET_DEPTH_FETCH_ENV) or "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+    out: Dict[str, Any] = {
+        "enabled": enabled,
+        "enable_env": _MARKET_DEPTH_FETCH_ENV,
+    }
+    if not enabled:
+        out.update(
+            {
+                "status": "disabled",
+                "why_disabled": "Requires broker Level 2/DOM support and is off by default.",
+                "recommended_alternative": "market_ticker",
+            }
+        )
+    return out
+
+
+def _market_depth_fetch_catalog_row(*, detail_mode: str) -> Dict[str, Any]:
+    row: Dict[str, Any] = {
+        "name": "market_depth_fetch",
+        "category": "market",
+        "description": (
+            "Return DOM/order-book depth when explicitly enabled and supported by the broker."
+        ),
+    }
+    row.update(_market_depth_fetch_catalog_state())
+    if detail_mode == "full":
+        row["parameters"] = {
+            "symbol": "required",
+            "spread": "optional",
+            "require_dom": "optional",
+        }
+        row["module"] = "mtdata.core.market_depth"
+    return row
+
+
 def registered_tool_catalog(*, detail: str = "compact") -> Dict[str, Any]:
     """Return a generated catalog of registered mtdata tools."""
     from .output_contract import related_tools_for
@@ -257,11 +305,13 @@ def registered_tool_catalog(*, detail: str = "compact") -> Dict[str, Any]:
     detail_mode = str(detail or "compact").strip().lower()
     tools = []
     categories: Dict[str, List[str]] = {}
+    seen: set[str] = set()
     for name in sorted(_TOOL_METADATA_REGISTRY):
         entry = _TOOL_METADATA_REGISTRY[name]
         func = entry.function
         if func is _REGISTRY_UNSET:
             continue
+        seen.add(name)
         category = _tool_catalog_category(name, func)
         categories.setdefault(category, []).append(name)
         row: Dict[str, Any] = {
@@ -272,10 +322,16 @@ def registered_tool_catalog(*, detail: str = "compact") -> Dict[str, Any]:
         related = related_tools_for(name)
         if related:
             row["related_tools"] = related
+        if name == "market_depth_fetch":
+            row.update(_market_depth_fetch_catalog_state())
         if detail_mode == "full":
             row["parameters"] = _tool_catalog_parameters(func)
             row["module"] = str(getattr(func, "__module__", "") or "")
         tools.append(row)
+    if "market_depth_fetch" not in seen:
+        row = _market_depth_fetch_catalog_row(detail_mode=detail_mode)
+        tools.append(row)
+        categories.setdefault("market", []).append("market_depth_fetch")
     return {
         "success": True,
         "detail": "full" if detail_mode == "full" else "compact",
