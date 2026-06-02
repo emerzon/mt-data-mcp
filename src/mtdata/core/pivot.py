@@ -217,15 +217,16 @@ def compute_support_resistance_payload(
 @mcp.tool()
 def pivot_compute_points(  # noqa: C901
     symbol: str,
-    timeframe: TimeframeLiteral = "H1",
+    timeframe: TimeframeLiteral = "D1",
     method: Optional[PivotMethodLiteral] = None,
     detail: CompactStandardFullDetailLiteral = "compact",
 ) -> Dict[str, Any]:
     """Compute pivot point levels from the last completed bar on `timeframe`.
     Parameters: symbol, timeframe, method, detail
 
-    By default, compact detail returns classic pivots while standard/full include
-    every supported method. Set `method` to return only one pivot method.
+    Defaults to D1 because daily pivots are the common floor-trader convention.
+    Compact detail returns classic pivots while standard/full include every
+    supported method. Set `method` to return only one pivot method.
     Use `support_resistance_levels` for complementary data-driven levels from
     historical retests and reactions.
     """

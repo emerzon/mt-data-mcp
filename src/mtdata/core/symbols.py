@@ -92,7 +92,12 @@ def _normalize_symbol_search_term(value: Optional[str]) -> Optional[str]:
     if value is None:
         return None
     text = str(value).strip()
-    return text or None
+    if not text:
+        return None
+    pair_match = re.fullmatch(r"([A-Za-z]{2,5})\s*/\s*([A-Za-z]{2,5})", text)
+    if pair_match:
+        return f"{pair_match.group(1)}{pair_match.group(2)}".upper()
+    return text
 
 
 def _nonempty_symbol_string(value: Any) -> Optional[str]:
@@ -436,6 +441,30 @@ def _symbol_search_context(search_term: str, search_mode: str) -> Dict[str, Any]
     return context
 
 
+def _symbol_search_normalized_from(
+    raw_search_term: Optional[str],
+    search_term: Optional[str],
+) -> Optional[str]:
+    raw = str(raw_search_term or "").strip()
+    normalized = str(search_term or "").strip()
+    if raw and normalized and raw != normalized:
+        return raw
+    return None
+
+
+def _symbol_search_context_for_request(
+    search_term: str,
+    search_mode: str,
+    *,
+    raw_search_term: Optional[str],
+) -> Dict[str, Any]:
+    context = _symbol_search_context(search_term, search_mode)
+    normalized_from = _symbol_search_normalized_from(raw_search_term, search_term)
+    if normalized_from:
+        context["normalized_from"] = normalized_from
+    return context
+
+
 def _symbol_search_suggestions(
     all_symbols: List[Any],
     search_term: str,
@@ -738,14 +767,16 @@ def symbols_list(  # noqa: C901
 ) -> Dict[str, Any]:
     """List symbols or symbol groups.
 
-    Search is case-insensitive. Auto mode searches symbol, description, and
-    group fields, then ranks exact/prefix/name matches before description and
-    group matches.
+    Search is case-insensitive. Slashed pairs such as EUR/USD are normalized to
+    broker-style concatenated symbols such as EURUSD. Auto mode searches symbol,
+    description, and group fields, then ranks exact/prefix/name matches before
+    description and group matches.
 
     Without a search term, universe="visible" lists Market Watch symbols and
     universe="all" lists the broker catalog. Searches use the broker catalog.
     Use group, currency, and category to filter the resulting symbol set.
     """
+    raw_search_term = str(search_term or "").strip() or None
     normalized_search_term = _normalize_symbol_search_term(search_term)
     group_filter = _normalize_group_path_query(group) if group else None
     currency_filter = str(currency or "").strip().upper() or None
@@ -927,9 +958,10 @@ def symbols_list(  # noqa: C901
                     out["sample"] = sample
                     out["sample_count"] = len(sample)
                 if normalized_search_term:
-                    out["search"] = _symbol_search_context(
+                    out["search"] = _symbol_search_context_for_request(
                         normalized_search_term,
                         search_mode_value,
+                        raw_search_term=raw_search_term,
                     )
                     if top_match:
                         out["top_match"] = top_match
@@ -987,9 +1019,10 @@ def symbols_list(  # noqa: C901
             if filters:
                 result["filters"] = filters
             if normalized_search_term:
-                result["search"] = _symbol_search_context(
+                result["search"] = _symbol_search_context_for_request(
                     normalized_search_term,
                     search_mode_value,
+                    raw_search_term=raw_search_term,
                 )
                 if top_match:
                     result["top_match"] = top_match
@@ -1752,6 +1785,7 @@ def _attach_market_scan_volume_semantics(
     units: Dict[str, str],
 ) -> None:
     if units.get("tick_volume") == "broker_tick_count":
+        out["volume_type"] = "tick_volume"
         out["volume_semantics"] = _TICK_VOLUME_SEMANTICS
 
 

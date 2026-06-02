@@ -38,6 +38,9 @@ _COMPACT_TICK_TOP_LEVEL_FIELDS = (
     "count",
     "data",
     "timezone",
+    "price_precision",
+    "price_point",
+    "price_currency",
     "units",
     "freshness",
     "data_freshness_seconds",
@@ -687,11 +690,16 @@ def _compact_tick_rows_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
         if key in payload and payload[key] not in (None, "", [], {})
     }
     rows = compact.get("data")
+    price_point = _tick_price_point(payload)
     if isinstance(rows, list):
         compact_rows: List[Any] = []
         last_spread: Optional[float] = None
         for row in rows:
-            compact_row, row_spread = _compact_tick_row(row, last_spread=last_spread)
+            compact_row, row_spread = _compact_tick_row(
+                row,
+                last_spread=last_spread,
+                price_point=price_point,
+            )
             if row_spread is not None:
                 last_spread = row_spread
             compact_rows.append(compact_row)
@@ -715,7 +723,13 @@ def _compact_tick_rows_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
         )
         for field in ("bid", "ask", "mid", "spread"):
             if any(isinstance(row, dict) and field in row for row in compact["data"]):
-                compact_units.setdefault(field, "price")
+                compact_units.setdefault(field, "absolute_price")
+        for field, unit in (
+            ("spread_points", "broker_points"),
+            ("spread_pct", "percentage_points (1.0 = 1%)"),
+        ):
+            if any(isinstance(row, dict) and field in row for row in compact["data"]):
+                compact_units.setdefault(field, unit)
         if compact_units:
             compact["units"] = compact_units
     quote_completeness = _tick_quote_completeness_pct(payload)
@@ -772,6 +786,7 @@ def _compact_tick_row(
     row: Any,
     *,
     last_spread: Optional[float] = None,
+    price_point: Optional[float] = None,
 ) -> tuple[Any, Optional[float]]:
     if not isinstance(row, dict):
         return row, None
@@ -797,7 +812,26 @@ def _compact_tick_row(
     elif last_spread is not None and ask is not None:
         compact["mid"] = round(ask - (last_spread / 2.0), 10)
         compact["mid_inferred"] = True
+    row_spread_points = _tick_row_price(row.get("spread_points"))
+    if row_spread_points is not None:
+        compact["spread_points"] = row_spread_points
+    elif numeric_spread is not None and price_point is not None and price_point > 0.0:
+        compact["spread_points"] = round(numeric_spread / price_point, 4)
+    row_spread_pct = _tick_row_price(row.get("spread_pct"))
+    if row_spread_pct is not None:
+        compact["spread_pct"] = row_spread_pct
+    elif numeric_spread is not None:
+        spread_mid = _tick_row_price(compact.get("mid"))
+        if spread_mid is not None and spread_mid > 0.0:
+            compact["spread_pct"] = round((numeric_spread / spread_mid) * 100.0, 6)
     return compact, numeric_spread
+
+
+def _tick_price_point(payload: Dict[str, Any]) -> Optional[float]:
+    point = _tick_row_price(payload.get("price_point"))
+    if point is not None and point > 0.0:
+        return point
+    return None
 
 
 def _tick_row_spread(bid: Any, ask: Any) -> Optional[float]:

@@ -45,6 +45,15 @@ def _get_confluence_fn():
     return raw
 
 
+def _get_pivot_fn():
+    from mtdata.core.pivot import pivot_compute_points
+
+    raw = pivot_compute_points
+    while hasattr(raw, "__wrapped__"):
+        raw = raw.__wrapped__
+    return raw
+
+
 @contextmanager
 def _mock_symbol_guard():
     @contextmanager
@@ -123,6 +132,35 @@ def test_confluence_levels_tool_combines_pivot_sr_and_fibonacci():
     assert "swing_fibonacci" in top["source_families"]
     assert mock_sr.call_args.kwargs["timeframe"] == "auto"
     assert mock_sr.call_args.kwargs["max_levels"] == 5
+
+
+def test_pivot_compute_points_defaults_to_daily_timeframe():
+    fn = _get_pivot_fn()
+    gateway = type(
+        "Gateway",
+        (),
+        {
+            "ensure_connection": lambda self: None,
+            "symbol_info_tick": lambda self, _symbol: _make_tick(),
+            "last_error": lambda self: None,
+        },
+    )()
+    rates = [
+        _make_rate(time_=1_699_913_600.0),
+        _make_rate(time_=1_700_000_000.0),
+    ]
+
+    with patch("mtdata.core.pivot.create_mt5_gateway", return_value=gateway), \
+         patch("mtdata.core.pivot.TIMEFRAME_MAP", {"D1": 1440}), \
+         patch("mtdata.core.pivot.TIMEFRAME_SECONDS", {"D1": 86400}), \
+         patch("mtdata.core.pivot._mt5_copy_rates_from", return_value=rates) as mock_rates, \
+         _mock_symbol_guard():
+        result = fn("EURUSD")
+
+    assert result["success"] is True
+    assert result["timeframe"] == "D1"
+    mock_rates.assert_called_once()
+    assert mock_rates.call_args.args[1] == 1440
 
 
 def test_confluence_levels_tool_rejects_invalid_pivot_method():

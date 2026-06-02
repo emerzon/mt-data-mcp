@@ -114,16 +114,23 @@ _TICK_PRICE_STAT_KEYS = frozenset(
 )
 _TICK_ROW_UNITS = {
     "time_epoch": "unix_seconds",
-    "bid": "price",
-    "ask": "price",
-    "last": "price",
-    "mid": "price",
-    "spread": "price",
+    "bid": "absolute_price",
+    "ask": "absolute_price",
+    "last": "absolute_price",
+    "mid": "absolute_price",
+    "spread": "absolute_price",
+    "spread_points": "broker_points",
+    "spread_pct": "percentage_points (1.0 = 1%)",
     "tick_gap_ms": "milliseconds",
     "tick_volume": "broker_tick_count",
     "real_volume": "traded_volume",
 }
 _TICK_VOLUME_SEMANTICS = "tick_volume_is_broker_tick_count_not_lots"
+
+
+def _format_utc_timestamp_seconds(epoch_seconds: float) -> str:
+    dt = datetime.fromtimestamp(float(epoch_seconds), tz=dt_timezone.utc)
+    return dt.isoformat(timespec="seconds").replace("+00:00", "Z")
 
 
 def _format_mt5_last_error() -> str:
@@ -243,6 +250,23 @@ def _tick_units_for_headers(headers: List[str]) -> Dict[str, str]:
         for key, unit in _TICK_ROW_UNITS.items()
         if key in headers
     }
+
+
+def _tick_spread_points(spread: Any, price_point: Optional[float]) -> Optional[float]:
+    if price_point is None or price_point <= 0.0:
+        return None
+    spread_value = _finite_or_none(spread)
+    if spread_value is None:
+        return None
+    return round(spread_value / price_point, 4)
+
+
+def _tick_spread_pct(spread: Any, mid: Any) -> Optional[float]:
+    spread_value = _finite_or_none(spread)
+    mid_value = _finite_or_none(mid)
+    if spread_value is None or mid_value is None or mid_value <= 0.0:
+        return None
+    return round((spread_value / mid_value) * 100.0, 6)
 
 
 def _attach_tick_volume_semantics(payload: Dict[str, Any]) -> None:
@@ -1627,6 +1651,7 @@ def fetch_candles(  # noqa: C901
             digits=price_digits,
             price_columns=_CANDLE_PRICE_COLUMNS,
         )
+        as_of_epoch = time.time()
         query_latency_ms = round((time.perf_counter() - query_started_at) * 1000.0, 3)
         query_mode = "range" if (start_datetime or end_datetime) else "latest"
         ti_added_cols = [str(c) for c in ti_cols if isinstance(c, str)]
@@ -1682,12 +1707,31 @@ def fetch_candles(  # noqa: C901
             },
         }
         volume_metadata = _candle_volume_metadata(headers)
+        latest_bar_epoch = None
+        first_bar_time = None
+        latest_bar_time = None
+        data_rows = payload.get("data")
+        if isinstance(data_rows, list) and data_rows:
+            first_row = data_rows[0]
+            latest_row = data_rows[-1]
+            if isinstance(first_row, dict):
+                first_bar_time = first_row.get("time")
+            if isinstance(latest_row, dict):
+                latest_bar_time = latest_row.get("time")
+        try:
+            if len(df) > 0 and "__epoch" in df.columns:
+                latest_bar_epoch = float(df["__epoch"].iloc[-1])
+        except Exception:
+            latest_bar_epoch = None
 
         payload.update({
             "success": True,
             "symbol": symbol,
             "timeframe": timeframe,
             "candles": candles_returned,
+            "requested_limit": candles_requested,
+            "returned_count": candles_returned,
+            "as_of": _format_utc_timestamp_seconds(as_of_epoch),
             **volume_metadata,
             **_candle_time_convention_metadata(timeframe),
             "candles_requested": candles_requested,
@@ -1724,6 +1768,23 @@ def fetch_candles(  # noqa: C901
                 },
             },
         })
+        data_window = {
+            "start": first_bar_time,
+            "end": latest_bar_time,
+            "requested_limit": candles_requested,
+            "returned_count": candles_returned,
+            "latest_bar_complete": not forming_candle_included,
+        }
+        if latest_bar_epoch is not None and query_mode != "range":
+            data_window["latest_bar_age_seconds"] = round(
+                max(0.0, float(as_of_epoch) - float(latest_bar_epoch)),
+                3,
+            )
+        payload["data_window"] = {
+            key: value
+            for key, value in data_window.items()
+            if value is not None
+        }
         if ohlcv not in (None, ""):
             payload["ohlcv_filter_applied"] = True
             payload["ohlcv_filter"] = str(ohlcv).strip()
@@ -2157,6 +2218,8 @@ def _compact_tick_summary(out: Dict[str, Any]) -> Dict[str, Any]:
     }
     if out.get("price_precision") is not None:
         compact["price_precision"] = out.get("price_precision")
+    if out.get("price_point") is not None:
+        compact["price_point"] = out.get("price_point")
     if out.get("price_currency") is not None:
         compact["price_currency"] = out.get("price_currency")
     for key in ("freshness", "data_freshness_seconds", "data_stale"):
@@ -2341,7 +2404,10 @@ def fetch_ticks(  # noqa: C901
         if include_quote_type:
             headers.append("quote_type")
         if full_rows:
-            headers.extend(["mid", "spread", "tick_gap_ms"])
+            headers.extend(["mid", "spread"])
+            if price_point is not None:
+                headers.append("spread_points")
+            headers.extend(["spread_pct", "tick_gap_ms"])
         headers.extend(["last", "tick_volume", "real_volume", "flags", "flags_decoded"])
 
         # Choose a consistent millisecond time format for tick rows.
@@ -2395,6 +2461,9 @@ def fetch_ticks(  # noqa: C901
             ]
             df_ticks["mid"] = (df_ticks["bid"] + df_ticks["ask"]) / 2.0
             df_ticks["spread"] = df_ticks["ask"] - df_ticks["bid"]
+            if price_point is not None:
+                df_ticks["spread_points"] = df_ticks["spread"] / price_point
+            df_ticks["spread_pct"] = (df_ticks["spread"] / df_ticks["mid"]) * 100.0
             df_ticks["tick_gap_ms"] = tick_gap_ms
         df_ticks["last"] = lasts
         df_ticks["tick_volume"] = volumes
@@ -2460,6 +2529,13 @@ def fetch_ticks(  # noqa: C901
                 spread_value = _finite_or_none(last_quote.get("spread"))
                 if spread_value is not None:
                     last_quote["spread_points"] = round(spread_value / price_point, 4)
+            if isinstance(last_quote, dict):
+                spread_pct = _tick_spread_pct(
+                    last_quote.get("spread"),
+                    last_quote.get("mid"),
+                )
+                if spread_pct is not None:
+                    last_quote["spread_pct"] = spread_pct
             if start or end or not _epochs:
                 return
             latest_tick_epoch = float(_epochs[-1])
@@ -2511,6 +2587,8 @@ def fetch_ticks(  # noqa: C901
             }
             if price_digits > 0:
                 out["price_precision"] = int(price_digits)
+            if price_point is not None:
+                out["price_point"] = price_point
             if price_currency:
                 out["price_currency"] = price_currency
             _add_tick_data_quality(out)
@@ -2649,6 +2727,8 @@ def fetch_ticks(  # noqa: C901
                     pass
             if price_digits > 0:
                 out["price_precision"] = int(price_digits)
+            if price_point is not None:
+                out["price_point"] = price_point
             if price_currency:
                 out["price_currency"] = price_currency
             units = _tick_units_for_headers(headers)
@@ -2773,6 +2853,8 @@ def fetch_ticks(  # noqa: C901
             }
             payload.update(table_payload)
             payload["timezone"] = _timezone_label(use_client_tz=_use_ctz, client_tz=client_tz)
+            if price_point is not None:
+                payload["price_point"] = price_point
             if price_currency:
                 payload["price_currency"] = price_currency
             units = _tick_units_for_headers(headers)
@@ -2909,14 +2991,18 @@ def fetch_ticks(  # noqa: C901
                     if bid_value is not None and ask_value is not None
                     else None
                 )
+                spread_points = _tick_spread_points(spread, price_point)
+                spread_pct = _tick_spread_pct(spread, mid)
                 gap_ms = None if i <= 0 else float((_epochs[i] - _epochs[i - 1]) * 1000.0)
                 values.extend(
                     [
                         _round_price_value(mid, price_digits),
                         _round_price_value(spread, price_digits),
-                        gap_ms,
                     ]
                 )
+                if price_point is not None:
+                    values.append(spread_points)
+                values.extend([spread_pct, gap_ms])
             values.append(_round_price_value(_finite_or_none(lasts[i]), price_digits))
             values.append(_finite_or_none(volumes[i]))
             values.append(_finite_or_none(volumes_real[i]))
@@ -2932,6 +3018,8 @@ def fetch_ticks(  # noqa: C901
         }
         payload.update(table_payload)
         payload["timezone"] = _timezone_label(use_client_tz=_use_ctz, client_tz=client_tz)
+        if price_point is not None:
+            payload["price_point"] = price_point
         if price_currency:
             payload["price_currency"] = price_currency
         units = _tick_units_for_headers(headers)

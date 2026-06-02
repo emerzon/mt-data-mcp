@@ -226,6 +226,7 @@ class TestSymbolsTopMarkets:
         assert "spread_points" not in result["data"][0]
         assert result["units"]["tick_volume"] == "broker_tick_count"
         assert result["units"]["close"] == "price"
+        assert result["volume_type"] == "tick_volume"
         assert result["volume_semantics"] == "tick_volume_is_broker_tick_count_not_lots"
         assert "lowest_spread" not in result
         assert "highest_volume" not in result
@@ -542,6 +543,7 @@ class TestSymbolsTopMarkets:
         assert first_price_change["symbol"] == "GBPUSD"
         assert result["units"]["tick_volume"] == "broker_tick_count"
         assert result["units"]["close"] == "price"
+        assert result["volume_type"] == "tick_volume"
         assert result["volume_semantics"] == "tick_volume_is_broker_tick_count_not_lots"
         assert "data_sources" not in result
         assert "collection_kind" not in result
@@ -750,6 +752,7 @@ class TestMarketScan:
         assert result["units"]["tick_volume"] == "broker_tick_count"
         assert result["units"]["spread_points"] == "broker_points"
         assert result["units"]["spread_pips"] == "pips"
+        assert result["volume_type"] == "tick_volume"
         assert result["volume_semantics"] == "tick_volume_is_broker_tick_count_not_lots"
         row = result["data"][0]
         assert row["symbol"] == "EURUSD"

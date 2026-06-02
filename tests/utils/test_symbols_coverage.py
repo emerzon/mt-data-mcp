@@ -239,6 +239,24 @@ class TestSymbolsListSearch:
             res = fn(search_term="  EUR  ", limit=25)
         assert [row[0] for row in res["data"]] == ["EURUSD"]
 
+    @patch(_NORM_LIMIT, return_value=25)
+    @patch(_TABLE, side_effect=lambda h, r: {"headers": h, "data": r})
+    @patch(f"{_MT5}.symbols_get")
+    def test_search_normalizes_slashed_pair_query(self, mock_get, mock_tbl, mock_lim):
+        mock_get.return_value = self._setup_syms()
+        with patch(_GROUP_PATH, side_effect=lambda s: s.path):
+            fn = _get_symbols_list()
+            res = fn(search_term="EUR/USD", limit=25)
+
+        assert [row[0] for row in res["data"]] == ["EURUSD"]
+        assert res["search"]["term"] == "EURUSD"
+        assert res["search"]["normalized_from"] == "EUR/USD"
+        assert res["top_match"] == {
+            "symbol": "EURUSD",
+            "match_reason": "exact_name",
+            "group": "Forex\\Majors",
+        }
+
     @patch(_NORM_LIMIT, return_value=5)
     @patch(_TABLE, side_effect=lambda h, r: {"headers": h, "data": r})
     @patch(f"{_MT5}.symbols_get")

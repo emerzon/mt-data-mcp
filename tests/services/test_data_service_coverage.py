@@ -1129,7 +1129,14 @@ class TestFetchCandles(unittest.TestCase):
         result = fetch_candles('EURUSD', limit=5)
         self.assertTrue(result.get('success'))
         self.assertEqual(result['candles_requested'], 5)
+        self.assertEqual(result['requested_limit'], 5)
+        self.assertEqual(result['returned_count'], 5)
         self.assertEqual(result['candles_excluded'], 0)
+        self.assertIn("as_of", result)
+        self.assertEqual(result["data_window"]["requested_limit"], 5)
+        self.assertEqual(result["data_window"]["returned_count"], 5)
+        self.assertTrue(result["data_window"]["latest_bar_complete"])
+        self.assertIn("latest_bar_age_seconds", result["data_window"])
         diagnostics = result['meta']['diagnostics']
         query = diagnostics['query']
         self.assertEqual(query['requested_bars'], 5)
@@ -2074,9 +2081,9 @@ class TestFetchTicks(unittest.TestCase):
         self.assertIn('stats', result)
         self.assertIn('spread', result['stats'])
         self.assertIn('last_quote', result)
-        self.assertEqual(result["units"]["bid"], "price")
-        self.assertEqual(result["units"]["ask"], "price")
-        self.assertEqual(result["units"]["volume"], "mt5_tick_volume")
+        self.assertEqual(result["units"]["bid"], "absolute_price")
+        self.assertEqual(result["units"]["ask"], "absolute_price")
+        self.assertEqual(result["units"]["tick_volume"], "broker_tick_count")
 
     @patch(_TICKS_RANGE)
     @patch(_CACHED_INFO, return_value=SimpleNamespace(digits=5, currency_profit="USD"))
@@ -2107,14 +2114,21 @@ class TestFetchTicks(unittest.TestCase):
         mock_ticks.return_value = _make_ticks(20, base_ts=1_700_000_000.0)
 
         rows = fetch_ticks('EURUSD', limit=5, format='rows')
+        full_rows = fetch_ticks('EURUSD', limit=5, format='full_rows')
         summary = fetch_ticks('EURUSD', limit=20, format='summary')
 
-        for result in (rows, summary):
+        for result in (rows, full_rows, summary):
             self.assertTrue(result.get('success'))
             self.assertEqual(result["data_freshness_seconds"], 600.0)
             self.assertTrue(result["data_stale"])
             self.assertEqual(result["freshness"], "stale, tick 10m 0s ago")
             self.assertEqual(result["last_quote"]["spread_points"], 20.0)
+            self.assertEqual(result["last_quote"]["spread_pct"], 0.018149)
+            self.assertEqual(result["price_point"], 0.00001)
+        self.assertEqual(full_rows["data"][-1]["spread_points"], 20.0)
+        self.assertEqual(full_rows["data"][-1]["spread_pct"], 0.018149)
+        self.assertEqual(full_rows["units"]["spread_points"], "broker_points")
+        self.assertEqual(full_rows["units"]["spread_pct"], "percentage_points (1.0 = 1%)")
 
     @patch(_TICKS_RANGE)
     @patch(_CACHED_INFO, return_value=SimpleNamespace(digits=5))
