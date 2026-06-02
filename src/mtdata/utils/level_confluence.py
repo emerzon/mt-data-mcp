@@ -441,6 +441,7 @@ def _format_cluster(
     reference_price: float,
     tolerance_abs: float,
     include_sources: bool,
+    include_reasons: bool,
     include_score_components: bool,
 ) -> Dict[str, Any]:
     price = _weighted_mean(records)
@@ -462,12 +463,11 @@ def _format_cluster(
         "source_families": families,
         "source_count": len(records),
         "distance_pct": _round_metric(_distance_pct(price, reference_price)),
-        "reasons": reasons,
     }
+    if include_reasons:
+        out["reasons"] = reasons
     if include_sources:
         out["sources"] = sources
-    else:
-        out["source_labels"] = [str(source.get("label")) for source in sources]
     if include_score_components:
         out["score_components"] = components
     return out
@@ -520,6 +520,7 @@ def build_level_confluence_payload(
         detail_value = "compact"
 
     include_sources = detail_value in {"standard", "full"}
+    include_reasons = detail_value in {"standard", "full"}
     include_score_components = detail_value in {"standard", "full"}
     formatted = [
         _format_cluster(
@@ -527,6 +528,7 @@ def build_level_confluence_payload(
             reference_price=reference,
             tolerance_abs=tolerance_abs,
             include_sources=include_sources,
+            include_reasons=include_reasons,
             include_score_components=include_score_components,
         )
         for group in clusters

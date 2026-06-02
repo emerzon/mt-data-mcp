@@ -58,6 +58,35 @@ def test_confluence_clusters_pivot_sr_and_fibonacci_levels():
         "support_resistance",
         "fibonacci",
     }
+    assert cluster["reasons"]
+
+
+def test_confluence_compact_omits_verbose_source_narration():
+    payload = build_level_confluence_payload(
+        symbol="EURUSD",
+        pivot_timeframe="D1",
+        sr_timeframe="H1",
+        reference_price=1.08,
+        tolerance_pct=0.001,
+        pivot_methods=[
+            {
+                "method": "classic",
+                "levels": {"R1": 1.0802, "R2": 1.0803},
+                "pivot": 1.08,
+            }
+        ],
+        support_resistance_payload={
+            "levels": [{"type": "support", "value": 1.0801, "score": 4, "touches": 2}]
+        },
+        detail="compact",
+    )
+
+    cluster = payload["levels"][0]
+    assert "reasons" not in cluster
+    assert "source_labels" not in cluster
+    assert "sources" not in cluster
+    assert "score_components" not in cluster
+    assert cluster["source_count"] == 3
 
 
 def test_pivot_original_resistance_below_reference_is_role_below():
