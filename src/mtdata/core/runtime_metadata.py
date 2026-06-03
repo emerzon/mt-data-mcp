@@ -78,6 +78,8 @@ def _prune_empty(value: Any) -> Any:
             out[key] = cleaned
         return out
     return value
+
+
 def _offset_tz_name(offset_seconds: Optional[int]) -> Optional[str]:
     if offset_seconds is None:
         return None
@@ -85,6 +87,25 @@ def _offset_tz_name(offset_seconds: Optional[int]) -> Optional[str]:
         return timezone(timedelta(seconds=int(offset_seconds))).tzname(None)
     except Exception:
         return None
+
+
+def display_timezone_label(
+    *,
+    use_client_tz: bool,
+    fallback: str = "client_local",
+    resolve_client_tz: Any = None,
+) -> str:
+    if not use_client_tz:
+        return "UTC"
+    try:
+        if resolve_client_tz is None:
+            from ..utils.utils import _resolve_client_tz as default_resolver
+
+            resolve_client_tz = default_resolver
+        client_tz = resolve_client_tz()
+        return str(getattr(client_tz, "zone", None) or client_tz or fallback)
+    except Exception:
+        return fallback
 
 
 def build_runtime_timezone_meta(

@@ -44,16 +44,10 @@ from ._mcp_instance import mcp
 from .execution_logging import run_logged_operation
 from .mt5_gateway import create_mt5_gateway
 from .output_contract import normalize_output_extras
+from .runtime_metadata import display_timezone_label
 from .volume_profile import compute_volume_profile_payload
 
 logger = logging.getLogger(__name__)
-
-
-def _pivot_display_timezone(use_client_tz: bool) -> str:
-    if not use_client_tz:
-        return "UTC"
-    client_tz = _resolve_client_tz()
-    return str(getattr(client_tz, "zone", None) or client_tz or "UTC")
 
 
 # Keep the MT5 adapter in this module namespace for compatibility with tests
@@ -464,7 +458,11 @@ def pivot_compute_points(  # noqa: C901
                 levels_table.append(row)
 
             _use_ctz = _use_client_tz()
-            timezone_label = _pivot_display_timezone(_use_ctz)
+            timezone_label = display_timezone_label(
+                use_client_tz=_use_ctz,
+                fallback="UTC",
+                resolve_client_tz=_resolve_client_tz,
+            )
             start_str = _format_time_minimal_local(period_start) if _use_ctz else _format_time_minimal(period_start)
             end_str = _format_time_minimal_local(period_end) if _use_ctz else _format_time_minimal(period_end)
             period_note = None
@@ -769,7 +767,11 @@ def confluence_levels(  # noqa: C901
                     if _use_ctz
                     else _format_time_minimal(period_start + float(tf_secs)),
                 }
-                payload["timezone"] = _pivot_display_timezone(_use_ctz)
+                payload["timezone"] = display_timezone_label(
+                    use_client_tz=_use_ctz,
+                    fallback="UTC",
+                    resolve_client_tz=_resolve_client_tz,
+                )
             else:
                 payload["timezone"] = "UTC"
             payload["calculation_basis"] = {

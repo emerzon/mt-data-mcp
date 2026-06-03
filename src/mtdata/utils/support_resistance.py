@@ -82,6 +82,20 @@ def _format_time(timestamp: Optional[float]) -> Optional[str]:
         return None
 
 
+def _format_time_iso_utc(timestamp: Optional[float]) -> Optional[str]:
+    if timestamp is None or not math.isfinite(float(timestamp)):
+        return None
+    try:
+        return (
+            datetime.fromtimestamp(float(timestamp), tz=timezone.utc)
+            .replace(microsecond=0)
+            .isoformat()
+            .replace("+00:00", "Z")
+        )
+    except Exception:
+        return None
+
+
 def _parse_output_time(value: Any) -> Optional[float]:
     if value is None:
         return None
@@ -2337,6 +2351,11 @@ def merge_support_resistance_results(  # noqa: C901
         "symbol": symbol if symbol is not None else results[0].get("symbol"),
         "timeframe": str(timeframe),
         "mode": "auto",
+        "source": "mt5_history",
+        "as_of": _format_time_iso_utc(
+            _parse_output_time(max(end_values)) if end_values else None
+        ),
+        "timezone": "UTC",
         "timeframes_analyzed": timeframes_analyzed,
         "timeframe_weights": {tf: _timeframe_weight(tf) for tf in timeframes_analyzed},
         "per_timeframe": [
@@ -2398,8 +2417,14 @@ def compact_support_resistance_level(level: Any) -> Optional[Dict[str, Any]]:
         "value",
         "distance_pct",
         "touches",
+        "episodes",
         "score",
         "strength_rank",
+        "last_touch",
+        "zone_width",
+        "zone_width_atr",
+        "avg_test_volume_ratio",
+        "volume_source",
         "role_transition",
     ):
         value = level.get(key)
@@ -2488,6 +2513,9 @@ def compact_support_resistance_payload(payload: Dict[str, Any]) -> Dict[str, Any
         "timeframe",
         "mode",
         "current_price",
+        "source",
+        "as_of",
+        "timezone",
         "timeframes_analyzed",
     ):
         value = payload.get(key)
@@ -2523,7 +2551,13 @@ def compact_support_resistance_payload(payload: Dict[str, Any]) -> Dict[str, Any
             for key in ("start", "end")
             if window.get(key) is not None
         }
-    for key in ("lookback", "limit", "max_distance_pct", "min_touches"):
+    for key in (
+        "lookback",
+        "limit",
+        "max_distance_pct",
+        "min_touches",
+        "effective_reaction_bars",
+    ):
         value = payload.get(key)
         if value not in (None, "", [], {}):
             out[key] = value
@@ -2788,6 +2822,9 @@ def compute_support_resistance_levels(
         "symbol": symbol,
         "timeframe": timeframe,
         "mode": "single",
+        "source": "mt5_history",
+        "as_of": _format_time_iso_utc(window_end),
+        "timezone": "UTC",
         "timeframes_analyzed": [str(timeframe)] if timeframe is not None else [],
         "limit": int(limit) if limit is not None else len(frame),
         "method": _METHOD_NAME,

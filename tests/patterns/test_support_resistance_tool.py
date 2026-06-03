@@ -11,8 +11,14 @@ _COMPACT_LEVEL_KEYS = {
     "value",
     "distance_pct",
     "touches",
+    "episodes",
     "score",
     "strength_rank",
+    "last_touch",
+    "zone_width",
+    "zone_width_atr",
+    "avg_test_volume_ratio",
+    "volume_source",
     "role_transition",
     "source_timeframes",
     "dominant_source",
@@ -72,11 +78,17 @@ def test_support_resistance_tool_returns_weighted_levels():
     assert result["success"] is True
     assert result["symbol"] == "EURUSD"
     assert result["timeframe"] == "H1"
+    assert result["source"] == "mt5_history"
+    assert result["timezone"] == "UTC"
+    assert result["as_of"].endswith("Z")
     assert result["level_counts"] == {"support": 1, "resistance": 1, "total": 2}
     assert len(result["supports"]) == 1
     assert len(result["resistances"]) == 1
     assert set(result["supports"][0]).issubset(_COMPACT_LEVEL_KEYS)
     assert set(result["resistances"][0]).issubset(_COMPACT_LEVEL_KEYS)
+    assert "zone_width" in result["supports"][0]
+    assert "last_touch" in result["supports"][0]
+    assert result["effective_reaction_bars"] >= 1
     assert "fibonacci" not in result
     assert "levels" not in result
     assert "nearest" not in result

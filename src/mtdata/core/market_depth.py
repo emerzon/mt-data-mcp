@@ -24,6 +24,7 @@ from .execution_logging import run_logged_operation
 from .mt5_gateway import create_mt5_gateway
 from .output_contract import ensure_common_meta, normalize_output_verbosity_detail
 from .quote_freshness import QUOTE_STALE_SECONDS, quote_closed_session_context
+from .runtime_metadata import display_timezone_label
 
 logger = logging.getLogger(__name__)
 _MARKET_DEPTH_ENABLE_ENV = "MTDATA_ENABLE_MARKET_DEPTH_FETCH"
@@ -51,16 +52,6 @@ _FOREX_CURRENCY_CODES = {
     "USD",
     "ZAR",
 }
-
-
-def _display_timezone_label(*, use_client_tz: bool) -> str:
-    if not use_client_tz:
-        return "UTC"
-    try:
-        client_tz = _resolve_client_tz()
-        return str(getattr(client_tz, "zone", None) or client_tz or "client_local")
-    except Exception:
-        return "client_local"
 
 
 def _round_market_ticker_value(value: Any, *, digits: int) -> Any:
@@ -437,7 +428,10 @@ def _market_depth_fetch_impl(symbol: str, spread: bool = False, require_dom: boo
             elif tick.time:
                 out["data"]["time"] = _format_time_explicit(float(tick.time))
                 out["data"]["time_epoch"] = int(float(tick.time))
-            out["timezone"] = _display_timezone_label(use_client_tz=_use_ctz)
+            out["timezone"] = display_timezone_label(
+                use_client_tz=_use_ctz,
+                resolve_client_tz=_resolve_client_tz,
+            )
             out["query_latency_ms"] = round((time.perf_counter() - started) * 1000.0, 3)
             return out
         except MT5ConnectionError as exc:
@@ -692,7 +686,10 @@ def market_ticker(
                 meta = {}
             meta["diagnostics"] = dict(diagnostics)
             out["meta"] = meta
-            out["timezone"] = _display_timezone_label(use_client_tz=_use_ctz)
+            out["timezone"] = display_timezone_label(
+                use_client_tz=_use_ctz,
+                resolve_client_tz=_resolve_client_tz,
+            )
             if price_field is not None:
                 field_value = str(price_field or "").strip().lower()
                 price_values = {
