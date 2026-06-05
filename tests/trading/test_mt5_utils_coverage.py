@@ -59,6 +59,7 @@ from mtdata.utils.mt5 import (
     _symbol_ready_guard,
     _to_mt5_history_epoch_seconds,
     _to_server_naive_dt,
+    _to_server_query_dt,
     _to_utc_history_query_dt,
     clear_mt5_time_alignment_cache,
     clear_symbol_info_cache,
@@ -351,6 +352,31 @@ class TestToServerNaiveDt:
         dt = datetime(2024, 6, 15)
         assert _to_server_naive_dt(dt) == dt
         assert any("Failed to convert UTC datetime" in record.message for record in caplog.records)
+
+
+class TestToServerQueryDt:
+    @patch("mtdata.utils.mt5.mt5_config")
+    def test_unconfigured_query_dt_is_utc_aware_and_pc_independent(self, cfg):
+        cfg.get_server_tz.return_value = None
+        cfg.get_time_offset_seconds.return_value = 0
+        result = _to_server_query_dt(datetime(2026, 6, 4, 17, 0))
+        # Tagged UTC so the MT5 package computes a deterministic epoch
+        # regardless of the local machine timezone.
+        assert result.tzinfo == timezone.utc
+        assert result.timestamp() == datetime(
+            2026, 6, 4, 17, 0, tzinfo=timezone.utc
+        ).timestamp()
+
+    @patch("mtdata.utils.mt5.mt5_config")
+    def test_static_offset_query_dt_epoch_is_server_local(self, cfg):
+        cfg.get_server_tz.return_value = None
+        cfg.get_time_offset_seconds.return_value = 7200
+        result = _to_server_query_dt(datetime(2026, 6, 4, 17, 0))
+        assert result.tzinfo == timezone.utc
+        # Server-local epoch == utc_epoch + offset, independent of PC tz.
+        assert result.timestamp() == datetime(
+            2026, 6, 4, 19, 0, tzinfo=timezone.utc
+        ).timestamp()
 
 
 class TestToUtcHistoryQueryDt:

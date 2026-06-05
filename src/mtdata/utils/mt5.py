@@ -326,6 +326,19 @@ def _to_server_naive_dt(dt: datetime) -> datetime:
         return dt
 
 
+def _to_server_query_dt(dt: datetime) -> datetime:
+    """Server-local query datetime tagged UTC for MT5 ``copy_*`` calls.
+
+    The MetaTrader5 package converts *naive* datetimes to epoch seconds using
+    the local machine timezone, which silently shifts historical range/from
+    queries by the PC's UTC offset on any non-UTC machine. Tagging the
+    server-local wall clock as UTC makes the resulting epoch deterministic and
+    independent of the PC timezone, symmetric with the inbound
+    ``_mt5_epoch_to_utc`` axis (raw MT5 epochs are server-local seconds).
+    """
+    return _to_server_naive_dt(dt).replace(tzinfo=timezone.utc)
+
+
 def _to_utc_history_query_dt(dt: datetime) -> datetime:
     """Convert a datetime to a UTC-aware instant for MT5 history_* queries."""
     from .utils import _utc_epoch_seconds
@@ -598,20 +611,20 @@ def _mt5_read_with_retry(fn, *args, max_retries: int = _MT5_READ_MAX_RETRIES):
 
 
 def _mt5_copy_rates_from(symbol: str, timeframe, to_dt_utc: datetime, count: int):
-    dt_srv = _to_server_naive_dt(to_dt_utc)
+    dt_srv = _to_server_query_dt(to_dt_utc)
     data = _mt5_read_with_retry(mt5.copy_rates_from, symbol, timeframe, dt_srv, count)
     return _normalize_times_in_struct(data)
 
 
 def _mt5_copy_rates_range(symbol: str, timeframe, from_dt_utc: datetime, to_dt_utc: datetime):
-    dt_from = _to_server_naive_dt(from_dt_utc)
-    dt_to = _to_server_naive_dt(to_dt_utc)
+    dt_from = _to_server_query_dt(from_dt_utc)
+    dt_to = _to_server_query_dt(to_dt_utc)
     data = _mt5_read_with_retry(mt5.copy_rates_range, symbol, timeframe, dt_from, dt_to)
     return _normalize_times_in_struct(data)
 
 
 def _mt5_copy_ticks_from(symbol: str, from_dt_utc: datetime, count: int, flags: int):
-    dt_from = _to_server_naive_dt(from_dt_utc)
+    dt_from = _to_server_query_dt(from_dt_utc)
     data = _mt5_read_with_retry(mt5.copy_ticks_from, symbol, dt_from, count, flags)
     return _normalize_times_in_struct(data)
 
@@ -622,8 +635,8 @@ def _mt5_copy_rates_from_pos(symbol: str, timeframe, start_pos: int, count: int)
 
 
 def _mt5_copy_ticks_range(symbol: str, from_dt_utc: datetime, to_dt_utc: datetime, flags: int):
-    dt_from = _to_server_naive_dt(from_dt_utc)
-    dt_to = _to_server_naive_dt(to_dt_utc)
+    dt_from = _to_server_query_dt(from_dt_utc)
+    dt_to = _to_server_query_dt(to_dt_utc)
     data = _mt5_read_with_retry(mt5.copy_ticks_range, symbol, dt_from, dt_to, flags)
     return _normalize_times_in_struct(data)
 
