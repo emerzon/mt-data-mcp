@@ -156,6 +156,7 @@ def _compact_market_ticker_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
         "spread_pct",
         "spread_pips",
         "freshness",
+        "stale_after_seconds",
         "market_status_reason",
         "time",
         "timezone",

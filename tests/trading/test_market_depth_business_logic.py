@@ -373,7 +373,7 @@ def test_market_ticker_compact_detail_omits_verbose_fields() -> None:
     assert out["time"] == "2023-11-14T22:13Z"
     assert "time_display" not in out
     assert "data_stale" not in out
-    assert "stale_after_seconds" not in out
+    assert out["stale_after_seconds"] == 300
     assert "freshness_basis" not in out
     assert "data_age" not in out
     assert "warning" not in out
