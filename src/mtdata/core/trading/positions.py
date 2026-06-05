@@ -1320,7 +1320,12 @@ def _resolve_pending_order(
 def trade_get_open(
     request: TradeGetOpenRequest,
 ) -> Dict[str, Any]:
-    """Get open positions. Compact output omits echoed request metadata by default."""
+    """Get open positions. Compact output omits echoed request metadata by default.
+
+    Each row's `ticket` is the position ticket; it equals `position_ticket` in
+    `trade_history`, so join the two tools on
+    `trade_get_open.ticket == trade_history.position_ticket`.
+    """
     def _run() -> Dict[str, Any]:
         gateway = create_trading_gateway()
         return _normalize_trade_read_output(
