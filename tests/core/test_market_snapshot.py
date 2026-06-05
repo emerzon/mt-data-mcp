@@ -7,6 +7,40 @@ def _raw_market_snapshot(**kwargs):
     return snapshot_mod.market_snapshot.__wrapped__(**kwargs)
 
 
+def test_market_snapshot_quote_compaction_preserves_epoch_as_secondary_field():
+    quote = snapshot_mod._compact_quote(
+        {
+            "success": True,
+            "symbol": "EURUSD",
+            "bid": 1.1,
+            "ask": 1.1002,
+            "time": 1700000000,
+            "time_display": "2023-11-14 22:13 UTC",
+            "meta": {"tool": "market_ticker"},
+        }
+    )
+
+    assert quote["time"] == "2023-11-14 22:13 UTC"
+    assert quote["time_epoch"] == 1700000000
+    assert "time_display" not in quote
+    assert "meta" not in quote
+
+
+def test_market_snapshot_quote_compaction_formats_epoch_without_display():
+    quote = snapshot_mod._compact_quote(
+        {
+            "success": True,
+            "symbol": "EURUSD",
+            "bid": 1.1,
+            "ask": 1.1002,
+            "time": 1700000000,
+        }
+    )
+
+    assert quote["time"] == "2023-11-14T22:13:20Z"
+    assert quote["time_epoch"] == 1700000000
+
+
 def test_market_snapshot_marks_invalid_symbol_failure(monkeypatch):
     def fake_call_section(name, symbol, timeframe, horizon, detail):
         if name == "quote":

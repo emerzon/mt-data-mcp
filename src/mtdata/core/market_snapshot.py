@@ -54,6 +54,22 @@ def _section_error(exc: Exception) -> Dict[str, Any]:
 def _compact_quote(quote: Any) -> Any:
     if not isinstance(quote, dict) or quote.get("error"):
         return quote
+    normalized_quote = dict(quote)
+    raw_time = normalized_quote.get("time")
+    display_time = normalized_quote.pop("time_display", None)
+    if isinstance(raw_time, (int, float)):
+        normalized_quote["time_epoch"] = raw_time
+        if display_time not in (None, ""):
+            normalized_quote["time"] = display_time
+        else:
+            normalized_quote["time"] = (
+                datetime.fromtimestamp(float(raw_time), tz=timezone.utc)
+                .replace(microsecond=0)
+                .isoformat()
+                .replace("+00:00", "Z")
+            )
+    elif display_time not in (None, "") and raw_time in (None, ""):
+        normalized_quote["time"] = display_time
     keys = (
         "symbol",
         "bid",
@@ -66,9 +82,10 @@ def _compact_quote(quote: Any) -> Any:
         "spread_pct",
         "freshness",
         "time",
+        "time_epoch",
         "data_stale",
     )
-    return {key: quote[key] for key in keys if key in quote}
+    return {key: normalized_quote[key] for key in keys if key in normalized_quote}
 
 
 def _latest_direction(forecast: Any) -> Optional[str]:
