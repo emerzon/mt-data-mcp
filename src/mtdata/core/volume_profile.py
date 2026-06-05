@@ -341,6 +341,10 @@ def _select_profile_rows(
                     _MIN_TICK_PRICE_COVERAGE_RATIO
                 )
             return fallback
+        if isinstance(diagnostics, dict) and source_value == "auto":
+            diagnostics["auto_source_reason"] = (
+                "tick data within bounded window with adequate price coverage"
+            )
         return tick_result
     if source_value == "ticks":
         return tick_result

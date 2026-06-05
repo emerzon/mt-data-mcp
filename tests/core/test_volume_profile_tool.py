@@ -79,6 +79,41 @@ def test_compute_volume_profile_payload_uses_tick_rows(monkeypatch):
     assert "buckets" not in result
 
 
+def test_compute_volume_profile_payload_auto_ticks_records_reason(monkeypatch):
+    monkeypatch.setattr(vp, "create_mt5_gateway", lambda **_: SimpleNamespace(ensure_connection=lambda: None))
+    monkeypatch.setattr(
+        vp,
+        "_symbol_ready_guard",
+        lambda symbol: _Guard(None, SimpleNamespace(point=0.0001, digits=5)),
+    )
+    monkeypatch.setattr(
+        vp,
+        "fetch_ticks",
+        lambda **_: {
+            "data": [
+                {"time": "2026-01-01 00:00:00.000", "bid": 1.0999, "ask": 1.1001, "mid": 1.1000, "tick_volume": 1, "real_volume": 0},
+                {"time": "2026-01-01 00:00:01.000", "bid": 1.1000, "ask": 1.1002, "mid": 1.1001, "tick_volume": 2, "real_volume": 0},
+            ]
+        },
+    )
+
+    result = vp.compute_volume_profile_payload(
+        symbol="EURUSD",
+        start="2026-01-01 00:00",
+        end="2026-01-01 00:01",
+        source="auto",
+        bucket_size=0.0001,
+        detail="compact",
+    )
+
+    assert result["success"] is True
+    assert result["source"] == "ticks"
+    assert (
+        result["diagnostics"]["auto_source_reason"]
+        == "tick data within bounded window with adequate price coverage"
+    )
+
+
 def test_compute_volume_profile_payload_exposes_fetch_freshness_and_units(monkeypatch):
     monkeypatch.setattr(vp, "create_mt5_gateway", lambda **_: SimpleNamespace(ensure_connection=lambda: None))
     monkeypatch.setattr(
