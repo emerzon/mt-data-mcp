@@ -70,8 +70,10 @@ def add_global_args_to_parser(
             "choices": PRECISION_CHOICES,
             "default": "auto",
             "help": (
-                "Numeric display precision: auto (safe defaults), compact/display "
-                "for token-saving output, or full/raw for unminimized numbers."
+                "TOON numeric display precision: auto (compact for most tools, "
+                "full for forecast/trade analytics), compact/display to force "
+                "token-saving output, or full/raw to disable rounding. JSON output "
+                "is always full precision."
             ),
         }
         if suppress_defaults:
