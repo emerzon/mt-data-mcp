@@ -95,7 +95,7 @@ def suggest_forecast_methods(method: Any, valid_methods: List[str], limit: int =
         normalized_needle,
         list(normalized_to_name),
         n=limit,
-        cutoff=0.45,
+        cutoff=0.6,
     )
     for normalized in fuzzy:
         name = normalized_to_name.get(normalized, normalized)

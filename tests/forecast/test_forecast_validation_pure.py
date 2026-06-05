@@ -315,3 +315,15 @@ class TestSanitizeParams:
         result = sanitize_params({"a": "5", "b": "hello"})
         assert result["a"] == 5
         assert result["b"] == "hello"
+
+
+class TestSuggestForecastMethods:
+    def test_no_spurious_cross_family_suggestion(self):
+        valid = ['theta', 'drift', 'seasonal_naive', 'analog', 'sf_constantmodel', 'sf_autoarima']
+        assert fv.suggest_forecast_methods('nonexistent_method', valid) == []
+
+    def test_close_typo_is_suggested(self):
+        valid = ['theta', 'drift', 'seasonal_naive', 'analog']
+        assert 'drift' in fv.suggest_forecast_methods('drft', valid)
+        assert 'analog' in fv.suggest_forecast_methods('analg', valid)
+
