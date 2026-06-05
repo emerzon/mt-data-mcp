@@ -450,7 +450,14 @@ class DataFetchCandlesRequest(BaseModel):
 
 class DataFetchTicksRequest(BaseModel):
     symbol: str
-    limit: int = DATA_FETCH_TICKS_DEFAULT_LIMIT
+    limit: int = Field(
+        DATA_FETCH_TICKS_DEFAULT_LIMIT,
+        description=(
+            "Max ticks to return (default "
+            f"{DATA_FETCH_TICKS_DEFAULT_LIMIT}, a recent snapshot). The response "
+            "echoes requested_limit and sets has_more=true when the cap is hit."
+        ),
+    )
     start: Optional[str] = None
     end: Optional[str] = None
     simplify: SimplifySpecInput = None

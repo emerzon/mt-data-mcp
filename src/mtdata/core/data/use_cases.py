@@ -686,8 +686,24 @@ def _run_data_fetch_ticks_impl(
         format=_TICK_DETAIL_FORMATS.get(request.detail, "summary"),
     )
     if str(request.detail or "compact").strip().lower() == "compact":
-        return _compact_tick_rows_payload(result)
+        result = _compact_tick_rows_payload(result)
+    _attach_tick_pagination(result, requested_limit=request.limit)
     return result
+
+
+def _attach_tick_pagination(payload: Any, *, requested_limit: int) -> None:
+    """Echo the requested limit and flag a likely truncation for tick payloads."""
+    if not isinstance(payload, dict) or payload.get("error"):
+        return
+    count = payload.get("count")
+    if not isinstance(count, int):
+        return
+    try:
+        limit_value = int(requested_limit)
+    except (TypeError, ValueError):
+        return
+    payload["requested_limit"] = limit_value
+    payload["has_more"] = bool(count >= limit_value)
 
 
 def _compact_tick_rows_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
