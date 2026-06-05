@@ -1353,6 +1353,22 @@ class TestForecastBarriers(_BarrierModulePatchMixin, unittest.TestCase):
         self.assertIn("error", result)
         self.assertIn("Invalid horizon", result["error"])
 
+    def test_forecast_barrier_hit_probabilities_rejects_mis_sided_absolute_levels(self):
+        self._set_flat_history(1.0, bars=200)
+        with patch(f'{_BARRIER_PROB_ROOT}._get_live_reference_price', return_value=(None, None)):
+            result = forecast_barrier_hit_probabilities(
+                symbol="EURUSD",
+                timeframe="H1",
+                horizon=4,
+                method="mc_gbm",
+                direction="long",
+                tp_abs=0.5,  # below reference (~1.0) -> wrong side for a long TP
+                sl_abs=0.9,  # below reference -> correct side
+            )
+        self.assertIn("error", result)
+        self.assertIn("tp_abs", result["error"])
+        self.assertIn("absolute price levels, not offsets", result["error"])
+
     def test_forecast_barrier_hit_probabilities_normalizes_direction_aliases(self):
         result = forecast_barrier_hit_probabilities(
             symbol="EURUSD",

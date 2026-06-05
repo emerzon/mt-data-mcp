@@ -139,6 +139,54 @@ def _live_reference_time_context(symbol: str, timeframe: str) -> Dict[str, Any]:
     }
 
 
+def _abs_barrier_side_error(
+    *,
+    price: float,
+    direction: str,
+    tp_abs: Optional[float],
+    sl_abs: Optional[float],
+) -> Optional[str]:
+    """Reject user-supplied absolute TP/SL levels on the wrong side of price.
+
+    ``tp_abs``/``sl_abs`` are absolute price levels (not offsets). A mis-sided
+    level is almost always a unit mistake (e.g. passing an intended offset like
+    ``sl_abs=500``), which the silent inversion nudge would otherwise mask with
+    meaningless probabilities. Return an actionable error instead.
+    """
+    try:
+        ref = float(price)
+    except (TypeError, ValueError):
+        return None
+    if not np.isfinite(ref):
+        return None
+    is_long = direction == "long"
+    problems: List[str] = []
+    for name, value, must_be_above in (
+        ("tp_abs", tp_abs, is_long),
+        ("sl_abs", sl_abs, not is_long),
+    ):
+        if value is None:
+            continue
+        try:
+            level = float(value)
+        except (TypeError, ValueError):
+            continue
+        if not np.isfinite(level):
+            continue
+        if must_be_above and level <= ref:
+            problems.append(f"{name} ({level:g}) must be above the reference price ({ref:g})")
+        elif not must_be_above and level >= ref:
+            problems.append(f"{name} ({level:g}) must be below the reference price ({ref:g})")
+    if not problems:
+        return None
+    side = "long" if is_long else "short"
+    return (
+        f"For a {side} position, " + " and ".join(problems)
+        + ". tp_abs/sl_abs are absolute price levels, not offsets; use tp_pct/sl_pct "
+        "or tp_ticks/sl_ticks to specify distances from the reference price."
+    )
+
+
 def forecast_barrier_hit_probabilities(  # noqa: C901
     symbol: str,
     timeframe: TimeframeLiteral = "H1",
@@ -209,6 +257,12 @@ def forecast_barrier_hit_probabilities(  # noqa: C901
         if price_warning:
             warnings_out.append(price_warning)
         pip_size = _get_pip_size(symbol)
+
+        abs_side_error = _abs_barrier_side_error(
+            price=last_price, direction=direction_norm, tp_abs=tp_abs, sl_abs=sl_abs
+        )
+        if abs_side_error:
+            return {"error": abs_side_error}
 
         # Compute absolute TP/SL prices with explicit trade direction
         dir_long = direction_norm == 'long'
