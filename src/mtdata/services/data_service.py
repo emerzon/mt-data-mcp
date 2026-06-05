@@ -519,6 +519,9 @@ def _fetch_rates_with_warmup(
             return None, from_date_error or to_date_error
         if from_date > to_date:
             return None, "start_datetime must be before end_datetime"
+        future_error = _future_start_error(start_datetime, from_date, seconds_per_bar)
+        if future_error:
+            return None, future_error
         from_date_internal = from_date - timedelta(seconds=seconds_per_bar * (warmup_bars + extra_bars))
         expected_end_ts = _utc_epoch_seconds(to_date)
 
@@ -532,6 +535,9 @@ def _fetch_rates_with_warmup(
         seconds_per_bar, timeframe_error = _resolve_fetch_timeframe_seconds(timeframe)
         if timeframe_error:
             return None, timeframe_error
+        future_error = _future_start_error(start_datetime, from_date, seconds_per_bar)
+        if future_error:
+            return None, future_error
         to_date = from_date + timedelta(seconds=seconds_per_bar * (candles + 2 + extra_bars))
         from_date_internal = from_date - timedelta(seconds=seconds_per_bar * (warmup_bars + extra_bars))
         expected_end_ts = _utc_epoch_seconds(to_date)
@@ -626,6 +632,29 @@ def _parse_fetch_datetime_arg(value: str) -> tuple[Optional[datetime], Optional[
     if parsed is None:
         return None, f"Could not parse date {value!r}. {_DATE_FORMAT_HINT}"
     return parsed, None
+
+
+def _future_start_error(
+    start_datetime: str, from_date: datetime, seconds_per_bar: int
+) -> Optional[str]:
+    """Return an error when the requested start is in the future.
+
+    A future ``start`` yields no historical bars; MT5 silently returns recent
+    bars that are then trimmed away, producing an opaque empty success. Reject
+    it explicitly (like reversed dates) so callers get an actionable signal.
+    A one-bar + clock-skew tolerance avoids false positives near the live bar.
+    """
+    try:
+        from_epoch = _utc_epoch_seconds(from_date)
+        tolerance = max(int(seconds_per_bar), 300)
+        if from_epoch > time.time() + tolerance:
+            return (
+                f"start datetime {start_datetime} is in the future; "
+                "no historical data is available for future dates."
+            )
+    except Exception:
+        return None
+    return None
 
 
 def _resolve_fetch_timeframe_seconds(timeframe: TimeframeLiteral) -> tuple[Optional[int], Optional[str]]:

@@ -310,7 +310,7 @@ class TestFetchRatesWithWarmup(unittest.TestCase):
             retry=False, sanity_check=False,
         )
         self.assertIsNone(result)
-        self.assertIn('Invalid date', err)
+        self.assertIn('Could not parse date', err)
 
     @patch(_RATES_RANGE)
     @patch(_PARSE_START)
@@ -322,7 +322,7 @@ class TestFetchRatesWithWarmup(unittest.TestCase):
             retry=False, sanity_check=False,
         )
         self.assertIsNone(result)
-        self.assertIn('Invalid date', err)
+        self.assertIn('Could not parse date', err)
 
     @patch(_RATES_RANGE)
     @patch(_PARSE_START)
@@ -338,6 +338,35 @@ class TestFetchRatesWithWarmup(unittest.TestCase):
         )
         self.assertIsNone(result)
         self.assertIn('before', err)
+
+    @patch(_RATES_RANGE)
+    @patch(_PARSE_START)
+    def test_future_start_with_end_returns_error(self, mock_parse, mock_range):
+        """A start in the future yields no historical data and must error."""
+        mock_parse.side_effect = [
+            datetime(2099, 1, 1, tzinfo=_UTC),
+            datetime(2099, 2, 1, tzinfo=_UTC),
+        ]
+        result, err = _fetch_rates_with_warmup(
+            'EURUSD', 16385, 'H1', 5, 0, '2099-01-01', '2099-02-01',
+            retry=False, sanity_check=False,
+        )
+        self.assertIsNone(result)
+        self.assertIn('future', err)
+        mock_range.assert_not_called()
+
+    @patch(_RATES_RANGE)
+    @patch(_PARSE_START)
+    def test_future_start_only_returns_error(self, mock_parse, mock_range):
+        """A future start without end must error rather than silently empty."""
+        mock_parse.return_value = datetime(2099, 1, 1, tzinfo=_UTC)
+        result, err = _fetch_rates_with_warmup(
+            'EURUSD', 16385, 'H1', 5, 0, '2099-01-01', None,
+            retry=False, sanity_check=False,
+        )
+        self.assertIsNone(result)
+        self.assertIn('future', err)
+        mock_range.assert_not_called()
 
     @patch(_RATES_RANGE)
     @patch(_PARSE_START)
@@ -363,7 +392,7 @@ class TestFetchRatesWithWarmup(unittest.TestCase):
             retry=False, sanity_check=False,
         )
         self.assertIsNone(result)
-        self.assertIn('Invalid date', err)
+        self.assertIn('Could not parse date', err)
 
     @patch(_RATES_RANGE)
     @patch(_PARSE_START)
@@ -419,7 +448,7 @@ class TestFetchRatesWithWarmup(unittest.TestCase):
             retry=False, sanity_check=False,
         )
         self.assertIsNone(result)
-        self.assertIn('Invalid date', err)
+        self.assertIn('Could not parse date', err)
 
     @patch(_RATES_FROM)
     def test_no_datetime_unknown_timeframe_seconds(self, mock_from):
