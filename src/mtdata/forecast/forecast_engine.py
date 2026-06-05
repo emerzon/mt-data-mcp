@@ -1130,10 +1130,17 @@ def _format_forecast_output(
                 result["lower_price"] = lower_vals
                 result["upper_price"] = upper_vals
         else:
-            warning_text = (
-                f"Point forecast only for method '{method}'; confidence intervals are unavailable. "
-                "Use forecast_conformal_intervals for uncertainty bands."
-            )
+            if ci_alpha_value is not None:
+                warning_text = (
+                    f"ci_alpha={ci_alpha_value:g} was requested but confidence intervals "
+                    f"are unavailable for method '{method}'; returning a point forecast only. "
+                    "Use forecast_conformal_intervals for calibrated uncertainty bands."
+                )
+            else:
+                warning_text = (
+                    f"Point forecast only for method '{method}'; confidence intervals are unavailable. "
+                    "Use forecast_conformal_intervals for uncertainty bands."
+                )
             warnings = result.get("warnings")
             if not isinstance(warnings, list):
                 warnings = []
