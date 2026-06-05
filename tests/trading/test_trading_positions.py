@@ -53,6 +53,15 @@ def test_normalize_trade_read_output_compact_omits_request_echoes():
     assert "limit" not in out
 
 
+def test_normalize_trade_read_output_open_positions_includes_as_of():
+    out = positions._normalize_trade_read_output(
+        {"items": [{"ticket": 1, "symbol": "EURUSD"}]},
+        request=SimpleNamespace(symbol="EURUSD", ticket=1, limit=5, detail="compact"),
+        kind="open_positions",
+    )
+    assert isinstance(out.get("as_of"), str) and out["as_of"].endswith("Z")
+
+
 def test_normalize_trade_read_output_compact_empty_keeps_contract_shape():
     out = positions._normalize_trade_read_output(
         [],
@@ -60,12 +69,18 @@ def test_normalize_trade_read_output_compact_empty_keeps_contract_shape():
         kind="open_positions",
     )
 
+    as_of = out.pop("as_of", None)
+    assert isinstance(as_of, str) and as_of.endswith("Z")
     assert out == {
         "success": True,
         "kind": "open_positions",
         "count": 0,
         "items": [],
         "empty": True,
+        "message": "No open positions matched the request.",
+        "hint": (
+            "Normal when flat; relax symbol/ticket filters or check trade_account_info."
+        ),
     }
 
 

@@ -273,6 +273,10 @@ def _normalize_trade_read_output(
         "count": 0,
         "items": [],
     }
+    if kind in ("open_positions", "pending_orders"):
+        out["as_of"] = (
+            datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+        )
     if kind == "trade_history":
         filters_applied = _trade_history_filters_applied(request)
         if filters_applied:
@@ -392,6 +396,8 @@ def _compact_trade_read_output(out: Dict[str, Any], *, request: Any) -> Dict[str
             "items": [],
             "empty": True,
         }
+        if out.get("as_of"):
+            compact["as_of"] = out.get("as_of")
         compact["message"] = out.get("message") or default_message
         compact["hint"] = (
             "Normal when flat; relax symbol/ticket filters or check trade_account_info."
