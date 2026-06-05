@@ -392,7 +392,16 @@ class DataFetchCandlesRequest(BaseModel):
         ),
         examples=["ohlcv", "close", "open,high,low,close,volume"],
     )
-    indicators: IndicatorSpecsInput = None
+    indicators: IndicatorSpecsInput = Field(
+        None,
+        description=(
+            "Technical indicators to append, using name(params) syntax. "
+            "Comma-separate multiple and use bare names for defaults, e.g. "
+            "\"rsi(14),macd(12,26,9),sma\". Use indicators_list / "
+            "indicators_describe to discover names and parameters."
+        ),
+        examples=["rsi(14)", "rsi(14),ema(20)", "macd(12,26,9)"],
+    )
     denoise: Optional[DenoiseSpec] = None
     simplify: SimplifySpecInput = None
     include_spread: bool = Field(

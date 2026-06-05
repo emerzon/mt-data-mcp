@@ -1471,7 +1471,8 @@ def fetch_candles(  # noqa: C901
                     "error": (
                         "Unknown indicator(s): "
                         + ", ".join(unknown_indicators)
-                        + ". Use indicators_list to view valid indicator names."
+                        + ". Parameters use name(params) syntax, e.g. rsi(14) or "
+                        "macd(12,26,9); use indicators_list to view valid indicator names."
                     )
                 }
             warmup_bars = _estimate_warmup_bars(ti_spec)
