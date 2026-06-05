@@ -380,7 +380,15 @@ class DataFetchCandlesRequest(BaseModel):
     symbol: str
     timeframe: TimeframeLiteral = "H1"
     detail: CompactStandardFullDetailLiteral = "compact"
-    limit: int = DATA_FETCH_CANDLES_DEFAULT_LIMIT
+    limit: int = Field(
+        DATA_FETCH_CANDLES_DEFAULT_LIMIT,
+        description=(
+            "Number of most-recent completed bars to return (default "
+            f"{DATA_FETCH_CANDLES_DEFAULT_LIMIT}, kept small for compact output). "
+            "Requested indicators automatically fetch extra warmup bars, so the "
+            "returned window has valid indicator values without raising the limit."
+        ),
+    )
     start: Optional[str] = None
     end: Optional[str] = None
     ohlcv: Optional[str] = Field(
