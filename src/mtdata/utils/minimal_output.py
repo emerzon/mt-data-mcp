@@ -306,6 +306,24 @@ def _normalize_forecast_payload(
             except Exception:
                 digits = None
         price_digits = digits if "price" in main_key else None
+        is_return_col = "return" in main_key
+
+        def _fmt_forecast_value(value: Any) -> Any:
+            if not (format_digits and isinstance(value, (int, float))):
+                return value
+            if price_digits is not None:
+                try:
+                    return f"{float(value):.{price_digits}f}"
+                except Exception:
+                    return value
+            if is_return_col:
+                # Returns are small dimensionless fractions; full float precision
+                # is spurious and wastes tokens. Round to 6 significant figures.
+                try:
+                    return float(f"{float(value):.6g}")
+                except Exception:
+                    return value
+            return value
 
         if "price" in main_key:
             lower_key, upper_key = "lower_price", "upper_price"
@@ -394,12 +412,7 @@ def _normalize_forecast_payload(
             headers.append(f"q{q}")
         rows: List[Dict[str, Any]] = []
         for i in range(n):
-            val = fvals[i]
-            if format_digits and price_digits is not None and isinstance(val, (int, float)):
-                try:
-                    val = f"{float(val):.{price_digits}f}"
-                except Exception:
-                    pass
+            val = _fmt_forecast_value(fvals[i])
 
             row: Dict[str, Any] = {
                 "time": times[i],
@@ -408,28 +421,15 @@ def _normalize_forecast_payload(
             if include_market_status:
                 row["market_status"] = market_status[i] if i < len(market_status) else None
             if include_interval_columns:
-                low_val = lower[i] if i < len(lower) else None
-                up_val = upper[i] if i < len(upper) else None
-                if format_digits and price_digits is not None:
-                    try:
-                        if isinstance(low_val, (int, float)):
-                            low_val = f"{float(low_val):.{price_digits}f}"
-                        if isinstance(up_val, (int, float)):
-                            up_val = f"{float(up_val):.{price_digits}f}"
-                    except Exception:
-                        pass
+                low_val = _fmt_forecast_value(lower[i] if i < len(lower) else None)
+                up_val = _fmt_forecast_value(upper[i] if i < len(upper) else None)
                 row["lower"] = low_val
                 row["upper"] = up_val
             for q in usable_qcols:
                 qarr = qmap.get(q) if isinstance(qmap, dict) else None  # type: ignore[assignment]
                 if not isinstance(qarr, list):
                     continue
-                q_val = qarr[i] if i < len(qarr) else None
-                if format_digits and price_digits is not None and isinstance(q_val, (int, float)):
-                    try:
-                        q_val = f"{float(q_val):.{price_digits}f}"
-                    except Exception:
-                        pass
+                q_val = _fmt_forecast_value(qarr[i] if i < len(qarr) else None)
                 row[f"q{q}"] = q_val
             rows.append(row)
 

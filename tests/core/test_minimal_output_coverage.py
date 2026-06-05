@@ -210,6 +210,20 @@ class TestNormalizeForecastPayload:
         result = _normalize_forecast_payload(payload)
         assert result is not None
 
+    def test_forecast_return_values_rounded_to_six_sig_figs(self):
+        payload = {
+            "times": ["t1", "t2"],
+            "forecast_return": [-0.00035303798505407027, 0.012345678901234],
+            "lower_return": [-0.0009998765, 0.001],
+            "upper_return": [0.00010001, 0.02],
+        }
+        result = _normalize_forecast_payload(payload)
+        rows = result["forecast"]
+        assert rows[0]["forecast"] == -0.000353038
+        assert rows[1]["forecast"] == 0.0123457
+        assert rows[0]["lower"] == -0.000999876
+        assert rows[0]["upper"] == 0.00010001
+
     def test_verbose_meta(self):
         payload = {
             "times": ["t1"],
