@@ -1371,12 +1371,17 @@ def symbols_describe(
                 symbol_data = _compact_symbol_describe_payload(symbol_data)
 
             symbol_name = _nonempty_symbol_string(symbol_data.pop("name", None))
-            return {
+            payload = {
                 "success": True,
                 "symbol": symbol_name or _nonempty_symbol_string(symbol) or symbol,
                 "timezone": _client_timezone_label(client_tz),
                 "details": symbol_data,
             }
+            warning = symbol_data.get("currency_base_warning")
+            if warning not in (None, ""):
+                payload["warnings"] = [warning]
+                payload["trust"] = "verify_broker_metadata"
+            return payload
         except MT5ConnectionError as exc:
             return build_error_payload(
                 str(exc),

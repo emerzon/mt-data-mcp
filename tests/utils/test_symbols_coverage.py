@@ -828,6 +828,8 @@ class TestSymbolsDescribe:
         assert sd["currency_base_inferred"] == "BTC"
         assert sd["currency_base_inference_source"] == "inferred_from_symbol_name"
         assert "verify broker metadata" in sd["currency_base_warning"]
+        assert res["warnings"] == [sd["currency_base_warning"]]
+        assert res["trust"] == "verify_broker_metadata"
 
     @patch(f"{_MT5}.symbol_info")
     def test_full_detail_describe_adds_time_epoch(self, mock_info):
