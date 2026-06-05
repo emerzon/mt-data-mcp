@@ -285,6 +285,10 @@ _FINVIZ_MARKET_COMPACT_FIELDS = (
     "name",
     "price",
     "price_currency",
+    "price_source",
+    "data_delayed",
+    "delay_minutes_min",
+    "delay_minutes_max",
     "group",
     "perf_day",
     "perf_week",
@@ -396,6 +400,8 @@ _FINVIZ_DETAIL_ERROR = (
     "Finviz standard/summary output uses the compact shape."
 )
 _FINVIZ_DELAYED_FRESHNESS = "finviz_delayed"
+_FINVIZ_DELAY_MINUTES_MIN = 15
+_FINVIZ_DELAY_MINUTES_MAX = 20
 _FINVIZ_FOREX_DELAYED_PRICE_WARNING = (
     "Finviz forex prices are delayed web quotes, not executable MT5 bid/ask; "
     "use market_ticker before order placement."
@@ -550,11 +556,33 @@ def _compact_finviz_screen_row(
     *,
     view: str = "overview",
 ) -> Dict[str, Any]:
-    return {
+    out = {
         field: row[field]
         for field in _finviz_screen_compact_fields(view)
         if field in row and row[field] not in (None, "")
     }
+    for field in (
+        "price_source",
+        "data_delayed",
+        "delay_minutes_min",
+        "delay_minutes_max",
+    ):
+        if row.get(field) not in (None, ""):
+            out[field] = row[field]
+    return out
+
+
+def _mark_finviz_delayed_price(row: Dict[str, Any]) -> Dict[str, Any]:
+    out = dict(row)
+    price = _parse_finviz_numeric_value(out.get("price"))
+    if price is None:
+        return out
+    out["price"] = price
+    out["price_source"] = _FINVIZ_DELAYED_FRESHNESS
+    out["data_delayed"] = True
+    out["delay_minutes_min"] = _FINVIZ_DELAY_MINUTES_MIN
+    out["delay_minutes_max"] = _FINVIZ_DELAY_MINUTES_MAX
+    return out
 
 
 def _finviz_screen_units_for_rows(rows: Any) -> Dict[str, str]:
@@ -721,6 +749,7 @@ def _canonicalize_finviz_market_row(row: Dict[str, Any]) -> Dict[str, Any]:
             out[field] = pct_value
     if _is_known_forex_pair_row(out):
         out = _normalize_finviz_forex_symbol(out)
+    out = _mark_finviz_delayed_price(out)
     return out
 
 
@@ -839,12 +868,18 @@ def _invalid_finviz_screen_filters_error(
     examples = _finviz_screen_filter_name_examples()
     if examples:
         details["valid_filter_examples"] = examples
-    return _finviz_error_payload(
+    payload = _finviz_error_payload(
         message,
         code="finviz_screen_filters_invalid",
         operation="finviz_screen",
         details=details,
     )
+    payload["related_tools"] = ["finviz_filters_list"]
+    payload["remediation"] = (
+        "Run finviz_filters_list(filter_name='<filter>') to inspect accepted "
+        "values, or use shorthand tokens such as fa_pe_under_20."
+    )
+    return payload
 
 
 def _finviz_screen_shorthand_token_map() -> Optional[Dict[str, tuple[str, str]]]:
@@ -1264,6 +1299,7 @@ def _normalize_finviz_news_item(item: Any, *, kind: str = "headline") -> Any:
         if relative_time:
             out["relative_time"] = relative_time
     out.setdefault("kind", kind)
+    out["content_type"] = "blog" if str(kind).lower() == "blog" else "news"
     return out
 
 
@@ -1297,7 +1333,14 @@ def _normalize_finviz_news_payload(
         out["count"] = int(out.get("count") or len(normalized_items))
         return out
     if detail_mode == "compact":
-        compact_fields = {"title", "source", "published_at", "relative_time", "kind"}
+        compact_fields = {
+            "title",
+            "source",
+            "published_at",
+            "relative_time",
+            "kind",
+            "content_type",
+        }
         out["items"] = [
             {
                 key: value
@@ -2644,6 +2687,10 @@ def _filter_finviz_fundamentals_payload(
         out["price_source"] = _FINVIZ_DELAYED_FRESHNESS
         out["price_currency"] = _FINVIZ_USD_PRICE_CURRENCY
         out["freshness"] = _FINVIZ_DELAYED_FRESHNESS
+        filtered["price_source"] = _FINVIZ_DELAYED_FRESHNESS
+        filtered["data_delayed"] = True
+        filtered["delay_minutes_min"] = _FINVIZ_DELAY_MINUTES_MIN
+        filtered["delay_minutes_max"] = _FINVIZ_DELAY_MINUTES_MAX
     if category_input != category_mode:
         out["category_requested"] = category_input
     if detail_mode == "full":

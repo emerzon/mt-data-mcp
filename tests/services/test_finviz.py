@@ -582,8 +582,12 @@ class TestFinvizTools:
                 "symbol": "EURUSD",
                 "display_symbol": "EUR/USD",
                 "name": "Euro / US Dollar",
-                "price": "1.10",
+                "price": 1.1,
                 "price_currency": "USD",
+                "price_source": "finviz_delayed",
+                "data_delayed": True,
+                "delay_minutes_min": 15,
+                "delay_minutes_max": 20,
                 "perf_day_pct": 0.2,
                 "perf_week_pct": -0.3,
                 "perf_month_pct": 0.4,
@@ -697,7 +701,11 @@ class TestFinvizTools:
             {
                 "symbol": "BTC",
                 "name": "Bitcoin",
-                "price": "90000",
+                "price": 90000,
+                "price_source": "finviz_delayed",
+                "data_delayed": True,
+                "delay_minutes_min": 15,
+                "delay_minutes_max": 20,
                 "perf_day_pct": 2.5,
             }
         ]
@@ -991,9 +999,13 @@ class TestFinvizTools:
         assert result["freshness"] == "finviz_delayed"
         assert "freshness_basis" not in result
         assert result["data_fetched_at"].endswith("Z")
+        assert result["fundamentals"]["price_source"] == "finviz_delayed"
+        assert result["fundamentals"]["data_delayed"] is True
+        assert result["fundamentals"]["delay_minutes_min"] == 15
+        assert result["fundamentals"]["delay_minutes_max"] == 20
         assert result["fundamentals"]["pe_ratio"] == 34.29
+        assert result["fundamentals"]["market_cap"] == 3_979_470_000_000
         assert result["fundamentals"]["market_cap_formatted"] == "3.98T"
-        assert "market_cap" not in result["fundamentals"]
         assert result["fundamentals"]["eps_ttm"] == 7.9
         assert result["fundamentals"]["change_pct"] == 1.2
         assert result["fundamentals"]["high_52w_price"] == 288.62
@@ -1028,6 +1040,8 @@ class TestFinvizTools:
         assert result["price_source"] == "finviz_delayed"
         assert result["price_currency"] == "USD"
         assert result["freshness"] == "finviz_delayed"
+        assert result["fundamentals"]["price_source"] == "finviz_delayed"
+        assert result["fundamentals"]["data_delayed"] is True
         assert "freshness_basis" not in result
 
     @patch("mtdata.core.finviz.get_stock_fundamentals")
@@ -1087,6 +1101,7 @@ class TestFinvizTools:
 
         assert valuation["category"] == "valuation"
         assert valuation["fundamentals"] == {
+            "market_cap": 3_979_470_000_000,
             "market_cap_formatted": "3.98T",
             "pe_ratio": 34.29,
             "price_to_sales": 8.1,
@@ -1101,21 +1116,21 @@ class TestFinvizTools:
         assert custom["missing_fields"] == ["Missing"]
         assert custom_normalized["fundamentals"] == {
             "pe_ratio": 34.29,
+            "market_cap": 3_979_470_000_000,
             "market_cap_formatted": "3.98T",
             "eps_ttm": 7.9,
             "sma20_distance_pct": 4.54,
         }
         assert "missing_fields" not in custom_normalized
-        assert technical["category"] == "technicals"
-        assert technical["category_requested"] == "technical"
+        assert technical["category"] == "technical"
         assert technical["fundamentals"] == {
             "rsi_14": 62.1,
             "sma20_distance_pct": 4.54,
             "sma50_distance_pct": 12.98,
             "sma200_distance_pct": 18.15,
         }
-        assert financial["category"] == "valuation"
-        assert financial["category_requested"] == "financial"
+        assert financial["success"] is False
+        assert financial["error_code"] == "finviz_fundamentals_invalid_category"
 
     @patch("mtdata.core.finviz.get_stock_fundamentals")
     def test_finviz_fundamentals_full_omits_redundant_field_echo(self, mock_get_fundamentals):
@@ -1592,6 +1607,8 @@ class TestFinvizTools:
         assert result["error_code"] == "finviz_screen_filters_invalid"
         assert result["operation"] == "finviz_screen"
         assert result["details"] == {"received_type": "str"}
+        assert result["related_tools"] == ["finviz_filters_list"]
+        assert "finviz_filters_list" in result["remediation"]
         assert isinstance(result.get("request_id"), str)
 
     def test_finviz_screen_tool_rejects_non_object_json_filters(self):

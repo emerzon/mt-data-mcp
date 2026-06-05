@@ -76,13 +76,11 @@ def test_finviz_news_normalizes_stock_results_to_single_items_array() -> None:
     with patch("mtdata.core.finviz.get_stock_news", return_value=service_result):
         out = raw(symbol="AAPL", limit=5, page=1)
 
-    assert out["items"] == [
-        {
-            "title": "Apple launches new chips",
-            "source": "Reuters",
-            "published_at": "2026-04-18T00:00:00+00:00",
-        }
-    ]
+    assert out["items"][0]["title"] == "Apple launches new chips"
+    assert out["items"][0]["source"] == "Reuters"
+    assert out["items"][0]["published_at"] == "2026-04-18T00:00:00+00:00"
+    assert out["items"][0]["kind"] == "direct_symbol"
+    assert out["items"][0]["content_type"] == "news"
     assert out["detail"] == "compact"
     assert "tool_scope" not in out
     assert "preferred_tool" not in out
@@ -182,6 +180,7 @@ def test_finviz_market_news_normalizes_items() -> None:
 
     assert out["items"][0]["title"] == "Stocks rise"
     assert out["items"][0]["source"] == "AP"
+    assert out["items"][0]["content_type"] == "news"
     assert "T14:00:00+00:00" in out["items"][0]["published_at"]
     assert out["row_key"] == "items"
     assert "preferred_tool" not in out
@@ -208,6 +207,22 @@ def test_finviz_market_news_repairs_double_encoded_titles() -> None:
         out = raw(news_type="news", limit=5, page=1, detail="compact")
 
     assert out["items"][0]["title"] == "HPE\u2019s stock soars"
+    assert out["items"][0]["content_type"] == "news"
+
+
+def test_finviz_market_news_marks_blog_items() -> None:
+    raw = _unwrap(finviz_market_news)
+    service_result = {
+        "success": True,
+        "type": "blogs",
+        "items": [{"Title": "Opinion post", "Source": "Blog", "Date": "02:00PM"}],
+    }
+
+    with patch("mtdata.core.finviz.get_general_news", return_value=service_result):
+        out = raw(news_type="blogs", limit=5, page=1, detail="compact")
+
+    assert out["items"][0]["kind"] == "blog"
+    assert out["items"][0]["content_type"] == "blog"
 
 
 def test_finviz_news_helpers_are_registered_tools() -> None:
