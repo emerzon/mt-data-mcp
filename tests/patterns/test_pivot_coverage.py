@@ -131,6 +131,47 @@ def test_pivot_compute_points_logs_finish_event(caplog):
     )
 
 
+def test_pivot_compute_points_demark_compact_returns_nonzero_levels():
+    fn = _get_pivot_fn()
+    info = _make_symbol_info(digits=5)
+
+    @contextmanager
+    def _guard(symbol):
+        yield None, info
+
+    rates = np.array(
+        [
+            _make_rate(time_=100.0),
+            _make_rate(
+                open_=1.15255,
+                high=1.15288,
+                low=1.14881,
+                close=1.14882,
+                time_=200.0,
+            ),
+        ]
+    )
+    with patch(_TF_MAP_PATCH, {"D1": 1}), \
+         patch(_TF_SECS_PATCH, {"D1": 86400}), \
+         patch(_GUARD, _guard), \
+         patch(f"{_MT5}.symbol_info_tick", return_value=None), \
+         patch(_EPOCH, side_effect=lambda x: float(x)), \
+         patch(_COPY_RATES, return_value=rates), \
+         patch(_USE_CTZ, return_value=False), \
+         patch(_FMT, side_effect=lambda x: f"T{int(x)}"):
+        res = fn("EURUSD", timeframe="D1", method="demark")
+
+    expected_x = 1.15288 + 2 * 1.14881 + 1.14882
+    assert res["success"] is True
+    assert res["method"] == "demark"
+    assert res["pivot"] == round(expected_x / 4.0, 5)
+    assert res["levels"]["PP"] == round(expected_x / 4.0, 5)
+    assert res["levels"]["R1"] != 0.0
+    assert res["levels"]["S1"] != 0.0
+    assert "R2" not in res["levels"]
+    assert "S2" not in res["levels"]
+
+
 class TestPivotSymbolGuardError:
 
     def test_symbol_error(self):
