@@ -249,7 +249,11 @@ class TradeJournalAnalyzeRequest(BaseModel):
     breakdown_limit: int = 10
     min_sample: int = Field(
         default=30,
-        description="Recommended minimum realized exit deals for journal statistics.",
+        description=(
+            "Recommended minimum realized exit deals for reliable journal "
+            "statistics (default 30). Smaller samples still return metrics but "
+            "are flagged via sample_quality/sample_warning rather than suppressed."
+        ),
     )
     check_only: bool = Field(
         default=False,
