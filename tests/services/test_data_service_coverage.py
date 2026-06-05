@@ -2172,7 +2172,7 @@ class TestFetchTicks(unittest.TestCase):
         self.assertIsNotNone(result['data'][0]['ask'])
         self.assertIsNotNone(result['data'][1]['bid'])
         self.assertIsNone(result['data'][1]['ask'])
-        self.assertEqual(result['data'][2]['last'], 0.0)
+        self.assertIsNone(result['data'][2]['last'])
 
     @patch(_TICKS_RANGE)
     @patch(_CACHED_INFO, return_value=MagicMock())
@@ -2303,13 +2303,13 @@ class TestFetchTicks(unittest.TestCase):
 
         self.assertTrue(result.get('success'))
         row = result["data"][0]
-        for key in ("last", "volume", "volume_real", "flags", "flags_decoded"):
+        for key in ("last", "tick_volume", "real_volume", "flags", "flags_decoded"):
             self.assertIn(key, row)
-        self.assertEqual(row["last"], 0.0)
-        self.assertEqual(row["volume"], 0.0)
-        self.assertEqual(row["volume_real"], 0.0)
+        self.assertIsNone(row["last"])
+        self.assertEqual(row["tick_volume"], 0.0)
+        self.assertEqual(row["real_volume"], 0.0)
         self.assertEqual(row["flags"], 1028)
-        self.assertIn("volume_real", row["flags_decoded"])
+        self.assertIn("real_volume", row["flags_decoded"])
 
     @patch(_TICKS_RANGE)
     @patch(_CACHED_INFO, return_value=SimpleNamespace(digits=5))
@@ -2327,9 +2327,13 @@ class TestFetchTicks(unittest.TestCase):
         self.assertTrue(result.get('success'))
         self.assertIsNone(result['data'][0]['bid'])
         self.assertEqual(result['data'][0]['ask'], 1.1)
+        self.assertEqual(result['data'][0]['quote_type'], 'ask_only')
+        self.assertEqual(result['data'][1]['quote_type'], 'bid_ask')
+        self.assertEqual(result['data'][1]['mid'], 1.1001)
         self.assertEqual(result['data'][1]['spread'], 0.0002)
         self.assertEqual(result['data'][2]['bid'], 1.1003)
         self.assertIsNone(result['data'][2]['ask'])
+        self.assertEqual(result['data'][2]['quote_type'], 'bid_only')
         self.assertEqual(result['data_quality']['one_sided_zero_spread_ticks'], 2)
         self.assertEqual(result['data_quality']['spread_ticks_excluded'], 2)
         self.assertAlmostEqual(result['stats']['spread']['mean'], 0.0002)
@@ -2554,11 +2558,11 @@ class TestFetchTicks(unittest.TestCase):
         mock_ticks.return_value = ticks
         result = fetch_ticks('EURUSD', limit=20, format='stats')
         self.assertTrue(result.get('success'))
-        vol = result['stats']['volume']
+        vol = result['stats']['real_volume']
         self.assertEqual(vol['kind'], 'real_volume')
         self.assertIn('sum', vol)
         self.assertIn('per_second', vol)
-        self.assertEqual(result["units"]["volume_real"], "traded_volume")
+        self.assertEqual(result["units"]["real_volume"], "traded_volume")
 
     @patch(_TICKS_RANGE)
     @patch(_CACHED_INFO, return_value=MagicMock())
@@ -2570,7 +2574,7 @@ class TestFetchTicks(unittest.TestCase):
             t['volume_real'] = float(100 + i * 10)
         mock_ticks.return_value = ticks
         result = fetch_ticks('EURUSD', limit=20, format='stats')
-        vol = result['stats']['volume']
+        vol = result['stats']['real_volume']
         self.assertIn('dist', vol)
 
     @patch(_TICKS_RANGE)
@@ -2767,7 +2771,7 @@ class TestEdgeCases(unittest.TestCase):
             t['volume_real'] = float(50 + i * 5)
         mock_ticks.return_value = ticks
         result = fetch_ticks('EURUSD', limit=20, format='stats')
-        vol = result['stats']['volume']
+        vol = result['stats']['real_volume']
         self.assertIn('cv', vol)
 
     @patch(_TICKS_RANGE)
@@ -2780,7 +2784,7 @@ class TestEdgeCases(unittest.TestCase):
             t['volume_real'] = float(100 + i * 10)
         mock_ticks.return_value = ticks
         result = fetch_ticks('EURUSD', limit=20, format='stats')
-        vol = result['stats']['volume']
+        vol = result['stats']['real_volume']
         self.assertIn('top10_share', vol)
 
     @patch(_TICKS_RANGE)
@@ -2793,7 +2797,7 @@ class TestEdgeCases(unittest.TestCase):
             t['volume_real'] = float(100 + i * 10)
         mock_ticks.return_value = ticks
         result = fetch_ticks('EURUSD', limit=20, format='stats')
-        vol = result['stats']['volume']
+        vol = result['stats']['real_volume']
         self.assertIn('half_ratio', vol)
 
     @patch(_TICKS_RANGE)
@@ -2806,7 +2810,7 @@ class TestEdgeCases(unittest.TestCase):
             t['volume_real'] = float(100 + i * 10)
         mock_ticks.return_value = ticks
         result = fetch_ticks('EURUSD', limit=20, format='stats')
-        vol = result['stats']['volume']
+        vol = result['stats']['real_volume']
         self.assertIn('vwap_mid', vol)
 
     @patch(_TICKS_RANGE)
@@ -2819,7 +2823,7 @@ class TestEdgeCases(unittest.TestCase):
             t['volume_real'] = float(100 + i * 10)
         mock_ticks.return_value = ticks
         result = fetch_ticks('EURUSD', limit=20, format='stats')
-        vol = result['stats']['volume']
+        vol = result['stats']['real_volume']
         self.assertIn('spike95_count', vol)
         self.assertIn('spike95_share', vol)
 
@@ -2835,7 +2839,7 @@ class TestEdgeCases(unittest.TestCase):
             t['ask'] = 1.1002 + i * 0.001
         mock_ticks.return_value = ticks
         result = fetch_ticks('EURUSD', limit=20, format='stats')
-        vol = result['stats']['volume']
+        vol = result['stats']['real_volume']
         self.assertIn('corr_abs_mid_change', vol)
 
 

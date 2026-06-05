@@ -2978,6 +2978,8 @@ def fetch_ticks(  # noqa: C901
                     _round_price_value(effective_asks[i], price_digits),
                 ]
             )
+            if include_quote_type:
+                values.append(quote_types[i])
             if full_rows:
                 bid_value = effective_bids[i]
                 ask_value = effective_asks[i]
