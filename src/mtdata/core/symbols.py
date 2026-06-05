@@ -157,6 +157,8 @@ _SYMBOL_DESCRIBE_FIELDS: tuple[str, ...] = (
     "trade_tick_value",
     "trade_tick_value_profit",
     "trade_tick_value_loss",
+    "margin_initial",
+    "margin_maintenance",
     "trade_stops_level",
     "trade_freeze_level",
     "volume_min",
@@ -193,6 +195,8 @@ _SYMBOL_DESCRIBE_COMPACT_DIRECT_FIELDS: tuple[str, ...] = (
     "trade_contract_size",
     "trade_tick_size",
     "trade_tick_value",
+    "margin_initial",
+    "margin_maintenance",
     "trade_stops_level",
     "trade_freeze_level",
     "volume_min",
@@ -1358,6 +1362,7 @@ def symbols_describe(
                         digits=6,
                     )
                     symbol_data["price_change_pct_unit"] = "percentage_points (1.0 = 1%)"
+            symbol_data.pop("price_change", None)
 
             _add_symbol_currency_diagnostics(symbol_data)
             if contract.detail == "summary":

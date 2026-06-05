@@ -889,6 +889,7 @@ class TestSymbolsDescribe:
             "bidhigh",
             "asklow",
             "askhigh",
+            "price_change",
             "session_open",
             "session_close",
         ]
@@ -898,6 +899,7 @@ class TestSymbolsDescribe:
         info.bidhigh = 4778.004
         info.asklow = 4744.305
         info.askhigh = 4778.014
+        info.price_change = -0.7924
         info.session_open = 4750.126
         info.session_close = 4760.874
         mock_info.return_value = info
@@ -912,6 +914,9 @@ class TestSymbolsDescribe:
         assert sd["askhigh"] == 4778.01
         assert sd["session_open"] == 4750.13
         assert sd["session_close"] == 4760.87
+        assert sd["price_change_pct"] == -0.7924
+        assert sd["price_change_pct_unit"] == "percentage_points (1.0 = 1%)"
+        assert "price_change" not in sd
 
     @patch(f"{_MT5}.symbol_info")
     def test_compact_detail_keeps_canonical_fields_with_labels(self, mock_info):
@@ -970,6 +975,8 @@ class TestSymbolsDescribe:
             "trade_contract_size",
             "trade_tick_size",
             "trade_tick_value",
+            "margin_initial",
+            "margin_maintenance",
             "volume_min",
             "volume_max",
             "volume_step",
@@ -984,6 +991,8 @@ class TestSymbolsDescribe:
         info.trade_contract_size = 100000.0
         info.trade_tick_size = 0.00001
         info.trade_tick_value = 1.0
+        info.margin_initial = 1000.0
+        info.margin_maintenance = 500.0
         info.volume_min = 0.01
         info.volume_max = 100.0
         info.volume_step = 0.01
@@ -1005,6 +1014,8 @@ class TestSymbolsDescribe:
             "trade_contract_size",
             "trade_tick_size",
             "trade_tick_value",
+            "margin_initial",
+            "margin_maintenance",
             "volume_min",
             "volume_max",
             "volume_step",
@@ -1026,6 +1037,8 @@ class TestSymbolsDescribe:
             "trade_contract_size",
             "trade_tick_size",
             "trade_tick_value",
+            "margin_initial",
+            "margin_maintenance",
             "volume_min",
             "volume_max",
             "volume_step",
@@ -1041,6 +1054,8 @@ class TestSymbolsDescribe:
         info.trade_contract_size = 100000.0
         info.trade_tick_size = 0.00001
         info.trade_tick_value = 1.0
+        info.margin_initial = 1000.0
+        info.margin_maintenance = 500.0
         info.volume_min = 0.01
         info.volume_max = 100.0
         info.volume_step = 0.01
@@ -1062,6 +1077,8 @@ class TestSymbolsDescribe:
         assert sd["trade_contract_size"] == 100000.0
         assert sd["trade_tick_size"] == 0.00001
         assert sd["trade_tick_value"] == 1.0
+        assert sd["margin_initial"] == 1000.0
+        assert sd["margin_maintenance"] == 500.0
         assert sd["volume_min"] == 0.01
         assert sd["volume_max"] == 100.0
         assert sd["volume_step"] == 0.01
