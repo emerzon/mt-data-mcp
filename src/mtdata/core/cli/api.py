@@ -12,6 +12,8 @@ import os
 import sys
 import types
 import warnings
+from importlib import metadata as importlib_metadata
+from pathlib import Path
 from typing import (
     Any,
     Dict,
@@ -194,6 +196,26 @@ from ..unified_params import add_global_args_to_parser
 ToolInfo = Dict[str, Any]
 
 CLI_PROGRAM = "mtdata-cli"
+PACKAGE_NAME = "mtdata"
+
+
+def _read_local_project_version() -> Optional[str]:
+    pyproject_path = Path(__file__).resolve().parents[4] / "pyproject.toml"
+    try:
+        for line in pyproject_path.read_text(encoding="utf-8").splitlines():
+            if line.strip().startswith("version"):
+                _, raw_value = line.split("=", 1)
+                return raw_value.strip().strip('"').strip("'") or None
+    except Exception:
+        return None
+    return None
+
+
+def _cli_version() -> str:
+    try:
+        return importlib_metadata.version(PACKAGE_NAME)
+    except importlib_metadata.PackageNotFoundError:
+        return _read_local_project_version() or "unknown"
 
 
 def _is_pydantic_model_type(value: Any) -> bool:
@@ -1417,6 +1439,11 @@ def _print_extended_help(functions: Dict[str, ToolInfo], query: str) -> None:
 
 def main():
     """Main CLI entry point with dynamic parameter discovery"""
+    raw_argv = sys.argv[1:]
+    if raw_argv in (["--version"], ["-V"]):
+        print(f"{CLI_PROGRAM} {_cli_version()}")
+        return 0
+
     load_environment()
     # Discover functions to expose dynamically
     functions = discover_tools()
@@ -1444,6 +1471,13 @@ def main():
         color=_argparse_color_enabled(),
     )
     # Add unified global parameters
+    parser.add_argument(
+        "--version",
+        "-V",
+        action="version",
+        version=f"{CLI_PROGRAM} {_cli_version()}",
+        help="Show installed mtdata version and exit.",
+    )
     add_global_args_to_parser(parser, exclude_params=["timeframe"])
     parser.add_argument(
         "--timeframe",

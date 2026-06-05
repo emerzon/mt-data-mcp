@@ -72,6 +72,18 @@ from mtdata.core.cli import (
 
 
 class TestMain:
+    @patch("mtdata.core.cli.discover_tools")
+    def test_version_flag_exits_without_tool_discovery(self, mock_discover, capsys):
+        with (
+            patch("sys.argv", ["cli.py", "--version"]),
+            patch("mtdata.core.cli._cli_version", return_value="9.8.7"),
+        ):
+            result = main()
+
+        assert result == 0
+        mock_discover.assert_not_called()
+        assert capsys.readouterr().out.strip() == "mtdata-cli 9.8.7"
+
     @patch("mtdata.core.cli.discover_tools", return_value={})
     def test_no_tools(self, mock_discover, capsys):
         result = main()
