@@ -26,6 +26,8 @@ def test_trade_session_context_compacts_nested_sections_by_default() -> None:
         "symbol": "EURUSD",
         "bid": 1.1,
         "ask": 1.1002,
+        "mid": 1.1001,
+        "price_currency": "USD",
         "spread": 0.0002,
         "spread_pips": 2.0,
         "time": "2023-11-14 22:13",
@@ -64,6 +66,10 @@ def test_trade_session_context_compacts_nested_sections_by_default() -> None:
             "login": 123456,
             "balance": 10000.0,
             "equity": 10010.0,
+            "profit": 10.0,
+            "floating_pnl": 10.0,
+            "pnl_basis": "floating_open_positions",
+            "equity_balance_delta": 10.0,
             "margin_level": 250.0,
             "terminal_connected": True,
             "execution_ready": True,
@@ -92,13 +98,17 @@ def test_trade_session_context_compacts_nested_sections_by_default() -> None:
     assert out["state"] == "open_position"
     assert out["state_scope"] == "symbol"
     assert out["account"]["equity"] == 10010.0
+    assert out["account"]["floating_pnl"] == 10.0
+    assert out["account"]["pnl_basis"] == "floating_open_positions"
     assert "login" not in out["account"]
     assert "account_type" not in out["account"]
     assert "execution_ready" not in out["account"]
     assert out["quote"] == {
         "bid": 1.1,
         "ask": 1.1002,
-        "spread": "0.000200",
+        "mid": 1.1001,
+        "price_currency": "USD",
+        "spread": 0.0002,
         "spread_pips": 2.0,
         "time": "2023-11-14 22:13",
         "timezone": "UTC",
@@ -183,6 +193,8 @@ def test_trade_session_context_compact_keeps_nested_quote_spread_numeric() -> No
         "symbol": "EURUSD",
         "bid": 1.17071,
         "ask": 1.17080,
+        "mid": 1.170755,
+        "price_currency": "USD",
         "price_precision": 5,
         "spread": 0.00009,
         "spread_points": 9.0,
@@ -209,6 +221,8 @@ def test_trade_session_context_compact_keeps_nested_quote_spread_numeric() -> No
         out = _raw_trade_session_context("EURUSD")
 
     assert out["quote"]["spread"] == 0.00009
+    assert out["quote"]["mid"] == 1.170755
+    assert out["quote"]["price_currency"] == "USD"
     assert out["quote"]["price_precision"] == 5
     assert out["quote"]["spread_cost_currency"] == "USD"
     assert out["quote"]["data_stale"] is True
@@ -372,6 +386,7 @@ def test_trade_session_context_compact_keeps_order_attribution_fields() -> None:
                     "Symbol": "EURUSD",
                     "Ticket": 456,
                     "Type": "BUY_LIMIT",
+                    "Side": "BUY",
                     "Volume": 0.1,
                     "Open Price": 1.095,
                     "Comments": "pending-agent",
@@ -399,8 +414,12 @@ def test_trade_session_context_compact_keeps_order_attribution_fields() -> None:
             "symbol": "EURUSD",
             "ticket": 456,
             "type": "BUY_LIMIT",
+            "order_type": "BUY_LIMIT",
+            "side": "BUY",
             "volume": 0.1,
             "price_open": 1.095,
+            "trigger_price": 1.095,
+            "entry_price": 1.095,
             "comment": "pending-agent",
             "magic": 7002,
         }

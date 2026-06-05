@@ -65,6 +65,8 @@ _TRADE_SESSION_PRICE_KEYS = {
     "price_open",
     "price_current",
     "price_stoplimit",
+    "trigger_price",
+    "entry_price",
     "open_price",
     "current_price",
     "sl",
@@ -96,16 +98,6 @@ def _round_trade_session_price(value: Any, *, digits: int) -> Any:
     if not math.isfinite(numeric):
         return value
     return float(round(numeric, max(0, int(digits))))
-
-
-def _trade_session_fixed_decimal(value: Any, *, digits: int) -> Any:
-    try:
-        numeric = float(value)
-    except Exception:
-        return value
-    if not math.isfinite(numeric):
-        return value
-    return f"{numeric:.{max(0, int(digits))}f}"
 
 
 def _round_trade_session_prices(value: Any, *, digits: int, key: Optional[str] = None) -> Any:
@@ -265,6 +257,9 @@ def _compact_trade_session_context_payload(payload: Dict[str, Any]) -> Dict[str,
                 for key in (
                     "equity",
                     "profit",
+                    "floating_pnl",
+                    "pnl_basis",
+                    "equity_balance_delta",
                     "balance",
                     "margin",
                     "margin_free",
@@ -287,7 +282,9 @@ def _compact_trade_session_context_payload(payload: Dict[str, Any]) -> Dict[str,
                 for key in (
                     "bid",
                     "ask",
+                    "mid",
                     "last",
+                    "price_currency",
                     "price_precision",
                     "spread",
                     "spread_points",
@@ -314,11 +311,6 @@ def _compact_trade_session_context_payload(payload: Dict[str, Any]) -> Dict[str,
                     quote_summary,
                     compact=True,
                 )
-                if normalized_quote.get("spread") not in (None, ""):
-                    normalized_quote["spread"] = _trade_session_fixed_decimal(
-                        normalized_quote.get("spread"),
-                        digits=_price_precision_from_quote(quote),
-                    )
                 compact["quote"] = normalized_quote
 
     open_positions = payload.get("open_positions")
@@ -377,8 +369,24 @@ def _compact_trade_session_context_payload(payload: Dict[str, Any]) -> Dict[str,
                     ("time", "time", "Time"),
                     ("expiration", "expiration", "Expiration"),
                     ("type", "type", "Type"),
+                    ("order_type", "order_type", "type", "Type"),
+                    ("side", "side", "Side"),
                     ("volume", "volume", "Volume"),
                     ("price_open", "price_open", "open_price", "Open Price"),
+                    (
+                        "trigger_price",
+                        "trigger_price",
+                        "price_open",
+                        "open_price",
+                        "Open Price",
+                    ),
+                    (
+                        "entry_price",
+                        "entry_price",
+                        "price_open",
+                        "open_price",
+                        "Open Price",
+                    ),
                     (
                         "price_current",
                         "price_current",

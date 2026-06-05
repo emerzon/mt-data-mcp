@@ -42,6 +42,9 @@ _TRADE_ACCOUNT_COMPACT_KEYS = (
     "balance",
     "equity",
     "profit",
+    "floating_pnl",
+    "pnl_basis",
+    "equity_balance_delta",
     "margin",
     "margin_free",
     "margin_level",
@@ -685,6 +688,17 @@ def _trade_account_payload_for_mode(payload: Dict[str, Any], *, mode: str) -> Di
     return {key: payload.get(key) for key in keys if key in payload}
 
 
+def _trade_account_equity_balance_delta(info: Any) -> Optional[float]:
+    try:
+        balance = float(getattr(info, "balance"))
+        equity = float(getattr(info, "equity"))
+    except Exception:
+        return None
+    if not math.isfinite(balance) or not math.isfinite(equity):
+        return None
+    return round(equity - balance, 2)
+
+
 @mcp.tool()
 def trade_account_info(
     detail: CompactFullDetailLiteral = "compact",  # type: ignore
@@ -740,6 +754,9 @@ def trade_account_info(
             "balance": info.balance,
             "equity": info.equity,
             "profit": info.profit,
+            "floating_pnl": info.profit,
+            "pnl_basis": "floating_open_positions",
+            "equity_balance_delta": _trade_account_equity_balance_delta(info),
             "margin": info.margin,
             "margin_free": info.margin_free,
             "margin_level": margin_level,
