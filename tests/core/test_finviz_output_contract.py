@@ -667,3 +667,20 @@ class TestFinvizProgressiveDisclosure:
 
         assert result["success"] is True
         assert result["detail"] == "compact"
+
+
+def test_finviz_description_compact_truncates_long_text():
+    from mtdata.core.finviz import _apply_finviz_description_detail
+    long_text = 'A. ' + 'word ' * 300
+    compact = _apply_finviz_description_detail(
+        {'success': True, 'symbol': 'AAPL', 'description': long_text}, detail='compact'
+    )
+    assert compact['description_truncated'] is True
+    assert compact['description_full_length'] == len(long_text)
+    assert len(compact['description']) <= 600
+    full = _apply_finviz_description_detail(
+        {'success': True, 'symbol': 'AAPL', 'description': long_text}, detail='full'
+    )
+    assert 'description_truncated' not in full
+    assert full['description'] == long_text
+

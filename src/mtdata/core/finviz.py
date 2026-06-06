@@ -2757,33 +2757,73 @@ def finviz_fundamentals(
     )
 
 
+_FINVIZ_DESCRIPTION_COMPACT_CHARS = 600
+
+
+def _apply_finviz_description_detail(
+    result: Dict[str, Any], *, detail: str
+) -> Dict[str, Any]:
+    """Truncate a long company description for compact detail."""
+    if not isinstance(result, dict) or result.get("error"):
+        return result
+    if str(detail or "compact").strip().lower() == "full":
+        return result
+    description = result.get("description")
+    if not isinstance(description, str):
+        return result
+    full_length = len(description)
+    if full_length <= _FINVIZ_DESCRIPTION_COMPACT_CHARS:
+        return result
+    truncated = description[:_FINVIZ_DESCRIPTION_COMPACT_CHARS].rstrip()
+    sentence_cut = truncated.rfind(". ")
+    if sentence_cut >= int(_FINVIZ_DESCRIPTION_COMPACT_CHARS * 0.5):
+        truncated = truncated[: sentence_cut + 1]
+    out = dict(result)
+    out["description"] = truncated
+    out["description_truncated"] = True
+    out["description_full_length"] = full_length
+    out["detail_hint"] = "Use detail='full' for the complete description."
+    return out
+
+
 @mcp.tool()
-def finviz_description(symbol: str) -> Dict[str, Any]:
+def finviz_description(
+    symbol: str,
+    detail: CompactFullDetailLiteral = "compact",  # type: ignore
+) -> Dict[str, Any]:
     """
     Get company business description for a US stock.
-    
+
     Parameters
     ----------
     symbol : str
         Stock ticker symbol (e.g., AAPL, TSLA)
-    
+    detail : str
+        Output detail: compact (default) truncates a long description for token
+        efficiency; full returns the complete text.
+
     Returns
     -------
     dict
         Company description text
     """
     def _run() -> Dict[str, Any]:
+        detail_error = _validate_finviz_detail(detail, operation="finviz_description")
+        if detail_error is not None:
+            return detail_error
         symbol_norm, error = _require_equity_symbol(
             symbol,
             tool_name="finviz_description",
         )
         if error is not None:
             return error
-        return get_stock_description(symbol_norm)
+        return _apply_finviz_description_detail(
+            get_stock_description(symbol_norm), detail=detail
+        )
 
     return _run_logged_tool(
         "finviz_description",
-        {"symbol": symbol},
+        {"symbol": symbol, "detail": detail},
         _run,
     )
 
