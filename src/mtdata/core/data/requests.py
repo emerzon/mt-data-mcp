@@ -778,7 +778,19 @@ WaitBoundaryEventSpec = CandleCloseEventSpec
 class WaitEventRequest(BaseModel):
     model_config = {"extra": "forbid"}
 
-    watch_for: Optional[List[WaitWatchEventSpec]] = None
+    watch_for: Optional[List[WaitWatchEventSpec]] = Field(
+        default=None,
+        description=(
+            "Watch event specs (each an object with a 'type'). Supported types: "
+            "price_change, price_touch_level, price_break_level, price_enter_zone, "
+            "volume_spike, tick_count_spike, tick_count_drought, spread_spike, "
+            "range_expansion, order_created, order_filled, order_cancelled, "
+            "position_opened, position_closed, tp_hit, sl_hit, pending_near_fill, "
+            "stop_threat. Example: "
+            "[{\"type\": \"price_change\", \"direction\": \"up\", "
+            "\"threshold_mode\": \"fixed_pct\", \"threshold_value\": 0.1}]."
+        ),
+    )
     end_on: List[WaitBoundaryEventSpec] = Field(default_factory=list)
     symbol: Optional[str] = None
     timeframe: Optional[TimeframeLiteral] = None
