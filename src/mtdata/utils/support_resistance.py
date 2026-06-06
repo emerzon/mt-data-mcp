@@ -1632,6 +1632,8 @@ def _collect_support_resistance_warnings(
     fibonacci: Optional[Dict[str, Any]],
     coverage_gaps: Optional[Dict[str, Dict[str, Any]]] = None,
     zone_overlap: Optional[Dict[str, Any]] = None,
+    support_count: Optional[int] = None,
+    resistance_count: Optional[int] = None,
 ) -> List[Dict[str, Any]]:
     warnings: List[Dict[str, Any]] = []
 
@@ -1725,6 +1727,29 @@ def _collect_support_resistance_warnings(
                 "message": (
                     f"Nearest {side} level is {gap_pct:.1f}% away; "
                     f"historical structure is sparse on the {side} side of the market.{suffix}"
+                ),
+            }
+        )
+
+    if support_count == 0 and (resistance_count or 0) > 0:
+        warnings.append(
+            {
+                "code": "no_support_levels",
+                "message": (
+                    "No support levels qualified in the lookback window; price is "
+                    "likely near a recent low so most structure sits above it. "
+                    "Increase limit/lookback or max_distance_pct to surface deeper supports."
+                ),
+            }
+        )
+    elif resistance_count == 0 and (support_count or 0) > 0:
+        warnings.append(
+            {
+                "code": "no_resistance_levels",
+                "message": (
+                    "No resistance levels qualified in the lookback window; price is "
+                    "likely near a recent high so most structure sits below it. "
+                    "Increase limit/lookback or max_distance_pct to surface higher resistances."
                 ),
             }
         )
@@ -2815,6 +2840,8 @@ def compute_support_resistance_levels(
         fibonacci=fibonacci,
         coverage_gaps=coverage_gaps,
         zone_overlap=zone_overlap,
+        support_count=len(supports),
+        resistance_count=len(resistances),
     )
 
     return {

@@ -6,6 +6,7 @@ import pytest
 
 from mtdata.utils.support_resistance import (
     _build_zone_overlap,
+    _collect_support_resistance_warnings,
     _resolve_adaptive_settings,
     compact_support_resistance_payload,
     compute_support_resistance_levels,
@@ -13,6 +14,38 @@ from mtdata.utils.support_resistance import (
     merge_support_resistance_results,
     standard_support_resistance_payload,
 )
+
+
+def test_collect_warnings_flags_zero_support_levels():
+    warnings = _collect_support_resistance_warnings(
+        fibonacci={},
+        support_count=0,
+        resistance_count=2,
+    )
+    codes = {w.get("code") for w in warnings}
+    assert "no_support_levels" in codes
+    assert "no_resistance_levels" not in codes
+
+
+def test_collect_warnings_flags_zero_resistance_levels():
+    warnings = _collect_support_resistance_warnings(
+        fibonacci={},
+        support_count=3,
+        resistance_count=0,
+    )
+    codes = {w.get("code") for w in warnings}
+    assert "no_resistance_levels" in codes
+
+
+def test_collect_warnings_silent_when_both_sides_present():
+    warnings = _collect_support_resistance_warnings(
+        fibonacci={},
+        support_count=2,
+        resistance_count=2,
+    )
+    codes = {w.get("code") for w in warnings}
+    assert "no_support_levels" not in codes
+    assert "no_resistance_levels" not in codes
 
 
 def _clustered_levels_frame() -> pd.DataFrame:
