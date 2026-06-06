@@ -1384,6 +1384,37 @@ def _extract_help_query(argv: List[str]) -> Optional[str]:
     return None
 
 
+_GLOBAL_FLAG_HELP: Dict[str, str] = {
+    "precision": (
+        "--precision {auto,compact,display,full,raw}: TOON numeric display precision "
+        "(auto compacts most tools but keeps full for forecast/trade analytics; JSON is "
+        "always full precision)."
+    ),
+    "extras": (
+        "--extras EXTRA[,EXTRA...]: include richer TOON output sections (e.g. diagnostics, "
+        "metadata) that are omitted from compact output by default."
+    ),
+    "json": (
+        "--json: emit machine-readable JSON instead of TOON (always full precision)."
+    ),
+    "timeframe": (
+        "--timeframe TF: default timeframe; may be supplied before the command for "
+        "one-shot sessionless use."
+    ),
+}
+
+
+def _match_global_flags(query: str) -> List[tuple[str, str]]:
+    token = str(query or "").strip().lower().lstrip("-")
+    if not token:
+        return []
+    return [
+        (name, doc)
+        for name, doc in _GLOBAL_FLAG_HELP.items()
+        if token == name or token in name or name.startswith(token)
+    ]
+
+
 def _print_extended_help(functions: Dict[str, ToolInfo], query: str) -> None:
     def _format_optional_param(param: Dict[str, Any]) -> str:
         name = param["name"]
@@ -1393,7 +1424,14 @@ def _print_extended_help(functions: Dict[str, ToolInfo], query: str) -> None:
         return f"{name}={default_text}"
 
     matches = _match_commands(functions, query)
+    global_matches = _match_global_flags(query)
     if not matches:
+        if global_matches:
+            print(f"Global options matching '{query}':")
+            for _name, doc in global_matches:
+                print(f"  {doc}")
+            print(f"\nThese apply to every command. Run `{CLI_PROGRAM} --help` for the full list.")
+            return
         print(f"No commands match '{query}'.")
         suggestions = _suggest_commands(functions, query)
         if suggestions:

@@ -1909,3 +1909,18 @@ class TestMatchCommands:
         # Both have "symbol" in their params context
         matches = _match_commands(fns, "generate")
         assert len(matches) == 1
+
+
+def test_extended_help_surfaces_global_flags(capsys):
+    from mtdata.core.cli.api import _print_extended_help
+    _print_extended_help({}, 'precision')
+    out = capsys.readouterr().out
+    assert 'Global options' in out
+    assert '--precision' in out
+
+
+def test_match_global_flags_matches_prefix():
+    from mtdata.core.cli.api import _match_global_flags
+    assert [n for n, _ in _match_global_flags('prec')] == ['precision']
+    assert _match_global_flags('xyzzy') == []
+
