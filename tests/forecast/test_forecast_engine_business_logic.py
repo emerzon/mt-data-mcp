@@ -146,7 +146,8 @@ def test_preprocessing_helpers_and_output_format():
     assert "ci_requested" not in no_ci
     assert "ci_alpha_requested" not in no_ci
     assert "warnings" in no_ci
-    assert "Point forecast only" in no_ci["warnings"][0]
+    assert "ci_alpha=0.05" in no_ci["warnings"][0]
+    assert "confidence intervals are unavailable" in no_ci["warnings"][0]
     assert "forecast_conformal_intervals" in no_ci["warnings"][0]
     assert no_ci["forecast_price"] == [101.0, 102.0]
     assert "forecast" not in no_ci
