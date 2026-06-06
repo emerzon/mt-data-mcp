@@ -690,9 +690,16 @@ def _forecast_generate_volatility_rows(
         count = max(1, int(horizon or payload.get("horizon") or 1))
     except Exception:
         count = 1
+    times = payload.get("forecast_time")
+    if not isinstance(times, list):
+        times = payload.get("times") if isinstance(payload.get("times"), list) else []
     rows: List[Dict[str, Any]] = []
     for step in range(1, count + 1):
-        row: Dict[str, Any] = {"step": step}
+        row: Dict[str, Any] = {}
+        idx = step - 1
+        if idx < len(times):
+            row["time"] = times[idx]
+        row["step"] = step
         if volatility is not None:
             row["volatility"] = float(round(volatility, 6))
         if volatility_pct is not None:

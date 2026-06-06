@@ -91,3 +91,17 @@ def test_bootstrap_tools_does_not_import_torch_or_tslearn_for_non_pattern_comman
         check=False,
     )
     assert completed.returncode == 0, completed.stdout + completed.stderr
+
+
+def test_forecast_volatility_rows_include_time():
+    from mtdata.forecast.use_cases import _forecast_generate_volatility_rows
+    payload = {
+        'volatility_per_bar': 0.001,
+        'volatility_per_bar_pct': 0.1,
+        'forecast_time': ['2026-06-05T13:00Z', '2026-06-05T14:00Z'],
+    }
+    rows = _forecast_generate_volatility_rows(payload, horizon=2)
+    assert rows[0]['time'] == '2026-06-05T13:00Z'
+    assert rows[1]['time'] == '2026-06-05T14:00Z'
+    assert rows[0]['step'] == 1 and rows[0]['volatility'] == 0.001
+
