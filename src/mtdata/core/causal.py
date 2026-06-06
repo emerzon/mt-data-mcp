@@ -611,6 +611,30 @@ def _pairwise_analysis_context(rows: List[Dict[str, Any]], *, timeframe: Any) ->
     return context
 
 
+def _correlation_fisher_ci(
+    correlation: float, samples: int, *, z: float = 1.959963984540054
+) -> tuple[Optional[float], Optional[float]]:
+    """Fisher z-transform 95% CI for a correlation coefficient.
+
+    Returns (None, None) when the CI is undefined (n<=3 or |r|>=1).
+    """
+    try:
+        r = float(correlation)
+        n = int(samples)
+    except (TypeError, ValueError):
+        return None, None
+    if n <= 3 or not math.isfinite(r) or abs(r) >= 1.0:
+        return None, None
+    try:
+        zr = math.atanh(r)
+        se = 1.0 / math.sqrt(n - 3)
+        lo = math.tanh(zr - z * se)
+        hi = math.tanh(zr + z * se)
+    except (ValueError, ZeroDivisionError):
+        return None, None
+    return round(lo, 6), round(hi, 6)
+
+
 def _pairwise_period_alignment(
     rows: List[Dict[str, Any]],
     *,
@@ -690,6 +714,7 @@ def _rank_correlation_pairs(
                 skipped["nonfinite"] += 1
                 continue
             corr_f = float(corr)
+            ci95_low, ci95_high = _correlation_fisher_ci(corr_f, int(len(subset)))
             period_start = _format_sample_time(subset.index[0])
             period_end = _format_sample_time(subset.index[-1])
             rows.append(
@@ -697,6 +722,8 @@ def _rank_correlation_pairs(
                     "left": left,
                     "right": right,
                     "correlation": corr_f,
+                    "ci95_low": ci95_low,
+                    "ci95_high": ci95_high,
                     "abs_correlation": abs(corr_f),
                     "samples": int(len(subset)),
                     "period_start": period_start,
@@ -734,6 +761,8 @@ def _compact_correlation_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]
             "symbol1": row.get("left"),
             "symbol2": row.get("right"),
             "correlation": row.get("correlation"),
+            "ci95_low": row.get("ci95_low"),
+            "ci95_high": row.get("ci95_high"),
             "samples": row.get("samples"),
             "period_start": row.get("period_start"),
             "period_end": row.get("period_end"),

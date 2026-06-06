@@ -1011,6 +1011,8 @@ class TestCorrelationMatrix:
             "symbol1",
             "symbol2",
             "correlation",
+            "ci95_low",
+            "ci95_high",
             "samples",
             "period_start",
             "period_end",
@@ -1352,3 +1354,13 @@ class TestCointegrationTest:
         assert "Cointegration tests failed" in result["error"]
         assert result["meta"]["stats"]["pairs_failed"] >= 1
         assert "warnings" in result
+
+
+def test_correlation_fisher_ci_bounds():
+    from mtdata.core.causal import _correlation_fisher_ci
+    lo, hi = _correlation_fisher_ci(0.948, 50)
+    assert lo is not None and hi is not None
+    assert lo < 0.948 < hi
+    assert _correlation_fisher_ci(0.5, 3) == (None, None)
+    assert _correlation_fisher_ci(1.0, 50) == (None, None)
+
