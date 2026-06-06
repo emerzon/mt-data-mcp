@@ -758,6 +758,9 @@ def confluence_levels(  # noqa: C901
                 detail=detail_value,
                 volume_profile_payload=volume_profile_payload,
             )
+            payload["reference_price_as_of"] = (
+                datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+            )
             period_start = float(source_bar["time"]) if _has_field(source_bar, "time") else float("nan")
             if math.isfinite(period_start):
                 _use_ctz = _use_client_tz()
