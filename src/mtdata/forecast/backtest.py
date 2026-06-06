@@ -355,6 +355,15 @@ def _compute_performance_metrics(
     drawdowns = equity / np.where(peak == 0.0, 1.0, peak) - 1.0
     max_drawdown = float(abs(np.min(drawdowns))) if drawdowns.size > 0 else float('nan')
 
+    downside = arr[arr < 0.0]
+    downside_dev = float(np.sqrt(np.mean(downside ** 2))) if downside.size > 0 else 0.0
+    sortino = float('nan')
+    if enough_trades and downside_dev > 1e-12 and math.isfinite(trades_per_year) and trades_per_year > 0:
+        sortino = float((avg_return / downside_dev) * math.sqrt(trades_per_year))
+    gross_profit = float(arr[arr > 0.0].sum()) if arr.size > 0 else 0.0
+    gross_loss = float(arr[arr < 0.0].sum()) if arr.size > 0 else 0.0
+    profit_factor = float(gross_profit / abs(gross_loss)) if gross_loss < 0.0 else float('nan')
+
     years = float(arr.size / trades_per_year) if math.isfinite(trades_per_year) and trades_per_year > 0 else float('nan')
     annual_return = float('nan')
     if (
@@ -397,6 +406,8 @@ def _compute_performance_metrics(
         "kelly_fraction": _finite_or_none(kelly_fraction),
         "half_kelly_fraction": _finite_or_none(half_kelly_fraction),
         "sharpe_ratio": _finite_or_none(sharpe),
+        "sortino_ratio": _finite_or_none(sortino),
+        "profit_factor": _finite_or_none(profit_factor),
         "max_drawdown": max_drawdown,
         "calmar_ratio": _finite_or_none(calmar),
         "annual_return": _finite_or_none(annual_return),

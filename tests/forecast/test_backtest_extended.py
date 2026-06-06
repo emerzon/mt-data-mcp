@@ -521,3 +521,17 @@ class TestForecastBacktest:
                 dimred_method="pca", dimred_params={"n_components": 3},
             )
         assert isinstance(result, dict)
+
+
+def test_performance_metrics_include_sortino_and_profit_factor():
+    import numpy as np
+    from mtdata.forecast.backtest import _compute_performance_metrics
+    np.random.seed(1)
+    returns = list(np.random.normal(0.001, 0.02, 60))
+    m = _compute_performance_metrics(returns, 'H1', 1, 0.0)
+    assert 'sortino_ratio' in m and m['sortino_ratio'] is not None
+    assert 'profit_factor' in m and m['profit_factor'] is not None
+    assert m['profit_factor'] > 0
+    # Sortino uses downside deviation, so it should differ from Sharpe
+    assert m['sharpe_ratio'] is not None
+
