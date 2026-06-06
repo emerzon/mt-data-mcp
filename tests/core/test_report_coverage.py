@@ -1142,3 +1142,18 @@ class TestReportParams:
         call_args = mock_basic.call_args
         p = call_args[0][3]
         assert p.get("methods") == ["EMA", "ARIMA"]
+
+
+def test_compact_report_payload_retains_as_of():
+    from mtdata.core.report.use_cases import _compact_report_payload
+    rep = {'success': True, 'timezone': 'UTC', 'as_of': '2026-06-05T20:00:00Z'}
+    out = _compact_report_payload(rep, symbol='EURUSD', template='basic')
+    assert out['as_of'] == '2026-06-05T20:00:00Z'
+
+
+def test_prioritize_report_payload_orders_as_of_near_top():
+    from mtdata.core.report.use_cases import _prioritize_report_payload
+    rep = {'sections': {}, 'as_of': 'T', 'success': True, 'timezone': 'UTC'}
+    keys = list(_prioritize_report_payload(rep).keys())
+    assert keys.index('as_of') < keys.index('sections')
+

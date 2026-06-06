@@ -155,6 +155,7 @@ def _prioritize_report_payload(report: Dict[str, Any]) -> Dict[str, Any]:
     preferred_keys = (
         "success",
         "completeness",
+        "as_of",
         "timezone",
         "summary_structured",
         "summary",
@@ -329,6 +330,8 @@ def _compact_report_payload(
     timezone_label = _valid_timezone_label(report.get("timezone"))
     if timezone_label:
         compact["timezone"] = timezone_label
+    if report.get("as_of") not in (None, ""):
+        compact["as_of"] = report.get("as_of")
     completeness = report.get("completeness")
     if completeness not in (None, "", [], {}):
         compact["completeness"] = completeness
@@ -1200,6 +1203,9 @@ def run_report_generate(  # noqa: C901
             rep["symbol"] = request.symbol
             rep["template"] = template_name
             rep["detail"] = detail_value
+            rep["as_of"] = (
+                datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+            )
             rep = _attach_report_timezone(rep)
             rep = _prioritize_report_payload(rep)
 
