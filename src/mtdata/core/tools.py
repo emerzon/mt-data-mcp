@@ -45,6 +45,11 @@ def tools_list(
                 return {"error": "limit must be a positive integer."}
         category_filter = str(category or "").strip().lower()
         search_filter = str(search or "").strip().lower()
+        known_categories = {
+            str(row.get("category") or "").strip().lower()
+            for row in tools
+            if isinstance(row, dict) and str(row.get("category") or "").strip()
+        }
         detail_mode = str(catalog.get("detail") or detail or "compact").strip().lower()
         filtered = []
         for row in tools:
@@ -111,6 +116,12 @@ def tools_list(
             "category": category_filter or None,
             "search": search_filter or None,
         }
+        if category_filter and category_filter not in known_categories:
+            catalog["warning"] = (
+                f"Unknown category '{category}'. Valid categories: "
+                + ", ".join(sorted(known_categories))
+                + "."
+            )
         if compact_mode and gated_tools:
             catalog["gated_tools"] = gated_tools
         return catalog
