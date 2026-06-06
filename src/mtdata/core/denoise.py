@@ -136,7 +136,27 @@ def denoise_describe(method: str) -> Dict[str, Any]:
         methods = _denoise_methods()
         for row in methods:
             if str(row.get("method") or "").strip().lower() == wanted:
-                return {"success": True, "method": row}
+                described = dict(row)
+                supports = described.get("supports")
+                causality = supports.get("causality") if isinstance(supports, dict) else None
+                if isinstance(causality, list):
+                    has_causal = "causal" in causality
+                    has_zero_phase = "zero_phase" in causality
+                    if has_zero_phase and not has_causal:
+                        described["causality_note"] = (
+                            "Zero-phase (non-causal) only: uses future bars, so it introduces "
+                            "look-ahead bias. Do not use for live signals or forward testing."
+                        )
+                    elif has_zero_phase and has_causal:
+                        described["causality_note"] = (
+                            "Supports causal and zero-phase modes. Use causal for live signals; "
+                            "zero-phase uses future bars (look-ahead) and is analysis-only."
+                        )
+                    elif has_causal:
+                        described["causality_note"] = (
+                            "Causal: uses only past/current bars; safe for live signals."
+                        )
+                return {"success": True, "method": described}
         return build_error_payload(
             f"Unknown denoise method {method!r}.",
             code="denoise_method_unknown",
