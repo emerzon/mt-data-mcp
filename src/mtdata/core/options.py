@@ -219,6 +219,13 @@ def options_provider_status(
 
         payload["tradier_docs"] = "https://documentation.tradier.com/"
         payload["base_url"] = getattr(options_data_config, "base_url", None)
+    elif payload.get("remediation"):
+        # Compact default: keep the actionable flags but drop the long remediation
+        # paragraph (identical on every call). action_required signals the need.
+        payload["remediation_hint"] = (
+            "Options provider not configured; use detail='full' for setup steps."
+        )
+        payload.pop("remediation", None)
     return _run_options_operation(
         "options_provider_status",
         detail=detail,
