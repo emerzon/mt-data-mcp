@@ -353,6 +353,10 @@ def options_barrier_price(
                     "strike": float(strike),
                     "barrier": float(barrier),
                     "maturity_days": int(maturity_days),
+                    "price_basis": (
+                        "premium per underlying unit, in the same currency/units as "
+                        "the supplied spot, strike and barrier (no symbol context)."
+                    ),
                     "pricing_note": (
                         f"{barrier_type} {option_type}: spot={float(spot)}, "
                         f"strike={float(strike)}, barrier={float(barrier)}."
