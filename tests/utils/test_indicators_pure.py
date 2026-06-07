@@ -775,12 +775,12 @@ class TestTableFromRows:
 class TestFormatTimeMinimal:
     def test_epoch_zero(self):
         result = _format_time_minimal(0)
-        assert result == "1970-01-01 00:00"
+        assert result == "1970-01-01T00:00Z"
 
     def test_known_epoch(self):
         # 2020-01-01 00:00 UTC = 1577836800
         result = _format_time_minimal(1577836800)
-        assert result == "2020-01-01 00:00"
+        assert result == "2020-01-01T00:00Z"
 
 class TestParseKvOrJson:
     def test_none(self):

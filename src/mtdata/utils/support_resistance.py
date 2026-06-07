@@ -9,7 +9,10 @@ from typing import Any, Dict, List, Optional
 import numpy as np
 import pandas as pd
 
-from ..shared.constants import TIMEFRAME_SECONDS as _TIMEFRAME_SECONDS
+from ..shared.constants import (
+    TIME_DISPLAY_FORMAT,
+    TIMEFRAME_SECONDS as _TIMEFRAME_SECONDS,
+)
 
 _METHOD_NAME = "weighted_retests"
 _DEFAULT_REACTION_BARS = 6
@@ -77,7 +80,9 @@ def _format_time(timestamp: Optional[float]) -> Optional[str]:
     if timestamp is None or not math.isfinite(float(timestamp)):
         return None
     try:
-        return datetime.fromtimestamp(float(timestamp), tz=timezone.utc).strftime("%Y-%m-%d %H:%M")
+        return datetime.fromtimestamp(float(timestamp), tz=timezone.utc).strftime(
+            TIME_DISPLAY_FORMAT
+        )
     except Exception:
         return None
 
@@ -107,7 +112,10 @@ def _parse_output_time(value: Any) -> Optional[float]:
         if not cleaned:
             return None
         try:
-            return datetime.strptime(cleaned, "%Y-%m-%d %H:%M").replace(tzinfo=timezone.utc).timestamp()
+            parsed = datetime.fromisoformat(cleaned.replace("Z", "+00:00"))
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=timezone.utc)
+            return parsed.timestamp()
         except Exception:
             return None
     return None

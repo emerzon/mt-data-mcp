@@ -602,11 +602,11 @@ class TestCausalDiscoverSignals:
         assert result["count"] == len(result["items"])
         assert all(item["significant"] is True for item in result["items"])
         assert result["context"]["timezone"] == "UTC"
-        assert result["context"]["period_start"] == "2024-01-01 01:00"
-        assert result["context"]["period_end"] == "2024-01-04 07:00"
+        assert result["context"]["period_start"] == "2024-01-01T01:00Z"
+        assert result["context"]["period_end"] == "2024-01-04T07:00Z"
         assert result["context"]["samples"] == 79
-        assert result["items"][0]["period_start"] == "2024-01-01 01:00"
-        assert result["items"][0]["period_end"] == "2024-01-04 07:00"
+        assert result["items"][0]["period_start"] == "2024-01-01T01:00Z"
+        assert result["items"][0]["period_end"] == "2024-01-04T07:00Z"
         assert result["meta"]["request"]["detail"] == "compact"
         assert "data" not in result
         assert "links" not in result
@@ -964,8 +964,8 @@ class TestCorrelationMatrix:
         assert result["matrix"]["A"]["C"] < -0.95
         assert result["items"][0]["abs_correlation"] >= result["items"][1]["abs_correlation"]
         assert result["items"][0]["samples"] == 60
-        assert result["items"][0]["period_start"] == "2024-01-01 20:00"
-        assert result["items"][0]["period_end"] == "2024-01-04 07:00"
+        assert result["items"][0]["period_start"] == "2024-01-01T20:00Z"
+        assert result["items"][0]["period_end"] == "2024-01-04T07:00Z"
         assert result["items"][0]["window_requested"] == 60
         assert result["items"][0]["window_actual"] == 60
         assert result["items"][0]["calculation_samples"] == 60
@@ -1019,8 +1019,8 @@ class TestCorrelationMatrix:
         }
         assert result["items"][0]["samples"] == 60
         assert result["context"]["timezone"] == "UTC"
-        assert result["context"]["period_start"] == "2024-01-01 20:00"
-        assert result["context"]["period_end"] == "2024-01-04 07:00"
+        assert result["context"]["period_start"] == "2024-01-01T20:00Z"
+        assert result["context"]["period_end"] == "2024-01-04T07:00Z"
         assert result["context"]["samples"] == 60
         assert result["context"]["transform"] == "log_return"
         assert result["context"]["min_overlap"] == 30
@@ -1320,11 +1320,11 @@ class TestCointegrationTest:
         assert result["success"] is True
         pair = result["items"][0]
         assert pair["cointegrated"] is True
-        assert pair["period_start"] == "2024-01-03 12:00"
-        assert pair["period_end"] == "2024-01-05 23:00"
+        assert pair["period_start"] == "2024-01-03T12:00Z"
+        assert pair["period_end"] == "2024-01-05T23:00Z"
         assert result["context"]["timezone"] == "UTC"
-        assert result["context"]["period_start"] == "2024-01-03 12:00"
-        assert result["context"]["period_end"] == "2024-01-05 23:00"
+        assert result["context"]["period_start"] == "2024-01-03T12:00Z"
+        assert result["context"]["period_end"] == "2024-01-05T23:00Z"
         assert result["context"]["samples"] == 60
         assert "calculation_samples" not in pair
         assert "aligned_observations" not in pair

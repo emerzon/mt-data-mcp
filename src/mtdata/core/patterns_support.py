@@ -2138,7 +2138,7 @@ def _to_jsonable(value: Any) -> Any:
     if isinstance(value, (np.floating, np.integer)):
         return value.item()
     if isinstance(value, pd.Timestamp):
-        return value.strftime("%Y-%m-%d %H:%M")
+        return _format_pandas_timestamp(value)
     if isinstance(value, dict):
         return {str(key): _to_jsonable(item) for key, item in value.items()}
     if isinstance(value, (list, tuple, set)):
@@ -2149,10 +2149,15 @@ def _to_jsonable(value: Any) -> Any:
 def _timestamp_to_label(ts: Any) -> Optional[str]:
     try:
         if isinstance(ts, pd.Timestamp):
-            return ts.strftime("%Y-%m-%d %H:%M")
+            return _format_pandas_timestamp(ts)
     except Exception:
         return None
     return None
+
+
+def _format_pandas_timestamp(ts: pd.Timestamp) -> str:
+    normalized = ts.tz_localize("UTC") if ts.tzinfo is None else ts.tz_convert("UTC")
+    return _format_time_minimal(float(normalized.timestamp()))
 
 
 def _load_stock_pattern_utils(

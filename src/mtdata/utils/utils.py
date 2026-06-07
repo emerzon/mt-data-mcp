@@ -141,19 +141,12 @@ def _table_from_rows(headers: List[str], rows: List[List[Any]]) -> Dict[str, Any
     }
 
 def _format_time_minimal(epoch_seconds: float) -> str:
-    """Format epoch seconds into a normalized UTC datetime string.
-
-    Normalized format everywhere: YYYY-MM-DD HH:MM
-    """
+    """Format epoch seconds as a minute-resolution RFC 3339 UTC string."""
     dt = datetime.fromtimestamp(epoch_seconds, tz=timezone.utc)
     return dt.strftime(TIME_DISPLAY_FORMAT)
 
 def _format_time_minimal_local(epoch_seconds: float) -> str:
-    """Format epoch seconds into a normalized local/client datetime string.
-
-    Normalized format everywhere: YYYY-MM-DD HH:MM (local/client tz)
-    Falls back to UTC if tz resolution fails.
-    """
+    """Format epoch seconds in client-local time with an explicit offset."""
     from ..bootstrap.settings import mt5_config
     try:
         tz = mt5_config.get_client_tz()
@@ -161,7 +154,7 @@ def _format_time_minimal_local(epoch_seconds: float) -> str:
             dt = datetime.fromtimestamp(epoch_seconds, tz=timezone.utc).astimezone(tz)
         else:
             dt = datetime.fromtimestamp(epoch_seconds, tz=timezone.utc).astimezone()
-        return dt.strftime(TIME_DISPLAY_FORMAT)
+        return _format_datetime_minute_explicit(dt)
     except Exception:
         return _format_time_minimal(epoch_seconds)
 
@@ -184,12 +177,16 @@ def _format_time_explicit_local(epoch_seconds: float) -> str:
         return _format_time_explicit(epoch_seconds)
 
 def _format_datetime_minute_explicit(dt: datetime) -> str:
-    text = dt.strftime("%Y-%m-%dT%H:%M%z")
-    if text.endswith("+0000"):
-        return f"{text[:-5]}Z"
-    if len(text) >= 5 and text[-5] in {"+", "-"}:
-        return f"{text[:-2]}:{text[-2:]}"
-    return text
+    return _format_datetime_explicit(dt, timespec="minutes")
+
+def _format_datetime_second_explicit(dt: datetime) -> str:
+    return _format_datetime_explicit(dt, timespec="seconds")
+
+def _format_datetime_explicit(dt: datetime, *, timespec: str) -> str:
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    text = dt.isoformat(timespec=timespec)
+    return f"{text[:-6]}Z" if text.endswith("+00:00") else text
 
 def _use_client_tz(_: object = None) -> bool:
     """Return True when a client timezone is configured."""

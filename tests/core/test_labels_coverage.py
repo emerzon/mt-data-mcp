@@ -599,7 +599,7 @@ class TestLabelsTripleBarrier:
         assert result["labels"][0] == -1
         assert result["holding_bars"][0] == 1
         assert result["tp_time"][0] is None
-        assert result["sl_time"][0] == "1970-01-01 01:00"
+        assert result["sl_time"][0] == "1970-01-01T01:00Z"
 
 
 @patch(f"{_LABELS_MOD}._get_pip_size", return_value=0.0001)

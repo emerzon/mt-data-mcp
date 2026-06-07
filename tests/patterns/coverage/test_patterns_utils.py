@@ -47,7 +47,7 @@ class TestToJsonable:
 
     def test_pd_timestamp(self):
         ts = pd.Timestamp("2024-01-01 12:30")
-        assert self._call(ts) == "2024-01-01 12:30"
+        assert self._call(ts) == "2024-01-01T12:30Z"
 
     def test_dict(self):
         result = self._call({"a": np.float64(1.5)})
@@ -80,7 +80,7 @@ class TestTimestampToLabel:
 
     def test_pd_timestamp(self):
         ts = pd.Timestamp("2024-06-15 09:30")
-        assert self._call(ts) == "2024-06-15 09:30"
+        assert self._call(ts) == "2024-06-15T09:30Z"
 
     def test_non_timestamp_returns_none(self):
         assert self._call(12345) is None

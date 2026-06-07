@@ -16,6 +16,7 @@ from ...utils.mt5 import (
 )
 from ...utils.mt5_enums import decode_mt5_enum_label
 from ...utils.utils import (
+    _format_datetime_second_explicit,
     _format_time_minimal,
     _format_time_minimal_local,
     _normalize_limit,
@@ -297,7 +298,7 @@ def _trade_journal_period_context(
             value = value.replace(tzinfo=timezone.utc)
         else:
             value = value.astimezone(timezone.utc)
-        return value.strftime("%Y-%m-%d %H:%M:%S")
+        return _format_datetime_second_explicit(value)
 
     to_dt = _parse_start_datetime(request.end) if request.end else None
     if to_dt is None:

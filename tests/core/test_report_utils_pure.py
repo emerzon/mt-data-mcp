@@ -46,11 +46,10 @@ class TestNowUtcIso:
 
     def test_format_matches_display(self):
         result = now_utc_iso()
-        # Should match YYYY-MM-DD HH:MM
-        assert re.match(r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}", result)
+        assert re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}Z", result)
 
     def test_approximately_now(self):
-        before = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:")
+        before = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:")
         result = now_utc_iso()
         assert result.startswith(before[:11])  # at least same date
 

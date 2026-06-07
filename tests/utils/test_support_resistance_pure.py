@@ -7,6 +7,7 @@ import pytest
 from mtdata.utils.support_resistance import (
     _build_zone_overlap,
     _collect_support_resistance_warnings,
+    _format_time,
     _resolve_adaptive_settings,
     compact_support_resistance_payload,
     compute_support_resistance_levels,
@@ -14,6 +15,10 @@ from mtdata.utils.support_resistance import (
     merge_support_resistance_results,
     standard_support_resistance_payload,
 )
+
+
+def test_format_time_uses_rfc3339_utc():
+    assert _format_time(0.0) == "1970-01-01T00:00Z"
 
 
 def test_collect_warnings_flags_zero_support_levels():

@@ -20,9 +20,9 @@ from mtdata.utils.mt5 import MT5ConnectionError, _mt5_epoch_to_utc
 
 
 def _format_utc_seconds(epoch_seconds: float) -> str:
-    return datetime.fromtimestamp(epoch_seconds, tz=timezone.utc).strftime(
-        "%Y-%m-%d %H:%M:%S"
-    )
+    return datetime.fromtimestamp(epoch_seconds, tz=timezone.utc).isoformat(
+        timespec="seconds"
+    ).replace("+00:00", "Z")
 
 
 def _unwrap(fn):
@@ -1096,8 +1096,8 @@ def test_trade_history_reports_explicit_period_context() -> None:
         ),
     )
 
-    assert out["period_start"] == "2026-01-01 00:00:00"
-    assert out["period_end"] == "2026-01-03 00:00:00"
+    assert out["period_start"] == "2026-01-01T00:00:00Z"
+    assert out["period_end"] == "2026-01-03T00:00:00Z"
     assert out["period_timezone"] == "UTC"
     assert out["period_source"] == "explicit_range"
     assert "minutes_back_effective" not in out
@@ -1176,8 +1176,8 @@ def test_trade_journal_analyze_summarizes_realized_exit_deals() -> None:
         )
 
     assert out["success"] is True
-    assert out["period_start"] == "2026-01-01 00:00:00"
-    assert out["period_end"] == "2026-01-03 00:00:00"
+    assert out["period_start"] == "2026-01-01T00:00:00Z"
+    assert out["period_end"] == "2026-01-03T00:00:00Z"
     assert out["period_timezone"] == "UTC"
     assert out["period_source"] == "explicit_range"
     assert "minutes_back_effective" not in out

@@ -11,8 +11,8 @@ PRECISION_MAX_LOSS_PCT = 1e-3
 PRECISION_MAX_DECIMALS = 10
 DISPLAY_MAX_DECIMALS = 8
 
-# Normalized datetime display format (UTC/local)
-TIME_DISPLAY_FORMAT = "%Y-%m-%d %H:%M"
+# Canonical minute-resolution UTC timestamp for machine-readable outputs.
+TIME_DISPLAY_FORMAT = "%Y-%m-%dT%H:%MZ"
 
 # Approximate seconds per bar for each timeframe (no MT5 dependency)
 TIMEFRAME_SECONDS = {

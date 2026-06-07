@@ -14,6 +14,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 
+from ..shared.constants import TIME_DISPLAY_FORMAT, TIMEFRAME_MAP, TIMEFRAME_SECONDS
 from ..shared.schema import CompactFullDetailLiteral, TimeframeLiteral
 from ..utils.mt5 import (
     _ensure_symbol_ready,
@@ -26,12 +27,11 @@ from ..utils.symbol import (
     _extract_group_path as _extract_group_path_util,
     _normalize_group_path_query,
 )
+from ..utils.utils import _parse_start_datetime
 from ._mcp_instance import mcp
-from ..shared.constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
 from .execution_logging import run_logged_operation
 from .mt5_gateway import create_mt5_gateway, mt5_connection_error
 from .output_contract import normalize_output_verbosity_detail
-from ..utils.utils import _parse_start_datetime
 
 logger = logging.getLogger(__name__)
 
@@ -573,7 +573,7 @@ def _format_sample_time(value: Any) -> str:
     timestamp = pd.Timestamp(value)
     if timestamp.tzinfo is not None:
         timestamp = timestamp.tz_convert("UTC")
-    return timestamp.strftime("%Y-%m-%d %H:%M")
+    return timestamp.strftime(TIME_DISPLAY_FORMAT)
 
 
 def _pairwise_analysis_context(rows: List[Dict[str, Any]], *, timeframe: Any) -> Dict[str, Any]:

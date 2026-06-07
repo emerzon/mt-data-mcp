@@ -8,6 +8,7 @@ import pytest
 
 from mtdata.utils.utils import (
     _coerce_scalar,
+    _format_datetime_second_explicit,
     _format_time_explicit,
     _format_time_minimal,
     _normalize_limit,
@@ -161,7 +162,7 @@ class TestTableFromRows:
 class TestFormatTimeMinimal:
     def test_epoch_zero(self):
         result = _format_time_minimal(0)
-        assert result == "1970-01-01 00:00"
+        assert result == "1970-01-01T00:00Z"
 
     def test_known_timestamp(self):
         result = _format_time_minimal(1704067200)  # 2024-01-01 00:00 UTC
@@ -170,6 +171,10 @@ class TestFormatTimeMinimal:
     def test_explicit_utc_timestamp_has_timezone_marker(self):
         result = _format_time_explicit(1704067200)
         assert result == "2024-01-01T00:00Z"
+
+    def test_explicit_second_timestamp_assumes_utc_for_naive_datetime(self):
+        result = _format_datetime_second_explicit(datetime(2024, 1, 1, 12, 30, 45))
+        assert result == "2024-01-01T12:30:45Z"
 
 class TestToFloatNp:
     def test_list_of_ints(self):

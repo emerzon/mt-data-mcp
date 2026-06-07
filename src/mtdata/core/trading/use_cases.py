@@ -20,6 +20,7 @@ from ...utils.mt5 import (
     _normalize_times_in_struct,
     _to_mt5_history_epoch_seconds,
 )
+from ...utils.utils import _format_datetime_second_explicit
 from ..error_envelope import normalize_error_payload
 from ..execution_logging import (
     infer_result_success,
@@ -2102,16 +2103,17 @@ def run_trade_history(  # noqa: C901
                     try:
                         tz_obj = mt5_config.get_client_tz()
                         if tz_obj is not None:
-                            return datetime.fromtimestamp(
-                                epoch_seconds,
-                                tz=timezone.utc,
-                            ).astimezone(tz_obj).strftime("%Y-%m-%d %H:%M:%S")
+                            return _format_datetime_second_explicit(
+                                datetime.fromtimestamp(
+                                    epoch_seconds,
+                                    tz=timezone.utc,
+                                ).astimezone(tz_obj)
+                            )
                     except Exception:
                         return format_time_minimal_local(epoch_seconds)
-                return datetime.fromtimestamp(
-                    epoch_seconds,
-                    tz=timezone.utc,
-                ).strftime("%Y-%m-%d %H:%M:%S")
+                return _format_datetime_second_explicit(
+                    datetime.fromtimestamp(epoch_seconds, tz=timezone.utc)
+                )
 
             fmt_time = _format_trade_history_timestamp
             trigger_pattern = re.compile(

@@ -8,6 +8,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 from ...utils.utils import (
+    _format_datetime_second_explicit,
     _format_time_minimal,
     _normalize_limit,
     _parse_start_datetime,
@@ -858,7 +859,7 @@ def _trade_history_period_context(request: Any) -> Dict[str, Any]:
             value = value.replace(tzinfo=timezone.utc)
         else:
             value = value.astimezone(timezone.utc)
-        return value.strftime("%Y-%m-%d %H:%M:%S")
+        return _format_datetime_second_explicit(value)
 
     end_value = getattr(request, "end", None)
     to_dt = _parse_start_datetime(end_value) if end_value else None
