@@ -1189,7 +1189,6 @@ def patterns_detect(
           multiple timeframes. Returns sectioned output.
         - "candlestick": Japanese candlestick patterns (Doji, Hammer, Engulfing, etc.)
         - "classic": Chart patterns (Head & Shoulders, Triangles, Flags, etc.)
-        - "chart": Alias for classic chart patterns
         - "harmonic": Fibonacci-ratio patterns (ABCD, Gartley, Bat, Butterfly, Crab, etc.)
         - "fractal": Bill Williams-style bullish/bearish fractal levels with breakout context
         - "elliott": Elliott Wave patterns
@@ -1256,9 +1255,10 @@ def patterns_detect(
         - ratio_tolerance, min_confidence, max_pivots, max_pattern_age_bars
         - min_prominence_pct, min_distance, pivot_use_hl
 
-    engine : str, optional (default="native")
-        Classic engine selection: "native", "stock_pattern",
-        or comma-separated list when `ensemble=True`.
+    engine : str, optional
+        Classic-mode engine selection: "native", "stock_pattern", or a
+        comma-separated list when `ensemble=True`. Omitted classic calls use
+        "native". Supplying engine for another mode is an error.
 
     ensemble : bool, optional (default=False)
         For classic mode, merge detections from multiple engines into consensus results.

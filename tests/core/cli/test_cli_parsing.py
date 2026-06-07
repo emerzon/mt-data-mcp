@@ -746,7 +746,7 @@ class TestResolveParamKwargs:
             "all",
             "candlestick",
             "classic",
-            "chart",
+            "harmonic",
             "fractal",
             "elliott",
         ]
@@ -911,6 +911,16 @@ class TestResolveParamKwargs:
         assert "not an output row limit" in limit_kwargs["help"]
         assert "Recent labeled entries" in lookback_kwargs["help"]
         assert "limit controls fetched history" in lookback_kwargs["help"]
+
+    def test_patterns_engine_help_names_mode_scope(self):
+        kwargs, _ = _resolve_param_kwargs(
+            {"name": "engine", "type": str, "required": False, "default": None},
+            None,
+            cmd_name="patterns_detect",
+        )
+
+        assert "Classic-mode engine" in kwargs["help"]
+        assert "invalid for other modes" in kwargs["help"]
 
     def test_trade_history_minutes_back_help_mentions_default_lookback(self):
         kwargs, _ = _resolve_param_kwargs(

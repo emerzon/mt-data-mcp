@@ -40,7 +40,7 @@ class PatternsDetectRequest(BaseModel):
     last_n_bars: Optional[int] = None
     denoise: Optional[DenoiseSpec] = None
     config: Optional[Dict[str, Any]] = None
-    engine: str = "native"
+    engine: Optional[str] = None
     ensemble: bool = False
     ensemble_weights: Optional[Dict[str, Any]] = None
     include_series: bool = False

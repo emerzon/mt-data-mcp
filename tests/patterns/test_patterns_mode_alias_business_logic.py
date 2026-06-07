@@ -33,15 +33,18 @@ def _sample_df() -> pd.DataFrame:
     )
 
 
-def test_patterns_detect_chart_alias_routes_to_classic_mode() -> None:
-    with patch("mtdata.core.patterns._fetch_pattern_data", return_value=(_sample_df(), None)), patch(
-        "mtdata.core.patterns._select_classic_engines",
-        return_value=(["native"], []),
-    ), patch(
-        "mtdata.core.patterns._run_classic_engine",
-        return_value=([{"pattern": "double_top", "status": "forming"}], None),
-    ):
-        out = _call_patterns_detect(symbol="EURUSD", mode="chart", timeframe="H1")
+def test_patterns_detect_rejects_removed_chart_alias() -> None:
+    out = _call_patterns_detect(symbol="EURUSD", mode="chart", timeframe="H1")
 
-    assert out.get("success") is True
-    assert out.get("mode") == "classic"
+    assert out["error"].startswith("Unknown mode: chart.")
+
+
+def test_patterns_detect_rejects_engine_for_non_classic_mode() -> None:
+    out = _call_patterns_detect(
+        symbol="EURUSD",
+        mode="candlestick",
+        timeframe="H1",
+        engine="stock_pattern",
+    )
+
+    assert out == {"error": "engine applies only to mode='classic'."}

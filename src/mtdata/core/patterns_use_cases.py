@@ -391,8 +391,6 @@ def run_patterns_detect(  # noqa: C901
         tf_norm = None
 
     mode_value = str(request.mode).strip().lower()
-    if mode_value == "chart":
-        mode_value = "classic"
     detail_value = str(request.detail).strip().lower()
     if detail_value not in ("summary", "compact", "standard", "full"):
         return {
@@ -402,6 +400,8 @@ def run_patterns_detect(  # noqa: C901
         }
     if request.whitelist and mode_value != "candlestick":
         return {"error": "whitelist applies only to mode='candlestick'."}
+    if request.engine is not None and mode_value != "classic":
+        return {"error": "engine applies only to mode='classic'."}
     if (
         bool(request.ensemble) or request.ensemble_weights is not None
     ) and mode_value != "classic":
@@ -544,7 +544,7 @@ def run_patterns_detect(  # noqa: C901
         if err:
             return err
         engines, invalid_engines = deps.select_classic_engines(
-            request.engine, request.ensemble
+            request.engine or "native", request.ensemble
         )
         if invalid_engines:
             return {
@@ -1264,6 +1264,6 @@ def run_patterns_detect(  # noqa: C901
     return {
         "error": (
             f"Unknown mode: {request.mode}. "
-            "Use all, candlestick, classic/chart, harmonic, fractal, or elliott."
+            "Use all, candlestick, classic, harmonic, fractal, or elliott."
         )
     }
