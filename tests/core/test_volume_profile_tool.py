@@ -3,6 +3,28 @@ from types import SimpleNamespace
 from mtdata.core import volume_profile as vp
 
 
+def test_profile_detail_compacts_value_area_bucket_indexes() -> None:
+    profile = {
+        "success": True,
+        "value_area": {
+            "low": 1.1,
+            "high": 1.2,
+            "volume": 100.0,
+            "bucket_indexes": [2, 3, 4],
+        },
+    }
+
+    compact = vp._profile_detail_payload(profile, "compact")
+    standard = vp._profile_detail_payload(profile, "standard")
+    full = vp._profile_detail_payload(profile, "full")
+
+    assert compact["value_area"]["bucket_count"] == 3
+    assert "bucket_indexes" not in compact["value_area"]
+    assert "bucket_indexes" not in standard["value_area"]
+    assert full["value_area"]["bucket_indexes"] == [2, 3, 4]
+    assert profile["value_area"]["bucket_indexes"] == [2, 3, 4]
+
+
 def test_compute_volume_profile_payload_uses_m1_fallback_for_large_auto_window(monkeypatch):
     monkeypatch.setattr(vp, "create_mt5_gateway", lambda **_: SimpleNamespace(ensure_connection=lambda: None))
     monkeypatch.setattr(

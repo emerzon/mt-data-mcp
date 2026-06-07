@@ -393,6 +393,15 @@ def _profile_detail_payload(profile: Dict[str, Any], detail: str) -> Dict[str, A
         "units",
     ]
     out = {key: profile[key] for key in keys if key in profile}
+    value_area = out.get("value_area")
+    if isinstance(value_area, dict):
+        compact_value_area = dict(value_area)
+        bucket_indexes = compact_value_area.get("bucket_indexes")
+        if isinstance(bucket_indexes, list):
+            compact_value_area["bucket_count"] = len(bucket_indexes)
+        if detail_value != "full":
+            compact_value_area.pop("bucket_indexes", None)
+        out["value_area"] = compact_value_area
     out["detail"] = detail_value
     if detail_value == "standard":
         out["buckets"] = profile.get("buckets", [])[:50]
