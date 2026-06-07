@@ -905,7 +905,9 @@ class TestCreateCommandFunction:
         args = argparse.Namespace(symbol=None, json=False, verbose=False)
         status = cmd_fn(args)
         assert status == 1
-        assert "Missing required argument(s): symbol." in capsys.readouterr().out
+        output = capsys.readouterr().out
+        assert "Missing required argument(s): symbol." in output
+        assert "Use symbols_list to browse available broker symbols." in output
         mock_fn.assert_not_called()
 
     def test_missing_required_literal_argument_shows_valid_values(self, capsys):

@@ -426,6 +426,8 @@ def create_command_function(  # noqa: C901
                 choices = _literal_choices_for_param(param_def)
                 if choices:
                     message = f"Missing required argument '{missing_name}'. Valid values: {', '.join(choices)}."
+                elif missing_name in {"symbol", "symbols"}:
+                    message += " Use symbols_list to browse available broker symbols."
             render_cli_result(
                 _build_cli_error(message),
                 args=args,
