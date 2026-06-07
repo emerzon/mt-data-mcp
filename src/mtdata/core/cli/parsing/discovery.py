@@ -151,6 +151,12 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
         "Classic-mode engine: native or stock_pattern. Omitted classic calls "
         "use native; invalid for other modes."
     ),
+    ("temporal_analyze", "lookback"): (
+        "Historical bars used when start/end are omitted. Defaults to a "
+        "timeframe-aware seasonal window: 210 days for day-of-week, 60 days "
+        "for hour/session, 730 days for month, and 365 days for overall "
+        "analysis, bounded to 200-20000 bars (H1 session: 1440 bars)."
+    ),
     ("regime_detect", "limit"): (
         "Historical bars fetched for regime detection. Defaults to the effective "
         "lookback plus warmup bars; use max_regimes for compact output count."

@@ -922,6 +922,16 @@ class TestResolveParamKwargs:
         assert "Classic-mode engine" in kwargs["help"]
         assert "invalid for other modes" in kwargs["help"]
 
+    def test_temporal_lookback_help_discloses_auto_window(self):
+        kwargs, _ = _resolve_param_kwargs(
+            {"name": "lookback", "type": int, "required": False, "default": None},
+            None,
+            cmd_name="temporal_analyze",
+        )
+
+        assert "timeframe-aware seasonal window" in kwargs["help"]
+        assert "H1 session: 1440 bars" in kwargs["help"]
+
     def test_trade_history_minutes_back_help_mentions_default_lookback(self):
         kwargs, _ = _resolve_param_kwargs(
             {"name": "minutes_back", "type": int, "required": False, "default": None},

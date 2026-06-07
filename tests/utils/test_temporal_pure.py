@@ -660,7 +660,16 @@ class TestTemporalAnalyze:
         assert r.get("success") is True
         assert mock_fetch.call_args.args[2] == 24 * 210
         assert r["lookback"] == 24 * 210
+        assert r["lookback_source"] == "auto"
         assert "sample_warnings" not in r
+
+    @_apply_analyze_patches
+    def test_explicit_lookback_reports_request_source(self, mock_fetch, *_):
+        r = self._call(mock_fetch, lookback=100)
+
+        assert r.get("success") is True
+        assert r["lookback"] == 100
+        assert r["lookback_source"] == "request"
 
     @_apply_analyze_patches
     def test_summary_detail_returns_best_and_overall_only(self, mock_fetch, *_):
