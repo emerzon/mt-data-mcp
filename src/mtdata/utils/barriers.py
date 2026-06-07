@@ -6,24 +6,9 @@ from .coercion import coerce_finite_float
 
 
 def validate_barrier_unit_family_exclusivity(values: Any) -> Any:
-    """Reject ambiguous TP/SL inputs that mix barrier unit families."""
+    """Reject ambiguous barrier inputs that mix units on the same side."""
     if not isinstance(values, dict):
         return values
-    families = {
-        "price": ("tp_abs", "sl_abs"),
-        "percent": ("tp_pct", "sl_pct"),
-        "ticks": ("tp_ticks", "sl_ticks"),
-    }
-    provided_families = [
-        family
-        for family, fields in families.items()
-        if any(values.get(field) is not None for field in fields)
-    ]
-    if len(provided_families) > 1:
-        raise ValueError(
-            "Use one TP/SL barrier unit family per request: "
-            "price (tp_abs/sl_abs), percent (tp_pct/sl_pct), or ticks (tp_ticks/sl_ticks)."
-        )
     for label, fields, message_fields in (
         (
             "take-profit",
