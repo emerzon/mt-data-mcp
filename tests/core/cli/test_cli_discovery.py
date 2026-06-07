@@ -1253,3 +1253,19 @@ class TestDiscoverTools:
     def test_discover_empty(self, mock_bootstrap, mock_get_reg, mock_get_registered):
         tools = discover_tools()
         assert tools == {}
+
+    @patch("mtdata.core.cli.get_registered_tools", return_value={})
+    @patch("mtdata.core.cli.get_mcp_registry", return_value=None)
+    @patch("mtdata.core.cli.bootstrap_tools", side_effect=RuntimeError("missing optional package"))
+    @patch("mtdata.core.cli.mcp", None)
+    def test_discover_records_bootstrap_failure(
+        self, mock_bootstrap, mock_get_reg, mock_get_registered
+    ):
+        from mtdata.core.cli import api as cli_api
+
+        tools = discover_tools()
+
+        assert tools == {}
+        assert cli_api._DISCOVERY_ERRORS == [
+            "bootstrap_tools failed: missing optional package"
+        ]

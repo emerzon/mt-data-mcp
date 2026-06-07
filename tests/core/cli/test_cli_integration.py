@@ -90,6 +90,23 @@ class TestMain:
         assert result == 1
         assert "No tools discovered" in capsys.readouterr().err
 
+    def test_no_tools_reports_discovery_cause(self, capsys):
+        from mtdata.core.cli import api as cli_api
+
+        def fail_discovery():
+            cli_api._DISCOVERY_ERRORS.append(
+                "bootstrap_tools failed: missing optional package"
+            )
+            return {}
+
+        with patch("mtdata.core.cli.discover_tools", side_effect=fail_discovery):
+            result = main()
+
+        error_output = capsys.readouterr().err
+        assert result == 1
+        assert "Discovery error: bootstrap_tools failed: missing optional package" in error_output
+        assert "MTDATA_CLI_DEBUG=1" in error_output
+
     @patch("mtdata.core.cli.sys")
     @patch("mtdata.core.cli.discover_tools")
     def test_help_query_mode(self, mock_discover, mock_sys, capsys):

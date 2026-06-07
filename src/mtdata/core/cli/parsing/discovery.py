@@ -397,6 +397,7 @@ def discover_tools(
     debug: Callable[[str], None],
     extract_function_from_tool_obj: Callable[[Any], Any],
     extract_metadata_from_tool_obj: Callable[[Any], Dict[str, Any]],
+    errors: Optional[list[str]] = None,
 ) -> Dict[str, ToolInfo]:
     """Discover CLI-visible tools from the bootstrap and MCP registries."""
     tools: Dict[str, ToolInfo] = {}
@@ -413,15 +414,27 @@ def discover_tools(
     try:
         bootstrapped_modules = tuple(bootstrap_tools())
     except Exception as exc:
-        debug(f"bootstrap_tools failed: {exc}")
+        message = f"bootstrap_tools failed: {exc}"
+        debug(message)
+        if errors is not None:
+            errors.append(message)
     try:
         reg = get_registered_tools()
         if reg and hasattr(reg, "items"):
             registry = reg
     except Exception as exc:
-        debug(f"get_registered_tools failed: {exc}")
+        message = f"get_registered_tools failed: {exc}"
+        debug(message)
+        if errors is not None:
+            errors.append(message)
     if mcp is not None:
-        registry = get_mcp_registry(mcp) or registry
+        try:
+            registry = get_mcp_registry(mcp) or registry
+        except Exception as exc:
+            message = f"get_mcp_registry failed: {exc}"
+            debug(message)
+            if errors is not None:
+                errors.append(message)
 
     module_names = {
         str(getattr(module, "__name__", "")).strip()

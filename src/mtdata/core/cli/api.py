@@ -648,6 +648,9 @@ _extract_function_from_tool_obj = _extract_function_from_tool_obj_impl
 _extract_metadata_from_tool_obj = _extract_metadata_from_tool_obj_impl
 
 
+_DISCOVERY_ERRORS: List[str] = []
+
+
 def _is_union_origin(origin: Any) -> bool:
     return origin in (Union, types.UnionType) or str(origin) in {
         "typing.Union",
@@ -670,6 +673,7 @@ def discover_tools():
     2) Use the MCP registry if available
     3) Fallback to scanning bootstrapped tool modules
     """
+    _DISCOVERY_ERRORS.clear()
     return _discover_tools_impl(
         bootstrap_tools=bootstrap_tools,
         get_registered_tools=get_registered_tools,
@@ -678,6 +682,7 @@ def discover_tools():
         debug=_debug,
         extract_function_from_tool_obj=_extract_function_from_tool_obj,
         extract_metadata_from_tool_obj=_extract_metadata_from_tool_obj,
+        errors=_DISCOVERY_ERRORS,
     )
 
 
@@ -1491,9 +1496,16 @@ def main():
 
     load_environment()
     # Discover functions to expose dynamically
+    _DISCOVERY_ERRORS.clear()
     functions = discover_tools()
     if not functions:
         print("No tools discovered from server module.", file=sys.stderr)
+        if _DISCOVERY_ERRORS:
+            print(f"Discovery error: {_DISCOVERY_ERRORS[0]}", file=sys.stderr)
+            print(
+                "Set MTDATA_CLI_DEBUG=1 and rerun for full diagnostics.",
+                file=sys.stderr,
+            )
         return 1
     argv = _normalize_cli_argv_aliases(sys.argv[1:], functions)
     help_query = _extract_help_query(argv)
