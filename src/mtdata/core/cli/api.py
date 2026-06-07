@@ -102,6 +102,13 @@ from .runtime import (
     _temporary_environment,
 )
 
+
+class _CLIHelpFormatter(
+    argparse.RawDescriptionHelpFormatter,
+    argparse.ArgumentDefaultsHelpFormatter,
+):
+    """Preserve command descriptions while showing effective defaults."""
+
 # Keep formatting helpers in this module namespace for backward-compatible
 # exports via mtdata.core.cli.__init__'s namespace copy.
 _CLI_NAMESPACE_EXPORTS = (
@@ -1502,7 +1509,7 @@ def main():
             "Dynamic CLI for MetaTrader5 MCP tools "
             "(TOON by default; set MTDATA_OUTPUT_FORMAT=json for JSON)"
         ),
-        formatter_class=argparse.RawDescriptionHelpFormatter,
+        formatter_class=_CLIHelpFormatter,
         epilog=_build_epilog(functions),
         allow_abbrev=False,
         suggest_on_error=True,
@@ -1556,7 +1563,7 @@ def main():
                     else f"Execute {cmd_name}"
                 ).replace("%", "%%")
             ),
-            formatter_class=argparse.RawDescriptionHelpFormatter,
+            formatter_class=_CLIHelpFormatter,
             allow_abbrev=False,
             suggest_on_error=True,
             color=_argparse_color_enabled(),
@@ -1602,7 +1609,7 @@ def main():
                     else f"Execute {cmd_name}"
                 ).replace("%", "%%")
             ),
-            formatter_class=argparse.RawDescriptionHelpFormatter,
+            formatter_class=_CLIHelpFormatter,
             allow_abbrev=False,
             suggest_on_error=True,
             color=_argparse_color_enabled(),
