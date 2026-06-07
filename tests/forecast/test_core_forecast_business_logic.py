@@ -403,7 +403,7 @@ def test_forecast_generate_compact_normalizes_utc_times_and_neutral_delta(monkey
             "quantity": kwargs["quantity"],
             "last_observation_time": "2026-06-02 19:00",
             "forecast_start_time": "2026-06-02 20:00",
-            "forecast_start_offset_bars": 1.0,
+            "forecast_start_gap_bars": 1.0,
             "last_price_age_seconds": 3600,
             "last_price_stale": False,
             "forecast_time": ["2026-06-02 20:00", "2026-06-02 21:00"],
@@ -429,7 +429,7 @@ def test_forecast_generate_compact_normalizes_utc_times_and_neutral_delta(monkey
         "last_bar_complete": True,
         "input_bar_policy": "closed_bars_only",
         "forecast_start": "2026-06-02T20:00Z",
-        "forecast_start_offset_bars": 1.0,
+        "forecast_start_gap_bars": 1.0,
         "last_observation_age_seconds": 3600,
         "last_observation_stale": False,
     }

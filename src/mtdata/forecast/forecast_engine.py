@@ -1053,7 +1053,7 @@ def _format_forecast_output(
 
     # Build base result
     forecast_start_epoch = float(future_epochs[0]) if future_epochs else None
-    forecast_start_offset_bars = (
+    forecast_start_gap_bars = (
         float(forecast_start_epoch - float(last_epoch)) / float(tf_secs)
         if forecast_start_epoch is not None and tf_secs
         else None
@@ -1072,8 +1072,8 @@ def _format_forecast_output(
         },
         "forecast_start_epoch": forecast_start_epoch,
         "forecast_start_time": forecast_times[0] if forecast_times else None,
-        "forecast_start_offset_bars": forecast_start_offset_bars,
-        "forecast_start_offset_note": (
+        "forecast_start_gap_bars": forecast_start_gap_bars,
+        "forecast_start_gap_note": (
             "Bars from the last closed observation to the first forecast; "
             "1.0 means the next timeframe bar."
         ),

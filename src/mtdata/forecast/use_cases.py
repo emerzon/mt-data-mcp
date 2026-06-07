@@ -611,7 +611,7 @@ def _forecast_generate_data_window(payload: Dict[str, Any]) -> Optional[Dict[str
     }
     for source_key, target_key in (
         ("forecast_start_time", "forecast_start"),
-        ("forecast_start_offset_bars", "forecast_start_offset_bars"),
+        ("forecast_start_gap_bars", "forecast_start_gap_bars"),
     ):
         value = payload.get(source_key)
         if value not in (None, "", [], {}):
