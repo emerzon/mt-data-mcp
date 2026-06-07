@@ -4,7 +4,7 @@ Covers lines 45-245 by mocking template functions and external data fetching.
 """
 import logging
 import warnings
-from typing import Any, Dict, List
+from typing import Any, Dict, List, get_type_hints
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -69,6 +69,16 @@ def test_report_generate_request_defaults_to_compact_detail():
     request = ReportGenerateRequest(symbol="EURUSD")
 
     assert request.detail == "compact"
+
+
+def test_report_section_control_type_hints_resolve() -> None:
+    from mtdata.core.report.use_cases import (
+        _apply_report_section_controls,
+        _split_report_section_names,
+    )
+
+    assert get_type_hints(_split_report_section_names)
+    assert get_type_hints(_apply_report_section_controls)
 
 
 def test_report_generate_request_template_choices_are_validated():
