@@ -1011,6 +1011,7 @@ def _normalize_market_ticker_payload(
         "price_currency",
         "bid",
         "ask",
+        "tick_volume",
         "spread",
         "freshness",
         "market_status_reason",
