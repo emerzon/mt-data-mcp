@@ -751,7 +751,7 @@ def _execute_single_close(
     position_side = _resolve_position_side(position, mt5)
     if position_side is None:
         return {
-            "ticket": position.ticket,
+            "ticket": getattr(position, "ticket", None),
             "error": "Unable to determine position side for close request.",
         }
     is_buy_position = position_side == "BUY"

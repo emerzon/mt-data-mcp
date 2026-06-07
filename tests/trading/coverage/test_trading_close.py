@@ -894,6 +894,25 @@ class TestClosePositions:
         assert result["ticket"] == 42
         assert "side" in result["error"].lower()
 
+    def test_execute_single_close_none_position_returns_structured_error(self):
+        mt5 = MagicMock()
+
+        result = _execute_single_close(
+            mt5,
+            None,
+            requested_volume=1.0,
+            position_volume_before=None,
+            remaining_volume_estimate=None,
+            deviation=20,
+            comment=None,
+            fill_modes=[],
+        )
+
+        assert result == {
+            "ticket": None,
+            "error": "Unable to determine position side for close request.",
+        }
+
     # -----------------------------------------------------------------
     # _sort_close_positions tests
     # -----------------------------------------------------------------
