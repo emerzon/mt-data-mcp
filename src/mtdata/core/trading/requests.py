@@ -384,7 +384,10 @@ class TradeRiskAnalyzeRequest(BaseModel):
 
 class TradeVarCvarRequest(BaseModel):
     symbol: Optional[str] = None
-    timeframe: TimeframeLiteral = "H1"
+    timeframe: TimeframeLiteral = Field(
+        default="H1",
+        description="Return interval and one-bar VaR/CVaR holding period.",
+    )
     lookback: int = 500
     confidence: float = Field(
         0.95,

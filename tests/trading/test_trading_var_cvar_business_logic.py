@@ -77,6 +77,11 @@ def test_run_trade_var_cvar_calculate_summarizes_open_position_portfolio() -> No
     assert out["summary"]["positions"] == 1
     assert out["summary"]["symbols"] == 1
     assert out["summary"]["observations"] == 4
+    assert out["summary"]["horizon_bars"] == 1
+    assert out["summary"]["holding_period"] == "1 H1 bar"
+    assert out["summary"]["var_interpretation"] == (
+        "One H1 bar loss on the current position snapshot."
+    )
     assert out["summary"]["var"] == 14.29
     assert out["summary"]["cvar"] == 14.29
     assert out["summary"]["var_pct_of_equity"] == 1.4286
@@ -193,6 +198,8 @@ def test_run_trade_var_cvar_calculate_full_detail_keeps_empty_shape() -> None:
     assert "reason" not in out
     assert "no_action" not in out
     assert out["summary"]["positions"] == 0
+    assert out["summary"]["horizon_bars"] == 1
+    assert out["summary"]["holding_period"] == "1 H1 bar"
     assert out["summary"]["var"] == 0.0
     assert out["symbol_exposures"] == []
     assert out["positions"] == []

@@ -3746,6 +3746,11 @@ def run_trade_var_cvar_calculate(  # noqa: C901
             "confidence": round(float(confidence_value), 6),
             "transform": transform_value,
             "timeframe": timeframe_value,
+            "horizon_bars": 1,
+            "holding_period": f"1 {timeframe_value} bar",
+            "var_interpretation": (
+                f"One {timeframe_value} bar loss on the current position snapshot."
+            ),
             "lookback": int(lookback),
             "min_observations": int(min_observations),
             "observations": 0,
@@ -4057,6 +4062,11 @@ def run_trade_var_cvar_calculate(  # noqa: C901
         ),
         "transform": transform_value,
         "timeframe": timeframe_value,
+        "horizon_bars": 1,
+        "holding_period": f"1 {timeframe_value} bar",
+        "var_interpretation": (
+            f"One {timeframe_value} bar loss on the current position snapshot."
+        ),
         "lookback": int(lookback),
         "min_observations": int(min_observations),
         "observations": int(len(pnl_values)),

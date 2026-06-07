@@ -55,6 +55,8 @@ def trade_var_cvar_calculate(request: TradeVarCvarRequest) -> dict:
     """Estimate portfolio VaR/CVaR for current open MT5 positions.
 
     Use this for account-level tail-risk analysis over the current portfolio.
+    The risk horizon is one bar of the requested timeframe; no multi-bar
+    scaling is applied.
     For single-symbol stop-loss exposure and new-trade lot sizing, use
     `trade_risk_analyze`. For a lightweight execution snapshot that includes
     account, quote, open positions, and pending orders, use
