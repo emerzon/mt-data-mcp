@@ -7,6 +7,7 @@ from typing import Any, Optional
 from ..shared.symbols import is_probably_crypto_symbol
 
 QUOTE_STALE_SECONDS = 300
+MAX_STANDARD_WEEKEND_DATA_AGE_SECONDS = 3 * 24 * 60 * 60
 
 
 def is_standard_weekend_closure(now_utc: datetime) -> bool:
@@ -25,6 +26,7 @@ def closed_session_context(
     *,
     now_epoch: Any,
     item: str = "tick",
+    data_age_seconds: Any = None,
 ) -> Optional[dict[str, Any]]:
     if not str(symbol or "").strip() or is_probably_crypto_symbol(symbol):
         return None
@@ -35,12 +37,21 @@ def closed_session_context(
     if not is_standard_weekend_closure(now_utc):
         return None
     item_label = str(item or "data").strip() or "data"
-    return {
+    out = {
         "market_status": "closed",
         "market_status_reason": "weekend",
         "market_status_source": "standard_weekend_hours",
         "note": f"Market is closed; showing the latest completed session {item_label}.",
     }
+    if data_age_seconds is not None:
+        try:
+            age_seconds = max(0.0, float(data_age_seconds))
+        except (TypeError, ValueError):
+            age_seconds = float("inf")
+        out["freshness_policy_relaxed"] = (
+            age_seconds <= MAX_STANDARD_WEEKEND_DATA_AGE_SECONDS
+        )
+    return out
 
 
 def format_age_seconds(seconds: Any) -> Optional[str]:

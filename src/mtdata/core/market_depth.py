@@ -668,12 +668,15 @@ def market_ticker(
                 closed_session = closed_session_context(
                     symbol,
                     now_epoch=now_epoch,
+                    data_age_seconds=age_seconds,
                 )
-                if closed_session:
+                if closed_session and closed_session.get("freshness_policy_relaxed"):
                     out["data_stale"] = False
                     out.update(closed_session)
                 else:
                     out["data_stale"] = age_seconds > _MARKET_TICKER_STALE_SECONDS
+                    if closed_session:
+                        out.update(closed_session)
                 out["freshness_basis"] = "absolute_300s"
                 if out["data_stale"]:
                     out["warning"] = (

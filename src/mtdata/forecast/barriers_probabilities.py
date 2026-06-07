@@ -110,9 +110,11 @@ def _history_freshness_context(
         symbol,
         now_epoch=now_epoch,
         item="data",
+        data_age_seconds=age_seconds,
     )
     if closed_session:
-        out["data_stale"] = False
+        if closed_session.get("freshness_policy_relaxed"):
+            out["data_stale"] = False
         out.update(closed_session)
     freshness = format_freshness_label(
         data_stale=out.get("data_stale"),
@@ -168,9 +170,11 @@ def _live_reference_time_context(
         symbol,
         now_epoch=now_epoch,
         item="reference price",
+        data_age_seconds=age_seconds,
     )
     if closed_session:
-        out["reference_price_stale"] = False
+        if closed_session.get("freshness_policy_relaxed"):
+            out["reference_price_stale"] = False
         out.update(closed_session)
     return out
 

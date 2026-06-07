@@ -15,6 +15,19 @@ def test_closed_session_context_marks_weekend_fx_but_not_crypto():
     assert closed_session_context("BTCUSD", now_epoch=saturday) is None
 
 
+def test_closed_session_context_does_not_relax_very_old_data():
+    saturday = datetime(2026, 6, 6, 12, tzinfo=timezone.utc).timestamp()
+
+    result = closed_session_context(
+        "EURUSD",
+        now_epoch=saturday,
+        data_age_seconds=4 * 24 * 60 * 60,
+    )
+
+    assert result is not None
+    assert result["freshness_policy_relaxed"] is False
+
+
 class _FalseLike:
     def __bool__(self):
         return False

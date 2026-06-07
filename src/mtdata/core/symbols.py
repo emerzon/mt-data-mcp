@@ -1474,8 +1474,13 @@ def _market_scan_freshness_fields(
         symbol,
         now_epoch=now_epoch,
         item="bar",
+        data_age_seconds=age_seconds,
     )
-    if data_stale and closed_session:
+    if (
+        data_stale
+        and closed_session
+        and closed_session.get("freshness_policy_relaxed")
+    ):
         data_stale = False
     fields: Dict[str, Any] = {
         "data_freshness_seconds": _market_scan_round(age_seconds, digits=3),
@@ -1522,9 +1527,15 @@ def _quote_staleness_fields(
         "data_age": format_age_seconds(age_seconds),
         "stale_after_seconds": int(_MARKET_SCAN_STALE_QUOTE_SECONDS),
     }
-    closed_session = closed_session_context(symbol, now_epoch=now_epoch)
+    closed_session = closed_session_context(
+        symbol,
+        now_epoch=now_epoch,
+        data_age_seconds=age_seconds,
+    )
     if closed_session:
-        fields["data_stale"] = False
+        fields["data_stale"] = not bool(
+            closed_session.get("freshness_policy_relaxed")
+        )
         fields.update(closed_session)
         fields["freshness"] = format_freshness_label(
             data_stale=False,

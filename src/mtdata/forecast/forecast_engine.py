@@ -999,11 +999,13 @@ def _last_price_freshness_fields(
         symbol,
         now_epoch=now_epoch,
         item="forecast anchor",
+        data_age_seconds=age_seconds,
     )
     if closed_session:
-        out["last_price_stale"] = False
+        if closed_session.get("freshness_policy_relaxed"):
+            out["last_price_stale"] = False
         out.update(closed_session)
-    elif out["last_price_stale"]:
+    if out["last_price_stale"]:
         out["stale_warning"] = (
             "Last forecast anchor is older than the bar freshness policy; "
             "market may be closed or broker data may be stale."
