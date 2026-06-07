@@ -1743,6 +1743,55 @@ class TestTier1TradingCosts(_BarrierModulePatchMixin, unittest.TestCase):
         self.assertGreater(tc["cost_per_trade"], 0.0)
         self.assertAlmostEqual(tc["spread_pips"], 2.0)
 
+    def test_spread_pips_use_conventional_five_digit_forex_size(self):
+        dates = pd.date_range(start="2023-01-01", periods=500, freq="h")
+        self._set_barrier_history(pd.DataFrame({"time": dates, "close": 1.1}))
+
+        with patch(f"{_BARRIER_OPT_ROOT}._get_pip_size", return_value=0.00001), patch(
+            f"{_BARRIER_OPT_ROOT}._symbol_price_precision",
+            return_value=5,
+        ):
+            pct_result = forecast_barrier_optimize(
+                symbol="EURUSD",
+                timeframe="H1",
+                horizon=10,
+                method="mc_gbm",
+                direction="long",
+                mode="pct",
+                tp_min=0.5,
+                tp_max=0.5,
+                tp_steps=1,
+                sl_min=0.5,
+                sl_max=0.5,
+                sl_steps=1,
+                params={"spread_pips": 1.0, "use_live_price": False},
+            )
+            ticks_result = forecast_barrier_optimize(
+                symbol="EURUSD",
+                timeframe="H1",
+                horizon=10,
+                method="mc_gbm",
+                direction="long",
+                mode="ticks",
+                tp_min=50,
+                tp_max=50,
+                tp_steps=1,
+                sl_min=50,
+                sl_max=50,
+                sl_steps=1,
+                params={"spread_pips": 1.0, "use_live_price": False},
+            )
+
+        expected_pct = 0.0001 / 1.1 * 100.0
+        self.assertAlmostEqual(
+            pct_result["trading_costs"]["cost_per_trade"],
+            expected_pct,
+        )
+        self.assertAlmostEqual(
+            ticks_result["trading_costs"]["cost_per_trade"],
+            10.0,
+        )
+
     def test_cost_adjusted_ev_fields(self):
         """When costs present, ev_gross and ev_net should appear in best candidate."""
         dates = pd.date_range(start='2023-01-01', periods=500, freq='h')

@@ -799,6 +799,13 @@ _BARRIER_CONCISE_DROP_KEYS = frozenset(
     }
 )
 
+
+def _cost_pip_size(tick_size: Optional[float], digits: Optional[int]) -> Optional[float]:
+    """Return the conventional pip size used by spread/slippage inputs."""
+    if tick_size is None or tick_size <= 0:
+        return None
+    return float(tick_size) * 10.0 if digits in {3, 5} else float(tick_size)
+
 _BARRIER_CONCISE_CANDIDATE_KEYS = (
     "tp",
     "sl",
@@ -1424,18 +1431,28 @@ def forecast_barrier_optimize(  # noqa: C901
         commission_pct_val = float(params_dict.get('commission_pct', 0.0) or 0.0)
         slippage_pips_val = float(params_dict.get('slippage_pips', 0.0) or 0.0)
         slippage_pct_val = float(params_dict.get('slippage_pct', 0.0) or 0.0)
+        cost_pip_size = _cost_pip_size(pip_size, price_precision)
 
         if mode_val == 'pct':
             # pips → pct points:  pips * pip_size / price * 100
-            pip_to_pct = (float(pip_size) / last_price * 100.0) if (pip_size and last_price > 0) else 0.0
+            pip_to_pct = (
+                float(cost_pip_size) / last_price * 100.0
+                if cost_pip_size and last_price > 0
+                else 0.0
+            )
             cost_spread = spread_pct_val + spread_pips_val * pip_to_pct
             cost_slippage = slippage_pct_val + slippage_pips_val * pip_to_pct
             cost_commission = commission_pct_val
         else:
-            # pct → pips:  pct / 100 * price / pip_size
+            # Convert all costs to the tick units used by barrier metrics.
             pct_to_pips = (last_price / float(pip_size) / 100.0) if (pip_size and pip_size > 0 and last_price > 0) else 0.0
-            cost_spread = spread_pips_val + spread_pct_val * pct_to_pips
-            cost_slippage = slippage_pips_val + slippage_pct_val * pct_to_pips
+            pips_to_ticks = (
+                float(cost_pip_size) / float(pip_size)
+                if cost_pip_size and pip_size and pip_size > 0
+                else 0.0
+            )
+            cost_spread = spread_pips_val * pips_to_ticks + spread_pct_val * pct_to_pips
+            cost_slippage = slippage_pips_val * pips_to_ticks + slippage_pct_val * pct_to_pips
             cost_commission = commission_pct_val * pct_to_pips
         dir_long = (direction_norm == 'long')
 
