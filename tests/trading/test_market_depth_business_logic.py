@@ -651,6 +651,10 @@ def test_market_depth_returns_env_gate_error_when_disabled(monkeypatch) -> None:
     assert out["recommended_alternative"] == "market_ticker"
 
 
+def test_market_depth_help_discloses_enablement_env() -> None:
+    assert "MTDATA_ENABLE_MARKET_DEPTH_FETCH=1" in market_depth_fetch.__doc__
+
+
 def test_tools_catalog_marks_market_depth_disabled(monkeypatch) -> None:
     monkeypatch.delenv("MTDATA_ENABLE_MARKET_DEPTH_FETCH", raising=False)
 

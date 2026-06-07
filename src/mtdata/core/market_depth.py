@@ -455,7 +455,10 @@ def _market_depth_fetch_impl(symbol: str, spread: bool = False, require_dom: boo
 
 
 def market_depth_fetch(symbol: str, spread: bool = False, require_dom: bool = False) -> Dict[str, Any]:
-    """Return DOM if available; otherwise current bid/ask snapshot for `symbol`.
+    """Return DOM when `MTDATA_ENABLE_MARKET_DEPTH_FETCH=1`; otherwise disabled.
+
+    When enabled, returns broker DOM if available and otherwise falls back to
+    the current bid/ask snapshot unless `require_dom=True`.
 
     Parameters: symbol
     """
