@@ -570,6 +570,9 @@ def test_forecast_generate_compact_flags_flat_theta_display(monkeypatch):
     assert out["path_flat"] is True
     assert out["path_range"] == 0.0
     assert out["point_forecast_mode"] == "flat_anchor"
+    assert out["forecast_vs_last_price"]["direction"] == "neutral"
+    assert out["forecast_vs_last_price"]["direction_basis"] == "flat_path"
+    assert out["forecast_vs_last_price"]["direction_suppressed_reason"] == "flat_path"
     assert any("near-flat at displayed price precision" in item for item in out["warnings"])
 
 
@@ -595,8 +598,9 @@ def test_forecast_generate_compact_flags_one_tick_flat_path(monkeypatch):
 
     assert out["path_flat"] is True
     assert out["path_range"] == 0.00001
-    assert out["forecast_vs_last_price"]["direction"] == "bearish"
-    assert out["forecast_vs_last_price"]["direction_basis"] == "horizon_end"
+    assert out["forecast_vs_last_price"]["direction"] == "neutral"
+    assert out["forecast_vs_last_price"]["direction_basis"] == "flat_path"
+    assert out["forecast_vs_last_price"]["direction_suppressed_reason"] == "flat_path"
     assert any("forecast_conformal_intervals" in item for item in out["warnings"])
 
 

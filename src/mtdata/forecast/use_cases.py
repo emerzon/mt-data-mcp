@@ -791,10 +791,14 @@ def _apply_forecast_generate_detail(
             compact["quantity_note"] = (
                 "forecast rows show return; price is the reconstructed price path."
             )
+    path_flatness = _forecast_path_flatness(payload)
     price_context = _forecast_vs_last_price(payload)
     if price_context:
+        if path_flatness:
+            price_context["direction"] = "neutral"
+            price_context["direction_basis"] = "flat_path"
+            price_context["direction_suppressed_reason"] = "flat_path"
         compact["forecast_vs_last_price"] = price_context
-    path_flatness = _forecast_path_flatness(payload)
     if path_flatness:
         compact.update(path_flatness)
         compact.setdefault("point_forecast_mode", "flat_anchor")
