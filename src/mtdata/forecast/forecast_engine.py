@@ -24,6 +24,7 @@ from ..utils.denoise import (
 from ..utils.denoise import (
     normalize_denoise_spec as _normalize_denoise_spec,
 )
+from ..utils.freshness import closed_session_context
 from ..utils.mt5 import get_cached_mt5_time_alignment, get_symbol_info_cached
 from ..utils.utils import (
     _format_time_minimal,
@@ -970,6 +971,7 @@ def _last_price_freshness_fields(
     last_epoch: float,
     tf_secs: int,
     now_epoch: Optional[float] = None,
+    symbol: Optional[str] = None,
 ) -> Dict[str, Any]:
     try:
         last_value = float(last_epoch)
@@ -993,7 +995,15 @@ def _last_price_freshness_fields(
     age_text = _format_age_seconds(rounded_age)
     if age_text:
         out["last_price_age"] = age_text
-    if out["last_price_stale"]:
+    closed_session = closed_session_context(
+        symbol,
+        now_epoch=now_epoch,
+        item="forecast anchor",
+    )
+    if closed_session:
+        out["last_price_stale"] = False
+        out.update(closed_session)
+    elif out["last_price_stale"]:
         out["stale_warning"] = (
             "Last forecast anchor is older than the bar freshness policy; "
             "market may be closed or broker data may be stale."
@@ -1462,6 +1472,7 @@ def forecast_engine(  # noqa: C901
                 _last_price_freshness_fields(
                     last_epoch=last_epoch,
                     tf_secs=int(tf_secs),
+                    symbol=symbol,
                 )
             )
         if method_l == 'ensemble' and metadata:

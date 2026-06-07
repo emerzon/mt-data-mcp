@@ -4,6 +4,7 @@ import os
 import sys
 import unittest
 import warnings
+from datetime import datetime, timezone
 from unittest.mock import patch
 
 import numpy as np
@@ -13,9 +14,27 @@ import pandas as pd
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../src')))
 
 from mtdata.forecast.barriers_probabilities import (
+    _history_freshness_context,
     forecast_barrier_closed_form,
     forecast_barrier_hit_probabilities,
 )
+
+
+def test_barrier_history_freshness_relaxes_for_closed_weekend():
+    saturday = datetime(2026, 6, 6, 12, tzinfo=timezone.utc).timestamp()
+    friday_close = datetime(2026, 6, 5, 20, tzinfo=timezone.utc).timestamp()
+    frame = pd.DataFrame({"time": [friday_close]})
+
+    result = _history_freshness_context(
+        frame,
+        "H1",
+        symbol="EURUSD",
+        now_epoch=saturday,
+    )
+
+    assert result["data_stale"] is False
+    assert result["market_status_reason"] == "weekend"
+    assert result["freshness"].startswith("closed weekend, data ")
 from mtdata.forecast.barriers_optimization import (
     forecast_barrier_optimize,
 )

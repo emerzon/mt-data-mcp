@@ -1,6 +1,7 @@
 """Tests for the symbols_top_markets MT5 market scanner tool."""
 
 from contextlib import contextmanager
+from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -80,6 +81,23 @@ def test_market_scan_freshness_summary_counts_bool_like_stale_flags():
 
     assert result["stale_rows"] == 2
     assert result["freshness"] == "mixed, 2/3 stale"
+
+
+def test_market_scan_freshness_summary_labels_closed_weekend_snapshot():
+    from mtdata.core.symbols import _market_scan_freshness_summary
+
+    saturday = datetime(2026, 6, 6, 12, tzinfo=timezone.utc).timestamp()
+    with patch("mtdata.core.symbols.time.time", return_value=saturday):
+        result = _market_scan_freshness_summary(
+            [
+                {"symbol": "EURUSD", "data_stale": False},
+                {"symbol": "GBPUSD", "data_stale": False},
+            ]
+        )
+
+    assert result["stale_rows"] == 0
+    assert result["session_status"] == "closed_weekend"
+    assert result["freshness"] == "closed_weekend_snapshot"
 
 
 def test_market_scan_bar_freshness_uses_timeframe_window():
@@ -744,7 +762,11 @@ class TestMarketScan:
         assert result["requested_limit"] == 5
         assert result["returned_count"] == 1
         assert result["universe_size"] == 1
-        assert result["freshness"] in {"fresh", "stale"}
+        assert result["freshness"] in {
+            "fresh",
+            "stale",
+            "closed_weekend_snapshot",
+        }
         assert result["stale_rows"] in {0, 1}
         assert result["data_as_of"]
         assert "only 1 symbols were available" in result["note"]

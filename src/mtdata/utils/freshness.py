@@ -1,7 +1,46 @@
 from __future__ import annotations
 
 import math
+from datetime import datetime, timezone
 from typing import Any, Optional
+
+from ..shared.symbols import is_probably_crypto_symbol
+
+QUOTE_STALE_SECONDS = 300
+
+
+def is_standard_weekend_closure(now_utc: datetime) -> bool:
+    weekday = now_utc.weekday()
+    if weekday == 5:
+        return True
+    if weekday == 6 and now_utc.hour < 22:
+        return True
+    if weekday == 4 and now_utc.hour >= 22:
+        return True
+    return False
+
+
+def closed_session_context(
+    symbol: Any,
+    *,
+    now_epoch: Any,
+    item: str = "tick",
+) -> Optional[dict[str, Any]]:
+    if not str(symbol or "").strip() or is_probably_crypto_symbol(symbol):
+        return None
+    try:
+        now_utc = datetime.fromtimestamp(float(now_epoch), tz=timezone.utc)
+    except Exception:
+        return None
+    if not is_standard_weekend_closure(now_utc):
+        return None
+    item_label = str(item or "data").strip() or "data"
+    return {
+        "market_status": "closed",
+        "market_status_reason": "weekend",
+        "market_status_source": "standard_weekend_hours",
+        "note": f"Market is closed; showing the latest completed session {item_label}.",
+    }
 
 
 def format_age_seconds(seconds: Any) -> Optional[str]:

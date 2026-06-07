@@ -13,7 +13,12 @@ from ..shared.constants import (
 )
 from ..shared.schema import CompactFullDetailLiteral, TimeframeLiteral
 from ..shared.validators import invalid_timeframe_error
-from ..utils.freshness import format_age_seconds, format_freshness_label
+from ..utils.freshness import (
+    QUOTE_STALE_SECONDS,
+    closed_session_context,
+    format_age_seconds,
+    format_freshness_label,
+)
 from ..utils.mt5 import (
     MT5ConnectionError,
     _mt5_copy_rates_from_pos,
@@ -45,7 +50,6 @@ from .output_contract import (
     normalize_output_verbosity_detail,
     resolve_output_contract,
 )
-from .quote_freshness import QUOTE_STALE_SECONDS, quote_closed_session_context
 
 logger = logging.getLogger(__name__)
 _MARKET_SCAN_STALE_BAR_SECONDS = 7 * 24 * 60 * 60
@@ -1466,7 +1470,11 @@ def _market_scan_freshness_fields(
         return {}
     stale_after_seconds = _market_scan_stale_bar_seconds(timeframe)
     data_stale = age_seconds > stale_after_seconds
-    closed_session = quote_closed_session_context(symbol, now_epoch=now_epoch)
+    closed_session = closed_session_context(
+        symbol,
+        now_epoch=now_epoch,
+        item="bar",
+    )
     if data_stale and closed_session:
         data_stale = False
     fields: Dict[str, Any] = {
@@ -1514,7 +1522,7 @@ def _quote_staleness_fields(
         "data_age": format_age_seconds(age_seconds),
         "stale_after_seconds": int(_MARKET_SCAN_STALE_QUOTE_SECONDS),
     }
-    closed_session = quote_closed_session_context(symbol, now_epoch=now_epoch)
+    closed_session = closed_session_context(symbol, now_epoch=now_epoch)
     if closed_session:
         fields["data_stale"] = False
         fields.update(closed_session)
@@ -1874,10 +1882,12 @@ def _market_scan_freshness_summary(rows: List[Dict[str, Any]]) -> Dict[str, Any]
     closed_count = sum(
         1
         for row in rows
-        if quote_closed_session_context(row.get("symbol"), now_epoch=now_epoch)
+        if closed_session_context(row.get("symbol"), now_epoch=now_epoch)
     )
     if closed_count == row_count:
         out["session_status"] = "closed_weekend"
+        if stale_count == 0:
+            out["freshness"] = "closed_weekend_snapshot"
     elif closed_count:
         out["session_status"] = f"mixed, {closed_count}/{row_count} closed_weekend"
     return out

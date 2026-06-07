@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -9,6 +10,7 @@ import pandas as pd
 from mtdata.forecast import forecast_engine as fe
 from mtdata.forecast import forecast_preprocessing as fp
 from mtdata.forecast.interface import ForecastResult
+from mtdata.forecast.use_cases import _forecast_anchor_freshness
 from mtdata.utils.utils import _format_time_minimal
 
 
@@ -177,6 +179,23 @@ def test_last_price_freshness_fields_mark_stale_anchor():
     )
     assert stale["last_price_stale"] is True
     assert "stale_warning" in stale
+
+
+def test_last_price_freshness_relaxes_for_closed_weekend():
+    saturday = datetime(2026, 6, 6, 12, tzinfo=timezone.utc).timestamp()
+    friday_close = datetime(2026, 6, 5, 20, tzinfo=timezone.utc).timestamp()
+
+    result = fe._last_price_freshness_fields(
+        last_epoch=friday_close,
+        tf_secs=3600,
+        now_epoch=saturday,
+        symbol="EURUSD",
+    )
+
+    assert result["last_price_stale"] is False
+    assert result["market_status_reason"] == "weekend"
+    assert "stale_warning" not in result
+    assert _forecast_anchor_freshness(result).startswith("closed weekend, anchor ")
 
 
 def test_prepare_ensemble_cv_uses_valid_rows_only(monkeypatch):

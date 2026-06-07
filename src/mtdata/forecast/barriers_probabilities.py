@@ -7,7 +7,11 @@ import numpy as np
 from ..shared.constants import SANITY_BARS_TOLERANCE, TIMEFRAME_SECONDS
 from ..shared.schema import DenoiseSpec, TimeframeLiteral
 from ..shared.validators import unsupported_timeframe_seconds_error
-from ..utils.freshness import format_age_seconds, format_freshness_label
+from ..utils.freshness import (
+    closed_session_context,
+    format_age_seconds,
+    format_freshness_label,
+)
 from ..utils.barriers import (
     barrier_prices_are_valid as _barrier_prices_are_valid,
 )
@@ -68,7 +72,13 @@ def _coerce_epoch(value: Any) -> Optional[float]:
     return epoch
 
 
-def _history_freshness_context(df: Any, timeframe: str) -> Dict[str, Any]:
+def _history_freshness_context(
+    df: Any,
+    timeframe: str,
+    *,
+    symbol: Optional[str] = None,
+    now_epoch: Optional[float] = None,
+) -> Dict[str, Any]:
     out: Dict[str, Any] = {"history_bars_used": int(len(df))}
     try:
         last_epoch = _coerce_epoch(df["time"].iloc[-1])
@@ -77,7 +87,8 @@ def _history_freshness_context(df: Any, timeframe: str) -> Dict[str, Any]:
     if last_epoch is None:
         return out
 
-    now_epoch = datetime.now(timezone.utc).timestamp()
+    if now_epoch is None:
+        now_epoch = datetime.now(timezone.utc).timestamp()
     age_seconds = max(0, int(round(now_epoch - last_epoch)))
     stale_after = int(
         max(1, int(TIMEFRAME_SECONDS.get(timeframe, 0) or 0))
@@ -95,8 +106,18 @@ def _history_freshness_context(df: Any, timeframe: str) -> Dict[str, Any]:
             "freshness_basis": "bar_policy",
         }
     )
+    closed_session = closed_session_context(
+        symbol,
+        now_epoch=now_epoch,
+        item="data",
+    )
+    if closed_session:
+        out["data_stale"] = False
+        out.update(closed_session)
     freshness = format_freshness_label(
-        data_stale=data_stale,
+        data_stale=out.get("data_stale"),
+        market_status=out.get("market_status"),
+        market_status_reason=out.get("market_status_reason"),
         age_seconds=age_seconds,
         age_text=age_text,
         item="data",
@@ -106,7 +127,12 @@ def _history_freshness_context(df: Any, timeframe: str) -> Dict[str, Any]:
     return out
 
 
-def _live_reference_time_context(symbol: str, timeframe: str) -> Dict[str, Any]:
+def _live_reference_time_context(
+    symbol: str,
+    timeframe: str,
+    *,
+    now_epoch: Optional[float] = None,
+) -> Dict[str, Any]:
     try:
         import MetaTrader5 as _mt5  # type: ignore
     except Exception:
@@ -124,19 +150,29 @@ def _live_reference_time_context(symbol: str, timeframe: str) -> Dict[str, Any]:
     if epoch is None:
         return {}
 
-    now_epoch = datetime.now(timezone.utc).timestamp()
+    if now_epoch is None:
+        now_epoch = datetime.now(timezone.utc).timestamp()
     age_seconds = max(0, int(round(now_epoch - epoch)))
     stale_after = int(
         max(1, int(TIMEFRAME_SECONDS.get(timeframe, 0) or 0))
         * max(1, int(SANITY_BARS_TOLERANCE))
     )
-    return {
+    out = {
         "reference_price_time": _format_barrier_epoch(epoch),
         "reference_price_time_epoch": float(epoch),
         "reference_price_age_seconds": age_seconds,
         "reference_price_age": format_age_seconds(age_seconds),
         "reference_price_stale": age_seconds > stale_after if stale_after > 0 else None,
     }
+    closed_session = closed_session_context(
+        symbol,
+        now_epoch=now_epoch,
+        item="reference price",
+    )
+    if closed_session:
+        out["reference_price_stale"] = False
+        out.update(closed_session)
+    return out
 
 
 def _abs_barrier_side_error(
@@ -243,7 +279,11 @@ def forecast_barrier_hit_probabilities(  # noqa: C901
         df = _fetch_history(symbol, timeframe, need, as_of=None)
         if len(df) < 10:
             return {"error": "Insufficient history for simulation"}
-        freshness_context = _history_freshness_context(df, timeframe)
+        freshness_context = _history_freshness_context(
+            df,
+            timeframe,
+            symbol=symbol,
+        )
         # Current price baseline
         last_price_close, last_price, last_price_source, price_warning, price_error = _resolve_reference_prices(
             df['close'].astype(float).to_numpy(),
@@ -632,7 +672,11 @@ def forecast_barrier_closed_form(
         df = _fetch_history(symbol, timeframe, need, as_of=None)
         if len(df) < 10:
             return {"error": "Insufficient history"}
-        freshness_context = _history_freshness_context(df, timeframe)
+        freshness_context = _history_freshness_context(
+            df,
+            timeframe,
+            symbol=symbol,
+        )
         base_col = 'close'
         if denoise:
             try:

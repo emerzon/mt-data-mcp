@@ -6,7 +6,12 @@ import time
 from typing import Any, Dict, Literal, Optional
 
 from ..shared.schema import CompactFullDetailLiteral
-from ..utils.freshness import format_age_seconds, format_freshness_label
+from ..utils.freshness import (
+    QUOTE_STALE_SECONDS,
+    closed_session_context,
+    format_age_seconds,
+    format_freshness_label,
+)
 from ..utils.mt5 import (
     MT5ConnectionError,
     ensure_mt5_connection_or_raise,
@@ -23,7 +28,6 @@ from .error_envelope import build_error_payload
 from .execution_logging import run_logged_operation
 from .mt5_gateway import create_mt5_gateway
 from .output_contract import ensure_common_meta, normalize_output_verbosity_detail
-from .quote_freshness import QUOTE_STALE_SECONDS, quote_closed_session_context
 from .runtime_metadata import display_timezone_label
 
 logger = logging.getLogger(__name__)
@@ -661,7 +665,7 @@ def market_ticker(
                 if age_display is not None:
                     out["data_age"] = age_display
                 out["stale_after_seconds"] = int(_MARKET_TICKER_STALE_SECONDS)
-                closed_session = quote_closed_session_context(
+                closed_session = closed_session_context(
                     symbol,
                     now_epoch=now_epoch,
                 )
