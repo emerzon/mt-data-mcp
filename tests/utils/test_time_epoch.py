@@ -25,3 +25,17 @@ def test_parse_start_datetime_epoch_is_utc() -> None:
     assert dt is not None
     assert dt.tzinfo is None
     assert int(_utc_epoch_seconds(dt)) == 1577836800
+
+
+def test_parse_start_datetime_supports_relative_weekdays() -> None:
+    today = datetime.now(timezone.utc).date()
+
+    next_monday = _parse_start_datetime("next monday")
+    last_friday = _parse_start_datetime("last Friday")
+
+    assert next_monday is not None
+    assert next_monday.weekday() == 0
+    assert next_monday.date() > today
+    assert last_friday is not None
+    assert last_friday.weekday() == 4
+    assert last_friday.date() < today

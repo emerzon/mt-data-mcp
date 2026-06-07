@@ -1,5 +1,5 @@
 import math
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from numbers import Number
 from typing import Any, Dict, List, Optional, Set, Tuple
 
@@ -461,6 +461,24 @@ def _parse_start_datetime(value: str) -> Optional[datetime]:
     """Parse a date/time string via dateparser into UTC-naive datetime."""
     if not value:
         return None
+    parts = str(value).strip().lower().split()
+    weekdays = {
+        "monday": 0,
+        "tuesday": 1,
+        "wednesday": 2,
+        "thursday": 3,
+        "friday": 4,
+        "saturday": 5,
+        "sunday": 6,
+    }
+    if len(parts) == 2 and parts[0] in {"last", "next"} and parts[1] in weekdays:
+        today = datetime.now(timezone.utc).date()
+        target_weekday = weekdays[parts[1]]
+        if parts[0] == "next":
+            days = (target_weekday - today.weekday()) % 7 or 7
+        else:
+            days = -((today.weekday() - target_weekday) % 7 or 7)
+        return datetime.combine(today + timedelta(days=days), datetime.min.time())
     dt = dateparser.parse(
         value,
         settings={
