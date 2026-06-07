@@ -357,6 +357,15 @@ class TestSymbolsTopMarkets:
         assert "pricing_basis" not in result["data"][0]
 
     @patch("mtdata.core.symbols._extract_group_path_util", side_effect=lambda s: s.path)
+    def test_stock_cfd_group_takes_precedence_over_nasdaq_venue(self, mock_group):
+        from mtdata.core.symbols import _symbol_category
+
+        symbol = _make_symbol("TSLA.NAS", description="Tesla Inc")
+        symbol.path = "Stock CFD's\\Nasdaq"
+
+        assert _symbol_category(symbol) == "stocks"
+
+    @patch("mtdata.core.symbols._extract_group_path_util", side_effect=lambda s: s.path)
     @patch("mtdata.core.symbols._mt5_copy_rates_from_pos")
     @patch("mtdata.core.symbols.mt5.symbol_info_tick")
     @patch("mtdata.core.symbols.mt5.symbols_get")

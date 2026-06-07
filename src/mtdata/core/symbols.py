@@ -335,12 +335,12 @@ def _symbol_category(symbol: Any) -> str:
         return "bonds"
     if "etf" in text:
         return "etfs"
+    if any(token in text for token in ("stock", "stocks", "share", "shares", "equity")):
+        return "stocks"
     if any(token in text for token in ("index", "indices", "nasdaq", "dow", "dax")):
         return "indices"
     if any(token in text for token in ("gold", "silver", "oil", "xau", "xag", "brent")):
         return "commodities"
-    if any(token in text for token in ("stock", "stocks", "share", "shares", "equity")):
-        return "stocks"
     return "other"
 
 
