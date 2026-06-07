@@ -72,6 +72,13 @@ _EPOCH = "mtdata.utils.mt5._mt5_epoch_to_utc"
 _COPY_RATES = "mtdata.core.pivot._mt5_copy_rates_from"
 
 
+def test_confluence_volume_profile_window_matches_sr_timeframe() -> None:
+    from mtdata.core.pivot import _confluence_volume_profile_window
+
+    assert _confluence_volume_profile_window("H4", 200) == ("H4", 48_000)
+    assert _confluence_volume_profile_window("auto", 200) == ("D1", 288_000)
+
+
 class _FakeClientTz:
     zone = "America/New_York"
 

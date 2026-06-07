@@ -55,6 +55,21 @@ logger = logging.getLogger(__name__)
 _PIVOT_COMPAT_EXPORTS = (mt5,)
 
 
+def _confluence_volume_profile_window(
+    sr_timeframe: str,
+    lookback: int,
+) -> tuple[str, int]:
+    timeframe = str(sr_timeframe or "H1").strip().upper()
+    if timeframe == "AUTO":
+        timeframe = max(
+            get_auto_support_resistance_timeframes(),
+            key=lambda value: int(TIMEFRAME_SECONDS.get(value, 0) or 0),
+        )
+    seconds = int(TIMEFRAME_SECONDS.get(timeframe, 0) or 0)
+    minutes_per_bar = max(1, int(math.ceil(seconds / 60.0)))
+    return timeframe, max(1, int(lookback) * minutes_per_bar)
+
+
 _PIVOT_METHOD_INFO: Dict[str, Dict[str, str]] = {
     "classic": {
         "method_description": "PP=(H+L+C)/3; R/S levels extend arithmetically from the prior bar range.",
@@ -724,10 +739,16 @@ def confluence_levels(  # noqa: C901
             if detail_value in {"summary", "summary_only"}:
                 detail_value = "compact"
             volume_profile_payload: Optional[Dict[str, Any]]
+            vp_timeframe, max_m1_bars = _confluence_volume_profile_window(
+                sr_tf,
+                int(lookback),
+            )
             volume_profile_payload = compute_volume_profile_payload(
                 symbol=symbol,
                 start=start,
                 end=end,
+                timeframe=vp_timeframe,
+                limit=int(lookback),
                 source=volume_profile_source,
                 price_source="mid",
                 volume_source="auto",
@@ -738,7 +759,7 @@ def confluence_levels(  # noqa: C901
                 reference_price=float(reference_price),
                 max_tick_window_days=int(volume_profile_max_tick_window_days),
                 max_ticks=int(volume_profile_max_ticks),
-                max_m1_bars=max(1, int(lookback) * 60),
+                max_m1_bars=max_m1_bars,
                 detail="compact",
             )
 
