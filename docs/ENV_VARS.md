@@ -236,6 +236,7 @@ MTDATA_TRADE_MAX_RISK_PCT_OF_FREE_MARGIN=2.0
 
 | Variable | Default | Description |
 |----------|---------|-------------|
+| `MTDATA_OUTPUT_FORMAT` | `toon` | Persistent CLI output format: `toon` or `json`. An explicit `--json` flag takes precedence. |
 | `MTDATA_CLI_DEBUG` | `false` | Enable verbose debug logging in the CLI (`1`, `true`, `yes`, or `on`) |
 | `NO_COLOR` | — | Disable ANSI color output (any non-empty value). Follows the [no-color.org](https://no-color.org) convention. |
 

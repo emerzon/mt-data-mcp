@@ -70,6 +70,10 @@ Structured output for programmatic use:
 mtdata-cli symbols_list --limit 5 --json
 ```
 
+For scripts that always require JSON, set `MTDATA_OUTPUT_FORMAT=json` in the
+environment or `.env` file. Accepted values are `json` and `toon`; an explicit
+`--json` flag always selects JSON.
+
 JSON output keeps numeric values unminimized by default. Text output uses
 `--precision auto`, which preserves full precision for trading and price-level
 tools while compacting known large tables such as candles and scans.
