@@ -378,7 +378,7 @@ def _summarize_pattern_bias(rows: List[Dict[str, Any]]) -> Optional[Dict[str, An
     return out
 
 
-def _summarize_actionable_pattern_signal(
+def _summarize_pattern_review(
     signal_bias: Dict[str, Any],
 ) -> Optional[Dict[str, Any]]:
     net_bias = str(signal_bias.get("net_bias") or "").strip().lower()
@@ -394,24 +394,27 @@ def _summarize_actionable_pattern_signal(
 
     if net_bias in {"neutral", "mixed"}:
         status = "conflicting" if conflict else "neutral"
-        action = "wait"
+        suggested_review = None
     elif confidence < _ACTIONABLE_SIGNAL_MIN_CONFIDENCE:
         status = "uncertain"
-        action = "wait"
+        suggested_review = None
     elif conflict:
         status = f"conflicting_{net_bias}"
-        action = "wait"
+        suggested_review = None
     else:
         status = net_bias
-        action = "review_long_setup" if net_bias == "bullish" else "review_short_setup"
+        suggested_review = "long_setup" if net_bias == "bullish" else "short_setup"
 
-    is_actionable = bool(action != "wait" and status in {"bullish", "bearish"})
+    review_recommended = bool(
+        suggested_review is not None and status in {"bullish", "bearish"}
+    )
     out: Dict[str, Any] = {
         "status": status,
-        "action": action,
         "confidence": confidence,
-        "is_actionable": is_actionable,
+        "review_recommended": review_recommended,
     }
+    if suggested_review is not None:
+        out["suggested_review"] = suggested_review
     if conflict:
         out["conflict"] = "both_bullish_and_bearish_patterns_present"
     return out
@@ -421,7 +424,7 @@ def _should_expose_directional_bias(
     signal_bias: Dict[str, Any],
     signal: Dict[str, Any],
 ) -> bool:
-    if bool(signal.get("is_actionable")):
+    if bool(signal.get("review_recommended")):
         return True
     if bool(signal_bias.get("conflict")):
         return False
@@ -564,7 +567,7 @@ def _compact_patterns_payload(
     signal_bias = _summarize_pattern_bias(rows)
     signal: Dict[str, Any] = {}
     if signal_bias:
-        signal = _summarize_actionable_pattern_signal(signal_bias) or {}
+        signal = _summarize_pattern_review(signal_bias) or {}
     strongest_compact: Optional[Dict[str, Any]] = None
     if strongest_row:
         strongest_compact = {}
@@ -679,11 +682,11 @@ def _compact_patterns_payload(
     if data_quality:
         compact["data_quality"] = data_quality
     if signal:
-        compact["is_actionable"] = bool(signal.get("is_actionable"))
-        compact["status"] = signal.get("status")
-        compact["signal_confidence"] = signal.get("confidence")
-        if signal.get("is_actionable"):
-            compact["action"] = signal.get("action")
+        compact["review_recommended"] = bool(signal.get("review_recommended"))
+        compact["pattern_status"] = signal.get("status")
+        compact["pattern_confidence"] = signal.get("confidence")
+        if signal.get("review_recommended"):
+            compact["suggested_review"] = signal.get("suggested_review")
         if signal.get("conflict"):
             compact["conflict"] = signal.get("conflict")
     if signal_bias and _should_expose_directional_bias(signal_bias, signal):

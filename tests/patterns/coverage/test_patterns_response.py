@@ -80,9 +80,9 @@ class TestBuildPatternResponse:
             ],
         )
 
-        assert resp["signal_confidence"] == 0.202
-        assert resp["is_actionable"] is False
-        assert "action" not in resp
+        assert resp["pattern_confidence"] == 0.202
+        assert resp["review_recommended"] is False
+        assert "suggested_review" not in resp
         assert "bias" not in resp
         assert resp["strongest_pattern"]["confidence"] == 0.202
         assert resp["top_patterns"][0]["confidence"] == 0.202

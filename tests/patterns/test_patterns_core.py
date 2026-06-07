@@ -137,10 +137,12 @@ def test_patterns_detect_public_default_is_compact_for_classic_mode(monkeypatch)
     out = patterns_detect(symbol="EURUSD", mode="classic", timeframe="H1")
 
     assert out["n_patterns"] == 1
-    assert out["action"] == "review_long_setup"
+    assert out["suggested_review"] == "long_setup"
     assert out["bias"] == "bullish"
-    assert out["is_actionable"] is True
-    assert out["signal_confidence"] == pytest.approx(0.81)
+    assert out["review_recommended"] is True
+    assert out["pattern_confidence"] == pytest.approx(0.81)
+    assert out["is_signal"] is False
+    assert out["usage"] == "information_only"
     assert out["strongest_pattern"]["name"] == "Ascending Triangle"
     assert "recent_patterns" not in out
     assert "patterns" not in out
@@ -617,9 +619,10 @@ def test_build_pattern_response_compact_keeps_actionable_fields():
     )
 
     assert compact["bias"] == "bullish"
-    assert compact["action"] == "review_long_setup"
-    assert compact["confidence"] == 0.85
-    assert compact["status"] == "bullish"
+    assert compact["suggested_review"] == "long_setup"
+    assert compact["pattern_confidence"] == 0.85
+    assert compact["review_recommended"] is True
+    assert compact["pattern_status"] == "bullish"
     assert compact["strongest_pattern"] == {
         "name": "Double Bottom",
         "direction": "bullish",
@@ -673,10 +676,11 @@ def test_build_pattern_response_compact_keeps_elliott_candidate_context():
         detail="compact",
     )
 
-    assert compact["bias"] == "bullish"
-    assert compact["status"] == "uncertain"
-    assert compact["action"] == "wait"
-    assert compact["confidence"] == 0.1
+    assert compact["pattern_status"] == "uncertain"
+    assert compact["review_recommended"] is False
+    assert "bias" not in compact
+    assert compact["pattern_confidence"] == 0.1
+    assert "suggested_review" not in compact
     assert compact["strongest_pattern"] == {
         "name": "Elliott impulse-like candidate",
         "confidence": 0.1,
@@ -729,7 +733,7 @@ def test_build_pattern_response_compact_keeps_fractal_breakout_fields():
     )
 
     assert compact["bias"] == "bearish"
-    assert compact["action"] == "review_short_setup"
+    assert compact["suggested_review"] == "short_setup"
     assert compact["strongest_pattern"] == {
         "name": "Bullish Fractal",
         "direction": "bearish",
@@ -816,9 +820,9 @@ def test_build_pattern_response_compact_counts_omitted_rows_when_truncated():
     assert len(compact["top_patterns"]) == 3
     assert compact["patterns_shown"] == 3
     assert compact["patterns_omitted"] == 6
-    assert compact["status"] == "conflicting"
-    assert compact["is_actionable"] is False
-    assert "action" not in compact
+    assert compact["pattern_status"] == "conflicting"
+    assert compact["review_recommended"] is False
+    assert "suggested_review" not in compact
     assert "confidence" not in compact
     assert "pattern_distribution" not in compact
     assert "strong_patterns" not in compact
@@ -863,7 +867,7 @@ def test_build_pattern_response_compact_promotes_data_gap_warning():
         "issues": ["time_gaps"],
     }
     keys = list(compact)
-    assert keys.index("data_quality") < keys.index("status")
+    assert keys.index("data_quality") < keys.index("pattern_status")
     assert compact["warnings"] == df.attrs["warnings"]
 
 
@@ -893,10 +897,10 @@ def test_build_pattern_response_compact_suppresses_low_confidence_elliott_bias()
         detail="compact",
     )
 
-    assert compact["status"] == "uncertain"
-    assert compact["is_actionable"] is False
-    assert compact["signal_confidence"] == pytest.approx(0.1)
-    assert "action" not in compact
+    assert compact["pattern_status"] == "uncertain"
+    assert compact["review_recommended"] is False
+    assert compact["pattern_confidence"] == pytest.approx(0.1)
+    assert "suggested_review" not in compact
     assert "bias" not in compact
     assert "dominant_direction" not in compact
 
@@ -1497,10 +1501,11 @@ def test_build_pattern_response_compact_marks_conflicting_signal_wait():
         detail="compact",
     )
 
-    assert compact["bias"] == "mixed"
-    assert compact["status"] == "conflicting"
-    assert compact["action"] == "wait"
-    assert compact["confidence"] == 0.0
+    assert compact["pattern_status"] == "conflicting"
+    assert compact["review_recommended"] is False
+    assert "bias" not in compact
+    assert compact["pattern_confidence"] == 0.0
+    assert "suggested_review" not in compact
     assert compact["conflict"] == "both_bullish_and_bearish_patterns_present"
 
 
