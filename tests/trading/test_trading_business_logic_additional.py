@@ -111,7 +111,7 @@ def test_run_trade_close_rejects_conflicting_profit_and_loss_filters():
 
 
 def test_run_trade_close_uses_history_lookup_when_ticket_is_already_closed():
-    request = TradeCloseRequest(ticket=123)
+    request = TradeCloseRequest(ticket=123, dry_run=False)
     close_positions = MagicMock(return_value={"error": "Position 123 not found"})
     cancel_pending = MagicMock(return_value={"error": "Pending order 123 not found"})
     lookup_ticket_history = MagicMock(
@@ -136,7 +136,7 @@ def test_run_trade_close_uses_history_lookup_when_ticket_is_already_closed():
 
 
 def test_run_trade_close_passes_magic_filter_to_close_and_cancel_paths():
-    request = TradeCloseRequest(ticket=123, magic=987)
+    request = TradeCloseRequest(ticket=123, magic=987, dry_run=False)
     close_positions = MagicMock(return_value={"error": "Position 123 not found"})
     cancel_pending = MagicMock(return_value={"cancelled_count": 1})
 

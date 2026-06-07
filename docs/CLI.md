@@ -23,7 +23,9 @@ Use read-only commands for research and reserve execution commands for intention
 | `forecast_*`, `regime_detect`, `patterns_detect` | `trade_modify` |
 | `report_generate`, `trade_risk_analyze`, `trade_get_*` | `trade_close` |
 
-When available, add `--dry-run true` first. The CLI expects boolean values as `true` or `false`, for example `--dry-run true`.
+`trade_place`, `trade_modify`, and `trade_close` default to `dry_run=true`.
+Review the preview, then pass `--dry-run false` explicitly for live execution.
+The CLI expects boolean values as `true` or `false`.
 
 ## Getting Help
 

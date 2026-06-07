@@ -126,8 +126,11 @@ class TradeModifyRequest(BaseModel):
     expiration: Optional[ExpirationValue] = None
     comment: Optional[str] = None
     dry_run: bool = Field(
-        default=False,
-        description="Preview the modification without sending it to the broker.",
+        default=True,
+        description=(
+            "Preview the modification without sending it to the broker. Defaults "
+            "to true; set dry_run=false to modify the live order or position."
+        ),
     )
     idempotency_key: Optional[str] = Field(
         default=None,
@@ -155,8 +158,11 @@ class TradeCloseRequest(BaseModel):
         description="Partial close volume in lots. Requires ticket.",
     )
     dry_run: bool = Field(
-        default=False,
-        description="Preview the close request without sending it to the broker.",
+        default=True,
+        description=(
+            "Preview the close request without sending it to the broker. Defaults "
+            "to true; set dry_run=false to close a live position or order."
+        ),
     )
     confirm_close_all: bool = Field(
         default=False,

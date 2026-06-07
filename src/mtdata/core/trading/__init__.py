@@ -77,7 +77,7 @@ def trade_place(request: TradePlaceRequest) -> dict:
 def trade_modify(request: TradeModifyRequest) -> dict:
     """Modify an open position or pending order by ticket.
 
-    Set `dry_run=true` to preview routing and validation without sending a modify request.
+    Defaults to dry-run preview. Set `dry_run=false` to send a live modify request.
     Risk-increasing pending-order changes can be blocked by configured trade
     guardrails, while close/reduce flows remain allowed.
     Optional idempotency_key values suppress duplicate in-process retries for
@@ -104,7 +104,7 @@ def trade_close(request: TradeCloseRequest) -> dict:
     Any bulk close requires `close_all=true`.
     Set `volume` only to partially close a specific open position by ticket.
     `volume` is invalid without `ticket`.
-    Set `dry_run=true` to preview routing and validation without sending a close/cancel request.
+    Defaults to dry-run preview. Set `dry_run=false` to send a live close/cancel request.
     """
     return run_logged_operation(
         logger,

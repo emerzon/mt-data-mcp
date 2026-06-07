@@ -50,6 +50,12 @@ def test_trading_order_requests_expose_canonical_detail_field() -> None:
     assert TradeCloseRequest(detail="summary").detail == "summary"
 
 
+def test_execution_requests_default_to_dry_run() -> None:
+    assert TradePlaceRequest().dry_run is True
+    assert TradeModifyRequest(ticket=100).dry_run is True
+    assert TradeCloseRequest(ticket=100).dry_run is True
+
+
 def test_normalize_order_type_rejects_mt5_integer() -> None:
     normalized, error = _normalize_order_type_input(2)
     assert normalized is None

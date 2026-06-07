@@ -56,6 +56,7 @@ def trade_modify(**kwargs):
     raw_output = bool(kwargs.pop("__cli_raw", False))
     request = kwargs.pop("request", None)
     if request is None:
+        kwargs.setdefault("dry_run", False)
         request = TradeModifyRequest(**kwargs)
     return _trade_modify_tool(request=request, __cli_raw=raw_output)
 
