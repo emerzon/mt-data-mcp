@@ -7,6 +7,14 @@ def _raw_market_snapshot(**kwargs):
     return snapshot_mod.market_snapshot.__wrapped__(**kwargs)
 
 
+def test_market_snapshot_help_discloses_builtin_section_methods():
+    doc = snapshot_mod.market_snapshot.__doc__ or ""
+
+    assert "regime section uses HMM" in doc
+    assert "forecast section uses" in doc
+    assert "horizon` applies only" in doc
+
+
 def test_market_snapshot_quote_compaction_preserves_epoch_as_secondary_field():
     quote = snapshot_mod._compact_quote(
         {
