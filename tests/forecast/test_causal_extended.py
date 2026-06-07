@@ -807,7 +807,11 @@ class TestCausalDiscoverSignals:
         assert link["p_value_raw"] == pytest.approx(0.02)
         assert link["lag_tests_run"] == 2
         assert link["p_value"] == pytest.approx(0.04)
+        assert link["significance_basis"] == "p_value_bonferroni_adjusted"
+        assert link["significance_threshold"] == pytest.approx(0.05)
         assert link["significant"] is True
+        assert result["summary"]["significance_basis"] == "p_value_bonferroni_adjusted"
+        assert result["summary"]["significance_threshold"] == pytest.approx(0.05)
 
     @patch("statsmodels.tsa.stattools.grangercausalitytests")
     @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})

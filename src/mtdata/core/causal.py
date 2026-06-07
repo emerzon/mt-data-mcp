@@ -1149,6 +1149,9 @@ def _compact_causal_pair_rows(
                 "lag": row.get("lag"),
                 "p_value": row.get("p_value"),
                 "p_value_raw": row.get("p_value_raw"),
+                "p_value_correction": row.get("p_value_correction"),
+                "significance_basis": row.get("significance_basis"),
+                "significance_threshold": row.get("significance_threshold"),
                 "significant": bool(row.get("significant")),
             }
         )
@@ -1881,6 +1884,8 @@ def causal_discover_signals(  # noqa: C901
                         "p_value": best_p,
                         "p_value_raw": float(best_p_raw),
                         "p_value_correction": "bonferroni",
+                        "significance_basis": "p_value_bonferroni_adjusted",
+                        "significance_threshold": float(significance),
                         "lag_tests_run": lag_correction_factor,
                         "samples": len(subset),
                         "period_start": period_start,
@@ -1950,6 +1955,8 @@ def causal_discover_signals(  # noqa: C901
             },
             "summary": {
                 "significance": float(significance),
+                "significance_basis": "p_value_bonferroni_adjusted",
+                "significance_threshold": float(significance),
                 "counts": {
                     "pairs_tested": int(pair_success),
                     "significant_links": int(len(significant_rows)),
