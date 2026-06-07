@@ -12,12 +12,18 @@ def _call(detail):
     return fn(detail=detail)
 
 
-def test_compact_provider_status_drops_verbose_remediation():
+def test_compact_provider_status_keeps_actionable_setup_steps():
     out = _call("compact")
-    # When unconfigured, the actionable flag stays but the long paragraph is gated.
     if out.get("action_required"):
         assert "remediation" not in out
-        assert out.get("remediation_hint")
+        assert out["remediation_hint"] == (
+            "Reliable options-chain access requires Tradier credentials."
+        )
+        assert out["next_steps"] == [
+            "Set MTDATA_OPTIONS_PROVIDER=tradier.",
+            "Set MTDATA_OPTIONS_API_KEY to a Tradier API token, then restart mtdata.",
+            "Use Yahoo only as an unauthenticated fallback that may return 401/429.",
+        ]
 
 
 def test_full_provider_status_keeps_remediation_when_unconfigured():

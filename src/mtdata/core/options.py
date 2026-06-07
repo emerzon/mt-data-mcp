@@ -220,11 +220,14 @@ def options_provider_status(
         payload["tradier_docs"] = "https://documentation.tradier.com/"
         payload["base_url"] = getattr(options_data_config, "base_url", None)
     elif payload.get("remediation"):
-        # Compact default: keep the actionable flags but drop the long remediation
-        # paragraph (identical on every call). action_required signals the need.
         payload["remediation_hint"] = (
-            "Options provider not configured; use detail='full' for setup steps."
+            "Reliable options-chain access requires Tradier credentials."
         )
+        payload["next_steps"] = [
+            "Set MTDATA_OPTIONS_PROVIDER=tradier.",
+            "Set MTDATA_OPTIONS_API_KEY to a Tradier API token, then restart mtdata.",
+            "Use Yahoo only as an unauthenticated fallback that may return 401/429.",
+        ]
         payload.pop("remediation", None)
     return _run_options_operation(
         "options_provider_status",
