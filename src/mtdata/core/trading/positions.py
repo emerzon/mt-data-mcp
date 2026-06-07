@@ -597,6 +597,13 @@ def _round_trade_money_fields(row: Dict[str, Any]) -> Dict[str, Any]:
         key_text = str(key)
         if key_text in _TRADE_MONEY_FIELDS:
             out[key] = _round_trade_money_value(value)
+        elif key_text in {"sl", "tp"}:
+            rounded = _round_trade_price_value(value)
+            try:
+                is_unset = math.isclose(float(rounded), 0.0, abs_tol=1e-12)
+                out[key] = None if is_unset else rounded
+            except (TypeError, ValueError):
+                out[key] = rounded
         elif key_text in _TRADE_PRICE_FIELDS:
             out[key] = _round_trade_price_value(value)
         elif key_text in _TRADE_MILLISECOND_TIME_FIELDS:

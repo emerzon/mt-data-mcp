@@ -137,6 +137,17 @@ def test_normalize_trade_read_output_trims_price_and_millisecond_artifacts():
     assert row["time_msc"] == 1778822029181
 
 
+def test_normalize_trade_read_output_converts_unset_sl_tp_to_null():
+    out = positions._normalize_trade_read_output(
+        [{"ticket": 1, "symbol": "EURUSD", "sl": 0.0, "tp": 0}],
+        request=SimpleNamespace(detail="compact"),
+        kind="open_positions",
+    )
+
+    assert out["items"][0]["sl"] is None
+    assert out["items"][0]["tp"] is None
+
+
 def test_resolve_open_position_respects_side_filter_when_mt5_constants_are_missing():
     class _NoConstantsMt5:
         def __init__(self, rows):
