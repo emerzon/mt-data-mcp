@@ -1159,6 +1159,9 @@ def run_report_generate(  # noqa: C901
             rep["summary"] = summ
             if summary_structured:
                 rep["summary_structured"] = summary_structured
+            source_sections_status = None
+            if bool(request.summary_only) and isinstance(rep.get("sections"), dict):
+                source_sections_status = _build_sections_status(rep["sections"])
             _apply_report_section_controls(
                 rep,
                 include_sections=request.include_sections,
@@ -1167,7 +1170,7 @@ def run_report_generate(  # noqa: C901
             )
             sections = rep.get("sections")
             if isinstance(sections, dict):
-                sections_status = _build_sections_status(sections)
+                sections_status = source_sections_status or _build_sections_status(sections)
                 rep["sections_status"] = sections_status
                 summary_counts = sections_status.get("summary", {})
                 error_count = int(summary_counts.get("error", 0))

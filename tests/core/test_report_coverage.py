@@ -1025,6 +1025,27 @@ class TestReportWarnings:
         assert res["overall_assessment"]["summary"] != "No report sections were available for assessment."
         assert res["success"] is True
 
+    def test_summary_only_assessment_uses_source_section_health(self):
+        fn = _get_report_generate()
+        rep = _make_report(sections=_make_full_sections())
+        mock_basic = MagicMock(return_value=rep)
+        with patch("mtdata.core.report_templates.template_basic", mock_basic, create=True), \
+             patch("mtdata.core.report_templates.template_advanced", mock_basic, create=True), \
+             patch("mtdata.core.report_templates.template_scalping", mock_basic, create=True), \
+             patch("mtdata.core.report_templates.template_intraday", mock_basic, create=True), \
+             patch("mtdata.core.report_templates.template_swing", mock_basic, create=True), \
+             patch("mtdata.core.report_templates.template_position", mock_basic, create=True), \
+             patch(_FMT_NUM, side_effect=str):
+            res = fn("EURUSD", template="basic", summary_only=True, format="toon")
+
+        assert res["sections"] == {}
+        assert res["section_controls"]["included_count"] == 0
+        assert res["sections_status"]["summary"]["total"] > 0
+        assert res["overall_assessment"]["section_health"]["total"] > 0
+        assert res["overall_assessment"]["summary"] != (
+            "No report sections were available for assessment."
+        )
+
     def test_partial_section_marks_report_partially_complete(self):
         fn = _get_report_generate()
         sec = _make_full_sections()
