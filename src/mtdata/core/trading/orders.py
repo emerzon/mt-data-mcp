@@ -256,7 +256,7 @@ def _attach_post_fill_protection(
                     )
 
                 price_tol = validation._safe_float_attr(symbol_info, "point")
-                if not math.isfinite(price_tol) or price_tol <= 0:
+                if price_tol is None or not math.isfinite(price_tol) or price_tol <= 0:
                     price_tol = 1e-9
                 if stop_loss is not None and sl_applied is not None:
                     if abs(float(sl_applied) - float(stop_loss)) > price_tol:

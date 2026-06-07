@@ -352,6 +352,25 @@ class TestPlaceMarketOrder:
         assert sl_tp_result.get("error") is None
 
     @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_sl_tp_verification_tolerates_missing_symbol_point(self):
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        mt5.symbol_info.return_value = _sym(point=None)
+        mt5.order_send.side_effect = [_order_result(), _order_result()]
+        mt5.positions_get.return_value = [_position()]
+        from mtdata.core.trading import _place_market_order
+
+        result = _place_market_order(
+            "EURUSD",
+            0.01,
+            "BUY",
+            stop_loss=1.09,
+            take_profit=1.12,
+        )
+
+        assert (result.get("sl_tp_result") or {}).get("status") == "applied"
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
     def test_sl_tp_uses_resolved_position_ticket_without_follow_up(self):
         mt5 = sys.modules["MetaTrader5"]
         self._setup_mt5(mt5)
