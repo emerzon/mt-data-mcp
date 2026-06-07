@@ -1963,10 +1963,10 @@ def _compact_forecast_ci(
         except Exception:
             confidence_level = None
     if ci_status == "available" and has_interval_columns:
-        if alpha is not None:
-            out["ci_alpha"] = alpha
         if not _is_empty_value(confidence_level):
             out["confidence_level"] = confidence_level
+        elif alpha is not None:
+            out["ci_alpha"] = alpha
         return out
 
     if not _is_empty_value(ci_status):
