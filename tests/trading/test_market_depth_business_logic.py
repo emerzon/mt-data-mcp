@@ -441,7 +441,11 @@ def test_market_ticker_price_field_returns_simple_price() -> None:
     assert out["price"] == pytest.approx(1.17229)
     assert out["price_precision"] == 5
     assert out["price_currency"] == "USD"
-    assert out["time_display"] == "2023-11-14 22:13"
+    assert out["time_display"] == "2023-11-14T22:13Z"
+    assert out["data_age_seconds"] >= 0
+    assert out["stale_after_seconds"] == 300
+    assert out["data_stale"] is True
+    assert out["freshness_basis"] == "absolute_300s"
     assert "bid" not in out
     assert "spread_pips" not in out
     assert out["meta"]["tool"] == "market_ticker"

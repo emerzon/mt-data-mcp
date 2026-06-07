@@ -738,7 +738,22 @@ def market_ticker(
                     "price_precision": digits,
                     "price_currency": price_currency,
                 }
-                for key in ("time", "time_display", "timezone"):
+                for key in (
+                    "time",
+                    "time_display",
+                    "timezone",
+                    "data_age_seconds",
+                    "data_age",
+                    "stale_after_seconds",
+                    "data_stale",
+                    "freshness_basis",
+                    "market_status",
+                    "market_status_reason",
+                    "market_status_source",
+                    "freshness_policy_relaxed",
+                    "note",
+                    "warning",
+                ):
                     if out.get(key) is not None:
                         simple[key] = out.get(key)
                 return _finalize(simple)
