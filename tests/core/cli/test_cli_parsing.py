@@ -942,6 +942,16 @@ class TestResolveParamKwargs:
         assert "Defaults to 10080 minutes" in kwargs["help"]
         assert "7 days" in kwargs["help"]
 
+    def test_trade_journal_minutes_back_help_mentions_default_lookback(self):
+        kwargs, _ = _resolve_param_kwargs(
+            {"name": "minutes_back", "type": int, "required": False, "default": None},
+            None,
+            cmd_name="trade_journal_analyze",
+        )
+
+        assert "Defaults to 10080 minutes" in kwargs["help"]
+        assert "7 days" in kwargs["help"]
+
     def test_trading_execution_flags_have_actionable_help(self):
         place_dry_run_kwargs, _ = _resolve_param_kwargs(
             {"name": "dry_run", "type": bool, "required": False, "default": False},

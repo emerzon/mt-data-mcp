@@ -218,7 +218,13 @@ class TradeHistoryRequest(BaseModel):
     position_ticket: Optional[Union[int, str]] = None
     deal_ticket: Optional[Union[int, str]] = None
     order_ticket: Optional[Union[int, str]] = None
-    minutes_back: Optional[int] = None
+    minutes_back: Optional[int] = Field(
+        default=None,
+        description=(
+            "History lookback in minutes. Defaults to 10080 minutes (7 days) "
+            "when start, end, and minutes_back are omitted."
+        ),
+    )
     limit: Optional[int] = 100
     offset: int = 0
     page: Optional[int] = None
@@ -247,7 +253,13 @@ class TradeJournalAnalyzeRequest(BaseModel):
     )
     position_ticket: Optional[Union[int, str]] = None
     deal_ticket: Optional[Union[int, str]] = None
-    minutes_back: Optional[int] = None
+    minutes_back: Optional[int] = Field(
+        default=None,
+        description=(
+            "Journal history lookback in minutes. Defaults to 10080 minutes "
+            "(7 days) when start, end, and minutes_back are omitted."
+        ),
+    )
     limit: Optional[int] = Field(
         default=50,
         description="Maximum raw history rows to inspect. Default 50 keeps post-session review fast; raise for longer-term statistics.",

@@ -203,6 +203,10 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
         "History lookback in minutes. Defaults to 10080 minutes (7 days) when "
         "start/end and minutes_back are omitted."
     ),
+    ("trade_journal_analyze", "minutes_back"): (
+        "Journal history lookback in minutes. Defaults to 10080 minutes (7 days) "
+        "when start/end and minutes_back are omitted."
+    ),
     ("trade_modify", "expiration"): "Pending order expiration time (dateparser string, UTC epoch seconds, or GTC token).",
     ("trade_place", "expiration"): "Pending order expiration time (dateparser string, UTC epoch seconds, or GTC token).",
     ("wait_event", "symbol"): "Trading symbol (e.g. EURUSD).",
