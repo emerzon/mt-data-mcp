@@ -88,7 +88,7 @@ Calibrate per‑step residual quantiles via rolling backtest; then get point + c
 
 ```bash
 mtdata-cli forecast_conformal_intervals EURUSD --timeframe H1 --method fourier_ols \
-  --horizon 12 --steps 25 --spacing 10 --ci-alpha 0.1 --json
+  --horizon 12 --steps 25 --spacing 12 --ci-alpha 0.1 --json
 ```
 
 - Use `lower_price`/`upper_price` (conformal), not model CIs, for entry gating and sizing.
@@ -151,6 +151,7 @@ mtdata-cli labels_triple_barrier EURUSD --timeframe H1 --limit 2000 \
   - TP/SL from optimizer; time stop at horizon if neither is hit.
   - Optional partial TP at 0.5×TP; move stop to breakeven.
 - Costs: subtract spread/commission from TP; inflate SL by typical slippage.
+- If you convert a plan into a live order, start with `trade_place --dry-run true` and review the CLI trade controls (`--require-sl-tp`, `--auto-close-on-sl-tp-fail`, `--magic`, `--expiration`) before removing the preview.
 
 ---
 
@@ -211,4 +212,3 @@ Plan B – Mean‑reversion in range regime (reduced size)
 - [forecast/REGIMES.md](forecast/REGIMES.md) — Regime detection details
 - [forecast/VOLATILITY.md](forecast/VOLATILITY.md) — Volatility estimation methods
 - [forecast/UNCERTAINTY.md](forecast/UNCERTAINTY.md) — Conformal intervals
-

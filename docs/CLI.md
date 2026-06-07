@@ -427,6 +427,21 @@ mtdata-cli trade_place BTCUSD --volume 0.01 --order-type BUY \
   --stop-loss 64500 --take-profit 67200 --dry-run true
 ```
 
+### Trade Execution Controls
+
+| Flag | Applies To | Description |
+|------|------------|-------------|
+| `--dry-run` | `trade_place`, `trade_modify`, `trade_close` | Preview the request without sending it to MT5. |
+| `--detail` | `trade_place` | Preview detail level; use `full` for execution diagnostics. |
+| `--magic` | `trade_place`, `trade_get_open`, `trade_get_pending`, `trade_close` | MT5 magic-number filter or default strategy identifier. |
+| `--require-sl-tp` | `trade_place` | Require both stop-loss and take-profit on market orders. |
+| `--auto-close-on-sl-tp-fail` | `trade_place` | If SL/TP attachment fails after a market fill, try to close the unprotected position. |
+| `--expiration` | `trade_place`, `trade_modify` | Expiration time for pending orders (`dateparser`, UTC epoch seconds, or `GTC`). |
+| `--idempotency-key` | `trade_modify` | Dedupe repeated modify requests within the current process. |
+| `--close-all` | `trade_close` | Close all matching positions instead of one ticket. |
+| `--profit-only` / `--loss-only` | `trade_close` | Restrict closes to positions currently in profit or loss. |
+| `--close-priority` | `trade_close` | When multiple positions match, close `loss_first`, `profit_first`, or `largest_first`. |
+
 For account-level safety, configure trade guardrails in [ENV_VARS.md](ENV_VARS.md#trade-guardrails) before moving from preview to live execution.
 
 ### Close or Modify Positions
@@ -445,6 +460,8 @@ Be especially careful with `trade_close --close-all`; it targets every matching 
 mtdata-cli trade_journal_analyze --minutes-back 10080 --json
 mtdata-cli trade_journal_analyze --symbol EURUSD --minutes-back 43200 --breakdown-limit 5 --json
 ```
+
+`trade_history` and `trade_journal_analyze` default to a 7-day lookback (`--minutes-back 10080`) when you do not pass a time window explicitly.
 
 ### Estimate Portfolio Tail Risk
 ```bash

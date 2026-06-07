@@ -60,6 +60,8 @@ Column naming convention: `INDICATOR_PARAM1_PARAM2`
 
 ## Indicator Categories
 
+> The tables below highlight commonly used indicators. The engine exposes **~190 indicators** discovered dynamically from `pandas_ta` at runtime, so the authoritative, environment-specific list comes from `mtdata-cli indicators_list` (optionally `--category <name>`). Many indicators also accept aliases — e.g. `bb`, `boll`, `bollinger`, `bollinger_bands` all resolve to `bbands`.
+
 ### Trend / Overlap
 
 Show direction and dynamic support/resistance levels.

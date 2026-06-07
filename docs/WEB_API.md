@@ -113,7 +113,7 @@ Calculate pivot points.
 
 - **Query Params:**
   - `symbol` (string, required).
-  - `timeframe` (string): Default "D1".
+  - `timeframe` (string): Default "H1".
   - `method` (string): "classic", "fibonacci", "woodie", "camarilla", "demark".
 
 #### `GET /api/support-resistance`
@@ -121,7 +121,7 @@ Identify support and resistance levels, plus Fibonacci retracement/extension lev
 
 - **Query Params:**
   - `symbol` (string, required).
-  - `timeframe` (string): Default `"auto"`. `auto` merges levels from `M15`, `H1`, `H4`, and `D1`.
+  - `timeframe` (string): Default `"H1"`. Pass `auto` to merge levels from `M15`, `H1`, `H4`, and `D1`.
   - `limit` (int): History depth to analyze.
   - `tolerance_pct` (float): Clustering tolerance (0.0015 = 0.15%).
   - `min_touches` (int): Minimum touches per level (default 2).

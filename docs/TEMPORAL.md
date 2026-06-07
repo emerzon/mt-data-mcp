@@ -30,10 +30,10 @@ mtdata-cli temporal_analyze EURUSD --timeframe D1 --group-by month --lookback 10
 |-----------|---------|-------------|
 | `symbol` | (required) | Trading symbol |
 | `--timeframe` | `H1` | Candle timeframe |
-| `--lookback` | 200 | Number of bars to analyze when `--start`/`--end` are omitted |
+| `--lookback` | auto | Bars to analyze when `--start`/`--end` are omitted. Auto-derived per timeframe (floor 200, cap 20,000). |
 | `--start` | (optional) | Start date (ISO or flexible format) |
 | `--end` | (optional) | End date (ISO or flexible format) |
-| `--group-by` | `dow` | Grouping: `dow` (day of week), `hour`, `month`, `all` |
+| `--group-by` | `dow` | Grouping: `dow` (day of week), `hour`, `month`, `session` (Asia/London/overlap/NY/off), `all` |
 | `--day-of-week` | (optional) | Filter to a specific day (0–6 or name, e.g., `Mon`, `Friday`) |
 | `--month` | (optional) | Filter to a specific month (1–12 or name, e.g., `Jan`, `September`) |
 | `--time-range` | (optional) | Filter by time window `HH:MM-HH:MM` using a half-open interval `[start, end)` (wraps midnight, e.g., `22:00-02:00`) |

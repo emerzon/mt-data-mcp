@@ -15,11 +15,17 @@ mtdata includes tools for fetching US equity options data and pricing exotic opt
 
 ## Options Data
 
-The options data tools are external-data helpers. Yahoo Finance is the zero-config fallback, but it can reject unauthenticated requests. To use Tradier instead, add these values to `.env`:
+The options data tools are external-data helpers. Yahoo Finance is the default, but it is an **unauthenticated fallback** that can reject requests (401/429), so the chain tools (`options_expirations`, `options_chain`, `options_heston_calibrate`) only treat data as ready when Tradier is configured. To use Tradier, add these values to `.env`:
 
 ```bash
 MTDATA_OPTIONS_PROVIDER=tradier
 MTDATA_OPTIONS_API_KEY=your_tradier_token
+```
+
+Run `options_provider_status` to see the configured vs. effective provider and whether chain data is ready:
+
+```bash
+mtdata-cli options_provider_status --json
 ```
 
 `options_barrier_price` is a local QuantLib calculator and still works without options-chain provider access when you supply spot, strike, barrier, maturity, and volatility.

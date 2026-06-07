@@ -64,3 +64,4 @@ prompts/*
 !prompts/trader_active.md
 !prompts/trader_grid_scalper.md
 code-reports/*
+.soulforge

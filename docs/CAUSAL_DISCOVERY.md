@@ -90,7 +90,7 @@ For each ordered pair of symbols `(cause → effect)`, the tool:
 | `limit` | `500` | Bars per symbol to analyze (after alignment). |
 | `max_lag` | `5` | Maximum lag to test (≥ 1). |
 | `significance` | `0.05` | Alpha threshold for reporting “causal” links. |
-| `transform` | `log_return` | One of: `log_return`, `pct`, `diff`, `level`. |
+| `transform` | `log_return` | One of: `log_return`, `log_level`, `pct`, `diff`, `level`. |
 | `normalize` | `true` | Z-score each series before testing. |
 
 ---

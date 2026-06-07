@@ -85,12 +85,12 @@ General-purpose smoothing.
 
 | Method | Description | Parameters |
 |--------|-------------|------------|
-| `ema` | Exponential Moving Average | `alpha` (0.1-0.5) |
+| `ema` | Exponential Moving Average | `span` (default 10) or `alpha` (0–1; overrides span) |
 | `sma` | Simple Moving Average | `window` |
 
 **Example:**
 ```bash
---denoise ema --denoise-params "alpha=0.2"
+--denoise ema --denoise-params "span=10"
 ```
 
 ### Robust Filters

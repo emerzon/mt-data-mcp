@@ -192,6 +192,28 @@ mtdata-cli finviz_screen --filters '{"Sector": "Healthcare"}' --order "-marketca
 
 **Filter formats:** JSON uses exact Finviz names, for example `{"Exchange":"NASDAQ"}`. Key-value pairs use compact keys and values such as `country=USA,marketcap=mega`; discrete comparison aliases such as `pe_under=15` and `beta_under=1` map to Finviz's available "Under/Over" filter options. Native shorthand uses Finviz URL tokens such as `cap_largeover,exch_nyse`; invalid tokens are reported in the error details.
 
+### `finviz_filters_list`
+
+Discover valid screener filters and their accepted values/tokens before building a `finviz_screen` query.
+
+```bash
+# List available filters
+mtdata-cli finviz_filters_list --json
+
+# Search filters by name
+mtdata-cli finviz_filters_list --search dividend --json
+
+# Show accepted values for one filter
+mtdata-cli finviz_filters_list --filter-name "Market Cap." --json
+```
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `--search` | (optional) | Case-insensitive substring match on filter display names |
+| `--filter-name` | (optional) | Show accepted values and tokens for a single filter |
+| `--limit` | 20 | Max filters per page |
+| `--offset` | 0 | Pagination offset |
+
 ---
 
 ## Macro Market Snapshots
@@ -293,6 +315,7 @@ mtdata-cli finviz_earnings --period "Next Week" --json
 | Insider trades (stock) | `mtdata-cli finviz_insider AAPL` |
 | Insider trades (market) | `mtdata-cli finviz_insider_activity` |
 | Stock screener | `mtdata-cli finviz_screen --filters '{"Sector":"Technology"}'` |
+| List screener filters | `mtdata-cli finviz_filters_list` |
 | Forex snapshot | `mtdata-cli finviz_forex` |
 | Crypto snapshot | `mtdata-cli finviz_crypto` |
 | Futures snapshot | `mtdata-cli finviz_futures` |

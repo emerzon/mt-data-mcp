@@ -105,7 +105,6 @@ See [LIMITATIONS.md](LIMITATIONS.md) for the user-facing caveats and gap list. T
 - Response-schema examples for each CLI/MCP tool, especially fields that change by `detail` and `extras`.
 - A single timestamp policy that explains broker server time, UTC, client-local time, and external provider timezones in one place.
 - A trading safety runbook with dry-run examples for `trade_place`, `trade_modify`, `trade_close`, guardrails, and broker-specific order behavior.
-- Options data-provider status and alternatives when Yahoo Finance options endpoints require authentication.
 - Deployment-oriented guidance for running MCP/Web API as a long-lived local service.
 
 ## Quick Reference

@@ -135,6 +135,18 @@ Configure the HuggingFace model used to rerank MT5 / external news by relevance.
 
 ---
 
+## Options Data
+
+Provider configuration for the options-chain tools (`options_expirations`, `options_chain`, `options_heston_calibrate`). The pure QuantLib calculator `options_barrier_price` does not require any of these. Run `options_provider_status` to check the effective configuration.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `MTDATA_OPTIONS_PROVIDER` | `yahoo` | Options-chain provider: `tradier`, `yahoo`, or `auto`. Yahoo is an unauthenticated fallback that may return 401/429; chain tools only treat data as ready when `tradier` is configured with an API key. |
+| `MTDATA_OPTIONS_API_KEY` | — | Tradier API token (required for `tradier`). `TRADIER_TOKEN` is also accepted. |
+| `MTDATA_OPTIONS_BASE_URL` | `https://api.tradier.com/v1` | Tradier API base URL. |
+
+---
+
 ## Forecasting & GPU
 
 | Variable | Default | Description |

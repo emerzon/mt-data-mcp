@@ -65,7 +65,7 @@ Conformal prediction calibrates intervals from rolling backtest residuals, makin
 
 ```bash
 mtdata-cli forecast_conformal_intervals EURUSD --timeframe H1 \
-  --method theta --horizon 12 --steps 25 --spacing 10 --ci-alpha 0.1 --json
+  --method theta --horizon 12 --steps 50 --spacing 20 --ci-alpha 0.1 --json
 ```
 
 **Parameters:**
@@ -73,9 +73,11 @@ mtdata-cli forecast_conformal_intervals EURUSD --timeframe H1 \
 |-----------|-------------|---------|
 | `--method` | Forecasting method | theta |
 | `--horizon` | Forecast horizon | 12 |
-| `--steps` | Number of backtest points | 25 |
-| `--spacing` | Bars between backtest points | 10 |
+| `--steps` | Number of calibration anchors (default 50 for stabler quantiles) | 50 |
+| `--spacing` | Bars between calibration anchors | 20 |
 | `--ci-alpha` | Miscoverage rate (0.1 = 90% interval) | 0.1 |
+
+> When `--steps > 1`, `--spacing` must be `>= --horizon` so calibration windows do not overlap; otherwise the request is rejected.
 
 ### Output
 
@@ -90,7 +92,7 @@ mtdata-cli forecast_conformal_intervals EURUSD --timeframe H1 \
 
 **Interpretation:**
 - `lower_price` / `upper_price`: Empirically calibrated bounds
-- "Based on the last 25 forecasts, the actual price stayed within these bounds ~90% of the time."
+- "Based on the last 50 forecasts, the actual price stayed within these bounds ~90% of the time."
 
 ### When to Use
 - When you don't trust model-based intervals

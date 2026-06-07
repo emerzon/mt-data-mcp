@@ -44,7 +44,7 @@ forecast[12]{time,value}:
 | Parameter | Default | Description |
 |-----------|---------|-------------|
 | `--timeframe` | `H1` | Candle timeframe |
-| `--horizon` | 5 | Bars to forecast |
+| `--horizon` | 12 | Bars to forecast |
 | `--lookback` | auto | Historical bars to use |
 | `--as-of` | now | Reference time (for backtesting) |
 
