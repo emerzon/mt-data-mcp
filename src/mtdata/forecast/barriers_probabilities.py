@@ -118,8 +118,16 @@ def _history_freshness_context(
         out.update(closed_session)
     freshness = format_freshness_label(
         data_stale=out.get("data_stale"),
-        market_status=out.get("market_status"),
-        market_status_reason=out.get("market_status_reason"),
+        market_status=(
+            out.get("market_status")
+            if out.get("freshness_policy_relaxed") is not False
+            else None
+        ),
+        market_status_reason=(
+            out.get("market_status_reason")
+            if out.get("freshness_policy_relaxed") is not False
+            else None
+        ),
         age_seconds=age_seconds,
         age_text=age_text,
         item="data",

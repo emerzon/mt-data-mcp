@@ -586,10 +586,13 @@ def _forecast_point_mode(payload: Dict[str, Any]) -> Optional[str]:
 
 
 def _forecast_anchor_freshness(payload: Dict[str, Any]) -> Optional[str]:
+    policy_relaxed = payload.get("freshness_policy_relaxed") is not False
     label = format_freshness_label(
         data_stale=payload.get("last_price_stale"),
-        market_status=payload.get("market_status"),
-        market_status_reason=payload.get("market_status_reason"),
+        market_status=payload.get("market_status") if policy_relaxed else None,
+        market_status_reason=(
+            payload.get("market_status_reason") if policy_relaxed else None
+        ),
         age_seconds=payload.get("last_price_age_seconds"),
         age_text=payload.get("last_price_age"),
         item="anchor",

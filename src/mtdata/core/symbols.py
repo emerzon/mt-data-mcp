@@ -1495,10 +1495,13 @@ def _market_scan_freshness_fields(
     }
     if closed_session:
         fields.update(closed_session)
+        policy_relaxed = bool(closed_session.get("freshness_policy_relaxed"))
         fields["freshness"] = format_freshness_label(
-            data_stale=False,
-            market_status=fields.get("market_status"),
-            market_status_reason=fields.get("market_status_reason"),
+            data_stale=fields.get("data_stale"),
+            market_status=fields.get("market_status") if policy_relaxed else None,
+            market_status_reason=(
+                fields.get("market_status_reason") if policy_relaxed else None
+            ),
             age_seconds=age_seconds,
             item="bar",
         )
@@ -1537,10 +1540,13 @@ def _quote_staleness_fields(
             closed_session.get("freshness_policy_relaxed")
         )
         fields.update(closed_session)
+        policy_relaxed = bool(closed_session.get("freshness_policy_relaxed"))
         fields["freshness"] = format_freshness_label(
-            data_stale=False,
-            market_status=fields.get("market_status"),
-            market_status_reason=fields.get("market_status_reason"),
+            data_stale=fields.get("data_stale"),
+            market_status=fields.get("market_status") if policy_relaxed else None,
+            market_status_reason=(
+                fields.get("market_status_reason") if policy_relaxed else None
+            ),
             age_seconds=age_seconds,
             item="tick",
         )

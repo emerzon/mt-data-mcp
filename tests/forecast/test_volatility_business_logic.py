@@ -202,14 +202,14 @@ def test_forecast_volatility_general_theta_and_proxy_errors(monkeypatch):
     assert out["success"] is True
     assert out["method"] == "theta"
     assert out["proxy"] == "squared_return"
-    assert out["horizon_sigma_return"] > 0
-    assert out["volatility_per_bar"] == out["sigma_bar_return"]
-    assert out["volatility_horizon"] == out["horizon_sigma_return"]
+    assert out["volatility_horizon"] > 0
     assert "volatility_horizon" in out["volatility_interpretation"]
     expected_bpy = vol._bars_per_year("H1")
-    assert out["sigma_annual_return"] == pytest.approx(out["sigma_bar_return"] * math.sqrt(expected_bpy))
-    assert out["horizon_sigma_annual"] == pytest.approx(
-        out["horizon_sigma_return"] * math.sqrt(expected_bpy / 4)
+    assert out["volatility_annualized"] == pytest.approx(
+        out["volatility_per_bar"] * math.sqrt(expected_bpy)
+    )
+    assert out["volatility_horizon_annualized"] == pytest.approx(
+        out["volatility_horizon"] * math.sqrt(expected_bpy / 4)
     )
 
 
@@ -239,11 +239,20 @@ def test_forecast_volatility_direct_methods_and_short_data(monkeypatch):
     assert "lambda_" in out["params_explained"]
     assert "decay_factor" in out["params_explained"]
     expected_bpy = vol._bars_per_year("H1")
-    assert out["sigma_annual_return"] == pytest.approx(out["sigma_bar_return"] * math.sqrt(expected_bpy))
-    assert out["horizon_sigma_annual"] == pytest.approx(
-        out["horizon_sigma_return"] * math.sqrt(expected_bpy / 5)
+    assert out["volatility_annualized"] == pytest.approx(
+        out["volatility_per_bar"] * math.sqrt(expected_bpy)
     )
-    assert out["horizon_sigma_annual"] == pytest.approx(out["sigma_annual_return"], rel=1e-6)
+    assert out["volatility_horizon_annualized"] == pytest.approx(
+        out["volatility_horizon"] * math.sqrt(expected_bpy / 5)
+    )
+    assert out["volatility_horizon_annualized"] == pytest.approx(
+        out["volatility_annualized"], rel=1e-6
+    )
+    assert out["data_window"]["bars_used"] == 239
+    assert out["data_window"]["returns_used"] == 238
+    assert out["data_window"]["input_bar_policy"] == "closed_bars_only"
+    assert out["data_as_of"] == out["data_window"]["end"]
+    assert out["freshness_basis"] == "bar_policy"
 
     out = vol.forecast_volatility(
         symbol="EURUSD",
@@ -268,6 +277,35 @@ def test_forecast_volatility_direct_methods_and_short_data(monkeypatch):
     monkeypatch.setattr(vol, "_mt5_copy_rates_from", lambda *args, **kwargs: _rates(5))
     out = vol.forecast_volatility(symbol="EURUSD", timeframe="H1", method="ewma")
     assert "Insufficient returns" in out["error"]
+
+
+def test_forecast_volatility_compact_includes_input_window(monkeypatch):
+    monkeypatch.setattr(vol, "TIMEFRAME_MAP", {"H1": 1})
+    monkeypatch.setattr(vol, "TIMEFRAME_SECONDS", {"H1": 3600})
+    monkeypatch.setattr(vol, "_ensure_symbol_ready", lambda _symbol: None)
+    monkeypatch.setattr(vol.mt5, "symbol_info", lambda _symbol: SimpleNamespace(visible=True))
+    monkeypatch.setattr(vol.mt5, "symbol_info_tick", lambda _symbol: SimpleNamespace(time=1_700_100_000))
+    monkeypatch.setattr("mtdata.utils.mt5._mt5_epoch_to_utc", lambda value: float(value))
+    monkeypatch.setattr(vol.mt5, "last_error", lambda: (0, "ok"))
+    monkeypatch.setattr(vol, "_mt5_copy_rates_from", lambda *args, **kwargs: _rates(120))
+
+    out = vol.forecast_volatility(
+        symbol="EURUSD",
+        timeframe="H1",
+        method="ewma",
+        detail="compact",
+    )
+
+    assert out["data_window"] == {
+        "start": "2023-11-14T22:13Z",
+        "end": "2023-11-19T20:13Z",
+        "bars_used": 119,
+        "returns_used": 118,
+        "input_bar_policy": "closed_bars_only",
+    }
+    assert out["data_as_of"] == "2023-11-19T20:13Z"
+    assert out["data_stale"] is True
+    assert out["freshness"].startswith("stale, data ")
 
 
 def test_finalize_volatility_compact_keeps_units_and_pct_aliases():
@@ -359,7 +397,7 @@ def test_forecast_volatility_yang_zhang_weights_overnight_variance(monkeypatch):
     assert out["success"] is True
     assert rs_mean == pytest.approx(0.0)
     assert expected_sigma2 > wrong_sigma2
-    assert out["sigma_bar_return"] == pytest.approx(math.sqrt(expected_sigma2))
+    assert out["volatility_per_bar"] == pytest.approx(math.sqrt(expected_sigma2))
 
 
 def test_forecast_volatility_ensemble_aggregates_component_methods(monkeypatch):
@@ -392,17 +430,20 @@ def test_forecast_volatility_ensemble_aggregates_component_methods(monkeypatch):
     assert ensemble["method"] == "ensemble"
     assert ensemble["params_used"]["methods"] == ["ewma", "rolling_std"]
     assert len(ensemble["components"]) == 2
-    assert ensemble["sigma_bar_return"] == pytest.approx(
-        (float(ewma["sigma_bar_return"]) + float(rolling_std["sigma_bar_return"])) / 2.0
+    assert ensemble["volatility_per_bar"] == pytest.approx(
+        (float(ewma["volatility_per_bar"]) + float(rolling_std["volatility_per_bar"])) / 2.0
     )
-    assert ensemble["horizon_sigma_return"] == pytest.approx(
-        (float(ewma["horizon_sigma_return"]) + float(rolling_std["horizon_sigma_return"])) / 2.0
+    assert ensemble["volatility_horizon"] == pytest.approx(
+        (float(ewma["volatility_horizon"]) + float(rolling_std["volatility_horizon"])) / 2.0
     )
     expected_bpy = vol._bars_per_year("H1")
-    assert ensemble["sigma_annual_return"] == pytest.approx(
-        ensemble["sigma_bar_return"] * math.sqrt(expected_bpy)
+    assert ensemble["volatility_annualized"] == pytest.approx(
+        ensemble["volatility_per_bar"] * math.sqrt(expected_bpy)
     )
-    assert ensemble["horizon_sigma_annual"] == pytest.approx(
-        ensemble["horizon_sigma_return"] * math.sqrt(expected_bpy / 5)
+    assert ensemble["volatility_horizon_annualized"] == pytest.approx(
+        ensemble["volatility_horizon"] * math.sqrt(expected_bpy / 5)
     )
-    assert ensemble["horizon_sigma_annual"] == pytest.approx(ensemble["sigma_annual_return"], rel=1e-6)
+    assert ensemble["volatility_horizon_annualized"] == pytest.approx(
+        ensemble["volatility_annualized"], rel=1e-6
+    )
+    assert ensemble["data_window"] == ewma["data_window"]
