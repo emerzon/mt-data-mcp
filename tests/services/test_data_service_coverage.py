@@ -26,6 +26,7 @@ sys.modules['MetaTrader5'] = _mt5_mock
 import pandas as pd  # noqa: E402
 
 from mtdata.services.data_service import (  # noqa: E402
+    _build_candle_headers,
     _build_candle_freshness_diagnostics,
     _build_no_data_error_with_context,
     _build_rates_df,
@@ -45,6 +46,20 @@ _UTC = timezone.utc
 # Keep default fixture data close to the test run so freshness checks remain stable.
 _NOW = datetime.now(_UTC).replace(second=0, microsecond=0)
 _NOW_TS = _NOW.timestamp()
+
+
+def test_build_candle_headers_tolerates_missing_volume_fields() -> None:
+    rates = [{
+        "time": _NOW_TS,
+        "open": 1.1,
+        "high": 1.2,
+        "low": 1.0,
+        "close": 1.15,
+    }]
+
+    headers = _build_candle_headers(rates, "OHLC")
+
+    assert headers == ["time", "open", "high", "low", "close"]
 
 
 def test_candle_freshness_diagnostics_never_reports_negative_freshness() -> None:

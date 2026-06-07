@@ -1019,8 +1019,21 @@ def _build_candle_headers(
     include_spread: bool = False,
 ) -> List[str]:
     """Build the initial candle header set before transforms add derived columns."""
-    tick_volumes = [int(rate["tick_volume"]) for rate in rates]
-    real_volumes = [int(rate["real_volume"]) for rate in rates]
+    def _volume_values(field: str) -> List[int]:
+        values: List[int] = []
+        for rate in rates:
+            try:
+                value = rate[field]
+            except (IndexError, KeyError, TypeError, ValueError):
+                value = 0
+            try:
+                values.append(int(value))
+            except (TypeError, ValueError, OverflowError):
+                values.append(0)
+        return values
+
+    tick_volumes = _volume_values("tick_volume")
+    real_volumes = _volume_values("real_volume")
 
     has_tick_volume = len(set(tick_volumes)) > 1 or any(value != 0 for value in tick_volumes)
     has_real_volume = len(set(real_volumes)) > 1 or any(value != 0 for value in real_volumes)
