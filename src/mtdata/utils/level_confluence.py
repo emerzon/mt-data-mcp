@@ -544,7 +544,6 @@ def build_level_confluence_payload(
     out: Dict[str, Any] = {
         "success": True,
         "symbol": symbol,
-        "detail": detail_value,
         "reference_price": _round_price(reference),
         "pivot_timeframe": str(pivot_timeframe),
         "sr_timeframe": str(sr_timeframe),
@@ -559,19 +558,20 @@ def build_level_confluence_payload(
             "fraction": tolerance_pct,
             "points": tolerance_points,
         },
-        "units": {
-            "tolerance.price": "price",
-            "tolerance.pct_points": "percentage_points (1.0 = 1%)",
-            "tolerance.fraction": "price_fraction (0.0015 = 0.15%)",
-            "tolerance.points": "broker_points",
-        },
-        "max_distance_pct": max_distance_pct,
-        "min_source_families": min_families,
         "levels": top_clusters,
     }
     if detail_value == "compact":
         out["count"] = len(top_clusters)
     else:
+        out["detail"] = detail_value
+        out["units"] = {
+            "tolerance.price": "price",
+            "tolerance.pct_points": "percentage_points (1.0 = 1%)",
+            "tolerance.fraction": "price_fraction (0.0015 = 0.15%)",
+            "tolerance.points": "broker_points",
+        }
+        out["max_distance_pct"] = max_distance_pct
+        out["min_source_families"] = min_families
         out["level_counts"] = level_counts
     if not top_clusters:
         out["level_scan_note"] = (

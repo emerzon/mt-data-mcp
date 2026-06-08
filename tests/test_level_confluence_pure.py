@@ -89,7 +89,30 @@ def test_confluence_compact_omits_verbose_source_narration():
     assert cluster["source_count"] == 3
     assert payload["tolerance"]["fraction"] == 0.001
     assert "input_pct" not in payload["tolerance"]
+    assert "detail" not in payload
+    assert "units" not in payload
+    assert "max_distance_pct" not in payload
+    assert "min_source_families" not in payload
+
+
+def test_confluence_standard_keeps_units_and_filter_context():
+    payload = build_level_confluence_payload(
+        symbol="EURUSD",
+        pivot_timeframe="D1",
+        sr_timeframe="H1",
+        reference_price=1.08,
+        tolerance_pct=0.001,
+        pivot_methods=[{"method": "classic", "levels": {"PP": 1.0801}}],
+        support_resistance_payload={"levels": []},
+        max_distance_pct=2.0,
+        min_source_families=1,
+        detail="standard",
+    )
+
+    assert payload["detail"] == "standard"
     assert payload["units"]["tolerance.pct_points"] == "percentage_points (1.0 = 1%)"
+    assert payload["max_distance_pct"] == 2.0
+    assert payload["min_source_families"] == 1
 
 
 def test_pivot_original_resistance_below_reference_is_role_below():

@@ -540,7 +540,6 @@ def pivot_compute_points(  # noqa: C901
                     "symbol": symbol,
                     "timeframe": timeframe,
                     "period": payload["period"],
-                    "detail": "compact",
                     "method": (
                         selected_method.get("method")
                         if isinstance(selected_method, dict)
@@ -555,11 +554,6 @@ def pivot_compute_points(  # noqa: C901
                 }
                 if period_note:
                     compact_payload["period_note"] = period_note
-                if isinstance(selected_method, dict):
-                    for key in ("level_set", "method_description", "intended_use"):
-                        value = selected_method.get(key)
-                        if value not in (None, "", [], {}):
-                            compact_payload[key] = value
                 compact_payload["timezone"] = timezone_label
                 degenerate_info = _degenerate_levels_info(compact_payload["levels"])
                 if degenerate_info:
@@ -798,16 +792,17 @@ def confluence_levels(  # noqa: C901
                 )
             else:
                 payload["timezone"] = "UTC"
-            payload["calculation_basis"] = {
-                "pivot_source_bar": f"last completed {pivot_tf} bar",
-                "support_resistance_timeframe": str(sr_payload.get("timeframe") or sr_tf),
-                "reference_price": "latest tick midpoint/last when available, else S/R current price or pivot close",
-                "volume_profile": (
-                    f"{volume_profile_payload.get('source')} source"
-                    if isinstance(volume_profile_payload, dict) and volume_profile_payload.get("success")
-                    else "unavailable"
-                ),
-            }
+            if detail_value != "compact":
+                payload["calculation_basis"] = {
+                    "pivot_source_bar": f"last completed {pivot_tf} bar",
+                    "support_resistance_timeframe": str(sr_payload.get("timeframe") or sr_tf),
+                    "reference_price": "latest tick midpoint/last when available, else S/R current price or pivot close",
+                    "volume_profile": (
+                        f"{volume_profile_payload.get('source')} source"
+                        if isinstance(volume_profile_payload, dict) and volume_profile_payload.get("success")
+                        else "unavailable"
+                    ),
+                }
             warnings = sr_payload.get("warnings")
             if isinstance(warnings, list) and warnings:
                 payload["warnings"] = list(warnings)

@@ -300,18 +300,19 @@ class TestPivotHappyPath:
         r = [_make_rate(time_=100.0), _make_rate(time_=200.0)]
         res = self._run(r)
         assert res["success"] is True
-        assert res["detail"] == "compact"
+        assert "detail" not in res
         assert res["method"] == "classic"
         assert "PP" in res["levels"]
         assert "R1" in res["levels"]
         assert "S1" in res["levels"]
 
-    def test_classic_intended_use_names_timeframe_matched_source(self):
+    def test_compact_omits_static_method_documentation(self):
         r = [_make_rate(time_=100.0), _make_rate(time_=200.0)]
         res = self._run(r)
 
-        assert "last completed source bar" in res["intended_use"]
-        assert "use D1" in res["intended_use"]
+        assert "level_set" not in res
+        assert "method_description" not in res
+        assert "intended_use" not in res
 
     def test_compact_selects_requested_method(self):
         r = [_make_rate(time_=100.0), _make_rate(time_=200.0)]
