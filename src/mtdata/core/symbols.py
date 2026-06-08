@@ -1865,7 +1865,11 @@ def _market_scan_error(
     return out
 
 
-def _market_scan_freshness_summary(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
+def _market_scan_freshness_summary(
+    rows: List[Dict[str, Any]],
+    *,
+    include_stale_symbols: bool = True,
+) -> Dict[str, Any]:
     if not rows:
         return {}
     stale_count = sum(1 for row in rows if bool(row.get("data_stale")))
@@ -1881,7 +1885,7 @@ def _market_scan_freshness_summary(rows: List[Dict[str, Any]]) -> Dict[str, Any]
         "freshness": freshness,
         "stale_rows": int(stale_count),
     }
-    if stale_count:
+    if stale_count and include_stale_symbols:
         out["stale_symbols"] = [
             str(row.get("symbol"))
             for row in rows
@@ -2768,10 +2772,11 @@ def symbols_top_markets(  # noqa: C901
                 returned_count = int(len(rows))
                 fields: Dict[str, Any] = {
                     "requested_limit": int(limit_value),
-                    "returned_count": returned_count,
                     "universe_size": int(len(selected_symbols)),
                     "available_count": available_count,
                 }
+                if detail_mode == "full":
+                    fields["returned_count"] = returned_count
                 if returned_count < int(limit_value):
                     fields["note"] = (
                         f"Requested {int(limit_value)} rows but only "
@@ -2813,7 +2818,12 @@ def symbols_top_markets(  # noqa: C901
                 out.update(scan_meta)
                 out["ranking"] = "lowest_spread"
                 out.update(_scope_fields("spread", spread_rows))
-                out.update(_market_scan_freshness_summary(spread_rows))
+                out.update(
+                    _market_scan_freshness_summary(
+                        spread_rows,
+                        include_stale_symbols=detail_mode == "full",
+                    )
+                )
                 _attach_top_markets_units(out, spread_rows)
                 if detail_mode == "full":
                     out["evaluated_symbols"] = evaluated_counts["spread"]
@@ -2830,7 +2840,12 @@ def symbols_top_markets(  # noqa: C901
                 out.update(scan_meta)
                 out["ranking"] = "highest_volume"
                 out.update(_scope_fields("volume", volume_rows))
-                out.update(_market_scan_freshness_summary(volume_rows))
+                out.update(
+                    _market_scan_freshness_summary(
+                        volume_rows,
+                        include_stale_symbols=detail_mode == "full",
+                    )
+                )
                 _attach_top_markets_units(out, volume_rows)
                 if detail_mode == "full":
                     out["evaluated_symbols"] = evaluated_counts["volume"]
@@ -2851,7 +2866,12 @@ def symbols_top_markets(  # noqa: C901
                     else "highest_price_change_pct"
                 )
                 out.update(_scope_fields("price_change", price_change_rows))
-                out.update(_market_scan_freshness_summary(price_change_rows))
+                out.update(
+                    _market_scan_freshness_summary(
+                        price_change_rows,
+                        include_stale_symbols=detail_mode == "full",
+                    )
+                )
                 _attach_top_markets_units(out, price_change_rows)
                 if detail_mode == "full":
                     out["evaluated_symbols"] = evaluated_counts["price_change"]
@@ -2893,7 +2913,12 @@ def symbols_top_markets(  # noqa: C901
                 "highest_volume": evaluated_counts["volume"],
                 "highest_price_change_pct": evaluated_counts["price_change"],
             }
-            out.update(_market_scan_freshness_summary(all_rows))
+            out.update(
+                _market_scan_freshness_summary(
+                    all_rows,
+                    include_stale_symbols=detail_mode == "full",
+                )
+            )
             if detail_mode == "full":
                 out["scan_stats"] = {
                     "spread": {
@@ -3399,7 +3424,10 @@ def market_scan(  # noqa: C901
                 output_rows,
                 include_columns=detail_mode == "full",
             )
-            freshness_summary = _market_scan_freshness_summary(limited_rows)
+            freshness_summary = _market_scan_freshness_summary(
+                limited_rows,
+                include_stale_symbols=detail_mode == "full",
+            )
             stale_rows = int(freshness_summary.get("stale_rows") or 0)
             message = (
                 f"{int(total_matches)} symbol(s) matched the requested market scan filters."
@@ -3426,7 +3454,6 @@ def market_scan(  # noqa: C901
                 ),
                 "requested_limit": int(limit_value),
                 "offset": int(offset_value),
-                "returned_count": int(table_payload["row_count"]),
                 "total_count": int(total_matches),
                 "has_more": bool(offset_value + table_payload["row_count"] < total_matches),
                 "universe_size": int(len(selected_symbols)),
@@ -3434,13 +3461,17 @@ def market_scan(  # noqa: C901
                     "counts": {
                         "scanned_symbols": int(stats["scanned_symbols"]),
                         "evaluated_symbols": int(stats["evaluated_symbols"]),
-                        "matched_symbols": int(stats["matched_symbols"]),
                         "filtered_out_symbols": int(stats["filtered_out_symbols"]),
                         "skipped_symbols": int(stats["skipped_symbols"]),
                     }
                 },
                 "meta": _market_scan_contract_meta(request=request, stats=stats),
             }
+            if detail_mode == "full":
+                out["returned_count"] = int(table_payload["row_count"])
+                out["summary"]["counts"]["matched_symbols"] = int(
+                    stats["matched_symbols"]
+                )
             out.update(freshness_summary)
             units = _market_scan_units_for_rows(table_payload["rows"])
             if units:

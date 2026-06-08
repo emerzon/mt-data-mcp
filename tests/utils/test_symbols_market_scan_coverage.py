@@ -236,7 +236,7 @@ class TestSymbolsTopMarkets:
         assert result["success"] is True
         assert result["ranking"] == "largest_abs_price_change_pct"
         assert result["requested_limit"] == 1
-        assert result["returned_count"] == 1
+        assert "returned_count" not in result
         assert len(result["data"]) == 1
         assert result["data"][0]["symbol"] == "EURUSD"
         assert result["data"][0]["close"] == 1.045
@@ -331,7 +331,7 @@ class TestSymbolsTopMarkets:
         assert "timeframe_requested" not in result
         assert "query_latency_ms" not in result
         assert result["requested_limit"] == 5
-        assert result["returned_count"] == 2
+        assert "returned_count" not in result
         assert result["universe_size"] == 2
         assert result["available_count"] == 2
         assert "only 2 symbols had usable spread data" in result["note"]
@@ -769,7 +769,7 @@ class TestMarketScan:
         assert result["rank_by"] == "abs_price_change_pct"
         assert result["ranking"] == "largest_abs_price_change_pct"
         assert result["requested_limit"] == 5
-        assert result["returned_count"] == 1
+        assert "returned_count" not in result
         assert result["universe_size"] == 1
         assert result["freshness"] in {
             "fresh",
@@ -881,7 +881,7 @@ class TestMarketScan:
         assert result["data"][0]["symbol"] == "GBPUSD"
         assert result["offset"] == 1
         assert result["requested_limit"] == 1
-        assert result["returned_count"] == 1
+        assert "returned_count" not in result
         assert result["total_count"] == 3
         assert result["has_more"] is True
         assert result["meta"]["request"]["offset"] == 1
@@ -959,6 +959,7 @@ class TestMarketScan:
         assert result["data"][1]["data_stale"] is True
         assert result["freshness"] == "mixed, 1/2 stale"
         assert result["stale_rows"] == 1
+        assert "stale_symbols" not in result
         assert "Returned rows: 1/2 stale." in result["message"]
 
     @patch("mtdata.core.symbols._extract_group_path_util", side_effect=lambda s: s.path)
@@ -994,7 +995,8 @@ class TestMarketScan:
         assert result["success"] is True
         assert result["meta"]["request"]["scope"] == "group"
         assert result["summary"]["counts"]["scanned_symbols"] == 2
-        assert result["summary"]["counts"]["matched_symbols"] == 2
+        assert "matched_symbols" not in result["summary"]["counts"]
+        assert result["total_count"] == 2
         assert result["meta"]["stats"]["scanned_symbols"] == 2
         mock_ready_guard.assert_called_once_with("USDJPY", info_before=hidden_symbol)
 
@@ -1087,7 +1089,8 @@ class TestMarketScan:
 
         assert result["success"] is True
         assert result["summary"]["empty"] is True
-        assert result["summary"]["counts"]["matched_symbols"] == 0
+        assert "matched_symbols" not in result["summary"]["counts"]
+        assert result["total_count"] == 0
         assert result["message"] == "No symbols matched the requested market scan filters."
         assert "no_action" not in result
 
