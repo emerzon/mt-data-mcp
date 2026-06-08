@@ -284,7 +284,13 @@ class TestLabelsTripleBarrier:
         result = _get_raw_fn()("EURUSD", tp_pct=0.5, sl_pct=0.5, horizon=5, detail="compact", lookback=10)
         assert result["success"] is True
         assert "summary" in result
-        assert result["sample_quality_status"] == "low"
+        assert result["summary"]["sample_quality"]["status"] == "low"
+        assert "sample_quality_status" not in result
+        assert "rows_before_labeling" not in result
+        assert "rows_after_labeling" not in result
+        assert "horizon_trimmed" not in result
+        assert "history_bars_requested" not in result["summary"]["sample_quality"]
+        assert "history_bars_used" not in result["summary"]["sample_quality"]
         assert len(result["data"]) <= 10
         assert {"entry_time", "label", "outcome", "holding_bars"}.issubset(
             result["data"][0]
@@ -309,13 +315,12 @@ class TestLabelsTripleBarrier:
 
         assert mock_hist.call_args.args[2] == 62
         assert result["success"] is True
-        assert result["rows_after_labeling"] == 50
+        assert result["labeling_coverage"]["rows_after_labeling"] == 50
         assert result["summary"]["lookback"] == 50
         assert result["history_bars_requested"] == 62
         assert result["history_bars_used"] == 62
         assert result["sample_limit"] == 20
         assert result["sample_size"] == 10
-        assert result["sample_quality_status"] == "ok"
         assert result["summary"]["sample_quality"]["status"] == "ok"
 
     @patch(f"{_LABELS_MOD}._get_pip_size", return_value=0.0001)
@@ -359,8 +364,8 @@ class TestLabelsTripleBarrier:
         )
 
         assert mock_hist.call_args.args[2] == 30
-        assert result["rows_before_labeling"] == 30
-        assert result["rows_after_labeling"] == 25
+        assert result["labeling_coverage"]["rows_before_labeling"] == 30
+        assert result["labeling_coverage"]["rows_after_labeling"] == 25
         assert result["summary"]["lookback"] == 25
         assert result["sample_limit"] == 5
         assert result["sample_size"] == 5

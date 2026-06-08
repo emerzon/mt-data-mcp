@@ -715,6 +715,19 @@ def labels_triple_barrier(
                         )
                     payload["data"] = _sample_rows(sample_indices)
                     for key in (
+                        "rows_before_labeling",
+                        "rows_after_labeling",
+                        "horizon_trimmed",
+                        "sample_quality_status",
+                    ):
+                        payload.pop(key, None)
+                    compact_sample_quality = summary.get("sample_quality")
+                    if isinstance(compact_sample_quality, dict):
+                        compact_sample_quality = dict(compact_sample_quality)
+                        compact_sample_quality.pop("history_bars_requested", None)
+                        compact_sample_quality.pop("history_bars_used", None)
+                        summary["sample_quality"] = compact_sample_quality
+                    for key in (
                         "entries",
                         "labels",
                         "outcomes",
