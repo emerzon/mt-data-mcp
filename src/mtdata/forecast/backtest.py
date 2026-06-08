@@ -125,6 +125,7 @@ def _compact_strategy_backtest_result(result: Dict[str, Any]) -> Dict[str, Any]:
     out = dict(result)
     out.pop("detail", None)
     out.pop("parameters", None)
+    out.pop("warning", None)
 
     summary = out.get("summary")
     if isinstance(summary, dict):
@@ -141,7 +142,33 @@ def _compact_strategy_backtest_result(result: Dict[str, Any]) -> Dict[str, Any]:
                 summary_out.pop("gross_return", None)
         except Exception:
             pass
+        summary_out.pop("metrics_reliability", None)
+        summary_out.pop("trades_observed", None)
         out["summary"] = summary_out
+    metrics = out.get("metrics")
+    if isinstance(metrics, dict):
+        metrics_out = dict(metrics)
+        metrics_out.pop("sample_notice", None)
+        out["metrics"] = metrics_out
+    units = out.get("units")
+    if isinstance(units, dict):
+        present_keys: set[str] = set()
+
+        def _collect_keys(value: Any) -> None:
+            if isinstance(value, dict):
+                for key, nested in value.items():
+                    present_keys.add(str(key))
+                    _collect_keys(nested)
+            elif isinstance(value, list):
+                for nested in value:
+                    _collect_keys(nested)
+
+        _collect_keys({key: value for key, value in out.items() if key != "units"})
+        out["units"] = {
+            key: value
+            for key, value in units.items()
+            if key == "returns" or key in present_keys
+        }
     return out
 
 
