@@ -259,12 +259,19 @@ def _serialize_model_handle(
     return payload
 
 
-def _model_store_state_payload(handle: Any) -> Dict[str, Any]:
+def _model_store_state_payload(
+    handle: Any,
+    *,
+    detail: DetailLevel = "full",
+) -> Dict[str, Any]:
     try:
         store = _get_model_store()
         info = store.describe_model(handle)
     except Exception:
-        return {"model_store_status": "unknown", "model_stored": None}
+        out = {"model_store_status": "unknown"}
+        if detail == "full":
+            out["model_stored"] = None
+        return out
 
     file_count = int(info.get("file_count") or 0)
     expired = bool(info.get("expired")) if info.get("expired") is not None else False
@@ -275,14 +282,17 @@ def _model_store_state_payload(handle: Any) -> Dict[str, Any]:
     else:
         status = "present"
 
-    payload: Dict[str, Any] = {
-        "model_stored": file_count > 0,
-        "model_store_status": status,
-        "model_store_path": info.get("model_dir"),
-        "model_store_file_count": file_count,
-    }
-    if info.get("ttl_seconds") is not None:
-        payload["model_store_ttl_days"] = _days(info.get("ttl_seconds"))
+    payload: Dict[str, Any] = {"model_store_status": status}
+    if detail == "full":
+        payload.update(
+            {
+                "model_stored": file_count > 0,
+                "model_store_path": info.get("model_dir"),
+                "model_store_file_count": file_count,
+            }
+        )
+        if info.get("ttl_seconds") is not None:
+            payload["model_store_ttl_days"] = _days(info.get("ttl_seconds"))
     return payload
 
 
@@ -316,7 +326,12 @@ def _recent_completed_model_tasks(
     return rows
 
 
-def _task_runtime_payload(task: Any, runtime: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+def _task_runtime_payload(
+    task: Any,
+    runtime: Optional[Dict[str, Any]],
+    *,
+    detail: DetailLevel,
+) -> Dict[str, Any]:
     if not isinstance(runtime, dict):
         return {}
     task_id = str(getattr(task, "task_id", "") or "")
@@ -330,18 +345,37 @@ def _task_runtime_payload(task: Any, runtime: Optional[Dict[str, Any]]) -> Dict[
         training_category = None
     if training_category:
         out["training_category"] = training_category
-        out["worker_type"] = "heavy" if training_category == "heavy" else "light"
+        if detail == "full":
+            out["worker_type"] = "heavy" if training_category == "heavy" else "light"
     queue_positions = runtime.get("queue_positions")
     if isinstance(queue_positions, dict) and task_id in queue_positions:
         out["queue_position"] = queue_positions.get(task_id)
     heavy_task_ids = runtime.get("heavy_task_ids")
     if isinstance(heavy_task_ids, list) and task_id in heavy_task_ids:
         out["worker_pool"] = "heavy"
-        out["worker_type"] = "heavy"
+        if detail == "full":
+            out["worker_type"] = "heavy"
     elif getattr(task, "status", None) == "running":
         out["worker_pool"] = "light"
-        out.setdefault("worker_type", "light")
+        if detail == "full":
+            out.setdefault("worker_type", "light")
     return out
+
+
+def _compact_task_runtime(runtime: Dict[str, Any]) -> Dict[str, Any]:
+    workers = runtime.get("workers")
+    queue = runtime.get("queue")
+    queue_out = dict(queue) if isinstance(queue, dict) else queue
+    if isinstance(queue_out, dict):
+        queue_out.pop("status_counts", None)
+    return {
+        key: value
+        for key, value in {
+            "workers": workers,
+            "queue": queue_out,
+        }.items()
+        if value not in (None, {}, [])
+    }
 
 
 def _task_status_payload(
@@ -368,14 +402,20 @@ def _task_status_payload(
     if pid is not None:
         payload["pid"] = pid
 
+    if detail != "full" and payload.get("started_at") == payload.get("created_at"):
+        payload.pop("started_at", None)
+
     if task.progress is not None:
         payload["progress_fraction"] = task.progress.fraction
-        payload["progress"] = _serialize_progress(task.progress, detail=detail)
-    payload.update(_task_runtime_payload(task, runtime))
+        if detail == "full":
+            payload["progress"] = _serialize_progress(task.progress, detail=detail)
+    payload.update(_task_runtime_payload(task, runtime, detail=detail))
 
     if task.status == "completed" and task.result is not None:
         payload["model_id"] = task.result.model_id
-        payload["produced_model_ids"] = [task.result.model_id]
+        payload.update(_model_store_state_payload(task.result, detail=detail))
+        if detail == "full":
+            payload["produced_model_ids"] = [task.result.model_id]
         payload["message"] = (
             f"Training complete. Model stored as '{task.result.model_id}'. "
             "Subsequent forecast_generate calls will use this model automatically."
@@ -430,11 +470,14 @@ def _task_list_item_payload(
         payload["pid"] = pid
     if task.progress is not None:
         payload["progress_fraction"] = task.progress.fraction
-    payload.update(_task_runtime_payload(task, runtime))
+    if detail != "full" and payload.get("started_at") == payload.get("created_at"):
+        payload.pop("started_at", None)
+    payload.update(_task_runtime_payload(task, runtime, detail=detail))
     if task.result is not None:
         payload["model_id"] = task.result.model_id
-        payload["produced_model_ids"] = [task.result.model_id]
-        payload.update(_model_store_state_payload(task.result))
+        payload.update(_model_store_state_payload(task.result, detail=detail))
+        if detail == "full":
+            payload["produced_model_ids"] = [task.result.model_id]
     if task.error:
         payload["error"] = task.error
 
@@ -733,18 +776,30 @@ def forecast_task_list(
             "detail": detail_mode,
             "count": len(items),
             "summary": summary,
-            "filters": {
+            "tasks": items,
+        }
+        filters = {
+            key: value
+            for key, value in {
                 "status_filter": status_filter,
                 "since_minutes": since_minutes,
                 "method": method,
                 "data_scope": data_scope,
-            },
-            "runtime": {
+            }.items()
+            if value is not None
+        }
+        if filters or detail_mode == "full":
+            out["filters"] = filters
+        runtime_out = (
+            {
                 "workers": runtime.get("workers"),
                 "queue": runtime.get("queue"),
-            },
-            "tasks": items,
-        }
+            }
+            if detail_mode == "full"
+            else _compact_task_runtime(runtime)
+        )
+        if runtime_out:
+            out["runtime"] = runtime_out
         if not items:
             if status_filter:
                 out["message"] = f"No forecast tasks matched status_filter={status_filter!r}."

@@ -75,7 +75,8 @@ class TestForecastTaskStatus:
         assert result["created_at"] == "1970-01-01T00:16:40Z"
         assert result["started_at"] == "1970-01-01T00:16:41Z"
         assert result["heartbeat_at"] == "1970-01-01T00:16:42Z"
-        assert result["progress"]["fraction"] == 0.5
+        assert result["progress_fraction"] == 0.5
+        assert "progress" not in result
         assert result["pid"] == 4321
         assert result["cancel_requested"] is False
 
@@ -92,12 +93,27 @@ class TestForecastTaskStatus:
         mock_tm = MagicMock()
         mock_tm.get_status.return_value = _make_task(status="completed", result=handle)
 
-        with patch(_PATCH_TM, return_value=mock_tm):
+        mock_store = MagicMock()
+        mock_store.describe_model.return_value = {
+            "file_count": 2,
+            "expired": False,
+            "model_dir": "C:/models/abc",
+            "ttl_seconds": 604800,
+        }
+
+        with patch(_PATCH_TM, return_value=mock_tm), patch(
+            _PATCH_STORE,
+            return_value=mock_store,
+        ):
             result = _unwrap(forecast_task_status)(ForecastTaskStatusRequest(task_id="task-abc"))
 
         assert result["success"] is True
         assert result["status"] == "completed"
         assert result["model_id"] == "nhits/EURUSD_H1/abc"
+        assert result["model_store_status"] == "present"
+        assert "produced_model_ids" not in result
+        assert "model_stored" not in result
+        assert "model_store_path" not in result
         assert "result" not in result
 
     def test_full_detail_includes_result_metadata(self):
@@ -241,6 +257,10 @@ class TestForecastTaskList:
         ]
         mock_tm = MagicMock()
         mock_tm.list_tasks.return_value = tasks
+        mock_tm.runtime_snapshot.return_value = {
+            "workers": {"active": 1},
+            "queue": {"pending": 0, "status_counts": {"running": 1, "completed": 1}},
+        }
 
         with patch(_PATCH_TM, return_value=mock_tm), patch(
             "src.mtdata.core.forecast_tasks.time.time",
@@ -251,6 +271,8 @@ class TestForecastTaskList:
         assert result["success"] is True
         assert result["count"] == 2
         assert result["summary"] == {"running": 1, "completed": 1}
+        assert "filters" not in result
+        assert "status_counts" not in result["runtime"]["queue"]
         assert result["tasks"][0]["progress_fraction"] == 0.1
         assert result["tasks"][0]["started_at"] == "1970-01-01T00:16:41Z"
         assert result["tasks"][0]["timezone"] == "UTC"
