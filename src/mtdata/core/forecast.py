@@ -26,7 +26,7 @@ from ..forecast.requests import (
     ForecastVolatilityEstimateRequest,
     StrategyBacktestRequest,
 )
-from ..shared.schema import CompactFullDetailLiteral
+from ..shared.schema import CompactFullDetailLiteral, CompactStandardFullDetailLiteral
 from ..utils.barriers import (
     build_barrier_kwargs_from as _build_barrier_kwargs_from,
 )
@@ -888,7 +888,7 @@ def forecast_volatility_estimate(
 
 @mcp.tool()
 def forecast_list_methods(
-    detail: CompactFullDetailLiteral = "compact",  # type: ignore
+    detail: CompactStandardFullDetailLiteral = "compact",
     limit: Optional[int] = None,
     offset: int = 0,
     search_term: Optional[str] = None,
@@ -903,9 +903,10 @@ def forecast_list_methods(
 ) -> Dict[str, Any]:
     """List forecast methods and availability.
 
-    Compact output is the default. Use extras='metadata' to include full
-    parameter docs and supports metadata. The default quickstart profile returns
-    a small native baseline set; use profile='all' for the full catalog.
+    Compact output is the default. Standard adds descriptions, capability
+    details, and related volatility methods; full adds parameter documentation.
+    The default quickstart profile returns a small native baseline set; use
+    profile='all' for the full catalog.
     """
     search_term_value = str(search_term or "").strip() or None
     return _run_forecast_operation(
@@ -1658,7 +1659,7 @@ def _forecast_volatility_methods_section(
 
 def _forecast_list_methods_impl(  # noqa: C901
     *,
-    detail: CompactFullDetailLiteral = "compact",
+    detail: CompactStandardFullDetailLiteral = "compact",
     limit: Optional[int] = None,
     offset: int = 0,
     search: Optional[str] = None,
@@ -1675,6 +1676,10 @@ def _forecast_list_methods_impl(  # noqa: C901
         if not isinstance(data, dict):
             data = {}
         detail_value = str(detail or "compact").strip().lower()
+        if detail_value in {"summary", "summary_only"}:
+            detail_value = "compact"
+        elif detail_value not in {"compact", "standard", "full"}:
+            detail_value = "compact"
         search_value = str(search or "").strip().lower()
         category_filter_value = str(category or "").strip().lower()
         library_value = str(library or "").strip().lower()
@@ -1786,10 +1791,12 @@ def _forecast_list_methods_impl(  # noqa: C901
             "optimizer_only_methods": ["ensemble"],
             "note": "Barrier methods are for forecast_barrier_prob and forecast_barrier_optimize; forecast_generate uses the main forecast method registry.",
         }
-        volatility_methods = _forecast_volatility_methods_section(
-            detail=detail_value,
-            show_unavailable=bool(show_unavailable),
-        )
+        volatility_methods = None
+        if detail_value in {"standard", "full"}:
+            volatility_methods = _forecast_volatility_methods_section(
+                detail=detail_value,
+                show_unavailable=bool(show_unavailable),
+            )
 
         if detail_value == "full":
             if not bool(snapshot.get("methods_valid")):
@@ -1855,7 +1862,8 @@ def _forecast_list_methods_impl(  # noqa: C901
                 "Full view includes trader-facing method metadata and structured params; "
                 "use search_term, library, or limit to narrow large catalogs."
             )
-            out_full["volatility_methods"] = volatility_methods
+            if volatility_methods is not None:
+                out_full["volatility_methods"] = volatility_methods
             out_full["barrier_methods"] = barrier_methods
             return out_full
 
@@ -1886,11 +1894,12 @@ def _forecast_list_methods_impl(  # noqa: C901
                 "method": method_name,
                 "available": available,
             }
-            desc = str(item.get("description") or "").strip()
-            if desc and desc.lower() != method_name.lower():
-                row["description"] = desc.splitlines()[0].strip()
+            if detail_value == "standard":
+                desc = str(item.get("description") or "").strip()
+                if desc and desc.lower() != method_name.lower():
+                    row["description"] = desc.splitlines()[0].strip()
             row["category"] = _item_category(item)
-            if row["category"] in {"statsforecast", "sktime", "mlforecast", "pretrained"}:
+            if detail_value == "standard" and row["category"] in {"statsforecast", "sktime", "mlforecast", "pretrained"}:
                 namespace = item.get("namespace")
                 if isinstance(namespace, str) and namespace.strip():
                     row["namespace"] = namespace
@@ -1899,15 +1908,16 @@ def _forecast_list_methods_impl(  # noqa: C901
                 row["supports_ci"] = bool(supports.get("ci"))
             elif isinstance(item.get("supports_ci"), bool):
                 row["supports_ci"] = bool(item.get("supports_ci"))
-            if row.get("supports_ci") is True:
+            if detail_value == "standard" and row.get("supports_ci") is True:
                 ci_method = _forecast_ci_method(item)
                 if ci_method:
                     row["ci_method"] = ci_method
             if isinstance(item.get("supports_training"), bool):
                 row["supports_training"] = bool(item.get("supports_training"))
-            params = item.get("params")
-            if isinstance(params, list):
-                row["params_count"] = len(params)
+            if detail_value == "standard":
+                params = item.get("params")
+                if isinstance(params, list):
+                    row["params_count"] = len(params)
             requires = item.get("requires")
             if not available and isinstance(requires, list) and requires:
                 req_text = ", ".join(str(req) for req in requires if str(req).strip())
@@ -1963,19 +1973,23 @@ def _forecast_list_methods_impl(  # noqa: C901
             "methods": selected_methods,
             "methods_shown": int(len(selected_methods)),
             "methods_hidden": hidden_count,
-            "volatility_methods": volatility_methods,
         }
+        if detail_value == "standard":
+            out["detail"] = "standard"
+            if volatility_methods is not None:
+                out["volatility_methods"] = volatility_methods
         if profile_methods is not None:
             out["profile"] = profile_value
-            out["profile_note"] = (
-                "Native quickstart methods with no optional package dependency; use profile=all for the full catalog."
-            )
-            out["usage"] = [
-                "mtdata-cli forecast_generate SYMBOL --method theta",
-                "mtdata-cli forecast_generate SYMBOL --method analog",
-                "mtdata-cli forecast_generate SYMBOL --method mc_gbm",
-                "mtdata-cli forecast_volatility_estimate SYMBOL --method ewma",
-            ]
+            if detail_value == "standard":
+                out["profile_note"] = (
+                    "Native quickstart methods with no optional package dependency; use profile=all for the full catalog."
+                )
+                out["usage"] = [
+                    "mtdata-cli forecast_generate SYMBOL --method theta",
+                    "mtdata-cli forecast_generate SYMBOL --method analog",
+                    "mtdata-cli forecast_generate SYMBOL --method mc_gbm",
+                    "mtdata-cli forecast_volatility_estimate SYMBOL --method ewma",
+                ]
         if offset_value:
             out["methods_before"] = int(min(offset_value, len(compact_methods)))
             out["offset"] = int(offset_value)

@@ -1452,8 +1452,8 @@ def test_forecast_list_library_models_and_list_methods(monkeypatch):
     assert compact["methods"][0]["method"] == "theta"
     assert "category_summary" not in compact
     assert "categories" not in compact
-    assert "params_count" in compact["methods"][0]
-    assert compact["methods"][0]["description"] == "Theta model."
+    assert "params_count" not in compact["methods"][0]
+    assert "description" not in compact["methods"][0]
     assert compact["methods"][0]["supports_ci"] is True
     assert compact["methods"][0]["supports_training"] is False
     assert "namespace" not in compact["methods"][0]
@@ -1469,6 +1469,13 @@ def test_forecast_list_library_models_and_list_methods(monkeypatch):
     assert "filters" not in compact
     assert "barrier_methods" not in compact
     assert "note" not in compact
+    assert "volatility_methods" not in compact
+
+    standard = _unwrap(cf.forecast_list_methods)(detail="standard")
+    assert standard["detail"] == "standard"
+    assert standard["methods"][0]["description"] == "Theta model."
+    assert standard["methods"][0]["params_count"] == 1
+    assert "volatility_methods" in standard
 
     compact_all = _unwrap(cf.forecast_list_methods)(show_unavailable=True)
     unavailable_method = next(row for row in compact_all["methods"] if row["available"] is False)
@@ -1627,7 +1634,7 @@ def test_forecast_list_library_models_and_list_methods(monkeypatch):
     assert "Error listing forecast methods" in _unwrap(cf.forecast_list_methods)()["error"]
 
 
-def test_forecast_list_methods_compact_exposes_ci_method(monkeypatch):
+def test_forecast_list_methods_standard_exposes_ci_method(monkeypatch):
     monkeypatch.setattr(
         cf,
         "_get_forecast_methods_data",
@@ -1667,7 +1674,14 @@ def test_forecast_list_methods_compact_exposes_ci_method(monkeypatch):
     )
 
     compact = _unwrap(cf.forecast_list_methods)(supports_ci=True, profile="all")
-    methods = {row["method"]: row for row in compact["methods"]}
+    assert all("ci_method" not in row for row in compact["methods"])
+
+    standard = _unwrap(cf.forecast_list_methods)(
+        detail="standard",
+        supports_ci=True,
+        profile="all",
+    )
+    methods = {row["method"]: row for row in standard["methods"]}
 
     assert set(methods) == {"arima", "mc_gbm"}
     assert methods["arima"]["ci_method"] == "statsmodels_prediction_interval"
@@ -1725,11 +1739,14 @@ def test_forecast_list_library_models_reports_missing_statsforecast(monkeypatch)
     }
 
 
-def test_forecast_list_methods_compact_describes_builtin_methods():
-    compact = _unwrap(cf.forecast_list_methods)(show_unavailable=True)
+def test_forecast_list_methods_standard_describes_builtin_methods():
+    standard = _unwrap(cf.forecast_list_methods)(
+        detail="standard",
+        show_unavailable=True,
+    )
     missing = [
         row["method"]
-        for row in compact["methods"]
+        for row in standard["methods"]
         if not row.get("description")
     ]
 
@@ -1773,12 +1790,15 @@ def test_forecast_list_methods_uses_shared_snapshot(monkeypatch):
         },
     )
 
-    compact = _unwrap(cf.forecast_list_methods)()
-    full = _unwrap(cf.forecast_list_methods)(detail="full")
+    compact = _unwrap(cf.forecast_list_methods)(profile="all")
+    standard = _unwrap(cf.forecast_list_methods)(detail="standard", profile="all")
+    full = _unwrap(cf.forecast_list_methods)(detail="full", profile="all")
 
-    assert compact["methods"][0]["namespace"] == "statsforecast"
+    assert "namespace" not in compact["methods"][0]
     assert compact["methods"][0]["supports_ci"] is True
     assert compact["methods"][0]["supports_training"] is True
+    assert standard["methods"][0]["namespace"] == "statsforecast"
+    assert standard["methods"][0]["description"] == "StatsForecast theta."
     assert full["methods"][0]["method_id"] == "statsforecast:theta"
     assert full["methods"][0]["training_category"] == "moderate"
     assert full["methods"][0]["selector"]["key"] == "model_name"
