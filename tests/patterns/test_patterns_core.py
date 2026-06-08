@@ -143,7 +143,7 @@ def test_patterns_detect_public_default_is_compact_for_classic_mode(monkeypatch)
     assert out["pattern_confidence"] == pytest.approx(0.81)
     assert out["is_signal"] is False
     assert out["usage"] == "information_only"
-    assert out["strongest_pattern"]["name"] == "Ascending Triangle"
+    assert out["top_patterns"][0]["name"] == "Ascending Triangle"
     assert "recent_patterns" not in out
     assert "patterns" not in out
 
@@ -579,7 +579,6 @@ def test_build_pattern_response_compact_detail_returns_summary():
     )
 
     assert compact["n_patterns"] == 2
-    assert compact["strongest_pattern"] == {"name": "B", "confidence": 0.7}
     assert compact["top_patterns"] == [
         {"name": "B", "status": "forming", "confidence": 0.7},
         {"name": "A", "status": "forming", "confidence": 0.5},
@@ -623,13 +622,6 @@ def test_build_pattern_response_compact_keeps_actionable_fields():
     assert compact["pattern_confidence"] == 0.85
     assert compact["review_recommended"] is True
     assert compact["pattern_status"] == "bullish"
-    assert compact["strongest_pattern"] == {
-        "name": "Double Bottom",
-        "direction": "bullish",
-        "confidence": 0.85,
-        "time": "2026-03-02 00:00",
-        "price": 12.0,
-    }
     assert compact["top_patterns"] == [
         {
             "name": "Double Bottom",
@@ -681,13 +673,6 @@ def test_build_pattern_response_compact_keeps_elliott_candidate_context():
     assert "bias" not in compact
     assert compact["pattern_confidence"] == 0.1
     assert "suggested_review" not in compact
-    assert compact["strongest_pattern"] == {
-        "name": "Elliott impulse-like candidate",
-        "confidence": 0.1,
-        "wave_count": 6,
-        "validation_status": "fallback_candidate",
-        "candidate_note": candidate_note,
-    }
     assert compact["top_patterns"] == [
         {
             "name": "Elliott impulse-like candidate",
@@ -695,6 +680,7 @@ def test_build_pattern_response_compact_keeps_elliott_candidate_context():
             "confidence": 0.1,
             "wave_count": 6,
             "candidate_note": candidate_note,
+            "validation_status": "fallback_candidate",
         }
     ]
 
@@ -734,13 +720,7 @@ def test_build_pattern_response_compact_keeps_fractal_breakout_fields():
 
     assert compact["bias"] == "bearish"
     assert compact["suggested_review"] == "short_setup"
-    assert compact["strongest_pattern"] == {
-        "name": "Bullish Fractal",
-        "direction": "bearish",
-        "confidence": 0.82,
-        "time": "2026-03-01 00:00",
-        "price": 9.9,
-    }
+    assert compact["top_patterns"][0]["name"] == "Bullish Fractal"
     assert "recent_patterns" not in compact
 
 
@@ -785,7 +765,7 @@ def test_build_pattern_response_compact_hides_completed_fractal_rows_by_default(
         detail="compact",
     )
 
-    assert compact["strongest_pattern"]["name"] == "Active Fractal"
+    assert compact["top_patterns"][0]["name"] == "Active Fractal"
     assert compact["completed_patterns_hidden"] == 1
 
 
@@ -819,7 +799,8 @@ def test_build_pattern_response_compact_counts_omitted_rows_when_truncated():
 
     assert len(compact["top_patterns"]) == 3
     assert compact["patterns_shown"] == 3
-    assert compact["patterns_omitted"] == 6
+    assert compact["n_patterns"] == 9
+    assert "patterns_omitted" not in compact
     assert compact["pattern_status"] == "conflicting"
     assert compact["review_recommended"] is False
     assert "suggested_review" not in compact

@@ -84,7 +84,7 @@ class TestBuildPatternResponse:
         assert resp["review_recommended"] is False
         assert "suggested_review" not in resp
         assert "bias" not in resp
-        assert resp["strongest_pattern"]["confidence"] == 0.202
+        assert resp["top_patterns"][0]["confidence"] == 0.202
         assert resp["top_patterns"][0]["confidence"] == 0.202
 
     def test_filters_completed(self):

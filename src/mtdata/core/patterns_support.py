@@ -670,14 +670,11 @@ def _compact_patterns_payload(
         "lookback": payload.get("lookback"),
         "mode": payload.get("mode"),
         "n_patterns": total_i,
-        "applied_limit": payload.get("applied_limit"),
-        "applied_top_k": payload.get("applied_top_k"),
         "applied_last_n_bars": payload.get("applied_last_n_bars"),
         "effective_window": payload.get("effective_window"),
     }
     compact = {key: value for key, value in compact.items() if value is not None}
     compact["patterns_shown"] = len(top_patterns)
-    compact["patterns_omitted"] = max(0, total_i - len(top_patterns))
     data_quality = _pattern_data_quality_summary(payload.get("warnings"))
     if data_quality:
         compact["data_quality"] = data_quality
@@ -697,8 +694,15 @@ def _compact_patterns_payload(
             "strength": signal_bias.get("directional_strength"),
             "share": signal_bias.get("dominant_share"),
         }
-    if strongest_compact:
-        compact["strongest_pattern"] = strongest_compact
+    if strongest_compact and top_patterns:
+        top_patterns[0] = {
+            **top_patterns[0],
+            **{
+                key: value
+                for key, value in strongest_compact.items()
+                if key not in top_patterns[0]
+            },
+        }
     if top_patterns:
         compact["top_patterns"] = top_patterns
 

@@ -565,9 +565,9 @@ def test_rule_based_compact_explains_direction_bias() -> None:
     assert current_regime["label"] == "ranging"
     assert current_regime["direction"] == "bearish"
     assert current_regime["window_bias"] == "bearish"
-    assert current_regime["headline"] == "regime=ranging; window_bias=bearish"
-    assert current_regime["state_label_native"] == "ranging"
-    assert current_regime["state_label_canonical"] == "ranging"
+    assert "headline" not in current_regime
+    assert "state_label_native" not in current_regime
+    assert "state_label_canonical" not in current_regime
     assert current_regime["regime_confidence"] == pytest.approx(0.8029)
     assert "state" not in current_regime
     assert "efficiency_ratio" in current_regime

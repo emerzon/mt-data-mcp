@@ -1227,7 +1227,7 @@ def patterns_detect(
     
     top_k : int, optional (default=3)
         Candidate preview budget. Compact output displays up to three
-        `top_patterns` rows and reports `patterns_shown`/`patterns_omitted`;
+        `top_patterns` rows and reports `patterns_shown`;
         use a larger value or `detail="full"` when you need more rows.
 
     last_n_bars : int, optional

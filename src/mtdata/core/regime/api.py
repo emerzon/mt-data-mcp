@@ -2524,6 +2524,12 @@ def regime_detect(  # noqa: C901
                 }
             if output == "compact":
                 compact_current_regime = dict(current_regime)
+                for key in (
+                    "state_label_native",
+                    "state_label_canonical",
+                    "headline",
+                ):
+                    compact_current_regime.pop(key, None)
                 compact_current_regime.update(
                     {
                         "trend_strength": trend_strength_out,
