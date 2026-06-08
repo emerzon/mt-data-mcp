@@ -14,6 +14,7 @@ from mtdata.core.causal import (
     _normalize_correlation_method,
     _normalize_transform_name,
     _pair_transform_comparability,
+    _pair_transform_guidance,
     _parse_symbols,
     _standardize_frame,
     _transform_cointegration_frame,
@@ -59,6 +60,23 @@ def test_pair_transform_comparability_marks_cointegration_level_scope():
 
     assert comparability["comparable_with"] == []
     assert "correlation_matrix(default=log_return)" in comparability["not_comparable_with"]
+
+
+def test_pair_transform_guidance_is_standard_only():
+    assert _pair_transform_guidance(
+        "correlation_matrix",
+        "log_return",
+        detail="compact",
+    ) == {}
+
+    standard = _pair_transform_guidance(
+        "correlation_matrix",
+        "log_return",
+        detail="standard",
+    )
+    assert "transform_reason" in standard
+    assert "comparable_with" in standard
+    assert "not_comparable_with" in standard
 
 
 def test_pair_workflow_related_tools_are_cataloged():

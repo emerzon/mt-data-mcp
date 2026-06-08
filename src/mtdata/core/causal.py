@@ -523,6 +523,20 @@ def _pair_transform_comparability(tool: str, transform: str) -> Dict[str, List[s
     }
 
 
+def _pair_transform_guidance(
+    tool: str,
+    transform: str,
+    *,
+    detail: str,
+) -> Dict[str, Any]:
+    if detail in {"compact", "summary", "summary_only"}:
+        return {}
+    return {
+        "transform_reason": _causal_transform_reason(tool, transform),
+        **_pair_transform_comparability(tool, transform),
+    }
+
+
 def _standardize_frame(frame: pd.DataFrame) -> pd.DataFrame:
     if frame.empty:
         return frame
@@ -1931,13 +1945,10 @@ def causal_discover_signals(  # noqa: C901
             "success": True,
             "result": "links_found" if significant_rows else "no_links_found",
             "transform": transform_value,
-            "transform_reason": _causal_transform_reason(
+            **_pair_transform_guidance(
                 "causal_discover_signals",
                 transform_value,
-            ),
-            **_pair_transform_comparability(
-                "causal_discover_signals",
-                transform_value,
+                detail=requested_detail,
             ),
             "items": output_rows,
             "count": int(len(output_rows)),
@@ -2390,13 +2401,10 @@ def correlation_matrix(  # noqa: C901
         out: Dict[str, Any] = {
             "success": True,
             "transform": transform_value,
-            "transform_reason": _causal_transform_reason(
+            **_pair_transform_guidance(
                 "correlation_matrix",
                 transform_value,
-            ),
-            **_pair_transform_comparability(
-                "correlation_matrix",
-                transform_value,
+                detail=requested_detail,
             ),
             "items": output_rows,
             "count": int(len(output_rows_raw)),
@@ -2870,13 +2878,10 @@ def cointegration_test(  # noqa: C901
         out: Dict[str, Any] = {
             "success": True,
             "transform": transform_value,
-            "transform_reason": _causal_transform_reason(
+            **_pair_transform_guidance(
                 "cointegration_test",
                 transform_value,
-            ),
-            **_pair_transform_comparability(
-                "cointegration_test",
-                transform_value,
+                detail=requested_detail,
             ),
             "items": [_public_pair_row(row) for row in output_rows_raw],
             "count": int(len(output_rows_raw)),
