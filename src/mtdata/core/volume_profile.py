@@ -402,7 +402,16 @@ def _profile_detail_payload(profile: Dict[str, Any], detail: str) -> Dict[str, A
         if detail_value != "full":
             compact_value_area.pop("bucket_indexes", None)
         out["value_area"] = compact_value_area
-    out["detail"] = detail_value
+    if detail_value == "compact":
+        out.pop("levels", None)
+        out.pop("units", None)
+        window = out.get("window")
+        if isinstance(window, dict) and not any(
+            value not in (None, "") for value in window.values()
+        ):
+            out.pop("window", None)
+    else:
+        out["detail"] = detail_value
     if detail_value == "standard":
         out["buckets"] = profile.get("buckets", [])[:50]
         out["bucket_note"] = "First 50 buckets returned; use detail='full' for all buckets."

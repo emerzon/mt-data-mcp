@@ -99,6 +99,9 @@ def test_compute_volume_profile_payload_uses_tick_rows(monkeypatch):
     assert result["source"] == "ticks"
     assert result["poc"]["level"] == "POC"
     assert "buckets" not in result
+    assert "levels" not in result
+    assert "units" not in result
+    assert "detail" not in result
 
 
 def test_compute_volume_profile_payload_auto_ticks_records_reason(monkeypatch):
@@ -136,7 +139,7 @@ def test_compute_volume_profile_payload_auto_ticks_records_reason(monkeypatch):
     )
 
 
-def test_compute_volume_profile_payload_exposes_fetch_freshness_and_units(monkeypatch):
+def test_compute_volume_profile_payload_exposes_fetch_freshness_and_standard_units(monkeypatch):
     monkeypatch.setattr(vp, "create_mt5_gateway", lambda **_: SimpleNamespace(ensure_connection=lambda: None))
     monkeypatch.setattr(
         vp,
@@ -162,6 +165,7 @@ def test_compute_volume_profile_payload_exposes_fetch_freshness_and_units(monkey
         symbol="EURUSD",
         source="ticks",
         bucket_size=0.0001,
+        detail="standard",
     )
 
     assert result["as_of"] == "2026-06-02T12:00:00Z"
@@ -206,7 +210,7 @@ def test_compute_volume_profile_payload_uses_limit_as_tick_cap(monkeypatch):
 
     assert result["success"] is True
     assert result["source"] == "ticks"
-    assert result["window"] == {"start": None, "end": None}
+    assert "window" not in result
     assert captured["limit"] == 5000
     assert captured["start"] is None
     assert captured["end"] is None
