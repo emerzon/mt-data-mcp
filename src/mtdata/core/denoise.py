@@ -10,7 +10,7 @@ from ..utils.denoise import get_denoise_methods_data
 from ._mcp_instance import mcp
 from .error_envelope import build_error_payload
 from .execution_logging import run_logged_operation
-from .output_contract import normalize_output_verbosity_detail
+from .output_contract import normalize_output_detail
 
 logger = logging.getLogger(__name__)
 
@@ -77,7 +77,7 @@ def denoise_list_methods(
     """List denoise methods, optional dependencies, causality support, and auto params."""
 
     def _run() -> Dict[str, Any]:
-        detail_mode = normalize_output_verbosity_detail(detail)
+        detail_mode = normalize_output_detail(detail)
         methods = _filter_denoise_methods(
             _denoise_methods(available_only=available_only),
             causality=causality,
@@ -96,6 +96,26 @@ def denoise_list_methods(
         limit_value = max(1, int(limit or _DENOISE_METHOD_DEFAULT_LIMIT))
         visible = methods[:limit_value]
         hidden = max(0, len(methods) - len(visible))
+        compact_mode = detail_mode != "standard"
+        method_rows = (
+            [
+                {
+                    "method": row.get("method"),
+                    "available": bool(row.get("available", False)),
+                    "causality": list(
+                        row.get("supports", {}).get("causality", [])
+                        if isinstance(row.get("supports"), dict)
+                        else []
+                    ),
+                }
+                for row in visible
+            ]
+            if compact_mode
+            else [_summary_denoise_method(row) for row in visible]
+        )
+        columns = ["method", "available", "causality"]
+        if not compact_mode:
+            columns.extend(["requires", "params"])
         out = {
             "success": True,
             "detail": detail_mode,
@@ -105,10 +125,10 @@ def denoise_list_methods(
             "limit": limit_value,
             "has_more": hidden > 0,
             "methods_hidden": hidden,
-            "columns": ["method", "available", "causality", "requires", "params"],
+            "columns": columns,
             "causality": str(causality).strip().lower() if causality else None,
             "no_extras": bool(no_extras),
-            "methods": [_summary_denoise_method(row) for row in visible],
+            "methods": method_rows,
             "describe_hint": "Use denoise_describe(method) for descriptions and defaults.",
         }
         if hidden > 0:

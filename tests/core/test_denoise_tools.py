@@ -30,18 +30,26 @@ def test_denoise_list_methods_compact_lists_small_catalog_by_default(monkeypatch
     assert result["total"] == 12
     assert result["has_more"] is False
     assert result["methods_hidden"] == 0
-    assert result["columns"] == ["method", "available", "causality", "requires", "params"]
+    assert result["columns"] == ["method", "available", "causality"]
     assert set(result["methods"][0]) == {
+        "method",
+        "available",
+        "causality",
+    }
+    assert result["methods"][0]["causality"] == ["causal"]
+    assert "list_all_hint" not in result
+
+    standard = _raw_list_methods()(detail="standard")
+    assert standard["detail"] == "standard"
+    assert standard["columns"] == [
         "method",
         "available",
         "causality",
         "requires",
         "params",
-    }
-    assert result["methods"][0]["causality"] == ["causal"]
-    assert result["methods"][0]["requires"] == "pkg"
-    assert result["methods"][0]["params"] == ["window", "alpha"]
-    assert "list_all_hint" not in result
+    ]
+    assert standard["methods"][0]["requires"] == "pkg"
+    assert standard["methods"][0]["params"] == ["window", "alpha"]
 
 
 def test_denoise_list_methods_compact_reports_hidden_catalog_hint(monkeypatch):

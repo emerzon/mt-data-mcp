@@ -474,9 +474,7 @@ def indicators_list(
     """
     def _run() -> Dict[str, Any]:
         try:
-            detail_mode = str(detail or "compact").strip().lower()
-            if detail_mode not in {"compact", "full"}:
-                detail_mode = "compact"
+            detail_mode = normalize_output_detail(detail, default="compact")
             detailed = detail_mode == "full"
             items = _list_ta_indicators(detailed=detailed)
             search_active = False
@@ -546,7 +544,7 @@ def indicators_list(
                     ],
                     rows,
                 )
-            else:
+            elif detail_mode == "standard":
                 include_use = bool(search_active or style_q)
                 headers = ["name", "category", "description", "params_count", "params"]
                 if include_use:
@@ -564,6 +562,18 @@ def indicators_list(
                         row.append(_indicator_trading_context(it).get("common_use", ""))
                     rows.append(row)
                 result = _table_from_rows(headers, rows)
+            else:
+                result = _table_from_rows(
+                    ["name", "category", "params_count"],
+                    [
+                        [
+                            it.get("name", ""),
+                            it.get("category", ""),
+                            len(it.get("params") or []),
+                        ]
+                        for it in items
+                    ],
+                )
             result["detail"] = detail_mode
             if style_q:
                 result["trading_style"] = style_q

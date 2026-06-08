@@ -509,11 +509,16 @@ Values above 70 often indicate overbought conditions.
         assert out["success"] is True
         assert out["count"] == 25
         assert out["data"][0]["params_count"] == 1
-        assert out["data"][0]["params"] == "length=14"
+        assert set(out["data"][0]) == {"name", "category", "params_count"}
         assert out["total_count"] == 30
         assert out["more_available"] == 5
         assert out["truncated"] is True
         assert "show_all_hint" not in out
+
+        standard = raw_list(category="momentum", limit=25, detail="standard")
+        assert standard["detail"] == "standard"
+        assert standard["data"][0]["params"] == "length=14"
+        assert "description" in standard["data"][0]
 
     def test_indicators_list_supports_offset_pagination(self, monkeypatch):
         from mtdata.core import indicators as core_indicators
