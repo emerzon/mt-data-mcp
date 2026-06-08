@@ -352,6 +352,20 @@ def _snapshot_summary_payload(sections: Dict[str, Any]) -> Dict[str, Any]:
     return out
 
 
+def _embedded_section_payload(name: str, payload: Any) -> Any:
+    if not isinstance(payload, dict) or payload.get("error"):
+        return payload
+    out = dict(payload)
+    for key in ("symbol", "timeframe", "detail"):
+        out.pop(key, None)
+    if name == "levels":
+        out.pop("mode", None)
+    elif name == "patterns":
+        for key in ("mode", "is_signal", "usage", "calibration"):
+            out.pop(key, None)
+    return out
+
+
 def _call_section(name: str, symbol: str, timeframe: str, horizon: int, detail: str) -> Any:
     try:
         if name == "quote":
@@ -460,13 +474,18 @@ def market_snapshot(
             summary_payload = _snapshot_summary_payload(section_payloads)
             if summary_payload:
                 payload["snapshot"] = summary_payload
+            payload["summary"] = _snapshot_summary(
+                symbol,
+                section_payloads,
+                health.get("failed_sections"),
+            )
         else:
-            payload.update(section_payloads)
-        payload["summary"] = _snapshot_summary(
-            symbol,
-            section_payloads,
-            health.get("failed_sections"),
-        )
+            payload.update(
+                {
+                    name: _embedded_section_payload(name, section_payload)
+                    for name, section_payload in section_payloads.items()
+                }
+            )
         if detail_mode == "full":
             payload["section_notes"] = {
                 "default": "quote,levels,patterns",

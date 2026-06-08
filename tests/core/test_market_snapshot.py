@@ -180,6 +180,46 @@ def test_market_snapshot_compact_defaults_to_lean_snapshot(monkeypatch):
     assert "patterns" not in result
 
 
+def test_market_snapshot_standard_strips_nested_request_echoes(monkeypatch):
+    def fake_call_section(name, symbol, timeframe, horizon, detail):
+        if name == "levels":
+            return {
+                "success": True,
+                "symbol": symbol,
+                "timeframe": timeframe,
+                "detail": "compact",
+                "mode": "single",
+                "levels": [{"value": 1.1}],
+            }
+        if name == "patterns":
+            return {
+                "success": True,
+                "symbol": symbol,
+                "timeframe": timeframe,
+                "mode": "candlestick",
+                "is_signal": False,
+                "usage": "information_only",
+                "calibration": {"note": "static guidance"},
+                "highlights": [],
+            }
+        return {"success": True, "symbol": symbol, "mid": 1.1}
+
+    monkeypatch.setattr(snapshot_mod, "_call_section", fake_call_section)
+
+    result = _raw_market_snapshot(symbol="EURUSD", detail="standard")
+
+    assert result["symbol"] == "EURUSD"
+    assert "summary" not in result
+    assert result["levels"] == {
+        "success": True,
+        "levels": [{"value": 1.1}],
+    }
+    assert result["patterns"] == {
+        "success": True,
+        "highlights": [],
+    }
+
+
 def test_snapshot_patterns_section_requests_recent_candlestick_triggers(monkeypatch):
     captured = {}
 
