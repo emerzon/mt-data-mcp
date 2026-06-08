@@ -652,6 +652,17 @@ def _finalize_volatility_output(
                 )
         except Exception:
             pass
+        if detail_mode == "compact":
+            for key in (
+                "volatility_per_bar_pct",
+                "volatility_annualized_pct",
+                "volatility_horizon_pct",
+                "volatility_horizon_annualized_pct",
+                "volatility_unit_note",
+                "volatility_annualized_note",
+                "horizon_note",
+            ):
+                out.pop(key, None)
         return out
 
     horizon = out.get("horizon")
