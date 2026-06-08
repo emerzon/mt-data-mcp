@@ -105,11 +105,14 @@ def test_strategy_backtest_compact_excludes_request_metadata() -> None:
     assert "resolved_request" not in res_compact, "compact mode should not include 'resolved_request'"
     # But the response should still contain results
     assert res_compact["success"] is True
-    assert res_compact["units"]["drawdown"] == "return_fraction"
+    assert res_compact["units"]["returns"] == "return_fraction"
+    assert "drawdown" not in res_compact["units"]
     assert "summary" in res_compact
     assert "sample_warning" not in res_compact.get("metrics", {})
     if res_compact.get("metrics"):
-        assert res_compact["metrics"]["sample_notice"]["code"] == "annualization_suppressed_low_sample"
+        assert "sample_notice" not in res_compact["metrics"]
+        assert res_compact["metrics"]["metrics_reliability"] == "low"
+        assert res_compact["summary"]["sample_status"] == "insufficient_trades"
         assert "trades_per_year" not in res_compact["metrics"]
 
 
