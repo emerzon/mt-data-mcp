@@ -73,6 +73,16 @@ def test_candle_freshness_diagnostics_never_reports_negative_freshness() -> None
     assert diagnostics["last_bar_within_policy_window"] is True
 
 
+def test_candle_freshness_diagnostics_rounds_machine_age() -> None:
+    diagnostics = _build_candle_freshness_diagnostics(
+        last_bar_epoch=100.0,
+        expected_end_epoch=2495.7353789806366,
+        freshness_cutoff_epoch=50.0,
+    )
+
+    assert diagnostics["data_freshness_seconds"] == 2395.735
+
+
 def test_no_data_context_uses_non_negative_history_position(monkeypatch) -> None:
     calls = []
 

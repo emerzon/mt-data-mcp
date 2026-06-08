@@ -472,7 +472,10 @@ def _build_candle_freshness_diagnostics(
     last_bar_within_policy_window: Optional[bool] = None
 
     if last_epoch is not None and expected_epoch is not None:
-        data_freshness_seconds = max(0.0, float(expected_epoch - last_epoch))
+        data_freshness_seconds = round(
+            max(0.0, float(expected_epoch - last_epoch)),
+            3,
+        )
     if last_epoch is not None and cutoff_epoch is not None:
         last_bar_within_policy_window = bool(last_epoch >= cutoff_epoch)
 
