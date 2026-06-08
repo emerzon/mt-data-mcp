@@ -1321,6 +1321,7 @@ def _forecast_list_library_models_impl(
     supported_libraries = ("native", "statsforecast", "sktime", "pretrained", "mlforecast")
     if lib == "all":
         sections: List[Dict[str, Any]] = []
+        total_catalog_models = 0
         total_models = 0
         total_available = 0
         total_unavailable_hidden = 0
@@ -1340,35 +1341,45 @@ def _forecast_list_library_models_impl(
                     }
                 )
                 continue
+            total_catalog_models += int(section.get("total") or 0)
             total_models += int(section.get("total_filtered") or 0)
             total_available += int(section.get("available") or 0)
             total_unavailable_hidden += int(section.get("unavailable_hidden") or 0)
             section_out = {
                 "library": library_name,
                 "models": section.get("models") or [],
+                "total": section.get("total"),
                 "total_filtered": section.get("total_filtered"),
-                    "available": section.get("available"),
-                    "unavailable": section.get("unavailable"),
-                    "unavailable_hidden": section.get("unavailable_hidden"),
-                    "models_shown": section.get("models_shown"),
-                    "has_more": section.get("has_more"),
-                }
+                "available": section.get("available"),
+                "has_more": section.get("has_more"),
+            }
+            if detail_mode == "full":
+                section_out.update(
+                    {
+                        "unavailable": section.get("unavailable"),
+                        "unavailable_hidden": section.get("unavailable_hidden"),
+                        "models_shown": section.get("models_shown"),
+                    }
+                )
             if detail_mode == "full" and isinstance(section.get("capabilities"), list):
                 section_out["capabilities"] = section.get("capabilities")
             sections.append(section_out)
-        return {
+        out = {
             "library": "all",
             "detail": detail_mode,
             "libraries": sections,
+            "total": total_catalog_models,
             "total_filtered": total_models,
             "available": total_available,
-            "unavailable_hidden": total_unavailable_hidden,
             "filters": {
                 "show_unavailable": bool(show_unavailable),
                 "limit": limit_value,
                 "offset": offset_value,
             },
         }
+        if detail_mode == "full":
+            out["unavailable_hidden"] = total_unavailable_hidden
+        return out
     capabilities_raw = _get_library_forecast_capabilities(
         lib,
         discover_sktime_forecasters=_discover_sktime_forecasters,
@@ -1384,6 +1395,8 @@ def _forecast_list_library_models_impl(
     else:
         capabilities_page = capabilities[offset_value: offset_value + limit_value]
     model_rows = _forecast_library_model_rows(capabilities_page)
+    if detail_mode != "full":
+        model_rows = _compact_forecast_library_model_rows(model_rows, library=lib)
     available_selected = int(
         sum(1 for row in capabilities if not _is_explicit_false(row.get("available")))
     )
@@ -1399,11 +1412,6 @@ def _forecast_list_library_models_impl(
         "total": len(capabilities_all),
         "total_filtered": len(capabilities),
         "available": available_selected,
-        "unavailable": unavailable_selected,
-        "unavailable_hidden": 0 if show_unavailable else unavailable_total,
-        "models_shown": len(model_rows),
-        "available_shown": available_shown,
-        "unavailable_shown": unavailable_shown,
         "has_more": offset_value + len(capabilities_page) < len(capabilities),
         "filters": {
             "show_unavailable": bool(show_unavailable),
@@ -1412,6 +1420,16 @@ def _forecast_list_library_models_impl(
         },
         "detail": detail_mode,
     }
+    if detail_mode == "full":
+        availability_meta.update(
+            {
+                "unavailable": unavailable_selected,
+                "unavailable_hidden": 0 if show_unavailable else unavailable_total,
+                "models_shown": len(model_rows),
+                "available_shown": available_shown,
+                "unavailable_shown": unavailable_shown,
+            }
+        )
 
     def _maybe_add_capabilities(payload: Dict[str, Any]) -> Dict[str, Any]:
         if detail_mode == "full":
@@ -1530,6 +1548,22 @@ def _forecast_method_params(params: Any) -> List[Dict[str, Any]]:
         if row:
             rows.append(row)
     return rows
+
+
+def _compact_forecast_library_model_rows(
+    rows: List[Dict[str, Any]],
+    *,
+    library: str,
+) -> List[Dict[str, Any]]:
+    compact_rows: List[Dict[str, Any]] = []
+    for row in rows:
+        compact = dict(row)
+        if compact.get("model") == compact.get("method"):
+            compact.pop("model", None)
+        if str(compact.get("library") or "").strip().lower() == library:
+            compact.pop("library", None)
+        compact_rows.append(compact)
+    return compact_rows
 
 
 def _forecast_ci_method(item: Dict[str, Any]) -> Optional[str]:

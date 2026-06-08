@@ -1314,7 +1314,7 @@ def test_forecast_list_library_models_and_list_methods(monkeypatch):
     )
 
     raw_list_models = _unwrap(cf.forecast_list_library_models)
-    out_native = raw_list_models("native")
+    out_native = raw_list_models("native", detail="full")
     assert out_native["library"] == "native"
     assert isinstance(out_native["models"], list)
     assert out_native["models"][0]["method"]
@@ -1322,7 +1322,7 @@ def test_forecast_list_library_models_and_list_methods(monkeypatch):
     assert isinstance(out_native["capabilities"], list)
     assert out_native["capabilities"][0]["execution"]["library"] == "native"
 
-    out_stats = raw_list_models("statsforecast")
+    out_stats = raw_list_models("statsforecast", detail="full")
     assert out_stats["library"] == "statsforecast"
     assert any(
         row["method"] == "AutoARIMA" and row["model"] == "AutoARIMA"
@@ -1332,7 +1332,7 @@ def test_forecast_list_library_models_and_list_methods(monkeypatch):
     assert out_stats["capabilities"][0]["execution"]["library"] == "statsforecast"
     assert out_stats["capabilities"][0]["selector"]["key"] == "model_name"
 
-    out_sktime = raw_list_models("sktime")
+    out_sktime = raw_list_models("sktime", detail="full")
     assert [row["model"] for row in out_sktime["models"]] == [
         "NaiveForecaster",
         "ThetaForecaster",
@@ -1340,7 +1340,7 @@ def test_forecast_list_library_models_and_list_methods(monkeypatch):
     assert out_sktime["capabilities"][0]["selector"]["key"] == "estimator"
     assert out_sktime["capabilities"][0]["execution"]["method"] == "sktime"
 
-    out_ml = raw_list_models("mlforecast")
+    out_ml = raw_list_models("mlforecast", detail="full")
     assert out_ml["library"] == "mlforecast"
     assert out_ml["models"][0]["method"] == "mlforecast"
     assert "note" in out_ml
@@ -1375,18 +1375,20 @@ def test_forecast_list_library_models_and_list_methods(monkeypatch):
     )
     out_native_available = raw_list_models("native")
     assert out_native_available["models"] == [
-        {"method": "theta", "available": True, "library": "native"}
+        {"method": "theta", "available": True}
     ]
-    assert out_native_available["unavailable"] == 0
-    assert out_native_available["unavailable_hidden"] == 1
+    assert out_native_available["total"] == 2
+    assert out_native_available["total_filtered"] == 1
+    assert out_native_available["available"] == 1
     assert out_native_available["filters"]["show_unavailable"] is False
     out_native_all = raw_list_models("native", show_unavailable=True)
     assert out_native_all["models"] == [
-        {"method": "theta", "available": True, "library": "native"},
-        {"method": "gt_deepar", "available": False, "library": "native"},
+        {"method": "theta", "available": True},
+        {"method": "gt_deepar", "available": False},
     ]
-    assert out_native_all["unavailable"] == 1
-    assert out_native_all["unavailable_hidden"] == 0
+    assert out_native_all["total"] == 2
+    assert out_native_all["total_filtered"] == 2
+    assert out_native_all["available"] == 1
     assert out_native_all["filters"]["show_unavailable"] is True
 
     monkeypatch.setattr(
@@ -1711,7 +1713,7 @@ def test_forecast_list_library_models_defaults_to_compact_page(monkeypatch):
     )
 
     compact_page = cf._forecast_list_library_models_impl("native")
-    assert compact_page["models_shown"] == 20
+    assert "models_shown" not in compact_page
     assert compact_page["total_filtered"] == 25
     assert compact_page["has_more"] is True
     assert compact_page["filters"]["limit"] == 20
@@ -1719,6 +1721,47 @@ def test_forecast_list_library_models_defaults_to_compact_page(monkeypatch):
     full_page = cf._forecast_list_library_models_impl("native", detail="full")
     assert full_page["models_shown"] == 25
     assert full_page["filters"]["limit"] is None
+
+
+def test_forecast_list_library_models_compact_deduplicates_model_rows(monkeypatch):
+    rows = [
+        {
+            "method": "ARIMA",
+            "display_name": "ARIMA",
+            "available": True,
+            "execution": {"library": "statsforecast"},
+        },
+        {
+            "method": "theta",
+            "display_name": "ThetaForecaster",
+            "available": True,
+            "execution": {"library": "sktime"},
+        },
+    ]
+    monkeypatch.setattr(
+        cf,
+        "_get_library_forecast_capabilities",
+        lambda *_args, **_kwargs: rows,
+    )
+    monkeypatch.setattr(cf, "import_module", lambda _name: ModuleType("statsforecast"))
+
+    compact = cf._forecast_list_library_models_impl(
+        "statsforecast",
+        show_unavailable=True,
+    )
+
+    assert compact["models"] == [
+        {"method": "ARIMA", "available": True},
+        {
+            "method": "theta",
+            "available": True,
+            "model": "ThetaForecaster",
+            "library": "sktime",
+        },
+    ]
+    assert "unavailable" not in compact
+    assert "unavailable_hidden" not in compact
+    assert "models_shown" not in compact
 
 
 def test_forecast_list_library_models_reports_missing_statsforecast(monkeypatch):
@@ -1829,7 +1872,7 @@ def test_forecast_list_library_models_derives_pretrained_models_from_capabilitie
 
     monkeypatch.setattr(cf, "_get_library_forecast_capabilities", fake_get_library_capabilities)
 
-    out = raw_list_models("pretrained")
+    out = raw_list_models("pretrained", detail="full")
 
     assert out["library"] == "pretrained"
     assert out["capabilities"] == pretrained_caps
