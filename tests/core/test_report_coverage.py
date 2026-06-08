@@ -253,6 +253,11 @@ def test_compact_report_payload_omits_duplicate_assessment_blocks():
     )
 
     assert out["overall_assessment"]["partial_sections"] == ["barriers"]
+    assert out["overall_assessment"]["section_health"] == {
+        "ok": 7,
+        "partial": 1,
+        "error": 0,
+    }
     assert out["summary_structured"]["template_focus"] == {"profile": "balanced"}
     assert "executive_summary" not in out
     assert "sections_with_issues" not in out
@@ -283,9 +288,7 @@ def test_compact_report_payload_elevates_barrier_conflicts():
         "existing warning",
         "Barrier EV/edge conflict detected for long and short direction(s).",
     ]
-    assert "Expected value and break-even edge disagree" in (
-        out["summary_structured"]["barriers"]["long"]["trading_note"]
-    )
+    assert "trading_note" not in out["summary_structured"]["barriers"]["long"]
 
 
 def test_report_generate_compact_keeps_actionable_section_summaries():

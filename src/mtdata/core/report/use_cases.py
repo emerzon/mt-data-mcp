@@ -240,29 +240,6 @@ def _attach_report_timezone(report: Dict[str, Any]) -> Dict[str, Any]:
     return out
 
 
-def _add_barrier_conflict_notes(summary_structured: Any) -> Any:
-    if not isinstance(summary_structured, dict):
-        return summary_structured
-    barriers = summary_structured.get("barriers")
-    if not isinstance(barriers, dict):
-        return summary_structured
-
-    changed = False
-    barriers_out: Dict[str, Any] = {}
-    for name, entry in barriers.items():
-        if isinstance(entry, dict) and bool(entry.get("ev_edge_conflict")):
-            entry = dict(entry)
-            entry.setdefault("trading_note", _BARRIER_EV_EDGE_CONFLICT_NOTE)
-            changed = True
-        barriers_out[name] = entry
-    if not changed:
-        return summary_structured
-
-    out = dict(summary_structured)
-    out["barriers"] = barriers_out
-    return out
-
-
 _COMPACT_SUMMARY_STRUCTURED_KEYS = (
     "market",
     "forecast",
@@ -281,6 +258,19 @@ def _compact_summary_structured(value: Any) -> Any:
     out: Dict[str, Any] = {}
     for key in _COMPACT_SUMMARY_STRUCTURED_KEYS:
         section = value.get(key)
+        if key == "barriers" and isinstance(section, dict):
+            barriers: Dict[str, Any] = {}
+            for name, entry in section.items():
+                if not isinstance(entry, dict):
+                    barriers[str(name)] = entry
+                    continue
+                entry_out = dict(entry)
+                entry_out.pop("trading_note", None)
+                if not bool(entry_out.get("ev_edge_conflict")):
+                    entry_out.pop("conflict_reason", None)
+                    entry_out.pop("ev_edge_conflict_reason", None)
+                barriers[str(name)] = entry_out
+            section = barriers
         if section not in (None, "", [], {}):
             out[key] = section
     if not out:
@@ -289,6 +279,18 @@ def _compact_summary_structured(value: Any) -> Any:
     if omitted:
         out["omitted_sections"] = omitted
         out["show_full_hint"] = "Use detail=standard or detail=full for omitted report sections."
+    return out
+
+
+def _compact_report_assessment(value: Any) -> Any:
+    if not isinstance(value, dict):
+        return value
+    out = dict(value)
+    section_health = out.get("section_health")
+    if isinstance(section_health, dict):
+        section_health = dict(section_health)
+        section_health.pop("total", None)
+        out["section_health"] = section_health
     return out
 
 
@@ -337,9 +339,11 @@ def _compact_report_payload(
         compact["completeness"] = completeness
     assessment = report.get("overall_assessment")
     if assessment not in (None, "", [], {}):
-        compact["overall_assessment"] = assessment
+        compact["overall_assessment"] = _compact_report_assessment(assessment)
     elif report.get("executive_summary") not in (None, "", [], {}):
-        compact["executive_summary"] = report.get("executive_summary")
+        compact["executive_summary"] = _compact_report_assessment(
+            report.get("executive_summary")
+        )
     for key in ("section_controls",):
         value = report.get(key)
         if value not in (None, "", [], {}):
@@ -348,7 +352,6 @@ def _compact_report_payload(
         value = report.get(key)
         if value not in (None, "", [], {}):
             if key == "summary_structured":
-                value = _add_barrier_conflict_notes(value)
                 value = _compact_summary_structured(value)
             compact[key] = value
     if "summary_structured" not in compact:
