@@ -404,8 +404,10 @@ def test_forecast_generate_compact_normalizes_utc_times_and_neutral_delta(monkey
             "last_observation_time": "2026-06-02 19:00",
             "forecast_start_time": "2026-06-02 20:00",
             "forecast_start_gap_bars": 1.0,
+            "forecast_start_gap_note": "Static gap explanation.",
             "last_price_age_seconds": 3600,
             "last_price_stale": False,
+            "denoise_applied": False,
             "forecast_time": ["2026-06-02 20:00", "2026-06-02 21:00"],
             "forecast_price": [1.00004, 1.00005],
             "last_price": 1.0,
@@ -433,6 +435,10 @@ def test_forecast_generate_compact_normalizes_utc_times_and_neutral_delta(monkey
         "last_observation_age_seconds": 3600,
         "last_observation_stale": False,
     }
+    assert "forecast_start_gap_bars" not in out
+    assert "forecast_start_gap_note" not in out
+    assert "last_price_stale" not in out
+    assert "denoise_applied" not in out
     assert out["forecast"] == [
         {"time": "2026-06-02T20:00Z", "value": 1.00004},
         {"time": "2026-06-02T21:00Z", "value": 1.00005},

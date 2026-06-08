@@ -786,8 +786,12 @@ def _apply_forecast_generate_detail(
     if freshness:
         compact["freshness"] = freshness
     data_window = _forecast_generate_data_window(payload)
+    stale_nested = False
     if data_window:
         compact["data_window"] = data_window
+        if "last_observation_stale" in data_window:
+            stale_nested = True
+            compact.pop("last_price_stale", None)
     if str(compact.get("quantity") or "").strip().lower() == "return":
         compact["return_unit"] = "return_fraction"
         if isinstance(payload.get("forecast_price"), list):
@@ -838,6 +842,8 @@ def _apply_forecast_generate_detail(
             "forecast_start_epoch",
             "forecast_from",
             "forecast_start_time",
+            "forecast_start_gap_bars",
+            "forecast_start_gap_note",
             "forecast_time",
             "forecast_price",
             "forecast_return",
@@ -867,6 +873,10 @@ def _apply_forecast_generate_detail(
         }:
             continue
         if ci_unavailable and str(key).startswith("ci_"):
+            continue
+        if key == "last_price_stale" and stale_nested:
+            continue
+        if key == "denoise_applied" and value is False:
             continue
         compact[key] = value
     return compact
