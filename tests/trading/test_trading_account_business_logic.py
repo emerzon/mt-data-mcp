@@ -150,9 +150,9 @@ def test_trade_account_info_compact_detail_includes_account_fields_without_diagn
 
     assert out["balance"] == 10000.0
     assert out["profit"] == 50.0
-    assert out["floating_pnl"] == 50.0
-    assert out["pnl_basis"] == "floating_open_positions"
-    assert out["equity_balance_delta"] == 50.0
+    assert "floating_pnl" not in out
+    assert "pnl_basis" not in out
+    assert "equity_balance_delta" not in out
     assert out["margin"] == 100.0
     assert out["margin_free"] == 9950.0
     assert out["leverage"] == 100

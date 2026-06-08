@@ -98,8 +98,10 @@ def test_trade_session_context_compacts_nested_sections_by_default() -> None:
     assert out["state"] == "open_position"
     assert out["state_scope"] == "symbol"
     assert out["account"]["equity"] == 10010.0
-    assert out["account"]["floating_pnl"] == 10.0
-    assert out["account"]["pnl_basis"] == "floating_open_positions"
+    assert out["account"]["profit"] == 10.0
+    assert "floating_pnl" not in out["account"]
+    assert "pnl_basis" not in out["account"]
+    assert "equity_balance_delta" not in out["account"]
     assert "login" not in out["account"]
     assert "account_type" not in out["account"]
     assert "execution_ready" not in out["account"]
