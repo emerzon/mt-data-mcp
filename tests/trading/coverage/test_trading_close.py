@@ -1027,6 +1027,34 @@ class TestClosePositions:
         assert all("consecutive" in r["error"].lower() for r in aborted)
 
     @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_single_ticket_exception_returns_structured_error(self):
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+
+        position = _position(ticket=42, symbol="EURUSD")
+
+        def _positions_get(*args, **kwargs):
+            if kwargs.get("ticket") is not None:
+                return [position]
+            return [position]
+
+        mt5.positions_get.side_effect = _positions_get
+        mt5.symbol_info.return_value = None
+        mt5.last_error.return_value = (10006, "No connection")
+
+        from mtdata.core.trading import _close_positions
+
+        with patch(
+            "mtdata.core.trading.execution._execute_single_close",
+            side_effect=RuntimeError("boom"),
+        ):
+            result = _close_positions(ticket=42)
+
+        assert result["error"] == "boom"
+        assert result["ticket"] == 42
+        assert result["last_error"] == (10006, "No connection")
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
     def test_resets_abort_counter_on_success(self):
         """A successful close resets the consecutive failure counter."""
         mt5 = sys.modules["MetaTrader5"]

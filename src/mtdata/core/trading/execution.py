@@ -1143,6 +1143,8 @@ def _close_positions(  # noqa: C901
         return connection_error
 
     def _close_positions():  # noqa: C901
+        results: list[dict[str, Any]] = []
+        position = None
         try:
             if profit_only and loss_only:
                 return {"error": "profit_only and loss_only cannot both be true."}
@@ -1234,7 +1236,7 @@ def _close_positions(  # noqa: C901
                 )
 
             # 3. Close positions
-            results = []
+            results.clear()
             consecutive_failures = 0
             for position in to_close:
                 # Abort early if consecutive transport/broker failures suggest
@@ -1374,20 +1376,19 @@ def _close_positions(  # noqa: C901
             return bulk_result
 
         except Exception as e:
-            if "results" not in locals():
-                return {"error": str(e)}
-
             error_result: Dict[str, Any] = {"error": str(e)}
-            current_position = locals().get("position")
-            current_ticket = validation._safe_int_ticket(getattr(current_position, "ticket", None))
-            if current_ticket is None and current_position is not None:
-                current_ticket = getattr(current_position, "ticket", None)
+            current_ticket = validation._safe_int_ticket(getattr(position, "ticket", None))
+            if current_ticket is None and position is not None:
+                current_ticket = getattr(position, "ticket", None)
             if current_ticket is not None:
                 error_result["ticket"] = current_ticket
 
             last_error = validation._safe_last_error(mt5)
             if last_error is not None:
                 error_result["last_error"] = last_error
+
+            if not results:
+                return error_result
 
             if current_ticket is None or not any(
                 isinstance(result_item, dict) and result_item.get("ticket") == current_ticket
