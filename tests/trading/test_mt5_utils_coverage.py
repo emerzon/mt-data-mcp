@@ -478,6 +478,48 @@ class TestNormalizeTimesInStruct:
         assert float(result[0]["time_expiration"]) == 0.0
         assert float(result[1]["time_expiration"]) == 3600.0
 
+    @patch("mtdata.utils.mt5.mt5_config")
+    def test_static_offset_fallback_leaves_zero_expiration_unchanged(self, cfg):
+        class _BoomingField:
+            def __init__(self, values):
+                self.values = np.asarray(values, dtype=float)
+
+            def __array__(self, dtype=None):
+                return np.asarray(self.values, dtype=dtype)
+
+            def __gt__(self, other):
+                return self.values > other
+
+            def __getitem__(self, item):
+                return self.values[item]
+
+            def __setitem__(self, key, value):
+                raise TypeError("vectorized write failed")
+
+            def __sub__(self, other):
+                return self.values - other
+
+        class _FakeStructured:
+            def __init__(self):
+                self.dtype = type("DType", (), {"names": ("time_expiration",)})()
+                self.flags = type("Flags", (), {"writeable": True})()
+                self._storage = {"time_expiration": np.array([0.0, 7200.0], dtype=float)}
+
+            def __getitem__(self, key):
+                return _BoomingField(self._storage[key])
+
+            def __setitem__(self, key, value):
+                self._storage[key] = np.asarray(value, dtype=float)
+
+        arr = _FakeStructured()
+        cfg.get_server_tz.return_value = None
+        cfg.get_time_offset_seconds.return_value = 3600
+
+        result = _normalize_times_in_struct(arr)
+
+        assert float(result._storage["time_expiration"][0]) == 0.0
+        assert float(result._storage["time_expiration"][1]) == 3600.0
+
     def test_exception_returns_input(self):
         obj = MagicMock()
         obj.dtype = MagicMock()

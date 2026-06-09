@@ -40,6 +40,8 @@ from datetime import datetime, timedelta, timezone
 from functools import lru_cache
 from typing import Any, Dict, Iterator, Optional, Tuple
 
+import numpy as np
+
 from ..bootstrap.settings import mt5_config
 
 logger = logging.getLogger(__name__)
@@ -424,7 +426,8 @@ def _normalize_times_in_struct(arr: Any):
                                 mask = values > 0
                                 out[field][mask] = values[mask] - shift
                             except Exception:
-                                out[field] = values - shift
+                                mask = values > 0
+                                out[field] = np.where(mask, values - shift, values)
                         except Exception as exc:
                             logger.warning(
                                 "Failed to normalize MT5 timestamp field %s with static offset; leaving raw values unchanged: %s",
