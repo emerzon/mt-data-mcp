@@ -1257,7 +1257,18 @@ def _close_positions(  # noqa: C901
                     fresh_positions = mt5.positions_get(ticket=position.ticket)
                 except Exception:
                     fresh_positions = None
-                if not fresh_positions:
+                if fresh_positions is None:
+                    error_result = {
+                        "ticket": position.ticket,
+                        "error": "Failed to refresh open position before close.",
+                    }
+                    last_error = validation._safe_last_error(mt5)
+                    if last_error is not None:
+                        error_result["last_error"] = last_error
+                    results.append(error_result)
+                    consecutive_failures += 1
+                    continue
+                if len(fresh_positions) == 0:
                     results.append(
                         {
                             "ticket": position.ticket,

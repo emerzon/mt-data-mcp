@@ -1055,6 +1055,30 @@ class TestClosePositions:
         assert result["last_error"] == (10006, "No connection")
 
     @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_refresh_failure_is_not_reported_as_position_closed(self):
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+
+        position = _position(ticket=42, symbol="EURUSD")
+
+        def _positions_get(*args, **kwargs):
+            if kwargs.get("ticket") is not None:
+                raise RuntimeError("transport down")
+            return [position]
+
+        mt5.positions_get.side_effect = _positions_get
+        mt5.last_error.return_value = (10006, "No connection")
+
+        from mtdata.core.trading import _close_positions
+
+        result = _close_positions(symbol="EURUSD")
+
+        row = result["results"][0]
+        assert row["ticket"] == 42
+        assert row["error"] == "Failed to refresh open position before close."
+        assert row["last_error"] == (10006, "No connection")
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
     def test_resets_abort_counter_on_success(self):
         """A successful close resets the consecutive failure counter."""
         mt5 = sys.modules["MetaTrader5"]

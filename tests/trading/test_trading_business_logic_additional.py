@@ -63,13 +63,15 @@ def test_validate_deviation_rejects_negative_and_non_numeric():
 
 def test_trade_done_helpers_use_safe_int_attr_and_cached_codes():
     mt5 = SimpleNamespace(
+        TRADE_RETCODE_PLACED="10008",
         TRADE_RETCODE_DONE=True,
         TRADE_RETCODE_DONE_PARTIAL="10010",
     )
 
     done_codes = _trade_done_codes(mt5)
 
-    assert done_codes == {10009, 10010}
+    assert done_codes == {10008, 10009, 10010}
+    assert _retcode_is_done(mt5, "10008", done_codes) is True
     assert _retcode_is_done(mt5, "10010", done_codes) is True
     assert _retcode_is_done(mt5, 1, done_codes) is False
 

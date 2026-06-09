@@ -277,6 +277,7 @@ def _resolve_position_side(position: Any, mt5: Any) -> Optional[str]:
 
 def _trade_done_codes(mt5: Any) -> set[int]:
     return {
+        _safe_int_attr(mt5, "TRADE_RETCODE_PLACED", 10008),
         _safe_int_attr(mt5, "TRADE_RETCODE_DONE", 10009),
         _safe_int_attr(mt5, "TRADE_RETCODE_DONE_PARTIAL", 10010),
     }

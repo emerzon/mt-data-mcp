@@ -117,6 +117,13 @@ def _comment_row_metadata(comment: Any) -> Dict[str, Any]:
 
 
 def _invalid_comment_error_text(result: Any, last_error: Any) -> Optional[str]:
+    try:
+        retcode = int(getattr(result, "retcode", None))
+    except Exception:
+        retcode = None
+    if retcode in {10008, 10009, 10010}:
+        return None
+
     texts = []
     try:
         result_comment = getattr(result, "comment", None)

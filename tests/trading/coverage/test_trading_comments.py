@@ -42,8 +42,10 @@ sys.modules["MetaTrader5"] = _mt5_stub
 
 from mtdata.core.trading.comments import (
     _comment_row_metadata,
+    _invalid_comment_error_text,
     _normalize_close_trade_comment,
     _normalize_trade_comment,
+    _send_order_with_comment_fallback,
 )
 from mtdata.core.trading.time import (
     _GTC_EXPIRATION_TOKENS,
@@ -133,6 +135,27 @@ class TestNormalizeCloseTradeComment:
         assert numeric_nan_meta == {}
         assert literal_nan_meta["comment_visible_length"] == 3
         assert literal_nan_meta["comment_may_be_truncated"] is False
+
+    def test_successful_retcode_does_not_trigger_comment_retry(self):
+        mt5 = MagicMock()
+        mt5.TRADE_RETCODE_DONE = 10009
+        result = SimpleNamespace(retcode=10009, comment="Done; original comment invalid format")
+        mt5.order_send.return_value = result
+        mt5.last_error.return_value = (0, "")
+
+        returned, fallback, last_error = _send_order_with_comment_fallback(
+            mt5,
+            {"comment": "strategy_EURUSD"},
+        )
+
+        assert returned is result
+        assert fallback is None
+        assert last_error == (0, "")
+        mt5.order_send.assert_called_once()
+
+    def test_invalid_comment_text_ignores_successful_retcode(self):
+        result = SimpleNamespace(retcode=10009, comment="Done; original comment invalid format")
+        assert _invalid_comment_error_text(result, (0, "")) is None
 
 
 # ===================================================================
