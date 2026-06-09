@@ -88,8 +88,8 @@ class TestReconstructPricesFromTarget:
         )
         np.testing.assert_allclose(result, [105.0, 102.0], rtol=1e-6)
 
-    def test_nan_propagation_stops_chain(self):
-        """Once NaN enters, all subsequent values should be NaN."""
+    def test_nan_reuses_last_valid_anchor_for_later_steps(self):
+        """A bad step should stay bad without poisoning later valid steps."""
         history = np.array([100.0])
         forecast = np.array([0.01, float("nan"), 0.02])
         result = _reconstruct_prices_from_target(
@@ -98,7 +98,7 @@ class TestReconstructPricesFromTarget:
         assert result is not None
         assert np.isfinite(result[0])
         assert np.isnan(result[1])
-        assert np.isnan(result[2])  # propagated
+        assert result[2] == pytest.approx(result[0] * np.exp(0.02))
 
     def test_empty_history_returns_none(self):
         result = _reconstruct_prices_from_target(np.array([0.01]), None, None)
@@ -135,8 +135,8 @@ class TestReconstructPricesFromTarget:
         assert np.isnan(result[1])
         assert result[2] == pytest.approx(115.5)
 
-    def test_inf_from_reconstruction_propagates_nan(self):
-        """If a reconstruction step produces inf, subsequent steps get NaN."""
+    def test_inf_from_reconstruction_recovers_from_last_valid_anchor(self):
+        """A non-finite reconstruction step should not poison later valid steps."""
         history = np.array([100.0])
         # Huge value that produces inf via exp
         forecast = np.array([1000.0, 0.01])
@@ -145,4 +145,4 @@ class TestReconstructPricesFromTarget:
         )
         assert result is not None
         assert np.isinf(result[0]) or np.isnan(result[0])
-        assert np.isnan(result[1])  # propagated
+        assert result[1] == pytest.approx(100.0 * np.exp(0.01))

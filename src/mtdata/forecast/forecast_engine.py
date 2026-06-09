@@ -459,13 +459,19 @@ def _reconstruct_prices_from_target(
     anchors = history.astype(float).tolist()
     for value in forecast_arr:
         anchor = anchors[-lag]
+        fallback_anchor = anchor
+        if not np.isfinite(fallback_anchor):
+            fallback_anchor = next(
+                (candidate for candidate in reversed(anchors) if np.isfinite(candidate)),
+                float("nan"),
+            )
         if not (np.isfinite(anchor) and np.isfinite(value)):
             price = float("nan")
         else:
             price = inverse_fn(anchor, float(value))
             if not np.isfinite(price):
                 price = float("nan")
-        anchors.append(price)
+        anchors.append(price if np.isfinite(price) else fallback_anchor)
         reconstructed.append(price)
 
     return np.asarray(reconstructed, dtype=float)
