@@ -1,9 +1,12 @@
 """Tests for forecast training runtime infrastructure."""
 
 import os
+import queue
+import sqlite3
 import threading
 import time
 import unittest
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -12,7 +15,7 @@ import pandas as pd
 from mtdata.forecast.interface import ForecastMethod, ForecastResult, TrainedModelHandle, TrainingProgress, TrainResult
 from mtdata.forecast.job_store import JobRecord, JobStore
 from mtdata.forecast.model_store import ModelStore
-from mtdata.forecast.task_manager import TaskManager, TrainingTask, _snapshot
+from mtdata.forecast.task_manager import TaskManager, TrainingTask, _TrainingSpec, _snapshot
 
 
 def _make_series(n: int = 100) -> pd.Series:
@@ -137,6 +140,38 @@ class TestTaskManagerBasic(_TaskManagerTestCase):
         self.assertTrue(new1)
         self.assertFalse(new2)
         self.assertEqual(tid1, tid2)
+
+    def test_submit_spec_returns_existing_task_after_integrity_race(self):
+        existing = TrainingTask(
+            task_id="winner-task",
+            method="fake",
+            data_scope="EURUSD_H1",
+            params_hash="hash-1",
+        )
+        spec = _TrainingSpec(
+            task_kind="train",
+            method_name="fake",
+            data_scope="EURUSD_H1",
+            params_hash="hash-1",
+            horizon=5,
+            seasonality=1,
+            params={},
+            timeframe="H1",
+        )
+
+        with patch.object(
+            self.tm,
+            "_get_existing_task",
+            side_effect=[None, existing],
+        ), patch.object(
+            self.tm,
+            "_create_task",
+            side_effect=sqlite3.IntegrityError("UNIQUE constraint failed"),
+        ):
+            task_id, is_new = self.tm._submit_spec(spec, training_category="fast")
+
+        self.assertEqual(task_id, "winner-task")
+        self.assertFalse(is_new)
 
     def test_different_params_do_not_dedup(self):
         fake = _FakeMethod(delay=0.2)
@@ -304,6 +339,78 @@ class TestHeavyRuntimeScheduling(_TaskManagerTestCase):
             self.tm.wait_for_status(t2, timeout_seconds=5.0)
 
         self.assertEqual(max_concurrent[0], 1)
+
+    def test_heavy_timeout_discards_late_terminal_events(self):
+        task = self.tm._create_task("heavy", "EURUSD_H1", "hash-1")
+        spec = _TrainingSpec(
+            task_kind="train",
+            method_name="heavy",
+            data_scope="EURUSD_H1",
+            params_hash="hash-1",
+            horizon=5,
+            seasonality=1,
+            params={},
+            timeframe="H1",
+        )
+
+        class _FakeQueue:
+            def __init__(self):
+                self._pending = [{"type": "completed", "heartbeat_at": 2.0, "completed_at": 2.0}]
+
+            def get(self, timeout=None):
+                raise queue.Empty
+
+            def get_nowait(self):
+                if self._pending:
+                    return self._pending.pop(0)
+                raise queue.Empty
+
+            def close(self):
+                return None
+
+        class _FakeProcess:
+            def __init__(self):
+                self.pid = 1234
+                self.exitcode = -15
+                self._alive = True
+
+            def start(self):
+                return None
+
+            def is_alive(self):
+                return self._alive
+
+            def terminate(self):
+                self._alive = False
+
+            def join(self, timeout=None):
+                return None
+
+        fake_queue = _FakeQueue()
+        fake_process = _FakeProcess()
+        fake_context = SimpleNamespace(
+            Queue=lambda: fake_queue,
+            Event=MagicMock(return_value=MagicMock()),
+            Process=MagicMock(return_value=fake_process),
+        )
+
+        with (
+            patch.object(self.tm, "_mp_context", fake_context),
+            patch.object(self.tm, "_cancel_grace_seconds", return_value=0.0),
+            patch("mtdata.forecast.task_manager.time.sleep", return_value=None),
+            patch(
+                "mtdata.forecast.task_manager.time.time",
+                side_effect=[0.0, 0.0, 0.0, 2.0, 2.0, 2.0, 2.0],
+            ),
+            patch.object(self.tm, "_handle_process_event", wraps=self.tm._handle_process_event) as handle_event,
+        ):
+            self.tm._run_heavy_task(task.task_id, spec, timeout_seconds=1.0)
+
+        status = self.tm.get_status(task.task_id)
+        self.assertIsNotNone(status)
+        self.assertEqual(status.status, "failed")
+        self.assertIn("timed out", status.error)
+        handle_event.assert_not_called()
 
 
 class TestTaskManagerShutdown(unittest.TestCase):

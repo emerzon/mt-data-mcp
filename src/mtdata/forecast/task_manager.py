@@ -7,6 +7,7 @@ import logging
 import multiprocessing as mp
 import os
 import queue
+import sqlite3
 import threading
 import time
 import uuid
@@ -497,10 +498,9 @@ class TaskManager:
             data_scope=data_scope,
             params_hash=params_hash,
         )
+        self._persist_task(_snapshot(task))
         with self._lock:
             self._cache_task(task)
-            snapshot = _snapshot(task)
-        self._persist_task(snapshot)
         return task
 
     def _submit_spec(
@@ -516,7 +516,13 @@ class TaskManager:
         if existing is not None:
             return existing.task_id, False
 
-        task = self._create_task(spec.method_name, spec.data_scope, spec.params_hash)
+        try:
+            task = self._create_task(spec.method_name, spec.data_scope, spec.params_hash)
+        except sqlite3.IntegrityError:
+            existing = self._get_existing_task(spec.method_name, spec.data_scope, spec.params_hash)
+            if existing is not None:
+                return existing.task_id, False
+            raise
         timeout_seconds = self._timeout_for_category(training_category)
 
         try:
@@ -805,6 +811,8 @@ class TaskManager:
                             pending_event = event_queue.get_nowait()
                         except queue.Empty:
                             break
+                        if terminal:
+                            continue
                         if isinstance(pending_event, dict):
                             terminal = self._handle_process_event(task_id, spec, pending_event) or terminal
                     if not terminal:
