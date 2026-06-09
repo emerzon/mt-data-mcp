@@ -53,9 +53,6 @@ classifiers = [
 where = ["src"]
 include = ["mtdata*"]
 
-[tool.setuptools.package-data]
-"mtdata.forecast.strategy_samples" = ["*.yaml"]
-
 [project.optional-dependencies]
 forecast-classical = [
     "arch>=8.0.0",
