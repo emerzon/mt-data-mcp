@@ -651,6 +651,7 @@ def _standard_temporal_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     out: Dict[str, Any] = _base_temporal_payload(payload)
     groups = payload.get("groups")
     if isinstance(groups, list) and groups:
+        best = None
         if all(isinstance(row, dict) and "dimension" in row for row in groups):
             standard_groups, best_rows, pagination = _flatten_temporal_dimension_groups(
                 groups,

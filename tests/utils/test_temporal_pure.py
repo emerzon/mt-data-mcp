@@ -847,6 +847,36 @@ class TestTemporalAnalyze:
         assert r["groups"][2]["breakdown"][0]["group"] == 1
         assert r["groups"][2]["breakdown"][0]["group_label"] == "Jan"
 
+    def test_group_by_all_standard_detail_sets_dimension_best_rows(self):
+        from mtdata.core.temporal import _standard_temporal_payload
+
+        payload = {
+            "groups": [
+                {
+                    "dimension": "dow",
+                    "breakdown": [
+                        {"group_label": "Mon", "avg_return": 0.001, "win_rate": 0.55, "win_rate_pct": 55.0},
+                    ],
+                },
+                {
+                    "dimension": "hour",
+                    "breakdown": [
+                        {"group_label": "08:00", "avg_return": 0.003, "win_rate": 0.60, "win_rate_pct": 60.0},
+                    ],
+                },
+            ],
+            "symbol": "EURUSD",
+            "timeframe": "H1",
+            "group_by": "all",
+            "lookback": 500,
+        }
+
+        result = _standard_temporal_payload(payload)
+
+        assert result["group_by"] == "all"
+        assert isinstance(result["best"], list)
+        assert [row["dimension"] for row in result["best"]] == ["dow", "hour"]
+
     @_apply_analyze_patches
     def test_group_by_all_compact_keeps_grouped_breakdowns(self, mock_fetch, *_):
         mock_fetch.return_value = (_make_rates(n=200, start_epoch=1704067200, interval=3600), None)
