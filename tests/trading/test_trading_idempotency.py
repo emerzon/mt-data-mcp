@@ -114,6 +114,41 @@ def test_reserve_waits_for_inflight_request_and_replays_outcome():
     assert duplicate["original_outcome"] == {"success": True}
 
 
+def test_stale_inflight_reservation_expires_and_allows_retry():
+    store = IdempotencyStore(ttl_seconds=0.05)
+    assert store.reserve("key-1", request_signature="sig-1") is None
+
+    second_result: dict[str, object] = {}
+
+    def _reserve_again() -> None:
+        second_result["value"] = store.reserve("key-1", request_signature="sig-1")
+
+    thread = threading.Thread(target=_reserve_again, daemon=True)
+    thread.start()
+    thread.join(timeout=1.0)
+
+    assert not thread.is_alive()
+    assert second_result["value"] is None
+
+
+def test_record_throttles_gc_scans(monkeypatch):
+    store = IdempotencyStore(ttl_seconds=300.0)
+    gc_calls = 0
+    original_gc = store._gc
+
+    def _counted_gc(*, now=None):
+        nonlocal gc_calls
+        gc_calls += 1
+        return original_gc(now=now)
+
+    monkeypatch.setattr(store, "_gc", _counted_gc)
+
+    store.record("one", {"success": True})
+    store.record("two", {"success": True})
+
+    assert gc_calls == 0
+
+
 def test_release_clears_inflight_reservation():
     store = IdempotencyStore()
     assert store.reserve("key-1", request_signature="sig-1") is None

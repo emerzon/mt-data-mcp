@@ -54,6 +54,8 @@ class IdempotencyStore:
         self._ttl = ttl_seconds
         self._entries: Dict[str, _IdempotencyEntry] = {}
         self._lock = threading.Lock()
+        self._gc_interval = min(max(float(ttl_seconds) / 4.0, 0.05), 30.0)
+        self._last_gc_at = time.monotonic()
 
     def check(self, key: Optional[str]) -> Optional[Dict[str, Any]]:
         """Return prior outcome if *key* exists and is not expired; else ``None``."""
@@ -78,6 +80,7 @@ class IdempotencyStore:
         if key is None:
             return None
         while True:
+            wait_timeout = None
             with self._lock:
                 entry = self._entries.get(key)
                 if entry is None:
@@ -105,7 +108,12 @@ class IdempotencyStore:
                 if entry.ready_event.is_set():
                     return _entry_duplicate_payload(entry)
                 wait_event = entry.ready_event
-            wait_event.wait()
+                remaining = self._ttl - (time.monotonic() - entry.created_at)
+                if remaining <= 0:
+                    del self._entries[key]
+                    continue
+                wait_timeout = min(remaining, 1.0)
+            wait_event.wait(timeout=wait_timeout)
 
     def record(
         self,
@@ -117,6 +125,8 @@ class IdempotencyStore:
         """Record *outcome* for *key*.  No-op when key is ``None``."""
         if key is None:
             return
+        should_gc = False
+        now = time.monotonic()
         with self._lock:
             entry = self._entries.get(key)
             if entry is None:
@@ -125,9 +135,11 @@ class IdempotencyStore:
             entry.outcome = outcome
             if request_signature is not None or entry.request_signature is None:
                 entry.request_signature = request_signature
-            entry.created_at = time.monotonic()
+            entry.created_at = now
             entry.ready_event.set()
-            self._gc()
+            should_gc = len(self._entries) > 1 and (now - self._last_gc_at) >= self._gc_interval
+        if should_gc:
+            self._gc(now=now)
 
     def release(self, key: Optional[str], *, request_signature: Optional[str] = None) -> None:
         """Drop an in-progress reservation so another caller can retry it."""
@@ -146,24 +158,27 @@ class IdempotencyStore:
             del self._entries[key]
             entry.ready_event.set()
 
-    def _is_expired(self, entry: _IdempotencyEntry) -> bool:
-        if not entry.ready_event.is_set():
-            return False
-        return (time.monotonic() - entry.created_at) > self._ttl
+    def _is_expired(self, entry: _IdempotencyEntry, *, now: Optional[float] = None) -> bool:
+        observed_now = time.monotonic() if now is None else now
+        return (observed_now - entry.created_at) > self._ttl
 
-    def _gc(self) -> None:
-        """Remove expired entries.  Caller must hold ``_lock``."""
-        expired = [
-            k for k, v in self._entries.items()
-            if self._is_expired(v)
-        ]
-        for k in expired:
-            del self._entries[k]
+    def _gc(self, *, now: Optional[float] = None) -> None:
+        """Remove expired entries."""
+        observed_now = time.monotonic() if now is None else now
+        with self._lock:
+            expired = [
+                k for k, v in self._entries.items()
+                if self._is_expired(v, now=observed_now)
+            ]
+            for k in expired:
+                del self._entries[k]
+            self._last_gc_at = observed_now
 
     def clear(self) -> None:
         """Clear all entries."""
         with self._lock:
             self._entries.clear()
+            self._last_gc_at = time.monotonic()
 
     def __len__(self) -> int:
         with self._lock:
