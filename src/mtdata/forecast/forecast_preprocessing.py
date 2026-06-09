@@ -121,8 +121,7 @@ def _prepare_base_data(df: pd.DataFrame, quantity: str, base_col: str = "close")
         df["__log_return"] = _safe_log_return_series(df[source_col])
         return "__log_return"
     if quantity == "volatility":
-        if "__log_return" not in df.columns:
-            df["__log_return"] = _safe_log_return_series(df[source_col])
+        df["__log_return"] = _safe_log_return_series(df[source_col])
         df["__squared_return"] = df["__log_return"] ** 2
         return "__squared_return"
     return source_col

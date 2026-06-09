@@ -824,6 +824,16 @@ class TestPrepareBaseData:
         assert "__squared_return" in df.columns
         assert "__log_return" in df.columns
 
+    def test_volatility_recomputes_log_return_when_source_column_changes(self):
+        df = self._make_df()
+        _prepare_base_data(df, "volatility", "close")
+        original = df["__log_return"].copy()
+        df["close_dn"] = df["close"] * 1.5
+
+        _prepare_base_data(df, "volatility", "close_dn")
+
+        assert not original.equals(df["__log_return"])
+
     def test_missing_base_col_falls_back(self):
         df = self._make_df()
         col = _prepare_base_data(df, "price", "nonexistent")
