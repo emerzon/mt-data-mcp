@@ -165,9 +165,6 @@ _DEFAULT_SPACES_METHOD_SCOPED: Dict[str, Dict[str, Any]] = {
     "timesfm": {
         "context_length": {"type": "int", "min": 64, "max": 320},
     },
-    "lag_llama": {
-        "context_length": {"type": "int", "min": 64, "max": 320},
-    },
     # Ensemble (not implemented): placeholder
     "ensemble": {},
 }

@@ -1582,7 +1582,7 @@ def _forecast_ci_method(item: Dict[str, Any]) -> Optional[str]:
         return "analog_quantile"
     if category in {"statsforecast", "sktime"}:
         return "provider_prediction_interval"
-    if method_name in {"chronos2", "chronos_bolt", "lag_llama"} or category == "pretrained":
+    if method_name in {"chronos2", "chronos_bolt", "timesfm"} or category == "pretrained":
         return "probabilistic_model_quantile"
     return None
 

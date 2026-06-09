@@ -65,7 +65,6 @@ Price forecasting pipeline: preprocessing → method selection → execution →
 | `neural.py` | — | Neural network models | forecast-foundation |
 | `pretrained.py` | 817 | Chronos, TimesFM | forecast-foundation |
 | `pretrained_helpers.py` | — | Pretrained model utilities | forecast-foundation |
-| `gluonts_extra.py` | 669 | GluonTS/Lag-Llama (excluded on 3.14) | — |
 | `analog.py` | — | Analog/pattern-matching forecast | core |
 | `monte_carlo.py` | — | MC-specific forecast method | core |
 

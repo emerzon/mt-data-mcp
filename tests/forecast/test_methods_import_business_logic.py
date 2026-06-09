@@ -41,6 +41,6 @@ def test_methods_package_no_longer_exposes_pretrained_wrapper_exports(monkeypatc
     methods_pkg = importlib.import_module("mtdata.forecast.methods")
 
     assert methods_pkg.__all__ == []
-    for name in ("forecast_timesfm", "forecast_chronos_bolt", "forecast_lag_llama"):
+    for name in ("forecast_timesfm", "forecast_chronos_bolt"):
         with pytest.raises(AttributeError):
             getattr(methods_pkg, name)

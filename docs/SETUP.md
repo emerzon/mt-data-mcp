@@ -107,7 +107,7 @@ Feature notes:
 - Foundation models:
   - Chronos (`chronos2`, `chronos_bolt`): `chronos-forecasting`, `torch`
   - TimesFM (`timesfm`): `timesfm`, `torch` (install with `pip install -e .[forecast-timesfm]`; Git-backed extra)
-  - Lag-Llama (`lag_llama`): documented for completeness, but not part of the supported Python 3.14 environment because `gluonts`/Lag-Llama are still constrained by upstream compatibility
+  - GluonTS / Lag-Llama are not shipped in mtdata because they are unsupported on the project's Python 3.14 runtime
 - Forecasting libraries: `statsforecast`, `sktime`, `mlforecast` (plus `lightgbm` for GBMs)
 - Volatility (GARCH/ARCH): `arch`
 - Simplification accelerator: `tsdownsample` is included in the full package-index install path (`requirements.txt` / `[all]`) and remains optional for lean installs
@@ -456,4 +456,3 @@ See [TROUBLESHOOTING.md](TROUBLESHOOTING.md) for more issues.
 - [LIMITATIONS.md](LIMITATIONS.md) — Review practical caveats before deeper integrations
 - [FINVIZ.md](FINVIZ.md) — Fundamental data and screening
 - [TEMPORAL.md](TEMPORAL.md) — Session and seasonal analysis
-

@@ -138,49 +138,10 @@ _timesfm_2p5_torch = _make_module("timesfm.timesfm_2p5.timesfm_2p5_torch")
 _timesfm_configs = _make_module("timesfm.configs")
 _timesfm_configs.ForecastConfig = _FakeForecastConfig
 
-# --- lag_llama stubs -------------------------------------------------------
-_lag_llama = _make_module("lag_llama")
-_lag_llama_gluon = _make_module("lag_llama.gluon")
-_lag_llama_gluon_est = _make_module("lag_llama.gluon.estimator")
-
-class _FakeLagLlamaEstimator:
-    def __init__(self, **kw):
-        self._kw = kw
-    def create_lightning_module(self):
-        return MagicMock()
-    def create_transformation(self):
-        return MagicMock()
-    def create_predictor(self, transformation, module):
-        return MagicMock()
-
-_lag_llama_gluon_est.LagLlamaEstimator = _FakeLagLlamaEstimator
-
-# --- huggingface_hub stub --------------------------------------------------
-_hf_hub = _make_module("huggingface_hub")
-_hf_hub.hf_hub_download = MagicMock(return_value="/tmp/fake.ckpt")
-
-# --- gluonts stubs ---------------------------------------------------------
-_gluonts = _make_module("gluonts")
-_gluonts_eval = _make_module("gluonts.evaluation")
-
-class _FakeForecastObj:
-    def __init__(self, h=10):
-        self.mean = np.ones(h)
-        self.samples = np.ones((100, h))
-    def quantile(self, q):
-        return np.ones(10) * q
-
-_gluonts_eval.make_evaluation_predictions = MagicMock(
-    side_effect=lambda **kw: (iter([_FakeForecastObj()]), iter([]))
-)
-_gluonts_dataset = _make_module("gluonts.dataset")
-_gluonts_dataset_common = _make_module("gluonts.dataset.common")
-_gluonts_dataset_common.ListDataset = MagicMock(return_value=[{"target": np.ones(50), "start": pd.Timestamp("2000-01-01")}])
-
 # --- Register all stubs in sys.modules ------------------------------------
 # Stubs are installed at module level for the initial import, then
 # re-installed before each test (via autouse fixture) to survive cleanup
-# by other test modules that share stub keys (e.g., test_gluonts_coverage).
+# by other test modules that share stub keys.
 _TORCH_STUBS = {
     "torch": _torch,
     "torch.cuda": _torch_cuda,
@@ -193,14 +154,6 @@ _NON_TORCH_STUBS = {
     "timesfm.timesfm_2p5": _timesfm_2p5,
     "timesfm.timesfm_2p5.timesfm_2p5_torch": _timesfm_2p5_torch,
     "timesfm.configs": _timesfm_configs,
-    "lag_llama": _lag_llama,
-    "lag_llama.gluon": _lag_llama_gluon,
-    "lag_llama.gluon.estimator": _lag_llama_gluon_est,
-    "huggingface_hub": _hf_hub,
-    "gluonts": _gluonts,
-    "gluonts.evaluation": _gluonts_eval,
-    "gluonts.dataset": _gluonts_dataset,
-    "gluonts.dataset.common": _gluonts_dataset_common,
 }
 
 # Install stubs for the module-level import of pretrained
@@ -214,7 +167,6 @@ from mtdata.forecast.interface import ForecastResult
 import mtdata.forecast.methods.pretrained as pretrained_module
 from mtdata.forecast.methods.pretrained import (
     ChronosBoltMethod,
-    LagLlamaMethod,
     PretrainedMethod,
     TimesFMMethod,
     _extract_chronos2_predict_df_output,
@@ -855,124 +807,9 @@ class TestTimesFMMethod:
             _FakeTimesFMTorch.forecast = orig
 
 
-# ===========================================================================
-# LagLlamaMethod (lines 525-702)
-# ===========================================================================
-
-@pytest.mark.usefixtures("_with_torch_stubs")
-class TestLagLlamaMethod:
-    def setup_method(self):
-        self.method = LagLlamaMethod()
-
-    def test_name(self):
-        assert self.method.name == "lag_llama"
-
-    def test_required_packages(self):
-        pkgs = self.method.required_packages
-        assert "lag-llama" in pkgs
-        assert "gluonts" in pkgs
-
-    def test_forecast_with_ckpt(self):
-        res = self.method.forecast(_series(), horizon=10, seasonality=1, params={"ckpt_path": "/tmp/fake.ckpt"})
-        assert isinstance(res, ForecastResult)
-        assert res.forecast is not None
-
-    def test_forecast_auto_download(self):
-        """Uses huggingface_hub to download when ckpt_path missing."""
-        res = self.method.forecast(_series(), horizon=10, seasonality=1, params={})
-        assert res.forecast is not None
-
-    def test_forecast_custom_hf_repo(self):
-        res = self.method.forecast(_series(), horizon=5, seasonality=1, params={
-            "hf_repo": "my-org/my-model",
-            "hf_filename": "model.ckpt",
-        })
-        assert res.forecast is not None
-
-    def test_forecast_with_quantiles(self):
-        res = self.method.forecast(_series(), horizon=10, seasonality=1, params={
-            "ckpt_path": "/tmp/fake.ckpt",
-            "quantiles": [0.1, 0.5, 0.9],
-        })
-        assert "quantiles" in res.metadata
-
-    def test_forecast_context_length(self):
-        res = self.method.forecast(_series(200), horizon=10, seasonality=1, params={
-            "ckpt_path": "/tmp/fake.ckpt",
-            "context_length": 32,
-        })
-        assert res.params_used["context_length"] == 32
-
-    def test_forecast_num_samples(self):
-        res = self.method.forecast(_series(), horizon=5, seasonality=1, params={
-            "ckpt_path": "/tmp/fake.ckpt",
-            "num_samples": 50,
-        })
-        assert res.params_used["num_samples"] == 50
-
-    def test_forecast_rope_scaling(self):
-        res = self.method.forecast(_series(), horizon=10, seasonality=1, params={
-            "ckpt_path": "/tmp/fake.ckpt",
-            "use_rope_scaling": True,
-            "context_length": 64,
-        })
-        assert res.params_used["use_rope_scaling"] is True
-
-    def test_forecast_device_explicit(self):
-        res = self.method.forecast(_series(), horizon=5, seasonality=1, params={
-            "ckpt_path": "/tmp/fake.ckpt",
-            "device": "cpu",
-        })
-        assert "cpu" in str(res.params_used["device"])
-
-    def test_forecast_freq(self):
-        res = self.method.forecast(_series(), horizon=5, seasonality=1, params={
-            "ckpt_path": "/tmp/fake.ckpt",
-            "freq": "D",
-        })
-        assert res.params_used["freq"] == "D"
-
-    def test_checkpoint_alias(self):
-        res = self.method.forecast(_series(), horizon=5, seasonality=1, params={
-            "checkpoint": "/tmp/fake.ckpt",
-        })
-        assert res.forecast is not None
-
-    def test_model_path_alias(self):
-        res = self.method.forecast(_series(), horizon=5, seasonality=1, params={
-            "model_path": "/tmp/fake.ckpt",
-        })
-        assert res.forecast is not None
-
-    def test_hf_download_failure(self):
-        """When hf_hub_download raises, RuntimeError propagated."""
-        _hf_hub.hf_hub_download.side_effect = OSError("download failed")
-        try:
-            with pytest.raises(RuntimeError, match="auto-download"):
-                self.method.forecast(_series(), horizon=5, seasonality=1, params={})
-        finally:
-            _hf_hub.hf_hub_download.side_effect = None
-            _hf_hub.hf_hub_download.return_value = "/tmp/fake.ckpt"
-
-    def test_short_series_context(self):
-        res = self.method.forecast(_series(5), horizon=3, seasonality=1, params={"ckpt_path": "/tmp/fake.ckpt", "context_length": 100})
-        assert res.forecast is not None
-
-    def test_zero_context_uses_full(self):
-        res = self.method.forecast(_series(20), horizon=5, seasonality=1, params={"ckpt_path": "/tmp/fake.ckpt", "context_length": 0})
-        assert res.forecast is not None
-
-    def test_quantiles_params_used(self):
-        res = self.method.forecast(_series(), horizon=5, seasonality=1, params={
-            "ckpt_path": "/tmp/fake.ckpt",
-            "quantiles": [0.25, 0.75],
-        })
-        assert "quantiles" in res.params_used
-
-
 @pytest.mark.parametrize(
     "name",
-    ["forecast_chronos_bolt", "forecast_timesfm", "forecast_lag_llama"],
+    ["forecast_chronos_bolt", "forecast_timesfm"],
 )
 def test_pretrained_wrapper_functions_removed(name):
     with pytest.raises(AttributeError):
@@ -994,20 +831,6 @@ class TestPretrainedErrorContext:
         assert isinstance(exc_info.value.__cause__, ValueError)
         assert str(exc_info.value.__cause__) == "predict failed"
 
-    def test_lag_llama_forecast_preserves_root_cause(self):
-        original = sys.modules["gluonts.evaluation"].make_evaluation_predictions
-        sys.modules["gluonts.evaluation"].make_evaluation_predictions = MagicMock(
-            side_effect=ValueError("predict failed")
-        )
-        try:
-            method = LagLlamaMethod()
-            with pytest.raises(RuntimeError, match="lag_llama inference error: predict failed") as exc_info:
-                method.forecast(_series(50), 5, 0, {"ckpt_path": "/tmp/fake.ckpt"})
-        finally:
-            sys.modules["gluonts.evaluation"].make_evaluation_predictions = original
-
-        assert isinstance(exc_info.value.__cause__, ValueError)
-        assert str(exc_info.value.__cause__) == "predict failed"
 
 
 def test_stringify_exception_chain_joins_nested_causes():

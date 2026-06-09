@@ -8,7 +8,7 @@ from .forecast_registry import get_forecast_methods_data
 from .interface import ForecastCapabilityDescriptor
 from .forecast_registry import ForecastRegistry
 
-_PRETRAINED_METHODS = {"chronos2", "chronos_bolt", "timesfm", "lag_llama"}
+_PRETRAINED_METHODS = {"chronos2", "chronos_bolt", "timesfm"}
 
 # Meaningful descriptions for StatsForecast models
 _STATSFORECAST_MODEL_DESCRIPTIONS = {

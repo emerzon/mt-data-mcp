@@ -7,7 +7,6 @@ Centralizes method definitions, requirements, and availability checking.
 import importlib as _importlib
 import importlib.metadata as _importlib_metadata
 import importlib.util as _importlib_util
-import sys
 from functools import lru_cache
 from typing import Any, Dict, List, Tuple, Type
 
@@ -106,15 +105,6 @@ METHOD_DESCRIPTIONS: Dict[str, str] = {
     "chronos2": "Chronos-2 pretrained foundation model for probabilistic time-series forecasts.",
     "chronos_bolt": "Chronos Bolt pretrained foundation model for fast time-series forecasts.",
     "timesfm": "TimesFM pretrained foundation model for long-context time-series forecasts.",
-    "lag_llama": "Lag-Llama pretrained probabilistic model for univariate time-series forecasts.",
-    "gt_deepar": "GluonTS DeepAR recurrent probabilistic forecasting model.",
-    "gt_deepnpts": "GluonTS DeepNPTS nonparametric probabilistic forecasting model.",
-    "gt_mqf2": "GluonTS MQF2 multivariate quantile forecasting model.",
-    "gt_npts": "GluonTS NPTS nonparametric probabilistic forecasting model.",
-    "gt_prophet": "GluonTS Prophet adapter for trend and seasonality forecasting.",
-    "gt_sfeedforward": "GluonTS simple feed-forward neural forecasting model.",
-    "gt_tft": "GluonTS Temporal Fusion Transformer forecasting model.",
-    "gt_wavenet": "GluonTS WaveNet sequence model for probabilistic forecasting.",
 }
 
 _FORECAST_METHOD_MODULES = (
@@ -125,23 +115,10 @@ _FORECAST_METHOD_MODULES = (
     "pretrained",
     "neural",
     "sktime",
-    "gluonts_extra",
     "analog",
     "ensemble",
     "monte_carlo",
 )
-_PYTHON_314_PLUS = sys.version_info >= (3, 14)
-_GLUONTS_EXTRA_METHODS = {
-    "gt_deepar",
-    "gt_sfeedforward",
-    "gt_prophet",
-    "gt_tft",
-    "gt_wavenet",
-    "gt_deepnpts",
-    "gt_mqf2",
-    "gt_npts",
-}
-_GLUONTS_PYTHON_RUNTIME_REQUIREMENT = "Python < 3.14 (GluonTS methods are unsupported in this project)"
 _OPTIONAL_FORECAST_METHOD_MODULES = frozenset(
     {
         "statsforecast",
@@ -149,7 +126,6 @@ _OPTIONAL_FORECAST_METHOD_MODULES = frozenset(
         "pretrained",
         "neural",
         "sktime",
-        "gluonts_extra",
     }
 )
 _LOADED_FORECAST_METHOD_MODULES: set[str] = set()
@@ -173,7 +149,6 @@ try:
     _LGB_AVAILABLE = _importlib_util.find_spec("lightgbm") is not None
     _CHRONOS_AVAILABLE = _importlib_util.find_spec("chronos") is not None
     _TIMESFM_AVAILABLE = _importlib_util.find_spec("timesfm") is not None
-    _LAG_LLAMA_AVAILABLE = _importlib_util.find_spec("lag_llama") is not None
     _SKTIME_AVAILABLE = _importlib_util.find_spec("sktime") is not None
 except Exception:
     _NF_AVAILABLE = False
@@ -182,7 +157,6 @@ except Exception:
     _LGB_AVAILABLE = False
     _CHRONOS_AVAILABLE = False
     _TIMESFM_AVAILABLE = False
-    _LAG_LLAMA_AVAILABLE = False
     _SKTIME_AVAILABLE = False
 
 
@@ -352,17 +326,11 @@ def _check_requirements(method: str, requires: List[str]) -> Tuple[bool, List[st
         if not neural_ok:
             available = False
             reqs.extend(neural_reqs)
-    if method == "lag_llama" and not _LAG_LLAMA_AVAILABLE:
-        available = False; reqs.append("lag-llama, gluonts, torch")
     if method == "sktime" and not _SKTIME_AVAILABLE:
         available = False; reqs.append("sktime")
-    if method in _GLUONTS_EXTRA_METHODS and _PYTHON_314_PLUS:
-        available = False
-        reqs.append(_GLUONTS_PYTHON_RUNTIME_REQUIREMENT)
 
     module_name_overrides = {
         "scikit-learn": "sklearn",
-        "lag-llama": "lag_llama",
         "chronos-forecasting": "chronos",
         "chronos-forecasting>=2.0.0": "chronos",
         "python-dotenv": "dotenv",
@@ -443,5 +411,4 @@ __all__ = [
     '_LGB_AVAILABLE',
     '_CHRONOS_AVAILABLE',
     '_TIMESFM_AVAILABLE',
-    '_LAG_LLAMA_AVAILABLE',
 ]

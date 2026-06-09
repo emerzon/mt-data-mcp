@@ -47,7 +47,7 @@ mtdata-cli forecast_list_methods
 ```
 
 Availability is environment-dependent:
-- On the supported Python 3.14 install path, GluonTS `gt_*` methods are unsupported.
+- On the supported Python 3.14 install path, mtdata ships Chronos, Chronos-Bolt, and TimesFM as the supported pretrained foundation-model options.
 - NeuralForecast methods (`nhits`, `tft`, `patchtst`, `nbeatsx`) require a modern Nixtla `neuralforecast` release plus `torch` in a Python/Torch environment supported by that package. On Python 3.14, current NeuralForecast releases may not resolve cleanly.
 - `forecast_list_methods --json` is the source of truth for what your current environment can actually run.
 
@@ -58,8 +58,7 @@ Availability is environment-dependent:
 | **Statistical** | `sf_autoarima`, `sf_autoets`, `sf_autotheta` | Auto-tuning, medium horizons |
 | **ML-Based** | `mlf_lightgbm`, `mlf_rf` | Non-linear patterns, feature engineering |
 | **Neural** | `nhits`, `tft`, `patchtst`, `nbeatsx` | Deep learning, long horizons; manual `neuralforecast` install required |
-| **Foundation** | `chronos2`, `chronos_bolt`, `timesfm`, `lag_llama` | Pretrained models (optional deps) |
-| **GluonTS** | `gt_deepar`, `gt_tft`, `gt_wavenet`, `gt_prophet`, `gt_sfeedforward`, `gt_deepnpts`, `gt_mqf2`, `gt_npts` | Documented for completeness, but unsupported on the project's Python 3.14 runtime |
+| **Foundation** | `chronos2`, `chronos_bolt`, `timesfm` | Pretrained models (optional deps) |
 | **Simulation** | `mc_gbm`, `hmm_mc` | Risk sizing, barrier analysis |
 | **Ensemble** | `ensemble` | Combine multiple models |
 
@@ -155,14 +154,6 @@ mtdata-cli forecast_generate EURUSD --timeframe H1 --horizon 24 \
 
 *Requires: `pip install -e .[forecast-timesfm]`.*
 
-**Lag-Llama** — Foundation model via GluonTS.
-```bash
-mtdata-cli forecast_generate EURUSD --timeframe H1 --horizon 24 \
-  --library pretrained --method lag_llama --params '{"ckpt_path":"C:/path/to/lag-llama.ckpt"}'
-```
-
-*Requires a manual nonstandard setup (`gluonts[torch]` plus Lag-Llama) and is not part of the supported Python 3.14 environment in this project.*
-
 GPU-backed forecast calls run in a short-lived child process by default
 (`MTDATA_FORECAST_PROCESS_ISOLATION=gpu`). This lets the child exit after
 inference so CUDA context memory is returned instead of staying reserved by a
@@ -210,7 +201,7 @@ mtdata supports multiple forecasting libraries. Use `--library` to select:
 | `statsforecast` | Nixtla's fast statistical models | AutoARIMA, AutoETS, Theta |
 | `sktime` | Scikit-learn style time series | Various forecasters |
 | `mlforecast` | ML models with lag features | LightGBM, RandomForest |
-| `pretrained` | Foundation models | Chronos, Chronos-Bolt, TimesFM, Lag-Llama (manual/nonstandard setup only) |
+| `pretrained` | Foundation models | Chronos, Chronos-Bolt, TimesFM |
 
 **List models in a library:**
 ```bash

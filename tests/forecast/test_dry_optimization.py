@@ -22,7 +22,7 @@ def compare_function_signatures():
     # Import both modules
     from mtdata.forecast.methods import pretrained, pretrained_refactored
     
-    functions_to_check = ['forecast_chronos_bolt', 'forecast_timesfm', 'forecast_moirai', 'forecast_lag_llama']
+    functions_to_check = ['forecast_chronos_bolt', 'forecast_timesfm', 'forecast_moirai']
     
     for func_name in functions_to_check:
         original_func = getattr(pretrained, func_name, None)

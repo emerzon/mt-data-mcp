@@ -132,12 +132,10 @@ pip install statsforecast              # For StatsForecast models
 pip install arch                       # For GARCH
 pip install statsmodels                # For ARIMA/ETS + causal_discover_signals
 pip install umap-learn                 # For UMAP dimred (Web UI / analysis)
-pip install gluonts[torch]             # For Lag-Llama (manual/nonstandard)
 pip install QuantLib                   # For barrier option pricing & Heston calibration
 pip install optuna                     # For Bayesian hyperparameter tuning
 pip install neuralforecast torch       # For neural models; may not resolve on Windows Python 3.14
 pip install -e .[forecast-timesfm]     # From the repo root; installs the TimesFM Git-backed extra
-# Lag-Llama may require a separate Python env due to upstream pins (see `requirements.txt`).
 ```
 
 ### "Import error" or "Module not found"
@@ -438,4 +436,3 @@ These models require PyTorch and a NeuralForecast dependency stack compatible wi
 - [GLOSSARY.md](GLOSSARY.md) — Term definitions
 - [FINVIZ.md](FINVIZ.md) — Finviz fundamental data reference
 - [OPTIONS_QUANTLIB.md](OPTIONS_QUANTLIB.md) — Options & QuantLib tools
-

@@ -31,7 +31,7 @@ def _method_family(value: Any) -> Optional[str]:
     normalized = _normalize_method_text(value)
     if not normalized:
         return None
-    for prefix in ("chronos", "timesfm", "lag_llama", "sf_", "skt_", "mlf_"):
+    for prefix in ("chronos", "timesfm", "sf_", "skt_", "mlf_"):
         if normalized.startswith(prefix):
             return prefix.rstrip("_")
     return None

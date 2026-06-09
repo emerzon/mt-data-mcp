@@ -194,8 +194,7 @@ export function useSupportResistance(symbol: string, timeframe: string, limit: n
 
 const DIMRED_METHODS = new Set([
   'mlf_rf', 'mlf_lightgbm', 'nhits', 'nbeatsx', 'tft', 'patchtst',
-  'chronos_bolt', 'timesfm', 'lag_llama', 'gt_deepar', 'gt_sfeedforward',
-  'gt_prophet', 'gt_tft', 'gt_wavenet', 'gt_deepnpts', 'gt_mqf2', 'gt_npts', 'ensemble',
+  'chronos_bolt', 'timesfm', 'ensemble',
 ])
 
 export type ForecastSettings = {

@@ -148,14 +148,11 @@ Foundation models pre-trained on large time series datasets.
 On the supported Python 3.14 install path:
 - `chronos2` and `chronos_bolt` are part of the package-index install path
 - `timesfm` remains a Git-backed extra
-- `lag_llama` is documented for completeness, but not part of the supported environment
 
 ```bash
 mtdata-cli forecast_generate EURUSD --library pretrained --method chronos2    
 mtdata-cli forecast_generate EURUSD --library pretrained --method chronos_bolt
 mtdata-cli forecast_generate EURUSD --library pretrained --method timesfm
-mtdata-cli forecast_generate EURUSD --library pretrained --method lag_llama \
-  --params '{"ckpt_path":"C:/path/to/lag-llama.ckpt"}'
 ```
 
 Tip: `mtdata-cli forecast_list_library_models pretrained` shows requirements for your current environment.
@@ -163,13 +160,11 @@ Tip: `mtdata-cli forecast_list_library_models pretrained` shows requirements for
 **Dependencies (by model):**
 - `chronos2` / `chronos_bolt`: `chronos-forecasting`, `torch`
 - `timesfm`: `timesfm`, `torch` (install with `pip install -e .[forecast-timesfm]`)
-- `lag_llama`: `lag-llama`, `gluonts[torch]`, `torch` (manual/nonstandard setup only; unsupported on the project's Python 3.14 runtime)
 
 **Parameters:**
 - Common: `context_length`, `quantiles`
 - Chronos: `model_name`, `device_map`
 - TimesFM: `device`, `model_class`
-- Lag-Llama: `ckpt_path` (or `hf_repo`/`hf_filename` for auto-download), `num_samples`, `device`, `freq`
 
 ### sktime (`--library sktime`)
 
@@ -229,7 +224,6 @@ mtdata-cli forecast_generate EURUSD --library mlforecast --method LGBMRegressor
 | `chronos2` | Amazon Chronos-II | `context_length=512` |
 | `chronos_bolt` | Fast Chronos variant | `context_length=256` |
 | `timesfm` | TimesFM (foundation model adapter) | `context_length=512` |
-| `lag_llama` | Lag-Llama via GluonTS (manual/nonstandard setup only) | `context_length=32 num_samples=100` |
 
 ---
 
@@ -325,4 +319,3 @@ mtdata-cli forecast_generate EURUSD --timeframe H1 --horizon 12 \
 - [../DENOISING.md](../DENOISING.md) — Preprocessing
 - [VOLATILITY.md](VOLATILITY.md) — Volatility forecasting
 - [UNCERTAINTY.md](UNCERTAINTY.md) — Confidence intervals
-

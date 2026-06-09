@@ -65,7 +65,7 @@ _TUNING_METRICS = frozenset(
     }
 )
 _VOLATILITY_PROXY_METHODS = {"arima", "sarima", "ets", "theta"}
-_PRETRAINED_FORECAST_METHODS = ("chronos2", "chronos_bolt", "timesfm", "lag_llama")
+_PRETRAINED_FORECAST_METHODS = ("chronos2", "chronos_bolt", "timesfm")
 _DEFAULT_VOLATILITY_PROXY = "squared_return"
 _FORECAST_DIRECTION_NEUTRAL_THRESHOLD_PCT = 0.01
 

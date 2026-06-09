@@ -71,16 +71,6 @@ def test_check_requirements_marks_chronos_unavailable_on_runtime_mismatch(monkey
     assert "chronos-forecasting>=2.0.0" in reqs
 
 
-def test_check_requirements_marks_gluonts_extra_methods_unsupported_on_python_314(monkeypatch):
-    monkeypatch.setattr(fr, "_PYTHON_314_PLUS", True)
-    monkeypatch.setattr(fr._importlib_util, "find_spec", lambda _name: object())
-
-    available, reqs = fr._check_requirements("gt_deepar", ["gluonts", "torch"])
-
-    assert available is False
-    assert fr._GLUONTS_PYTHON_RUNTIME_REQUIREMENT in reqs
-
-
 def test_registry_get_method_info_loads_methods_on_demand():
     info = fr.ForecastRegistry.get_method_info("mlf_lightgbm")
 
@@ -93,12 +83,12 @@ def test_ensure_registry_loaded_continues_after_one_module_import_failure(monkey
 
     def fake_import(name):
         imported.append(name)
-        if name.endswith(".gluonts_extra"):
+        if name.endswith(".sktime"):
             raise ImportError("unsupported runtime")
         return object()
 
-    monkeypatch.setattr(fr, "_FORECAST_METHOD_MODULES", ("classical", "gluonts_extra", "analog"))
-    monkeypatch.setattr(fr, "_OPTIONAL_FORECAST_METHOD_MODULES", frozenset({"gluonts_extra"}))
+    monkeypatch.setattr(fr, "_FORECAST_METHOD_MODULES", ("classical", "sktime", "analog"))
+    monkeypatch.setattr(fr, "_OPTIONAL_FORECAST_METHOD_MODULES", frozenset({"sktime"}))
     monkeypatch.setattr(fr, "_LOADED_FORECAST_METHOD_MODULES", set())
     monkeypatch.setattr(fr, "_FAILED_OPTIONAL_FORECAST_MODULES", {})
     monkeypatch.setattr(fr._importlib, "import_module", fake_import)
@@ -107,11 +97,11 @@ def test_ensure_registry_loaded_continues_after_one_module_import_failure(monkey
 
     assert imported == [
         "mtdata.forecast.methods.classical",
-        "mtdata.forecast.methods.gluonts_extra",
+        "mtdata.forecast.methods.sktime",
         "mtdata.forecast.methods.analog",
     ]
     assert fr._LOADED_FORECAST_METHOD_MODULES == {"classical", "analog"}
-    assert fr._FAILED_OPTIONAL_FORECAST_MODULES == {"gluonts_extra": "unsupported runtime"}
+    assert fr._FAILED_OPTIONAL_FORECAST_MODULES == {"sktime": "unsupported runtime"}
 
 
 def test_ensure_registry_loaded_memoizes_optional_import_failures(monkeypatch):
@@ -119,12 +109,12 @@ def test_ensure_registry_loaded_memoizes_optional_import_failures(monkeypatch):
 
     def fake_import(name):
         imported.append(name)
-        if name.endswith(".gluonts_extra"):
+        if name.endswith(".sktime"):
             raise ImportError("unsupported runtime")
         return object()
 
-    monkeypatch.setattr(fr, "_FORECAST_METHOD_MODULES", ("classical", "gluonts_extra", "analog"))
-    monkeypatch.setattr(fr, "_OPTIONAL_FORECAST_METHOD_MODULES", frozenset({"gluonts_extra"}))
+    monkeypatch.setattr(fr, "_FORECAST_METHOD_MODULES", ("classical", "sktime", "analog"))
+    monkeypatch.setattr(fr, "_OPTIONAL_FORECAST_METHOD_MODULES", frozenset({"sktime"}))
     monkeypatch.setattr(fr, "_LOADED_FORECAST_METHOD_MODULES", set())
     monkeypatch.setattr(fr, "_FAILED_OPTIONAL_FORECAST_MODULES", {})
     monkeypatch.setattr(fr._importlib, "import_module", fake_import)
@@ -134,7 +124,7 @@ def test_ensure_registry_loaded_memoizes_optional_import_failures(monkeypatch):
 
     assert imported == [
         "mtdata.forecast.methods.classical",
-        "mtdata.forecast.methods.gluonts_extra",
+        "mtdata.forecast.methods.sktime",
         "mtdata.forecast.methods.analog",
     ]
 
@@ -146,7 +136,7 @@ def test_ensure_registry_loaded_reraises_non_optional_import_errors(monkeypatch)
         return object()
 
     monkeypatch.setattr(fr, "_FORECAST_METHOD_MODULES", ("classical",))
-    monkeypatch.setattr(fr, "_OPTIONAL_FORECAST_METHOD_MODULES", frozenset({"gluonts_extra"}))
+    monkeypatch.setattr(fr, "_OPTIONAL_FORECAST_METHOD_MODULES", frozenset({"sktime"}))
     monkeypatch.setattr(fr, "_LOADED_FORECAST_METHOD_MODULES", set())
     monkeypatch.setattr(fr, "_FAILED_OPTIONAL_FORECAST_MODULES", {})
     monkeypatch.setattr(fr._importlib, "import_module", fake_import)

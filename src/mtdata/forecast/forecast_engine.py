@@ -69,7 +69,6 @@ from .methods import analog as _analog_methods
 from .methods import classical as _classical_methods
 from .methods import ensemble as _ensemble_methods
 from .methods import ets_arima as _ets_arima_methods
-from .methods import gluonts_extra as _gluonts_extra_methods
 from .methods import mlforecast as _mlforecast_methods
 from .methods import monte_carlo as _monte_carlo_methods
 from .methods import neural as _neural_methods
@@ -84,7 +83,6 @@ _REGISTERED_METHOD_MODULES = (
     _classical_methods,
     _ensemble_methods,
     _ets_arima_methods,
-    _gluonts_extra_methods,
     _mlforecast_methods,
     _monte_carlo_methods,
     _neural_methods,

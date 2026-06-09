@@ -13,15 +13,10 @@ GPU_BACKED_FORECAST_METHODS = frozenset(
         "chronos2",
         "chronos_bolt",
         "timesfm",
-        "lag_llama",
         "nhits",
         "nbeatsx",
         "tft",
         "patchtst",
-        "gt_deepar",
-        "gt_sfeedforward",
-        "gt_tft",
-        "gt_wavenet",
     }
 )
 

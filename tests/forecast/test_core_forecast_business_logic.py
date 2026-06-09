@@ -1364,10 +1364,10 @@ def test_forecast_list_library_models_and_list_methods(monkeypatch):
                 "execution": {"library": "native", "method": "theta"},
             },
             {
-                "method": "gt_deepar",
+                "method": "unavailable_model",
                 "namespace": "native",
                 "available": FalseLike(),
-                "execution": {"library": "native", "method": "gt_deepar"},
+                "execution": {"library": "native", "method": "unavailable_model"},
             },
         ]
         if lib == "native"
@@ -1384,7 +1384,7 @@ def test_forecast_list_library_models_and_list_methods(monkeypatch):
     out_native_all = raw_list_models("native", show_unavailable=True)
     assert out_native_all["models"] == [
         {"method": "theta", "available": True},
-        {"method": "gt_deepar", "available": False},
+        {"method": "unavailable_model", "available": False},
     ]
     assert out_native_all["total"] == 2
     assert out_native_all["total_filtered"] == 2
