@@ -2,6 +2,7 @@
 
 import logging
 import os
+import threading
 import warnings
 from datetime import datetime, timezone
 from typing import Optional
@@ -24,6 +25,7 @@ except Exception:
 _WARNED_SERVER_TZ = False
 _WARNED_STATIC_OFFSET_OVERRIDE = False
 _ENV_LOADED = False
+_ENV_LOAD_LOCK = threading.Lock()
 _LOGGER = logging.getLogger(__name__)
 
 
@@ -321,50 +323,51 @@ class TradeGuardrailsRuntimeConfig(_GuardrailSection):
 def load_environment(*, force: bool = False) -> bool:
     """Load environment variables from `.env` once for application entrypoints."""
     global _ENV_LOADED
-    if _ENV_LOADED and not force:
-        return False
+    with _ENV_LOAD_LOCK:
+        if _ENV_LOADED and not force:
+            return False
 
-    loaded = False
-    attempted = False
-    try:
-        from dotenv import find_dotenv, load_dotenv  # type: ignore
-
-        env_path = find_dotenv()
-        if env_path:
-            loaded = bool(load_dotenv(env_path, override=force))
-        else:
-            loaded = bool(load_dotenv(override=force))
-        attempted = True
-    except Exception:
         loaded = False
+        attempted = False
+        try:
+            from dotenv import find_dotenv, load_dotenv  # type: ignore
 
-    if attempted:
-        _ENV_LOADED = True
-    config_obj = globals().get("mt5_config")
-    if config_obj is not None:
-        try:
-            config_obj.reload_from_env(warn_if_timezone_missing=True)
-        except Exception as exc:
-            _LOGGER.warning("Failed to reload MT5 configuration from environment: %s", exc)
-    embeddings_obj = globals().get("news_embeddings_config")
-    if embeddings_obj is not None:
-        try:
-            embeddings_obj.reload_from_env()
-        except Exception as exc:
-            _LOGGER.warning("Failed to reload news embeddings configuration from environment: %s", exc)
-    guardrails_obj = globals().get("trade_guardrails_config")
-    if guardrails_obj is not None:
-        try:
-            guardrails_obj.reload_from_env()
-        except Exception as exc:
-            _LOGGER.warning("Failed to reload trade guardrails configuration from environment: %s", exc)
-    options_obj = globals().get("options_data_config")
-    if options_obj is not None:
-        try:
-            options_obj.reload_from_env()
-        except Exception as exc:
-            _LOGGER.warning("Failed to reload options data configuration from environment: %s", exc)
-    return loaded
+            env_path = find_dotenv()
+            if env_path:
+                loaded = bool(load_dotenv(env_path, override=force))
+            else:
+                loaded = bool(load_dotenv(override=force))
+            attempted = True
+        except Exception:
+            loaded = False
+
+        if attempted:
+            _ENV_LOADED = True
+        config_obj = globals().get("mt5_config")
+        if config_obj is not None:
+            try:
+                config_obj.reload_from_env(warn_if_timezone_missing=True)
+            except Exception as exc:
+                _LOGGER.warning("Failed to reload MT5 configuration from environment: %s", exc)
+        embeddings_obj = globals().get("news_embeddings_config")
+        if embeddings_obj is not None:
+            try:
+                embeddings_obj.reload_from_env()
+            except Exception as exc:
+                _LOGGER.warning("Failed to reload news embeddings configuration from environment: %s", exc)
+        guardrails_obj = globals().get("trade_guardrails_config")
+        if guardrails_obj is not None:
+            try:
+                guardrails_obj.reload_from_env()
+            except Exception as exc:
+                _LOGGER.warning("Failed to reload trade guardrails configuration from environment: %s", exc)
+        options_obj = globals().get("options_data_config")
+        if options_obj is not None:
+            try:
+                options_obj.reload_from_env()
+            except Exception as exc:
+                _LOGGER.warning("Failed to reload options data configuration from environment: %s", exc)
+        return loaded
 
 class MT5Config:
     """MetaTrader5 connection configuration."""
