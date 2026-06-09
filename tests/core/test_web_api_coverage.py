@@ -174,6 +174,14 @@ class TestWebApiSecurity:
         assert resp.status_code == 403
         assert resp.json()["detail"]["error_code"] == "web_api_remote_forbidden"
 
+    def test_forwarded_headers_disable_loopback_bypass(self):
+        request = SimpleNamespace(
+            client=SimpleNamespace(host="127.0.0.1"),
+            headers={"x-forwarded-for": "203.0.113.9"},
+        )
+
+        assert web_api._is_local_api_client(request) is False
+
     def test_configured_token_requires_auth_header(self, monkeypatch):
         monkeypatch.setenv("WEBAPI_AUTH_TOKEN", "secret")
         resp = _client.get("/api/timeframes")
@@ -1555,4 +1563,3 @@ class TestMethodsAvailabilityEdgeCases:
         ):
             res = web_api.get_methods()
         assert res == data
-

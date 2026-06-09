@@ -102,6 +102,19 @@ def _raise_auth_error(status_code: int, message: str, *, code: str, headers: Opt
 
 
 def _is_local_api_client(request: Request) -> bool:
+    headers = getattr(request, "headers", None)
+    forwarded = None
+    if headers is not None:
+        try:
+            forwarded = (
+                headers.get("x-forwarded-for")
+                or headers.get("forwarded")
+                or headers.get("x-real-ip")
+            )
+        except Exception:
+            forwarded = None
+    if isinstance(forwarded, str) and forwarded.strip():
+        return False
     client_host = getattr(getattr(request, "client", None), "host", None)
     client_text = str(client_host or "").strip().lower()
     return client_text == "testclient" or is_loopback_host(client_text)
