@@ -678,7 +678,7 @@ class TaskManager:
                 heartbeat_at=time.time(),
                 cancel_requested=True,
             )
-        except Exception as exc:
+        except BaseException as exc:
             logger.exception("Training failed: %s %s", spec.method_name, spec.data_scope)
             self._mutate_task(
                 task_id,
