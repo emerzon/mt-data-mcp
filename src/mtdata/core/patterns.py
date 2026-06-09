@@ -610,6 +610,7 @@ def _format_elliott_patterns(df: pd.DataFrame, cfg: _ElliottCfg) -> List[Dict[st
                     row["validation_issues"] = [str(item) for item in violations[:3]]
             out_list.append(row)
         except Exception:
+            logger.debug("Dropping Elliott pattern during formatting", exc_info=True)
             continue
     return _enrich_elliott_patterns(out_list, df, cfg)
 
@@ -683,6 +684,7 @@ def _format_fractal_patterns(
                 row["breakout_date"] = breakout_date
             out_list.append(row)
         except Exception:
+            logger.debug("Dropping fractal pattern during formatting", exc_info=True)
             continue
     return out_list
 
@@ -743,6 +745,7 @@ def _format_harmonic_patterns(
                 row["target_price_2"] = float(target_2)
             out_list.append(row)
         except Exception:
+            logger.debug("Dropping harmonic pattern during formatting", exc_info=True)
             continue
     return out_list
 
@@ -843,6 +846,7 @@ def _format_classic_native_patterns(df: pd.DataFrame, cfg: _ClassicCfg) -> List[
                     d["bars_to_completion"] = int(est)
             out_list.append(d)
         except Exception:
+            logger.debug("Dropping classic pattern during formatting", exc_info=True)
             continue
     return out_list
 

@@ -271,6 +271,23 @@ class TestFormatElliottPatterns:
         assert result[0]["status"] == "forming"
 
     @patch("mtdata.core.patterns._detect_elliott_waves")
+    def test_logs_when_pattern_is_dropped_during_formatting(self, mock_detect, caplog):
+        class _BadTime:
+            def __float__(self):
+                raise TypeError("bad time")
+
+        mock_detect.return_value = [
+            _mock_pattern_result(start_time=_BadTime(), end_time=1704110400.0),
+        ]
+        df = _make_ohlcv_df(50)
+
+        with caplog.at_level("DEBUG", logger="mtdata.core.patterns"):
+            result = self._call(df, MagicMock())
+
+        assert result == []
+        assert any("Dropping Elliott pattern during formatting" in record.message for record in caplog.records)
+
+    @patch("mtdata.core.patterns._detect_elliott_waves")
     def test_completed_status(self, mock_detect):
         df = _make_ohlcv_df(100)
         mock_detect.return_value = [
