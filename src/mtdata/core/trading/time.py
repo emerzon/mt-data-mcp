@@ -57,10 +57,8 @@ def _to_server_time_naive(dt: datetime) -> datetime:
 
 def _server_time_naive_to_mt5_timestamp(dt: datetime) -> int:
     """Convert a server-local naive datetime into an MT5-compatible timestamp."""
-    if dt.tzinfo is not None:
-        dt = dt.replace(tzinfo=None)
-    dt = dt.replace(microsecond=0)
-    return int((dt - datetime(1970, 1, 1)).total_seconds())
+    utc_dt = _server_time_naive_to_utc(dt.replace(microsecond=0))
+    return int(utc_dt.timestamp())
 
 
 def _server_time_naive_to_utc(dt: datetime) -> datetime:

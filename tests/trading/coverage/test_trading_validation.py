@@ -246,6 +246,17 @@ class TestServerTimeNaiveToMT5Timestamp:
         result = _server_time_naive_to_mt5_timestamp(dt)
         assert result == int((datetime(2024, 1, 1) - datetime(1970, 1, 1)).total_seconds())
 
+    @patch("mtdata.core.trading.time.mt5_config")
+    def test_applies_server_offset_when_datetime_is_server_local(self, mock_cfg):
+        mock_cfg.get_server_tz.return_value = None
+        mock_cfg.get_time_offset_seconds.return_value = 7200
+
+        dt = datetime(2024, 1, 1, 14, 0, 0)
+        result = _server_time_naive_to_mt5_timestamp(dt)
+
+        expected = int(datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc).timestamp())
+        assert result == expected
+
 
 # ===================================================================
 #  _to_server_time_naive (config-dependent)
