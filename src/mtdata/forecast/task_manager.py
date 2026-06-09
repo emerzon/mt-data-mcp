@@ -795,6 +795,10 @@ class TaskManager:
                     time.sleep(cancel_grace)
                     if process.is_alive():
                         process.terminate()
+                        process.join(timeout=1.0)
+                    if process.is_alive():
+                        process.kill()
+                        process.join(timeout=1.0)
                     self._mutate_task(
                         task_id,
                         status="failed",
@@ -831,10 +835,22 @@ class TaskManager:
                     break
         finally:
             process.join(timeout=1.0)
+            if process.is_alive():
+                process.terminate()
+                process.join(timeout=1.0)
+            if process.is_alive():
+                process.kill()
+                process.join(timeout=1.0)
             with self._lock:
                 self._process_controls.pop(task_id, None)
             try:
                 event_queue.close()
+            except Exception:
+                pass
+            try:
+                join_thread = getattr(event_queue, "join_thread", None)
+                if callable(join_thread):
+                    join_thread()
             except Exception:
                 pass
 

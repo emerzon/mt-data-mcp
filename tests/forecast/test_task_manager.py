@@ -412,6 +412,84 @@ class TestHeavyRuntimeScheduling(_TaskManagerTestCase):
         self.assertIn("timed out", status.error)
         handle_event.assert_not_called()
 
+    def test_heavy_task_finalizer_joins_queue_and_kills_lingering_process(self):
+        task = self.tm._create_task("heavy", "EURUSD_H1", "hash-2")
+        spec = _TrainingSpec(
+            task_kind="train",
+            method_name="heavy",
+            data_scope="EURUSD_H1",
+            params_hash="hash-2",
+            horizon=5,
+            seasonality=1,
+            params={},
+            timeframe="H1",
+        )
+
+        class _FakeQueue:
+            def __init__(self):
+                self.closed = False
+                self.joined = False
+
+            def get(self, timeout=None):
+                raise queue.Empty
+
+            def get_nowait(self):
+                raise queue.Empty
+
+            def close(self):
+                self.closed = True
+
+            def join_thread(self):
+                self.joined = True
+
+        class _FakeProcess:
+            def __init__(self):
+                self.pid = 5678
+                self.exitcode = -9
+                self._alive = True
+                self.join_calls = 0
+                self.kill_called = False
+
+            def start(self):
+                return None
+
+            def is_alive(self):
+                return self._alive
+
+            def terminate(self):
+                return None
+
+            def kill(self):
+                self.kill_called = True
+                self._alive = False
+
+            def join(self, timeout=None):
+                self.join_calls += 1
+                return None
+
+        fake_queue = _FakeQueue()
+        fake_process = _FakeProcess()
+        fake_context = SimpleNamespace(
+            Queue=lambda: fake_queue,
+            Event=MagicMock(return_value=MagicMock()),
+            Process=MagicMock(return_value=fake_process),
+        )
+
+        with (
+            patch.object(self.tm, "_mp_context", fake_context),
+            patch(
+                "mtdata.forecast.task_manager.time.time",
+                side_effect=[0.0, 0.0, 0.0, 2.0, 2.0, 2.0, 2.0],
+            ),
+            patch("mtdata.forecast.task_manager.time.sleep", return_value=None),
+        ):
+            self.tm._run_heavy_task(task.task_id, spec, timeout_seconds=1.0)
+
+        self.assertTrue(fake_queue.closed)
+        self.assertTrue(fake_queue.joined)
+        self.assertTrue(fake_process.kill_called)
+        self.assertGreaterEqual(fake_process.join_calls, 2)
+
 
 class TestLightRuntimeFailures(_TaskManagerTestCase):
     def test_light_task_marks_base_exception_as_failed(self):
