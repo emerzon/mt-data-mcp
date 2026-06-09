@@ -260,6 +260,23 @@ class TestParseTiSpecs:
 
         indicators_mod._is_available_ta_indicator.cache_clear()
 
+    def test_indicator_lookup_cache_is_bounded(self, monkeypatch):
+        import mtdata.utils.indicators as indicators_mod
+
+        class _ProxyPta:
+            def __getattr__(self, name: str):
+                raise AttributeError(name)
+
+        monkeypatch.setattr(indicators_mod, "pta", _ProxyPta())
+        indicators_mod._is_available_ta_indicator.cache_clear()
+
+        for idx in range(600):
+            indicators_mod._is_available_ta_indicator(f"unknown_indicator_{idx}")
+
+        assert indicators_mod._is_available_ta_indicator.cache_info().currsize <= 512
+
+        indicators_mod._is_available_ta_indicator.cache_clear()
+
     def test_list_ta_indicators_includes_shadowed_volatility_category(self):
         items = list_ta_indicators(detailed=False)
         by_name = {str(item.get("name")): item for item in items}

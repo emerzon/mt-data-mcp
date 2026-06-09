@@ -315,7 +315,7 @@ def _parse_ti_specs(spec: str) -> List[Tuple[str, List[int | float], Dict[str, i
     return specs
 
 
-@lru_cache(maxsize=None)
+@lru_cache(maxsize=512)
 def _is_available_ta_indicator(name: str) -> bool:
     return callable(getattr(pta, str(name or "").strip(), None))
 
