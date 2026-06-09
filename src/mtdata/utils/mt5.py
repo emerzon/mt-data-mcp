@@ -647,6 +647,7 @@ def _mt5_copy_ticks_range(symbol: str, from_dt_utc: datetime, to_dt_utc: datetim
 
 class MT5Connection:
     def __init__(self):
+        self._lock = threading.RLock()
         self.connected = False
         self._connection_identity: Optional[tuple[Optional[int], Optional[str]]] = None
 
@@ -692,48 +693,51 @@ class MT5Connection:
             self._connection_identity = current_identity
 
     def _ensure_connection(self) -> bool:
-        if self.is_connected():
-            self._refresh_connection_identity()
-            return True
-        try:
-            if mt5_config.has_credentials():
-                login = mt5_config.get_login()
-                password = mt5_config.get_password()
-                server = mt5_config.get_server()
-                if not mt5.initialize(login=login, password=password, server=server):
-                    logger.warning(f"Failed to initialize MT5 with credentials: {mt5.last_error()}")
+        with self._lock:
+            if self.is_connected():
+                self._refresh_connection_identity()
+                return True
+            try:
+                if mt5_config.has_credentials():
+                    login = mt5_config.get_login()
+                    password = mt5_config.get_password()
+                    server = mt5_config.get_server()
+                    if not mt5.initialize(login=login, password=password, server=server):
+                        logger.warning(f"Failed to initialize MT5 with credentials: {mt5.last_error()}")
+                        if not mt5.initialize():
+                            logger.error(f"Failed to initialize MT5: {mt5.last_error()}")
+                            return False
+                    else:
+                        logger.debug(f"Connected to MT5 with account {login}")
+                else:
                     if not mt5.initialize():
                         logger.error(f"Failed to initialize MT5: {mt5.last_error()}")
                         return False
-                else:
-                    logger.debug(f"Connected to MT5 with account {login}")
-            else:
-                if not mt5.initialize():
-                    logger.error(f"Failed to initialize MT5: {mt5.last_error()}")
-                    return False
-                else:
-                    logger.debug("Connected to MT5 using terminal's current login")
-            self.connected = True
-            self._refresh_connection_identity()
-            return True
-        except Exception as e:
-            logger.error(f"Error connecting to MT5: {e}")
-            return False
+                    else:
+                        logger.debug("Connected to MT5 using terminal's current login")
+                self.connected = True
+                self._refresh_connection_identity()
+                return True
+            except Exception as e:
+                logger.error(f"Error connecting to MT5: {e}")
+                return False
 
     def disconnect(self):
-        if self.connected:
-            mt5.shutdown()
-            self.connected = False
-            self._connection_identity = None
-            clear_symbol_info_cache()
-            clear_mt5_time_alignment_cache()
-            logger.debug("Disconnected from MetaTrader5")
+        with self._lock:
+            if self.connected:
+                mt5.shutdown()
+                self.connected = False
+                self._connection_identity = None
+                clear_symbol_info_cache()
+                clear_mt5_time_alignment_cache()
+                logger.debug("Disconnected from MetaTrader5")
 
     def is_connected(self) -> bool:
-        if not self.connected:
-            return False
-        terminal_info = mt5.terminal_info()
-        return terminal_info is not None and terminal_info.connected
+        with self._lock:
+            if not self.connected:
+                return False
+            terminal_info = mt5.terminal_info()
+            return terminal_info is not None and terminal_info.connected
 
 
 mt5_connection = MT5Connection()
