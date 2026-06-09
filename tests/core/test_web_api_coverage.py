@@ -1492,21 +1492,21 @@ class TestHistoryDenoiseEdgeCases:
         assert kw["denoise"] is None
 
     def test_denoise_json_non_dict_payload(self):
-        """JSON payload that is a list should fall through to kv parsing."""
+        """JSON payload that is a list should be rejected explicitly."""
         payload = {"data": [{"time": 1.0}]}
         dn_methods = {"methods": [{"method": "wavelet", "available": True}]}
         denoise_params_json = json.dumps([1, 2, 3])
         with patch.object(web_api.mt5_connection, "_ensure_connection", return_value=True), \
              patch("mtdata.core.web_api._fetch_candles_impl", return_value=payload), \
              patch("mtdata.core.web_api._get_denoise_methods", return_value=dn_methods), \
-             patch("mtdata.core.web_api._norm_dn", return_value={"method": "wavelet"}) as mock_norm, \
              patch("mtdata.core.web_api.mt5_config") as mock_cfg:
             mock_cfg.get_time_offset_seconds.return_value = 0
-            _client.get("/api/history", params={
+            resp = _client.get("/api/history", params={
                 "symbol": "EURUSD", "denoise_method": "wavelet",
                 "denoise_params": denoise_params_json,
             })
-        mock_norm.assert_called_once()
+        assert resp.status_code == 400
+        assert resp.json()["detail"]["error_code"] == "denoise_params_invalid"
 
 
 class TestInstrumentSearchEdgeCases:

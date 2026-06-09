@@ -490,6 +490,27 @@ def get_history_response(  # noqa: C901
             except HTTPException:
                 raise
             except Exception:
+                stripped_params = str(denoise_params_val or "").strip()
+                if stripped_params:
+                    if stripped_params.startswith("{") or stripped_params.startswith("["):
+                        raise _http_error(
+                            400,
+                            "denoise_params must be a JSON object or key=value pairs.",
+                            code="denoise_params_invalid",
+                            operation="get_history",
+                        )
+                    try:
+                        json_payload = json.loads(stripped_params)
+                    except Exception:
+                        json_payload = None
+                    else:
+                        if not isinstance(json_payload, dict):
+                            raise _http_error(
+                                400,
+                                "denoise_params must be a JSON object or key=value pairs.",
+                                code="denoise_params_invalid",
+                                operation="get_history",
+                            )
                 params_dict: Dict[str, Any] = {}
                 for part in denoise_params_val.split(","):
                     if "=" in part:
