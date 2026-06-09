@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 import time
 from unittest.mock import MagicMock, patch
 
@@ -65,6 +66,37 @@ class TestMt5ReadWithRetry:
         assert len(sleeps) == 2
         assert sleeps[0] == 1.0
         assert sleeps[1] == 2.0
+
+    def test_concurrent_reads_respect_minimum_spacing(self):
+        call_times: list[float] = []
+        results: list[str] = []
+
+        def _fn(label: str) -> str:
+            call_times.append(time.monotonic())
+            return label
+
+        with patch.object(mt5_mod, "_MT5_READ_MIN_SPACING", 0.02):
+            mt5_mod._mt5_last_read_ts = 0.0
+            threads = [
+                threading.Thread(
+                    target=lambda value=value: results.append(
+                        mt5_mod._mt5_read_with_retry(_fn, value, max_retries=0)
+                    )
+                )
+                for value in ("a", "b", "c")
+            ]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join()
+
+        assert sorted(results) == ["a", "b", "c"]
+        ordered = sorted(call_times)
+        min_gap = min(
+            ordered[idx] - ordered[idx - 1]
+            for idx in range(1, len(ordered))
+        )
+        assert min_gap >= 0.015
 
 
 class TestEnforceReadSpacing:

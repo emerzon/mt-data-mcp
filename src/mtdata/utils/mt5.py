@@ -595,8 +595,9 @@ def _mt5_read_with_retry(fn, *args, max_retries: int = _MT5_READ_MAX_RETRIES):
     Returns the first non-``None`` result, or ``None`` if all attempts fail.
     """
     for attempt in range(max_retries + 1):
-        _enforce_read_spacing()
-        result = fn(*args)
+        with _mt5_lock:
+            _enforce_read_spacing()
+            result = fn(*args)
         if result is not None:
             return result
         if attempt < max_retries:
