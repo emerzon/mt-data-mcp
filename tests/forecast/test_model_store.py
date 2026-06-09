@@ -210,6 +210,20 @@ class TestModelStoreTTL(unittest.TestCase):
         self.assertEqual(handle.store_metadata["compatibility_version"], 1)
         self.assertAlmostEqual(handle.store_metadata["last_used"], legacy_last_used, delta=0.01)
 
+    def test_find_reads_handles_under_store_lock(self):
+        self.store.save("m", "d", "p", b"data")
+        lock_states = []
+        original_read = self.store._read_handle
+
+        def wrapped_read(model_dir, *, skip_expiry=False):
+            lock_states.append(self.store._lock._is_owned())
+            return original_read(model_dir, skip_expiry=skip_expiry)
+
+        self.store._read_handle = wrapped_read
+
+        self.assertIsNotNone(self.store.find("m", "d", "p"))
+        self.assertEqual(lock_states, [True])
+
     def test_cleanup_expired(self):
         self.store.save("m1", "d", "p1", b"d")
         self.store.save("m2", "d", "p2", b"d")
@@ -224,6 +238,29 @@ class TestModelStoreTTL(unittest.TestCase):
         self.assertEqual(removed, 1)
         self.assertIsNone(self.store.find("m1", "d", "p1"))
         self.assertIsNotNone(self.store.find("m2", "d", "p2"))
+
+    def test_cleanup_expired_deletes_under_store_lock(self):
+        self.store.save("m1", "d", "p1", b"d")
+        meta_path = self.store._model_dir("m1", "d", "p1") / "metadata.json"
+        with open(meta_path) as f:
+            meta = json.load(f)
+        meta["last_used"] = time.time() - 10
+        with open(meta_path, "w") as f:
+            json.dump(meta, f)
+
+        lock_states = []
+        original_remove = self.store._remove_dir
+
+        def wrapped_remove(model_dir):
+            lock_states.append(self.store._lock._is_owned())
+            return original_remove(model_dir)
+
+        self.store._remove_dir = wrapped_remove
+
+        removed = self.store.cleanup_expired()
+
+        self.assertEqual(removed, 1)
+        self.assertEqual(lock_states, [True])
 
 
 class TestModelStoreCompatibilityStatus(unittest.TestCase):

@@ -156,7 +156,7 @@ class ModelStore:
     ) -> None:
         self._root = Path(root) if root else Path(_env_root())
         self._ttl = ttl_seconds if ttl_seconds is not None else _env_ttl_seconds()
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
 
     @property
     def root(self) -> Path:
@@ -265,7 +265,8 @@ class ModelStore:
         Returns ``None`` if not found or expired (based on ``last_used``).
         """
         model_dir = self._model_dir(method, data_scope, params_hash)
-        return self._read_handle(model_dir)
+        with self._lock:
+            return self._read_handle(model_dir)
 
     def list_models(
         self,
@@ -273,24 +274,25 @@ class ModelStore:
     ) -> List[TrainedModelHandle]:
         """List all stored model handles, optionally filtered by method."""
         handles: List[TrainedModelHandle] = []
-        if not self._root.is_dir():
-            return handles
+        with self._lock:
+            if not self._root.is_dir():
+                return handles
 
-        for method_dir in sorted(self._root.iterdir()):
-            if not method_dir.is_dir():
-                continue
-            if method and method_dir.name != method:
-                continue
-            for scope_dir in sorted(method_dir.iterdir()):
-                if not scope_dir.is_dir():
+            for method_dir in sorted(self._root.iterdir()):
+                if not method_dir.is_dir():
                     continue
-                for hash_dir in sorted(scope_dir.iterdir()):
-                    if not hash_dir.is_dir():
+                if method and method_dir.name != method:
+                    continue
+                for scope_dir in sorted(method_dir.iterdir()):
+                    if not scope_dir.is_dir():
                         continue
-                    handle = self._read_handle(hash_dir, skip_expiry=True)
-                    if handle is not None:
-                        handles.append(handle)
-        return handles
+                    for hash_dir in sorted(scope_dir.iterdir()):
+                        if not hash_dir.is_dir():
+                            continue
+                        handle = self._read_handle(hash_dir, skip_expiry=True)
+                        if handle is not None:
+                            handles.append(handle)
+            return handles
 
     def delete(self, model_id: str) -> bool:
         """Delete a model by *model_id*. Returns ``True`` if it existed."""
@@ -299,25 +301,27 @@ class ModelStore:
             return False
         method, data_scope, params_hash = parts
         model_dir = self._model_dir(method, data_scope, params_hash)
-        return self._remove_dir(model_dir)
+        with self._lock:
+            return self._remove_dir(model_dir)
 
     def describe_model(self, handle: TrainedModelHandle) -> Dict[str, Any]:
         """Return operational metadata for a stored model handle."""
         model_dir = self._model_dir(handle.method, handle.data_scope, handle.params_hash)
-        meta = self._read_raw_meta(model_dir) or {}
-        created_at = self._coerce_timestamp(meta.get("created_at"), handle.created_at)
-        last_used = self._last_used_from_meta(meta, created_at)
-        size_bytes = 0
-        file_count = 0
-        if model_dir.is_dir():
-            for path in model_dir.rglob("*"):
-                if not path.is_file():
-                    continue
-                try:
-                    size_bytes += int(path.stat().st_size)
-                    file_count += 1
-                except OSError:
-                    continue
+        with self._lock:
+            meta = self._read_raw_meta(model_dir) or {}
+            created_at = self._coerce_timestamp(meta.get("created_at"), handle.created_at)
+            last_used = self._last_used_from_meta(meta, created_at)
+            size_bytes = 0
+            file_count = 0
+            if model_dir.is_dir():
+                for path in model_dir.rglob("*"):
+                    if not path.is_file():
+                        continue
+                    try:
+                        size_bytes += int(path.stat().st_size)
+                        file_count += 1
+                    except OSError:
+                        continue
         now = time.time()
         ttl = float(self._ttl)
         expires_in_seconds: Optional[float] = None
@@ -344,15 +348,22 @@ class ModelStore:
             return 0
         removed = 0
         now = time.time()
-        for handle in self.list_models():
-            meta = self._read_raw_meta(
-                self._model_dir(handle.method, handle.data_scope, handle.params_hash)
-            )
-            last_used = self._last_used_from_meta(meta, handle.created_at) if meta else handle.created_at
-            if (now - last_used) > self._ttl:
-                if self.delete(handle.model_id):
-                    removed += 1
-        return removed
+        with self._lock:
+            for handle in self.list_models():
+                meta = self._read_raw_meta(
+                    self._model_dir(handle.method, handle.data_scope, handle.params_hash)
+                )
+                last_used = (
+                    self._last_used_from_meta(meta, handle.created_at)
+                    if meta
+                    else handle.created_at
+                )
+                if (now - last_used) > self._ttl:
+                    if self._remove_dir(
+                        self._model_dir(handle.method, handle.data_scope, handle.params_hash)
+                    ):
+                        removed += 1
+            return removed
 
     # ------------------------------------------------------------------
     # Internal helpers
