@@ -114,7 +114,7 @@ def test_news_tool_symbol_limit_caps_related_bucket_only(monkeypatch) -> None:
     assert limited["has_more"] is True
 
 
-def test_news_tool_fx_symbol_limit_fills_from_macro_buckets(monkeypatch) -> None:
+def test_news_tool_fx_symbol_limit_does_not_fill_from_general_buckets(monkeypatch) -> None:
     raw = _unwrap(news)
 
     payload = {
@@ -133,14 +133,17 @@ def test_news_tool_fx_symbol_limit_fills_from_macro_buckets(monkeypatch) -> None
     limited = raw(symbol="EURUSD", limit=3)
 
     assert limited["related_news"] == [{"title": "r1"}]
-    assert limited["general_news"] == [{"title": "g1"}, {"title": "g2"}]
-    assert limited["row_keys"] == ["related_news", "general_news"]
+    assert limited["row_keys"] == ["related_news"]
+    assert "general_news" not in limited
+    assert "impact_news" not in limited
+    assert "upcoming_events" not in limited
+    assert "recent_events" not in limited
     assert "market_context" not in limited
-    assert limited["total_candidates"] == 6
-    assert limited["returned"] == 3
-    assert limited["limit_scope"] == "symbol_macro"
-    assert limited["macro_fallback"] is True
-    assert limited["has_more"] is True
+    assert limited["total_candidates"] == 1
+    assert limited["returned"] == 1
+    assert limited["limit_scope"] == "symbol"
+    assert "macro_fallback" not in limited
+    assert limited["has_more"] is False
 
 
 def test_news_tool_supports_global_offset(monkeypatch) -> None:
