@@ -13,6 +13,7 @@ import pandas as pd
 import pytest
 
 from mtdata.core.patterns_requests import PatternsDetectRequest
+from pydantic import ValidationError
 
 # ---------------------------------------------------------------------------
 # Helpers to build mock data
@@ -370,8 +371,8 @@ class TestPatternsDetect:
         assert "lookback" not in result
 
     def test_unknown_mode(self):
-        result = _call_patterns_detect(symbol="EURUSD", mode="unknown_mode")
-        assert "error" in result
+        with pytest.raises(ValidationError):
+            PatternsDetectRequest(symbol="EURUSD", mode="unknown_mode")
 
     def test_ensemble_rejected_outside_classic_mode(self):
         result = _call_patterns_detect(
@@ -1199,10 +1200,10 @@ class TestPatternsDetectAllMode:
         assert result.get("success") is True or "error" not in result
 
     def test_unknown_mode_includes_all(self):
-        """Error message for unknown mode mentions 'all'."""
-        result = _call_patterns_detect(symbol="EURUSD", mode="bad_mode")
-        assert "error" in result
-        assert "all" in result["error"].lower()
+        """Validation error for unknown mode lists the valid modes including 'all'."""
+        with pytest.raises(ValidationError) as exc_info:
+            PatternsDetectRequest(symbol="EURUSD", mode="bad_mode")
+        assert "all" in str(exc_info.value).lower()
 
     def test_whitelist_rejected_outside_candlestick_mode(self):
         result = _call_patterns_detect(symbol="EURUSD", mode="all", whitelist="engulfing")

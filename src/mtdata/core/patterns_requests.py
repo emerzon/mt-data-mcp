@@ -2,20 +2,27 @@ from __future__ import annotations
 
 from typing import Any, Dict, Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from ..shared.schema import DenoiseSpec, TimeframeLiteral
 
 
 PatternsDetailLiteral = Literal["compact", "standard", "summary", "full"]
+PatternModeLiteral = Literal["candlestick", "classic", "harmonic", "fractal", "elliott", "all"]
 
 
 class PatternsDetectRequest(BaseModel):
     symbol: str
     timeframe: Optional[TimeframeLiteral] = None
-    mode: str = "candlestick"
+    mode: PatternModeLiteral = "candlestick"
     detail: PatternsDetailLiteral = "compact"
     limit: int = 150
+
+    @field_validator("mode", mode="before")
+    @classmethod
+    def _normalize_mode(cls, value: Any) -> Any:
+        return value.strip().lower() if isinstance(value, str) else value
+
     start: Optional[str] = Field(
         None,
         description="Optional UTC-compatible start date/time for the analysis window.",

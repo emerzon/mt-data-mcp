@@ -3,6 +3,8 @@ from __future__ import annotations
 from unittest.mock import patch
 
 import pandas as pd
+import pytest
+from pydantic import ValidationError
 
 from mtdata.core.patterns import patterns_detect
 from mtdata.core.patterns_requests import PatternsDetectRequest
@@ -34,9 +36,9 @@ def _sample_df() -> pd.DataFrame:
 
 
 def test_patterns_detect_rejects_removed_chart_alias() -> None:
-    out = _call_patterns_detect(symbol="EURUSD", mode="chart", timeframe="H1")
-
-    assert out["error"].startswith("Unknown mode: chart.")
+    # mode is a Literal, so removed/unknown aliases are rejected at validation time.
+    with pytest.raises(ValidationError):
+        PatternsDetectRequest(symbol="EURUSD", mode="chart", timeframe="H1")
 
 
 def test_patterns_detect_rejects_engine_for_non_classic_mode() -> None:
