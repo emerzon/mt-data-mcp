@@ -51,9 +51,9 @@ from mtdata.utils.indicators import (
     infer_defaults_from_doc,
     list_ta_indicators,
 )
+from mtdata.utils.formatting import format_float
 from mtdata.utils.utils import (
     _coerce_scalar,
-    _format_float,
     _format_numeric_rows_from_df,
     _format_time_minimal,
     _normalize_limit,
@@ -845,16 +845,16 @@ class TestParseKvOrJson:
 
 class TestFormatFloat:
     def test_basic(self):
-        assert _format_float(3.14, 2) == "3.14"
+        assert format_float(3.14, 2) == "3.14"
 
     def test_trailing_zeros_trimmed(self):
-        assert _format_float(3.10, 2) == "3.1"
+        assert format_float(3.10, 2) == "3.1"
 
     def test_integer_value(self):
-        assert _format_float(5.0, 2) == "5"
+        assert format_float(5.0, 2) == "5"
 
     def test_zero(self):
-        assert _format_float(0.0, 4) == "0"
+        assert format_float(0.0, 4) == "0"
 
 
 class TestFormatNumericRowsFromDf:

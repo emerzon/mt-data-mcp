@@ -15,7 +15,7 @@ from ..shared.constants import (
     TIME_DISPLAY_FORMAT,
 )
 from .formatting import (
-    format_float as _format_float_shared,
+    format_float,
 )
 from .formatting import (
     format_number,
@@ -335,12 +335,6 @@ def parse_kv_or_json(obj: Any) -> Dict[str, Any]:
     return {}
 
 
-def _format_float(v: float, d: int) -> str:
-    return _format_float_shared(v, d)
-
-
-
-
 def _format_numeric_rows_from_df(
     df: pd.DataFrame,
     headers: List[str],
@@ -393,7 +387,7 @@ def _format_numeric_rows_from_df(
                     if decimals is None:
                         out_row.append(format_number(num))
                     else:
-                        out_row.append(_format_float(num, decimals))
+                        out_row.append(format_float(num, decimals))
             else:
                 out_row.append(str(val) if stringify else val)
         out_rows.append(out_row)
