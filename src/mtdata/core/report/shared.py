@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Optional
 
 from ...utils.coercion import coerce_finite_float as _as_float
 from ...utils.formatting import format_float, format_number
-from ...utils.minimal_output import format_table_toon as _format_table_toon
+from ...utils.minimal_output_toon import format_table_toon as _format_table_toon
 
 
 def _indicator_key_variants(key: str) -> List[str]:

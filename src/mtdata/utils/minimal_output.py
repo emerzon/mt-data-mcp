@@ -13,25 +13,18 @@ from typing import Any, Dict, Iterable, List, Optional
 from ..shared.output_precision import resolve_output_precision
 from .freshness import format_freshness_label
 from .minimal_output_toon import (
-    _column_decimals,  # noqa: F401 - compatibility re-export
     _DEFAULT_DELIMITER,
     _INDENT,
     _encode_expanded_array,
-    _encode_inline_array,  # noqa: F401 - compatibility re-export
     _encode_tabular,
     _format_to_toon,
     _headers_from_dicts,
     _is_empty_value,
     _is_scalar_value,
-    _minify_number,  # noqa: F401 - compatibility re-export
     _quote_always,
-    _quote_if_needed,  # noqa: F401 - compatibility re-export
     _quote_key,
-    _stringify_cell,  # noqa: F401 - compatibility re-export
-    _stringify_for_toon,  # noqa: F401 - compatibility re-export
     _stringify_for_toon_value,
     _stringify_scalar,
-    format_table_toon,  # noqa: F401 - compatibility re-export
 )
 
 

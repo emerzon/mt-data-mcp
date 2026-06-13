@@ -2,20 +2,22 @@
 import math
 
 from mtdata.utils.minimal_output import (
-    _column_decimals,
     _encode_tabular,
     _format_complex_value,
     _headers_from_dicts,
     _indent_text,
     _is_empty_value,
     _is_scalar_value,
-    _minify_number,
-    _quote_if_needed,
     _quote_key,
-    _stringify_cell,
-    _stringify_for_toon,
     _stringify_for_toon_value,
     _stringify_scalar,
+)
+from mtdata.utils.minimal_output_toon import (
+    _column_decimals,
+    _minify_number,
+    _quote_if_needed,
+    _stringify_cell,
+    _stringify_for_toon,
 )
 
 

@@ -5,7 +5,6 @@ from mtdata.utils.minimal_output import (
     _build_forecast_meta,
     _compact_forecast_ci,
     _encode_expanded_array,
-    _encode_inline_array,
     _format_complex_value,
     _format_to_toon,
     _is_empty_value,
@@ -16,9 +15,12 @@ from mtdata.utils.minimal_output import (
     _normalize_trade_payload,
     _normalize_trade_table_payload,
     _normalize_triple_barrier_payload,
-    _stringify_cell,
     _stringify_scalar,
     format_result_minimal,
+)
+from mtdata.utils.minimal_output_toon import (
+    _encode_inline_array,
+    _stringify_cell,
     format_table_toon,
 )
 
