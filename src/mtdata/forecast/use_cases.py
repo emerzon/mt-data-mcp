@@ -208,7 +208,14 @@ def _forecast_interval_summary(payload: Dict[str, Any]) -> Optional[Dict[str, fl
 def _forecast_compact_ci(payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     ci_status = str(payload.get("ci_status") or "").strip().lower()
     if ci_status == "unavailable":
-        return None
+        out: Dict[str, Any] = {
+            "status": "unavailable",
+            "mode": "point_only",
+            "recommended_tool": "forecast_conformal_intervals",
+        }
+        if payload.get("ci_alpha") is not None:
+            out["requested_alpha"] = payload.get("ci_alpha")
+        return out
 
     lower_key = next(
         (
@@ -252,7 +259,7 @@ def _forecast_compact_ci(payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         row["high"] = upper_vals[idx]
         intervals.append(row)
 
-    out = {"status": ci_status or "available"}
+    out = {"status": ci_status or "available", "mode": "interval"}
     if payload.get("ci_alpha") is not None:
         out["alpha"] = payload.get("ci_alpha")
     if intervals:
@@ -762,7 +769,7 @@ def _apply_forecast_generate_detail(
     ci_unavailable = str(payload.get("ci_status") or "").strip().lower() == "unavailable"
     ci_compact = _forecast_compact_ci(payload)
     if ci_compact:
-        compact["ci"] = ci_compact
+        compact["uncertainty"] = ci_compact
     ci_warning_dedup = ci_unavailable
     for key in (
         "last_observation_time",
@@ -864,6 +871,7 @@ def _apply_forecast_generate_detail(
             "lower",
             "upper",
             "ci",
+            "uncertainty",
             "ci_status",
             "ci_alpha",
             "ci_available",
