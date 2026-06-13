@@ -303,6 +303,7 @@ def seasonality_detect(
             "items": rows,
             "count": len(rows),
             "dominant_period_bars": rows[0]["period_bars"] if rows else None,
+            "score_formula": "0.55*acf_strength + 0.45*periodogram_strength; range 0-1, higher = stronger seasonality",
         }
         if normalize_output_verbosity_detail(detail, default="compact") == "full":
             out["method"] = {
@@ -432,6 +433,7 @@ def outliers_detect(
             "timeframe": timeframe,
             "method": method,
             "threshold": float(threshold),
+            "score_meaning": f"robust {method} deviation magnitude per bar; score >= threshold ({float(threshold)}) flags an outlier",
             "fields_analyzed": requested,
             "samples": int(len(frame)),
             "outliers_total": int((max_scores >= float(threshold)).sum()),
@@ -523,6 +525,7 @@ def volatility_term_structure(
             "timeframe": timeframe,
             "annualized": bool(annualize),
             "unit": "annualized_decimal_volatility" if annualize else "per_bar_decimal_volatility",
+            "cone_methodology": "percentiles of the historical distribution of rolling realized volatility at each horizon; percentile_rank shows where current vol sits in that distribution",
             "items": rows,
             "count": len(rows),
         }
