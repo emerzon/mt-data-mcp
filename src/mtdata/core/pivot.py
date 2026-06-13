@@ -51,11 +51,6 @@ from .volume_profile import compute_volume_profile_payload
 logger = logging.getLogger(__name__)
 
 
-# Keep the MT5 adapter in this module namespace for compatibility with tests
-# and callers that patch mtdata.core.pivot.mt5 directly.
-_PIVOT_COMPAT_EXPORTS = (mt5,)
-
-
 def _confluence_volume_profile_window(
     sr_timeframe: str,
     lookback: int,
