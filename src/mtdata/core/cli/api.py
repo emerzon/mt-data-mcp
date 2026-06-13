@@ -71,7 +71,6 @@ from .formatting import (
     _format_result_minimal,
     _json_default,
     _resolve_cli_formatter,
-    _safe_tz_name,
 )
 from .runtime.commands import (
     coerce_cli_scalar as _coerce_cli_scalar_impl,
@@ -115,7 +114,6 @@ _CLI_NAMESPACE_EXPORTS = (
     CLI_FORMAT_TOON,
     _build_cli_timezone_meta,
     _build_cli_timezone_meta_brief,
-    _safe_tz_name,
     _temporary_environment,
 )
 

@@ -57,7 +57,6 @@ from mtdata.core.cli import (
     _parse_set_overrides,
     _print_extended_help,
     _quote_cli_value,
-    _safe_tz_name,
     _suggest_commands,
     _type_name,
     create_command_function,
@@ -1620,11 +1619,14 @@ class TestEdgeCases:
         assert _is_typed_dict_type(FakeTD) is True
 
     def test_safe_tz_name_with_zone_none(self):
+        from mtdata.core.runtime_metadata import _safe_tz_name
+
         class FakeTZ:
             zone = None
 
+        # An object whose tz hints are all empty yields no name (not a repr string).
         result = _safe_tz_name(FakeTZ())
-        assert isinstance(result, str)
+        assert result is None
 
 
 # ========================================================================

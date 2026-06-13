@@ -10,7 +10,6 @@ from ...mt5_gateway import create_mt5_gateway
 from ...output_contract import apply_output_verbosity
 from ...output_serialization import json_default as _json_default
 from ...output_serialization import sanitize_json as _sanitize_json
-from ...runtime_metadata import _safe_tz_name as _runtime_safe_tz_name
 from ...runtime_metadata import build_runtime_timezone_meta
 
 CLI_FORMAT_TOON = "toon"
@@ -80,16 +79,6 @@ def _format_result_for_cli(
         )
     except TypeError:
         return _format_result_minimal(prepared, verbose=verbose)
-
-
-def _safe_tz_name(value: Any) -> Optional[str]:
-    if value is None:
-        return None
-    name = _runtime_safe_tz_name(value)
-    if name:
-        return name
-    text = str(value).strip()
-    return text or None
 
 
 def _build_cli_timezone_meta(result: Any) -> Dict[str, Any]:
