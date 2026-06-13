@@ -800,6 +800,10 @@ def _execute_single_close(
         validation._safe_int_attr(mt5, "TRADE_RETCODE_PRICE_CHANGED", 10020),
         validation._safe_int_attr(mt5, "TRADE_RETCODE_REQUOTE", 10004),
     }
+    invalid_fill_codes = {
+        validation._safe_int_attr(mt5, "TRADE_RETCODE_INVALID_FILL", 10030),
+    }
+    stop_retries = False
     for fill_mode in fill_modes:
         price_retry_count = 0
         while True:
@@ -843,7 +847,9 @@ def _execute_single_close(
                 )
                 if isinstance(attempt_comment_fallback, dict):
                     attempts[-1]["comment_fallback"] = attempt_comment_fallback
-                _stdlib_time.sleep(0.15)
+                # A missing response does not prove that an irreversible close
+                # failed. Do not send the close again with another fill mode.
+                stop_retries = True
                 break
 
             retcode_val = getattr(result, "retcode", None)
@@ -860,17 +866,21 @@ def _execute_single_close(
                 attempts[-1]["comment_fallback"] = attempt_comment_fallback
             if validation._retcode_is_done(mt5, retcode_val):
                 break
+            if retcode_val in invalid_fill_codes:
+                break
             if retcode_val not in price_changed_codes or price_retry_count >= 3:
-                _stdlib_time.sleep(0.15)
+                stop_retries = True
                 break
             refreshed_tick = mt5.symbol_info_tick(position.symbol)
             if refreshed_tick is None:
-                _stdlib_time.sleep(0.15)
+                stop_retries = True
                 break
             tick = refreshed_tick
             price_retry_count += 1
             _stdlib_time.sleep(0.15)
         if validation._retcode_is_done(mt5, getattr(result, "retcode", None) if result is not None else None):
+            break
+        if stop_retries:
             break
 
     close_ok = (
@@ -1277,7 +1287,32 @@ def _close_positions(  # noqa: C901
                     )
                     # Disappearing position is not a transport failure
                     continue
-                position = fresh_positions[0]
+                expected_ticket = validation._safe_int_ticket(
+                    getattr(position, "ticket", None)
+                )
+                refreshed_position = next(
+                    (
+                        candidate
+                        for candidate in fresh_positions
+                        if validation._safe_int_ticket(
+                            getattr(candidate, "ticket", None)
+                        )
+                        == expected_ticket
+                    ),
+                    None,
+                )
+                if refreshed_position is None:
+                    results.append(
+                        {
+                            "ticket": getattr(position, "ticket", None),
+                            "error": (
+                                "Exact position ticket was not returned during "
+                                "pre-close refresh; close was not sent."
+                            ),
+                        }
+                    )
+                    continue
+                position = refreshed_position
 
                 symbol_info = None
                 try:

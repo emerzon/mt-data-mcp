@@ -157,6 +157,26 @@ class TestNormalizeCloseTradeComment:
         result = SimpleNamespace(retcode=10009, comment="Done; original comment invalid format")
         assert _invalid_comment_error_text(result, (0, "")) is None
 
+    @pytest.mark.parametrize("retcode", [10008, 10010])
+    def test_comment_fallback_stops_after_any_accepted_retcode(self, retcode):
+        mt5 = MagicMock()
+        mt5.TRADE_RETCODE_PLACED = 10008
+        mt5.TRADE_RETCODE_DONE = 10009
+        mt5.TRADE_RETCODE_DONE_PARTIAL = 10010
+        rejected = SimpleNamespace(retcode=10013, comment="Invalid comment")
+        accepted = SimpleNamespace(retcode=retcode, comment="accepted")
+        mt5.order_send.side_effect = [rejected, accepted]
+        mt5.last_error.return_value = (0, "")
+
+        returned, fallback, _last_error = _send_order_with_comment_fallback(
+            mt5,
+            {"comment": "strategy_EURUSD"},
+        )
+
+        assert returned is accepted
+        assert fallback["used"] is True
+        assert mt5.order_send.call_count == 2
+
 
 # ===================================================================
 #  _normalize_pending_expiration (mixed: some paths need config mock)

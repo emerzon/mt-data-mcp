@@ -659,7 +659,7 @@ class TestClosePositions:
         assert "attempts" in result
 
     @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
-    def test_close_retries_fill_modes_when_first_attempt_fails(self):
+    def test_close_does_not_retry_after_ambiguous_none_response(self):
         mt5 = sys.modules["MetaTrader5"]
         self._setup_mt5(mt5)
         mt5.positions_get.return_value = [_position(ticket=77)]
@@ -669,9 +669,45 @@ class TestClosePositions:
         from mtdata.core.trading import _close_positions
         result = _close_positions(ticket=77)
         assert result["ticket"] == 77
-        assert int(result["retcode"]) == 10009
+        assert result["error"] == "Failed to send close order"
         assert isinstance(result.get("attempts"), list)
-        assert len(result.get("attempts") or []) >= 2
+        assert len(result.get("attempts") or []) == 1
+        assert mt5.order_send.call_count == 1
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_close_retries_only_after_invalid_fill(self):
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        mt5.TRADE_RETCODE_INVALID_FILL = 10030
+        mt5.positions_get.return_value = [_position(ticket=77)]
+        mt5.symbol_info_tick.return_value = _tick()
+        mt5.order_send.side_effect = [
+            _order_result(retcode=10030, comment="Unsupported filling mode"),
+            _order_result(),
+        ]
+        from mtdata.core.trading import _close_positions
+
+        result = _close_positions(ticket=77)
+
+        assert int(result["retcode"]) == 10009
+        assert mt5.order_send.call_count == 2
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_close_does_not_retry_unrelated_rejection_across_fill_modes(self):
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        mt5.positions_get.return_value = [_position(ticket=77)]
+        mt5.symbol_info_tick.return_value = _tick()
+        mt5.order_send.side_effect = [
+            _order_result(retcode=10006, comment="Rejected"),
+            _order_result(),
+        ]
+        from mtdata.core.trading import _close_positions
+
+        result = _close_positions(ticket=77)
+
+        assert result["error"] == "Failed to send close order"
+        assert mt5.order_send.call_count == 1
 
     @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
     def test_no_positions_matched_criteria(self):
@@ -697,6 +733,26 @@ class TestClosePositions:
         assert result["close_price"] == 1.1
         assert "pnl" in result
         assert "duration_seconds" in result
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_single_ticket_with_two_open_positions_sends_one_exact_close(self):
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        requested = _position(ticket=42, symbol="EURUSD", volume=0.01)
+        other = _position(ticket=43, symbol="EURUSD", volume=0.01)
+        mt5.positions_get.side_effect = [[requested], [other, requested]]
+        mt5.symbol_info_tick.return_value = _tick()
+        mt5.order_send.return_value = _order_result()
+
+        from mtdata.core.trading import _close_positions
+
+        result = _close_positions(ticket=42)
+
+        assert result["ticket"] == 42
+        assert mt5.order_send.call_count == 1
+        close_request = mt5.order_send.call_args.args[0]
+        assert close_request["position"] == 42
+        assert close_request["volume"] == 0.01
 
     @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
     def test_partial_close_uses_requested_volume(self):
@@ -1077,6 +1133,22 @@ class TestClosePositions:
         assert row["ticket"] == 42
         assert row["error"] == "Failed to refresh open position before close."
         assert row["last_error"] == (10006, "No connection")
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_refresh_must_return_the_exact_position_ticket(self):
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        requested = _position(ticket=42, symbol="EURUSD")
+        different = _position(ticket=43, symbol="EURUSD")
+        mt5.positions_get.side_effect = [[requested], [different]]
+
+        from mtdata.core.trading import _close_positions
+
+        result = _close_positions(ticket=42)
+
+        assert result["ticket"] == 42
+        assert "Exact position ticket" in result["error"]
+        mt5.order_send.assert_not_called()
 
     @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
     def test_resets_abort_counter_on_success(self):
