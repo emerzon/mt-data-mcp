@@ -8,6 +8,7 @@ from typing import Any, Callable, Dict, List, Optional
 from pydantic import BaseModel, Field
 
 from .sizing import _resolve_risk_tick_value
+from .validation import _safe_float_attr as _validation_safe_float_attr
 
 
 class TradeSafetyPolicy(BaseModel):
@@ -54,15 +55,13 @@ class TradeGuardrailsConfig(BaseModel):
 
 
 def _safe_float_attr(obj: Any, name: str) -> Optional[float]:
-    """Extract a float attribute safely, returning None on failure."""
-    try:
-        val = getattr(obj, name, None)
-        if val is None:
-            return None
-        fv = float(val)
-        return fv if math.isfinite(fv) else None
-    except (TypeError, ValueError):
-        return None
+    """Extract a float attribute safely, returning None on failure.
+
+    Thin wrapper over the canonical validation helper that pins the
+    missing-value default to ``None`` so guardrail checks can distinguish
+    absent fields from genuine zeros.
+    """
+    return _validation_safe_float_attr(obj, name, None)
 
 
 def _normalize_stop_loss_value(value: Optional[float]) -> Optional[float]:

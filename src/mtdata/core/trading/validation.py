@@ -233,12 +233,13 @@ def _safe_int_attr(obj: Any, name: str, default: int) -> int:
     return int(numeric)
 
 
-def _safe_float_attr(obj: Any, name: str, default: float = 0.0) -> float:
+def _safe_float_attr(obj: Any, name: str, default: Optional[float] = 0.0) -> Optional[float]:
     """Safely coerce an object attribute to a float with fallback.
 
     Mirrors ``_safe_int_attr`` but for float extraction.  Handles missing
     attributes, ``None``, non-numeric values, and non-finite results
-    (NaN / ±Inf) by returning *default*.
+    (NaN / ±Inf) by returning *default* (``0.0`` for validation callers,
+    ``None`` for callers that need to distinguish missing values).
     """
     try:
         raw = getattr(obj, name, None)
