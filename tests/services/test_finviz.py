@@ -2124,6 +2124,40 @@ class TestFinvizTools:
         assert result["timezone"] == "UTC"
         assert "symbol" not in result["items"][0]
 
+    def test_finviz_dividend_calendar_labels_amounts_and_yield_units(self):
+        from mtdata.core.finviz import finviz_calendar
+
+        def _run_direct(_logger, operation, func, **fields):
+            return func()
+
+        service_result = {
+            "success": True,
+            "items": [
+                {
+                    "ticker": "ADP",
+                    "ordinary": 1.7,
+                    "special": 0.1,
+                    "yield": 2.878,
+                    "exdate": "2026-06-12",
+                }
+            ],
+        }
+        with (
+            patch("mtdata.core.finviz.run_logged_operation", side_effect=_run_direct),
+            patch(
+                "mtdata.core.finviz.get_dividends_calendar_api",
+                return_value=service_result,
+            ),
+        ):
+            result = finviz_calendar.__wrapped__(calendar="dividends")
+
+        assert result["items"][0]["ordinary_amount"] == 1.7
+        assert result["items"][0]["special_amount"] == 0.1
+        assert result["items"][0]["yield_pct"] == 2.878
+        assert "yield" not in result["items"][0]
+        assert result["currency_basis"] == "listing_currency"
+        assert result["units"]["yield_pct"] == "percentage_points (1.0 = 1%)"
+
     def test_finviz_calendar_rejects_removed_date_aliases(self):
         from mtdata.core.finviz import finviz_calendar
 

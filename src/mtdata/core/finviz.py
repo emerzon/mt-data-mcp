@@ -1674,9 +1674,10 @@ _FINVIZ_CALENDAR_COMPACT_FIELDS = (
     "sales_actual",
     "dividend",
     "amount",
-    "ordinary",
-    "special",
-    "yield",
+    "dividend_amount",
+    "ordinary_amount",
+    "special_amount",
+    "yield_pct",
     "impact",
 )
 
@@ -2221,6 +2222,21 @@ def _compact_finviz_calendar_item(
     }
 
 
+def _normalize_finviz_dividend_item(item: Any) -> Any:
+    if not isinstance(item, dict):
+        return item
+    normalized = dict(item)
+    for source, target in (
+        ("amount", "dividend_amount"),
+        ("ordinary", "ordinary_amount"),
+        ("special", "special_amount"),
+        ("yield", "yield_pct"),
+    ):
+        if source in normalized and target not in normalized:
+            normalized[target] = normalized.pop(source)
+    return normalized
+
+
 def _enrich_finviz_calendar_country(item: Dict[str, Any]) -> Dict[str, Any]:
     normalized = dict(item)
     had_country = normalized.get("country") not in (None, "")
@@ -2256,7 +2272,13 @@ def _normalize_finviz_calendar_payload(
             _enrich_finviz_calendar_country(item)
             for item in _normalize_finviz_output_rows(out["items"])
         ]
-        if str(calendar_type or "economic").strip().lower() == "economic":
+        calendar_mode = str(calendar_type or "economic").strip().lower()
+        if calendar_mode == "dividends":
+            normalized_items = [
+                _normalize_finviz_dividend_item(item)
+                for item in normalized_items
+            ]
+        if calendar_mode == "economic":
             normalized_items = [
                 _normalize_finviz_economic_calendar_time(item)
                 if isinstance(item, dict)
@@ -2306,6 +2328,14 @@ def _normalize_finviz_calendar_payload(
         out["timezone"] = "UTC"
     else:
         out.setdefault("timezone", _FINVIZ_CALENDAR_LOCAL_TIMEZONE)
+    if str(calendar_type or "economic").strip().lower() == "dividends":
+        out["currency_basis"] = "listing_currency"
+        out["units"] = {
+            "dividend_amount": "listing_currency_per_share",
+            "ordinary_amount": "listing_currency_per_share",
+            "special_amount": "listing_currency_per_share",
+            "yield_pct": "percentage_points (1.0 = 1%)",
+        }
     out["detail"] = detail_mode
     return out
 
