@@ -68,6 +68,7 @@ from mtdata.utils.mt5 import (
     get_cached_mt5_time_alignment,
     get_symbol_info_cached,
     inspect_mt5_time_alignment,
+    resolve_broker_symbol_name,
 )
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
@@ -818,6 +819,21 @@ class TestSymbolReadyGuard:
         # symbol_select called with True for selection, but NOT False for restore
         calls = [c for c in _mt5_mock.symbol_select.call_args_list if c == (("EURUSD", False),)]
         assert len(calls) == 0
+
+
+class TestResolveBrokerSymbolName:
+    def test_resolves_unique_case_insensitive_name(self):
+        _mt5_mock.symbols_get.return_value = [types.SimpleNamespace(name="QQQ")]
+
+        assert resolve_broker_symbol_name("qqq") == "QQQ"
+
+    def test_preserves_ambiguous_compact_name(self):
+        _mt5_mock.symbols_get.return_value = [
+            types.SimpleNamespace(name="BRK.B"),
+            types.SimpleNamespace(name="BRK-B"),
+        ]
+
+        assert resolve_broker_symbol_name("brkb") == "brkb"
 
 
 # ── estimate_server_offset  (lines 267-307) ──────────────────────────────────

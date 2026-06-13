@@ -16,6 +16,7 @@ from ..utils.mt5 import (
     MT5ConnectionError,
     ensure_mt5_connection_or_raise,
     mt5,
+    resolve_broker_symbol_name,
 )
 from ..utils.utils import (
     _format_time_explicit,
@@ -501,11 +502,12 @@ def market_ticker(
                 ensure_connection_impl=ensure_mt5_connection_or_raise,
             )
             mt5_gateway.ensure_connection()
+            resolved_symbol = resolve_broker_symbol_name(symbol)
             started = time.perf_counter()
-            if not mt5_gateway.symbol_select(symbol, True):
+            if not mt5_gateway.symbol_select(resolved_symbol, True):
                 return _finalize(
                     _market_ticker_error(
-                        _describe_symbol_select_error(symbol, mt5_gateway.last_error()),
+                        _describe_symbol_select_error(resolved_symbol, mt5_gateway.last_error()),
                         code="market_ticker_symbol_unavailable",
                         remediation=(
                             f"Verify the broker symbol name with symbols_list(search_term='{symbol}') "
@@ -514,11 +516,11 @@ def market_ticker(
                     )
                 )
 
-            symbol_info = mt5_gateway.symbol_info(symbol)
+            symbol_info = mt5_gateway.symbol_info(resolved_symbol)
             if symbol_info is None:
                 return _finalize(
                     _market_ticker_error(
-                        f"Symbol {symbol} not found",
+                        f"Symbol {resolved_symbol} not found",
                         code="market_ticker_symbol_unavailable",
                         remediation=(
                             f"Verify the broker symbol name with symbols_list(search_term='{symbol}') "
@@ -527,11 +529,11 @@ def market_ticker(
                     )
                 )
 
-            tick = mt5_gateway.symbol_info_tick(symbol)
+            tick = mt5_gateway.symbol_info_tick(resolved_symbol)
             if tick is None:
                 return _finalize(
                     _market_ticker_error(
-                        f"Failed to get tick data for {symbol}",
+                        f"Failed to get tick data for {resolved_symbol}",
                         code="market_ticker_tick_unavailable",
                         remediation=(
                             "Ensure the symbol is visible in Market Watch and that the market is open "
@@ -559,7 +561,7 @@ def market_ticker(
                 return _finalize(
                     _market_ticker_error(
                         (
-                            f"No usable quote data for {symbol}. "
+                            f"No usable quote data for {resolved_symbol}. "
                             f"Use symbols_list(search_term='{symbol}') to find broker-specific names and suffixes."
                         ),
                         code="market_ticker_quote_unavailable",
@@ -589,7 +591,7 @@ def market_ticker(
                 spread_points = (spread_abs / point) if point > 0 else None
                 points_per_pip = _market_ticker_points_per_pip(
                     symbol_info,
-                    symbol=symbol,
+                    symbol=resolved_symbol,
                     point=point,
                     digits=digits,
                 )
@@ -616,7 +618,7 @@ def market_ticker(
 
             out: Dict[str, Any] = {
                 "success": True,
-                "symbol": symbol,
+                "symbol": resolved_symbol,
                 "type": "quote",
                 "price_precision": digits,
                 "price_currency": price_currency,
@@ -669,7 +671,7 @@ def market_ticker(
                     out["data_age"] = age_display
                 out["stale_after_seconds"] = int(_MARKET_TICKER_STALE_SECONDS)
                 closed_session = closed_session_context(
-                    symbol,
+                    resolved_symbol,
                     now_epoch=now_epoch,
                     data_age_seconds=age_seconds,
                 )
@@ -724,7 +726,7 @@ def market_ticker(
                 if price is None:
                     return _finalize(
                         _market_ticker_error(
-                            f"{field_value} price is unavailable for {symbol}.",
+                            f"{field_value} price is unavailable for {resolved_symbol}.",
                             code="market_ticker_price_unavailable",
                             remediation=(
                                 "Use bid, ask, mid, or spread when the broker does not publish "
@@ -734,7 +736,7 @@ def market_ticker(
                     )
                 simple: Dict[str, Any] = {
                     "success": True,
-                    "symbol": symbol,
+                    "symbol": resolved_symbol,
                     "type": "price",
                     "field": field_value,
                     "price": price,

@@ -776,6 +776,32 @@ def _compact_symbol_name(value: Any) -> str:
     return "".join(ch for ch in str(value or "").upper() if ch.isalnum())
 
 
+def resolve_broker_symbol_name(symbol: str) -> str:
+    query = str(symbol or "").strip()
+    if not query:
+        return query
+    try:
+        names = [
+            str(getattr(info, "name", "") or "").strip()
+            for info in (mt5.symbols_get() or [])
+        ]
+    except Exception:
+        return query
+    names = [name for name in names if name]
+    case_matches = [name for name in names if name.casefold() == query.casefold()]
+    if len(case_matches) == 1:
+        return case_matches[0]
+    query_compact = _compact_symbol_name(query)
+    compact_matches = [
+        name
+        for name in names
+        if query_compact and _compact_symbol_name(name) == query_compact
+    ]
+    if len(compact_matches) == 1:
+        return compact_matches[0]
+    return query
+
+
 def _symbol_name_suggestions(symbol: str, *, limit: int = 5) -> list[str]:
     query = str(symbol or "").strip()
     if not query:

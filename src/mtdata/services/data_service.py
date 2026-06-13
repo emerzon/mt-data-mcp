@@ -61,6 +61,7 @@ from ..utils.mt5 import (
     get_cached_mt5_time_alignment,
     get_symbol_info_cached,
     mt5,
+    resolve_broker_symbol_name,
 )
 from ..utils.ohlcv import validate_and_clean_ohlcv_frame
 
@@ -1486,6 +1487,7 @@ def fetch_candles(  # noqa: C901
 ) -> Dict[str, Any]:
     """Return historical candles as tabular data."""
     try:
+        symbol = resolve_broker_symbol_name(symbol)
         query_started_at = time.perf_counter()
         # Backward/compat mappings to internal variable names used in implementation
         candles = int(limit)
@@ -2343,6 +2345,7 @@ def fetch_ticks(  # noqa: C901
         - "full_rows": return rows with per-tick epoch, mid, spread, and gap fields.
     """
     try:
+        symbol = resolve_broker_symbol_name(symbol)
         effective_limit = int(limit)
         if effective_limit <= 0:
             return {"error": "limit must be greater than 0."}

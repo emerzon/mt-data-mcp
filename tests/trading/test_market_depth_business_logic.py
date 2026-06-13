@@ -333,6 +333,28 @@ def test_market_ticker_returns_lightweight_spread_snapshot() -> None:
     assert "diagnostics" not in out["meta"]
 
 
+def test_market_ticker_uses_canonical_broker_symbol_case() -> None:
+    tick = SimpleNamespace(bid=100.0, ask=100.1, last=100.05, volume=1, time=1700000000)
+    with patch("mtdata.core.market_depth.mt5") as mt5, patch(
+        "mtdata.core.market_depth.resolve_broker_symbol_name", return_value="QQQ"
+    ):
+        mt5.symbol_select.return_value = True
+        mt5.symbol_info.return_value = SimpleNamespace(
+            digits=2,
+            point=0.01,
+            trade_tick_size=0.01,
+            trade_tick_value=1.0,
+            currency_profit="USD",
+        )
+        mt5.symbol_info_tick.return_value = tick
+
+        out = _raw_market_ticker("qqq", detail="compact")
+
+    assert out["symbol"] == "QQQ"
+    mt5.symbol_select.assert_called_once_with("QQQ", True)
+    mt5.symbol_info_tick.assert_called_once_with("QQQ")
+
+
 def test_market_ticker_compact_detail_omits_verbose_fields() -> None:
     tick = SimpleNamespace(
         bid=200.0,
