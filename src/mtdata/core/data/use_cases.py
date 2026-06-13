@@ -496,7 +496,7 @@ def _slim_projected_candles_payload(payload: Dict[str, Any]) -> None:
     if "spread" not in projected_fields:
         payload.pop("spread_estimate", None)
         payload.pop("spread_unavailable", None)
-    if not any(isinstance(row, dict) and row.get("is_forming") for row in rows or []):
+    if not bool(payload.get("forming_candle_included")):
         payload.pop("forming_candle_status", None)
         payload.pop("has_forming_candle", None)
         payload.pop("forming_candle_included", None)

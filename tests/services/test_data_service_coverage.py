@@ -1031,6 +1031,7 @@ class TestFetchCandles(unittest.TestCase):
         self.assertTrue(result['forming_candle_included'])
         self.assertFalse(result['forming_candle_skipped'])
         self.assertEqual(len(result['data']), 5)
+        self.assertNotIn('is_forming', result['data'][-1])
 
     @patch(_MT5_CONFIG)
     @patch(_RATES_FROM)

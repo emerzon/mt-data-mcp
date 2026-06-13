@@ -1837,11 +1837,7 @@ def fetch_candles(  # noqa: C901
         if forming_candle_included:
             data_rows = payload.get("data")
             if isinstance(data_rows, list) and data_rows:
-                forming_index = len(data_rows) - 1
-                payload["forming_candle_index"] = forming_index
-                row = data_rows[forming_index]
-                if isinstance(row, dict):
-                    row["is_forming"] = True
+                payload["forming_candle_index"] = len(data_rows) - 1
         if query_mode == "range":
             query_applied: Dict[str, Any] = {
                 "mode": query_mode,

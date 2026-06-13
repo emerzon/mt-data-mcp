@@ -867,6 +867,37 @@ def test_run_data_fetch_candles_adds_contract_metadata_in_full_detail():
     assert "canonical_source" not in result
 
 
+def test_run_data_fetch_candles_full_keeps_forming_metadata_without_row_flag():
+    request = DataFetchCandlesRequest(
+        symbol="EURUSD",
+        timeframe="H1",
+        limit=10,
+        detail="full",
+    )
+
+    result = run_data_fetch_candles(
+        request,
+        gateway=SimpleNamespace(ensure_connection=lambda: None),
+        fetch_candles_impl=lambda **kwargs: {
+            "success": True,
+            "symbol": "EURUSD",
+            "timeframe": "H1",
+            "candles_requested": 10,
+            "has_forming_candle": True,
+            "forming_candle_status": "included",
+            "forming_candle_included": True,
+            "forming_candle_skipped": False,
+            "ohlcv_filter_applied": True,
+            "data": [{"time": 1.0, "close": 1.1}],
+        },
+    )
+
+    assert result["has_forming_candle"] is True
+    assert result["forming_candle_status"] == "included"
+    assert result["forming_candle_included"] is True
+    assert "is_forming" not in result["data"][0]
+
+
 def test_run_data_fetch_ticks_logs_connection_error(caplog):
     request = DataFetchTicksRequest(symbol="EURUSD", limit=5)
 
