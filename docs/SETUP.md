@@ -387,7 +387,6 @@ mtdata/
 │   │   ├── regime/     # Regime detection (HMM, BOCPD, MS-AR)
 │   │   ├── report/     # `report_generate` runtime
 │   │   ├── report_templates/  # Per-style report templates
-│   │   ├── reports/    # Shared report helpers
 │   │   └── trading/    # `trade_*` tools and account / risk modules
 │   ├── forecast/       # Forecasting methods
 │   ├── patterns/       # Pattern detection
