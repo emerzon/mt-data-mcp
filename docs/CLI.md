@@ -229,6 +229,14 @@ Trained models are written under `~/.mtdata/models/` by default and re-used auto
 | `labels_triple_barrier` | Label data with barrier outcomes |
 | `regime_detect` | Detect market regimes and change points |
 
+### Time-Series Diagnostics
+| Command | Description |
+|---------|-------------|
+| `stationarity_test` | Run ADF, KPSS, and optional Phillips-Perron tests |
+| `seasonality_detect` | Rank dominant periods using autocorrelation and spectral peaks |
+| `outliers_detect` | Detect anomalous return, volume, and range bars |
+| `volatility_term_structure` | Compare realized volatility across rolling horizons and historical percentiles |
+
 ### Indicators & Patterns
 | Command | Description |
 |---------|-------------|
@@ -240,7 +248,8 @@ Trained models are written under `~/.mtdata/models/` by default and re-used auto
 | `pivot_compute_points` | Calculate pivot levels |
 | `support_resistance_levels` | Compute support/resistance levels with Fibonacci swing context |
 | `correlation_matrix` | Pairwise correlation matrix between symbols |
-| `cointegration_test` | Pairwise cointegration test between symbols |
+| `cross_correlation` | Estimate lead/lag correlation between two symbols |
+| `cointegration_test` | Engle-Granger pair tests or Johansen multivariate cointegration |
 | `causal_discover_signals` | Granger-style causal discovery between symbols |
 
 Volume profile example:
@@ -278,6 +287,7 @@ mtdata-cli patterns_detect EURUSD --timeframe H1 --mode fractal \
 | `trade_journal_analyze` | Summarize realized exit-deal performance |
 | `trade_risk_analyze` | Analyze position risk |
 | `trade_var_cvar_calculate` | Estimate portfolio VaR/CVaR from open positions |
+| `trade_stress_test` | Apply deterministic percentage shocks to open positions |
 
 ### News
 | Command | Description |
@@ -471,6 +481,14 @@ mtdata-cli trade_journal_analyze --symbol EURUSD --minutes-back 43200 --breakdow
 mtdata-cli trade_var_cvar_calculate --timeframe H1 --lookback 500 --confidence 95 --json
 mtdata-cli trade_var_cvar_calculate --symbol EURUSD --method gaussian --transform pct --lookback 300 --json
 ```
+
+### Stress Open Positions
+```bash
+mtdata-cli trade_stress_test '{"EURUSD":-2.0,"GBPUSD":-1.5}' --json
+mtdata-cli trade_stress_test '{"*":-3.0}' --detail full --json
+```
+
+Shock values are percentage price moves. `*` is a fallback for any open-position symbol without an explicit shock. The tool is read-only and reports estimated P&L and equity impact.
 
 ### Detect Patterns and Regimes
 ```bash

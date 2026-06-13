@@ -40,6 +40,7 @@ from .requests import (
     TradeModifyRequest,
     TradePlaceRequest,
     TradeRiskAnalyzeRequest,
+    TradeStressTestRequest,
     TradeVarCvarRequest,
 )
 from .safety import evaluate_trade_guardrails, preview_trade_guardrails
@@ -3645,6 +3646,145 @@ def run_trade_risk_analyze(  # noqa: C901
             return {"error": str(exc)}
 
     return _finish(_analyze_risk())
+
+
+def run_trade_stress_test(
+    request: TradeStressTestRequest,
+    *,
+    gateway: Any,
+) -> Dict[str, Any]:
+    """Apply deterministic price shocks to the current open-position snapshot."""
+    try:
+        gateway.ensure_connection()
+    except MT5ConnectionError as exc:
+        return {"error": str(exc)}
+    try:
+        account = gateway.account_info()
+        positions = gateway.positions_get()
+    except Exception as exc:
+        return {"error": str(exc)}
+    positions = list(positions or [])
+    equity = validation._safe_float_attr(account, "equity", 0.0) if account is not None else 0.0
+    currency = str(getattr(account, "currency", "") or "").strip() if account is not None else ""
+    position_type_buy = validation._safe_int_attr(
+        gateway,
+        "POSITION_TYPE_BUY",
+        validation._safe_int_attr(gateway, "ORDER_TYPE_BUY", 0),
+    )
+    rows: List[Dict[str, Any]] = []
+    warnings_out: List[Dict[str, Any]] = []
+    total_pnl = 0.0
+    shocked_positions = 0
+    for position in positions:
+        symbol = str(getattr(position, "symbol", "") or "").strip().upper()
+        shock = request.shocks.get(symbol, request.shocks.get("*"))
+        if shock is None and not request.include_unshocked:
+            continue
+        shock_value = float(shock or 0.0)
+        symbol_info = gateway.symbol_info(symbol)
+        if symbol_info is None:
+            warnings_out.append({"symbol": symbol, "warning": "Symbol info unavailable."})
+            continue
+        current_price = validation._safe_float_attr(position, "price_current", 0.0)
+        if current_price <= 0.0:
+            current_price = validation._safe_float_attr(position, "price_open", 0.0)
+        volume = validation._safe_float_attr(position, "volume", 0.0)
+        tick_size = validation._safe_float_attr(symbol_info, "trade_tick_size", 0.0)
+        if tick_size <= 0.0:
+            tick_size = validation._safe_float_attr(symbol_info, "point", 0.0)
+        tick_value = validation._safe_float_attr(symbol_info, "trade_tick_value", 0.0)
+        tick_value_profit = validation._safe_float_attr(
+            symbol_info,
+            "trade_tick_value_profit",
+            tick_value,
+        )
+        tick_value_loss = validation._safe_float_attr(
+            symbol_info,
+            "trade_tick_value_loss",
+            tick_value,
+        )
+        if current_price <= 0.0 or volume <= 0.0 or tick_size <= 0.0:
+            warnings_out.append(
+                {
+                    "ticket": getattr(position, "ticket", None),
+                    "symbol": symbol,
+                    "warning": "Invalid position price, volume, or symbol tick size.",
+                }
+            )
+            continue
+        shocked_price = current_price * (1.0 + shock_value / 100.0)
+        side = (
+            "BUY"
+            if validation._safe_int_attr(position, "type", 1) == int(position_type_buy)
+            else "SELL"
+        )
+        side_sign = 1.0 if side == "BUY" else -1.0
+        ticks_moved = (shocked_price - current_price) / tick_size
+        raw_pnl_sign = side_sign * ticks_moved
+        applied_tick_value = tick_value_profit if raw_pnl_sign >= 0.0 else tick_value_loss
+        if not math.isfinite(applied_tick_value) or applied_tick_value <= 0.0:
+            warnings_out.append(
+                {
+                    "ticket": getattr(position, "ticket", None),
+                    "symbol": symbol,
+                    "warning": "Symbol tick value is unavailable; stress P&L cannot be calculated.",
+                }
+            )
+            continue
+        pnl_impact = raw_pnl_sign * applied_tick_value * volume
+        total_pnl += pnl_impact
+        if abs(shock_value) > 0.0:
+            shocked_positions += 1
+        row: Dict[str, Any] = {
+            "ticket": getattr(position, "ticket", None),
+            "symbol": symbol,
+            "side": side,
+            "volume": round(float(volume), 6),
+            "shock_pct": round(shock_value, 6),
+            "current_price": round(float(current_price), 8),
+            "shocked_price": round(float(shocked_price), 8),
+            "pnl_impact": round(float(pnl_impact), 2),
+        }
+        if request.detail == "full":
+            row.update(
+                {
+                    "ticks_moved": round(float(ticks_moved), 4),
+                    "tick_size": round(float(tick_size), 10),
+                    "tick_value_used": round(float(applied_tick_value), 8),
+                }
+            )
+        rows.append(row)
+    rows.sort(key=lambda row: (float(row.get("pnl_impact") or 0.0), str(row.get("symbol") or "")))
+    stressed_equity = float(equity + total_pnl) if equity > 0.0 else None
+    result: Dict[str, Any] = {
+        "success": True,
+        "scope": "open_positions",
+        "shocks": dict(request.shocks),
+        "positions_total": len(positions),
+        "positions_evaluated": len(rows),
+        "positions_shocked": int(shocked_positions),
+        "total_pnl_impact": round(float(total_pnl), 2),
+        "items": rows,
+        "count": len(rows),
+    }
+    if equity > 0.0:
+        result.update(
+            {
+                "equity_before": round(float(equity), 2),
+                "equity_after": round(float(stressed_equity), 2),
+                "equity_impact_pct": round(float(total_pnl / equity * 100.0), 4),
+            }
+        )
+    if currency:
+        result["currency"] = currency
+    if not positions:
+        result.update({"empty": True, "message": "No open positions found."})
+    elif not rows:
+        result["message"] = "No open positions matched the requested shocks or had usable tick metadata."
+    if warnings_out:
+        result["warnings"] = warnings_out
+        result["partial_failure"] = True
+    return result
 
 
 def run_trade_var_cvar_calculate(  # noqa: C901

@@ -8,8 +8,16 @@ from ...utils.mt5 import ensure_mt5_connection_or_raise, mt5_adapter
 from .._mcp_instance import mcp
 from ..execution_logging import run_logged_operation
 from .gateway import create_trading_gateway
-from .requests import TradeRiskAnalyzeRequest, TradeVarCvarRequest
-from .use_cases import run_trade_risk_analyze, run_trade_var_cvar_calculate
+from .requests import (
+    TradeRiskAnalyzeRequest,
+    TradeStressTestRequest,
+    TradeVarCvarRequest,
+)
+from .use_cases import (
+    run_trade_risk_analyze,
+    run_trade_stress_test,
+    run_trade_var_cvar_calculate,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -68,6 +76,27 @@ def trade_var_cvar_calculate(request: TradeVarCvarRequest) -> dict:
         symbol=request.symbol,
         timeframe=request.timeframe,
         func=lambda: run_trade_var_cvar_calculate(
+            request,
+            gateway=create_trading_gateway(
+                adapter=mt5_adapter,
+                ensure_connection_impl=ensure_mt5_connection_or_raise,
+            ),
+        ),
+    )
+
+
+@mcp.tool()
+def trade_stress_test(request: TradeStressTestRequest) -> dict:
+    """Apply deterministic percentage shocks to current open MT5 positions.
+
+    This tool is read-only. It estimates position-level and aggregate P&L impact
+    using current position marks and broker tick-value metadata.
+    """
+    return run_logged_operation(
+        logger,
+        operation="trade_stress_test",
+        shocks=request.shocks,
+        func=lambda: run_trade_stress_test(
             request,
             gateway=create_trading_gateway(
                 adapter=mt5_adapter,

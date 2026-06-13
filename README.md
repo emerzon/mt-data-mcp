@@ -30,17 +30,18 @@ Use it to explore ideas, build repeatable research workflows, and integrate MT5 
 |----------|--------------|-----------|
 | **Data** | Fetch candles, ticks, market depth, and ranked market scans from MT5 | `data_fetch_candles`, `data_fetch_ticks`, `market_depth_fetch`, `market_ticker`, `symbols_top_markets` |
 | **Forecasting** | Predict price paths with classical, ML, or foundation models | `forecast_generate`, `forecast_backtest_run` |
-| **Volatility** | Estimate future price movement magnitude | `forecast_volatility_estimate` |
+| **Volatility** | Estimate future movement and compare realized volatility across horizons | `forecast_volatility_estimate`, `volatility_term_structure` |
 | **Regimes** | Detect trending, ranging, or crisis market states | `regime_detect` |
 | **Barriers** | Calculate TP/SL hit probabilities via simulation | `forecast_barrier_prob`, `forecast_barrier_optimize` |
 | **Patterns** | Identify candlestick, chart, Elliott, and fractal patterns | `patterns_detect` |
 | **Indicators** | Compute 100+ technical indicators | `data_fetch_candles --indicators` |
 | **Denoising** | Smooth price data to reveal trends | `--denoise` option |
-| **Temporal** | Discover session effects and seasonal patterns | `temporal_analyze` |
-| **Multi-asset** | Explore cross-symbol correlation, cointegration, and lead/lag relationships | `correlation_matrix`, `cointegration_test`, `causal_discover_signals` |
+| **Temporal** | Test stationarity and discover automatic or calendar seasonality | `stationarity_test`, `seasonality_detect`, `temporal_analyze` |
+| **Diagnostics** | Flag anomalous returns, volume, and bar ranges | `outliers_detect` |
+| **Multi-asset** | Explore correlation, lead/lag structure, and pairwise or multivariate cointegration | `correlation_matrix`, `cross_correlation`, `cointegration_test` |
 | **Scanning** | Screen MT5 symbols by spread, price change, volume, RSI, and SMA | `symbols_top_markets`, `market_scan` |
 | **Strategy Backtesting** | Backtest simple SMA/EMA/RSI trading rules on MT5 candles | `strategy_backtest` |
-| **Trading** | Place orders, manage positions, review realized performance, and estimate tail risk | `trade_place`, `trade_close`, `trade_journal_analyze`, `trade_var_cvar_calculate` |
+| **Trading** | Place orders, manage positions, review performance, and estimate tail or scenario risk | `trade_place`, `trade_close`, `trade_var_cvar_calculate`, `trade_stress_test` |
 | **Async Training** | Run heavyweight forecast training in the background and reuse cached models | `forecast_train`, `forecast_task_status`, `forecast_task_wait`, `forecast_models_list`, `forecast_models_delete` |
 | **News** | Unified, ranked news + economic calendar relevant to a symbol | `news` |
 | **Fundamentals** | US equity data, screening, news, calendars | `finviz_fundamentals`, `finviz_screen`, `finviz_calendar` |

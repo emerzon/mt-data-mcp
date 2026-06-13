@@ -1,0 +1,54 @@
+# Time-Series Diagnostics
+
+These read-only tools analyze recent MT5 bars before forecasting, modeling, or risk decisions.
+
+## Stationarity
+
+`stationarity_test` runs ADF and KPSS from `statsmodels`; Phillips-Perron is also available when the `arch` extra is installed.
+
+```bash
+mtdata-cli stationarity_test EURUSD --timeframe H1 --lookback 500 \
+  --target log_return --tests adf,kpss,pp --json
+```
+
+ADF and PP use a unit-root null hypothesis, while KPSS uses a stationarity null. The combined `conclusion` is `stationary`, `non_stationary`, `mixed`, or `inconclusive`.
+
+## Automatic Seasonality
+
+`seasonality_detect` combines autocorrelation peaks with a periodogram and ranks candidate periods in bars.
+
+```bash
+mtdata-cli seasonality_detect EURUSD --timeframe H1 --lookback 1000 \
+  --target log_return --min-period 2 --max-period 168 --json
+```
+
+The dominant period is exploratory evidence, not proof of a stable calendar effect. Confirm it on separate history.
+
+## Bar Outliers
+
+`outliers_detect` scores returns, volume, and high-low range with MAD, IQR, or z-scores.
+
+```bash
+mtdata-cli outliers_detect EURUSD --timeframe H1 --lookback 500 \
+  --fields return,volume,range --method mad --threshold 3.5 --json
+```
+
+Use `--detail full` to include field-level scores and OHLC values for each flagged bar.
+
+## Volatility Term Structure
+
+`volatility_term_structure` compares current realized volatility with its historical distribution across multiple rolling horizons.
+
+```bash
+mtdata-cli volatility_term_structure EURUSD --timeframe H1 --lookback 1000 \
+  --horizons 1,5,10,20,60 --percentiles 10,25,50,75,90 --json
+```
+
+By default values are annualized decimal volatility. Set `--annualize false` for per-bar decimal volatility.
+
+## Typical Workflow
+
+1. Run `outliers_detect` to identify data or event-driven anomalies.
+2. Run `stationarity_test` on the exact transform intended for modeling.
+3. Use `seasonality_detect` to propose candidate seasonal periods.
+4. Use `volatility_term_structure` to place current risk in historical context.

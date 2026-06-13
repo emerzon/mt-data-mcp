@@ -26,7 +26,7 @@ from .orders import (
 )
 from .positions import trade_get_open, trade_get_pending
 from .requests import TradeCloseRequest, TradeModifyRequest, TradePlaceRequest
-from .risk import trade_risk_analyze, trade_var_cvar_calculate
+from .risk import trade_risk_analyze, trade_stress_test, trade_var_cvar_calculate
 from .use_cases import run_trade_close, run_trade_modify, run_trade_place
 
 logger = logging.getLogger(__name__)

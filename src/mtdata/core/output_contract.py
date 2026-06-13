@@ -5,6 +5,8 @@ from typing import Any, Iterable, Iterator, Mapping, Optional
 
 from ..shared.parameter_contracts import (
     OUTPUT_EXTRA_FULL_ALIASES as _OUTPUT_EXTRA_FULL_ALIASES,
+)
+from ..shared.parameter_contracts import (
     OUTPUT_EXTRAS as _OUTPUT_EXTRAS,
 )
 from ..shared.schema import CANONICAL_OUTPUT_DETAIL_ALIASES
@@ -15,17 +17,23 @@ _MISSING = object()
 _SUCCESS_RELATED_TOOLS = {
     "market_ticker": ["market_snapshot", "trade_session_context", "support_resistance_levels"],
     "market_snapshot": ["market_ticker", "report_generate", "trade_session_context"],
-    "data_fetch_candles": ["indicators_describe", "temporal_analyze", "patterns_detect"],
+    "data_fetch_candles": ["indicators_describe", "temporal_analyze", "stationarity_test"],
     "patterns_detect": ["regime_detect", "support_resistance_levels", "pivot_compute_points"],
-    "regime_detect": ["patterns_detect", "forecast_generate", "temporal_analyze"],
+    "regime_detect": ["patterns_detect", "forecast_generate", "stationarity_test"],
     "trade_session_context": ["market_ticker", "trade_risk_analyze", "trade_get_open"],
     "support_resistance_levels": ["confluence_levels", "pivot_compute_points", "data_fetch_candles"],
     "pivot_compute_points": ["confluence_levels", "support_resistance_levels", "market_status"],
     "confluence_levels": ["pivot_compute_points", "support_resistance_levels", "data_fetch_candles"],
-    "correlation_matrix": ["cointegration_test", "causal_discover_signals", "trade_var_cvar_calculate"],
-    "cointegration_test": ["correlation_matrix", "causal_discover_signals"],
+    "correlation_matrix": ["cointegration_test", "cross_correlation", "trade_var_cvar_calculate"],
+    "cross_correlation": ["correlation_matrix", "cointegration_test", "causal_discover_signals"],
+    "cointegration_test": ["correlation_matrix", "cross_correlation", "causal_discover_signals"],
     "causal_discover_signals": ["correlation_matrix", "cointegration_test"],
-    "trade_var_cvar_calculate": ["correlation_matrix", "cointegration_test", "causal_discover_signals"],
+    "trade_var_cvar_calculate": ["trade_stress_test", "correlation_matrix", "cointegration_test"],
+    "trade_stress_test": ["trade_var_cvar_calculate", "trade_risk_analyze", "trade_get_open"],
+    "stationarity_test": ["seasonality_detect", "forecast_generate", "cointegration_test"],
+    "seasonality_detect": ["stationarity_test", "temporal_analyze", "forecast_generate"],
+    "outliers_detect": ["data_fetch_candles", "denoise_list_methods", "regime_detect"],
+    "volatility_term_structure": ["forecast_volatility_estimate", "regime_detect", "trade_var_cvar_calculate"],
 }
 _VERBOSE_ONLY_KEYS = frozenset(
     {

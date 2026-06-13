@@ -451,13 +451,13 @@ def _summarize_current_regime_for_comparison(
             label,
             mean_return=regime_stats.get("mean_return"),
         )
-    elif method == "clustering":
+    elif method in {"clustering", "pelt"}:
         direction = _normalize_direction_signal(label)
     if direction is not None:
         entry["direction"] = direction
 
     volatility = None
-    if method in {"hmm", "ms_ar", "garch", "ensemble", "wavelet"}:
+    if method in {"hmm", "ms_ar", "garch", "ensemble", "wavelet", "pelt"}:
         volatility = _normalize_volatility_signal(
             label,
             volatility=regime_stats.get("volatility"),
@@ -700,6 +700,11 @@ _REGIME_METHOD_RUNTIME_GUIDANCE: Dict[str, Dict[str, str]] = {
         "use_case": "change-point and transition timing",
         "cost_notes": "calibration and run-length filtering cost grows with history",
     },
+    "pelt": {
+        "speed_tier": "fast",
+        "use_case": "offline structural-break segmentation",
+        "cost_notes": "ruptures PELT with pruning; cost depends on model and history length",
+    },
     "hmm": {
         "speed_tier": "medium",
         "use_case": "probabilistic return/price state segmentation",
@@ -801,6 +806,7 @@ def regime_detect(  # noqa: C901
     end: Optional[str] = None,
     method: Literal[
         "bocpd",
+        "pelt",
         "hmm",
         "gmm",
         "ms_ar",
@@ -829,7 +835,7 @@ def regime_detect(  # noqa: C901
       caps bars analysed after the window is fetched; omitted limit uses the
       effective lookback cap.
     - method: Default is 'rule_based' (fast trend/ranging/transition classification).
-      Other options: 'bocpd' (Bayesian online change-point; Gaussian), 'hmm' / 'gmm' (Gaussian mixture/HMM-lite),
+      Other options: 'bocpd' (Bayesian online change-point; Gaussian), 'pelt' (offline penalized change-point segmentation), 'hmm' / 'gmm' (Gaussian mixture/HMM-lite),
       'ms_ar' (Markov-switching AR), 'clustering' (rolling-feature clustering via tsfresh + KMeans/Spectral),
       'garch' (GARCH-based volatility regimes),
       'wavelet' (multi-resolution wavelet energy regime detection via PyWavelets),
@@ -1385,6 +1391,147 @@ def regime_detect(  # noqa: C901
                     max_regimes=max_regimes,
                 )
             )
+
+        elif method == "pelt":
+            try:
+                import ruptures as rpt
+            except ImportError:
+                return _finish(
+                    {
+                        "error": "ruptures is required for PELT regime detection.",
+                        "error_code": "dependency_missing",
+                        "details": {"method": "pelt", "requires": ["ruptures"]},
+                    }
+                )
+
+            model = str(p.get("model", "l2") or "l2").strip().lower()
+            if model not in {"l1", "l2", "rbf", "normal", "ar"}:
+                return _finish(
+                    {"error": "params.model must be one of: l1, l2, rbf, normal, ar."}
+                )
+            min_size, min_size_error = _coerce_param(
+                p,
+                "min_size",
+                default=max(2, int(min_regime_bars_val)),
+                cast=int,
+                error="params.min_size must be an integer >= 2.",
+            )
+            if min_size_error is not None or int(min_size) < 2:
+                return _finish({"error": min_size_error or "params.min_size must be >= 2."})
+            jump, jump_error = _coerce_param(
+                p,
+                "jump",
+                default=1,
+                cast=int,
+                error="params.jump must be an integer >= 1.",
+            )
+            if jump_error is not None or int(jump) < 1:
+                return _finish({"error": jump_error or "params.jump must be >= 1."})
+            penalty_raw = p.get("penalty")
+            if penalty_raw is None or str(penalty_raw).strip().lower() == "auto":
+                variance = float(np.var(x, ddof=0))
+                penalty = max(1e-12, 3.0 * np.log(max(int(x.size), 2)) * variance)
+                penalty_source = "bic_like_auto"
+            else:
+                try:
+                    penalty = float(penalty_raw)
+                except Exception:
+                    return _finish({"error": "params.penalty must be a positive number."})
+                penalty_source = "params"
+            if not np.isfinite(penalty) or penalty <= 0.0:
+                return _finish({"error": "params.penalty must be a positive finite number."})
+
+            signal = np.asarray(x, dtype=float).reshape(-1, 1)
+            try:
+                breakpoints = rpt.Pelt(
+                    model=model,
+                    min_size=int(min_size),
+                    jump=int(jump),
+                ).fit(signal).predict(pen=float(penalty))
+            except Exception as exc:
+                return _finish({"error": f"PELT regime detection failed: {exc}"})
+
+            segment_ends = [int(value) for value in breakpoints if int(value) > 0]
+            if not segment_ends or segment_ends[-1] != int(x.size):
+                segment_ends.append(int(x.size))
+            regimes: List[Dict[str, Any]] = []
+            change_points: List[Dict[str, Any]] = []
+            start_idx = 0
+            global_volatility = max(float(np.std(x, ddof=0)), 1e-12)
+            for regime_id, end_idx in enumerate(segment_ends):
+                if end_idx <= start_idx:
+                    continue
+                segment = np.asarray(x[start_idx:end_idx], dtype=float)
+                mean_value = float(np.mean(segment))
+                volatility = float(np.std(segment, ddof=0))
+                if target == "return":
+                    direction = "positive" if mean_value > 0 else "negative" if mean_value < 0 else "neutral"
+                    vol_label = "high_vol" if volatility > global_volatility else "low_vol"
+                    label = f"{direction}_{vol_label}"
+                else:
+                    direction = "rising" if segment[-1] > segment[0] else "falling" if segment[-1] < segment[0] else "flat"
+                    label = direction
+                row = {
+                    "regime": int(regime_id),
+                    "label": label,
+                    "start": t_fmt[start_idx],
+                    "end": t_fmt[end_idx - 1],
+                    "bars": int(end_idx - start_idx),
+                    "mean": round(mean_value, 8),
+                    "volatility": round(volatility, 8),
+                }
+                regimes.append(row)
+                if start_idx > 0:
+                    change_points.append(
+                        {"idx": int(start_idx), "time": t_fmt[start_idx]}
+                    )
+                start_idx = end_idx
+
+            if not regimes:
+                return _finish({"error": "PELT produced no valid regime segments."})
+            latest = regimes[-1]
+            mean_contrast = float(np.std([float(row["mean"]) for row in regimes], ddof=0))
+            confidence = min(1.0, mean_contrast / global_volatility) if global_volatility > 0 else 0.0
+            current_regime = {
+                "regime_id": latest["regime"],
+                "label": latest["label"],
+                "since": latest["start"],
+                "bars": latest["bars"],
+                "regime_confidence": round(float(confidence), 4),
+            }
+            payload: Dict[str, Any] = {
+                "success": True,
+                "symbol": symbol,
+                "timeframe": timeframe,
+                "method": "pelt",
+                "target": target,
+                "current_regime": current_regime,
+                "regimes": regimes[-int(max_regimes) :] if output != "full" else regimes,
+                "change_points": change_points,
+                "summary": {
+                    "segments": int(len(regimes)),
+                    "change_points_count": int(len(change_points)),
+                    "current_segment_bars": int(latest["bars"]),
+                },
+                "reliability": _common_reliability(
+                    None,
+                    source="pelt_segment_separation",
+                    confidence=confidence,
+                ),
+                "params_used": {
+                    "model": model,
+                    "penalty": round(float(penalty), 10),
+                    "penalty_source": penalty_source,
+                    "min_size": int(min_size),
+                    "jump": int(jump),
+                },
+            }
+            if include_series and output == "full":
+                payload["series"] = {
+                    "times": t_fmt,
+                    "values": [float(value) for value in x.tolist()],
+                }
+            return _finish(payload)
 
         elif method == "ms_ar":
             try:
@@ -3221,6 +3368,7 @@ def regime_detect(  # noqa: C901
             include_series_for_subcalls = bool(include_series) and sub_detail == "full"
             all_methods = [
                 "bocpd",
+                "pelt",
                 "hmm",
                 "ms_ar",
                 "clustering",

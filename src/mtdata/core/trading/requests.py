@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from typing import Any, Dict, Literal, Optional, Union
 
 from pydantic import AliasChoices, BaseModel, Field, field_validator
@@ -407,6 +408,34 @@ class TradeVarCvarRequest(BaseModel):
             "risk arrays when no open positions are available."
         ),
     )
+
+
+class TradeStressTestRequest(BaseModel):
+    shocks: Dict[str, float] = Field(
+        ...,
+        description=(
+            "Per-symbol percentage price shocks, for example {'EURUSD': -2.0}. "
+            "Use '*' as a fallback shock for symbols without an explicit entry."
+        ),
+    )
+    include_unshocked: bool = False
+    detail: CompactFullDetailLiteral = "compact"
+
+    @field_validator("shocks")
+    @classmethod
+    def _validate_shocks(cls, value: Dict[str, float]) -> Dict[str, float]:
+        if not value:
+            raise ValueError("shocks must contain at least one symbol or '*' fallback.")
+        normalized: Dict[str, float] = {}
+        for raw_symbol, raw_shock in value.items():
+            symbol = str(raw_symbol or "").strip().upper()
+            if not symbol:
+                raise ValueError("shock symbols must be non-empty strings.")
+            shock = float(raw_shock)
+            if not math.isfinite(shock) or shock <= -100.0:
+                raise ValueError("shock percentages must be finite and greater than -100.")
+            normalized[symbol] = shock
+        return normalized
 
 
 class TradeGetOpenRequest(BaseModel):

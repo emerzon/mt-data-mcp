@@ -111,7 +111,25 @@ summary:
 
 ---
 
-### 3. Markov-Switching AR (MS-AR)
+### 3. PELT Change-Point Detection
+
+**What it does:** Segments the return series at structural breaks using the Pruned Exact Linear Time algorithm from `ruptures`.
+
+```bash
+mtdata-cli regime_detect EURUSD --timeframe H1 --method pelt \
+  --params "model=rbf penalty=auto min_size=5 jump=1"
+```
+
+Supported cost models are `l1`, `l2`, `rbf`, `normal`, and `ar`. Set a numeric `penalty` for explicit sensitivity or keep `penalty=auto` for a variance-scaled default.
+
+**When to use:**
+- Retrospective structural-break detection
+- Segmenting history before fitting forecasts
+- Confirming breaks suggested by BOCPD
+
+---
+
+### 4. Markov-Switching AR (MS-AR)
 
 **What it does:** Combines HMM with autoregressive modeling. Each regime has its own AR parameters.
 
@@ -128,7 +146,7 @@ Use `n_states` to choose the number of regimes.
 
 ---
 
-### 4. Clustering (`clustering`)
+### 5. Clustering (`clustering`)
 
 **What it does:** Groups bars into regimes using distance-based clustering (e.g. KMeans on return/volatility features). Does not assume a hidden Markov structure.
 
@@ -253,6 +271,7 @@ Adds supported richer sections such as metadata and diagnostics.
 | Classify regimes (2 states) | `mtdata-cli regime_detect EURUSD --method hmm --params "n_states=2"` |
 | Classify regimes (3 states) | `mtdata-cli regime_detect EURUSD --method hmm --params "n_states=3"` |
 | Detect change points | `mtdata-cli regime_detect EURUSD --method bocpd --threshold 0.5` |
+| Segment structural breaks | `mtdata-cli regime_detect EURUSD --method pelt --params "model=rbf penalty=auto"` |
 | Markov-switching AR | `mtdata-cli regime_detect EURUSD --method ms_ar --params "n_states=2"` |
 | Clustering | `mtdata-cli regime_detect EURUSD --method clustering --params "n_states=3"` |
 

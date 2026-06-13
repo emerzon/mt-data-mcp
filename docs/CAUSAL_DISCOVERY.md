@@ -2,7 +2,7 @@
 
 The `causal_discover_signals` tool performs **pairwise Granger-style causal discovery** between symbols using recent MT5 close prices. It is intended for exploratory analysis (feature discovery / watchlist relationships), not “true causality”.
 
-If you want **co-movement** rather than lead/lag structure, use `correlation_matrix` to calculate pairwise Pearson or Spearman correlations on transformed MT5 price series. If you want candidate **mean-reverting / spread** relationships, use `cointegration_test`.
+If you want **co-movement**, use `correlation_matrix`. For a direct two-symbol lead/lag estimate, use `cross_correlation`. For candidate **mean-reverting / spread** relationships, use `cointegration_test`.
 
 **Related:**
 - [CLI.md](CLI.md) — Command usage and output formats
@@ -25,6 +25,14 @@ mtdata-cli correlation_matrix --group "Forex\\Majors" --timeframe H1 \
 # Test an MT5 group for candidate cointegrated pairs
 mtdata-cli cointegration_test --group "Forex\\Majors" --timeframe H1 \
   --limit 400 --transform log_level --significance 0.05 --json
+
+# Estimate whether the first symbol leads the second
+mtdata-cli cross_correlation "EURUSD,GBPUSD" --timeframe H1 \
+  --max-lag 20 --transform log_return --json
+
+# Test a multivariate basket with Johansen trace and maximum-eigenvalue tests
+mtdata-cli cointegration_test "EURUSD,GBPUSD,EURGBP" --timeframe H1 \
+  --method johansen --k-ar-diff 1 --transform log_level --json
 
 # Provide an explicit list of symbols
 mtdata-cli causal_discover_signals "EURUSD,GBPUSD,USDJPY" --timeframe H1 \
@@ -65,10 +73,16 @@ For each unordered pair of symbols `(A, B)`, the tool:
 3. Runs Engle-Granger cointegration tests in both orientations
 4. Keeps the orientation with the lower p-value and reports spread diagnostics
 
+With `method=engle_granger`, it evaluates unordered pairs. With `method=johansen`, it evaluates the aligned basket jointly and returns trace/max-eigenvalue rank estimates plus cointegrating vectors.
+
 It accepts either:
 
 - an explicit `symbols` list (or compatibility alias `symbol`), or
 - a `group` path that matches the MT5 symbol groups exposed by `symbols_list --list-mode groups`
+
+### `cross_correlation`
+
+This tool requires exactly two symbols and evaluates lags from `-max_lag` through `+max_lag`. A positive best lag means the first symbol leads the second; a negative lag means the second leads the first. The result includes a moving-block bootstrap confidence interval for the best-lag correlation.
 
 ### `causal_discover_signals`
 

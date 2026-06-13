@@ -9,7 +9,7 @@ import math
 import time
 import warnings
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Literal, Optional, Tuple
 
 import numpy as np
 import pandas as pd
@@ -25,6 +25,8 @@ from ..utils.mt5 import (
 )
 from ..utils.symbol import (
     _extract_group_path as _extract_group_path_util,
+)
+from ..utils.symbol import (
     _normalize_group_path_query,
 )
 from ..utils.utils import _parse_start_datetime
@@ -203,9 +205,27 @@ _COINTEGRATION_REQUEST_KEYS = frozenset(
         "start",
         "end",
         "transform",
+        "method",
         "trend",
+        "k_ar_diff",
         "significance",
         "min_overlap",
+        "detail",
+    }
+)
+
+_CROSS_CORRELATION_REQUEST_KEYS = frozenset(
+    {
+        "symbols_input",
+        "timeframe",
+        "window_bars",
+        "start",
+        "end",
+        "max_lag",
+        "method",
+        "transform",
+        "min_overlap",
+        "bootstrap_samples",
         "detail",
     }
 )
@@ -1111,6 +1131,78 @@ def _build_cointegration_summary(
             for row in cointegrated[:limit]
         ]
     return summary
+
+
+def _johansen_rank(statistics: np.ndarray, critical_values: np.ndarray, column: int) -> int:
+    rank = 0
+    for index, statistic in enumerate(np.asarray(statistics, dtype=float)):
+        if index >= len(critical_values):
+            break
+        if float(statistic) > float(critical_values[index][column]):
+            rank = index + 1
+        else:
+            break
+    return int(rank)
+
+
+def _lagged_pair_values(
+    left: np.ndarray,
+    right: np.ndarray,
+    lag: int,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Align arrays so a positive lag means left leads right."""
+    if lag > 0:
+        return left[:-lag], right[lag:]
+    if lag < 0:
+        shift = abs(int(lag))
+        return left[shift:], right[:-shift]
+    return left, right
+
+
+def _correlation_value(left: np.ndarray, right: np.ndarray, method: str) -> float:
+    if left.size < 2 or right.size < 2:
+        return float("nan")
+    if float(np.std(left, ddof=0)) <= 1e-15 or float(np.std(right, ddof=0)) <= 1e-15:
+        return float("nan")
+    if method == "spearman":
+        from scipy.stats import spearmanr
+
+        value = spearmanr(left, right, nan_policy="omit").statistic
+        return float(value)
+    return float(np.corrcoef(left, right)[0, 1])
+
+
+def _block_bootstrap_correlation_ci(
+    left: np.ndarray,
+    right: np.ndarray,
+    *,
+    method: str,
+    samples: int,
+    block_size: int,
+    confidence: float = 0.95,
+) -> tuple[Optional[float], Optional[float]]:
+    n = int(min(left.size, right.size))
+    if n < 8 or samples < 20:
+        return None, None
+    block = max(2, min(int(block_size), n))
+    rng = np.random.default_rng(42)
+    values: List[float] = []
+    max_start = max(1, n - block + 1)
+    blocks_needed = int(math.ceil(n / float(block)))
+    for _ in range(int(samples)):
+        indices: List[int] = []
+        for _block in range(blocks_needed):
+            start_idx = int(rng.integers(0, max_start))
+            indices.extend(range(start_idx, min(start_idx + block, n)))
+        take = np.asarray(indices[:n], dtype=int)
+        value = _correlation_value(left[take], right[take], method)
+        if math.isfinite(value):
+            values.append(value)
+    if len(values) < 20:
+        return None, None
+    tail = (1.0 - float(confidence)) / 2.0
+    low, high = np.quantile(np.asarray(values), [tail, 1.0 - tail])
+    return float(low), float(high)
 
 
 def _format_summary(
@@ -2449,6 +2541,207 @@ def correlation_matrix(  # noqa: C901
 
 
 @mcp.tool()
+def cross_correlation(  # noqa: C901
+    symbols: str,
+    timeframe: TimeframeLiteral = "H1",
+    window_bars: int = 500,
+    start: Optional[str] = None,
+    end: Optional[str] = None,
+    max_lag: int = 20,
+    method: str = "pearson",
+    transform: str = "log_return",
+    min_overlap: int = 50,
+    bootstrap_samples: int = 300,
+    detail: CompactFullDetailLiteral = "compact",
+) -> Dict[str, Any]:
+    """Measure lead-lag correlation for an explicit pair of MT5 symbols.
+
+    Positive lag means the first symbol leads the second by that many bars;
+    negative lag means the second symbol leads the first.
+    """
+
+    def _run() -> Dict[str, Any]:  # noqa: C901
+        meta: Dict[str, Any] = {
+            "_tool": "cross_correlation",
+            "_request_keys": _CROSS_CORRELATION_REQUEST_KEYS,
+            "symbols_input": symbols,
+            "timeframe": timeframe,
+            "window_bars": int(window_bars),
+            "start": start,
+            "end": end,
+            "max_lag": int(max_lag),
+            "method": method,
+            "transform": transform,
+            "min_overlap": int(min_overlap),
+            "bootstrap_samples": int(bootstrap_samples),
+            "detail": detail,
+        }
+        connection_error = _causal_connection_error()
+        if connection_error is not None:
+            return _causal_error(
+                str(connection_error.get("error") or "Failed to connect to MetaTrader5."),
+                code=str(connection_error.get("error_code") or "mt5_connection_error"),
+                meta=meta,
+            )
+        symbol_list = _parse_symbols(symbols)
+        if len(symbol_list) != 2:
+            return _causal_error(
+                "cross_correlation requires exactly two comma-separated symbols.",
+                code="invalid_input",
+                meta=meta,
+            )
+        tf = TIMEFRAME_MAP.get(timeframe)
+        if tf is None:
+            return _causal_error(
+                f"Invalid timeframe '{timeframe}'.",
+                code="invalid_timeframe",
+                meta=meta,
+            )
+        if int(window_bars) < 10 or int(min_overlap) < 5:
+            return _causal_error(
+                "window_bars must be >= 10 and min_overlap must be >= 5.",
+                code="invalid_input",
+                meta=meta,
+            )
+        if int(max_lag) < 0 or int(max_lag) >= int(window_bars):
+            return _causal_error(
+                "max_lag must be >= 0 and less than window_bars.",
+                code="invalid_input",
+                meta=meta,
+            )
+        if not 20 <= int(bootstrap_samples) <= 2000:
+            return _causal_error(
+                "bootstrap_samples must be between 20 and 2000.",
+                code="invalid_input",
+                meta=meta,
+            )
+        method_value = _normalize_correlation_method(method)
+        if method_value is None:
+            return _causal_error(
+                "Invalid method. Valid options: pearson, spearman",
+                code="invalid_method",
+                meta=meta,
+            )
+        transform_value = _normalize_transform_name(transform)
+        if transform_value is None:
+            return _causal_error(
+                "Invalid transform. Valid options: log_return, pct, diff, level, log_level",
+                code="invalid_transform",
+                meta=meta,
+            )
+        detail_mode = normalize_output_verbosity_detail(detail, default="compact")
+        fetch_count = max(int(window_bars) + int(max_lag) + 10, int(min_overlap) + 10)
+        series_map: Dict[str, pd.Series] = {}
+        errors: List[str] = []
+        for symbol_name in symbol_list:
+            series, fetch_error = _fetch_series_for_window(
+                symbol_name,
+                tf,
+                fetch_count,
+                start=start,
+                end=end,
+            )
+            if fetch_error:
+                errors.append(fetch_error)
+            else:
+                series_map[symbol_name] = series
+        if errors:
+            return _causal_error(
+                errors[0],
+                code="data_fetch_failed",
+                meta=meta,
+                details=errors,
+            )
+        frame = _build_pairwise_frame(series_map, symbol_list)
+        transformed = _transform_frame(frame, transform_value)
+        aligned = transformed[symbol_list].dropna(how="any").tail(int(window_bars))
+        if len(aligned) < int(min_overlap):
+            return _causal_error(
+                f"Only {len(aligned)} overlapping samples are available; min_overlap={min_overlap}.",
+                code="insufficient_overlap",
+                meta=meta,
+            )
+        left_values = aligned[symbol_list[0]].to_numpy(dtype=float)
+        right_values = aligned[symbol_list[1]].to_numpy(dtype=float)
+        rows: List[Dict[str, Any]] = []
+        for lag in range(-int(max_lag), int(max_lag) + 1):
+            lag_left, lag_right = _lagged_pair_values(left_values, right_values, lag)
+            value = _correlation_value(lag_left, lag_right, method_value)
+            if not math.isfinite(value) or lag_left.size < int(min_overlap):
+                continue
+            rows.append(
+                {
+                    "lag": int(lag),
+                    "correlation": round(float(value), 6),
+                    "samples": int(lag_left.size),
+                }
+            )
+        if not rows:
+            return _causal_error(
+                "No lag had enough finite overlapping samples.",
+                code="insufficient_overlap",
+                meta=meta,
+            )
+        best = max(rows, key=lambda row: abs(float(row["correlation"])))
+        selected_left, selected_right = _lagged_pair_values(
+            left_values,
+            right_values,
+            int(best["lag"]),
+        )
+        block_size = max(2, int(round(math.sqrt(selected_left.size))))
+        ci_low, ci_high = _block_bootstrap_correlation_ci(
+            selected_left,
+            selected_right,
+            method=method_value,
+            samples=int(bootstrap_samples),
+            block_size=block_size,
+        )
+        best_item = dict(best)
+        best_item.update(
+            {
+                "leader": symbol_list[0] if int(best["lag"]) > 0 else symbol_list[1] if int(best["lag"]) < 0 else None,
+                "follower": symbol_list[1] if int(best["lag"]) > 0 else symbol_list[0] if int(best["lag"]) < 0 else None,
+                "ci_low": round(ci_low, 6) if ci_low is not None else None,
+                "ci_high": round(ci_high, 6) if ci_high is not None else None,
+                "significant": bool(ci_low is not None and ci_high is not None and (ci_low > 0.0 or ci_high < 0.0)),
+            }
+        )
+        out: Dict[str, Any] = {
+            "success": True,
+            "symbols": symbol_list,
+            "timeframe": timeframe,
+            "transform": transform_value,
+            "method": method_value,
+            "best": best_item,
+            "lag_convention": "positive lag means the first symbol leads the second",
+            "context": {
+                "window_bars": int(window_bars),
+                "samples_aligned": int(len(aligned)),
+                "max_lag": int(max_lag),
+                "bootstrap_samples": int(bootstrap_samples),
+                "bootstrap_block_size": int(block_size),
+            },
+            "meta": _causal_contract_meta(meta),
+        }
+        if detail_mode == "full":
+            out["items"] = rows
+            out["count"] = len(rows)
+        return out
+
+    return run_logged_operation(
+        logger,
+        operation="cross_correlation",
+        symbols=symbols,
+        timeframe=timeframe,
+        window_bars=window_bars,
+        max_lag=max_lag,
+        method=method,
+        transform=transform,
+        func=_run,
+    )
+
+
+@mcp.tool()
 def cointegration_test(  # noqa: C901
     symbols: Optional[str] = None,
     group: Optional[str] = None,
@@ -2459,12 +2752,14 @@ def cointegration_test(  # noqa: C901
     start: Optional[str] = None,
     end: Optional[str] = None,
     transform: str = "log_level",
+    method: Literal["engle_granger", "johansen"] = "engle_granger",
     trend: str = "c",
+    k_ar_diff: int = 1,
     significance: float = 0.05,
     min_overlap: int = 80,
     detail: CompactFullDetailLiteral = "compact",
 ) -> Dict[str, Any]:
-    """Run pairwise Engle-Granger cointegration tests on MT5 symbols.
+    """Run Engle-Granger pair tests or a multivariate Johansen rank test.
 
     When a single symbol is provided, the tool automatically expands to include
     all related symbols from its MT5 group (e.g., EURUSD → EURUSD, GBPUSD, 
@@ -2485,7 +2780,10 @@ def cointegration_test(  # noqa: C901
         start: Optional UTC-compatible start date/time for the analysis window.
         end: Optional UTC-compatible end date/time; end-only anchors recent history.
         transform: Price transform: "log_level" or "level".
+        method: "engle_granger" for pairwise tests or "johansen" for one
+            multivariate cointegration-rank test across all retained symbols.
         trend: Deterministic trend term for the test: "c", "ct", "ctt", or "n".
+        k_ar_diff: Number of lagged differences for the Johansen test.
         significance: Alpha threshold for reporting cointegrated pairs.
         min_overlap: Minimum overlapping transformed samples required per pair;
             values above window_bars are capped to window_bars with a warning.
@@ -2507,7 +2805,9 @@ def cointegration_test(  # noqa: C901
             "start": start,
             "end": end,
             "transform": str(transform),
+            "method": str(method),
             "trend": str(trend),
+            "k_ar_diff": int(k_ar_diff),
             "significance": float(significance),
             "min_overlap": min_overlap_value,
             "detail": str(detail or "compact"),
@@ -2526,10 +2826,26 @@ def cointegration_test(  # noqa: C901
 
         try:
             from statsmodels.tsa.stattools import coint
+            from statsmodels.tsa.vector_ar.vecm import coint_johansen
         except Exception:
             return _causal_error(
                 "statsmodels is required for cointegration testing. Please install 'statsmodels'.",
                 code="dependency_missing",
+                meta=meta,
+            )
+
+        method_value = str(method or "engle_granger").strip().lower()
+        if method_value not in {"engle_granger", "johansen"}:
+            return _causal_error(
+                "Invalid method. Valid options: engle_granger, johansen",
+                code="invalid_method",
+                meta=meta,
+            )
+        meta["method"] = method_value
+        if int(k_ar_diff) < 0:
+            return _causal_error(
+                "k_ar_diff must be >= 0.",
+                code="invalid_input",
                 meta=meta,
             )
 
@@ -2672,6 +2988,18 @@ def cointegration_test(  # noqa: C901
                 meta=meta,
             )
         meta["trend"] = trend_value
+        if method_value == "johansen" and trend_value == "ctt":
+            return _causal_error(
+                "Johansen supports trend values n, c, or ct; ctt is only available for Engle-Granger.",
+                code="invalid_trend",
+                meta=meta,
+            )
+        if method_value == "johansen" and float(significance) not in {0.01, 0.05, 0.1}:
+            return _causal_error(
+                "Johansen significance must be one of: 0.01, 0.05, 0.1.",
+                code="invalid_input",
+                meta=meta,
+            )
 
         fetch_count = max(window_bars_value + 10, min_overlap_value + 10, 200)
         meta["fetch_count"] = int(fetch_count)
@@ -2766,6 +3094,111 @@ def cointegration_test(  # noqa: C901
                 meta=meta,
                 warnings=warnings_out,
             )
+
+        if method_value == "johansen":
+            complete = transformed[symbols_used].dropna(how="any")
+            available_overlap = int(len(complete))
+            if available_overlap < min_overlap_value:
+                return _causal_error(
+                    f"Only {available_overlap} complete multivariate observations are available; min_overlap={min_overlap_value}.",
+                    code="insufficient_overlap",
+                    meta=meta,
+                    warnings=warnings_out,
+                )
+            sample = complete.tail(window_bars_value)
+            if int(len(sample)) <= int(k_ar_diff) + len(symbols_used) + 1:
+                return _causal_error(
+                    "The Johansen test needs more observations than symbols plus lagged differences.",
+                    code="insufficient_overlap",
+                    meta=meta,
+                    warnings=warnings_out,
+                )
+            det_order = {"n": -1, "c": 0, "ct": 1}[trend_value]
+            try:
+                johansen = coint_johansen(
+                    sample.to_numpy(dtype=float),
+                    det_order,
+                    int(k_ar_diff),
+                )
+            except Exception as exc:
+                return _causal_error(
+                    "Johansen cointegration test failed.",
+                    code="test_failed",
+                    meta=meta,
+                    warnings=warnings_out,
+                    details=[str(exc)],
+                )
+            significance_column = {0.1: 0, 0.05: 1, 0.01: 2}[float(significance)]
+            trace_rank = _johansen_rank(
+                johansen.trace_stat,
+                johansen.trace_stat_crit_vals,
+                significance_column,
+            )
+            max_eig_rank = _johansen_rank(
+                johansen.max_eig_stat,
+                johansen.max_eig_stat_crit_vals,
+                significance_column,
+            )
+            selected_rank = min(trace_rank, max_eig_rank)
+            rank_rows: List[Dict[str, Any]] = []
+            for rank_index in range(len(symbols_used)):
+                rank_rows.append(
+                    {
+                        "rank_null": int(rank_index),
+                        "trace_statistic": round(float(johansen.trace_stat[rank_index]), 6),
+                        "trace_critical_value": round(float(johansen.trace_stat_crit_vals[rank_index][significance_column]), 6),
+                        "max_eigen_statistic": round(float(johansen.max_eig_stat[rank_index]), 6),
+                        "max_eigen_critical_value": round(float(johansen.max_eig_stat_crit_vals[rank_index][significance_column]), 6),
+                    }
+                )
+            vectors: List[Dict[str, Any]] = []
+            for vector_index in range(min(int(selected_rank), int(johansen.evec.shape[1]))):
+                coefficients = johansen.evec[:, vector_index]
+                scale = float(np.max(np.abs(coefficients)))
+                if scale <= 0.0 or not np.isfinite(scale):
+                    scale = 1.0
+                vectors.append(
+                    {
+                        "vector": int(vector_index + 1),
+                        "coefficients": {
+                            symbol_name: round(float(coefficients[idx] / scale), 8)
+                            for idx, symbol_name in enumerate(symbols_used)
+                        },
+                    }
+                )
+            out: Dict[str, Any] = {
+                "success": True,
+                "method": "johansen",
+                "transform": transform_value,
+                "symbols": symbols_used,
+                "cointegration_rank": int(selected_rank),
+                "trace_rank": int(trace_rank),
+                "max_eigen_rank": int(max_eig_rank),
+                "cointegrated": bool(selected_rank > 0),
+                "items": rank_rows,
+                "count": len(rank_rows),
+                "cointegrating_vectors": vectors,
+                "context": {
+                    **_pairwise_analysis_context([], timeframe=timeframe),
+                    "window_bars": window_bars_value,
+                    "samples": int(len(sample)),
+                    "available_overlap_rows": available_overlap,
+                    "transform": transform_value,
+                    "trend": trend_value,
+                    "det_order": int(det_order),
+                    "k_ar_diff": int(k_ar_diff),
+                    "significance": float(significance),
+                },
+                "summary": {
+                    "selected_rank": int(selected_rank),
+                    "independent_stochastic_trends": int(max(0, len(symbols_used) - selected_rank)),
+                    "rank_agreement": bool(trace_rank == max_eig_rank),
+                },
+                "meta": _causal_contract_meta(meta),
+            }
+            if warnings_out:
+                out["warnings"] = warnings_out
+            return out
 
         rows: List[Dict[str, Any]] = []
         pair_overlaps: Dict[str, int] = {}
@@ -2950,7 +3383,9 @@ def cointegration_test(  # noqa: C901
         start=start,
         end=end,
         transform=transform,
+        method=method,
         trend=trend,
+        k_ar_diff=k_ar_diff,
         significance=significance,
         min_overlap=min_overlap,
         detail=detail,

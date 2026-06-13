@@ -21,7 +21,7 @@ Safety note: `trade_*` commands can place/modify/close real orders on the accoun
 3. [CLI.md](CLI.md) — How to run commands and read output
 4. [SAMPLE-TRADE.md](SAMPLE-TRADE.md) — A beginner-friendly workflow with explanations
 5. [SAMPLE-TRADE-ADVANCED.md](SAMPLE-TRADE-ADVANCED.md) — More methods + stricter risk/execution gates
-6. Deep dives: [FORECAST.md](FORECAST.md), [BARRIER_FUNCTIONS.md](BARRIER_FUNCTIONS.md), [TECHNICAL_INDICATORS.md](TECHNICAL_INDICATORS.md)
+6. Deep dives: [FORECAST.md](FORECAST.md), [TIME_SERIES_DIAGNOSTICS.md](TIME_SERIES_DIAGNOSTICS.md), [BARRIER_FUNCTIONS.md](BARRIER_FUNCTIONS.md), [TECHNICAL_INDICATORS.md](TECHNICAL_INDICATORS.md)
 7. Specialized: [FINVIZ.md](FINVIZ.md), [TEMPORAL.md](TEMPORAL.md), [OPTIONS_QUANTLIB.md](OPTIONS_QUANTLIB.md)
 
 ## Getting Started
@@ -43,6 +43,7 @@ Safety note: `trade_*` commands can place/modify/close real orders on the accoun
 | [forecast/BACKTESTING.md](forecast/BACKTESTING.md) | Rolling backtests and parameter optimization |
 | [forecast/VOLATILITY.md](forecast/VOLATILITY.md) | Volatility estimation and forecasting |
 | [forecast/REGIMES.md](forecast/REGIMES.md) | Market regime and change-point detection |
+| [TIME_SERIES_DIAGNOSTICS.md](TIME_SERIES_DIAGNOSTICS.md) | Stationarity, automatic seasonality, outlier, and volatility-cone analysis |
 | [forecast/UNCERTAINTY.md](forecast/UNCERTAINTY.md) | Confidence and conformal intervals |
 | [BARRIER_FUNCTIONS.md](BARRIER_FUNCTIONS.md) | TP/SL hit probability, optimization, and statistical robustness checks |
 | [TECHNICAL_INDICATORS.md](TECHNICAL_INDICATORS.md) | Available indicators and how to use them |

@@ -82,6 +82,7 @@ def test_pair_transform_guidance_is_standard_only():
 def test_pair_workflow_related_tools_are_cataloged():
     assert related_tools_for("cointegration_test") == [
         "correlation_matrix",
+        "cross_correlation",
         "causal_discover_signals",
     ]
 
