@@ -576,8 +576,10 @@ class TestRuntimeHelpers:
 class TestResolveTransport:
 
     def _call(self, default="sse"):
-        from mtdata.core.server import _resolve_transport
-        return _resolve_transport(default)
+        from mtdata.core.server import load_mcp_runtime_settings
+        runtime = load_mcp_runtime_settings(default_transport=default)
+        mount_path = runtime.mount_path if runtime.transport == "sse" and runtime.mount_path not in ("", "/") else None
+        return runtime.transport, mount_path
 
     def test_default_sse(self, monkeypatch):
         monkeypatch.delenv("MCP_TRANSPORT", raising=False)

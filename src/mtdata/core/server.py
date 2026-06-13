@@ -21,13 +21,6 @@ def _disconnect_mt5():
     mt5_connection.disconnect()
 
 
-def _resolve_transport(default: str = "sse") -> tuple[str, Optional[str]]:
-    """Return the transport to use and optional mount path for SSE."""
-    runtime = load_mcp_runtime_settings(default_transport=cast(Literal["stdio", "sse", "streamable-http"], default))
-    mount_path = runtime.mount_path if runtime.transport == "sse" and runtime.mount_path not in ("", "/") else None
-    return runtime.transport, mount_path
-
-
 def main(
     *,
     transport: Optional[Literal["stdio", "sse", "streamable-http"]] = None,
