@@ -1940,6 +1940,8 @@ def _market_scan_freshness_summary(
             out["freshness"] = "closed_weekend_snapshot"
     elif closed_count:
         out["session_status"] = f"mixed, {closed_count}/{row_count} closed_weekend"
+        if stale_count == 0:
+            out["freshness"] = f"mixed, {closed_count}/{row_count} closed_weekend_snapshot"
     return out
 
 

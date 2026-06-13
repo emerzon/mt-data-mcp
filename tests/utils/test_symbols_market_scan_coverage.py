@@ -100,6 +100,26 @@ def test_market_scan_freshness_summary_labels_closed_weekend_snapshot():
     assert result["freshness"] == "closed_weekend_snapshot"
 
 
+def test_market_scan_freshness_summary_labels_mixed_closed_weekend():
+    from mtdata.core import symbols as symbols_mod
+
+    def _fake_closed(symbol, *, now_epoch=None):
+        return str(symbol) == "EURUSD"
+
+    with patch.object(symbols_mod, "closed_session_context", _fake_closed):
+        result = symbols_mod._market_scan_freshness_summary(
+            [
+                {"symbol": "EURUSD", "data_stale": False},
+                {"symbol": "BTCUSD", "data_stale": False},
+            ]
+        )
+
+    # Some sessions closed, none stale: freshness must not bare-claim "fresh".
+    assert result["stale_rows"] == 0
+    assert result["session_status"] == "mixed, 1/2 closed_weekend"
+    assert result["freshness"] == "mixed, 1/2 closed_weekend_snapshot"
+
+
 def test_market_scan_bar_freshness_uses_timeframe_window():
     from mtdata.core.symbols import _market_scan_freshness_fields
 
