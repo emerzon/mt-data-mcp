@@ -6,9 +6,9 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
+from mtdata.forecast import volatility as vol
 from mtdata.forecast.requests import ForecastVolatilityEstimateRequest
 from mtdata.forecast.use_cases import run_forecast_volatility_estimate
-from mtdata.forecast import volatility as vol
 
 
 def _rates(n: int = 360, start: int = 1_700_000_000, step: int = 3600):
@@ -211,6 +211,8 @@ def test_forecast_volatility_general_theta_and_proxy_errors(monkeypatch):
     assert out["volatility_annualized"] == pytest.approx(
         out["volatility_per_bar"] * math.sqrt(expected_bpy)
     )
+    assert out["bars_per_year"] == expected_bpy
+    assert out["annualization_basis"] == "252_trading_days_24h_intraday"
     assert out["volatility_horizon_annualized"] == pytest.approx(
         out["volatility_horizon"] * math.sqrt(expected_bpy / 4)
     )

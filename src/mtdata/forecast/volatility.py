@@ -6,11 +6,11 @@ from typing import Any, Dict, List, Literal, Optional
 import numpy as np
 import pandas as pd
 
-from ..shared.constants import SANITY_BARS_TOLERANCE, TIMEFRAME_MAP, TIMEFRAME_SECONDS
 from ..services.data_service import (
     _resolve_live_rate_auto_shift_seconds,
     _shift_rate_times,
 )
+from ..shared.constants import SANITY_BARS_TOLERANCE, TIMEFRAME_MAP, TIMEFRAME_SECONDS
 from ..shared.schema import CompactFullDetailLiteral, DenoiseSpec, TimeframeLiteral
 from ..shared.validators import (
     invalid_timeframe_error,
@@ -540,6 +540,13 @@ def _finalize_volatility_with_context(
     live_window: bool,
     detail: str,
 ) -> Dict[str, Any]:
+    annualization_bars = float(_bars_per_year(timeframe))
+    if math.isfinite(annualization_bars) and annualization_bars > 0:
+        payload.setdefault("bars_per_year", round(annualization_bars, 4))
+        payload.setdefault(
+            "annualization_basis",
+            "252_trading_days_24h_intraday",
+        )
     payload.update(
         _volatility_input_context(
             df,

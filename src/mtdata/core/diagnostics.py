@@ -526,9 +526,11 @@ def volatility_term_structure(
             "items": rows,
             "count": len(rows),
         }
+        if annualize:
+            out["bars_per_year"] = round(float(bars_per_year(timeframe)), 4)
+            out["annualization_basis"] = "252_trading_days_24h_intraday"
         if normalize_output_verbosity_detail(detail, default="compact") == "full":
             out["method"] = "rolling_root_mean_square_log_return"
-            out["bars_per_year"] = round(float(bars_per_year(timeframe)), 4)
             out["lookback"] = int(lookback)
         return out
 

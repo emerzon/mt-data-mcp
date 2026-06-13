@@ -99,3 +99,5 @@ def test_volatility_term_structure_returns_requested_horizons(monkeypatch):
     assert result["success"] is True
     assert [row["horizon_bars"] for row in result["items"]] == [1, 5, 20]
     assert all("p50" in row["cone"] for row in result["items"])
+    assert result["bars_per_year"] == 6048.0
+    assert result["annualization_basis"] == "252_trading_days_24h_intraday"
