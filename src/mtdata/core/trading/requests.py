@@ -70,10 +70,11 @@ class TradePlaceRequest(BaseModel):
         description="Maximum allowed execution slippage in points.",
     )
     dry_run: bool = Field(
-        default=True,
+        default=False,
         description=(
             "Preview the order without sending it to the broker. Defaults to "
-            "true; set dry_run=false to place a live order."
+            "false, so trade_place places a live order; set dry_run=true to "
+            "preview only."
         ),
     )
     detail: CompactFullDetailLiteral = Field(
@@ -127,10 +128,11 @@ class TradeModifyRequest(BaseModel):
     expiration: Optional[ExpirationValue] = None
     comment: Optional[str] = None
     dry_run: bool = Field(
-        default=True,
+        default=False,
         description=(
             "Preview the modification without sending it to the broker. Defaults "
-            "to true; set dry_run=false to modify the live order or position."
+            "to false, so trade_modify changes the live order or position; set "
+            "dry_run=true to preview only."
         ),
     )
     idempotency_key: Optional[str] = Field(
@@ -162,8 +164,8 @@ class TradeCloseRequest(BaseModel):
         default=False,
         description=(
             "Preview the close request without sending it to the broker. Defaults "
-            "to false; set dry_run=true to preview without closing a live position "
-            "or order."
+            "to false, so trade_close closes the live position or order; set "
+            "dry_run=true to preview only."
         ),
     )
     confirm_close_all: bool = Field(
