@@ -25,7 +25,7 @@ class ElliottWaveConfig:
     1.0 sum.
     """
 
-    # Legacy options (kept for API compatibility)
+    # Pivot detection controls (used by analysis and autotune)
     min_prominence_pct: float = 0.5
     min_distance: int = 5
 
