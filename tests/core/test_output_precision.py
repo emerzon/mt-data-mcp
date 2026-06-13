@@ -36,10 +36,14 @@ def test_auto_precision_compacts_large_tables_but_not_trading_tools():
         None,
         tool_name="support_resistance_levels",
     )
+    market_snapshot = resolve_output_precision(None, tool_name="market_snapshot")
+    report_generate = resolve_output_precision(None, tool_name="report_generate")
 
     assert compact.simplify_numbers is True
     assert trading.simplify_numbers is False
     assert support_resistance.simplify_numbers is False
+    assert market_snapshot.simplify_numbers is False
+    assert report_generate.simplify_numbers is False
 
 
 def test_full_precision_rendering_does_not_display_round_price_fields():

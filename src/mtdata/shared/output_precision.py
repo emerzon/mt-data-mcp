@@ -22,7 +22,9 @@ _FULL_BY_DEFAULT_TOOLS = {
     "forecast_barrier_prob",
     "forecast_generate",
     "market_depth_fetch",
+    "market_snapshot",
     "market_ticker",
+    "report_generate",
     "support_resistance_levels",
 }
 
