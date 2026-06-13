@@ -1489,7 +1489,7 @@ def test_detect_classic_patterns_disables_aliases_by_default(monkeypatch):
     peaks = np.array([20, 45, 70, 95, 120, 145], dtype=int)
     troughs = np.array([10, 35, 60, 85, 110, 135], dtype=int)
     monkeypatch.setattr(
-        classic_mod, "_detect_pivots_close", lambda c, cfg: (peaks, troughs)
+        classic_mod, "_detect_pivots_close", lambda c, cfg, h, l: (peaks, troughs)
     )
 
     out_default = detect_classic_patterns(
