@@ -952,6 +952,31 @@ class TestFinvizTools:
         assert result["error_code"] == "finviz_news_invalid_limit"
         mock_get_news.assert_not_called()
 
+    @patch("mtdata.core.finviz.get_stock_news")
+    def test_finviz_news_compact_keeps_url_and_provenance(self, mock_get_news):
+        from mtdata.core.finviz import finviz_news
+
+        mock_get_news.return_value = {
+            "success": True,
+            "news": [
+                {
+                    "Title": "Market update",
+                    "Source": "Example",
+                    "Date": "2026-06-13 12:00",
+                    "Link": "https://example.com/story",
+                }
+            ],
+        }
+        raw = getattr(finviz_news, "__wrapped__", finviz_news)
+
+        result = raw("AAPL", limit=1, detail="compact")
+
+        assert result["provider"] == "finviz"
+        assert result["delivery"] == "aggregated_web_feed"
+        assert result["is_realtime"] is False
+        assert "does not guarantee real-time" in result["freshness_note"]
+        assert result["items"][0]["url"] == "https://example.com/story"
+
     @patch("mtdata.core.finviz.get_stock_fundamentals")
     def test_finviz_fundamentals_requires_symbol(self, mock_get_fundamentals):
         from mtdata.core.finviz import finviz_fundamentals

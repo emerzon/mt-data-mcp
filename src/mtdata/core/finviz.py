@@ -1335,6 +1335,12 @@ def _normalize_finviz_news_payload(
     out.pop("timezone", None)
     detail_mode = normalize_output_detail(detail, default="compact")
     out["detail"] = detail_mode
+    out["provider"] = "finviz"
+    out["delivery"] = "aggregated_web_feed"
+    out["is_realtime"] = False
+    out["freshness_note"] = (
+        "Finviz aggregates third-party headlines and does not guarantee real-time delivery."
+    )
 
     news_rows = result.get("news")
     items_rows = result.get("items")
@@ -1357,6 +1363,7 @@ def _normalize_finviz_news_payload(
             "source",
             "published_at",
             "relative_time",
+            "url",
             "kind",
             "content_type",
         }
