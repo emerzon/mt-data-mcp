@@ -1126,6 +1126,13 @@ def _list_symbol_groups(
             q = search_term.strip().lower()
             filtered_items = [(k, v) for (k, v) in filtered_items if q in (k or '').lower()]
 
+        group_search_note = (
+            f"No group path matches '{search_term}'. Group listing filters by group "
+            "path, not symbol name; omit list_mode=groups to search symbols by name."
+            if search_term and not filtered_items
+            else None
+        )
+
         # Sort groups by count (most symbols first)
         filtered_items.sort(
             key=lambda item: (
@@ -1162,6 +1169,8 @@ def _list_symbol_groups(
                 out["total_count"] = total_count
                 out["offset"] = offset_value
                 out["has_more"] = has_more
+            if group_search_note:
+                out["note"] = group_search_note
             return out
         if detail_mode in {"standard", "full"}:
             rows = [
@@ -1188,6 +1197,8 @@ def _list_symbol_groups(
             result["offset"] = offset_value
             result["limit"] = limit_value
             result["has_more"] = has_more
+        if group_search_note:
+            result["note"] = group_search_note
         return attach_collection_contract(
             result,
             collection_kind="table",
