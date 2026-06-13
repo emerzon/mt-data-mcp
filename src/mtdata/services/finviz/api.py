@@ -10,6 +10,7 @@ from .client import (
     get_finviz_page_limit_max,
     get_finviz_screener_max_rows,
 )
+from .symbols import looks_like_non_equity_symbol
 from ..news_text import normalize_news_text
 
 logger = logging.getLogger(__name__)
@@ -19,8 +20,6 @@ _FINVIZ_HTTP_TIMEOUT = get_finviz_http_timeout()
 _FINVIZ_SCREENER_MAX_ROWS = get_finviz_screener_max_rows()
 _FINVIZ_PAGE_LIMIT_MAX = get_finviz_page_limit_max()
 
-# Non-equity suffixes (forex pairs)
-_PAIR_SUFFIXES = {"USD", "EUR", "GBP", "JPY", "AUD", "CAD", "CHF", "NZD"}
 _MT5_EQUITY_SUFFIXES = {
     "AMEX",
     "ARCA",
@@ -34,18 +33,6 @@ _MT5_EQUITY_SUFFIXES = {
     "NYQ",
     "US",
 }
-
-
-def _looks_like_non_equity_symbol(symbol: str) -> bool:
-    """Check if a symbol looks like a forex pair or other non-equity instrument."""
-    s = str(symbol or "").strip().upper()
-    if not s:
-        return False
-    if "/" in s or ":" in s:
-        return True
-    if len(s) == 6 and s[:3].isalpha() and s[3:].isalpha() and s[3:] in _PAIR_SUFFIXES:
-        return True
-    return False
 
 
 def _normalize_finviz_equity_symbol(symbol: str) -> str:
@@ -62,7 +49,7 @@ def _normalize_finviz_equity_symbol(symbol: str) -> str:
             base
             and len(base) <= 6
             and base.replace(".", "").isalnum()
-            and not _looks_like_non_equity_symbol(base)
+            and not looks_like_non_equity_symbol(base)
             and suffix_token in _MT5_EQUITY_SUFFIXES
         ):
             return base
@@ -87,7 +74,7 @@ def _sanitize_error_message(exc: Exception, *, symbol: str | None = None) -> str
     
     # Check for HTTP error patterns and replace with user-friendly message
     if "404" in error_str and "Client Error" in error_str:
-        if symbol and _looks_like_non_equity_symbol(symbol.upper()):
+        if symbol and looks_like_non_equity_symbol(symbol.upper()):
             return (
                 f"{str(symbol).upper()} is not a Finviz-supported symbol. "
                 "finviz_news only covers US equities."

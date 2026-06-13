@@ -32,6 +32,7 @@ from ..services.finviz import (
     screen_stocks,
 )
 from ..services.news_text import normalize_news_text
+from ..services.finviz.symbols import looks_like_non_equity_symbol
 from ..shared.schema import CompactFullDetailLiteral
 from ..shared.symbols import finviz_forex_symbol_to_mt5
 from ._mcp_instance import mcp
@@ -45,7 +46,6 @@ from .output_contract import (
 
 logger = logging.getLogger(__name__)
 
-_PAIR_SUFFIXES = {"USD", "EUR", "GBP", "JPY", "AUD", "CAD", "CHF", "NZD"}
 _FINVIZ_EQUITY_BROKER_SUFFIXES = {
     "AMEX",
     "ARCA",
@@ -186,17 +186,6 @@ def _validate_positive_finviz_limit(
     )
 
 
-def _looks_like_non_equity_symbol(symbol: str) -> bool:
-    s = str(symbol or "").strip().upper()
-    if not s:
-        return False
-    if "/" in s or ":" in s:
-        return True
-    if len(s) == 6 and s[:3].isalpha() and s[3:].isalpha() and s[3:] in _PAIR_SUFFIXES:
-        return True
-    return False
-
-
 def _normalize_finviz_equity_symbol_text(symbol: str) -> str:
     symbol_norm = str(symbol or "").strip().upper()
     if "." not in symbol_norm:
@@ -219,7 +208,7 @@ def _normalize_equity_symbol(symbol: str, *, tool_name: str) -> tuple[Optional[s
             operation=tool_name,
             details={"tool": tool_name},
         )
-    if _looks_like_non_equity_symbol(symbol_norm):
+    if looks_like_non_equity_symbol(symbol_norm):
         return None, _finviz_error_payload(
             (
                 f"{symbol_norm} is not a Finviz-supported equity ticker. "
