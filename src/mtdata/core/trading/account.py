@@ -167,6 +167,14 @@ def _trade_journal_metrics(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
     }
     if profit_factor_note:
         metrics["profit_factor_note"] = profit_factor_note
+    if 0 < count < 30:
+        metrics["sample_notice"] = {
+            "code": "low_sample_unreliable_metrics",
+            "message": (
+                f"Only {count} closed deals; win rate, profit factor and expectancy "
+                "are statistically unreliable below ~30 trades."
+            ),
+        }
     return metrics
 
 

@@ -1187,6 +1187,7 @@ def test_trade_journal_analyze_summarizes_realized_exit_deals() -> None:
     assert out["summary"]["net_pnl"] == 13.0
     assert out["summary"]["profit_factor"] == 2.2381
     assert out["summary"]["expectancy"] == 6.5
+    assert out["summary"]["sample_notice"]["code"] == "low_sample_unreliable_metrics"
     assert "avg_pnl" not in out["summary"]
     assert out["breakdowns"]["by_symbol"][0]["symbol"] == "EURUSD"
     assert out["item_schema"] == "trade_journal_analyzed_exit.v1"
