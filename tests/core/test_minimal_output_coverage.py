@@ -890,6 +890,25 @@ class TestFormatResultMinimal:
         assert "spread_cost_currency" not in result
         assert "pricing_basis" not in result
 
+    def test_market_ticker_minimal_keeps_spread_pips(self):
+        payload = {
+            "success": True,
+            "symbol": "EURUSD",
+            "type": "quote",
+            "spread": 0.00022,
+            "spread_pips": 2.2,
+        }
+
+        result = _normalize_market_ticker_payload(
+            payload,
+            verbose=False,
+            tool_name="market_ticker",
+        )
+
+        # spread_pips is the standard FX spread unit and must survive compact mode
+        # for parity with market_snapshot.
+        assert result["spread_pips"] == 2.2
+
     def test_market_ticker_minimal_preserves_error_envelope(self):
         payload = {
             "success": False,
