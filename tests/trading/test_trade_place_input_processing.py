@@ -257,7 +257,15 @@ def test_trade_place_dry_run_market_preview_allows_missing_sl_tp() -> None:
     assert out.get("success") is True
     assert out.get("dry_run") is True
     assert out.get("require_sl_tp") is True
-    assert "SL/TP not required in dry run mode" in out.get("dry_run_note", "")
+    assert "live submission with require_sl_tp=true would be rejected" in out.get(
+        "dry_run_note", ""
+    )
+    assert out["validation"] == {
+        "local_requirements_passed": False,
+        "live_submission_eligible": False,
+        "blockers": ["missing_stop_loss", "missing_take_profit"],
+        "broker_validation_performed": False,
+    }
     assert out.get("would_send_order") is False
     assert out.get("action") == "place_market_order"
     assert "requested_sl" not in out

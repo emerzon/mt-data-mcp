@@ -84,6 +84,7 @@ _TRADE_PLACE_PREVIEW_KEYS = (
     "preview_error",
     "message",
     "dry_run_note",
+    "validation",
     "require_sl_tp",
     "auto_close_on_sl_tp_fail",
     "magic",
@@ -1004,6 +1005,10 @@ def run_trade_place(  # noqa: C901
                 "fillability",
                 "sl_tp_attachment",
             ]
+            local_blockers = [
+                f"missing_{field_name}"
+                for field_name in dry_run_missing_protection
+            ]
             preview: Dict[str, Any] = {
                 "success": True,
                 "dry_run": True,
@@ -1018,7 +1023,13 @@ def run_trade_place(  # noqa: C901
                 "volume": float(request.volume),
                 "message": "Dry run only. No order was sent to MT5.",
                 "validation_scope": validation_scope,
-                "validation_passed": True,
+                "validation_passed": not local_blockers,
+                "validation": {
+                    "local_requirements_passed": not local_blockers,
+                    "live_submission_eligible": not local_blockers,
+                    "blockers": local_blockers,
+                    "broker_validation_performed": False,
+                },
                 "trade_gate_passed": False,
                 "actionability": "preview_only",
                 "actionability_reason": (
@@ -1047,9 +1058,11 @@ def run_trade_place(  # noqa: C901
             }
             if dry_run_missing_protection:
                 preview["dry_run_note"] = (
-                    "SL/TP not required in dry run mode; add stop_loss and "
-                    "take_profit for a complete protection preview."
+                    "A live submission with require_sl_tp=true would be rejected. "
+                    "Add both stop_loss and take_profit, or explicitly set "
+                    "require_sl_tp=false."
                 )
+                preview["actionability"] = "blocked_by_local_requirements"
             if callable(build_dry_run_preview):
                 preview.update(
                     build_dry_run_preview(
