@@ -26,8 +26,8 @@ sys.modules['MetaTrader5'] = _mt5_mock
 import pandas as pd  # noqa: E402
 
 from mtdata.services.data_service import (  # noqa: E402
-    _build_candle_headers,
     _build_candle_freshness_diagnostics,
+    _build_candle_headers,
     _build_no_data_error_with_context,
     _build_rates_df,
     _compact_tick_summary,
@@ -538,7 +538,7 @@ class TestFetchRatesWithWarmup(unittest.TestCase):
                 'freshness_cutoff_epoch': float((12 * 60 * 60) - (3 * 60 * 60)),
                 'data_freshness_seconds': float((12 * 60 * 60) - stale_rates[-1]['time']),
                 'last_bar_within_policy_window': False,
-                'freshness_policy_relaxed': 'latest_completed_bar_for_live_request',
+                'freshness_policy_relaxed': True,
                 'market_session_status': 'closed_or_idle',
                 'freshness_note': 'Market appears closed or idle; showing the latest completed bar.',
             },
@@ -565,8 +565,33 @@ class TestFetchRatesWithWarmup(unittest.TestCase):
         self.assertEqual(mock_from.call_count, 1)
         self.assertEqual(
             diagnostics['freshness']['freshness_policy_relaxed'],
-            'latest_completed_bar_for_live_request',
+            True,
         )
+
+    @patch(_RATES_FROM)
+    def test_weekend_completed_bars_report_closed_weekend(self, mock_from):
+        now = datetime(2026, 6, 13, 12, 0, tzinfo=_UTC)
+        latest = datetime(2026, 6, 12, 20, 0, tzinfo=_UTC)
+        stale_rates = _make_rates(
+            5,
+            base_ts=latest.timestamp(),
+            step=60 * 60,
+        )
+        mock_from.return_value = stale_rates
+        diagnostics = {}
+
+        with patch(f'{_DS}._utc_epoch_seconds', return_value=now.timestamp()):
+            result, err = _fetch_rates_with_warmup(
+                'EURUSD', 16385, 'H1', 5, 0, None, None,
+                retry=False, sanity_check=True, diagnostics=diagnostics,
+            )
+
+        self.assertIsNone(err)
+        self.assertEqual(result, stale_rates)
+        freshness = diagnostics['freshness']
+        self.assertTrue(freshness['freshness_policy_relaxed'])
+        self.assertEqual(freshness['market_session_status'], 'closed')
+        self.assertEqual(freshness['market_session_reason'], 'weekend')
 
     @patch(_RATES_FROM)
     @patch(_PARSE_START)
@@ -2174,7 +2199,7 @@ class TestFetchTicks(unittest.TestCase):
 
         for result in (rows, full_rows, summary):
             self.assertTrue(result.get('success'))
-            self.assertEqual(result["data_freshness_seconds"], 600.0)
+            self.assertEqual(result["data_age_seconds"], 600.0)
             self.assertTrue(result["data_stale"])
             self.assertEqual(result["freshness"], "stale, tick 10m 0s ago")
             self.assertEqual(result["last_quote"]["spread_points"], 20.0)
@@ -2184,6 +2209,32 @@ class TestFetchTicks(unittest.TestCase):
         self.assertEqual(full_rows["data"][-1]["spread_pct"], 0.018149)
         self.assertEqual(full_rows["units"]["spread_points"], "broker_points")
         self.assertEqual(full_rows["units"]["spread_pct"], "percentage_points (1.0 = 1%)")
+
+    @patch(f'{_DS}.time.time')
+    @patch(_TICKS_RANGE)
+    @patch(_CACHED_INFO, return_value=SimpleNamespace(digits=5, point=0.00001))
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_GUARD, _mock_symbol_guard)
+    def test_weekend_ticks_are_closed_not_stale(
+        self,
+        mock_ctz,
+        mock_info,
+        mock_ticks,
+        mock_time,
+    ):
+        now = datetime(2026, 6, 13, 12, 0, tzinfo=_UTC).timestamp()
+        latest = datetime(2026, 6, 12, 20, 0, tzinfo=_UTC).timestamp()
+        mock_time.return_value = now
+        mock_ticks.return_value = _make_ticks(5, base_ts=latest)
+
+        result = fetch_ticks('EURUSD', limit=5, format='rows')
+
+        self.assertTrue(result.get('success'))
+        self.assertFalse(result['data_stale'])
+        self.assertEqual(result['market_status'], 'closed')
+        self.assertEqual(result['market_status_reason'], 'weekend')
+        self.assertEqual(result['freshness'], 'closed weekend, tick 16h 0m ago')
+        self.assertEqual(result['data_age_seconds'], 16 * 60 * 60)
 
     @patch(_TICKS_RANGE)
     @patch(_CACHED_INFO, return_value=SimpleNamespace(digits=5))

@@ -141,6 +141,59 @@ def test_trade_session_context_compacts_nested_sections_by_default() -> None:
     assert out["meta"]["runtime"]["timezone"] == timezone_meta
 
 
+def test_trade_session_context_surfaces_closed_market_tradability() -> None:
+    with patch(
+        "mtdata.core.trading.context.trade_account_info",
+        new=lambda: {
+            "success": True,
+            "equity": 1000.0,
+            "margin_free": 900.0,
+            "execution_ready": True,
+        },
+    ), patch(
+        "mtdata.core.trading.context.market_ticker",
+        new=lambda symbol, detail="compact": {
+            "success": True,
+            "bid": 1.1,
+            "ask": 1.1002,
+            "data_stale": False,
+            "freshness": "closed weekend, tick 16h 0m ago",
+        },
+    ), patch(
+        "mtdata.core.trading.context._trade_session_tradability",
+        return_value={
+            "status": "weekend_closed",
+            "reason": "weekend",
+            "is_tradable": False,
+            "can_open_new_positions": False,
+        },
+    ), patch(
+        "mtdata.core.trading.context.trade_get_open",
+        new=lambda request: {
+            "success": True,
+            "kind": "open_positions",
+            "count": 0,
+            "items": [],
+        },
+    ), patch(
+        "mtdata.core.trading.context.trade_get_pending",
+        new=lambda request: {
+            "success": True,
+            "kind": "pending_orders",
+            "count": 0,
+            "items": [],
+        },
+    ):
+        out = _raw_trade_session_context("EURUSD")
+
+    assert out["market_status"] == "weekend_closed"
+    assert out["market_status_reason"] == "weekend"
+    assert out["is_tradable"] is False
+    assert out["can_open_new_positions"] is False
+    assert out["trade_ready"]["can_trade"] is False
+    assert "market_not_open_for_new_positions" in out["trade_ready"]["blockers"]
+
+
 def test_trade_session_context_compact_surfaces_portfolio_exposure_elsewhere() -> None:
     def open_positions_for_request(request):
         if request.symbol == "EURUSD":

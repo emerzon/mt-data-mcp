@@ -43,8 +43,13 @@ _COMPACT_TICK_TOP_LEVEL_FIELDS = (
     "price_currency",
     "units",
     "freshness",
-    "data_freshness_seconds",
+    "data_age_seconds",
     "data_stale",
+    "market_status",
+    "market_status_reason",
+    "market_status_source",
+    "freshness_policy_relaxed",
+    "note",
     "simplified",
     "simplify",
 )
@@ -411,7 +416,15 @@ def _compact_candles_payload(
         compact.pop("forming_candle_skipped", None)
     if result.get("forming_candle_status") == "skipped" and result.get("hint"):
         compact["hint"] = result["hint"]
-    for key in ("freshness", "data_age_seconds", "data_stale"):
+    for key in (
+        "freshness",
+        "data_age_seconds",
+        "data_stale",
+        "market_status",
+        "market_status_reason",
+        "market_status_source",
+        "note",
+    ):
         if key in public_diagnostics:
             compact[key] = public_diagnostics[key]
     if "spread_estimate" in public_diagnostics:
@@ -512,6 +525,9 @@ def _standard_candles_payload(result: Dict[str, Any]) -> Dict[str, Any]:
         "data_stale",
         "data_age_seconds",
         "market_status",
+        "market_status_reason",
+        "market_status_source",
+        "note",
         "stale_warning",
         "spread_estimate",
     ):
@@ -590,11 +606,10 @@ def _public_candle_diagnostics(result: Dict[str, Any]) -> Dict[str, Any]:
     if isinstance(freshness, dict):
         public["freshness_basis"] = "bar_policy"
         within_policy = freshness.get("last_bar_within_policy_window")
-        for key in ("data_freshness_seconds", "last_bar_within_policy_window"):
-            if key == "data_freshness_seconds" and query_mode == "range":
-                continue
-            if freshness.get(key) is not None:
-                public[key] = bool(freshness[key]) if key == "last_bar_within_policy_window" else freshness[key]
+        if freshness.get("last_bar_within_policy_window") is not None:
+            public["last_bar_within_policy_window"] = bool(
+                freshness["last_bar_within_policy_window"]
+            )
         if query_mode != "range" and freshness.get("data_freshness_seconds") is not None:
             seconds = freshness["data_freshness_seconds"]
             public.setdefault("data_age_seconds", seconds)
@@ -606,6 +621,14 @@ def _public_candle_diagnostics(result: Dict[str, Any]) -> Dict[str, Any]:
                 public["market_status"] = (
                     freshness.get("market_session_status") or "closed_or_idle"
                 )
+                if freshness.get("market_session_reason"):
+                    public["market_status_reason"] = freshness[
+                        "market_session_reason"
+                    ]
+                if freshness.get("market_session_source"):
+                    public["market_status_source"] = freshness[
+                        "market_session_source"
+                    ]
                 note = freshness.get("freshness_note")
                 if note:
                     public["note"] = note
@@ -618,6 +641,7 @@ def _public_candle_diagnostics(result: Dict[str, Any]) -> Dict[str, Any]:
             freshness_label = format_freshness_label(
                 data_stale=stale,
                 market_status=public.get("market_status"),
+                market_status_reason=public.get("market_status_reason"),
                 age_seconds=seconds,
                 item="bar",
             )

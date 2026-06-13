@@ -7,6 +7,7 @@ from typing import Any, Dict, Optional
 from .._mcp_instance import mcp
 from ..execution_logging import run_logged_operation
 from ..market_depth import market_ticker
+from ..market_status import _check_symbol_market_status
 from ..output_contract import ensure_common_meta
 from .account import trade_account_info
 from .positions import trade_get_open, trade_get_pending
@@ -139,7 +140,11 @@ def _normalize_nested_quote_time(quote: Dict[str, Any], *, compact: bool) -> Dic
     return normalized
 
 
-def _build_trade_ready(account: Any, quote: Any) -> Dict[str, Any]:
+def _build_trade_ready(
+    account: Any,
+    quote: Any,
+    tradability: Any = None,
+) -> Dict[str, Any]:
     blockers: list[str] = []
     margin_free = None
     if not isinstance(account, dict) or account.get("error") not in (None, ""):
@@ -162,6 +167,12 @@ def _build_trade_ready(account: Any, quote: Any) -> Dict[str, Any]:
     elif bool(quote.get("data_stale")):
         blockers.append("quote_stale")
 
+    can_open_new_positions = None
+    if isinstance(tradability, dict) and tradability.get("error") in (None, ""):
+        can_open_new_positions = tradability.get("can_open_new_positions")
+        if can_open_new_positions is False:
+            blockers.append("market_not_open_for_new_positions")
+
     deduped_blockers = list(dict.fromkeys(blockers))
     margin_sufficient = None
     try:
@@ -169,11 +180,39 @@ def _build_trade_ready(account: Any, quote: Any) -> Dict[str, Any]:
             margin_sufficient = float(margin_free) > 0
     except Exception:
         margin_sufficient = None
-    return {
+    result = {
         "can_trade": not deduped_blockers,
         "any_blockers": bool(deduped_blockers),
         "blockers": deduped_blockers,
         "margin_sufficient_for_min_lot": margin_sufficient,
+    }
+    if can_open_new_positions is not None:
+        result["can_open_new_positions"] = can_open_new_positions
+    return result
+
+
+def _trade_session_tradability(symbol: str) -> Dict[str, Any]:
+    try:
+        result = _check_symbol_market_status(
+            symbol,
+            detail="compact",
+            timezone_display="utc",
+        )
+    except Exception:
+        return {}
+    if not isinstance(result, dict) or result.get("error"):
+        return {}
+    return {
+        key: result[key]
+        for key in (
+            "status",
+            "reason",
+            "is_tradable",
+            "can_open_new_positions",
+            "trade_mode_allows_opening",
+            "tick_freshness",
+        )
+        if key in result
     }
 
 
@@ -243,6 +282,10 @@ def _compact_trade_session_context_payload(payload: Dict[str, Any]) -> Dict[str,
             "partial_failure",
             "trade_ready",
             "quote_quality",
+            "market_status",
+            "market_status_reason",
+            "is_tradable",
+            "can_open_new_positions",
         )
         if payload.get(key) not in (None, "")
     }
@@ -433,6 +476,7 @@ def trade_session_context(request: TradeSessionContextRequest) -> Dict[str, Any]
 
         account_res = acc_func() if request.include_account else None
         quote_res = quote_func(symbol=request.symbol, detail=request.detail)
+        tradability = _trade_session_tradability(request.symbol)
 
         open_req = TradeGetOpenRequest(symbol=request.symbol)
         open_res = open_func(request=open_req)
@@ -504,12 +548,23 @@ def trade_session_context(request: TradeSessionContextRequest) -> Dict[str, Any]
             "quote": quote_res,
             "quote_quality": _build_quote_quality(quote_res),
         }
+        if tradability:
+            payload["market_status"] = tradability.get("status")
+            payload["market_status_reason"] = tradability.get("reason")
+            payload["is_tradable"] = tradability.get("is_tradable")
+            payload["can_open_new_positions"] = tradability.get(
+                "can_open_new_positions"
+            )
         if other_positions_count is not None:
             payload["portfolio_positions_count"] = portfolio_positions_count
             payload["other_positions_count"] = other_positions_count
         if request.include_account:
             payload["account"] = account_res
-            payload["trade_ready"] = _build_trade_ready(account_res, quote_res)
+            payload["trade_ready"] = _build_trade_ready(
+                account_res,
+                quote_res,
+                tradability,
+            )
         if partial_failure:
             payload["partial_failure"] = True
         if request.detail == "compact":

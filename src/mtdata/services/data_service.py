@@ -42,7 +42,7 @@ from ..utils.denoise import (
 from ..utils.denoise import (
     normalize_denoise_spec as _normalize_denoise_spec,
 )
-from ..utils.freshness import format_freshness_label
+from ..utils.freshness import closed_session_context, format_freshness_label
 from ..utils.indicators import (
     _apply_ta_indicators,
     _estimate_warmup_bars,
@@ -488,7 +488,51 @@ def _build_candle_freshness_diagnostics(
     }
 
 
-def _fetch_rates_with_warmup(
+def _relax_live_completed_bar_freshness(
+    *,
+    symbol: str,
+    rates: Any,
+    timeframe: TimeframeLiteral,
+    expected_end_ts: float,
+    start_datetime: Optional[str],
+    end_datetime: Optional[str],
+    freshness_meta: Dict[str, Any],
+) -> bool:
+    if start_datetime or end_datetime:
+        return False
+    if _is_last_bar_forming(
+        rates,
+        timeframe,
+        current_time_epoch=float(expected_end_ts),
+    ):
+        return False
+    closed_session = closed_session_context(
+        symbol,
+        now_epoch=expected_end_ts,
+        item="bar",
+        data_age_seconds=freshness_meta.get("data_freshness_seconds"),
+    )
+    freshness_meta["freshness_policy_relaxed"] = True
+    if closed_session:
+        freshness_meta["market_session_status"] = closed_session.get(
+            "market_status"
+        )
+        freshness_meta["market_session_reason"] = closed_session.get(
+            "market_status_reason"
+        )
+        freshness_meta["market_session_source"] = closed_session.get(
+            "market_status_source"
+        )
+        freshness_meta["freshness_note"] = closed_session.get("note")
+    else:
+        freshness_meta["market_session_status"] = "closed_or_idle"
+        freshness_meta["freshness_note"] = (
+            "Market appears closed or idle; showing the latest completed bar."
+        )
+    return True
+
+
+def _fetch_rates_with_warmup(  # noqa: C901
     symbol: str,
     mt5_timeframe: int,
     timeframe: TimeframeLiteral,
@@ -593,22 +637,15 @@ def _fetch_rates_with_warmup(
             if bool(freshness_meta.get("last_bar_within_policy_window")):
                 stale_last_t = None
                 break
-            if (
-                not start_datetime
-                and not end_datetime
-                and not _is_last_bar_forming(
-                    rates,
-                    timeframe,
-                    current_time_epoch=float(expected_end_ts),
-                )
+            if _relax_live_completed_bar_freshness(
+                symbol=symbol,
+                rates=rates,
+                timeframe=timeframe,
+                expected_end_ts=expected_end_ts,
+                start_datetime=start_datetime,
+                end_datetime=end_datetime,
+                freshness_meta=freshness_meta,
             ):
-                freshness_meta["freshness_policy_relaxed"] = (
-                    "latest_completed_bar_for_live_request"
-                )
-                freshness_meta["market_session_status"] = "closed_or_idle"
-                freshness_meta["freshness_note"] = (
-                    "Market appears closed or idle; showing the latest completed bar."
-                )
                 stale_last_t = None
                 break
             stale_last_t = float(last_t)
@@ -2264,7 +2301,16 @@ def _compact_tick_summary(out: Dict[str, Any]) -> Dict[str, Any]:
         compact["price_point"] = out.get("price_point")
     if out.get("price_currency") is not None:
         compact["price_currency"] = out.get("price_currency")
-    for key in ("freshness", "data_freshness_seconds", "data_stale"):
+    for key in (
+        "freshness",
+        "data_age_seconds",
+        "data_stale",
+        "market_status",
+        "market_status_reason",
+        "market_status_source",
+        "freshness_policy_relaxed",
+        "note",
+    ):
         if out.get(key) is not None:
             compact[key] = out.get(key)
     if isinstance(out.get("last_quote"), dict):
@@ -2582,11 +2628,23 @@ def fetch_ticks(  # noqa: C901
                 return
             latest_tick_epoch = float(_epochs[-1])
             age_seconds = max(0.0, float(time.time()) - latest_tick_epoch)
+            closed_session = closed_session_context(
+                symbol,
+                now_epoch=time.time(),
+                item="tick",
+                data_age_seconds=age_seconds,
+            )
             data_stale = age_seconds > 300.0
-            payload["data_freshness_seconds"] = round(age_seconds, 3)
+            if closed_session and closed_session.get("freshness_policy_relaxed"):
+                data_stale = False
+            payload["data_age_seconds"] = round(age_seconds, 3)
             payload["data_stale"] = data_stale
+            if closed_session:
+                payload.update(closed_session)
             freshness = format_freshness_label(
                 data_stale=data_stale,
+                market_status=payload.get("market_status"),
+                market_status_reason=payload.get("market_status_reason"),
                 age_seconds=age_seconds,
                 item="tick",
             )

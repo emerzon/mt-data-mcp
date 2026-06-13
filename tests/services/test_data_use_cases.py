@@ -404,8 +404,10 @@ def test_run_data_fetch_candles_closed_market_relaxation_is_not_stale():
     assert result["freshness"].startswith("closed or idle, bar ")
     assert result["data_stale"] is False
     assert result["data_age_seconds"] == 149668.6
-    assert "market_status" not in result
-    assert "note" not in result
+    assert result["market_status"] == "closed_or_idle"
+    assert result["note"] == (
+        "Market appears closed or idle; showing the latest completed bar."
+    )
     assert "stale_warning" not in result
 
 
@@ -647,7 +649,8 @@ def test_run_data_fetch_candles_summary_omits_rows_and_keeps_metadata():
     assert result["timezone"] == "UTC"
     assert result["query_type"] == "latest"
     assert result["latency_ms"] == 12.3
-    assert result["data_freshness_seconds"] == 60.0
+    assert result["data_age_seconds"] == 60.0
+    assert "data_freshness_seconds" not in result
     assert result["data_age"] == "1m 0s"
     assert result["data_stale"] is False
     assert "data" not in result
@@ -987,7 +990,7 @@ def test_run_data_fetch_ticks_compact_prunes_row_diagnostics():
             ],
             "timezone": "UTC",
             "freshness": "stale, tick 10m 0s ago",
-            "data_freshness_seconds": 600.0,
+            "data_age_seconds": 600.0,
             "data_stale": True,
             "price_point": 0.00001,
             "stats": {"spread": {"low": 0.00006, "high": 0.00008}},
@@ -1043,7 +1046,7 @@ def test_run_data_fetch_ticks_compact_prunes_row_diagnostics():
         "price_precision": 5,
         "price_point": 0.00001,
         "freshness": "stale, tick 10m 0s ago",
-        "data_freshness_seconds": 600.0,
+        "data_age_seconds": 600.0,
         "data_stale": True,
         "units": {
             "bid": "absolute_price",
