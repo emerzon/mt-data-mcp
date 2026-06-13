@@ -386,6 +386,8 @@ class DataFetchCandlesRequest(BaseModel):
         description=(
             "Number of most-recent completed bars to return (default "
             f"{DATA_FETCH_CANDLES_DEFAULT_LIMIT}, kept small for compact output). "
+            "The limit also caps start/end range queries; raise it to return more "
+            "bars from the requested range. "
             "Requested indicators automatically fetch extra warmup bars, so the "
             "returned window has valid indicator values without raising the limit."
         ),

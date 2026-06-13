@@ -421,9 +421,12 @@ def _apply_range_limit_cap(result: Dict[str, Any], *, limit: int) -> None:
     result["truncation"] = {
         "reason": "limit",
         "retained": "last",
-        "available_count": available,
-        "returned_count": len(retained),
+        "excluded_count": available - len(retained),
     }
+    result.setdefault("warnings", []).append(
+        f"Range contained {available} bars; returned the latest {len(retained)} "
+        f"because limit={limit_value}. Set limit>={available} to return the full range."
+    )
     candle_counts = result.get("candle_counts")
     if isinstance(candle_counts, dict):
         candle_counts["returned"] = len(retained)
@@ -440,14 +443,17 @@ def _apply_range_limit_cap(result: Dict[str, Any], *, limit: int) -> None:
 
 def _normalize_candle_count_field(result: Dict[str, Any]) -> None:
     candles_value = result.pop("candles", None)
-    if "count" in result:
-        return
-    if candles_value is not None:
+    if "count" not in result and candles_value is not None:
         result["count"] = candles_value
-        return
-    data = result.get("data")
-    if isinstance(data, list):
-        result["count"] = len(data)
+    elif "count" not in result:
+        data = result.get("data")
+        if isinstance(data, list):
+            result["count"] = len(data)
+    result.pop("returned_count", None)
+    data_window = result.get("data_window")
+    if isinstance(data_window, dict):
+        data_window.pop("requested_limit", None)
+        data_window.pop("returned_count", None)
 
 
 def _compact_candles_payload(

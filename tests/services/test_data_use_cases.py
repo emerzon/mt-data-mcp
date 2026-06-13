@@ -476,7 +476,51 @@ def test_run_data_fetch_candles_range_applies_limit_cap():
     assert result["available_count"] == 5
     assert result["limit_applied"] == 2
     assert result["truncated"] is True
+    assert result["truncation"] == {
+        "reason": "limit",
+        "retained": "last",
+        "excluded_count": 3,
+    }
+    assert result["warnings"] == [
+        "Range contained 5 bars; returned the latest 2 because limit=2. "
+        "Set limit>=5 to return the full range."
+    ]
     assert "query_type" not in result
+
+
+def test_run_data_fetch_candles_normalizes_count_metadata():
+    request = DataFetchCandlesRequest(
+        symbol="EURUSD",
+        timeframe="H1",
+        limit=2,
+        start="2026-01-01",
+        end="2026-01-02",
+    )
+
+    result = run_data_fetch_candles(
+        request,
+        gateway=SimpleNamespace(ensure_connection=lambda: None),
+        fetch_candles_impl=lambda **kwargs: {
+            "success": True,
+            "candles": 5,
+            "requested_limit": 2,
+            "returned_count": 5,
+            "data_window": {
+                "start": "t1",
+                "end": "t2",
+                "requested_limit": 2,
+                "returned_count": 5,
+            },
+            "meta": {"diagnostics": {"query": {"mode": "range"}}},
+            "data": [{"time": f"t{index}"} for index in range(5)],
+        },
+    )
+
+    assert result["count"] == 2
+    assert result["requested_limit"] == 2
+    assert "candles" not in result
+    assert "returned_count" not in result
+    assert result["data_window"] == {"start": "t1", "end": "t2"}
 
 
 def test_run_data_fetch_candles_compact_keeps_spread_estimate_without_meta():
