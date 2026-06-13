@@ -701,7 +701,9 @@ def confluence_levels(  # noqa: C901
             )
 
             reference_price = _tick_reference_price(tick)
+            reference_price_source = "live_tick"
             if reference_price is None:
+                reference_price_source = "last_completed_bar_close"
                 try:
                     sr_current = sr_payload.get("current_price")
                     reference_price = float(sr_current) if sr_current is not None else None
@@ -709,6 +711,7 @@ def confluence_levels(  # noqa: C901
                     reference_price = None
             if reference_price is None or not math.isfinite(float(reference_price)):
                 reference_price = close
+                reference_price_source = "last_completed_bar_close"
 
             detail_value = str(detail).strip().lower()
             if normalize_output_extras(extras):
@@ -756,9 +759,17 @@ def confluence_levels(  # noqa: C901
                 detail=detail_value,
                 volume_profile_payload=volume_profile_payload,
             )
-            payload["reference_price_as_of"] = (
-                datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
-            )
+            payload["reference_price_source"] = reference_price_source
+            if reference_price_source == "live_tick":
+                payload["reference_price_as_of"] = (
+                    datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+                )
+            else:
+                payload.setdefault("warnings", []).append(
+                    "reference_price is the latest completed bar close (no live tick available); "
+                    "the proximity of price to support/resistance reflects the analysis window, "
+                    "not a live quote."
+                )
             period_start = float(source_bar["time"]) if _has_field(source_bar, "time") else float("nan")
             if math.isfinite(period_start):
                 _use_ctz = _use_client_tz()

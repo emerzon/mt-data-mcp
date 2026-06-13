@@ -2427,6 +2427,7 @@ def merge_support_resistance_results(  # noqa: C901
         "baseline_atr_pct": None if merge_baseline_atr_pct is None else float(merge_baseline_atr_pct),
         "decay_half_life_bars": None if decay_half_life_bars is None else int(decay_half_life_bars),
         "current_price": None if current_price is None else float(round(current_price, 6)),
+        "current_price_source": "last_completed_bar_close",
         "window": {
             "start": min(start_values) if start_values else None,
             "end": max(end_values) if end_values else None,
@@ -2880,6 +2881,7 @@ def compute_support_resistance_levels(
         "baseline_atr_pct": adaptive_settings["baseline_atr_pct"],
         "decay_half_life_bars": int(half_life_value),
         "current_price": None if current_price is None else float(round(current_price, 6)),
+        "current_price_source": "last_completed_bar_close",
         "window": {
             "start": _format_time(window_start),
             "end": _format_time(window_end),

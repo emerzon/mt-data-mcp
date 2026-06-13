@@ -248,6 +248,7 @@ def test_compute_support_resistance_returns_ranked_levels_around_current_price()
     )
 
     assert result["current_price"] == 105.0
+    assert result["current_price_source"] == "last_completed_bar_close"
     assert len(result["supports"]) == 1
     assert len(result["resistances"]) == 1
 
