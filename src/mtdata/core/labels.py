@@ -392,12 +392,19 @@ def labels_triple_barrier(
                         "tp_abs and sl_abs, or tp_ticks and sl_ticks."
                     ),
                     "remediation": (
-                        "Choose explicit TP/SL barriers for the labeling objective. "
-                        "For exploratory percent labels, start with tp_pct=0.5 and sl_pct=0.5; "
-                        "use forecast_barrier_optimize to tune barriers from history."
+                        "Choose explicit TP/SL barriers scaled to the symbol's volatility. "
+                        "Run forecast_volatility_estimate to read the per-bar sigma, then set "
+                        "barriers to a multiple of it (e.g. ~1-3x the per-bar sigma scaled to "
+                        "the horizon), or use forecast_barrier_optimize to tune from history. "
+                        "Fixed values like tp_pct=0.5 are not volatility-aware and may be hit "
+                        "within a bar (or never), producing near-random labels."
                     ),
+                    "related_tools": [
+                        "forecast_volatility_estimate",
+                        "forecast_barrier_optimize",
+                    ],
                     "examples": [
-                        "labels_triple_barrier(symbol='EURUSD', tp_pct=0.5, sl_pct=0.5)",
+                        "forecast_volatility_estimate(symbol='EURUSD', timeframe='H1')  # find per-bar sigma first",
                         "labels_triple_barrier(symbol='EURUSD', tp_ticks=50, sl_ticks=50)",
                     ],
                 }
