@@ -2456,14 +2456,7 @@ def _market_scan_sort_rows(
     )
 
 
-_MARKET_SCAN_RANK_BY_ALIASES = {
-    "abs_price_change": "abs_price_change_pct",
-    "price_change": "price_change_pct",
-    "volume": "tick_volume",
-    "spread": "spread_pct",
-}
-
-_SYMBOLS_TOP_MARKETS_RANK_BY_ALIASES = {
+_RANK_BY_ALIASES = {
     "abs_price_change": "abs_price_change_pct",
     "price_change": "price_change_pct",
     "volume": "tick_volume",
@@ -2493,7 +2486,7 @@ _MARKET_SCAN_RANK_BY_CHOICES = (
 
 def _normalize_market_scan_rank_by(value: Any) -> tuple[str, Optional[str]]:
     raw_value = str(value or "abs_price_change_pct").strip().lower()
-    return _MARKET_SCAN_RANK_BY_ALIASES.get(raw_value, raw_value), raw_value
+    return _RANK_BY_ALIASES.get(raw_value, raw_value), raw_value
 
 
 def _normalize_market_scan_rank_order(value: Any) -> tuple[str, Optional[str]]:
@@ -2564,7 +2557,7 @@ def symbols_top_markets(  # noqa: C901
     def _run() -> Dict[str, Any]:  # noqa: C901
         try:
             raw_rank_by_value = str(rank_by or "abs_price_change_pct").strip().lower()
-            rank_by_value = _SYMBOLS_TOP_MARKETS_RANK_BY_ALIASES.get(
+            rank_by_value = _RANK_BY_ALIASES.get(
                 raw_rank_by_value,
                 raw_rank_by_value,
             )
