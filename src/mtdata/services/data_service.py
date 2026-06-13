@@ -2092,12 +2092,14 @@ def fetch_candles(  # noqa: C901
                         )
                         payload["data"] = data_rows
                         payload.setdefault("warnings", []).append(
-                            "include_spread requested but spread unavailable; "
-                            f"estimated spread from {estimate_source} ({est_mean:g}) applied."
+                            "include_spread requested but per-bar spread unavailable; a single "
+                            f"estimated spread from {estimate_source} ({est_mean:g}) was applied "
+                            "uniformly to every row (not per-bar historical spread)."
                         )
                         payload["spread_unit"] = "price"
                         payload["spread_estimated"] = True
                         payload["spread_source"] = estimate_source
+                        payload["spread_estimate_basis"] = "uniform_single_estimate_not_per_bar_historical"
                         payload.setdefault("meta", {}).setdefault("diagnostics", {}).setdefault("spread_estimate", {})["estimated_mean"] = est_mean
                         payload["meta"]["diagnostics"]["spread_estimate"]["source"] = estimate_source
                         payload["meta"]["diagnostics"]["spread_estimate"]["unit"] = "price"
