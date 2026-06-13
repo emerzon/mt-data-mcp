@@ -7,22 +7,14 @@ import dateparser
 import numpy as np
 import pandas as pd
 
-from ..shared.constants import (
-    PRECISION_ABS_TOL,
-    PRECISION_MAX_DECIMALS,
-    PRECISION_MAX_LOSS_PCT,
-    PRECISION_REL_TOL,
-    TIME_DISPLAY_FORMAT,
-)
+from ..shared.constants import TIME_DISPLAY_FORMAT
 from .formatting import (
     format_float,
 )
 from .formatting import (
     format_number,
 )
-from .formatting import (
-    optimal_decimals as _optimal_decimals_shared,
-)
+from .formatting import optimal_decimals
 from .coercion import coerce_finite_float as _coerce_finite_float
 from .coercion import safe_float as _safe_float
 
@@ -224,22 +216,6 @@ def _resolve_client_tz(_: object = None):
     except Exception:
         return None
 
-def _optimal_decimals(
-    values: List[float],
-    rel_tol: float = PRECISION_REL_TOL,
-    abs_tol: float = PRECISION_ABS_TOL,
-    max_decimals: int = PRECISION_MAX_DECIMALS,
-    max_loss_pct: float = PRECISION_MAX_LOSS_PCT,
-) -> int:
-    return _optimal_decimals_shared(
-        values,
-        rel_tol=rel_tol,
-        abs_tol=abs_tol,
-        max_decimals=max_decimals,
-        max_loss_pct=max_loss_pct,
-    )
-
-
 def parse_kv_or_json(obj: Any) -> Dict[str, Any]:
     """Parse params/features provided as dict, JSON string, or k=v pairs into a dict.
 
@@ -356,7 +332,7 @@ def _format_numeric_rows_from_df(
         except Exception:
             values = []
         if values:
-            col_decimals[col] = _optimal_decimals(values)
+            col_decimals[col] = optimal_decimals(values)
 
     out_rows: List[List[Any]] = []
     for row_values in df[headers].itertuples(index=False, name=None):
