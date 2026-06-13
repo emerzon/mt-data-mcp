@@ -73,6 +73,37 @@ def test_fetch_unified_news_without_symbol_returns_only_general_bucket(monkeypat
     assert set(result["sources_used"]) == {"finviz", "mt5"}
 
 
+def test_fetch_unified_news_rejects_unknown_equity_symbol(monkeypatch) -> None:
+    monkeypatch.setattr(svc, "get_symbol_info_cached", lambda symbol: None)
+    monkeypatch.setattr(
+        svc,
+        "get_general_news",
+        lambda news_type="news", limit=20, page=1: {"success": True, "items": []},
+    )
+    monkeypatch.setattr(
+        svc,
+        "get_stock_news",
+        lambda symbol, limit=20, page=1: {
+            "error": "Symbol not found. Please check the ticker symbol and try again."
+        },
+    )
+    monkeypatch.setattr(
+        svc,
+        "get_mt5_news",
+        lambda **_kwargs: {"success": True, "news": []},
+    )
+    _disable_ycnbc(monkeypatch)
+    _disable_embeddings(monkeypatch)
+    _reset_aggregator(monkeypatch)
+
+    result = svc.fetch_unified_news("ZZZZZ")
+
+    assert result["success"] is False
+    assert result["error_code"] == "news_symbol_unavailable"
+    assert result["symbol"] == "ZZZZZ"
+    assert result["remediation"]
+
+
 def test_fetch_unified_news_repairs_provider_mojibake(monkeypatch) -> None:
     def fake_general_news(news_type: str = "news", limit: int = 20, page: int = 1):
         return {

@@ -438,6 +438,8 @@ def news(
 
     def _run() -> Dict[str, Any]:
         raw = fetch_unified_news(symbol=symbol)
+        if isinstance(raw, dict) and raw.get("success") is False:
+            return raw
         out = _apply_news_limit(
             normalize_news_output(
                 raw,

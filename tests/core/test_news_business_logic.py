@@ -54,6 +54,27 @@ def test_news_tool_forwards_symbol(monkeypatch) -> None:
     assert "T" in result["data_fetched_at"]
 
 
+def test_news_tool_preserves_symbol_validation_error(monkeypatch) -> None:
+    raw = _unwrap(news)
+    monkeypatch.setattr(
+        "mtdata.core.news.fetch_unified_news",
+        lambda symbol=None: {
+            "success": False,
+            "error": f"Symbol '{symbol}' was not found by the equity news provider.",
+            "error_code": "news_symbol_unavailable",
+            "symbol": symbol,
+            "remediation": "Check the ticker spelling.",
+        },
+    )
+
+    result = raw(symbol="ZZZZZ", limit=2)
+
+    assert result["success"] is False
+    assert result["error_code"] == "news_symbol_unavailable"
+    assert result["symbol"] == "ZZZZZ"
+    assert "limit_scope" not in result
+
+
 def test_news_tool_limits_globally_without_changing_default(monkeypatch) -> None:
     raw = _unwrap(news)
 

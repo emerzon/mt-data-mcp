@@ -390,6 +390,10 @@ class InstrumentContext:
         }
 
 
+class NewsSymbolUnavailableError(ValueError):
+    """Raised when an authoritative provider rejects an unknown symbol."""
+
+
 @runtime_checkable
 class NewsSource(Protocol):
     """Protocol for pluggable news providers."""
@@ -1386,13 +1390,22 @@ class FinvizNewsSource:
         if not candidates:
             return []
 
+        attempted_candidates = 0
+        unavailable_candidates = 0
         for candidate in candidates:
             try:
                 result = get_stock_news(candidate, limit=limit, page=1)
             except Exception:
                 logger.exception("Error fetching direct Finviz equity news for %s via %s", context.symbol, candidate)
                 continue
+            attempted_candidates += 1
             if not result.get("success"):
+                error_text = _safe_text(result.get("error")).lower()
+                if (
+                    "symbol not found" in error_text
+                    or "not a finviz-supported symbol" in error_text
+                ):
+                    unavailable_candidates += 1
                 continue
 
             out: List[NewsItem] = []
@@ -1419,6 +1432,14 @@ class FinvizNewsSource:
             if out:
                 return out
 
+        if (
+            attempted_candidates > 0
+            and unavailable_candidates == attempted_candidates
+            and not context.metadata_hints
+        ):
+            raise NewsSymbolUnavailableError(
+                f"Symbol '{context.symbol}' was not found by the equity news provider."
+            )
         return []
 
     def _fetch_market_snapshots(
@@ -1648,7 +1669,7 @@ class NewsAggregator:
     def get_available_sources(self) -> List[str]:
         return [name for name, source in self._sources.items() if source.is_available()]
 
-    def fetch_news(self, symbol: Optional[str] = None) -> Dict[str, Any]:
+    def fetch_news(self, symbol: Optional[str] = None) -> Dict[str, Any]:  # noqa: C901
         bucket_size = _DEFAULT_BUCKET_SIZE
         candidate_limit = bucket_size * _CANDIDATE_MULTIPLIER
         symbol_norm = _normalize_symbol(symbol)
@@ -1700,6 +1721,17 @@ class NewsAggregator:
                     "general_candidates": len(general_items),
                     "related_candidates": len(news_items),
                     "market_context_candidates": len(context_items),
+                }
+            except NewsSymbolUnavailableError as exc:
+                return {
+                    "success": False,
+                    "error": str(exc),
+                    "error_code": "news_symbol_unavailable",
+                    "symbol": context.symbol if context is not None else symbol_norm,
+                    "remediation": (
+                        "Check the ticker spelling or use the broker's exact MT5 "
+                        "symbol name when querying a broker-listed instrument."
+                    ),
                 }
             except Exception as exc:
                 logger.exception("Error collecting news from %s", name)
