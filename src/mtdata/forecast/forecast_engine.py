@@ -1075,6 +1075,11 @@ def _format_forecast_output(
         "forecast_time": forecast_times,
         "last_price": last_price,
         "last_price_source": "candle_close" if last_price is not None else None,
+        "calendar_treatment": (
+            "forex_weekend_skipped"
+            if _uses_standard_weekend_projection(symbol, tf_secs)
+            else "continuous_no_weekend_skip"
+        ),
     }
     if calendar_gaps:
         result["forecast_calendar_gaps"] = calendar_gaps
@@ -1082,6 +1087,14 @@ def _format_forecast_output(
             f"{horizon} trading bars forecast; {skipped_bars} "
             f"{str(timeframe or '').upper() or 'timeframe'} bars skipped (weekend)."
         )
+    elif not _uses_standard_weekend_projection(symbol, tf_secs):
+        weekend_bars = _count_weekend_forecast_times(forecast_times)
+        if weekend_bars:
+            result.setdefault("warnings", []).append(
+                f"{weekend_bars} of {horizon} forecast timestamps fall on a weekend; "
+                "weekends are not skipped for this symbol (continuous calendar). "
+                "Confirm the instrument trades during those periods."
+            )
 
     # Choose which arrays to expose
     if quantity == 'return':
