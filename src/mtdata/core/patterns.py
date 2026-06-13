@@ -1132,6 +1132,10 @@ def _attach_pattern_usage_notice(result: Dict[str, Any]) -> None:
         result.get("mode") == "all" and "highlights" in result
     )
     if compact_shape:
+        result.setdefault(
+            "confidence_basis",
+            "confidence/pattern_confidence are heuristic pattern scores (0-1), not historical win rates",
+        )
         return
     result.setdefault(
         "calibration",

@@ -1523,3 +1523,19 @@ def test_run_classic_engine_native_multiscale_merges(monkeypatch):
     assert out
     assert out[0]["details"].get("native_multiscale") is True
     assert int(out[0].get("support_count", 1)) >= 2
+
+
+def test_attach_pattern_usage_notice_compact_adds_confidence_basis():
+    result = {"success": True, "patterns_shown": 2, "pattern_confidence": 0.3}
+    core_patterns._attach_pattern_usage_notice(result)
+    assert result["is_signal"] is False
+    assert result["usage"] == "information_only"
+    assert "heuristic" in result["confidence_basis"]
+    # compact shape should not carry the verbose calibration block
+    assert "calibration" not in result
+
+
+def test_attach_pattern_usage_notice_full_adds_calibration():
+    result = {"success": True, "patterns": []}
+    core_patterns._attach_pattern_usage_notice(result)
+    assert result["calibration"]["confidence"].startswith("heuristic")
