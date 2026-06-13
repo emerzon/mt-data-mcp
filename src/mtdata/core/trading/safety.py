@@ -39,6 +39,7 @@ class TradeGuardrailsConfig(BaseModel):
     """Top-level trade guardrail configuration."""
 
     enabled: bool = False
+    ignore_on_demo: bool = True
     trading_enabled: bool = True
     allowed_symbols: List[str] = Field(default_factory=list)
     blocked_symbols: List[str] = Field(default_factory=list)
@@ -138,6 +139,41 @@ def _guardrails_active(config: Optional[Any]) -> bool:
 
 def _wallet_limits_active(limits: Optional[WalletRiskLimits]) -> bool:
     return limits is not None and _model_has_values(limits)
+
+
+def _account_is_demo(account_info: Any) -> bool:
+    if account_info is None:
+        return False
+
+    is_demo = getattr(account_info, "is_demo", None)
+    if isinstance(is_demo, bool):
+        return is_demo
+
+    account_type = str(getattr(account_info, "account_type", "") or "").strip().lower()
+    if account_type == "demo":
+        return True
+    if account_type:
+        return False
+
+    trade_mode = getattr(account_info, "trade_mode", None)
+    if isinstance(trade_mode, str):
+        return trade_mode.strip().lower() == "demo"
+    try:
+        return int(trade_mode) == 0
+    except Exception:
+        return False
+
+
+def _guardrails_ignored_for_demo(
+    config: Optional[TradeGuardrailsConfig],
+    *,
+    account_info: Any,
+) -> bool:
+    return bool(
+        config is not None
+        and getattr(config, "ignore_on_demo", False)
+        and _account_is_demo(account_info)
+    )
 
 
 def _build_guardrail_block(
@@ -614,6 +650,8 @@ def evaluate_trade_guardrails(
     """Evaluate configured guardrails against an order request."""
     if not _guardrails_active(config):
         return None
+    if _guardrails_ignored_for_demo(config, account_info=account_info):
+        return None
 
     normalized_symbol = _normalize_symbol(symbol)
     normalized_side = _normalize_side(side)
@@ -689,6 +727,7 @@ def preview_trade_guardrails(
     stop_loss: Optional[float] = None,
     deviation: Optional[int] = None,
     side: Optional[str] = None,
+    account_info: Any = None,
 ) -> Dict[str, Any]:
     """Produce a dry-run friendly preview of guardrail checks."""
     enabled = _guardrails_active(config)
@@ -699,6 +738,14 @@ def preview_trade_guardrails(
             "checks_not_performed": [],
             "message": "No trade guardrails are configured.",
         }
+    if _guardrails_ignored_for_demo(config, account_info=account_info):
+        return {
+            "enabled": True,
+            "blocked": False,
+            "checks_not_performed": [],
+            "ignored_for_demo": True,
+            "message": "Trade guardrails are ignored on demo accounts by default.",
+        }
 
     static_result = evaluate_trade_guardrails(
         config,
@@ -707,6 +754,7 @@ def preview_trade_guardrails(
         stop_loss=stop_loss,
         deviation=deviation,
         side=side,
+        account_info=account_info,
         enforce_account_risk=False,
         enforce_wallet_risk=False,
     )

@@ -251,6 +251,7 @@ class TradeGuardrailsRuntimeConfig(_GuardrailSection):
 
     def __init__(self) -> None:
         self.enabled = False
+        self.ignore_on_demo = True
         self.trading_enabled = True
         self.allowed_symbols: list[str] = []
         self.blocked_symbols: list[str] = []
@@ -264,6 +265,7 @@ class TradeGuardrailsRuntimeConfig(_GuardrailSection):
     def is_enabled(self) -> bool:
         return bool(
             self.enabled
+            or not self.ignore_on_demo
             or not self.trading_enabled
             or self.allowed_symbols
             or self.blocked_symbols
@@ -276,6 +278,10 @@ class TradeGuardrailsRuntimeConfig(_GuardrailSection):
 
     def reload_from_env(self) -> None:
         self.enabled = _env_bool("MTDATA_TRADE_GUARDRAILS_ENABLED", default=False)
+        self.ignore_on_demo = _env_bool(
+            "MTDATA_TRADE_GUARDRAILS_IGNORE_ON_DEMO",
+            default=True,
+        )
         self.trading_enabled = _env_bool("MTDATA_TRADING_ENABLED", default=True)
         self.allowed_symbols = [
             symbol.upper() for symbol in _env_csv("MTDATA_TRADE_ALLOWED_SYMBOLS")

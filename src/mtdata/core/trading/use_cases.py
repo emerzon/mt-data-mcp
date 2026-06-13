@@ -19,6 +19,7 @@ from ...utils.mt5 import (
     _ensure_symbol_ready,
     _normalize_times_in_struct,
     _to_mt5_history_epoch_seconds,
+    mt5_adapter,
 )
 from ...utils.utils import _format_datetime_second_explicit
 from ..error_envelope import normalize_error_payload
@@ -214,6 +215,15 @@ def _guardrail_order_side(order_type: Optional[str]) -> Optional[str]:
     if text.startswith("SELL"):
         return "SELL"
     return None
+
+
+def _best_effort_trade_guardrail_account_info() -> Any:
+    if not trade_guardrails_config.is_enabled():
+        return None
+    try:
+        return mt5_adapter.account_info()
+    except Exception:
+        return None
 
 
 def _normalize_idempotency_key(value: Any) -> Optional[str]:
@@ -1241,6 +1251,7 @@ def run_trade_place(  # noqa: C901
                     )
 
         if bool(request.dry_run):
+            guardrail_account_info = _best_effort_trade_guardrail_account_info()
             guardrail_preview = preview_trade_guardrails(
                 trade_guardrails_config,
                 symbol=symbol_norm,
@@ -1248,6 +1259,7 @@ def run_trade_place(  # noqa: C901
                 stop_loss=request.stop_loss,
                 deviation=request.deviation,
                 side=_guardrail_order_side(order_type_norm),
+                account_info=guardrail_account_info,
             )
             if guardrail_preview.get("blocked"):
                 violations = list(guardrail_preview.get("violations") or [])
@@ -1308,6 +1320,7 @@ def run_trade_place(  # noqa: C901
             stop_loss=request.stop_loss,
             deviation=request.deviation,
             side=_guardrail_order_side(order_type_norm),
+            account_info=_best_effort_trade_guardrail_account_info(),
             enforce_account_risk=False,
             enforce_wallet_risk=False,
         )

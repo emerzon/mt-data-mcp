@@ -115,3 +115,24 @@ def test_modify_pending_order_allows_tighter_stop_loss(
 
     assert result["success"] is True
     assert result["pending_order_ticket"] == 100
+
+
+def test_modify_pending_order_ignores_guardrails_for_demo_account(
+    restore_trade_guardrails,
+    patch_gateway,
+):
+    trade_guardrails_config.enabled = True
+    trade_guardrails_config.wallet_risk_limits.max_risk_pct_of_equity = 0.1
+    patch_gateway.account_info = lambda: SimpleNamespace(
+        equity=10000.0,
+        balance=10000.0,
+        margin_free=9000.0,
+        profit=0.0,
+        margin_level=500.0,
+        trade_mode=0,
+    )
+
+    result = _modify_pending_order(ticket=100, price=1.1000, stop_loss=1.0940)
+
+    assert result["success"] is True
+    assert result["pending_order_ticket"] == 100

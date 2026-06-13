@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import copy
 from types import SimpleNamespace
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -32,6 +32,7 @@ def test_trade_guardrails_config_reloads_from_env(monkeypatch, restore_trade_gua
     monkeypatch.setenv("MTDATA_TRADE_BLOCKED_SYMBOLS", "XAUUSD")
     monkeypatch.setenv("MTDATA_TRADE_MAX_VOLUME_BY_SYMBOL", "EURUSD:0.5, BTCUSD=0.03")
     monkeypatch.setenv("MTDATA_TRADE_MAX_RISK_PCT_OF_EQUITY", "1.25")
+    monkeypatch.setenv("MTDATA_TRADE_GUARDRAILS_IGNORE_ON_DEMO", "false")
 
     trade_guardrails_config.reload_from_env()
 
@@ -42,6 +43,7 @@ def test_trade_guardrails_config_reloads_from_env(monkeypatch, restore_trade_gua
         "BTCUSD": 0.03,
     }
     assert trade_guardrails_config.wallet_risk_limits.max_risk_pct_of_equity == 1.25
+    assert trade_guardrails_config.ignore_on_demo is False
     assert trade_guardrails_config.is_enabled() is True
 
 
@@ -61,6 +63,27 @@ def test_preview_trade_guardrails_reports_dynamic_checks(restore_trade_guardrail
     assert preview["enabled"] is True
     assert preview["blocked"] is False
     assert "wallet_risk" in preview["checks_not_performed"]
+
+
+def test_preview_trade_guardrails_ignores_demo_accounts_by_default():
+    config = TradeGuardrailsConfig(
+        enabled=True,
+        blocked_symbols=["BTCUSD"],
+    )
+
+    preview = preview_trade_guardrails(
+        config,
+        symbol="BTCUSD",
+        volume=0.1,
+        stop_loss=1.09,
+        deviation=10,
+        side="BUY",
+        account_info=SimpleNamespace(trade_mode="demo"),
+    )
+
+    assert preview["enabled"] is True
+    assert preview["blocked"] is False
+    assert preview["ignored_for_demo"] is True
 
 
 def test_preview_trade_guardrails_surfaces_allowlist_context():
@@ -114,6 +137,40 @@ def test_evaluate_trade_guardrails_blocks_wallet_risk_threshold():
     assert result is not None
     assert result["guardrail_blocked"] is True
     assert result["guardrail_rule"] == "wallet_risk"
+
+
+def test_evaluate_trade_guardrails_allows_demo_account_by_default():
+    config = TradeGuardrailsConfig(
+        enabled=True,
+        blocked_symbols=["BTCUSD"],
+        wallet_risk_limits=WalletRiskLimits(max_risk_pct_of_equity=1.0),
+    )
+    account = SimpleNamespace(
+        trade_mode=0,
+        equity=10000.0,
+        balance=10000.0,
+        margin_free=8000.0,
+    )
+    symbol_info = SimpleNamespace(
+        trade_tick_size=1.0,
+        trade_tick_value=1.0,
+        trade_tick_value_loss=1.0,
+    )
+
+    result = evaluate_trade_guardrails(
+        config,
+        symbol="BTCUSD",
+        volume=200.0,
+        stop_loss=90.0,
+        side="BUY",
+        entry_price=100.0,
+        account_info=account,
+        existing_positions=[],
+        symbol_info=symbol_info,
+        symbol_info_resolver=lambda _symbol: symbol_info,
+    )
+
+    assert result is None
 
 
 def test_estimate_order_risk_treats_zero_stop_loss_as_missing():
@@ -186,6 +243,37 @@ def test_run_trade_place_dry_run_reports_guardrail_block(restore_trade_guardrail
     place_pending_order.assert_not_called()
 
 
+def test_run_trade_place_dry_run_ignores_guardrails_for_demo_account(
+    restore_trade_guardrails,
+):
+    trade_guardrails_config.enabled = True
+    trade_guardrails_config.blocked_symbols = ["BTCUSD"]
+
+    with patch(
+        "mtdata.core.trading.use_cases.mt5_adapter.account_info",
+        return_value=SimpleNamespace(trade_mode=0),
+    ):
+        result = run_trade_place(
+            TradePlaceRequest(
+                symbol="BTCUSD",
+                volume=0.03,
+                order_type="BUY",
+                require_sl_tp=False,
+                dry_run=True,
+            ),
+            normalize_order_type_input=lambda value: ("BUY", None),
+            normalize_pending_expiration=lambda value: (value, False),
+            prevalidate_trade_place_market_input=lambda symbol, volume: None,
+            place_market_order=lambda **kwargs: {"ok": True},
+            place_pending_order=lambda **kwargs: {"ok": True},
+            close_positions=lambda **kwargs: {"closed_count": 1},
+            safe_int_ticket=lambda value: value,
+    )
+
+    assert result["success"] is True
+    assert result.get("guardrail_blocked") is not True
+
+
 def test_run_trade_place_blocks_static_guardrail_before_send(restore_trade_guardrails):
     trade_guardrails_config.enabled = True
     trade_guardrails_config.max_volume_by_symbol = {"BTCUSD": 0.01}
@@ -197,6 +285,7 @@ def test_run_trade_place_blocks_static_guardrail_before_send(restore_trade_guard
             volume=0.03,
             order_type="BUY",
             require_sl_tp=False,
+            dry_run=False,
         ),
         normalize_order_type_input=lambda value: ("BUY", None),
         normalize_pending_expiration=lambda value: (value, False),
@@ -210,6 +299,39 @@ def test_run_trade_place_blocks_static_guardrail_before_send(restore_trade_guard
     assert result["guardrail_blocked"] is True
     assert result["guardrail_rule"] == "symbol_policy"
     place_market_order.assert_not_called()
+
+
+def test_run_trade_place_live_ignores_static_guardrails_for_demo_account(
+    restore_trade_guardrails,
+):
+    trade_guardrails_config.enabled = True
+    trade_guardrails_config.max_volume_by_symbol = {"BTCUSD": 0.01}
+    place_market_order = MagicMock(return_value={"success": True})
+
+    with patch(
+        "mtdata.core.trading.use_cases.mt5_adapter.account_info",
+        return_value=SimpleNamespace(trade_mode=0),
+    ):
+        result = run_trade_place(
+            TradePlaceRequest(
+                symbol="BTCUSD",
+                volume=0.03,
+                order_type="BUY",
+                require_sl_tp=False,
+                dry_run=False,
+            ),
+            normalize_order_type_input=lambda value: ("BUY", None),
+            normalize_pending_expiration=lambda value: (value, False),
+            prevalidate_trade_place_market_input=lambda symbol, volume: None,
+            place_market_order=place_market_order,
+            place_pending_order=lambda **kwargs: {"ok": True},
+            close_positions=lambda **kwargs: {"closed_count": 1},
+            safe_int_ticket=lambda value: value,
+        )
+
+    assert result["success"] is True
+    assert result.get("guardrail_blocked") is not True
+    place_market_order.assert_called_once()
 
 
 def test_run_trade_place_dry_run_exposes_allowlist_samples(restore_trade_guardrails):
