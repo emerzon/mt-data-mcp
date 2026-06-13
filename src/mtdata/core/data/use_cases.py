@@ -845,6 +845,11 @@ def _compact_tick_rows_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
                 compact_units.setdefault(field, unit)
         if compact_units:
             compact["units"] = compact_units
+        compact["volume_fields"] = [
+            field
+            for field in ("tick_volume", "real_volume")
+            if field in present_fields
+        ]
     quote_completeness = _tick_quote_completeness_pct(payload)
     if quote_completeness is not None:
         compact["quote_completeness_pct"] = quote_completeness
@@ -937,6 +942,10 @@ def _compact_tick_row(
         spread_mid = _tick_row_price(compact.get("mid"))
         if spread_mid is not None and spread_mid > 0.0:
             compact["spread_pct"] = round((numeric_spread / spread_mid) * 100.0, 6)
+    for field in ("tick_volume", "real_volume"):
+        volume = _tick_row_price(row.get(field))
+        if volume is not None and volume != 0.0:
+            compact[field] = volume
     return compact, numeric_spread
 
 

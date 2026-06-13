@@ -1015,6 +1015,8 @@ def test_run_data_fetch_ticks_compact_prunes_row_diagnostics():
                     "time": "2026-05-29 20:56",
                     "bid": 1.1659,
                     "ask": 1.16596,
+                    "tick_volume": 3.0,
+                    "real_volume": 1.25,
                     "flags": 1026,
                     "flags_decoded": ["bid", "volume_real"],
                 },
@@ -1022,6 +1024,8 @@ def test_run_data_fetch_ticks_compact_prunes_row_diagnostics():
                     "time": "2026-05-29 20:57",
                     "bid": 1.16591,
                     "ask": 1.16599,
+                    "tick_volume": 4.0,
+                    "real_volume": 0.0,
                     "flags": 1030,
                     "flags_decoded": ["bid", "ask", "volume_real"],
                 },
@@ -1031,6 +1035,10 @@ def test_run_data_fetch_ticks_compact_prunes_row_diagnostics():
             "data_age_seconds": 600.0,
             "data_stale": True,
             "price_point": 0.00001,
+            "units": {
+                "tick_volume": "broker_tick_count",
+                "real_volume": "traded_volume",
+            },
             "stats": {"spread": {"low": 0.00006, "high": 0.00008}},
             "last_quote": {"bid": 1.16591, "ask": 1.16599},
             "flags_legend": {"1026": ["bid", "volume_real"]},
@@ -1069,6 +1077,8 @@ def test_run_data_fetch_ticks_compact_prunes_row_diagnostics():
                 "mid": 1.16593,
                 "spread_points": 6.0,
                 "spread_pct": 0.005146,
+                "tick_volume": 3.0,
+                "real_volume": 1.25,
             },
             {
                 "time": "2026-05-29 20:57",
@@ -1078,6 +1088,7 @@ def test_run_data_fetch_ticks_compact_prunes_row_diagnostics():
                 "mid": 1.16595,
                 "spread_points": 8.0,
                 "spread_pct": 0.006861,
+                "tick_volume": 4.0,
             },
         ],
         "timezone": "UTC",
@@ -1093,7 +1104,10 @@ def test_run_data_fetch_ticks_compact_prunes_row_diagnostics():
             "mid": "absolute_price",
             "spread_points": "broker_points",
             "spread_pct": "percentage_points (1.0 = 1%)",
+            "tick_volume": "broker_tick_count",
+            "real_volume": "traded_volume",
         },
+        "volume_fields": ["tick_volume", "real_volume"],
         "quote_completeness_pct": 50.0,
         "quality": "partial_quotes=1/2; last=unavailable",
         "requested_limit": 2,
@@ -1260,6 +1274,11 @@ def test_data_fetch_ticks_request_defaults_to_compact_detail():
     request = DataFetchTicksRequest(symbol="EURUSD")
 
     assert request.detail == "compact"
+
+
+def test_data_fetch_ticks_request_rejects_excessive_limit():
+    with pytest.raises(ValidationError, match="limit must be at most 10000"):
+        DataFetchTicksRequest(symbol="EURUSD", limit=10_001)
 
 
 @pytest.mark.parametrize("raw_detail", ["stats", "rows"])

@@ -36,6 +36,7 @@ _MAGIC_NUMBER_DESCRIPTION = (
 )
 DATA_FETCH_CANDLES_DEFAULT_LIMIT = 20
 DATA_FETCH_TICKS_DEFAULT_LIMIT = 20
+DATA_FETCH_TICKS_MAX_LIMIT = 10_000
 
 
 def _normalize_data_detail(value: Any) -> str:
@@ -455,7 +456,8 @@ class DataFetchTicksRequest(BaseModel):
         description=(
             "Max ticks to return (default "
             f"{DATA_FETCH_TICKS_DEFAULT_LIMIT}, a recent snapshot). The response "
-            "echoes requested_limit and sets has_more=true when the cap is hit."
+            "echoes requested_limit and sets has_more=true when the cap is hit. "
+            f"Maximum {DATA_FETCH_TICKS_MAX_LIMIT} per request."
         ),
     )
     start: Optional[str] = None
@@ -484,7 +486,12 @@ class DataFetchTicksRequest(BaseModel):
     @field_validator("limit")
     @classmethod
     def _validate_limit(cls, value: int) -> int:
-        return _validate_positive_limit(value)
+        validated = _validate_positive_limit(value)
+        if validated > DATA_FETCH_TICKS_MAX_LIMIT:
+            raise ValueError(
+                f"limit must be at most {DATA_FETCH_TICKS_MAX_LIMIT} for tick requests."
+            )
+        return validated
 
 
 class WaitCandleRequest(BaseModel):
