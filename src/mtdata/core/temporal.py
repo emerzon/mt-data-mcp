@@ -5,6 +5,12 @@ from typing import Any, Dict, List, Literal, Optional, Tuple
 import numpy as np
 import pandas as pd
 
+from ..services.data_service import (
+    _resolve_live_rate_auto_shift_seconds,
+    _shift_rate_times,
+)
+from ..shared.constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
+from ..shared.schema import CompactFullDetailLiteral, TimeframeLiteral
 from ..shared.validators import (
     invalid_timeframe_error,
     unsupported_timeframe_seconds_error,
@@ -26,15 +32,9 @@ from ..utils.utils import (
     _safe_float,
 )
 from ._mcp_instance import mcp
-from ..shared.constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
-from ..services.data_service import (
-    _resolve_live_rate_auto_shift_seconds,
-    _shift_rate_times,
-)
 from .execution_logging import run_logged_operation
 from .mt5_gateway import create_mt5_gateway
 from .output_contract import normalize_output_detail
-from ..shared.schema import CompactFullDetailLiteral, TimeframeLiteral
 
 logger = logging.getLogger(__name__)
 
@@ -1239,6 +1239,7 @@ def temporal_analyze(  # noqa: C901
                     "win_rate": "fraction",
                     "win_rate_pct": "percentage_points",
                     "avg_range_pct": "percentage_points",
+                    "volatility": "percentage_point_return_stddev_per_bar",
                 },
                 "timezone": tz_name,
                 "lookback": effective_lookback,

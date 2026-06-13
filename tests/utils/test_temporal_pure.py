@@ -968,6 +968,7 @@ class TestTemporalAnalyze:
         assert r.get("success") is True
         assert r["return_mode"] == "pct"
         assert r["units"]["returns"] == "percentage_points"
+        assert r["units"]["volatility"] == "percentage_point_return_stddev_per_bar"
 
     @_apply_analyze_patches
     def test_volume_source_tick(self, mock_fetch, *_):
