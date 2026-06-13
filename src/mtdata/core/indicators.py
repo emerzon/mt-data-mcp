@@ -2,9 +2,7 @@ import logging
 import re
 from typing import Any, Dict, List, Literal, Optional
 
-from ..utils.indicators import _try_number
 from ..utils.indicators import clean_help_text as _clean_help_text
-from ..utils.indicators import infer_defaults_from_doc as _infer_defaults_from_doc
 from ..utils.indicators import list_ta_indicators as _list_ta_indicators
 from ..utils.utils import _table_from_rows
 from ._mcp_instance import mcp
