@@ -63,6 +63,7 @@ from .patterns_support import (
     _enrich_classic_patterns,
     _enrich_elliott_patterns,
     _estimate_classic_bars_to_completion,
+    _filter_non_actionable_elliott_warnings,
     _format_pattern_dates,
     _index_pos_for_timestamp,
     _infer_stock_pattern_confidence,
@@ -95,25 +96,6 @@ ClassicEngineRunner = Callable[
     Tuple[List[Dict[str, Any]], Optional[str]],
 ]
 _CLASSIC_ENGINE_REGISTRY: Dict[str, ClassicEngineRunner] = {}
-
-
-def _filter_non_actionable_elliott_warnings(
-    warnings_in: Any,
-    *,
-    mode: str,
-    diagnostic: Any,
-    n_patterns: int,
-) -> List[str]:
-    if not isinstance(warnings_in, list):
-        return []
-    warnings_clean = [str(w) for w in warnings_in if str(w)]
-    if str(mode).strip().lower() != "elliott" or not diagnostic or int(n_patterns) != 0:
-        return warnings_clean
-    return [
-        warning_text
-        for warning_text in warnings_clean
-        if not warning_text.startswith("Data quality warning:")
-    ]
 
 
 def _patterns_connection_error() -> Optional[Dict[str, Any]]:

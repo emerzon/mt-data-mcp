@@ -11,6 +11,7 @@ from .patterns_support import (
     _elliott_completed_preview,
     _elliott_hidden_completed_note,
     _empty_patterns_note,
+    _filter_non_actionable_elliott_warnings,
     _highlights_all_mode_payload,
     score_all_mode_patterns,
 )
@@ -24,24 +25,6 @@ _MAX_SPAN_SECONDS = 90 * 86400   # 90 days — longest a single pattern can span
 # Hard bar-count bounds so intraday TFs don't get absurdly large limits
 _AGE_BAR_FLOOR, _AGE_BAR_CEIL = 30, 400
 _SPAN_BAR_FLOOR, _SPAN_BAR_CEIL = 15, 250
-
-
-def _filter_non_actionable_elliott_warnings(
-    warnings_in: Any,
-    *,
-    diagnostic: Any,
-    n_patterns: int,
-) -> List[str]:
-    if not isinstance(warnings_in, list):
-        return []
-    warnings_clean = [str(w) for w in warnings_in if str(w)]
-    if not diagnostic or int(n_patterns) != 0:
-        return warnings_clean
-    return [
-        warning_text
-        for warning_text in warnings_clean
-        if not warning_text.startswith("Data quality warning:")
-    ]
 
 
 def _timeframe_aware_age_limits(
@@ -866,6 +849,7 @@ def run_patterns_detect(  # noqa: C901
                     )
             tf_warnings = _filter_non_actionable_elliott_warnings(
                 df.attrs.get("warnings"),
+                mode="elliott",
                 diagnostic=finding_row.get("diagnostic"),
                 n_patterns=int(len(filtered)),
             )

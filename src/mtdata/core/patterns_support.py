@@ -137,6 +137,30 @@ def _resolve_elliott_pattern_status(
     return "forming" if end_idx >= int(max(0, n_bars - recent)) else "completed"
 
 
+def _filter_non_actionable_elliott_warnings(
+    warnings_in: Any,
+    *,
+    mode: str = "elliott",
+    diagnostic: Any,
+    n_patterns: int,
+) -> List[str]:
+    """Drop data-quality Elliott warnings when no patterns were found.
+
+    Only applies in ``elliott`` mode with a diagnostic present and zero
+    patterns; otherwise the cleaned warnings are returned unchanged.
+    """
+    if not isinstance(warnings_in, list):
+        return []
+    warnings_clean = [str(w) for w in warnings_in if str(w)]
+    if str(mode).strip().lower() != "elliott" or not diagnostic or int(n_patterns) != 0:
+        return warnings_clean
+    return [
+        warning_text
+        for warning_text in warnings_clean
+        if not warning_text.startswith("Data quality warning:")
+    ]
+
+
 def _elliott_preview_sort_key(row: Dict[str, Any]) -> Tuple[float, float, str]:
     conf = _safe_float(row.get("confidence")) or 0.0
     end_idx = _safe_float(row.get("end_index"))
