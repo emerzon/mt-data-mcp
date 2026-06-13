@@ -200,7 +200,7 @@ def _format_datetime_explicit(dt: datetime, *, timespec: str) -> str:
     text = dt.isoformat(timespec=timespec)
     return f"{text[:-6]}Z" if text.endswith("+00:00") else text
 
-def _use_client_tz(_: object = None) -> bool:
+def _use_client_tz() -> bool:
     """Return True when a client timezone is configured."""
     from ..bootstrap.settings import mt5_config
     try:
@@ -208,7 +208,7 @@ def _use_client_tz(_: object = None) -> bool:
     except Exception:
         return False
 
-def _resolve_client_tz(_: object = None):
+def _resolve_client_tz():
     """Return the configured client timezone, if any."""
     from ..bootstrap.settings import mt5_config
     try:
