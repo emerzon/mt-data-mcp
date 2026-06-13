@@ -372,6 +372,10 @@ def _compact_report_payload(
             warnings_out.append(warning)
     if warnings_out:
         compact["warnings"] = warnings_out
+    compact.setdefault(
+        "detail_hint",
+        "Compact report shows summary and assessment only; pass detail='standard' or detail='full' for full section data.",
+    )
     return compact
 
 
