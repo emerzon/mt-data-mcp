@@ -630,6 +630,17 @@ class TestFinvizTools:
         ]
 
     @patch("mtdata.core.finviz.get_forex_performance")
+    def test_finviz_forex_rejects_zero_limit(self, mock_get_forex):
+        from mtdata.core.finviz import finviz_forex
+
+        raw = getattr(finviz_forex, "__wrapped__", finviz_forex)
+        result = raw(limit=0)
+
+        assert result["success"] is False
+        assert result["error_code"] == "finviz_forex_invalid_limit"
+        mock_get_forex.assert_not_called()
+
+    @patch("mtdata.core.finviz.get_forex_performance")
     def test_finviz_forex_filters_non_fiat_pairs(self, mock_get_forex):
         from mtdata.core.finviz import finviz_forex
 
@@ -929,6 +940,17 @@ class TestFinvizTools:
         assert result["operation"] == "finviz_news"
         assert result["details"] == {"symbol": "BTCUSD", "tool": "finviz_news"}
         assert isinstance(result.get("request_id"), str)
+
+    @patch("mtdata.core.finviz.get_stock_news")
+    def test_finviz_news_rejects_zero_limit(self, mock_get_news):
+        from mtdata.core.finviz import finviz_news
+
+        raw = getattr(finviz_news, "__wrapped__", finviz_news)
+        result = raw("AAPL", limit=0)
+
+        assert result["success"] is False
+        assert result["error_code"] == "finviz_news_invalid_limit"
+        mock_get_news.assert_not_called()
 
     @patch("mtdata.core.finviz.get_stock_fundamentals")
     def test_finviz_fundamentals_requires_symbol(self, mock_get_fundamentals):

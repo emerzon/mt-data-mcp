@@ -167,6 +167,25 @@ def _finviz_error_payload(
     )
 
 
+def _validate_positive_finviz_limit(
+    limit: Any,
+    *,
+    operation: str,
+) -> Optional[Dict[str, Any]]:
+    try:
+        value = int(limit)
+    except (TypeError, ValueError):
+        value = 0
+    if value >= 1:
+        return None
+    return _finviz_error_payload(
+        "limit must be greater than or equal to 1.",
+        code=f"{operation}_invalid_limit",
+        operation=operation,
+        details={"limit": limit, "minimum": 1},
+    )
+
+
 def _looks_like_non_equity_symbol(symbol: str) -> bool:
     s = str(symbol or "").strip().upper()
     if not s:
@@ -2862,6 +2881,12 @@ def finviz_news(
     fields = {"symbol": symbol, "limit": limit, "page": page, "detail": detail}
 
     def _run() -> Dict[str, Any]:
+        limit_error = _validate_positive_finviz_limit(
+            limit,
+            operation="finviz_news",
+        )
+        if limit_error is not None:
+            return limit_error
         symbol_norm, error = _require_equity_symbol(
             symbol,
             tool_name="finviz_news",
@@ -3241,6 +3266,12 @@ def finviz_forex(
     request = {"limit": limit, "detail": detail}
 
     def _run() -> Dict[str, Any]:
+        limit_error = _validate_positive_finviz_limit(
+            limit,
+            operation="finviz_forex",
+        )
+        if limit_error is not None:
+            return limit_error
         detail_error = _validate_finviz_detail(detail, operation="finviz_forex")
         if detail_error is not None:
             return detail_error
