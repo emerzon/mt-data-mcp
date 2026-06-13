@@ -325,7 +325,7 @@ PARAM_HINTS = {
 }
 
 
-_TIMEFRAME_CHOICES = tuple(sorted(TIMEFRAME_MAP.keys()))
+_TIMEFRAME_CHOICES = tuple(TIMEFRAME_MAP.keys())
 TimeframeLiteral = Literal[_TIMEFRAME_CHOICES]  # type: ignore
 AutoTimeframeLiteral = Union[TimeframeLiteral, Literal["auto"]]
 CANONICAL_OUTPUT_SHAPE_DETAILS = ("compact", "standard", "summary", "full")

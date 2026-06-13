@@ -6,6 +6,7 @@ import mtdata.core.causal as causal_mod
 import mtdata.core.pivot as pivot_mod
 from mtdata.core.report.requests import ReportGenerateRequest
 from mtdata.core.trading.requests import TradeVarCvarRequest
+from mtdata.shared.constants import TIMEFRAME_MAP
 from mtdata.shared.schema import AutoTimeframeLiteral, TimeframeLiteral
 
 
@@ -36,3 +37,7 @@ def test_support_resistance_accepts_auto_timeframe_literal() -> None:
 def test_request_models_use_timeframe_literal_annotations() -> None:
     assert TradeVarCvarRequest.model_fields["timeframe"].annotation == TimeframeLiteral
     assert TimeframeLiteral in get_args(ReportGenerateRequest.model_fields["timeframe"].annotation)
+
+
+def test_timeframe_literal_preserves_chronological_map_order() -> None:
+    assert get_args(TimeframeLiteral) == tuple(TIMEFRAME_MAP.keys())
