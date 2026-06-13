@@ -37,6 +37,7 @@ from ..utils.support_resistance import (
 from ..utils.utils import (
     _format_time_minimal,
     _format_time_minimal_local,
+    _positive_float_attr,
     _resolve_client_tz,
     _use_client_tz,
 )
@@ -95,19 +96,6 @@ _PIVOT_METHOD_INFO: Dict[str, Dict[str, str]] = {
         "intended_use": "Directional single-level pivot context from the prior bar.",
     },
 }
-
-
-def _positive_float_attr(obj: Any, *names: str) -> Optional[float]:
-    if obj is None:
-        return None
-    for name in names:
-        value = getattr(obj, name, None)
-        if isinstance(value, bool) or not isinstance(value, (int, float)):
-            continue
-        numeric = float(value)
-        if math.isfinite(numeric) and numeric > 0:
-            return numeric
-    return None
 
 
 def _tick_reference_price(tick: Any) -> Optional[float]:

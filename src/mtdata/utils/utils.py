@@ -27,6 +27,26 @@ from .coercion import coerce_finite_float as _coerce_finite_float
 from .coercion import safe_float as _safe_float
 
 
+def _positive_float_attr(obj: Any, *names: str) -> Optional[float]:
+    """Return the first finite, strictly-positive float among *names* on *obj*.
+
+    Tries each attribute name in order, accepting only real numeric values
+    (``int``/``float``, excluding ``bool``) and skipping non-numeric,
+    non-finite, and non-positive values.  Returns ``None`` when no attribute
+    yields a positive float.
+    """
+    if obj is None:
+        return None
+    for name in names:
+        value = getattr(obj, name, None)
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            continue
+        numeric = float(value)
+        if math.isfinite(numeric) and numeric > 0.0:
+            return numeric
+    return None
+
+
 def _coerce_scalar(s: str):
     """Try to coerce a scalar string to int or float; otherwise return original string."""
     try:

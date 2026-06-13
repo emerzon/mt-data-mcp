@@ -13,7 +13,7 @@ from ..utils.mt5 import (
     _symbol_ready_guard,
     ensure_mt5_connection_or_raise,
 )
-from ..utils.utils import _parse_start_datetime
+from ..utils.utils import _parse_start_datetime, _positive_float_attr
 from ..utils.volume_profile import VolumeProfileConfig, compute_volume_profile
 from ._mcp_instance import mcp
 from .execution_logging import run_logged_operation
@@ -35,22 +35,6 @@ _MIN_TICK_PRICE_COVERAGE_RATIO = 0.5
 
 def _utc_now_naive() -> datetime:
     return datetime.now(timezone.utc).replace(tzinfo=None)
-
-
-def _positive_float_attr(obj: Any, *names: str) -> Optional[float]:
-    if obj is None:
-        return None
-    for name in names:
-        value = getattr(obj, name, None)
-        if isinstance(value, bool):
-            continue
-        try:
-            numeric = float(value)
-        except (TypeError, ValueError):
-            continue
-        if math.isfinite(numeric) and numeric > 0.0:
-            return numeric
-    return None
 
 
 def _positive_int_attr(obj: Any, *names: str) -> Optional[int]:
