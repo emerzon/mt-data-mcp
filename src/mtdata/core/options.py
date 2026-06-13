@@ -119,6 +119,24 @@ def _compact_option_contract(row: Any) -> Any:
     }
 
 
+def _barrier_pricing_inputs(payload: Dict[str, Any]) -> Dict[str, Any]:
+    params = payload.get("params_used")
+    source = params if isinstance(params, dict) else payload
+    inputs = {
+        key: source[key]
+        for key in (
+            "risk_free_rate",
+            "dividend_yield",
+            "volatility",
+            "rebate",
+        )
+        if source.get(key) is not None
+    }
+    if inputs:
+        inputs["rate_unit"] = "decimal_fraction"
+    return inputs
+
+
 def _apply_options_detail(
     payload: Dict[str, Any],
     *,
@@ -138,6 +156,9 @@ def _apply_options_detail(
                 "delta": "premium_change_per_underlying_price_unit",
             },
         )
+        pricing_inputs = _barrier_pricing_inputs(out)
+        if pricing_inputs:
+            out["pricing_inputs"] = pricing_inputs
     if detail_mode == "full":
         return out
 
@@ -195,6 +216,7 @@ def _apply_options_detail(
                 "delta",
                 "units",
                 "pricing_assumptions",
+                "pricing_inputs",
                 "pricing_note",
                 "detail",
             )

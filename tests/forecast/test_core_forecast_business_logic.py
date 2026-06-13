@@ -2989,6 +2989,34 @@ def test_options_chain_logs_finish_event(caplog, monkeypatch):
     )
 
 
+def test_options_barrier_compact_keeps_numeric_pricing_inputs():
+    payload = {
+        "success": True,
+        "price": 1.23,
+        "delta": 0.4,
+        "params_used": {
+            "risk_free_rate": 0.05,
+            "dividend_yield": 0.01,
+            "volatility": 0.2,
+            "rebate": 0.0,
+        },
+    }
+
+    result = opt._apply_options_detail(
+        payload,
+        detail="compact",
+        kind="barrier_price",
+    )
+
+    assert result["pricing_inputs"] == {
+        "risk_free_rate": 0.05,
+        "dividend_yield": 0.01,
+        "volatility": 0.2,
+        "rebate": 0.0,
+        "rate_unit": "decimal_fraction",
+    }
+
+
 def test_options_tools_support_compact_and_full_detail(monkeypatch):
     raw_exp = _unwrap(opt.options_expirations)
     raw_chain = _unwrap(opt.options_chain)
@@ -3059,7 +3087,10 @@ def test_options_tools_support_compact_and_full_detail(monkeypatch):
                 "option_type": kwargs["option_type"],
                 "barrier_type": kwargs["barrier_type"],
                 "maturity_days": kwargs["maturity_days"],
+                "risk_free_rate": kwargs["risk_free_rate"],
+                "dividend_yield": kwargs["dividend_yield"],
                 "volatility": kwargs["volatility"],
+                "rebate": kwargs["rebate"],
             },
         },
     )
@@ -3089,15 +3120,19 @@ def test_options_tools_support_compact_and_full_detail(monkeypatch):
     assert raw_chain("AAPL", detail="full")["options"][0]["implied_volatility"] == 0.2
 
     compact_price = raw_price(100, 105, 120, 30, detail="compact")
-    assert compact_price == {
-        "success": True,
-        "price": 1.23,
-        "delta": 0.4,
-        "units": {
-            "price": "premium_per_underlying_unit",
-            "delta": "premium_change_per_underlying_price_unit",
-        },
-        "detail": "compact",
+    assert compact_price["price"] == 1.23
+    assert compact_price["delta"] == 0.4
+    assert compact_price["detail"] == "compact"
+    assert compact_price["units"] == {
+        "price": "premium_per_underlying_unit",
+        "delta": "premium_change_per_underlying_price_unit",
+    }
+    assert compact_price["pricing_inputs"] == {
+        "risk_free_rate": 0.02,
+        "dividend_yield": 0.0,
+        "volatility": 0.2,
+        "rebate": 0.0,
+        "rate_unit": "decimal_fraction",
     }
     full_price = raw_price(100, 105, 120, 30, detail="full")
     assert full_price["delta"] == 0.4
