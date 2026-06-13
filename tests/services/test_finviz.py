@@ -90,6 +90,28 @@ class TestFinvizService:
         assert result["count"] == 1
         assert result["insider_trades"][0]["Date"] == "2025-11-07"
 
+    def test_finviz_error_kind_classification(self):
+        from mtdata.services.finviz.api import _finviz_error_kind
+
+        assert _finviz_error_kind("Finviz request timed out. Retry later.") == ("finviz_timeout", True)
+        assert _finviz_error_kind("Finviz rejected the request as unauthorized.") == ("finviz_unauthorized", False)
+        assert _finviz_error_kind("Finviz response could not be parsed.") == ("finviz_parse_error", False)
+        assert _finviz_error_kind("Unable to fetch data from Finviz. Please try again later.") == ("finviz_unavailable", True)
+
+    def test_get_insider_activity_error_is_structured(self):
+        from mtdata.services.finviz import api as finviz_api
+
+        def _boom(*_a, **_k):
+            raise TimeoutError("connection timeout while contacting Finviz")
+
+        with patch.object(finviz_api, "_apply_finvizfinance_timeout_patch", _boom):
+            result = finviz_api.get_insider_activity(option="latest")
+
+        assert "error" in result
+        assert result["error_code"] == "finviz_timeout"
+        assert result["retryable"] is True
+        assert result["option"] == "latest"
+
     @patch('finvizfinance.quote.finvizfinance')
     def test_get_stock_ratings_success(self, mock_finviz):
         """Test successful ratings fetch."""

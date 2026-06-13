@@ -114,6 +114,24 @@ def _sanitize_error_message(exc: Exception, *, symbol: str | None = None) -> str
     return "Unable to fetch data from Finviz. Please try again later."
 
 
+def _finviz_error_kind(message: str) -> tuple[str, bool]:
+    """Map a sanitized Finviz error message to a (error_code, retryable) pair."""
+    low = message.lower()
+    if "unauthorized" in low:
+        return "finviz_unauthorized", False
+    if "service error" in low or "server error" in low:
+        return "finviz_upstream_error", True
+    if "timed out" in low:
+        return "finviz_timeout", True
+    if "connection error" in low:
+        return "finviz_connection_error", True
+    if "could not be parsed" in low:
+        return "finviz_parse_error", False
+    if "adjust filters" in low or "available" in low:
+        return "finviz_no_data", False
+    return "finviz_unavailable", True
+
+
 def _sanitize_pagination(limit: int, page: int) -> tuple[int, int]:
     """Clamp pagination inputs to sane bounds."""
     from .pagination import sanitize_pagination
@@ -771,7 +789,14 @@ def get_insider_activity(option: str = "latest", limit: int = 50, page: int = 1)
         }
     except Exception as e:
         logger.exception("Error fetching insider activity")
-        return {"error": _sanitize_error_message(e)}
+        message = _sanitize_error_message(e)
+        error_code, retryable = _finviz_error_kind(message)
+        return {
+            "error": message,
+            "error_code": error_code,
+            "retryable": retryable,
+            "option": option,
+        }
 
 
 def get_forex_performance() -> Dict[str, Any]:
