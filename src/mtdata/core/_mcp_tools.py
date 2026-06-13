@@ -14,6 +14,7 @@ from typing import Any, Dict, List, Optional, Union, cast, get_args, get_origin
 
 from pydantic import BaseModel
 
+from ..shared.annotations import get_runtime_annotations, get_runtime_signature
 from ..shared.parameter_contracts import (
     OUTPUT_EXTRA_FULL_ALIASES,
     OUTPUT_EXTRAS,
@@ -32,13 +33,7 @@ from .output_contract import (
     resolve_output_contract,
 )
 
-try:
-    import annotationlib
-except Exception:  # pragma: no cover - Python 3.14+ should provide this
-    annotationlib = None
-
 _ORIG_TOOL_DECORATOR: Any = None
-_ANNOTATION_VALUE_FORMAT = getattr(getattr(annotationlib, "Format", None), "VALUE", None)
 _REGISTRY_UNSET = object()
 _TOOL_TIMEOUT_SECONDS = 120
 _NO_TIMEOUT_TOOLS = frozenset(
@@ -235,7 +230,7 @@ def _tool_catalog_description(func: Any) -> str:
 def _tool_catalog_parameters(func: Any) -> Dict[str, str]:
     target = getattr(func, "__wrapped__", func)
     try:
-        signature = _get_runtime_signature(target)
+        signature = get_runtime_signature(target)
     except Exception:
         return {}
     params = list(signature.parameters.values())
@@ -347,29 +342,6 @@ def registered_tool_catalog(*, detail: str = "compact") -> Dict[str, Any]:
         },
         "tools": tools,
     }
-
-
-def _get_runtime_signature(obj: Any) -> inspect.Signature:
-    """Resolve a signature with evaluated annotations when available."""
-    if _ANNOTATION_VALUE_FORMAT is not None:
-        try:
-            return inspect.signature(obj, eval_str=True, annotation_format=_ANNOTATION_VALUE_FORMAT)
-        except Exception:
-            pass
-    return inspect.signature(obj)
-
-
-def _get_runtime_annotations(obj: Any) -> Dict[str, Any]:
-    """Resolve runtime annotations using the 3.14 annotation API when available."""
-    if annotationlib is not None and _ANNOTATION_VALUE_FORMAT is not None:
-        try:
-            resolved = annotationlib.get_annotations(obj, eval_str=True, format=_ANNOTATION_VALUE_FORMAT)
-            if isinstance(resolved, dict):
-                return resolved
-        except Exception:
-            pass
-    raw = getattr(obj, "__annotations__", None)
-    return raw if isinstance(raw, dict) else {}
 
 
 def _unwrap_optional_annotation(annotation: Any) -> tuple[Any, bool]:
@@ -507,7 +479,7 @@ def _get_pydantic_model_fields(model_type: Any) -> tuple[Dict[str, Any], bool]:
 def _coerce_kwargs_for_callable(func: Any, kwargs: Dict[str, Any]) -> Dict[str, Any]:
     """Coerce common scalar string inputs (from MCP clients) based on annotations."""
     try:
-        sig = _get_runtime_signature(func)
+        sig = get_runtime_signature(func)
     except Exception:
         return kwargs
     for param_name, param in sig.parameters.items():
@@ -565,7 +537,7 @@ def _coerce_kwargs_for_callable(func: Any, kwargs: Dict[str, Any]) -> Dict[str, 
 def _request_model_signature_fields(func: Any) -> List[inspect.Parameter]:
     """Flatten a single request-model parameter into top-level keyword params."""
     try:
-        sig = _get_runtime_signature(func)
+        sig = get_runtime_signature(func)
     except Exception:
         return []
 
@@ -780,7 +752,7 @@ def _select_output_fields(value: Any, fields: Any) -> Any:
 
 def _callable_accepts_kwarg(func: Any, name: str) -> bool:
     try:
-        sig = _get_runtime_signature(func)
+        sig = get_runtime_signature(func)
     except Exception:
         return False
 
@@ -817,13 +789,13 @@ def _recording_tool_decorator(*dargs, **dkwargs):  # type: ignore[override]  # n
                 )
                 for param in flattened_params
             }
-            ann = _get_runtime_annotations(func)
+            ann = get_runtime_annotations(func)
             if "return" in ann:
                 cleaned["return"] = _normalize_exposed_annotation(ann["return"])
             return cleaned
         cleaned = {}
-        ann = _get_runtime_annotations(func)
-        sig = _get_runtime_signature(func)
+        ann = get_runtime_annotations(func)
+        sig = get_runtime_signature(func)
         for name, param in sig.parameters.items():
             value = ann.get(name, param.annotation)
             cleaned[name] = _normalize_exposed_annotation(value)
@@ -960,7 +932,7 @@ def _recording_tool_decorator(*dargs, **dkwargs):  # type: ignore[override]  # n
             _wrapped.__annotations__ = cleaned
             params = _request_model_signature_fields(func)
             if not params:
-                sig = _get_runtime_signature(func)
+                sig = get_runtime_signature(func)
                 for name, param in sig.parameters.items():
                     if param.kind in (
                         inspect.Parameter.VAR_POSITIONAL,

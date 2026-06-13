@@ -17,17 +17,12 @@ from typing import (
     Union,
     get_args,
     get_origin,
-    get_type_hints,
     is_typeddict,
 )
 
 from typing_extensions import TypedDict
 
-try:
-    import annotationlib
-except Exception:  # pragma: no cover - Python 3.14+ should provide this
-    annotationlib = None
-
+from .annotations import get_runtime_annotations, get_runtime_signature
 from .constants import TIMEFRAME_MAP
 from .parameter_contracts import PARAMETER_HELP
 
@@ -719,38 +714,6 @@ _TYPED_DICT_REFS = {
     "SimplifySpec": "#/$defs/SimplifySpec",
 }
 
-_ANNOTATION_VALUE_FORMAT = getattr(getattr(annotationlib, "Format", None), "VALUE", None)
-
-
-def _get_runtime_signature(obj: Any) -> inspect.Signature:
-    """Resolve a signature with evaluated annotations when available."""
-    if _ANNOTATION_VALUE_FORMAT is not None:
-        try:
-            return inspect.signature(obj, eval_str=True, annotation_format=_ANNOTATION_VALUE_FORMAT)
-        except Exception:
-            pass
-    return inspect.signature(obj)
-
-
-def _get_runtime_annotations(obj: Any) -> Dict[str, Any]:
-    """Resolve runtime annotations using the 3.14 annotation API when available."""
-    if annotationlib is not None and _ANNOTATION_VALUE_FORMAT is not None:
-        try:
-            resolved = annotationlib.get_annotations(obj, eval_str=True, format=_ANNOTATION_VALUE_FORMAT)
-            if isinstance(resolved, dict):
-                return resolved
-        except Exception:
-            pass
-    try:
-        resolved = get_type_hints(obj)
-        if isinstance(resolved, dict):
-            return resolved
-    except Exception:
-        pass
-    raw = getattr(obj, "__annotations__", None)
-    return raw if isinstance(raw, dict) else {}
-
-
 def _is_typed_dict_type(type_hint: Any) -> bool:
     try:
         if is_typeddict(type_hint):
@@ -906,8 +869,8 @@ def get_function_info(func: Any) -> Dict[str, Any]:
         target = inspect.unwrap(func)
     except Exception:
         target = func
-    sig = _get_runtime_signature(target)
-    type_hints = _get_runtime_annotations(target)
+    sig = get_runtime_signature(target)
+    type_hints = get_runtime_annotations(target)
 
     params = []
     for name, param in sig.parameters.items():
