@@ -121,8 +121,10 @@ class CandlestickRuntime:
 
 _runtime = CandlestickRuntime()
 
-# Backward-compat aliases so existing code referencing module-level names
-# continues to work.  New code should use ``_runtime.<attr>`` directly.
+# Module-level handles populated lazily from ``_runtime`` by
+# ``_ensure_candlestick_runtime()``.  They are kept as module globals (rather
+# than read off ``_runtime`` directly) so tests can monkeypatch them; the lazy
+# loader only fills in values that are still ``None``, preserving overrides.
 ta: Any = None
 mt5: Any = None
 TIMEFRAME_MAP: Optional[Dict[str, Any]] = None
