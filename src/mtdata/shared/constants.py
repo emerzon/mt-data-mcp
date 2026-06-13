@@ -41,7 +41,6 @@ TIMEFRAME_SECONDS = {
 
 # Constants (centralize defaults instead of hardcoding inline)
 SERVICE_NAME = "MetaTrader5 Market Data Server"
-GROUP_SEARCH_THRESHOLD = 5
 TICKS_LOOKBACK_DAYS = 1
 DATA_READY_TIMEOUT = 3.0
 DATA_POLL_INTERVAL = 0.2

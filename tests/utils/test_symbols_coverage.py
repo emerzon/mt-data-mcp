@@ -305,8 +305,7 @@ class TestSymbolsListSearch:
             _make_symbol("EURUSD", path="Forex\\Majors"),
         ]
         mock_get.return_value = syms
-        with patch(_GROUP_PATH, side_effect=lambda s: s.path), \
-             patch("mtdata.core.symbols.GROUP_SEARCH_THRESHOLD", 5):
+        with patch(_GROUP_PATH, side_effect=lambda s: s.path):
             fn = _get_symbols_list()
             res = fn(search_term="Metal", limit=25)
         assert "data" in res
@@ -320,8 +319,7 @@ class TestSymbolsListSearch:
         for i in range(10):
             syms.append(_make_symbol(f"USD{i}", path=f"Group{i}\\USD"))
         mock_get.return_value = syms
-        with patch(_GROUP_PATH, side_effect=lambda s: s.path), \
-             patch("mtdata.core.symbols.GROUP_SEARCH_THRESHOLD", 3):
+        with patch(_GROUP_PATH, side_effect=lambda s: s.path):
             fn = _get_symbols_list()
             res = fn(search_term="USD", limit=25)
         assert "data" in res
@@ -333,8 +331,7 @@ class TestSymbolsListSearch:
         """When no name or group match, fallback to description."""
         syms = [_make_symbol("SYM1", path="G1", description="Gold Spot")]
         mock_get.return_value = syms
-        with patch(_GROUP_PATH, side_effect=lambda s: s.path), \
-             patch("mtdata.core.symbols.GROUP_SEARCH_THRESHOLD", 5):
+        with patch(_GROUP_PATH, side_effect=lambda s: s.path):
             fn = _get_symbols_list()
             res = fn(search_term="Gold", limit=25)
         assert "data" in res
@@ -346,8 +343,7 @@ class TestSymbolsListSearch:
         """Description empty but path matches."""
         s = _make_symbol("SYM1", path="Metals\\Gold", description="")
         mock_get.return_value = [s]
-        with patch(_GROUP_PATH, side_effect=lambda s: s.path), \
-             patch("mtdata.core.symbols.GROUP_SEARCH_THRESHOLD", 5):
+        with patch(_GROUP_PATH, side_effect=lambda s: s.path):
             fn = _get_symbols_list()
             res = fn(search_term="Gold", limit=25)
         assert "data" in res
@@ -403,8 +399,7 @@ class TestSymbolsListSearch:
     def test_search_no_match(self, mock_get, mock_tbl, mock_lim):
         syms = [_make_symbol("EURUSD", path="Forex\\Majors", description="Euro vs Dollar")]
         mock_get.return_value = syms
-        with patch(_GROUP_PATH, side_effect=lambda s: s.path), \
-             patch("mtdata.core.symbols.GROUP_SEARCH_THRESHOLD", 5):
+        with patch(_GROUP_PATH, side_effect=lambda s: s.path):
             fn = _get_symbols_list()
             res = fn(search_term="ZZZZZ", limit=25)
         assert "data" in res
