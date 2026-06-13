@@ -83,6 +83,24 @@ def _critical_values(values: Any) -> Dict[str, float]:
     }
 
 
+def _clean_stationarity_warning(text: Any) -> str:
+    """Translate raw statsmodels/scipy stationarity warnings into plain guidance."""
+    raw = str(getattr(text, "message", text)).strip()
+    low = raw.lower()
+    if "p-value" in low and ("look-up table" in low or "lookup table" in low or "outside of the range" in low):
+        if "smaller" in low:
+            direction = "smaller than the reported value"
+        elif "greater" in low or "larger" in low:
+            direction = "greater than the reported value"
+        else:
+            direction = "outside the reported range"
+        return (
+            "KPSS p-value is approximate: the test statistic falls outside the "
+            f"lookup table, so the actual p-value is {direction}."
+        )
+    return raw
+
+
 @mcp.tool()
 def stationarity_test(
     symbol: str,
@@ -157,7 +175,7 @@ def stationarity_test(
                     **({"critical_values": _critical_values(result[3])} if detail_mode == "full" else {}),
                 }
             )
-            warnings_out.extend(str(item.message) for item in caught)
+            warnings_out.extend(_clean_stationarity_warning(item) for item in caught)
         if "pp" in requested:
             try:
                 from arch.unitroot import PhillipsPerron

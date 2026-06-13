@@ -47,6 +47,22 @@ def test_stationarity_test_combines_adf_and_kpss(monkeypatch):
     assert {row["test"] for row in result["items"]} == {"adf", "kpss"}
 
 
+def test_clean_stationarity_warning_translates_kpss_lookup_warning():
+    raw = (
+        "The test statistic is outside of the range of p-values available in the "
+        "look-up table. The actual p-value is smaller than the p-value returned."
+    )
+    cleaned = diagnostics._clean_stationarity_warning(raw)
+    assert "KPSS p-value is approximate" in cleaned
+    assert "smaller than the reported value" in cleaned
+    # Raw statsmodels jargon should not leak.
+    assert "look-up table" not in cleaned
+
+
+def test_clean_stationarity_warning_passes_through_other_text():
+    assert diagnostics._clean_stationarity_warning("some other note") == "some other note"
+
+
 def test_seasonality_detect_finds_known_period(monkeypatch):
     x = np.arange(480, dtype=float)
     frame = _bars(100.0 + np.sin(2.0 * np.pi * x / 12.0))
