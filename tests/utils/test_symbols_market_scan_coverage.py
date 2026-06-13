@@ -114,6 +114,45 @@ def test_market_scan_bar_freshness_uses_timeframe_window():
     assert result["freshness"] == "stale, bar 1d 2h ago"
 
 
+@patch("mtdata.core.symbols.time.time", return_value=10_000.0)
+@patch("mtdata.core.symbols._mt5_copy_rates_from_pos")
+def test_market_scan_completed_rates_keeps_latest_closed_bar(mock_rates, mock_time):
+    from mtdata.core.symbols import _market_scan_completed_rates
+
+    bars = _make_bars([1.0, 2.0, 3.0])
+    bars[-1]["time"] = 6_000.0
+    mock_rates.return_value = bars
+
+    result = _market_scan_completed_rates(
+        "EURUSD",
+        timeframe="H1",
+        mt5_timeframe=16385,
+        count=2,
+    )
+
+    assert [bar["close"] for bar in result] == [2.0, 3.0]
+    mock_rates.assert_called_once_with("EURUSD", 16385, 0, 3)
+
+
+@patch("mtdata.core.symbols.time.time", return_value=10_000.0)
+@patch("mtdata.core.symbols._mt5_copy_rates_from_pos")
+def test_market_scan_completed_rates_drops_forming_bar(mock_rates, mock_time):
+    from mtdata.core.symbols import _market_scan_completed_rates
+
+    bars = _make_bars([1.0, 2.0, 3.0])
+    bars[-1]["time"] = 9_000.0
+    mock_rates.return_value = bars
+
+    result = _market_scan_completed_rates(
+        "EURUSD",
+        timeframe="H1",
+        mt5_timeframe=16385,
+        count=2,
+    )
+
+    assert [bar["close"] for bar in result] == [1.0, 2.0]
+
+
 def _make_symbol(
     name: str,
     *,
@@ -804,7 +843,7 @@ class TestMarketScan:
         }.issubset(row)
         assert row["time"].endswith("Z")
         assert row["spread_pips"] == 1.0
-        assert mock_rates.call_args.args[3] == 1
+        assert mock_rates.call_args.args[2:] == (0, 2)
         assert "real_volume" not in row
         assert "rows" not in result
         assert result["meta"]["request"]["detail"] == "compact"

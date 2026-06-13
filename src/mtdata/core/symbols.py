@@ -1662,12 +1662,41 @@ def _build_market_scan_spread_row(
     return row, None
 
 
+def _market_scan_completed_rates(
+    symbol: str,
+    *,
+    timeframe: str,
+    mt5_timeframe: Any,
+    count: int,
+) -> Any:
+    requested = max(1, int(count))
+    rates = _mt5_copy_rates_from_pos(symbol, mt5_timeframe, 0, requested + 1)
+    if rates is None or len(rates) < 1:
+        return rates
+    seconds_per_bar = TIMEFRAME_SECONDS.get(str(timeframe).upper())
+    latest_time = _market_scan_float(rates[-1]["time"])
+    if (
+        seconds_per_bar
+        and latest_time is not None
+        and (latest_time + float(seconds_per_bar)) > time.time()
+    ):
+        rates = rates[:-1]
+    if len(rates) > requested:
+        rates = rates[-requested:]
+    return rates
+
+
 def _build_market_scan_bar_row(
     symbol: Any,
     timeframe: str,
     mt5_timeframe: Any,
 ) -> tuple[Optional[Dict[str, Any]], Optional[str]]:
-    rates = _mt5_copy_rates_from_pos(symbol.name, mt5_timeframe, 1, 1)
+    rates = _market_scan_completed_rates(
+        symbol.name,
+        timeframe=timeframe,
+        mt5_timeframe=mt5_timeframe,
+        count=1,
+    )
     if rates is None or len(rates) < 1:
         return None, f"No completed {timeframe} bar data returned."
 
@@ -2240,7 +2269,12 @@ def _build_market_scan_signal_row(
     include_rsi: bool,
     include_sma: bool,
 ) -> tuple[Optional[Dict[str, Any]], Optional[str]]:
-    rates = _mt5_copy_rates_from_pos(symbol.name, mt5_timeframe, 1, lookback)
+    rates = _market_scan_completed_rates(
+        symbol.name,
+        timeframe=timeframe,
+        mt5_timeframe=mt5_timeframe,
+        count=lookback,
+    )
     if rates is None or len(rates) < 1:
         return None, f"No completed {timeframe} bar data returned."
 
