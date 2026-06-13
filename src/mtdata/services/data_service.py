@@ -168,6 +168,26 @@ def _symbol_price_currency(*infos: Any) -> Optional[str]:
     return None
 
 
+def _symbol_candle_price_basis(*infos: Any) -> str:
+    for info in infos:
+        try:
+            chart_mode = getattr(info, "chart_mode", None)
+        except Exception:
+            chart_mode = None
+        if isinstance(chart_mode, str):
+            normalized = chart_mode.strip().lower()
+            if "bid" in normalized:
+                return "bid"
+            if "last" in normalized:
+                return "last_trade"
+        if isinstance(chart_mode, (int, float)) and not isinstance(chart_mode, bool):
+            if int(chart_mode) == 0:
+                return "bid"
+            if int(chart_mode) == 1:
+                return "last_trade"
+    return "broker_chart_price"
+
+
 def _symbol_price_point(*infos: Any) -> Optional[float]:
     for info in infos:
         try:
@@ -1511,6 +1531,7 @@ def fetch_candles(  # noqa: C901
                 return {"error": err}
             price_digits = _symbol_price_digits(_info, _info_before)
             price_currency = _symbol_price_currency(_info, _info_before)
+            price_basis = _symbol_candle_price_basis(_info, _info_before)
 
             try:
                 ti_spec = _normalize_indicator_spec(ti)
@@ -1890,6 +1911,7 @@ def fetch_candles(  # noqa: C901
             payload["query_applied"] = query_applied
         if price_currency:
             payload["price_currency"] = price_currency
+        payload["price_basis"] = price_basis
         if incomplete_candles_skipped and not include_incomplete:
             if ti_spec and latest_indicator_missing:
                 payload["hint"] = (

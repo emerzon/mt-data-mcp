@@ -797,7 +797,14 @@ class TestFetchCandles(unittest.TestCase):
 
     @patch(_MT5_CONFIG)
     @patch(_RATES_FROM)
-    @patch(_CACHED_INFO, return_value=SimpleNamespace(digits=5, currency_profit="USD"))
+    @patch(
+        _CACHED_INFO,
+        return_value=SimpleNamespace(
+            digits=5,
+            currency_profit="USD",
+            chart_mode=0,
+        ),
+    )
     @patch(_RESOLVE_CTZ, return_value=None)
     @patch(_ESTIMATE_WARMUP, return_value=0)
     @patch(_GUARD, _mock_symbol_guard)
@@ -807,6 +814,7 @@ class TestFetchCandles(unittest.TestCase):
         result = fetch_candles('EURUSD', limit=5)
         self.assertTrue(result.get('success'))
         self.assertEqual(result["price_currency"], "USD")
+        self.assertEqual(result["price_basis"], "bid")
 
     @patch(_MT5_CONFIG)
     @patch(_RATES_FROM)
