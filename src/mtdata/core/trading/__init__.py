@@ -104,7 +104,8 @@ def trade_close(request: TradeCloseRequest) -> dict:
     Any bulk close requires `close_all=true`.
     Set `volume` only to partially close a specific open position by ticket.
     `volume` is invalid without `ticket`.
-    Defaults to dry-run preview. Set `dry_run=false` to send a live close/cancel request.
+    Defaults to live execution. Set `dry_run=true` to preview without sending a
+    close/cancel request.
     """
     return run_logged_operation(
         logger,

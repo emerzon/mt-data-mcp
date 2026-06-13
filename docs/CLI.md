@@ -23,8 +23,10 @@ Use read-only commands for research and reserve execution commands for intention
 | `forecast_*`, `regime_detect`, `patterns_detect` | `trade_modify` |
 | `report_generate`, `trade_risk_analyze`, `trade_get_*` | `trade_close` |
 
-`trade_place`, `trade_modify`, and `trade_close` default to `dry_run=true`.
-Review the preview, then pass `--dry-run false` explicitly for live execution.
+`trade_place` and `trade_modify` default to `dry_run=true`. `trade_close`
+defaults to `dry_run=false`, so a ticketed close is live unless you pass
+`--dry-run true`. Bulk closes still require `--close-all` and explicit
+confirmation.
 The CLI expects boolean values as `true` or `false`.
 
 ## Getting Help
@@ -445,7 +447,8 @@ mtdata-cli trade_place BTCUSD --volume 0.01 --order-type BUY \
 For account-level safety, configure trade guardrails in [ENV_VARS.md](ENV_VARS.md#trade-guardrails) before moving from preview to live execution.
 
 ### Close or Modify Positions
-Use exact tickets whenever possible. Preview closes before execution when `--dry-run true` is supported:
+Use exact tickets whenever possible. Because `trade_close` defaults to live
+execution, pass `--dry-run true` explicitly when previewing a close:
 
 ```bash
 mtdata-cli trade_get_open --json
