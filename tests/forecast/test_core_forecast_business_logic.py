@@ -2920,8 +2920,8 @@ def test_options_chain_tools_short_circuit_when_provider_not_ready(monkeypatch):
         opt,
         "_options_provider_readiness",
         lambda: {
-            "configured_provider": "yahoo",
-            "effective_provider": "yahoo",
+            "configured_provider": "tradier",
+            "effective_provider": "tradier",
             "api_key_configured": False,
             "chain_data_ready": False,
             "action_required": "configure_options_provider",
@@ -2936,10 +2936,39 @@ def test_options_chain_tools_short_circuit_when_provider_not_ready(monkeypatch):
     ):
         assert result["success"] is False
         assert result["error_code"] == "options_provider_auth"
-        assert result["provider"] == "yahoo"
+        assert result["provider"] == "tradier"
         assert result["next_tool"] == "options_provider_status"
         assert result["chain_data_ready"] is False
         assert result["action_required"] == "configure_options_provider"
+
+
+def test_options_chain_tools_allow_yahoo_best_effort_provider(monkeypatch):
+    raw_exp = _unwrap(opt.options_expirations)
+
+    import mtdata.services.options_service as options_service
+
+    monkeypatch.setattr(
+        options_service,
+        "get_options_expirations",
+        lambda **kwargs: {"success": True, "provider": "yahoo", **kwargs},
+    )
+    monkeypatch.setattr(
+        opt,
+        "_options_provider_readiness",
+        lambda: {
+            "configured_provider": "yahoo",
+            "effective_provider": "yahoo",
+            "api_key_configured": False,
+            "chain_data_ready": True,
+            "provider_mode": "best_effort",
+            "action_required": None,
+        },
+    )
+
+    result = raw_exp(symbol="AAPL")
+
+    assert result["success"] is True
+    assert result["provider"] == "yahoo"
 
 
 def test_options_chain_logs_finish_event(caplog, monkeypatch):

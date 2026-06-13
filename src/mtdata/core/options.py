@@ -47,13 +47,20 @@ def _options_provider_readiness() -> Dict[str, Any]:
 
     provider = str(getattr(options_data_config, "provider", "yahoo") or "yahoo").strip().lower()
     api_key_configured = bool(getattr(options_data_config, "api_key", None))
-    effective_provider = "tradier" if provider == "auto" and api_key_configured else provider
-    chain_data_ready = effective_provider == "tradier" and api_key_configured
+    effective_provider = (
+        "tradier" if provider == "auto" and api_key_configured
+        else "yahoo" if provider == "auto"
+        else provider
+    )
+    chain_data_ready = effective_provider == "yahoo" or (
+        effective_provider == "tradier" and api_key_configured
+    )
     return {
         "configured_provider": provider,
         "effective_provider": effective_provider,
         "api_key_configured": api_key_configured,
         "chain_data_ready": chain_data_ready,
+        "provider_mode": "best_effort" if effective_provider == "yahoo" else "authenticated",
         "supported_providers": ["tradier", "yahoo"],
         "chain_dependent_tools": [
             "options_expirations",
@@ -62,9 +69,12 @@ def _options_provider_readiness() -> Dict[str, Any]:
         ],
         "local_tools": ["options_barrier_price"],
         "action_required": None if chain_data_ready else "configure_options_provider",
-        "remediation": None
-        if chain_data_ready
-        else (
+        "remediation": (
+            "Yahoo options data is unauthenticated best-effort data and may return 401/429. "
+            "For reliable chains, set MTDATA_OPTIONS_PROVIDER=tradier and MTDATA_OPTIONS_API_KEY."
+        )
+        if effective_provider == "yahoo"
+        else None if chain_data_ready else (
             "For reliable options chains, set MTDATA_OPTIONS_PROVIDER=tradier "
             "and MTDATA_OPTIONS_API_KEY. Yahoo is an unauthenticated fallback "
             "and may return 401/429."
@@ -76,14 +86,20 @@ def _options_chain_provider_gate(tool_name: str) -> Optional[Dict[str, Any]]:
     readiness = _options_provider_readiness()
     if readiness.get("chain_data_ready") is True:
         return None
+    provider = readiness.get("effective_provider")
+    error_code = (
+        "options_provider_auth"
+        if provider == "tradier"
+        else "options_provider_unavailable"
+    )
     return {
         "success": False,
         "error": (
             f"{tool_name} requires a configured options-chain provider. "
             "Run options_provider_status for setup details."
         ),
-        "error_code": "options_provider_auth",
-        "provider": readiness.get("effective_provider"),
+        "error_code": error_code,
+        "provider": provider,
         "configured_provider": readiness.get("configured_provider"),
         "chain_data_ready": False,
         "action_required": readiness.get("action_required"),
