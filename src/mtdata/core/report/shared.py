@@ -5,6 +5,7 @@ from __future__ import annotations
 import math
 from typing import Any, Dict, List, Optional
 
+from ...utils.coercion import coerce_finite_float as _as_float
 from ...utils.formatting import format_float, format_number
 from ...utils.minimal_output import format_table_toon as _format_table_toon
 
@@ -106,16 +107,6 @@ def _format_signed(value: Optional[float]) -> str:
         return f"{value:+.1f}"
     except Exception:
         return str(value)
-
-
-def _as_float(value: Any) -> Optional[float]:
-    try:
-        result = float(value)
-    except (TypeError, ValueError):
-        return None
-    if not math.isfinite(result):
-        return None
-    return result
 
 
 def _format_decimal(value: Any, decimals: int = 4) -> Optional[str]:

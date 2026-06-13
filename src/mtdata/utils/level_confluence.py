@@ -5,15 +5,9 @@ from __future__ import annotations
 import math
 from typing import Any, Dict, Iterable, List, Optional
 
+from .coercion import coerce_finite_float as _as_float
+
 _DEFAULT_TOLERANCE_PCT = 0.0015
-
-
-def _as_float(value: Any) -> Optional[float]:
-    try:
-        out = float(value)
-    except Exception:
-        return None
-    return out if math.isfinite(out) else None
 
 
 def _round_price(value: Any) -> Optional[float]:
