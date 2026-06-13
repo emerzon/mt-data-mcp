@@ -49,6 +49,11 @@ mtdata-cli forecast_generate --help
 mtdata-cli regime_detect --help
 ```
 
+**Discover tools programmatically:**
+```bash
+mtdata-cli tools_list --category forecast --json   # filter/paginate the tool catalog
+```
+
 ---
 
 ## Output Contract
@@ -192,6 +197,7 @@ mtdata-cli data_fetch_candles EURUSD --start "2025-12-01" --end "2025-12-31"
 | `data_fetch_ticks` | Fetch tick data |
 | `market_depth_fetch` | Get order book (DOM) — requires `MTDATA_ENABLE_MARKET_DEPTH_FETCH=1` |
 | `market_ticker` | Get current bid/ask/spread snapshot |
+| `market_snapshot` | Unified pre-trade snapshot (quote, levels, patterns; optional regime/forecast sections) |
 | `market_status` | Get market trading hours and session status |
 | `wait_event` | Stream real-time market events |
 
@@ -207,6 +213,7 @@ mtdata-cli data_fetch_candles EURUSD --start "2025-12-01" --end "2025-12-31"
 | `forecast_volatility_estimate` | Forecast volatility |
 | `forecast_tune_genetic` | Optimize model parameters (genetic algorithm) |
 | `forecast_tune_optuna` | Optimize model parameters (Bayesian/Optuna) |
+| `forecast_optimize_hints` | Genetic search for top forecast configurations across timeframes, methods, and parameters |
 
 ### Async Training & Model Store
 | Command | Description |
@@ -215,9 +222,11 @@ mtdata-cli data_fetch_candles EURUSD --start "2025-12-01" --end "2025-12-31"
 | `forecast_task_status` | Poll training progress for a `task_id` |
 | `forecast_task_wait` | Wait for a task to finish or until a timeout is reached |
 | `forecast_task_cancel` | Cancel a running training task |
+| `forecast_task_cancel_all` | Cancel all active training tasks |
 | `forecast_task_list` | List active and recent training tasks |
 | `forecast_models_list` | List trained models cached on disk |
 | `forecast_models_delete` | Delete a stored model by `model_id` |
+| `forecast_models_cleanup` | Preview or delete stale/expired stored models |
 
 Trained models are written under `~/.mtdata/models/` by default and re-used automatically by subsequent `forecast_generate` calls with the same method/symbol/timeframe/params. Task status is persisted in `~/.mtdata/forecast/jobs.sqlite` by default, so recent task state can survive process restarts. See [ENV_VARS.md](ENV_VARS.md#async-training--model-store) for the related environment variables.
 
@@ -273,6 +282,8 @@ mtdata-cli patterns_detect EURUSD --timeframe H1 --mode fractal \
   --config '{"volume_profile":true,"volume_profile_tolerance_points":25}' --json
 ```
 
+See [LEVELS.md](LEVELS.md) for the full pivots, support/resistance, confluence, and volume-profile reference.
+
 ### Trading
 | Command | Description |
 |---------|-------------|
@@ -288,6 +299,8 @@ mtdata-cli patterns_detect EURUSD --timeframe H1 --mode fractal \
 | `trade_risk_analyze` | Analyze position risk |
 | `trade_var_cvar_calculate` | Estimate portfolio VaR/CVaR from open positions |
 | `trade_stress_test` | Apply deterministic percentage shocks to open positions |
+
+See [TRADING_RISK.md](TRADING_RISK.md) for position sizing (fixed-fraction + Kelly), VaR/CVaR, and stress-test parameters and output.
 
 ### News
 | Command | Description |

@@ -47,6 +47,7 @@ Safety note: `trade_*` commands can place/modify/close real orders on the accoun
 | [forecast/UNCERTAINTY.md](forecast/UNCERTAINTY.md) | Confidence and conformal intervals |
 | [BARRIER_FUNCTIONS.md](BARRIER_FUNCTIONS.md) | TP/SL hit probability, optimization, and statistical robustness checks |
 | [TECHNICAL_INDICATORS.md](TECHNICAL_INDICATORS.md) | Available indicators and how to use them |
+| [LEVELS.md](LEVELS.md) | Pivots, support/resistance, confluence zones, and volume profile |
 | [DENOISING.md](DENOISING.md) | Smoothing filters and noise reduction |
 | [SIMPLIFICATION.md](SIMPLIFICATION.md) | Downsampling and output reduction (`--simplify`) |
 | [CAUSAL_DISCOVERY.md](CAUSAL_DISCOVERY.md) | Granger-style causal signal discovery |
@@ -68,6 +69,13 @@ Safety note: `trade_*` commands can place/modify/close real orders on the accoun
 | [SAMPLE-TRADE.md](SAMPLE-TRADE.md) | Beginner step-by-step trade analysis guide |
 | [SAMPLE-TRADE-ADVANCED.md](SAMPLE-TRADE-ADVANCED.md) | Advanced workflow with regimes, HAR-RV, barriers |
 | [EXAMPLE.md](EXAMPLE.md) | Complete end-to-end command-driven research loop |
+
+## Trading
+
+| Document | Description |
+|----------|-------------|
+| [TRADING_RISK.md](TRADING_RISK.md) | Read-only risk analytics: position sizing (fixed-fraction + Kelly), VaR/CVaR, and scenario stress tests |
+| [BARRIER_FUNCTIONS.md](BARRIER_FUNCTIONS.md) | TP/SL hit probability, optimization, and statistical robustness checks |
 
 ## Common Workflows (Recipes)
 

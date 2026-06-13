@@ -674,6 +674,20 @@ Peak-to-trough decline in account equity.
 
 **Maximum drawdown:** Largest historical drawdown. Key risk metric.
 
+### VaR (Value at Risk)
+The loss your positions are not expected to exceed over a holding period at a given confidence level.
+
+**Example:** One-bar 95% VaR = $120 means that, 95% of the time, you should not lose more than $120 over the next bar.
+
+**In mtdata:** Estimated for open positions by `trade_var_cvar_calculate` (historical or Gaussian). See [TRADING_RISK.md](TRADING_RISK.md).
+
+### CVaR (Conditional VaR / Expected Shortfall)
+The average loss in the worst cases beyond the VaR threshold — a measure of tail severity.
+
+**Example:** If the 95% VaR is $120, the 95% CVaR is the average loss across the worst 5% of outcomes, which is ≥ $120.
+
+**In mtdata:** Returned alongside VaR by `trade_var_cvar_calculate`. See [TRADING_RISK.md](TRADING_RISK.md).
+
 ---
 
 ## External Tools and Techniques
@@ -706,7 +720,22 @@ A financial derivative whose payoff depends on whether the underlying asset's pr
 ### Support and Resistance
 Price levels where buying pressure (support) or selling pressure (resistance) tends to concentrate, causing price to pause or reverse.
 
-**In mtdata:** Detected via `support_resistance_levels` and the Web API `/api/support-resistance` endpoint. See [WEB_API.md](WEB_API.md).
+**In mtdata:** Detected via `support_resistance_levels` and the Web API `/api/support-resistance` endpoint. See [WEB_API.md](WEB_API.md) and [LEVELS.md](LEVELS.md).
+
+### Pivot Points
+Formula-derived price levels (a central pivot plus resistances R1–R3 and supports S1–S3) computed from the prior bar's high, low, and close. Common methods include classic, Fibonacci, Camarilla, Woodie, and DeMark.
+
+**In mtdata:** Computed by `pivot_compute_points`. See [LEVELS.md](LEVELS.md).
+
+### Volume Profile (POC, VAH, VAL)
+A distribution of traded volume across price rather than time. The **Point of Control (POC)** is the most-traded price; the **Value Area** (bounded by **VAH** and **VAL**) is the price range that contains a chosen share of volume (70% by default).
+
+**In mtdata:** Computed by `volume_profile_levels` from bounded ticks or an M1-bar approximation. See [LEVELS.md](LEVELS.md).
+
+### Confluence
+A price zone where several independent methods (pivots, support/resistance, Fibonacci, volume profile) agree, raising the odds of a reaction.
+
+**In mtdata:** Ranked by `confluence_levels`; use `min_source_families=2` to require independent agreement. See [LEVELS.md](LEVELS.md).
 
 ### Fundamental Analysis
 Evaluating a security by examining its intrinsic value through financial statements, earnings, revenue, P/E ratios, and other economic data — as opposed to technical analysis which focuses on price/volume patterns.

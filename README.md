@@ -107,9 +107,11 @@ New here? Follow this learning path:
 - **[Regime Detection](docs/forecast/REGIMES.md)** — Identifying market states (trending vs. ranging)
 - **[Barrier Analysis](docs/BARRIER_FUNCTIONS.md)** — TP/SL hit probability calculation
 - **[Technical Indicators](docs/TECHNICAL_INDICATORS.md)** — Available indicators and usage
+- **[Price Levels](docs/LEVELS.md)** — Pivots, support/resistance, confluence zones, volume profile
 - **[Denoising](docs/DENOISING.md)** — Smoothing filters to reveal trends
 - **[Pattern Detection](docs/forecast/PATTERN_SEARCH.md)** — Candlestick and chart patterns
 - **[Temporal Analysis](docs/TEMPORAL.md)** — Session effects, day-of-week, and seasonal patterns
+- **[Trading Risk Analytics](docs/TRADING_RISK.md)** — Position sizing (fixed-fraction + Kelly), VaR/CVaR, stress tests
 
 ### External Data & Options
 - **[Finviz Fundamentals](docs/FINVIZ.md)** — US equity data, screening, news, calendars

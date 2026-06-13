@@ -275,6 +275,18 @@ mtdata-cli data_fetch_candles EURUSD --timeframe H1 --limit 500 \
 
 ---
 
+## Discovering Methods
+
+Two read-only helpers describe the available denoise filters and their parameters:
+
+```bash
+mtdata-cli denoise_list_methods --json                 # all methods, dependencies, causality support
+mtdata-cli denoise_list_methods --available-only --json # only methods whose dependencies are installed
+mtdata-cli denoise_describe kalman --json               # parameters and defaults for one method
+```
+
+---
+
 ## See Also
 
 - [GLOSSARY.md](GLOSSARY.md) — Term definitions
