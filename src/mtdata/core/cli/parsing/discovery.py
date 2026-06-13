@@ -43,15 +43,6 @@ _COMMAND_PARAM_CHOICE_OVERRIDES: Dict[tuple[str, str], list[str]] = {
         "auto",
     ],
     (
-        "labels_triple_barrier",
-        "detail",
-    ): [
-        "full",
-        "standard",
-        "summary",
-        "compact",
-    ],
-    (
         "patterns_detect",
         "mode",
     ): [

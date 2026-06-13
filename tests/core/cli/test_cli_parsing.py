@@ -581,16 +581,17 @@ class TestAddDynamicArguments:
             "params": [
                 {
                     "name": "detail",
-                    "type": Literal["full", "summary", "compact"],
+                    "type": Literal["compact", "standard", "summary", "full"],
                     "required": False,
-                    "default": "full",
+                    "default": "compact",
                 },
             ]
         }
 
         add_dynamic_arguments(parser, func_info, cmd_name="labels_triple_barrier")
 
-        assert any(action.dest == "detail" for action in parser._actions)
+        detail_action = next(action for action in parser._actions if action.dest == "detail")
+        assert list(detail_action.choices) == ["compact", "standard", "summary", "full"]
         assert not any(action.dest == "summary_only" for action in parser._actions)
         args = parser.parse_args(["--detail", "standard"])
         assert args.detail == "standard"

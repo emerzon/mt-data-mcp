@@ -1709,7 +1709,7 @@ class TestBuildEpilog:
     def test_labels_triple_barrier_renders_canonical_literal_choices(self):
         def labels_triple_barrier(
             symbol: str,
-            detail: Literal["full", "summary", "compact"] = "compact",
+            detail: Literal["compact", "standard", "summary", "full"] = "compact",
         ):
             """Label bars."""
             pass
@@ -1726,7 +1726,7 @@ class TestBuildEpilog:
         epilog = _build_epilog(functions)
 
         assert "--summary-only" not in epilog
-        assert "--detail{full,standard,summary,compact}" in epilog
+        assert "--detail{compact,standard,summary,full}" in epilog
         assert "<Literal>" not in epilog
 
 
