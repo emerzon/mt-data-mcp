@@ -130,6 +130,10 @@ def test_market_snapshot_summary_detail_returns_lean_snapshot(monkeypatch):
         "nearest_support": 1.098,
         "nearest_resistance": 1.105,
         "pattern_bias": "bullish",
+        "pattern_is_signal": False,
+        "pattern_usage": "information_only",
+        "pattern_window_bars": 3,
+        "pattern_count": 2,
     }
     assert "quote" not in result
     assert "levels" not in result
@@ -174,6 +178,10 @@ def test_market_snapshot_compact_defaults_to_lean_snapshot(monkeypatch):
         "nearest_support": 1.098,
         "nearest_resistance": 1.105,
         "pattern_bias": "bullish",
+        "pattern_is_signal": False,
+        "pattern_usage": "information_only",
+        "pattern_window_bars": 3,
+        "pattern_count": 2,
     }
     assert "quote" not in result
     assert "levels" not in result
@@ -216,8 +224,43 @@ def test_market_snapshot_standard_strips_nested_request_echoes(monkeypatch):
     }
     assert result["patterns"] == {
         "success": True,
+        "is_signal": False,
+        "usage": "information_only",
         "highlights": [],
     }
+
+
+def test_market_snapshot_qualifies_uncertain_pattern_bias(monkeypatch):
+    def fake_call_section(name, symbol, timeframe, horizon, detail):
+        if name == "quote":
+            return {"success": True, "symbol": symbol, "mid": 1.1}
+        if name == "levels":
+            return {"success": True, "supports": [], "resistances": []}
+        return {
+            "success": True,
+            "n_patterns": 4,
+            "bias": "bearish",
+            "pattern_status": "uncertain",
+            "pattern_confidence": 0.225,
+            "conflict": "both_bullish_and_bearish_patterns_present",
+            "is_signal": False,
+            "usage": "information_only",
+            "applied_last_n_bars": 3,
+        }
+
+    monkeypatch.setattr(snapshot_mod, "_call_section", fake_call_section)
+
+    result = _raw_market_snapshot(symbol="EURUSD", detail="compact")
+
+    snapshot = result["snapshot"]
+    assert snapshot["pattern_bias"] == "bearish"
+    assert snapshot["pattern_status"] == "uncertain"
+    assert snapshot["pattern_confidence"] == 0.225
+    assert snapshot["pattern_conflict"] == "both_bullish_and_bearish_patterns_present"
+    assert snapshot["pattern_count"] == 4
+    assert snapshot["pattern_is_signal"] is False
+    assert snapshot["pattern_usage"] == "information_only"
+    assert snapshot["pattern_window_bars"] == 3
 
 
 def test_snapshot_patterns_section_requests_recent_candlestick_triggers(monkeypatch):

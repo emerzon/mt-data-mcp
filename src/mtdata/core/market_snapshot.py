@@ -349,6 +349,27 @@ def _snapshot_summary_payload(sections: Dict[str, Any]) -> Dict[str, Any]:
     pattern_bias = _pattern_bias(patterns)
     if pattern_bias:
         out["pattern_bias"] = pattern_bias
+        out["pattern_is_signal"] = False
+        out["pattern_usage"] = "information_only"
+        out["pattern_window_bars"] = _SNAPSHOT_PATTERN_LAST_N_BARS
+    if isinstance(patterns, dict):
+        for source_key, output_key in (
+            ("pattern_status", "pattern_status"),
+            ("pattern_confidence", "pattern_confidence"),
+            ("conflict", "pattern_conflict"),
+            ("n_patterns", "pattern_count"),
+        ):
+            value = patterns.get(source_key)
+            if value is not None:
+                out[output_key] = value
+        if "is_signal" in patterns:
+            out["pattern_is_signal"] = bool(patterns["is_signal"])
+        usage = patterns.get("usage")
+        if usage not in (None, ""):
+            out["pattern_usage"] = usage
+        applied_window = patterns.get("applied_last_n_bars")
+        if applied_window is not None:
+            out["pattern_window_bars"] = applied_window
     return out
 
 
@@ -361,7 +382,7 @@ def _embedded_section_payload(name: str, payload: Any) -> Any:
     if name == "levels":
         out.pop("mode", None)
     elif name == "patterns":
-        for key in ("mode", "is_signal", "usage", "calibration"):
+        for key in ("mode", "calibration"):
             out.pop(key, None)
     return out
 
