@@ -10,6 +10,7 @@ import numpy as np
 from ...shared.result import Err, Ok, Result, to_dict
 from ...utils.freshness import format_age_seconds as _format_age_seconds
 from ...utils.freshness import format_freshness_label
+from ..error_envelope import build_error_payload
 from ..execution_logging import run_logged_operation
 from ..mt5_gateway import mt5_connection_error
 from ..output_contract import attach_collection_contract
@@ -174,6 +175,7 @@ def _run_data_fetch_candles_impl(
         include_incomplete=request.include_incomplete,
         allow_stale=request.allow_stale,
     )
+    result = _normalize_candle_query_error(result, request=request)
     # Detect missing or all-zero spread when include_spread requested.
     # MT5 often only reports spread at tick level; aggregated higher-timeframe bars may show spread==0.
     if isinstance(result, dict) and getattr(request, "include_spread", False):
@@ -237,6 +239,68 @@ def _run_data_fetch_candles_impl(
             out.pop("canonical_source", None)
         return out
     return result
+
+
+def _normalize_candle_query_error(
+    result: Any,
+    *,
+    request: DataFetchCandlesRequest,
+) -> Any:
+    if not isinstance(result, dict) or not result.get("error"):
+        return result
+    if result.get("error_code"):
+        return result
+
+    message = str(result["error"])
+    normalized = message.lower()
+    error_code: Optional[str] = None
+    remediation: Optional[str] = None
+
+    if "not found" in normalized and "symbol" in normalized:
+        error_code = "data_fetch_candles_symbol_unavailable"
+        remediation = (
+            "Use the broker's exact MT5 symbol name; call market_ticker for symbol "
+            "discovery when the broker uses suffixes or aliases."
+        )
+    elif (
+        "start_datetime must be before end_datetime" in normalized
+        or "start must be before or equal to end" in normalized
+    ):
+        error_code = "data_fetch_candles_invalid_date_range"
+        remediation = "Set start to a timestamp earlier than or equal to end."
+    elif "in the future" in normalized and "start" in normalized:
+        error_code = "data_fetch_candles_future_date_range"
+        remediation = "Use a start timestamp at or before the current time."
+    elif "data appears stale" in normalized:
+        error_code = "data_fetch_candles_stale_data"
+        remediation = (
+            "Confirm the market session and broker feed, or set allow_stale=true "
+            "when historical data is intentionally acceptable."
+        )
+
+    if error_code is None:
+        return result
+
+    details = {
+        "symbol": request.symbol,
+        "timeframe": request.timeframe,
+    }
+    if request.start is not None:
+        details["start"] = str(request.start)
+    if request.end is not None:
+        details["end"] = str(request.end)
+
+    payload = build_error_payload(
+        message,
+        code=error_code,
+        operation="data_fetch_candles",
+        details=details,
+        remediation=remediation,
+    )
+    for key in ("warnings", "diagnostics"):
+        if key in result:
+            payload[key] = result[key]
+    return payload
 
 
 def _effective_candle_limit(request: DataFetchCandlesRequest) -> int:

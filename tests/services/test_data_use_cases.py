@@ -49,6 +49,44 @@ def test_run_data_fetch_candles_passes_allow_stale_to_service():
     assert captured["kwargs"]["allow_stale"] is True
 
 
+@pytest.mark.parametrize(
+    ("message", "expected_code"),
+    [
+        (
+            "Symbol 'EURUSD.bad' was not found or is not available in MT5.",
+            "data_fetch_candles_symbol_unavailable",
+        ),
+        (
+            "start_datetime must be before end_datetime",
+            "data_fetch_candles_invalid_date_range",
+        ),
+        (
+            "start datetime 2099-01-01 is in the future; no historical data is available for future dates.",
+            "data_fetch_candles_future_date_range",
+        ),
+    ],
+)
+def test_run_data_fetch_candles_classifies_query_errors(message, expected_code):
+    request = DataFetchCandlesRequest(
+        symbol="EURUSD.bad",
+        timeframe="H1",
+        start="2026-01-02T00:00:00Z",
+        end="2026-01-01T00:00:00Z",
+    )
+
+    result = run_data_fetch_candles(
+        request,
+        gateway=SimpleNamespace(ensure_connection=lambda: None),
+        fetch_candles_impl=lambda **kwargs: {"error": message},
+    )
+
+    assert result["success"] is False
+    assert result["error_code"] == expected_code
+    assert result["operation"] == "data_fetch_candles"
+    assert result["remediation"]
+    assert result["details"]["symbol"] == "EURUSD.BAD"
+
+
 def test_run_data_fetch_candles_passes_include_spread_to_service():
     captured = {}
     request = DataFetchCandlesRequest(
