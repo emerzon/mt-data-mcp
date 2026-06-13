@@ -32,16 +32,6 @@ class Err:
 Result = Union[Ok[T], Err]
 
 
-def is_ok(result: Result) -> bool:
-    """Return *True* if *result* is an :class:`Ok`."""
-    return isinstance(result, Ok)
-
-
-def is_err(result: Result) -> bool:
-    """Return *True* if *result* is an :class:`Err`."""
-    return isinstance(result, Err)
-
-
 def to_dict(result: Result) -> dict[str, Any]:
     """Convert a :class:`Result` to the existing dict error-envelope contract.
 

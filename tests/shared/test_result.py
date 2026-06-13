@@ -2,7 +2,7 @@
 
 import pytest
 
-from mtdata.shared.result import Err, Ok, Result, is_err, is_ok, to_dict
+from mtdata.shared.result import Err, Ok, Result, to_dict
 
 
 # ---------------------------------------------------------------------------
@@ -50,16 +50,16 @@ class TestErrConstruction:
 # ---------------------------------------------------------------------------
 class TestTypeGuards:
     def test_is_ok_true(self):
-        assert is_ok(Ok(1)) is True
+        assert isinstance(Ok(1), Ok) is True
 
     def test_is_ok_false(self):
-        assert is_ok(Err("x")) is False
+        assert isinstance(Err("x"), Ok) is False
 
     def test_is_err_true(self):
-        assert is_err(Err("x")) is True
+        assert isinstance(Err("x"), Err) is True
 
     def test_is_err_false(self):
-        assert is_err(Ok(1)) is False
+        assert isinstance(Ok(1), Err) is False
 
 
 # ---------------------------------------------------------------------------
