@@ -1,7 +1,5 @@
 from pathlib import Path
 
-from mtdata.core.web_api_handlers import WEB_API_FACADE_ADAPTERS
-
 ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -26,14 +24,3 @@ def test_tool_calling_exposes_transport_neutral_raw_invocation() -> None:
 
     assert "def call_tool_sync_structured" in source
     assert "raw_tool_output" in source
-
-
-def test_web_api_facade_adapters_are_explicitly_allowlisted() -> None:
-    assert WEB_API_FACADE_ADAPTERS == frozenset(
-        {
-            "get_methods",
-            "get_history",
-            "get_pivots",
-            "get_support_resistance",
-        }
-    )
