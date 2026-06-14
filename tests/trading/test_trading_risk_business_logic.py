@@ -457,6 +457,63 @@ def test_trade_risk_analyze_preserves_zero_position_risk_metrics() -> None:
     assert by_ticket[2]["rr_ratio"] == 0.0
 
 
+def test_trade_risk_analyze_reports_symbol_scope_when_other_positions_exist() -> None:
+    mt5 = MagicMock()
+    mt5.POSITION_TYPE_BUY = 0
+    mt5.ORDER_TYPE_BUY_LIMIT = 2
+    mt5.ORDER_TYPE_BUY_STOP = 4
+    mt5.ORDER_TYPE_BUY_STOP_LIMIT = 6
+    mt5.ORDER_TYPE_SELL_LIMIT = 3
+    mt5.ORDER_TYPE_SELL_STOP = 5
+    mt5.ORDER_TYPE_SELL_STOP_LIMIT = 7
+    mt5.account_info.return_value = SimpleNamespace(equity=1000.0, currency="USD")
+    other_positions = [
+        SimpleNamespace(
+            ticket=11,
+            symbol="USDJPY",
+            type=0,
+            volume=1.0,
+            price_open=100.0,
+            sl=90.0,
+            tp=110.0,
+        ),
+        SimpleNamespace(
+            ticket=12,
+            symbol="BTCUSD",
+            type=0,
+            volume=1.0,
+            price_open=100.0,
+            sl=90.0,
+            tp=110.0,
+        ),
+    ]
+
+    def _positions_get(symbol=None):
+        if symbol == "EURUSD":
+            return []
+        return list(other_positions)
+
+    mt5.positions_get.side_effect = _positions_get
+    mt5.orders_get.return_value = []
+    mt5.symbol_info.return_value = _make_symbol_info()
+
+    with _patched_mt5_module(mt5):
+        out = trade_risk_analyze(symbol="EURUSD")
+
+    assert out["scope"] == {
+        "mode": "symbol",
+        "symbol": "EURUSD",
+        "matched_positions": 0,
+        "portfolio_positions": 2,
+        "other_positions": 2,
+    }
+    assert (
+        out["scope_warning"]
+        == "No open EURUSD positions matched; 2 open position(s) exist on other symbols."
+    )
+    assert out["portfolio_risk"]["positions_count"] == 0
+
+
 def test_trade_risk_analyze_blocks_min_volume_risk_overshoot_by_default() -> None:
     mt5 = MagicMock()
     mt5.account_info.return_value = SimpleNamespace(equity=1000.0, currency="USD")

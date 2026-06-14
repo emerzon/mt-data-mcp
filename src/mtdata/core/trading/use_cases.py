@@ -2656,6 +2656,13 @@ def run_trade_risk_analyze(  # noqa: C901
             )
             if positions is None:
                 positions = []
+            portfolio_positions_total: Optional[int] = None
+            if request.symbol:
+                try:
+                    portfolio_positions = gateway.positions_get()
+                except Exception:
+                    portfolio_positions = None
+                portfolio_positions_total = len(list(portfolio_positions or []))
 
             position_type_buy = validation._safe_int_attr(
                 gateway,
@@ -2999,6 +3006,43 @@ def run_trade_risk_analyze(  # noqa: C901
                 },
                 "positions": position_risks,
             }
+            if request.symbol:
+                other_positions_count = None
+                if portfolio_positions_total is not None:
+                    other_positions_count = max(
+                        0,
+                        int(portfolio_positions_total) - len(position_risks),
+                    )
+                result["scope"] = {
+                    "mode": "symbol",
+                    "symbol": str(request.symbol),
+                    "matched_positions": len(position_risks),
+                    **(
+                        {"portfolio_positions": int(portfolio_positions_total)}
+                        if portfolio_positions_total is not None
+                        else {}
+                    ),
+                    **(
+                        {"other_positions": int(other_positions_count)}
+                        if other_positions_count is not None
+                        else {}
+                    ),
+                }
+                if other_positions_count:
+                    result["scope_warning"] = (
+                        f"No open {request.symbol} positions matched; "
+                        f"{int(other_positions_count)} open position(s) exist on other symbols."
+                        if not position_risks
+                        else (
+                            f"This analysis is scoped to {request.symbol}; "
+                            f"{int(other_positions_count)} open position(s) exist on other symbols."
+                        )
+                    )
+            else:
+                result["scope"] = {
+                    "mode": "portfolio",
+                    "matched_positions": len(position_risks),
+                }
             if getattr(request, "include_pending", True):
                 result["pending_orders"] = pending_order_risks
             if risk_calculation_failures:
