@@ -2853,6 +2853,8 @@ def compute_support_resistance_levels(
     )
     support_candidates = _filter_levels_by_distance(support_candidates, max_distance_pct=max_distance_value)
     resistance_candidates = _filter_levels_by_distance(resistance_candidates, max_distance_pct=max_distance_value)
+    support_candidates = _drop_zero_score_when_stronger_exist(support_candidates)
+    resistance_candidates = _drop_zero_score_when_stronger_exist(resistance_candidates)
 
     supports = support_candidates[:max_levels_value]
     resistances = resistance_candidates[:max_levels_value]

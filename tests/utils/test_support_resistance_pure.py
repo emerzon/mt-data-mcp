@@ -86,6 +86,32 @@ def test_drop_zero_score_handles_missing_or_nan_score():
     assert [level["value"] for level in filtered] == [1.16]
 
 
+def test_single_timeframe_pipeline_filters_zero_score_candidates(monkeypatch):
+    import mtdata.utils.support_resistance as support_resistance
+
+    calls = []
+    original = support_resistance._drop_zero_score_when_stronger_exist
+
+    def tracking_filter(levels):
+        calls.append([dict(level) for level in levels])
+        return original(levels)
+
+    monkeypatch.setattr(
+        support_resistance,
+        "_drop_zero_score_when_stronger_exist",
+        tracking_filter,
+    )
+
+    compute_support_resistance_levels(
+        _clustered_levels_frame(),
+        symbol="EURUSD",
+        timeframe="H1",
+        min_touches=1,
+    )
+
+    assert len(calls) == 2
+
+
 def _clustered_levels_frame() -> pd.DataFrame:
     closes = [
         104.0, 102.0, 100.6, 102.2, 104.0,
