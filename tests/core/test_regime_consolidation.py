@@ -409,6 +409,45 @@ def test_bocpd_segment_context_labels_significant_trend():
     assert ctx["mean_t_stat"] >= 1.96
 
 
+def test_bocpd_under_segmentation_warning_on_long_quiet_window_with_outlier():
+    """A long single-segment window with a multi-sigma move must warn.
+
+    Regression test for the Jun 5 EURUSD flash crash: BOCPD fit a single
+    regime across 199 bars despite a 4-bar crash that other methods (PELT,
+    MS-AR, clustering) all detected. The audit showed the crash was silently
+    absorbed as a fat-tail outlier.
+    """
+    from mtdata.core.regime.api import _bocpd_under_segmentation_warnings
+
+    rng = np.random.default_rng(42)
+    calm = rng.normal(0.0, 0.0005, size=195)
+    crash = np.array([-0.0047, -0.0013, -0.0012, -0.0023])
+    series = np.concatenate([calm[:100], crash, calm[100:]])
+
+    peak_z = float(np.max(np.abs(series)) / float(np.std(series)))
+    warnings = _bocpd_under_segmentation_warnings(
+        total_bars=int(series.size),
+        change_point_count=0,
+        reliability={"confidence": 0.4},
+        peak_abs_return=peak_z,
+    )
+    assert any("under-segmentation" in w for w in warnings)
+    assert any("σ single-bar move" in w for w in warnings)
+
+
+def test_bocpd_under_segmentation_silent_on_short_windows():
+    """Short windows with no CPs must NOT warn (single regime is unremarkable)."""
+    from mtdata.core.regime.api import _bocpd_under_segmentation_warnings
+
+    warnings = _bocpd_under_segmentation_warnings(
+        total_bars=50,
+        change_point_count=0,
+        reliability={"confidence": 0.4},
+        peak_abs_return=5.0,
+    )
+    assert warnings == []
+
+
 def _state_runs_for_test(state):
     runs = []
     start = 0

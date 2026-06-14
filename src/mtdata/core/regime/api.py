@@ -257,6 +257,71 @@ def _append_warnings(payload: Dict[str, Any], warnings_to_add: List[str]) -> Non
     payload["warnings"] = warnings_list
 
 
+# Bars required before BOCPD under-segmentation checks kick in. Below this
+# window length a single-segment result is unremarkable and not worth warning
+# about; above it, the absence of any change point becomes suspicious.
+_BOCPD_UNDERSEG_MIN_BARS = 100
+# Single-bar absolute return (in std units) above which we flag a possible
+# missed change point even when BOCPD posterior never crossed cp_threshold.
+_BOCPD_UNDERSEG_PEAK_Z = 3.5
+
+
+def _peak_abs_return(series: np.ndarray) -> float:
+    arr = np.asarray(series, dtype=float)
+    arr = arr[np.isfinite(arr)]
+    if arr.size == 0:
+        return 0.0
+    std = float(np.std(arr))
+    if not np.isfinite(std) or std <= 1e-12:
+        return 0.0
+    return float(np.max(np.abs(arr)) / std)
+
+
+def _bocpd_under_segmentation_warnings(
+    *,
+    total_bars: int,
+    change_point_count: int,
+    reliability: Any,
+    peak_abs_return: float,
+) -> List[str]:
+    """Surface likely BOCPD under-segmentation.
+
+    BOCPD's Gaussian conjugate priors can absorb a violent but short-lived
+    move as a fat-tail outlier inside a single regime, so a flash crash that
+    PELT, MS-AR, and clustering all flag is silently missed. Surface a
+    warning when the model returns zero change points over a long window,
+    especially when reliability confidence is low or when the window contains
+    a multi-sigma single-bar move that other methods would have caught.
+    """
+    if total_bars < _BOCPD_UNDERSEG_MIN_BARS:
+        return []
+    if change_point_count > 0:
+        return []
+
+    warnings: List[str] = []
+    confidence_value: Optional[float] = None
+    if isinstance(reliability, dict):
+        raw_conf = reliability.get("confidence")
+        try:
+            if raw_conf is not None:
+                confidence_value = float(raw_conf)
+        except (TypeError, ValueError):
+            confidence_value = None
+    if confidence_value is not None and confidence_value < 0.5:
+        warnings.append(
+            "BOCPD reported no change points over a long window with low "
+            "reliability confidence; possible under-segmentation. Compare "
+            "with PELT or ms_ar for cross-validation."
+        )
+    if peak_abs_return >= _BOCPD_UNDERSEG_PEAK_Z:
+        warnings.append(
+            f"Window contains a {peak_abs_return:.1f}σ single-bar move but "
+            "BOCPD reported no change points; the move may have been absorbed "
+            "as a fat-tail outlier. Try a lower cp_threshold or hazard_lambda."
+        )
+    return warnings
+
+
 def _resolve_state_count_param(
     params: Dict[str, Any],
     *,
@@ -1390,6 +1455,15 @@ def regime_detect(  # noqa: C901
                 )
             if tuning_hint is not None:
                 payload["tuning_hint"] = tuning_hint
+            _append_warnings(
+                payload,
+                _bocpd_under_segmentation_warnings(
+                    total_bars=int(x.size),
+                    change_point_count=len(raw_cp_idx),
+                    reliability=payload.get("reliability"),
+                    peak_abs_return=_peak_abs_return(x),
+                ),
+            )
             if output in ("summary", "compact"):
                 payload = _apply_bocpd_output_mode(
                     payload,
