@@ -712,6 +712,7 @@ class TestFormatResultForCli:
                 "rank_by": "abs_price_change_pct",
                 "rank_order": "desc",
                 "ranking": "largest_abs_price_change_pct",
+                "price_change_basis": "previous_completed_close_to_latest_completed_close",
                 "requested_limit": 3,
                 "returned_count": 1,
                 "total_count": 6,
@@ -742,6 +743,10 @@ class TestFormatResultForCli:
         assert "rank_by: abs_price_change_pct" in result
         assert "rank_order: desc" in result
         assert "ranking: largest_abs_price_change_pct" in result
+        assert (
+            "price_change_basis: previous_completed_close_to_latest_completed_close"
+            in result
+        )
         assert "requested_limit: 3" in result
         assert "returned_count: 1" in result
         assert "total_count: 6" in result

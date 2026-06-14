@@ -543,6 +543,7 @@ def _normalize_market_scan_cli_payload(result: Any, *, verbose: bool) -> Any:
         "rank_by",
         "rank_order",
         "ranking",
+        "price_change_basis",
         "headers",
         "data",
         "freshness",

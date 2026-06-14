@@ -173,6 +173,51 @@ def test_market_scan_completed_rates_drops_forming_bar(mock_rates, mock_time):
     assert [bar["close"] for bar in result] == [1.0, 2.0]
 
 
+def test_market_scan_signal_price_change_uses_previous_close(monkeypatch):
+    from mtdata.core import symbols as symbols_mod
+
+    monkeypatch.setattr(
+        symbols_mod,
+        "_market_scan_completed_rates",
+        lambda *args, **kwargs: [
+            {
+                "time": 1_700_000_000.0,
+                "open": 99.0,
+                "close": 100.0,
+                "tick_volume": 10,
+                "real_volume": 0,
+            },
+            {
+                "time": 1_700_003_600.0,
+                "open": 110.0,
+                "close": 105.0,
+                "tick_volume": 12,
+                "real_volume": 0,
+            },
+        ],
+    )
+
+    row, error = symbols_mod._build_market_scan_signal_row(
+        _make_symbol("TEST", digits=2),
+        timeframe="H1",
+        mt5_timeframe=16385,
+        lookback=2,
+        rsi_length=14,
+        sma_period=20,
+        include_rsi=False,
+        include_sma=False,
+    )
+
+    assert error is None
+    assert row["previous_close"] == 100.0
+    assert row["open"] == 110.0
+    assert row["close"] == 105.0
+    assert row["price_change_pct"] == 5.0
+    assert row["price_change_basis"] == (
+        "previous_completed_close_to_latest_completed_close"
+    )
+
+
 def _make_symbol(
     name: str,
     *,
@@ -791,6 +836,9 @@ class TestMarketScan:
         assert result["count"] == 1
         assert result["rank_by"] == "abs_price_change_pct"
         assert result["ranking"] == "largest_abs_price_change_pct"
+        assert result["price_change_basis"] == (
+            "previous_completed_close_to_latest_completed_close"
+        )
         assert result["data"][0]["symbol"] == "EURUSD"
         assert result["data"][0]["rsi"] == 100.0
         assert result["data"][0]["sma_value"] == 5.0
@@ -863,7 +911,7 @@ class TestMarketScan:
         }.issubset(row)
         assert row["time"].endswith("Z")
         assert row["spread_pips"] == 1.0
-        assert mock_rates.call_args.args[2:] == (0, 2)
+        assert mock_rates.call_args.args[2:] == (0, 3)
         assert "real_volume" not in row
         assert "rows" not in result
         assert result["meta"]["request"]["detail"] == "compact"
@@ -990,6 +1038,13 @@ class TestMarketScan:
         mock_rates.side_effect = lambda symbol, timeframe, start_pos, count: {
             "STALETIGHT": [
                 {
+                    "time": now - (11 * 3600),
+                    "open": 1.1000,
+                    "close": 1.1000,
+                    "tick_volume": 119,
+                    "real_volume": 0,
+                },
+                {
                     "time": now - (10 * 3600),
                     "open": 1.1000,
                     "close": 1.1000,
@@ -998,6 +1053,13 @@ class TestMarketScan:
                 }
             ],
             "FRESHWIDE": [
+                {
+                    "time": now - (2 * 3600),
+                    "open": 1.1000,
+                    "close": 1.1000,
+                    "tick_volume": 119,
+                    "real_volume": 0,
+                },
                 {
                     "time": now - 3600,
                     "open": 1.1000,

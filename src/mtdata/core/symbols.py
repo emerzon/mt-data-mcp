@@ -1784,6 +1784,7 @@ def _project_market_scan_rows(
 
 _MARKET_SCAN_UNITS = {
     "close": "price",
+    "previous_close": "price",
     "price_change_pct": "percentage_points (1.0 = 1%)",
     "tick_volume": "broker_tick_count",
     "real_volume": "traded_volume",
@@ -2275,16 +2276,20 @@ def _build_market_scan_signal_row(
         mt5_timeframe=mt5_timeframe,
         count=lookback,
     )
-    if rates is None or len(rates) < 1:
-        return None, f"No completed {timeframe} bar data returned."
+    if rates is None or len(rates) < 2:
+        return None, f"At least two completed {timeframe} bars are required."
 
     latest_bar = rates[-1]
+    previous_bar = rates[-2]
     open_price = _market_scan_float(latest_bar["open"])
     close_price = _market_scan_float(latest_bar["close"])
+    previous_close = _market_scan_float(previous_bar["close"])
     if open_price is None or close_price is None:
         return None, "Completed bar is missing open/close prices."
-    if open_price == 0:
-        return None, "Completed bar open price is zero."
+    if previous_close is None:
+        return None, "Previous completed bar is missing its close price."
+    if previous_close == 0:
+        return None, "Previous completed bar close price is zero."
 
     close_values: List[float] = []
     for bar in rates:
@@ -2312,14 +2317,16 @@ def _build_market_scan_signal_row(
             "data_source": f"{timeframe}_bars",
             "time": _format_time_explicit(bar_time) if bar_time is not None else None,
             **_market_scan_freshness_fields(bar_time, timeframe=timeframe, symbol=symbol.name),
+            "previous_close": _market_scan_round(previous_close, digits=digits),
             "open": _market_scan_round(open_price, digits=digits),
             "close": _market_scan_round(close_price, digits=digits),
             "tick_volume": tick_volume,
             "real_volume": real_volume,
             "price_change_pct": _market_scan_round(
-                ((close_price - open_price) / open_price) * 100.0,
+                ((close_price - previous_close) / previous_close) * 100.0,
                 digits=6,
             ),
+            "price_change_basis": "previous_completed_close_to_latest_completed_close",
         }
     )
     if include_rsi:
@@ -3018,8 +3025,10 @@ def market_scan(  # noqa: C901
 ) -> Dict[str, Any]:
     """Filtered MT5 market scanner with one flat table and technical filters.
 
-    Pass `symbols` for one instrument or a comma-separated list. `data` is
-    the canonical flat row payload. Compact detail is the default; use
+    Pass `symbols` for one instrument or a comma-separated list. `price_change_pct`
+    is the return from the previous completed bar close to the latest completed
+    bar close. `data` is the canonical flat row payload. Compact detail is the
+    default; use
     `detail="full"` when you also want the explicit `columns` ordering hint
     for compatibility. Broad scans use the visible universe; `universe="all"`
     must be combined with `symbols` or `group` to avoid unbounded hidden-symbol
@@ -3217,7 +3226,7 @@ def market_scan(  # noqa: C901
                 or rsi_below is not None
             )
             include_sma = detail_mode != "compact" or price_vs_sma_value is not None
-            signal_lookback = lookback_value if (include_rsi or include_sma) else 1
+            signal_lookback = lookback_value if (include_rsi or include_sma) else 2
 
             mt5_gateway = create_mt5_gateway(
                 adapter=mt5,
@@ -3383,6 +3392,7 @@ def market_scan(  # noqa: C901
                 "bar_age_hours",
                 "data_stale",
                 "stale_warning",
+                "previous_close",
                 "close",
                 "price_change_pct",
                 "tick_volume",
@@ -3479,6 +3489,7 @@ def market_scan(  # noqa: C901
                     rsi_above=rsi_above,
                     rsi_below=rsi_below,
                 ),
+                "price_change_basis": "previous_completed_close_to_latest_completed_close",
                 "requested_limit": int(limit_value),
                 "offset": int(offset_value),
                 "total_count": int(total_matches),
