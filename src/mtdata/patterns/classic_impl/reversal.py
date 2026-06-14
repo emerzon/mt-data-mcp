@@ -52,21 +52,40 @@ def _dedupe_overlapping_patterns(
 
 
 def _level_components(vals: np.ndarray, tol_pct: float) -> List[List[int]]:
+    """Group indices of *vals* into clusters whose members all sit at the same level.
+
+    A cluster is valid only when every member is within ``tol_pct`` of both the
+    cluster minimum and maximum — i.e. the total spread never exceeds the
+    tolerance. This is stricter than transitive (chained-pair) closure, which
+    historically allowed monotonic escalation sequences (e.g. rising peaks over
+    a multi-day window) to be emitted as horizontal "Triple Top" patterns with
+    high confidence.
+    """
     n = int(vals.size)
     if n <= 0:
         return []
     order = np.argsort(np.asarray(vals, dtype=float), kind="mergesort")
+    sorted_vals = np.asarray(vals, dtype=float)[order]
     components: List[List[int]] = []
     component = [int(order[0])]
+    cluster_min = float(sorted_vals[0])
+    cluster_max = float(sorted_vals[0])
     for pos in range(1, n):
-        prev_idx = int(order[pos - 1])
+        cur_val = float(sorted_vals[pos])
         cur_idx = int(order[pos])
-        if _level_close(float(vals[prev_idx]), float(vals[cur_idx]), tol_pct):
+        within_cluster = _level_close(cluster_min, cur_val, tol_pct) and _level_close(
+            cluster_max, cur_val, tol_pct
+        )
+        if within_cluster:
             component.append(cur_idx)
+            cluster_min = min(cluster_min, cur_val)
+            cluster_max = max(cluster_max, cur_val)
             continue
         component.sort()
         components.append(component)
         component = [cur_idx]
+        cluster_min = cur_val
+        cluster_max = cur_val
     component.sort()
     components.append(component)
     components.sort(key=lambda item: item[0])
@@ -84,6 +103,40 @@ def _neckline_quality_score(
     if int(point_count) <= 2:
         return float(neck_penalty)
     return float(0.5 * neck_penalty + 0.5 * max(0.0, min(1.0, float(r2))))
+
+
+def _formation_neckline(
+    close: np.ndarray,
+    cluster_indices: np.ndarray,
+    opposing_pivots: np.ndarray,
+    kind: str,
+) -> float:
+    """Return the neckline of a top/bottom formation.
+
+    For tops, the neckline is the lowest opposing (trough) pivot *between* the
+    outer cluster peaks; for bottoms it is the highest opposing (peak) pivot.
+    Only pivots strictly inside the formation span are considered, so unrelated
+    deep lows / high highs outside the pattern are not mis-attributed as the
+    neckline. When no qualifying opposing pivot exists, the extreme close
+    between the outer peaks is used as a fallback.
+    """
+    c = np.asarray(close, dtype=float)
+    if cluster_indices.size < 2:
+        return float("nan")
+    start_i = int(cluster_indices[0])
+    end_i = int(cluster_indices[-1])
+    fallback_slice = c[start_i : end_i + 1]
+    if fallback_slice.size == 0:
+        return float("nan")
+    if opposing_pivots.size == 0:
+        return float(np.min(fallback_slice)) if kind == "top" else float(np.max(fallback_slice))
+    mask = (opposing_pivots > start_i) & (opposing_pivots < end_i)
+    if not mask.any():
+        return float(np.min(fallback_slice)) if kind == "top" else float(np.max(fallback_slice))
+    opposing_vals = c[opposing_pivots[mask]]
+    if opposing_vals.size == 0:
+        return float(np.min(fallback_slice)) if kind == "top" else float(np.max(fallback_slice))
+    return float(np.min(opposing_vals)) if kind == "top" else float(np.max(opposing_vals))
 
 def detect_tops_bottoms(
     c: np.ndarray,
@@ -103,10 +156,11 @@ def detect_tops_bottoms(
             if len(cluster) >= 2:
                 name = name_triple if len(cluster) >= 3 else name_top
                 ii = idxs[cluster]
-                start_i, end_i = int(ii[0]), int(ii[-1])
+                ii_sorted = np.sort(ii)
+                start_i, end_i = int(ii_sorted[0]), int(ii_sorted[-1])
                 status = "forming"
                 level = float(np.median(vals[cluster]))
-                neckline = float(np.min(c[start_i:end_i + 1])) if kind == "top" else float(np.max(c[start_i:end_i + 1]))
+                neckline = _formation_neckline(c, ii_sorted, troughs if kind == "top" else peaks, kind)
                 direction = "down" if kind == "top" else "up"
                 breakout_look = max(int(cfg.completion_lookback_bars), int(max(1, cfg.breakout_lookahead)))
                 break_i = _find_forward_level_breakout(

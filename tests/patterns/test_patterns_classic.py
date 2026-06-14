@@ -1259,12 +1259,60 @@ def test_detect_tops_bottoms_merges_connected_same_level_cluster():
     assert triple_top.confidence == pytest.approx(0.7)
 
 
-def test_level_components_preserves_transitive_clusters_in_input_order():
+def test_level_components_rejects_spread_beyond_tolerance():
+    """Cluster members must all fit within tol_pct of each other (strict spread).
+
+    Previously the algorithm used transitive closure (chained-pair closeness),
+    which allowed monotonically escalating peaks to cluster as a horizontal
+    "Triple Top". The strict spread check rejects that false positive.
+    """
     from src.mtdata.patterns.classic_impl.reversal import _level_components
 
     vals = np.array([100.0, 112.0, 103.0, 115.0, 106.0], dtype=float)
 
-    assert _level_components(vals, 5.0) == [[0, 2, 4], [1, 3]]
+    # 100, 103, 106 have a 6% spread which exceeds 5% tol → must NOT cluster together
+    assert _level_components(vals, 5.0) == [[0, 2], [1, 3], [4]]
+
+    # Larger tolerance captures them all (10% > 15% spread of 100..115)
+    assert _level_components(vals, 20.0) == [[0, 1, 2, 3, 4]]
+
+
+def test_detect_tops_bottoms_rejects_escalating_peaks_as_triple_top():
+    """Top pattern neckline must come from inter-peak troughs, not window min.
+
+    Regression test: previously the neckline used ``np.min(close[start:end+1])``
+    which could pick up an unrelated deep low inside the formation span. The
+    neckline must come from the lowest *trough pivot* between the cluster peaks.
+    """
+    from src.mtdata.patterns.classic_impl.reversal import detect_tops_bottoms
+
+    # Cluster peaks at indices 0,2,4,6,7,8,9 (values 1.15638..1.15897, ~0.22%
+    # spread — within default 0.4% tol so they legitimately cluster as a top).
+    # Index 10 holds an unrelated deep low (1.14995) inside the formation span
+    # but past the last cluster peak — it must NOT become the neckline.
+    close = np.array(
+        [
+            1.15638, 1.15650, 1.15690, 1.15700, 1.15710,
+            1.15720, 1.15781, 1.15731, 1.15897, 1.15894, 1.14995,
+        ],
+        dtype=float,
+    )
+    peaks = np.array([0, 2, 4, 6, 7, 8, 9], dtype=int)
+    troughs = np.array([1, 3, 5, 10], dtype=int)
+
+    out = detect_tops_bottoms(
+        close,
+        peaks,
+        troughs,
+        np.arange(close.size, dtype=float),
+        ClassicDetectorConfig(same_level_tol_pct=0.4),
+    )
+
+    triple_top = next(pattern for pattern in out if pattern.name == "Triple Top")
+    # New neckline: lowest *trough* between cluster peaks (1.15650, 1.15700, 1.15720)
+    # NOT the window minimum 1.14995 (which sits past the last cluster peak).
+    assert triple_top.details["neckline"] == pytest.approx(1.15650, abs=1e-6)
+    assert triple_top.details["neckline"] > 1.15
 
 
 def test_detect_head_shoulders_fits_neckline_with_reaction_troughs(monkeypatch):
