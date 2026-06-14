@@ -1051,8 +1051,10 @@ class TestReportWarnings:
         assert res["sections"] == {}
         assert res["section_controls"]["included_count"] == 0
         assert res["section_controls"]["summary_mode"] is True
+        assert sorted(res["sections_available"]) == sorted(_make_full_sections().keys())
         assert res["sections_status"]["summary"]["total"] > 0
         assert res["overall_assessment"]["section_health"]["total"] > 0
+        assert res["completeness"] == "summary_only"
         assert res["detail"] == "summary"
         assert "diagnostics" not in res
         assert res["overall_assessment"]["summary"] != (
@@ -1200,4 +1202,3 @@ def test_prioritize_report_payload_orders_as_of_near_top():
     rep = {'sections': {}, 'as_of': 'T', 'success': True, 'timezone': 'UTC'}
     keys = list(_prioritize_report_payload(rep).keys())
     assert keys.index('as_of') < keys.index('sections')
-

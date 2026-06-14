@@ -444,6 +444,8 @@ def _apply_report_section_controls(
         return
 
     original_names = list(sections.keys())
+    if summary_mode and original_names:
+        report["sections_available"] = list(original_names)
     if summary_mode:
         selected_names: List[str] = []
         missing_requested: List[str] = []
@@ -1185,6 +1187,8 @@ def run_report_generate(  # noqa: C901
                     if error_count > 0
                     else "partial"
                     if partial_count > 0
+                    else "summary_only"
+                    if summary_mode
                     else "complete"
                 )
                 rep["success"] = bool(error_count == 0)
