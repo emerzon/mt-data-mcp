@@ -126,28 +126,69 @@ def price_barrier_option_quantlib(
     except Exception as ex:
         return {"error": f"QuantLib pricing failed: {ex}"}
 
-    delta = float("nan")
-    gamma = float("nan")
-    vega = float("nan")
+    delta: Optional[float] = None
+    gamma: Optional[float] = None
+    vega: Optional[float] = None
+    greeks_method: Optional[str] = None
+    greeks_warnings: List[str] = []
+
+    barrier_distance = abs(barrier_val - spot_val)
+    eps_s = min(
+        max(1e-6, abs(spot_val) * 1e-4),
+        barrier_distance * 0.25,
+        spot_val * 0.25,
+    )
     try:
-        eps_s = max(1e-4, abs(spot_val) * 1e-2)
         p_up = _price_with(spot_val + eps_s, vol)
-        p_dn = _price_with(max(1e-8, spot_val - eps_s), vol)
+        p_dn = _price_with(spot_val - eps_s, vol)
         delta = (p_up - p_dn) / (2.0 * eps_s)
         gamma = (p_up - 2.0 * npv + p_dn) / (eps_s * eps_s)
+        greeks_method = "central_difference"
+    except Exception as central_exc:
+        try:
+            direction = -1.0 if barrier_type_norm.startswith("up_") else 1.0
+            p_1 = _price_with(spot_val + direction * eps_s, vol)
+            p_2 = _price_with(spot_val + direction * 2.0 * eps_s, vol)
+            p_3 = _price_with(spot_val + direction * 3.0 * eps_s, vol)
+            delta = direction * (-3.0 * npv + 4.0 * p_1 - p_2) / (2.0 * eps_s)
+            gamma = (2.0 * npv - 5.0 * p_1 + 4.0 * p_2 - p_3) / (
+                eps_s * eps_s
+            )
+            greeks_method = "one_sided_away_from_barrier"
+            greeks_warnings.append(
+                f"Central spot differences failed ({central_exc}); used a one-sided "
+                "difference away from the barrier."
+            )
+        except Exception as one_sided_exc:
+            greeks_warnings.append(
+                "Spot Greeks unavailable: central and one-sided differences failed "
+                f"({one_sided_exc})."
+            )
+
+    try:
         eps_v = max(1e-4, abs(vol) * 5e-2)
         pv_up = _price_with(spot_val, vol + eps_v)
         pv_dn = _price_with(spot_val, max(1e-6, vol - eps_v))
         vega = (pv_up - pv_dn) / (2.0 * eps_v)
-    except Exception:
-        pass
+    except Exception as ex:
+        greeks_warnings.append(f"Vega unavailable: volatility differences failed ({ex}).")
+
+    finite_greeks = sum(
+        value is not None and math.isfinite(value)
+        for value in (delta, gamma, vega)
+    )
+    greeks_status = "complete" if finite_greeks == 3 else "partial" if finite_greeks else "unavailable"
 
     return {
         "success": True,
         "price": float(npv),
-        "delta": float(delta) if math.isfinite(delta) else None,
-        "gamma": float(gamma) if math.isfinite(gamma) else None,
-        "vega": float(vega) if math.isfinite(vega) else None,
+        "delta": float(delta) if delta is not None and math.isfinite(delta) else None,
+        "gamma": float(gamma) if gamma is not None and math.isfinite(gamma) else None,
+        "vega": float(vega) if vega is not None and math.isfinite(vega) else None,
+        "greeks_status": greeks_status,
+        "greeks_method": greeks_method,
+        "greeks_spot_step": float(eps_s),
+        **({"greeks_warnings": greeks_warnings} if greeks_warnings else {}),
         "pricing_assumptions": _quantlib_pricing_assumptions(
             "BlackScholesMerton analytic barrier"
         ),

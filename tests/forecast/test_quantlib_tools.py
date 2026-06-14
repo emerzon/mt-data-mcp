@@ -204,6 +204,40 @@ def test_price_barrier_option_quantlib_with_fake_backend(monkeypatch):
     assert out["price"] > 0.0
     assert out["params_used"]["option_type"] == "call"
     assert out["params_used"]["barrier_type"] == "up_out"
+    assert out["greeks_status"] == "complete"
+    assert out["greeks_spot_step"] == 0.01
+
+
+def test_price_barrier_option_quantlib_uses_safe_step_near_barrier(monkeypatch):
+    fake = _make_fake_quantlib()
+    base_option = fake.BarrierOption
+
+    class _StrictBarrierOption(base_option):
+        def NPV(self):
+            spot = self._engine.process.spot
+            if self.barrier_type.startswith("up_") and spot >= self.barrier:
+                raise RuntimeError("barrier touched")
+            if self.barrier_type.startswith("down_") and spot <= self.barrier:
+                raise RuntimeError("barrier touched")
+            return super().NPV()
+
+    fake.BarrierOption = _StrictBarrierOption
+    monkeypatch.setitem(__import__("sys").modules, "QuantLib", fake)
+
+    out = qtools.price_barrier_option_quantlib(
+        spot=1.168,
+        strike=1.15,
+        barrier=1.17,
+        maturity_days=30,
+        option_type="call",
+        barrier_type="up_out",
+    )
+
+    assert out["success"] is True
+    assert out["greeks_status"] == "complete"
+    assert out["greeks_method"] == "central_difference"
+    assert out["greeks_spot_step"] < 1.17 - 1.168
+    assert out["delta"] is not None
 
 
 def test_price_barrier_option_quantlib_validates_touched_down_barrier():
