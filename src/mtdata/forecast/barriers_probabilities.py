@@ -584,7 +584,7 @@ def forecast_barrier_hit_probabilities(  # noqa: C901
         # Directional interpretation:
         # - For long: TP is above last_price, SL is below; prob_tp_first is long win probability.
         # - For short: TP is below last_price, SL is above; prob_tp_first is short win probability.
-        edge = float(prob_tp_first - prob_sl_first)
+        probability_edge = float(prob_tp_first - prob_sl_first)
         price_precision = _symbol_price_precision(symbol)
         out = {
             "success": True,
@@ -613,7 +613,7 @@ def forecast_barrier_hit_probabilities(  # noqa: C901
             "prob_sl_first_ci95": {"low": float(sl_lo), "high": float(sl_hi)},
             "prob_tie_ci95": {"low": float(tie_lo), "high": float(tie_hi)},
             "prob_no_hit_ci95": {"low": float(no_hit_lo), "high": float(no_hit_hi)},
-            "edge": float(edge),
+            "probability_edge": probability_edge,
             "tp_hit_prob_by_t": [float(v) for v in tp_any_curve],
             "sl_hit_prob_by_t": [float(v) for v in sl_any_curve],
             "time_to_tp_bars": tp_stats,

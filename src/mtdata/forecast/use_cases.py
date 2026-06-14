@@ -383,7 +383,7 @@ def _round_barrier_prob_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
         "prob_sl_first",
         "prob_tie",
         "prob_no_hit",
-        "edge",
+        "probability_edge",
         "prob_tp_first_se",
         "prob_sl_first_se",
         "prob_tie_se",
@@ -1205,7 +1205,7 @@ def _apply_barrier_prob_detail(
         "prob_tp_first",
         "prob_sl_first",
         "prob_no_hit",
-        "edge",
+        "probability_edge",
     ):
         _set_if_present(compact, key, payload.get(key))
     confidence: Dict[str, Any] = {}
@@ -1300,7 +1300,15 @@ def _annotate_barrier_prob_context(
         out.setdefault("barrier_unit", "price")
         out.setdefault("barrier_mode", "price")
     out.setdefault("probability_unit", "fraction")
-    out.setdefault("edge_definition", "prob_tp_first - prob_sl_first")
+    if out.get("probability_edge") is None:
+        tp_prob = _finite_float(out.get("prob_tp_first"))
+        sl_prob = _finite_float(out.get("prob_sl_first"))
+        if tp_prob is not None and sl_prob is not None:
+            out["probability_edge"] = round(tp_prob - sl_prob, 6)
+    out.setdefault(
+        "probability_edge_definition",
+        "prob_tp_first - prob_sl_first",
+    )
     units = _barrier_prob_units(out)
     if units:
         out.setdefault("units", units)
@@ -1335,13 +1343,13 @@ def _barrier_prob_units(payload: Dict[str, Any]) -> Dict[str, str]:
     for key in ("prob_tp_first", "prob_sl_first", "prob_no_hit", "prob_hit"):
         if payload.get(key) not in (None, "", [], {}):
             units[key] = "probability_fraction"
-    if payload.get("edge") not in (None, "", [], {}):
-        units["edge"] = "probability_difference"
+    if payload.get("probability_edge") not in (None, "", [], {}):
+        units["probability_edge"] = "probability_difference"
     return units
 
 
 def _barrier_prob_verdict(payload: Dict[str, Any]) -> Optional[str]:
-    edge_value = _finite_float(payload.get("edge"))
+    edge_value = _finite_float(payload.get("probability_edge"))
     if edge_value is None:
         tp_prob = _finite_float(payload.get("prob_tp_first"))
         sl_prob = _finite_float(payload.get("prob_sl_first"))
@@ -1349,10 +1357,10 @@ def _barrier_prob_verdict(payload: Dict[str, Any]) -> Optional[str]:
             edge_value = tp_prob - sl_prob
     if edge_value is not None:
         if edge_value > 0:
-            return "TP-first bias, positive edge"
+            return "TP-first probability bias"
         if edge_value < 0:
-            return "SL-first bias, negative edge"
-        return "Neutral first-hit edge"
+            return "SL-first probability bias"
+        return "Neutral first-hit probabilities"
     if payload.get("prob_hit") not in (None, "", [], {}):
         return "Barrier-hit probability estimated"
     return None
@@ -1372,10 +1380,10 @@ def _barrier_prob_interpretation(payload: Dict[str, Any]) -> Dict[str, str]:
         interpretation["prob_no_hit"] = (
             "Probability neither barrier is reached before the forecast horizon."
         )
-    if payload.get("edge") not in (None, "", [], {}):
-        interpretation["edge"] = (
-            "Directional edge; positive favors take-profit-first outcomes, "
-            "negative favors stop-loss-first outcomes."
+    if payload.get("probability_edge") not in (None, "", [], {}):
+        interpretation["probability_edge"] = (
+            "Take-profit-first probability minus stop-loss-first probability; "
+            "this is not expected value."
         )
     if payload.get("prob_hit") not in (None, "", [], {}):
         interpretation["prob_hit"] = (

@@ -2378,11 +2378,14 @@ def test_forecast_barrier_prob_applies_default_pct_barriers_when_missing(monkeyp
     assert out["barrier_unit"] == "percent"
     assert out["barrier_mode"] == "pct"
     assert out["probability_unit"] == "fraction"
-    assert out["edge_definition"] == "prob_tp_first - prob_sl_first"
+    assert out["probability_edge"] == 0.1
+    assert out["probability_edge_definition"] == "prob_tp_first - prob_sl_first"
+    assert "edge" not in out
     assert out["units"]["horizon"] == "bars"
     assert out["units"]["tp_pct"] == "percentage_points"
     assert out["units"]["prob_tp_first"] == "probability_fraction"
-    assert out["verdict"] == "TP-first bias, positive edge"
+    assert out["units"]["probability_edge"] == "probability_difference"
+    assert out["verdict"] == "TP-first probability bias"
 
 
 def test_forecast_barrier_prob_keeps_partial_barrier_inputs_strict():
@@ -2758,7 +2761,7 @@ def test_forecast_barrier_prob_detail_rounds_display_values():
         "sl_price": 1.1690124100000001,
         "prob_tp_first": 0.5123456789,
         "prob_sl_first": 0.4876543211,
-        "edge": -0.17800000000000005,
+        "probability_edge": -0.17800000000000005,
         "prob_tp_first_ci95": {"low": 0.5000000001, "high": 0.6000000001},
     }
 
@@ -2772,9 +2775,10 @@ def test_forecast_barrier_prob_detail_rounds_display_values():
     assert out["tp_price"] == 1.17801241
     assert out["sl_price"] == 1.16901241
     assert out["prob_tp_first"] == 0.512346
-    assert out["edge"] == -0.178
+    assert out["probability_edge"] == -0.178
     assert out["probability_unit"] == "fraction"
-    assert out["edge_definition"] == "prob_tp_first - prob_sl_first"
+    assert out["probability_edge_definition"] == "prob_tp_first - prob_sl_first"
+    assert "edge" not in out
     assert out["confidence"]["prob_tp_first_ci95"] == {"low": 0.5, "high": 0.6}
 
 

@@ -1216,7 +1216,8 @@ class TestFormatResultMinimal:
             "sl_price": 1.17,
             "prob_tp_first": 0.52,
             "prob_sl_first": 0.48,
-            "edge": 0.04,
+            "probability_edge": 0.04,
+            "probability_edge_definition": "prob_tp_first - prob_sl_first",
             "confidence": {
                 "prob_tp_first_ci95": {"low": 0.48, "high": 0.56},
             },
