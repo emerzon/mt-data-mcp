@@ -378,6 +378,7 @@ def test_build_pattern_response_include_completed_filter_behavior():
         include_series=False,
         series_time="string",
         df=df,
+        detail="full",
     )
     with_completed = _build_pattern_response(
         "EURUSD",
@@ -389,6 +390,7 @@ def test_build_pattern_response_include_completed_filter_behavior():
         include_series=False,
         series_time="string",
         df=df,
+        detail="full",
     )
 
     assert forming_only["n_patterns"] == 1

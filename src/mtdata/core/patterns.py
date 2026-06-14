@@ -359,7 +359,7 @@ def _build_pattern_response(
     include_series: bool,
     series_time: str,
     df: pd.DataFrame,
-    detail: PatternsDetailLiteral = "full",
+    detail: PatternsDetailLiteral = "compact",
 ) -> Dict[str, Any]:
     """Build the response dict for pattern detection results."""
     # Filter patterns based on include_completed
@@ -504,9 +504,6 @@ def _build_pattern_response(
                 ]
 
     detail_value = str(detail).lower().strip()
-    # Keep this helper's implicit default as full for direct callers that still
-    # rely on the legacy shape. The public patterns_detect contract defaults to
-    # compact via PatternsDetectRequest.
     if detail_value in ("compact", "summary"):
         compact_resp = _compact_patterns_payload(resp)
         if detail_value == "summary":

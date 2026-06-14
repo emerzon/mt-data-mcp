@@ -1,13 +1,12 @@
 """Tests for pattern response building and formatting."""
 
-import numpy as np
-import pandas as pd
-import pytest
-
 from datetime import datetime, timezone
 from typing import Any, Dict
 from unittest.mock import MagicMock, patch
 
+import numpy as np
+import pandas as pd
+import pytest
 
 # ---------------------------------------------------------------------------
 # Helpers to build mock data
@@ -47,6 +46,7 @@ class TestBuildPatternResponse:
             include_series=False,
             series_time="string",
             df=_make_ohlcv_df(100),
+            detail="full",
         )
         defaults.update(kwargs)
         return _build_pattern_response(**defaults)
