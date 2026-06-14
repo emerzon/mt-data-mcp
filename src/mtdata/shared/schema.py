@@ -119,7 +119,6 @@ PARAM_HINTS = {
     "sections": "Comma-separated output sections to include.",
     "include_sections": "Only include these report sections; comma-separated or repeated values.",
     "max_sections": "Maximum report sections to include after filtering.",
-    "summary_only": "Return only summary and metadata; omit detailed sections.",
     "include_account": "Include account snapshot fields in the session context.",
     "region": "Market region filter or status region.",
     "timezone_display": "Display timezone for market-hours timestamps.",

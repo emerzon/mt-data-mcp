@@ -437,14 +437,14 @@ def _apply_report_section_controls(
     *,
     include_sections: Any = None,
     max_sections: Optional[int] = None,
-    summary_only: bool = False,
+    summary_mode: bool = False,
 ) -> None:
     sections = report.get("sections")
     if not isinstance(sections, dict):
         return
 
     original_names = list(sections.keys())
-    if summary_only:
+    if summary_mode:
         selected_names: List[str] = []
         missing_requested: List[str] = []
     else:
@@ -468,9 +468,9 @@ def _apply_report_section_controls(
 
     report["sections"] = {name: sections[name] for name in selected_names if name in sections}
     omitted_names = [name for name in original_names if name not in selected_names]
-    if omitted_names or missing_requested or summary_only or max_sections is not None or include_sections:
+    if omitted_names or missing_requested or summary_mode or max_sections is not None or include_sections:
         report["section_controls"] = {
-            "summary_only": bool(summary_only),
+            "summary_mode": bool(summary_mode),
             "included_sections": selected_names,
             "included_count": len(selected_names),
             "omitted_sections": omitted_names,
@@ -635,10 +635,7 @@ def run_report_generate(  # noqa: C901
     append_diagnostic_warning: Any,
 ) -> str | Dict[str, Any]:
     template_name = (request.template or "basic").lower().strip()
-    detail_value = normalize_output_detail(
-        getattr(request, "detail", "compact"),
-        aliases={"summary": "compact", "summary_only": "compact"},
-    )
+    detail_value = normalize_output_detail(getattr(request, "detail", "compact"))
 
     def _run() -> str | Dict[str, Any]:  # noqa: C901
         started_at = time.perf_counter()
@@ -1167,13 +1164,14 @@ def run_report_generate(  # noqa: C901
             if summary_structured:
                 rep["summary_structured"] = summary_structured
             source_sections_status = None
-            if bool(request.summary_only) and isinstance(rep.get("sections"), dict):
+            summary_mode = detail_value == "summary"
+            if summary_mode and isinstance(rep.get("sections"), dict):
                 source_sections_status = _build_sections_status(rep["sections"])
             _apply_report_section_controls(
                 rep,
                 include_sections=request.include_sections,
                 max_sections=request.max_sections,
-                summary_only=bool(request.summary_only),
+                summary_mode=summary_mode,
             )
             sections = rep.get("sections")
             if isinstance(sections, dict):
@@ -1221,10 +1219,10 @@ def run_report_generate(  # noqa: C901
 
             if detail_value == "compact":
                 return _compact_report_payload(rep, symbol=request.symbol, template=template_name)
-            if detail_value == "standard":
+            if detail_value in {"standard", "summary"}:
                 rep = dict(rep)
                 rep.pop("diagnostics", None)
-                rep["detail"] = "standard"
+                rep["detail"] = detail_value
             return rep
         except Exception as exc:
             log_operation_exception(

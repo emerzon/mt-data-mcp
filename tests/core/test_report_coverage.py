@@ -71,6 +71,13 @@ def test_report_generate_request_defaults_to_compact_detail():
     assert request.detail == "compact"
 
 
+def test_report_generate_request_rejects_removed_summary_only_field():
+    from mtdata.core.report.requests import ReportGenerateRequest
+
+    with pytest.raises(ValidationError, match="summary_only was removed; use detail='summary'"):
+        ReportGenerateRequest(symbol="EURUSD", summary_only=True)
+
+
 def test_report_section_control_type_hints_resolve() -> None:
     from mtdata.core.report.use_cases import (
         _apply_report_section_controls,
@@ -1028,7 +1035,7 @@ class TestReportWarnings:
         assert res["overall_assessment"]["summary"] != "No report sections were available for assessment."
         assert res["success"] is True
 
-    def test_summary_only_assessment_uses_source_section_health(self):
+    def test_summary_detail_uses_source_section_health(self):
         fn = _get_report_generate()
         rep = _make_report(sections=_make_full_sections())
         mock_basic = MagicMock(return_value=rep)
@@ -1039,12 +1046,15 @@ class TestReportWarnings:
              patch("mtdata.core.report_templates.template_swing", mock_basic, create=True), \
              patch("mtdata.core.report_templates.template_position", mock_basic, create=True), \
              patch(_FMT_NUM, side_effect=str):
-            res = fn("EURUSD", template="basic", summary_only=True, format="toon")
+            res = fn("EURUSD", template="basic", detail="summary", format="toon")
 
         assert res["sections"] == {}
         assert res["section_controls"]["included_count"] == 0
+        assert res["section_controls"]["summary_mode"] is True
         assert res["sections_status"]["summary"]["total"] > 0
         assert res["overall_assessment"]["section_health"]["total"] > 0
+        assert res["detail"] == "summary"
+        assert "diagnostics" not in res
         assert res["overall_assessment"]["summary"] != (
             "No report sections were available for assessment."
         )

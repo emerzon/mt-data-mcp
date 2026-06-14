@@ -53,7 +53,7 @@ def _attach_report_compute_hint(report: Any, request: ReportGenerateRequest) -> 
     if not isinstance(report, dict) or report.get("error"):
         return report
     template = str(request.template or "basic").strip().lower()
-    if template == "minimal":
+    if template == "minimal" or request.detail != "full":
         return report
     diagnostics = report.get("diagnostics")
     if not isinstance(diagnostics, dict):

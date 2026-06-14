@@ -45,10 +45,6 @@ class ReportGenerateRequest(BaseModel):
         ge=1,
         description="Maximum number of report sections to include, after include_sections filtering.",
     )
-    summary_only: bool = Field(
-        False,
-        description="Return only summary and metadata; omit detailed report sections.",
-    )
     denoise: Optional[DenoiseSpec] = None
     params: Optional[Dict[str, Any]] = Field(
         None,
@@ -68,6 +64,11 @@ class ReportGenerateRequest(BaseModel):
     def _reject_removed_output(cls, values: Any) -> Any:
         values = reject_removed_field(values, field_name="output", replacement="json")
         values = reject_removed_field(values, field_name="format", replacement="json")
+        values = reject_removed_field(
+            values,
+            field_name="summary_only",
+            replacement="detail='summary'",
+        )
         if isinstance(values, dict) and isinstance(values.get("template"), str):
             values = dict(values)
             values["template"] = values["template"].strip().lower()
