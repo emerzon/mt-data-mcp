@@ -8,6 +8,7 @@ from mtdata.core.causal import (
     _build_cointegration_summary,
     _build_correlation_matrix,
     _build_correlation_summary,
+    _fit_cointegration_hedge,
     _format_summary,
     _normalize_cointegration_transform,
     _normalize_cointegration_trend,
@@ -142,6 +143,39 @@ class TestStandardizeFrame:
 
 
 class TestCorrelationHelpers:
+    @pytest.mark.parametrize(
+        ("trend", "deterministic"),
+        [
+            ("c", lambda t: 3.0 + 0.0 * t),
+            ("ct", lambda t: 3.0 + 0.25 * t),
+            ("ctt", lambda t: 3.0 + 0.25 * t + 0.01 * t**2),
+        ],
+    )
+    def test_cointegration_hedge_matches_deterministic_trend(self, trend, deterministic):
+        t = np.arange(1.0, 81.0)
+        hedge = pd.Series(np.sin(t / 7.0) + t * 0.1)
+        dependent = pd.Series(0.7 * hedge.to_numpy() + deterministic(t))
+
+        beta, intercept, spread = _fit_cointegration_hedge(
+            dependent,
+            hedge,
+            trend=trend,
+        )
+
+        assert beta == pytest.approx(0.7)
+        assert intercept == pytest.approx(3.0)
+        assert spread is not None
+        assert np.max(np.abs(spread)) < 1e-9
+
+    def test_cointegration_hedge_rejects_unknown_trend(self):
+        beta, intercept, spread = _fit_cointegration_hedge(
+            pd.Series([1.0, 2.0]),
+            pd.Series([1.0, 2.0]),
+            trend="bad",
+        )
+
+        assert (beta, intercept, spread) == (None, None, None)
+
     def test_normalize_correlation_method_aliases(self):
         assert _normalize_correlation_method("pearson") == "pearson"
         assert _normalize_correlation_method("Linear") == "pearson"

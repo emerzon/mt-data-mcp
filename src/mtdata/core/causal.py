@@ -991,16 +991,25 @@ def _fit_cointegration_hedge(
     x = hedge.to_numpy(dtype=float)
     if y.size != x.size or y.size < 2:
         return None, None, None
+    time_index = np.arange(1.0, float(x.size) + 1.0)
     if trend == "n":
         design = x.reshape(-1, 1)
-    else:
+    elif trend == "c":
         design = np.column_stack([x, np.ones(x.size, dtype=float)])
+    elif trend == "ct":
+        design = np.column_stack([x, np.ones(x.size, dtype=float), time_index])
+    elif trend == "ctt":
+        design = np.column_stack(
+            [x, np.ones(x.size, dtype=float), time_index, time_index**2]
+        )
+    else:
+        return None, None, None
     coeffs, *_ = np.linalg.lstsq(design, y, rcond=None)
     if coeffs.size < 1 or not math.isfinite(float(coeffs[0])):
         return None, None, None
     beta = float(coeffs[0])
     intercept = 0.0 if trend == "n" else float(coeffs[1]) if coeffs.size > 1 else 0.0
-    spread = y - (beta * x + intercept)
+    spread = y - design @ coeffs
     return beta, intercept, spread
 
 
