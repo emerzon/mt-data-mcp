@@ -1789,6 +1789,29 @@ def _annotate_strength_metrics(levels: List[Dict[str, Any]]) -> None:
         level["strength_score_normalized"] = float(round(max(0.0, min(1.0, normalized)), 4))
 
 
+def _drop_zero_score_when_stronger_exist(levels: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Filter zero-score levels out of the ranked output when stronger levels exist.
+
+    A clamped-to-zero score means the level was broken through (breakout penalty
+    overwhelmed any base strength and role-reversal bonus). Returning such a
+    level alongside stronger ones misleads users who reasonably expect every
+    ranked level to be actionable. When every candidate is zero-score we keep
+    the list as-is so the tool still surfaces *some* structure for the user to
+    inspect, rather than returning an empty result.
+    """
+    if not levels:
+        return levels
+
+    def _score_or_zero(level: Dict[str, Any]) -> float:
+        value = _as_finite_float(level.get("score"))
+        return 0.0 if value is None else float(value)
+
+    has_positive = any(_score_or_zero(level) > 0.0 for level in levels)
+    if not has_positive:
+        return levels
+    return [level for level in levels if _score_or_zero(level) > 0.0]
+
+
 def _normalize_max_distance_pct(max_distance_pct: Optional[float]) -> Optional[float]:
     if max_distance_pct is None:
         return None
@@ -2345,6 +2368,9 @@ def merge_support_resistance_results(  # noqa: C901
     )
     support_candidates = _filter_levels_by_distance(support_candidates, max_distance_pct=max_distance_value)
     resistance_candidates = _filter_levels_by_distance(resistance_candidates, max_distance_pct=max_distance_value)
+    # Drop breakout-broken (clamped-to-zero) levels when stronger ones remain.
+    support_candidates = _drop_zero_score_when_stronger_exist(support_candidates)
+    resistance_candidates = _drop_zero_score_when_stronger_exist(resistance_candidates)
 
     max_levels_value = max(1, int(max_levels))
     supports = support_candidates[:max_levels_value]

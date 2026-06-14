@@ -7,6 +7,7 @@ import pytest
 from mtdata.utils.support_resistance import (
     _build_zone_overlap,
     _collect_support_resistance_warnings,
+    _drop_zero_score_when_stronger_exist,
     _format_time,
     _resolve_adaptive_settings,
     compact_support_resistance_payload,
@@ -51,6 +52,38 @@ def test_collect_warnings_silent_when_both_sides_present():
     codes = {w.get("code") for w in warnings}
     assert "no_support_levels" not in codes
     assert "no_resistance_levels" not in codes
+
+
+def test_drop_zero_score_when_stronger_exist_filters_broken_levels():
+    """Zero-score (clamped from breakout penalty) levels drop out when stronger ones exist."""
+    levels = [
+        {"value": 1.16, "score": 1.2},
+        {"value": 1.17, "score": 0.8},
+        {"value": 1.18, "score": 0.0},  # broken-through, should drop
+    ]
+    filtered = _drop_zero_score_when_stronger_exist(levels)
+    assert [level["value"] for level in filtered] == [1.16, 1.17]
+
+
+def test_drop_zero_score_keeps_all_when_only_zero_score_remain():
+    """If every candidate is broken-through, keep them so the tool still returns structure."""
+    levels = [
+        {"value": 1.16, "score": 0.0},
+        {"value": 1.17, "score": 0.0},
+    ]
+    filtered = _drop_zero_score_when_stronger_exist(levels)
+    assert filtered == levels
+
+
+def test_drop_zero_score_handles_missing_or_nan_score():
+    """Missing/NaN scores are treated as zero (filtered when stronger exist)."""
+    levels = [
+        {"value": 1.16, "score": 1.0},
+        {"value": 1.17},  # no score
+        {"value": 1.18, "score": float("nan")},
+    ]
+    filtered = _drop_zero_score_when_stronger_exist(levels)
+    assert [level["value"] for level in filtered] == [1.16]
 
 
 def _clustered_levels_frame() -> pd.DataFrame:
