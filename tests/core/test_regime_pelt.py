@@ -4,6 +4,33 @@ import numpy as np
 import pandas as pd
 
 import mtdata.core.regime as regime
+from mtdata.core.regime.api import _pelt_return_direction
+
+
+def test_pelt_direction_requires_statistically_significant_mean() -> None:
+    noisy = np.array([0.001, -0.001, 0.0011, -0.0009, 0.0001] * 20)
+
+    direction, mean_t_stat, significant = _pelt_return_direction(
+        noisy,
+        float(np.mean(noisy)),
+    )
+
+    assert direction == "neutral"
+    assert mean_t_stat is not None
+    assert significant is False
+
+
+def test_pelt_direction_keeps_significant_drift() -> None:
+    trending = np.array([0.0010, 0.0012, 0.0008, 0.0011, 0.0009] * 20)
+
+    direction, mean_t_stat, significant = _pelt_return_direction(
+        trending,
+        float(np.mean(trending)),
+    )
+
+    assert direction == "positive"
+    assert mean_t_stat is not None and mean_t_stat > 1.96
+    assert significant is True
 
 
 def test_pelt_detects_structural_break(monkeypatch):
@@ -41,3 +68,4 @@ def test_pelt_detects_structural_break(monkeypatch):
     assert result["summary"]["change_points_count"] >= 1
     assert len(result["regimes"]) >= 2
     assert result["params_used"]["penalty_source"] == "bic_like_auto"
+    assert all(row["direction_significant"] for row in result["regimes"])

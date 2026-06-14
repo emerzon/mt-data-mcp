@@ -52,6 +52,29 @@ from .smoothing import (
 
 logger = logging.getLogger(__name__)
 
+_PELT_DIRECTION_T_STAT_THRESHOLD = 1.96
+
+
+def _pelt_return_direction(
+    segment: np.ndarray,
+    mean_value: float,
+) -> tuple[str, Optional[float], bool]:
+    values = np.asarray(segment, dtype=float)
+    if values.size < 2:
+        return "neutral", None, False
+    sample_std = float(np.std(values, ddof=1))
+    if not np.isfinite(sample_std) or sample_std <= 1e-12:
+        significant = bool(abs(float(mean_value)) > 1e-12)
+        direction = (
+            "positive" if mean_value > 0 else "negative" if mean_value < 0 else "neutral"
+        )
+        return (direction if significant else "neutral"), None, significant
+    mean_t_stat = float(mean_value) / (sample_std / np.sqrt(float(values.size)))
+    significant = bool(abs(mean_t_stat) >= _PELT_DIRECTION_T_STAT_THRESHOLD)
+    if not significant:
+        return "neutral", mean_t_stat, False
+    return ("positive" if mean_value > 0 else "negative"), mean_t_stat, True
+
 
 def _regime_connection_error() -> Optional[Dict[str, Any]]:
     return mt5_connection_error(
@@ -1465,7 +1488,9 @@ def regime_detect(  # noqa: C901
                 mean_value = float(np.mean(segment))
                 volatility = float(np.std(segment, ddof=0))
                 if target == "return":
-                    direction = "positive" if mean_value > 0 else "negative" if mean_value < 0 else "neutral"
+                    direction, mean_t_stat, direction_significant = (
+                        _pelt_return_direction(segment, mean_value)
+                    )
                     vol_label = "high_vol" if volatility > global_volatility else "low_vol"
                     label = f"{direction}_{vol_label}"
                 else:
@@ -1480,6 +1505,13 @@ def regime_detect(  # noqa: C901
                     "mean": round(mean_value, 8),
                     "volatility": round(volatility, 8),
                 }
+                if target == "return":
+                    row["mean_t_stat"] = (
+                        round(float(mean_t_stat), 4)
+                        if mean_t_stat is not None and np.isfinite(mean_t_stat)
+                        else None
+                    )
+                    row["direction_significant"] = bool(direction_significant)
                 regimes.append(row)
                 if start_idx > 0:
                     change_points.append(
@@ -1524,6 +1556,7 @@ def regime_detect(  # noqa: C901
                     "penalty_source": penalty_source,
                     "min_size": int(min_size),
                     "jump": int(jump),
+                    "direction_t_stat_threshold": _PELT_DIRECTION_T_STAT_THRESHOLD,
                 },
             }
             if include_series and output == "full":

@@ -182,6 +182,33 @@ class TestConsolidatePayload:
         assert result["regime_info"][0]["observed_in_window"] is True
         assert result["regime_info"][1]["observed_in_window"] is True
 
+    def test_msar_regime_info_does_not_remap_canonical_parameters_twice(self):
+        payload = {
+            "symbol": "EURUSD",
+            "timeframe": "H1",
+            "method": "ms_ar",
+            "target": "return",
+            "success": True,
+            "times": ["T1", "T2"],
+            "state": [0, 1],
+            "state_probabilities": [[0.95, 0.05], [0.05, 0.95]],
+            "regime_params": {
+                "mean_return": [-0.002, 0.001],
+                "volatility": [0.003, 0.0005],
+            },
+            "params_used": {
+                "relabeled": True,
+                "label_mapping": {"0": 1, "1": 0},
+            },
+        }
+
+        result = _consolidate_payload(payload, "ms_ar", "full")
+
+        assert result["regime_info"][0]["mean_return"] == pytest.approx(-0.002)
+        assert result["regime_info"][1]["mean_return"] == pytest.approx(0.001)
+        assert result["regimes"][0]["label"].startswith("negative_")
+        assert result["regimes"][1]["label"].startswith("positive_")
+
     def test_compact_regime_history_reports_has_more_and_hint(self):
         payload = {
             "symbol": "EURUSD",

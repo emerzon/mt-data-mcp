@@ -815,7 +815,9 @@ def _consolidate_payload(  # noqa: C901
             regime_params,
             method,
             target=payload.get("target"),
-            label_mapping=label_mapping,
+            # HMM parameter arrays remain in model-native order. Other methods
+            # derive regime_params after canonicalizing their state labels.
+            label_mapping=label_mapping if method == "hmm" else None,
         )
 
         final_segments = []
