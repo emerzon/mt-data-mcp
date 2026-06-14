@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 
 from ..services.data_service import (
+    _is_last_bar_forming,
     _resolve_live_rate_auto_shift_seconds,
     _shift_rate_times,
 )
@@ -804,6 +805,18 @@ def _fetch_mt5_rates_guarded(
                 pass
 
 
+def _drop_forming_live_bar(
+    frame: pd.DataFrame,
+    rates: Any,
+    *,
+    timeframe: str,
+    live_window: bool,
+) -> pd.DataFrame:
+    if live_window and len(frame) >= 2 and _is_last_bar_forming(rates, timeframe):
+        return frame.iloc[:-1]
+    return frame
+
+
 def forecast_volatility(  # noqa: C901
     symbol: str,
     timeframe: TimeframeLiteral = "H1",
@@ -1044,8 +1057,12 @@ def forecast_volatility(  # noqa: C901
             if rates is None or len(rates) < 5:
                 return {"error": f"Failed to get sufficient rates for {symbol}: {mt5.last_error()}"}
             df = pd.DataFrame(rates)
-            if as_of is None and end is None and len(df) >= 2:
-                df = df.iloc[:-1]
+            df = _drop_forming_live_bar(
+                df,
+                rates,
+                timeframe=timeframe,
+                live_window=as_of is None and end is None,
+            )
             if len(df) < 5:
                 return {"error": "Not enough closed bars"}
             if denoise:
@@ -1240,8 +1257,12 @@ def forecast_volatility(  # noqa: C901
                 if rates_rv is None or len(rates_rv) < 50:
                     return {"error": f"Failed to get intraday rates for RV: {mt5.last_error()}"}
                 dfrv = pd.DataFrame(rates_rv)
-                if as_of is None and end is None and len(dfrv) >= 2:
-                    dfrv = dfrv.iloc[:-1]
+                dfrv = _drop_forming_live_bar(
+                    dfrv,
+                    rates_rv,
+                    timeframe=rv_tf,
+                    live_window=as_of is None and end is None,
+                )
                 if dn_spec_used:
                     try:
                         _apply_denoise(dfrv, dn_spec_used, default_when='pre_ti')
@@ -1335,8 +1356,12 @@ def forecast_volatility(  # noqa: C901
             return {"error": f"Failed to get sufficient rates for {symbol}: {mt5.last_error()}"}
 
         df = pd.DataFrame(rates)
-        if as_of is None and end is None and len(df) >= 2:
-            df = df.iloc[:-1]
+        df = _drop_forming_live_bar(
+            df,
+            rates,
+            timeframe=timeframe,
+            live_window=as_of is None and end is None,
+        )
         if len(df) < 3:
             return {"error": "Not enough closed bars"}
         # Normalize and apply denoise spec (uniform behavior)

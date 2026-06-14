@@ -229,6 +229,7 @@ def test_forecast_volatility_direct_methods_and_short_data(monkeypatch):
     monkeypatch.setattr("mtdata.utils.mt5._mt5_epoch_to_utc", lambda t: float(t))
     monkeypatch.setattr(vol.mt5, "last_error", lambda: (0, "ok"))
     monkeypatch.setattr(vol, "_mt5_copy_rates_from", lambda *args, **kwargs: _rates(240))
+    monkeypatch.setattr(vol, "_is_last_bar_forming", lambda *_args, **_kwargs: False)
 
     out = vol.forecast_volatility(
         symbol="EURUSD",
@@ -255,8 +256,8 @@ def test_forecast_volatility_direct_methods_and_short_data(monkeypatch):
     assert out["volatility_horizon_annualized"] == pytest.approx(
         out["volatility_annualized"], rel=1e-6
     )
-    assert out["data_window"]["bars_used"] == 239
-    assert out["data_window"]["returns_used"] == 238
+    assert out["data_window"]["bars_used"] == 240
+    assert out["data_window"]["returns_used"] == 239
     assert out["data_window"]["input_bar_policy"] == "closed_bars_only"
     assert out["data_as_of"] == out["data_window"]["end"]
     assert out["freshness_basis"] == "bar_policy"
@@ -286,6 +287,28 @@ def test_forecast_volatility_direct_methods_and_short_data(monkeypatch):
     assert "Insufficient returns" in out["error"]
 
 
+def test_drop_forming_live_bar_preserves_last_closed_bar(monkeypatch):
+    frame = pd.DataFrame({"time": [1.0, 2.0, 3.0], "close": [1.0, 1.1, 1.2]})
+
+    monkeypatch.setattr(vol, "_is_last_bar_forming", lambda *_args, **_kwargs: False)
+    closed = vol._drop_forming_live_bar(
+        frame,
+        frame.to_dict("records"),
+        timeframe="H1",
+        live_window=True,
+    )
+    assert len(closed) == 3
+
+    monkeypatch.setattr(vol, "_is_last_bar_forming", lambda *_args, **_kwargs: True)
+    forming = vol._drop_forming_live_bar(
+        frame,
+        frame.to_dict("records"),
+        timeframe="H1",
+        live_window=True,
+    )
+    assert len(forming) == 2
+
+
 def test_forecast_volatility_compact_includes_input_window(monkeypatch):
     monkeypatch.setattr(vol, "TIMEFRAME_MAP", {"H1": 1})
     monkeypatch.setattr(vol, "TIMEFRAME_SECONDS", {"H1": 3600})
@@ -295,6 +318,7 @@ def test_forecast_volatility_compact_includes_input_window(monkeypatch):
     monkeypatch.setattr("mtdata.utils.mt5._mt5_epoch_to_utc", lambda value: float(value))
     monkeypatch.setattr(vol.mt5, "last_error", lambda: (0, "ok"))
     monkeypatch.setattr(vol, "_mt5_copy_rates_from", lambda *args, **kwargs: _rates(120))
+    monkeypatch.setattr(vol, "_is_last_bar_forming", lambda *_args, **_kwargs: False)
 
     out = vol.forecast_volatility(
         symbol="EURUSD",
@@ -306,19 +330,19 @@ def test_forecast_volatility_compact_includes_input_window(monkeypatch):
 
     assert out["data_window"] == {
         "start": "2023-11-14T22:13Z",
-        "end": "2023-11-19T20:13Z",
-        "bars_used": 119,
-        "returns_used": 118,
+        "end": "2023-11-19T21:13Z",
+        "bars_used": 120,
+        "returns_used": 119,
         "input_bar_policy": "closed_bars_only",
     }
-    assert out["data_as_of"] == "2023-11-19T20:13Z"
+    assert out["data_as_of"] == "2023-11-19T21:13Z"
     assert out["forecast_window"] == {
-        "anchor": "2023-11-19T20:13Z",
-        "start": "2023-11-19T22:00Z",
-        "end": "2023-11-20T09:00Z",
+        "anchor": "2023-11-19T21:13Z",
+        "start": "2023-11-19T22:13Z",
+        "end": "2023-11-20T09:13Z",
         "bars": 12,
         "step_seconds": 3600,
-        "forecast_start_gap_bars": 1.7778,
+        "forecast_start_gap_bars": 1.0,
         "calendar_policy": "forex_weekend_skipped",
     }
     assert out["data_stale"] is True
@@ -381,6 +405,7 @@ def test_forecast_volatility_yang_zhang_weights_overnight_variance(monkeypatch):
     monkeypatch.setattr(vol.mt5, "symbol_info_tick", lambda _symbol: SimpleNamespace(time=1_700_100_000))
     monkeypatch.setattr("mtdata.utils.mt5._mt5_epoch_to_utc", lambda t: float(t))
     monkeypatch.setattr(vol.mt5, "last_error", lambda: (0, "ok"))
+    monkeypatch.setattr(vol, "_is_last_bar_forming", lambda *_args, **_kwargs: True)
 
     rows = [
         (100.0, 110.0),
