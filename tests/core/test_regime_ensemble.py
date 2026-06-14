@@ -43,7 +43,7 @@ def _mock_fetch_history(
     )
 
 
-@patch("mtdata.core.regime._fetch_history", side_effect=_mock_fetch_history)
+@patch("mtdata.core.regime.api._fetch_history", side_effect=_mock_fetch_history)
 class TestEnsembleRegime:
     """Tests for the ensemble (consensus voting) regime detection method."""
 

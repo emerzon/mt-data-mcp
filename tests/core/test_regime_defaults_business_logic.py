@@ -7,8 +7,8 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from mtdata.core import regime as regime_mod
-from mtdata.core.regime import _auto_calibrate_bocpd_params, regime_detect
+from mtdata.core.regime import api as regime_mod
+from mtdata.core.regime.api import _auto_calibrate_bocpd_params, regime_detect
 from mtdata.core.regime.methods.bocpd.core import (
     _walkforward_quantile_threshold_calibration,
 )
@@ -38,13 +38,13 @@ def test_regime_detect_defaults_to_compact_output() -> None:
     cp[-2] = 0.9
 
     with (
-        patch("mtdata.core.regime._fetch_history", return_value=_sample_df(80)),
+        patch("mtdata.core.regime.api._fetch_history", return_value=_sample_df(80)),
         patch(
-            "mtdata.core.regime._resolve_denoise_base_col",
+            "mtdata.core.regime.api._resolve_denoise_base_col",
             return_value="close",
         ),
         patch(
-            "mtdata.core.regime._format_time_minimal",
+            "mtdata.core.regime.api._format_time_minimal",
             side_effect=lambda x: f"T{x}",
         ),
         patch(
@@ -74,9 +74,9 @@ def test_regime_detect_accepts_standard_detail_as_compact() -> None:
     cp = np.zeros(79, dtype=float)
 
     with (
-        patch("mtdata.core.regime._fetch_history", return_value=_sample_df(80)),
-        patch("mtdata.core.regime._resolve_denoise_base_col", return_value="close"),
-        patch("mtdata.core.regime._format_time_minimal", side_effect=lambda x: f"T{x}"),
+        patch("mtdata.core.regime.api._fetch_history", return_value=_sample_df(80)),
+        patch("mtdata.core.regime.api._resolve_denoise_base_col", return_value="close"),
+        patch("mtdata.core.regime.api._format_time_minimal", side_effect=lambda x: f"T{x}"),
         patch("mtdata.utils.regime.bocpd_gaussian", return_value={"cp_prob": cp}),
     ):
         out = raw(
@@ -123,13 +123,13 @@ def test_bocpd_uses_crypto_sensitive_auto_hazard_default() -> None:
         return {"cp_prob": np.zeros_like(x, dtype=float)}
 
     with (
-        patch("mtdata.core.regime._fetch_history", return_value=_sample_df(80)),
+        patch("mtdata.core.regime.api._fetch_history", return_value=_sample_df(80)),
         patch(
-            "mtdata.core.regime._resolve_denoise_base_col",
+            "mtdata.core.regime.api._resolve_denoise_base_col",
             return_value="close",
         ),
         patch(
-            "mtdata.core.regime._format_time_minimal",
+            "mtdata.core.regime.api._format_time_minimal",
             side_effect=lambda x: f"T{x}",
         ),
         patch(
@@ -171,13 +171,13 @@ def test_bocpd_hazard_lambda_param_override_is_preserved() -> None:
         return {"cp_prob": np.zeros_like(x, dtype=float)}
 
     with (
-        patch("mtdata.core.regime._fetch_history", return_value=_sample_df(80)),
+        patch("mtdata.core.regime.api._fetch_history", return_value=_sample_df(80)),
         patch(
-            "mtdata.core.regime._resolve_denoise_base_col",
+            "mtdata.core.regime.api._resolve_denoise_base_col",
             return_value="close",
         ),
         patch(
-            "mtdata.core.regime._format_time_minimal",
+            "mtdata.core.regime.api._format_time_minimal",
             side_effect=lambda x: f"T{x}",
         ),
         patch(
@@ -207,13 +207,13 @@ def test_bocpd_cp_threshold_param_override_is_preserved() -> None:
     cp = np.zeros(79, dtype=float)
 
     with (
-        patch("mtdata.core.regime._fetch_history", return_value=_sample_df(80)),
+        patch("mtdata.core.regime.api._fetch_history", return_value=_sample_df(80)),
         patch(
-            "mtdata.core.regime._resolve_denoise_base_col",
+            "mtdata.core.regime.api._resolve_denoise_base_col",
             return_value="close",
         ),
         patch(
-            "mtdata.core.regime._format_time_minimal",
+            "mtdata.core.regime.api._format_time_minimal",
             side_effect=lambda x: f"T{x}",
         ),
         patch(
@@ -241,13 +241,13 @@ def test_bocpd_hazard_mode_auto_calibrated_sets_sources_and_diagnostics() -> Non
     cp = np.zeros(79, dtype=float)
 
     with (
-        patch("mtdata.core.regime._fetch_history", return_value=_sample_df(80)),
+        patch("mtdata.core.regime.api._fetch_history", return_value=_sample_df(80)),
         patch(
-            "mtdata.core.regime._resolve_denoise_base_col",
+            "mtdata.core.regime.api._resolve_denoise_base_col",
             return_value="close",
         ),
         patch(
-            "mtdata.core.regime._format_time_minimal",
+            "mtdata.core.regime.api._format_time_minimal",
             side_effect=lambda x: f"T{x}",
         ),
         patch(
@@ -280,13 +280,13 @@ def test_bocpd_hazard_lambda_override_beats_auto_calibrated_mode() -> None:
     cp = np.zeros(79, dtype=float)
 
     with (
-        patch("mtdata.core.regime._fetch_history", return_value=_sample_df(80)),
+        patch("mtdata.core.regime.api._fetch_history", return_value=_sample_df(80)),
         patch(
-            "mtdata.core.regime._resolve_denoise_base_col",
+            "mtdata.core.regime.api._resolve_denoise_base_col",
             return_value="close",
         ),
         patch(
-            "mtdata.core.regime._format_time_minimal",
+            "mtdata.core.regime.api._format_time_minimal",
             side_effect=lambda x: f"T{x}",
         ),
         patch(
@@ -333,9 +333,9 @@ def test_auto_calibrate_bocpd_params_significant_move_lowers_hazard_and_threshol
 def test_regime_detect_rejects_invalid_min_regime_bars() -> None:
     raw = _unwrap(regime_detect)
     with (
-        patch("mtdata.core.regime._fetch_history", return_value=_sample_df(80)),
+        patch("mtdata.core.regime.api._fetch_history", return_value=_sample_df(80)),
         patch(
-            "mtdata.core.regime._resolve_denoise_base_col",
+            "mtdata.core.regime.api._resolve_denoise_base_col",
             return_value="close",
         ),
     ):
@@ -354,8 +354,8 @@ def test_regime_detect_default_min_regime_bars_is_dynamic() -> None:
 
     # Verify that effective defaults are applied based on timeframe
     with (
-        patch("mtdata.core.regime._fetch_history", return_value=_sample_df(800)),
-        patch("mtdata.core.regime._resolve_denoise_base_col", return_value="close"),
+        patch("mtdata.core.regime.api._fetch_history", return_value=_sample_df(800)),
+        patch("mtdata.core.regime.api._resolve_denoise_base_col", return_value="close"),
     ):
         # M1 should get higher defaults
         out_m1 = raw(symbol="TEST", timeframe="M1", method="hmm", detail="full")
@@ -380,9 +380,9 @@ def test_regime_detect_default_fetch_limit_tracks_timeframe_lookback() -> None:
         return _sample_df(limit)
 
     with (
-        patch("mtdata.core.regime._fetch_history", side_effect=fake_fetch_history),
-        patch("mtdata.core.regime._resolve_denoise_base_col", return_value="close"),
-        patch("mtdata.core.regime._format_time_minimal", side_effect=lambda x: f"T{x}"),
+        patch("mtdata.core.regime.api._fetch_history", side_effect=fake_fetch_history),
+        patch("mtdata.core.regime.api._resolve_denoise_base_col", return_value="close"),
+        patch("mtdata.core.regime.api._format_time_minimal", side_effect=lambda x: f"T{x}"),
     ):
         out = raw(symbol="TEST", timeframe="H1", method="rule_based")
 
@@ -399,9 +399,9 @@ def test_regime_detect_explicit_limit_still_caps_fetch_history() -> None:
         return _sample_df(limit)
 
     with (
-        patch("mtdata.core.regime._fetch_history", side_effect=fake_fetch_history),
-        patch("mtdata.core.regime._resolve_denoise_base_col", return_value="close"),
-        patch("mtdata.core.regime._format_time_minimal", side_effect=lambda x: f"T{x}"),
+        patch("mtdata.core.regime.api._fetch_history", side_effect=fake_fetch_history),
+        patch("mtdata.core.regime.api._resolve_denoise_base_col", return_value="close"),
+        patch("mtdata.core.regime.api._format_time_minimal", side_effect=lambda x: f"T{x}"),
     ):
         out = raw(
             symbol="TEST",
@@ -420,13 +420,13 @@ def test_bocpd_zero_change_points_includes_tuning_hint() -> None:
     cp = np.zeros(79, dtype=float)
 
     with (
-        patch("mtdata.core.regime._fetch_history", return_value=_sample_df(80)),
+        patch("mtdata.core.regime.api._fetch_history", return_value=_sample_df(80)),
         patch(
-            "mtdata.core.regime._resolve_denoise_base_col",
+            "mtdata.core.regime.api._resolve_denoise_base_col",
             return_value="close",
         ),
         patch(
-            "mtdata.core.regime._format_time_minimal",
+            "mtdata.core.regime.api._format_time_minimal",
             side_effect=lambda x: f"T{x}",
         ),
         patch(
@@ -460,13 +460,13 @@ def test_bocpd_filters_last_bar_spike_with_strict_confirmation() -> None:
         return {"cp_prob": cp}
 
     with (
-        patch("mtdata.core.regime._fetch_history", return_value=_sample_df(220)),
+        patch("mtdata.core.regime.api._fetch_history", return_value=_sample_df(220)),
         patch(
-            "mtdata.core.regime._resolve_denoise_base_col",
+            "mtdata.core.regime.api._resolve_denoise_base_col",
             return_value="close",
         ),
         patch(
-            "mtdata.core.regime._format_time_minimal",
+            "mtdata.core.regime.api._format_time_minimal",
             side_effect=lambda x: f"T{x}",
         ),
         patch(
@@ -501,13 +501,13 @@ def test_bocpd_walkforward_threshold_calibration_metadata_is_exposed() -> None:
         return {"cp_prob": cp}
 
     with (
-        patch("mtdata.core.regime._fetch_history", return_value=_sample_df(220)),
+        patch("mtdata.core.regime.api._fetch_history", return_value=_sample_df(220)),
         patch(
-            "mtdata.core.regime._resolve_denoise_base_col",
+            "mtdata.core.regime.api._resolve_denoise_base_col",
             return_value="close",
         ),
         patch(
-            "mtdata.core.regime._format_time_minimal",
+            "mtdata.core.regime.api._format_time_minimal",
             side_effect=lambda x: f"T{x}",
         ),
         patch(
@@ -531,13 +531,13 @@ def test_bocpd_summary_contains_reliability_fields() -> None:
     cp[150] = 0.9
 
     with (
-        patch("mtdata.core.regime._fetch_history", return_value=_sample_df(220)),
+        patch("mtdata.core.regime.api._fetch_history", return_value=_sample_df(220)),
         patch(
-            "mtdata.core.regime._resolve_denoise_base_col",
+            "mtdata.core.regime.api._resolve_denoise_base_col",
             return_value="close",
         ),
         patch(
-            "mtdata.core.regime._format_time_minimal",
+            "mtdata.core.regime.api._format_time_minimal",
             side_effect=lambda x: f"T{x}",
         ),
         patch(
@@ -590,21 +590,21 @@ def test_bocpd_calibrated_threshold_does_not_overreject_at_edge_by_default() -> 
     )
 
     with (
-        patch("mtdata.core.regime._fetch_history", return_value=_sample_df(220)),
+        patch("mtdata.core.regime.api._fetch_history", return_value=_sample_df(220)),
         patch(
-            "mtdata.core.regime._resolve_denoise_base_col",
+            "mtdata.core.regime.api._resolve_denoise_base_col",
             return_value="close",
         ),
         patch(
-            "mtdata.core.regime._format_time_minimal",
+            "mtdata.core.regime.api._format_time_minimal",
             side_effect=lambda x: f"T{x}",
         ),
         patch(
-            "mtdata.core.regime._auto_calibrate_bocpd_params",
+            "mtdata.core.regime.api._auto_calibrate_bocpd_params",
             return_value=fake_auto,
         ),
         patch(
-            "mtdata.core.regime._walkforward_quantile_threshold_calibration",
+            "mtdata.core.regime.api._walkforward_quantile_threshold_calibration",
             return_value=fake_thr_cal,
         ),
         patch(
@@ -655,21 +655,21 @@ def test_bocpd_default_cp_confirm_bars_is_live_mode_one() -> None:
     )
 
     with (
-        patch("mtdata.core.regime._fetch_history", return_value=_sample_df(220)),
+        patch("mtdata.core.regime.api._fetch_history", return_value=_sample_df(220)),
         patch(
-            "mtdata.core.regime._resolve_denoise_base_col",
+            "mtdata.core.regime.api._resolve_denoise_base_col",
             return_value="close",
         ),
         patch(
-            "mtdata.core.regime._format_time_minimal",
+            "mtdata.core.regime.api._format_time_minimal",
             side_effect=lambda x: f"T{x}",
         ),
         patch(
-            "mtdata.core.regime._auto_calibrate_bocpd_params",
+            "mtdata.core.regime.api._auto_calibrate_bocpd_params",
             return_value=fake_auto,
         ),
         patch(
-            "mtdata.core.regime._walkforward_quantile_threshold_calibration",
+            "mtdata.core.regime.api._walkforward_quantile_threshold_calibration",
             return_value=fake_thr_cal,
         ),
         patch(

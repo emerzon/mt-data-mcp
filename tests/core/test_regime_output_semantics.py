@@ -6,10 +6,13 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from mtdata.core import regime as regime_mod
-from mtdata.core.regime import _consolidate_payload, regime_detect
 from mtdata.core.regime import api as regime_api
-from mtdata.core.regime.api import _build_all_method_comparison
+from mtdata.core.regime import api as regime_mod
+from mtdata.core.regime.api import (
+    _build_all_method_comparison,
+    _consolidate_payload,
+    regime_detect,
+)
 from mtdata.core.regime.payload import _build_regime_descriptions
 
 
@@ -385,9 +388,9 @@ def test_rule_based_uses_price_window_metrics_for_return_target() -> None:
     )
 
     with (
-        patch("mtdata.core.regime._fetch_history", return_value=history),
-        patch("mtdata.core.regime._resolve_denoise_base_col", return_value="close"),
-        patch("mtdata.core.regime._format_time_minimal", side_effect=lambda x: f"T{x}"),
+        patch("mtdata.core.regime.api._fetch_history", return_value=history),
+        patch("mtdata.core.regime.api._resolve_denoise_base_col", return_value="close"),
+        patch("mtdata.core.regime.api._format_time_minimal", side_effect=lambda x: f"T{x}"),
     ):
         out = raw(
             symbol="TEST",
@@ -412,9 +415,9 @@ def test_rule_based_full_series_uses_price_window_timestamps_for_return_target()
     raw = _unwrap(regime_detect)
 
     with (
-        patch("mtdata.core.regime._fetch_history", return_value=_downtrend_df(100)),
-        patch("mtdata.core.regime._resolve_denoise_base_col", return_value="close"),
-        patch("mtdata.core.regime._format_time_minimal", side_effect=lambda x: f"T{x}"),
+        patch("mtdata.core.regime.api._fetch_history", return_value=_downtrend_df(100)),
+        patch("mtdata.core.regime.api._resolve_denoise_base_col", return_value="close"),
+        patch("mtdata.core.regime.api._format_time_minimal", side_effect=lambda x: f"T{x}"),
     ):
         out = raw(
             symbol="TEST",
@@ -443,9 +446,9 @@ def test_rule_based_window_bars_expands_fetch_limit() -> None:
         return _downtrend_df(limit)
 
     with (
-        patch("mtdata.core.regime._fetch_history", side_effect=fake_fetch_history),
-        patch("mtdata.core.regime._resolve_denoise_base_col", return_value="close"),
-        patch("mtdata.core.regime._format_time_minimal", side_effect=lambda x: f"T{x}"),
+        patch("mtdata.core.regime.api._fetch_history", side_effect=fake_fetch_history),
+        patch("mtdata.core.regime.api._resolve_denoise_base_col", return_value="close"),
+        patch("mtdata.core.regime.api._format_time_minimal", side_effect=lambda x: f"T{x}"),
     ):
         out = raw(
             symbol="TEST",
@@ -498,9 +501,9 @@ def test_rule_based_ranging_confidence_uses_ranging_evidence() -> None:
     raw = _unwrap(regime_detect)
 
     with (
-        patch("mtdata.core.regime._fetch_history", return_value=_flat_df()),
-        patch("mtdata.core.regime._resolve_denoise_base_col", return_value="close"),
-        patch("mtdata.core.regime._format_time_minimal", side_effect=lambda x: f"T{x}"),
+        patch("mtdata.core.regime.api._fetch_history", return_value=_flat_df()),
+        patch("mtdata.core.regime.api._resolve_denoise_base_col", return_value="close"),
+        patch("mtdata.core.regime.api._format_time_minimal", side_effect=lambda x: f"T{x}"),
     ):
         out = raw(
             symbol="TEST",
@@ -520,9 +523,9 @@ def test_rule_based_explains_ranging_direction_bias() -> None:
     raw = _unwrap(regime_detect)
 
     with (
-        patch("mtdata.core.regime._fetch_history", return_value=_choppy_bearish_df()),
-        patch("mtdata.core.regime._resolve_denoise_base_col", return_value="close"),
-        patch("mtdata.core.regime._format_time_minimal", side_effect=lambda x: f"T{x}"),
+        patch("mtdata.core.regime.api._fetch_history", return_value=_choppy_bearish_df()),
+        patch("mtdata.core.regime.api._resolve_denoise_base_col", return_value="close"),
+        patch("mtdata.core.regime.api._format_time_minimal", side_effect=lambda x: f"T{x}"),
     ):
         out = raw(
             symbol="TEST",
@@ -548,9 +551,9 @@ def test_rule_based_compact_explains_direction_bias() -> None:
     raw = _unwrap(regime_detect)
 
     with (
-        patch("mtdata.core.regime._fetch_history", return_value=_choppy_bearish_df()),
-        patch("mtdata.core.regime._resolve_denoise_base_col", return_value="close"),
-        patch("mtdata.core.regime._format_time_minimal", side_effect=lambda x: f"T{x}"),
+        patch("mtdata.core.regime.api._fetch_history", return_value=_choppy_bearish_df()),
+        patch("mtdata.core.regime.api._resolve_denoise_base_col", return_value="close"),
+        patch("mtdata.core.regime.api._format_time_minimal", side_effect=lambda x: f"T{x}"),
     ):
         out = raw(
             symbol="TEST",
@@ -588,9 +591,9 @@ def test_rule_based_summary_explains_direction_bias() -> None:
     raw = _unwrap(regime_detect)
 
     with (
-        patch("mtdata.core.regime._fetch_history", return_value=_choppy_bearish_df()),
-        patch("mtdata.core.regime._resolve_denoise_base_col", return_value="close"),
-        patch("mtdata.core.regime._format_time_minimal", side_effect=lambda x: f"T{x}"),
+        patch("mtdata.core.regime.api._fetch_history", return_value=_choppy_bearish_df()),
+        patch("mtdata.core.regime.api._resolve_denoise_base_col", return_value="close"),
+        patch("mtdata.core.regime.api._format_time_minimal", side_effect=lambda x: f"T{x}"),
     ):
         out = raw(
             symbol="TEST",
@@ -612,9 +615,9 @@ def test_rule_based_warns_for_inapplicable_parameters() -> None:
     raw = _unwrap(regime_detect)
 
     with (
-        patch("mtdata.core.regime._fetch_history", return_value=_choppy_bearish_df()),
-        patch("mtdata.core.regime._resolve_denoise_base_col", return_value="close"),
-        patch("mtdata.core.regime._format_time_minimal", side_effect=lambda x: f"T{x}"),
+        patch("mtdata.core.regime.api._fetch_history", return_value=_choppy_bearish_df()),
+        patch("mtdata.core.regime.api._resolve_denoise_base_col", return_value="close"),
+        patch("mtdata.core.regime.api._format_time_minimal", side_effect=lambda x: f"T{x}"),
     ):
         out = raw(
             symbol="TEST",
@@ -639,9 +642,9 @@ def test_rule_based_lookback_controls_window_when_window_bars_omitted() -> None:
     raw = _unwrap(regime_detect)
 
     with (
-        patch("mtdata.core.regime._fetch_history", return_value=_choppy_bearish_df()),
-        patch("mtdata.core.regime._resolve_denoise_base_col", return_value="close"),
-        patch("mtdata.core.regime._format_time_minimal", side_effect=lambda x: f"T{x}"),
+        patch("mtdata.core.regime.api._fetch_history", return_value=_choppy_bearish_df()),
+        patch("mtdata.core.regime.api._resolve_denoise_base_col", return_value="close"),
+        patch("mtdata.core.regime.api._format_time_minimal", side_effect=lambda x: f"T{x}"),
     ):
         out = raw(
             symbol="TEST",
@@ -668,9 +671,9 @@ def test_gmm_alias_reports_requested_method_and_common_reliability() -> None:
     sigma = np.array([0.0004, 0.002])
 
     with (
-        patch("mtdata.core.regime._fetch_history", return_value=history),
-        patch("mtdata.core.regime._resolve_denoise_base_col", return_value="close"),
-        patch("mtdata.core.regime._format_time_minimal", side_effect=lambda x: f"T{x}"),
+        patch("mtdata.core.regime.api._fetch_history", return_value=history),
+        patch("mtdata.core.regime.api._resolve_denoise_base_col", return_value="close"),
+        patch("mtdata.core.regime.api._format_time_minimal", side_effect=lambda x: f"T{x}"),
         patch(
             "mtdata.core.regime.api.fit_gaussian_mixture_1d",
             return_value=(weights, mu, sigma, gamma, None),
@@ -720,10 +723,10 @@ def test_ensemble_bocpd_uses_submethod_threshold_for_vote() -> None:
         }
 
     with (
-        patch("mtdata.core.regime._fetch_history", return_value=history),
-        patch("mtdata.core.regime._resolve_denoise_base_col", return_value="close"),
-        patch("mtdata.core.regime._format_time_minimal", side_effect=lambda x: f"T{x}"),
-        patch("mtdata.core.regime.call_tool_sync_structured", side_effect=fake_call_tool),
+        patch("mtdata.core.regime.api._fetch_history", return_value=history),
+        patch("mtdata.core.regime.api._resolve_denoise_base_col", return_value="close"),
+        patch("mtdata.core.regime.api._format_time_minimal", side_effect=lambda x: f"T{x}"),
+        patch("mtdata.core.regime.api.call_tool_sync_structured", side_effect=fake_call_tool),
     ):
         out = raw(
             symbol="TEST",
@@ -766,10 +769,10 @@ def test_ensemble_keeps_invalid_leading_submethod_rows_undefined() -> None:
         }
 
     with (
-        patch("mtdata.core.regime._fetch_history", return_value=history),
-        patch("mtdata.core.regime._resolve_denoise_base_col", return_value="close"),
-        patch("mtdata.core.regime._format_time_minimal", side_effect=lambda x: f"T{x}"),
-        patch("mtdata.core.regime.call_tool_sync_structured", side_effect=fake_call_tool),
+        patch("mtdata.core.regime.api._fetch_history", return_value=history),
+        patch("mtdata.core.regime.api._resolve_denoise_base_col", return_value="close"),
+        patch("mtdata.core.regime.api._format_time_minimal", side_effect=lambda x: f"T{x}"),
+        patch("mtdata.core.regime.api.call_tool_sync_structured", side_effect=fake_call_tool),
     ):
         out = raw(
             symbol="TEST",
@@ -791,8 +794,8 @@ def test_garch_rejects_price_target() -> None:
     raw = _unwrap(regime_detect)
 
     with (
-        patch("mtdata.core.regime._fetch_history", return_value=_downtrend_df(80)),
-        patch("mtdata.core.regime._resolve_denoise_base_col", return_value="close"),
+        patch("mtdata.core.regime.api._fetch_history", return_value=_downtrend_df(80)),
+        patch("mtdata.core.regime.api._resolve_denoise_base_col", return_value="close"),
     ):
         out = raw(
             symbol="TEST",
@@ -810,8 +813,8 @@ def test_wavelet_rejects_non_positive_energy_window() -> None:
     raw = _unwrap(regime_detect)
 
     with (
-        patch("mtdata.core.regime._fetch_history", return_value=_downtrend_df(80)),
-        patch("mtdata.core.regime._resolve_denoise_base_col", return_value="close"),
+        patch("mtdata.core.regime.api._fetch_history", return_value=_downtrend_df(80)),
+        patch("mtdata.core.regime.api._resolve_denoise_base_col", return_value="close"),
     ):
         out = raw(
             symbol="TEST",

@@ -11,7 +11,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from mtdata.core import regime as regime_mod
+from mtdata.core.regime import api as regime_mod
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -41,7 +41,7 @@ def _time_fmt_stub(epoch):
 # _consolidate_payload tests
 # ---------------------------------------------------------------------------
 
-from mtdata.core.regime import (
+from mtdata.core.regime.api import (
     _consolidate_payload,
     _smooth_short_state_runs,
     _summary_only_payload,
@@ -425,9 +425,9 @@ def _get_regime_detect():
     return fn
 
 
-_FETCH = "mtdata.core.regime._fetch_history"
-_DENOISE = "mtdata.core.regime._resolve_denoise_base_col"
-_FMT = "mtdata.core.regime._format_time_minimal"
+_FETCH = "mtdata.core.regime.api._fetch_history"
+_DENOISE = "mtdata.core.regime.api._resolve_denoise_base_col"
+_FMT = "mtdata.core.regime.api._format_time_minimal"
 
 
 class TestRegimeDetectBOCPD:
@@ -869,7 +869,7 @@ class TestRegimeDetectHMM:
         mu = np.array([0.0, 0.001])
         sigma = np.array([0.001, 0.003])
         with patch(
-            "mtdata.core.regime.fit_gaussian_mixture_1d",
+            "mtdata.core.regime.api.fit_gaussian_mixture_1d",
             return_value=(w, mu, sigma, gamma, None),
             create=True,
         ):
@@ -890,7 +890,7 @@ class TestRegimeDetectHMM:
         mu = np.array([0.0, 0.001])
         sigma = np.array([0.001, 0.003])
         with patch(
-            "mtdata.core.regime.fit_gaussian_mixture_1d",
+            "mtdata.core.regime.api.fit_gaussian_mixture_1d",
             return_value=(w, mu, sigma, gamma, None),
             create=True,
         ):
@@ -910,7 +910,7 @@ class TestRegimeDetectHMM:
         mu = np.array([0.0, 0.001])
         sigma = np.array([0.001, 0.003])
         with patch(
-            "mtdata.core.regime.fit_gaussian_mixture_1d",
+            "mtdata.core.regime.api.fit_gaussian_mixture_1d",
             return_value=(w, mu, sigma, gamma, None),
             create=True,
         ):
@@ -930,7 +930,7 @@ class TestRegimeDetectHMM:
         mu = np.array([0.0, 0.001])
         sigma = np.array([0.001, 0.003])
         with patch(
-            "mtdata.core.regime.fit_gaussian_mixture_1d",
+            "mtdata.core.regime.api.fit_gaussian_mixture_1d",
             return_value=(w, mu, sigma, gamma, None),
             create=True,
         ):
@@ -957,7 +957,7 @@ class TestRegimeDetectHMM:
         mu = np.array([0.0, 0.001])
         sigma = np.array([0.001, 0.003])
         with patch(
-            "mtdata.core.regime.fit_gaussian_mixture_1d",
+            "mtdata.core.regime.api.fit_gaussian_mixture_1d",
             return_value=(w, mu, sigma, gamma, None),
             create=True,
         ):
@@ -997,7 +997,7 @@ class TestRegimeDetectHMM:
         mu = np.array([0.0, 0.001])
         sigma = np.array([0.001, 0.003])
         with patch(
-            "mtdata.core.regime.fit_gaussian_mixture_1d",
+            "mtdata.core.regime.api.fit_gaussian_mixture_1d",
             return_value=(w, mu, sigma, gamma, None),
             create=True,
         ):
@@ -1048,7 +1048,7 @@ class TestRegimeDetectHMM:
         mu = np.array([0.0, 0.001, -0.001])
         sigma = np.array([0.001, 0.003, 0.002])
         with patch(
-            "mtdata.core.regime.fit_gaussian_mixture_1d",
+            "mtdata.core.regime.api.fit_gaussian_mixture_1d",
             return_value=(w, mu, sigma, gamma, None),
             create=True,
         ):
@@ -1147,11 +1147,12 @@ class TestRegimeDetectClustering:
         mock_extract = MagicMock(return_value=features)
         with (
             patch(
-                "mtdata.core.regime.extract_rolling_features", mock_extract, create=True
+                "mtdata.core.regime.api._features_module.extract_rolling_features",
+                mock_extract,
             ),
-            patch("mtdata.core.regime.StandardScaler", create=True) as mock_scaler_cls,
-            patch("mtdata.core.regime.KMeans", create=True) as mock_kmeans_cls,
-            patch("mtdata.core.regime.PCA", create=True) as mock_pca_cls,
+            patch("mtdata.core.regime.api.StandardScaler", create=True) as mock_scaler_cls,
+            patch("mtdata.core.regime.api.KMeans", create=True) as mock_kmeans_cls,
+            patch("mtdata.core.regime.api.PCA", create=True) as mock_pca_cls,
         ):
             mock_scaler = MagicMock()
             mock_scaler.fit_transform.return_value = np.random.default_rng(2).random(
@@ -1189,11 +1190,12 @@ class TestRegimeDetectClustering:
         mock_extract = MagicMock(return_value=features)
         with (
             patch(
-                "mtdata.core.regime.extract_rolling_features", mock_extract, create=True
+                "mtdata.core.regime.api._features_module.extract_rolling_features",
+                mock_extract,
             ),
-            patch("mtdata.core.regime.StandardScaler", create=True) as mock_scaler_cls,
-            patch("mtdata.core.regime.KMeans", create=True) as mock_kmeans_cls,
-            patch("mtdata.core.regime.PCA", create=True) as mock_pca_cls,
+            patch("mtdata.core.regime.api.StandardScaler", create=True) as mock_scaler_cls,
+            patch("mtdata.core.regime.api.KMeans", create=True) as mock_kmeans_cls,
+            patch("mtdata.core.regime.api.PCA", create=True) as mock_pca_cls,
         ):
             mock_scaler = MagicMock()
             mock_scaler.fit_transform.return_value = np.random.default_rng(2).random(
@@ -1245,11 +1247,12 @@ class TestRegimeDetectClustering:
         mock_extract = MagicMock(return_value=features)
         with (
             patch(
-                "mtdata.core.regime.extract_rolling_features", mock_extract, create=True
+                "mtdata.core.regime.api._features_module.extract_rolling_features",
+                mock_extract,
             ),
-            patch("mtdata.core.regime.StandardScaler", create=True) as mock_scaler_cls,
-            patch("mtdata.core.regime.KMeans", create=True) as mock_kmeans_cls,
-            patch("mtdata.core.regime.PCA", create=True) as mock_pca_cls,
+            patch("mtdata.core.regime.api.StandardScaler", create=True) as mock_scaler_cls,
+            patch("mtdata.core.regime.api.KMeans", create=True) as mock_kmeans_cls,
+            patch("mtdata.core.regime.api.PCA", create=True) as mock_pca_cls,
         ):
             mock_scaler = MagicMock()
             mock_scaler.fit_transform.return_value = np.random.default_rng(2).random(
@@ -1285,11 +1288,12 @@ class TestRegimeDetectClustering:
         mock_extract = MagicMock(return_value=features)
         with (
             patch(
-                "mtdata.core.regime.extract_rolling_features", mock_extract, create=True
+                "mtdata.core.regime.api._features_module.extract_rolling_features",
+                mock_extract,
             ),
-            patch("mtdata.core.regime.StandardScaler", create=True) as mock_scaler_cls,
-            patch("mtdata.core.regime.KMeans", create=True) as mock_kmeans_cls,
-            patch("mtdata.core.regime.PCA", create=True) as mock_pca_cls,
+            patch("mtdata.core.regime.api.StandardScaler", create=True) as mock_scaler_cls,
+            patch("mtdata.core.regime.api.KMeans", create=True) as mock_kmeans_cls,
+            patch("mtdata.core.regime.api.PCA", create=True) as mock_pca_cls,
         ):
             mock_scaler = MagicMock()
             mock_scaler.fit_transform.return_value = np.random.default_rng(2).random(
@@ -1336,11 +1340,12 @@ class TestRegimeDetectClustering:
         mock_extract = MagicMock(return_value=features)
         with (
             patch(
-                "mtdata.core.regime.extract_rolling_features", mock_extract, create=True
+                "mtdata.core.regime.api._features_module.extract_rolling_features",
+                mock_extract,
             ),
-            patch("mtdata.core.regime.StandardScaler", create=True) as mock_scaler_cls,
-            patch("mtdata.core.regime.KMeans", create=True) as mock_kmeans_cls,
-            patch("mtdata.core.regime.PCA", create=True),
+            patch("mtdata.core.regime.api.StandardScaler", create=True) as mock_scaler_cls,
+            patch("mtdata.core.regime.api.KMeans", create=True) as mock_kmeans_cls,
+            patch("mtdata.core.regime.api.PCA", create=True),
         ):
             mock_scaler = MagicMock()
             mock_scaler.fit_transform.return_value = np.random.default_rng(2).random(

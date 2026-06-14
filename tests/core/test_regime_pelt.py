@@ -3,8 +3,15 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-import mtdata.core.regime as regime
+from mtdata.core.regime import api as regime
 from mtdata.core.regime.api import _pelt_return_direction
+
+
+def _raw_regime_detect():
+    fn = regime.regime_detect
+    while hasattr(fn, "__wrapped__"):
+        fn = fn.__wrapped__
+    return fn
 
 
 def test_pelt_direction_requires_statistically_significant_mean() -> None:
@@ -53,7 +60,7 @@ def test_pelt_detects_structural_break(monkeypatch):
     monkeypatch.setattr(regime, "_regime_connection_error", lambda: None)
     monkeypatch.setattr(regime, "_fetch_history", lambda *args, **kwargs: frame)
 
-    result = regime._regime_detect_raw(
+    result = _raw_regime_detect()(
         symbol="TEST",
         timeframe="H1",
         limit=len(frame),

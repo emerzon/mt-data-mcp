@@ -41,7 +41,7 @@ def _mock_fetch_history(symbol: str, timeframe: str, limit: int, as_of=None) -> 
     )
 
 
-@patch("mtdata.core.regime._fetch_history", side_effect=_mock_fetch_history)
+@patch("mtdata.core.regime.api._fetch_history", side_effect=_mock_fetch_history)
 class TestSpectralClustering:
     """Tests for clustering method with algorithm='spectral'."""
 

@@ -2,7 +2,7 @@
 import numpy as np
 import pytest
 
-from mtdata.core.regime import (
+from mtdata.core.regime.api import (
     _consolidate_payload,
     _smooth_short_state_runs,
     _summary_only_payload,

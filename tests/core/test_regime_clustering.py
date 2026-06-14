@@ -1,6 +1,6 @@
 """Smoke test for clustering-based regime detection on synthetic data.
 
-Runs `mtdata.core.regime.regime_detect` with `method="clustering"` while patching
+Runs `mtdata.core.regime.api.regime_detect` with `method="clustering"` while patching
 the MT5 history fetch to avoid external dependencies.
 """
 
@@ -41,7 +41,7 @@ def _mock_fetch_history(symbol: str, timeframe: str, limit: int, as_of=None) -> 
     )
 
 
-@patch("mtdata.core.regime._fetch_history", side_effect=_mock_fetch_history)
+@patch("mtdata.core.regime.api._fetch_history", side_effect=_mock_fetch_history)
 def main(_mocked_fetch) -> int:
     try:
         res = regime_detect(
