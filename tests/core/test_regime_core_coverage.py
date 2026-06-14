@@ -1216,9 +1216,15 @@ class TestRegimeDetectClustering:
                 "EURUSD", limit=80, method="clustering", target="price", detail="full"
             )
         assert isinstance(res, dict)
-        assert res["warnings"] == [
+        # The price-feature warning must always be present. With short-state
+        # preservation, additional smoothing warnings may also surface when
+        # the synthetic cluster assignments contain short-lived regimes that
+        # cannot be eliminated without losing a state.
+        warnings = res.get("warnings", [])
+        assert (
             "Clustering on price features may produce level-dependent regimes. Consider target='return'."
-        ]
+            in warnings
+        )
 
     @patch(_FMT, side_effect=_time_fmt_stub)
     @patch(_DENOISE, return_value="close")

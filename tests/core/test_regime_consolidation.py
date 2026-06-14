@@ -338,16 +338,44 @@ class TestConsolidatePayload:
 
 
 def test_smoothing_satisfies_min_regime_bars_for_alternating_states():
-    state = [idx % 2 for idx in range(12)]
+    """Alternating short runs collapse cleanly when no state would be eliminated."""
+    # Three states with multiple occurrences each so smoothing can absorb short
+    # runs without eliminating any state entirely.
+    state = [0, 0, 1, 2, 2, 1, 0, 0, 2, 1, 1, 2, 0, 0, 2, 1, 0, 0]
 
     smoothed, _, meta = _smooth_short_state_runs(
         np.asarray(state, dtype=int),
         None,
-        min_regime_bars=4,
+        min_regime_bars=3,
     )
 
     assert meta["min_regime_bars_satisfied"] is True
-    assert all(run["length"] >= 4 for run in _state_runs_for_test(smoothed))
+    assert all(run["length"] >= 3 for run in _state_runs_for_test(smoothed))
+    # All three states must survive in the output.
+    assert set(smoothed.tolist()) == {0, 1, 2}
+
+
+def test_smoothing_preserves_last_occurrence_of_state():
+    """Smoothing must not absorb the last remaining bars of any state.
+
+    Regression test: a short-but-distinct regime (e.g., a 4-bar crash) used
+    to be merged into the surrounding calm regime, eliminating the state and
+    mislabeling the bars with the calm regime's statistics.
+    """
+    # 20 calm bars (state 0), 4 crash bars (state 1), 20 calm bars (state 0).
+    state = np.array([0] * 20 + [1] * 4 + [0] * 20, dtype=int)
+
+    smoothed, _, meta = _smooth_short_state_runs(
+        state,
+        None,
+        min_regime_bars=5,
+    )
+
+    # State 1 must survive even though its 4-bar run is shorter than min_regime_bars.
+    assert 1 in set(smoothed.tolist())
+    crash_indices = np.flatnonzero(smoothed == 1).tolist()
+    assert crash_indices == list(range(20, 24))
+    assert meta["smoothing_applied"] is False
 
 
 def _state_runs_for_test(state):

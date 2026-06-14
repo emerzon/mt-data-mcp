@@ -1630,9 +1630,14 @@ def regime_detect(  # noqa: C901
             except Exception as ex:
                 return _finish({"error": f"MS-AR fitting error: {ex}"})
 
-            # Build regime parameters (mean/vol per regime)
+            # Build regime parameters (mean/vol per regime) for states that
+            # actually have observations after smoothing/canonicalization.
+            # Iterating range(n_states_msar) produced phantom entries (0.0
+            # mean / 0.0 vol) for states that smoothing had eliminated,
+            # which then leaked into payload labels and downstream scoring.
+            unique_canonical_states = sorted(int(s) for s in np.unique(state).tolist())
             msar_regime_params = {"mean_return": [], "volatility": []}
-            for s in range(n_states_msar):
+            for s in unique_canonical_states:
                 mask = state == s
                 if mask.any():
                     msar_regime_params["mean_return"].append(float(np.mean(x[mask])))

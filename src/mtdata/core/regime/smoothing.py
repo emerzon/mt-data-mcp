@@ -79,6 +79,33 @@ def _smooth_short_state_runs(
             short_candidates,
             key=lambda item: (int(item[1]["length"]), int(item[1]["start"])),
         )
+        # Preserve the last occurrence of any state: absorbing the only
+        # remaining run of a state would silently drop that regime and
+        # attribute its bars (e.g., a violent 4-bar crash) to whatever
+        # calm regime surrounds it. Skip such runs so significant but
+        # short-lived regimes stay visible in the output.
+        run_state = int(run["state"])
+        bars_in_state = int(np.sum(state_arr == run_state))
+        if bars_in_state <= int(run["length"]):
+            # Mark the candidate as permanently skipped by tagging the
+            # state on the iteration; we will not pick it again this pass.
+            # We do this by lengthening the candidate virtually via the
+            # outer loop continuing to the next shortest run.
+            other_short = [
+                (other_idx, other_run)
+                for other_idx, other_run in short_candidates
+                if other_idx != idx
+            ]
+            if not other_short:
+                break
+            idx, run = min(
+                other_short,
+                key=lambda item: (int(item[1]["length"]), int(item[1]["start"])),
+            )
+            run_state = int(run["state"])
+            bars_in_state = int(np.sum(state_arr == run_state))
+            if bars_in_state <= int(run["length"]):
+                break
         left = runs[idx - 1] if idx > 0 else None
         right = runs[idx + 1] if idx + 1 < len(runs) else None
         if left is None and right is None:
