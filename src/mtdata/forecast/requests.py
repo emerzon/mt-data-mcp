@@ -270,7 +270,13 @@ class ForecastOptimizeHintsRequest(BaseModel):
     generations: int = Field(5, ge=1, le=100)
     crossover_rate: float = Field(0.6, ge=0.0, le=1.0)
     mutation_rate: float = Field(0.3, ge=0.0, le=1.0)
-    fitness_metric: str = "composite"
+    fitness_metric: str = Field(
+        "composite",
+        description=(
+            "Optimization objective. Composite uses trading metrics when available "
+            "and falls back to forecast accuracy for flat backtests."
+        ),
+    )
     fitness_weights: Optional[Dict[str, float]] = None
     seed: int = 42
     max_search_time_seconds: Optional[float] = None

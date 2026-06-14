@@ -202,7 +202,44 @@ def test_genetic_search_optimize_hints_uses_nested_backtest_metrics():
     assert metrics["sharpe_ratio"] == 1.5
     assert metrics["win_rate"] == 0.61
     assert metrics["avg_return_per_trade"] == 0.008
+    assert metrics["avg_rmse"] == 0.12
+    assert hint["fitness_source"] == "trading_composite"
     assert hint["fitness_score"] > 0.1
+
+
+def test_genetic_search_optimize_hints_falls_back_to_forecast_accuracy():
+    backtest_result = {
+        "results": {
+            "naive": {
+                "success": True,
+                "avg_rmse": 0.02,
+                "avg_mae": 0.01,
+                "avg_directional_accuracy": 0.6,
+                "metrics_available": False,
+                "metrics_reason": "no_non_flat_trades",
+                "trade_status": "flat",
+                "metrics": {},
+            }
+        }
+    }
+
+    with patch("mtdata.forecast.tune._eval_candidate", return_value=(0.02, backtest_result)):
+        result = genetic_search_optimize_hints(
+            symbol="EURUSD",
+            timeframes=["H1"],
+            methods=["naive"],
+            population=2,
+            generations=1,
+            top_n=1,
+            fitness_metric="composite",
+            seed=42,
+        )
+
+    hint = result["hints"][0]
+    assert hint["fitness_source"] == "forecast_accuracy_fallback"
+    assert hint["fitness_score"] > 0.1
+    assert hint["backtest_metrics"]["avg_rmse"] == 0.02
+    assert hint["backtest_metrics"]["metrics_reason"] == "no_non_flat_trades"
 
 
 def test_genetic_search_optimize_hints_deduplicates_identical_configs():

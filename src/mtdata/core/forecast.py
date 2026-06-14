@@ -1028,8 +1028,9 @@ def forecast_optimize_hints(request: ForecastOptimizeHintsRequest) -> Dict[str, 
     """Genetic search for optimal forecast settings across timeframes, methods, and parameters.
 
     Searches over timeframes, algorithms, and algorithm-specific parameters to find
-    top-N configurations ranked by composite fitness score (Sharpe ratio, win rate,
-    inverse drawdown, and average return).
+    top-N configurations ranked by composite trading fitness. When trading metrics
+    are unavailable, composite mode falls back to forecast error and directional
+    accuracy instead of assigning every candidate the same synthetic score.
 
     Parameters:
     -----------

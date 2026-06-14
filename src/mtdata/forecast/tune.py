@@ -8,7 +8,8 @@ import time
 import warnings
 from typing import Any, Dict, List, Optional, Tuple
 
-from .backtest import _backtest_units, forecast_backtest as _forecast_backtest
+from .backtest import _backtest_units
+from .backtest import forecast_backtest as _forecast_backtest
 from .optimize import (
     build_comprehensive_search_space as _build_search_space,
 )
@@ -42,6 +43,40 @@ def _suppress_noisy_forecast_tune_loggers() -> None:
         noisy_logger = logging.getLogger(logger_name)
         if noisy_logger.level == logging.NOTSET or noisy_logger.getEffectiveLevel() < logging.WARNING:
             noisy_logger.setLevel(logging.WARNING)
+
+
+def _finite_metric(metrics: Dict[str, Any], key: str) -> Optional[float]:
+    try:
+        value = float(metrics.get(key))
+    except (TypeError, ValueError):
+        return None
+    return value if math.isfinite(value) else None
+
+
+def _has_trading_fitness_metrics(metrics: Dict[str, Any]) -> bool:
+    return any(
+        _finite_metric(metrics, key) is not None
+        for key in (
+            "sharpe_ratio",
+            "win_rate",
+            "max_drawdown",
+            "avg_return_per_trade",
+        )
+    )
+
+
+def _forecast_accuracy_fitness(metrics: Dict[str, Any]) -> float:
+    directional = _finite_metric(metrics, "avg_directional_accuracy")
+    error = _finite_metric(metrics, "avg_rmse")
+    if error is None:
+        error = _finite_metric(metrics, "avg_mae")
+
+    components: List[float] = []
+    if directional is not None:
+        components.append(max(0.0, min(1.0, directional)))
+    if error is not None and error >= 0.0:
+        components.append(1.0 / (1.0 + error))
+    return float(sum(components) / len(components)) if components else 0.0
 
 
 # Sensible default search spaces per method (lightweight, CPU-friendly)
@@ -1039,6 +1074,9 @@ def genetic_search_optimize_hints(  # noqa: C901
                 'avg_directional_accuracy',
                 'successful_tests',
                 'num_tests',
+                'metrics_available',
+                'metrics_reason',
+                'trade_status',
             ):
                 if key in method_results and key not in merged:
                     merged[key] = method_results.get(key)
@@ -1075,7 +1113,15 @@ def genetic_search_optimize_hints(  # noqa: C901
                 backtest_metrics = _extract_method_backtest_metrics(res, method)
             except Exception:
                 backtest_metrics = {}
-            fitness = _composite_fitness(backtest_metrics, weights=fitness_weights)
+            if _has_trading_fitness_metrics(backtest_metrics):
+                fitness = _composite_fitness(backtest_metrics, weights=fitness_weights)
+                fitness_source = "trading_composite"
+            else:
+                fitness = _forecast_accuracy_fitness(backtest_metrics)
+                fitness_source = "forecast_accuracy_fallback"
+            if isinstance(res, dict):
+                res = dict(res)
+                res['_optimization_fitness_source'] = fitness_source
             # Convert to minimization score (1 - fitness to minimize)
             fitness_score = 1.0 - fitness
         else:
@@ -1195,18 +1241,31 @@ def genetic_search_optimize_hints(  # noqa: C901
             'method_params': params,
             'fitness_score': 1.0 - fitness if fitness_metric == 'composite' else fitness,
         }
+        fitness_source = (
+            backtest_res.get('_optimization_fitness_source')
+            if isinstance(backtest_res, dict)
+            else None
+        )
+        if fitness_source:
+            hint['fitness_source'] = fitness_source
 
         # Extract backtest metrics
         try:
             method_metrics = _extract_method_backtest_metrics(backtest_res, method)
             if method_metrics:
                 hint['backtest_metrics'] = {
+                    'avg_rmse': method_metrics.get('avg_rmse'),
+                    'avg_mae': method_metrics.get('avg_mae'),
+                    'avg_directional_accuracy': method_metrics.get('avg_directional_accuracy'),
                     'sharpe_ratio': method_metrics.get('sharpe_ratio'),
                     'win_rate': method_metrics.get('win_rate'),
                     'max_drawdown': method_metrics.get('max_drawdown'),
                     'avg_return_per_trade': method_metrics.get('avg_return_per_trade'),
                     'calmar_ratio': method_metrics.get('calmar_ratio'),
                     'annual_return': method_metrics.get('annual_return'),
+                    'metrics_available': method_metrics.get('metrics_available'),
+                    'metrics_reason': method_metrics.get('metrics_reason'),
+                    'trade_status': method_metrics.get('trade_status'),
                 }
         except Exception:
             pass
@@ -1237,5 +1296,16 @@ def genetic_search_optimize_hints(  # noqa: C901
         },
         'history_tail': history[-10:] if history else [],
     }
+
+    finite_scores = [
+        float(item['fitness_score'])
+        for item in top_configs
+        if math.isfinite(float(item.get('fitness_score', float('nan'))))
+    ]
+    if len(finite_scores) > 1 and max(finite_scores) - min(finite_scores) <= 1e-12:
+        result['search_summary']['fitness_tie'] = True
+        result['warning'] = (
+            "Top configurations have identical fitness; treat their ordering as tied."
+        )
 
     return result
