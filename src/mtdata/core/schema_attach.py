@@ -9,6 +9,7 @@ import copy
 import logging
 from typing import Any, Callable, Dict, Iterable
 
+from ..forecast.barriers_shared import BARRIER_MONTE_CARLO_METHODS
 from ..shared.parameter_contracts import (
     OUTPUT_EXTRA_FULL_ALIASES,
     OUTPUT_EXTRAS,
@@ -32,28 +33,12 @@ from ._mcp_tools import get_mcp_registry
 
 logger = logging.getLogger(__name__)
 
-_BARRIER_PROB_METHODS = [
-    "mc_gbm",
-    "mc_gbm_bb",
-    "hmm_mc",
-    "garch",
-    "bootstrap",
-    "heston",
-    "jump_diffusion",
+_BARRIER_PROB_METHODS = (
+    *BARRIER_MONTE_CARLO_METHODS[:-1],
     "closed_form",
-    "auto",
-]
-
-_BARRIER_OPTIMIZE_METHODS = [
-    "mc_gbm",
-    "mc_gbm_bb",
-    "hmm_mc",
-    "garch",
-    "bootstrap",
-    "heston",
-    "jump_diffusion",
-    "auto",
-]
+    BARRIER_MONTE_CARLO_METHODS[-1],
+)
+_BARRIER_OPTIMIZE_METHODS = BARRIER_MONTE_CARLO_METHODS
 
 _TRADE_PLACE_STRING_ORDER_TYPES = [
     "BUY",
