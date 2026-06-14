@@ -247,6 +247,35 @@ class TestForecastBarriers(_BarrierModulePatchMixin, unittest.TestCase):
         self.assertAlmostEqual(result["last_price_close"], 1.0, places=8)
         self.assertEqual(result["last_price_source"], "close")
 
+    def test_forecast_barrier_hmm_warns_when_states_collapse(self):
+        self._set_flat_history(1.0, bars=200)
+        paths = self._sample_paths()
+        with patch(f'{_BARRIER_PROB_ROOT}._simulate_hmm_mc') as mock_sim:
+            mock_sim.return_value = {
+                "price_paths": paths,
+                "requested_n_states": 2,
+                "fitted_n_states": 1,
+                "model_type": "gaussian_hmm_baum_welch",
+            }
+            result = forecast_barrier_hit_probabilities(
+                symbol="EURUSD",
+                timeframe="H1",
+                horizon=4,
+                method="hmm_mc",
+                direction="long",
+                tp_pct=0.5,
+                sl_pct=0.5,
+            )
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["sim_meta"]["requested_n_states"], 2)
+        self.assertEqual(result["sim_meta"]["fitted_n_states"], 1)
+        self.assertIn(
+            "HMM state collapse: requested 2 states but fitted 1; "
+            "probabilities use the reduced-state model.",
+            result["warnings"],
+        )
+
     def test_forecast_barrier_hit_probabilities_surfaces_denoise_warning(self):
         self._set_flat_history(1.0, bars=200)
         paths = self._sample_paths()

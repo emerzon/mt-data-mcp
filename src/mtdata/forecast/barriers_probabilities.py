@@ -647,6 +647,18 @@ def forecast_barrier_hit_probabilities(  # noqa: C901
             sim_meta['sigma'] = [float(v) for v in _np.asarray(sim['sigma']).ravel()]
         if sim_meta:
             out['sim_meta'] = sim_meta
+            requested_states = sim_meta.get("requested_n_states")
+            fitted_states = sim_meta.get("fitted_n_states")
+            if (
+                isinstance(requested_states, (int, float))
+                and isinstance(fitted_states, (int, float))
+                and int(fitted_states) < int(requested_states)
+            ):
+                warnings_out.append(
+                    "HMM state collapse: requested "
+                    f"{int(requested_states)} states but fitted {int(fitted_states)}; "
+                    "probabilities use the reduced-state model."
+                )
         if warnings_out:
             out["warnings"] = warnings_out
              
