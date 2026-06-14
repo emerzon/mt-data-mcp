@@ -5,10 +5,9 @@ from __future__ import annotations
 import logging
 import math
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 from ...bootstrap.settings import mt5_config
-from ...shared.schema import CompactFullDetailLiteral
 from ...utils.mt5 import (
     MT5ConnectionError,
     ensure_mt5_connection_or_raise,
@@ -27,8 +26,7 @@ from .._mcp_instance import mcp
 from ..execution_logging import run_logged_operation
 from ..output_contract import (
     ensure_common_meta,
-    normalize_output_detail,
-    normalize_output_verbosity_detail,
+    resolve_output_contract,
 )
 from . import comments, validation
 from .gateway import create_trading_gateway
@@ -707,7 +705,7 @@ def _trade_account_equity_balance_delta(info: Any) -> Optional[float]:
 
 @mcp.tool()
 def trade_account_info(
-    detail: CompactFullDetailLiteral = "compact",  # type: ignore
+    detail: Literal["compact", "full"] = "compact",
 ) -> dict:
     """Get account information with compact or full account output modes.
 
@@ -716,10 +714,10 @@ def trade_account_info(
     """
 
     def _run() -> dict:
-        requested_raw = normalize_output_detail(detail, default="full")
-        if requested_raw not in {"compact", "standard", "summary", "full"}:
+        contract = resolve_output_contract(detail=detail, default_detail="compact")
+        if contract.detail not in {"compact", "full"}:
             return {"error": "Invalid detail level. Use 'compact' or 'full'."}
-        requested_mode = normalize_output_verbosity_detail(detail, default="full")
+        requested_mode = contract.detail
 
         mt5 = create_trading_gateway(
             include_trade_preflight=True,
