@@ -108,6 +108,18 @@ def _table_rows(payload: Dict[str, Any]) -> list[dict[str, Any]]:
     return rows if isinstance(rows, list) else []
 
 
+def _observed_profile_window(
+    rows: list[dict[str, Any]],
+    *,
+    fallback_start: Optional[str],
+    fallback_end: Optional[str],
+) -> Dict[str, Optional[str]]:
+    times = [row.get("time") for row in rows if row.get("time") not in (None, "")]
+    if not times:
+        return {"start": fallback_start, "end": fallback_end}
+    return {"start": str(times[0]), "end": str(times[-1])}
+
+
 def _fetch_tick_rows(
     *,
     symbol: str,
@@ -476,27 +488,18 @@ def compute_volume_profile_payload(
     max_m1_bars: int = _DEFAULT_MAX_M1_BARS,
     detail: CompactStandardFullDetailLiteral = "compact",
 ) -> Dict[str, Any]:
-    source_value = str(source or "auto").strip().lower()
-    effective_max_ticks = max_ticks
-    window_limit = limit
-    if limit is not None and not timeframe and source_value in {"auto", "ticks"}:
-        try:
-            effective_max_ticks = int(limit)
-        except (TypeError, ValueError):
-            effective_max_ticks = 0
-        if effective_max_ticks <= 0:
-            return {
-                "error": (
-                    "limit must be a positive integer when used as a tick cap; "
-                    "omit limit to use max_ticks."
-                )
-            }
-        window_limit = None
+    if limit is not None and not timeframe:
+        return {
+            "error": (
+                "limit is a bar count and requires timeframe; "
+                "use max_ticks to cap tick rows."
+            )
+        }
     window = _resolve_profile_window(
         start=start,
         end=end,
         timeframe=timeframe,
-        limit=window_limit,
+        limit=limit,
     )
     if window.get("error"):
         return {"error": window["error"]}
@@ -515,7 +518,7 @@ def compute_volume_profile_payload(
         source=source,
         price_source=price_source,
         max_tick_window_days=max_tick_window_days,
-        max_ticks=effective_max_ticks,
+        max_ticks=max_ticks,
         max_m1_bars=max_m1_bars,
     )
     if selected.get("error"):
@@ -545,7 +548,11 @@ def compute_volume_profile_payload(
         return profile
     profile["symbol"] = symbol
     profile["source"] = selected.get("source")
-    profile["window"] = {"start": resolved_start, "end": resolved_end}
+    profile["window"] = _observed_profile_window(
+        selected.get("rows", []),
+        fallback_start=resolved_start,
+        fallback_end=resolved_end,
+    )
     profile["diagnostics"] = {
         **(selected.get("diagnostics") or {}),
         **(profile.get("diagnostics") or {}),
@@ -584,9 +591,10 @@ def volume_profile_levels(  # noqa: PLR0913
     """Compute volume-profile POC, VAH, and VAL from ticks or M1-bar approximation.
 
     `source="auto"` uses bounded raw ticks for short windows and falls back to
-    M1-bar approximation for larger windows. When `timeframe` is provided without
-    `limit`, the window defaults to 200 bars. `price_source="mid"` is the safe
-    default for FX symbols where tick `last` is often unavailable.
+    M1-bar approximation for larger windows. `limit` is always a bar count and
+    requires `timeframe`; use `max_ticks` to cap tick rows. When `timeframe` is
+    provided without `limit`, the window defaults to 200 bars. `price_source="mid"`
+    is the safe default for FX symbols where tick `last` is often unavailable.
     """
 
     def _run() -> Dict[str, Any]:

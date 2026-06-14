@@ -172,13 +172,37 @@ def test_compute_volume_profile_payload_exposes_fetch_freshness_and_standard_uni
     assert result["timezone"] == "UTC"
     assert result["data_age_seconds"] == 12.5
     assert result["data_stale"] is False
+    assert result["window"] == {
+        "start": "2026-06-02 12:00:00.000",
+        "end": "2026-06-02 12:00:01.000",
+    }
     assert result["units"]["price"] == "absolute_price"
     assert result["units"]["volume"] == "tick_volume"
 
 
-def test_compute_volume_profile_payload_uses_limit_as_tick_cap(monkeypatch):
+def test_compute_volume_profile_payload_rejects_limit_without_timeframe():
+    result = vp.compute_volume_profile_payload(
+        symbol="EURUSD",
+        source="ticks",
+        limit=5000,
+        bucket_size=0.0001,
+    )
+
+    assert result == {
+        "error": (
+            "limit is a bar count and requires timeframe; "
+            "use max_ticks to cap tick rows."
+        )
+    }
+
+
+def test_compute_volume_profile_payload_uses_explicit_max_ticks(monkeypatch):
     captured = {}
-    monkeypatch.setattr(vp, "create_mt5_gateway", lambda **_: SimpleNamespace(ensure_connection=lambda: None))
+    monkeypatch.setattr(
+        vp,
+        "create_mt5_gateway",
+        lambda **_: SimpleNamespace(ensure_connection=lambda: None),
+    )
     monkeypatch.setattr(
         vp,
         "_symbol_ready_guard",
@@ -190,6 +214,7 @@ def test_compute_volume_profile_payload_uses_limit_as_tick_cap(monkeypatch):
         return {
             "data": [
                 {
+                    "time": "2026-01-01 00:00:00.000",
                     "bid": 1.0999,
                     "ask": 1.1001,
                     "mid": 1.1000,
@@ -204,16 +229,16 @@ def test_compute_volume_profile_payload_uses_limit_as_tick_cap(monkeypatch):
     result = vp.compute_volume_profile_payload(
         symbol="EURUSD",
         source="ticks",
-        limit=5000,
+        max_ticks=5000,
         bucket_size=0.0001,
     )
 
     assert result["success"] is True
-    assert result["source"] == "ticks"
-    assert "window" not in result
+    assert result["window"] == {
+        "start": "2026-01-01 00:00:00.000",
+        "end": "2026-01-01 00:00:00.000",
+    }
     assert captured["limit"] == 5000
-    assert captured["start"] is None
-    assert captured["end"] is None
 
 
 def test_compute_volume_profile_payload_auto_falls_back_on_low_tick_mid_coverage(monkeypatch):
