@@ -55,6 +55,8 @@ def detect_trend_lines(
             xs = idxs.astype(float)
             ys = c[idxs]
             slope, intercept, r2 = _fit_line_robust(xs, ys, cfg) if cfg.use_robust_fit else _fit_line(xs, ys)
+            if not np.isfinite(r2) or float(r2) < float(cfg.min_r2):
+                continue
             
             line_vals = slope * np.arange(n, dtype=float) + intercept
             tol_abs = _tol_abs_from_close(c, cfg.same_level_tol_pct)

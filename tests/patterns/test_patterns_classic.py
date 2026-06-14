@@ -818,6 +818,25 @@ def test_detect_trend_lines_extend_to_current_bar():
     assert all(p.end_index == (n - 1) for p in out)
 
 
+def test_detect_trend_lines_reject_fit_below_r2_floor(monkeypatch):
+    from src.mtdata.patterns.classic_impl import trend
+
+    close = np.linspace(100.0, 101.0, 40)
+    peaks = np.array([5, 15, 25], dtype=int)
+    troughs = np.array([10, 20, 30], dtype=int)
+    monkeypatch.setattr(trend, "_fit_line", lambda *_args: (0.0, 100.0, 0.0))
+
+    out = trend.detect_trend_lines(
+        close,
+        peaks,
+        troughs,
+        np.arange(close.size, dtype=float),
+        ClassicDetectorConfig(use_robust_fit=False, min_r2=0.6),
+    )
+
+    assert out == []
+
+
 def test_detect_channels_allow_small_absolute_slope_spread(monkeypatch):
     from src.mtdata.patterns.classic_impl import trend
 
