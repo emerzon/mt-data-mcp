@@ -466,30 +466,15 @@ def _apply_ta_indicators(df: pd.DataFrame, ti_spec: str) -> List[str]:  # noqa: 
                     call_kwargs[pname] = args[ai]
                     ai += 1
 
-                # Call indicator function with constructed arguments, with fallbacks
-                out = None
+                # Call once with the signature-derived argument mapping. Retrying with
+                # different bindings can silently change indicator semantics.
                 try:
                     out = func(*call_args, **call_kwargs)
-                except Exception:
-                    logger.debug("Indicator %s primary call failed", lname, exc_info=True)
-                    try:
-                        # Fallback: also pass numeric args positionally after series
-                        out = func(*([*call_args, *args]), **call_kwargs)
-                    except Exception:
-                        logger.debug("Indicator %s positional fallback failed", lname, exc_info=True)
-                        try:
-                            # Fallback: keyword-only attempt including close
-                            kw_only = dict(call_kwargs)
-                            if 'close' in params and 'close' in df.columns:
-                                kw_only['close'] = df['close']
-                            out = func(**kw_only)
-                        except Exception:
-                            logger.warning(
-                                "Indicator %s failed after all call fallbacks",
-                                lname,
-                                exc_info=True,
-                            )
-                            out = None
+                except Exception as exc:
+                    parameter_names = ", ".join(sorted(call_kwargs)) or "defaults"
+                    raise ValueError(
+                        f"Indicator '{lname}' failed with parameters {parameter_names}: {exc}"
+                    ) from exc
                 if isinstance(out, pd.DataFrame):
                     for c in out.columns:
                         df[c] = out[c]

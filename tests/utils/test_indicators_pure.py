@@ -42,6 +42,7 @@ from mtdata.shared.schema import (
 # Module imports
 # ---------------------------------------------------------------------------
 from mtdata.utils.indicators import (
+    _apply_ta_indicators,
     _estimate_warmup_bars,
     _find_unknown_ta_indicators,
     _parse_ti_number,
@@ -236,6 +237,29 @@ class TestParseTiSpecs:
 
     def test_bollinger_aliases_are_not_reported_as_unknown(self):
         assert _find_unknown_ta_indicators("bb(20),boll(20),bollinger_bands(20)") == []
+
+    def test_indicator_call_failure_is_not_retried_with_different_bindings(self, monkeypatch):
+        import mtdata.utils.indicators as indicators_mod
+
+        calls = []
+
+        def broken_indicator(close, length=14):
+            calls.append((close, length))
+            raise RuntimeError("invalid calculation")
+
+        monkeypatch.setattr(
+            indicators_mod,
+            "pta",
+            type("PtaStub", (), {"rsi": staticmethod(broken_indicator)})(),
+        )
+
+        with pytest.raises(
+            ValueError,
+            match=r"Indicator 'rsi' failed with parameters length: invalid calculation",
+        ):
+            _apply_ta_indicators(_make_ohlcv_df(20), "rsi(10)")
+
+        assert len(calls) == 1
 
     def test_indicator_lookup_results_are_cached(self, monkeypatch):
         import mtdata.utils.indicators as indicators_mod
