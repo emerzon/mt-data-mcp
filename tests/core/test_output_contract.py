@@ -32,6 +32,10 @@ def test_normalize_output_detail_preserves_summary_mode_aliases() -> None:
     )
 
 
+def test_normalize_output_detail_applies_canonical_aliases_by_default() -> None:
+    assert normalize_output_detail(" Summary_Only ") == "summary"
+
+
 def test_normalize_output_detail_normalizes_alias_mapping_keys_and_values() -> None:
     assert (
         normalize_output_detail(

@@ -195,15 +195,13 @@ def _normalize_detail_token(value: Any, *, default: str) -> str:
 
 
 def _normalize_detail_aliases(aliases: Optional[Mapping[str, str]]) -> dict[str, str]:
-    if not aliases:
-        return {}
-
     normalized: dict[str, str] = dict(CANONICAL_OUTPUT_DETAIL_ALIASES)
-    for key, value in aliases.items():
-        normalized[_normalize_detail_token(key, default="")] = _normalize_detail_token(
-            value,
-            default="",
-        )
+    if aliases:
+        for key, value in aliases.items():
+            normalized[_normalize_detail_token(key, default="")] = _normalize_detail_token(
+                value,
+                default="",
+            )
     return normalized
 
 

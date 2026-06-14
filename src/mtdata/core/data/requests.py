@@ -39,14 +39,6 @@ DATA_FETCH_TICKS_DEFAULT_LIMIT = 20
 DATA_FETCH_TICKS_MAX_LIMIT = 10_000
 
 
-def _normalize_data_detail(value: Any) -> str:
-    return normalize_output_detail(
-        value,
-        default="compact",
-        aliases={"summary_only": "summary"},
-    )
-
-
 def _split_indicator_tokens(spec: str) -> List[str]:
     text = str(spec or "").strip()
     if not text:
@@ -448,7 +440,7 @@ class DataFetchCandlesRequest(BaseModel):
     @field_validator("detail", mode="before")
     @classmethod
     def _normalize_detail(cls, value: Any) -> str:
-        return _normalize_data_detail(value)
+        return normalize_output_detail(value, default="compact")
 
 
 class DataFetchTicksRequest(BaseModel):
@@ -483,7 +475,7 @@ class DataFetchTicksRequest(BaseModel):
     @field_validator("detail", mode="before")
     @classmethod
     def _normalize_detail(cls, value: Any) -> str:
-        return _normalize_data_detail(value)
+        return normalize_output_detail(value, default="compact")
 
     @field_validator("limit")
     @classmethod
