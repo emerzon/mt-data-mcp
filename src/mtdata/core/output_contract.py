@@ -10,7 +10,7 @@ from ..shared.parameter_contracts import (
     OUTPUT_EXTRAS as _OUTPUT_EXTRAS,
 )
 from ..shared.schema import CANONICAL_OUTPUT_DETAIL_ALIASES
-from ..utils.utils import _UNPARSED_BOOL, _parse_bool_like
+from ..utils.utils import UNPARSED_BOOL, parse_bool_like
 from .runtime_metadata import build_runtime_timezone_meta
 
 _MISSING = object()
@@ -105,8 +105,8 @@ def _read_verbosity_field(source: Any, field: str) -> Any:
 def _coerce_optional_verbose_flag(value: Any) -> Optional[bool]:
     if value is _MISSING or value is None:
         return None
-    parsed = _parse_bool_like(value, allow_none=True)
-    if parsed is _UNPARSED_BOOL:
+    parsed = parse_bool_like(value, allow_none=True)
+    if parsed is UNPARSED_BOOL:
         return bool(value)
     if parsed is None:
         return None
@@ -114,8 +114,8 @@ def _coerce_optional_verbose_flag(value: Any) -> Optional[bool]:
 
 
 def _coerce_json_flag(value: Any) -> bool:
-    parsed = _parse_bool_like(value, allow_none=True)
-    if parsed is _UNPARSED_BOOL:
+    parsed = parse_bool_like(value, allow_none=True)
+    if parsed is UNPARSED_BOOL:
         return bool(value)
     return bool(parsed)
 
@@ -124,12 +124,12 @@ def normalize_output_extras(value: Any) -> tuple[str, ...]:
     """Normalize public richer-output extras into canonical tokens."""
     if value is _MISSING:
         return ()
-    parsed_bool = _parse_bool_like(value, allow_none=True)
-    if parsed_bool is _UNPARSED_BOOL and not isinstance(
+    parsed_bool = parse_bool_like(value, allow_none=True)
+    if parsed_bool is UNPARSED_BOOL and not isinstance(
         value,
         (str, Iterable, dict, bytes, bytearray),
     ):
-        parsed_bool = _parse_bool_like(str(value), allow_none=True)
+        parsed_bool = parse_bool_like(str(value), allow_none=True)
     if parsed_bool is None or parsed_bool is False:
         return ()
     if parsed_bool is True:

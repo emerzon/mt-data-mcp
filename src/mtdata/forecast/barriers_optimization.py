@@ -14,7 +14,7 @@ from ..utils.barriers import (
 from ..utils.barriers import (
     normalize_trade_direction,
 )
-from ..utils.utils import _UNPARSED_BOOL, _parse_bool_like
+from ..utils.utils import UNPARSED_BOOL, parse_bool_like
 from ..utils.utils import parse_kv_or_json as _parse_kv_or_json
 from .barrier_stats import (
     bootstrap_metric_uncertainty as _bootstrap_uncertainty,
@@ -137,8 +137,8 @@ class _BarrierBridgeInputs:
 
 
 def _coerce_barrier_bool_flag(value: Any, default: bool = False) -> bool:
-    parsed = _parse_bool_like(value)
-    if parsed is _UNPARSED_BOOL:
+    parsed = parse_bool_like(value)
+    if parsed is UNPARSED_BOOL:
         return bool(default)
     return bool(parsed)
 

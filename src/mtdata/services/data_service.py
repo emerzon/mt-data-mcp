@@ -75,7 +75,7 @@ from ..utils.simplify import (
 )
 from ..utils.time import format_epoch_utc
 from ..utils.utils import (
-    _coerce_scalar,
+    coerce_scalar,
     _format_datetime_minute_explicit,
     _format_numeric_rows_from_df,
     _format_time_explicit,
@@ -1018,11 +1018,11 @@ def _normalize_indicator_spec(indicators: Optional[List[IndicatorSpec]]) -> Opti
                 name = str(item.get('name'))
                 params = item.get('params') or []
                 if isinstance(params, (list, tuple)) and len(params) > 0:
-                    args_str = ",".join(str(_coerce_scalar(str(param))) for param in params)
+                    args_str = ",".join(str(coerce_scalar(str(param))) for param in params)
                     parts.append(f"{name}({args_str})")
                 elif isinstance(params, dict) and len(params) > 0:
                     args_str = ",".join(
-                        f"{str(key).strip()}={_coerce_scalar(str(param))}"
+                        f"{str(key).strip()}={coerce_scalar(str(param))}"
                         for key, param in params.items()
                         if str(key).strip()
                     )

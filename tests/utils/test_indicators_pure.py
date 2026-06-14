@@ -53,7 +53,7 @@ from mtdata.utils.indicators import (
 )
 from mtdata.utils.formatting import format_float
 from mtdata.utils.utils import (
-    _coerce_scalar,
+    coerce_scalar,
     _format_numeric_rows_from_df,
     _format_time_minimal,
     _normalize_limit,
@@ -689,25 +689,25 @@ Values above 70 often indicate overbought conditions.
 # ===================================================================
 class TestCoerceScalar:
     def test_integer_string(self):
-        assert _coerce_scalar("42") == 42
+        assert coerce_scalar("42") == 42
 
     def test_negative_integer(self):
-        assert _coerce_scalar("-7") == -7
+        assert coerce_scalar("-7") == -7
 
     def test_float_string(self):
-        assert _coerce_scalar("3.14") == pytest.approx(3.14)
+        assert coerce_scalar("3.14") == pytest.approx(3.14)
 
     def test_non_numeric_string(self):
-        assert _coerce_scalar("hello") == "hello"
+        assert coerce_scalar("hello") == "hello"
 
     def test_none(self):
-        assert _coerce_scalar(None) is None
+        assert coerce_scalar(None) is None
 
     def test_empty_string(self):
-        assert _coerce_scalar("") == ""
+        assert coerce_scalar("") == ""
 
     def test_whitespace(self):
-        assert _coerce_scalar("  42  ") == 42
+        assert coerce_scalar("  42  ") == 42
 
 
 class TestNormalizeOhlcvArg:

@@ -12,7 +12,7 @@ from ..forecast.exceptions import ForecastError
 from ..forecast.forecast_methods import get_forecast_methods_payload
 from ..utils.mt5 import MT5ConnectionError
 from ..utils.support_resistance import compact_support_resistance_payload
-from ..utils.utils import _UNPARSED_BOOL, _parse_bool_like
+from ..utils.utils import UNPARSED_BOOL, parse_bool_like
 from .error_envelope import build_http_error_detail
 from .mt5_gateway import create_mt5_gateway
 from .output_contract import ensure_common_meta, output_extras_shape_detail
@@ -98,8 +98,8 @@ def _require_mt5_connection() -> None:
 
 
 def _history_denoise_bool(value: Any, *, field_name: str) -> bool:
-    parsed = _parse_bool_like(value)
-    if parsed is _UNPARSED_BOOL:
+    parsed = parse_bool_like(value)
+    if parsed is UNPARSED_BOOL:
         raise _http_error(
             400,
             f"denoise_params.{field_name} must be a boolean value.",

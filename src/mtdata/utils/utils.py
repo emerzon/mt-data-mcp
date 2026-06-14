@@ -39,7 +39,7 @@ def _positive_float_attr(obj: Any, *names: str) -> Optional[float]:
     return None
 
 
-def _coerce_scalar(s: str):
+def coerce_scalar(s: str):
     """Try to coerce a scalar string to int or float; otherwise return original string."""
     try:
         if s is None:
@@ -55,13 +55,13 @@ def _coerce_scalar(s: str):
         return s
 
 
-_UNPARSED_BOOL = object()
+UNPARSED_BOOL = object()
 
 
-def _parse_bool_like(value: Any, *, allow_none: bool = False) -> Any:
+def parse_bool_like(value: Any, *, allow_none: bool = False) -> Any:
     """Parse common boolean spellings and return a sentinel when unrecognized."""
     if value is None:
-        return None if allow_none else _UNPARSED_BOOL
+        return None if allow_none else UNPARSED_BOOL
     if isinstance(value, bool):
         return value
     if isinstance(value, (int, float)) and not isinstance(value, bool):
@@ -69,12 +69,12 @@ def _parse_bool_like(value: Any, *, allow_none: bool = False) -> Any:
     if isinstance(value, str):
         text = value.strip().lower()
         if text in ("none", "null"):
-            return None if allow_none else _UNPARSED_BOOL
+            return None if allow_none else UNPARSED_BOOL
         if text in ("true", "1", "yes", "y", "on"):
             return True
         if text in ("false", "0", "no", "n", "off"):
             return False
-    return _UNPARSED_BOOL
+    return UNPARSED_BOOL
 
 
 def _normalize_ohlcv_arg(ohlcv: Optional[str]) -> Optional[Set[str]]:

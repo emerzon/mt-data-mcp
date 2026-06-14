@@ -20,7 +20,7 @@ from ..shared.parameter_contracts import (
     OUTPUT_EXTRAS,
     PUBLIC_OUTPUT_PARAMS,
 )
-from ..utils.utils import _UNPARSED_BOOL, _coerce_scalar, _parse_bool_like
+from ..utils.utils import UNPARSED_BOOL, coerce_scalar, parse_bool_like
 from .error_envelope import (
     build_error_payload,
     log_transport_exception,
@@ -398,8 +398,8 @@ def _unwrap_optional_annotation(annotation: Any) -> tuple[Any, bool]:
 
 
 def _coerce_bool(value: Any, *, allow_none: bool, name: str) -> Any:
-    parsed = _parse_bool_like(value, allow_none=allow_none)
-    if parsed is _UNPARSED_BOOL:
+    parsed = parse_bool_like(value, allow_none=allow_none)
+    if parsed is UNPARSED_BOOL:
         raise ValueError(f"Invalid value for '{name}': expected boolean, got {value!r}")
     return parsed
 
@@ -425,7 +425,7 @@ def _coerce_int(value: Any, *, allow_none: bool, name: str) -> Any:
             if allow_none:
                 return None
             raise ValueError(f"Invalid value for '{name}': expected integer, got {value!r}")
-        coerced = _coerce_scalar(s)
+        coerced = coerce_scalar(s)
         if isinstance(coerced, int) and not isinstance(coerced, bool):
             return coerced
         if isinstance(coerced, float) and math.isfinite(coerced) and coerced.is_integer():
@@ -451,7 +451,7 @@ def _coerce_float(value: Any, *, allow_none: bool, name: str) -> Any:
             if allow_none:
                 return None
             raise ValueError(f"Invalid value for '{name}': expected number, got {value!r}")
-        coerced = _coerce_scalar(s)
+        coerced = coerce_scalar(s)
         if isinstance(coerced, (int, float)) and not isinstance(coerced, bool):
             out = float(coerced)
             if not math.isfinite(out):

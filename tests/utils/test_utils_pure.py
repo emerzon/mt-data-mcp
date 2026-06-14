@@ -7,7 +7,7 @@ import pandas as pd
 import pytest
 
 from mtdata.utils.utils import (
-    _coerce_scalar,
+    coerce_scalar,
     _format_datetime_second_explicit,
     _format_time_explicit,
     _format_time_minimal,
@@ -53,30 +53,30 @@ class TestSafeFloat:
 
 class TestCoerceScalar:
     def test_none(self):
-        assert _coerce_scalar(None) is None
+        assert coerce_scalar(None) is None
 
     def test_empty_string(self):
-        assert _coerce_scalar("") == ""
+        assert coerce_scalar("") == ""
 
     def test_int_string(self):
-        assert _coerce_scalar("42") == 42
+        assert coerce_scalar("42") == 42
 
     def test_negative_int_string(self):
-        assert _coerce_scalar("-7") == -7
+        assert coerce_scalar("-7") == -7
 
     def test_float_string(self):
-        result = _coerce_scalar("3.14")
+        result = coerce_scalar("3.14")
         assert isinstance(result, float)
         assert abs(result - 3.14) < 1e-9
 
     def test_non_numeric(self):
-        assert _coerce_scalar("hello") == "hello"
+        assert coerce_scalar("hello") == "hello"
 
     def test_whitespace_padded(self):
-        assert _coerce_scalar("  5  ") == 5
+        assert coerce_scalar("  5  ") == 5
 
     def test_zero(self):
-        assert _coerce_scalar("0") == 0
+        assert coerce_scalar("0") == 0
 
 
 class TestNormalizeOhlcvArg:

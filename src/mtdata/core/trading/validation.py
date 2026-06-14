@@ -6,7 +6,7 @@ import math
 from typing import Any, Dict, Literal, Optional, Tuple, Union
 
 from ...utils.coercion import coerce_finite_float
-from ...utils.utils import _coerce_scalar
+from ...utils.utils import coerce_scalar
 from .gateway import MT5TradingGateway, create_trading_gateway, trading_connection_error
 
 MarketOrderTypeLiteral = Literal["BUY", "SELL"]
@@ -52,7 +52,7 @@ def _normalize_order_type_input(order_type: Any) -> Tuple[Optional[str], Optiona
     if not text:
         return None, "order_type is required."
 
-    scalar = _coerce_scalar(text)
+    scalar = coerce_scalar(text)
     if isinstance(scalar, (int, float)) and not isinstance(scalar, bool):
         return None, f"Unsupported order_type '{order_type}'. Use canonical string order types."
 
@@ -898,7 +898,7 @@ def _safe_int_ticket(value: Any) -> Optional[int]:
         iv = int(fv)
         return iv if iv > 0 else None
     try:
-        scalar = _coerce_scalar(str(value).strip())
+        scalar = coerce_scalar(str(value).strip())
     except Exception:
         scalar = value
     if isinstance(scalar, (int, float)) and not isinstance(scalar, bool):

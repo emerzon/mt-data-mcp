@@ -40,9 +40,9 @@ from ..utils.mt5 import (
 )
 from ..utils.ohlcv import validate_and_clean_ohlcv_frame
 from ..utils.utils import (
-    _UNPARSED_BOOL,
+    UNPARSED_BOOL,
     _format_time_minimal,
-    _parse_bool_like,
+    parse_bool_like,
     _parse_start_datetime,
 )
 from ..utils.utils import to_float_np as __to_float_np
@@ -1102,8 +1102,8 @@ def _apply_config_to_obj(cfg: Any, config: Optional[Dict[str, Any]]) -> List[str
                 else:
                     setattr(cfg, k, [v])
             elif isinstance(current, bool):
-                coerced = _parse_bool_like(v)
-                if coerced is _UNPARSED_BOOL:
+                coerced = parse_bool_like(v)
+                if coerced is UNPARSED_BOOL:
                     invalid_keys.append(str(k))
                     continue
                 setattr(cfg, k, bool(coerced))
