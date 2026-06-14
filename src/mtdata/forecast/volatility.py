@@ -39,10 +39,10 @@ from .common import (
 from .common import (
     log_returns_from_prices as _log_returns_from_prices,
 )
+from .common import next_times_from_last, uses_standard_weekend_projection
 from .common import (
     pd_freq_from_timeframe as _pd_freq_from_timeframe,
 )
-from .common import next_times_from_last, uses_standard_weekend_projection
 
 _VOLATILITY_METHOD_HINTS = (
     "ewma",
@@ -846,9 +846,17 @@ def forecast_volatility(  # noqa: C901
         __stage = 'parse_params'
         p = parse_kv_or_json(params)
 
-        # Backward-compatible alias: callers passing 'lambda' are normalised to 'lambda_'
-        if 'lambda' in p and 'lambda_' not in p:
-            p['lambda_'] = p.pop('lambda')
+        if method_l == "ewma":
+            allowed_ewma_params = {"halflife", "lambda_", "lookback"}
+            unknown_ewma_params = sorted(set(p) - allowed_ewma_params)
+            if unknown_ewma_params:
+                return {
+                    "error": (
+                        "Unknown EWMA parameter(s): "
+                        f"{', '.join(unknown_ewma_params)}. Use one of: "
+                        f"{', '.join(sorted(allowed_ewma_params))}."
+                    )
+                }
 
         if method_l == 'ensemble':
             default_methods = ['ewma', 'parkinson', 'rolling_std']

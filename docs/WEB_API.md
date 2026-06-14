@@ -193,7 +193,7 @@ Generate volatility forecasts.
   "horizon": 1,
   "method": "ewma",
   "proxy": null,
-  "params": {"lambda": 0.94},
+  "params": {"lambda_": 0.94},
   "as_of": null,
   "denoise": null
 }

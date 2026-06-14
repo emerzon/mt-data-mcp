@@ -549,16 +549,16 @@ class TestHarRvSecondSection:
             r = forecast_volatility("EURUSD", "H1", 5, method="ewma")
             assert r.get("success") is True
 
-    def test_lambda_backward_compat_ewma(self):
-        """'lambda' key (legacy alias) is normalised to 'lambda_' before dispatch
-        and must affect the EWMA result reflected in params_used."""
+    def test_lambda_alias_is_rejected(self):
+        """EWMA rejects the removed lambda alias with an actionable error."""
         custom_lam = 0.80
         std = _make_rates(200)
         with _mock_env(rates_side_effect=[std]):
             r = forecast_volatility("EURUSD", "H1", 5, method="ewma",
                                     params={"lambda": custom_lam})
-        assert r.get("success") is True
-        assert abs(r["params_used"]["lambda_"] - custom_lam) < 1e-9
+        assert r["error"] == (
+            "Unknown EWMA parameter(s): lambda. Use one of: halflife, lambda_, lookback."
+        )
 
     def test_second_section_ensure_error(self):
         """_ensure_symbol_ready error in the HAR-RV intraday fetch returns an error."""
