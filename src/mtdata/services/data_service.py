@@ -73,6 +73,7 @@ from ..utils.simplify import (
     _select_indices_for_timeseries,
     _simplify_dataframe_rows_ext,
 )
+from ..utils.time import format_epoch_utc
 from ..utils.utils import (
     _coerce_scalar,
     _format_datetime_minute_explicit,
@@ -129,11 +130,6 @@ _TICK_ROW_UNITS = {
     "real_volume": "traded_volume",
 }
 _TICK_VOLUME_SEMANTICS = "tick_volume_is_broker_tick_count_not_lots"
-
-
-def _format_utc_timestamp_seconds(epoch_seconds: float) -> str:
-    dt = datetime.fromtimestamp(float(epoch_seconds), tz=dt_timezone.utc)
-    return dt.isoformat(timespec="seconds").replace("+00:00", "Z")
 
 
 def _format_mt5_last_error() -> str:
@@ -1850,7 +1846,7 @@ def fetch_candles(  # noqa: C901
             "candles": candles_returned,
             "requested_limit": candles_requested,
             "returned_count": candles_returned,
-            "as_of": _format_utc_timestamp_seconds(as_of_epoch),
+            "as_of": format_epoch_utc(as_of_epoch),
             **volume_metadata,
             **_candle_time_convention_metadata(timeframe),
             "candles_requested": candles_requested,

@@ -13,12 +13,12 @@ Provides tools for:
 
 import logging
 import time
-from datetime import datetime, timezone
 from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
 from ..shared.schema import CompactFullDetailLiteral, TimeframeLiteral
+from ..utils.time import format_epoch_utc
 from ._mcp_instance import mcp
 from .error_envelope import build_error_payload
 from .execution_logging import run_logged_operation
@@ -28,22 +28,6 @@ logger = logging.getLogger(__name__)
 DetailLevel = CompactFullDetailLiteral
 
 
-def _format_epoch_utc(value: Any) -> Optional[str]:
-    try:
-        timestamp = float(value)
-    except Exception:
-        return None
-    try:
-        return (
-            datetime.fromtimestamp(timestamp, timezone.utc)
-            .replace(microsecond=0)
-            .isoformat()
-            .replace("+00:00", "Z")
-        )
-    except Exception:
-        return None
-
-
 def _attach_time_field(
     payload: Dict[str, Any],
     field: str,
@@ -51,7 +35,7 @@ def _attach_time_field(
     *,
     detail: DetailLevel,
 ) -> None:
-    iso_value = _format_epoch_utc(value)
+    iso_value = format_epoch_utc(value)
     if iso_value is not None:
         payload[field] = iso_value
         if detail == "full":
@@ -210,14 +194,14 @@ def _serialize_model_handle(
         "method": handle.method,
         "data_scope": handle.data_scope,
         "params_hash": handle.params_hash,
-        "created_at": _format_epoch_utc(created_at_epoch) or created_at_epoch,
+        "created_at": format_epoch_utc(created_at_epoch) or created_at_epoch,
     }
     model_metadata = dict(getattr(handle, "metadata", {}) or {})
     source_task_id = model_metadata.get("source_task_id")
     if source_task_id not in (None, ""):
         payload["source_task_id"] = str(source_task_id)
     if last_used_epoch is not None:
-        payload["last_used"] = _format_epoch_utc(last_used_epoch) or last_used_epoch
+        payload["last_used"] = format_epoch_utc(last_used_epoch) or last_used_epoch
     age_days = _days(store_info.get("age_seconds"))
     idle_days = _days(store_info.get("idle_seconds"))
     expires_in_days = _days(store_info.get("expires_in_seconds"))
@@ -316,7 +300,7 @@ def _recent_completed_model_tasks(
         row = {
             "task_id": task.task_id,
             "model_id": handle.model_id,
-            "completed_at": _format_epoch_utc(getattr(task, "completed_at", None))
+            "completed_at": format_epoch_utc(getattr(task, "completed_at", None))
             or getattr(task, "completed_at", None),
         }
         row.update(_model_store_state_payload(handle))
@@ -661,7 +645,7 @@ def forecast_task_cancel_all(request: ForecastTaskCancelAllRequest) -> Dict[str,
                 "method": task.method,
                 "data_scope": task.data_scope,
                 "status": task.status,
-                "created_at": _format_epoch_utc(getattr(task, "created_at", None))
+                "created_at": format_epoch_utc(getattr(task, "created_at", None))
                 or getattr(task, "created_at", None),
                 "timezone": "UTC",
             }
@@ -946,8 +930,8 @@ def forecast_models_cleanup(request: ForecastModelsCleanupRequest) -> Dict[str, 
                 row.update(
                     {
                         "data_scope": handle.data_scope,
-                        "created_at": _format_epoch_utc(info.get("created_at")),
-                        "last_used": _format_epoch_utc(info.get("last_used")),
+                        "created_at": format_epoch_utc(info.get("created_at")),
+                        "last_used": format_epoch_utc(info.get("last_used")),
                         "age_days": _days(info.get("age_seconds")),
                         "idle_days": _days(info.get("idle_seconds")),
                         "expires_in_days": _days(info.get("expires_in_seconds")),
@@ -972,7 +956,7 @@ def forecast_models_cleanup(request: ForecastModelsCleanupRequest) -> Dict[str, 
             "matched": len(matches),
             "deleted": deleted,
             "models": matches,
-            "generated_at": _format_epoch_utc(generated_at),
+            "generated_at": format_epoch_utc(generated_at),
         }
 
     return run_logged_operation(
