@@ -447,12 +447,17 @@ def normalize_denoise_spec(spec: Any, default_when: str = 'pre_ti') -> Optional[
     if isinstance(spec, dict):
         out = dict(base)
         out.update({k: v for k, v in spec.items() if v is not None})
+        method = str(out.get('method') or 'none').strip().lower()
+        params = deepcopy(_DENOISE_METHOD_DEFAULT_PARAMS.get(method, {}))
+        supplied_params = out.get('params')
+        if isinstance(supplied_params, dict):
+            params.update(supplied_params)
+        out['method'] = method
+        out['params'] = params
         cols = out.get('columns')
         if isinstance(cols, str):
             parts = [p.strip() for p in cols.replace(',', ' ').split() if p.strip()]
             out['columns'] = parts if parts else ['close']
-        if 'params' not in out or out['params'] is None:
-            out['params'] = {}
         return out
     # String method name
     try:

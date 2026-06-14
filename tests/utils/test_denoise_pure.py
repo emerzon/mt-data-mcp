@@ -4,8 +4,6 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from mtdata.utils.denoise import api as denoise_api
-from mtdata.utils.denoise.api import _run_denoise_handler
 from mtdata.utils.denoise import (
     _apply_denoise,
     _denoise_series,
@@ -14,12 +12,14 @@ from mtdata.utils.denoise import (
     get_denoise_methods_data,
     normalize_denoise_spec,
 )
+from mtdata.utils.denoise import api as denoise_api
+from mtdata.utils.denoise.api import _run_denoise_handler
+from mtdata.utils.denoise.filters import specialized as specialized_filters
 from mtdata.utils.denoise.filters.adaptive import (
     _adaptive_lms_filter,
     _adaptive_rls_filter,
 )
 from mtdata.utils.denoise.filters.decomposition import _ssa_denoise, _vmd_denoise
-from mtdata.utils.denoise.filters import specialized as specialized_filters
 from mtdata.utils.denoise.filters.specialized import (
     _bilateral_filter_1d,
     _hampel_filter,
@@ -208,9 +208,14 @@ class TestNormalizeDenoiseSec:
         out = normalize_denoise_spec({"method": "sma", "suffix": "_smooth"})
         assert out["suffix"] == "_smooth"
 
-    def test_dict_missing_params_defaults_to_empty(self):
+    def test_dict_missing_params_uses_method_defaults(self):
         out = normalize_denoise_spec({"method": "ema"})
-        assert out["params"] == {}
+        assert out["params"] == {"span": 10}
+
+    def test_dict_params_override_method_defaults(self):
+        out = normalize_denoise_spec({"method": "butterworth", "params": {"order": 2}})
+        assert out["params"]["cutoff"] == 0.1
+        assert out["params"]["order"] == 2
 
 
 # ======================================================================
