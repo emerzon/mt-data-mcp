@@ -1977,6 +1977,8 @@ def test_forecast_conformal_intervals_success_and_errors(monkeypatch):
     assert out["ci_available"] is True
     assert out["detail"] == "compact"
     assert out["conformal"]["ci_alpha"] == 0.1
+    assert out["conformal"]["empirical_coverage"] == 1.0
+    assert out["conformal"]["min_calibration_points"] == 2
     assert len(out["lower_price"]) == 2
     assert len(out["upper_price"]) == 2
     assert out["lower_price"][0] <= 100.0 <= out["upper_price"][0]
@@ -2082,6 +2084,11 @@ def test_run_forecast_conformal_intervals_uses_finite_sample_quantile():
     )
 
     assert result["conformal"]["per_step_q"] == [3.0]
+    assert result["conformal"]["empirical_coverage"] == pytest.approx(2.0 / 3.0)
+    assert result["conformal"]["empirical_coverage_per_step"] == [
+        pytest.approx(2.0 / 3.0)
+    ]
+    assert result["conformal"]["calibration_points_per_step"] == [3]
     assert result["lower_price"] == [97.0]
     assert result["upper_price"] == [103.0]
     assert result["ci_status"] == "available"
@@ -2127,6 +2134,9 @@ def test_run_forecast_conformal_intervals_compact_omits_technical_metadata():
         "ci_alpha": 0.1,
         "calibration_steps": 1,
         "calibration_spacing": 1,
+        "coverage_target": 0.9,
+        "coverage_evaluation": "leave_one_out_calibration_residuals",
+        "min_calibration_points": 1,
     }
     assert "per_step_q" not in result["conformal"]
     for key in (
@@ -2203,7 +2213,8 @@ def test_run_forecast_conformal_intervals_rewrites_interval_unavailable_guidance
     assert result["ci_available"] is True
     assert result["lower_price"] == [99.0]
     assert result["upper_price"] == [101.0]
-    assert result["warnings"] == ["native theta fallback used"]
+    assert result["warnings"][0] == "native theta fallback used"
+    assert "below 30" in result["warnings"][1]
 
 
 def test_run_forecast_conformal_intervals_raises_typed_error_for_nested_error_payload():

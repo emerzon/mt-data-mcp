@@ -977,7 +977,15 @@ def _conformal_summary(conformal: Any) -> Optional[Dict[str, Any]]:
         return None
     out = {
         key: conformal.get(key)
-        for key in ("ci_alpha", "calibration_steps", "calibration_spacing")
+        for key in (
+            "ci_alpha",
+            "calibration_steps",
+            "calibration_spacing",
+            "empirical_coverage",
+            "coverage_target",
+            "coverage_evaluation",
+            "min_calibration_points",
+        )
         if conformal.get(key) not in (None, "", [], {})
     }
     return out or None
@@ -1737,6 +1745,24 @@ def _finite_sample_conformal_quantile(values: List[float], alpha: float) -> floa
     return float(_np.partition(arr, rank - 1)[rank - 1])
 
 
+def _leave_one_out_conformal_coverage(
+    values: List[float],
+    alpha: float,
+) -> Optional[float]:
+    if len(values) < 2:
+        return None
+    covered = 0
+    evaluated = 0
+    for index, value in enumerate(values):
+        calibration = values[:index] + values[index + 1 :]
+        quantile = _finite_sample_conformal_quantile(calibration, alpha)
+        if not math.isfinite(quantile):
+            continue
+        evaluated += 1
+        covered += int(float(value) <= quantile)
+    return float(covered / evaluated) if evaluated else None
+
+
 def _resolve_sktime_forecaster(method: str) -> Optional[Tuple[str, str]]:
     """Resolve a user-provided method name to (class_name, dotted_path)."""
     method_s = str(method or "").strip()
@@ -2166,6 +2192,18 @@ def run_forecast_conformal_intervals(
             _finite_sample_conformal_quantile(err, float(request.ci_alpha))
             for err in errs
         ]
+        calibration_points = [len(err) for err in errs]
+        coverage_per_step = [
+            _leave_one_out_conformal_coverage(err, float(request.ci_alpha))
+            for err in errs
+        ]
+        finite_coverage = [value for value in coverage_per_step if value is not None]
+        empirical_coverage = (
+            float(sum(finite_coverage) / len(finite_coverage))
+            if finite_coverage
+            else None
+        )
+        min_calibration_points = min(calibration_points) if calibration_points else 0
 
         # 2) Forecast now (latest).
         out = raise_if_error_result(forecast_impl(
@@ -2195,6 +2233,12 @@ def run_forecast_conformal_intervals(
             "calibration_steps": int(request.steps),
             "calibration_spacing": int(request.spacing),
             "per_step_q": [float(v) for v in qerrs],
+            "calibration_points_per_step": calibration_points,
+            "min_calibration_points": int(min_calibration_points),
+            "empirical_coverage_per_step": coverage_per_step,
+            "empirical_coverage": empirical_coverage,
+            "coverage_target": round(1.0 - float(request.ci_alpha), 6),
+            "coverage_evaluation": "leave_one_out_calibration_residuals",
         }
         result["lower_price"] = [float(v) for v in lo.tolist()]
         result["upper_price"] = [float(v) for v in hi.tolist()]
@@ -2219,6 +2263,18 @@ def run_forecast_conformal_intervals(
                 warnings_list = []
             if alpha_warning not in warnings_list:
                 warnings_list.append(alpha_warning)
+            result["warnings"] = warnings_list
+        if min_calibration_points < 30:
+            sample_warning = (
+                "Conformal calibration has as few as "
+                f"{min_calibration_points} residual(s) per forecast step; "
+                "tail quantiles and empirical coverage may be unstable below 30."
+            )
+            warnings_list = result.get("warnings")
+            if not isinstance(warnings_list, list):
+                warnings_list = []
+            if sample_warning not in warnings_list:
+                warnings_list.append(sample_warning)
             result["warnings"] = warnings_list
         result = _apply_conformal_intervals_detail(result, request)
     except Exception as exc:
