@@ -1,5 +1,4 @@
 import importlib.util
-import logging
 import sys
 from pathlib import Path
 
@@ -87,7 +86,7 @@ def test_apply_ta_indicators_accepts_volume_alias_columns(volume_col: str) -> No
     assert any(str(col).upper().startswith("OBV") for col in added)
 
 
-def test_apply_ta_indicators_logs_warning_when_all_fallbacks_fail(monkeypatch, caplog) -> None:
+def test_apply_ta_indicators_raises_actionable_error_without_retries(monkeypatch) -> None:
     df = _sample_df()
 
     def _broken_indicator(*args, **kwargs):
@@ -95,8 +94,8 @@ def test_apply_ta_indicators_logs_warning_when_all_fallbacks_fail(monkeypatch, c
 
     monkeypatch.setattr(indicators.pta, "ema", _broken_indicator, raising=False)
 
-    with caplog.at_level(logging.WARNING, logger=indicators.logger.name):
-        added = _apply_ta_indicators(df, "ema(20)")
-
-    assert added == []
-    assert any("Indicator ema failed after all call fallbacks" in record.message for record in caplog.records)
+    with pytest.raises(
+        ValueError,
+        match="Indicator 'ema' failed with parameters defaults: boom",
+    ):
+        _apply_ta_indicators(df, "ema(20)")
