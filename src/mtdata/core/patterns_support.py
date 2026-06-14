@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 
 from ..patterns.common import interval_overlap_ratio as _interval_overlap_ratio
+from ..utils.regime_heuristics import infer_market_regime
 from ..utils.utils import _format_time_minimal, _safe_float
 from ..utils.utils import to_float_np as __to_float_np
 
@@ -1464,51 +1465,28 @@ def _infer_market_regime(df: pd.DataFrame, config: Any) -> Optional[Dict[str, An
     if close.size < 20:
         return None
 
-    window_bars = min(
-        int(close.size),
-        _config_int(config, "regime_window_bars", 160, minimum=20),
+    result = infer_market_regime(
+        close,
+        window_bars=_config_int(config, "regime_window_bars", 160, minimum=20),
+        trend_strength_threshold=_config_float(
+            config, "regime_trend_strength_threshold", 1.25, minimum=0.1
+        ),
+        efficiency_threshold=_config_float(
+            config,
+            "regime_efficiency_trending_threshold",
+            0.35,
+            minimum=0.05,
+        ),
     )
-    segment = np.asarray(close[-window_bars:], dtype=float)
-    if segment.size < 20:
+    if result is None:
         return None
-
-    diffs = np.diff(segment)
-    finite_diffs = diffs[np.isfinite(diffs)]
-    path_length = float(np.sum(np.abs(finite_diffs))) if finite_diffs.size else 0.0
-    move = float(segment[-1] - segment[0])
-    base_price = float(segment[0]) if abs(float(segment[0])) > 1e-9 else 1e-9
-    trend_strength = float(abs(move) / max(float(np.nanstd(segment)), 1e-9))
-    efficiency_ratio = float(abs(move) / max(path_length, 1e-9))
-    trend_threshold = _config_float(
-        config, "regime_trend_strength_threshold", 1.25, minimum=0.1
-    )
-    efficiency_threshold = _config_float(
-        config,
-        "regime_efficiency_trending_threshold",
-        0.35,
-        minimum=0.05,
-    )
-
-    if efficiency_ratio >= efficiency_threshold and trend_strength >= trend_threshold:
-        state = "trending"
-    elif efficiency_ratio <= max(0.1, 0.55 * efficiency_threshold):
-        state = "ranging"
-    else:
-        state = "transition"
-
-    direction = "neutral"
-    if move > 1e-9:
-        direction = "bullish"
-    elif move < -1e-9:
-        direction = "bearish"
-
     return {
-        "state": state,
-        "direction": direction,
-        "window_bars": int(window_bars),
-        "trend_strength": _round_value(trend_strength),
-        "efficiency_ratio": _round_value(efficiency_ratio),
-        "window_move_pct": _round_value((move / base_price) * 100.0),
+        "state": result["state"],
+        "direction": result["direction"],
+        "window_bars": result["window_bars"],
+        "trend_strength": _round_value(result["trend_strength"]),
+        "efficiency_ratio": _round_value(result["efficiency_ratio"]),
+        "window_move_pct": _round_value(result["window_move_pct"]),
     }
 
 

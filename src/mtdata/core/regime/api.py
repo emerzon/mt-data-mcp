@@ -14,6 +14,7 @@ from ...shared.schema import DenoiseSpec, DetailLiteral, TimeframeLiteral
 from ...shared.symbols import CRYPTO_SYMBOL_HINTS as _CRYPTO_SYMBOL_HINTS
 from ...utils.denoise import _resolve_denoise_base_col
 from ...utils.mt5 import MT5ConnectionError, ensure_mt5_connection_or_raise
+from ...utils.regime_heuristics import infer_market_regime
 from ...utils.utils import _format_time_minimal
 from .. import features as _features_module
 from .._mcp_instance import mcp
@@ -2456,7 +2457,6 @@ def regime_detect(  # noqa: C901
 
         elif method == "rule_based":
             # Rule-based trend/ranging/transition detection
-            # Based on the internal _infer_market_regime from patterns_support.py
             if rule_based_config is None:
                 return _finish({"error": "Internal error resolving rule_based parameters."})
 
@@ -2479,44 +2479,20 @@ def regime_detect(  # noqa: C901
                     }
                 )
 
-            # Use the recent price window so direction and movement metrics stay
-            # meaningful even when the requested target is return-based.
-            segment = price_series[-window_bars:]
-
-            # Calculate metrics
-            diffs = np.diff(segment)
-            finite_diffs = diffs[np.isfinite(diffs)]
-            path_length = (
-                float(np.sum(np.abs(finite_diffs))) if finite_diffs.size else 0.0
+            regime_metrics = infer_market_regime(
+                price_series,
+                window_bars=window_bars,
+                efficiency_threshold=efficiency_threshold,
+                trend_strength_threshold=trend_strength_threshold,
             )
-            move = float(segment[-1] - segment[0])
-            base_price = float(segment[0]) if abs(float(segment[0])) > 1e-9 else 1e-9
-
-            # Trend strength: move relative to volatility
-            trend_strength = float(abs(move) / max(float(np.nanstd(segment)), 1e-9))
-
-            # Efficiency ratio: how direct was the move
-            efficiency_ratio = float(abs(move) / max(path_length, 1e-9))
-
-            # Determine regime
+            if regime_metrics is None:
+                return _finish({"error": "Insufficient finite price data for rule-based regime."})
+            regime_state = str(regime_metrics["state"])
+            direction = str(regime_metrics["direction"])
+            trend_strength = float(regime_metrics["trend_strength"])
+            efficiency_ratio = float(regime_metrics["efficiency_ratio"])
+            window_move_pct_raw = float(regime_metrics["window_move_pct"])
             ranging_efficiency_threshold = max(0.1, 0.55 * efficiency_threshold)
-            if (
-                efficiency_ratio >= efficiency_threshold
-                and trend_strength >= trend_strength_threshold
-            ):
-                regime_state = "trending"
-            elif efficiency_ratio <= ranging_efficiency_threshold:
-                regime_state = "ranging"
-            else:
-                regime_state = "transition"
-
-            # Determine direction
-            if move > 1e-9:
-                direction = "bullish"
-            elif move < -1e-9:
-                direction = "bearish"
-            else:
-                direction = "neutral"
 
             direction_bias = {
                 "bullish": "upward",
@@ -2551,7 +2527,7 @@ def regime_detect(  # noqa: C901
             # Build payload - single regime for the window
             trend_strength_out = round(trend_strength, 4)
             efficiency_ratio_out = round(efficiency_ratio, 4)
-            window_move_pct = round((move / base_price) * 100.0, 4)
+            window_move_pct = round(window_move_pct_raw, 4)
             window_quality: Optional[Dict[str, Any]] = None
             if int(window_bars) < _RULE_BASED_RECOMMENDED_WINDOW_BARS:
                 window_quality = {
