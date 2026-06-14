@@ -101,11 +101,13 @@ class TestComputePerformanceMetrics:
 
         assert m["win_rate"] == 0.5
         assert m["avg_win_return"] == pytest.approx(0.03)
-        assert m["avg_loss_return"] == pytest.approx(0.015)
+        assert m["avg_loss_return"] == pytest.approx(-0.015)
+        assert m["avg_loss_magnitude"] == pytest.approx(0.015)
         assert m["avg_win_loss_ratio"] == pytest.approx(2.0)
         assert m["kelly_fraction"] == pytest.approx(0.25)
         assert m["half_kelly_fraction"] == pytest.approx(0.125)
-        assert m["avg_loss_return_pct"] == pytest.approx(1.5)
+        assert m["avg_loss_return_pct"] == pytest.approx(-1.5)
+        assert m["avg_loss_magnitude_pct"] == pytest.approx(1.5)
 
     def test_single_return(self):
         m = _compute_performance_metrics([0.05], "H1", 12, 0.0)

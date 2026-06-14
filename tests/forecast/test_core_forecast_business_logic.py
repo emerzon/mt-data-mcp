@@ -845,7 +845,8 @@ def test_run_forecast_backtest_compact_keeps_kelly_metrics():
                     "metrics": {
                         "win_rate": 0.5,
                         "avg_win_return": 0.03000001,
-                        "avg_loss_return": 0.01500001,
+                        "avg_loss_return": -0.01500001,
+                        "avg_loss_magnitude": 0.01500001,
                         "avg_win_loss_ratio": 1.999998,
                         "kelly_fraction": 0.249999,
                         "half_kelly_fraction": 0.124999,
@@ -863,7 +864,8 @@ def test_run_forecast_backtest_compact_keeps_kelly_metrics():
 
     row = result["ranked_methods"][0]
     assert row["avg_win_return"] == 0.03
-    assert row["avg_loss_return"] == 0.015
+    assert row["avg_loss_return"] == -0.015
+    assert row["avg_loss_magnitude"] == 0.015
     assert row["avg_win_loss_ratio"] == 2.0
     assert row["kelly_fraction"] == 0.25
     assert row["half_kelly_fraction"] == 0.125
