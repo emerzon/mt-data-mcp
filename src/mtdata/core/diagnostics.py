@@ -287,7 +287,7 @@ def seasonality_detect(
             period = int(round(1.0 / float(frequency)))
             if int(min_period) <= period <= upper:
                 spectral_by_period[period] = max(spectral_by_period.get(period, 0.0), float(power))
-        max_power = max(spectral_by_period.values(), default=0.0)
+        total_spectral_power = float(np.sum(powers[positive]))
         positive_acf = np.maximum(acf_scores, 0.0)
         peak_idx, _ = find_peaks(positive_acf)
         candidates = set(int(periods[index]) for index in peak_idx)
@@ -297,7 +297,11 @@ def seasonality_detect(
         rows: List[Dict[str, Any]] = []
         for period in candidates:
             acf_value = float(acf_scores[period - int(min_period)])
-            spectral_strength = float(spectral_by_period.get(period, 0.0) / max_power) if max_power > 0 else 0.0
+            spectral_strength = (
+                float(spectral_by_period.get(period, 0.0) / total_spectral_power)
+                if total_spectral_power > 0
+                else 0.0
+            )
             acf_strength = max(0.0, min(1.0, acf_value))
             score = 0.55 * acf_strength + 0.45 * spectral_strength
             rows.append(
@@ -321,12 +325,13 @@ def seasonality_detect(
             "items": rows,
             "count": len(rows),
             "dominant_period_bars": rows[0]["period_bars"] if rows else None,
-            "score_formula": "0.55*acf_strength + 0.45*periodogram_strength; range 0-1, higher = stronger seasonality",
+            "score_formula": "0.55*acf_strength + 0.45*spectral_power_fraction; range 0-1, higher = stronger seasonality",
         }
         if normalize_output_verbosity_detail(detail, default="compact") == "full":
             out["method"] = {
                 "acf_weight": 0.55,
                 "periodogram_weight": 0.45,
+                "spectral_component": "candidate_power / total_positive_frequency_power",
                 "minimum_cycles": int(min_cycles),
             }
         return out

@@ -80,6 +80,28 @@ def test_seasonality_detect_finds_known_period(monkeypatch):
     assert result["dominant_period_bars"] == 12
 
 
+def test_seasonality_detect_does_not_inflate_noise_spectral_score(monkeypatch):
+    values = 100.0 + np.random.default_rng(42).normal(size=1000)
+    frame = _bars(values)
+    monkeypatch.setattr(diagnostics, "create_mt5_gateway", lambda **kwargs: _Gateway())
+    monkeypatch.setattr(
+        diagnostics,
+        "_fetch_diagnostic_bars",
+        lambda *args, **kwargs: (frame, None),
+    )
+
+    result = _raw(diagnostics.seasonality_detect)(
+        symbol="TEST",
+        target="close",
+        min_period=4,
+        max_period=50,
+    )
+
+    assert result["success"] is True
+    assert max(row["spectral_strength"] for row in result["items"]) < 0.05
+    assert max(row["score"] for row in result["items"]) < 0.15
+
+
 def test_outliers_detect_flags_price_and_volume_spike(monkeypatch):
     close = np.linspace(100.0, 101.0, 120)
     close[80] = 130.0
