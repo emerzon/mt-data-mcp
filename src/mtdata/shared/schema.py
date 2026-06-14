@@ -244,7 +244,6 @@ PARAM_HINTS = {
     "optimizer": "Barrier optimizer backend: grid or optuna.",
     "fast_defaults": "Use a faster low-cost optimization profile (fewer sims/steps/trials). Example: '--fast-defaults true'.",
     "search_profile": "Search intensity profile: fast, medium, or long.",
-    "profile": "Alias for search_profile in params payloads.",
     "statistical_robustness": "Enable statistical robustness diagnostics for the selected barrier pair.",
     "target_ci_width": "Requested probability CI width used for minimum-simulation guidance.",
     "n_seeds_stability": "Number of alternate seed re-runs for cross-seed stability checks.",

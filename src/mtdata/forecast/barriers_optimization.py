@@ -150,7 +150,7 @@ def _resolve_barrier_search_profile_config(
     fast_defaults: Any,
 ) -> Tuple[str, Dict[str, Any]]:
     search_profile_requested = str(
-        params_dict.get("search_profile", params_dict.get("profile", search_profile))
+        params_dict.get("search_profile", search_profile)
     ).strip().lower()
     if search_profile_requested not in _BARRIER_SEARCH_PROFILE_DEFAULTS:
         search_profile_requested = "medium"
@@ -1069,6 +1069,13 @@ def forecast_barrier_optimize(  # noqa: C901
             return {"error": direction_error}
 
         params_dict = _parse_kv_or_json(params)
+        if "profile" in params_dict:
+            return {
+                "error": (
+                    "params.profile is not supported. Use search_profile either as "
+                    "the tool parameter or inside params."
+                )
+            }
         contract_warnings: List[str] = []
         mode_requested = str(mode).lower().strip()
         if mode_requested not in {'pct', 'ticks'}:

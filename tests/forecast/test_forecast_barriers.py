@@ -50,6 +50,21 @@ _BARRIER_PROB_ROOT = "mtdata.forecast.barriers_probabilities"
 _BARRIER_OPT_ROOT = "mtdata.forecast.barriers_optimization"
 
 
+def test_barrier_optimize_rejects_removed_profile_alias():
+    result = forecast_barrier_optimize(
+        symbol="EURUSD",
+        timeframe="H1",
+        params={"profile": "long"},
+    )
+
+    assert result == {
+        "error": (
+            "params.profile is not supported. Use search_profile either as "
+            "the tool parameter or inside params."
+        )
+    }
+
+
 class _BarrierModulePatchMixin:
     def _start_barrier_module_patchers(self) -> None:
         self._barrier_patchers = [
