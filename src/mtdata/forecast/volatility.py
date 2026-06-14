@@ -42,6 +42,7 @@ from .common import (
 from .common import (
     pd_freq_from_timeframe as _pd_freq_from_timeframe,
 )
+from .common import next_times_from_last, uses_standard_weekend_projection
 
 _VOLATILITY_METHOD_HINTS = (
     "ewma",
@@ -461,6 +462,7 @@ def _volatility_input_context(
     timeframe: str,
     returns_used: int,
     live_window: bool,
+    horizon: int = 1,
     now_epoch: Optional[float] = None,
 ) -> Dict[str, Any]:
     if "time" not in df.columns or len(df) == 0:
@@ -481,6 +483,36 @@ def _volatility_input_context(
             "input_bar_policy": "closed_bars_only",
         },
     }
+    tf_secs = int(TIMEFRAME_SECONDS.get(timeframe, 0) or 0)
+    forecast_epochs = (
+        next_times_from_last(
+            last_epoch,
+            tf_secs,
+            max(1, int(horizon)),
+            skip_weekends=uses_standard_weekend_projection(symbol, tf_secs),
+        )
+        if tf_secs > 0
+        else []
+    )
+    if forecast_epochs:
+        start_epoch = float(forecast_epochs[0])
+        end_epoch = float(forecast_epochs[-1])
+        out["forecast_window"] = {
+            "anchor": _format_time_minimal(last_epoch),
+            "start": _format_time_minimal(start_epoch),
+            "end": _format_time_minimal(end_epoch),
+            "bars": int(len(forecast_epochs)),
+            "step_seconds": tf_secs,
+            "forecast_start_gap_bars": round(
+                (start_epoch - last_epoch) / float(tf_secs),
+                4,
+            ),
+            "calendar_policy": (
+                "forex_weekend_skipped"
+                if uses_standard_weekend_projection(symbol, tf_secs)
+                else "continuous_no_weekend_skip"
+            ),
+        }
     if not live_window:
         return out
 
@@ -554,6 +586,7 @@ def _finalize_volatility_with_context(
             timeframe=timeframe,
             returns_used=returns_used,
             live_window=live_window,
+            horizon=int(payload.get("horizon", 1) or 1),
         )
     )
     return _finalize_volatility_output(payload, detail=detail)

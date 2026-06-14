@@ -34,6 +34,24 @@ _FORECAST_AUXILIARY_COLUMN_RE = re.compile(
 )
 _NF_ENV_LOCK = threading.RLock()
 
+_FOREX_CURRENCY_CODES = frozenset(
+    {
+        "AUD",
+        "CAD",
+        "CHF",
+        "CNH",
+        "EUR",
+        "GBP",
+        "JPY",
+        "NOK",
+        "NZD",
+        "SEK",
+        "SGD",
+        "USD",
+        "ZAR",
+    }
+)
+
 
 def edge_pad_to_length(values: np.ndarray, length: int) -> np.ndarray:
     """Trim or edge-pad a 1D array to exactly `length` elements."""
@@ -312,6 +330,20 @@ def is_standard_weekend_closed_epoch(epoch: Any) -> bool:
     if weekday == 4 and dt_utc.hour >= 22:
         return True
     return False
+
+
+def uses_standard_weekend_projection(symbol: Optional[str], tf_secs: int) -> bool:
+    """Return whether intraday forecasts should skip the standard FX weekend."""
+    text = "".join(ch for ch in str(symbol or "").upper() if ch.isalpha())
+    if len(text) < 6:
+        return False
+    base = text[:3]
+    quote = text[3:6]
+    return (
+        base in _FOREX_CURRENCY_CODES
+        and quote in _FOREX_CURRENCY_CODES
+        and int(tf_secs) < TIMEFRAME_SECONDS.get("D1", 86400)
+    )
 
 
 def _next_standard_weekend_open_epoch(epoch: float) -> float:

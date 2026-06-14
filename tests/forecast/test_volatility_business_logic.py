@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import math
+from datetime import datetime, timezone
 from types import SimpleNamespace
 
 import numpy as np
+import pandas as pd
 import pytest
 
 from mtdata.forecast import volatility as vol
@@ -297,6 +299,7 @@ def test_forecast_volatility_compact_includes_input_window(monkeypatch):
     out = vol.forecast_volatility(
         symbol="EURUSD",
         timeframe="H1",
+        horizon=12,
         method="ewma",
         detail="compact",
     )
@@ -309,8 +312,41 @@ def test_forecast_volatility_compact_includes_input_window(monkeypatch):
         "input_bar_policy": "closed_bars_only",
     }
     assert out["data_as_of"] == "2023-11-19T20:13Z"
+    assert out["forecast_window"] == {
+        "anchor": "2023-11-19T20:13Z",
+        "start": "2023-11-19T22:00Z",
+        "end": "2023-11-20T09:00Z",
+        "bars": 12,
+        "step_seconds": 3600,
+        "forecast_start_gap_bars": 1.7778,
+        "calendar_policy": "forex_weekend_skipped",
+    }
     assert out["data_stale"] is True
     assert out["freshness"].startswith("stale, data ")
+
+
+def test_volatility_forecast_window_skips_closed_fx_weekend() -> None:
+    friday_19 = datetime(2026, 6, 12, 19, tzinfo=timezone.utc).timestamp()
+    frame = pd.DataFrame({"time": [friday_19 - 3600, friday_19]})
+
+    context = vol._volatility_input_context(
+        frame,
+        symbol="EURUSD",
+        timeframe="H1",
+        returns_used=1,
+        live_window=False,
+        horizon=12,
+    )
+
+    assert context["forecast_window"] == {
+        "anchor": "2026-06-12T19:00Z",
+        "start": "2026-06-12T20:00Z",
+        "end": "2026-06-15T07:00Z",
+        "bars": 12,
+        "step_seconds": 3600,
+        "forecast_start_gap_bars": 1.0,
+        "calendar_policy": "forex_weekend_skipped",
+    }
 
 
 def test_finalize_volatility_standard_keeps_pct_aliases_and_notes():

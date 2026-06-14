@@ -41,6 +41,7 @@ from .common import (
     default_seasonality,
     is_standard_weekend_closed_epoch,
     next_times_from_last,
+    uses_standard_weekend_projection,
 )
 from .common import (
     fetch_history as _fetch_history,
@@ -84,34 +85,6 @@ _ENSEMBLE_BASE_METHODS = (
 logger = logging.getLogger(__name__)
 _normalize_weights = _normalize_weights_impl
 
-_FOREX_CURRENCY_CODES = frozenset(
-    {
-        "AUD",
-        "CAD",
-        "CHF",
-        "CNH",
-        "EUR",
-        "GBP",
-        "JPY",
-        "NOK",
-        "NZD",
-        "SEK",
-        "SGD",
-        "USD",
-        "ZAR",
-    }
-)
-
-
-def _looks_like_forex_symbol(symbol: Optional[str]) -> bool:
-    text = "".join(ch for ch in str(symbol or "").upper() if ch.isalpha())
-    if len(text) < 6:
-        return False
-    base = text[:3]
-    quote = text[3:6]
-    return base in _FOREX_CURRENCY_CODES and quote in _FOREX_CURRENCY_CODES
-
-
 def _count_weekend_forecast_times(times: List[str]) -> int:
     weekend_count = 0
     for value in times:
@@ -122,13 +95,6 @@ def _count_weekend_forecast_times(times: List[str]) -> int:
         if timestamp.weekday() >= 5:
             weekend_count += 1
     return weekend_count
-
-
-def _uses_standard_weekend_projection(symbol: Optional[str], tf_secs: int) -> bool:
-    return (
-        _looks_like_forex_symbol(symbol)
-        and int(tf_secs) < TIMEFRAME_SECONDS.get("D1", 86400)
-    )
 
 
 def _forex_forecast_market_status(epoch: Any) -> str:
@@ -504,7 +470,7 @@ def _prepare_feature_context(
             float(df['time'].iloc[-1]),
             int(tf_secs),
             int(horizon),
-            skip_weekends=_uses_standard_weekend_projection(symbol, int(tf_secs)),
+            skip_weekends=uses_standard_weekend_projection(symbol, int(tf_secs)),
         )
         try:
             X, built_future_exog, feat_info = _forecast_preprocessing.prepare_features(
@@ -1018,7 +984,7 @@ def _format_forecast_output(
         last_epoch,
         tf_secs,
         horizon,
-        skip_weekends=_uses_standard_weekend_projection(symbol, tf_secs),
+        skip_weekends=uses_standard_weekend_projection(symbol, tf_secs),
     )
     use_client_tz = _use_client_tz()
     client_tz = _resolve_client_tz() if use_client_tz else None
@@ -1077,7 +1043,7 @@ def _format_forecast_output(
         "last_price_source": "candle_close" if last_price is not None else None,
         "calendar_treatment": (
             "forex_weekend_skipped"
-            if _uses_standard_weekend_projection(symbol, tf_secs)
+            if uses_standard_weekend_projection(symbol, tf_secs)
             else "continuous_no_weekend_skip"
         ),
     }
@@ -1087,7 +1053,7 @@ def _format_forecast_output(
             f"{horizon} trading bars forecast; {skipped_bars} "
             f"{str(timeframe or '').upper() or 'timeframe'} bars skipped (weekend)."
         )
-    elif not _uses_standard_weekend_projection(symbol, tf_secs):
+    elif not uses_standard_weekend_projection(symbol, tf_secs):
         weekend_bars = _count_weekend_forecast_times(forecast_times)
         if weekend_bars:
             result.setdefault("warnings", []).append(
@@ -1164,7 +1130,7 @@ def _format_forecast_output(
         result.update(metadata)
 
     if (
-        _uses_standard_weekend_projection(symbol, tf_secs)
+        uses_standard_weekend_projection(symbol, tf_secs)
         and forecast_times
     ):
         market_status = [_forex_forecast_market_status(epoch) for epoch in future_epochs]
