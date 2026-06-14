@@ -10,14 +10,11 @@ from typing import Any, Dict, List, Optional, Tuple
 import pandas as pd
 
 try:
-    import pandas_ta as pta  # preferred module name
-except ModuleNotFoundError:  # fallback for alternate distribution import
-    try:
-        import pandas_ta_classic as pta
-    except ModuleNotFoundError as e:
-        raise ModuleNotFoundError(
-            "pandas_ta not found. Install 'pandas-ta-classic' (or 'pandas-ta')."
-        ) from e
+    import pandas_ta_classic as pta
+except ModuleNotFoundError as exc:
+    raise ModuleNotFoundError(
+        "pandas-ta-classic not found. Install with: pip install pandas-ta-classic"
+    ) from exc
 
 
 _INDICATOR_ALIASES: dict[str, str] = {
