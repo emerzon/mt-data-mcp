@@ -845,6 +845,7 @@ def _compact_tick_rows_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
                 compact_units.setdefault(field, "absolute_price")
         for field, unit in (
             ("spread_points", "broker_points"),
+            ("spread_pips", "pips"),
             ("spread_pct", "percentage_points (1.0 = 1%)"),
         ):
             if any(isinstance(row, dict) and field in row for row in compact["data"]):

@@ -28,6 +28,7 @@ from ..shared.constants import (
     TIMEFRAME_MAP,
     TIMEFRAME_SECONDS,
 )
+from ..shared.market_units import forex_points_per_pip
 
 # Imports from core (schema, constants, server utils)
 # Imports from core (schema, constants)
@@ -121,6 +122,7 @@ _TICK_ROW_UNITS = {
     "mid": "absolute_price",
     "spread": "absolute_price",
     "spread_points": "broker_points",
+    "spread_pips": "pips",
     "spread_pct": "percentage_points (1.0 = 1%)",
     "tick_gap_ms": "milliseconds",
     "tick_volume": "broker_tick_count",
@@ -199,6 +201,17 @@ def _symbol_price_point(*infos: Any) -> Optional[float]:
             if math.isfinite(point) and point > 0.0:
                 return point
     return None
+
+
+def _symbol_path(*infos: Any) -> str:
+    for info in infos:
+        try:
+            path = getattr(info, "path", None)
+        except Exception:
+            path = None
+        if isinstance(path, str) and path.strip():
+            return path.strip()
+    return ""
 
 
 def _round_price_value(value: Any, digits: int) -> Any:
@@ -2381,6 +2394,16 @@ def fetch_ticks(  # noqa: C901
             price_digits = _symbol_price_digits(_info, _info_before)
             price_currency = _symbol_price_currency(_info, _info_before)
             price_point = _symbol_price_point(_info, _info_before)
+            points_per_pip = (
+                forex_points_per_pip(
+                    symbol,
+                    path=_symbol_path(_info, _info_before),
+                    point=price_point,
+                    digits=price_digits,
+                )
+                if price_point is not None
+                else None
+            )
 
             # Normalized params only. This is an output shape selector, not the
             # shared compact/full detail enum.
@@ -2522,6 +2545,8 @@ def fetch_ticks(  # noqa: C901
             headers.extend(["mid", "spread"])
             if price_point is not None:
                 headers.append("spread_points")
+            if points_per_pip is not None:
+                headers.append("spread_pips")
             headers.extend(["spread_pct", "tick_gap_ms"])
         headers.extend(["last", "tick_volume", "real_volume", "flags", "flags_decoded"])
 
@@ -2578,6 +2603,10 @@ def fetch_ticks(  # noqa: C901
             df_ticks["spread"] = df_ticks["ask"] - df_ticks["bid"]
             if price_point is not None:
                 df_ticks["spread_points"] = df_ticks["spread"] / price_point
+            if price_point is not None and points_per_pip is not None:
+                df_ticks["spread_pips"] = (
+                    df_ticks["spread"] / price_point / points_per_pip
+                )
             df_ticks["spread_pct"] = (df_ticks["spread"] / df_ticks["mid"]) * 100.0
             df_ticks["tick_gap_ms"] = tick_gap_ms
         df_ticks["last"] = lasts
@@ -2644,6 +2673,11 @@ def fetch_ticks(  # noqa: C901
                 spread_value = _finite_or_none(last_quote.get("spread"))
                 if spread_value is not None:
                     last_quote["spread_points"] = round(spread_value / price_point, 4)
+                    if points_per_pip is not None:
+                        last_quote["spread_pips"] = round(
+                            spread_value / price_point / points_per_pip,
+                            4,
+                        )
             if isinstance(last_quote, dict):
                 spread_pct = _tick_spread_pct(
                     last_quote.get("spread"),
@@ -3131,6 +3165,12 @@ def fetch_ticks(  # noqa: C901
                 )
                 if price_point is not None:
                     values.append(spread_points)
+                if points_per_pip is not None:
+                    values.append(
+                        round(spread_points / points_per_pip, 4)
+                        if spread_points is not None
+                        else None
+                    )
                 values.extend([spread_pct, gap_ms])
             values.append(_round_price_value(_finite_or_none(lasts[i]), price_digits))
             values.append(_finite_or_none(volumes[i]))

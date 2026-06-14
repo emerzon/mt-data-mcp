@@ -2192,7 +2192,7 @@ class TestFetchTicks(unittest.TestCase):
     @patch(_CACHED_INFO, return_value=SimpleNamespace(digits=5, point=0.00001))
     @patch(_RESOLVE_CTZ, return_value=None)
     @patch(_GUARD, _mock_symbol_guard)
-    def test_recent_ticks_include_freshness_and_spread_points(
+    def test_recent_ticks_include_freshness_and_spread_units(
         self,
         mock_ctz,
         mock_info,
@@ -2211,12 +2211,32 @@ class TestFetchTicks(unittest.TestCase):
             self.assertTrue(result["data_stale"])
             self.assertEqual(result["freshness"], "stale, tick 10m 0s ago")
             self.assertEqual(result["last_quote"]["spread_points"], 20.0)
+            self.assertEqual(result["last_quote"]["spread_pips"], 2.0)
             self.assertEqual(result["last_quote"]["spread_pct"], 0.018149)
             self.assertEqual(result["price_point"], 0.00001)
         self.assertEqual(full_rows["data"][-1]["spread_points"], 20.0)
+        self.assertEqual(full_rows["data"][-1]["spread_pips"], 2.0)
         self.assertEqual(full_rows["data"][-1]["spread_pct"], 0.018149)
         self.assertEqual(full_rows["units"]["spread_points"], "broker_points")
+        self.assertEqual(full_rows["units"]["spread_pips"], "pips")
         self.assertEqual(full_rows["units"]["spread_pct"], "percentage_points (1.0 = 1%)")
+
+    @patch(_TICKS_RANGE)
+    @patch(
+        _CACHED_INFO,
+        return_value=SimpleNamespace(digits=2, point=0.01, path="Crypto\\BTCUSD"),
+    )
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_GUARD, _mock_symbol_guard)
+    def test_non_fx_ticks_omit_spread_pips(self, mock_ctz, mock_info, mock_ticks):
+        mock_ticks.return_value = _make_ticks(5)
+
+        result = fetch_ticks("BTCUSD", limit=5, format="full_rows")
+
+        self.assertTrue(result.get("success"))
+        self.assertNotIn("spread_pips", result["last_quote"])
+        self.assertNotIn("spread_pips", result["data"][0])
+        self.assertNotIn("spread_pips", result["units"])
 
     @patch(f'{_DS}.time.time')
     @patch(_TICKS_RANGE)

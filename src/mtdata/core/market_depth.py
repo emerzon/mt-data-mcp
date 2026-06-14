@@ -5,6 +5,7 @@ import os
 import time
 from typing import Any, Dict, Literal, Optional
 
+from ..shared.market_units import forex_points_per_pip
 from ..shared.schema import CompactFullDetailLiteral
 from ..utils.freshness import (
     QUOTE_STALE_SECONDS,
@@ -39,26 +40,6 @@ _MARKET_DEPTH_BOOK_UNITS = {
     "volume_real": "book_volume_real",
 }
 _MARKET_DEPTH_TICK_UNITS = {"volume": "mt5_tick_volume"}
-_FOREX_CURRENCY_CODES = {
-    "AUD",
-    "CAD",
-    "CHF",
-    "CNH",
-    "CNY",
-    "EUR",
-    "GBP",
-    "HKD",
-    "JPY",
-    "MXN",
-    "NOK",
-    "NZD",
-    "SEK",
-    "SGD",
-    "USD",
-    "ZAR",
-}
-
-
 def _round_market_ticker_value(value: Any, *, digits: int) -> Any:
     if value is None:
         return None
@@ -100,27 +81,12 @@ def _market_ticker_points_per_pip(
     point: float,
     digits: int,
 ) -> Optional[float]:
-    path = str(getattr(symbol_info, "path", "") or "").casefold()
-    name_letters = "".join(
-        char for char in str(symbol or "").upper() if "A" <= char <= "Z"
+    return forex_points_per_pip(
+        symbol,
+        path=str(getattr(symbol_info, "path", "") or ""),
+        point=point,
+        digits=digits,
     )
-    pair_prefix = name_letters[:6]
-    is_currency_pair = (
-        len(pair_prefix) == 6
-        and pair_prefix[:3] in _FOREX_CURRENCY_CODES
-        and pair_prefix[3:] in _FOREX_CURRENCY_CODES
-    )
-    if not is_currency_pair and "forex" not in path and "\\fx" not in path and "/fx" not in path:
-        return None
-    if digits in {3, 5}:
-        return 10.0
-    if digits in {2, 4}:
-        return 1.0
-    if point in {0.00001, 0.001}:
-        return 10.0
-    if point in {0.0001, 0.01}:
-        return 1.0
-    return None
 
 
 def _market_depth_fetch_enabled() -> bool:

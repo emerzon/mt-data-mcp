@@ -11,6 +11,7 @@ from ..shared.constants import (
     TIMEFRAME_MAP,
     TIMEFRAME_SECONDS,
 )
+from ..shared.market_units import forex_points_per_pip
 from ..shared.schema import CompactFullDetailLiteral, TimeframeLiteral
 from ..shared.validators import invalid_timeframe_error
 from ..utils.freshness import (
@@ -1590,26 +1591,12 @@ def _market_scan_quote_freshness_fields(
 
 
 def _market_scan_points_per_pip(symbol: Any, *, point: float, digits: int) -> Optional[float]:
-    path = str(getattr(symbol, "path", "") or "").casefold()
-    name_letters = re.sub(r"[^A-Z]", "", str(getattr(symbol, "name", "") or "").upper())
-    pair_prefix = name_letters[:6]
-    is_currency_pair = (
-        len(pair_prefix) == 6
-        and pair_prefix[:3] in _FOREX_CURRENCY_CODES
-        and pair_prefix[3:] in _FOREX_CURRENCY_CODES
+    return forex_points_per_pip(
+        str(getattr(symbol, "name", "") or ""),
+        path=str(getattr(symbol, "path", "") or ""),
+        point=point,
+        digits=digits,
     )
-    if not is_currency_pair and "forex" not in path and "\\fx" not in path and "/fx" not in path:
-        return None
-
-    if digits in {3, 5}:
-        return 10.0
-    if digits in {2, 4}:
-        return 1.0
-    if point in {0.00001, 0.001}:
-        return 10.0
-    if point in {0.0001, 0.01}:
-        return 1.0
-    return None
 
 
 def _build_market_scan_spread_row(
