@@ -1,10 +1,16 @@
 """Payload consolidation utilities for regime detection output formatting."""
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 
 from .smoothing import _canonicalize_regime_labels
+
+# Direction label requires mean return to be at least this many standard errors
+# away from zero. Aligns BOCPD segment labeling with the PELT gate so that a
+# stationary-return window is no longer branded trending_down just because the
+# cumulative return happened to land slightly negative over a long window.
+_DIRECTION_T_STAT_THRESHOLD = 1.96
 
 
 def _return_level_from_mean(mu: float, *, neutral_threshold: float = 0.0001) -> str:
@@ -368,7 +374,14 @@ def _build_bocpd_segment_context(
     *,
     target: Optional[str],
 ) -> Dict[str, Any]:
-    """Derive contextual statistics for a BOCPD segment from the target series."""
+    """Derive contextual statistics for a BOCPD segment from the target series.
+
+    Direction labels (``bullish`` / ``bearish``) are gated on a t-statistic of
+    at least ``_DIRECTION_T_STAT_THRESHOLD`` so a long, stationary window is
+    no longer branded trending just because the cumulative return happened to
+    drift slightly negative or positive. Statistical insignificant segments
+    fall back to ``flat``.
+    """
     values = np.asarray(series_values, dtype=float)
     values = values[np.isfinite(values)]
     if values.size == 0:
@@ -387,24 +400,41 @@ def _build_bocpd_segment_context(
             )
         else:
             volatility_pct = 0.0
+        mean_for_tstat = float(np.mean(log_returns)) if values.size > 1 and log_returns.size else 0.0
+        std_for_tstat = float(np.std(log_returns, ddof=1)) if log_returns.size > 1 else 0.0
+        n_for_tstat = int(log_returns.size) if values.size > 1 else 0
     else:
         total_log_return = float(np.sum(values))
         return_pct = float(np.expm1(total_log_return) * 100.0)
         volatility_pct = float(np.std(values) * 100.0) if values.size > 1 else 0.0
+        mean_for_tstat = float(np.mean(values))
+        std_for_tstat = float(np.std(values, ddof=1)) if values.size > 1 else 0.0
+        n_for_tstat = int(values.size)
 
-    if abs(return_pct) < 0.05:
+    mean_t_stat: Optional[float] = None
+    if n_for_tstat >= 2 and np.isfinite(std_for_tstat) and std_for_tstat > 1e-12:
+        mean_t_stat = float(mean_for_tstat / (std_for_tstat / np.sqrt(n_for_tstat)))
+
+    direction_significant = bool(
+        mean_t_stat is not None and abs(mean_t_stat) >= _DIRECTION_T_STAT_THRESHOLD
+    )
+    if not direction_significant:
         bias = "flat"
     elif return_pct > 0:
         bias = "bullish"
     else:
         bias = "bearish"
 
-    return {
+    context = {
         "source": f"derived_from_{target_name}_series",
         "bias": bias,
         "return_pct": round(return_pct, 4),
         "volatility_pct": round(volatility_pct, 4),
     }
+    if mean_t_stat is not None and np.isfinite(mean_t_stat):
+        context["mean_t_stat"] = round(float(mean_t_stat), 4)
+        context["direction_significant"] = bool(direction_significant)
+    return context
 
 
 def _interpret_regime_label(

@@ -378,6 +378,37 @@ def test_smoothing_preserves_last_occurrence_of_state():
     assert meta["smoothing_applied"] is False
 
 
+def test_bocpd_segment_context_labels_stationary_window_flat():
+    """A long stationary-return window with small cumulative drift must be `flat`.
+
+    Regression test: with the old 0.05% cumulative-return threshold, a 199-bar
+    EURUSD H1 window with stationary log returns could be branded trending_down
+    just because cumulative return happened to land at -0.67%. The new t-stat
+    gate requires the mean return to be statistically distinguishable from zero.
+    """
+    from mtdata.core.regime.payload import _build_bocpd_segment_context
+
+    rng = np.random.default_rng(42)
+    # 199 stationary returns with small negative drift (not statistically
+    # distinguishable from zero). Cumulative return ~ -0.67%.
+    returns = rng.normal(loc=-0.0000338, scale=0.0006, size=199)
+    ctx = _build_bocpd_segment_context(returns, target="return")
+    assert ctx["bias"] == "flat"
+    assert ctx["direction_significant"] is False
+
+
+def test_bocpd_segment_context_labels_significant_trend():
+    """A segment with statistically significant positive drift must be `bullish`."""
+    from mtdata.core.regime.payload import _build_bocpd_segment_context
+
+    rng = np.random.default_rng(7)
+    returns = rng.normal(loc=0.002, scale=0.0005, size=50)
+    ctx = _build_bocpd_segment_context(returns, target="return")
+    assert ctx["bias"] == "bullish"
+    assert ctx["direction_significant"] is True
+    assert ctx["mean_t_stat"] >= 1.96
+
+
 def _state_runs_for_test(state):
     runs = []
     start = 0
