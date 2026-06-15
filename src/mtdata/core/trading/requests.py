@@ -409,8 +409,8 @@ class TradeVarCvarRequest(BaseModel):
     detail: CompactFullDetailLiteral = Field(
         default="compact",
         description=(
-            "Response detail level. Use full to include the legacy zero-filled "
-            "risk arrays when no open positions are available."
+            "Response detail level. Compact returns the risk summary; full also "
+            "includes position, symbol-exposure, and worst-observation tables."
         ),
     )
 

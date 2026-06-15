@@ -598,6 +598,35 @@ def _shape_trade_risk_analyze_payload(
     return shaped
 
 
+def _shape_trade_var_cvar_payload(
+    result: Dict[str, Any],
+    *,
+    detail: str,
+) -> Dict[str, Any]:
+    if not isinstance(result, dict) or result.get("error"):
+        return result
+    if str(detail).strip().lower() != "compact":
+        return result
+    return {
+        key: result[key]
+        for key in (
+            "success",
+            "empty",
+            "status",
+            "message",
+            "scope",
+            "symbol",
+            "portfolio_hint",
+            "summary",
+            "equity",
+            "currency",
+            "history_failures",
+            "warnings",
+        )
+        if key in result
+    }
+
+
 def _trade_risk_sizing_field_label(field_name: str) -> str:
     return {
         "desired_risk_pct": "--desired-risk-pct",
@@ -4302,16 +4331,24 @@ def run_trade_var_cvar_calculate(  # noqa: C901
 
     result = {
         "success": True,
+        "scope": "symbol" if request.symbol else "portfolio",
         "summary": summary,
         "symbol_exposures": symbol_rows,
         "positions": position_exposures,
         "worst_observations": worst_observations,
     }
+    if request.symbol:
+        result["symbol"] = request.symbol
+        result["portfolio_hint"] = (
+            "Omit symbol to calculate VaR/CVaR for all open positions."
+        )
     if history_failures:
         result["history_failures"] = history_failures
     if warnings:
         result["warnings"] = warnings
-    return _finish(result)
+    return _finish(
+        _shape_trade_var_cvar_payload(result, detail=request.detail)
+    )
 
 
 def run_trade_get_open(
