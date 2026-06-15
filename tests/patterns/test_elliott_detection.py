@@ -3,7 +3,7 @@ import pandas as pd
 
 from src.mtdata.patterns.elliott import (
     ElliottWaveConfig,
-    _impulse_rules_and_score,
+    _evaluate_impulse_rules,
     _zigzag_pivots_indices,
     detect_elliott_waves,
 )
@@ -12,17 +12,17 @@ from src.mtdata.patterns.elliott import (
 def test_impulse_rule_rejects_wave3_shortest():
     # W3 is intentionally shorter than both W1 and W5.
     close = np.array([100.0, 130.0, 120.0, 132.0, 131.0, 171.0], dtype=float)
-    valid, score, metrics = _impulse_rules_and_score(close, [0, 1, 2, 3, 4, 5], bullish=True)
-    assert valid is False
-    assert float(score) >= 0.0
-    assert isinstance(metrics, dict)
+    evaluation = _evaluate_impulse_rules(close, [0, 1, 2, 3, 4, 5], bullish=True)
+    assert evaluation.valid is False
+    assert float(evaluation.fib_score) >= 0.0
+    assert isinstance(evaluation.metrics, dict)
 
 
 def test_impulse_rule_allows_wave3_to_tie_longest_non_shortest_wave():
     close = np.array([100.0, 120.0, 110.0, 130.0, 121.0, 146.0], dtype=float)
-    valid, _score, _metrics = _impulse_rules_and_score(close, [0, 1, 2, 3, 4, 5], bullish=True)
+    evaluation = _evaluate_impulse_rules(close, [0, 1, 2, 3, 4, 5], bullish=True)
 
-    assert valid is True
+    assert evaluation.valid is True
 
 
 def test_detect_elliott_waves_returns_candidate_for_fallback():

@@ -16,9 +16,7 @@ from mtdata.patterns.elliott import (
     _enforce_min_distance_on_pivots,
     _evaluate_correction_rules,
     _evaluate_impulse_rules,
-    _extract_wave_features,
     _filter_nested_results,
-    _impulse_rules_and_score,
     _normalize_pattern_types,
     _result_sort_key,
     _segment_waves_from_pivots,
@@ -327,11 +325,11 @@ class TestEvaluateImpulseRules:
         ev = _evaluate_impulse_rules(c, [0, 1, 2, 3, 4, 5], bullish=True)
         assert "non_finite_prices" in ev.violations
 
-    def test_backward_compat_wrapper(self):
+    def test_impulse_evaluation_exposes_score_metrics(self):
         c = _impulse_close()
-        valid, fib, metrics = _impulse_rules_and_score(c, [0, 1, 2, 3, 4, 5], True)
-        assert isinstance(valid, bool)
-        assert "fib_score" in metrics
+        evaluation = _evaluate_impulse_rules(c, [0, 1, 2, 3, 4, 5], True)
+        assert isinstance(evaluation.valid, bool)
+        assert evaluation.fib_score == evaluation.metrics["fib_score"]
 
 
 class TestEvaluateCorrectionRules:

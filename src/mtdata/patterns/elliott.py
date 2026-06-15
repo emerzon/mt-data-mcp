@@ -336,14 +336,6 @@ def _extract_wave_features_with_index(
     return np.asarray(features, dtype=float), wave_index_map
 
 
-def _extract_wave_features(
-    waves: List[Tuple[int, int]], close: np.ndarray
-) -> np.ndarray:
-    """Backward-compatible feature extractor used by existing tests/importers."""
-    features, _ = _extract_wave_features_with_index(waves, close)
-    return features
-
-
 def _cluster_impulsive_score(cluster_mean: np.ndarray) -> float:
     price_change = abs(float(cluster_mean[1])) if cluster_mean.size > 1 else 0.0
     slope = abs(float(cluster_mean[2])) if cluster_mean.size > 2 else 0.0
@@ -573,15 +565,6 @@ def _evaluate_impulse_rules(
         metrics=metrics,
         violations=violations,
     )
-
-
-def _impulse_rules_and_score(
-    c: np.ndarray, piv: List[int], bullish: bool
-) -> Tuple[bool, float, Dict[str, float]]:
-    """Backward-compatible wrapper around rule evaluation."""
-
-    ev = _evaluate_impulse_rules(c, piv, bullish)
-    return ev.valid, ev.fib_score, ev.metrics
 
 
 def _blend_confidence(
