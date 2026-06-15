@@ -9,9 +9,13 @@ from ..shared.market_units import forex_points_per_pip
 from ..shared.schema import CompactFullDetailLiteral
 from ..utils.freshness import (
     QUOTE_STALE_SECONDS,
-    closed_session_context,
     format_age_seconds,
     format_freshness_label,
+)
+from ..utils.market_metadata import (
+    FRESHNESS_ANCHOR_WALL_CLOCK,
+    FRESHNESS_METRIC_LAST_TICK_AGE,
+    build_tick_freshness_context,
 )
 from ..utils.mt5 import (
     MT5ConnectionError,
@@ -113,6 +117,14 @@ def _market_depth_level_field(level: Any, *names: str) -> Any:
 
 def _compact_market_ticker_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     out: Dict[str, Any] = {}
+    primary_spread_key = next(
+        (
+            key
+            for key in ("spread_pips", "spread_points", "spread")
+            if payload.get(key) is not None
+        ),
+        None,
+    )
     for key in (
         "success",
         "symbol",
@@ -122,16 +134,11 @@ def _compact_market_ticker_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
         "bid",
         "ask",
         "mid",
-        "spread",
-        "spread_points",
-        "spread_pct",
-        "spread_pips",
         "freshness",
         "stale_after_seconds",
         "market_status_reason",
         "time",
         "timezone",
-        "units",
     ):
         if key == "freshness":
             value = _market_ticker_freshness_label(payload)
@@ -141,6 +148,19 @@ def _compact_market_ticker_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
             value = payload.get(key)
         if value is not None:
             out[key] = value
+    if primary_spread_key is not None:
+        out[primary_spread_key] = payload.get(primary_spread_key)
+    units = payload.get("units")
+    if isinstance(units, dict):
+        filtered_units = {
+            key: units.get(key)
+            for key in ("bid", "ask", "mid", primary_spread_key)
+            if key and units.get(key) is not None
+        }
+        if filtered_units:
+            out["units"] = filtered_units
+    elif units is not None:
+        out["units"] = units
     return out
 
 
@@ -630,24 +650,25 @@ def market_ticker(
                 except Exception:
                     age_seconds = None
             if age_seconds is not None:
-                rounded_age_seconds = _market_ticker_age_seconds(age_seconds)
-                out["data_age_seconds"] = rounded_age_seconds
+                freshness_context = build_tick_freshness_context(
+                    resolved_symbol,
+                    tick_epoch=tick_time,
+                    now_epoch=now_epoch,
+                    item="tick",
+                    stale_after_seconds=_MARKET_TICKER_STALE_SECONDS,
+                    age_rounder=_market_ticker_age_seconds,
+                )
+                rounded_age_seconds = freshness_context.get("data_age_seconds")
+                out.update(
+                    {
+                        key: value
+                        for key, value in freshness_context.items()
+                        if key != "freshness_state"
+                    }
+                )
                 age_display = _market_ticker_age_display(rounded_age_seconds)
                 if age_display is not None:
                     out["data_age"] = age_display
-                out["stale_after_seconds"] = int(_MARKET_TICKER_STALE_SECONDS)
-                closed_session = closed_session_context(
-                    resolved_symbol,
-                    now_epoch=now_epoch,
-                    data_age_seconds=age_seconds,
-                )
-                if closed_session and closed_session.get("freshness_policy_relaxed"):
-                    out["data_stale"] = False
-                    out.update(closed_session)
-                else:
-                    out["data_stale"] = age_seconds > _MARKET_TICKER_STALE_SECONDS
-                    if closed_session:
-                        out.update(closed_session)
                 out["freshness_basis"] = "absolute_300s"
                 if out["data_stale"]:
                     out["warning"] = (
@@ -658,6 +679,8 @@ def market_ticker(
                 "source": "mt5.symbol_info_tick",
                 "cache_used": False,
                 "data_freshness_seconds": _market_ticker_age_seconds(age_seconds),
+                "data_freshness_anchor": FRESHNESS_ANCHOR_WALL_CLOCK,
+                "data_freshness_metric": FRESHNESS_METRIC_LAST_TICK_AGE,
                 "query_latency_ms": round((time.perf_counter() - started) * 1000.0, 3),
             }
             meta = out.get("meta")
@@ -714,6 +737,8 @@ def market_ticker(
                     "time_display",
                     "timezone",
                     "data_age_seconds",
+                    "data_age_anchor",
+                    "data_age_metric",
                     "data_age",
                     "stale_after_seconds",
                     "data_stale",

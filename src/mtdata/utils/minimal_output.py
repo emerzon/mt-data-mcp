@@ -986,6 +986,8 @@ def _normalize_market_ticker_payload(
         "spread_cost_currency",
         "pricing_basis",
         "data_age_seconds",
+        "data_age_anchor",
+        "data_age_metric",
         "data_age",
         "data_stale",
         "stale_after_seconds",
@@ -995,22 +997,34 @@ def _normalize_market_ticker_payload(
         "note",
         "warning",
     )
-    compact_keys = (
-        "success",
-        "symbol",
-        "type",
-        "field",
-        "price",
-        "price_currency",
-        "bid",
-        "ask",
-        "tick_volume",
-        "spread",
-        "spread_pips",
-        "freshness",
-        "market_status_reason",
-    )
-    for key in (rich_keys if verbose else compact_keys):
+    if verbose:
+        selected_keys = rich_keys
+    else:
+        primary_spread_key = next(
+            (
+                key
+                for key in ("spread_pips", "spread_points", "spread")
+                if not _is_empty_value(payload.get(key))
+            ),
+            None,
+        )
+        compact_keys = [
+            "success",
+            "symbol",
+            "type",
+            "field",
+            "price",
+            "price_currency",
+            "bid",
+            "ask",
+            "tick_volume",
+            "freshness",
+            "market_status_reason",
+        ]
+        if primary_spread_key is not None:
+            compact_keys.append(primary_spread_key)
+        selected_keys = tuple(compact_keys)
+    for key in selected_keys:
         value = _freshness_label() if key == "freshness" else payload.get(key)
         if not _is_empty_value(value):
             if key in {"price", "bid", "ask", "last", "spread"}:
@@ -1042,6 +1056,25 @@ def _normalize_market_ticker_payload(
     meta = payload.get("meta")
     if isinstance(meta, dict) and meta:
         out["meta"] = meta
+
+    if not verbose:
+        units = out.get("units")
+        if isinstance(units, dict):
+            primary_spread_key = next(
+                (
+                    key
+                    for key in ("spread_pips", "spread_points", "spread")
+                    if key in out
+                ),
+                None,
+            )
+            filtered_units = {
+                key: units.get(key)
+                for key in ("bid", "ask", primary_spread_key)
+                if key and units.get(key) is not None
+            }
+            if filtered_units:
+                out["units"] = filtered_units
 
     return out
 

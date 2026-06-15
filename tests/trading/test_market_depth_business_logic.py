@@ -310,12 +310,12 @@ def test_market_ticker_returns_lightweight_spread_snapshot() -> None:
     assert out["price_currency"] == "USD"
     assert out["bid"] == 200.0
     assert out["ask"] == 201.0
-    assert out["spread"] == 1.0
     assert out["spread_points"] == 100.0
-    assert out["units"]["spread"] == "price"
     assert out["units"]["spread_points"] == "broker_points"
     assert out["freshness"].startswith("stale, tick ")
     assert out["time"] == "2023-11-14T22:13Z"
+    assert "spread" not in out
+    assert "spread" not in out["units"]
     assert "spread_pips" not in out
     assert "spread_pips" not in out["units"]
     assert "spread_pct_display" not in out
@@ -382,12 +382,11 @@ def test_market_ticker_compact_detail_omits_verbose_fields() -> None:
     assert out["price_currency"] == "USD"
     assert out["bid"] == 200.0
     assert out["ask"] == 201.0
-    assert out["spread"] == 1.0
     assert out["spread_points"] == 100.0
-    assert out["units"]["spread"] == "price"
     assert out["units"]["spread_points"] == "broker_points"
     assert out["freshness"].startswith("stale, tick ")
     assert "spread_display" not in out
+    assert "spread" not in out
     assert "spread_pips" not in out
     assert "spread_pct_display" not in out
     assert "last" not in out
@@ -429,7 +428,8 @@ def test_market_ticker_none_detail_uses_compact_output() -> None:
         out = _raw_market_ticker("BTCUSD", detail=None)
 
     assert out["success"] is True
-    assert out["spread"] == 1.0
+    assert out["spread_points"] == 100.0
+    assert "spread" not in out
     assert "pricing_basis" not in out
     assert "diagnostics" not in out
     assert "spread_cost_per_lot" not in out
@@ -569,7 +569,7 @@ def test_market_ticker_treats_weekend_gap_as_closed_market() -> None:
     )
     with patch("mtdata.core.market_depth.mt5") as mt5, patch(
         "mtdata.core.market_depth._use_client_tz", return_value=False
-    ), patch("mtdata.core.market_depth.time.time", return_value=1779656400.0):
+    ), patch("mtdata.core.market_depth.time.time", return_value=1779656340.0):
         mt5.symbol_select.return_value = True
         mt5.symbol_info.return_value = SimpleNamespace(
             digits=5,
@@ -642,13 +642,13 @@ def test_market_ticker_rounds_tick_precision_noise() -> None:
 
     assert out["bid"] == 1.17581
     assert out["ask"] == 1.1759
-    assert out["spread"] == 0.00009
-    assert out["spread_points"] == 9.0
     assert out["spread_pips"] == 0.9
     assert out["units"]["spread_pips"] == "pips"
+    assert "spread" not in out
+    assert "spread_points" not in out
     assert "last" not in out
     assert "spread_display" not in out
-    assert out["spread_pct"] == pytest.approx(0.007654)
+    assert "spread_pct" not in out
 
 
 def test_market_depth_returns_connection_error_payload() -> None:

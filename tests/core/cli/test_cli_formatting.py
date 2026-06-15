@@ -653,7 +653,7 @@ class TestFormatResultForCli:
         assert payload["time"] == "2023-11-14 22:13"
         assert payload["spread_points"] == 8.999999999992347
         assert "spread_pips" not in payload
-        assert payload["spread_pct"] == 0.007795818842487513
+        assert "spread_pct" not in payload
         assert "spread_pct_display" not in payload
         assert "time_display" not in payload
         assert "time_epoch" not in payload
@@ -713,6 +713,8 @@ class TestFormatResultForCli:
             )
 
         assert out["data_freshness_seconds"] == 100.0
+        assert out["data_freshness_anchor"] == "wall_clock"
+        assert out["data_freshness_metric"] == "last_tick_age_seconds"
 
     def test_market_scan_toon_prunes_echoed_query_metadata(self):
         result = _format_result_for_cli(

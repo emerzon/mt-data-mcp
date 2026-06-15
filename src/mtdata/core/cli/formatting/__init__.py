@@ -134,7 +134,14 @@ def _build_market_ticker_cli_verbose_meta(result: Any) -> Dict[str, Any]:
     if not isinstance(diagnostics, dict):
         diagnostics = result.get("diagnostics")
     if isinstance(diagnostics, dict):
-        for key in ("source", "cache_used", "query_latency_ms", "data_freshness_seconds"):
+        for key in (
+            "source",
+            "cache_used",
+            "query_latency_ms",
+            "data_freshness_seconds",
+            "data_freshness_anchor",
+            "data_freshness_metric",
+        ):
             if key in diagnostics:
                 out[key] = diagnostics.get(key)
     tick_epoch = result.get("time")
@@ -146,6 +153,8 @@ def _build_market_ticker_cli_verbose_meta(result: Any) -> Dict[str, Any]:
                     0.0,
                     time.time() - float(tick_epoch),
                 )
+                out["data_freshness_anchor"] = "wall_clock"
+                out["data_freshness_metric"] = "last_tick_age_seconds"
             except Exception:
                 pass
     for field in ("bid", "ask", "spread", "spread_points", "spread_cost_per_lot"):
@@ -274,6 +283,18 @@ def _normalize_market_ticker_cli_payload(
     out.pop("spread_display", None)
     out.pop("spread_pct_display", None)
     out.pop("data_age_hours", None)
+    if not verbose:
+        primary_spread_key = next(
+            (
+                key
+                for key in ("spread_pips", "spread_points", "spread")
+                if not _is_empty_value(out.get(key))
+            ),
+            None,
+        )
+        for field in ("spread", "spread_points", "spread_pips", "spread_pct"):
+            if field != primary_spread_key:
+                out.pop(field, None)
     if verbose and not _is_empty_value(raw_epoch):
         out["time_epoch"] = raw_epoch
     else:
