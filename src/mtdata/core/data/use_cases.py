@@ -10,6 +10,15 @@ import numpy as np
 from ...shared.result import Err, Ok, Result, to_dict
 from ...utils.freshness import format_age_seconds as _format_age_seconds
 from ...utils.freshness import format_freshness_label
+from ...utils.market_metadata import (
+    FRESHNESS_ANCHOR_QUERY_EXPECTED_END,
+    FRESHNESS_ANCHOR_WALL_CLOCK,
+    FRESHNESS_METRIC_LAST_COMPLETED_BAR_AGE,
+    FRESHNESS_METRIC_LAST_TICK_AGE,
+    FRESHNESS_METRIC_REQUESTED_RANGE_END_GAP,
+    attach_candle_volume_semantics,
+    normalize_policy_relaxed,
+)
 from ..error_envelope import build_error_payload
 from ..execution_logging import run_logged_operation
 from ..mt5_gateway import mt5_connection_error
@@ -45,6 +54,8 @@ _COMPACT_TICK_TOP_LEVEL_FIELDS = (
     "units",
     "freshness",
     "data_age_seconds",
+    "data_age_anchor",
+    "data_age_metric",
     "data_stale",
     "market_status",
     "market_status_reason",
@@ -56,7 +67,6 @@ _COMPACT_TICK_TOP_LEVEL_FIELDS = (
 )
 
 _ANALYSIS_CANDLE_DEFAULT_LIMIT = 100
-_TICK_VOLUME_SEMANTICS = "tick_volume_is_broker_tick_count_not_lots"
 
 
 def _ensure_gateway_connection(gateway: Any) -> Dict[str, Any] | None:
@@ -487,20 +497,29 @@ def _compact_candles_payload(
     if result.get("forming_candle_status") == "skipped" and result.get("hint"):
         compact["hint"] = result["hint"]
     for key in (
+        "query_type",
         "freshness",
         "data_age_seconds",
+        "data_age_anchor",
+        "data_age_metric",
         "data_stale",
+        "freshness_policy_relaxed",
         "market_status",
         "market_status_reason",
         "market_status_source",
         "note",
+        "query_end_gap_seconds",
+        "query_end_gap",
+        "query_end_gap_anchor",
+        "query_end_gap_metric",
+        "mt5_time_alignment",
     ):
         if key in public_diagnostics:
             compact[key] = public_diagnostics[key]
     if "spread_estimate" in public_diagnostics:
         compact["spread_estimate"] = public_diagnostics["spread_estimate"]
     _attach_denoise_disclosure(compact)
-    _attach_candle_volume_semantics(compact)
+    attach_candle_volume_semantics(compact)
     return compact
 
 
@@ -553,13 +572,6 @@ def _attach_denoise_disclosure(payload: Dict[str, Any]) -> None:
     payload.pop("denoise", None)
 
 
-def _attach_candle_volume_semantics(payload: Dict[str, Any]) -> None:
-    volume_type = str(payload.get("volume_type") or "").strip().lower()
-    volume_unit = str(payload.get("volume_unit") or "").strip().lower()
-    if volume_type == "tick_count" or volume_unit in {"broker_tick_count", "mt5_tick_volume"}:
-        payload["volume_semantics"] = _TICK_VOLUME_SEMANTICS
-
-
 def _slim_projected_candles_payload(payload: Dict[str, Any]) -> None:
     if not bool(payload.get("ohlcv_filter_applied")):
         return
@@ -594,10 +606,18 @@ def _standard_candles_payload(result: Dict[str, Any]) -> Dict[str, Any]:
         "freshness",
         "data_stale",
         "data_age_seconds",
+        "data_age_anchor",
+        "data_age_metric",
+        "freshness_policy_relaxed",
         "market_status",
         "market_status_reason",
         "market_status_source",
         "note",
+        "query_end_gap_seconds",
+        "query_end_gap",
+        "query_end_gap_anchor",
+        "query_end_gap_metric",
+        "mt5_time_alignment",
         "stale_warning",
         "spread_estimate",
     ):
@@ -608,7 +628,19 @@ def _standard_candles_payload(result: Dict[str, Any]) -> Dict[str, Any]:
 
 def _attach_candle_machine_freshness(payload: Dict[str, Any]) -> None:
     public_diagnostics = _public_candle_diagnostics(payload)
-    for key in ("data_age_seconds", "data_stale"):
+    for key in (
+        "query_type",
+        "data_age_seconds",
+        "data_age_anchor",
+        "data_age_metric",
+        "data_stale",
+        "freshness_policy_relaxed",
+        "query_end_gap_seconds",
+        "query_end_gap",
+        "query_end_gap_anchor",
+        "query_end_gap_metric",
+        "mt5_time_alignment",
+    ):
         if key in public_diagnostics:
             payload.setdefault(key, public_diagnostics[key])
 
@@ -680,13 +712,47 @@ def _public_candle_diagnostics(result: Dict[str, Any]) -> Dict[str, Any]:
             public["last_bar_within_policy_window"] = bool(
                 freshness["last_bar_within_policy_window"]
             )
-        if query_mode != "range" and freshness.get("data_freshness_seconds") is not None:
-            seconds = freshness["data_freshness_seconds"]
+        if "freshness_policy_relaxed" in freshness:
+            public["freshness_policy_relaxed"] = normalize_policy_relaxed(
+                freshness.get("freshness_policy_relaxed")
+            )
+        if query_mode == "range" and freshness.get("data_freshness_seconds") is not None:
+            try:
+                seconds = max(0.0, float(freshness["data_freshness_seconds"]))
+            except Exception:
+                seconds = freshness["data_freshness_seconds"]
+            public["query_end_gap_seconds"] = seconds
+            public["query_end_gap_anchor"] = (
+                freshness.get("data_freshness_anchor")
+                or FRESHNESS_ANCHOR_QUERY_EXPECTED_END
+            )
+            public["query_end_gap_metric"] = (
+                freshness.get("data_freshness_metric")
+                or FRESHNESS_METRIC_REQUESTED_RANGE_END_GAP
+            )
+            gap_text = _format_age_seconds(seconds)
+            if gap_text is not None:
+                public["query_end_gap"] = gap_text
+        elif freshness.get("data_freshness_seconds") is not None:
+            try:
+                seconds = max(0.0, float(freshness["data_freshness_seconds"]))
+            except Exception:
+                seconds = freshness["data_freshness_seconds"]
             public.setdefault("data_age_seconds", seconds)
+            public["data_age_anchor"] = (
+                freshness.get("data_freshness_anchor")
+                or FRESHNESS_ANCHOR_WALL_CLOCK
+            )
+            public["data_age_metric"] = (
+                freshness.get("data_freshness_metric")
+                or FRESHNESS_METRIC_LAST_COMPLETED_BAR_AGE
+            )
             age_text = _format_age_seconds(seconds)
             if age_text is not None:
                 public["data_age"] = age_text
-            relaxed_policy = bool(freshness.get("freshness_policy_relaxed"))
+            relaxed_policy = normalize_policy_relaxed(
+                freshness.get("freshness_policy_relaxed")
+            )
             if relaxed_policy:
                 public["market_status"] = (
                     freshness.get("market_session_status") or "closed_or_idle"
@@ -722,6 +788,22 @@ def _public_candle_diagnostics(result: Dict[str, Any]) -> Dict[str, Any]:
                     "Latest completed candle is outside the freshness policy window; "
                     "market may be closed or broker data may be stale."
                 )
+    mt5_time_alignment = diagnostics.get("mt5_time_alignment")
+    if isinstance(mt5_time_alignment, dict):
+        status = str(mt5_time_alignment.get("status") or "").strip().lower()
+        if status and status != "ok":
+            public["mt5_time_alignment"] = {
+                key: mt5_time_alignment.get(key)
+                for key in (
+                    "status",
+                    "reason",
+                    "warning",
+                    "probe_timeframe",
+                    "inferred_offset_seconds",
+                    "offset_mismatch_seconds",
+                )
+                if mt5_time_alignment.get(key) is not None
+            }
     return public
 
 
@@ -781,6 +863,7 @@ def _run_data_fetch_ticks_impl(
     )
     if str(request.detail or "compact").strip().lower() == "compact":
         result = _compact_tick_rows_payload(result)
+    _attach_tick_freshness_contract(result)
     _attach_tick_pagination(result, requested_limit=request.limit)
     return result
 
@@ -798,6 +881,15 @@ def _attach_tick_pagination(payload: Any, *, requested_limit: int) -> None:
         return
     payload["requested_limit"] = limit_value
     payload["has_more"] = bool(count >= limit_value)
+
+
+def _attach_tick_freshness_contract(payload: Any) -> None:
+    if not isinstance(payload, dict) or payload.get("error"):
+        return
+    if payload.get("data_age_seconds") is None:
+        return
+    payload.setdefault("data_age_anchor", FRESHNESS_ANCHOR_WALL_CLOCK)
+    payload.setdefault("data_age_metric", FRESHNESS_METRIC_LAST_TICK_AGE)
 
 
 def _compact_tick_rows_payload(payload: Dict[str, Any]) -> Dict[str, Any]:

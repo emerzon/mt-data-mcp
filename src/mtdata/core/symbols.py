@@ -20,6 +20,12 @@ from ..utils.freshness import (
     format_age_seconds,
     format_freshness_label,
 )
+from ..utils.market_metadata import (
+    FRESHNESS_ANCHOR_WALL_CLOCK,
+    FRESHNESS_METRIC_LAST_COMPLETED_BAR_AGE,
+    TICK_VOLUME_SEMANTICS,
+    build_tick_freshness_context,
+)
 from ..utils.mt5 import (
     MT5ConnectionError,
     _mt5_copy_rates_from_pos,
@@ -1496,6 +1502,8 @@ def _market_scan_freshness_fields(
         data_stale = False
     fields: Dict[str, Any] = {
         "data_freshness_seconds": _market_scan_round(age_seconds, digits=3),
+        "data_freshness_anchor": FRESHNESS_ANCHOR_WALL_CLOCK,
+        "data_freshness_metric": FRESHNESS_METRIC_LAST_COMPLETED_BAR_AGE,
         "stale_after_seconds": stale_after_seconds,
         "bar_age_hours": _market_scan_round(age_seconds / 3600.0, digits=3),
         "data_stale": data_stale,
@@ -1537,38 +1545,16 @@ def _quote_staleness_fields(
         age_seconds = max(0.0, now_epoch - float(tick_time))
     except Exception:
         return {}
-    fields: Dict[str, Any] = {
-        "data_age_seconds": _market_scan_round(age_seconds, digits=3),
-        "data_age": format_age_seconds(age_seconds),
-        "stale_after_seconds": int(_MARKET_SCAN_STALE_QUOTE_SECONDS),
-    }
-    closed_session = closed_session_context(
+    fields = build_tick_freshness_context(
         symbol,
+        tick_epoch=tick_time,
         now_epoch=now_epoch,
-        data_age_seconds=age_seconds,
-    )
-    if closed_session:
-        fields["data_stale"] = not bool(
-            closed_session.get("freshness_policy_relaxed")
-        )
-        fields.update(closed_session)
-        policy_relaxed = bool(closed_session.get("freshness_policy_relaxed"))
-        fields["freshness"] = format_freshness_label(
-            data_stale=fields.get("data_stale"),
-            market_status=fields.get("market_status") if policy_relaxed else None,
-            market_status_reason=(
-                fields.get("market_status_reason") if policy_relaxed else None
-            ),
-            age_seconds=age_seconds,
-            item="tick",
-        )
-        return fields
-    fields["data_stale"] = age_seconds > float(_MARKET_SCAN_STALE_QUOTE_SECONDS)
-    fields["freshness"] = format_freshness_label(
-        data_stale=fields["data_stale"],
-        age_seconds=age_seconds,
         item="tick",
+        stale_after_seconds=_MARKET_SCAN_STALE_QUOTE_SECONDS,
+        age_rounder=lambda value: _market_scan_round(value, digits=3),
     )
+    fields.pop("freshness_state", None)
+    fields["data_age"] = format_age_seconds(age_seconds)
     if fields["data_stale"]:
         fields["warning"] = (
             "Live quote timestamp is older than "
@@ -1799,7 +1785,6 @@ _MARKET_SCAN_UNITS = {
     "stale_after_seconds": "seconds",
     "bar_age_hours": "hours",
 }
-_TICK_VOLUME_SEMANTICS = "tick_volume_is_broker_tick_count_not_lots"
 
 
 def _market_scan_units_for_rows(rows: List[Dict[str, Any]]) -> Dict[str, str]:
@@ -1849,7 +1834,7 @@ def _attach_market_scan_volume_semantics(
 ) -> None:
     if units.get("tick_volume") == "broker_tick_count":
         out["volume_type"] = "tick_volume"
-        out["volume_semantics"] = _TICK_VOLUME_SEMANTICS
+        out["volume_semantics"] = TICK_VOLUME_SEMANTICS
 
 
 def _market_scan_contract_meta(
@@ -3388,6 +3373,8 @@ def market_scan(  # noqa: C901
                 "timeframe",
                 "time",
                 "data_freshness_seconds",
+                "data_freshness_anchor",
+                "data_freshness_metric",
                 "stale_after_seconds",
                 "bar_age_hours",
                 "data_stale",
@@ -3555,4 +3542,3 @@ def market_scan(  # noqa: C901
         timeframe=timeframe,
         func=_run,
     )
-

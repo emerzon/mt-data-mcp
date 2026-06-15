@@ -43,7 +43,15 @@ from ..utils.denoise import (
 from ..utils.denoise import (
     normalize_denoise_spec as _normalize_denoise_spec,
 )
-from ..utils.freshness import closed_session_context, format_freshness_label
+from ..utils.freshness import closed_session_context
+from ..utils.market_metadata import (
+    FRESHNESS_ANCHOR_QUERY_EXPECTED_END,
+    FRESHNESS_ANCHOR_WALL_CLOCK,
+    FRESHNESS_METRIC_LAST_COMPLETED_BAR_AGE,
+    FRESHNESS_METRIC_REQUESTED_RANGE_END_GAP,
+    TICK_VOLUME_SEMANTICS,
+    build_tick_freshness_context,
+)
 from ..utils.indicators import (
     _apply_ta_indicators,
     _estimate_warmup_bars,
@@ -129,9 +137,6 @@ _TICK_ROW_UNITS = {
     "tick_volume": "broker_tick_count",
     "real_volume": "traded_volume",
 }
-_TICK_VOLUME_SEMANTICS = "tick_volume_is_broker_tick_count_not_lots"
-
-
 def _format_mt5_last_error() -> str:
     try:
         err = mt5.last_error()
@@ -302,7 +307,7 @@ def _tick_spread_pct(spread: Any, mid: Any) -> Optional[float]:
 def _attach_tick_volume_semantics(payload: Dict[str, Any]) -> None:
     units = payload.get("units")
     if isinstance(units, dict) and units.get("tick_volume") == "broker_tick_count":
-        payload["volume_semantics"] = _TICK_VOLUME_SEMANTICS
+        payload["volume_semantics"] = TICK_VOLUME_SEMANTICS
 
 
 def _describe_rate_fetch_error(symbol: str, *, info_before: Any = None) -> str:
@@ -662,6 +667,18 @@ def _fetch_rates_with_warmup(  # noqa: C901
                 expected_end_epoch=expected_end_ts,
                 freshness_cutoff_epoch=freshness_cutoff,
             )
+            if start_datetime or end_datetime:
+                freshness_meta["data_freshness_anchor"] = (
+                    FRESHNESS_ANCHOR_QUERY_EXPECTED_END
+                )
+                freshness_meta["data_freshness_metric"] = (
+                    FRESHNESS_METRIC_REQUESTED_RANGE_END_GAP
+                )
+            else:
+                freshness_meta["data_freshness_anchor"] = FRESHNESS_ANCHOR_WALL_CLOCK
+                freshness_meta["data_freshness_metric"] = (
+                    FRESHNESS_METRIC_LAST_COMPLETED_BAR_AGE
+                )
             if diagnostics is not None:
                 diagnostics["freshness"] = freshness_meta
             if bool(freshness_meta.get("last_bar_within_policy_window")):
@@ -821,6 +838,38 @@ def _shift_rate_times(rates: Any, shift_seconds: int) -> Any:
             shifted_rows.append(shifted_row)
         return shifted_rows
     return rates
+
+
+def _collect_candle_time_alignment(
+    symbol: str,
+    *,
+    timeframe: TimeframeLiteral,
+    start_datetime: Optional[str],
+    end_datetime: Optional[str],
+) -> Optional[Dict[str, Any]]:
+    broker_time_check_enabled = bool(
+        getattr(mt5_config, "broker_time_check_enabled", False)
+    )
+    if not broker_time_check_enabled or start_datetime or end_datetime:
+        return None
+    broker_time_check_ttl_seconds = int(
+        getattr(mt5_config, "broker_time_check_ttl_seconds", 60) or 60
+    )
+    probe_timeframe = "M1" if timeframe != "M1" else timeframe
+    try:
+        return get_cached_mt5_time_alignment(
+            symbol=symbol,
+            probe_timeframe=probe_timeframe,
+            ttl_seconds=broker_time_check_ttl_seconds,
+        )
+    except Exception as exc:
+        return {
+            "symbol": str(symbol),
+            "probe_timeframe": probe_timeframe,
+            "status": "unavailable",
+            "reason": "inspection_failed",
+            "error": str(exc),
+        }
 
 
 def _format_rate_times(epoch_series: pd.Series, *, use_client_tz: bool) -> pd.Series:
@@ -1774,6 +1823,12 @@ def fetch_candles(  # noqa: C901
         as_of_epoch = time.time()
         query_latency_ms = round((time.perf_counter() - query_started_at) * 1000.0, 3)
         query_mode = "range" if (start_datetime or end_datetime) else "latest"
+        broker_time_check_result = _collect_candle_time_alignment(
+            symbol,
+            timeframe=timeframe,
+            start_datetime=start_datetime,
+            end_datetime=end_datetime,
+        )
         ti_added_cols = [str(c) for c in ti_cols if isinstance(c, str)]
         # Build tabular payload
         payload = _table_from_rows(headers, rows)
@@ -1888,6 +1943,10 @@ def fetch_candles(  # noqa: C901
                 },
             },
         })
+        if broker_time_check_result is not None:
+            payload["meta"]["diagnostics"]["mt5_time_alignment"] = (
+                dict(broker_time_check_result)
+            )
         data_window = {
             "start": first_bar_time,
             "end": latest_bar_time,
@@ -2689,29 +2748,15 @@ def fetch_ticks(  # noqa: C901
             if start or end or not _epochs:
                 return
             latest_tick_epoch = float(_epochs[-1])
-            age_seconds = max(0.0, float(time.time()) - latest_tick_epoch)
-            closed_session = closed_session_context(
+            freshness_context = build_tick_freshness_context(
                 symbol,
+                tick_epoch=latest_tick_epoch,
                 now_epoch=time.time(),
                 item="tick",
-                data_age_seconds=age_seconds,
+                age_rounder=lambda value: round(value, 3),
             )
-            data_stale = age_seconds > 300.0
-            if closed_session and closed_session.get("freshness_policy_relaxed"):
-                data_stale = False
-            payload["data_age_seconds"] = round(age_seconds, 3)
-            payload["data_stale"] = data_stale
-            if closed_session:
-                payload.update(closed_session)
-            freshness = format_freshness_label(
-                data_stale=data_stale,
-                market_status=payload.get("market_status"),
-                market_status_reason=payload.get("market_status_reason"),
-                age_seconds=age_seconds,
-                item="tick",
-            )
-            if freshness:
-                payload["freshness"] = freshness
+            freshness_context.pop("freshness_state", None)
+            payload.update(freshness_context)
 
         def _compact_summary_from_ticks() -> Dict[str, Any]:
             df_stats = df_ticks.copy()
@@ -3230,4 +3275,3 @@ def fetch_ticks(  # noqa: C901
         return _json_safe_payload(payload)
     except Exception as e:
         return {"error": f"Error getting ticks: {str(e)}"}
-

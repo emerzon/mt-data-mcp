@@ -537,6 +537,8 @@ class TestFetchRatesWithWarmup(unittest.TestCase):
                 'expected_end_epoch': float(12 * 60 * 60),
                 'freshness_cutoff_epoch': float((12 * 60 * 60) - (3 * 60 * 60)),
                 'data_freshness_seconds': float((12 * 60 * 60) - stale_rates[-1]['time']),
+                'data_freshness_anchor': 'wall_clock',
+                'data_freshness_metric': 'last_completed_bar_age_seconds',
                 'last_bar_within_policy_window': False,
                 'freshness_policy_relaxed': True,
                 'market_session_status': 'closed_or_idle',
@@ -620,6 +622,8 @@ class TestFetchRatesWithWarmup(unittest.TestCase):
                 'expected_end_epoch': float(to_date.timestamp()),
                 'freshness_cutoff_epoch': float(to_date.timestamp() - (4 * 60 * 60)),
                 'data_freshness_seconds': 0.0,
+                'data_freshness_anchor': 'query_expected_end',
+                'data_freshness_metric': 'requested_range_end_gap_seconds',
                 'last_bar_within_policy_window': True,
             },
         )
@@ -1240,10 +1244,17 @@ class TestFetchCandles(unittest.TestCase):
                 'expected_end_epoch',
                 'freshness_cutoff_epoch',
                 'data_freshness_seconds',
+                'data_freshness_anchor',
+                'data_freshness_metric',
                 'last_bar_within_policy_window',
             },
         )
         self.assertTrue(freshness['last_bar_within_policy_window'])
+        self.assertEqual(freshness['data_freshness_anchor'], 'wall_clock')
+        self.assertEqual(
+            freshness['data_freshness_metric'],
+            'last_completed_bar_age_seconds',
+        )
         self.assertEqual(diagnostics['indicators']['requested'], False)
         self.assertEqual(diagnostics['session_gaps']['expected_bar_seconds'], 3600.0)
 

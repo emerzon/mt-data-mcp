@@ -371,6 +371,8 @@ def test_run_data_fetch_candles_compact_keeps_staleness_without_meta():
     assert "meta" not in result
     assert result["freshness"] == "fresh, bar 1m 0s ago"
     assert result["data_stale"] is False
+    assert result["data_age_anchor"] == "wall_clock"
+    assert result["data_age_metric"] == "last_completed_bar_age_seconds"
     assert "freshness_basis" not in result
     assert "data_freshness_seconds" not in result
     assert result["data_age_seconds"] == 60.0
@@ -402,7 +404,10 @@ def test_run_data_fetch_candles_compact_flags_stale_latest_data():
     )
 
     assert result["freshness"] == "stale, bar 1h 1m ago"
+    assert result["query_type"] == "latest"
     assert result["data_stale"] is True
+    assert result["data_age_anchor"] == "wall_clock"
+    assert result["data_age_metric"] == "last_completed_bar_age_seconds"
     assert "freshness_basis" not in result
     assert result["data_age_seconds"] == 3661.0
     assert "data_age" not in result
@@ -440,8 +445,12 @@ def test_run_data_fetch_candles_closed_market_relaxation_is_not_stale():
     )
 
     assert result["freshness"].startswith("closed or idle, bar ")
+    assert result["query_type"] == "latest"
     assert result["data_stale"] is False
     assert result["data_age_seconds"] == 149668.6
+    assert result["data_age_anchor"] == "wall_clock"
+    assert result["data_age_metric"] == "last_completed_bar_age_seconds"
+    assert result["freshness_policy_relaxed"] is True
     assert result["market_status"] == "closed_or_idle"
     assert result["note"] == (
         "Market appears closed or idle; showing the latest completed bar."
@@ -485,7 +494,7 @@ def test_run_data_fetch_candles_range_applies_limit_cap():
         "Range contained 5 bars; returned the latest 2 because limit=2. "
         "Set limit>=5 to return the full range."
     ]
-    assert "query_type" not in result
+    assert result["query_type"] == "historical"
 
 
 def test_run_data_fetch_candles_normalizes_count_metadata():
@@ -556,7 +565,7 @@ def test_run_data_fetch_candles_compact_keeps_spread_estimate_without_meta():
     }
 
 
-def test_run_data_fetch_candles_compact_omits_historical_freshness():
+def test_run_data_fetch_candles_compact_exposes_range_gap_metadata():
     request = DataFetchCandlesRequest(
         symbol="EURUSD",
         timeframe="H1",
@@ -585,8 +594,13 @@ def test_run_data_fetch_candles_compact_omits_historical_freshness():
         },
     )
 
-    assert "query_type" not in result
+    assert result["query_type"] == "historical"
     assert "data_freshness_seconds" not in result
+    assert "data_age_seconds" not in result
+    assert result["query_end_gap_seconds"] == 0.0
+    assert result["query_end_gap_anchor"] == "query_expected_end"
+    assert result["query_end_gap_metric"] == "requested_range_end_gap_seconds"
+    assert result["query_end_gap"] == "0s"
 
 
 def test_run_data_fetch_candles_standard_omits_verbose_diagnostics():
@@ -630,6 +644,8 @@ def test_run_data_fetch_candles_standard_omits_verbose_diagnostics():
     assert result["query_type"] == "latest"
     assert result["data_stale"] is False
     assert result["freshness"] == "fresh, bar 1m 0s ago"
+    assert result["data_age_anchor"] == "wall_clock"
+    assert result["data_age_metric"] == "last_completed_bar_age_seconds"
     assert "latency_ms" not in result
     assert "freshness_basis" not in result
     assert "data_freshness_seconds" not in result
@@ -676,6 +692,49 @@ def test_run_data_fetch_candles_standard_handles_bool_like_freshness_flags():
     assert "last_bar_within_policy_window" not in result
     assert result["data_stale"] is True
     assert result["freshness"] == "stale, bar 1h 1m ago"
+
+
+def test_run_data_fetch_candles_standard_surfaces_mt5_time_alignment_warning():
+    request = DataFetchCandlesRequest(
+        symbol="EURUSD",
+        timeframe="H1",
+        limit=5,
+        detail="standard",
+    )
+
+    result = run_data_fetch_candles(
+        request,
+        gateway=SimpleNamespace(ensure_connection=lambda: None),
+        fetch_candles_impl=lambda **kwargs: {
+            "success": True,
+            "symbol": "EURUSD",
+            "timeframe": "H1",
+            "candles": 5,
+            "data": [],
+            "meta": {
+                "diagnostics": {
+                    "query": {"mode": "latest"},
+                    "freshness": {
+                        "data_freshness_seconds": 60.0,
+                        "last_bar_within_policy_window": True,
+                    },
+                    "mt5_time_alignment": {
+                        "status": "stale",
+                        "reason": "market_data_stale",
+                        "warning": "MT5 broker-time sanity check could not confirm live alignment: market is closed",
+                        "probe_timeframe": "M1",
+                    },
+                },
+            },
+        },
+    )
+
+    assert result["mt5_time_alignment"] == {
+        "status": "stale",
+        "reason": "market_data_stale",
+        "warning": "MT5 broker-time sanity check could not confirm live alignment: market is closed",
+        "probe_timeframe": "M1",
+    }
 
 
 def test_run_data_fetch_candles_summary_omits_rows_and_keeps_metadata():
@@ -732,6 +791,8 @@ def test_run_data_fetch_candles_summary_omits_rows_and_keeps_metadata():
     assert result["query_type"] == "latest"
     assert result["latency_ms"] == 12.3
     assert result["data_age_seconds"] == 60.0
+    assert result["data_age_anchor"] == "wall_clock"
+    assert result["data_age_metric"] == "last_completed_bar_age_seconds"
     assert "data_freshness_seconds" not in result
     assert result["data_age"] == "1m 0s"
     assert result["data_stale"] is False
@@ -1140,6 +1201,8 @@ def test_run_data_fetch_ticks_compact_prunes_row_diagnostics():
         "price_point": 0.00001,
         "freshness": "stale, tick 10m 0s ago",
         "data_age_seconds": 600.0,
+        "data_age_anchor": "wall_clock",
+        "data_age_metric": "last_tick_age_seconds",
         "data_stale": True,
         "units": {
             "bid": "absolute_price",

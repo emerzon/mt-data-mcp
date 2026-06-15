@@ -450,6 +450,52 @@ def test_market_status_symbol_mode_uses_recent_candles_for_weekend_session(
     assert "reason" not in result
 
 
+def test_market_status_symbol_mode_marks_weekend_snapshot_freshness(monkeypatch) -> None:
+    raw = _unwrap(market_status_mod.market_status)
+    fixed_now = datetime(2026, 4, 25, 12, 0, tzinfo=timezone.utc)
+    now_epoch = fixed_now.timestamp()
+
+    class FixedDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            if tz is None:
+                return fixed_now.replace(tzinfo=None)
+            return fixed_now.astimezone(tz)
+
+    class Gateway:
+        TIMEFRAME_M1 = 1
+        SYMBOL_TRADE_MODE_FULL = 4
+        SYMBOL_TRADE_MODE_DISABLED = 0
+        SYMBOL_TRADE_MODE_CLOSEONLY = 3
+        SYMBOL_TRADE_MODE_LONGONLY = 1
+        SYMBOL_TRADE_MODE_SHORTONLY = 2
+
+        def ensure_connection(self) -> None:
+            return None
+
+        def symbol_info(self, symbol: str):
+            assert symbol == "EURUSD"
+            return SimpleNamespace(name=symbol, visible=True, trade_mode=4)
+
+        def symbol_info_tick(self, symbol: str):
+            assert symbol == "EURUSD"
+            return SimpleNamespace(time=now_epoch - (36 * 60 * 60), bid=1.1, ask=1.2)
+
+        def copy_rates_range(self, symbol: str, timeframe: int, start, end):
+            return []
+
+    monkeypatch.setattr(market_status_mod, "datetime", FixedDateTime)
+    monkeypatch.setattr(market_status_mod, "create_mt5_gateway", lambda **kwargs: Gateway())
+
+    result = raw(symbol="EURUSD", detail="full")
+
+    assert result["status"] == "weekend_closed"
+    assert result["tick_freshness"] == "closed_weekend_snapshot"
+    assert result["tick"]["market_status"] == "closed"
+    assert result["tick"]["market_status_reason"] == "weekend"
+    assert result["tick"]["freshness_policy_relaxed"] is True
+
+
 def test_market_status_symbol_mode_full_includes_diagnostics(monkeypatch) -> None:
     raw = _unwrap(market_status_mod.market_status)
 

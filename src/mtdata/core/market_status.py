@@ -13,6 +13,7 @@ import holidays
 
 from ..shared.schema import CompactFullDetailLiteral
 from ..shared.symbols import is_probably_crypto_symbol
+from ..utils.market_metadata import build_tick_freshness_context
 from ..utils.mt5 import MT5ConnectionError, ensure_mt5_connection_or_raise
 from ..utils.mt5_enums import decode_mt5_enum_label
 from ._mcp_instance import mcp
@@ -653,7 +654,7 @@ def _symbol_trade_mode_status(gateway: Any, trade_mode: Any) -> Dict[str, Any]:
     }
 
 
-def _symbol_tick_snapshot(tick: Any, *, now_utc: datetime) -> Dict[str, Any]:
+def _symbol_tick_snapshot(symbol: str, tick: Any, *, now_utc: datetime) -> Dict[str, Any]:
     if tick is None:
         return {
             "tick_available": False,
@@ -667,12 +668,30 @@ def _symbol_tick_snapshot(tick: Any, *, now_utc: datetime) -> Dict[str, Any]:
     if tick_time is not None:
         try:
             tick_epoch = float(tick_time)
-            age_seconds = max(0.0, now_utc.timestamp() - tick_epoch)
             out["last_tick_time"] = _format_utc_iso_z(
                 datetime.fromtimestamp(tick_epoch, tz=timezone.utc)
             )
-            out["last_tick_age_seconds"] = round(age_seconds, 3)
-            out["tick_freshness"] = "fresh" if age_seconds <= 300.0 else "stale"
+            freshness = build_tick_freshness_context(
+                symbol,
+                tick_epoch=tick_epoch,
+                now_epoch=now_utc.timestamp(),
+                item="tick",
+                age_rounder=lambda value: round(value, 3),
+            )
+            if freshness:
+                out["last_tick_age_seconds"] = freshness["data_age_seconds"]
+                out["tick_freshness"] = freshness.get("freshness_state", "unknown")
+                for key in (
+                    "market_status",
+                    "market_status_reason",
+                    "market_status_source",
+                    "freshness_policy_relaxed",
+                    "note",
+                ):
+                    if freshness.get(key) is not None:
+                        out[key] = freshness.get(key)
+            else:
+                out["tick_freshness"] = "unknown"
         except (OSError, OverflowError, TypeError, ValueError):
             out["tick_freshness"] = "unknown"
     else:
@@ -861,7 +880,7 @@ def _check_symbol_market_status(
     trade_mode = getattr(info, "trade_mode", None)
     mode_status = _symbol_trade_mode_status(mt5_gateway, trade_mode)
     tick = mt5_gateway.symbol_info_tick(symbol_name)
-    tick_status = _symbol_tick_snapshot(tick, now_utc=now_utc)
+    tick_status = _symbol_tick_snapshot(symbol_name, tick, now_utc=now_utc)
     schedule_status = _infer_symbol_schedule_from_recent_candles(
         symbol_name,
         mt5_gateway,
