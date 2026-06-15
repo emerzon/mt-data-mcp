@@ -93,6 +93,7 @@ class TestFitLineRobust:
         y[5] = 999.0  # outlier
         slope, intercept, r2 = _fit_line_robust(x, y, cfg)
         assert abs(slope - 2.0) < 0.5
+        assert r2 > 0.99
 
     def test_ransac_preserves_unit_r2_for_perfect_horizontal_line(self):
         cfg = ClassicDetectorConfig(use_robust_fit=True)

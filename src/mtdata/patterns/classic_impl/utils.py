@@ -93,9 +93,21 @@ def _fit_line_robust(x: np.ndarray, y: np.ndarray, cfg: ClassicDetectorConfig) -
         est = model.estimator_
         slope = float(getattr(est, 'coef_', [0.0])[0])
         intercept = float(getattr(est, 'intercept_', 0.0))
-        y_hat = slope * x + intercept
-        ss_res = float(np.sum((yv - y_hat) ** 2))
-        ss_tot = float(np.sum((yv - yv.mean()) ** 2)) if yv.size else 0.0
+        inlier_mask = np.asarray(
+            getattr(model, "inlier_mask_", np.ones(yv.size, dtype=bool)),
+            dtype=bool,
+        )
+        if inlier_mask.shape != yv.shape or int(inlier_mask.sum()) < 2:
+            inlier_mask = np.ones(yv.size, dtype=bool)
+        x_inliers = x[inlier_mask]
+        y_inliers = yv[inlier_mask]
+        y_hat = slope * x_inliers + intercept
+        ss_res = float(np.sum((y_inliers - y_hat) ** 2))
+        ss_tot = (
+            float(np.sum((y_inliers - y_inliers.mean()) ** 2))
+            if y_inliers.size
+            else 0.0
+        )
         r2 = _stable_r2(ss_res, ss_tot)
         return slope, intercept, r2
     except (AttributeError, TypeError, ValueError, RuntimeError):
