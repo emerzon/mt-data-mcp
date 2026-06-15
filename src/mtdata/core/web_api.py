@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hmac
 import logging
+from functools import lru_cache
 from importlib.util import find_spec as _find_spec
 from typing import Any, Dict, Literal, Optional
 
@@ -121,12 +122,21 @@ def _is_local_api_client(request: Request) -> bool:
     return client_text == "testclient" or is_loopback_host(client_text)
 
 
+@lru_cache(maxsize=1)
+def _get_api_access_runtime_settings():
+    return load_web_api_runtime_settings()
+
+
+def _clear_api_access_runtime_settings_cache() -> None:
+    _get_api_access_runtime_settings.cache_clear()
+
+
 def _require_api_access(
     request: Request,
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(_bearer_auth),
     x_api_key: Optional[str] = Header(default=None, alias="X-API-Key"),
 ) -> None:
-    runtime = load_web_api_runtime_settings()
+    runtime = _get_api_access_runtime_settings()
     configured_token = str(runtime.auth_token or "").strip()
     supplied_token = None
     if isinstance(credentials, HTTPAuthorizationCredentials):
@@ -404,4 +414,5 @@ mount_webui(app)
 def main_webapi() -> None:
     """Entry point to run the FastAPI web server."""
     load_environment()
+    _clear_api_access_runtime_settings_cache()
     run_webapi(app)

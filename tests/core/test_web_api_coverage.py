@@ -184,6 +184,7 @@ class TestPydanticModels:
 class TestWebApiSecurity:
     def test_remote_requests_require_token_or_loopback(self, monkeypatch):
         monkeypatch.delenv("WEBAPI_AUTH_TOKEN", raising=False)
+        web_api._clear_api_access_runtime_settings_cache()
         with patch("mtdata.core.web_api._is_local_api_client", return_value=False):
             resp = _client.get("/api/timeframes")
         assert resp.status_code == 403
@@ -199,6 +200,7 @@ class TestWebApiSecurity:
 
     def test_configured_token_requires_auth_header(self, monkeypatch):
         monkeypatch.setenv("WEBAPI_AUTH_TOKEN", "secret")
+        web_api._clear_api_access_runtime_settings_cache()
         resp = _client.get("/api/timeframes")
         assert resp.status_code == 401
         assert resp.headers["www-authenticate"] == "Bearer"
@@ -206,13 +208,27 @@ class TestWebApiSecurity:
 
     def test_bearer_token_allows_request(self, monkeypatch):
         monkeypatch.setenv("WEBAPI_AUTH_TOKEN", "secret")
+        web_api._clear_api_access_runtime_settings_cache()
         resp = _client.get("/api/timeframes", headers={"Authorization": "Bearer secret"})
         assert resp.status_code == 200
 
     def test_x_api_key_allows_request(self, monkeypatch):
         monkeypatch.setenv("WEBAPI_AUTH_TOKEN", "secret")
+        web_api._clear_api_access_runtime_settings_cache()
         resp = _client.get("/api/timeframes", headers={"X-API-Key": "secret"})
         assert resp.status_code == 200
+
+    def test_access_runtime_settings_are_cached_until_reset(self, monkeypatch):
+        monkeypatch.setenv("WEBAPI_AUTH_TOKEN", "secret-a")
+        web_api._clear_api_access_runtime_settings_cache()
+
+        assert web_api._get_api_access_runtime_settings().auth_token == "secret-a"
+
+        monkeypatch.setenv("WEBAPI_AUTH_TOKEN", "secret-b")
+        assert web_api._get_api_access_runtime_settings().auth_token == "secret-a"
+
+        web_api._clear_api_access_runtime_settings_cache()
+        assert web_api._get_api_access_runtime_settings().auth_token == "secret-b"
 
 
 class TestWebApiRuntimeHelpers:
