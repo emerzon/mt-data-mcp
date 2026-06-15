@@ -32,14 +32,26 @@ class ForecastGenerateRequest(BaseModel):
     timeframe: TimeframeLiteral = "H1"
     library: ForecastLibraryLiteral = "native"
     method: str = "theta"
-    horizon: int = Field(12, ge=1)
+    horizon: int = Field(
+        12,
+        ge=1,
+        description="Number of future bars to forecast at the requested timeframe.",
+    )
     lookback: Optional[int] = Field(None, ge=1)
     as_of: Optional[str] = None
     start: Optional[str] = None
     end: Optional[str] = None
     params: Optional[Dict[str, Any]] = None
-    ci_alpha: Optional[float] = Field(0.05, ge=0.0, le=0.5)
-    quantity: Literal["price", "return", "volatility"] = "price"
+    ci_alpha: Optional[float] = Field(
+        0.05,
+        ge=0.0,
+        le=0.5,
+        description="Interval tail probability; confidence is 1 - ci_alpha. Use None to omit intervals.",
+    )
+    quantity: Literal["price", "return", "volatility"] = Field(
+        "price",
+        description="Forecast target: price levels, returns, or volatility.",
+    )
     proxy: Optional[Literal["squared_return", "abs_return", "log_r2"]] = None
     denoise: Optional[DenoiseSpec] = None
     features: Optional[Dict[str, Any]] = None

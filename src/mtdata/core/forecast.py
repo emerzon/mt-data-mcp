@@ -764,8 +764,12 @@ def _run_forecast_operation(
 def forecast_generate(request: ForecastGenerateRequest) -> Dict[str, Any]:
     """Generate forecasts for the next `horizon` bars using a selected method.
 
+    `horizon` counts future bars at the requested timeframe, not elapsed clock
+    units. `quantity` selects the modeled target: price levels, returns, or
+    volatility. When `ci_alpha` is not None, intervals use confidence
+    `1 - ci_alpha` (for example, 0.05 requests 95% intervals).
+
     Supports native or library-backed methods with optional preprocessing.
-    Delegates to `mtdata.forecast.forecast`.
     """
     def _execute() -> Dict[str, Any]:
         return run_forecast_generate(
