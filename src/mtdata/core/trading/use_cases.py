@@ -4190,9 +4190,10 @@ def run_trade_var_cvar_calculate(  # noqa: C901
             for symbol, data in symbol_exposure_frame.items()
         }
     )
-    portfolio_pnl = (
-        aligned_returns[exposure_vector.index].mul(exposure_vector, axis=1).sum(axis=1)
-    )
+    pnl_returns = aligned_returns[exposure_vector.index]
+    if transform_value == "log_return":
+        pnl_returns = np.expm1(pnl_returns)
+    portfolio_pnl = pnl_returns.mul(exposure_vector, axis=1).sum(axis=1)
     pnl_values = [
         float(value) for value in portfolio_pnl.tolist() if math.isfinite(float(value))
     ]

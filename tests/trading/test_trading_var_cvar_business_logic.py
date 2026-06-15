@@ -90,6 +90,56 @@ def test_run_trade_var_cvar_calculate_summarizes_open_position_portfolio() -> No
     assert out["worst_observations"][0]["simulated_pnl"] == -14.29
 
 
+def test_run_trade_var_cvar_calculate_converts_log_returns_to_price_changes() -> None:
+    position = SimpleNamespace(
+        ticket=11,
+        symbol="EURUSD",
+        type=0,
+        volume=1.0,
+        price_current=100.0,
+        price_open=99.0,
+        profit=1.0,
+    )
+    gateway = SimpleNamespace(
+        ensure_connection=lambda: None,
+        account_info=lambda: SimpleNamespace(equity=1000.0, currency="USD"),
+        positions_get=lambda symbol=None: [position],
+        symbol_info=lambda symbol: SimpleNamespace(trade_contract_size=1.0),
+        copy_rates_from_pos=lambda symbol, timeframe, start, count: [
+            {"time": 1, "close": 100.0},
+            {"time": 2, "close": 95.0},
+            {"time": 3, "close": 105.0},
+            {"time": 4, "close": 90.0},
+            {"time": 5, "close": 110.0},
+        ],
+        POSITION_TYPE_BUY=0,
+        POSITION_TYPE_SELL=1,
+        ORDER_TYPE_BUY=0,
+        ORDER_TYPE_SELL=1,
+    )
+    request_args = {
+        "timeframe": "H1",
+        "lookback": 5,
+        "confidence": 75,
+        "method": "historical",
+        "min_observations": 4,
+    }
+
+    log_out = run_trade_var_cvar_calculate(
+        TradeVarCvarRequest(**request_args),
+        gateway=gateway,
+    )
+    pct_out = run_trade_var_cvar_calculate(
+        TradeVarCvarRequest(**request_args, transform="pct"),
+        gateway=gateway,
+    )
+
+    assert log_out["summary"]["transform"] == "log_return"
+    assert log_out["summary"]["var"] == pct_out["summary"]["var"] == 14.29
+    assert log_out["summary"]["cvar"] == pct_out["summary"]["cvar"] == 14.29
+    assert log_out["worst_observations"] == pct_out["worst_observations"]
+
+
 def test_run_trade_var_cvar_calculate_low_sample_error_mentions_override() -> None:
     position = SimpleNamespace(
         ticket=11,
