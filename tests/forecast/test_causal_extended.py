@@ -224,6 +224,47 @@ class TestFetchSeries:
         assert err is None
         assert len(series) == 50
 
+    @patch("mtdata.core.causal._mt5_copy_rates_range")
+    @patch("mtdata.core.causal._ensure_symbol_ready", return_value=None)
+    def test_explicit_date_range_preserves_all_rows(self, mock_ensure, mock_copy):
+        times = list(range(1_700_000_000, 1_700_000_200))
+        closes = [1.1 + i * 0.001 for i in range(200)]
+        mock_copy.return_value = np.array(
+            list(
+                zip(
+                    times,
+                    closes,
+                    closes,
+                    closes,
+                    closes,
+                    [100] * 200,
+                    [1] * 200,
+                    [0] * 200,
+                )
+            ),
+            dtype=[
+                ("time", "i8"),
+                ("open", "f8"),
+                ("high", "f8"),
+                ("low", "f8"),
+                ("close", "f8"),
+                ("tick_volume", "i8"),
+                ("spread", "i4"),
+                ("real_volume", "i8"),
+            ],
+        )
+
+        series, err = _fetch_series(
+            "EURUSD",
+            None,
+            50,
+            start="2023-01-01",
+            end="2024-01-01",
+        )
+
+        assert err is None
+        assert len(series) == 200
+
     @patch("mtdata.core.causal._mt5_copy_rates_from")
     @patch("mtdata.core.causal._ensure_symbol_ready", return_value=None)
     def test_deduplicates_duplicate_timestamps(self, mock_ensure, mock_copy):

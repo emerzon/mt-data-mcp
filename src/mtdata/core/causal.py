@@ -420,7 +420,7 @@ def _fetch_series(
             time.sleep(pause)
             continue
         df = df.sort_values("time")
-        if len(df) > count:
+        if start_dt is None and len(df) > count:
             df = df.tail(count)
         series = pd.Series(
             df["close"].to_numpy(dtype=float),
