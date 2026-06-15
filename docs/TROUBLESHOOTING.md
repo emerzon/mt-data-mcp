@@ -94,7 +94,7 @@ mtdata-cli forecast_volatility_estimate --help
 mtdata-cli patterns_detect --help
 ```
 
-**Common timeframes:** `M1`, `M5`, `M15`, `M30`, `H1`, `H4`, `D1`, `W1`, `MN1`
+**Supported timeframes:** `M1`, `M2`, `M3`, `M4`, `M5`, `M6`, `M10`, `M12`, `M15`, `M20`, `M30`, `H1`, `H2`, `H3`, `H4`, `H6`, `H8`, `H12`, `D1`, `W1`, `MN1`. Broker history availability may vary.
 
 ### "Unknown parameter" in --params
 
@@ -417,7 +417,7 @@ These models require PyTorch and a NeuralForecast dependency stack compatible wi
 |-------|-----------|
 | MT5 not connecting | Restart MT5 terminal, ensure login |
 | Missing parameter | Check `--help` for required arguments |
-| Invalid timeframe | Use: M1, M5, M15, M30, H1, H4, D1, W1, MN1 |
+| Invalid timeframe | Use a supported MT5 interval listed in the Timeframe section above |
 | Method not available | Check `forecast_list_methods` and install deps |
 | Output hard to read | Add `--json` |
 | Wrong timestamps | Set `MT5_SERVER_TZ` in `.env`, or `MT5_TIME_OFFSET_MINUTES` if you only know a fixed offset |

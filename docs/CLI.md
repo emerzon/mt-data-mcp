@@ -131,7 +131,7 @@ mtdata-cli data_fetch_candles EURUSD --timeframe M15 --limit 100
 mtdata-cli forecast_generate EURUSD --timeframe H4 --horizon 24
 ```
 
-Available timeframes: `M1`, `M5`, `M15`, `M30`, `H1`, `H4`, `D1`, `W1`, `MN1`
+Available timeframes: `M1`, `M2`, `M3`, `M4`, `M5`, `M6`, `M10`, `M12`, `M15`, `M20`, `M30`, `H1`, `H2`, `H3`, `H4`, `H6`, `H8`, `H12`, `D1`, `W1`, `MN1`. Broker history availability may vary.
 
 ### Parameters
 Pass method-specific parameters with `--params`:
