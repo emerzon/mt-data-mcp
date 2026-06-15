@@ -131,33 +131,24 @@ _OPTIONAL_FORECAST_METHOD_MODULES = frozenset(
 _LOADED_FORECAST_METHOD_MODULES: set[str] = set()
 _FAILED_OPTIONAL_FORECAST_MODULES: Dict[str, str] = {}
 
+
+def _package_available(name: str) -> bool:
+    try:
+        return _importlib_util.find_spec(name) is not None
+    except Exception:
+        return False
+
+
 # Import availability checkers
-try:
-    _SM_ETS_AVAILABLE = _importlib_util.find_spec("statsmodels.tsa.holtwinters") is not None
-except Exception:
-    _SM_ETS_AVAILABLE = False
-
-try:
-    _SM_SARIMAX_AVAILABLE = _importlib_util.find_spec("statsmodels.tsa.statespace.sarimax") is not None
-except Exception:
-    _SM_SARIMAX_AVAILABLE = False
-
-try:
-    _NF_AVAILABLE = _importlib_util.find_spec("neuralforecast") is not None
-    _MLF_AVAILABLE = _importlib_util.find_spec("mlforecast") is not None
-    _SF_AVAILABLE = _importlib_util.find_spec("statsforecast") is not None
-    _LGB_AVAILABLE = _importlib_util.find_spec("lightgbm") is not None
-    _CHRONOS_AVAILABLE = _importlib_util.find_spec("chronos") is not None
-    _TIMESFM_AVAILABLE = _importlib_util.find_spec("timesfm") is not None
-    _SKTIME_AVAILABLE = _importlib_util.find_spec("sktime") is not None
-except Exception:
-    _NF_AVAILABLE = False
-    _MLF_AVAILABLE = False
-    _SF_AVAILABLE = False
-    _LGB_AVAILABLE = False
-    _CHRONOS_AVAILABLE = False
-    _TIMESFM_AVAILABLE = False
-    _SKTIME_AVAILABLE = False
+_SM_ETS_AVAILABLE = _package_available("statsmodels.tsa.holtwinters")
+_SM_SARIMAX_AVAILABLE = _package_available("statsmodels.tsa.statespace.sarimax")
+_NF_AVAILABLE = _package_available("neuralforecast")
+_MLF_AVAILABLE = _package_available("mlforecast")
+_SF_AVAILABLE = _package_available("statsforecast")
+_LGB_AVAILABLE = _package_available("lightgbm")
+_CHRONOS_AVAILABLE = _package_available("chronos")
+_TIMESFM_AVAILABLE = _package_available("timesfm")
+_SKTIME_AVAILABLE = _package_available("sktime")
 
 
 def _find_method_definition(
