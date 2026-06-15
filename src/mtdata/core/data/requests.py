@@ -775,6 +775,8 @@ WaitWatchEventSpec = Annotated[
 
 WaitBoundaryEventSpec = CandleCloseEventSpec
 
+_WAIT_EVENT_MIN_POLL_INTERVAL_SECONDS = 0.1
+
 
 class WaitEventRequest(BaseModel):
     model_config = {"extra": "forbid"}
@@ -825,7 +827,13 @@ class WaitEventRequest(BaseModel):
     @field_validator("poll_interval_seconds")
     @classmethod
     def _validate_poll_interval_seconds(cls, value: float) -> float:
-        return _validate_positive_float(value, "poll_interval_seconds")
+        validated = _validate_positive_float(value, "poll_interval_seconds")
+        if validated < _WAIT_EVENT_MIN_POLL_INTERVAL_SECONDS:
+            raise ValueError(
+                "poll_interval_seconds must be at least "
+                f"{_WAIT_EVENT_MIN_POLL_INTERVAL_SECONDS:.1f} seconds."
+            )
+        return validated
 
     @field_validator("max_wait_seconds")
     @classmethod

@@ -633,6 +633,15 @@ def test_wait_event_request_rejects_explicit_empty_watchers_without_boundary() -
     ):
         WaitEventRequest(watch_for=[])
 
+
+def test_wait_event_request_rejects_too_small_poll_interval() -> None:
+    with pytest.raises(
+        ValidationError,
+        match="poll_interval_seconds must be at least 0.1 seconds",
+    ):
+        WaitEventRequest(symbol="EURUSD", poll_interval_seconds=0.001)
+
+
 def test_wait_event_gateway_check_treats_constructed_none_boundary_as_empty() -> None:
     request = WaitEventRequest.model_construct(watch_for=[], end_on=None, timeframe="M1")
 
