@@ -21,6 +21,7 @@ from .tool_calling import resolve_sync_tool_result
 from .web_api_models import BacktestBody, ForecastPriceBody, ForecastVolBody
 
 logger = logging.getLogger(__name__)
+_MAX_DENOISE_PARAMS_CHARS = 4096
 
 
 def _shape_detail_from_extras(extras: Any) -> str:
@@ -446,6 +447,14 @@ def get_history_response(  # noqa: C901
             "params": {},
         }
         if denoise_params_val:
+            if len(denoise_params_val) > _MAX_DENOISE_PARAMS_CHARS:
+                raise _http_error(
+                    400,
+                    f"denoise_params exceeds {_MAX_DENOISE_PARAMS_CHARS} characters.",
+                    code="denoise_params_too_large",
+                    operation="get_history",
+                    details={"max_chars": _MAX_DENOISE_PARAMS_CHARS},
+                )
             try:
                 payload = json.loads(denoise_params_val)
                 if isinstance(payload, dict):

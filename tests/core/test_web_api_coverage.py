@@ -805,6 +805,20 @@ class TestGetHistory:
         assert detail["error_code"] == "denoise_params_invalid"
         assert "duplicate key 'level'" in detail["error"]
 
+    def test_denoise_params_rejects_oversized_query_value(self):
+        dn_methods = {"methods": [{"method": "wavelet", "available": True}]}
+        with patch.object(web_api.mt5_connection, "_ensure_connection", return_value=True), \
+             patch("mtdata.core.web_api._get_denoise_methods", return_value=dn_methods):
+            resp = _client.get("/api/history", params={
+                "symbol": "EURUSD",
+                "denoise_method": "wavelet",
+                "denoise_params": "x" * 4097,
+            })
+        assert resp.status_code == 400
+        detail = resp.json()["detail"]
+        assert detail["error_code"] == "denoise_params_too_large"
+        assert detail["details"] == {"max_chars": 4096}
+
     def test_denoise_unavailable_method(self):
         dn_methods = {"methods": [{"method": "wavelet", "available": False, "requires": "pywt"}]}
         with patch.object(web_api.mt5_connection, "_ensure_connection", return_value=True), \
