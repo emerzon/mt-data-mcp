@@ -105,8 +105,10 @@ class TradePlaceRequest(BaseModel):
     idempotency_key: Optional[str] = Field(
         default=None,
         description=(
-            "Optional in-process dedupe key. Reusing the same key with the same "
-            "payload replays the prior result instead of sending another order."
+            "Optional in-process dedupe key with an in-memory ~5-minute TTL. "
+            "Reusing the same key with the same payload replays the prior "
+            "result instead of sending another order. It is not broker-side "
+            "idempotency and does not survive restarts."
         ),
     )
 
@@ -141,8 +143,10 @@ class TradeModifyRequest(BaseModel):
     idempotency_key: Optional[str] = Field(
         default=None,
         description=(
-            "Optional in-process dedupe key. Reusing the same key with the same "
-            "payload replays the prior result instead of sending another modify request."
+            "Optional in-process dedupe key with an in-memory ~5-minute TTL. "
+            "Reusing the same key with the same payload replays the prior "
+            "result instead of sending another modify request. It is not "
+            "broker-side idempotency and does not survive restarts."
         ),
     )
 
@@ -315,27 +319,40 @@ class TradeRiskAnalyzeRequest(BaseModel):
         default="fixed_fraction",
         description=(
             "Position sizing method. fixed_fraction uses desired_risk_pct; "
-            "kelly uses win-rate and average win/loss inputs to derive risk."
+            "kelly uses win-rate and average win/loss inputs to derive risk. "
+            "Use trade_journal_analyze to estimate those inputs from realized "
+            "trade history."
         ),
     )
     kelly_metrics: Optional[Dict[str, Any]] = Field(
         default=None,
         description=(
             "Optional metrics dict containing win_rate, avg_win_return, and "
-            "avg_loss_return. Explicit kelly_* fields override this dict."
+            "avg_loss_return. The trade_journal_analyze summary provides "
+            "compatible win_rate/avg_win/avg_loss inputs. Explicit kelly_* "
+            "fields override this dict."
         ),
     )
     kelly_win_rate: Optional[float] = Field(
         default=None,
-        description="Kelly win probability as a fraction in [0, 1].",
+        description=(
+            "Kelly win probability as a fraction in [0, 1]. Map from "
+            "trade_journal_analyze summary.win_rate when available."
+        ),
     )
     kelly_avg_win: Optional[float] = Field(
         default=None,
-        description="Average winning return for Kelly sizing.",
+        description=(
+            "Average winning return for Kelly sizing. A practical source is "
+            "trade_journal_analyze summary.avg_win."
+        ),
     )
     kelly_avg_loss: Optional[float] = Field(
         default=None,
-        description="Average losing return magnitude for Kelly sizing.",
+        description=(
+            "Average losing return magnitude for Kelly sizing. A practical "
+            "source is trade_journal_analyze summary.avg_loss."
+        ),
     )
     kelly_fraction_multiplier: float = Field(
         default=0.5,

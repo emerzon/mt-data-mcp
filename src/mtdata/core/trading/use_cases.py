@@ -589,7 +589,7 @@ def _compact_trade_risk_position_sizing(
     if position_sizing.get("status") == "parameters_missing":
         return {
             key: position_sizing[key]
-            for key in ("status", "message", "missing")
+            for key in ("status", "message", "missing", "note", "related_tools")
             if key in position_sizing
         }
     compact = {
@@ -3243,11 +3243,17 @@ def run_trade_risk_analyze(  # noqa: C901
                         if sizing_method == "fixed_fraction"
                         else (
                             "Kelly sizing needs win rate and average win/loss "
-                            "returns; desired_risk_pct is optional and acts as a cap."
+                            "returns; desired_risk_pct is optional and acts as a "
+                            "cap. Use trade_journal_analyze to estimate "
+                            "win_rate, avg_win, and avg_loss from realized "
+                            "trades."
                         ),
                     }
                     if sizing_method == "kelly":
                         position_sizing["sizing_method"] = sizing_method
+                        position_sizing["related_tools"] = [
+                            "trade_journal_analyze"
+                        ]
                     if position_sizing_provided:
                         proposed_context = {
                             key: value

@@ -245,6 +245,26 @@ def test_trade_risk_analyze_kelly_no_edge_returns_zero_volume() -> None:
     assert sizing["kelly"]["status"] == "kelly_no_edge"
 
 
+def test_trade_risk_analyze_kelly_missing_inputs_references_trade_journal_analyze() -> None:
+    mt5 = MagicMock()
+    mt5.account_info.return_value = SimpleNamespace(equity=1000.0, currency="USD")
+    mt5.positions_get.return_value = []
+    mt5.symbol_info.return_value = _make_symbol_info()
+
+    with _patched_mt5_module(mt5):
+        out = trade_risk_analyze(
+            symbol="EURUSD",
+            sizing_method="kelly",
+            entry=100.0,
+            stop_loss=92.0,
+        )
+
+    sizing = out["position_sizing"]
+    assert sizing["status"] == "parameters_missing"
+    assert sizing["related_tools"] == ["trade_journal_analyze"]
+    assert "trade_journal_analyze" in sizing["note"]
+
+
 def test_trade_risk_analyze_compact_keeps_blocked_sizing_context() -> None:
     mt5 = MagicMock()
     mt5.account_info.return_value = SimpleNamespace(equity=1000.0, currency="USD")

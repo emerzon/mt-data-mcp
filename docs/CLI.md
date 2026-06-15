@@ -311,6 +311,8 @@ See [LEVELS.md](LEVELS.md) for the full pivots, support/resistance, confluence, 
 | `trade_stress_test` | Apply deterministic percentage shocks to open positions |
 
 See [TRADING_RISK.md](TRADING_RISK.md) for position sizing (fixed-fraction + Kelly), VaR/CVaR, and stress-test parameters and output.
+For Kelly sizing, `trade_journal_analyze` is the quickest way to derive
+`win_rate`, `avg_win`, and `avg_loss` inputs from realized trade history.
 
 ### News
 | Command | Description |
@@ -472,7 +474,7 @@ mtdata-cli trade_place BTCUSD --volume 0.01 --order-type BUY \
 | `--require-sl-tp` | `trade_place` | Require both stop-loss and take-profit on market orders. |
 | `--auto-close-on-sl-tp-fail` | `trade_place` | If SL/TP attachment fails after a market fill, try to close the unprotected position. |
 | `--expiration` | `trade_place`, `trade_modify` | Expiration time for pending orders (`dateparser`, UTC epoch seconds, or `GTC`). |
-| `--idempotency-key` | `trade_modify` | Dedupe repeated modify requests within the current process. |
+| `--idempotency-key` | `trade_place`, `trade_modify` | Dedupe repeated requests within the current process only (in-memory ~5-minute TTL; not persisted across restarts or shared across workers). |
 | `--close-all` | `trade_close` | Close all matching positions instead of one ticket. |
 | `--profit-only` / `--loss-only` | `trade_close` | Restrict closes to positions currently in profit or loss. |
 | `--close-priority` | `trade_close` | When multiple positions match, close `loss_first`, `profit_first`, or `largest_first`. |
@@ -498,6 +500,9 @@ mtdata-cli trade_journal_analyze --symbol EURUSD --minutes-back 43200 --breakdow
 ```
 
 `trade_history` and `trade_journal_analyze` default to a 7-day lookback (`--minutes-back 10080`) when you do not pass a time window explicitly.
+For Kelly sizing in `trade_risk_analyze`, map `summary.win_rate`,
+`summary.avg_win`, and `summary.avg_loss` from `trade_journal_analyze` to
+`--kelly-win-rate`, `--kelly-avg-win`, and `--kelly-avg-loss`.
 
 ### Estimate Portfolio Tail Risk
 ```bash
