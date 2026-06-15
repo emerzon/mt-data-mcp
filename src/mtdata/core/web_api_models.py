@@ -6,7 +6,13 @@ from typing import Any, Dict, Literal, Optional
 
 from pydantic import BaseModel, Field, model_validator
 
-from ..forecast.requests import ForecastBacktestRequest, ForecastGenerateRequest
+from ..forecast.requests import (
+    MAX_BACKTEST_SPACING,
+    MAX_BACKTEST_STEPS,
+    MAX_FORECAST_HORIZON,
+    ForecastBacktestRequest,
+    ForecastGenerateRequest,
+)
 from ..shared.schema import reject_removed_field
 from .output_contract import output_extras_shape_detail
 
@@ -15,7 +21,7 @@ class ForecastPriceBody(BaseModel):
     symbol: str
     timeframe: str = Field("H1")
     method: str = Field("theta")
-    horizon: int = Field(12, ge=1)
+    horizon: int = Field(12, ge=1, le=MAX_FORECAST_HORIZON)
     lookback: Optional[int] = Field(None, ge=1)
     as_of: Optional[str] = None
     start: Optional[str] = None
@@ -65,7 +71,7 @@ class ForecastPriceBody(BaseModel):
 class ForecastVolBody(BaseModel):
     symbol: str
     timeframe: str = Field("H1")
-    horizon: int = Field(12, ge=1)
+    horizon: int = Field(12, ge=1, le=MAX_FORECAST_HORIZON)
     method: str = Field("ewma")
     proxy: Optional[str] = None
     params: Optional[Dict[str, Any]] = None
@@ -78,9 +84,9 @@ class ForecastVolBody(BaseModel):
 class BacktestBody(BaseModel):
     symbol: str
     timeframe: str = Field("H1")
-    horizon: int = Field(12, ge=1)
-    steps: int = Field(5, ge=1)
-    spacing: int = Field(20, ge=1)
+    horizon: int = Field(12, ge=1, le=MAX_FORECAST_HORIZON)
+    steps: int = Field(5, ge=1, le=MAX_BACKTEST_STEPS)
+    spacing: int = Field(20, ge=1, le=MAX_BACKTEST_SPACING)
     methods: Optional[list[str]] = None
     params_per_method: Optional[Dict[str, Any]] = None
     quantity: Literal["price", "return", "volatility"] = Field("price")

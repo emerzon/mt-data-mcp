@@ -17,6 +17,10 @@ from ..utils.barriers import (
     validate_barrier_unit_family_exclusivity,
 )
 
+MAX_FORECAST_HORIZON = 500
+MAX_BACKTEST_STEPS = 200
+MAX_BACKTEST_SPACING = 10_000
+
 
 def _normalize_trade_direction_alias(value: Optional[str]) -> Optional[str]:
     if value is None:
@@ -35,6 +39,7 @@ class ForecastGenerateRequest(BaseModel):
     horizon: int = Field(
         12,
         ge=1,
+        le=MAX_FORECAST_HORIZON,
         description="Number of future bars to forecast at the requested timeframe.",
     )
     lookback: Optional[int] = Field(None, ge=1)
@@ -90,9 +95,9 @@ def _normalize_methods_value(value: Any) -> Any:
 class ForecastBacktestRequest(BaseModel):
     symbol: str
     timeframe: TimeframeLiteral = "H1"
-    horizon: int = Field(12, ge=1, description="Bars forecast after each backtest anchor.")
-    steps: int = Field(5, ge=1, description="Number of rolling-origin backtest anchors to run.")
-    spacing: int = Field(20, ge=1, description="Bars between consecutive rolling-origin anchors.")
+    horizon: int = Field(12, ge=1, le=MAX_FORECAST_HORIZON, description="Bars forecast after each backtest anchor.")
+    steps: int = Field(5, ge=1, le=MAX_BACKTEST_STEPS, description="Number of rolling-origin backtest anchors to run.")
+    spacing: int = Field(20, ge=1, le=MAX_BACKTEST_SPACING, description="Bars between consecutive rolling-origin anchors.")
     start: Optional[str] = None
     end: Optional[str] = None
     methods: Optional[List[str]] = None
@@ -155,13 +160,14 @@ class ForecastConformalIntervalsRequest(BaseModel):
     symbol: str
     timeframe: TimeframeLiteral = "H1"
     method: str = "theta"
-    horizon: int = Field(12, ge=1)
+    horizon: int = Field(12, ge=1, le=MAX_FORECAST_HORIZON)
     steps: int = Field(
         50,
         ge=1,
+        le=MAX_BACKTEST_STEPS,
         description="Number of rolling-origin calibration anchors; default 50 for stabler interval quantiles.",
     )
-    spacing: int = Field(20, ge=1, description="Bars between consecutive calibration anchors.")
+    spacing: int = Field(20, ge=1, le=MAX_BACKTEST_SPACING, description="Bars between consecutive calibration anchors.")
     ci_alpha: float = Field(
         0.1,
         gt=0.0,
@@ -187,9 +193,9 @@ class ForecastTuneGeneticRequest(BaseModel):
     timeframe: TimeframeLiteral = "H1"
     method: Optional[str] = "theta"
     methods: Optional[List[str]] = None
-    horizon: int = Field(12, ge=1, description="Bars forecast after each tuning backtest anchor.")
-    steps: int = Field(5, ge=1, description="Number of rolling-origin backtest anchors per trial.")
-    spacing: int = Field(20, ge=1, description="Bars between consecutive tuning backtest anchors.")
+    horizon: int = Field(12, ge=1, le=MAX_FORECAST_HORIZON, description="Bars forecast after each tuning backtest anchor.")
+    steps: int = Field(5, ge=1, le=MAX_BACKTEST_STEPS, description="Number of rolling-origin backtest anchors per trial.")
+    spacing: int = Field(20, ge=1, le=MAX_BACKTEST_SPACING, description="Bars between consecutive tuning backtest anchors.")
     search_space: Optional[Dict[str, Any]] = None
     metric: str = "avg_rmse"
     mode: str = "min"
@@ -211,9 +217,9 @@ class ForecastTuneOptunaRequest(BaseModel):
     timeframe: TimeframeLiteral = "H1"
     method: Optional[str] = "theta"
     methods: Optional[List[str]] = None
-    horizon: int = Field(12, ge=1, description="Bars forecast after each tuning backtest anchor.")
-    steps: int = Field(5, ge=1, description="Number of rolling-origin backtest anchors per trial.")
-    spacing: int = Field(20, ge=1, description="Bars between consecutive tuning backtest anchors.")
+    horizon: int = Field(12, ge=1, le=MAX_FORECAST_HORIZON, description="Bars forecast after each tuning backtest anchor.")
+    steps: int = Field(5, ge=1, le=MAX_BACKTEST_STEPS, description="Number of rolling-origin backtest anchors per trial.")
+    spacing: int = Field(20, ge=1, le=MAX_BACKTEST_SPACING, description="Bars between consecutive tuning backtest anchors.")
     search_space: Optional[Dict[str, Any]] = None
     metric: str = "avg_rmse"
     mode: str = "min"
@@ -238,7 +244,7 @@ class ForecastBarrierProbRequest(BaseModel):
 
     symbol: str
     timeframe: TimeframeLiteral = "H1"
-    horizon: int = Field(12, ge=1)
+    horizon: int = Field(12, ge=1, le=MAX_FORECAST_HORIZON)
     method: str = "hmm_mc"
     direction: str = "long"
     tp_abs: Optional[float] = Field(None, description="Take-profit absolute price. Do not combine with percent or tick barriers.")
@@ -275,9 +281,9 @@ class ForecastOptimizeHintsRequest(BaseModel):
     timeframe: Optional[TimeframeLiteral] = None
     timeframes: Optional[List[TimeframeLiteral]] = None
     methods: Optional[List[str]] = None
-    horizon: int = Field(12, ge=1, description="Bars forecast after each optimization backtest anchor.")
-    steps: int = Field(5, ge=1, description="Number of rolling-origin backtest anchors per candidate.")
-    spacing: int = Field(20, ge=1, description="Bars between consecutive optimization backtest anchors.")
+    horizon: int = Field(12, ge=1, le=MAX_FORECAST_HORIZON, description="Bars forecast after each optimization backtest anchor.")
+    steps: int = Field(5, ge=1, le=MAX_BACKTEST_STEPS, description="Number of rolling-origin backtest anchors per candidate.")
+    spacing: int = Field(20, ge=1, le=MAX_BACKTEST_SPACING, description="Bars between consecutive optimization backtest anchors.")
     population: int = Field(8, ge=1, le=100)
     generations: int = Field(5, ge=1, le=100)
     crossover_rate: float = Field(0.6, ge=0.0, le=1.0)
@@ -306,7 +312,7 @@ class ForecastBarrierOptimizeRequest(BaseModel):
 
     symbol: str
     timeframe: TimeframeLiteral = "H1"
-    horizon: int = Field(12, ge=1)
+    horizon: int = Field(12, ge=1, le=MAX_FORECAST_HORIZON)
     method: str = "auto"
     direction: str = "long"
     mode: str = "pct"
@@ -340,7 +346,7 @@ class ForecastBarrierOptimizeRequest(BaseModel):
 class ForecastVolatilityEstimateRequest(BaseModel):
     symbol: str
     timeframe: TimeframeLiteral = "H1"
-    horizon: int = Field(12, ge=1)
+    horizon: int = Field(12, ge=1, le=MAX_FORECAST_HORIZON)
     method: str = "ewma"
     proxy: Optional[str] = None
     params: Optional[Dict[str, Any]] = None

@@ -165,6 +165,20 @@ class TestPydanticModels:
         assert body.methods == ["theta", "arima"]
         assert body.to_domain_request().quantity == "price"
 
+    @pytest.mark.parametrize(
+        ("model", "field", "value"),
+        [
+            (ForecastPriceBody, "horizon", 501),
+            (ForecastVolBody, "horizon", 501),
+            (BacktestBody, "horizon", 501),
+            (BacktestBody, "steps", 201),
+            (BacktestBody, "spacing", 10_001),
+        ],
+    )
+    def test_compute_bounds_reject_extreme_requests(self, model, field, value):
+        with pytest.raises(ValidationError):
+            model(symbol="EURUSD", **{field: value})
+
 
 class TestWebApiSecurity:
     def test_remote_requests_require_token_or_loopback(self, monkeypatch):
