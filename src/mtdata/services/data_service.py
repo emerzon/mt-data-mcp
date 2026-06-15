@@ -1288,7 +1288,12 @@ def _apply_indicator_stage(
     if not ti_spec:
         return ti_cols
 
-    ti_cols = _apply_ta_indicators(df, ti_spec)
+    columns_before = {str(column) for column in df.columns}
+    reported_columns = [str(column) for column in _apply_ta_indicators(df, ti_spec)]
+    created_columns = [
+        str(column) for column in df.columns if str(column) not in columns_before
+    ]
+    ti_cols = list(dict.fromkeys([*reported_columns, *created_columns]))
     ti_cols = _normalize_indicator_columns_for_display(df, ti_cols)
     _extend_unique_headers(headers, ti_cols)
 

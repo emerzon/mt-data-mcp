@@ -1661,7 +1661,7 @@ class TestFetchCandles(unittest.TestCase):
         self.assertTrue(result.get('success'))
         self.assertEqual(
             result['meta']['diagnostics']['indicators']['added_columns'],
-            ['ATRr_14'],
+            ['ATRr_14', 'atr_14'],
         )
         self.assertIn('ATRr_14', result['data'][0])
         self.assertEqual(result['data'][0]['ATRr_14'], 2.2)
