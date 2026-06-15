@@ -21,12 +21,12 @@ from ..services.data_service import fetch_candles as _fetch_candles_impl
 from ..utils.denoise import get_denoise_methods_data as _get_denoise_methods
 from ..utils.denoise import normalize_denoise_spec as _norm_dn
 from ..utils.dimred import list_dimred_methods as _list_dimred_methods
-from ..utils.mt5 import _ensure_symbol_ready, mt5, mt5_connection
+from ..utils.mt5 import _ensure_symbol_ready, ensure_mt5_connection_or_raise, mt5, mt5_connection
 from ..utils.symbol import _extract_group_path as _extract_group_path_util
 from ..bootstrap.settings import load_environment, mt5_config
 from ..shared.constants import TIMEFRAME_MAP
 from .error_envelope import build_error_payload
-from .mt5_gateway import create_mt5_gateway
+from .mt5_gateway import create_mt5_gateway, mt5_connection_error
 from .pivot import pivot_compute_points
 from .tool_calling import unwrap_tool_callable
 from .web_api_handlers import (
@@ -83,7 +83,7 @@ from .forecast import (
 )
 from .tool_calling import call_tool_sync_structured
 from .web_api_models import BacktestBody, ForecastPriceBody, ForecastVolBody
-from .web_api_runtime import create_web_api_app, mount_webui, run_webapi
+from .web_api_runtime import SafeJSONResponse, create_web_api_app, mount_webui, run_webapi
 
 API_PREFIXES = ("/api", "/api/v1")
 
@@ -215,6 +215,49 @@ def _web_api_gateway():
     return create_mt5_gateway(
         adapter=mt5,
         ensure_connection_impl=mt5_connection._ensure_connection,
+    )
+
+
+def _readiness_payload() -> tuple[Dict[str, Any], int]:
+    connection_error = mt5_connection_error(
+        create_mt5_gateway(
+            adapter=mt5,
+            ensure_connection_impl=ensure_mt5_connection_or_raise,
+        )
+    )
+    if connection_error is None:
+        return (
+            {
+                "service": "mtdata-webui",
+                "status": "ok",
+                "ready": True,
+                "components": {
+                    "mt5_connection": {
+                        "status": "ok",
+                    }
+                },
+            },
+            200,
+        )
+    component = {
+        "status": "error",
+        "error": connection_error.get("error"),
+        "error_code": connection_error.get("error_code"),
+    }
+    if connection_error.get("request_id"):
+        component["request_id"] = connection_error["request_id"]
+    if connection_error.get("remediation"):
+        component["remediation"] = connection_error["remediation"]
+    return (
+        {
+            "service": "mtdata-webui",
+            "status": "degraded",
+            "ready": False,
+            "components": {
+                "mt5_connection": component,
+            },
+        },
+        503,
     )
 
 
@@ -394,9 +437,20 @@ def health() -> Dict[str, Any]:
     return {"service": "mtdata-webui", "status": "ok"}
 
 
+@api_router.get("/ready")
+def ready() -> SafeJSONResponse:
+    payload, status_code = _readiness_payload()
+    return SafeJSONResponse(status_code=status_code, content=payload)
+
+
 @app.get("/health")
 def health_root() -> Dict[str, Any]:
     return health()
+
+
+@app.get("/ready")
+def ready_root() -> SafeJSONResponse:
+    return ready()
 
 
 @app.get("/")

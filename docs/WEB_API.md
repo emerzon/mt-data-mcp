@@ -62,13 +62,16 @@ Responses are JSON. Most endpoints return compact, UI-oriented payloads rather t
 Basic health check. Returns JSON, not the SPA.
 
 #### `GET /health`
-Same health payload as `/`.
+Same liveness payload as `/`.
+
+#### `GET /ready`
+Readiness probe. Returns HTTP 200 when the API can establish an MT5 connection and HTTP 503 when MT5 is unavailable. Also available at `GET /api/ready` and `GET /api/v1/ready`.
 
 #### `GET /app`
 Serves the built Web UI (if `webui/dist/` exists).
 
 #### `GET /api/health`
-API health check. Also available at `GET /api/v1/health`.
+API liveness check. Also available at `GET /api/v1/health`.
 
 ### Market Data
 

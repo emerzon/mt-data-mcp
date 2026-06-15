@@ -33,6 +33,32 @@ def test_health_available_on_root_route() -> None:
     assert response.json() == {"service": "mtdata-webui", "status": "ok"}
 
 
+def test_ready_available_on_versioned_route() -> None:
+    with patch("mtdata.core.web_api.mt5_connection._ensure_connection", return_value=True):
+        response = client.get("/api/v1/ready")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "service": "mtdata-webui",
+        "status": "ok",
+        "ready": True,
+        "components": {"mt5_connection": {"status": "ok"}},
+    }
+
+
+def test_ready_available_on_root_route() -> None:
+    with patch("mtdata.core.web_api.mt5_connection._ensure_connection", return_value=True):
+        response = client.get("/ready")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "service": "mtdata-webui",
+        "status": "ok",
+        "ready": True,
+        "components": {"mt5_connection": {"status": "ok"}},
+    }
+
+
 def test_history_available_on_versioned_route() -> None:
     payload = {
         "success": True,

@@ -1386,6 +1386,19 @@ class TestRoot:
         assert res["status"] == "ok"
 
 
+class TestReadiness:
+    def test_ready_reports_mt5_outage(self):
+        with patch.object(web_api.mt5_connection, "_ensure_connection", return_value=False):
+            resp = _client.get("/api/ready")
+
+        assert resp.status_code == 503
+        body = resp.json()
+        assert body["service"] == "mtdata-webui"
+        assert body["status"] == "degraded"
+        assert body["ready"] is False
+        assert body["components"]["mt5_connection"]["error_code"] == "mt5_connection_error"
+
+
 # ===========================================================================
 # main_webapi
 # ===========================================================================
