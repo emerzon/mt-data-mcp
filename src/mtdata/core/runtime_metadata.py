@@ -89,6 +89,26 @@ def _offset_tz_name(offset_seconds: Optional[int]) -> Optional[str]:
         return None
 
 
+def _coerce_optional_int(value: Any) -> Optional[int]:
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return int(value)
+    if isinstance(value, float):
+        if value.is_integer():
+            return int(value)
+        return None
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return None
+        try:
+            return int(text)
+        except Exception:
+            return None
+    return None
+
+
 def display_timezone_label(
     *,
     use_client_tz: bool,
@@ -152,25 +172,16 @@ def build_runtime_timezone_meta(
             server_offset_seconds = None
 
     offset_env = os.getenv("MT5_TIME_OFFSET_MINUTES")
-    server_offset_minutes = None
-    try:
-        cfg_offset_minutes = int(getattr(cfg, "time_offset_minutes"))
-    except Exception:
-        cfg_offset_minutes = None
-    if cfg_offset_minutes not in (None, 0):
-        server_offset_minutes = cfg_offset_minutes
-    elif offset_env is not None:
-        try:
-            server_offset_minutes = int(offset_env)
-        except Exception:
-            server_offset_minutes = None
+    cfg_offset_minutes = _coerce_optional_int(getattr(cfg, "time_offset_minutes", None))
+    env_offset_minutes = _coerce_optional_int(offset_env)
+    server_offset_minutes = env_offset_minutes if offset_env is not None else cfg_offset_minutes
     if server_offset_seconds is None and isinstance(server_offset_minutes, int):
         server_offset_seconds = int(server_offset_minutes) * 60
 
     server_source = "none"
     if isinstance(server_offset_minutes, int) and server_offset_minutes != 0:
         server_source = "MT5_TIME_OFFSET_MINUTES"
-    elif server_tz_config:
+    elif server_tz_config or server_tz_resolved:
         server_source = "MT5_SERVER_TZ"
 
     server_tzinfo = _resolve_tzinfo(server_tz_obj) or _resolve_tzinfo(server_tz_resolved or server_tz_config)
