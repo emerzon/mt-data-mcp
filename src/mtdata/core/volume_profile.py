@@ -13,7 +13,11 @@ from ..utils.mt5 import (
     _symbol_ready_guard,
     ensure_mt5_connection_or_raise,
 )
-from ..utils.utils import _parse_start_datetime, _positive_float_attr
+from ..utils.utils import (
+    _format_datetime_explicit,
+    _parse_start_datetime,
+    _positive_float_attr,
+)
 from ..utils.volume_profile import VolumeProfileConfig, compute_volume_profile
 from ._mcp_instance import mcp
 from .execution_logging import run_logged_operation
@@ -108,16 +112,60 @@ def _table_rows(payload: Dict[str, Any]) -> list[dict[str, Any]]:
     return rows if isinstance(rows, list) else []
 
 
+def _format_window_timestamp(value: Any) -> Optional[str]:
+    if value in (None, ""):
+        return None
+    timespec = "seconds"
+    parsed: Optional[datetime]
+    if isinstance(value, datetime):
+        parsed = value
+        if value.microsecond:
+            timespec = "milliseconds"
+    elif isinstance(value, (int, float)):
+        try:
+            epoch = float(value)
+        except (TypeError, ValueError):
+            parsed = None
+        else:
+            if not math.isfinite(epoch):
+                return None
+            parsed = datetime.fromtimestamp(epoch, tz=timezone.utc)
+            if not float(epoch).is_integer():
+                timespec = "milliseconds"
+    else:
+        text = str(value).strip()
+        if not text:
+            return None
+        if "." in text:
+            timespec = "milliseconds"
+        try:
+            parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+        except ValueError:
+            parsed = _parse_start_datetime(text)
+            if parsed is None:
+                return text
+    return _format_datetime_explicit(parsed, timespec=timespec)
+
+
 def _observed_profile_window(
     rows: list[dict[str, Any]],
     *,
     fallback_start: Optional[str],
     fallback_end: Optional[str],
 ) -> Dict[str, Optional[str]]:
-    times = [row.get("time") for row in rows if row.get("time") not in (None, "")]
+    times = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        formatted = _format_window_timestamp(row.get("time"))
+        if formatted not in (None, ""):
+            times.append(formatted)
     if not times:
-        return {"start": fallback_start, "end": fallback_end}
-    return {"start": str(times[0]), "end": str(times[-1])}
+        return {
+            "start": _format_window_timestamp(fallback_start),
+            "end": _format_window_timestamp(fallback_end),
+        }
+    return {"start": times[0], "end": times[-1]}
 
 
 def _fetch_tick_rows(
@@ -194,9 +242,11 @@ def _fetch_m1_rows(
         if not prices:
             continue
         per_price_weight = weight / float(len(prices)) if weight > 0.0 else 0.0
+        candle_time = _format_window_timestamp(candle.get("time"))
         for price in prices:
             rows.append(
                 {
+                    "time": candle_time,
                     "last": price,
                     "mid": price,
                     "bid": price,
