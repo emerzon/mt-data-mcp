@@ -15,6 +15,19 @@ def test_closed_session_context_marks_weekend_fx_but_not_crypto():
     assert closed_session_context("BTCUSD", now_epoch=saturday) is None
 
 
+def test_closed_session_context_ignores_non_forex_symbols() -> None:
+    saturday = datetime(2026, 6, 6, 12, tzinfo=timezone.utc).timestamp()
+
+    assert closed_session_context("US500", now_epoch=saturday) is None
+    assert closed_session_context("XAUUSD", now_epoch=saturday) is None
+
+
+def test_closed_session_context_allows_fx_after_sunday_utc_reopen() -> None:
+    sunday_reopen = datetime(2026, 6, 14, 21, 30, tzinfo=timezone.utc).timestamp()
+
+    assert closed_session_context("EURUSD", now_epoch=sunday_reopen) is None
+
+
 def test_closed_session_context_does_not_relax_very_old_data():
     saturday = datetime(2026, 6, 6, 12, tzinfo=timezone.utc).timestamp()
 

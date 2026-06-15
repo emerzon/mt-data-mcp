@@ -60,3 +60,15 @@ def is_probably_crypto_symbol(symbol: Any) -> bool:
     if not normalized:
         return False
     return any(token in normalized for token in CRYPTO_SYMBOL_HINTS)
+
+
+def is_probably_forex_symbol(symbol: Any) -> bool:
+    text = str(symbol or "").upper().strip()
+    if not text:
+        return False
+    normalized = "".join(ch for ch in text if ch.isalnum())
+    if len(normalized) < 6:
+        return False
+    base = normalized[:3]
+    quote = normalized[3:6]
+    return base in FIAT_CURRENCY_CODES and quote in FIAT_CURRENCY_CODES

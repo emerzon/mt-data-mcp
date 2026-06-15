@@ -4,7 +4,7 @@ import math
 from datetime import datetime, timezone
 from typing import Any, Optional
 
-from ..shared.symbols import is_probably_crypto_symbol
+from ..shared.symbols import is_probably_crypto_symbol, is_probably_forex_symbol
 
 QUOTE_STALE_SECONDS = 300
 MAX_STANDARD_WEEKEND_DATA_AGE_SECONDS = 3 * 24 * 60 * 60
@@ -14,7 +14,7 @@ def is_standard_weekend_closure(now_utc: datetime) -> bool:
     weekday = now_utc.weekday()
     if weekday == 5:
         return True
-    if weekday == 6 and now_utc.hour < 22:
+    if weekday == 6 and now_utc.hour < 21:
         return True
     if weekday == 4 and now_utc.hour >= 22:
         return True
@@ -28,7 +28,11 @@ def closed_session_context(
     item: str = "tick",
     data_age_seconds: Any = None,
 ) -> Optional[dict[str, Any]]:
-    if not str(symbol or "").strip() or is_probably_crypto_symbol(symbol):
+    if (
+        not str(symbol or "").strip()
+        or is_probably_crypto_symbol(symbol)
+        or not is_probably_forex_symbol(symbol)
+    ):
         return None
     try:
         now_utc = datetime.fromtimestamp(float(now_epoch), tz=timezone.utc)
