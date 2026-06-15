@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 
 import pytest
 
@@ -10,7 +10,11 @@ import pytest
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../src")))
 
 from mtdata.bootstrap import settings as mt5_config_module
-from mtdata.core.trading.time import _normalize_pending_expiration, mt5_config
+from mtdata.core.trading.time import (
+    _normalize_pending_expiration,
+    _relative_expiration_base,
+    mt5_config,
+)
 
 
 def _with_clean_tz_config():
@@ -83,7 +87,7 @@ def test_normalize_pending_expiration_none_is_not_explicit() -> None:
     assert exp is None
 
 
-def test_normalize_pending_expiration_applies_server_tz_offset() -> None:
+def test_normalize_pending_expiration_preserves_absolute_epoch_with_server_tz() -> None:
     if getattr(mt5_config_module, "pytz", None) is None:
         pytest.skip("pytz is not available")
 
@@ -92,6 +96,32 @@ def test_normalize_pending_expiration_applies_server_tz_offset() -> None:
         mt5_config.server_tz_name = "Europe/Athens"
         exp, specified = _normalize_pending_expiration(1577836800)
         assert specified is True
-        assert exp == 1577844000
+        assert exp == 1577836800
+    finally:
+        _restore_tz_config(original)
+
+
+def test_relative_expiration_base_uses_utc_without_client_timezone() -> None:
+    original = _with_clean_tz_config()
+    try:
+        base = _relative_expiration_base(
+            now_utc=datetime(2026, 6, 15, 12, 0, tzinfo=timezone.utc)
+        )
+        assert base == datetime(2026, 6, 15, 12, 0)
+    finally:
+        _restore_tz_config(original)
+
+
+def test_relative_expiration_base_uses_configured_client_timezone() -> None:
+    if getattr(mt5_config_module, "pytz", None) is None:
+        pytest.skip("pytz is not available")
+
+    original = _with_clean_tz_config()
+    try:
+        mt5_config.client_tz_name = "America/New_York"
+        base = _relative_expiration_base(
+            now_utc=datetime(2026, 6, 15, 12, 0, tzinfo=timezone.utc)
+        )
+        assert base == datetime(2026, 6, 15, 8, 0)
     finally:
         _restore_tz_config(original)

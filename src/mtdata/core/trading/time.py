@@ -221,6 +221,25 @@ def _sleep_until_next_candle(
     return payload
 
 
+def _relative_expiration_base(*, now_utc: Optional[datetime] = None) -> datetime:
+    """Return a naive dateparser base in the configured client timezone."""
+    current_utc = now_utc or datetime.now(timezone.utc)
+    if current_utc.tzinfo is None:
+        current_utc = current_utc.replace(tzinfo=timezone.utc)
+    else:
+        current_utc = current_utc.astimezone(timezone.utc)
+    try:
+        client_tz = mt5_config.get_client_tz()
+    except Exception:
+        client_tz = None
+    if client_tz is not None:
+        try:
+            return current_utc.astimezone(client_tz).replace(tzinfo=None)
+        except Exception:
+            pass
+    return current_utc.replace(tzinfo=None)
+
+
 def _normalize_pending_expiration(expiration: Optional[ExpirationValue]) -> Tuple[Optional[int], bool]:
     """Convert user-supplied expiration data into an MT5-compatible timestamp."""
     if expiration is None:
@@ -275,7 +294,7 @@ def _normalize_pending_expiration(expiration: Optional[ExpirationValue]) -> Tupl
                 settings={
                     "RETURN_AS_TIMEZONE_AWARE": False,
                     "PREFER_DATES_FROM": "future",
-                    "RELATIVE_BASE": datetime.now(),
+                    "RELATIVE_BASE": _relative_expiration_base(),
                 },
             )
             if dt is not None:
