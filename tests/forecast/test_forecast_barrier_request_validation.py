@@ -10,7 +10,7 @@ from mtdata.forecast.requests import (
 def test_forecast_barrier_prob_request_rejects_multiple_tp_unit_families():
     with pytest.raises(
         ValidationError,
-        match="Provide only one take-profit unit family: tp_abs, tp_pct, tp_ticks",
+        match="Use one TP/SL barrier unit family",
     ):
         ForecastBarrierProbRequest(symbol="EURUSD", tp_abs=1.11, tp_pct=0.5)
 
@@ -18,16 +18,24 @@ def test_forecast_barrier_prob_request_rejects_multiple_tp_unit_families():
 def test_forecast_barrier_prob_request_rejects_multiple_sl_unit_families():
     with pytest.raises(
         ValidationError,
-        match="Provide only one stop-loss unit family: sl_abs, sl_pct, sl_ticks",
+        match="Use one TP/SL barrier unit family",
     ):
         ForecastBarrierProbRequest(symbol="EURUSD", sl_abs=1.09, sl_ticks=15.0)
 
 
-def test_forecast_barrier_prob_request_allows_one_unit_family_per_side():
-    request = ForecastBarrierProbRequest(symbol="EURUSD", tp_pct=0.5, sl_ticks=15.0)
+def test_forecast_barrier_prob_request_rejects_mixed_unit_families():
+    with pytest.raises(
+        ValidationError,
+        match="Use one TP/SL barrier unit family",
+    ):
+        ForecastBarrierProbRequest(symbol="EURUSD", tp_pct=0.5, sl_ticks=15.0)
+
+
+def test_forecast_barrier_prob_request_allows_single_shared_unit_family():
+    request = ForecastBarrierProbRequest(symbol="EURUSD", tp_pct=0.5, sl_pct=0.25)
 
     assert request.tp_pct == 0.5
-    assert request.sl_ticks == 15.0
+    assert request.sl_pct == 0.25
 
 
 def test_forecast_barrier_prob_request_uses_tick_fields_as_canonical_names():

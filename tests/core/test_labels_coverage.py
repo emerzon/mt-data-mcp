@@ -129,6 +129,29 @@ class TestLabelsTripleBarrier:
         assert row["sl_price"] == pytest.approx(1.15897)
         assert "barrier_levels" not in row
 
+    def test_triple_barrier_sample_row_surfaces_barrier_resolution_errors(self):
+        from mtdata.core.labels import _triple_barrier_sample_row
+
+        with patch(f"{_LABELS_MOD}._resolve_barrier_prices", side_effect=RuntimeError("boom")):
+            row = _triple_barrier_sample_row(
+                idx=0,
+                closes=np.array([1.23456]),
+                t_entry=["2024-01-01T00:00:00Z"],
+                labels=[1],
+                hold=[3],
+                tp_times=[None],
+                sl_times=[None],
+                direction_value="long",
+                pip_size=0.0001,
+                barrier_kwargs={"tp_pct": 0.5, "sl_pct": 0.5},
+                price_digits=5,
+            )
+
+        assert row["entry_price"] == pytest.approx(1.23456)
+        assert row["barrier_error"] == "boom"
+        assert "tp_price" not in row
+        assert "sl_price" not in row
+
     @patch(f"{_LABELS_MOD}._get_pip_size", return_value=0.0001)
     @patch(f"{_LABELS_MOD}._resolve_denoise_base_col", return_value="close")
     @patch(f"{_LABELS_MOD}._fetch_history")

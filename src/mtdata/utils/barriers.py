@@ -4,26 +4,31 @@ from typing import Any, Dict, Literal, Optional, Tuple
 from .mt5 import get_symbol_info_cached
 from .coercion import coerce_finite_float
 
+_BARRIER_FAMILY_FIELDS = (
+    ("abs", ("tp_abs", "sl_abs")),
+    ("pct", ("tp_pct", "sl_pct")),
+    ("ticks", ("tp_ticks", "sl_ticks")),
+)
+_BARRIER_FAMILY_ERROR = (
+    "Use one TP/SL barrier unit family: tp_abs/sl_abs, tp_pct/sl_pct, or tp_ticks/sl_ticks."
+)
+
 
 def validate_barrier_unit_family_exclusivity(values: Any) -> Any:
     """Reject ambiguous barrier inputs that mix units on the same side."""
     if not isinstance(values, dict):
         return values
-    for label, fields, message_fields in (
-        (
-            "take-profit",
-            ("tp_abs", "tp_pct", "tp_ticks"),
-            "tp_abs, tp_pct, tp_ticks",
-        ),
-        (
-            "stop-loss",
-            ("sl_abs", "sl_pct", "sl_ticks"),
-            "sl_abs, sl_pct, sl_ticks",
-        ),
-    ):
+    for fields in (("tp_abs", "tp_pct", "tp_ticks"), ("sl_abs", "sl_pct", "sl_ticks")):
         provided = [field for field in fields if values.get(field) is not None]
         if len(provided) > 1:
-            raise ValueError(f"Provide only one {label} unit family: {message_fields}")
+            raise ValueError(_BARRIER_FAMILY_ERROR)
+    provided_families = [
+        family_name
+        for family_name, family_fields in _BARRIER_FAMILY_FIELDS
+        if any(values.get(field) is not None for field in family_fields)
+    ]
+    if len(provided_families) > 1:
+        raise ValueError(_BARRIER_FAMILY_ERROR)
     return values
 
 

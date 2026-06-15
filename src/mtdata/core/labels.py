@@ -107,8 +107,8 @@ def _triple_barrier_sample_row(
                 row["tp_price"] = _round_label_price(tp_price, digits=price_digits)
             if sl_price is not None:
                 row["sl_price"] = _round_label_price(sl_price, digits=price_digits)
-    except Exception:
-        pass
+    except Exception as exc:
+        row["barrier_error"] = str(exc) or exc.__class__.__name__
     return row
 
 
