@@ -95,6 +95,24 @@ def test_apply_ta_indicators_accepts_volume_alias_columns(volume_col: str) -> No
     assert any(str(col).upper().startswith("OBV") for col in added)
 
 
+def test_apply_ta_indicators_prefers_nonzero_tick_volume_over_zero_volume(monkeypatch) -> None:
+    df = _sample_df()
+    df["volume"] = 0.0
+    df["real_volume"] = 0.0
+    df["tick_volume"] = np.arange(1, len(df) + 1, dtype=float)
+    observed = {}
+
+    def _fake_obv(close, volume):
+        observed["volume"] = volume.copy()
+        return pd.Series(np.asarray(volume, dtype=float), index=close.index, name="OBV")
+
+    monkeypatch.setattr(indicators.pta, "obv", _fake_obv, raising=False)
+
+    _apply_ta_indicators(df, "obv")
+
+    assert observed["volume"].reset_index(drop=True).equals(df["tick_volume"].reset_index(drop=True))
+
+
 def test_apply_ta_indicators_raises_actionable_error_without_retries(monkeypatch) -> None:
     df = _sample_df()
 

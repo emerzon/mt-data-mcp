@@ -362,6 +362,26 @@ def _format_missing_indicator_columns(
     )
 
 
+def _resolve_indicator_volume_series(df: pd.DataFrame) -> Optional[pd.Series]:
+    fallback: Optional[pd.Series] = None
+    for col_name in _VOLUME_SOURCE_COLUMNS:
+        if col_name not in df.columns:
+            continue
+        series = df[col_name]
+        if fallback is None:
+            fallback = series
+        try:
+            numeric = pd.to_numeric(series, errors="coerce")
+        except Exception:
+            numeric = series
+        try:
+            if bool((numeric.fillna(0) != 0).any()):
+                return series
+        except Exception:
+            pass
+    return fallback
+
+
 def _resolve_indicator_series_inputs(
     df: pd.DataFrame,
     indicator_name: str,
@@ -376,9 +396,7 @@ def _resolve_indicator_series_inputs(
     for name in required:
         if name == "volume":
             if volume_series is None:
-                volume_col = next((col for col in _VOLUME_SOURCE_COLUMNS if col in df.columns), None)
-                if volume_col is not None:
-                    volume_series = df[volume_col]
+                volume_series = _resolve_indicator_volume_series(df)
             if volume_series is None:
                 missing.append(name)
             else:
@@ -424,8 +442,7 @@ def _apply_ta_indicators(df: pd.DataFrame, ti_spec: str) -> List[str]:  # noqa: 
                     pass
         before = set(df.columns)
         specs = _parse_ti_specs(ti_spec)
-        volume_col = next((col for col in _VOLUME_SOURCE_COLUMNS if col in df.columns), None)
-        volume_series = df[volume_col] if volume_col is not None else None
+        volume_series = _resolve_indicator_volume_series(df)
         for name, args, kwargs in specs:
             lname = _normalize_ta_indicator_name(name)
             func = getattr(pta, lname, None)
