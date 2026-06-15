@@ -61,6 +61,15 @@ def test_apply_ta_indicators_raises_for_missing_required_columns() -> None:
         _apply_ta_indicators(df, "atr(14)")
 
 
+def test_apply_ta_indicators_rejects_unknown_indicators_before_partial_apply() -> None:
+    df = _sample_df()
+
+    with pytest.raises(ValueError, match=r"Unknown indicator\(s\): fake_indicator_xyz"):
+        _apply_ta_indicators(df, "ema(20),fake_indicator_xyz(14)")
+
+    assert list(df.columns) == ["close"]
+
+
 def test_apply_ta_indicators_restores_original_index_on_value_error() -> None:
     df = pd.DataFrame(
         {

@@ -332,6 +332,16 @@ def _find_unknown_ta_indicators(spec: str) -> List[str]:
     return sorted(set(unknown))
 
 
+def _format_unknown_ta_indicators_error(indicator_names: List[str]) -> str:
+    names = [str(name).strip() for name in indicator_names if str(name).strip()]
+    return (
+        "Unknown indicator(s): "
+        + ", ".join(names)
+        + ". Parameters use name(params) syntax, e.g. rsi(14) or "
+        "macd(12,26,9); use indicators_list to view valid indicator names."
+    )
+
+
 def _format_missing_indicator_columns(
     indicator_name: str,
     required: List[str],
@@ -398,6 +408,9 @@ def _apply_ta_indicators(df: pd.DataFrame, ti_spec: str) -> List[str]:  # noqa: 
     added_cols: List[str] = []
     if not ti_spec:
         return added_cols
+    unknown_indicators = _find_unknown_ta_indicators(ti_spec)
+    if unknown_indicators:
+        raise ValueError(_format_unknown_ta_indicators_error(unknown_indicators))
     # Many TA funcs expect a DatetimeIndex
     original_index = df.index
     try:
