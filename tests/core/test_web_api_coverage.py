@@ -1188,6 +1188,26 @@ class TestPostForecastPrice:
         assert resp.status_code == 400
         assert "engine exploded" in resp.text
 
+    def test_internal_exception_is_sanitized(self):
+        with patch(
+            "mtdata.core.web_api._run_forecast_generate_impl",
+            side_effect=RuntimeError("secret trace"),
+        ):
+            resp = _client.post("/api/forecast/price", json={"symbol": "EURUSD"})
+        assert resp.status_code == 500
+        detail = resp.json()["detail"]
+        assert detail["error_code"] == "forecast_internal_error"
+        assert "secret trace" not in detail["error"]
+
+    def test_mt5_connection_error_becomes_http_503(self):
+        with patch(
+            "mtdata.core.web_api._run_forecast_generate_impl",
+            side_effect=MT5ConnectionError("terminal unavailable"),
+        ):
+            resp = _client.post("/api/forecast/price", json={"symbol": "EURUSD"})
+        assert resp.status_code == 503
+        assert resp.json()["detail"]["error_code"] == "forecast_mt5_unavailable"
+
 
 # ===========================================================================
 # POST /api/forecast/volatility

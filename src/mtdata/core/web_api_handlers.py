@@ -752,8 +752,23 @@ def get_tick_response(
 def post_forecast_price_response(*, body: ForecastPriceBody, forecast_generate_use_case: Callable[..., Any]) -> Dict[str, Any]:
     try:
         result = forecast_generate_use_case(body.to_domain_request())
+    except HTTPException:
+        raise
     except ForecastError as exc:
         raise _http_error(400, str(exc), code="forecast_error", operation="post_forecast_price")
+    except MT5ConnectionError as exc:
+        raise _http_error(
+            503,
+            str(exc),
+            code="forecast_mt5_unavailable",
+            operation="post_forecast_price",
+        )
+    except Exception:
+        _raise_internal_handler_error(
+            operation="post_forecast_price",
+            code="forecast_internal_error",
+            message="Forecast computation failed.",
+        )
     if isinstance(result, dict) and result.get("error"):
         raise _http_error(400, str(result["error"]), code="forecast_tool_error", operation="post_forecast_price")
     return result
