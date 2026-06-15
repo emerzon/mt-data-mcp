@@ -15,7 +15,7 @@ from mtdata.core.trading.requests import (
     TradeHistoryRequest,
     TradeJournalAnalyzeRequest,
 )
-from mtdata.core.trading.use_cases import run_trade_history
+from mtdata.core.trading.use_cases import _trade_rows_to_dataframe, run_trade_history
 from mtdata.utils.mt5 import MT5ConnectionError, _mt5_epoch_to_utc
 
 
@@ -23,6 +23,22 @@ def _format_utc_seconds(epoch_seconds: float) -> str:
     return datetime.fromtimestamp(epoch_seconds, tz=timezone.utc).isoformat(
         timespec="seconds"
     ).replace("+00:00", "Z")
+
+
+def test_trade_rows_to_dataframe_preserves_heterogeneous_fields() -> None:
+    import pandas as pd
+
+    frame = _trade_rows_to_dataframe(
+        [
+            {"ticket": 1, "profit": 100.0, "commission": -5.0},
+            {"ticket": 2, "profit": 75.0, "swap": -2.0},
+        ],
+        pd_module=pd,
+    )
+
+    assert list(frame.columns) == ["ticket", "profit", "commission", "swap"]
+    assert frame.loc[0, "commission"] == -5.0
+    assert frame.loc[1, "swap"] == -2.0
 
 
 def _unwrap(fn):

@@ -153,10 +153,7 @@ def _trade_rows_to_dataframe(rows: Any, *, pd_module: Any) -> Any:
     row_dicts = [_trade_row_to_dict(row) for row in list(rows)]
     if not row_dicts:
         return pd_module.DataFrame()
-    return pd_module.DataFrame.from_records(
-        row_dicts,
-        columns=list(row_dicts[0].keys()),
-    )
+    return pd_module.DataFrame.from_records(row_dicts)
 
 
 def _resolve_trade_place_preview_detail(request: TradePlaceRequest) -> str:
