@@ -71,18 +71,34 @@ def _options_provider_readiness() -> Dict[str, Any]:
 
     provider = str(getattr(options_data_config, "provider", "yahoo") or "yahoo").strip().lower()
     api_key_configured = bool(getattr(options_data_config, "api_key", None))
-    effective_provider = (
-        "tradier" if provider == "auto" and api_key_configured
-        else "yahoo" if provider == "auto"
-        else provider
-    )
-    chain_data_ready = effective_provider == "yahoo" or (
-        effective_provider == "tradier" and api_key_configured
-    )
+    if provider == "tradier" and not api_key_configured:
+        effective_provider = "yahoo"
+        configured_provider_ready = False
+        action_required = "configure_options_provider"
+        remediation = (
+            "Configured Tradier mode is missing MTDATA_OPTIONS_API_KEY. mtdata will "
+            "retry unauthenticated Yahoo as a best-effort fallback, but reliable "
+            "options chains still require Tradier credentials."
+        )
+    else:
+        effective_provider = (
+            "tradier" if provider == "auto" and api_key_configured
+            else "yahoo" if provider == "auto"
+            else provider
+        )
+        configured_provider_ready = True
+        action_required = None
+        remediation = (
+            "Yahoo options data is unauthenticated best-effort data and may return "
+            "401/429. For reliable chains, set MTDATA_OPTIONS_PROVIDER=tradier and "
+            "MTDATA_OPTIONS_API_KEY."
+        ) if effective_provider == "yahoo" else None
+    chain_data_ready = effective_provider in {"yahoo", "tradier"}
     return {
         "configured_provider": provider,
         "effective_provider": effective_provider,
         "api_key_configured": api_key_configured,
+        "configured_provider_ready": configured_provider_ready,
         "chain_data_ready": chain_data_ready,
         "provider_mode": "best_effort" if effective_provider == "yahoo" else "authenticated",
         "supported_providers": ["tradier", "yahoo"],
@@ -92,17 +108,8 @@ def _options_provider_readiness() -> Dict[str, Any]:
             "options_heston_calibrate",
         ],
         "local_tools": ["options_barrier_price"],
-        "action_required": None if chain_data_ready else "configure_options_provider",
-        "remediation": (
-            "Yahoo options data is unauthenticated best-effort data and may return 401/429. "
-            "For reliable chains, set MTDATA_OPTIONS_PROVIDER=tradier and MTDATA_OPTIONS_API_KEY."
-        )
-        if effective_provider == "yahoo"
-        else None if chain_data_ready else (
-            "For reliable options chains, set MTDATA_OPTIONS_PROVIDER=tradier "
-            "and MTDATA_OPTIONS_API_KEY. Yahoo is an unauthenticated fallback "
-            "and may return 401/429."
-        ),
+        "action_required": action_required,
+        "remediation": remediation,
     }
 
 
@@ -192,11 +199,14 @@ def _apply_options_detail(
             for key in (
                 "success",
                 "provider",
+                "configured_provider",
+                "provider_effective",
                 "cached",
                 "data_age_seconds",
                 "symbol",
                 "expirations",
                 "expiration_count",
+                "warnings",
                 "detail",
             )
             if key in out
@@ -207,6 +217,8 @@ def _apply_options_detail(
             for key in (
                 "success",
                 "provider",
+                "configured_provider",
+                "provider_effective",
                 "cached",
                 "data_age_seconds",
                 "symbol",
@@ -217,6 +229,7 @@ def _apply_options_detail(
                 "count",
                 "calls_count",
                 "puts_count",
+                "warnings",
                 "detail",
             )
             if key in out
@@ -292,7 +305,7 @@ def options_provider_status(
         payload["next_steps"] = [
             "Set MTDATA_OPTIONS_PROVIDER=tradier.",
             "Set MTDATA_OPTIONS_API_KEY to a Tradier API token, then restart mtdata.",
-            "Use Yahoo only as an unauthenticated fallback that may return 401/429.",
+            "Yahoo fallback is best-effort only and may still return 401/429.",
         ]
         payload.pop("remediation", None)
     return _run_options_operation(
@@ -310,9 +323,11 @@ def options_expirations(
     """Fetch option expirations using the configured options-chain provider.
 
     Tradier requires MTDATA_OPTIONS_API_KEY. Yahoo Finance is an unauthenticated
-    fallback and may return 401 responses. For reliable options-chain data,
-    configure Tradier with MTDATA_OPTIONS_PROVIDER=tradier and
-    MTDATA_OPTIONS_API_KEY. Tradier API tokens: https://documentation.tradier.com/.
+    fallback and may return 401 responses. When provider mode is `tradier` or
+    `auto`, mtdata retries Yahoo if Tradier is unavailable or misconfigured. For
+    reliable options-chain data, configure Tradier with
+    MTDATA_OPTIONS_PROVIDER=tradier and MTDATA_OPTIONS_API_KEY. Tradier API
+    tokens: https://documentation.tradier.com/.
     """
     from ..services.options_service import get_options_expirations as _impl
 
@@ -358,9 +373,11 @@ def options_chain(
     """Fetch option-chain snapshots using the configured chain provider.
 
     Tradier requires MTDATA_OPTIONS_API_KEY. Yahoo Finance is an unauthenticated
-    fallback and may return 401 responses. For reliable options-chain data,
-    configure Tradier with MTDATA_OPTIONS_PROVIDER=tradier and
-    MTDATA_OPTIONS_API_KEY. Tradier API tokens: https://documentation.tradier.com/.
+    fallback and may return 401 responses. When provider mode is `tradier` or
+    `auto`, mtdata retries Yahoo if Tradier is unavailable or misconfigured. For
+    reliable options-chain data, configure Tradier with
+    MTDATA_OPTIONS_PROVIDER=tradier and MTDATA_OPTIONS_API_KEY. Tradier API
+    tokens: https://documentation.tradier.com/.
     """
     from ..services.options_service import get_options_chain as _impl
 
@@ -487,9 +504,11 @@ def options_heston_calibrate(
     """Calibrate Heston from the configured options-chain provider.
 
     Tradier requires MTDATA_OPTIONS_API_KEY. Yahoo Finance is an unauthenticated
-    fallback and may return 401 responses. For reliable options-chain data,
-    configure Tradier with MTDATA_OPTIONS_PROVIDER=tradier and
-    MTDATA_OPTIONS_API_KEY. Tradier API tokens: https://documentation.tradier.com/.
+    fallback and may return 401 responses. When provider mode is `tradier` or
+    `auto`, mtdata retries Yahoo if Tradier is unavailable or misconfigured. For
+    reliable options-chain data, configure Tradier with
+    MTDATA_OPTIONS_PROVIDER=tradier and MTDATA_OPTIONS_API_KEY. Tradier API
+    tokens: https://documentation.tradier.com/.
     """
     from ..forecast.quantlib_tools import (
         calibrate_heston_quantlib_from_options as _impl,

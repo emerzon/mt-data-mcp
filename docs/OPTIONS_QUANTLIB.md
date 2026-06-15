@@ -9,20 +9,20 @@ mtdata includes tools for fetching US equity options data and pricing exotic opt
 
 ---
 
-> **Dependencies:** Options chain data uses Yahoo Finance by default and may fail with unauthenticated 401/429 responses. For reliable chain data, set `MTDATA_OPTIONS_PROVIDER=tradier` and `MTDATA_OPTIONS_API_KEY`. QuantLib tools require `pip install QuantLib` and are independent of both MT5 and chain-provider access.
+> **Dependencies:** Options chain data uses Yahoo Finance by default and may fail with unauthenticated 401/429 responses. When `MTDATA_OPTIONS_PROVIDER=tradier` or `auto`, mtdata retries Yahoo if Tradier is unavailable or misconfigured, but reliable chain data still requires `MTDATA_OPTIONS_API_KEY`. QuantLib tools require `pip install QuantLib` and are independent of both MT5 and chain-provider access.
 
 ---
 
 ## Options Data
 
-The options data tools are external-data helpers. Yahoo Finance is the default, but it is an **unauthenticated fallback** that can reject requests (401/429), so the chain tools (`options_expirations`, `options_chain`, `options_heston_calibrate`) only treat data as ready when Tradier is configured. To use Tradier, add these values to `.env`:
+The options data tools are external-data helpers. Yahoo Finance is the default, but it is an **unauthenticated fallback** that can reject requests (401/429). If you select `tradier` (or `auto` with a Tradier token), mtdata retries Yahoo once when Tradier is unavailable or misconfigured. To use reliable authenticated chains, add these values to `.env`:
 
 ```bash
 MTDATA_OPTIONS_PROVIDER=tradier
 MTDATA_OPTIONS_API_KEY=your_tradier_token
 ```
 
-Run `options_provider_status` to see the configured vs. effective provider and whether chain data is ready:
+Run `options_provider_status` to see the configured vs. effective provider and whether mtdata is using authenticated or best-effort fallback access:
 
 ```bash
 mtdata-cli options_provider_status --json

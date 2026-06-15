@@ -7,7 +7,7 @@ import email.utils as _email_utils
 import logging
 import threading as _threading
 import time as _time
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 import requests
 
@@ -187,13 +187,189 @@ def _options_error(error: Any, *, prefix: Optional[str] = None) -> Dict[str, Any
     return out
 
 
-def _configured_options_provider() -> str:
+def _configured_options_provider_mode() -> str:
     provider = str(getattr(options_data_config, "provider", "yahoo") or "yahoo").strip().lower()
-    if provider == "auto":
-        return "tradier" if getattr(options_data_config, "api_key", None) else "yahoo"
-    if provider not in {"yahoo", "tradier"}:
+    if provider not in {"auto", "yahoo", "tradier"}:
         return "yahoo"
     return provider
+
+
+def _options_provider_attempt_order() -> List[str]:
+    provider = _configured_options_provider_mode()
+    if provider == "yahoo":
+        return ["yahoo"]
+    if provider == "auto":
+        return ["tradier", "yahoo"] if getattr(options_data_config, "api_key", None) else ["yahoo"]
+    return ["tradier", "yahoo"]
+
+
+def _configured_options_provider() -> str:
+    return _options_provider_attempt_order()[0]
+
+
+def _provider_label(provider: str) -> str:
+    return "Tradier" if provider == "tradier" else "Yahoo"
+
+
+def _provider_attempt_metadata(
+    provider: str,
+    *,
+    success: bool,
+    error: Optional[BaseException] = None,
+) -> Dict[str, Any]:
+    out: Dict[str, Any] = {"provider": provider, "success": bool(success)}
+    if error is not None:
+        out["error"] = str(error)
+    return out
+
+
+def _provider_error_from_payload(payload: Any) -> Optional[ValueError]:
+    if not isinstance(payload, dict):
+        return ValueError("Malformed options provider response")
+    if payload.get("success") is True:
+        return None
+    message = payload.get("error")
+    if message:
+        return ValueError(str(message))
+    return None
+
+
+def _provider_failure_message(
+    failures: List[tuple[str, BaseException]],
+) -> str:
+    parts: List[str] = []
+    for index, (provider, error) in enumerate(failures):
+        label = _provider_label(provider)
+        prefix = (
+            f"{label} options provider failed"
+            if index == 0
+            else f"{label} fallback also failed"
+        )
+        parts.append(f"{prefix}: {error}")
+    return "; ".join(parts)
+
+
+def _fallback_warning(
+    failures: List[tuple[str, BaseException]],
+    *,
+    effective_provider: str,
+) -> str:
+    return (
+        f"{_provider_label(effective_provider)} fallback returned data after "
+        f"{_provider_failure_message(failures)}"
+    )
+
+
+def _annotate_fallback_payload(
+    payload: Dict[str, Any],
+    *,
+    configured_provider: str,
+    effective_provider: str,
+    failures: List[tuple[str, BaseException]],
+) -> Dict[str, Any]:
+    out = dict(payload)
+    out["configured_provider"] = configured_provider
+    out["provider_effective"] = effective_provider
+    out["warnings"] = [_fallback_warning(failures, effective_provider=effective_provider)]
+    out["provider_attempts"] = [
+        _provider_attempt_metadata(provider, success=False, error=error)
+        for provider, error in failures
+    ] + [_provider_attempt_metadata(effective_provider, success=True)]
+    return out
+
+
+def _provider_error_payload(
+    error: Any,
+    *,
+    operation: str,
+    provider: str,
+    configured_provider: str,
+    provider_attempts: Optional[List[Dict[str, Any]]] = None,
+) -> Dict[str, Any]:
+    payload = _options_error(
+        error,
+        prefix=f"Failed to fetch {operation}",
+    )
+    payload["provider"] = provider
+    payload["configured_provider"] = configured_provider
+    if provider_attempts:
+        payload["provider_attempts"] = provider_attempts
+    return payload
+
+
+def _run_options_provider_query(
+    *,
+    operation: str,
+    yahoo_func: Callable[[], Dict[str, Any]],
+    tradier_func: Callable[[], Dict[str, Any]],
+) -> Dict[str, Any]:
+    configured_provider = _configured_options_provider_mode()
+    providers = _options_provider_attempt_order()
+    failures: List[tuple[str, BaseException]] = []
+    for index, provider in enumerate(providers):
+        provider_func = tradier_func if provider == "tradier" else yahoo_func
+        fallback_remaining = "yahoo" in providers[index + 1 :]
+        try:
+            payload = provider_func()
+        except Exception as exc:
+            failures.append((provider, exc))
+            if fallback_remaining:
+                logger.warning(
+                    "%s options provider failed for %s; retrying Yahoo fallback: %s",
+                    _provider_label(provider),
+                    operation,
+                    exc,
+                )
+                continue
+            return _provider_error_payload(
+                ValueError(_provider_failure_message(failures)),
+                operation=operation,
+                provider=provider,
+                configured_provider=configured_provider,
+                provider_attempts=[
+                    _provider_attempt_metadata(item_provider, success=False, error=error)
+                    for item_provider, error in failures
+                ],
+            )
+
+        provider_error = _provider_error_from_payload(payload)
+        if provider_error is None:
+            if failures:
+                return _annotate_fallback_payload(
+                    payload,
+                    configured_provider=configured_provider,
+                    effective_provider=provider,
+                    failures=failures,
+                )
+            return payload
+        if fallback_remaining:
+            failures.append((provider, provider_error))
+            logger.warning(
+                "%s options provider returned an error for %s; retrying Yahoo fallback: %s",
+                _provider_label(provider),
+                operation,
+                provider_error,
+            )
+            continue
+        if failures:
+            failures.append((provider, provider_error))
+            return _provider_error_payload(
+                ValueError(_provider_failure_message(failures)),
+                operation=operation,
+                provider=provider,
+                configured_provider=configured_provider,
+                provider_attempts=[
+                    _provider_attempt_metadata(item_provider, success=False, error=error)
+                    for item_provider, error in failures
+                ],
+            )
+        return payload
+    return _provider_error_payload(
+        RuntimeError("No supported options providers are available."),
+        operation=operation,
+        provider="yahoo",
+        configured_provider=configured_provider,
+    )
 
 
 def _throttle_yahoo_request() -> None:
@@ -548,30 +724,146 @@ def _get_tradier_options_chain(
     }
 
 
+def _get_yahoo_options_expirations(symbol: str) -> Dict[str, Any]:
+    payload = _fetch_yahoo_options_payload(symbol)
+    expiration_epochs = _extract_expiration_epochs(payload)
+    expirations = [_epoch_to_ymd(v) for v in expiration_epochs]
+    quote = payload.get("quote", {}) if isinstance(payload.get("quote"), dict) else {}
+    return {
+        "success": True,
+        **_live_options_metadata("yahoo"),
+        "symbol": str(symbol).upper().strip(),
+        "underlying_price": _to_numeric(
+            quote.get("regularMarketPrice"),
+            float,
+            float("nan"),
+            field_name="quote.regularMarketPrice",
+        ),
+        "currency": quote.get("currency"),
+        "expirations": expirations,
+        "expiration_count": int(len(expirations)),
+    }
+
+
+def _get_yahoo_options_chain(
+    *,
+    symbol: str,
+    expiration: Optional[str],
+    option_type: str,
+    min_open_interest: int,
+    min_volume: int,
+    limit: int,
+) -> Dict[str, Any]:
+    symbol_norm = str(symbol).upper().strip()
+    base = _fetch_yahoo_options_payload(symbol_norm)
+    expiration_epochs = _extract_expiration_epochs(base)
+    if not expiration_epochs:
+        return {"error": f"No option expirations found for {symbol_norm}"}
+
+    available_map = {_epoch_to_ymd(ep): int(ep) for ep in expiration_epochs}
+    chosen_expiry_ymd: str
+    chosen_expiry_epoch: int
+    if expiration is None:
+        chosen_expiry_epoch = int(expiration_epochs[0])
+        chosen_expiry_ymd = _epoch_to_ymd(chosen_expiry_epoch)
+    else:
+        chosen_expiry_ymd = str(expiration).strip()
+        chosen_expiry_epoch = int(available_map.get(chosen_expiry_ymd, -1))
+        if chosen_expiry_epoch < 0:
+            return {
+                "error": f"Requested expiration {chosen_expiry_ymd} not available for {symbol_norm}",
+                "expirations": sorted(available_map),
+            }
+
+    payload = _fetch_yahoo_options_payload(symbol_norm, chosen_expiry_epoch)
+    quote = payload.get("quote", {}) if isinstance(payload.get("quote"), dict) else {}
+    options_arr = payload.get("options", [])
+    if not isinstance(options_arr, list) or not options_arr:
+        return {"error": f"No options chain returned for {symbol_norm} @ {chosen_expiry_ymd}"}
+    chain = options_arr[0] if isinstance(options_arr[0], dict) else {}
+    calls_raw = chain.get("calls", []) if isinstance(chain, dict) else []
+    puts_raw = chain.get("puts", []) if isinstance(chain, dict) else []
+    calls_raw = calls_raw if isinstance(calls_raw, list) else []
+    puts_raw = puts_raw if isinstance(puts_raw, list) else []
+
+    def _norm(rows: List[Dict[str, Any]], side: str) -> List[Dict[str, Any]]:
+        out: List[Dict[str, Any]] = []
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            oi = max(0, _to_numeric(row.get("openInterest"), int, 0, field_name="openInterest"))
+            vol = max(0, _to_numeric(row.get("volume"), int, 0, field_name="volume"))
+            if oi < min_open_interest or vol < min_volume:
+                continue
+            strike = _to_numeric(row.get("strike"), float, float("nan"), field_name="strike")
+            if not (strike == strike and strike > 0):
+                continue
+            entry: Dict[str, Any] = {
+                "side": side,
+                "contract": row.get("contractSymbol"),
+                "strike": float(strike),
+                "last": _to_numeric(row.get("lastPrice"), float, float("nan"), field_name="lastPrice"),
+                "bid": _to_numeric(row.get("bid"), float, float("nan"), field_name="bid"),
+                "ask": _to_numeric(row.get("ask"), float, float("nan"), field_name="ask"),
+                "change": _to_numeric(row.get("change"), float, float("nan"), field_name="change"),
+                "percent_change": _to_numeric(
+                    row.get("percentChange"),
+                    float,
+                    float("nan"),
+                    field_name="percentChange",
+                ),
+                "volume": int(vol),
+                "open_interest": int(oi),
+                "implied_volatility": _to_numeric(
+                    row.get("impliedVolatility"),
+                    float,
+                    float("nan"),
+                    field_name="impliedVolatility",
+                ),
+                "in_the_money": bool(row.get("inTheMoney", False)),
+                "last_trade_epoch": _to_numeric(row.get("lastTradeDate"), int, 0, field_name="lastTradeDate"),
+                "currency": row.get("currency"),
+            }
+            out.append(entry)
+        out.sort(key=lambda x: float(x.get("strike", 0.0)))
+        return out
+
+    calls = _norm(calls_raw, "call") if option_type in {"call", "both"} else []
+    puts = _norm(puts_raw, "put") if option_type in {"put", "both"} else []
+    combined = (calls + puts)[:limit]
+
+    return {
+        "success": True,
+        **_live_options_metadata("yahoo"),
+        "symbol": symbol_norm,
+        "expiration": chosen_expiry_ymd,
+        "underlying_price": _to_numeric(
+            quote.get("regularMarketPrice"),
+            float,
+            float("nan"),
+            field_name="quote.regularMarketPrice",
+        ),
+        "currency": quote.get("currency"),
+        "contract_size": quote.get("contractSize"),
+        "expirations": sorted(available_map),
+        "option_type": option_type,
+        "min_open_interest": int(min_open_interest),
+        "min_volume": int(min_volume),
+        "count": int(len(combined)),
+        "calls_count": int(len(calls)),
+        "puts_count": int(len(puts)),
+        "options": combined,
+    }
+
+
 def get_options_expirations(symbol: str) -> Dict[str, Any]:
     """Return available option expirations for a symbol."""
     try:
-        if _configured_options_provider() == "tradier":
-            return _get_tradier_options_expirations(symbol)
-
-        payload = _fetch_yahoo_options_payload(symbol)
-        expiration_epochs = _extract_expiration_epochs(payload)
-        expirations = [_epoch_to_ymd(v) for v in expiration_epochs]
-        quote = payload.get("quote", {}) if isinstance(payload.get("quote"), dict) else {}
-        return {
-            "success": True,
-            **_live_options_metadata("yahoo"),
-            "symbol": str(symbol).upper().strip(),
-            "underlying_price": _to_numeric(
-                quote.get("regularMarketPrice"),
-                float,
-                float("nan"),
-                field_name="quote.regularMarketPrice",
-            ),
-            "currency": quote.get("currency"),
-            "expirations": expirations,
-            "expiration_count": int(len(expirations)),
-        }
+        return _run_options_provider_query(
+            operation="options expirations",
+            yahoo_func=lambda: _get_yahoo_options_expirations(symbol),
+            tradier_func=lambda: _get_tradier_options_expirations(symbol),
+        )
     except Exception as e:
         return _options_error(e, prefix="Failed to fetch options expirations")
 
@@ -594,114 +886,24 @@ def get_options_chain(
         min_vol = max(0, _to_numeric(min_volume, int, 0, field_name="min_volume"))
         max_rows = max(1, _to_numeric(limit, int, 200, field_name="limit"))
 
-        if _configured_options_provider() == "tradier":
-            return _get_tradier_options_chain(
+        return _run_options_provider_query(
+            operation="options chain",
+            yahoo_func=lambda: _get_yahoo_options_chain(
                 symbol=symbol_norm,
                 expiration=expiration,
                 option_type=option_type_norm,
                 min_open_interest=min_oi,
                 min_volume=min_vol,
                 limit=max_rows,
-            )
-
-        base = _fetch_yahoo_options_payload(symbol_norm)
-        expiration_epochs = _extract_expiration_epochs(base)
-        if not expiration_epochs:
-            return {"error": f"No option expirations found for {symbol_norm}"}
-
-        available_map = {_epoch_to_ymd(ep): int(ep) for ep in expiration_epochs}
-        chosen_expiry_ymd: str
-        chosen_expiry_epoch: int
-        if expiration is None:
-            chosen_expiry_epoch = int(expiration_epochs[0])
-            chosen_expiry_ymd = _epoch_to_ymd(chosen_expiry_epoch)
-        else:
-            chosen_expiry_ymd = str(expiration).strip()
-            chosen_expiry_epoch = int(available_map.get(chosen_expiry_ymd, -1))
-            if chosen_expiry_epoch < 0:
-                return {
-                    "error": f"Requested expiration {chosen_expiry_ymd} not available for {symbol_norm}",
-                    "expirations": sorted(available_map),
-                }
-
-        payload = _fetch_yahoo_options_payload(symbol_norm, chosen_expiry_epoch)
-        quote = payload.get("quote", {}) if isinstance(payload.get("quote"), dict) else {}
-        options_arr = payload.get("options", [])
-        if not isinstance(options_arr, list) or not options_arr:
-            return {"error": f"No options chain returned for {symbol_norm} @ {chosen_expiry_ymd}"}
-        chain = options_arr[0] if isinstance(options_arr[0], dict) else {}
-        calls_raw = chain.get("calls", []) if isinstance(chain, dict) else []
-        puts_raw = chain.get("puts", []) if isinstance(chain, dict) else []
-        calls_raw = calls_raw if isinstance(calls_raw, list) else []
-        puts_raw = puts_raw if isinstance(puts_raw, list) else []
-
-        def _norm(rows: List[Dict[str, Any]], side: str) -> List[Dict[str, Any]]:
-            out: List[Dict[str, Any]] = []
-            for row in rows:
-                if not isinstance(row, dict):
-                    continue
-                oi = max(0, _to_numeric(row.get("openInterest"), int, 0, field_name="openInterest"))
-                vol = max(0, _to_numeric(row.get("volume"), int, 0, field_name="volume"))
-                if oi < min_oi or vol < min_vol:
-                    continue
-                strike = _to_numeric(row.get("strike"), float, float("nan"), field_name="strike")
-                if not (strike == strike and strike > 0):
-                    continue
-                entry: Dict[str, Any] = {
-                    "side": side,
-                    "contract": row.get("contractSymbol"),
-                    "strike": float(strike),
-                    "last": _to_numeric(row.get("lastPrice"), float, float("nan"), field_name="lastPrice"),
-                    "bid": _to_numeric(row.get("bid"), float, float("nan"), field_name="bid"),
-                    "ask": _to_numeric(row.get("ask"), float, float("nan"), field_name="ask"),
-                    "change": _to_numeric(row.get("change"), float, float("nan"), field_name="change"),
-                    "percent_change": _to_numeric(
-                        row.get("percentChange"),
-                        float,
-                        float("nan"),
-                        field_name="percentChange",
-                    ),
-                    "volume": int(vol),
-                    "open_interest": int(oi),
-                    "implied_volatility": _to_numeric(
-                        row.get("impliedVolatility"),
-                        float,
-                        float("nan"),
-                        field_name="impliedVolatility",
-                    ),
-                    "in_the_money": bool(row.get("inTheMoney", False)),
-                    "last_trade_epoch": _to_numeric(row.get("lastTradeDate"), int, 0, field_name="lastTradeDate"),
-                    "currency": row.get("currency"),
-                }
-                out.append(entry)
-            out.sort(key=lambda x: float(x.get("strike", 0.0)))
-            return out
-
-        calls = _norm(calls_raw, "call") if option_type_norm in {"call", "both"} else []
-        puts = _norm(puts_raw, "put") if option_type_norm in {"put", "both"} else []
-        combined = (calls + puts)[:max_rows]
-
-        return {
-            "success": True,
-            **_live_options_metadata("yahoo"),
-            "symbol": symbol_norm,
-            "expiration": chosen_expiry_ymd,
-            "underlying_price": _to_numeric(
-                quote.get("regularMarketPrice"),
-                float,
-                float("nan"),
-                field_name="quote.regularMarketPrice",
             ),
-            "currency": quote.get("currency"),
-            "contract_size": quote.get("contractSize"),
-            "expirations": sorted(available_map),
-            "option_type": option_type_norm,
-            "min_open_interest": int(min_oi),
-            "min_volume": int(min_vol),
-            "count": int(len(combined)),
-            "calls_count": int(len(calls)),
-            "puts_count": int(len(puts)),
-            "options": combined,
-        }
+            tradier_func=lambda: _get_tradier_options_chain(
+                symbol=symbol_norm,
+                expiration=expiration,
+                option_type=option_type_norm,
+                min_open_interest=min_oi,
+                min_volume=min_vol,
+                limit=max_rows,
+            ),
+        )
     except Exception as e:
         return _options_error(e, prefix="Failed to fetch options chain")

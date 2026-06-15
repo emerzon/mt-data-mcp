@@ -242,16 +242,154 @@ def test_get_options_chain_uses_configured_tradier_provider(monkeypatch):
     assert out["options"][0]["contract"] == "AAPL260417C00100000"
 
 
-def test_configured_tradier_provider_without_token_returns_auth_hint(monkeypatch):
+def test_configured_tradier_provider_without_token_falls_back_to_yahoo(monkeypatch):
     monkeypatch.setattr(osvc.options_data_config, "provider", "tradier")
     monkeypatch.setattr(osvc.options_data_config, "api_key", None)
+    expiry = osvc._ymd_to_epoch("2026-04-17")
+    monkeypatch.setattr(
+        osvc,
+        "_fetch_yahoo_options_payload",
+        lambda symbol, expiry_epoch=None: {
+            "expirationDates": [expiry],
+            "quote": {"regularMarketPrice": 100.5, "currency": "USD"},
+        },
+    )
+
+    out = osvc.get_options_expirations("AAPL")
+
+    assert out["success"] is True
+    assert out["provider"] == "yahoo"
+    assert out["configured_provider"] == "tradier"
+    assert out["provider_effective"] == "yahoo"
+    assert out["expirations"] == ["2026-04-17"]
+    assert "Tradier options provider failed" in out["warnings"][0]
+    assert out["provider_attempts"] == [
+        {
+            "provider": "tradier",
+            "success": False,
+            "error": (
+                "Authentication error: Tradier options provider requires "
+                "MTDATA_OPTIONS_API_KEY."
+            ),
+        },
+        {"provider": "yahoo", "success": True},
+    ]
+
+
+def test_get_options_chain_falls_back_to_yahoo_when_tradier_runtime_error(monkeypatch):
+    monkeypatch.setattr(osvc.options_data_config, "provider", "auto")
+    monkeypatch.setattr(osvc.options_data_config, "api_key", "token")
+    expiry = osvc._ymd_to_epoch("2026-04-17")
+    monkeypatch.setattr(
+        osvc,
+        "_fetch_tradier_expirations_payload",
+        lambda symbol: (_ for _ in ()).throw(requests.exceptions.Timeout("tradier timeout")),
+    )
+
+    def fake_yahoo_fetch(symbol, expiry_epoch=None):
+        if expiry_epoch is None:
+            return {
+                "expirationDates": [expiry],
+                "quote": {"regularMarketPrice": 100.5, "currency": "USD"},
+            }
+        return {
+            "expirationDates": [expiry],
+            "quote": {"regularMarketPrice": 100.5, "currency": "USD"},
+            "options": [
+                {
+                    "calls": [
+                        {
+                            "contractSymbol": "AAPL260417C00100000",
+                            "strike": 100.0,
+                            "lastPrice": 2.1,
+                            "bid": 2.0,
+                            "ask": 2.2,
+                            "change": 0.1,
+                            "percentChange": 5.0,
+                            "volume": 15,
+                            "openInterest": 20,
+                            "impliedVolatility": 0.25,
+                            "inTheMoney": True,
+                            "lastTradeDate": 0,
+                            "currency": "USD",
+                        }
+                    ],
+                    "puts": [],
+                }
+            ],
+        }
+
+    monkeypatch.setattr(osvc, "_fetch_yahoo_options_payload", fake_yahoo_fetch)
+
+    out = osvc.get_options_chain(
+        symbol="AAPL",
+        expiration="2026-04-17",
+        option_type="call",
+        min_open_interest=10,
+        min_volume=10,
+        limit=10,
+    )
+
+    assert out["success"] is True
+    assert out["provider"] == "yahoo"
+    assert out["configured_provider"] == "auto"
+    assert out["provider_effective"] == "yahoo"
+    assert out["count"] == 1
+    assert "Tradier options provider failed" in out["warnings"][0]
+    assert out["provider_attempts"] == [
+        {
+            "provider": "tradier",
+            "success": False,
+            "error": "tradier timeout",
+        },
+        {"provider": "yahoo", "success": True},
+    ]
+
+
+def test_get_options_expirations_surfaces_dual_provider_failures(monkeypatch):
+    monkeypatch.setattr(osvc.options_data_config, "provider", "tradier")
+    monkeypatch.setattr(osvc.options_data_config, "api_key", "token")
+    monkeypatch.setattr(
+        osvc,
+        "_fetch_tradier_expirations_payload",
+        lambda symbol: (_ for _ in ()).throw(requests.exceptions.Timeout("tradier timeout")),
+    )
+    monkeypatch.setattr(
+        osvc,
+        "_fetch_yahoo_options_payload",
+        lambda symbol, expiry_epoch=None: (_ for _ in ()).throw(
+            ValueError(
+                "Authentication error: Yahoo Finance options endpoint returned "
+                "401 Unauthorized. No mtdata API-key setting is available for "
+                "this Yahoo endpoint."
+            )
+        ),
+    )
 
     out = osvc.get_options_expirations("AAPL")
 
     assert out["success"] is False
     assert out["error_code"] == "options_provider_auth"
-    assert "MTDATA_OPTIONS_API_KEY" in out["remediation"]
-    assert "https://documentation.tradier.com/" in out["remediation"]
+    assert out["provider"] == "yahoo"
+    assert out["configured_provider"] == "tradier"
+    assert "Tradier options provider failed: tradier timeout" in out["error"]
+    assert "Yahoo fallback also failed" in out["error"]
+    assert out["provider_attempts"] == [
+        {
+            "provider": "tradier",
+            "success": False,
+            "error": "tradier timeout",
+        },
+        {
+            "provider": "yahoo",
+            "success": False,
+            "error": (
+                "Authentication error: Yahoo Finance options endpoint returned "
+                "401 Unauthorized. No mtdata API-key setting is available for "
+                "this Yahoo endpoint."
+            ),
+        },
+    ]
 
 
 def test_get_yahoo_session_reuses_single_session(monkeypatch):
@@ -410,6 +548,6 @@ def test_get_options_expirations_handles_401_gracefully(monkeypatch):
     assert "401" in result["error"] or "Unauthorized" in result["error"]
     assert result["success"] is False
     assert result["error_code"] == "options_provider_auth"
-    assert "no Yahoo API-key setting" in result["remediation"]
-    assert "https://documentation.tradier.com/" in result["remediation"]
+    assert "MTDATA_OPTIONS_PROVIDER=tradier" in result["remediation"]
+    assert "MTDATA_OPTIONS_API_KEY" in result["remediation"]
     assert "retry later" not in result["remediation"].lower()
