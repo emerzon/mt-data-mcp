@@ -131,6 +131,24 @@ def _coerce_optional_float(value: Any) -> Optional[float]:
     return out
 
 
+def _finite_raw_kurtosis(values: np.ndarray) -> float:
+    array = np.asarray(values, dtype=float)
+    array = array[np.isfinite(array)]
+    if array.size == 0:
+        return 3.0
+    scale = float(np.max(np.abs(array)))
+    if not np.isfinite(scale) or scale <= 1e-12:
+        return 3.0
+    scaled = array / scale
+    std = float(np.std(scaled))
+    if not np.isfinite(std) or std <= 1e-9:
+        return 3.0
+    with np.errstate(over="ignore", invalid="ignore"):
+        standardized = (scaled - float(np.mean(scaled))) / std
+        kurtosis = float(np.mean(standardized**4))
+    return kurtosis if np.isfinite(kurtosis) else 3.0
+
+
 def _lookup_regime_info_entry(regime_info: Any, regime_id: Any) -> Dict[str, Any]:
     if not isinstance(regime_info, dict):
         return {}
@@ -2259,11 +2277,7 @@ def regime_detect(  # noqa: C901
                     vol_ratio = vol_p90 / vol_p10 if vol_p10 > 1e-9 else 1.0
 
                     # Also calculate kurtosis of returns (fat tails indicator)
-                    returns_kurt = (
-                        float(np.mean((x - np.mean(x)) ** 4) / (np.std(x) ** 4))
-                        if np.std(x) > 1e-9
-                        else 3.0
-                    )
+                    returns_kurt = _finite_raw_kurtosis(x)
 
                     # Infer optimal states based on vol_ratio and kurtosis
                     # High vol_ratio (10+) or high kurtosis (>6) suggests need for more states
@@ -3063,11 +3077,7 @@ def regime_detect(  # noqa: C901
             n_states_source = "n_states"
             if n_states_input is None:
                 # Analyze return distribution characteristics
-                returns_kurt = (
-                    float(np.mean((x - np.mean(x)) ** 4) / (np.std(x) ** 4))
-                    if np.std(x) > 1e-9
-                    else 3.0
-                )
+                returns_kurt = _finite_raw_kurtosis(x)
 
                 # High kurtosis (>5) suggests fat tails needing more granular regimes
                 if returns_kurt > 6.0:

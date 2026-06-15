@@ -37,6 +37,16 @@ def _time_fmt_stub(epoch):
     return f"T{int(epoch)}"
 
 
+def test_finite_raw_kurtosis_handles_extreme_and_degenerate_values() -> None:
+    extreme = np.array([1e300, -1e300, 0.0, 1.0, -1.0])
+
+    assert np.isfinite(regime_mod._finite_raw_kurtosis(extreme))
+    assert regime_mod._finite_raw_kurtosis(np.ones(10)) == 3.0
+    assert np.isfinite(
+        regime_mod._finite_raw_kurtosis(np.array([-2.0, -1.0, 0.0, 1.0, 2.0]))
+    )
+
+
 # ---------------------------------------------------------------------------
 # _consolidate_payload tests
 # ---------------------------------------------------------------------------
