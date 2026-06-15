@@ -1,6 +1,6 @@
 import json
 import os
-from datetime import datetime
+import time
 from typing import Any, Callable, Dict, Optional
 
 from ....shared.output_precision import resolve_output_precision
@@ -142,7 +142,10 @@ def _build_market_ticker_cli_verbose_meta(result: Any) -> Dict[str, Any]:
         out["tick_time_epoch"] = float(tick_epoch)
         if "data_freshness_seconds" not in out:
             try:
-                out["data_freshness_seconds"] = max(0.0, datetime.now().timestamp() - float(tick_epoch))
+                out["data_freshness_seconds"] = max(
+                    0.0,
+                    time.time() - float(tick_epoch),
+                )
             except Exception:
                 pass
     for field in ("bid", "ask", "spread", "spread_points", "spread_cost_per_lot"):

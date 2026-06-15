@@ -697,6 +697,23 @@ class TestFormatResultForCli:
         assert "time_epoch: 1700000000" in result
         assert "time_display" not in result
 
+    def test_market_ticker_verbose_freshness_uses_epoch_clock(self):
+        from mtdata.core.cli import formatting as cli_formatting
+
+        with (
+            patch.object(cli_formatting.time, "time", return_value=1_700_000_100.0),
+            patch.object(
+                cli_formatting,
+                "create_mt5_gateway",
+                side_effect=RuntimeError("not connected"),
+            ),
+        ):
+            out = cli_formatting._build_market_ticker_cli_verbose_meta(
+                {"time": 1_700_000_000.0}
+            )
+
+        assert out["data_freshness_seconds"] == 100.0
+
     def test_market_scan_toon_prunes_echoed_query_metadata(self):
         result = _format_result_for_cli(
             {
