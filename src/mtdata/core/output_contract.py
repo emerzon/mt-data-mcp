@@ -205,31 +205,6 @@ def _normalize_detail_aliases(aliases: Optional[Mapping[str, str]]) -> dict[str,
     return normalized
 
 
-def _iter_contract_sources(
-    source: Any,
-    *,
-    detail: Any = _MISSING,
-    verbose: Any = _MISSING,
-    json: Any = _MISSING,
-    extras: Any = _MISSING,
-) -> tuple[Any, ...]:
-    explicit: dict[str, Any] = {}
-    if detail is not _MISSING:
-        explicit["detail"] = detail
-    if verbose is not _MISSING:
-        explicit["verbose"] = verbose
-    if json is not _MISSING:
-        explicit["json"] = json
-    if extras is not _MISSING:
-        explicit["extras"] = extras
-
-    candidates: list[Any] = []
-    if explicit:
-        candidates.append(explicit)
-    candidates.extend(_iter_verbosity_sources(source))
-    return tuple(candidates)
-
-
 def normalize_output_detail(
     value: Any,
     *,
