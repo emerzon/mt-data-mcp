@@ -4,6 +4,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from ...shared.constants import TIME_DISPLAY_FORMAT
 from ...utils.barriers import get_pip_size as _get_pip_size
+from ...utils.mt5 import get_symbol_info_cached
 from ..tool_calling import call_tool_sync_structured
 from .shared import (
     _as_float,
@@ -344,14 +345,35 @@ def market_snapshot(symbol: str, timezone: str = 'UTC') -> Dict[str, Any]:
                     total_sell_vol = float(sum(float(s.get('volume') or 0.0) for s in sells)) if sells else None
                 except Exception:
                     total_sell_vol = None
-        tick_size = _get_pip_size(symbol)
-        pip_size = None
+        info = get_symbol_info_cached(symbol)
+        tick_size = _get_pip_size(symbol, symbol_info=info)
+        point_size = None
+        digits = None
+        if info is not None:
+            try:
+                point_size = float(getattr(info, "point", 0.0) or 0.0)
+            except Exception:
+                point_size = None
+            try:
+                digits = int(getattr(info, "digits", 0) or 0)
+            except Exception:
+                digits = None
         if tick_size is not None:
             try:
                 tick_size = float(tick_size)
             except Exception:
                 tick_size = None
-        if tick_size is not None and tick_size > 0:
+        if point_size is not None:
+            try:
+                point_size = float(point_size)
+            except Exception:
+                point_size = None
+            if point_size is not None and point_size <= 0:
+                point_size = None
+        pip_size = None
+        if point_size is not None:
+            pip_size = point_size * 10.0 if digits in (3, 5) else point_size
+        elif tick_size is not None and tick_size > 0:
             pip_size = tick_size
             if math.isclose(tick_size, 0.00001, rel_tol=0.0, abs_tol=1e-12) or math.isclose(
                 tick_size,
@@ -366,6 +388,12 @@ def market_snapshot(symbol: str, timezone: str = 'UTC') -> Dict[str, Any]:
                 spread_ticks = float(spread) / float(tick_size) if tick_size > 0 else None
             except Exception:
                 spread_ticks = None
+        spread_points = None
+        if point_size and spread is not None:
+            try:
+                spread_points = float(spread) / float(point_size) if point_size > 0 else None
+            except Exception:
+                spread_points = None
         spread_pips = None
         if pip_size and spread is not None:
             try:
@@ -377,7 +405,10 @@ def market_snapshot(symbol: str, timezone: str = 'UTC') -> Dict[str, Any]:
             'ask': ask,
             'spread': spread,
             'tick_size': tick_size,
+            'point_size': point_size,
+            'pip_size': pip_size,
             'spread_ticks': spread_ticks,
+            'spread_points': spread_points,
             'spread_pips': spread_pips,
             'dom_top_buy_vol': top_buy_vol,
             'dom_top_sell_vol': top_sell_vol,
@@ -801,4 +832,3 @@ def _compact_table_value(value: Any) -> str:
     if any(ch in text for ch in (',', '"')):
         text = '"' + text.replace('"', '""') + '"'
     return text
-

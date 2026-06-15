@@ -6,6 +6,7 @@ Every test is deterministic – no MT5, no network, no side effects.
 import math
 import re
 from datetime import datetime, timezone
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
@@ -557,8 +558,9 @@ class TestApplyMarketGates:
 
 
 class TestMarketSnapshot:
+    @patch("mtdata.core.report.utils.get_symbol_info_cached", return_value=SimpleNamespace(point=0.00001, digits=5))
     @patch("mtdata.core.report.utils._get_pip_size", return_value=0.00001)
-    def test_spread_pips_uses_true_pip_units(self, mock_pip):
+    def test_spread_pips_uses_true_pip_units(self, mock_pip, mock_symbol_info):
         with patch(
             "mtdata.core.market_depth.market_depth_fetch",
             new=lambda *args, **kwargs: {
@@ -570,7 +572,28 @@ class TestMarketSnapshot:
             snap = market_snapshot("EURUSD")
 
         assert snap["spread_ticks"] == pytest.approx(15.0)
+        assert snap["spread_points"] == pytest.approx(15.0)
         assert snap["spread_pips"] == pytest.approx(1.5)
+        assert snap["point_size"] == pytest.approx(0.00001)
+        assert snap["pip_size"] == pytest.approx(0.0001)
+
+    @patch("mtdata.core.report.utils.get_symbol_info_cached", return_value=SimpleNamespace(point=0.1, digits=1))
+    @patch("mtdata.core.report.utils._get_pip_size", return_value=0.5)
+    def test_spread_pips_prefers_point_units_when_tick_size_is_coarser(self, mock_pip, mock_symbol_info):
+        with patch(
+            "mtdata.core.market_depth.market_depth_fetch",
+            new=lambda *args, **kwargs: {
+                "success": True,
+                "type": "tick_data",
+                "data": {"bid": 100.0, "ask": 101.0},
+            },
+        ):
+            snap = market_snapshot("US30")
+
+        assert snap["spread_ticks"] == pytest.approx(2.0)
+        assert snap["spread_points"] == pytest.approx(10.0)
+        assert snap["spread_pips"] == pytest.approx(10.0)
+        assert snap["pip_size"] == pytest.approx(0.1)
 
 
 # ---------------------------------------------------------------------------
@@ -862,5 +885,4 @@ class TestContextForTf:
             "error": "Data remained stale",
             "freshness": freshness,
         }
-
 
