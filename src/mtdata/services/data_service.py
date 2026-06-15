@@ -67,6 +67,7 @@ from ..utils.mt5 import (
     _mt5_copy_ticks_range,
     _rates_to_df,
     _symbol_ready_guard,
+    describe_mt5_time_normalization,
     get_cached_mt5_time_alignment,
     get_symbol_info_cached,
     mt5,
@@ -591,6 +592,8 @@ def _fetch_rates_with_warmup(  # noqa: C901
         start_datetime=start_datetime,
         end_datetime=end_datetime,
     )
+    if diagnostics is not None and auto_shift_seconds:
+        diagnostics["auto_shift_seconds"] = int(auto_shift_seconds)
     if start_datetime and end_datetime:
         seconds_per_bar, timeframe_error = _resolve_fetch_timeframe_seconds(timeframe)
         if timeframe_error:
@@ -1633,6 +1636,9 @@ def fetch_candles(  # noqa: C901
                 diagnostics=rate_fetch_diagnostics,
             )
             freshness_diagnostics = rate_fetch_diagnostics.get("freshness")
+            time_normalization = describe_mt5_time_normalization(
+                auto_shift_seconds=int(rate_fetch_diagnostics.get("auto_shift_seconds") or 0)
+            )
             if rates_error:
                 error_payload: Dict[str, Any] = {"error": rates_error}
                 if isinstance(freshness_diagnostics, dict):
@@ -1907,6 +1913,7 @@ def fetch_candles(  # noqa: C901
             "requested_limit": candles_requested,
             "returned_count": candles_returned,
             "as_of": format_epoch_utc(as_of_epoch),
+            **time_normalization,
             **volume_metadata,
             **_candle_time_convention_metadata(timeframe),
             "candles_requested": candles_requested,
@@ -1940,6 +1947,7 @@ def fetch_candles(  # noqa: C901
                     "session_gaps": {
                         "expected_bar_seconds": float(expected_bar_seconds) if expected_bar_seconds > 0 else None,
                     },
+                    "time_normalization": dict(time_normalization),
                 },
             },
         })
@@ -2401,6 +2409,16 @@ def _compact_tick_summary(out: Dict[str, Any]) -> Dict[str, Any]:
     if out.get("price_currency") is not None:
         compact["price_currency"] = out.get("price_currency")
     for key in (
+        "time_basis",
+        "raw_time_basis",
+        "time_normalization",
+        "broker_server_tz",
+        "broker_utc_offset_seconds",
+        "auto_shift_seconds",
+    ):
+        if out.get(key) is not None:
+            compact[key] = out.get(key)
+    for key in (
         "freshness",
         "data_age_seconds",
         "data_stale",
@@ -2464,6 +2482,7 @@ def fetch_ticks(  # noqa: C901
                 if price_point is not None
                 else None
             )
+            time_normalization = describe_mt5_time_normalization()
 
             # Normalized params only. This is an output shape selector, not the
             # shared compact/full detail enum.
@@ -2745,6 +2764,7 @@ def fetch_ticks(  # noqa: C901
                 )
                 if spread_pct is not None:
                     last_quote["spread_pct"] = spread_pct
+            payload.update(time_normalization)
             if start or end or not _epochs:
                 return
             latest_tick_epoch = float(_epochs[-1])

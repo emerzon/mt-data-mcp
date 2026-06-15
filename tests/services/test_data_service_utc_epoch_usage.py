@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import contextmanager
 from datetime import datetime
 from unittest.mock import MagicMock, patch
 
@@ -42,3 +43,51 @@ def test_fetch_rates_with_warmup_uses_utc_epoch_seconds_for_end_ts() -> None:
     assert out_err is None
     assert out_rates == rates
     assert mock_epoch.called
+
+
+def test_fetch_candles_exposes_time_normalization_metadata() -> None:
+    rates = [
+        {"time": 1_700_000_000.0, "open": 1.10, "high": 1.12, "low": 1.09, "close": 1.11},
+        {"time": 1_700_003_600.0, "open": 1.11, "high": 1.13, "low": 1.10, "close": 1.12},
+    ]
+
+    @contextmanager
+    def _guard(*args, **kwargs):
+        yield None, MagicMock(digits=5)
+
+    def _fake_fetch(*args, diagnostics=None, **kwargs):
+        if diagnostics is not None:
+            diagnostics["auto_shift_seconds"] = 0
+        return rates, None
+
+    with patch("mtdata.services.data_service.get_symbol_info_cached", return_value=MagicMock(digits=5)), patch(
+        "mtdata.services.data_service._symbol_ready_guard",
+        _guard,
+    ), patch(
+        "mtdata.services.data_service._fetch_rates_with_warmup",
+        side_effect=_fake_fetch,
+    ), patch(
+        "mtdata.services.data_service._resolve_client_tz",
+        return_value=None,
+    ), patch(
+        "mtdata.services.data_service.mt5_config.server_tz_name",
+        "Europe/Nicosia",
+    ), patch(
+        "mtdata.services.data_service.mt5_config.time_offset_minutes",
+        0,
+    ):
+        result = data_service.fetch_candles(
+            "EURUSD",
+            timeframe="H1",
+            limit=2,
+            include_incomplete=True,
+        )
+
+    assert result["time_basis"] == "utc_normalized"
+    assert result["raw_time_basis"] == "mt5_server_epoch"
+    assert result["time_normalization"] == "dst_aware_server_timezone"
+    assert result["broker_server_tz"] == "Europe/Nicosia"
+    assert (
+        result["meta"]["diagnostics"]["time_normalization"]["broker_server_tz"]
+        == "Europe/Nicosia"
+    )

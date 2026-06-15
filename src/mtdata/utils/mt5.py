@@ -11,9 +11,9 @@ All MT5 timestamps pass through a single normalisation chain:
 
 2. **Inbound** (server-local → UTC): ``_normalize_times_in_struct()``
    converts every ``time`` field in the returned structured arrays back
-   to UTC.  When a server timezone is configured it delegates per-element
-   to ``_mt5_epoch_to_utc()`` (DST-aware); otherwise it subtracts the
-   static offset in bulk (fast path).
+   to UTC.  When a server timezone is configured it uses vectorized
+   DST-aware conversion and falls back to ``_mt5_epoch_to_utc()`` when
+   needed; otherwise it subtracts the static offset in bulk (fast path).
 
 3. **Diagnostic** (optional): ``inspect_mt5_time_alignment()`` samples
    the latest tick and bar to infer the actual broker offset, compares it
@@ -295,6 +295,40 @@ def _mt5_epoch_to_utc(epoch_seconds: float) -> float:
 _DEFAULT_MT5_EPOCH_TO_UTC = _mt5_epoch_to_utc
 
 
+def describe_mt5_time_normalization(*, auto_shift_seconds: int = 0) -> Dict[str, Any]:
+    """Describe how MT5 timestamps are interpreted before public output."""
+    metadata: Dict[str, Any] = {"raw_time_basis": "mt5_server_epoch"}
+    server_tz_name = str(getattr(mt5_config, "server_tz_name", "") or "").strip() or None
+    try:
+        static_offset_minutes = int(getattr(mt5_config, "time_offset_minutes", 0) or 0)
+    except Exception:
+        static_offset_minutes = 0
+
+    if static_offset_minutes:
+        metadata["time_basis"] = "utc_normalized"
+        metadata["time_normalization"] = "static_utc_offset"
+        metadata["broker_utc_offset_seconds"] = static_offset_minutes * 60
+        if server_tz_name:
+            metadata["broker_server_tz"] = server_tz_name
+        return metadata
+
+    if server_tz_name:
+        metadata["time_basis"] = "utc_normalized"
+        metadata["time_normalization"] = "dst_aware_server_timezone"
+        metadata["broker_server_tz"] = server_tz_name
+        return metadata
+
+    if int(auto_shift_seconds):
+        metadata["time_basis"] = "utc_normalized"
+        metadata["time_normalization"] = "live_auto_alignment"
+        metadata["auto_shift_seconds"] = int(auto_shift_seconds)
+        return metadata
+
+    metadata["time_basis"] = "raw_mt5_server_epoch"
+    metadata["time_normalization"] = "unconfigured"
+    return metadata
+
+
 def _rates_to_df(rates: Any):
     """Convert MT5 rates into a DataFrame.
 
@@ -372,6 +406,50 @@ def _to_mt5_history_epoch_seconds(dt: datetime, *, config: Any = None) -> float:
     return utc_epoch + float(offset_seconds)
 
 
+def _vectorized_mt5_epoch_to_utc(values: Any, *, milliseconds: bool, tz: Any) -> np.ndarray:
+    """Convert MT5 server-local epoch values to UTC in bulk."""
+    import pandas as pd
+
+    numeric = np.asarray(values, dtype=float)
+    mask = np.isfinite(numeric) & (numeric > 0.0)
+    if not bool(mask.any()):
+        return numeric
+
+    scale = 1000.0 if milliseconds else 1.0
+    local_dt = pd.to_datetime(numeric[mask] / scale, unit="s", errors="raise")
+    utc_dt = local_dt.tz_localize(
+        tz,
+        ambiguous=False,
+        nonexistent=timedelta(hours=1),
+    ).tz_convert(timezone.utc)
+
+    normalized = numeric.copy()
+    normalized[mask] = (utc_dt.asi8.astype(np.float64) / 1_000_000_000.0) * scale
+    return normalized
+
+
+def _normalize_times_in_struct_elementwise(out: Any, time_fields: list[str]) -> Any:
+    for i in range(len(out)):
+        for field in time_fields:
+            try:
+                val = float(out[i][field])
+                if val <= 0:
+                    continue
+                if field.endswith("_msc"):
+                    out[i][field] = _mt5_epoch_to_utc(val / 1000.0) * 1000.0
+                else:
+                    out[i][field] = _mt5_epoch_to_utc(val)
+            except Exception as exc:
+                logger.warning(
+                    "Failed to normalize MT5 timestamp at index %s field %s; leaving raw value unchanged: %s",
+                    i,
+                    field,
+                    exc,
+                )
+                continue
+    return out
+
+
 def _normalize_times_in_struct(arr: Any):
     """Convert all time fields in a structured array to UTC."""
     try:
@@ -436,27 +514,25 @@ def _normalize_times_in_struct(arr: Any):
                             )
                             continue
                 return out
-
-        # Fallback to per-element conversion (handles DST correctly)
-        for i in range(len(out)):
-            for field in time_fields:
-                try:
-                    val = float(out[i][field])
-                    if val <= 0:
-                        continue
-                    if field.endswith("_msc"):
-                        out[i][field] = _mt5_epoch_to_utc(val / 1000.0) * 1000.0
-                    else:
-                        out[i][field] = _mt5_epoch_to_utc(val)
-                except Exception as exc:
-                    logger.warning(
-                        "Failed to normalize MT5 timestamp at index %s field %s; leaving raw value unchanged: %s",
-                        i,
-                        field,
-                        exc,
+            try:
+                normalized_fields = {
+                    field: _vectorized_mt5_epoch_to_utc(
+                        out[field],
+                        milliseconds=field.endswith("_msc"),
+                        tz=tz,
                     )
-                    continue
-        return out
+                    for field in time_fields
+                }
+                for field, values in normalized_fields.items():
+                    out[field] = values
+                return out
+            except Exception as exc:
+                logger.warning(
+                    "Failed to vectorize MT5 timestamp normalization; falling back to per-element conversion: %s",
+                    exc,
+                )
+
+        return _normalize_times_in_struct_elementwise(out, time_fields)
     except Exception as exc:
         logger.warning(
             "Failed to normalize MT5 timestamps in structured array; leaving values unchanged: %s",
