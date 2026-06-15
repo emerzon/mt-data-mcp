@@ -166,14 +166,61 @@ class ModelStore:
     def ttl_seconds(self) -> float:
         return float(self._ttl)
 
-    def _model_dir(self, method: str, data_scope: str, params_hash: str) -> Path:
-        safe_scope = data_scope.replace("/", "_").replace("\\", "_")
-        return self._root / method / safe_scope / params_hash
-
     @staticmethod
-    def _model_id(method: str, data_scope: str, params_hash: str) -> str:
-        safe_scope = data_scope.replace("/", "_").replace("\\", "_")
-        return f"{method}/{safe_scope}/{params_hash}"
+    def _validate_path_component(value: str, *, name: str) -> str:
+        component = str(value)
+        if (
+            not component
+            or component in {".", ".."}
+            or "\x00" in component
+            or "/" in component
+            or "\\" in component
+        ):
+            raise ValueError(f"Invalid model {name}: {value!r}")
+        return component
+
+    def _resolve_within_root(self, path: Path) -> Path:
+        root = self._root.resolve()
+        candidate = path.resolve()
+
+        def _normalized_path_text(value: Path) -> str:
+            text = os.path.normcase(str(value))
+            if text.startswith("\\\\?\\"):
+                text = text[4:]
+            return text
+
+        root_text = _normalized_path_text(root)
+        candidate_text = _normalized_path_text(candidate)
+        try:
+            common = os.path.commonpath((root_text, candidate_text))
+        except ValueError as exc:
+            raise ValueError(f"Model path escapes store root: {candidate}") from exc
+        if common != root_text:
+            raise ValueError(f"Model path escapes store root: {candidate}")
+        if candidate_text == root_text:
+            raise ValueError("Model path must be below the store root")
+        return candidate
+
+    def _model_dir(self, method: str, data_scope: str, params_hash: str) -> Path:
+        safe_method = self._validate_path_component(method, name="method")
+        safe_scope = self._validate_path_component(
+            str(data_scope).replace("/", "_").replace("\\", "_"),
+            name="data_scope",
+        )
+        safe_hash = self._validate_path_component(params_hash, name="params_hash")
+        return self._resolve_within_root(
+            self._root / safe_method / safe_scope / safe_hash
+        )
+
+    @classmethod
+    def _model_id(cls, method: str, data_scope: str, params_hash: str) -> str:
+        safe_method = cls._validate_path_component(method, name="method")
+        safe_scope = cls._validate_path_component(
+            str(data_scope).replace("/", "_").replace("\\", "_"),
+            name="data_scope",
+        )
+        safe_hash = cls._validate_path_component(params_hash, name="params_hash")
+        return f"{safe_method}/{safe_scope}/{safe_hash}"
 
     # ------------------------------------------------------------------
     # Public API
@@ -191,8 +238,8 @@ class ModelStore:
 
         Writes are atomic (temp file + ``os.replace``).
         """
-        model_id = self._model_id(method, data_scope, params_hash)
         model_dir = self._model_dir(method, data_scope, params_hash)
+        model_id = self._model_id(method, data_scope, params_hash)
 
         with self._lock:
             model_dir.mkdir(parents=True, exist_ok=True)
@@ -243,7 +290,10 @@ class ModelStore:
         if len(parts) != 3:
             raise FileNotFoundError(f"Invalid model_id format: {model_id}")
         method, data_scope, params_hash = parts
-        model_dir = self._model_dir(method, data_scope, params_hash)
+        try:
+            model_dir = self._model_dir(method, data_scope, params_hash)
+        except ValueError as exc:
+            raise FileNotFoundError(f"Invalid model_id format: {model_id}") from exc
         artifact_path = model_dir / "model.bin"
 
         with self._lock:
@@ -300,7 +350,10 @@ class ModelStore:
         if len(parts) != 3:
             return False
         method, data_scope, params_hash = parts
-        model_dir = self._model_dir(method, data_scope, params_hash)
+        try:
+            model_dir = self._model_dir(method, data_scope, params_hash)
+        except ValueError:
+            return False
         with self._lock:
             return self._remove_dir(model_dir)
 
@@ -523,8 +576,9 @@ class ModelStore:
 
     def _remove_dir(self, path: Path) -> bool:
         try:
-            if path.is_dir():
-                shutil.rmtree(path)
+            safe_path = self._resolve_within_root(path)
+            if safe_path.is_dir():
+                shutil.rmtree(safe_path)
                 return True
         except Exception as exc:
             logger.debug("Failed to remove %s: %s", path, exc)

@@ -87,6 +87,35 @@ class TestModelStoreBasics(unittest.TestCase):
     def test_delete_bad_id_returns_false(self):
         self.assertFalse(self.store.delete("bad"))
 
+    def test_path_traversal_is_rejected_for_save_load_and_delete(self):
+        store_root = Path(self._tmpdir)
+        outside_dir = store_root.parent / f"{store_root.name}_outside"
+        outside_dir.mkdir()
+        sentinel = outside_dir / "sentinel.txt"
+        sentinel.write_text("keep", encoding="utf-8")
+        self.addCleanup(lambda: outside_dir.rmdir() if outside_dir.exists() else None)
+        self.addCleanup(lambda: sentinel.unlink(missing_ok=True))
+
+        with self.assertRaises(ValueError):
+            self.store.save("..", "scope", "hash", b"data")
+        with self.assertRaises(ValueError):
+            self.store.save("method", "scope", "..", b"data")
+        with self.assertRaises(FileNotFoundError):
+            self.store.load_bytes("../scope/hash")
+        self.assertFalse(self.store.delete("../scope/hash"))
+
+        self.assertEqual(sentinel.read_text(encoding="utf-8"), "keep")
+
+    def test_model_components_reject_path_separators(self):
+        for method in ("nested/method", "nested\\method"):
+            with self.subTest(method=method):
+                with self.assertRaises(ValueError):
+                    self.store.save(method, "scope", "hash", b"data")
+        for params_hash in ("nested/hash", "nested\\hash"):
+            with self.subTest(params_hash=params_hash):
+                with self.assertRaises(ValueError):
+                    self.store.save("method", "scope", params_hash, b"data")
+
 
 class TestModelStoreOverwrite(unittest.TestCase):
     """Re-saving the same key overwrites the artifact."""
