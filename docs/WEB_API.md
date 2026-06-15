@@ -93,6 +93,7 @@ Fetch OHLCV candles for a symbol.
   - `ohlcv` (string): Column selector (default "ohlc").
   - `include_spread` (bool): Append the historical candle `spread` field without changing the default row shape.
   - `include_incomplete` (bool): Include the latest forming candle.
+  - `timestamp_format` (`epoch` | `iso`): Timestamp encoding for returned rows. Default `epoch`; use `iso` to match the data tool's default.
   - `denoise_method` (string, optional): Apply denoising (e.g., "ema").
   - `denoise_params` (string, optional): JSON or "k=v" params for denoising.    
 - **Response Notes:**

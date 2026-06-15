@@ -73,3 +73,29 @@ def test_history_passes_include_spread() -> None:
     assert res["data"][0]["spread"] == 12
     kwargs = mock_fetch.call_args.kwargs
     assert kwargs["include_spread"] is True
+
+
+def test_history_accepts_iso_timestamp_format() -> None:
+    payload = {
+        "success": True,
+        "data": [
+            {"time": "2025-01-01T00:00:00Z", "close": 1.1},
+        ],
+        "has_forming_candle": False,
+        "forming_candle_status": "none",
+        "forming_candle_included": False,
+    }
+    with patch.object(web_api.mt5_connection, "_ensure_connection", return_value=True), patch(
+        "mtdata.core.web_api._fetch_candles_impl", return_value=payload
+    ) as mock_fetch:
+        res = web_api.get_history(
+            symbol="EURUSD",
+            timeframe="H1",
+            limit=1,
+            ohlcv="close",
+            timestamp_format="iso",
+        )
+
+    assert res["data"][0]["time"] == "2025-01-01T00:00:00Z"
+    kwargs = mock_fetch.call_args.kwargs
+    assert kwargs["time_as_epoch"] is False

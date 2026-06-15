@@ -397,6 +397,7 @@ def get_history_response(  # noqa: C901
     ohlcv: Optional[str],
     include_spread: bool,
     include_incomplete: bool,
+    timestamp_format: str,
     denoise_method: Optional[str],
     denoise_params: Optional[str],
     fetch_candles_impl: Callable[..., Any],
@@ -543,7 +544,7 @@ def get_history_response(  # noqa: C901
             denoise=denoise_spec,
             simplify=None,
             include_incomplete=include_incomplete,
-            time_as_epoch=True,
+            time_as_epoch=str(timestamp_format).strip().lower() != "iso",
         )
     except Exception as exc:
         _raise_history_fetch_error(exc)
