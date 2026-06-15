@@ -130,6 +130,7 @@ def _fetch_pattern_data(
     gateway: Any = None,
     start: Optional[str] = None,
     end: Optional[str] = None,
+    fetch_floor_bars: Optional[int] = None,
 ) -> Tuple[Optional[pd.DataFrame], Optional[Dict[str, Any]]]:
     """Fetch and prepare OHLCV data for pattern detection.
     
@@ -155,7 +156,6 @@ def _fetch_pattern_data(
         return None, {"error": f"Failed to enable symbol '{symbol}' in MT5: {exc}"}
     
     utc_now = datetime.now(timezone.utc)
-    count = max(400, int(limit) + 2)
     start_dt = _parse_start_datetime(start) if start else None
     if start and start_dt is None:
         return None, {"error": "Invalid start time."}
@@ -166,6 +166,12 @@ def _fetch_pattern_data(
         end_dt = utc_now.replace(tzinfo=None)
     if start_dt is not None and end_dt is not None and start_dt > end_dt:
         return None, {"error": "start must be before or equal to end."}
+    default_fetch_floor = 5 if (start_dt is not None or end_dt is not None) else 100
+    try:
+        configured_fetch_floor = int(fetch_floor_bars) if fetch_floor_bars is not None else default_fetch_floor
+    except Exception:
+        configured_fetch_floor = default_fetch_floor
+    count = max(max(1, configured_fetch_floor), int(limit) + 2)
 
     if start_dt is not None:
         rates = _mt5_copy_rates_range(symbol, mt5_tf, start_dt, end_dt)

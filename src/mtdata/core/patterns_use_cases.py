@@ -102,6 +102,13 @@ _MODE_RECOMMENDED_MIN_BARS = {
     "harmonic": 120,
     "elliott": 150,
 }
+_MODE_FETCH_FLOOR_BARS = {
+    "classic": 100,
+    "fractal": 100,
+    "harmonic": 120,
+    "elliott": 150,
+    "all": 150,
+}
 
 
 def _unknown_config_keys_for_mode(mode: str, unknown_keys: List[str]) -> List[str]:
@@ -393,22 +400,34 @@ def run_patterns_detect(  # noqa: C901
     def _fetch_pattern_frame(
         timeframe: str,
         limit: int,
+        *,
+        fetch_floor_bars: Optional[int] = None,
     ) -> tuple[Any, Any]:
+        fetch_kwargs: Dict[str, Any] = {}
         if request.start or request.end:
+            fetch_kwargs["start"] = request.start
+            fetch_kwargs["end"] = request.end
+        if fetch_floor_bars is not None:
+            fetch_kwargs["fetch_floor_bars"] = int(fetch_floor_bars)
+        try:
             return deps.fetch_pattern_data(
                 request.symbol,
                 timeframe,
                 limit,
                 request.denoise,
-                start=request.start,
-                end=request.end,
+                **fetch_kwargs,
             )
-        return deps.fetch_pattern_data(
-            request.symbol,
-            timeframe,
-            limit,
-            request.denoise,
-        )
+        except TypeError as exc:
+            if "fetch_floor_bars" not in str(exc):
+                raise
+            fetch_kwargs.pop("fetch_floor_bars", None)
+            return deps.fetch_pattern_data(
+                request.symbol,
+                timeframe,
+                limit,
+                request.denoise,
+                **fetch_kwargs,
+            )
 
     def _config_bool(name: str, default: bool = False) -> bool:
         if not isinstance(request.config, dict) or name not in request.config:
@@ -523,7 +542,11 @@ def run_patterns_detect(  # noqa: C901
         if "max_pattern_span_bars" not in user_cfg:
             _, span_bars = _timeframe_aware_age_limits(tf_single, request.limit)
             cfg.max_pattern_span_bars = span_bars
-        df, err = _fetch_pattern_frame(tf_single, request.limit)
+        df, err = _fetch_pattern_frame(
+            tf_single,
+            request.limit,
+            fetch_floor_bars=_MODE_FETCH_FLOOR_BARS["classic"],
+        )
         if err:
             return err
         engines, invalid_engines = deps.select_classic_engines(
@@ -643,7 +666,11 @@ def run_patterns_detect(  # noqa: C901
         if config_errors:
             return {"error": f"Invalid fractal config: {config_errors[0]}"}
 
-        df, err = _fetch_pattern_frame(tf_single, request.limit)
+        df, err = _fetch_pattern_frame(
+            tf_single,
+            request.limit,
+            fetch_floor_bars=_MODE_FETCH_FLOOR_BARS["fractal"],
+        )
         if err:
             return err
 
@@ -728,7 +755,11 @@ def run_patterns_detect(  # noqa: C901
         if config_errors:
             return {"error": f"Invalid harmonic config: {config_errors[0]}"}
 
-        df, err = _fetch_pattern_frame(tf_single, request.limit)
+        df, err = _fetch_pattern_frame(
+            tf_single,
+            request.limit,
+            fetch_floor_bars=_MODE_FETCH_FLOOR_BARS["harmonic"],
+        )
         if err:
             return err
 
@@ -759,7 +790,11 @@ def run_patterns_detect(  # noqa: C901
             return {"error": f"Invalid config key(s): {sorted(unknown_cfg)}"}
 
         if tf_norm:
-            df, err = _fetch_pattern_frame(tf_norm, request.limit)
+            df, err = _fetch_pattern_frame(
+                tf_norm,
+                request.limit,
+                fetch_floor_bars=_MODE_FETCH_FLOOR_BARS["elliott"],
+            )
             if err:
                 return err
 
@@ -789,7 +824,11 @@ def run_patterns_detect(  # noqa: C901
         hidden_completed_rows_total: List[Dict[str, Any]] = []
 
         for tf in scanned_timeframes:
-            df, err = _fetch_pattern_frame(tf, request.limit)
+            df, err = _fetch_pattern_frame(
+                tf,
+                request.limit,
+                fetch_floor_bars=_MODE_FETCH_FLOOR_BARS["elliott"],
+            )
             if err:
                 failed_timeframes[tf] = str(err.get("error", "Unknown error"))
                 continue
@@ -1076,7 +1115,11 @@ def run_patterns_detect(  # noqa: C901
                 section_errors.setdefault("candlestick", {})[tf] = str(exc)
 
             # ── Shared data fetch for classic + harmonic + elliott + fractal ──
-            df, fetch_err = _fetch_pattern_frame(tf, tf_limit)
+            df, fetch_err = _fetch_pattern_frame(
+                tf,
+                tf_limit,
+                fetch_floor_bars=_MODE_FETCH_FLOOR_BARS["all"],
+            )
             if fetch_err:
                 err_msg = str(fetch_err.get("error", "data fetch failed"))
                 section_errors.setdefault("classic", {})[tf] = err_msg

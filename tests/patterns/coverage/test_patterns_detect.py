@@ -78,9 +78,9 @@ def _call_patterns_detect(**kwargs):
 
 class TestFetchPatternData:
 
-    def _call(self, symbol, timeframe, limit, denoise=None):
+    def _call(self, symbol, timeframe, limit, denoise=None, **kwargs):
         from mtdata.core.patterns import _fetch_pattern_data
-        return _fetch_pattern_data(symbol, timeframe, limit, denoise)
+        return _fetch_pattern_data(symbol, timeframe, limit, denoise, **kwargs)
 
     def test_invalid_timeframe(self):
         df, err = self._call("EURUSD", "INVALID", 500)
@@ -104,6 +104,26 @@ class TestFetchPatternData:
         assert err is None
         assert df is not None
         assert len(df) <= 100
+
+    @patch("mtdata.core.patterns.mt5")
+    @patch("mtdata.core.patterns._mt5_copy_rates_from")
+    def test_small_limit_uses_recent_fetch_floor(self, mock_rates, mock_mt5):
+        mock_mt5.symbol_info.return_value = MagicMock(visible=True)
+        mock_rates.return_value = _make_rates_array(200)
+
+        self._call("EURUSD", "H1", 50)
+
+        assert mock_rates.call_args.args[3] == 100
+
+    @patch("mtdata.core.patterns.mt5")
+    @patch("mtdata.core.patterns._mt5_copy_rates_from")
+    def test_custom_fetch_floor_overrides_default_floor(self, mock_rates, mock_mt5):
+        mock_mt5.symbol_info.return_value = MagicMock(visible=True)
+        mock_rates.return_value = _make_rates_array(200)
+
+        self._call("EURUSD", "H1", 50, fetch_floor_bars=150)
+
+        assert mock_rates.call_args.args[3] == 150
 
     @patch("mtdata.core.patterns.mt5")
     @patch("mtdata.core.patterns._mt5_copy_rates_from")

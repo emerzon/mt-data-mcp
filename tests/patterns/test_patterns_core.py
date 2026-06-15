@@ -1279,6 +1279,47 @@ def test_patterns_detect_classic_ensemble_merges_engine_outputs(monkeypatch, cap
     assert "event=finish operation=patterns_detect success=True" in caplog.text
 
 
+def test_patterns_detect_all_mode_uses_shared_fetch_floor(monkeypatch):
+    captured_fetch_floors = []
+    df = pd.DataFrame(
+        {
+            "time": list(range(200)),
+            "open": [1.0] * 200,
+            "high": [1.1] * 200,
+            "low": [0.9] * 200,
+            "close": [1.0] * 200,
+            "tick_volume": [100] * 200,
+        }
+    )
+
+    def _fake_fetch(symbol, timeframe, limit, denoise=None, **kwargs):
+        _ = symbol
+        _ = timeframe
+        _ = limit
+        _ = denoise
+        captured_fetch_floors.append(kwargs.get("fetch_floor_bars"))
+        return df.copy(), None
+
+    monkeypatch.setattr(core_patterns, "_fetch_pattern_data", _fake_fetch)
+    monkeypatch.setattr(core_patterns, "_detect_candlestick_patterns", lambda **kwargs: {"data": []})
+    monkeypatch.setattr(core_patterns, "_run_classic_engine", lambda *args, **kwargs: ([], None))
+    monkeypatch.setattr(core_patterns, "_format_harmonic_patterns", lambda *args, **kwargs: [])
+    monkeypatch.setattr(core_patterns, "_format_elliott_patterns", lambda *args, **kwargs: [])
+    monkeypatch.setattr(core_patterns, "_format_fractal_patterns", lambda *args, **kwargs: [])
+
+    res = patterns_detect(
+        symbol="EURUSD",
+        mode="all",
+        detail="full",
+        timeframe="H1",
+        limit=50,
+        __cli_raw=True,
+    )
+
+    assert res["success"] is True
+    assert captured_fetch_floors == [150]
+
+
 def test_patterns_detect_rejects_hidden_precise_engine(monkeypatch):
     df = pd.DataFrame(
         {
