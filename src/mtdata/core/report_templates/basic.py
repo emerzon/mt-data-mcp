@@ -22,6 +22,7 @@ _TREND_COMPACT_LEGEND: Dict[str, str] = {
     "regime_code": "Regime code: 0=neutral, 1=uptrend, 2=downtrend, 3=breakout_up, 4=breakout_down.",
     "bars_since_swing_high": "Bars since most recent swing high (within lookback window).",
     "bars_since_swing_low": "Bars since most recent swing low (within lookback window).",
+    "data_quality": "Missing-input summary when close/high/low values were imputed for trend calculations.",
 }
 _TREND_REGIME_LABELS = {
     0: "neutral",
@@ -150,16 +151,36 @@ def _compute_compact_trend(rows: List[Dict[str, Any]]) -> Optional[Dict[str, Any
     closes: List[Optional[float]] = [_safe_float(r.get('close')) for r in rows]
     highs: List[Optional[float]] = [_safe_float(r.get('high')) for r in rows]
     lows: List[Optional[float]] = [_safe_float(r.get('low')) for r in rows]
-    # Replace None with previous close where possible
+    seed_close = next((float(c) for c in closes if c is not None and float(c) > 0.0), None)
+    if seed_close is None:
+        return None
+    imputed_fields = {"close": 0, "high": 0, "low": 0}
+    imputed_bars: set[int] = set()
+    # Replace missing/invalid close values with the earliest known close, then forward-fill.
     clean_close: List[float] = []
-    lastc = None
-    for c in closes:
-        if c is None:
-            c = lastc if lastc is not None else 0.0
-        clean_close.append(c)
-        lastc = c
-    clean_high = [h if h is not None else c for h, c in zip(highs, clean_close)]
-    clean_low = [l if l is not None else c for l, c in zip(lows, clean_close)]
+    lastc = seed_close
+    for idx, c in enumerate(closes):
+        if c is None or float(c) <= 0.0:
+            c = lastc if clean_close else seed_close
+            imputed_fields["close"] += 1
+            imputed_bars.add(idx)
+        clean_close.append(float(c))
+        lastc = float(c)
+    clean_high: List[float] = []
+    clean_low: List[float] = []
+    for idx, (h, l, c) in enumerate(zip(highs, lows, clean_close)):
+        high_val = h
+        low_val = l
+        if high_val is None or float(high_val) <= 0.0:
+            high_val = c
+            imputed_fields["high"] += 1
+            imputed_bars.add(idx)
+        if low_val is None or float(low_val) <= 0.0:
+            low_val = c
+            imputed_fields["low"] += 1
+            imputed_bars.add(idx)
+        clean_high.append(float(high_val))
+        clean_low.append(float(low_val))
 
     # ATR(14) in price units
     tr = _compute_tr(clean_high, clean_low, clean_close)
@@ -253,7 +274,7 @@ def _compute_compact_trend(rows: List[Dict[str, Any]]) -> Optional[Dict[str, Any
     # ATR% of price as basis points (bps)
     v = int(round(((atr / last_price) * 10000.0) if last_price > 0 and atr > 0 else 0.0))
 
-    return {
+    out = {
         'slope_atr_scores': s_vals,   # slopes ATRu*100
         'fit_r2_pcts': r_vals,   # R2%
         'volatility_bps': v,        # ATR% of price
@@ -262,6 +283,20 @@ def _compute_compact_trend(rows: List[Dict[str, Any]]) -> Optional[Dict[str, Any
         'bars_since_swing_high': int(h_idx),
         'bars_since_swing_low': int(l_idx),
     }
+    if imputed_bars:
+        out['data_quality'] = {
+            'status': 'imputed',
+            'imputed_bars': int(len(imputed_bars)),
+            'imputed_pct': round((100.0 * len(imputed_bars)) / float(len(rows)), 1),
+            'imputed_fields': {
+                key: int(value) for key, value in imputed_fields.items() if int(value) > 0
+            },
+            'warning': (
+                'Trend metrics include imputed close/high/low values; treat regime and slope scores as '
+                'lower-confidence when gaps are present.'
+            ),
+        }
+    return out
 
 
 def _explain_compact_trend(compact: Dict[str, Any]) -> Dict[str, Any]:

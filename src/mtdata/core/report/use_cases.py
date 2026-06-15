@@ -43,6 +43,80 @@ def _report_time_label(value: Any) -> str | None:
     return datetime.fromtimestamp(epoch, tz=timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
 
 
+def _parse_report_timestamp(value: Any) -> datetime | None:
+    if isinstance(value, datetime):
+        return value.astimezone(timezone.utc) if value.tzinfo else value.replace(tzinfo=timezone.utc)
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return None
+        iso_text = text.replace("Z", "+00:00") if text.endswith("Z") else text
+        try:
+            parsed = datetime.fromisoformat(iso_text)
+        except ValueError:
+            try:
+                parsed = datetime.strptime(text, "%Y-%m-%d %H:%M UTC").replace(tzinfo=timezone.utc)
+            except ValueError:
+                return None
+        return parsed.astimezone(timezone.utc) if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+    try:
+        epoch = float(value)
+    except Exception:
+        return None
+    if not math.isfinite(epoch):
+        return None
+    return datetime.fromtimestamp(epoch, tz=timezone.utc)
+
+
+def _format_report_timestamp(value: datetime) -> str:
+    return value.astimezone(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+
+
+_REPORT_TIMESTAMP_KEYS = frozenset(
+    {
+        "as_of",
+        "as_of_epoch",
+        "data_as_of",
+        "data_as_of_epoch",
+        "last_bar_epoch",
+        "last_bar_time",
+        "last_observation_epoch",
+        "last_observation_time",
+        "quote_epoch",
+        "quote_time",
+        "snapshot_epoch",
+        "snapshot_time",
+    }
+)
+
+
+def _collect_report_timestamp_candidates(value: Any) -> List[datetime]:
+    candidates: List[datetime] = []
+    if isinstance(value, dict):
+        for key, item in value.items():
+            if str(key) in _REPORT_TIMESTAMP_KEYS:
+                parsed = _parse_report_timestamp(item)
+                if parsed is not None:
+                    candidates.append(parsed)
+                continue
+            candidates.extend(_collect_report_timestamp_candidates(item))
+    elif isinstance(value, list):
+        for item in value:
+            candidates.extend(_collect_report_timestamp_candidates(item))
+    return candidates
+
+
+def _derive_report_data_as_of(sections: Any) -> str | None:
+    if not isinstance(sections, dict):
+        return None
+    section_times: List[datetime] = []
+    for payload in sections.values():
+        section_times.extend(_collect_report_timestamp_candidates(payload))
+    if not section_times:
+        return None
+    return _format_report_timestamp(min(section_times))
+
+
 def _has_payload_error(payload: Any) -> bool:
     if isinstance(payload, dict):
         err = payload.get("error")
@@ -156,6 +230,7 @@ def _prioritize_report_payload(report: Dict[str, Any]) -> Dict[str, Any]:
         "success",
         "completeness",
         "as_of",
+        "generated_at",
         "timezone",
         "summary_structured",
         "summary",
@@ -294,6 +369,42 @@ def _compact_report_assessment(value: Any) -> Any:
     return out
 
 
+def _compact_sections_status(value: Any) -> Any:
+    if not isinstance(value, dict):
+        return None
+    summary = value.get("summary")
+    if not isinstance(summary, dict):
+        return None
+    if int(summary.get("partial", 0) or 0) <= 0 and int(summary.get("error", 0) or 0) <= 0:
+        return None
+    out: Dict[str, Any] = {"summary": dict(summary)}
+    sections = value.get("sections")
+    details = value.get("details")
+    issues: Dict[str, Any] = {}
+    if isinstance(sections, dict):
+        for name, status_value in sections.items():
+            status_text = (
+                str(status_value.get("status"))
+                if isinstance(status_value, dict)
+                else str(status_value)
+            ).strip().lower()
+            if status_text in {"", "ok"}:
+                continue
+            issue: Dict[str, Any] = {"status": status_text}
+            detail = details.get(name) if isinstance(details, dict) else None
+            if isinstance(detail, dict):
+                reason = detail.get("reason")
+                if reason not in (None, "", [], {}):
+                    issue["reason"] = reason
+                errors = detail.get("errors")
+                if isinstance(errors, list) and errors:
+                    issue["errors"] = errors[:2]
+            issues[str(name)] = issue
+    if issues:
+        out["issues"] = issues
+    return out
+
+
 def _compact_report_payload(
     report: Dict[str, Any],
     *,
@@ -334,12 +445,20 @@ def _compact_report_payload(
         compact["timezone"] = timezone_label
     if report.get("as_of") not in (None, ""):
         compact["as_of"] = report.get("as_of")
+    if (
+        report.get("generated_at") not in (None, "")
+        and report.get("generated_at") != report.get("as_of")
+    ):
+        compact["generated_at"] = report.get("generated_at")
     completeness = report.get("completeness")
     if completeness not in (None, "", [], {}):
         compact["completeness"] = completeness
     assessment = report.get("overall_assessment")
     if assessment not in (None, "", [], {}):
         compact["overall_assessment"] = _compact_report_assessment(assessment)
+    sections_status = _compact_sections_status(report.get("sections_status"))
+    if sections_status not in (None, "", [], {}):
+        compact["sections_status"] = sections_status
     elif report.get("executive_summary") not in (None, "", [], {}):
         compact["executive_summary"] = _compact_report_assessment(
             report.get("executive_summary")
@@ -1166,6 +1285,7 @@ def run_report_generate(  # noqa: C901
             if summary_structured:
                 rep["summary_structured"] = summary_structured
             source_sections_status = None
+            source_sections = rep.get("sections") if isinstance(rep.get("sections"), dict) else None
             summary_mode = detail_value == "summary"
             if summary_mode and isinstance(rep.get("sections"), dict):
                 source_sections_status = _build_sections_status(rep["sections"])
@@ -1215,9 +1335,15 @@ def run_report_generate(  # noqa: C901
             rep["symbol"] = request.symbol
             rep["template"] = template_name
             rep["detail"] = detail_value
-            rep["as_of"] = (
-                datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
-            )
+            generated_at = None
+            meta = rep.get("meta")
+            if isinstance(meta, dict):
+                generated_at = meta.get("generated_at")
+            generated_at_text = generated_at if isinstance(generated_at, str) and generated_at.strip() else None
+            if generated_at_text is None:
+                generated_at_text = _format_report_timestamp(datetime.now(timezone.utc))
+            rep["generated_at"] = generated_at_text
+            rep["as_of"] = _derive_report_data_as_of(source_sections or rep.get("sections")) or generated_at_text
             rep = _attach_report_timezone(rep)
             rep = _prioritize_report_payload(rep)
 

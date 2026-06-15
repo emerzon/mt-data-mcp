@@ -305,12 +305,28 @@ class TestComputeCompactTrend:
     def test_none_close_handled(self):
         rows = [{"close": None, "high": 101, "low": 99, "tick_volume": 100} for _ in range(10)]
         result = _compute_compact_trend(rows)
-        assert result is not None  # Should not crash
+        assert result is None
+
+    def test_initial_missing_close_is_flagged_without_extreme_slope(self):
+        clean_rows = _make_rows(30, base=100, step=0.2)
+        gapped_rows = [dict(row) for row in clean_rows]
+        gapped_rows[0]["close"] = None
+
+        clean = _compute_compact_trend(clean_rows)
+        result = _compute_compact_trend(gapped_rows)
+
+        assert clean is not None
+        assert result is not None
+        assert result["data_quality"]["status"] == "imputed"
+        assert result["data_quality"]["imputed_bars"] == 1
+        assert result["data_quality"]["imputed_fields"] == {"close": 1}
+        assert abs(result["slope_atr_scores"][0] - clean["slope_atr_scores"][0]) < 25
 
     def test_missing_high_low_keys(self):
         rows = [{"close": 100 + i * 0.1} for i in range(10)]
         result = _compute_compact_trend(rows)
         assert result is not None
+        assert result["data_quality"]["imputed_fields"] == {"high": 10, "low": 10}
 
     def test_large_dataset(self):
         rows = _make_rows(200, base=50, step=0.01)
@@ -1566,4 +1582,3 @@ class TestLinregSlopeR2Edge:
         slope, r2 = result
         assert abs(slope - 2.0) < 1e-6
         assert abs(r2 - 1.0) < 1e-6
-

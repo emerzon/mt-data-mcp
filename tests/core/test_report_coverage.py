@@ -250,6 +250,13 @@ def test_compact_report_payload_omits_duplicate_assessment_blocks():
             "sections_status": {
                 "summary": {"ok": 7, "partial": 1, "error": 0, "total": 8},
                 "sections": {"forecast": "ok", "barriers": "partial"},
+                "details": {
+                    "barriers": {
+                        "status": "partial",
+                        "reason": "section contains usable data plus one or more nested errors",
+                        "errors": [{"path": "short", "message": "optimizer failed"}],
+                    }
+                },
             },
             "summary_structured": {
                 "template_focus": {"profile": "balanced"},
@@ -268,7 +275,16 @@ def test_compact_report_payload_omits_duplicate_assessment_blocks():
     assert out["summary_structured"]["template_focus"] == {"profile": "balanced"}
     assert "executive_summary" not in out
     assert "sections_with_issues" not in out
-    assert "sections_status" not in out
+    assert out["sections_status"] == {
+        "summary": {"ok": 7, "partial": 1, "error": 0, "total": 8},
+        "issues": {
+            "barriers": {
+                "status": "partial",
+                "reason": "section contains usable data plus one or more nested errors",
+                "errors": [{"path": "short", "message": "optimizer failed"}],
+            }
+        },
+    }
 
 
 def test_compact_report_payload_elevates_barrier_conflicts():
@@ -1061,6 +1077,29 @@ class TestReportWarnings:
             "No report sections were available for assessment."
         )
 
+
+    def test_report_generate_uses_data_timestamp_for_as_of(self):
+        fn = _get_report_generate()
+        sec = _make_full_sections()
+        sec["context"]["freshness"] = {"last_observation_time": "2026-06-01T09:30:00Z"}
+        sec["forecast"]["last_observation_epoch"] = 1_780_320_000.0
+        rep = _make_report(sections=sec)
+        rep["meta"] = {"generated_at": "2026-06-02T12:00:00Z"}
+        mock_basic = MagicMock(return_value=rep)
+        with patch("mtdata.core.report_templates.template_basic", mock_basic, create=True), \
+             patch("mtdata.core.report_templates.template_advanced", mock_basic, create=True), \
+             patch("mtdata.core.report_templates.template_scalping", mock_basic, create=True), \
+             patch("mtdata.core.report_templates.template_intraday", mock_basic, create=True), \
+             patch("mtdata.core.report_templates.template_swing", mock_basic, create=True), \
+             patch("mtdata.core.report_templates.template_position", mock_basic, create=True), \
+             patch(_FMT_NUM, side_effect=str):
+            res = fn("EURUSD", template="basic", format="toon")
+
+        assert res["generated_at"] == "2026-06-02T12:00:00Z"
+        assert res["as_of"] == "2026-06-01T09:30:00Z"
+        assert res["as_of"] != res["generated_at"]
+
+
     def test_partial_section_marks_report_partially_complete(self):
         fn = _get_report_generate()
         sec = _make_full_sections()
@@ -1195,6 +1234,18 @@ def test_compact_report_payload_retains_as_of():
     rep = {'success': True, 'timezone': 'UTC', 'as_of': '2026-06-05T20:00:00Z'}
     out = _compact_report_payload(rep, symbol='EURUSD', template='basic')
     assert out['as_of'] == '2026-06-05T20:00:00Z'
+
+
+def test_compact_report_payload_retains_generated_at_when_distinct():
+    from mtdata.core.report.use_cases import _compact_report_payload
+    rep = {
+        'success': True,
+        'timezone': 'UTC',
+        'as_of': '2026-06-05T20:00:00Z',
+        'generated_at': '2026-06-05T20:05:00Z',
+    }
+    out = _compact_report_payload(rep, symbol='EURUSD', template='basic')
+    assert out['generated_at'] == '2026-06-05T20:05:00Z'
 
 
 def test_prioritize_report_payload_orders_as_of_near_top():
