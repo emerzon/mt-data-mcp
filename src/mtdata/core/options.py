@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any, Dict, Literal, Optional
 
 from ..shared.schema import CompactFullDetailLiteral
@@ -22,6 +23,29 @@ _OPTIONS_CHAIN_COMPACT_FIELDS = (
     "volume",
     "open_interest",
 )
+_OPTIONS_SYMBOL_PATTERN = re.compile(r"^[A-Z0-9^][A-Z0-9.^=_/-]{0,63}$")
+
+
+def _normalize_options_symbol(
+    symbol: Any,
+) -> tuple[Optional[str], Optional[Dict[str, Any]]]:
+    normalized = str(symbol or "").strip().upper()
+    if not normalized:
+        return None, {
+            "success": False,
+            "error": "symbol is required",
+            "error_code": "invalid_symbol",
+        }
+    if _OPTIONS_SYMBOL_PATTERN.fullmatch(normalized) is None:
+        return None, {
+            "success": False,
+            "error": (
+                f"Invalid symbol: {symbol}. Use 1-64 letters, digits, or common "
+                "market-symbol characters: . ^ = _ / -."
+            ),
+            "error_code": "invalid_symbol",
+        }
+    return normalized, None
 
 
 def _run_options_operation(
@@ -292,21 +316,29 @@ def options_expirations(
     """
     from ..services.options_service import get_options_expirations as _impl
 
+    symbol_value, symbol_error = _normalize_options_symbol(symbol)
+    if symbol_error is not None or symbol_value is None:
+        return _run_options_operation(
+            "options_expirations",
+            symbol=symbol,
+            detail=detail,
+            func=lambda: symbol_error or {"error": "symbol is required"},
+        )
     gate = _options_chain_provider_gate("options_expirations")
     if gate is not None:
         return _run_options_operation(
             "options_expirations",
-            symbol=symbol,
+            symbol=symbol_value,
             detail=detail,
             func=lambda: gate,
         )
 
     return _run_options_operation(
         "options_expirations",
-        symbol=symbol,
+        symbol=symbol_value,
         detail=detail,
         func=lambda: _apply_options_detail(
-            _impl(symbol=symbol),
+            _impl(symbol=symbol_value),
             detail=detail,
             kind="expirations",
         ),
@@ -332,11 +364,19 @@ def options_chain(
     """
     from ..services.options_service import get_options_chain as _impl
 
+    symbol_value, symbol_error = _normalize_options_symbol(symbol)
+    if symbol_error is not None or symbol_value is None:
+        return _run_options_operation(
+            "options_chain",
+            symbol=symbol,
+            detail=detail,
+            func=lambda: symbol_error or {"error": "symbol is required"},
+        )
     gate = _options_chain_provider_gate("options_chain")
     if gate is not None:
         return _run_options_operation(
             "options_chain",
-            symbol=symbol,
+            symbol=symbol_value,
             expiration=expiration,
             option_type=option_type,
             limit=limit,
@@ -346,14 +386,14 @@ def options_chain(
 
     return _run_options_operation(
         "options_chain",
-        symbol=symbol,
+        symbol=symbol_value,
         expiration=expiration,
         option_type=option_type,
         limit=limit,
         detail=detail,
         func=lambda: _apply_options_detail(
             _impl(
-                symbol=symbol,
+                symbol=symbol_value,
                 expiration=expiration,
                 option_type=option_type,
                 min_open_interest=int(min_open_interest),
@@ -455,11 +495,19 @@ def options_heston_calibrate(
         calibrate_heston_quantlib_from_options as _impl,
     )
 
+    symbol_value, symbol_error = _normalize_options_symbol(symbol)
+    if symbol_error is not None or symbol_value is None:
+        return _run_options_operation(
+            "options_heston_calibrate",
+            symbol=symbol,
+            detail=detail,
+            func=lambda: symbol_error or {"error": "symbol is required"},
+        )
     gate = _options_chain_provider_gate("options_heston_calibrate")
     if gate is not None:
         return _run_options_operation(
             "options_heston_calibrate",
-            symbol=symbol,
+            symbol=symbol_value,
             expiration=expiration,
             option_type=option_type,
             max_contracts=max_contracts,
@@ -469,7 +517,7 @@ def options_heston_calibrate(
 
     return _run_options_operation(
         "options_heston_calibrate",
-        symbol=symbol,
+        symbol=symbol_value,
         expiration=expiration,
         valuation_date=valuation_date,
         option_type=option_type,
@@ -477,7 +525,7 @@ def options_heston_calibrate(
         detail=detail,
         func=lambda: _apply_options_detail(
             _impl(
-                symbol=symbol,
+                symbol=symbol_value,
                 expiration=expiration,
                 valuation_date=valuation_date,
                 option_type=option_type,

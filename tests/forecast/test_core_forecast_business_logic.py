@@ -2926,6 +2926,35 @@ def test_options_and_quantlib_tool_routing(monkeypatch):
     assert out["option_type"] == "put"
 
 
+def test_options_tools_validate_and_normalize_symbols(monkeypatch):
+    raw_exp = _unwrap(opt.options_expirations)
+    raw_chain = _unwrap(opt.options_chain)
+    raw_cal = _unwrap(opt.options_heston_calibrate)
+
+    import mtdata.services.options_service as options_service
+
+    monkeypatch.setattr(opt, "_options_provider_readiness", _ready_options_provider)
+    monkeypatch.setattr(
+        options_service,
+        "get_options_expirations",
+        lambda **kwargs: {"success": True, **kwargs},
+    )
+
+    for tool in (raw_exp, raw_chain, raw_cal):
+        out = tool(symbol="  ")
+        assert out["success"] is False
+        assert out["error_code"] == "invalid_symbol"
+        assert out["error"] == "symbol is required"
+
+        out = tool(symbol="AAPL?query=1")
+        assert out["success"] is False
+        assert out["error_code"] == "invalid_symbol"
+
+    out = raw_exp(symbol=" brk.b ")
+    assert out["success"] is True
+    assert out["symbol"] == "BRK.B"
+
+
 def test_options_chain_tools_short_circuit_when_provider_not_ready(monkeypatch):
     raw_exp = _unwrap(opt.options_expirations)
     raw_chain = _unwrap(opt.options_chain)
