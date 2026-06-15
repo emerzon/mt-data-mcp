@@ -708,11 +708,31 @@ def test_trade_risk_analyze_falls_back_to_take_profit_direction_for_break_even_s
             take_profit=110.0,
         )
 
-    assert (
-        out["position_sizing_error"]
-        == "SL distance must be greater than 0"
-    )
-    assert "Unable to infer trade direction" not in out["position_sizing_error"]
+    err = out["position_sizing_error"]
+    assert err["code"] == "non_positive_sl_distance"
+    assert err["reason"] == "SL distance must be greater than 0"
+    assert "Unable to infer trade direction" not in err["reason"]
+
+
+def test_trade_risk_analyze_returns_structured_direction_error_when_inference_is_ambiguous() -> None:
+    mt5 = MagicMock()
+    mt5.account_info.return_value = SimpleNamespace(equity=1000.0, currency="USD")
+    mt5.positions_get.return_value = []
+    mt5.symbol_info.return_value = _make_symbol_info()
+
+    with _patched_mt5_module(mt5):
+        out = trade_risk_analyze(
+            symbol="EURUSD",
+            desired_risk_pct=1.0,
+            entry=100.0,
+            stop_loss=100.0,
+        )
+
+    err = out["position_sizing_error"]
+    assert err["code"] == "direction_unable_to_infer"
+    assert err["field"] == "direction"
+    assert err["remediation"] == "Provide direction='long' or direction='short'."
+    assert err["stop_loss"] == 100.0
 
 
 def test_trade_risk_analyze_rejects_wrong_side_stop_for_short_trade() -> None:
@@ -730,7 +750,9 @@ def test_trade_risk_analyze_rejects_wrong_side_stop_for_short_trade() -> None:
             stop_loss=95.0,
         )
 
-    assert out["position_sizing_error"] == "For short trades, stop_loss must be above entry."
+    err = out["position_sizing_error"]
+    assert err["code"] == "invalid_sl_for_direction"
+    assert err["reason"] == "For short trades, stop_loss must be above entry."
     assert "position_sizing" not in out
 
 
@@ -750,7 +772,9 @@ def test_trade_risk_analyze_rejects_wrong_side_take_profit_for_long_trade() -> N
             take_profit=95.0,
         )
 
-    assert out["position_sizing_error"] == "For long trades, take_profit must be above entry."
+    err = out["position_sizing_error"]
+    assert err["code"] == "invalid_tp_for_direction"
+    assert err["reason"] == "For long trades, take_profit must be above entry."
     assert "position_sizing" not in out
 
 
@@ -776,7 +800,9 @@ def test_trade_risk_analyze_rejects_position_sizing_when_tick_size_is_invalid() 
             stop_loss=95.0,
         )
 
-    assert out["position_sizing_error"] == "Symbol tick configuration is invalid for risk sizing"
+    err = out["position_sizing_error"]
+    assert err["code"] == "invalid_tick_configuration"
+    assert err["reason"] == "Symbol tick configuration is invalid for risk sizing"
     assert "position_sizing" not in out
 
 

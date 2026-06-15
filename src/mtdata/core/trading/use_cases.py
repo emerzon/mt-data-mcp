@@ -329,6 +329,35 @@ def _resolve_trade_risk_direction(
     )
 
 
+def _build_position_sizing_error(
+    *,
+    code: str,
+    reason: str,
+    field: Optional[str] = None,
+    entry: Optional[float] = None,
+    constraint: Optional[str] = None,
+    remediation: Optional[str] = None,
+    details: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    error: Dict[str, Any] = {
+        "code": code,
+        "reason": reason,
+        "message": reason,
+    }
+    if field:
+        error["field"] = field
+    if entry is not None:
+        error["entry"] = entry
+    if constraint:
+        error["constraint"] = constraint
+    if remediation:
+        error["remediation"] = remediation
+    for key, value in (details or {}).items():
+        if value is not None:
+            error[key] = value
+    return error
+
+
 def _positive_trade_price(value: Any) -> float | None:
     try:
         price = float(value)
@@ -395,14 +424,14 @@ def _validate_trade_risk_levels(
         constraint: str,
         value: float,
     ) -> Dict[str, Any]:
-        return {
-            "code": code,
-            "field": field,
-            "reason": reason,
-            "entry": entry,
-            field: value,
-            "constraint": constraint,
-        }
+        return _build_position_sizing_error(
+            code=code,
+            field=field,
+            reason=reason,
+            entry=entry,
+            constraint=constraint,
+            details={field: value},
+        )
 
     if direction == "long":
         if stop_loss > entry:
@@ -3142,7 +3171,15 @@ def run_trade_risk_analyze(  # noqa: C901
                 else ({}, [], None)
             )
             if sizing_method_error:
-                result["position_sizing_error"] = sizing_method_error
+                result["position_sizing_error"] = _build_position_sizing_error(
+                    code="invalid_sizing_method",
+                    field="sizing_method",
+                    reason=sizing_method_error,
+                    details={
+                        "sizing_method": getattr(request, "sizing_method", None),
+                        "valid_options": ["fixed_fraction", "kelly"],
+                    },
+                )
             else:
                 required_pairs: List[tuple[str, Any]] = [
                     ("entry", request.entry),
@@ -3287,8 +3324,10 @@ def run_trade_risk_analyze(  # noqa: C901
                     and math.isfinite(tick_size)
                     and tick_size > 0
                 ):
-                    result["position_sizing_error"] = (
-                        "Symbol tick configuration is invalid for risk sizing"
+                    result["position_sizing_error"] = _build_position_sizing_error(
+                        code="invalid_tick_configuration",
+                        reason="Symbol tick configuration is invalid for risk sizing",
+                        details={"symbol": request.symbol},
                     )
                     return result
                 if not (math.isfinite(volume_step) and volume_step > 0):
@@ -3307,9 +3346,33 @@ def run_trade_risk_analyze(  # noqa: C901
                     )
                 )
                 if direction_error or direction_norm is None:
-                    result["position_sizing_error"] = (
-                        direction_error
-                        or "Unable to resolve trade direction for position sizing."
+                    result["position_sizing_error"] = _build_position_sizing_error(
+                        code=(
+                            "direction_unable_to_infer"
+                            if direction_source == "unable_to_infer"
+                            else "invalid_direction"
+                        ),
+                        field="direction",
+                        reason=(
+                            direction_error
+                            or "Unable to resolve trade direction for position sizing."
+                        ),
+                        entry=float(request.entry),
+                        remediation=(
+                            "Provide direction='long' or direction='short'."
+                            if direction_source == "unable_to_infer"
+                            else None
+                        ),
+                        details={
+                            "requested_direction": request.direction,
+                            "stop_loss": float(request.stop_loss),
+                            "take_profit": (
+                                float(request.take_profit)
+                                if request.take_profit is not None
+                                else None
+                            ),
+                            "direction_source": direction_source,
+                        },
                     )
                     return result
                 level_error = _validate_trade_risk_levels(
@@ -3349,10 +3412,22 @@ def run_trade_risk_analyze(  # noqa: C901
                             )
                         )
                         if effective_risk_pct_raw is None:
-                            result["position_sizing_error"] = (
-                                kelly_context.get("error")
-                                if isinstance(kelly_context, dict)
-                                else "Invalid Kelly sizing inputs"
+                            result["position_sizing_error"] = _build_position_sizing_error(
+                                code="invalid_kelly_inputs",
+                                reason=(
+                                    kelly_context.get("error")
+                                    if isinstance(kelly_context, dict)
+                                    else "Invalid Kelly sizing inputs"
+                                ),
+                                remediation=(
+                                    "Provide valid Kelly metrics or derive them from "
+                                    "trade_journal_analyze."
+                                ),
+                                details={
+                                    "kelly_win_rate": kelly_inputs.get("win_rate"),
+                                    "kelly_avg_win": kelly_inputs.get("avg_win"),
+                                    "kelly_avg_loss": kelly_inputs.get("avg_loss"),
+                                },
                             )
                             return result
                         effective_risk_pct = float(effective_risk_pct_raw)
@@ -3428,7 +3503,11 @@ def run_trade_risk_analyze(  # noqa: C901
                     risk_amount = equity * (effective_risk_pct / 100.0)
                     raw_volume = risk_amount / (sl_distance_ticks * risk_tick_value)
                     if not math.isfinite(raw_volume) or raw_volume <= 0:
-                        result["position_sizing_error"] = "Calculated volume is invalid"
+                        result["position_sizing_error"] = _build_position_sizing_error(
+                            code="invalid_calculated_volume",
+                            reason="Calculated volume is invalid",
+                            details={"raw_volume": raw_volume},
+                        )
                         return result
 
                     volume_steps = _floor_volume_steps(raw_volume, volume_step)
@@ -3728,8 +3807,16 @@ def run_trade_risk_analyze(  # noqa: C901
                             "overshoot_currency": round(overshoot_currency, 2),
                         }
                 else:
-                    result["position_sizing_error"] = (
-                        "SL distance must be greater than 0"
+                    result["position_sizing_error"] = _build_position_sizing_error(
+                        code="non_positive_sl_distance",
+                        field="stop_loss",
+                        reason="SL distance must be greater than 0",
+                        entry=float(request.entry),
+                        constraint="abs(stop_loss - entry) > 0",
+                        details={
+                            "direction": direction_norm,
+                            "stop_loss": float(request.stop_loss),
+                        },
                     )
 
             return result
