@@ -256,6 +256,28 @@ def _apply_global_weekend_reason(status: Dict[str, Any], *, now_utc: datetime) -
     return out
 
 
+def _runtime_meta_tzinfo(
+    meta: Dict[str, Any],
+    *,
+    allow_offset: bool = False,
+) -> tuple[Optional[Any], Optional[str]]:
+    tz_name = meta.get("tz")
+    if isinstance(tz_name, str) and tz_name.strip():
+        try:
+            return ZoneInfo(tz_name.strip()), tz_name.strip()
+        except Exception:
+            pass
+    if allow_offset:
+        offset_seconds = meta.get("offset_seconds")
+        if offset_seconds is not None:
+            try:
+                tzinfo = timezone(timedelta(seconds=int(offset_seconds)))
+                return tzinfo, tzinfo.tzname(None) or "server"
+            except Exception:
+                pass
+    return None, None
+
+
 def _is_early_close_session(
     market: Dict[str, Any],
     country: str,
@@ -789,26 +811,26 @@ def _infer_symbol_schedule_from_recent_candles(
     }
 
 
-def _symbol_market_now(now_utc: datetime, server: Dict[str, Any]) -> tuple[str, str, str]:
-    server_tz = server.get("tz")
-    if isinstance(server_tz, str) and server_tz.strip():
-        try:
-            market_now = (
-                now_utc.astimezone(ZoneInfo(server_tz.strip()))
-                .replace(microsecond=0)
-                .isoformat()
-            )
-            return "server", server_tz.strip(), market_now
-        except Exception:
-            pass
-    offset_seconds = server.get("offset_seconds")
-    if offset_seconds is not None:
-        try:
-            tzinfo = timezone(timedelta(seconds=int(offset_seconds)))
-            market_now = now_utc.astimezone(tzinfo).replace(microsecond=0).isoformat()
-            return "server", tzinfo.tzname(None) or "server", market_now
-        except Exception:
-            pass
+def _symbol_market_now(
+    now_utc: datetime,
+    *,
+    display: str,
+    server: Dict[str, Any],
+    client: Dict[str, Any],
+) -> tuple[str, str, str]:
+    display_mode = str(display or "server").strip().lower()
+    if display_mode == "utc":
+        return "utc", "UTC", _format_utc_iso_z(now_utc)
+    if display_mode == "local":
+        client_tzinfo, client_label = _runtime_meta_tzinfo(client)
+        if client_tzinfo is not None:
+            market_now = now_utc.astimezone(client_tzinfo).replace(microsecond=0).isoformat()
+            return "client", client_label or "local", market_now
+        return "utc", "UTC", _format_utc_iso_z(now_utc)
+    server_tzinfo, server_label = _runtime_meta_tzinfo(server, allow_offset=True)
+    if server_tzinfo is not None:
+        market_now = now_utc.astimezone(server_tzinfo).replace(microsecond=0).isoformat()
+        return "server", server_label or "server", market_now
     return "utc", "UTC", _format_utc_iso_z(now_utc)
 
 
@@ -969,7 +991,9 @@ def _symbol_market_status_timezone_context(
     clock_now = now_utc or datetime.now(timezone.utc)
     authoritative_clock, status_timezone, market_now = _symbol_market_now(
         clock_now,
-        server,
+        display=str(timezone_display or "server"),
+        server=server,
+        client=client,
     )
     return {
         "timezone_display": str(timezone_display or "server"),

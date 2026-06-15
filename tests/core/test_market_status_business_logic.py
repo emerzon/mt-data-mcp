@@ -168,6 +168,93 @@ def test_market_status_symbol_timezone_context_labels_server_clock(monkeypatch) 
     assert context["market_now"] == "2024-01-02T14:00:00+02:00"
 
 
+def test_market_status_symbol_timezone_context_honors_local_and_utc_display(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        market_status_mod,
+        "build_runtime_timezone_meta",
+        lambda _result, include_now=True: {
+            "server": {"tz": "Europe/Nicosia", "offset_seconds": 7200},
+            "client": {"tz": "America/New_York", "now": "2024-01-02T07:00:00-05:00"},
+        },
+    )
+
+    local = market_status_mod._symbol_market_status_timezone_context(
+        "local",
+        now_utc=datetime(2024, 1, 2, 12, 0, tzinfo=timezone.utc),
+    )
+    utc = market_status_mod._symbol_market_status_timezone_context(
+        "utc",
+        now_utc=datetime(2024, 1, 2, 12, 0, tzinfo=timezone.utc),
+    )
+
+    assert local["authoritative_clock"] == "client"
+    assert local["status_timezone"] == "America/New_York"
+    assert local["market_now"] == "2024-01-02T07:00:00-05:00"
+    assert utc["authoritative_clock"] == "utc"
+    assert utc["status_timezone"] == "UTC"
+    assert utc["market_now"] == "2024-01-02T12:00:00Z"
+
+
+def test_market_status_symbol_mode_honors_timezone_display(monkeypatch) -> None:
+    raw = _unwrap(market_status_mod.market_status)
+    fixed_now = datetime(2024, 1, 2, 12, 0, tzinfo=timezone.utc)
+    now_epoch = fixed_now.timestamp()
+
+    class FixedDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            if tz is None:
+                return fixed_now.replace(tzinfo=None)
+            return fixed_now.astimezone(tz)
+
+    class Gateway:
+        SYMBOL_TRADE_MODE_FULL = 4
+        SYMBOL_TRADE_MODE_DISABLED = 0
+        SYMBOL_TRADE_MODE_CLOSEONLY = 3
+        SYMBOL_TRADE_MODE_LONGONLY = 1
+        SYMBOL_TRADE_MODE_SHORTONLY = 2
+
+        def ensure_connection(self) -> None:
+            return None
+
+        def symbol_info(self, symbol: str):
+            assert symbol == "EURUSD"
+            return SimpleNamespace(
+                name="EURUSD",
+                description="Euro vs US Dollar",
+                visible=True,
+                trade_mode=4,
+            )
+
+        def symbol_info_tick(self, symbol: str):
+            assert symbol == "EURUSD"
+            return SimpleNamespace(time=now_epoch, bid=1.1, ask=1.2)
+
+    monkeypatch.setattr(market_status_mod, "datetime", FixedDateTime)
+    monkeypatch.setattr(market_status_mod, "create_mt5_gateway", lambda **kwargs: Gateway())
+    monkeypatch.setattr(
+        market_status_mod,
+        "build_runtime_timezone_meta",
+        lambda _result, include_now=True: {
+            "server": {"tz": "Europe/Nicosia", "offset_seconds": 7200},
+            "client": {"tz": "America/New_York", "now": "2024-01-02T07:00:00-05:00"},
+        },
+    )
+
+    expected = {
+        "server": ("2024-01-02T14:00:00+02:00", "Europe/Nicosia", "server"),
+        "local": ("2024-01-02T07:00:00-05:00", "America/New_York", "client"),
+        "utc": ("2024-01-02T12:00:00Z", "UTC", "utc"),
+    }
+    for display, (clock, tz_name, authority) in expected.items():
+        result = raw(symbol="EURUSD", timezone_display=display)
+        assert result["market_clock"] == clock
+        assert result["market_clock_timezone"] == tz_name
+        assert result["authoritative_clock"] == authority
+
+
 def test_market_status_symbol_mode_handles_bool_like_trade_and_schedule(monkeypatch) -> None:
     fixed_now = datetime(2024, 1, 2, 12, 0, tzinfo=timezone.utc)
 
