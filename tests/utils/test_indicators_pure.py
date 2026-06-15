@@ -561,6 +561,21 @@ Values above 70 often indicate overbought conditions.
         assert standard["data"][0]["params"] == "length=14"
         assert "description" in standard["data"][0]
 
+    def test_indicators_list_rejects_invalid_limits(self):
+        from mtdata.core import indicators as core_indicators
+
+        raw_list = getattr(
+            core_indicators.indicators_list,
+            "__wrapped__",
+            core_indicators.indicators_list,
+        )
+
+        assert raw_list(limit=0) == {"error": "Invalid limit: 0. Must be >= 1."}
+        assert raw_list(limit=-3) == {"error": "Invalid limit: -3. Must be >= 1."}
+        assert raw_list(limit="many") == {
+            "error": "Invalid limit: many. Must be an integer >= 1."
+        }
+
     def test_indicators_list_supports_offset_pagination(self, monkeypatch):
         from mtdata.core import indicators as core_indicators
 

@@ -457,6 +457,18 @@ def _describe_indicator_params(
     return rows
 
 
+def _normalize_indicator_list_limit(limit: Any) -> tuple[Optional[int], Optional[str]]:
+    if limit is None:
+        return None, None
+    try:
+        limit_value = int(float(limit))
+    except (TypeError, ValueError, OverflowError):
+        return None, f"Invalid limit: {limit}. Must be an integer >= 1."
+    if limit_value <= 0:
+        return None, f"Invalid limit: {limit_value}. Must be >= 1."
+    return limit_value, None
+
+
 @mcp.tool()
 def indicators_list(
     search_term: Optional[str] = None,
@@ -496,12 +508,9 @@ def indicators_list(
             if not search_active:
                 items.sort(key=lambda x: (x.get('category') or '', x.get('name') or ''))
             total_matches = len(items)
-            limit_value = None
-            try:
-                if limit is not None:
-                    limit_value = int(float(limit))
-            except Exception:
-                limit_value = None
+            limit_value, limit_error = _normalize_indicator_list_limit(limit)
+            if limit_error:
+                return {"error": limit_error}
             try:
                 offset_value = int(float(offset or 0))
             except Exception:
@@ -510,7 +519,7 @@ def indicators_list(
                 return {"error": f"Invalid offset: {offset_value}. Must be >= 0."}
             if offset_value:
                 items = items[offset_value:]
-            if limit_value and limit_value > 0:
+            if limit_value is not None:
                 items = items[:limit_value]
             if detailed:
                 rows = []
@@ -579,7 +588,7 @@ def indicators_list(
             if total_matches > len(items) or offset_value:
                 result["total_count"] = total_matches
                 result["offset"] = offset_value
-                if limit_value and limit_value > 0:
+                if limit_value is not None:
                     result["limit"] = limit_value
                 result["has_more"] = more_available > 0
                 result["more_available"] = more_available
