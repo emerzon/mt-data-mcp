@@ -361,6 +361,9 @@ class TestConsolidateEdgeCases:
         }
         res = _consolidate_payload(payload, "hmm", "full")
         assert "consolidation_error" in res
+        assert res["error"].startswith("Regime output consolidation failed:")
+        assert res["error_code"] == "regime_consolidation_failed"
+        assert res["partial_failure"] is True
         assert res["success"] is False
 
     def test_probs_none_entries(self):

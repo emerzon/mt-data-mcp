@@ -1,6 +1,6 @@
 """Payload consolidation utilities for regime detection output formatting."""
 
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 import numpy as np
 
@@ -1120,6 +1120,9 @@ def _consolidate_payload(  # noqa: C901
     except Exception as e:
         # Fallback to original payload on error
         payload["consolidation_error"] = str(e)
+        payload["error"] = f"Regime output consolidation failed: {e}"
+        payload["error_code"] = "regime_consolidation_failed"
+        payload["partial_failure"] = True
         payload["success"] = False
         return payload
 
