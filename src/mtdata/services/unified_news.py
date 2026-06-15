@@ -525,7 +525,10 @@ def _parse_relative_time(value: str) -> Optional[datetime]:
         return now - timedelta(days=1)
     if text.startswith("-"):
         return None
-    match = re.fullmatch(r"(\d+)\s+(minute|hour|day)s?\s+ago", text)
+    match = re.fullmatch(
+        r"(\d+)\s+(minute|hour|day|week|month)s?\s+ago",
+        text,
+    )
     if not match:
         return None
     amount = int(match.group(1))
@@ -535,7 +538,11 @@ def _parse_relative_time(value: str) -> Optional[datetime]:
             return now - timedelta(minutes=amount)
         if unit == "hour":
             return now - timedelta(hours=amount)
-        return now - timedelta(days=amount)
+        if unit == "day":
+            return now - timedelta(days=amount)
+        if unit == "week":
+            return now - timedelta(weeks=amount)
+        return now - timedelta(days=30 * amount)
     except OverflowError:
         return None
 

@@ -546,6 +546,18 @@ def test_parse_relative_time_handles_yesterday() -> None:
     assert datetime.now(timezone.utc) - timedelta(days=1, minutes=1) <= parsed <= datetime.now(timezone.utc)
 
 
+def test_parse_relative_time_handles_weeks_and_months() -> None:
+    now = datetime.now(timezone.utc)
+
+    two_weeks = svc._parse_relative_time("2 weeks ago")
+    three_months = svc._parse_relative_time("3 months ago")
+
+    assert two_weeks is not None
+    assert abs((now - two_weeks) - timedelta(days=14)) < timedelta(seconds=1)
+    assert three_months is not None
+    assert abs((now - three_months) - timedelta(days=90)) < timedelta(seconds=1)
+
+
 def test_parse_relative_time_rejects_negative_values() -> None:
     assert svc._parse_relative_time("-5 minutes ago") is None
 
