@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import datetime as _dt
 import types
 
 from mtdata.forecast import quantlib_tools as qtools
@@ -19,21 +20,46 @@ def _make_fake_quantlib():  # noqa: C901
             return cls._instance
 
     class _Date:
-        def __init__(self, *_args):
-            pass
+        def __init__(self, day=None, month=None, year=None):
+            if day is None or month is None or year is None:
+                self.ordinal = _dt.date(2026, 1, 1).toordinal()
+            else:
+                self.ordinal = _dt.date(int(year), int(month), int(day)).toordinal()
+
+        @classmethod
+        def from_ordinal(cls, ordinal):
+            instance = cls.__new__(cls)
+            instance.ordinal = int(ordinal)
+            return instance
 
         @staticmethod
         def todaysDate():
-            return _Date()
+            return _Date.from_ordinal(_dt.date(2026, 1, 1).toordinal())
 
         def __add__(self, _days):
-            return _Date()
+            return _Date.from_ordinal(self.ordinal + int(_days))
+
+        def __sub__(self, other):
+            return int(self.ordinal - other.ordinal)
 
     class _UnitedStates:
         NYSE = "NYSE"
 
-        def __init__(self, _market=None):
-            pass
+        def __init__(self, market=None):
+            self.market = market
+
+        def advance(self, date, days, _unit):
+            return date + int(days)
+
+        def businessDaysBetween(self, start, end):
+            return max(0, (end - start) - 4)
+
+    class _NullCalendar:
+        def advance(self, date, days, _unit):
+            return date + int(days)
+
+        def businessDaysBetween(self, start, end):
+            return max(0, end - start)
 
     class _Option:
         Call = "call"
@@ -163,6 +189,7 @@ def _make_fake_quantlib():  # noqa: C901
         Settings=_Settings,
         Actual365Fixed=lambda: object(),
         UnitedStates=_UnitedStates,
+        NullCalendar=_NullCalendar,
         Option=_Option,
         Barrier=_Barrier,
         PlainVanillaPayoff=_PlainVanillaPayoff,
@@ -243,6 +270,27 @@ def test_price_barrier_option_quantlib_uses_safe_step_near_barrier(monkeypatch):
     assert out["delta"] is not None
 
 
+def test_price_barrier_option_quantlib_exposes_calendar_overrides(monkeypatch):
+    monkeypatch.setitem(__import__("sys").modules, "QuantLib", _make_fake_quantlib())
+
+    out = qtools.price_barrier_option_quantlib(
+        spot=100.0,
+        strike=100.0,
+        barrier=120.0,
+        maturity_days=30,
+        option_type="call",
+        barrier_type="up_out",
+        calendar="NullCalendar",
+        maturity_basis="business_days",
+    )
+
+    assert out["success"] is True
+    assert out["pricing_assumptions"]["calendar"] == "NullCalendar"
+    assert out["pricing_assumptions"]["maturity_basis"] == "business_days"
+    assert out["params_used"]["calendar"] == "NullCalendar"
+    assert out["params_used"]["maturity_basis"] == "business_days"
+
+
 def test_price_barrier_option_quantlib_validates_touched_down_barrier():
     out = qtools.price_barrier_option_quantlib(
         spot=100.0,
@@ -301,6 +349,41 @@ def test_calibrate_heston_quantlib_from_options_with_fake_backend(monkeypatch):
     assert out["contracts_used"] == 5
     assert set(out["params"].keys()) == {"kappa", "theta", "sigma", "rho", "v0"}
     assert out["calibration_error_rmse"] is not None
+
+
+def test_calibrate_heston_quantlib_uses_calendar_override_for_business_days(monkeypatch):
+    monkeypatch.setitem(__import__("sys").modules, "QuantLib", _make_fake_quantlib())
+    monkeypatch.setattr(
+        qtools,
+        "get_options_chain",
+        lambda **kwargs: {
+            "success": True,
+            "symbol": kwargs["symbol"],
+            "expiration": "2026-12-19",
+            "underlying_price": 100.0,
+            "options": [
+                {"strike": 90.0, "implied_volatility": 0.35, "side": "call"},
+                {"strike": 95.0, "implied_volatility": 0.30, "side": "call"},
+                {"strike": 100.0, "implied_volatility": 0.28, "side": "call"},
+                {"strike": 105.0, "implied_volatility": 0.29, "side": "call"},
+                {"strike": 110.0, "implied_volatility": 0.33, "side": "call"},
+                {"strike": 115.0, "implied_volatility": 0.37, "side": "call"},
+            ],
+        },
+    )
+
+    out = qtools.calibrate_heston_quantlib_from_options(
+        symbol="AAPL",
+        expiration="2026-12-19",
+        valuation_date="2026-12-01",
+        calendar="NullCalendar",
+        maturity_basis="business_days",
+    )
+
+    assert out["success"] is True
+    assert out["days_to_expiry"] == 18
+    assert out["pricing_assumptions"]["calendar"] == "NullCalendar"
+    assert out["pricing_assumptions"]["maturity_basis"] == "business_days"
 
 
 def test_calibrate_heston_rejects_invalid_valuation_date(monkeypatch):

@@ -435,9 +435,11 @@ def options_barrier_price(
     dividend_yield: float = 0.0,
     volatility: float = 0.2,
     rebate: float = 0.0,
+    calendar: str = "UnitedStates.NYSE",
+    maturity_basis: Literal["calendar_days", "business_days"] = "calendar_days",  # type: ignore
     detail: CompactFullDetailLiteral = "compact",  # type: ignore
 ) -> Dict[str, Any]:
-    """Price a barrier option using QuantLib."""
+    """Price a barrier option using QuantLib with optional calendar overrides."""
     from ..forecast.quantlib_tools import price_barrier_option_quantlib as _impl
 
     def _run() -> Dict[str, Any]:
@@ -452,6 +454,8 @@ def options_barrier_price(
             dividend_yield=float(dividend_yield),
             volatility=float(volatility),
             rebate=float(rebate),
+            calendar=calendar,
+            maturity_basis=maturity_basis,
         )
         if isinstance(payload, dict) and payload.get("success"):
             payload.update(
@@ -483,6 +487,8 @@ def options_barrier_price(
         option_type=option_type,
         barrier_type=barrier_type,
         maturity_days=maturity_days,
+        calendar=calendar,
+        maturity_basis=maturity_basis,
         detail=detail,
         func=_run,
     )
@@ -499,6 +505,8 @@ def options_heston_calibrate(
     min_open_interest: int = 0,
     min_volume: int = 0,
     max_contracts: int = 25,
+    calendar: str = "UnitedStates.NYSE",
+    maturity_basis: Literal["calendar_days", "business_days"] = "calendar_days",  # type: ignore
     detail: CompactFullDetailLiteral = "compact",  # type: ignore
 ) -> Dict[str, Any]:
     """Calibrate Heston from the configured options-chain provider.
@@ -508,7 +516,9 @@ def options_heston_calibrate(
     `auto`, mtdata retries Yahoo if Tradier is unavailable or misconfigured. For
     reliable options-chain data, configure Tradier with
     MTDATA_OPTIONS_PROVIDER=tradier and MTDATA_OPTIONS_API_KEY. Tradier API
-    tokens: https://documentation.tradier.com/.
+    tokens: https://documentation.tradier.com/. Use `calendar` and
+    `maturity_basis` to override the default `UnitedStates.NYSE` /
+    `calendar_days` maturity assumptions.
     """
     from ..forecast.quantlib_tools import (
         calibrate_heston_quantlib_from_options as _impl,
@@ -553,6 +563,8 @@ def options_heston_calibrate(
                 min_open_interest=int(min_open_interest),
                 min_volume=int(min_volume),
                 max_contracts=int(max_contracts),
+                calendar=calendar,
+                maturity_basis=maturity_basis,
             ),
             detail=detail,
             kind="heston_calibrate",

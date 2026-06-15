@@ -10,16 +10,104 @@ import numpy as np
 
 from ..services.options_service import get_options_chain
 
+_DEFAULT_QUANTLIB_CALENDAR = "UnitedStates.NYSE"
+_DEFAULT_MATURITY_BASIS = "calendar_days"
 
-def _quantlib_pricing_assumptions(model: str) -> Dict[str, str]:
+
+def _quantlib_pricing_assumptions(
+    model: str,
+    *,
+    calendar: str,
+    maturity_basis: str,
+) -> Dict[str, str]:
     return {
         "source": "QuantLib",
         "model": model,
         "day_count": "Actual365Fixed",
-        "calendar": "UnitedStates.NYSE",
+        "calendar": calendar,
         "rate_compounding": "continuous_flat",
-        "maturity_basis": "calendar_days",
+        "maturity_basis": maturity_basis,
     }
+
+
+def _normalize_quantlib_calendar_name(calendar: Any) -> str:
+    name = str(calendar or _DEFAULT_QUANTLIB_CALENDAR).strip()
+    return name or _DEFAULT_QUANTLIB_CALENDAR
+
+
+def _normalize_maturity_basis(maturity_basis: Any) -> str:
+    value = str(maturity_basis or _DEFAULT_MATURITY_BASIS).strip().lower()
+    if value not in {"calendar_days", "business_days"}:
+        raise ValueError(
+            f"Invalid maturity_basis: {maturity_basis}. "
+            "Use calendar_days|business_days."
+        )
+    return value
+
+
+def _resolve_quantlib_calendar(ql: Any, calendar_name: Any) -> tuple[Any, str]:
+    normalized_name = _normalize_quantlib_calendar_name(calendar_name)
+    if "." in normalized_name:
+        class_name, market_name = normalized_name.split(".", 1)
+        calendar_factory = getattr(ql, class_name, None)
+        market = getattr(calendar_factory, market_name, None) if calendar_factory is not None else None
+        if calendar_factory is None or market is None:
+            raise ValueError(
+                f"Invalid calendar: {normalized_name}. "
+                "Use QuantLib calendar names such as UnitedStates.NYSE or NullCalendar."
+            )
+        return calendar_factory(market), normalized_name
+    calendar_factory = getattr(ql, normalized_name, None)
+    if calendar_factory is None:
+        raise ValueError(
+            f"Invalid calendar: {normalized_name}. "
+            "Use QuantLib calendar names such as UnitedStates.NYSE or NullCalendar."
+        )
+    try:
+        return calendar_factory(), normalized_name
+    except TypeError as exc:
+        raise ValueError(
+            f"Invalid calendar: {normalized_name}. "
+            "Use QuantLib calendar names such as UnitedStates.NYSE or NullCalendar."
+        ) from exc
+
+
+def _quantlib_date(ql: Any, day: _dt.date) -> Any:
+    return ql.Date(int(day.day), int(day.month), int(day.year))
+
+
+def _advance_maturity_date(
+    *,
+    ql: Any,
+    ql_today: Any,
+    calendar: Any,
+    maturity_days: int,
+    maturity_basis: str,
+) -> Any:
+    if maturity_basis == "business_days":
+        return calendar.advance(ql_today, int(maturity_days), ql.Days)
+    return ql_today + int(maturity_days)
+
+
+def _days_to_expiry(
+    *,
+    ql: Any,
+    calendar: Any,
+    valuation_day: _dt.date,
+    expiry_date: _dt.date,
+    maturity_basis: str,
+) -> int:
+    if maturity_basis == "business_days":
+        return max(
+            1,
+            int(
+                calendar.businessDaysBetween(
+                    _quantlib_date(ql, valuation_day),
+                    _quantlib_date(ql, expiry_date),
+                )
+            ),
+        )
+    return max(1, int((expiry_date - valuation_day).days))
 
 
 def price_barrier_option_quantlib(
@@ -34,6 +122,8 @@ def price_barrier_option_quantlib(
     dividend_yield: float = 0.0,
     volatility: float = 0.2,
     rebate: float = 0.0,
+    calendar: str = _DEFAULT_QUANTLIB_CALENDAR,
+    maturity_basis: str = _DEFAULT_MATURITY_BASIS,
 ) -> Dict[str, Any]:
     """Price a European barrier option with QuantLib."""
     try:
@@ -59,6 +149,11 @@ def price_barrier_option_quantlib(
         return {"error": f"Invalid option_type: {option_type}. Use call|put."}
     if barrier_type_norm not in barrier_choices:
         return {"error": f"Invalid barrier_type: {barrier_type}. Use up_in|up_out|down_in|down_out."}
+    try:
+        maturity_basis_norm = _normalize_maturity_basis(maturity_basis)
+    except ValueError as ex:
+        return {"error": str(ex)}
+    calendar_name = _normalize_quantlib_calendar_name(calendar)
 
     geometry_error = _barrier_option_geometry_error(
         barrier_type=barrier_type_norm,
@@ -80,6 +175,8 @@ def price_barrier_option_quantlib(
                 dividend_yield=div,
                 volatility=vol,
                 rebate=rebate_val,
+                calendar=calendar_name,
+                maturity_basis=maturity_basis_norm,
             ),
         }
 
@@ -87,6 +184,11 @@ def price_barrier_option_quantlib(
         import QuantLib as ql
     except Exception as ex:
         return {"error": f"QuantLib is required: {ex}"}
+
+    try:
+        calendar_obj, calendar_name = _resolve_quantlib_calendar(ql, calendar_name)
+    except ValueError as ex:
+        return {"error": str(ex)}
 
     opt_map = {"call": ql.Option.Call, "put": ql.Option.Put}
     barrier_map = {
@@ -99,8 +201,13 @@ def price_barrier_option_quantlib(
     ql_today = ql.Date.todaysDate()
     ql.Settings.instance().evaluationDate = ql_today
     day_count = ql.Actual365Fixed()
-    calendar = ql.UnitedStates(ql.UnitedStates.NYSE)
-    maturity = ql_today + int(maturity_val)
+    maturity = _advance_maturity_date(
+        ql=ql,
+        ql_today=ql_today,
+        calendar=calendar_obj,
+        maturity_days=maturity_val,
+        maturity_basis=maturity_basis_norm,
+    )
 
     payoff = ql.PlainVanillaPayoff(opt_map[option_type_norm], float(strike_val))
     exercise = ql.EuropeanExercise(maturity)
@@ -116,7 +223,14 @@ def price_barrier_option_quantlib(
         spot_h = ql.QuoteHandle(ql.SimpleQuote(float(spot_local)))
         rf_ts = ql.YieldTermStructureHandle(ql.FlatForward(ql_today, float(rf), day_count))
         div_ts = ql.YieldTermStructureHandle(ql.FlatForward(ql_today, float(div), day_count))
-        vol_ts = ql.BlackVolTermStructureHandle(ql.BlackConstantVol(ql_today, calendar, float(vol_local), day_count))
+        vol_ts = ql.BlackVolTermStructureHandle(
+            ql.BlackConstantVol(
+                ql_today,
+                calendar_obj,
+                float(vol_local),
+                day_count,
+            )
+        )
         process = ql.BlackScholesMertonProcess(spot_h, div_ts, rf_ts, vol_ts)
         barrier_opt.setPricingEngine(ql.AnalyticBarrierEngine(process))
         return float(barrier_opt.NPV())
@@ -190,7 +304,9 @@ def price_barrier_option_quantlib(
         "greeks_spot_step": float(eps_s),
         **({"greeks_warnings": greeks_warnings} if greeks_warnings else {}),
         "pricing_assumptions": _quantlib_pricing_assumptions(
-            "BlackScholesMerton analytic barrier"
+            "BlackScholesMerton analytic barrier",
+            calendar=calendar_name,
+            maturity_basis=maturity_basis_norm,
         ),
         "params_used": _barrier_option_params(
             spot=spot_val,
@@ -203,6 +319,8 @@ def price_barrier_option_quantlib(
             dividend_yield=div,
             volatility=vol,
             rebate=rebate_val,
+            calendar=calendar_name,
+            maturity_basis=maturity_basis_norm,
         ),
     }
 
@@ -232,6 +350,8 @@ def _barrier_option_params(
     dividend_yield: float,
     volatility: float,
     rebate: float,
+    calendar: str,
+    maturity_basis: str,
 ) -> Dict[str, Any]:
     return {
         "spot": float(spot),
@@ -244,6 +364,8 @@ def _barrier_option_params(
         "dividend_yield": float(dividend_yield),
         "volatility": float(volatility),
         "rebate": float(rebate),
+        "calendar": str(calendar),
+        "maturity_basis": str(maturity_basis),
     }
 
 
@@ -258,12 +380,24 @@ def calibrate_heston_quantlib_from_options(
     min_volume: int = 0,
     max_contracts: int = 25,
     valuation_date: Optional[str] = None,
+    calendar: str = _DEFAULT_QUANTLIB_CALENDAR,
+    maturity_basis: str = _DEFAULT_MATURITY_BASIS,
 ) -> Dict[str, Any]:
     """Calibrate a Heston model from option-chain implied vols using QuantLib."""
     try:
         import QuantLib as ql
     except Exception as ex:
         return {"error": f"QuantLib is required: {ex}"}
+
+    try:
+        maturity_basis_norm = _normalize_maturity_basis(maturity_basis)
+    except ValueError as ex:
+        return {"error": str(ex)}
+    calendar_name = _normalize_quantlib_calendar_name(calendar)
+    try:
+        calendar_obj, calendar_name = _resolve_quantlib_calendar(ql, calendar_name)
+    except ValueError as ex:
+        return {"error": str(ex)}
 
     side = str(option_type or "call").strip().lower()
     if side not in {"call", "put", "both"}:
@@ -325,16 +459,17 @@ def calibrate_heston_quantlib_from_options(
                     "Use YYYY-MM-DD."
                 )
             }
-    days_to_expiry = max(1, int((expiry_date - valuation_day).days))
-
-    ql_today = ql.Date(
-        int(valuation_day.day),
-        int(valuation_day.month),
-        int(valuation_day.year),
+    days_to_expiry = _days_to_expiry(
+        ql=ql,
+        calendar=calendar_obj,
+        valuation_day=valuation_day,
+        expiry_date=expiry_date,
+        maturity_basis=maturity_basis_norm,
     )
+
+    ql_today = _quantlib_date(ql, valuation_day)
     ql.Settings.instance().evaluationDate = ql_today
     day_count = ql.Actual365Fixed()
-    calendar = ql.UnitedStates(ql.UnitedStates.NYSE)
     rf_ts = ql.YieldTermStructureHandle(ql.FlatForward(ql_today, float(risk_free_rate), day_count))
     div_ts = ql.YieldTermStructureHandle(ql.FlatForward(ql_today, float(dividend_yield), day_count))
     spot_handle = ql.QuoteHandle(ql.SimpleQuote(float(spot_val)))
@@ -354,7 +489,7 @@ def calibrate_heston_quantlib_from_options(
     for row in rows:
         helper = ql.HestonModelHelper(
             maturity,
-            calendar,
+            calendar_obj,
             float(spot_val),
             float(row["strike"]),
             ql.QuoteHandle(ql.SimpleQuote(float(row["iv"]))),
@@ -392,10 +527,11 @@ def calibrate_heston_quantlib_from_options(
             "v0": float(model.v0()),
         },
         "pricing_assumptions": _quantlib_pricing_assumptions(
-            "Heston analytic calibration"
+            "Heston analytic calibration",
+            calendar=calendar_name,
+            maturity_basis=maturity_basis_norm,
         ),
         "risk_free_rate": float(risk_free_rate),
         "dividend_yield": float(dividend_yield),
         "sample_contracts": rows[:10],
     }
-
