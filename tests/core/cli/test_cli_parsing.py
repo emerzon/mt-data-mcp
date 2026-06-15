@@ -59,6 +59,12 @@ from mtdata.core.cli import (
     get_function_info,
 )
 
+_ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;]*m")
+
+
+def _strip_ansi(text: str) -> str:
+    return _ANSI_ESCAPE_RE.sub("", text)
+
 
 def test_dynamic_cli_help_has_no_placeholder_param_text():
     from mtdata.bootstrap.settings import load_environment
@@ -241,7 +247,7 @@ class TestAddDynamicArguments:
         assert args.flag == "false"
         args = parser.parse_args(["--no-flag"])
         assert args.flag == "false"
-        help_text = parser.format_help()
+        help_text = _strip_ansi(parser.format_help())
         assert "--flag [{true,false}]" in help_text
         assert "[bool]" not in help_text
 
@@ -265,7 +271,7 @@ class TestAddDynamicArguments:
         }
         add_dynamic_arguments(parser, func_info, cmd_name="data_fetch_candles")
 
-        help_text = parser.format_help()
+        help_text = _strip_ansi(parser.format_help())
 
         assert "--include-spread [{true,false}]" in help_text
         assert "defaults to false" in help_text
@@ -327,7 +333,7 @@ class TestAddDynamicArguments:
         }
         add_dynamic_arguments(parser, func_info, cmd_name="market_scan")
 
-        help_text = parser.format_help()
+        help_text = _strip_ansi(parser.format_help())
 
         assert "--symbols" in help_text
         assert "Comma-separated MT5 symbols" in help_text
@@ -382,7 +388,7 @@ class TestAddDynamicArguments:
             ]
         }
         add_dynamic_arguments(parser, func_info)
-        help_text = parser.format_help()
+        help_text = _strip_ansi(parser.format_help())
         args = parser.parse_args(["--params", "alpha=0.5", "--set", "params.beta=0.2"])
         assert args.params == "alpha=0.5"
         assert args.set_overrides == ["params.beta=0.2"]
