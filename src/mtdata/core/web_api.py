@@ -33,7 +33,7 @@ from ..utils.mt5 import _ensure_symbol_ready, mt5, mt5_connection
 from ..utils.symbol import _extract_group_path as _extract_group_path_util
 from ..bootstrap.settings import load_environment, mt5_config
 from ..shared.constants import TIMEFRAME_MAP
-from .error_envelope import build_http_error_detail
+from .error_envelope import build_error_payload
 from .mt5_gateway import create_mt5_gateway
 from .pivot import pivot_compute_points
 from .tool_calling import unwrap_tool_callable
@@ -90,7 +90,7 @@ _bearer_auth = HTTPBearer(auto_error=False)
 
 
 def _raise_auth_error(status_code: int, message: str, *, code: str, headers: Optional[Dict[str, str]] = None) -> None:
-    payload = build_http_error_detail(message, code=code, operation="web_api_auth")
+    payload = build_error_payload(message, code=code, operation="web_api_auth")
     logger.warning(
         "transport=web_api operation=%s request_id=%s status=%s error=%s",
         "web_api_auth",

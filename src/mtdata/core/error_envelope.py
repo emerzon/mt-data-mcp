@@ -218,33 +218,6 @@ def build_error_payload(
     return payload
 
 
-def build_http_error_detail(
-    message: Any,
-    *,
-    code: str,
-    request_id: Optional[str] = None,
-    operation: Optional[str] = None,
-    details: Optional[Dict[str, Any]] = None,
-    remediation: Optional[str] = None,
-    related_tools: Optional[list[str]] = None,
-    valid_values: Optional[Dict[str, Any]] = None,
-    example: Optional[str] = None,
-    documentation: Optional[str] = None,
-) -> Dict[str, Any]:
-    return build_error_payload(
-        message,
-        code=code,
-        request_id=request_id,
-        operation=operation,
-        details=details,
-        remediation=remediation,
-        related_tools=related_tools,
-        valid_values=valid_values,
-        example=example,
-        documentation=documentation,
-    )
-
-
 def log_transport_exception(
     logger: logging.Logger,
     *,
