@@ -148,6 +148,8 @@ def compute_support_resistance_payload(
             if start or end:
                 history_kwargs.update({"start": start, "end": end})
             frame = fetch_history_impl(**history_kwargs)
+            if frame is None:
+                raise RuntimeError("No history available")
             if len(frame) > int(limit):
                 frame = frame.iloc[-int(limit):].copy()
             result = compute_support_resistance_levels(

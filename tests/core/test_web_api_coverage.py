@@ -28,6 +28,7 @@ from mtdata.utils.mt5 import MT5ConnectionError
 
 _client = TestClient(app)
 
+
 # ---------------------------------------------------------------------------
 # Helper: convenience for building mock symbol objects
 # ---------------------------------------------------------------------------
@@ -185,8 +186,11 @@ class TestWebApiSecurity:
     def test_remote_requests_require_token_or_loopback(self, monkeypatch):
         monkeypatch.delenv("WEBAPI_AUTH_TOKEN", raising=False)
         web_api._clear_api_access_runtime_settings_cache()
-        with patch("mtdata.core.web_api._is_local_api_client", return_value=False):
-            resp = _client.get("/api/timeframes")
+        try:
+            with patch("mtdata.core.web_api._is_local_api_client", return_value=False):
+                resp = _client.get("/api/timeframes")
+        finally:
+            web_api._clear_api_access_runtime_settings_cache()
         assert resp.status_code == 403
         assert resp.json()["detail"]["error_code"] == "web_api_remote_forbidden"
 
@@ -201,7 +205,10 @@ class TestWebApiSecurity:
     def test_configured_token_requires_auth_header(self, monkeypatch):
         monkeypatch.setenv("WEBAPI_AUTH_TOKEN", "secret")
         web_api._clear_api_access_runtime_settings_cache()
-        resp = _client.get("/api/timeframes")
+        try:
+            resp = _client.get("/api/timeframes")
+        finally:
+            web_api._clear_api_access_runtime_settings_cache()
         assert resp.status_code == 401
         assert resp.headers["www-authenticate"] == "Bearer"
         assert resp.json()["detail"]["error_code"] == "web_api_auth_required"
@@ -209,26 +216,34 @@ class TestWebApiSecurity:
     def test_bearer_token_allows_request(self, monkeypatch):
         monkeypatch.setenv("WEBAPI_AUTH_TOKEN", "secret")
         web_api._clear_api_access_runtime_settings_cache()
-        resp = _client.get("/api/timeframes", headers={"Authorization": "Bearer secret"})
+        try:
+            resp = _client.get("/api/timeframes", headers={"Authorization": "Bearer secret"})
+        finally:
+            web_api._clear_api_access_runtime_settings_cache()
         assert resp.status_code == 200
 
     def test_x_api_key_allows_request(self, monkeypatch):
         monkeypatch.setenv("WEBAPI_AUTH_TOKEN", "secret")
         web_api._clear_api_access_runtime_settings_cache()
-        resp = _client.get("/api/timeframes", headers={"X-API-Key": "secret"})
+        try:
+            resp = _client.get("/api/timeframes", headers={"X-API-Key": "secret"})
+        finally:
+            web_api._clear_api_access_runtime_settings_cache()
         assert resp.status_code == 200
 
     def test_access_runtime_settings_are_cached_until_reset(self, monkeypatch):
         monkeypatch.setenv("WEBAPI_AUTH_TOKEN", "secret-a")
         web_api._clear_api_access_runtime_settings_cache()
+        try:
+            assert web_api._get_api_access_runtime_settings().auth_token == "secret-a"
 
-        assert web_api._get_api_access_runtime_settings().auth_token == "secret-a"
+            monkeypatch.setenv("WEBAPI_AUTH_TOKEN", "secret-b")
+            assert web_api._get_api_access_runtime_settings().auth_token == "secret-a"
 
-        monkeypatch.setenv("WEBAPI_AUTH_TOKEN", "secret-b")
-        assert web_api._get_api_access_runtime_settings().auth_token == "secret-a"
-
-        web_api._clear_api_access_runtime_settings_cache()
-        assert web_api._get_api_access_runtime_settings().auth_token == "secret-b"
+            web_api._clear_api_access_runtime_settings_cache()
+            assert web_api._get_api_access_runtime_settings().auth_token == "secret-b"
+        finally:
+            web_api._clear_api_access_runtime_settings_cache()
 
 
 class TestWebApiRuntimeHelpers:
@@ -1620,7 +1635,7 @@ class TestGetSupportResistance:
         })
         with patch("mtdata.core.web_api._fetch_history_impl", return_value=df):
             resp = _client.get("/api/support-resistance", params=self._sr_params(
-                tolerance_pct=0.0001, min_touches=1,
+                tolerance_pct=0.0001, min_touches=1, max_distance_pct=20.0,
             ))
         assert resp.status_code == 200
         body = resp.json()
