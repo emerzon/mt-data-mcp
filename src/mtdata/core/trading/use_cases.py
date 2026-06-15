@@ -1381,6 +1381,7 @@ def run_trade_place(  # noqa: C901
             if isinstance(result, dict):
                 sl_tp_requested, sl_tp_status = _sl_tp_result_details(result)
                 sl_tp_failed = sl_tp_status == "failed"
+                sl_tp_unverified = sl_tp_status == "unverified"
                 if sl_tp_requested and sl_tp_failed:
                     warnings_out = _coerce_warning_list(result.get("warnings"))
                     pos_ticket = result.get("position_ticket")
@@ -1459,15 +1460,22 @@ def run_trade_place(  # noqa: C901
                 if (
                     bool(request.require_sl_tp)
                     and sl_tp_requested
-                    and sl_tp_failed
+                    and (sl_tp_failed or sl_tp_unverified)
                     and "error" not in result
                 ):
                     result["error"] = (
                         "Order was executed, but TP/SL protection could not be applied."
+                        if sl_tp_failed
+                        else "Order was executed, but TP/SL protection could not be verified."
                     )
                     result["require_sl_tp"] = bool(request.require_sl_tp)
                     result["protection_status"] = (
-                        result.get("protection_status") or "unprotected_position"
+                        result.get("protection_status")
+                        or (
+                            "unprotected_position"
+                            if sl_tp_failed
+                            else "protection_unverified"
+                        )
                     )
             return _finish(result, order_type=order_type_norm, pending=is_pending)
         if request.price is None:

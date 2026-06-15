@@ -89,6 +89,49 @@ def _build_sl_tp_result(
     return out
 
 
+def _sl_tp_price_tolerance(symbol_info: Any) -> float:
+    price_tol = validation._safe_float_attr(symbol_info, "point")
+    if price_tol is None or not math.isfinite(price_tol) or price_tol <= 0:
+        return 1e-9
+    return float(price_tol)
+
+
+def _position_protection_levels(position: Any) -> tuple[Optional[float], Optional[float]]:
+    sl = validation._safe_float_attr(position, "sl")
+    tp = validation._safe_float_attr(position, "tp")
+    applied_sl = float(sl) if sl is not None and math.isfinite(sl) and sl != 0.0 else None
+    applied_tp = float(tp) if tp is not None and math.isfinite(tp) and tp != 0.0 else None
+    return applied_sl, applied_tp
+
+
+def _evaluate_requested_protection(
+    *,
+    requested_sl: Optional[float],
+    requested_tp: Optional[float],
+    applied_sl: Optional[float],
+    applied_tp: Optional[float],
+    symbol_info: Any,
+) -> tuple[bool, bool, Optional[Dict[str, Dict[str, float]]]]:
+    price_tol = _sl_tp_price_tolerance(symbol_info)
+    all_requested_present = True
+    adjustment: Dict[str, Dict[str, float]] = {}
+    for label, requested, applied in (
+        ("sl", requested_sl, applied_sl),
+        ("tp", requested_tp, applied_tp),
+    ):
+        if requested is None:
+            continue
+        if applied is None:
+            all_requested_present = False
+            continue
+        if abs(float(applied) - float(requested)) > price_tol:
+            adjustment[label] = {
+                "requested": float(requested),
+                "applied": float(applied),
+            }
+    return all_requested_present, bool(adjustment), adjustment or None
+
+
 class _ProtectionOutcome(TypedDict, total=False):
     position_ticket: Optional[int]
     position_ticket_candidates: List[int]
@@ -191,101 +234,124 @@ def _attach_post_fill_protection(
             }
 
         if position_obj is not None and position_ticket is not None:
-            # --- Phase 2: Attach SL/TP via TRADE_ACTION_SLTP ---
-            modify_request = {
-                "action": mt5.TRADE_ACTION_SLTP,
-                "symbol": symbol,
-                "position": position_ticket,
-                "sl": 0.0 if stop_loss is None else float(stop_loss),
-                "tp": 0.0 if take_profit is None else float(take_profit),
-                "comment": comments._normalize_trade_comment(
-                    comment,
-                    default=request_comment,
-                    suffix=" - set TP/SL",
-                ),
-            }
-            modify_magic = validation._safe_int_ticket(getattr(position_obj, "magic", None))
-            if modify_magic is not None:
-                modify_request["magic"] = modify_magic
-            modify_result = None
-            max_modify_attempts = 5
-            invalid_stops_code = validation._safe_int_attr(mt5, "TRADE_RETCODE_INVALID_STOPS", 10016)
-            for modify_try in range(max_modify_attempts):
-                sl_tp_attempts = int(modify_try + 1)
-                try:
-                    modify_result = mt5.order_send(modify_request)
-                    _sl_tp_last_error = validation._safe_last_error(mt5)
-                except Exception as ex:
-                    modify_result = None
-                    sl_tp_error = f"Error setting TP/SL: {str(ex)}"
-                if modify_result is not None:
-                    sl_tp_last_retcode = getattr(modify_result, "retcode", None)
-                    sl_tp_last_comment = getattr(modify_result, "comment", None)
-                if modify_result and getattr(modify_result, "retcode", None) == mt5.TRADE_RETCODE_DONE:
-                    break
-                if sl_tp_last_retcode == invalid_stops_code:
-                    break
-                if modify_try + 1 < max_modify_attempts:
-                    _stdlib_time.sleep(0.35)
-
-            if modify_result and getattr(modify_result, "retcode", None) == mt5.TRADE_RETCODE_DONE:
-                # --- Phase 3: Verify SL/TP readback ---
-                sl_tp_apply_status = "applied"
-                try:
-                    positions_after = mt5.positions_get(ticket=position_ticket)
-                    if not positions_after:
-                        fallback_pos, _, _ = _resolve_open_position(
-                            mt5,
-                            ticket_candidates=[position_ticket],
-                            symbol=symbol,
-                            side=side,
-                            volume=volume,
-                            magic=magic,
-                        )
-                        positions_after = [fallback_pos] if fallback_pos is not None else []
-                    if positions_after and len(positions_after) > 0:
-                        pos_after = positions_after[0]
-                        sl_applied = validation._safe_float_attr(pos_after, "sl") or None
-                        tp_applied = validation._safe_float_attr(pos_after, "tp") or None
-                except Exception as verify_exc:
-                    sl_tp_verification_failed = True
-                    logger.warning(
-                        "SL/TP verification failed for ticket %s: %s",
-                        position_ticket,
-                        verify_exc,
-                    )
-
-                price_tol = validation._safe_float_attr(symbol_info, "point")
-                if price_tol is None or not math.isfinite(price_tol) or price_tol <= 0:
-                    price_tol = 1e-9
-                if stop_loss is not None and sl_applied is not None:
-                    if abs(float(sl_applied) - float(stop_loss)) > price_tol:
-                        sl_tp_broker_adjusted = True
-                        sl_tp_adjustment["sl"] = {
-                            "requested": float(stop_loss),
-                            "applied": float(sl_applied),
-                        }
-                if take_profit is not None and tp_applied is not None:
-                    if abs(float(tp_applied) - float(take_profit)) > price_tol:
-                        sl_tp_broker_adjusted = True
-                        sl_tp_adjustment["tp"] = {
-                            "requested": float(take_profit),
-                            "applied": float(tp_applied),
-                        }
-            else:
-                sl_tp_error = (
-                    "Failed to set TP/SL"
-                    if sl_tp_error is None
-                    else sl_tp_error
+            sl_applied, tp_applied = _position_protection_levels(position_obj)
+            initial_confirmed, initial_adjusted, initial_adjustment = (
+                _evaluate_requested_protection(
+                    requested_sl=stop_loss,
+                    requested_tp=take_profit,
+                    applied_sl=sl_applied,
+                    applied_tp=tp_applied,
+                    symbol_info=symbol_info,
                 )
-                sl_tp_apply_status = "failed"
+            )
+            if initial_confirmed:
+                sl_tp_apply_status = "applied"
+                sl_tp_broker_adjusted = initial_adjusted
+                if initial_adjustment:
+                    sl_tp_adjustment = dict(initial_adjustment)
+            else:
+                # --- Phase 2: Attach SL/TP via TRADE_ACTION_SLTP ---
+                modify_request = {
+                    "action": mt5.TRADE_ACTION_SLTP,
+                    "symbol": symbol,
+                    "position": position_ticket,
+                    "sl": 0.0 if stop_loss is None else float(stop_loss),
+                    "tp": 0.0 if take_profit is None else float(take_profit),
+                    "comment": comments._normalize_trade_comment(
+                        comment,
+                        default=request_comment,
+                        suffix=" - set TP/SL",
+                    ),
+                }
+                modify_magic = validation._safe_int_ticket(getattr(position_obj, "magic", None))
+                if modify_magic is not None:
+                    modify_request["magic"] = modify_magic
+                modify_result = None
+                max_modify_attempts = 5
+                invalid_stops_code = validation._safe_int_attr(mt5, "TRADE_RETCODE_INVALID_STOPS", 10016)
+                for modify_try in range(max_modify_attempts):
+                    sl_tp_attempts = int(modify_try + 1)
+                    try:
+                        modify_result = mt5.order_send(modify_request)
+                        _sl_tp_last_error = validation._safe_last_error(mt5)
+                    except Exception as ex:
+                        modify_result = None
+                        sl_tp_error = f"Error setting TP/SL: {str(ex)}"
+                    if modify_result is not None:
+                        sl_tp_last_retcode = getattr(modify_result, "retcode", None)
+                        sl_tp_last_comment = getattr(modify_result, "comment", None)
+                    if modify_result and getattr(modify_result, "retcode", None) == mt5.TRADE_RETCODE_DONE:
+                        break
+                    if sl_tp_last_retcode == invalid_stops_code:
+                        break
+                    if modify_try + 1 < max_modify_attempts:
+                        _stdlib_time.sleep(0.35)
+
+                if modify_result and getattr(modify_result, "retcode", None) == mt5.TRADE_RETCODE_DONE:
+                    # --- Phase 3: Verify SL/TP readback ---
+                    positions_after = None
+                    try:
+                        positions_after = mt5.positions_get(ticket=position_ticket)
+                        if not positions_after:
+                            fallback_pos, _, _ = _resolve_open_position(
+                                mt5,
+                                ticket_candidates=[position_ticket],
+                                symbol=symbol,
+                                side=side,
+                                volume=volume,
+                                magic=magic,
+                            )
+                            positions_after = [fallback_pos] if fallback_pos is not None else []
+                        if positions_after and len(positions_after) > 0:
+                            pos_after = positions_after[0]
+                            sl_applied, tp_applied = _position_protection_levels(pos_after)
+                            confirmed, adjusted, adjustment = _evaluate_requested_protection(
+                                requested_sl=stop_loss,
+                                requested_tp=take_profit,
+                                applied_sl=sl_applied,
+                                applied_tp=tp_applied,
+                                symbol_info=symbol_info,
+                            )
+                            if confirmed:
+                                sl_tp_apply_status = "applied"
+                                sl_tp_broker_adjusted = adjusted
+                                sl_tp_adjustment = dict(adjustment or {})
+                            else:
+                                sl_tp_error = (
+                                    "Broker accepted the TP/SL update, but the live "
+                                    "position did not report the requested protection."
+                                )
+                                sl_tp_apply_status = "failed"
+                        else:
+                            sl_tp_verification_failed = True
+                    except Exception as verify_exc:
+                        sl_tp_verification_failed = True
+                        logger.warning(
+                            "SL/TP verification failed for ticket %s: %s",
+                            position_ticket,
+                            verify_exc,
+                        )
+
+                    if sl_tp_verification_failed:
+                        sl_tp_error = (
+                            "Broker accepted the TP/SL update, but live protection "
+                            "could not be verified."
+                        )
+                        sl_tp_apply_status = "unverified"
+                else:
+                    sl_tp_error = (
+                        "Failed to set TP/SL"
+                        if sl_tp_error is None
+                        else sl_tp_error
+                    )
+                    sl_tp_apply_status = "failed"
         else:
             checked = ", ".join(str(v) for v in position_ticket_candidates) or "none"
             sl_tp_error = (
-                "Position not found for TP/SL modification "
+                "Unable to resolve the filled position for TP/SL verification "
                 f"(ticket candidates: {checked})"
             )
-            sl_tp_apply_status = "failed"
+            sl_tp_apply_status = "unverified"
     except Exception as e:
         sl_tp_error = f"Error setting TP/SL: {str(e)}"
         sl_tp_apply_status = "failed"
@@ -309,6 +375,27 @@ def _attach_post_fill_protection(
         warnings_out.append(
             "CRITICAL: Order filled but TP/SL could not be applied. "
             f"{action_text}, or close the position."
+        )
+    elif sl_tp_apply_status == "unverified":
+        if position_ticket is not None:
+            action_text = (
+                f"Run trade_get_open --ticket {position_ticket} immediately and confirm "
+                "the live protection levels."
+            )
+        elif position_ticket_candidates:
+            candidate_list = ", ".join(str(v) for v in position_ticket_candidates)
+            action_text = (
+                "Run trade_get_open immediately and confirm the live protection "
+                f"levels (candidate tickets: {candidate_list})."
+            )
+        else:
+            action_text = (
+                "Run trade_get_open immediately to find the live position and confirm "
+                "its protection levels."
+            )
+        warnings_out.append(
+            "WARNING: Order filled but TP/SL protection could not be verified. "
+            f"{action_text}"
         )
     if sl_tp_verification_failed:
         warnings_out.append(
@@ -340,6 +427,8 @@ def _attach_post_fill_protection(
         outcome["protection_status"] = "protected"
     elif sl_tp_apply_status == "failed":
         outcome["protection_status"] = "unprotected_position"
+    elif sl_tp_apply_status == "unverified":
+        outcome["protection_status"] = "protection_unverified"
     return outcome
 
 
@@ -827,6 +916,12 @@ def _place_market_order(  # noqa: C901
             validate_tick = mt5.symbol_info_tick(symbol)
             if validate_tick is None:
                 return {"error": f"Failed to get current price for {symbol}"}
+            tick_freshness_error = validation._validate_tick_freshness(
+                validate_tick,
+                symbol=symbol,
+            )
+            if tick_freshness_error is not None:
+                return tick_freshness_error
             validate_reference_price = validate_tick.bid if side == "BUY" else validate_tick.ask
 
             # SL/TP validation for market orders
@@ -873,6 +968,12 @@ def _place_market_order(  # noqa: C901
             send_tick = mt5.symbol_info_tick(symbol)
             if send_tick is None:
                 return {"error": f"Failed to get fresh price for {symbol}"}
+            tick_freshness_error = validation._validate_tick_freshness(
+                send_tick,
+                symbol=symbol,
+            )
+            if tick_freshness_error is not None:
+                return tick_freshness_error
             price = send_tick.ask if side == "BUY" else send_tick.bid
             send_reference_price = send_tick.bid if side == "BUY" else send_tick.ask
             if norm_sl is not None:
@@ -986,38 +1087,69 @@ def _place_market_order(  # noqa: C901
                 if cand is not None and cand not in position_ticket_candidates:
                     position_ticket_candidates.append(cand)
 
+            sl_tp_requested = bool(norm_sl is not None or norm_tp is not None)
             position_ticket = None
             position_ticket_resolution = None
-            if position_ticket_candidates:
-                position_obj, resolved_ticket, resolve_info = _resolve_open_position(
+            position_ticket_candidates_out: Optional[List[int]] = (
+                position_ticket_candidates or None
+            )
+            protection_status = None
+            warnings_out: List[str] = []
+            if sl_tp_requested:
+                protection_outcome = _attach_post_fill_protection(
                     mt5,
-                    ticket_candidates=position_ticket_candidates,
                     symbol=symbol,
                     side=side,
                     volume=volume_validated,
+                    position_ticket_candidates=position_ticket_candidates,
+                    stop_loss=norm_sl,
+                    take_profit=norm_tp,
+                    symbol_info=symbol_info,
+                    comment=comment,
+                    request_comment="trade_place_market",
                     magic=validation._safe_int_ticket(request.get("magic")),
                 )
-                position_ticket = resolved_ticket
-                position_ticket_resolution = {
-                    **dict(resolve_info),
-                    "matched": position_obj is not None and resolved_ticket is not None,
-                }
-            sl_tp_requested = bool(norm_sl is not None or norm_tp is not None)
-            sl_tp_result = _build_sl_tp_result(
-                requested_sl=norm_sl,
-                requested_tp=norm_tp,
-                applied_sl=norm_sl if sl_tp_requested else None,
-                applied_tp=norm_tp if sl_tp_requested else None,
-                status="applied" if sl_tp_requested else "not_requested",
-                error=None,
-                broker_adjusted=False,
-                adjustment=None,
-                attempts=1 if sl_tp_requested else 0,
-                last_retcode=getattr(result, "retcode", None) if sl_tp_requested else None,
-                last_comment=getattr(result, "comment", None) if sl_tp_requested else None,
-            )
-
-            warnings_out: List[str] = []
+                position_ticket = protection_outcome.get("position_ticket")
+                position_ticket_resolution = protection_outcome.get(
+                    "position_ticket_resolution"
+                )
+                position_ticket_candidates_out = protection_outcome.get(
+                    "position_ticket_candidates"
+                ) or position_ticket_candidates_out
+                sl_tp_result = protection_outcome["sl_tp_result"]
+                protection_status = protection_outcome.get("protection_status")
+                for warning in list(protection_outcome.get("warnings") or []):
+                    warning_text = str(warning).strip()
+                    if warning_text:
+                        warnings_out.append(warning_text)
+            else:
+                if position_ticket_candidates:
+                    position_obj, resolved_ticket, resolve_info = _resolve_open_position(
+                        mt5,
+                        ticket_candidates=position_ticket_candidates,
+                        symbol=symbol,
+                        side=side,
+                        volume=volume_validated,
+                        magic=validation._safe_int_ticket(request.get("magic")),
+                    )
+                    position_ticket = resolved_ticket
+                    position_ticket_resolution = {
+                        **dict(resolve_info),
+                        "matched": position_obj is not None and resolved_ticket is not None,
+                    }
+                sl_tp_result = _build_sl_tp_result(
+                    requested_sl=None,
+                    requested_tp=None,
+                    applied_sl=None,
+                    applied_tp=None,
+                    status="not_requested",
+                    error=None,
+                    broker_adjusted=False,
+                    adjustment=None,
+                    attempts=0,
+                    last_retcode=None,
+                    last_comment=None,
+                )
             retcode = _order_result_value(result, "retcode")
             out: Dict[str, Any] = {
                 "retcode": retcode,
@@ -1031,7 +1163,7 @@ def _place_market_order(  # noqa: C901
                 "comment": _order_result_value(result, "comment"),
                 "request_id": _order_result_value(result, "request_id"),
                 "position_ticket": position_ticket,
-                "position_ticket_candidates": position_ticket_candidates or None,
+                "position_ticket_candidates": position_ticket_candidates_out,
                 "position_ticket_resolution": position_ticket_resolution,
                 "type_filling_used": used_request.get("type_filling"),
                 "sl_tp_result": sl_tp_result,
@@ -1042,8 +1174,8 @@ def _place_market_order(  # noqa: C901
                 comment_sanitization=comment_sanitization,
                 comment_truncation=comment_truncation,
             )
-            if sl_tp_requested:
-                out["protection_status"] = "protected"
+            if protection_status is not None:
+                out["protection_status"] = protection_status
             if fill_mode_attempts:
                 out["fill_mode_attempts"] = fill_mode_attempts
             if warnings_out:

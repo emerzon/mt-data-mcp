@@ -519,6 +519,31 @@ def test_trade_place_preserves_scalar_warning_on_unprotected_market_fill() -> No
     assert any("CRITICAL" in str(w) for w in out.get("warnings", []))
 
 
+def test_trade_place_require_sl_tp_flags_unverified_market_fill() -> None:
+    with patch(
+        "mtdata.core.trading._place_market_order",
+        return_value={
+            "retcode": 10009,
+            "warnings": ["verify protection"],
+            "sl_tp_result": {"status": "unverified", "requested": {"sl": 64000.0, "tp": 68000.0}},
+            "protection_status": "protection_unverified",
+        },
+    ), patch("mtdata.core.trading._close_positions") as mock_close:
+        out = trade_place(
+            symbol="BTCUSD",
+            volume=0.03,
+            order_type="BUY",
+            stop_loss=64000,
+            take_profit=68000,
+            require_sl_tp=True,
+            __cli_raw=True,
+        )
+    mock_close.assert_not_called()
+    assert out.get("error") == "Order was executed, but TP/SL protection could not be verified."
+    assert out.get("protection_status") == "protection_unverified"
+    assert out.get("warnings") == ["verify protection"]
+
+
 def test_trade_place_defaults_to_auto_closing_unprotected_market_fill() -> None:
     with patch(
         "mtdata.core.trading._place_market_order",

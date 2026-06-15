@@ -339,7 +339,7 @@ class TestPlaceMarketOrder:
     def test_success_with_sl_tp_modification(self):
         mt5 = sys.modules["MetaTrader5"]
         self._setup_mt5(mt5)
-        mt5.order_send.side_effect = [_order_result(), _order_result()]
+        mt5.order_send.return_value = _order_result()
         mt5.positions_get.return_value = [_position()]
         from mtdata.core.trading import _place_market_order
         result = _place_market_order("EURUSD", 0.01, "BUY", stop_loss=1.09, take_profit=1.12)
@@ -350,6 +350,33 @@ class TestPlaceMarketOrder:
         assert sl_tp_result.get("broker_adjusted") is None
         assert sl_tp_result.get("adjustment") is None
         assert sl_tp_result.get("error") is None
+        assert result.get("protection_status") == "protected"
+        assert mt5.order_send.call_count == 1
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_sl_tp_follow_up_modify_verifies_missing_protection(self):
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        mt5.order_send.side_effect = [_order_result(), _order_result()]
+        mt5.positions_get.side_effect = [
+            [_position(sl=0.0, tp=0.0)],
+            [_position(sl=1.09, tp=1.12)],
+        ]
+        from mtdata.core.trading import _place_market_order
+
+        result = _place_market_order(
+            "EURUSD",
+            0.01,
+            "BUY",
+            stop_loss=1.09,
+            take_profit=1.12,
+        )
+
+        sl_tp_result = result.get("sl_tp_result") or {}
+        assert sl_tp_result.get("status") == "applied"
+        assert sl_tp_result.get("applied") == {"sl": pytest.approx(1.09), "tp": pytest.approx(1.12)}
+        assert result.get("protection_status") == "protected"
+        assert mt5.order_send.call_count == 2
 
     @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
     def test_sl_tp_verification_tolerates_missing_symbol_point(self):
@@ -414,11 +441,13 @@ class TestPlaceMarketOrder:
         result = _place_market_order("EURUSD", 0.01, "BUY", stop_loss=1.09)
         sl_tp_result = result.get("sl_tp_result") or {}
         assert sl_tp_result.get("requested") == {"sl": pytest.approx(1.09)}
-        assert sl_tp_result.get("status") == "applied"
-        assert sl_tp_result.get("applied") == {"sl": pytest.approx(1.09)}
+        assert sl_tp_result.get("status") == "unverified"
+        assert sl_tp_result.get("applied") is None
         assert result.get("position_ticket") is None
         assert result.get("position_ticket_candidates") == [1]
-        assert not any("trade_modify 1" in str(w) for w in result.get("warnings", []))
+        assert result.get("protection_status") == "protection_unverified"
+        assert any("could not be verified" in str(w).lower() for w in result.get("warnings", []))
+        assert not any("CRITICAL" in str(w) for w in result.get("warnings", []))
 
     @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
     def test_sl_tp_not_requested_state_is_explicit(self):
@@ -500,6 +529,39 @@ class TestPlaceMarketOrder:
         result = _place_market_order("EURUSD", 0.01, "BUY")
         assert "error" in result and "current price" in result["error"]
 
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_stale_tick_returns_error(self):
+        import time as _time_module
+
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        mt5.symbol_info_tick.return_value = _tick()
+        mt5.symbol_info_tick.return_value.time_msc = (_time_module.time() - 60.0) * 1000.0
+        from mtdata.core.trading import _place_market_order
+
+        result = _place_market_order("EURUSD", 0.01, "BUY")
+
+        assert "stale" in result.get("error", "").lower()
+        assert result.get("tick_age_seconds", 0) >= 50
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_stale_send_tick_returns_error(self):
+        import time as _time_module
+
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        fresh_tick = _tick()
+        fresh_tick.time_msc = (_time_module.time() - 1.0) * 1000.0
+        stale_tick = _tick()
+        stale_tick.time_msc = (_time_module.time() - 60.0) * 1000.0
+        mt5.symbol_info_tick.side_effect = [fresh_tick, stale_tick]
+        from mtdata.core.trading import _place_market_order
+
+        result = _place_market_order("EURUSD", 0.01, "BUY")
+
+        assert "stale" in result.get("error", "").lower()
+        assert result.get("tick_age_seconds", 0) >= 50
+
     def test_accepts_injected_gateway(self):
         """Market order placement accepts an injected MT5TradingGateway."""
         from mtdata.core.trading.gateway import MT5TradingGateway
@@ -564,10 +626,12 @@ class TestPlaceMarketOrder:
 
         assert "error" not in result
         ensure_connection.assert_called_once_with()
-        assert adapter.order_send.call_count == 1
-        request = adapter.order_send.call_args.args[0]
-        assert math.isclose(request["sl"], 1.04000)
-        assert math.isclose(request["tp"], 1.06000)
+        assert adapter.order_send.call_count == 2
+        initial_request = adapter.order_send.call_args_list[0].args[0]
+        assert math.isclose(initial_request["sl"], 1.04000)
+        assert math.isclose(initial_request["tp"], 1.06000)
+        follow_up_request = adapter.order_send.call_args_list[1].args[0]
+        assert follow_up_request["position"] == 456
         assert "comment_fallback" not in result
 
 
