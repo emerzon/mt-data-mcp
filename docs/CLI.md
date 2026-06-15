@@ -112,6 +112,17 @@ mtdata-cli market_status --extras metadata,diagnostics
 
 Use `--extras all` when you need every supported richer section.
 
+### Exit Codes
+
+| Code | Meaning |
+|------|---------|
+| `0` | Command completed without a tool error |
+| `1` | Tool/provider failure, invalid tool payload, interrupted command, internal CLI error, or no command selected |
+| `2` | Argument parsing or command-line usage error reported by `argparse` |
+
+Scripts should parse JSON error fields when they need to distinguish provider,
+validation, and internal failures that share exit code `1`.
+
 ---
 
 ## Common Patterns
