@@ -140,8 +140,8 @@ def _forecast_compute_cost(operation: str, payload: Optional[Dict[str, Any]]) ->
             "estimated": trials * steps * method_count,
             "drivers": "n_trials*steps*methods",
         }
-    population = _positive_int(data.get("population"), 20 if operation == "forecast_optimize_hints" else 12)
-    generations = _positive_int(data.get("generations"), 15 if operation == "forecast_optimize_hints" else 10)
+    population = _positive_int(data.get("population"), 8 if operation == "forecast_optimize_hints" else 12)
+    generations = _positive_int(data.get("generations"), 5 if operation == "forecast_optimize_hints" else 10)
     timeframes = _value_count(data.get("timeframes") or data.get("timeframe"), 4 if operation == "forecast_optimize_hints" else 1)
     return {
         "unit": "rolling_backtests",
@@ -1059,10 +1059,10 @@ def forecast_optimize_hints(request: ForecastOptimizeHintsRequest) -> Dict[str, 
     spacing : int, optional (default=20)
         Spacing between anchors in bars.
     
-    population : int, optional (default=20)
+    population : int, optional (default=8)
         Genetic algorithm population size (1-100).
     
-    generations : int, optional (default=15)
+    generations : int, optional (default=5)
         Number of generations to evolve (1-100).
     
     crossover_rate : float, optional (default=0.6)
