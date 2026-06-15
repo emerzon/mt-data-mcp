@@ -430,7 +430,7 @@ def _stats_for_group(df: pd.DataFrame, volume_col: Optional[str]) -> Dict[str, A
 def _compact_temporal_stats(
     row: Dict[str, Any],
     *,
-    include_group: bool = False,
+    include_group: bool = True,
 ) -> Dict[str, Any]:
     keys = (
         "group_label",
@@ -440,7 +440,7 @@ def _compact_temporal_stats(
         "win_rate_pct",
         "volatility",
     )
-    if include_group:
+    if include_group and row.get("group") is not None:
         keys = ("group", *keys)
     return {key: row.get(key) for key in keys if row.get(key) is not None}
 
