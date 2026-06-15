@@ -270,17 +270,22 @@ def _forecast_compact_ci(payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     return out
 
 
-def _strip_volatility_impl_aliases(payload: Dict[str, Any]) -> Dict[str, Any]:
+def _normalize_volatility_impl_aliases(payload: Dict[str, Any]) -> Dict[str, Any]:
     if not isinstance(payload, dict):
         return payload
     out = dict(payload)
-    for key in (
-        "sigma_bar_return",
-        "sigma_annual_return",
-        "horizon_sigma_return",
-        "horizon_sigma_annual",
+    for legacy_key, trader_key in (
+        ("sigma_bar_return", "volatility_per_bar"),
+        ("sigma_annual_return", "volatility_annualized"),
+        ("horizon_sigma_return", "volatility_horizon"),
+        ("horizon_sigma_annual", "volatility_horizon_annualized"),
     ):
-        out.pop(key, None)
+        legacy_value = out.get(legacy_key)
+        trader_value = out.get(trader_key)
+        if trader_value is None and legacy_value is not None:
+            out[trader_key] = legacy_value
+        elif legacy_value is None and trader_value is not None:
+            out[legacy_key] = trader_value
     return out
 
 
@@ -696,7 +701,25 @@ def _forecast_generate_volatility_rows(
 ) -> List[Dict[str, Any]]:
     volatility = _finite_float(payload.get("volatility_per_bar"))
     volatility_pct = _finite_float(payload.get("volatility_per_bar_pct"))
-    if volatility is None and volatility_pct is None:
+    volatility_annualized = _finite_float(payload.get("volatility_annualized"))
+    volatility_annualized_pct = _finite_float(payload.get("volatility_annualized_pct"))
+    horizon_volatility = _finite_float(payload.get("volatility_horizon"))
+    horizon_volatility_pct = _finite_float(payload.get("volatility_horizon_pct"))
+    horizon_volatility_annualized = _finite_float(payload.get("volatility_horizon_annualized"))
+    horizon_volatility_annualized_pct = _finite_float(payload.get("volatility_horizon_annualized_pct"))
+    if all(
+        value is None
+        for value in (
+            volatility,
+            volatility_pct,
+            volatility_annualized,
+            volatility_annualized_pct,
+            horizon_volatility,
+            horizon_volatility_pct,
+            horizon_volatility_annualized,
+            horizon_volatility_annualized_pct,
+        )
+    ):
         return []
     try:
         count = max(1, int(horizon or payload.get("horizon") or 1))
@@ -705,19 +728,27 @@ def _forecast_generate_volatility_rows(
     times = payload.get("forecast_time")
     if not isinstance(times, list):
         times = payload.get("times") if isinstance(payload.get("times"), list) else []
-    rows: List[Dict[str, Any]] = []
-    for step in range(1, count + 1):
-        row: Dict[str, Any] = {}
-        idx = step - 1
-        if idx < len(times):
-            row["time"] = times[idx]
-        row["step"] = step
-        if volatility is not None:
-            row["volatility"] = float(round(volatility, 6))
-        if volatility_pct is not None:
-            row["volatility_pct"] = float(round(volatility_pct, 4))
-        rows.append(row)
-    return rows
+    row: Dict[str, Any] = {"horizon_steps": count}
+    if times:
+        row["start_time"] = times[0]
+        row["end_time"] = times[min(count - 1, len(times) - 1)]
+    if volatility is not None:
+        row["volatility_per_bar"] = float(round(volatility, 6))
+    if volatility_pct is not None:
+        row["volatility_per_bar_pct"] = float(round(volatility_pct, 4))
+    if volatility_annualized is not None:
+        row["volatility_annualized"] = float(round(volatility_annualized, 6))
+    if volatility_annualized_pct is not None:
+        row["volatility_annualized_pct"] = float(round(volatility_annualized_pct, 4))
+    if horizon_volatility is not None:
+        row["volatility_horizon"] = float(round(horizon_volatility, 6))
+    if horizon_volatility_pct is not None:
+        row["volatility_horizon_pct"] = float(round(horizon_volatility_pct, 4))
+    if horizon_volatility_annualized is not None:
+        row["volatility_horizon_annualized"] = float(round(horizon_volatility_annualized, 6))
+    if horizon_volatility_annualized_pct is not None:
+        row["volatility_horizon_annualized_pct"] = float(round(horizon_volatility_annualized_pct, 4))
+    return [row]
 
 
 def _apply_forecast_generate_detail(
@@ -735,6 +766,9 @@ def _apply_forecast_generate_detail(
         payload,
         horizon=getattr(request, "horizon", None),
     )
+    volatility_summary_mode = bool(
+        volatility_rows and str(payload.get("quantity") or request.quantity or "").strip().lower() == "volatility"
+    )
 
     detail_value = _normalize_trader_detail(getattr(request, "detail", "compact"))
     if detail_value in {"standard", "full"}:
@@ -748,6 +782,13 @@ def _apply_forecast_generate_detail(
         row_series = forecast_rows or volatility_rows
         if row_series:
             out.setdefault("forecast", row_series)
+        if volatility_summary_mode and not forecast_rows:
+            out.setdefault("forecast_summary_mode", "scalar_volatility_estimate")
+            out.setdefault(
+                "quantity_note",
+                "forecast contains a single volatility summary row; horizon_steps records the requested horizon "
+                "because no distinct per-step volatility path is modeled.",
+            )
         out["detail"] = detail_value
         if detail_value == "full":
             out.setdefault("interpretation", _forecast_generate_interpretation(out))
@@ -816,15 +857,31 @@ def _apply_forecast_generate_detail(
     if path_flatness:
         compact.update(path_flatness)
         compact.setdefault("point_forecast_mode", "flat_anchor")
+    if str(compact.get("quantity") or "").strip().lower() == "volatility":
+        for key in (
+            "volatility_per_bar",
+            "volatility_annualized",
+            "volatility_horizon",
+            "volatility_horizon_annualized",
+            "volatility_unit",
+        ):
+            value = payload.get(key)
+            if value not in (None, "", [], {}):
+                compact[key] = value
     forecast_rows = _forecast_generate_compact_rows(payload)
     ci_has_intervals = isinstance(ci_compact, dict) and bool(ci_compact.get("intervals"))
     if forecast_rows and not ci_has_intervals:
         compact["forecast"] = forecast_rows
     elif volatility_rows:
         compact["forecast"] = volatility_rows
+        compact["forecast_summary_mode"] = "scalar_volatility_estimate"
         compact["quantity_note"] = (
-            "forecast rows repeat the per-bar volatility estimate for each horizon step."
+            "forecast summarizes a single volatility estimate; horizon_steps records the requested "
+            "horizon and no distinct per-step path is implied."
         )
+        compact.pop("forecast_time", None)
+        compact.pop("forecast_price", None)
+        compact.pop("forecast_return", None)
     if forecast_rows or ci_has_intervals:
         compact.pop("forecast_time", None)
         compact.pop("forecast_price", None)
@@ -893,9 +950,15 @@ def _apply_forecast_generate_detail(
 def _forecast_generate_interpretation(payload: Dict[str, Any]) -> Dict[str, str]:
     interpretation: Dict[str, str] = {}
     if payload.get("forecast") not in (None, "", [], {}):
-        interpretation["forecast"] = (
-            "Per-step forecast rows for the requested horizon."
-        )
+        if payload.get("forecast_summary_mode") == "scalar_volatility_estimate":
+            interpretation["forecast"] = (
+                "Single summary row for scalar volatility output; horizon_steps records the requested "
+                "horizon and no distinct per-step volatility path is implied."
+            )
+        else:
+            interpretation["forecast"] = (
+                "Per-step forecast rows for the requested horizon."
+            )
     if payload.get("forecast_price") not in (None, "", [], {}):
         interpretation["forecast_price"] = (
             "Predicted price path in instrument price units."
@@ -3062,7 +3125,7 @@ def run_forecast_volatility_estimate(
         method=request.method,
         horizon=request.horizon,
     )
-    return _strip_volatility_impl_aliases(result)
+    return _normalize_volatility_impl_aliases(result)
 
 
 def run_forecast_optimize_hints(

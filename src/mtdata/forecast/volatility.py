@@ -604,18 +604,19 @@ def _finalize_volatility_output(
 
     out = dict(payload)
     detail_mode = str(detail or "compact").strip().lower()
-    sigma_bar = out.get("sigma_bar_return")
-    sigma_annual = out.get("sigma_annual_return")
-    horizon_sigma = out.get("horizon_sigma_return")
-    horizon_sigma_annual = out.get("horizon_sigma_annual")
-    if sigma_bar is not None:
-        out.setdefault("volatility_per_bar", sigma_bar)
-    if sigma_annual is not None:
-        out.setdefault("volatility_annualized", sigma_annual)
-    if horizon_sigma is not None:
-        out.setdefault("volatility_horizon", horizon_sigma)
-    if horizon_sigma_annual is not None:
-        out.setdefault("volatility_horizon_annualized", horizon_sigma_annual)
+    alias_pairs = (
+        ("sigma_bar_return", "volatility_per_bar"),
+        ("sigma_annual_return", "volatility_annualized"),
+        ("horizon_sigma_return", "volatility_horizon"),
+        ("horizon_sigma_annual", "volatility_horizon_annualized"),
+    )
+    for legacy_key, trader_key in alias_pairs:
+        legacy_value = out.get(legacy_key)
+        trader_value = out.get(trader_key)
+        if trader_value is None and legacy_value is not None:
+            out[trader_key] = legacy_value
+        elif legacy_value is None and trader_value is not None:
+            out[legacy_key] = trader_value
     out.setdefault("volatility_unit", "return_fraction")
     out.setdefault("volatility_measure", "standard_deviation_of_returns")
     out.setdefault(
@@ -636,14 +637,6 @@ def _finalize_volatility_output(
         except Exception:
             pass
 
-    for key in (
-        "sigma_bar_return",
-        "sigma_annual_return",
-        "horizon_sigma_return",
-        "horizon_sigma_annual",
-    ):
-        out.pop(key, None)
-
     if detail_mode != "full":
         for key in (
             "params_explained",
@@ -662,6 +655,10 @@ def _finalize_volatility_output(
             "volatility_annualized",
             "volatility_horizon",
             "volatility_horizon_annualized",
+            "sigma_bar_return",
+            "sigma_annual_return",
+            "horizon_sigma_return",
+            "horizon_sigma_annual",
         ):
             try:
                 out[key] = round(float(out[key]), 6)
@@ -686,6 +683,7 @@ def _finalize_volatility_output(
             ):
                 out.pop("volatility_horizon_annualized", None)
                 out.pop("volatility_horizon_annualized_pct", None)
+                out.pop("horizon_sigma_annual", None)
                 out.setdefault(
                     "volatility_annualized_note",
                     "volatility_horizon_annualized equals volatility_annualized under sqrt-time scaling; "
@@ -1551,4 +1549,3 @@ def forecast_volatility(  # noqa: C901
         return {"error": f"Unsupported direct volatility method: {method_l}"}
     except Exception as e:
         return {"error": f"Error computing volatility forecast: {str(e)}"}
-

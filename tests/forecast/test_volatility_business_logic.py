@@ -85,15 +85,15 @@ def test_finalize_volatility_output_compact_omits_explanatory_fields():
     assert "volatility_per_bar_pct" not in compact
     assert "volatility_annualized_pct" not in compact
     assert "volatility_unit_note" not in compact
-    assert "sigma_bar_return" not in compact
-    assert "horizon_sigma_return" not in compact
+    assert compact["sigma_bar_return"] == pytest.approx(0.01)
+    assert compact["horizon_sigma_return"] == pytest.approx(0.02)
     assert "params_used" not in compact
     assert "params_explained" not in compact
     assert "volatility_interpretation" not in compact
-    assert "sigma_bar_return" not in full
-    assert "sigma_annual_return" not in full
-    assert "horizon_sigma_return" not in full
-    assert "horizon_sigma_annual" not in full
+    assert full["sigma_bar_return"] == pytest.approx(0.01)
+    assert full["sigma_annual_return"] == pytest.approx(0.5)
+    assert full["horizon_sigma_return"] == pytest.approx(0.02)
+    assert full["horizon_sigma_annual"] == pytest.approx(0.8)
     assert full["volatility_per_bar"] == pytest.approx(0.01)
     assert full["params_used"]["lookback"] == 100
     assert set(full["volatility_interpretation"]) == {
@@ -130,10 +130,10 @@ def test_forecast_volatility_estimate_strips_duplicate_impl_sigma_fields():
 
     assert out["volatility_per_bar"] == pytest.approx(0.01)
     assert out["volatility_horizon"] == pytest.approx(0.02)
-    assert "sigma_bar_return" not in out
-    assert "sigma_annual_return" not in out
-    assert "horizon_sigma_return" not in out
-    assert "horizon_sigma_annual" not in out
+    assert out["sigma_bar_return"] == pytest.approx(0.01)
+    assert out["sigma_annual_return"] == pytest.approx(0.5)
+    assert out["horizon_sigma_return"] == pytest.approx(0.02)
+    assert out["horizon_sigma_annual"] == pytest.approx(0.8)
     assert out["volatility_interpretation"] == {"volatility_per_bar": "per bar"}
 
 
@@ -394,7 +394,10 @@ def test_finalize_volatility_standard_keeps_pct_aliases_and_notes():
     assert "decimal return fractions" in standard["volatility_unit_note"]
     assert "horizon=1" in standard["horizon_note"]
     assert "volatility_interpretation" not in standard
-    assert "sigma_bar_return" not in standard
+    assert standard["sigma_bar_return"] == 0.0123
+    assert standard["sigma_annual_return"] == 0.1944
+    assert standard["horizon_sigma_return"] == 0.0123
+    assert "horizon_sigma_annual" not in standard
 
 
 def test_forecast_volatility_yang_zhang_weights_overnight_variance(monkeypatch):

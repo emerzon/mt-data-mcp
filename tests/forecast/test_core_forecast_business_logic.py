@@ -391,6 +391,50 @@ def test_forecast_generate_compact_summarizes_stale_anchor(monkeypatch):
     assert "stale_warning" not in out
 
 
+def test_forecast_generate_compact_volatility_uses_summary_row(monkeypatch):
+    raw = _unwrap(cf.forecast_generate)
+    monkeypatch.setattr(
+        cf,
+        "_forecast_impl",
+        lambda **kwargs: {
+            "success": True,
+            "method": kwargs["method"],
+            "horizon": kwargs["horizon"],
+            "quantity": kwargs["quantity"],
+            "volatility_per_bar": 0.012345,
+            "volatility_annualized": 0.194444,
+            "volatility_horizon": 0.021234,
+            "forecast_time": ["t1", "t2", "t3"],
+        },
+    )
+
+    out = raw(
+        request=ForecastGenerateRequest(
+            symbol="EURUSD",
+            timeframe="H1",
+            method="theta",
+            quantity="volatility",
+            horizon=3,
+        )
+    )
+
+    assert out["volatility_per_bar"] == pytest.approx(0.012345)
+    assert out["volatility_horizon"] == pytest.approx(0.021234)
+    assert out["forecast_summary_mode"] == "scalar_volatility_estimate"
+    assert "no distinct per-step path is implied" in out["quantity_note"]
+    assert "forecast_time" not in out
+    assert out["forecast"] == [
+        {
+            "horizon_steps": 3,
+            "start_time": "t1",
+            "end_time": "t3",
+            "volatility_per_bar": 0.012345,
+            "volatility_annualized": 0.194444,
+            "volatility_horizon": 0.021234,
+        }
+    ]
+
+
 def test_forecast_generate_compact_normalizes_utc_times_and_neutral_delta(monkeypatch):
     raw = _unwrap(cf.forecast_generate)
     monkeypatch.setattr(
