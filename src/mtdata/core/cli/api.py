@@ -1740,11 +1740,15 @@ def main():
             )
 
             if getattr(args, "print_config", False):
-                print(
-                    _format_result_minimal(
-                        {"forecast_generate": request.model_dump(mode="json")}, verbose=True
-                    )
+                config_output = _format_result_for_cli(
+                    {"forecast_generate": request.model_dump(mode="json")},
+                    fmt=_resolve_cli_formatter(args),
+                    verbose=True,
+                    cmd_name="forecast_generate",
+                    precision=getattr(args, "precision", None),
                 )
+                if config_output:
+                    _write_cli_text(config_output)
                 return 0
 
             out = _invoke_cli_tool_function(

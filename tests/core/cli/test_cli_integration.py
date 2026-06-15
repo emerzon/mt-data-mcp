@@ -1237,6 +1237,30 @@ class TestForecastGenerateIntegration:
         assert "EURUSD" in out
 
     @patch("mtdata.core.cli.discover_tools")
+    def test_forecast_generate_print_config_honors_json(self, mock_discover, capsys):
+        mock_fn = MagicMock(return_value={"forecast": [1.0]})
+        mock_fn.__module__ = "mtdata.core.server"
+        mock_fn.__name__ = "forecast_generate"
+        mock_fn.__doc__ = "Generate forecasts."
+        mock_discover.return_value = {
+            "forecast_generate": {
+                "func": mock_fn,
+                "meta": {"description": "Generate forecasts"},
+            },
+        }
+
+        with patch(
+            "sys.argv",
+            ["cli.py", "forecast_generate", "EURUSD", "--print-config", "--json"],
+        ):
+            result = main()
+
+        assert result == 0
+        mock_fn.assert_not_called()
+        payload = json.loads(capsys.readouterr().out)
+        assert payload["forecast_generate"]["symbol"] == "EURUSD"
+
+    @patch("mtdata.core.cli.discover_tools")
     def test_forecast_generate_json_format(self, mock_discover, capsys):
         mock_fn = MagicMock(return_value="text forecast")
         mock_fn.__module__ = "mtdata.core.server"
