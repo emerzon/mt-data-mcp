@@ -5,7 +5,7 @@ from __future__ import annotations
 import hmac
 import logging
 from importlib.util import find_spec as _find_spec
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Literal, Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -271,7 +271,7 @@ def get_wavelets() -> Dict[str, Any]:
 def get_history(
     symbol: str = Query(...),
     timeframe: str = Query("H1"),
-    limit: int = Query(500, ge=1, le=20000),
+    limit: int = Query(20, ge=1, le=20000),
     start: Optional[str] = Query(None),
     end: Optional[str] = Query(None),
     ohlcv: Optional[str] = Query("ohlc"),
@@ -320,19 +320,31 @@ def get_pivots(
 def get_support_resistance(
     symbol: str = Query(...),
     timeframe: str = Query("H1"),
-    limit: int = Query(800, ge=100, le=20000),
+    lookback: Optional[int] = Query(None, ge=100, le=20000),
+    limit: Optional[int] = Query(None, ge=100, le=20000, deprecated=True),
     tolerance_pct: float = Query(0.0015, ge=0.0, le=0.05),
     min_touches: int = Query(2, ge=1),
     max_levels: int = Query(4, ge=1, le=20),
+    max_distance_pct: Optional[float] = Query(5.0, ge=0.0, le=100.0),
+    volume_weighting: Literal["off", "auto"] = Query("off"),
+    reaction_bars: int = Query(6, ge=1),
+    adx_period: int = Query(14, ge=1),
+    decay_half_life_bars: Optional[int] = Query(None, ge=1),
     extras: Optional[str] = None,
 ) -> Dict[str, Any]:
     return _get_support_resistance_response(
         symbol=symbol,
         timeframe=timeframe,
+        lookback=lookback,
         limit=limit,
         tolerance_pct=tolerance_pct,
         min_touches=min_touches,
         max_levels=max_levels,
+        max_distance_pct=max_distance_pct,
+        volume_weighting=volume_weighting,
+        reaction_bars=reaction_bars,
+        adx_period=adx_period,
+        decay_half_life_bars=decay_half_life_bars,
         extras=extras,
         fetch_history_impl=_fetch_history_impl,
     )

@@ -88,7 +88,7 @@ Fetch OHLCV candles for a symbol.
 - **Query Params:**
   - `symbol` (string, required): e.g., "EURUSD".
   - `timeframe` (string): Default "H1".
-  - `limit` (int): Number of bars (default 500).
+  - `limit` (int): Number of bars (default 20, matching the data tool default).
   - `start`, `end` (string, optional): ISO dates or relative strings.
   - `ohlcv` (string): Column selector (default "ohlc").
   - `include_spread` (bool): Append the historical candle `spread` field without changing the default row shape.
@@ -122,10 +122,16 @@ Identify support and resistance levels, plus Fibonacci retracement/extension lev
 - **Query Params:**
   - `symbol` (string, required).
   - `timeframe` (string): Default `"H1"`. Pass `auto` to merge levels from `M15`, `H1`, `H4`, and `D1`.
-  - `limit` (int): History depth to analyze.
+  - `lookback` (int): History depth to analyze (default `200`, matching the support/resistance tool).
+  - `limit` (int, deprecated): Legacy alias for `lookback`.
   - `tolerance_pct` (float): Clustering tolerance (0.0015 = 0.15%).
   - `min_touches` (int): Minimum touches per level (default 2).
   - `max_levels` (int): Max levels per side (default 4).
+  - `max_distance_pct` (float, optional): Percentage distance cap from current price (default `5.0`).
+  - `volume_weighting` (`off` | `auto`): Volume weighting mode (default `off`).
+  - `reaction_bars` (int): Reaction window used for level qualification (default `6`).
+  - `adx_period` (int): ADX period used in scoring (default `14`).
+  - `decay_half_life_bars` (int, optional): Half-life for recency decay.
 - **Response Notes:**
   - Each level includes a price `zone_low`/`zone_high` envelope rather than only a single line.
   - `status` and `breakout_analysis` expose broken levels and role-reversal confirmations.

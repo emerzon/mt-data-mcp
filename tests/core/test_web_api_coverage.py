@@ -650,6 +650,20 @@ class TestGetWavelets:
 # ===========================================================================
 
 class TestGetHistory:
+    def test_default_limit_matches_data_tool_default(self):
+        payload = {"data": [{"time": 1.0, "close": 1.1}], "has_forming_candle": False}
+        with patch.object(web_api.mt5_connection, "_ensure_connection", return_value=True), \
+             patch("mtdata.core.web_api._fetch_candles_impl", return_value=payload) as mock_fetch, \
+             patch("mtdata.core.web_api.mt5_config") as mock_cfg:
+            mock_cfg.server_tz_name = "Europe/Nicosia"
+            mock_cfg.client_tz_name = None
+            mock_cfg.get_server_tz.return_value = ZoneInfo("Europe/Nicosia")
+            mock_cfg.get_client_tz.return_value = None
+            mock_cfg.get_time_offset_seconds.return_value = 0
+            resp = _client.get("/api/history", params={"symbol": "EURUSD"})
+        assert resp.status_code == 200
+        assert mock_fetch.call_args.kwargs["limit"] == 20
+
     def test_connection_failure(self):
         with patch.object(web_api.mt5_connection, "_ensure_connection", return_value=False):
             resp = _client.get("/api/history", params={"symbol": "EURUSD"})
@@ -1459,6 +1473,49 @@ class TestGetSupportResistance:
         assert body["timeframe"] == "H1"
         assert body["mode"] == "single"
         assert mock_fetch.call_count == 1
+
+    def test_default_params_match_support_resistance_tool(self):
+        payload = {
+            "symbol": "EURUSD",
+            "timeframe": "H1",
+            "mode": "single",
+            "limit": 200,
+            "method": "support_resistance_levels",
+            "tolerance_pct": 0.0015,
+            "min_touches": 2,
+            "max_levels": 4,
+            "levels": [{"type": "support", "value": 1.1, "touches": 2}],
+        }
+        with patch("mtdata.core.web_api_handlers.compute_support_resistance_payload", return_value=payload) as mock_compute:
+            resp = _client.get("/api/support-resistance", params={"symbol": "EURUSD", "extras": "metadata"})
+        assert resp.status_code == 200
+        kwargs = mock_compute.call_args.kwargs
+        assert kwargs["limit"] == 200
+        assert kwargs["max_distance_pct"] == 5.0
+        assert kwargs["volume_weighting"] == "off"
+        assert kwargs["reaction_bars"] == 6
+        assert kwargs["adx_period"] == 14
+        assert kwargs["decay_half_life_bars"] is None
+
+    def test_lookback_overrides_legacy_limit_alias(self):
+        payload = {
+            "symbol": "EURUSD",
+            "timeframe": "H1",
+            "mode": "single",
+            "limit": 250,
+            "method": "support_resistance_levels",
+            "tolerance_pct": 0.0015,
+            "min_touches": 2,
+            "max_levels": 4,
+            "levels": [{"type": "support", "value": 1.1, "touches": 2}],
+        }
+        with patch("mtdata.core.web_api_handlers.compute_support_resistance_payload", return_value=payload) as mock_compute:
+            resp = _client.get(
+                "/api/support-resistance",
+                params={"symbol": "EURUSD", "lookback": 250, "limit": 800, "extras": "metadata"},
+            )
+        assert resp.status_code == 200
+        assert mock_compute.call_args.kwargs["limit"] == 250
 
     def test_no_levels_detected(self):
         import pandas as pd

@@ -183,10 +183,16 @@ export async function getPivots(params: PivotParams): Promise<PivotResponse> {
 export type SupportResistanceParams = {
   symbol: string
   timeframe?: string
+  lookback?: number
   limit?: number
   tolerance_pct?: number
   min_touches?: number
   max_levels?: number
+  max_distance_pct?: number
+  volume_weighting?: 'off' | 'auto'
+  reaction_bars?: number
+  adx_period?: number
+  decay_half_life_bars?: number
 }
 
 export async function getSupportResistance(

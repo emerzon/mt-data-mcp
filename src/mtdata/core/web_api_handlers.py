@@ -700,27 +700,34 @@ def get_support_resistance_response(
     *,
     symbol: str,
     timeframe: str,
-    limit: int,
+    lookback: Optional[int],
+    limit: Optional[int],
     tolerance_pct: float,
     min_touches: int,
     max_levels: int,
+    max_distance_pct: Optional[float],
+    volume_weighting: str,
+    reaction_bars: int,
+    adx_period: int,
+    decay_half_life_bars: Optional[int],
     extras: Any,
     fetch_history_impl: Callable[..., Any],
 ) -> Dict[str, Any]:
+    effective_lookback = int(lookback if lookback is not None else limit if limit is not None else 200)
     try:
         result = compute_support_resistance_payload(
             fetch_history_impl=fetch_history_impl,
             symbol=symbol,
             timeframe=timeframe,
-            limit=int(limit),
+            limit=effective_lookback,
             tolerance_pct=float(tolerance_pct),
             min_touches=int(min_touches),
             max_levels=int(max_levels),
-            max_distance_pct=None,
-            volume_weighting="off",
-            reaction_bars=6,
-            adx_period=14,
-            decay_half_life_bars=None,
+            max_distance_pct=None if max_distance_pct is None else float(max_distance_pct),
+            volume_weighting=str(volume_weighting),
+            reaction_bars=int(reaction_bars),
+            adx_period=int(adx_period),
+            decay_half_life_bars=None if decay_half_life_bars is None else int(decay_half_life_bars),
         )
     except Exception as exc:
         message = str(exc)
