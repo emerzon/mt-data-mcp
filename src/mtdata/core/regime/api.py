@@ -3355,7 +3355,6 @@ def regime_detect(  # noqa: C901
             ensemble_regime_params = {
                 "mean_return": [],
                 "volatility": [],
-                "mean_agreement": mean_agreement,  # Backward compatibility
             }
             for s in range(n_states_ens):
                 mask = ensemble_state == s
@@ -3405,7 +3404,6 @@ def regime_detect(  # noqa: C901
             payload["reliability"] = _common_reliability(
                 {
                     "confidence": mean_agreement,
-                    "mean_agreement": mean_agreement,
                     "methods_considered": method_names,
                 },
                 source="ensemble_agreement",

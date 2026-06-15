@@ -115,7 +115,7 @@ class TestEnsembleRegime:
         assert res.get("params_used", {}).get("voting") == "hard"
 
     def test_ensemble_agreement_score(self, _mock):
-        """Ensemble should report mean_agreement in regime_params."""
+        """Ensemble should report agreement in its canonical metadata."""
         res = regime_detect(
             symbol="TEST",
             timeframe="H1",
@@ -126,9 +126,11 @@ class TestEnsembleRegime:
             __cli_raw=True,
         )
         assert isinstance(res, dict)
-        rp = res.get("regime_params", {})
-        assert "mean_agreement" in rp
-        assert 0.0 <= rp["mean_agreement"] <= 1.0
+        assert "mean_agreement" not in res.get("regime_params", {})
+        mean_agreement = res.get("ensemble_info", {}).get("mean_agreement")
+        assert 0.0 <= mean_agreement <= 1.0
+        assert res.get("reliability", {}).get("confidence") == mean_agreement
+        assert "mean_agreement" not in res.get("reliability", {})
 
     def test_ensemble_compact_output(self, _mock):
         res = regime_detect(
