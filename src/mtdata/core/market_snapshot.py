@@ -88,6 +88,30 @@ def _compact_quote(quote: Any) -> Any:
     return {key: normalized_quote[key] for key in keys if key in normalized_quote}
 
 
+def _utc_iso_text(epoch_seconds: float) -> str:
+    return (
+        datetime.fromtimestamp(float(epoch_seconds), tz=timezone.utc)
+        .replace(microsecond=0)
+        .isoformat()
+        .replace("+00:00", "Z")
+    )
+
+
+def _snapshot_quote_as_of(sections: Dict[str, Any]) -> Optional[str]:
+    quote = sections.get("quote")
+    if not isinstance(quote, dict):
+        return None
+    raw_epoch = quote.get("time_epoch")
+    if isinstance(raw_epoch, (int, float)):
+        return _utc_iso_text(float(raw_epoch))
+    raw_time = quote.get("time")
+    if isinstance(raw_time, str):
+        text = raw_time.strip()
+        if text.endswith("Z"):
+            return text
+    return None
+
+
 def _latest_direction(forecast: Any) -> Optional[str]:
     if not isinstance(forecast, dict):
         return None
@@ -468,6 +492,10 @@ def market_snapshot(
     The optional regime section uses HMM and the optional forecast section uses
     Theta. `horizon` applies only to that built-in forecast section. Call the
     dedicated regime or forecast tool for custom methods and parameters.
+
+    Timestamp semantics: `as_of` tracks the latest quote time when available,
+    `quote_as_of` duplicates that normalized quote timestamp explicitly, and
+    `assembled_at` records when this snapshot payload was built.
     """
 
     def _run() -> Dict[str, Any]:
@@ -478,19 +506,24 @@ def market_snapshot(
             for name in selected
         }
         health = _snapshot_health(symbol, selected, section_payloads)
+        assembled_at = (
+            datetime.now(timezone.utc)
+            .replace(microsecond=0)
+            .isoformat()
+            .replace("+00:00", "Z")
+        )
+        quote_as_of = _snapshot_quote_as_of(section_payloads)
         payload: Dict[str, Any] = {
             "success": bool(health.get("success")),
             "symbol": symbol,
             "timeframe": timeframe,
-            "as_of": (
-                datetime.now(timezone.utc)
-                .replace(microsecond=0)
-                .isoformat()
-                .replace("+00:00", "Z")
-            ),
+            "as_of": quote_as_of or assembled_at,
+            "assembled_at": assembled_at,
             "sections": list(selected),
             **{key: value for key, value in health.items() if key != "success"},
         }
+        if quote_as_of is not None:
+            payload["quote_as_of"] = quote_as_of
         if detail_mode in {"summary", "summary_only", "compact"}:
             summary_payload = _snapshot_summary_payload(section_payloads)
             if summary_payload:

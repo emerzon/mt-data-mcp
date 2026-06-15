@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
+from unittest.mock import MagicMock, patch
+
 import mtdata.core.market_snapshot as snapshot_mod
 
 
@@ -13,6 +16,8 @@ def test_market_snapshot_help_discloses_builtin_section_methods():
     assert "regime section uses HMM" in doc
     assert "forecast section uses" in doc
     assert "horizon` applies only" in doc
+    assert "assembled_at" in doc
+    assert "quote_as_of" in doc
 
 
 def test_market_snapshot_quote_compaction_preserves_epoch_as_secondary_field():
@@ -186,6 +191,35 @@ def test_market_snapshot_compact_defaults_to_lean_snapshot(monkeypatch):
     assert "quote" not in result
     assert "levels" not in result
     assert "patterns" not in result
+
+
+def test_market_snapshot_exposes_quote_and_assembly_timestamps(monkeypatch):
+    def fake_call_section(name, symbol, timeframe, horizon, detail):
+        if name == "quote":
+            return {
+                "success": True,
+                "symbol": symbol,
+                "mid": 1.1002,
+                "time": "2023-11-14 22:13 UTC",
+                "time_epoch": 1_700_000_000,
+            }
+        if name == "levels":
+            return {"success": True, "supports": [], "resistances": []}
+        return {"success": True, "n_patterns": 0, "highlights": []}
+
+    fixed_now = datetime(2026, 6, 15, 19, 34, 8, tzinfo=timezone.utc)
+    fake_datetime = MagicMock()
+    fake_datetime.now.return_value = fixed_now
+    fake_datetime.fromtimestamp.side_effect = datetime.fromtimestamp
+
+    monkeypatch.setattr(snapshot_mod, "_call_section", fake_call_section)
+
+    with patch.object(snapshot_mod, "datetime", fake_datetime):
+        result = _raw_market_snapshot(symbol="EURUSD", detail="compact")
+
+    assert result["as_of"] == "2023-11-14T22:13:20Z"
+    assert result["quote_as_of"] == "2023-11-14T22:13:20Z"
+    assert result["assembled_at"] == "2026-06-15T19:34:08Z"
 
 
 def test_market_snapshot_standard_strips_nested_request_echoes(monkeypatch):
