@@ -1014,6 +1014,35 @@ class TestGetPivots:
         assert len(res["levels"]) == 3
         assert res["method"] == "classic"
 
+    def test_compact_mapping_forwards_requested_method(self):
+        compact_result = {
+            "success": True,
+            "symbol": "EURUSD",
+            "timeframe": "D1",
+            "period": {"start": "2025-01-01", "end": "2025-01-02"},
+            "method": "fibonacci",
+            "levels": {"PP": 1.1, "R1": 1.11, "S1": 1.09},
+        }
+        raw_tool = MagicMock(return_value=compact_result)
+        with patch("mtdata.core.web_api._call_tool_raw", return_value=raw_tool):
+            resp = _client.get(
+                "/api/pivots",
+                params={"symbol": "EURUSD", "timeframe": "D1", "method": "fibonacci"},
+            )
+
+        assert resp.status_code == 200
+        assert resp.json()["levels"] == [
+            {"level": "PP", "value": 1.1},
+            {"level": "R1", "value": 1.11},
+            {"level": "S1", "value": 1.09},
+        ]
+        raw_tool.assert_called_once_with(
+            symbol="EURUSD",
+            timeframe="D1",
+            method="fibonacci",
+            detail="compact",
+        )
+
     def test_string_result_parsed(self):
         raw_str = json.dumps(self._pivot_result())
         # Inject json module into web_api namespace for the json.loads call

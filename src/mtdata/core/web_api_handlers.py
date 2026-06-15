@@ -607,10 +607,25 @@ def get_pivots_response(
     call_tool_raw: Callable[[Any], Any],
 ) -> Dict[str, Any]:
     tool = call_tool_raw(pivot_tool)
+    method_key = str(method).lower().strip()
     try:
-        result = resolve_sync_tool_result(tool(symbol=symbol, timeframe=timeframe))
+        result = resolve_sync_tool_result(
+            tool(
+                symbol=symbol,
+                timeframe=timeframe,
+                method=method_key,
+                detail="compact",
+            )
+        )
     except TypeError:
-        result = resolve_sync_tool_result(pivot_tool(symbol=symbol, timeframe=timeframe))
+        result = resolve_sync_tool_result(
+            pivot_tool(
+                symbol=symbol,
+                timeframe=timeframe,
+                method=method_key,
+                detail="compact",
+            )
+        )
     except Exception as exc:
         raise _http_error(
             500,
@@ -646,16 +661,25 @@ def get_pivots_response(
         )
 
     levels = []
-    method_key = str(method).lower().strip()
-    for row in result.get("levels", []) or []:
-        level_name = row.get("level") or row.get("Level")
-        value = row.get(method_key)
-        if level_name is None or value is None:
-            continue
-        try:
-            levels.append({"level": str(level_name), "value": float(value)})
-        except Exception:
-            continue
+    raw_levels = result.get("levels", []) or []
+    if isinstance(raw_levels, dict):
+        for level_name, value in raw_levels.items():
+            try:
+                levels.append({"level": str(level_name), "value": float(value)})
+            except (TypeError, ValueError):
+                continue
+    elif isinstance(raw_levels, list):
+        for row in raw_levels:
+            if not isinstance(row, dict):
+                continue
+            level_name = row.get("level") or row.get("Level")
+            value = row.get(method_key)
+            if level_name is None or value is None:
+                continue
+            try:
+                levels.append({"level": str(level_name), "value": float(value)})
+            except (TypeError, ValueError):
+                continue
     if not levels:
         raise _http_error(
             404,
