@@ -1,6 +1,7 @@
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, List, Literal, Optional, Tuple
+from zoneinfo import ZoneInfo
 
 import numpy as np
 import pandas as pd
@@ -73,13 +74,28 @@ _SESSION_ORDER = {
     "off_session": 4,
 }
 _SESSION_DEFINITION = {
-    "clock": "UTC",
-    "asia": "00:00-07:00",
-    "london": "07:00-13:30",
-    "london_ny_overlap": "13:30-16:00",
-    "ny": "16:00-21:00",
-    "off_session": "21:00-24:00",
+    "basis": "dst_aware_market_sessions",
+    "asia": "Tokyo open to London open",
+    "london": "London open to New York open",
+    "london_ny_overlap": "New York open to London close",
+    "ny": "London close to New York close",
+    "off_session": "New York close to next Tokyo open",
+    "market_timezones": {
+        "tokyo": "Asia/Tokyo",
+        "london": "Europe/London",
+        "new_york": "America/New_York",
+    },
+    "market_local_hours": {
+        "tokyo_open": "09:00",
+        "london_open": "08:00",
+        "london_close": "16:00",
+        "new_york_open": "09:30",
+        "new_york_close": "16:00",
+    },
 }
+_TOKYO_TZ = ZoneInfo("Asia/Tokyo")
+_LONDON_TZ = ZoneInfo("Europe/London")
+_NEW_YORK_TZ = ZoneInfo("America/New_York")
 
 
 def _error_response(
@@ -135,20 +151,112 @@ def _default_temporal_lookback(timeframe: str, group_by: str) -> int:
     )
 
 
-def _market_session_label(minutes_utc: Any) -> str:
+def _timezone_label(value: Any, *, default: str = "UTC") -> str:
     try:
-        minutes = int(minutes_utc)
+        label = getattr(value, "key", None) or getattr(value, "zone", None) or str(value)
+    except Exception:
+        return default
+    text = str(label or "").strip()
+    return text or default
+
+
+def _session_boundary(
+    day: date,
+    *,
+    market_tz: ZoneInfo,
+    hour: int,
+    minute: int,
+    analysis_tz: Any,
+) -> datetime:
+    return datetime(
+        day.year,
+        day.month,
+        day.day,
+        hour,
+        minute,
+        tzinfo=market_tz,
+    ).astimezone(analysis_tz)
+
+
+def _session_boundaries_for_day(day: date, analysis_tz: Any) -> Dict[str, datetime]:
+    return {
+        "asia_open": _session_boundary(
+            day,
+            market_tz=_TOKYO_TZ,
+            hour=9,
+            minute=0,
+            analysis_tz=analysis_tz,
+        ),
+        "london_open": _session_boundary(
+            day,
+            market_tz=_LONDON_TZ,
+            hour=8,
+            minute=0,
+            analysis_tz=analysis_tz,
+        ),
+        "ny_open": _session_boundary(
+            day,
+            market_tz=_NEW_YORK_TZ,
+            hour=9,
+            minute=30,
+            analysis_tz=analysis_tz,
+        ),
+        "london_close": _session_boundary(
+            day,
+            market_tz=_LONDON_TZ,
+            hour=16,
+            minute=0,
+            analysis_tz=analysis_tz,
+        ),
+        "ny_close": _session_boundary(
+            day,
+            market_tz=_NEW_YORK_TZ,
+            hour=16,
+            minute=0,
+            analysis_tz=analysis_tz,
+        ),
+    }
+
+
+def _market_session_label(
+    value: Any,
+    *,
+    analysis_tz: Any = timezone.utc,
+    boundary_cache: Optional[Dict[date, Dict[str, datetime]]] = None,
+) -> str:
+    if not isinstance(value, datetime):
+        return "unknown"
+    dt = value if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)
+    try:
+        dt_analysis = dt.astimezone(analysis_tz or timezone.utc)
     except Exception:
         return "unknown"
-    if 0 <= minutes < 7 * 60:
-        return "asia"
-    if 7 * 60 <= minutes < 13 * 60 + 30:
-        return "london"
-    if 13 * 60 + 30 <= minutes < 16 * 60:
-        return "london_ny_overlap"
-    if 16 * 60 <= minutes < 21 * 60:
-        return "ny"
+    cache = boundary_cache if boundary_cache is not None else {}
+    anchor_date = dt_analysis.date()
+    for day in (
+        anchor_date - timedelta(days=1),
+        anchor_date,
+        anchor_date + timedelta(days=1),
+    ):
+        boundaries = cache.get(day)
+        if boundaries is None:
+            boundaries = _session_boundaries_for_day(day, analysis_tz or timezone.utc)
+            cache[day] = boundaries
+        if boundaries["asia_open"] <= dt_analysis < boundaries["london_open"]:
+            return "asia"
+        if boundaries["london_open"] <= dt_analysis < boundaries["ny_open"]:
+            return "london"
+        if boundaries["ny_open"] <= dt_analysis < boundaries["london_close"]:
+            return "london_ny_overlap"
+        if boundaries["london_close"] <= dt_analysis < boundaries["ny_close"]:
+            return "ny"
     return "off_session"
+
+
+def _session_definition_for_clock(clock_name: str) -> Dict[str, Any]:
+    out = dict(_SESSION_DEFINITION)
+    out["clock"] = clock_name or "UTC"
+    return out
 
 
 def _parse_mapped_value(
@@ -793,8 +901,8 @@ def temporal_analyze(  # noqa: C901
     Filters:
     - day_of_week: 0-6 or names like Mon, Tuesday
     - month: 1-12 or names like Jan, September
-    - time_range: 'HH:MM-HH:MM' (start inclusive, end exclusive; local/client
-      timezone if configured, wraps midnight like 22:00-02:00)
+    - time_range: 'HH:MM-HH:MM' (start inclusive, end exclusive; analysis
+      timezone if configured via client timezone, wraps midnight like 22:00-02:00)
     - min_bars: exclude grouped rows below this sample size. When omitted for
       day-of-week analysis, sparse weekend groups are auto-filtered.
     - limit/offset: page grouped output rows; does not change the analysis
@@ -802,8 +910,9 @@ def temporal_analyze(  # noqa: C901
     - volume: uses real_volume when available and non-zero, else tick_volume
 
     Returns grouped averages for returns and volatility plus simple extras.
-    Group keys are numeric for dow/hour/month; session uses UTC market-session
-    labels: asia, london, london_ny_overlap, ny, off_session.
+    Group keys are numeric for dow/hour/month; session uses DST-aware market
+    session labels (asia, london, london_ny_overlap, ny, off_session)
+    evaluated in the same analysis timezone used for hour and time_range.
     Example: temporal_analyze(symbol="EURUSD", group_by="dow")
     Use group_by='all' for a single overall summary.
     """
@@ -1010,11 +1119,18 @@ def temporal_analyze(  # noqa: C901
 
             client_tz = _resolve_client_tz()
             use_client_tz = client_tz is not None
+            analysis_tz = client_tz if use_client_tz else timezone.utc
             dt_utc = pd.to_datetime(df["__epoch"], unit="s", utc=True)
             dt = dt_utc.dt.tz_convert(client_tz) if use_client_tz else dt_utc
             df["__dt"] = dt
-            session_minutes = dt_utc.dt.hour * 60 + dt_utc.dt.minute
-            df["__session"] = session_minutes.map(_market_session_label)
+            session_boundary_cache: Dict[date, Dict[str, datetime]] = {}
+            df["__session"] = dt.map(
+                lambda value: _market_session_label(
+                    value,
+                    analysis_tz=analysis_tz,
+                    boundary_cache=session_boundary_cache,
+                )
+            )
 
             if "close" not in df.columns:
                 return _error_response(
@@ -1221,12 +1337,7 @@ def temporal_analyze(  # noqa: C901
             start_str = _format_time_minimal_local(start_epoch) if use_client_tz else _format_time_minimal(start_epoch)
             end_str = _format_time_minimal_local(end_epoch) if use_client_tz else _format_time_minimal(end_epoch)
 
-            tz_name = "UTC"
-            if use_client_tz:
-                try:
-                    tz_name = getattr(client_tz, "zone", None) or str(client_tz)
-                except Exception:
-                    tz_name = "local"
+            tz_name = _timezone_label(analysis_tz)
 
             payload: Dict[str, Any] = {
                 "success": True,
@@ -1257,7 +1368,7 @@ def temporal_analyze(  # noqa: C901
             if min_bars_value is not None:
                 payload["min_bars_applied"] = int(min_bars_value or 0)
             if group_norm in {"session", "all"}:
-                payload["session_definition"] = _SESSION_DEFINITION
+                payload["session_definition"] = _session_definition_for_clock(tz_name)
             if min_bars_value is not None:
                 filters["min_bars"] = {
                     "value": int(min_bars_value or 0),
