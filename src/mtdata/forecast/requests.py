@@ -109,7 +109,7 @@ class ForecastBacktestRequest(BaseModel):
     dimred_method: Optional[str] = None
     dimred_params: Optional[Dict[str, Any]] = None
     slippage_bps: float = 0.0
-    trade_threshold: float = 0.0
+    trade_threshold: float = Field(0.0, ge=0.0)
     detail: CompactFullDetailLiteral = "compact"
 
     @model_validator(mode="before")

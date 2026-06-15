@@ -440,6 +440,17 @@ class TestForecastBacktest:
         assert method_result["metrics"]["trades_observed"] == 0
 
     @patch("mtdata.forecast.backtest._fetch_history")
+    def test_negative_trade_threshold_rejected(self, fetch):
+        result = forecast_backtest(
+            "EURUSD",
+            timeframe="H1",
+            methods=["naive"],
+            trade_threshold=-0.01,
+        )
+        assert result["error"] == "trade_threshold must be greater than or equal to 0."
+        fetch.assert_not_called()
+
+    @patch("mtdata.forecast.backtest._fetch_history")
     def test_params_per_method_and_global(self, fetch):
         fetch.return_value = _make_df(500)
         with patch("mtdata.forecast.backtest.forecast") as fc:
@@ -536,4 +547,3 @@ def test_performance_metrics_include_sortino_and_profit_factor():
     assert m['profit_factor'] > 0
     # Sortino uses downside deviation, so it should differ from Sharpe
     assert m['sharpe_ratio'] is not None
-

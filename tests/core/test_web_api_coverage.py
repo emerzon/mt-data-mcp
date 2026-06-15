@@ -173,6 +173,7 @@ class TestPydanticModels:
             (BacktestBody, "horizon", 501),
             (BacktestBody, "steps", 201),
             (BacktestBody, "spacing", 10_001),
+            (BacktestBody, "trade_threshold", -0.01),
         ],
     )
     def test_compute_bounds_reject_extreme_requests(self, model, field, value):

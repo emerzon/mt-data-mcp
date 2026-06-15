@@ -96,6 +96,11 @@ def test_forecast_tool_requests_default_to_price_quantity() -> None:
     assert ForecastBacktestRequest(symbol="EURUSD").quantity == "price"
 
 
+def test_forecast_backtest_request_rejects_negative_trade_threshold() -> None:
+    with pytest.raises(ValidationError):
+        ForecastBacktestRequest(symbol="EURUSD", trade_threshold=-0.01)
+
+
 def test_execution_contract_rejects_multivariate_features_for_univariate_only_model() -> None:
     with pytest.raises(ValidationError):
         ForecastExecutionContract(

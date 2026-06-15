@@ -1329,6 +1329,14 @@ def forecast_backtest(  # noqa: C901
         include_paths = detail_mode == "full"
         if timeframe not in TIMEFRAME_MAP:
             return {"error": invalid_timeframe_error(timeframe, TIMEFRAME_MAP)}
+        try:
+            trade_threshold_value = float(trade_threshold or 0.0)
+        except Exception:
+            return {"error": "trade_threshold must be a finite number."}
+        if not math.isfinite(trade_threshold_value):
+            return {"error": "trade_threshold must be a finite number."}
+        if trade_threshold_value < 0.0:
+            return {"error": "trade_threshold must be greater than or equal to 0."}
         if (
             not anchors
             and int(steps) > 1
@@ -1459,7 +1467,7 @@ def forecast_backtest(  # noqa: C901
             detail=detail_mode,
         )
         strategy_contract = (
-            _build_forecast_threshold_strategy_contract(float(trade_threshold or 0.0))
+            _build_forecast_threshold_strategy_contract(trade_threshold_value)
             if quantity != "volatility"
             else None
         )
@@ -1810,7 +1818,7 @@ def forecast_backtest(  # noqa: C901
             "units": _backtest_units(quantity),
             "backtest_plan": backtest_plan,
             "slippage_bps": float(slippage_bps),
-            "trade_threshold": float(trade_threshold or 0.0),
+            "trade_threshold": trade_threshold_value,
             "detail": detail_mode,
             "results": results,
         }
