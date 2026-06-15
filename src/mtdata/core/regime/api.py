@@ -11,7 +11,6 @@ import numpy as np
 from ...forecast.common import fetch_history as _fetch_history
 from ...forecast.common import log_returns_from_prices as _log_returns_from_prices
 from ...shared.schema import DenoiseSpec, DetailLiteral, TimeframeLiteral
-from ...shared.symbols import CRYPTO_SYMBOL_HINTS as _CRYPTO_SYMBOL_HINTS
 from ...utils.denoise import _resolve_denoise_base_col
 from ...utils.mt5 import MT5ConnectionError, ensure_mt5_connection_or_raise
 from ...utils.regime_heuristics import infer_market_regime
