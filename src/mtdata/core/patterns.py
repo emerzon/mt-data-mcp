@@ -1274,11 +1274,14 @@ def patterns_detect(
     
     Examples:
     ---------
-    # Comprehensive scan across all pattern types and timeframes (default)
+    # Candlestick-only H1 scan (default)
     patterns_detect(symbol="EURUSD")
+
+    # Comprehensive scan across all pattern types and default timeframes
+    patterns_detect(symbol="EURUSD", mode="all")
     
     # Comprehensive scan on a single timeframe
-    patterns_detect(symbol="EURUSD", timeframe="H4")
+    patterns_detect(symbol="EURUSD", mode="all", timeframe="H4")
     
     # Detect candlestick patterns only
     patterns_detect(symbol="EURUSD", mode="candlestick", timeframe="M15", min_strength=0.70, top_k=3)
