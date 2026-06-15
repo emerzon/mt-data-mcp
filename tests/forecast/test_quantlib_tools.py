@@ -19,6 +19,9 @@ def _make_fake_quantlib():  # noqa: C901
             return cls._instance
 
     class _Date:
+        def __init__(self, *_args):
+            pass
+
         @staticmethod
         def todaysDate():
             return _Date()
@@ -289,9 +292,38 @@ def test_calibrate_heston_quantlib_from_options_with_fake_backend(monkeypatch):
         min_open_interest=0,
         min_volume=0,
         max_contracts=5,
+        valuation_date="2026-12-01",
     )
     assert out["success"] is True
     assert out["symbol"] == "AAPL"
+    assert out["valuation_date"] == "2026-12-01"
+    assert out["days_to_expiry"] == 18
     assert out["contracts_used"] == 5
     assert set(out["params"].keys()) == {"kappa", "theta", "sigma", "rho", "v0"}
     assert out["calibration_error_rmse"] is not None
+
+
+def test_calibrate_heston_rejects_invalid_valuation_date(monkeypatch):
+    monkeypatch.setitem(__import__("sys").modules, "QuantLib", _make_fake_quantlib())
+    monkeypatch.setattr(
+        qtools,
+        "get_options_chain",
+        lambda **_kwargs: {
+            "success": True,
+            "expiration": "2026-12-19",
+            "underlying_price": 100.0,
+            "options": [
+                {"strike": strike, "implied_volatility": 0.25, "side": "call"}
+                for strike in (90, 95, 100, 105, 110)
+            ],
+        },
+    )
+
+    out = qtools.calibrate_heston_quantlib_from_options(
+        symbol="AAPL",
+        valuation_date="12/01/2026",
+    )
+
+    assert out == {
+        "error": "Invalid valuation_date: 12/01/2026. Use YYYY-MM-DD."
+    }

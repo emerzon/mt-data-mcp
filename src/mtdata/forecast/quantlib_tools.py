@@ -257,6 +257,7 @@ def calibrate_heston_quantlib_from_options(
     min_open_interest: int = 0,
     min_volume: int = 0,
     max_contracts: int = 25,
+    valuation_date: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Calibrate a Heston model from option-chain implied vols using QuantLib."""
     try:
@@ -309,10 +310,28 @@ def calibrate_heston_quantlib_from_options(
         expiry_date = _dt.datetime.strptime(expiry_text, "%Y-%m-%d").date()
     except Exception:
         return {"error": f"Invalid expiration format: {expiry_text}"}
-    today = _dt.date.today()
-    days_to_expiry = max(1, int((expiry_date - today).days))
+    if valuation_date is None:
+        valuation_day = _dt.datetime.now(_dt.timezone.utc).date()
+    else:
+        try:
+            valuation_day = _dt.datetime.strptime(
+                str(valuation_date).strip(),
+                "%Y-%m-%d",
+            ).date()
+        except (TypeError, ValueError):
+            return {
+                "error": (
+                    f"Invalid valuation_date: {valuation_date}. "
+                    "Use YYYY-MM-DD."
+                )
+            }
+    days_to_expiry = max(1, int((expiry_date - valuation_day).days))
 
-    ql_today = ql.Date.todaysDate()
+    ql_today = ql.Date(
+        int(valuation_day.day),
+        int(valuation_day.month),
+        int(valuation_day.year),
+    )
     ql.Settings.instance().evaluationDate = ql_today
     day_count = ql.Actual365Fixed()
     calendar = ql.UnitedStates(ql.UnitedStates.NYSE)
@@ -360,6 +379,7 @@ def calibrate_heston_quantlib_from_options(
         "success": True,
         "symbol": str(symbol).upper().strip(),
         "expiration": expiry_text,
+        "valuation_date": valuation_day.isoformat(),
         "days_to_expiry": int(days_to_expiry),
         "contracts_used": int(len(rows)),
         "spot": float(spot_val),

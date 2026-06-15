@@ -232,6 +232,7 @@ def _apply_options_detail(
                 "success",
                 "symbol",
                 "expiration",
+                "valuation_date",
                 "days_to_expiry",
                 "contracts_used",
                 "spot",
@@ -434,6 +435,7 @@ def options_barrier_price(
 def options_heston_calibrate(
     symbol: str,
     expiration: Optional[str] = None,
+    valuation_date: Optional[str] = None,
     option_type: Literal["call", "put", "both"] = "call",  # type: ignore
     risk_free_rate: float = 0.02,
     dividend_yield: float = 0.0,
@@ -469,6 +471,7 @@ def options_heston_calibrate(
         "options_heston_calibrate",
         symbol=symbol,
         expiration=expiration,
+        valuation_date=valuation_date,
         option_type=option_type,
         max_contracts=max_contracts,
         detail=detail,
@@ -476,6 +479,7 @@ def options_heston_calibrate(
             _impl(
                 symbol=symbol,
                 expiration=expiration,
+                valuation_date=valuation_date,
                 option_type=option_type,
                 risk_free_rate=float(risk_free_rate),
                 dividend_yield=float(dividend_yield),
