@@ -1196,7 +1196,7 @@ class TestPostForecastPrice:
     def test_passes_all_params(self):
         with patch("mtdata.core.web_api._run_forecast_generate_impl", return_value={}) as mock_fc:
             _client.post("/api/forecast/price", json={
-                "symbol": "GBPUSD", "timeframe": "D1", "method": "arima",
+                "symbol": "GBPUSD", "timeframe": "D1", "library": "statsforecast", "method": "arima",
                 "horizon": 5, "lookback": 200, "as_of": "2025-01-01",
                 "params": {"order": [1, 1, 1]}, "ci_alpha": 0.1,
                 "quantity": "return",
@@ -1206,6 +1206,7 @@ class TestPostForecastPrice:
             })
         request = mock_fc.call_args.args[0]
         assert request.symbol == "GBPUSD"
+        assert request.library == "statsforecast"
         assert request.method == "arima"
         assert request.horizon == 5
         assert request.quantity == "return"
@@ -1285,10 +1286,10 @@ class TestPostForecastVolatility:
                 "method": "garch", "proxy": "close", "params": {"p": 1},
                 "as_of": "2025-01-01", "denoise": {"method": "wavelet"},
             })
-        kw = mock_fv.call_args.kwargs
-        assert kw["method"] == "garch"
-        assert kw["proxy"] == "close"
-        assert kw["denoise"] == {"method": "wavelet"}
+        request = mock_fv.call_args.args[0]
+        assert request.method == "garch"
+        assert request.proxy == "close"
+        assert request.denoise == {"method": "wavelet"}
 
 
 # ===========================================================================

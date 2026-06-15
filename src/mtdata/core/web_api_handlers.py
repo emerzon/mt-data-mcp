@@ -800,18 +800,7 @@ def post_forecast_price_response(*, body: ForecastPriceBody, forecast_generate_u
 
 def post_forecast_volatility_response(*, body: ForecastVolBody, forecast_vol_impl: Callable[..., Any]) -> Dict[str, Any]:
     try:
-        result = forecast_vol_impl(
-            symbol=body.symbol,
-            timeframe=body.timeframe,  # type: ignore[arg-type]
-            horizon=body.horizon,
-            method=body.method,  # type: ignore[arg-type]
-            proxy=body.proxy,  # type: ignore[arg-type]
-            params=body.params,
-            as_of=body.as_of,
-            start=body.start,
-            end=body.end,
-            denoise=body.denoise,
-        )
+        result = forecast_vol_impl(body.to_domain_request())
     except HTTPException:
         raise
     except ForecastError as exc:

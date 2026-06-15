@@ -13,15 +13,6 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from ..bootstrap.runtime import is_loopback_host, load_web_api_runtime_settings
 from ..forecast.common import fetch_history as _fetch_history_impl
 from ..forecast.forecast import get_forecast_methods_data as _get_methods_impl
-from ..forecast.use_cases import (
-    run_forecast_backtest as _run_forecast_backtest_impl,
-)
-from ..forecast.use_cases import (
-    run_forecast_generate as _run_forecast_generate_impl,
-)
-from ..forecast.volatility import (
-    forecast_volatility as _forecast_vol_impl,
-)
 from ..forecast.volatility import (
     get_volatility_methods_data as _get_vol_methods,
 )
@@ -80,6 +71,16 @@ from .web_api_handlers import (
     post_forecast_volatility_response as _post_forecast_volatility_response,
 )
 from .forecast_tasks import forecast_models_list as _forecast_models_list_tool
+from .forecast import (
+    forecast_backtest_run as _forecast_backtest_tool,
+)
+from .forecast import (
+    forecast_generate as _forecast_generate_tool,
+)
+from .forecast import (
+    forecast_volatility_estimate as _forecast_volatility_tool,
+)
+from .tool_calling import call_tool_sync_structured
 from .web_api_models import BacktestBody, ForecastPriceBody, ForecastVolBody
 from .web_api_runtime import create_web_api_app, mount_webui, run_webapi
 
@@ -186,6 +187,18 @@ def _call_tool_raw(func: Any) -> Any:
 
 def _get_models_impl(*, method: Optional[str] = None, detail: str = "compact") -> Any:
     return _call_tool_raw(_forecast_models_list_tool)(method=method, detail=detail)
+
+
+def _run_forecast_generate_impl(request: Any) -> Dict[str, Any]:
+    return call_tool_sync_structured(_forecast_generate_tool, request=request)
+
+
+def _run_forecast_backtest_impl(request: Any) -> Dict[str, Any]:
+    return call_tool_sync_structured(_forecast_backtest_tool, request=request)
+
+
+def _forecast_vol_impl(request: Any) -> Dict[str, Any]:
+    return call_tool_sync_structured(_forecast_volatility_tool, request=request)
 
 
 def _web_api_gateway():

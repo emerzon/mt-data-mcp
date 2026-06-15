@@ -301,6 +301,7 @@ export type DenoiseSpecUI = {
 export type ForecastPriceBody = {
   symbol: string
   timeframe?: string
+  library?: 'native' | 'statsforecast' | 'sktime' | 'mlforecast' | 'pretrained'
   method?: string
   horizon?: number
   lookback?: number

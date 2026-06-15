@@ -157,13 +157,12 @@ List sktime estimators (when sktime is installed).
 #### `POST /api/forecast/price`
 Generate price forecasts.
 
-> **Note:** The Web API always uses the `native` forecast library regardless of any `library` field in the request body. For other libraries (sktime, mlforecast, statsforecast) use the CLI.
-
 **Body (JSON):**
 ```json
 {
   "symbol": "EURUSD",
   "timeframe": "H1",
+  "library": "native",
   "method": "theta",
   "horizon": 12,
   "lookback": null,
@@ -181,6 +180,9 @@ Generate price forecasts.
   "target_spec": null
 }
 ```
+
+- `library` supports the same forecast libraries exposed by the forecast tool:
+  `native`, `statsforecast`, `sktime`, `mlforecast`, and `pretrained`.
 
 #### `POST /api/forecast/volatility`
 Generate volatility forecasts.

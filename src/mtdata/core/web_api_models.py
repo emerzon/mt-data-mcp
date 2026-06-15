@@ -12,14 +12,16 @@ from ..forecast.requests import (
     MAX_FORECAST_HORIZON,
     ForecastBacktestRequest,
     ForecastGenerateRequest,
+    ForecastVolatilityEstimateRequest,
 )
-from ..shared.schema import reject_removed_field
+from ..shared.schema import ForecastLibraryLiteral, reject_removed_field
 from .output_contract import output_extras_shape_detail
 
 
 class ForecastPriceBody(BaseModel):
     symbol: str
     timeframe: str = Field("H1")
+    library: ForecastLibraryLiteral = Field("native")
     method: str = Field("theta")
     horizon: int = Field(12, ge=1, le=MAX_FORECAST_HORIZON)
     lookback: Optional[int] = Field(None, ge=1)
@@ -49,7 +51,7 @@ class ForecastPriceBody(BaseModel):
         return ForecastGenerateRequest(
             symbol=self.symbol,
             timeframe=self.timeframe,
-            library="native",
+            library=self.library,
             method=self.method,
             horizon=self.horizon,
             lookback=self.lookback,
@@ -79,6 +81,20 @@ class ForecastVolBody(BaseModel):
     start: Optional[str] = None
     end: Optional[str] = None
     denoise: Optional[Dict[str, Any]] = None
+
+    def to_domain_request(self) -> ForecastVolatilityEstimateRequest:
+        return ForecastVolatilityEstimateRequest(
+            symbol=self.symbol,
+            timeframe=self.timeframe,
+            horizon=self.horizon,
+            method=self.method,
+            proxy=self.proxy,
+            params=self.params,
+            as_of=self.as_of,
+            start=self.start,
+            end=self.end,
+            denoise=self.denoise,
+        )
 
 
 class BacktestBody(BaseModel):
