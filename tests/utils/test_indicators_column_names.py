@@ -126,3 +126,21 @@ def test_apply_ta_indicators_raises_actionable_error_without_retries(monkeypatch
         match="Indicator 'ema' failed with parameters defaults: boom",
     ):
         _apply_ta_indicators(df, "ema(20)")
+
+
+def test_apply_ta_indicators_supports_supertrend_multi_series_signature() -> None:
+    idx = pd.date_range("2024-01-01", periods=80, freq="h")
+    close = np.linspace(100.0, 108.0, len(idx))
+    df = pd.DataFrame(
+        {
+            "high": close + 0.4,
+            "low": close - 0.4,
+            "close": close,
+        },
+        index=idx,
+    )
+
+    added = _apply_ta_indicators(df, "supertrend(7,3)")
+
+    assert added
+    assert any(str(col).upper().startswith("SUPERT") for col in added)

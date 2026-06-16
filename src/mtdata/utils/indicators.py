@@ -457,23 +457,13 @@ def _apply_ta_indicators(df: pd.DataFrame, ti_spec: str) -> List[str]:  # noqa: 
                     params,
                     volume_series=volume_series,
                 )
-                # Prepare positional and keyword arguments safely
+                # Prepare keyword arguments safely. Passing resolved series by
+                # name avoids binding collisions for multi-series indicators
+                # such as supertrend(high, low, close, ...).
                 call_kwargs = dict(kwargs)
-                call_args = []
-                # Provide price/series inputs
-                if 'close' in series_inputs:
-                    # Use positional for 'close' to prevent numeric args binding to it
-                    call_args.append(series_inputs['close'])
-                    call_kwargs.pop('close', None)
-                # Additional series as keywords if accepted
-                if 'open' in series_inputs and 'open' not in call_kwargs:
-                    call_kwargs['open'] = series_inputs['open']
-                if 'high' in series_inputs and 'high' not in call_kwargs:
-                    call_kwargs['high'] = series_inputs['high']
-                if 'low' in series_inputs and 'low' not in call_kwargs:
-                    call_kwargs['low'] = series_inputs['low']
-                if 'volume' in series_inputs and 'volume' not in call_kwargs:
-                    call_kwargs['volume'] = series_inputs['volume']
+                for series_name, series_value in series_inputs.items():
+                    if series_name not in call_kwargs:
+                        call_kwargs[series_name] = series_value
 
                 # Generic mapping: map provided numeric args to function parameters in declared order
                 # Skip series parameters and any already supplied in call_kwargs
@@ -499,7 +489,7 @@ def _apply_ta_indicators(df: pd.DataFrame, ti_spec: str) -> List[str]:  # noqa: 
                 # Call once with the signature-derived argument mapping. Retrying with
                 # different bindings can silently change indicator semantics.
                 try:
-                    out = func(*call_args, **call_kwargs)
+                    out = func(**call_kwargs)
                 except Exception as exc:
                     parameter_names = ", ".join(sorted(call_kwargs)) or "defaults"
                     raise ValueError(
