@@ -50,6 +50,8 @@ Large modules use subdirectories for organization:
 | `tests/patterns/` | 3 split pattern business logic files | `test_patterns_business_logic.py` (3,736 lines) |
 | `tests/trading/coverage/` | 7 focused trading test files | `test_trading_coverage.py` (2,837 lines) |
 | `tests/services/wait_event/` | 4 focused wait event files | `test_wait_event_use_cases.py` (2,744 lines) |
+| `tests/services/coverage/` | 7 focused data-service test files | `test_data_service_coverage.py` (2,992 lines) |
+| `tests/forecast/barriers/` | 8 focused barrier test files | `test_forecast_barriers.py` (2,723 lines) |
 
 ## CONFTEST FIXTURES
 
@@ -75,8 +77,30 @@ Large modules use subdirectories for organization:
 
 ## CLEANUP HISTORY
 
-2026-05-01: Phase 1-3 test reorganization
+2026-06-15: Phase 4 test reorganization
+- Split `test_forecast_barriers.py` (2,723 lines) into 8 focused files in `tests/forecast/barriers/`
+  - `test_hit_probabilities.py` (318 lines): hit probabilities, closed form, GBM/HMM/bootstrap/GARCH
+  - `test_optimize_basic.py` (292 lines): optimize signature, optuna, fast_defaults, bool flags
+  - `test_optimize_profiles_ensemble.py` (339 lines): search profiles, ensemble, live price, geometry
+  - `test_optimize_output_grid.py` (456 lines): output modes, grids, constraints, tie probs, trade gate
+  - `test_optimize_guardrails.py` (382 lines): input validation, EV warnings, guardrails
+  - `test_trading_costs.py` (483 lines): spread/commission/slippage, cost-adjusted metrics
+  - `test_statistical_quality.py` (383 lines): statistical significance, error handling, ensemble degradation
+  - `test_candidate_eval.py` (159 lines): candidate viability, unresolved PnL, barrier geometry
+- All 110 tests preserved with identical assertions
 - Renamed 4 files to match `_business_logic` convention
 - Deleted 3 duplicate files (cli, data_service, trading business_logic)
 - Split 4 large files into 19 focused subfiles in 5 subdirectories
 - Total: 235 test files (was 213), +22 files but much better organization
+
+2026-06-15: Phase 5 test reorganization
+- Split `test_data_service_coverage.py` (2,992 lines) into 7 focused files in `tests/services/coverage/`
+  - `_helpers.py` (141 lines): shared imports, fixture builders, patch-target constants
+  - `test_internals.py` (670 lines): helper tests, TestShiftRateTimes, TestFetchRatesWithWarmup, TestBuildRatesDf, TestTrimDfToTarget
+  - `test_fetch_candles_core.py` (846 lines): success paths, error paths, datetime queries, forming-candle and quality-filter behaviour
+  - `test_fetch_candles_indicators.py` (497 lines): indicator specs, NaN warmup-retry variants
+  - `test_fetch_candles_advanced.py` (160 lines): simplify and denoise features
+  - `test_fetch_ticks.py` (667 lines): all fetch_ticks tests including volume stats and simplify
+  - `test_edge_cases.py` (237 lines): edge cases from TestEdgeCases
+- 157 tests preserved with identical assertions; 2 pre-existing failures carried forward unchanged
+- Total: 242 test files (+7 new, 1 removed = net +6)

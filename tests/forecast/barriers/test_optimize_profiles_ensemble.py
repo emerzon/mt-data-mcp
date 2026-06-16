@@ -1,0 +1,339 @@
+"""Tests for optimize search profiles, ensemble method, live reference price
+re-anchoring, and invalid barrier geometry filtering.
+"""
+
+import unittest
+from unittest.mock import patch
+
+import numpy as np
+import pandas as pd
+
+from ._helpers import _BarrierTestBase, _BARRIER_PROB_ROOT, _BARRIER_OPT_ROOT
+from mtdata.forecast.barriers_optimization import forecast_barrier_optimize
+from mtdata.forecast.barriers_probabilities import forecast_barrier_hit_probabilities
+
+
+class TestBarrierOptimizeProfilesEnsemble(_BarrierTestBase):
+    """Search profiles, ensemble method, live reference price, geometry filter."""
+
+    def test_forecast_barrier_optimize_search_profile_long(self):
+        self._set_flat_history(1.0)
+        paths = self._sample_paths()
+        with patch(f'{_BARRIER_OPT_ROOT}._simulate_gbm_mc') as mock_sim:
+            mock_sim.return_value = {"price_paths": paths}
+            result = forecast_barrier_optimize(
+                symbol="EURUSD",
+                timeframe="H1",
+                horizon=4,
+                method="mc_gbm",
+                direction="long",
+                mode="pct",
+                search_profile="long",
+                return_grid=True,
+            )
+        self.assertTrue(result.get("success"))
+        self.assertEqual(result.get("search_profile"), "long")
+        profile = result.get("compute_profile", {})
+        self.assertEqual(profile.get("profile"), "long")
+        self.assertEqual(profile.get("n_sims"), 10000)
+        self.assertEqual(profile.get("tp_steps"), 41)
+        self.assertEqual(profile.get("sl_steps"), 51)
+        self.assertEqual(profile.get("ratio_steps"), 24)
+        self.assertEqual(profile.get("vol_steps"), 18)
+        self.assertTrue(profile.get("refine"))
+
+    def test_forecast_barrier_optimize_parses_refine_flag_from_params(self):
+        self._set_flat_history(1.0)
+        paths = self._sample_paths()
+        with patch(f'{_BARRIER_OPT_ROOT}._simulate_gbm_mc') as mock_sim:
+            mock_sim.return_value = {"price_paths": paths}
+            result = forecast_barrier_optimize(
+                symbol="EURUSD",
+                timeframe="H1",
+                horizon=4,
+                method="mc_gbm",
+                direction="long",
+                mode="pct",
+                search_profile="long",
+                params={"refine": "false"},
+                return_grid=True,
+            )
+        self.assertTrue(result.get("success"))
+        profile = result.get("compute_profile", {})
+        self.assertEqual(profile.get("profile"), "long")
+        self.assertFalse(profile.get("refine"))
+
+    def test_forecast_barrier_optimize_preserves_explicit_medium_defaults_under_fast_profile(self):
+        self._set_flat_history(1.0)
+        paths = self._sample_paths()
+        with patch(f'{_BARRIER_OPT_ROOT}._simulate_gbm_mc') as mock_sim:
+            mock_sim.return_value = {"price_paths": paths}
+            result = forecast_barrier_optimize(
+                symbol="EURUSD",
+                timeframe="H1",
+                horizon=4,
+                method="mc_gbm",
+                direction="long",
+                mode="pct",
+                tp_steps=7,
+                sl_steps=9,
+                ratio_steps=8,
+                vol_steps=7,
+                refine=False,
+                search_profile="fast",
+                return_grid=True,
+            )
+        self.assertTrue(result.get("success"))
+        profile = result.get("compute_profile", {})
+        self.assertEqual(profile.get("profile"), "fast")
+        self.assertEqual(profile.get("tp_steps"), 7)
+        self.assertEqual(profile.get("sl_steps"), 9)
+        self.assertEqual(profile.get("ratio_steps"), 8)
+        self.assertEqual(profile.get("vol_steps"), 7)
+        self.assertFalse(profile.get("refine"))
+
+    def test_forecast_barrier_optimize_ensemble_method(self):
+        self._set_flat_history(1.0)
+        paths = self._sample_paths()
+        with patch(f'{_BARRIER_OPT_ROOT}._simulate_gbm_mc') as mock_gbm, \
+             patch(f'{_BARRIER_OPT_ROOT}._simulate_bootstrap_mc') as mock_bootstrap, \
+             patch(f'{_BARRIER_OPT_ROOT}._get_live_reference_price', return_value=(None, None)):
+            mock_gbm.return_value = {"price_paths": paths}
+            mock_bootstrap.return_value = {"price_paths": paths}
+            result = forecast_barrier_optimize(
+                symbol="EURUSD",
+                timeframe="H1",
+                horizon=4,
+                method="ensemble",
+                direction="long",
+                mode="pct",
+                tp_min=0.5, tp_max=0.5, tp_steps=1,
+                sl_min=0.5, sl_max=0.5, sl_steps=1,
+                params={
+                    "ensemble_methods": ["mc_gbm", "bootstrap"],
+                    "ensemble_agg": "median",
+                    "optimizer": "grid",
+                    "n_sims": 50,
+                    "n_seeds": 1,
+                },
+                return_grid=False,
+                output_mode="summary",
+            )
+        self.assertTrue(result.get("success"))
+        self.assertEqual(result.get("method"), "ensemble")
+        self.assertIn("ensemble", result)
+        self.assertEqual(result["ensemble"]["agg"], "median")
+        self.assertEqual(len(result["ensemble"]["members"]), 2)
+        self.assertIn("best", result)
+        self.assertIsInstance(result["best"], dict)
+        self.assertIn("ev", result["best"])
+
+    def test_forecast_barrier_optimize_ensemble_fetches_history_once(self):
+        self._set_flat_history(1.0)
+        self.mock_fetch_history_opt.reset_mock()
+        paths = self._sample_paths()
+        with patch(f'{_BARRIER_OPT_ROOT}._simulate_gbm_mc') as mock_gbm, \
+             patch(f'{_BARRIER_OPT_ROOT}._simulate_bootstrap_mc') as mock_bootstrap, \
+             patch(f'{_BARRIER_OPT_ROOT}._get_live_reference_price', return_value=(None, None)):
+            mock_gbm.return_value = {"price_paths": paths}
+            mock_bootstrap.return_value = {"price_paths": paths}
+            result = forecast_barrier_optimize(
+                symbol="EURUSD",
+                timeframe="H1",
+                horizon=4,
+                method="ensemble",
+                direction="long",
+                mode="pct",
+                tp_min=0.5, tp_max=0.5, tp_steps=1,
+                sl_min=0.5, sl_max=0.5, sl_steps=1,
+                params={
+                    "ensemble_methods": ["mc_gbm", "bootstrap"],
+                    "ensemble_agg": "median",
+                    "optimizer": "grid",
+                    "n_sims": 50,
+                    "n_seeds": 1,
+                },
+                return_grid=False,
+                output_mode="summary",
+            )
+        self.assertTrue(result.get("success"))
+        self.assertEqual(self.mock_fetch_history_opt.call_count, 1)
+
+    def test_optimize_rejects_non_finite_trailing_close_without_live_reference(self):
+        df = self.df.copy()
+        df.loc[df.index[-1], "close"] = np.nan
+        self._set_barrier_history(df)
+        result = forecast_barrier_optimize(
+            symbol="EURUSD",
+            timeframe="H1",
+            horizon=4,
+            method="mc_gbm",
+            direction="long",
+            mode="pct",
+            tp_min=0.5,
+            tp_max=0.5,
+            tp_steps=1,
+            sl_min=0.5,
+            sl_max=0.5,
+            sl_steps=1,
+            params={"optimizer": "grid", "n_sims": 50, "n_seeds": 1, "use_live_price": False},
+            return_grid=False,
+            output_mode="summary",
+        )
+        self.assertEqual(
+            result.get("error"),
+            "Latest close is non-finite; refresh history or enable a live reference price.",
+        )
+
+    def test_forecast_barrier_optimize_ensemble_selects_real_member_candidate(self):
+        self._set_flat_history(1.0)
+        gbm_paths = np.array([
+            [1.0030, 1.0010, 1.0010, 1.0010],
+            [1.0030, 1.0010, 1.0010, 1.0010],
+            [0.9970, 0.9960, 0.9950, 0.9940],
+            [1.0010, 1.0010, 1.0010, 1.0010],
+        ])
+        bootstrap_paths = np.array([
+            [1.0070, 1.0070, 1.0070, 1.0070],
+            [1.0070, 1.0070, 1.0070, 1.0070],
+            [0.9930, 0.9930, 0.9930, 0.9930],
+            [1.0070, 1.0070, 1.0070, 1.0070],
+        ])
+        with patch(f'{_BARRIER_OPT_ROOT}._simulate_gbm_mc') as mock_gbm, \
+             patch(f'{_BARRIER_OPT_ROOT}._simulate_bootstrap_mc') as mock_bootstrap, \
+             patch(f'{_BARRIER_OPT_ROOT}._get_live_reference_price', return_value=(None, None)):
+            mock_gbm.return_value = {"price_paths": gbm_paths}
+            mock_bootstrap.return_value = {"price_paths": bootstrap_paths}
+            result = forecast_barrier_optimize(
+                symbol="EURUSD",
+                timeframe="H1",
+                horizon=4,
+                method="ensemble",
+                direction="long",
+                mode="pct",
+                tp_min=0.2, tp_max=0.6, tp_steps=2,
+                sl_min=0.2, sl_max=0.6, sl_steps=2,
+                objective="ev",
+                params={
+                    "ensemble_methods": ["mc_gbm", "bootstrap"],
+                    "ensemble_agg": "median",
+                    "optimizer": "grid",
+                    "n_sims": 50,
+                    "n_seeds": 1,
+                },
+                return_grid=True,
+                output_mode="summary",
+            )
+        self.assertTrue(result.get("success"))
+        self.assertEqual(result.get("method"), "ensemble")
+        self.assertEqual(result["best"].get("member_method"), "bootstrap")
+        self.assertEqual(result["ensemble"]["selected_member"]["method"], "bootstrap")
+        aggregate = result["ensemble"].get("aggregate_metrics")
+        self.assertIsInstance(aggregate, dict)
+        self.assertNotAlmostEqual(float(result["best"]["tp"]), float(aggregate["tp"]), places=8)
+        selected_rows = [m for m in result["ensemble"]["members"] if m.get("selected")]
+        self.assertEqual(len(selected_rows), 1)
+        self.assertAlmostEqual(float(selected_rows[0]["tp"]), float(result["best"]["tp"]), places=8)
+        self.assertAlmostEqual(float(selected_rows[0]["sl"]), float(result["best"]["sl"]), places=8)
+
+    def test_forecast_barrier_optimize_prefers_live_reference_price(self):
+        self._set_flat_history(1.0, bars=200)
+        paths = self._sample_paths()
+        with patch(f'{_BARRIER_OPT_ROOT}._simulate_gbm_mc') as mock_sim, \
+             patch(f'{_BARRIER_OPT_ROOT}._get_live_reference_price', return_value=(1.2345, "live_tick_bid")):
+            mock_sim.return_value = {"price_paths": paths}
+            result = forecast_barrier_optimize(
+                symbol="EURUSD",
+                timeframe="H1",
+                horizon=4,
+                method="mc_gbm",
+                direction="short",
+                mode="pct",
+                tp_min=0.5,
+                tp_max=0.5,
+                tp_steps=1,
+                sl_min=0.5,
+                sl_max=0.5,
+                sl_steps=1,
+                return_grid=True,
+                viable_only=False,
+            )
+        self.assertTrue(result["success"])
+        self.assertAlmostEqual(result["last_price"], 1.2345, places=8)
+        self.assertAlmostEqual(result["last_price_close"], 1.0, places=8)
+        self.assertEqual(result["last_price_source"], "live_tick_bid")
+        best = result.get("best")
+        self.assertIsInstance(best, dict)
+        self.assertAlmostEqual(best["tp_price"], 1.2345 * 0.995, places=8)
+        self.assertAlmostEqual(best["sl_price"], 1.2345 * 1.005, places=8)
+
+    def test_forecast_barrier_optimize_reanchors_paths_to_live_reference_price(self):
+        self._set_flat_history(1.0, bars=200)
+        paths = self._sample_paths()
+        with patch(f'{_BARRIER_PROB_ROOT}._simulate_gbm_mc') as mock_sim, \
+             patch(f'{_BARRIER_PROB_ROOT}._get_live_reference_price', return_value=(1.2345, "live_tick_ask")):
+            mock_sim.return_value = {"price_paths": paths}
+            hit_probs = forecast_barrier_hit_probabilities(
+                symbol="EURUSD",
+                timeframe="H1",
+                horizon=4,
+                method="mc_gbm",
+                direction="long",
+                tp_pct=0.5,
+                sl_pct=0.5,
+            )
+        with patch(f'{_BARRIER_OPT_ROOT}._simulate_gbm_mc') as mock_sim, \
+             patch(f'{_BARRIER_OPT_ROOT}._get_live_reference_price', return_value=(1.2345, "live_tick_ask")):
+            mock_sim.return_value = {"price_paths": paths}
+            result = forecast_barrier_optimize(
+                symbol="EURUSD",
+                timeframe="H1",
+                horizon=4,
+                method="mc_gbm",
+                direction="long",
+                mode="pct",
+                tp_min=0.5,
+                tp_max=0.5,
+                tp_steps=1,
+                sl_min=0.5,
+                sl_max=0.5,
+                sl_steps=1,
+                return_grid=True,
+            )
+        self.assertTrue(hit_probs.get("success"))
+        self.assertTrue(result.get("success"))
+        best = result["best"]
+        self.assertAlmostEqual(best["prob_tp_first"], hit_probs["prob_tp_first"], places=8)
+        self.assertAlmostEqual(best["prob_sl_first"], hit_probs["prob_sl_first"], places=8)
+        self.assertAlmostEqual(best["prob_no_hit"], hit_probs["prob_no_hit"], places=8)
+
+    def test_forecast_barrier_optimize_filters_invalid_barrier_geometry(self):
+        self._set_flat_history(1.0, bars=200)
+        paths = self._sample_paths()
+        with patch(f'{_BARRIER_OPT_ROOT}._simulate_gbm_mc') as mock_sim, \
+             patch(f'{_BARRIER_OPT_ROOT}._get_live_reference_price', return_value=(None, None)):
+            mock_sim.return_value = {"price_paths": paths}
+            result = forecast_barrier_optimize(
+                symbol="EURUSD",
+                timeframe="H1",
+                horizon=4,
+                method="mc_gbm",
+                direction="short",
+                mode="pct",
+                tp_min=150.0,
+                tp_max=150.0,
+                tp_steps=1,
+                sl_min=0.5,
+                sl_max=0.5,
+                sl_steps=1,
+                return_grid=True,
+            )
+        self.assertTrue(result["success"])
+        self.assertTrue(result["no_candidates"])
+        self.assertIsNone(result["best"])
+        self.assertEqual(result["results_total"], 0)
+        self.assertEqual(result.get("barrier_sanity_filtered"), 1)
+
+
+if __name__ == '__main__':
+    unittest.main()

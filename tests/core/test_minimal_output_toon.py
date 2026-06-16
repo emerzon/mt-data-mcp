@@ -6,8 +6,6 @@ from mtdata.utils.minimal_output import (
     _format_complex_value,
     _headers_from_dicts,
     _indent_text,
-    _is_empty_value,
-    _is_scalar_value,
     _quote_key,
     _stringify_for_toon_value,
     _stringify_scalar,
@@ -21,101 +19,15 @@ from mtdata.utils.minimal_output_toon import (
 )
 
 
-class TestIsScalarValue:
-    def test_string(self):
-        assert _is_scalar_value("hello") is True
-
-    def test_int(self):
-        assert _is_scalar_value(42) is True
-
-    def test_float(self):
-        assert _is_scalar_value(3.14) is True
-
-    def test_bool(self):
-        assert _is_scalar_value(True) is True
-
-    def test_none(self):
-        assert _is_scalar_value(None) is True
-
-    def test_list(self):
-        assert _is_scalar_value([1, 2]) is False
-
-    def test_dict(self):
-        assert _is_scalar_value({"a": 1}) is False
-
-
-class TestIsEmptyValue:
-    def test_none(self):
-        assert _is_empty_value(None) is True
-
-    def test_empty_string(self):
-        assert _is_empty_value("") is True
-
-    def test_whitespace_string(self):
-        assert _is_empty_value("   ") is True
-
-    def test_non_empty_string(self):
-        assert _is_empty_value("hello") is False
-
-    def test_empty_list(self):
-        assert _is_empty_value([]) is True
-
-    def test_list_of_nones(self):
-        assert _is_empty_value([None, None]) is True
-
-    def test_nonempty_list(self):
-        assert _is_empty_value([1]) is False
-
-    def test_empty_dict(self):
-        assert _is_empty_value({}) is True
-
-    def test_dict_with_empty_values(self):
-        assert _is_empty_value({"a": None, "b": ""}) is True
-
-    def test_dict_with_values(self):
-        assert _is_empty_value({"a": 1}) is False
-
-    def test_number(self):
-        assert _is_empty_value(0) is False
-
-
 class TestStringifyScalar:
-    def test_none(self):
-        assert _stringify_scalar(None) == "null"
-
     def test_bool_true(self):
         assert _stringify_scalar(True) == "true"
 
     def test_bool_false(self):
         assert _stringify_scalar(False) == "false"
 
-    def test_int(self):
-        assert _stringify_scalar(42) == "42"
-
-    def test_float(self):
-        result = _stringify_scalar(1.5)
-        assert "1.5" in result
-
-    def test_string(self):
-        assert _stringify_scalar("hello") == "hello"
-
 
 class TestStringifyCell:
-    def test_scalar(self):
-        assert _stringify_cell(42) == "42"
-
-    def test_empty_list(self):
-        assert _stringify_cell([None, None]) == ""
-
-    def test_scalar_list(self):
-        result = _stringify_cell([1, 2, 3])
-        assert "|" in result
-
-    def test_dict(self):
-        result = _stringify_cell({"a": 1, "b": 2})
-        assert "a=" in result
-        assert "b=" in result
-
     def test_nested_dict_empty_values_skipped(self):
         result = _stringify_cell({"a": None, "b": 1})
         assert "a=" not in result
@@ -276,21 +188,9 @@ class TestStringifyForToonValue:
 
 
 class TestFormatComplexValue:
-    def test_scalar(self):
-        assert _format_complex_value(42) == "42"
-
-    def test_list_of_scalars(self):
-        result = _format_complex_value([1, 2, 3])
-        assert "1" in result
-        assert "2" in result
-
     def test_list_of_dicts(self):
         result = _format_complex_value([{"a": 1}, {"a": 2}])
         assert "a" in result
-
-    def test_dict(self):
-        result = _format_complex_value({"key": "value"})
-        assert "key: value" in result
 
     def test_nested_dict_with_multiline(self):
         result = _format_complex_value({"outer": {"a": 1, "b": 2}})

@@ -7,7 +7,6 @@ import argparse
 import copy
 import json
 import logging
-import os
 import sys
 import types
 from datetime import datetime, timezone
@@ -24,19 +23,7 @@ from mtdata.core.trading.requests import (
 )
 from mtdata.forecast.requests import ForecastGenerateRequest
 
-# ---------------------------------------------------------------------------
-# Fixture: ensure the cli module is importable with heavy deps mocked
-# ---------------------------------------------------------------------------
-
-
-@pytest.fixture(autouse=True)
-def _isolate_env(monkeypatch):
-    """Clear env vars that influence debug/colour behaviour between tests."""
-    monkeypatch.delenv("MTDATA_CLI_DEBUG", raising=False)
-    monkeypatch.delenv("MTDATA_OUTPUT_FORMAT", raising=False)
-    monkeypatch.delenv("NO_COLOR", raising=False)
-    monkeypatch.delenv("MT5_TIME_OFFSET_MINUTES", raising=False)
-
+pytestmark = pytest.mark.usefixtures("_isolate_env")
 
 # We import lazily inside tests where heavy server machinery is needed,
 # but the pure-logic helpers can be imported directly.
@@ -1966,4 +1953,3 @@ def test_match_global_flags_matches_prefix():
     from mtdata.core.cli.api import _match_global_flags
     assert [n for n, _ in _match_global_flags('prec')] == ['precision']
     assert _match_global_flags('xyzzy') == []
-
