@@ -111,7 +111,10 @@ class JobStore:
     def _decode(payload: Optional[str]) -> Optional[Dict[str, Any]]:
         if not payload:
             return None
-        data = json.loads(payload)
+        try:
+            data = json.loads(payload)
+        except (TypeError, ValueError):
+            return None
         return data if isinstance(data, dict) else None
 
     @staticmethod

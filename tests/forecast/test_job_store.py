@@ -36,6 +36,36 @@ class TestJobStore(unittest.TestCase):
         self.assertEqual(loaded.progress_payload["step"], 1)
         self.assertEqual(loaded.pid, 4321)
 
+    def test_corrupted_payload_json_does_not_break_reads(self):
+        self.store.upsert(
+            JobRecord(
+                task_id="task-corrupt",
+                method="nhits",
+                data_scope="EURUSD_H1",
+                params_hash="hash-1",
+                status="running",
+                created_at=1000.0,
+                progress_payload={"step": 1},
+                result_payload={"ok": True},
+            )
+        )
+        with self.store._connect() as conn:
+            conn.execute(
+                "UPDATE jobs SET progress_json = ? WHERE task_id = ?",
+                ("{broken json", "task-corrupt"),
+            )
+            conn.commit()
+
+        loaded = self.store.get("task-corrupt")
+
+        self.assertIsNotNone(loaded)
+        self.assertIsNone(loaded.progress_payload)
+        self.assertEqual(loaded.result_payload, {"ok": True})
+        self.assertEqual(
+            [record.task_id for record in self.store.list_jobs()],
+            ["task-corrupt"],
+        )
+
     def test_find_active_ignores_completed(self):
         self.store.upsert(
             JobRecord(
