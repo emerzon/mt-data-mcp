@@ -149,6 +149,10 @@ def test_trade_account_info_compact_detail_includes_account_fields_without_diagn
         out = raw(detail="compact")
 
     assert out["balance"] == 10000.0
+    assert out["source"] == "mt5_account_snapshot"
+    assert out["timezone"] == "UTC"
+    assert out["as_of"].endswith("Z")
+    assert out["retrieved_at"] == out["as_of"]
     assert out["profit"] == 50.0
     assert "floating_pnl" not in out
     assert "pnl_basis" not in out

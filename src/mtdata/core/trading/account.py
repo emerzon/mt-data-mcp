@@ -38,6 +38,10 @@ logger = logging.getLogger(__name__)
 
 _TRADE_ACCOUNT_COMPACT_KEYS = (
     "success",
+    "source",
+    "as_of",
+    "retrieved_at",
+    "timezone",
     "balance",
     "equity",
     "profit",
@@ -752,8 +756,18 @@ def trade_account_info(
         except Exception:
             pass
 
+        retrieved_at = (
+            datetime.now(timezone.utc)
+            .replace(microsecond=0)
+            .isoformat()
+            .replace("+00:00", "Z")
+        )
         payload = {
             "success": True,
+            "source": "mt5_account_snapshot",
+            "as_of": retrieved_at,
+            "retrieved_at": retrieved_at,
+            "timezone": "UTC",
             "login": login,
             "balance": info.balance,
             "equity": info.equity,
