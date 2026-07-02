@@ -292,8 +292,11 @@ def _normalize_market_ticker_cli_payload(
             ),
             None,
         )
+        retained_spread_keys = {primary_spread_key} if primary_spread_key else set()
+        if not _is_empty_value(out.get("spread")):
+            retained_spread_keys.add("spread")
         for field in ("spread", "spread_points", "spread_pips", "spread_pct"):
-            if field != primary_spread_key:
+            if field not in retained_spread_keys:
                 out.pop(field, None)
     if verbose and not _is_empty_value(raw_epoch):
         out["time_epoch"] = raw_epoch

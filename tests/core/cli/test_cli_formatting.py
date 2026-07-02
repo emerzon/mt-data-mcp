@@ -613,6 +613,7 @@ class TestFormatResultForCli:
                     "symbol": "BTCUSD",
                     "time": 1700000000,
                     "time_display": "2023-11-14 22:13",
+                    "spread": 0.09,
                     "spread_points": 8.999999999992347,
                     "spread_pct": 0.007795818842487513,
                     "spread_pct_display": "0.007796%",
@@ -623,6 +624,7 @@ class TestFormatResultForCli:
             )
         )
         assert payload["time"] == "2023-11-14 22:13"
+        assert payload["spread"] == 0.09
         assert payload["spread_points"] == 8.999999999992347
         assert "spread_pips" not in payload
         assert "spread_pct" not in payload
