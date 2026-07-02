@@ -1230,6 +1230,9 @@ class TestFormatResultForCli:
                 ],
                 "methods_shown": 2,
                 "methods_hidden": 1,
+                "profile": "quickstart",
+                "profile_methods_hidden": 64,
+                "profile_hint": "Use profile=all to list all registered methods.",
                 "truncation_reason": "Default compact limit 20; set limit=3 for all filtered methods.",
                 "note": "Use --extras metadata to see all methods.",
             },
@@ -1243,6 +1246,9 @@ class TestFormatResultForCli:
         assert "categories" not in result
         assert "params_count" not in result
         assert "show_all_hint" not in result
+        assert "profile: quickstart" in result
+        assert "profile_methods_hidden: 64" in result
+        assert "profile_hint: Use profile=all to list all registered methods." in result
         assert "truncated: true" in result
         assert (
             "truncation_reason: Default compact limit 20; "

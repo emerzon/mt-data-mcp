@@ -1547,6 +1547,9 @@ def test_forecast_list_library_models_and_list_methods(monkeypatch):
     assert all("requires" not in row for row in compact["methods"])
     assert compact["methods_shown"] == 1
     assert compact["methods_hidden"] == 0
+    assert compact["profile"] == "quickstart"
+    assert compact["profile_methods_hidden"] == 1
+    assert compact["profile_hint"] == "Use profile=all to list all registered methods."
     assert "filters" not in compact
     assert "barrier_methods" not in compact
     assert "note" not in compact
@@ -1558,11 +1561,11 @@ def test_forecast_list_library_models_and_list_methods(monkeypatch):
     assert standard["methods"][0]["params_count"] == 1
     assert "volatility_methods" in standard
 
-    compact_all = _unwrap(cf.forecast_list_methods)(show_unavailable=True)
+    compact_all = _unwrap(cf.forecast_list_methods)(show_unavailable=True, profile="all")
     unavailable_method = next(row for row in compact_all["methods"] if row["available"] is False)
     assert unavailable_method["unavailable_reason"] == "Requires: mlforecast, sklearn"
 
-    full = _unwrap(cf.forecast_list_methods)(detail="full", show_unavailable=True)
+    full = _unwrap(cf.forecast_list_methods)(detail="full", show_unavailable=True, profile="all")
     assert full["detail"] == "full"
     assert full["total"] == 2
     assert full["total_filtered"] == 2
@@ -1622,7 +1625,7 @@ def test_forecast_list_library_models_and_list_methods(monkeypatch):
             ],
         },
     )
-    grouped = _unwrap(cf.forecast_list_methods)()
+    grouped = _unwrap(cf.forecast_list_methods)(profile="all")
     params = signature(_unwrap(cf.forecast_list_methods)).parameters
     assert "search_term" in params
     assert "search" not in params
@@ -1633,30 +1636,29 @@ def test_forecast_list_library_models_and_list_methods(monkeypatch):
     assert "all" not in params
     sf_rows = [r for r in grouped["methods"] if r.get("category") == "statsforecast"]
     assert len(sf_rows) == 3
-    if sf_rows:
-        assert all(str(r.get("namespace")) == "statsforecast" for r in sf_rows)
+    assert all(str(r.get("category")) == "statsforecast" for r in sf_rows)
     assert grouped["methods_hidden"] == 0
-    filtered = _unwrap(cf.forecast_list_methods)(search_term="theta", limit=1)
+    filtered = _unwrap(cf.forecast_list_methods)(search_term="theta", limit=1, profile="all")
     assert "filters" not in filtered
     assert len(filtered["methods"]) == 1
     assert filtered["methods_hidden"] >= 1
     assert "theta" in str(filtered["methods"][0]["method"]).lower()
-    sf_only = _unwrap(cf.forecast_list_methods)(library="statsforecast")
+    sf_only = _unwrap(cf.forecast_list_methods)(library="statsforecast", profile="all")
     assert "filters" not in sf_only
     assert all(
         row.get("category") == "statsforecast" for row in sf_only["methods"]
     )
-    category_only = _unwrap(cf.forecast_list_methods)(category="statsforecast")
+    category_only = _unwrap(cf.forecast_list_methods)(category="statsforecast", profile="all")
     assert "filters" not in category_only
     assert all(row.get("category") == "statsforecast" for row in category_only["methods"])
-    ci_only = _unwrap(cf.forecast_list_methods)(supports_ci=True)
+    ci_only = _unwrap(cf.forecast_list_methods)(supports_ci=True, profile="all")
     assert "filters" not in ci_only
     assert ci_only["methods"]
     assert all(row.get("supports_ci") is True for row in ci_only["methods"])
-    no_ci = _unwrap(cf.forecast_list_methods)(supports_ci=False, show_unavailable=True)
+    no_ci = _unwrap(cf.forecast_list_methods)(supports_ci=False, show_unavailable=True, profile="all")
     assert "filters" not in no_ci
     assert all(row.get("supports_ci") is False for row in no_ci["methods"])
-    with_unavailable = _unwrap(cf.forecast_list_methods)(show_unavailable=True)
+    with_unavailable = _unwrap(cf.forecast_list_methods)(show_unavailable=True, profile="all")
     assert with_unavailable["unavailable"] == 1
     assert any(row["available"] is False for row in with_unavailable["methods"])
     unavailable_row = next(row for row in with_unavailable["methods"] if row["available"] is False)
@@ -1680,14 +1682,14 @@ def test_forecast_list_library_models_and_list_methods(monkeypatch):
             ],
         },
     )
-    default_out = _unwrap(cf.forecast_list_methods)()
+    default_out = _unwrap(cf.forecast_list_methods)(profile="all")
     assert "filters" not in default_out
     assert default_out["methods_shown"] == 25
     assert default_out["methods_hidden"] == 0
     assert "has_more" not in default_out
     assert "truncation_reason" not in default_out
 
-    page = _unwrap(cf.forecast_list_methods)(limit=5, offset=5)
+    page = _unwrap(cf.forecast_list_methods)(limit=5, offset=5, profile="all")
     assert [row["method"] for row in page["methods"]] == [
         "m05",
         "m06",
@@ -1703,7 +1705,7 @@ def test_forecast_list_library_models_and_list_methods(monkeypatch):
         "Limit 5 at offset 5; set offset=10 for more filtered methods."
     )
 
-    filtered_uncapped = _unwrap(cf.forecast_list_methods)(category="classical")
+    filtered_uncapped = _unwrap(cf.forecast_list_methods)(category="classical", profile="all")
     assert "filters" not in filtered_uncapped
     assert filtered_uncapped["methods_shown"] == 25
     assert filtered_uncapped["methods_hidden"] == 0

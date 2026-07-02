@@ -1830,6 +1830,19 @@ def _forecast_list_methods_impl(  # noqa: C901
             "optimizer_only_methods": ["ensemble"],
             "note": "Barrier methods are for forecast_barrier_prob and forecast_barrier_optimize; forecast_generate uses the main forecast method registry.",
         }
+
+        def _profile_methods_hidden_count(method_rows: Any) -> int:
+            if profile_methods is None or not isinstance(method_rows, list):
+                return 0
+            profile_count = 0
+            for row in method_rows:
+                if not isinstance(row, dict):
+                    continue
+                method_name = str(row.get("method") or "")
+                if method_name in profile_methods:
+                    profile_count += 1
+            return int(max(0, len(method_rows) - profile_count))
+
         volatility_methods = None
         if detail_value in {"standard", "full"}:
             volatility_methods = _forecast_volatility_methods_section(
@@ -1894,6 +1907,10 @@ def _forecast_list_methods_impl(  # noqa: C901
                 "show_unavailable": bool(show_unavailable),
             }
             if profile_methods is not None:
+                profile_hidden_count = _profile_methods_hidden_count(methods_full)
+                if profile_hidden_count > 0:
+                    out_full["profile_methods_hidden"] = profile_hidden_count
+                    out_full["profile_hint"] = "Use profile=all to list all registered methods."
                 out_full["profile_note"] = (
                     "quickstart/core shows native methods with no optional package dependency; use profile=all for the full catalog."
                 )
@@ -2019,6 +2036,10 @@ def _forecast_list_methods_impl(  # noqa: C901
                 out["volatility_methods"] = volatility_methods
         if profile_methods is not None:
             out["profile"] = profile_value
+            profile_hidden_count = _profile_methods_hidden_count(methods)
+            if profile_hidden_count > 0:
+                out["profile_methods_hidden"] = profile_hidden_count
+                out["profile_hint"] = "Use profile=all to list all registered methods."
             if detail_value == "standard":
                 out["profile_note"] = (
                     "Native quickstart methods with no optional package dependency; use profile=all for the full catalog."

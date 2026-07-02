@@ -1608,6 +1608,9 @@ def _normalize_forecast_methods_payload(
         "unavailable",
         "methods_shown",
         "methods_hidden",
+        "profile",
+        "profile_methods_hidden",
+        "profile_hint",
         "truncation_reason",
     ):
         value = payload.get(key)
