@@ -617,33 +617,44 @@ class TestMT5Connection:
         cfg.get_login.return_value = 12345
         cfg.get_password.return_value = "pass"
         cfg.get_server.return_value = "Demo"
+        _mt5_mock.initialize.reset_mock(side_effect=True)
         _mt5_mock.initialize.return_value = True
+        _mt5_mock.account_info.return_value = MagicMock(login=12345, server="Demo")
         assert conn._ensure_connection() is True
         assert conn.connected is True
 
     @patch("mtdata.utils.mt5.mt5_config")
-    def test_ensure_connection_cred_fail_fallback_success(self, cfg):
+    def test_ensure_connection_cred_fail_does_not_fallback_to_current_terminal(self, cfg):
         conn = MT5Connection()
         _mt5_mock.terminal_info.return_value = None
         cfg.has_credentials.return_value = True
         cfg.get_login.return_value = 12345
         cfg.get_password.return_value = "pass"
         cfg.get_server.return_value = "Demo"
-        _mt5_mock.initialize.side_effect = [False, True]
-        _mt5_mock.last_error.return_value = (-1, "err")
-        assert conn._ensure_connection() is True
-
-    @patch("mtdata.utils.mt5.mt5_config")
-    def test_ensure_connection_cred_fail_fallback_fail(self, cfg):
-        conn = MT5Connection()
-        _mt5_mock.terminal_info.return_value = None
-        cfg.has_credentials.return_value = True
-        cfg.get_login.return_value = 12345
-        cfg.get_password.return_value = "pass"
-        cfg.get_server.return_value = "Demo"
-        _mt5_mock.initialize.side_effect = [False, False]
+        _mt5_mock.initialize.reset_mock(side_effect=True)
+        _mt5_mock.initialize.return_value = False
         _mt5_mock.last_error.return_value = (-1, "err")
         assert conn._ensure_connection() is False
+        _mt5_mock.initialize.assert_called_once_with(
+            login=12345,
+            password="pass",
+            server="Demo",
+        )
+
+    @patch("mtdata.utils.mt5.mt5_config")
+    def test_ensure_connection_credential_account_mismatch_fails(self, cfg):
+        conn = MT5Connection()
+        _mt5_mock.terminal_info.return_value = None
+        cfg.has_credentials.return_value = True
+        cfg.get_login.return_value = 12345
+        cfg.get_password.return_value = "pass"
+        cfg.get_server.return_value = "Demo"
+        _mt5_mock.initialize.reset_mock(side_effect=True)
+        _mt5_mock.shutdown.reset_mock()
+        _mt5_mock.initialize.return_value = True
+        _mt5_mock.account_info.return_value = MagicMock(login=67890, server="Demo")
+        assert conn._ensure_connection() is False
+        _mt5_mock.shutdown.assert_called()
 
     @patch("mtdata.utils.mt5.mt5_config")
     def test_ensure_connection_no_cred_success(self, cfg):

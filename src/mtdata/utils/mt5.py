@@ -779,10 +779,22 @@ class MT5Connection:
                     password = mt5_config.get_password()
                     server = mt5_config.get_server()
                     if not mt5.initialize(login=login, password=password, server=server):
-                        logger.warning(f"Failed to initialize MT5 with credentials: {mt5.last_error()}")
-                        if not mt5.initialize():
-                            logger.error(f"Failed to initialize MT5: {mt5.last_error()}")
-                            return False
+                        logger.error(
+                            "Failed to initialize MT5 with configured credentials: "
+                            f"{mt5.last_error()}"
+                        )
+                        return False
+                    connected_login, _connected_server = self._read_connection_identity()
+                    if connected_login is None or int(connected_login) != int(login):
+                        logger.error(
+                            "Connected MT5 account does not match configured login "
+                            f"{login}; connected_login={connected_login}."
+                        )
+                        try:
+                            mt5.shutdown()
+                        except Exception:
+                            pass
+                        return False
                     else:
                         logger.debug(f"Connected to MT5 with account {login}")
                 else:
