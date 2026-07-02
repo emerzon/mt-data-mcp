@@ -2788,6 +2788,8 @@ def regime_detect(  # noqa: C901
                 if regime_state != "trending" or state_note:
                     compact_current_regime["direction_basis"] = "net_window_move"
                     compact_current_regime["interpretation"] = interpretation
+                if regime_state != "trending":
+                    compact_current_regime["direction_role"] = "window_bias_not_trend"
                 if state_note:
                     compact_current_regime["note"] = state_note
                 payload = {
@@ -2796,6 +2798,9 @@ def regime_detect(  # noqa: C901
                     "timeframe": timeframe,
                     "method": method,
                     "target": target,
+                    "signal_status": (
+                        "information_only" if regime_state == "trending" else "not_actionable"
+                    ),
                     "current_regime": compact_current_regime,
                 }
                 if window_quality:

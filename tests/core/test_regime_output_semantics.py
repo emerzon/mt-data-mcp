@@ -564,10 +564,12 @@ def test_rule_based_compact_explains_direction_bias() -> None:
         )
 
     current_regime = out["current_regime"]
+    assert out["signal_status"] == "not_actionable"
     assert current_regime["bars"] == 60
     assert current_regime["label"] == "ranging"
     assert current_regime["direction"] == "bearish"
     assert current_regime["window_bias"] == "bearish"
+    assert current_regime["direction_role"] == "window_bias_not_trend"
     assert "headline" not in current_regime
     assert "state_label_native" not in current_regime
     assert "state_label_canonical" not in current_regime
