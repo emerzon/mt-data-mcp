@@ -59,6 +59,26 @@ def test_create_training_dataframes_with_and_without_exog():
     assert len(y_df) == 3
 
 
+def test_create_training_dataframes_accepts_1d_single_column_exog():
+    series = np.array([1.0, 2.0, 3.0], dtype=float)
+    exog = np.array([10.0, 11.0, 12.0], dtype=float)
+    exog_future = np.array([13.0, 14.0], dtype=float)
+
+    _, x_df, xf_df = fc._create_training_dataframes(
+        series,
+        fh=2,
+        exog_used=exog,
+        exog_future=exog_future,
+    )
+
+    assert x_df is not None
+    assert list(x_df.columns) == ["unique_id", "ds", "x0"]
+    assert x_df["x0"].tolist() == [10.0, 11.0, 12.0]
+    assert xf_df is not None
+    assert list(xf_df.columns) == ["unique_id", "ds", "x0"]
+    assert xf_df["x0"].tolist() == [13.0, 14.0]
+
+
 def test_timeframe_helpers_cover_key_branches():
     assert fc.default_seasonality("H1") == 24
     assert fc.default_seasonality("D1") == 5

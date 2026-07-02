@@ -233,6 +233,21 @@ def _extract_forecast_values(
     return edge_pad_to_length(vals, int(fh))
 
 
+def _as_2d_exog_array(
+    value: Optional[np.ndarray],
+    *,
+    name: str,
+) -> Optional[np.ndarray]:
+    if value is None or not isinstance(value, np.ndarray) or not value.size:
+        return None
+    arr = np.asarray(value, dtype=float)
+    if arr.ndim == 1:
+        return arr.reshape(-1, 1)
+    if arr.ndim == 2:
+        return arr
+    raise ValueError(f"{name} must be a 1D or 2D numpy array")
+
+
 def _create_training_dataframes(series: np.ndarray, fh: int, exog_used: Optional[np.ndarray] = None, exog_future: Optional[np.ndarray] = None) -> Tuple[Any, Optional[Any], Optional[Any]]:
     """Create standardized training DataFrames for forecast methods.
     
@@ -256,12 +271,14 @@ def _create_training_dataframes(series: np.ndarray, fh: int, exog_used: Optional
     
     X_df = None
     Xf_df = None
-    if exog_used is not None and isinstance(exog_used, np.ndarray) and exog_used.size:
-        cols = [f'x{i}' for i in range(exog_used.shape[1])]
+    exog_used_2d = _as_2d_exog_array(exog_used, name="exog_used")
+    exog_future_2d = _as_2d_exog_array(exog_future, name="exog_future")
+    if exog_used_2d is not None:
+        cols = [f'x{i}' for i in range(exog_used_2d.shape[1])]
         X_df = base_train.copy()
         for j, cname in enumerate(cols):
-            X_df[cname] = exog_used[:, j]
-        if exog_future is not None and isinstance(exog_future, np.ndarray) and exog_future.size:
+            X_df[cname] = exog_used_2d[:, j]
+        if exog_future_2d is not None:
             future_len = int(fh)
             future_index = _pd.RangeIndex(start=train_len, stop=train_len + future_len)
             Xf_df = _pd.DataFrame(
@@ -271,7 +288,7 @@ def _create_training_dataframes(series: np.ndarray, fh: int, exog_used: Optional
                 }
             )
             for j, cname in enumerate(cols):
-                Xf_df[cname] = exog_future[:, j]
+                Xf_df[cname] = exog_future_2d[:, j]
     
     return Y_df, X_df, Xf_df
 
@@ -649,11 +666,12 @@ def nf_create_and_fit(
             _fit_params = {}
         supports_x = 'X_df' in _fit_params
 
-        if exog_used is not None and isinstance(exog_used, np.ndarray) and exog_used.size and supports_x:
+        exog_used_2d = _as_2d_exog_array(exog_used, name="exog_used")
+        if exog_used_2d is not None and supports_x:
             X_df = pd.DataFrame({'unique_id': ['ts'] * len(Y_df), 'ds': Y_df['ds'].values})
-            cols = [f'x{i}' for i in range(exog_used.shape[1])]
+            cols = [f'x{i}' for i in range(exog_used_2d.shape[1])]
             for j, cname in enumerate(cols):
-                X_df[cname] = exog_used[:, j]
+                X_df[cname] = exog_used_2d[:, j]
             nf.fit(df=Y_df, X_df=X_df, verbose=False)
         else:
             nf.fit(df=Y_df, verbose=False)
@@ -687,12 +705,13 @@ def nf_predict_from_fitted(
             _fit_params = {}
         supports_x_predict = 'X_df' in _pred_params
 
-        if exog_future is not None and isinstance(exog_future, np.ndarray) and exog_future.size and future_times is not None and supports_x_predict:
+        exog_future_2d = _as_2d_exog_array(exog_future, name="exog_future")
+        if exog_future_2d is not None and future_times is not None and supports_x_predict:
             ds_f = pd.to_datetime(pd.Series(future_times), unit='s', utc=True)
-            cols = [f'x{i}' for i in range(exog_future.shape[1])]
+            cols = [f'x{i}' for i in range(exog_future_2d.shape[1])]
             Xf_df = pd.DataFrame({'unique_id': ['ts'] * len(ds_f), 'ds': pd.Index(ds_f).to_pydatetime()})
             for j, cname in enumerate(cols):
-                Xf_df[cname] = exog_future[:, j]
+                Xf_df[cname] = exog_future_2d[:, j]
             if 'h' in _pred_params:
                 return nf.predict(h=int(fh), X_df=Xf_df)
             else:
@@ -881,18 +900,20 @@ def nf_setup_and_predict(  # noqa: C901
                     _pred_params = {}
                 supports_x = ('X_df' in _fit_params) and ('X_df' in _pred_params)
 
-                if exog_used is not None and isinstance(exog_used, np.ndarray) and exog_used.size and supports_x:
+                exog_used_2d = _as_2d_exog_array(exog_used, name="exog_used")
+                exog_future_2d = _as_2d_exog_array(exog_future, name="exog_future")
+                if exog_used_2d is not None and supports_x:
                     # Build X_df and X_future for NF (newer API)
                     X_df = pd.DataFrame({'unique_id': ['ts'] * int(len(Y_df)), 'ds': Y_df['ds'].values})
-                    cols = [f'x{i}' for i in range(exog_used.shape[1])]
+                    cols = [f'x{i}' for i in range(exog_used_2d.shape[1])]
                     for j, cname in enumerate(cols):
-                        X_df[cname] = exog_used[:, j]
+                        X_df[cname] = exog_used_2d[:, j]
                     nf.fit(df=Y_df, X_df=X_df, verbose=False)  # type: ignore
-                    if exog_future is not None and isinstance(exog_future, np.ndarray) and exog_future.size and future_times is not None:
+                    if exog_future_2d is not None and future_times is not None:
                         ds_f = pd.to_datetime(pd.Series(future_times), unit='s', utc=True)
                         Xf_df = pd.DataFrame({'unique_id': ['ts'] * int(len(ds_f)), 'ds': pd.Index(ds_f).to_pydatetime()})
                         for j, cname in enumerate(cols):
-                            Xf_df[cname] = exog_future[:, j]
+                            Xf_df[cname] = exog_future_2d[:, j]
                         if 'h' in _pred_params:
                             Yf = nf.predict(h=int(fh), X_df=Xf_df)  # type: ignore
                         else:
