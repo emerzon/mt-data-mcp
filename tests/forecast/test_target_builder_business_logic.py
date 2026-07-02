@@ -49,6 +49,23 @@ def test_build_target_series_legacy_price_and_return():
     assert info_ret == {"mode": "return", "base": "close", "transform": "log_return"}
 
 
+def test_build_target_series_custom_defaults_to_return_quantity_transform():
+    df = _ohlc_df(5)
+
+    y_ret, info_ret = tb.build_target_series(
+        df,
+        base_col="close",
+        target_spec={"base": "close"},
+        quantity="return",
+    )
+
+    assert y_ret.shape[0] == 5
+    assert np.isnan(y_ret[0])
+    assert np.isfinite(y_ret[1:]).all()
+    assert info_ret["mode"] == "custom"
+    assert info_ret["transform"] == "log_return(k=1)"
+
+
 def test_build_target_series_custom_with_indicators_and_transforms(monkeypatch):
     df = _ohlc_df(8)
     calls = {"parse": 0, "apply": 0}

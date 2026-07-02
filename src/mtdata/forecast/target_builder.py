@@ -104,7 +104,10 @@ def build_target_series(
     target_info['base'] = base_name
     
     # Apply transform
-    transform = str(ts.get('transform', 'none')).lower()
+    default_transform = (
+        'log_return' if str(quantity).strip().lower() == 'return' else 'none'
+    )
+    transform = str(ts.get('transform', default_transform)).lower()
     k = int(ts.get('k', 1))
     if k < 1:
         k = 1
