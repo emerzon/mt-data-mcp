@@ -554,6 +554,10 @@ Values above 70 often indicate overbought conditions.
         assert out["total_count"] == 30
         assert out["more_available"] == 5
         assert out["truncated"] is True
+        assert out["search_hint"] == (
+            "Use search_term to match indicator names, aliases, "
+            "categories, or docs; detail='full' includes aliases."
+        )
         assert "show_all_hint" not in out
 
         standard = raw_list(category="momentum", limit=25, detail="standard")

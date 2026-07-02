@@ -594,6 +594,10 @@ def indicators_list(
                 result["more_available"] = more_available
                 if more_available > 0:
                     result["truncated"] = True
+                    result["search_hint"] = (
+                        "Use search_term to match indicator names, aliases, "
+                        "categories, or docs; detail='full' includes aliases."
+                    )
             return result
         except Exception as exc:
             return {"error": f"Error listing indicators: {exc}"}
