@@ -913,6 +913,12 @@ def test_normalize_tick_rows_keeps_epoch_and_time_msc_on_same_utc_basis() -> Non
         }
     ]
 
+
+def test_mt5_millis_to_utc_returns_zero_for_invalid_values() -> None:
+    assert wait_events_mod._mt5_millis_to_utc(None) == 0
+    assert wait_events_mod._mt5_millis_to_utc("not-a-number") == 0
+
+
 def test_format_account_match_uses_millisecond_timestamp_fields() -> None:
     match = wait_events_mod._format_account_match(
         "order_created",

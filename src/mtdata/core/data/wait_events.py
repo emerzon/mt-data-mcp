@@ -3505,7 +3505,7 @@ def _mt5_millis_to_utc(value_millis: float) -> int:
     try:
         return int(round(float(value_millis)))
     except Exception:
-        return int(round(float(value_millis)))
+        return 0
 
 
 def _tick_time_msc(row: Any, *, fallback_epoch: float) -> int:
