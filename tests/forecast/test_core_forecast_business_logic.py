@@ -1285,7 +1285,27 @@ def test_forecast_barrier_optimize_logs_finish_event(caplog, monkeypatch):
 def test_forecast_barrier_optimize_request_defaults_to_summary_output():
     request = ForecastBarrierOptimizeRequest(symbol="EURUSD")
     assert request.search_profile == "medium"
-    assert len(ForecastBarrierOptimizeRequest.model_fields) == 15
+    assert set(ForecastBarrierOptimizeRequest.model_fields) >= {
+        "symbol",
+        "timeframe",
+        "horizon",
+        "method",
+        "direction",
+        "mode",
+        "params",
+        "objective",
+        "top_k",
+        "viable_only",
+        "tradable_only",
+        "min_ev",
+        "min_edge",
+        "min_kelly",
+        "grid_style",
+        "preset",
+        "search_profile",
+        "detail",
+        "denoise",
+    }
     assert "output_mode" not in ForecastBarrierOptimizeRequest.model_fields
     assert "tp_min" not in ForecastBarrierOptimizeRequest.model_fields
     assert "statistical_robustness" not in ForecastBarrierOptimizeRequest.model_fields
@@ -2300,7 +2320,9 @@ def test_forecast_tune_genetic_and_barrier_prob_routing(monkeypatch):
 
     monkeypatch.setattr(tune_mod, "default_search_space", fake_default_search_space)
     out = raw_tune(request=ForecastTuneGeneticRequest(symbol="EURUSD", method="theta", search_space=None))
-    assert out == {"ok": True, "detail": "compact"}
+    assert out["ok"] is True
+    assert out["detail"] == "compact"
+    assert out["compute_intensity"] == "high"
     assert captured["method"] == "theta"
     assert ss_calls["method"] == "theta"
     assert ss_calls["methods"] is None
@@ -2311,10 +2333,12 @@ def test_forecast_tune_genetic_and_barrier_prob_routing(monkeypatch):
             symbol="EURUSD",
             method="theta",
             methods=["theta", "naive"],
-            search_space={"x": {"type": "int"}},
+            search_space={"x": {"type": "int", "min": 1, "max": 3}},
         )
     )
-    assert out == {"ok": True, "detail": "compact"}
+    assert out["ok"] is True
+    assert out["detail"] == "compact"
+    assert out["compute_intensity"] == "high"
     assert captured["method"] is None
 
     monkeypatch.setattr(cf, "_genetic_search_impl", lambda **kwargs: (_ for _ in ()).throw(RuntimeError("fail")))
@@ -2523,6 +2547,28 @@ def test_forecast_barrier_optimize_rounds_public_float_artifacts():
     assert out["barrier_unit"] == "percent"
     assert out["probability_unit"] == "fraction"
     assert "Expected reward/risk edge" in out["edge_definition"]
+
+
+def test_forecast_barrier_optimize_uses_tick_unit_context():
+    def fake_optimize(**kwargs):
+        return {
+            "success": True,
+            "mode": kwargs["mode"],
+            "distance_unit": kwargs["mode"],
+            "status": "ok",
+            "best": {"ev": 1.0, "prob_tp_first": 0.6, "prob_sl_first": 0.4},
+        }
+
+    out = forecast_use_cases.run_forecast_barrier_optimize(
+        ForecastBarrierOptimizeRequest(symbol="EURUSD", method="mc_gbm", mode="ticks"),
+        parse_kv_or_json=lambda value: value or {},
+        barrier_optimize_impl=fake_optimize,
+    )
+
+    assert out["distance_unit"] == "ticks"
+    assert out["barrier_unit"] == "ticks"
+    assert out["barrier_mode"] == "ticks"
+    assert out["probability_unit"] == "fraction"
 
 
 def test_forecast_barrier_optimize_compact_trims_blocked_status_noise():

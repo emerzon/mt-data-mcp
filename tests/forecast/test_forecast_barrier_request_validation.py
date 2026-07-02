@@ -46,6 +46,11 @@ def test_forecast_barrier_prob_request_uses_tick_fields_as_canonical_names():
     assert "tp_ticks" in request.model_dump()
 
 
+def test_forecast_barrier_prob_request_rejects_unknown_fields():
+    with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+        ForecastBarrierProbRequest(symbol="EURUSD", tp_percent=0.5)
+
+
 def test_forecast_barrier_optimize_request_keeps_ticks_mode_canonical():
     request = ForecastBarrierOptimizeRequest(symbol="EURUSD", mode="ticks")
 

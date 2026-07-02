@@ -240,7 +240,7 @@ class ForecastTuneOptunaRequest(BaseModel):
 
 
 class ForecastBarrierProbRequest(BaseModel):
-    model_config = {"populate_by_name": True}
+    model_config = {"populate_by_name": True, "extra": "forbid"}
 
     symbol: str
     timeframe: TimeframeLiteral = "H1"

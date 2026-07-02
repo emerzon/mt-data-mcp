@@ -41,6 +41,25 @@ class TestBarrierTradingCosts(_BarrierTestBase):
         self.assertEqual(tc["cost_unit"], "pct")
         self.assertAlmostEqual(tc["spread_pct"], 0.02)
 
+    def test_optimize_with_bps_aliases_produces_trading_costs(self):
+        result = forecast_barrier_optimize(
+            symbol="EURUSD", timeframe="H1", horizon=10,
+            method="mc_gbm", direction="long", mode="pct",
+            tp_min=0.5, tp_max=0.5, tp_steps=1,
+            sl_min=0.5, sl_max=0.5, sl_steps=1,
+            params={"spread_bps": 2.0, "slippage_bps": 0.5},
+        )
+
+        self.assertTrue(result.get("success"))
+        self.assertIn("trading_costs", result)
+        tc = result["trading_costs"]
+        self.assertEqual(tc["cost_unit"], "pct")
+        self.assertAlmostEqual(tc["spread_bps"], 2.0)
+        self.assertAlmostEqual(tc["slippage_bps"], 0.5)
+        self.assertAlmostEqual(tc["spread_pct"], 0.02)
+        self.assertAlmostEqual(tc["slippage_pct"], 0.005)
+        self.assertAlmostEqual(tc["cost_per_trade"], 0.025)
+
     def test_optimize_with_spread_pips_produces_trading_costs(self):
         result = forecast_barrier_optimize(
             symbol="EURUSD", timeframe="H1", horizon=10,

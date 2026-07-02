@@ -521,7 +521,8 @@ def bootstrap_metric_uncertainty(
     if metrics is None:
         metrics = [
             'prob_win', 'prob_loss', 'prob_tie', 'prob_tp_first', 'prob_sl_first',
-            'ev', 'ev_cond', 'edge', 'kelly', 'kelly_cond', 'prob_no_hit', 'prob_resolve'
+            'ev', 'ev_unresolved', 'ev_cond', 'edge', 'kelly', 'kelly_cond',
+            'prob_no_hit', 'prob_resolve',
         ]
     
     rng = np.random.RandomState(seed)
@@ -552,6 +553,7 @@ def bootstrap_metric_uncertainty(
         wins = (first_tp < first_sl)
         losses = (first_sl < first_tp)
         ties = (first_tp == first_sl) & (first_tp < horizon)
+        unresolved = ~(wins | losses | ties)
         
         n_wins = wins.sum()
         n_losses = losses.sum()
@@ -562,7 +564,7 @@ def bootstrap_metric_uncertainty(
         prob_tie = n_ties / n_sims
         prob_tp_first = (n_wins + 0.5 * n_ties) / n_sims
         prob_sl_first = (n_losses + 0.5 * n_ties) / n_sims
-        prob_no_hit = 1.0 - (any_tp | any_sl).sum() / n_sims
+        prob_no_hit = unresolved.sum() / n_sims
         prob_resolve = 1.0 - prob_no_hit
         
         edge = prob_win - prob_loss
@@ -574,10 +576,26 @@ def bootstrap_metric_uncertainty(
             gross_reward = abs(tp_trigger - anchor_price)
             gross_risk = abs(sl_trigger - anchor_price)
 
-        net_reward = gross_reward - max(0.0, float(cost_per_trade or 0.0))
-        net_risk = gross_risk + max(0.0, float(cost_per_trade or 0.0))
+        cost = max(0.0, float(cost_per_trade or 0.0))
+        net_reward = gross_reward - cost
+        net_risk = gross_risk + cost
         net_rr = net_reward / net_risk if net_risk > 0 else 0.0
-        ev = prob_tp_first * net_reward - prob_sl_first * net_risk
+
+        unit_size = 1.0
+        if reward is not None and gross_reward > 0:
+            unit_size = abs(tp_trigger - anchor_price) / gross_reward
+        elif risk is not None and gross_risk > 0:
+            unit_size = abs(sl_trigger - anchor_price) / gross_risk
+        if not np.isfinite(unit_size) or unit_size <= 0:
+            unit_size = 1.0
+        terminal_pnl = (bootstrap_paths[:, -1] - anchor_price) / unit_size
+        if not dir_long:
+            terminal_pnl = -terminal_pnl
+        unresolved_mean_pnl = (
+            float(np.mean(terminal_pnl[unresolved])) if np.any(unresolved) else 0.0
+        )
+        ev_unresolved = prob_no_hit * (unresolved_mean_pnl - cost)
+        ev = prob_tp_first * net_reward - prob_sl_first * net_risk + ev_unresolved
         kelly = prob_tp_first - (prob_sl_first / net_rr) if net_rr > 0 else 0.0
 
         if prob_resolve > 0:

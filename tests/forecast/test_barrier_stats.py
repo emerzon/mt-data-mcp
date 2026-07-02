@@ -339,6 +339,27 @@ class TestBarrierStats(unittest.TestCase):
         self.assertAlmostEqual(result['ev_cond']['mean'], 10.0 / 3.0, places=12)
         self.assertAlmostEqual(result['kelly']['mean'], 0.25, places=12)
         self.assertAlmostEqual(result['kelly_cond']['mean'], 1.0 / 3.0, places=12)
+
+    def test_bootstrap_metric_uncertainty_includes_unresolved_terminal_pnl(self):
+        """Bootstrap EV should include marked terminal PnL for paths that do not hit a barrier."""
+        paths = np.full((20, 3), 100.5)
+
+        result = bootstrap_metric_uncertainty(
+            paths=paths,
+            tp_trigger=101.0,
+            sl_trigger=99.0,
+            direction='long',
+            entry_price=100.0,
+            reward=1.0,
+            risk=1.0,
+            n_bootstrap=20,
+            metrics=['ev', 'ev_unresolved', 'prob_no_hit'],
+            seed=42,
+        )
+
+        self.assertAlmostEqual(result['prob_no_hit']['mean'], 1.0, places=12)
+        self.assertAlmostEqual(result['ev_unresolved']['mean'], 0.5, places=12)
+        self.assertAlmostEqual(result['ev']['mean'], 0.5, places=12)
     
     def test_statistical_power_analysis_high_power(self):
         """Test power analysis with high power scenario."""
@@ -608,7 +629,7 @@ class TestBarrierOptimizationWithStats(_BarrierOptimizationPatchMixin, unittest.
                 )
 
         self.assertTrue(result['success'])
-        self.assertAlmostEqual(float(captured['successes'][-1] / captured['trials'][-1]), 0.2, places=12)
+        self.assertAlmostEqual(float(captured['successes'][-1] / captured['trials'][-1]), 0.08, places=12)
         self.assertEqual(int(captured['trials'][-1]), 100)
         conv = result['statistical_robustness']['convergence_diagnostic']
         self.assertEqual(conv['event'], 'selected_objective_ev')

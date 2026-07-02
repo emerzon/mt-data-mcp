@@ -1467,6 +1467,22 @@ def _barrier_prob_interpretation(payload: Dict[str, Any]) -> Dict[str, str]:
     return interpretation
 
 
+def _barrier_optimize_unit_context(payload: Dict[str, Any]) -> Tuple[str, str]:
+    mode = str(
+        payload.get("distance_unit")
+        or payload.get("mode")
+        or payload.get("barrier_mode")
+        or ""
+    ).strip().lower()
+    if mode in {"ticks", "tick"}:
+        return "ticks", "ticks"
+    if mode in {"pct", "percent", "percentage", "percentage_points"}:
+        return "percent", "pct"
+    if mode in {"price", "abs", "absolute"}:
+        return "price", "price"
+    return "percent", "pct"
+
+
 def _request_has_barrier_inputs(request: ForecastBarrierProbRequest) -> bool:
     return any(
         getattr(request, field_name, None) is not None
@@ -3039,7 +3055,9 @@ def run_forecast_barrier_optimize(
                 result.pop("last_price_source", None)
             if detail_value == "compact":
                 result = _compact_barrier_optimize_payload(result)
-            result.setdefault("barrier_unit", "percent")
+            barrier_unit, barrier_mode = _barrier_optimize_unit_context(result)
+            result.setdefault("barrier_unit", barrier_unit)
+            result.setdefault("barrier_mode", barrier_mode)
             result.setdefault("probability_unit", "fraction")
             result.setdefault(
                 "edge_definition",

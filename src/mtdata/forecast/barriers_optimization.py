@@ -1433,11 +1433,17 @@ def forecast_barrier_optimize(  # noqa: C901
             if sims < min_sims_recommended:
                 sims = min_sims_recommended
 
-        spread_pips_val = float(params_dict.get('spread_pips', 0.0) or 0.0)
-        spread_pct_val = float(params_dict.get('spread_pct', 0.0) or 0.0)
-        commission_pct_val = float(params_dict.get('commission_pct', 0.0) or 0.0)
-        slippage_pips_val = float(params_dict.get('slippage_pips', 0.0) or 0.0)
-        slippage_pct_val = float(params_dict.get('slippage_pct', 0.0) or 0.0)
+        def _cost_param_float(key: str) -> float:
+            return float(params_dict.get(key, 0.0) or 0.0)
+
+        spread_pips_val = _cost_param_float('spread_pips')
+        spread_bps_val = _cost_param_float('spread_bps')
+        spread_pct_val = _cost_param_float('spread_pct') + spread_bps_val / 100.0
+        commission_bps_val = _cost_param_float('commission_bps')
+        commission_pct_val = _cost_param_float('commission_pct') + commission_bps_val / 100.0
+        slippage_pips_val = _cost_param_float('slippage_pips')
+        slippage_bps_val = _cost_param_float('slippage_bps')
+        slippage_pct_val = _cost_param_float('slippage_pct') + slippage_bps_val / 100.0
         cost_pip_size = _cost_pip_size(pip_size, price_precision)
 
         if mode_val == 'pct':
@@ -1942,9 +1948,12 @@ def forecast_barrier_optimize(  # noqa: C901
                     "cost_per_trade": _safe_float(cost_per_trade),
                     "cost_unit": mode_val,
                     "spread_pips": _safe_float(spread_pips_val) if spread_pips_val else None,
+                    "spread_bps": _safe_float(spread_bps_val) if spread_bps_val else None,
                     "spread_pct": _safe_float(spread_pct_val) if spread_pct_val else None,
+                    "commission_bps": _safe_float(commission_bps_val) if commission_bps_val else None,
                     "commission_pct": _safe_float(commission_pct_val) if commission_pct_val else None,
                     "slippage_pips": _safe_float(slippage_pips_val) if slippage_pips_val else None,
+                    "slippage_bps": _safe_float(slippage_bps_val) if slippage_bps_val else None,
                     "slippage_pct": _safe_float(slippage_pct_val) if slippage_pct_val else None,
                 }
             if selected_best and not viable:
@@ -2326,9 +2335,14 @@ def forecast_barrier_optimize(  # noqa: C901
             first_tp[~any_tp] = horizon_total
             first_sl[~any_sl] = horizon_total
 
-            wins = (first_tp < first_sl).astype(float)
-            losses = (first_sl < first_tp).astype(float)
-            ties = ((first_tp == first_sl) & (first_tp < horizon_total)).astype(float)
+            wins_mask = first_tp < first_sl
+            losses_mask = first_sl < first_tp
+            ties_mask = (first_tp == first_sl) & (first_tp < horizon_total)
+            unresolved_mask = ~(wins_mask | losses_mask | ties_mask)
+
+            wins = wins_mask.astype(float)
+            losses = losses_mask.astype(float)
+            ties = ties_mask.astype(float)
             resolves = wins + losses + ties
 
             trials = np.arange(1, eval_paths.shape[0] + 1, dtype=float)
@@ -2346,6 +2360,28 @@ def forecast_barrier_optimize(  # noqa: C901
             net_reward = reward - cost_per_trade if has_trading_costs else reward
             net_risk = risk + cost_per_trade if has_trading_costs else risk
             net_rr = net_reward / net_risk if net_risk > 0 else 0.0
+
+            terminal_prices = eval_paths[:, -1]
+            if mode_val == 'pct' and last_price > 0:
+                terminal_pnl = (terminal_prices - last_price) / last_price * 100.0
+            elif pip_size and pip_size > 0:
+                terminal_pnl = (terminal_prices - last_price) / float(pip_size)
+            else:
+                terminal_pnl = np.zeros_like(terminal_prices, dtype=float)
+            if not dir_long:
+                terminal_pnl = -terminal_pnl
+            unresolved_payoff = np.where(
+                unresolved_mask,
+                terminal_pnl - (cost_per_trade if has_trading_costs else 0.0),
+                0.0,
+            )
+            path_payoff = (
+                wins * net_reward
+                - losses * net_risk
+                + ties * (0.5 * net_reward - 0.5 * net_risk)
+                + unresolved_payoff
+            )
+            cumulative_payoff = np.cumsum(path_payoff)
 
             reward_frac = 0.0
             risk_frac = 0.0
@@ -2373,17 +2409,11 @@ def forecast_barrier_optimize(  # noqa: C901
             elif objective_val == 'edge':
                 estimate_series = prob_win_series - prob_loss_series
             elif objective_val == 'ev':
-                estimate_series = (
-                    prob_tp_first_series * net_reward
-                    - prob_sl_first_series * net_risk
-                )
+                estimate_series = cumulative_payoff / trials
             elif objective_val == 'ev_per_bar':
                 time_in_trade = np.minimum(np.minimum(first_tp, first_sl) + 1, horizon_total).astype(float)
                 mean_time_series = np.cumsum(time_in_trade) / trials
-                ev_series = (
-                    prob_tp_first_series * net_reward
-                    - prob_sl_first_series * net_risk
-                )
+                ev_series = cumulative_payoff / trials
                 estimate_series = np.divide(
                     ev_series,
                     mean_time_series,
@@ -3071,9 +3101,12 @@ def forecast_barrier_optimize(  # noqa: C901
                 "cost_per_trade": _safe_float(cost_per_trade),
                 "cost_unit": mode_val,
                 "spread_pips": _safe_float(spread_pips_val) if spread_pips_val else None,
+                "spread_bps": _safe_float(spread_bps_val) if spread_bps_val else None,
                 "spread_pct": _safe_float(spread_pct_val) if spread_pct_val else None,
+                "commission_bps": _safe_float(commission_bps_val) if commission_bps_val else None,
                 "commission_pct": _safe_float(commission_pct_val) if commission_pct_val else None,
                 "slippage_pips": _safe_float(slippage_pips_val) if slippage_pips_val else None,
+                "slippage_bps": _safe_float(slippage_bps_val) if slippage_bps_val else None,
                 "slippage_pct": _safe_float(slippage_pct_val) if slippage_pct_val else None,
             }
         return _finalize_barrier_output(
