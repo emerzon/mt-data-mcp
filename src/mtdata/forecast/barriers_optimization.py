@@ -57,6 +57,8 @@ from .barriers_shared import (
     _sort_candidate_results,
     _symbol_price_precision,
     normalize_barrier_method,
+    normalize_barrier_seed,
+    offset_barrier_seed,
 )
 from .common import fetch_history as _fetch_history
 from .common import log_returns_from_prices as _log_returns_from_prices
@@ -1998,9 +2000,8 @@ def forecast_barrier_optimize(  # noqa: C901
             )
         seed_raw = params_dict.get('seed')
         seed_provided = seed_raw is not None
-        seed = int(seed_raw) if seed_provided else None
         request_seed_base = (
-            int(seed)
+            normalize_barrier_seed(seed_raw)
             if seed_provided
             else _stable_barrier_seed(
                 "forecast_barrier_optimize",
@@ -2021,7 +2022,7 @@ def forecast_barrier_optimize(  # noqa: C901
                 {k: v for k, v in params_dict.items() if k != "seed"},
             )
         )
-        optuna_seed = int(request_seed_base)
+        optuna_seed = normalize_barrier_seed(request_seed_base)
 
         def _simulate_paths_for_seed_range(
             seed_base: Optional[int],
@@ -2038,9 +2039,9 @@ def forecast_barrier_optimize(  # noqa: C901
             local_bb_enabled = method_name == 'mc_gbm_bb'
             effective_seed_count = max(1, int(seed_count))
             local_seed_base = (
-                int(seed_base)
+                normalize_barrier_seed(seed_base)
                 if seed_base is not None
-                else int(np.random.default_rng().integers(0, np.iinfo(np.int32).max))
+                else normalize_barrier_seed(np.random.default_rng().integers(0, np.iinfo(np.int32).max))
             )
 
             if method_name in ('mc_gbm', 'mc_gbm_bb'):
@@ -2049,7 +2050,7 @@ def forecast_barrier_optimize(  # noqa: C901
                         prices,
                         horizon=horizon_val,
                         n_sims=int(sims),
-                        seed=int(local_seed_base + offset),
+                        seed=offset_barrier_seed(local_seed_base, offset),
                     )
                     local_paths_list.append(np.asarray(sim['price_paths'], dtype=float))
             elif method_name == 'hmm_mc':
@@ -2060,7 +2061,7 @@ def forecast_barrier_optimize(  # noqa: C901
                         horizon=horizon_val,
                         n_states=int(n_states),
                         n_sims=int(sims),
-                        seed=int(local_seed_base + offset),
+                        seed=offset_barrier_seed(local_seed_base, offset),
                     )
                     local_paths_list.append(np.asarray(sim['price_paths'], dtype=float))
             elif method_name == 'garch':
@@ -2071,7 +2072,7 @@ def forecast_barrier_optimize(  # noqa: C901
                         prices,
                         horizon=horizon_val,
                         n_sims=int(sims),
-                        seed=int(local_seed_base + offset),
+                        seed=offset_barrier_seed(local_seed_base, offset),
                         p_order=p_order,
                         q_order=q_order,
                     )
@@ -2085,7 +2086,7 @@ def forecast_barrier_optimize(  # noqa: C901
                         prices,
                         horizon=horizon_val,
                         n_sims=int(sims),
-                        seed=int(local_seed_base + offset),
+                        seed=offset_barrier_seed(local_seed_base, offset),
                         block_size=bs,
                     )
                     local_paths_list.append(np.asarray(sim['price_paths'], dtype=float))
@@ -2095,7 +2096,7 @@ def forecast_barrier_optimize(  # noqa: C901
                         prices,
                         horizon=horizon_val,
                         n_sims=int(sims),
-                        seed=int(local_seed_base + offset),
+                        seed=offset_barrier_seed(local_seed_base, offset),
                         kappa=params_dict.get('kappa'),
                         theta=params_dict.get('theta'),
                         xi=params_dict.get('xi'),
@@ -2109,7 +2110,7 @@ def forecast_barrier_optimize(  # noqa: C901
                         prices,
                         horizon=horizon_val,
                         n_sims=int(sims),
-                        seed=int(local_seed_base + offset),
+                        seed=offset_barrier_seed(local_seed_base, offset),
                         jump_lambda=params_dict.get('jump_lambda', params_dict.get('lambda')),
                         jump_mu=params_dict.get('jump_mu'),
                         jump_sigma=params_dict.get('jump_sigma'),
@@ -2156,7 +2157,7 @@ def forecast_barrier_optimize(  # noqa: C901
                         [np.full((local_sims_total, 1), log_s0), log_paths],
                         axis=1,
                     )
-                    rng_bb = np.random.RandomState(int(local_seed_base) + 7)
+                    rng_bb = np.random.RandomState(offset_barrier_seed(local_seed_base, 7))
                     local_bb_uniform_tp = rng_bb.rand(local_sims_total, local_horizon)
                     local_bb_uniform_sl = rng_bb.rand(local_sims_total, local_horizon)
 
@@ -2954,7 +2955,7 @@ def forecast_barrier_optimize(  # noqa: C901
             if n_seeds_stability_val > 1:
                 results_by_seed: Dict[int, Dict[str, Any]] = {}
                 for seed_offset in range(1, min(n_seeds_stability_val, 5) + 1):
-                    seed_key = int(request_seed_base + seed_offset)
+                    seed_key = offset_barrier_seed(request_seed_base, seed_offset)
                     try:
                         (
                             stability_paths,

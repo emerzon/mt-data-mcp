@@ -111,6 +111,31 @@ class TestBarrierHitProbabilities(_BarrierTestBase):
         self.assertEqual(first["prob_sl_first"], second["prob_sl_first"])
         self.assertEqual(first["prob_no_hit"], second["prob_no_hit"])
 
+    def test_forecast_barrier_hit_probabilities_normalizes_oversized_seed(self):
+        self._set_flat_history(1.0)
+        seen_seeds = []
+
+        def _fake_sim(*args, seed=None, **kwargs):
+            seen_seeds.append(seed)
+            return {"price_paths": self._sample_paths()}
+
+        with patch(f'{_BARRIER_PROB_ROOT}._simulate_gbm_mc', side_effect=_fake_sim), \
+             patch(f'{_BARRIER_PROB_ROOT}._get_live_reference_price', return_value=(None, None)):
+            result = forecast_barrier_hit_probabilities(
+                symbol="EURUSD",
+                timeframe="H1",
+                horizon=4,
+                method="mc_gbm",
+                direction="long",
+                tp_pct=0.5,
+                sl_pct=0.5,
+                params={"seed": 2**32 + 5, "n_sims": 10},
+            )
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["seed"], 5)
+        self.assertEqual(seen_seeds, [5])
+
     def test_forecast_barrier_hit_probabilities_accepts_tick_aliases(self):
         result = forecast_barrier_hit_probabilities(
             symbol="EURUSD",

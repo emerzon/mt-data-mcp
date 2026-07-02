@@ -86,6 +86,8 @@ BARRIER_MONTE_CARLO_METHODS: Tuple[BarrierMethodLiteral, ...] = (
     "auto",
 )
 
+_RANDOM_SEED_MODULUS = 2**32
+
 
 def _stable_barrier_seed(*parts: Any) -> int:
     payload = json.dumps(
@@ -96,6 +98,14 @@ def _stable_barrier_seed(*parts: Any) -> int:
     )
     digest = hashlib.sha256(payload.encode("utf-8")).digest()
     return int.from_bytes(digest[:4], "big") & int(np.iinfo(np.int32).max)
+
+
+def normalize_barrier_seed(seed: Any) -> int:
+    return int(seed) % _RANDOM_SEED_MODULUS
+
+
+def offset_barrier_seed(seed_base: Any, offset: int = 0) -> int:
+    return normalize_barrier_seed(int(seed_base) + int(offset))
 
 
 BARRIER_METHOD_ALIASES: Dict[str, str] = {

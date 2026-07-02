@@ -43,6 +43,8 @@ from .barriers_shared import (
     _stable_barrier_seed,
     _symbol_price_precision,
     normalize_barrier_method,
+    normalize_barrier_seed,
+    offset_barrier_seed,
 )
 from .common import fetch_history as _fetch_history
 from .common import log_returns_from_prices as _log_returns_from_prices
@@ -373,9 +375,8 @@ def forecast_barrier_hit_probabilities(  # noqa: C901
         bb_enabled = method_key == 'mc_gbm_bb'
         seed_raw = p.get('seed')
         seed_provided = seed_raw is not None
-        seed = int(seed_raw) if seed_provided else None
         request_seed_base = (
-            int(seed)
+            normalize_barrier_seed(seed_raw)
             if seed_provided
             else _stable_barrier_seed(
                 "forecast_barrier_prob",
@@ -400,7 +401,7 @@ def forecast_barrier_hit_probabilities(  # noqa: C901
                     prices,
                     horizon=horizon_val,
                     n_sims=int(sims),
-                    seed=int(request_seed_base),
+                    seed=normalize_barrier_seed(request_seed_base),
                 )
             elif method_key == 'hmm_mc':
                 n_states = int(p.get('n_states', 2) or 2)
@@ -409,7 +410,7 @@ def forecast_barrier_hit_probabilities(  # noqa: C901
                     horizon=horizon_val,
                     n_states=int(n_states),
                     n_sims=int(sims),
-                    seed=int(request_seed_base),
+                    seed=normalize_barrier_seed(request_seed_base),
                 )
             elif method_key == 'garch':
                 p_order = int(p.get('p', 1))
@@ -418,7 +419,7 @@ def forecast_barrier_hit_probabilities(  # noqa: C901
                     prices,
                     horizon=horizon_val,
                     n_sims=int(sims),
-                    seed=int(request_seed_base),
+                    seed=normalize_barrier_seed(request_seed_base),
                     p_order=p_order,
                     q_order=q_order,
                 )
@@ -429,7 +430,7 @@ def forecast_barrier_hit_probabilities(  # noqa: C901
                     prices,
                     horizon=horizon_val,
                     n_sims=int(sims),
-                    seed=int(request_seed_base),
+                    seed=normalize_barrier_seed(request_seed_base),
                     block_size=bs,
                 )
             elif method_key == 'heston':
@@ -437,7 +438,7 @@ def forecast_barrier_hit_probabilities(  # noqa: C901
                     prices,
                     horizon=horizon_val,
                     n_sims=int(sims),
-                    seed=int(request_seed_base),
+                    seed=normalize_barrier_seed(request_seed_base),
                     kappa=p.get('kappa'),
                     theta=p.get('theta'),
                     xi=p.get('xi'),
@@ -449,7 +450,7 @@ def forecast_barrier_hit_probabilities(  # noqa: C901
                     prices,
                     horizon=horizon_val,
                     n_sims=int(sims),
-                    seed=int(request_seed_base),
+                    seed=normalize_barrier_seed(request_seed_base),
                     jump_lambda=p.get('jump_lambda', p.get('lambda')),
                     jump_mu=p.get('jump_mu'),
                     jump_sigma=p.get('jump_sigma'),
@@ -490,7 +491,7 @@ def forecast_barrier_hit_probabilities(  # noqa: C901
                 log_paths = np.log(np.clip(price_paths, 1e-12, None))
                 log_s0 = float(np.log(max(last_price, 1e-12)))
                 bb_log_paths = np.concatenate([np.full((S, 1), log_s0), log_paths], axis=1)
-                rng_bb = np.random.RandomState(int(request_seed_base) + 7)
+                rng_bb = np.random.RandomState(offset_barrier_seed(request_seed_base, 7))
                 bb_uniform_tp = rng_bb.rand(S, H)
                 bb_uniform_sl = rng_bb.rand(S, H)
         

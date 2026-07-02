@@ -63,6 +63,39 @@ class TestBarrierOptimizeProfilesEnsemble(_BarrierTestBase):
         self.assertEqual(profile.get("profile"), "long")
         self.assertFalse(profile.get("refine"))
 
+    def test_forecast_barrier_optimize_normalizes_oversized_seed(self):
+        self._set_flat_history(1.0)
+        paths = self._sample_paths()
+        seen_seeds = []
+
+        def _fake_sim(*args, seed=None, **kwargs):
+            seen_seeds.append(seed)
+            return {"price_paths": paths}
+
+        with patch(f'{_BARRIER_OPT_ROOT}._simulate_gbm_mc', side_effect=_fake_sim), \
+             patch(f'{_BARRIER_OPT_ROOT}._get_live_reference_price', return_value=(None, None)):
+            result = forecast_barrier_optimize(
+                symbol="EURUSD",
+                timeframe="H1",
+                horizon=4,
+                method="mc_gbm",
+                direction="long",
+                mode="pct",
+                tp_min=0.5,
+                tp_max=0.5,
+                tp_steps=1,
+                sl_min=0.5,
+                sl_max=0.5,
+                sl_steps=1,
+                params={"seed": 2**32 + 9, "n_sims": 10, "n_seeds": 1},
+                return_grid=True,
+            )
+
+        self.assertTrue(result.get("success"))
+        self.assertTrue(seen_seeds)
+        self.assertTrue(all(0 <= int(seed) < 2**32 for seed in seen_seeds))
+        self.assertEqual(seen_seeds[0], 9)
+
     def test_forecast_barrier_optimize_preserves_explicit_medium_defaults_under_fast_profile(self):
         self._set_flat_history(1.0)
         paths = self._sample_paths()
