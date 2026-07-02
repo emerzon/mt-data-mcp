@@ -143,6 +143,13 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
         "Classic-mode engine: native or stock_pattern. Omitted classic calls "
         "use native; invalid for other modes."
     ),
+    ("report_generate", "template"): (
+        "Report template: minimal fast context+forecast, basic balanced default, "
+        "advanced regimes/HAR/conformal, scalping M5, intraday H1, swing H4/D1, "
+        "or position D1/W1. Runtime cost: minimal is the quick path; "
+        "basic/advanced and style templates may invoke multiple MT5 fetches plus "
+        "pivots, patterns, backtests, barriers, and regime checks."
+    ),
     ("temporal_analyze", "lookback"): (
         "Historical bars used when start/end are omitted. Defaults to a "
         "timeframe-aware seasonal window: 210 days for day-of-week, 60 days "

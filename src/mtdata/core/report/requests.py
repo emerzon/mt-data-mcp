@@ -24,7 +24,10 @@ ReportTemplateLiteral = Literal[
 _REPORT_TEMPLATE_HELP = (
     "Report template: minimal fast context+forecast, basic balanced default, "
     "advanced adds regimes/HAR/conformal, scalping M5 short-term setup, "
-    "intraday H1 setup, swing H4/D1 setup, position D1/W1 setup."
+    "intraday H1 setup, swing H4/D1 setup, position D1/W1 setup. "
+    "Runtime cost: minimal is the quick path; basic/advanced and style "
+    "templates may invoke multiple MT5 fetches plus pivots, patterns, "
+    "backtests, barriers, and regime checks."
 )
 
 
