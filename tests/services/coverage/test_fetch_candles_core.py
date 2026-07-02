@@ -482,6 +482,11 @@ class TestFetchCandlesCore(unittest.TestCase):
         self.assertEqual(result["data_window"]["returned_count"], 5)
         self.assertTrue(result["data_window"]["latest_bar_complete"])
         self.assertIn("latest_bar_age_seconds", result["data_window"])
+        self.assertEqual(
+            result["data_window"]["latest_bar_age_metric"],
+            "latest_completed_bar_close_age_seconds",
+        )
+        self.assertLess(result["data_window"]["latest_bar_age_seconds"], 120.0)
         diagnostics = result['meta']['diagnostics']
         query = diagnostics['query']
         self.assertEqual(query['requested_bars'], 5)

@@ -2042,10 +2042,16 @@ def fetch_candles(  # noqa: C901
             "latest_bar_complete": not forming_candle_included,
         }
         if latest_bar_epoch is not None and query_mode != "range":
+            latest_bar_age_epoch = float(latest_bar_epoch)
+            latest_bar_age_metric = "latest_bar_open_age_seconds"
+            if not forming_candle_included and expected_bar_seconds > 0:
+                latest_bar_age_epoch = float(latest_bar_epoch) + float(expected_bar_seconds)
+                latest_bar_age_metric = "latest_completed_bar_close_age_seconds"
             data_window["latest_bar_age_seconds"] = round(
-                max(0.0, float(as_of_epoch) - float(latest_bar_epoch)),
+                max(0.0, float(as_of_epoch) - latest_bar_age_epoch),
                 3,
             )
+            data_window["latest_bar_age_metric"] = latest_bar_age_metric
         payload["data_window"] = {
             key: value
             for key, value in data_window.items()
