@@ -95,6 +95,7 @@ class TestResolveBarrierPrices:
             price=100.0, direction="long",
             tp_abs=99.0, sl_abs=101.0,  # inverted
             pip_size=0.01,
+            adjust_inverted=True,
         )
         assert tp > 100.0
         assert sl < 100.0
@@ -105,6 +106,7 @@ class TestResolveBarrierPrices:
             price=100.0, direction="short",
             tp_abs=101.0, sl_abs=99.0,  # inverted
             pip_size=0.01,
+            adjust_inverted=True,
         )
         assert tp < 100.0
         assert sl > 100.0
@@ -119,15 +121,14 @@ class TestResolveBarrierPrices:
         assert tp > 100.0
         assert sl < 100.0
 
-    def test_no_adjust_inverted(self):
-        """With adjust_inverted=False, inverted prices are kept as-is."""
+    def test_rejects_inverted_by_default(self):
+        """Inverted prices are rejected unless adjustment is explicit."""
         tp, sl = resolve_barrier_prices(
             price=100.0, direction="long",
             tp_abs=99.0, sl_abs=101.0,
-            adjust_inverted=False,
         )
-        assert tp == pytest.approx(99.0)
-        assert sl == pytest.approx(101.0)
+        assert tp is None
+        assert sl is None
 
     def test_coerce_string_values(self):
         """String numeric values should be coerced."""

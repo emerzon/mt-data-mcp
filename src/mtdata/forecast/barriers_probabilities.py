@@ -328,7 +328,6 @@ def forecast_barrier_hit_probabilities(  # noqa: C901
             tp_ticks=barrier_values.get("tp_ticks"),
             sl_ticks=barrier_values.get("sl_ticks"),
             pip_size=pip_size,
-            adjust_inverted=True,
         )
 
         if tp_price is None or sl_price is None:
