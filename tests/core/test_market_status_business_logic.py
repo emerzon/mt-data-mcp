@@ -141,6 +141,7 @@ def test_market_status_symbol_mode_reports_heuristic_status(monkeypatch) -> None
     assert result["data_fetched_at"] == "2024-01-02T12:00:00Z"
     assert result["last_tick_time"] == "2024-01-02T12:00:00Z"
     assert result["is_tradable"] is True
+    assert result["is_tradable_confidence"] == "heuristic"
     assert result["market_clock"] == "2024-01-02T12:00:00Z"
     assert result["market_clock_timezone"] == "UTC"
     assert result["authoritative_clock"] in {"server", "utc"}

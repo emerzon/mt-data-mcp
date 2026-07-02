@@ -934,6 +934,7 @@ def _check_symbol_market_status(
         "status_confidence": "heuristic",
         "can_open_new_positions": can_open,
         "is_tradable": can_open,
+        "is_tradable_confidence": "heuristic",
         "trade_mode_allows_opening": trade_mode_can_open,
         "trade_mode_label": mode_status.get("trade_mode_label"),
         "tick_freshness": tick_freshness,
@@ -1043,7 +1044,9 @@ def _compact_symbol_market_status(row: Dict[str, Any], *, detail: str) -> Dict[s
     keys = (
         "symbol",
         "status",
+        "status_confidence",
         "is_tradable",
+        "is_tradable_confidence",
         "can_open_new_positions",
         "tick_freshness",
         "market_clock",
