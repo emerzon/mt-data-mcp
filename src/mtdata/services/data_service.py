@@ -1025,7 +1025,7 @@ def _trim_df_to_target(
             return out.copy() if copy_rows else out
         target_from = _utc_epoch_seconds(from_dt)
         target_to = _utc_epoch_seconds(to_dt)
-        out = df.loc[(df['__epoch'] >= target_from) & (df['__epoch'] <= target_to)]
+        out = df.loc[(df['__epoch'] >= target_from) & (df['__epoch'] < target_to)]
     elif start_datetime:
         from_dt = _parse_start_datetime(start_datetime)
         if not from_dt:
@@ -1359,6 +1359,42 @@ def _apply_indicator_stage(
             _apply_denoise_util(df, dn_ti, default_when='post_ti')
 
     return ti_cols
+
+
+def _indicator_columns_with_missing_values(
+    df: pd.DataFrame,
+    ti_cols: List[str],
+) -> List[str]:
+    missing_cols: List[str] = []
+    for col in ti_cols:
+        if col not in df.columns:
+            continue
+        try:
+            if bool(df[col].isna().any()):
+                missing_cols.append(str(col))
+        except Exception:
+            continue
+    return missing_cols
+
+
+def _drop_incomplete_indicator_rows(
+    df: pd.DataFrame,
+    ti_cols: List[str],
+) -> Tuple[pd.DataFrame, int, List[str]]:
+    existing_cols = [col for col in ti_cols if col in df.columns]
+    if not existing_cols or len(df) == 0:
+        return df, 0, []
+
+    missing_cols = _indicator_columns_with_missing_values(df, ti_cols)
+    if not missing_cols:
+        return df, 0, []
+
+    missing_mask = df[existing_cols].isna().any(axis=1)
+    dropped_rows = int(missing_mask.sum())
+    if dropped_rows <= 0:
+        return df, 0, []
+
+    return df.loc[~missing_mask].copy(), dropped_rows, missing_cols
 
 
 def _apply_post_ti_denoise(
@@ -1711,6 +1747,7 @@ def fetch_candles(  # noqa: C901
             "applied": False,
             "warmup_bars": int(warmup_bars),
         }
+        indicator_rows_dropped = 0
 
         # If TI requested, check for NaNs and retry once with increased warmup
         if ti_spec and ti_cols:
@@ -1772,6 +1809,44 @@ def fetch_candles(  # noqa: C901
                 ti_warnings.append(
                     f"Indicator warmup retry failed: {exc}. Indicator values may be incomplete."
                 )
+
+        if ti_spec and ti_cols:
+            df, dropped_rows, missing_indicator_cols = _drop_incomplete_indicator_rows(df, ti_cols)
+            if dropped_rows:
+                indicator_rows_dropped += int(dropped_rows)
+                warmup_retry_meta["incomplete_rows_dropped"] = int(dropped_rows)
+                warmup_retry_meta["incomplete_indicator_columns"] = list(missing_indicator_cols)
+                if len(df) == 0:
+                    warning_text = (
+                        f"Dropped {dropped_rows} candle rows with incomplete indicator values; "
+                        "no complete indicator rows remain."
+                    )
+                    if warning_text not in ti_warnings:
+                        ti_warnings.append(warning_text)
+                    return {
+                        "success": False,
+                        "error_code": "data_fetch_candles_incomplete_indicators",
+                        "error": (
+                            f"No complete indicator rows available for {symbol} {timeframe}; "
+                            "increase limit, reduce indicator lookback, or allow a larger "
+                            "historical warmup window."
+                        ),
+                        "symbol": symbol,
+                        "timeframe": timeframe,
+                        "indicator_columns": list(missing_indicator_cols),
+                        "warnings": list(ti_warnings),
+                        "meta": {
+                            "diagnostics": {
+                                "query": {
+                                    "warmup_retry": warmup_retry_meta,
+                                },
+                            },
+                        },
+                    }
+                ti_warnings.append(
+                    f"Dropped {dropped_rows} candle rows with incomplete indicator values after warmup."
+                )
+                rows_after_target_trim = int(len(df))
 
         # Authoritative incomplete-tail trim: covers the initial fetch *and*
         # the TI-retry rebuild path, applied before any non-causal transforms.
@@ -1866,12 +1941,15 @@ def fetch_candles(  # noqa: C901
         else:
             forming_candle_status = "none"
         remaining_after_forming = max(0, candles_excluded - incomplete_candles_skipped)
-        quality_excluded = min(int(quality_rows_removed), remaining_after_forming)
-        remaining_excluded = max(0, remaining_after_forming - quality_excluded)
+        indicator_excluded = min(int(indicator_rows_dropped), remaining_after_forming)
+        remaining_after_indicator = max(0, remaining_after_forming - indicator_excluded)
+        quality_excluded = min(int(quality_rows_removed), remaining_after_indicator)
+        remaining_excluded = max(0, remaining_after_indicator - quality_excluded)
         window_shortfall = remaining_excluded if (start_datetime or end_datetime) else 0
         source_shortfall = max(0, remaining_excluded - window_shortfall)
         candle_excluded_total = (
             incomplete_candles_skipped
+            + indicator_excluded
             + quality_excluded
             + window_shortfall
             + source_shortfall
@@ -1881,7 +1959,7 @@ def fetch_candles(  # noqa: C901
             "returned": candles_returned,
             "excluded": {
                 "forming_bar": incomplete_candles_skipped,
-                "indicator_warmup": 0,
+                "indicator_warmup": indicator_excluded,
                 "quality_filtered": quality_excluded,
                 "window_or_source_shortfall": window_shortfall + source_shortfall,
                 "total": candle_excluded_total,
@@ -1935,6 +2013,7 @@ def fetch_candles(  # noqa: C901
                         "warmup_bars": int(warmup_bars),
                         "raw_bars_fetched": raw_bars_fetched,
                         "rows_after_target_trim": rows_after_target_trim,
+                        "indicator_rows_dropped": int(indicator_rows_dropped),
                         "quality_rows_removed": int(quality_rows_removed),
                         "cache_status": "unknown",
                         "warmup_retry": warmup_retry_meta,

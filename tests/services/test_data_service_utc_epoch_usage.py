@@ -10,7 +10,7 @@ from mtdata.services import data_service
 
 
 def test_trim_df_to_target_uses_utc_epoch_seconds() -> None:
-    df = pd.DataFrame({"__epoch": [100.0, 200.0, 300.0], "close": [1.0, 2.0, 3.0]})
+    df = pd.DataFrame({"__epoch": [100.0, 200.0, 250.0, 300.0], "close": [1.0, 2.0, 2.5, 3.0]})
     with patch("mtdata.services.data_service._parse_start_datetime") as mock_parse, patch(
         "mtdata.services.data_service._utc_epoch_seconds"
     ) as mock_epoch:

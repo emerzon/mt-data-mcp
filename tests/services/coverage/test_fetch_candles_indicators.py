@@ -334,7 +334,46 @@ class TestFetchCandlesIndicators(unittest.TestCase):
     @patch(_RESOLVE_CTZ, return_value=None)
     @patch(_ESTIMATE_WARMUP, return_value=14)
     @patch(_GUARD, _mock_symbol_guard)
-    def test_nan_warmup_retry_metadata_stays_unapplied_when_refetch_is_empty(
+    def test_nan_warmup_retry_drops_incomplete_rows_when_refetch_is_empty(
+        self,
+        mock_warmup,
+        mock_ctz,
+        mock_info,
+        mock_from,
+        mock_ti,
+        mock_cfg,
+    ):
+        mock_cfg.get_time_offset_seconds.return_value = 0
+        mock_from.side_effect = [_make_rates(30), []]
+
+        def add_nan_col(df, spec):
+            df['rsi_14'] = [float('nan')] * max(0, len(df) - 3) + [50.0, 51.0, 52.0]
+            return ['rsi_14']
+
+        mock_ti.side_effect = add_nan_col
+
+        result = fetch_candles('EURUSD', limit=5, indicators=[{'name': 'rsi', 'params': [14]}])
+
+        self.assertTrue(result.get('success'))
+        self.assertEqual(result['returned_count'], 2)
+        self.assertTrue(all(row['rsi_14'] is not None for row in result['data']))
+        self.assertEqual(result['candle_counts']['excluded']['indicator_warmup'], 1)
+        warmup_retry = result['meta']['diagnostics']['query']['warmup_retry']
+        self.assertFalse(warmup_retry['applied'])
+        self.assertEqual(warmup_retry['raw_bars_fetched'], 0)
+        self.assertEqual(warmup_retry['incomplete_rows_dropped'], 2)
+        self.assertEqual(result['meta']['diagnostics']['query']['indicator_rows_dropped'], 2)
+
+    @patch(_MT5_CONFIG)
+    @patch(_APPLY_TI)
+    @patch(f'{_DS}.FETCH_RETRY_DELAY', 0)
+    @patch(f'{_DS}.FETCH_RETRY_ATTEMPTS', 1)
+    @patch(_RATES_FROM)
+    @patch(_CACHED_INFO, return_value=MagicMock())
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_ESTIMATE_WARMUP, return_value=14)
+    @patch(_GUARD, _mock_symbol_guard)
+    def test_nan_warmup_retry_fails_when_no_complete_rows_remain(
         self,
         mock_warmup,
         mock_ctz,
@@ -354,10 +393,13 @@ class TestFetchCandlesIndicators(unittest.TestCase):
 
         result = fetch_candles('EURUSD', limit=5, indicators=[{'name': 'rsi', 'params': [14]}])
 
-        self.assertTrue(result.get('success'))
+        self.assertFalse(result.get('success'))
+        self.assertEqual(result['error_code'], 'data_fetch_candles_incomplete_indicators')
+        self.assertEqual(result['indicator_columns'], ['rsi_14'])
         warmup_retry = result['meta']['diagnostics']['query']['warmup_retry']
         self.assertFalse(warmup_retry['applied'])
         self.assertEqual(warmup_retry['raw_bars_fetched'], 0)
+        self.assertEqual(warmup_retry['incomplete_rows_dropped'], 5)
 
     @patch(_MT5_CONFIG)
     @patch(_APPLY_TI)
@@ -429,11 +471,13 @@ class TestFetchCandlesIndicators(unittest.TestCase):
 
         result = fetch_candles('EURUSD', limit=5, indicators=[{'name': 'rsi', 'params': [14]}])
 
-        self.assertTrue(result.get('success'))
+        self.assertFalse(result.get('success'))
+        self.assertEqual(result['error_code'], 'data_fetch_candles_incomplete_indicators')
         warmup_retry = result['meta']['diagnostics']['query']['warmup_retry']
         self.assertTrue(warmup_retry['applied'])
         self.assertEqual(warmup_retry['error'], 'retry boom')
         self.assertTrue(any('Indicator warmup retry failed: retry boom' in str(w) for w in result.get('warnings', [])))
+        self.assertEqual(warmup_retry['incomplete_rows_dropped'], 5)
         self.assertEqual(mock_rebuild.call_count, 1)
 
     @patch(_MT5_CONFIG)
@@ -446,7 +490,7 @@ class TestFetchCandlesIndicators(unittest.TestCase):
     @patch(_RESOLVE_CTZ, return_value=None)
     @patch(_ESTIMATE_WARMUP, return_value=14)
     @patch(_GUARD, _mock_symbol_guard)
-    def test_nan_warmup_retry_preserves_freshness_policy(
+    def test_nan_warmup_retry_allows_historical_end_retry_window(
         self,
         mock_warmup,
         mock_ctz,
@@ -485,12 +529,11 @@ class TestFetchCandlesIndicators(unittest.TestCase):
 
         self.assertTrue(result.get('success'))
         self.assertEqual(mock_from.call_count, 2)
-        self.assertEqual(mock_ti.call_count, 1)
-        self.assertEqual(float(result['data'][-1]['time']), float(fresh_rates[-1]['time']))
+        self.assertEqual(mock_ti.call_count, 2)
+        self.assertEqual(float(result['data'][-1]['time']), float(stale_rates[-1]['time']))
         warmup_retry = result['meta']['diagnostics']['query']['warmup_retry']
-        self.assertFalse(warmup_retry['applied'])
-        self.assertIn('Data appears stale for EURUSD H1', warmup_retry['error'])
-        self.assertTrue(any('Indicator warmup retry failed:' in str(w) for w in result.get('warnings', [])))
+        self.assertTrue(warmup_retry['applied'])
+        self.assertEqual(warmup_retry['raw_bars_fetched'], 60)
 
 
 if __name__ == '__main__':
