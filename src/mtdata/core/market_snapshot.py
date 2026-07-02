@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import math
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
@@ -234,6 +235,16 @@ def _snapshot_summary(
     return "; ".join(parts) + "."
 
 
+def _coerce_float(value: Any) -> Optional[float]:
+    try:
+        out = float(value)
+    except Exception:
+        return None
+    if not math.isfinite(out):
+        return None
+    return out
+
+
 def _first_level_value(levels: Any) -> Any:
     if not isinstance(levels, list):
         return None
@@ -246,7 +257,41 @@ def _first_level_value(levels: Any) -> Any:
     return None
 
 
-def _nearest_level_value(payload: Any, side: str) -> Any:
+def _nearest_level_from_side(
+    levels: Any,
+    side: str,
+    reference_price: Optional[float],
+) -> Any:
+    if not isinstance(levels, list):
+        return None
+    if reference_price is None:
+        return _first_level_value(levels)
+
+    candidates: list[tuple[float, Any]] = []
+    for level in levels:
+        if not isinstance(level, dict):
+            continue
+        value = level.get("value")
+        numeric_value = _coerce_float(value)
+        if numeric_value is None:
+            continue
+        if side == "support" and numeric_value > reference_price:
+            continue
+        if side == "resistance" and numeric_value < reference_price:
+            continue
+        candidates.append((abs(numeric_value - reference_price), value))
+    if not candidates:
+        return None
+    candidates.sort(key=lambda item: item[0])
+    return candidates[0][1]
+
+
+def _nearest_level_value(
+    payload: Any,
+    side: str,
+    *,
+    reference_price: Optional[float] = None,
+) -> Any:
     if not isinstance(payload, dict):
         return None
 
@@ -254,22 +299,60 @@ def _nearest_level_value(payload: Any, side: str) -> Any:
     direct = payload.get(direct_key)
     if isinstance(direct, dict):
         value = direct.get("value")
+        numeric_value = _coerce_float(value)
+        if (
+            numeric_value is not None
+            and reference_price is not None
+            and (
+                (side == "support" and numeric_value > reference_price)
+                or (side == "resistance" and numeric_value < reference_price)
+            )
+        ):
+            value = None
         if value is not None:
             return value
     elif direct is not None:
-        return direct
+        numeric_value = _coerce_float(direct)
+        if not (
+            numeric_value is not None
+            and reference_price is not None
+            and (
+                (side == "support" and numeric_value > reference_price)
+                or (side == "resistance" and numeric_value < reference_price)
+            )
+        ):
+            return direct
 
     nearest = payload.get("nearest")
     if isinstance(nearest, dict):
         nested = nearest.get(side)
         if isinstance(nested, dict):
             value = nested.get("value")
+            numeric_value = _coerce_float(value)
+            if (
+                numeric_value is not None
+                and reference_price is not None
+                and (
+                    (side == "support" and numeric_value > reference_price)
+                    or (side == "resistance" and numeric_value < reference_price)
+                )
+            ):
+                value = None
             if value is not None:
                 return value
         elif nested is not None:
-            return nested
+            numeric_value = _coerce_float(nested)
+            if not (
+                numeric_value is not None
+                and reference_price is not None
+                and (
+                    (side == "support" and numeric_value > reference_price)
+                    or (side == "resistance" and numeric_value < reference_price)
+                )
+            ):
+                return nested
 
-    return _first_level_value(payload.get(f"{side}s"))
+    return _nearest_level_from_side(payload.get(f"{side}s"), side, reference_price)
 
 
 def _bias_from_signal_bias(value: Any) -> Optional[str]:
@@ -363,10 +446,17 @@ def _snapshot_summary_payload(sections: Dict[str, Any]) -> Dict[str, Any]:
             if value is not None:
                 out[key] = value
 
-    support = _nearest_level_value(levels, "support")
+    reference_price = _coerce_float(out.get("mid"))
+    if reference_price is None:
+        bid = _coerce_float(out.get("bid"))
+        ask = _coerce_float(out.get("ask"))
+        if bid is not None and ask is not None:
+            reference_price = (bid + ask) / 2.0
+
+    support = _nearest_level_value(levels, "support", reference_price=reference_price)
     if support is not None:
         out["nearest_support"] = support
-    resistance = _nearest_level_value(levels, "resistance")
+    resistance = _nearest_level_value(levels, "resistance", reference_price=reference_price)
     if resistance is not None:
         out["nearest_resistance"] = resistance
 

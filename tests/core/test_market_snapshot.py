@@ -193,6 +193,38 @@ def test_market_snapshot_compact_defaults_to_lean_snapshot(monkeypatch):
     assert "patterns" not in result
 
 
+def test_market_snapshot_nearest_levels_respect_quote_side(monkeypatch):
+    def fake_call_section(name, symbol, timeframe, horizon, detail):
+        if name == "quote":
+            return {
+                "success": True,
+                "symbol": symbol,
+                "bid": 1.1000,
+                "ask": 1.1002,
+                "mid": 1.1001,
+            }
+        if name == "levels":
+            return {
+                "success": True,
+                "supports": [
+                    {"type": "support", "value": 1.10015},
+                    {"type": "support", "value": 1.0999},
+                ],
+                "resistances": [
+                    {"type": "resistance", "value": 1.1},
+                    {"type": "resistance", "value": 1.1004},
+                ],
+            }
+        return {"success": True, "n_patterns": 0, "highlights": []}
+
+    monkeypatch.setattr(snapshot_mod, "_call_section", fake_call_section)
+
+    result = _raw_market_snapshot(symbol="EURUSD", detail="compact")
+
+    assert result["snapshot"]["nearest_support"] == 1.0999
+    assert result["snapshot"]["nearest_resistance"] == 1.1004
+
+
 def test_market_snapshot_exposes_quote_and_assembly_timestamps(monkeypatch):
     def fake_call_section(name, symbol, timeframe, horizon, detail):
         if name == "quote":
