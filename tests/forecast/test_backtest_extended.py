@@ -82,10 +82,18 @@ class TestBarsPerYear:
 
 class TestComputePerformanceMetrics:
     def test_empty_returns(self):
-        assert _compute_performance_metrics([], "H1", 12, 0.0) == {}
+        metrics = _compute_performance_metrics([], "H1", 12, 0.0)
+
+        assert metrics["trades_observed"] == 0
+        assert metrics["win_rate"] == 0.0
+        assert metrics["metrics_reliability"] == "empty"
 
     def test_all_none_returns(self):
-        assert _compute_performance_metrics([None, None], "H1", 12, 0.0) == {}
+        metrics = _compute_performance_metrics([None, None], "H1", 12, 0.0)
+
+        assert metrics["trades_observed"] == 0
+        assert metrics["avg_return_per_trade"] == 0.0
+        assert metrics["metrics_reliability_reason"] == "no_valid_trades"
 
     def test_basic_returns(self):
         rets = [0.01, -0.005, 0.02, 0.015, -0.01]
@@ -217,16 +225,16 @@ class TestForecastBacktest:
                 timeframe="H1",
                 horizon=12,
                 steps=2,
-                spacing=12,
+                spacing=13,
                 methods=["theta"],
             )
 
         assert result.get("success") is True
         assert captured == [
             {
-                "as_of": _format_time_minimal(float(df["time"].iloc[475])),
-                "prefetched_len": 476,
-                "prefetched_last_time": float(df["time"].iloc[475]),
+                "as_of": _format_time_minimal(float(df["time"].iloc[474])),
+                "prefetched_len": 475,
+                "prefetched_last_time": float(df["time"].iloc[474]),
             },
             {
                 "as_of": _format_time_minimal(float(df["time"].iloc[487])),
@@ -246,9 +254,21 @@ class TestForecastBacktest:
             methods=["theta"],
         )
 
-        assert result == {
-            "error": "spacing must be greater than or equal to horizon when steps > 1"
-        }
+        assert result == {"error": "spacing must be greater than horizon when steps > 1"}
+        fetch.assert_not_called()
+
+    @patch("mtdata.forecast.backtest._fetch_history")
+    def test_rejects_boundary_overlapping_generated_backtest_windows(self, fetch):
+        result = forecast_backtest(
+            "EURUSD",
+            timeframe="H1",
+            horizon=12,
+            steps=2,
+            spacing=12,
+            methods=["theta"],
+        )
+
+        assert result == {"error": "spacing must be greater than horizon when steps > 1"}
         fetch.assert_not_called()
 
     @patch("mtdata.forecast.backtest._fetch_history")

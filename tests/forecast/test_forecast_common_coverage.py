@@ -731,7 +731,11 @@ class TestBarsPerYear:
 # ===================================================================
 class TestComputePerformanceMetrics:
     def test_empty_returns(self):
-        assert _compute_performance_metrics([], "H1", 1, 0.0) == {}
+        metrics = _compute_performance_metrics([], "H1", 1, 0.0)
+
+        assert metrics["trades_observed"] == 0
+        assert metrics["win_rate"] == 0.0
+        assert metrics["metrics_reliability"] == "empty"
 
     def test_single_return(self):
         m = _compute_performance_metrics([0.05], "H1", 1, 0.0)
@@ -774,7 +778,8 @@ class TestComputePerformanceMetrics:
 
     def test_all_nan_returns_empty(self):
         m = _compute_performance_metrics([float("nan"), float("nan")], "H1", 1, 0.0)
-        assert m == {}
+        assert m["trades_observed"] == 0
+        assert m["sample_notice"]["code"] == "no_valid_trades"
 
     def test_calmar_ratio_defined_when_enough_data(self):
         # Need at least 30 trades and 0.25 years

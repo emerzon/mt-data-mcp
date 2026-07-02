@@ -335,15 +335,61 @@ def _compute_performance_metrics(
 ) -> Dict[str, Any]:
     """Compute portfolio-level performance statistics from per-trade returns."""
 
-    metrics: Dict[str, Any] = {}
+    def _empty_metrics() -> Dict[str, Any]:
+        bars_per_year = _bars_per_year(timeframe)
+        cadence = (
+            max(1, int(trade_spacing_bars))
+            if trade_spacing_bars is not None
+            else max(1, int(horizon))
+        )
+        trades_per_year = (
+            float(bars_per_year / cadence)
+            if math.isfinite(bars_per_year)
+            else float("nan")
+        )
+        return {
+            "avg_return_per_trade": 0.0,
+            "avg_return_per_trade_pct": 0.0,
+            "win_rate": 0.0,
+            "win_rate_pct": 0.0,
+            "avg_win_return": None,
+            "avg_loss_return": None,
+            "avg_loss_magnitude": None,
+            "avg_win_loss_ratio": None,
+            "kelly_fraction": None,
+            "half_kelly_fraction": None,
+            "sharpe_ratio": None,
+            "sortino_ratio": None,
+            "profit_factor": None,
+            "max_drawdown": 0.0,
+            "max_drawdown_pct": 0.0,
+            "calmar_ratio": None,
+            "annual_return": None,
+            "trades_per_year": trades_per_year,
+            "trades_observed": 0,
+            "winning_trades": 0,
+            "losing_trades": 0,
+            "breakeven_trades": 0,
+            "slippage_bps": float(slippage_bps),
+            "metrics_reliability": "empty",
+            "metrics_reliability_reason": "no_valid_trades",
+            "sample_notice": {
+                "code": "no_valid_trades",
+                "trades_observed": 0,
+                "minimum_trades": int(_MIN_ANNUALIZATION_TRADES),
+            },
+        }
+
     if not returns:
-        return metrics
+        return _empty_metrics()
 
     arr = np.asarray([float(r) for r in returns if r is not None], dtype=float)
     arr = arr[np.isfinite(arr)]
     if arr.size == 0:
-        return metrics
+        return _empty_metrics()
     arr = np.clip(arr, -0.999, None)
+
+    metrics: Dict[str, Any] = {}
 
     bars_per_year = _bars_per_year(timeframe)
     cadence = max(1, int(trade_spacing_bars)) if trade_spacing_bars is not None else max(1, int(horizon))
@@ -1340,10 +1386,10 @@ def forecast_backtest(  # noqa: C901
         if (
             not anchors
             and int(steps) > 1
-            and int(spacing) < int(horizon)
+            and int(spacing) <= int(horizon)
         ):
             return {
-                "error": "spacing must be greater than or equal to horizon when steps > 1"
+                "error": "spacing must be greater than horizon when steps > 1"
             }
 
         # Fetch sufficient history via shared helper; ensure enough bars for anchors
