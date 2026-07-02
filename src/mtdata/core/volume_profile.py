@@ -417,6 +417,8 @@ def _profile_detail_payload(profile: Dict[str, Any], detail: str) -> Dict[str, A
         "success",
         "symbol",
         "source",
+        "volume_source_quality",
+        "is_synthetic",
         "window",
         "price_source",
         "volume_kind",
@@ -517,6 +519,21 @@ def _profile_units(profile: Dict[str, Any]) -> Dict[str, str]:
     }
 
 
+def _profile_source_quality(source: Any) -> Dict[str, Any]:
+    source_value = str(source or "").strip().lower()
+    if source_value == "m1_bars":
+        return {
+            "volume_source_quality": "estimated_m1_bar_proxy",
+            "is_synthetic": True,
+        }
+    if source_value == "ticks":
+        return {
+            "volume_source_quality": "raw_ticks",
+            "is_synthetic": False,
+        }
+    return {}
+
+
 def compute_volume_profile_payload(
     *,
     symbol: str,
@@ -589,6 +606,7 @@ def compute_volume_profile_payload(
     if profile.get("error"):
         profile["symbol"] = symbol
         profile["source"] = selected.get("source")
+        profile.update(_profile_source_quality(selected.get("source")))
         profile["price_point"] = price_point
         profile["price_digits"] = price_digits
         profile["diagnostics"] = {
@@ -598,6 +616,7 @@ def compute_volume_profile_payload(
         return profile
     profile["symbol"] = symbol
     profile["source"] = selected.get("source")
+    profile.update(_profile_source_quality(selected.get("source")))
     profile["window"] = _observed_profile_window(
         selected.get("rows", []),
         fallback_start=resolved_start,
