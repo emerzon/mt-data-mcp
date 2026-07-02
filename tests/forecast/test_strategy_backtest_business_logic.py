@@ -54,10 +54,15 @@ def test_strategy_backtest_sma_cross_generates_long_trade(monkeypatch):
     assert out["summary"]["num_trades"] == 1
     assert out["summary"]["long_trades"] == 1
     assert out["units"]["returns"] == "return_fraction"
+    assert out["units"]["net_return"] == "return_fraction"
+    assert out["units"]["net_return_pct"] == "percentage_points"
     assert out["units"]["drawdown"] == "return_fraction"
     assert out["units"]["win_rate"] == "fraction"
     assert out["trades"][0]["direction"] == "long"
     assert out["summary"]["net_return"] > 0.0
+    assert out["summary"]["net_return_pct"] == pytest.approx(
+        out["summary"]["net_return"] * 100.0
+    )
 
 
 def test_strategy_backtest_includes_first_valid_warmup_signal(monkeypatch):

@@ -142,6 +142,7 @@ def _compact_strategy_backtest_result(result: Dict[str, Any]) -> Dict[str, Any]:
                 abs_tol=1e-12,
             ):
                 summary_out.pop("gross_return", None)
+                summary_out.pop("gross_return_pct", None)
         except Exception:
             pass
         summary_out.pop("metrics_reliability", None)
@@ -250,6 +251,10 @@ _MIN_ANNUALIZATION_TRADES = 30
 _MIN_ANNUALIZATION_YEARS = 0.25
 _TRADE_BACKTEST_UNITS = {
     "returns": "return_fraction",
+    "gross_return": "return_fraction",
+    "gross_return_pct": "percentage_points",
+    "net_return": "return_fraction",
+    "net_return_pct": "percentage_points",
     "avg_return": "return_fraction",
     "avg_return_pct": "percentage_points",
     "avg_return_per_trade": "return_fraction",
@@ -296,6 +301,16 @@ def _backtest_units(quantity: Optional[str] = None) -> Dict[str, str]:
         units["avg_rmse"] = forecast_error_unit
         units["avg_mae"] = forecast_error_unit
     return units
+
+
+def _return_fraction_to_pct(value: Any) -> Optional[float]:
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(numeric):
+        return None
+    return round(numeric * 100.0, 6)
 
 
 def _directional_accuracy_from_signs(
@@ -1110,6 +1125,8 @@ def strategy_backtest(  # noqa: C901
         if end is not None:
             _params["end"] = end
         bars_used = len(df) if range_requested else int(lookback)
+        gross_return = float(gross_equity[-1] - 1.0)
+        net_return = float(net_equity[-1] - 1.0)
 
         result: Dict[str, Any] = {
             "success": True,
@@ -1131,8 +1148,10 @@ def strategy_backtest(  # noqa: C901
                 "num_trades": int(len(trades)),
                 "long_trades": long_trades,
                 "short_trades": short_trades,
-                "gross_return": float(gross_equity[-1] - 1.0),
-                "net_return": float(net_equity[-1] - 1.0),
+                "gross_return": gross_return,
+                "gross_return_pct": _return_fraction_to_pct(gross_return),
+                "net_return": net_return,
+                "net_return_pct": _return_fraction_to_pct(net_return),
             },
             "metrics": metrics,
             "last_signal": {
