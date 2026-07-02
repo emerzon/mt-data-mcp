@@ -449,7 +449,7 @@ def create_error_response(errors: List[str]) -> Dict[str, Any]:
     }
 
 
-def safe_cast_numeric(value: Any, param_name: str) -> Union[int, float, str]:
+def safe_cast_numeric(value: Any, param_name: str) -> Optional[Union[int, float, str]]:
     """Safely cast a value to numeric type or return original."""
     if value is None:
         return None
