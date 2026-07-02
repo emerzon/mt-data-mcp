@@ -116,8 +116,8 @@ def log_returns_from_prices(prices: np.ndarray, eps: float = 1e-12) -> np.ndarra
     if not math.isfinite(eps_value) or eps_value <= 0.0:
         raise ValueError("eps must be a positive finite number")
     finite = arr[np.isfinite(arr)]
-    if finite.size and np.any(finite < 0.0):
-        raise ValueError("prices must not contain negative values")
+    if finite.size and np.any(finite <= 0.0):
+        raise ValueError("prices must contain only positive values")
     with np.errstate(divide='ignore', invalid='ignore'):
         rets = np.diff(np.log(np.clip(arr, eps_value, None)))
     return np.asarray(rets, dtype=float)

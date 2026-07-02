@@ -743,7 +743,6 @@ class TestLogReturnsExtended:
         assert len(result) == 1
         assert abs(result[0] - np.log(110.0 / 100.0)) < 1e-10
 
-    def test_zero_price_clipped(self):
-        result = log_returns_from_prices(np.array([0.0, 100.0]))
-        assert len(result) == 1
-        assert np.isfinite(result[0])
+    def test_zero_price_rejected(self):
+        with pytest.raises(ValueError, match="positive values"):
+            log_returns_from_prices(np.array([0.0, 100.0]))

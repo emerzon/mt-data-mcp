@@ -58,11 +58,10 @@ class TestLogReturnsFromPrices:
         result = log_returns_from_prices(np.array([]))
         assert len(result) == 0
 
-    def test_near_zero_clipped(self):
+    def test_zero_price_rejected(self):
         prices = np.array([0.0, 1.0])
-        result = log_returns_from_prices(prices)
-        assert len(result) == 1
-        assert np.isfinite(result[0])
+        with pytest.raises(ValueError, match="positive values"):
+            log_returns_from_prices(prices)
 
 
 class TestExtractForecastValues:

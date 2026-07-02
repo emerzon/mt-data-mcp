@@ -142,14 +142,13 @@ class TestLogReturnsFromPrices:
 
     def test_negative_prices_raise_value_error(self):
         prices = np.array([100.0, -5.0, 100.0])
-        with pytest.raises(ValueError, match="negative values"):
+        with pytest.raises(ValueError, match="positive values"):
             log_returns_from_prices(prices)
 
     def test_eps_parameter(self):
         prices = np.array([0.0, 100.0])
-        rets = log_returns_from_prices(prices, eps=1e-6)
-        assert rets.shape == (1,)
-        assert np.isfinite(rets[0])
+        with pytest.raises(ValueError, match="positive values"):
+            log_returns_from_prices(prices, eps=1e-6)
 
     def test_random_prices(self):
         prices = 100 + np.cumsum(RS.randn(50))
