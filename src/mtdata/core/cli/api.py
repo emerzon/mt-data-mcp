@@ -78,6 +78,7 @@ from .runtime.commands import (
 from .runtime.commands import (
     create_command_function as _create_command_function_impl,
 )
+from .runtime.commands import LIVE_TRADE_MUTATION_TOOLS, LIVE_TRADE_MUTATION_WARNING
 from .runtime.commands import (
     merge_dict as _merge_dict_impl,
 )
@@ -1568,9 +1569,12 @@ def main():
             cmd_name,
             help=(
                 (
-                    meta.get("description") or func_info["doc"].split("\n")[0]
-                    if func_info["doc"]
-                    else f"Execute {cmd_name}"
+                    meta.get("description")
+                    or (
+                        func_info["doc"].split("\n")[0]
+                        if func_info["doc"]
+                        else f"Execute {cmd_name}"
+                    )
                 ).replace("%", "%%")
             ),
             formatter_class=_CLIHelpFormatter,
@@ -1578,6 +1582,15 @@ def main():
             suggest_on_error=True,
             color=_argparse_color_enabled(),
         )
+        if cmd_name in LIVE_TRADE_MUTATION_TOOLS:
+            summary = meta.get("description") or (
+                func_info["doc"].split("\n")[0]
+                if func_info["doc"]
+                else f"Execute {cmd_name}"
+            )
+            cmd_parser.description = (
+                f"{str(summary).replace('%', '%%')}\n\n{LIVE_TRADE_MUTATION_WARNING}"
+            )
 
         # Add global parameters to each subparser, excluding any that conflict with function params
         existing_param_names = [p["name"] for p in func_info["params"]]

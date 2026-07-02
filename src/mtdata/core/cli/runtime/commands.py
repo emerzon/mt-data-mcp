@@ -8,6 +8,12 @@ from ...data.requests import (
     _normalize_indicator_specs as _shared_normalize_indicator_specs,
 )
 
+LIVE_TRADE_MUTATION_TOOLS = frozenset({"trade_place", "trade_modify", "trade_close"})
+LIVE_TRADE_MUTATION_WARNING = (
+    "LIVE ORDER WARNING: this command can send real MT5 trade requests when "
+    "--dry-run false. Use --dry-run true to preview without sending an order."
+)
+
 
 def parse_kv_string(s: str, *, debug: Callable[[str], None]) -> Optional[Dict[str, Any]]:
     """Parse 'k=v,k2=v2' or JSON into a dict."""
@@ -428,6 +434,8 @@ def create_command_function(  # noqa: C901
                     message = f"Missing required argument '{missing_name}'. Valid values: {', '.join(choices)}."
                 elif missing_name in {"symbol", "symbols"}:
                     message += " Use symbols_list to browse available broker symbols."
+            if cmd_name in LIVE_TRADE_MUTATION_TOOLS:
+                message += f" {LIVE_TRADE_MUTATION_WARNING}"
             render_cli_result(
                 _build_cli_error(message),
                 args=args,
