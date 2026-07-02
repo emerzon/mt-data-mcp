@@ -201,6 +201,7 @@ _SYMBOL_DESCRIBE_COMPACT_DIRECT_FIELDS: tuple[str, ...] = (
     "warning",
     "price_change_pct",
     "price_change_pct_unit",
+    "price_change_basis",
     "digits",
     "point",
     "trade_contract_size",
@@ -327,6 +328,25 @@ def _symbol_forex_pair(symbol: Any) -> Optional[str]:
     return None
 
 
+def _symbol_crypto_match(symbol: Any, text: str) -> bool:
+    tokens = set(re.findall(r"[a-z0-9]+", text.casefold()))
+    if tokens.intersection(base.casefold() for base in _COMMON_CRYPTO_BASES):
+        return True
+    if tokens.intersection({"crypto", "cryptos", "cryptocurrency", "cryptocurrencies"}):
+        return True
+
+    letters = _symbol_name_letters(symbol)
+    quote_tokens = set(_FOREX_CURRENCY_CODES).union({"USDT", "USDC"})
+    for base in _COMMON_CRYPTO_BASES:
+        base_text = str(base or "").upper()
+        if not base_text or not letters.startswith(base_text):
+            continue
+        suffix = letters[len(base_text):]
+        if suffix in quote_tokens:
+            return True
+    return False
+
+
 def _symbol_category(symbol: Any) -> str:
     name = str(getattr(symbol, "name", "") or "")
     path = str(_extract_group_path_util(symbol) or "")
@@ -336,14 +356,14 @@ def _symbol_category(symbol: Any) -> str:
 
     if pair_prefix:
         return "forex"
-    if any(base.casefold() in text for base in _COMMON_CRYPTO_BASES):
-        return "crypto"
     if any(token in text for token in ("bond", "treasury", "bund", "gilt")):
         return "bonds"
     if "etf" in text:
         return "etfs"
     if any(token in text for token in ("stock", "stocks", "share", "shares", "equity")):
         return "stocks"
+    if _symbol_crypto_match(symbol, text):
+        return "crypto"
     if any(token in text for token in ("index", "indices", "nasdaq", "dow", "dax")):
         return "indices"
     if any(token in text for token in ("gold", "silver", "oil", "xau", "xag", "brent")):
@@ -1371,6 +1391,7 @@ def symbols_describe(
                     digits=6,
                 )
                 symbol_data["price_change_pct_unit"] = "percentage_points (1.0 = 1%)"
+                symbol_data["price_change_basis"] = "broker_symbol_info_price_change"
             else:
                 session_open = _market_scan_float(symbol_data.get("session_open"))
                 session_close = _market_scan_float(symbol_data.get("session_close"))
@@ -1384,6 +1405,7 @@ def symbols_describe(
                         digits=6,
                     )
                     symbol_data["price_change_pct_unit"] = "percentage_points (1.0 = 1%)"
+                    symbol_data["price_change_basis"] = "session_open_to_session_close"
             symbol_data.pop("price_change", None)
 
             _add_symbol_currency_diagnostics(symbol_data)

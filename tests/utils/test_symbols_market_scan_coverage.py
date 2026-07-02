@@ -266,6 +266,24 @@ def _make_bars(closes, *, tick_volume: int = 100):
     return bars
 
 
+def test_symbol_category_prefers_stock_group_over_crypto_substrings():
+    from mtdata.core.symbols import _symbol_category
+
+    stock = _make_symbol(
+        "LINK.US",
+        path="Stock CFD's\\Other US",
+        description="Interlink Electronics shares",
+    )
+    crypto = _make_symbol(
+        "LINKUSD",
+        path="Crypto\\Majors",
+        description="Chainlink vs US Dollar",
+    )
+
+    assert _symbol_category(stock) == "stocks"
+    assert _symbol_category(crypto) == "crypto"
+
+
 @contextmanager
 def _ready_guard_ok(symbol: str, info_before=None):
     yield None, info_before
