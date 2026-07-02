@@ -513,6 +513,12 @@ def _compact_finviz_market_row(row: Dict[str, Any], *, rows_key: str) -> Dict[st
         compact["perf_week"] = compact["perf_wtd"]
         compact["_perf_week_basis"] = "week_to_date"
     fields = _FINVIZ_MARKET_COMPACT_FIELDS
+    if rows_key == "pairs" and compact.get("price") not in (None, ""):
+        compact["delayed_price"] = compact.pop("price")
+        fields = tuple(
+            "delayed_price" if field == "price" else field
+            for field in fields
+        )
     out = {
         field: compact[field]
         for field in fields
@@ -621,6 +627,7 @@ def _normalize_finviz_market_payload(
     detail: str = "compact",
     tool: str,
     request: Dict[str, Any],
+    symbol_filter: Optional[str] = None,
 ) -> Dict[str, Any]:
     if not isinstance(result, dict) or "error" in result:
         return result
@@ -640,10 +647,19 @@ def _normalize_finviz_market_payload(
         for row in (rows if isinstance(rows, list) else [])
     ]
     upstream_count = len(normalized_rows)
+    symbol_filter_norm: Optional[str] = None
     if rows_key == "pairs":
         normalized_rows = [
             row for row in normalized_rows if _is_known_forex_pair_row(row)
         ]
+        if symbol_filter not in (None, ""):
+            symbol_filter_norm = finviz_forex_symbol_to_mt5(symbol_filter)
+            if symbol_filter_norm is not None:
+                normalized_rows = [
+                    row
+                    for row in normalized_rows
+                    if str(row.get("symbol") or "").upper() == symbol_filter_norm
+                ]
     limit_value = _coerce_finviz_limit(limit, default=len(normalized_rows))
     limited_rows = normalized_rows[:limit_value]
     if detail_mode != "full" and rows_key in {"pairs", "coins", "futures"}:
@@ -666,6 +682,8 @@ def _normalize_finviz_market_payload(
     out = {key: value for key, value in result.items() if key != rows_key}
     out["items"] = output_rows
     out["count"] = len(output_rows)
+    if symbol_filter_norm is not None:
+        out["symbol"] = symbol_filter_norm
     available = len(normalized_rows)
     if rows_key != "stocks":
         out["available_count"] = available
@@ -689,6 +707,11 @@ def _normalize_finviz_market_payload(
         out["freshness"] = _FINVIZ_DELAYED_FRESHNESS
     if has_price and rows_key == "pairs":
         _append_finviz_warning(out, _FINVIZ_FOREX_DELAYED_PRICE_WARNING)
+    if rows_key == "pairs" and symbol_filter_norm is not None and not output_rows:
+        _append_finviz_warning(
+            out,
+            f"No Finviz forex row matched symbol {symbol_filter_norm}.",
+        )
     if rows_key == "futures":
         out["price_source"] = _FINVIZ_DELAYED_FRESHNESS
         out["freshness"] = _FINVIZ_DELAYED_FRESHNESS
@@ -3275,6 +3298,7 @@ def finviz_insider_activity(
 
 @mcp.tool()
 def finviz_forex(
+    symbol: Optional[str] = None,
     limit: int = 20,
     detail: CompactFullDetailLiteral = "compact",  # type: ignore
 ) -> Dict[str, Any]:
@@ -3289,9 +3313,22 @@ def finviz_forex(
     dict
         Forex pairs performance data
     """
-    request = {"limit": limit, "detail": detail}
+    request = {"symbol": symbol, "limit": limit, "detail": detail}
 
     def _run() -> Dict[str, Any]:
+        symbol_norm = None
+        if symbol not in (None, ""):
+            symbol_norm = finviz_forex_symbol_to_mt5(symbol)
+            if symbol_norm is None:
+                return _finviz_error_payload(
+                    (
+                        f"Invalid forex symbol: {symbol}. Use a six-letter fiat "
+                        "pair such as EURUSD or a slash pair such as EUR/USD."
+                    ),
+                    code="finviz_forex_invalid_symbol",
+                    operation="finviz_forex",
+                    details={"symbol": symbol},
+                )
         limit_error = _validate_positive_finviz_limit(
             limit,
             operation="finviz_forex",
@@ -3308,6 +3345,7 @@ def finviz_forex(
             detail=detail,
             tool="finviz_forex",
             request=request,
+            symbol_filter=symbol_norm,
         )
 
     return _run_logged_tool("finviz_forex", request, _run)

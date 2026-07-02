@@ -604,7 +604,7 @@ class TestFinvizTools:
                 "symbol": "EURUSD",
                 "display_symbol": "EUR/USD",
                 "name": "Euro / US Dollar",
-                "price": 1.1,
+                "delayed_price": 1.1,
                 "price_currency": "USD",
                 "price_source": "finviz_delayed",
                 "data_delayed": True,
@@ -650,6 +650,56 @@ class TestFinvizTools:
                 "name": "British Pound / US Dollar",
             },
         ]
+
+    @patch("mtdata.core.finviz.get_forex_performance")
+    def test_finviz_forex_filters_symbol_aliases(self, mock_get_forex):
+        from mtdata.core.finviz import finviz_forex
+
+        mock_get_forex.return_value = {
+            "success": True,
+            "market": "forex",
+            "pairs": [
+                {"Pair": "EUR/USD", "Price": "1.10"},
+                {"Pair": "GBP/USD", "Price": "1.25"},
+                {"Pair": "USD/JPY", "Price": "156.20"},
+            ],
+        }
+
+        raw = getattr(finviz_forex, "__wrapped__", finviz_forex)
+        result = raw("GBPUSD", limit=20)
+
+        assert result["success"] is True
+        assert result["symbol"] == "GBPUSD"
+        assert result["count"] == 1
+        assert result["available_count"] == 1
+        assert result["items"] == [
+            {
+                "symbol": "GBPUSD",
+                "display_symbol": "GBP/USD",
+                "name": "British Pound / US Dollar",
+                "delayed_price": 1.25,
+                "price_currency": "USD",
+                "price_source": "finviz_delayed",
+                "data_delayed": True,
+                "delay_minutes_min": 15,
+                "delay_minutes_max": 20,
+            }
+        ]
+
+        slash_result = raw("USD/JPY", limit=20)
+        assert slash_result["symbol"] == "USDJPY"
+        assert slash_result["items"][0]["symbol"] == "USDJPY"
+
+    @patch("mtdata.core.finviz.get_forex_performance")
+    def test_finviz_forex_rejects_invalid_symbol_without_fetch(self, mock_get_forex):
+        from mtdata.core.finviz import finviz_forex
+
+        raw = getattr(finviz_forex, "__wrapped__", finviz_forex)
+        result = raw("BTCUSD")
+
+        assert result["success"] is False
+        assert result["error_code"] == "finviz_forex_invalid_symbol"
+        mock_get_forex.assert_not_called()
 
     @patch("mtdata.core.finviz.get_forex_performance")
     def test_finviz_forex_rejects_zero_limit(self, mock_get_forex):

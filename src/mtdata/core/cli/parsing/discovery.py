@@ -6,6 +6,7 @@ ToolInfo = Dict[str, Any]
 
 
 _OPTIONAL_FIRST_POSITIONAL_PARAMS: set[tuple[str, str]] = {
+    ("finviz_forex", "symbol"),
     ("finviz_news", "symbol"),
     ("news", "symbol"),
     ("correlation_matrix", "symbols"),
