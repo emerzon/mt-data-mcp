@@ -711,6 +711,24 @@ def _compact_patterns_payload(
             compact["suggested_review"] = signal.get("suggested_review")
         if signal.get("conflict"):
             compact["conflict"] = signal.get("conflict")
+        if (
+            str(signal.get("status") or "").strip().lower() == "neutral"
+            and float(signal.get("confidence") or 0.0) <= 0.0
+            and top_patterns
+        ):
+            visible_confidences = [
+                _safe_float(item.get("confidence"))
+                for item in top_patterns
+                if _safe_float(item.get("confidence")) is not None
+            ]
+            if visible_confidences:
+                max_visible_confidence = max(float(value) for value in visible_confidences)
+                if max_visible_confidence >= 0.5:
+                    compact["max_pattern_confidence"] = _round_confidence(max_visible_confidence)
+                    compact["bias_suppressed_reason"] = (
+                        "visible patterns are neutral or lack directional bias; "
+                        "aggregate confidence measures directional bias, not max single-pattern score"
+                    )
     if signal_bias and _should_expose_directional_bias(signal_bias, signal):
         compact["bias"] = signal_bias.get("net_bias")
         compact["dominant_direction"] = signal_bias.get("dominant_direction")

@@ -590,6 +590,37 @@ def test_build_pattern_response_compact_detail_returns_summary():
     assert "patterns" not in compact
 
 
+def test_build_pattern_response_compact_explains_neutral_high_score_patterns():
+    df = pd.DataFrame({"time": [1, 2, 3], "close": [10.0, 11.0, 12.0]})
+    patterns = [
+        {
+            "name": "Rectangle",
+            "direction": "neutral",
+            "status": "forming",
+            "confidence": 0.95,
+            "end_index": 2,
+        }
+    ]
+
+    compact = _build_pattern_response(
+        "EURUSD",
+        "H1",
+        100,
+        "classic",
+        patterns,
+        include_completed=False,
+        include_series=False,
+        series_time="string",
+        df=df,
+        detail="compact",
+    )
+
+    assert compact["pattern_status"] == "neutral"
+    assert compact["pattern_confidence"] == 0.0
+    assert compact["max_pattern_confidence"] == 0.95
+    assert "aggregate confidence measures directional bias" in compact["bias_suppressed_reason"]
+
+
 def test_build_pattern_response_compact_keeps_actionable_fields():
     df = pd.DataFrame({"time": [1, 2, 3], "close": [10.0, 11.0, 12.0]})
     patterns = [
