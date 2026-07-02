@@ -656,6 +656,7 @@ class TestPlacePendingOrder:
         mock_mt5.ORDER_TIME_GTC = 0
         mock_mt5.ORDER_TIME_SPECIFIED = 2
         mock_mt5.ORDER_FILLING_IOC = 1
+        mock_mt5.ORDER_FILLING_RETURN = 2
 
     @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
     def test_buy_limit_success(self):
@@ -668,6 +669,8 @@ class TestPlacePendingOrder:
         assert result.get("requested_price") == 1.09
         assert result.get("requested_sl") is None
         assert result.get("requested_tp") is None
+        request = mt5.order_send.call_args.args[0]
+        assert request["type_filling"] == mt5.ORDER_FILLING_RETURN
 
     @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
     def test_sell_stop_success(self):

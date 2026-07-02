@@ -457,7 +457,19 @@ def _send_order_with_fill_mode_retry(
         validation._safe_int_attr(mt5, "TRADE_RETCODE_INVALID_STOPS", 10016),
         validation._safe_int_attr(mt5, "TRADE_RETCODE_INVALID", 10013),
     }
-    for fill_mode in validation._candidate_fill_modes(mt5, symbol_info):
+    fill_modes: List[int] = []
+    preferred_fill_mode = request.get("type_filling")
+    try:
+        if preferred_fill_mode is not None:
+            fill_modes.append(int(preferred_fill_mode))
+    except Exception:
+        pass
+    for candidate in validation._candidate_fill_modes(mt5, symbol_info):
+        fill_mode = int(candidate)
+        if fill_mode not in fill_modes:
+            fill_modes.append(fill_mode)
+
+    for fill_mode in fill_modes:
         attempt_request = dict(request)
         attempt_request["type_filling"] = int(fill_mode)
         price_retry_count = 0
@@ -1329,7 +1341,7 @@ def _place_pending_order(
                 "magic": magic if magic is not None else _configured_order_magic(),
                 "comment": request_comment,
                 "type_time": mt5.ORDER_TIME_GTC,
-                "type_filling": validation._safe_int_attr(mt5, "ORDER_FILLING_IOC", 1),
+                "type_filling": validation._safe_int_attr(mt5, "ORDER_FILLING_RETURN", 2),
             }
 
             if expiration_specified:
