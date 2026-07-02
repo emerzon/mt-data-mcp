@@ -661,6 +661,7 @@ class TestTemporalAnalyze:
         assert mock_fetch.call_args.args[2] == 24 * 210
         assert r["lookback"] == 24 * 210
         assert r["lookback_source"] == "auto"
+        assert "Auto lookback selected 5040 bars" in r["lookback_note"]
         assert "sample_warnings" not in r
 
     @_apply_analyze_patches

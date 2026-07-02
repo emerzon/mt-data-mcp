@@ -615,6 +615,7 @@ def _base_temporal_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
             "timezone",
             "lookback",
             "lookback_source",
+            "lookback_note",
             "bars",
             "start",
             "end",
@@ -706,6 +707,7 @@ def _summary_temporal_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
             "timezone",
             "lookback",
             "lookback_source",
+            "lookback_note",
             "bars",
             "start",
             "end",
@@ -1362,6 +1364,12 @@ def temporal_analyze(  # noqa: C901
                 "overall": overall,
                 "volume_source": volume_col,
             }
+            if lookback_defaulted:
+                payload["lookback_note"] = (
+                    f"Auto lookback selected {int(effective_lookback)} bars for "
+                    f"{group_norm} analysis on {timeframe}; pass --lookback for a "
+                    "smaller, faster sample."
+                )
             group_payload_source = grouped_dimensions if grouped_dimensions else groups_out
             payload["groups_analyzed"] = _temporal_group_count(group_payload_source)
             payload["groups_excluded"] = len(excluded_groups)
