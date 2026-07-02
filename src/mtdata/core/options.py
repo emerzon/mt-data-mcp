@@ -93,14 +93,27 @@ def _options_provider_readiness() -> Dict[str, Any]:
             "401/429. For reliable chains, set MTDATA_OPTIONS_PROVIDER=tradier and "
             "MTDATA_OPTIONS_API_KEY."
         ) if effective_provider == "yahoo" else None
-    chain_data_ready = effective_provider in {"yahoo", "tradier"}
-    return {
+    chain_data_access_available = effective_provider in {"yahoo", "tradier"}
+    chain_provider_ready = effective_provider == "tradier" and api_key_configured
+    chain_data_ready = chain_provider_ready
+    provider_mode = "best_effort" if effective_provider == "yahoo" else "authenticated"
+    warnings = []
+    if provider_mode == "best_effort":
+        warnings.append(
+            "Options chain access is using unauthenticated Yahoo fallback; "
+            "it is best-effort and may return 401/429."
+        )
+    out = {
         "configured_provider": provider,
         "effective_provider": effective_provider,
         "api_key_configured": api_key_configured,
         "configured_provider_ready": configured_provider_ready,
+        "local_tools_ready": True,
+        "chain_provider_ready": chain_provider_ready,
         "chain_data_ready": chain_data_ready,
-        "provider_mode": "best_effort" if effective_provider == "yahoo" else "authenticated",
+        "chain_data_access_available": chain_data_access_available,
+        "degraded": bool(provider_mode == "best_effort"),
+        "provider_mode": provider_mode,
         "supported_providers": ["tradier", "yahoo"],
         "chain_dependent_tools": [
             "options_expirations",
@@ -111,11 +124,14 @@ def _options_provider_readiness() -> Dict[str, Any]:
         "action_required": action_required,
         "remediation": remediation,
     }
+    if warnings:
+        out["warnings"] = warnings
+    return out
 
 
 def _options_chain_provider_gate(tool_name: str) -> Optional[Dict[str, Any]]:
     readiness = _options_provider_readiness()
-    if readiness.get("chain_data_ready") is True:
+    if readiness.get("chain_data_access_available") is True:
         return None
     provider = readiness.get("effective_provider")
     error_code = (

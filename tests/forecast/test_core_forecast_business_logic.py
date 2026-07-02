@@ -2958,6 +2958,7 @@ def _ready_options_provider():
         "effective_provider": "tradier",
         "api_key_configured": True,
         "chain_data_ready": True,
+        "chain_data_access_available": True,
         "action_required": None,
         "remediation": None,
     }
@@ -3104,7 +3105,8 @@ def test_options_chain_tools_allow_yahoo_best_effort_provider(monkeypatch):
             "configured_provider": "yahoo",
             "effective_provider": "yahoo",
             "api_key_configured": False,
-            "chain_data_ready": True,
+            "chain_data_ready": False,
+            "chain_data_access_available": True,
             "provider_mode": "best_effort",
             "action_required": None,
         },

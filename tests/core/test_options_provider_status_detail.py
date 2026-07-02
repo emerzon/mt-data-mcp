@@ -47,9 +47,18 @@ def test_provider_status_marks_tradier_without_key_as_yahoo_fallback(monkeypatch
     assert out["configured_provider"] == "tradier"
     assert out["effective_provider"] == "yahoo"
     assert out["configured_provider_ready"] is False
-    assert out["chain_data_ready"] is True
+    assert out["local_tools_ready"] is True
+    assert out["chain_provider_ready"] is False
+    assert out["chain_data_ready"] is False
+    assert out["chain_data_access_available"] is True
+    assert out["degraded"] is True
+    assert out["provider_mode"] == "best_effort"
     assert out["action_required"] == "configure_options_provider"
     assert "retry unauthenticated Yahoo as a best-effort fallback" in out["remediation"]
+    assert out["warnings"] == [
+        "Options chain access is using unauthenticated Yahoo fallback; "
+        "it is best-effort and may return 401/429."
+    ]
 
 
 def test_options_expirations_compact_keeps_fallback_warning(monkeypatch):
