@@ -48,6 +48,7 @@ from mtdata.core.trading.time import (
     _to_server_time_naive,
 )
 from mtdata.core.trading.validation import (
+    _candidate_fill_modes,
     _normalize_order_type_input,
     _validate_deviation,
     _validate_volume,
@@ -109,6 +110,24 @@ def test_validation_type_hints_resolve_union_annotations():
     hints = get_type_hints(_validate_volume)
 
     assert "volume" in hints
+
+
+def test_candidate_fill_modes_decodes_symbol_filling_bitmask():
+    mt5 = SimpleNamespace(
+        SYMBOL_FILLING_FOK=1,
+        SYMBOL_FILLING_IOC=2,
+        SYMBOL_FILLING_RETURN=4,
+        ORDER_FILLING_FOK=0,
+        ORDER_FILLING_IOC=1,
+        ORDER_FILLING_RETURN=2,
+    )
+    symbol_info = SimpleNamespace(filling_mode=mt5.SYMBOL_FILLING_IOC)
+
+    assert _candidate_fill_modes(mt5, symbol_info) == [
+        mt5.ORDER_FILLING_IOC,
+        mt5.ORDER_FILLING_FOK,
+        mt5.ORDER_FILLING_RETURN,
+    ]
 
 
 # ===================================================================

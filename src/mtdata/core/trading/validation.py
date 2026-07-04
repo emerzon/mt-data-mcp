@@ -324,14 +324,6 @@ def _candidate_fill_modes(mt5: Any, symbol_info: Any = None) -> list[int]:
                 and fill_mode not in fill_modes
             ):
                 fill_modes.append(fill_mode)
-        for fill_attr, default in (
-            ("ORDER_FILLING_IOC", 1),
-            ("ORDER_FILLING_FOK", 0),
-            ("ORDER_FILLING_RETURN", 2),
-        ):
-            fill_mode = _safe_int_attr(mt5, fill_attr, default)
-            if preferred_fill_mode == fill_mode and fill_mode not in fill_modes:
-                fill_modes.append(fill_mode)
 
     for fill_attr, default in (
         ("ORDER_FILLING_IOC", 1),
