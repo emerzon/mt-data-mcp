@@ -187,7 +187,8 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
         "Optional in-process dedupe key; replays the prior matching modify result."
     ),
     ("trade_place", "dry_run"): (
-        "Preview the order without sending it to the broker."
+        "Preview the order without sending it to the broker. Defaults to true; "
+        "set dry_run=false only for an intentional live order."
     ),
     ("trade_place", "detail"): (
         "Dry-run preview detail: compact for key checks, full for execution diagnostics."

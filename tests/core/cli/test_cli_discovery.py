@@ -910,7 +910,7 @@ class TestCreateCommandFunction:
         assert "Use symbols_list to browse available broker symbols." in output
         mock_fn.assert_not_called()
 
-    def test_trade_place_missing_required_warns_about_live_orders(self, capsys):
+    def test_trade_place_missing_required_describes_live_order_opt_in(self, capsys):
         mock_fn = MagicMock(return_value={"ok": True})
         func_info = {
             "func": mock_fn,
@@ -933,7 +933,7 @@ class TestCreateCommandFunction:
         output = capsys.readouterr().out
         assert "Missing required argument(s): symbol, volume, order_type." in output
         assert "LIVE ORDER WARNING" in output
-        assert "--dry-run true" in output
+        assert "--dry-run false" in output
         mock_fn.assert_not_called()
 
     def test_missing_required_literal_argument_shows_valid_values(self, capsys):
