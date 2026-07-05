@@ -185,8 +185,14 @@ def _serialize_model_handle(
             raw_info = describe(handle)
             if isinstance(raw_info, dict):
                 store_info = raw_info
-        except Exception:
-            store_info = {}
+        except Exception as exc:
+            logger.warning(
+                "Model store describe failed for %s: %s",
+                getattr(handle, "model_id", "<unknown>"),
+                exc,
+                exc_info=True,
+            )
+            store_info = {"describe_error": str(exc)}
     created_at_epoch = store_info.get("created_at", created_at_epoch)
     last_used_epoch = store_info.get("last_used")
     payload: Dict[str, Any] = {
@@ -215,6 +221,8 @@ def _serialize_model_handle(
         payload["expires_in_days"] = expires_in_days
     if store_info.get("expired") is not None:
         payload["expired"] = bool(store_info.get("expired"))
+    if store_info.get("describe_error"):
+        payload["model_store_error"] = str(store_info["describe_error"])
     store_metadata = dict(getattr(handle, "store_metadata", {}) or {})
     try:
         from ..forecast.model_store import describe_store_metadata_compatibility
@@ -251,10 +259,17 @@ def _model_store_state_payload(
     try:
         store = _get_model_store()
         info = store.describe_model(handle)
-    except Exception:
+    except Exception as exc:
+        logger.warning(
+            "Model store state lookup failed for %s: %s",
+            getattr(handle, "model_id", "<unknown>"),
+            exc,
+            exc_info=True,
+        )
         out = {"model_store_status": "unknown"}
         if detail == "full":
             out["model_stored"] = None
+            out["model_store_error"] = str(exc)
         return out
 
     file_count = int(info.get("file_count") or 0)
@@ -287,8 +302,14 @@ def _recent_completed_model_tasks(
 ) -> List[Dict[str, Any]]:
     try:
         tasks = _get_task_manager().list_tasks(status="completed")
-    except Exception:
-        return []
+    except Exception as exc:
+        logger.error("Forecast task manager list_tasks failed: %s", exc, exc_info=True)
+        return [
+            {
+                "error": "forecast_task_manager_unavailable",
+                "message": str(exc),
+            }
+        ]
 
     rows: List[Dict[str, Any]] = []
     for task in tasks:

@@ -283,6 +283,47 @@ class TestForecastTaskList:
 
 
 class TestForecastModels:
+    def test_model_handle_includes_describe_error_when_store_lookup_fails(self, caplog):
+        from src.mtdata.core.forecast_tasks import _serialize_model_handle
+
+        handle = TrainedModelHandle(
+            "nhits/EURUSD_H1/a",
+            "nhits",
+            "EURUSD_H1",
+            "a",
+            1000.0,
+        )
+        store = MagicMock()
+        store.describe_model.side_effect = RuntimeError("store unavailable")
+
+        with caplog.at_level("WARNING", logger="src.mtdata.core.forecast_tasks"):
+            result = _serialize_model_handle(handle, detail="full", store=store)
+
+        assert result["model_id"] == "nhits/EURUSD_H1/a"
+        assert result["model_store_error"] == "store unavailable"
+        assert result["ttl_days"] is None
+        assert any("Model store describe failed" in record.message for record in caplog.records)
+
+    def test_recent_completed_model_tasks_returns_error_row_when_manager_fails(self, caplog):
+        from src.mtdata.core.forecast_tasks import _recent_completed_model_tasks
+
+        mock_tm = MagicMock()
+        mock_tm.list_tasks.side_effect = RuntimeError("task manager unavailable")
+
+        with patch(_PATCH_TM, return_value=mock_tm), caplog.at_level(
+            "ERROR",
+            logger="src.mtdata.core.forecast_tasks",
+        ):
+            result = _recent_completed_model_tasks()
+
+        assert result == [
+            {
+                "error": "forecast_task_manager_unavailable",
+                "message": "task manager unavailable",
+            }
+        ]
+        assert any("Forecast task manager list_tasks failed" in record.message for record in caplog.records)
+
     def test_lists_models(self):
         from src.mtdata.core.forecast_tasks import forecast_models_list
 
