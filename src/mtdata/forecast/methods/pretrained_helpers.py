@@ -7,7 +7,7 @@ forecasting models to reduce code duplication and improve maintainability.
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, List, Optional, Union
 
 import numpy as np
 
@@ -40,42 +40,6 @@ def extract_context_window(
     return np.asarray(context, dtype=dtype)
 
 
-def validate_and_clean_data(
-    data: np.ndarray,
-    method_name: str = "forecast"
-) -> Tuple[np.ndarray, Optional[str]]:
-    """
-    Validate and clean time series data by handling NaN values.
-    
-    Args:
-        data: Input time series data
-        method_name: Name of the forecasting method for error messages
-        
-    Returns:
-        Tuple of (cleaned_data, error_message)
-        If validation fails, returns (empty_array, error_message)
-    """
-    if len(data) == 0:
-        return np.array([]), f"{method_name} error: empty context data"
-    
-    # Check for all NaN values
-    if not np.any(np.isfinite(data)):
-        return np.array([]), f"{method_name} error: context contains no finite values"
-    
-    # Clean the data - replace NaN with mean of finite values
-    finite_mean = np.nanmean(data[np.isfinite(data)])
-    if not np.isfinite(finite_mean):
-        finite_mean = 0.0
-    
-    cleaned_data = np.nan_to_num(data, nan=float(finite_mean))
-    
-    # Validate cleaned data
-    if not np.any(np.isfinite(cleaned_data)):
-        return np.array([]), f"{method_name} error: cleaned context contains no finite values"
-    
-    return cleaned_data, None
-
-
 def adjust_forecast_length(
     values: np.ndarray,
     fh: int,
@@ -93,42 +57,6 @@ def adjust_forecast_length(
         Adjusted forecast values array
     """
     return _edge_pad_to_length(values, int(fh))
-
-
-def extract_quantiles_from_forecast(
-    forecast_obj: Any,
-    quantiles: Optional[List[Union[str, float, int]]],
-    fh: int,
-    method_name: str = "forecast"
-) -> Dict[str, List[float]]:
-    """
-    Extract quantile forecasts from forecast object.
-    
-    Args:
-        forecast_obj: Forecast object with quantile method
-        quantiles: List of quantile levels to extract
-        fh: Forecast horizon
-        method_name: Name of the forecasting method for error messages
-        
-    Returns:
-        Dictionary mapping quantile strings to forecast value lists
-    """
-    fq: Dict[str, List[float]] = {}
-    
-    if quantiles and hasattr(forecast_obj, 'quantile'):
-        for q in quantiles:
-            try:
-                qf = float(q)
-                q_value = forecast_obj.quantile(qf)
-                if q_value is not None:
-                    q_array = np.asarray(q_value, dtype=float)
-                    # Adjust length to match forecast horizon
-                    q_array = _edge_pad_to_length(q_array, int(fh))
-                    fq[str(qf)] = q_array.tolist()
-            except Exception:
-                continue
-    
-    return fq
 
 
 def process_quantile_levels(
