@@ -3,6 +3,7 @@ from types import SimpleNamespace
 import pytest
 
 from mtdata.core.mt5_gateway import create_mt5_gateway, mt5_connection_error
+from mtdata.core.trading.gateway import create_trading_gateway, trading_connection_error
 from mtdata.utils.mt5 import MT5ConnectionError
 
 
@@ -52,6 +53,25 @@ def test_mt5_connection_error_returns_stage1_envelope():
     assert out["error"] == "MT5 unavailable"
     assert out["error_code"] == "mt5_connection_error"
     assert out["operation"] == "mt5_ensure_connection"
+    assert isinstance(out.get("request_id"), str)
+    assert out["request_id"]
+
+
+def test_trading_connection_error_returns_stage1_envelope():
+    gateway = create_trading_gateway(
+        adapter=SimpleNamespace(),
+        ensure_connection_impl=lambda: (_ for _ in ()).throw(
+            MT5ConnectionError("MT5 unavailable")
+        ),
+    )
+
+    out = trading_connection_error(gateway)
+
+    assert out is not None
+    assert out["success"] is False
+    assert out["error"] == "MT5 unavailable"
+    assert out["error_code"] == "mt5_connection_error"
+    assert out["operation"] == "trading"
     assert isinstance(out.get("request_id"), str)
     assert out["request_id"]
 

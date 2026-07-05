@@ -13,6 +13,7 @@ from typing import Any, Dict, List, Literal, Optional, Tuple
 import pandas as pd
 
 from ..bootstrap.settings import mt5_config
+from ..core.error_envelope import build_error_payload
 from ..core.output_contract import normalize_output_detail
 from ..shared.constants import (
     DEFAULT_ROW_LIMIT,
@@ -334,10 +335,7 @@ def _build_no_data_error_with_context(
     start_datetime: Optional[str],
     end_datetime: Optional[str],
 ) -> Dict[str, Any]:
-    """Build a detailed error message when no data is available for the requested range.
-    
-    Returns a dict with 'error' key and optional 'details' with context.
-    """
+    """Build a detailed error payload when no data is available for the requested range."""
     error_msg = "No data available"
     details: Dict[str, Any] = {}
     
@@ -393,10 +391,12 @@ def _build_no_data_error_with_context(
         # Silently ignore any errors when trying to get available range
         pass
     
-    result: Dict[str, Any] = {"error": error_msg}
-    if details:
-        result["details"] = details
-    return result
+    return build_error_payload(
+        error_msg,
+        code="data_fetch_candles_no_data",
+        operation="data_fetch_candles",
+        details=details or None,
+    )
 
 
 def _indicator_param_syntax_error(ti_spec: Optional[str]) -> Optional[str]:

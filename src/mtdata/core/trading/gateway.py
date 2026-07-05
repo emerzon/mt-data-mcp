@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any, Callable, Dict, Optional
 
 from ...utils.mt5 import MT5ConnectionError, ensure_mt5_connection_or_raise, mt5_adapter
+from ..error_envelope import build_error_payload
 from ..mt5_gateway import MT5Gateway
 
 
@@ -82,5 +83,9 @@ def trading_connection_error(
     try:
         create_trading_gateway(gateway).ensure_connection()
     except MT5ConnectionError as exc:
-        return {"error": str(exc)}
+        return build_error_payload(
+            str(exc),
+            code="mt5_connection_error",
+            operation="trading",
+        )
     return None

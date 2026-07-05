@@ -93,6 +93,10 @@ def test_no_data_context_uses_non_negative_history_position(monkeypatch) -> None
     )
 
     assert calls == [("EURUSD", 1, 0, 100_000)]
+    assert result["success"] is False
+    assert result["error_code"] == "data_fetch_candles_no_data"
+    assert result["operation"] == "data_fetch_candles"
+    assert result["request_id"]
     assert result["details"]["available_range"] == {
         "earliest": "1970-01-01T00:01Z",
         "latest": "1970-01-01T00:03Z",
