@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pandas as pd
@@ -34,6 +35,17 @@ def _get_support_resistance_fn():
     return raw
 
 
+def _gateway(digits: int = 5):
+    return type(
+        "Gateway",
+        (),
+        {
+            "ensure_connection": lambda self: None,
+            "symbol_info": lambda self, _symbol: SimpleNamespace(digits=digits),
+        },
+    )()
+
+
 def _frame() -> pd.DataFrame:
     closes = [
         104.0, 102.0, 100.6, 102.2, 104.0,
@@ -59,7 +71,7 @@ def _frame() -> pd.DataFrame:
 
 def test_support_resistance_tool_returns_weighted_levels():
     fn = _get_support_resistance_fn()
-    gateway = type("Gateway", (), {"ensure_connection": lambda self: None})()
+    gateway = _gateway()
     with patch("mtdata.core.pivot.create_mt5_gateway", return_value=gateway) as mock_gateway, \
          patch("mtdata.core.pivot._fetch_history", return_value=_frame()) as mock_fetch:
         result = fn(
@@ -97,7 +109,7 @@ def test_support_resistance_tool_returns_weighted_levels():
 
 def test_support_resistance_tool_applies_near_price_distance_default():
     fn = _get_support_resistance_fn()
-    gateway = type("Gateway", (), {"ensure_connection": lambda self: None})()
+    gateway = _gateway()
     payload = {
         "success": True,
         "symbol": "EURUSD",
@@ -118,9 +130,33 @@ def test_support_resistance_tool_applies_near_price_distance_default():
     assert mock_compute.call_args.kwargs["max_distance_pct"] == 5.0
 
 
+def test_support_resistance_tool_rounds_price_levels_to_symbol_digits():
+    fn = _get_support_resistance_fn()
+    gateway = _gateway(digits=5)
+    payload = {
+        "success": True,
+        "symbol": "EURUSD",
+        "timeframe": "H1",
+        "current_price": 1.143684321,
+        "supports": [{"type": "support", "value": 1.143266, "distance": -0.000418321}],
+        "resistances": [{"type": "resistance", "value": 1.146223}],
+        "levels": [],
+    }
+
+    with patch("mtdata.core.pivot.create_mt5_gateway", return_value=gateway), \
+         patch("mtdata.core.pivot.compute_support_resistance_payload", return_value=payload):
+        result = fn("EURUSD", timeframe="H1", detail="standard")
+
+    assert result["price_precision"] == 5
+    assert result["current_price"] == 1.14368
+    assert result["supports"][0]["value"] == 1.14327
+    assert result["supports"][0]["distance"] == -0.00042
+    assert result["resistances"][0]["value"] == 1.14622
+
+
 def test_support_resistance_tool_compact_omits_zone_overlap_and_fibonacci():
     fn = _get_support_resistance_fn()
-    gateway = type("Gateway", (), {"ensure_connection": lambda self: None})()
+    gateway = _gateway()
     payload = {
         "success": True,
         "symbol": "USDJPY",
@@ -169,7 +205,7 @@ def test_support_resistance_tool_compact_omits_zone_overlap_and_fibonacci():
 
 def test_support_resistance_tool_compact_exposes_coverage_gap_metadata_with_distance_filter():
     fn = _get_support_resistance_fn()
-    gateway = type("Gateway", (), {"ensure_connection": lambda self: None})()
+    gateway = _gateway()
     with patch("mtdata.core.pivot.create_mt5_gateway", return_value=gateway), \
          patch("mtdata.core.pivot._fetch_history", return_value=_frame()):
         result = fn(
@@ -194,7 +230,7 @@ def test_support_resistance_tool_compact_exposes_coverage_gap_metadata_with_dist
 
 def test_support_resistance_tool_compact_exposes_volume_metadata_when_enabled():
     fn = _get_support_resistance_fn()
-    gateway = type("Gateway", (), {"ensure_connection": lambda self: None})()
+    gateway = _gateway()
     frame = _frame().copy()
     frame["tick_volume"] = [100.0] * len(frame)
     frame.loc[2, "tick_volume"] = 40.0
@@ -220,7 +256,7 @@ def test_support_resistance_tool_compact_exposes_volume_metadata_when_enabled():
 
 def test_support_resistance_tool_standard_detail_keeps_actionable_lists_without_full_diagnostics():
     fn = _get_support_resistance_fn()
-    gateway = type("Gateway", (), {"ensure_connection": lambda self: None})()
+    gateway = _gateway()
     with patch("mtdata.core.pivot.create_mt5_gateway", return_value=gateway), \
          patch("mtdata.core.pivot._fetch_history", return_value=_frame()):
         result = fn(
@@ -251,7 +287,7 @@ def test_support_resistance_tool_standard_detail_keeps_actionable_lists_without_
 
 def test_support_resistance_tool_full_detail_keeps_rows_compact_with_structured_diagnostics():
     fn = _get_support_resistance_fn()
-    gateway = type("Gateway", (), {"ensure_connection": lambda self: None})()
+    gateway = _gateway()
     with patch("mtdata.core.pivot.create_mt5_gateway", return_value=gateway), \
          patch("mtdata.core.pivot._fetch_history", return_value=_frame()):
         result = fn(
@@ -279,7 +315,7 @@ def test_support_resistance_tool_full_detail_keeps_rows_compact_with_structured_
 
 def test_support_resistance_tool_auto_mode_merges_timeframes():
     fn = _get_support_resistance_fn()
-    gateway = type("Gateway", (), {"ensure_connection": lambda self: None})()
+    gateway = _gateway()
 
     def _fetch(symbol: str, timeframe: str, need: int, as_of=None):
         assert symbol == "EURUSD"
@@ -316,7 +352,7 @@ def test_support_resistance_tool_auto_mode_merges_timeframes():
 
 def test_support_resistance_tool_auto_mode_surfaces_partial_timeframe_failures():
     fn = _get_support_resistance_fn()
-    gateway = type("Gateway", (), {"ensure_connection": lambda self: None})()
+    gateway = _gateway()
 
     def _fetch(symbol: str, timeframe: str, need: int, as_of=None):
         if timeframe == "H1":
@@ -347,7 +383,7 @@ def test_support_resistance_tool_auto_mode_surfaces_partial_timeframe_failures()
 
 def test_support_resistance_tool_full_detail_retains_support_and_resistance_lists():
     fn = _get_support_resistance_fn()
-    gateway = type("Gateway", (), {"ensure_connection": lambda self: None})()
+    gateway = _gateway()
     with patch("mtdata.core.pivot.create_mt5_gateway", return_value=gateway), \
          patch("mtdata.core.pivot._fetch_history", return_value=_frame()):
         result = fn(
@@ -374,7 +410,7 @@ def test_support_resistance_tool_full_detail_retains_support_and_resistance_list
 
 def test_support_resistance_tool_wraps_fetch_errors():
     fn = _get_support_resistance_fn()
-    gateway = type("Gateway", (), {"ensure_connection": lambda self: None})()
+    gateway = _gateway()
     with patch("mtdata.core.pivot.create_mt5_gateway", return_value=gateway), \
          patch("mtdata.core.pivot._fetch_history", side_effect=RuntimeError("boom")):
         result = fn("EURUSD", timeframe="H1")

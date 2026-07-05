@@ -77,7 +77,7 @@ def test_confluence_levels_tool_combines_pivot_sr_and_fibonacci():
         "levels": [
             {
                 "type": "resistance",
-                "value": 1.0853,
+                "value": 1.085333333,
                 "score": 5.0,
                 "touches": 3,
                 "source_timeframes": ["H1"],
@@ -90,13 +90,13 @@ def test_confluence_levels_tool_combines_pivot_sr_and_fibonacci():
                     "label": "61.8%",
                     "ratio": 0.618,
                     "kind": "retracement",
-                    "value": 1.0848,
+                    "value": 1.084876543,
                 },
                 {
                     "label": "127.2%",
                     "ratio": 1.272,
                     "kind": "extension",
-                    "value": 1.0851,
+                    "value": 1.085123456,
                     "projection": "upside",
                 },
             ],
@@ -123,6 +123,7 @@ def test_confluence_levels_tool_combines_pivot_sr_and_fibonacci():
 
     assert result["success"] is True
     assert result["detail"] == "standard"
+    assert result["price_precision"] == 5
     assert result["pivot_timeframe"] == "D1"
     assert result["sr_timeframe"] == "auto"
     assert result["levels"]
@@ -130,6 +131,15 @@ def test_confluence_levels_tool_combines_pivot_sr_and_fibonacci():
     assert "pivot_formula" in top["source_families"]
     assert "touch_derived" in top["source_families"]
     assert "swing_fibonacci" in top["source_families"]
+    for level in result["levels"]:
+        for key in ("price",):
+            text = str(level[key])
+            decimals = len(text.split(".")[1]) if "." in text else 0
+            assert decimals <= 5
+        for key in ("low", "high", "width"):
+            text = str(level["range"][key])
+            decimals = len(text.split(".")[1]) if "." in text else 0
+            assert decimals <= 5
     assert mock_sr.call_args.kwargs["timeframe"] == "auto"
     assert mock_sr.call_args.kwargs["max_levels"] == 5
 

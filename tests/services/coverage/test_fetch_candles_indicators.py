@@ -12,17 +12,22 @@ import unittest
 from datetime import datetime
 from unittest.mock import MagicMock, patch
 
-from ._helpers import (
-    _UTC,
-    _mock_symbol_guard,
-    _make_rates,
-    _DS, _GUARD, _RATES_FROM,
-    _CACHED_INFO, _RESOLVE_CTZ,
-    _ESTIMATE_WARMUP, _APPLY_TI, _MT5_CONFIG,
-    _PARSE_START,
-)
-
 from mtdata.services.data_service import fetch_candles
+
+from ._helpers import (
+    _APPLY_TI,
+    _CACHED_INFO,
+    _DS,
+    _ESTIMATE_WARMUP,
+    _GUARD,
+    _MT5_CONFIG,
+    _PARSE_START,
+    _RATES_FROM,
+    _RESOLVE_CTZ,
+    _UTC,
+    _make_rates,
+    _mock_symbol_guard,
+)
 
 
 class TestFetchCandlesIndicators(unittest.TestCase):
@@ -111,11 +116,12 @@ class TestFetchCandlesIndicators(unittest.TestCase):
         mock_cfg,
     ):
         mock_cfg.get_time_offset_seconds.return_value = 0
+        mock_info.return_value.digits = 5
         mock_from.return_value = _make_rates(30)
 
         def add_cols(df, spec):
             df['RSI_14'] = 50.0
-            df['EMA_20'] = 1.1
+            df['EMA_20'] = 1.143839
             df['ATRr_14'] = 2.2
             return ['RSI_14', 'EMA_20', 'ATRr_14']
 
@@ -135,6 +141,19 @@ class TestFetchCandlesIndicators(unittest.TestCase):
         self.assertIn('rsi_14', result['data'][0])
         self.assertIn('ema_20', result['data'][0])
         self.assertIn('atr_14', result['data'][0])
+        self.assertEqual(result['data'][0]['ema_20'], 1.14384)
+        self.assertEqual(
+            result['indicator_rounding'],
+            {
+                'price_columns': ['ema_20'],
+                'price_precision': 5,
+                'policy': 'symbol_price_precision',
+            },
+        )
+        self.assertEqual(
+            result['meta']['diagnostics']['indicators']['rounding'],
+            result['indicator_rounding'],
+        )
         self.assertNotIn('RSI_14', result['data'][0])
         self.assertNotIn('EMA_20', result['data'][0])
         self.assertNotIn('ATRr_14', result['data'][0])

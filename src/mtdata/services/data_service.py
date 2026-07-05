@@ -30,9 +30,6 @@ from ..shared.constants import (
     TIMEFRAME_SECONDS,
 )
 from ..shared.market_units import forex_points_per_pip
-
-# Imports from core (schema, constants, server utils)
-# Imports from core (schema, constants)
 from ..shared.schema import DenoiseSpec, IndicatorSpec, SimplifySpec, TimeframeLiteral
 from ..shared.validators import invalid_timeframe_error
 from ..utils.denoise import (
@@ -45,6 +42,12 @@ from ..utils.denoise import (
     normalize_denoise_spec as _normalize_denoise_spec,
 )
 from ..utils.freshness import closed_session_context
+from ..utils.indicators import (
+    _apply_ta_indicators,
+    _estimate_warmup_bars,
+    _find_unknown_ta_indicators,
+    _parse_ti_specs,
+)
 from ..utils.market_metadata import (
     FRESHNESS_ANCHOR_QUERY_EXPECTED_END,
     FRESHNESS_ANCHOR_WALL_CLOCK,
@@ -52,12 +55,6 @@ from ..utils.market_metadata import (
     FRESHNESS_METRIC_REQUESTED_RANGE_END_GAP,
     TICK_VOLUME_SEMANTICS,
     build_tick_freshness_context,
-)
-from ..utils.indicators import (
-    _apply_ta_indicators,
-    _estimate_warmup_bars,
-    _find_unknown_ta_indicators,
-    _parse_ti_specs,
 )
 
 # Imports from utils
@@ -85,7 +82,6 @@ from ..utils.simplify import (
 )
 from ..utils.time import format_epoch_utc
 from ..utils.utils import (
-    coerce_scalar,
     _format_datetime_minute_explicit,
     _format_numeric_rows_from_df,
     _format_time_explicit,
@@ -95,6 +91,7 @@ from ..utils.utils import (
     _resolve_client_tz,
     _table_from_rows,
     _utc_epoch_seconds,
+    coerce_scalar,
 )
 
 logger = logging.getLogger(__name__)
@@ -250,6 +247,32 @@ def _round_row_price_columns(
                 rounded[idx] = _round_price_value(rounded[idx], digits)
         rounded_rows.append(rounded)
     return rounded_rows
+
+
+_PRICE_INDICATOR_PREFIXES = (
+    "ALMA_",
+    "BBL_",
+    "BBM_",
+    "BBU_",
+    "DEMA_",
+    "EMA_",
+    "HMA_",
+    "KAMA_",
+    "SMA_",
+    "TEMA_",
+    "VWAP",
+    "VWMA_",
+    "WMA_",
+)
+
+
+def _price_indicator_columns(columns: List[str]) -> List[str]:
+    out: List[str] = []
+    for column in columns:
+        name = str(column or "").strip().upper()
+        if name.startswith(_PRICE_INDICATOR_PREFIXES):
+            out.append(str(column))
+    return out
 
 
 def _round_tick_price_payload(out: Dict[str, Any], digits: int) -> None:
@@ -1894,12 +1917,14 @@ def fetch_candles(  # noqa: C901
             timeframe,
             current_time_epoch=live_bar_reference_epoch,
         )
+        ti_added_cols = [str(c) for c in ti_cols if isinstance(c, str)]
+        price_indicator_cols = _price_indicator_columns(ti_added_cols)
         rows = _format_numeric_rows_from_df(df, headers, stringify=False)
         rows = _round_row_price_columns(
             rows,
             headers,
             digits=price_digits,
-            price_columns=_CANDLE_PRICE_COLUMNS,
+            price_columns=frozenset([*_CANDLE_PRICE_COLUMNS, *price_indicator_cols]),
         )
         as_of_epoch = time.time()
         query_latency_ms = round((time.perf_counter() - query_started_at) * 1000.0, 3)
@@ -1910,7 +1935,6 @@ def fetch_candles(  # noqa: C901
             start_datetime=start_datetime,
             end_datetime=end_datetime,
         )
-        ti_added_cols = [str(c) for c in ti_cols if isinstance(c, str)]
         # Build tabular payload
         payload = _table_from_rows(headers, rows)
         # `candles` is the domain-specific row count for this tool; avoid
@@ -2034,6 +2058,14 @@ def fetch_candles(  # noqa: C901
             payload["meta"]["diagnostics"]["mt5_time_alignment"] = (
                 dict(broker_time_check_result)
             )
+        if price_indicator_cols and price_digits > 0:
+            rounding_meta = {
+                "price_columns": price_indicator_cols,
+                "price_precision": int(price_digits),
+                "policy": "symbol_price_precision",
+            }
+            payload["indicator_rounding"] = rounding_meta
+            payload["meta"]["diagnostics"]["indicators"]["rounding"] = rounding_meta
         data_window = {
             "start": first_bar_time,
             "end": latest_bar_time,
@@ -2692,7 +2724,7 @@ def fetch_ticks(  # noqa: C901
         has_real_volume = any(math.isfinite(v) and v != 0.0 for v in volumes_real)
         one_sided_zero_spread_count = sum(
             1
-            for bid, ask in zip(effective_bids, effective_asks)
+            for bid, ask in zip(effective_bids, effective_asks, strict=False)
             if bid is None or ask is None
         )
 

@@ -17,6 +17,7 @@ from mtdata.core.causal import (
     _pair_transform_comparability,
     _pair_transform_guidance,
     _parse_symbols,
+    _rank_correlation_pairs,
     _standardize_frame,
     _transform_cointegration_frame,
     _transform_frame,
@@ -78,6 +79,30 @@ def test_pair_transform_guidance_is_standard_only():
     assert "transform_reason" in standard
     assert "comparable_with" in standard
     assert "not_comparable_with" in standard
+
+
+def test_rank_correlation_pairs_rounds_statistical_estimates() -> None:
+    frame = pd.DataFrame(
+        {
+            "A": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+            "B": [1.1, 2.0, 2.7, 4.2, 5.1, 6.4],
+        },
+        index=pd.date_range("2026-01-01", periods=6, freq="h"),
+    )
+
+    rows, _, _ = _rank_correlation_pairs(
+        frame,
+        ["A", "B"],
+        method="pearson",
+        window_bars=6,
+        min_overlap=2,
+    )
+
+    assert rows
+    row = rows[0]
+    assert row["correlation"] == round(row["correlation"], 6)
+    assert row["abs_correlation"] == round(row["abs_correlation"], 6)
+    assert len(str(row["correlation"]).split(".")[1]) <= 6
 
 
 def test_pair_workflow_related_tools_are_cataloged():

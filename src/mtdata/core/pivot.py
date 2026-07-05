@@ -51,6 +51,67 @@ from .volume_profile import compute_volume_profile_payload
 logger = logging.getLogger(__name__)
 
 
+_LEVEL_PRICE_FIELD_NAMES = frozenset(
+    {
+        "value",
+        "price",
+        "reference_price",
+        "current_price",
+        "nearest_support",
+        "nearest_resistance",
+        "low",
+        "high",
+        "width",
+        "distance",
+        "range",
+    }
+)
+
+
+def _symbol_price_digits(info: Any) -> Optional[int]:
+    try:
+        digits = int(info.digits)
+    except Exception:
+        return None
+    if digits < 0 or digits > 15:
+        return None
+    return digits
+
+
+def _round_level_price(value: Any, *, digits: int) -> Any:
+    if isinstance(value, bool):
+        return value
+    try:
+        number = float(value)
+    except Exception:
+        return value
+    if not math.isfinite(number):
+        return value
+    return round(number, max(0, int(digits)))
+
+
+def _round_level_payload_prices(value: Any, *, digits: Optional[int], key: Optional[str] = None) -> Any:
+    if digits is None:
+        return value
+    if isinstance(value, dict):
+        return {
+            item_key: _round_level_payload_prices(
+                item_value,
+                digits=digits,
+                key=str(item_key),
+            )
+            for item_key, item_value in value.items()
+        }
+    if isinstance(value, list):
+        return [
+            _round_level_payload_prices(item, digits=digits, key=key)
+            for item in value
+        ]
+    if key in _LEVEL_PRICE_FIELD_NAMES or (isinstance(key, str) and key.endswith("_price")):
+        return _round_level_price(value, digits=digits)
+    return value
+
+
 def _confluence_volume_profile_window(
     sr_timeframe: str,
     lookback: int,
@@ -802,6 +863,10 @@ def confluence_levels(  # noqa: C901
             warnings = sr_payload.get("warnings")
             if isinstance(warnings, list) and warnings:
                 payload["warnings"] = list(warnings)
+            digits_value = _symbol_price_digits(info_before)
+            if digits_value is not None:
+                payload["price_precision"] = digits_value
+                payload = _round_level_payload_prices(payload, digits=digits_value)
             return payload
         except MT5ConnectionError as exc:
             return {"error": str(exc)}
@@ -882,7 +947,12 @@ def support_resistance_levels(
 
     def _run() -> Dict[str, Any]:
         try:
-            create_mt5_gateway(ensure_connection_impl=ensure_mt5_connection_or_raise).ensure_connection()
+            gateway = create_mt5_gateway(
+                ensure_connection_impl=ensure_mt5_connection_or_raise,
+            )
+            gateway.ensure_connection()
+            symbol_info = gateway.symbol_info(symbol)
+            digits_value = _symbol_price_digits(symbol_info)
             result = compute_support_resistance_payload(
                 fetch_history_impl=_fetch_history,
                 symbol=symbol,
@@ -913,6 +983,9 @@ def support_resistance_levels(
                 payload = full_support_resistance_payload(result)
             payload["detail"] = detail_value
             payload.setdefault("timezone", "UTC")
+            if digits_value is not None:
+                payload["price_precision"] = digits_value
+                payload = _round_level_payload_prices(payload, digits=digits_value)
             return payload
         except MT5ConnectionError as exc:
             return {"error": str(exc)}

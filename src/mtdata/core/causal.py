@@ -748,6 +748,7 @@ def _rank_correlation_pairs(
                 skipped["nonfinite"] += 1
                 continue
             corr_f = float(corr)
+            corr_rounded = round(corr_f, 6)
             ci95_low, ci95_high = _correlation_fisher_ci(corr_f, int(len(subset)))
             period_start = _format_sample_time(subset.index[0])
             period_end = _format_sample_time(subset.index[-1])
@@ -755,10 +756,10 @@ def _rank_correlation_pairs(
                 {
                     "left": left,
                     "right": right,
-                    "correlation": corr_f,
+                    "correlation": corr_rounded,
                     "ci95_low": ci95_low,
                     "ci95_high": ci95_high,
-                    "abs_correlation": abs(corr_f),
+                    "abs_correlation": round(abs(corr_f), 6),
                     "samples": int(len(subset)),
                     "period_start": period_start,
                     "period_end": period_end,
