@@ -42,8 +42,8 @@ from ..utils.ohlcv import validate_and_clean_ohlcv_frame
 from ..utils.utils import (
     UNPARSED_BOOL,
     _format_time_minimal,
-    parse_bool_like,
     _parse_start_datetime,
+    parse_bool_like,
 )
 from ..utils.utils import to_float_np as __to_float_np
 from ..utils.volume_profile import annotate_level_confluence
@@ -1219,9 +1219,9 @@ def patterns_detect(
         patterns to detect (e.g., "doji,hammer,engulfing").
     
     top_k : int, optional (default=3)
-        Candidate preview budget. Compact output displays up to three
-        `top_patterns` rows and reports `patterns_shown`;
-        use a larger value or `detail="full"` when you need more rows.
+        Result preview budget. `limit` controls the scanned bar window;
+        `top_k` controls how many `top_patterns` rows compact output returns
+        and is reported as `patterns_shown`.
 
     last_n_bars : int, optional
         Candlestick mode only. Restrict detections to patterns that occur in the

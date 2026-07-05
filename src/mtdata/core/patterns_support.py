@@ -647,7 +647,7 @@ def _compact_patterns_payload(
             _safe_float(r.get("end_index")) or float("-inf"),
         ),
         reverse=True,
-    )[:3]:
+    )[:preview_limit]:
         item: Dict[str, Any] = {}
         label = _pattern_label(row)
         if label:
@@ -700,6 +700,24 @@ def _compact_patterns_payload(
     }
     compact = {key: value for key, value in compact.items() if value is not None}
     compact["patterns_shown"] = len(top_patterns)
+    if total_i > len(top_patterns) or len(top_patterns) < min(preview_limit, total_i):
+        reason = "top_k_cap" if len(top_patterns) >= min(preview_limit, total_i) else "visible_rows_shortfall"
+        compact["result_limit"] = {
+            "detected_patterns": total_i,
+            "requested_top_k": int(preview_limit),
+            "patterns_shown": len(top_patterns),
+            "reason": reason,
+        }
+        if total_i > len(top_patterns):
+            compact["result_limit_note"] = (
+                f"Showing top {len(top_patterns)} of {total_i} detected patterns; "
+                "increase top_k or use detail='full' for more rows."
+            )
+        elif len(top_patterns) < int(preview_limit):
+            compact["result_limit_note"] = (
+                f"Showing {len(top_patterns)} of requested top_k={int(preview_limit)}; "
+                "fewer visible pattern rows remained after mode filters."
+            )
     data_quality = _pattern_data_quality_summary(payload.get("warnings"))
     if data_quality:
         compact["data_quality"] = data_quality

@@ -14,13 +14,13 @@ import src.mtdata.services.data_service as data_service_mod
 from src.mtdata.core import patterns as core_patterns
 from src.mtdata.core.patterns import _apply_config_to_obj, _build_pattern_response
 from src.mtdata.core.patterns_requests import PatternsDetectRequest
-from src.mtdata.patterns.common import data_quality_warnings
 from src.mtdata.patterns.classic import (
     ClassicDetectorConfig,
     ClassicPatternResult,
     _count_recent_touches,
     _fit_lines_and_arrays,
 )
+from src.mtdata.patterns.common import data_quality_warnings
 from src.mtdata.utils.mt5 import MT5ConnectionError
 
 
@@ -830,9 +830,16 @@ def test_build_pattern_response_compact_counts_omitted_rows_when_truncated():
         detail="compact",
     )
 
-    assert len(compact["top_patterns"]) == 3
-    assert compact["patterns_shown"] == 3
+    assert len(compact["top_patterns"]) == 8
+    assert compact["patterns_shown"] == 8
     assert compact["n_patterns"] == 9
+    assert compact["result_limit"] == {
+        "detected_patterns": 9,
+        "requested_top_k": 8,
+        "patterns_shown": 8,
+        "reason": "top_k_cap",
+    }
+    assert "Showing top 8 of 9 detected patterns" in compact["result_limit_note"]
     assert "patterns_omitted" not in compact
     assert compact["pattern_status"] == "conflicting"
     assert compact["review_recommended"] is False
@@ -843,6 +850,41 @@ def test_build_pattern_response_compact_counts_omitted_rows_when_truncated():
     assert "verdict" not in compact
     assert "hints" not in compact
     assert "show_all_hint" not in compact
+
+
+def test_compact_patterns_payload_honors_preview_limit_above_three():
+    rows = [
+        {
+            "name": f"Pattern {i}",
+            "status": "forming",
+            "confidence": 0.9 - (i * 0.01),
+            "end_index": i,
+        }
+        for i in range(8)
+    ]
+
+    compact = patterns_support_mod._compact_patterns_payload(
+        {
+            "success": True,
+            "symbol": "EURUSD",
+            "timeframe": "H1",
+            "lookback": 200,
+            "mode": "candlestick",
+            "n_patterns": len(rows),
+            "patterns": rows,
+        },
+        preview_limit=5,
+    )
+
+    assert compact["patterns_shown"] == 5
+    assert len(compact["top_patterns"]) == 5
+    assert compact["result_limit"] == {
+        "detected_patterns": 8,
+        "requested_top_k": 5,
+        "patterns_shown": 5,
+        "reason": "top_k_cap",
+    }
+    assert "increase top_k" in compact["result_limit_note"]
 
 
 def test_build_pattern_response_compact_promotes_data_gap_warning():
