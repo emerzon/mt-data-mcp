@@ -36,8 +36,8 @@ logger = logging.getLogger(__name__)
 def trade_place(request: TradePlaceRequest) -> dict:
     """Place a market or pending order.
 
-    Defaults to dry-run preview. Set `dry_run=false` only when intentionally
-    placing a live order.
+    Defaults to live execution. Set `dry_run=true` to preview without sending
+    an order.
     Required inputs: symbol, volume, order_type.
     - BUY/SELL: market orders; omit `price`.
     - BUY_LIMIT/BUY_STOP/SELL_LIMIT/SELL_STOP: pending (requires `price`).

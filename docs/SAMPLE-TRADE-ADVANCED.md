@@ -151,7 +151,7 @@ mtdata-cli labels_triple_barrier EURUSD --timeframe H1 --limit 2000 \
   - TP/SL from optimizer; time stop at horizon if neither is hit.
   - Optional partial TP at 0.5×TP; move stop to breakeven.
 - Costs: subtract spread/commission from TP; inflate SL by typical slippage.
-- If you convert a plan into a live order, keep the default `trade_place` preview first and review the CLI trade controls (`--require-sl-tp`, `--auto-close-on-sl-tp-fail`, `--magic`, `--expiration`) before passing `--dry-run false`.
+- If you convert a plan into a live order, start with `trade_place --dry-run true` and review the CLI trade controls (`--require-sl-tp`, `--auto-close-on-sl-tp-fail`, `--magic`, `--expiration`) before removing the preview.
 
 ---
 

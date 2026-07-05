@@ -23,11 +23,9 @@ Use read-only commands for research and reserve execution commands for intention
 | `forecast_*`, `regime_detect`, `patterns_detect` | `trade_modify` |
 | `report_generate`, `trade_risk_analyze`, `trade_get_*` | `trade_close` |
 
-`trade_place` defaults to `dry_run=true`, so order placement previews unless
-you explicitly pass `--dry-run false`. `trade_modify` and `trade_close` still
-default to `dry_run=false`, so they execute live unless you pass
-`--dry-run true` to preview. Bulk closes still require `--close-all` and
-explicit confirmation.
+`trade_place`, `trade_modify`, and `trade_close` all default to `dry_run=false`,
+so they execute live unless you pass `--dry-run true` to preview. Bulk closes
+still require `--close-all` and explicit confirmation.
 The CLI expects boolean values as `true` or `false`.
 
 ## Getting Help

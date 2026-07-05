@@ -80,11 +80,11 @@ class TradePlaceRequest(BaseModel):
         description="Maximum allowed execution slippage in points.",
     )
     dry_run: bool = Field(
-        default=True,
+        default=False,
         description=(
-            "Preview the order without sending it to the broker. Defaults to true "
-            "for safety; set dry_run=false only when intentionally placing a live "
-            "order."
+            "Preview the order without sending it to the broker. Defaults to "
+            "false, so trade_place places a live order; set dry_run=true to "
+            "preview only."
         ),
     )
     detail: CompactFullDetailLiteral = Field(

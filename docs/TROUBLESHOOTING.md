@@ -282,7 +282,7 @@ If the broker uses a suffix, rerun the command with the exact symbol shown by `s
 
 ### A Trading Command Might Execute Live
 
-**Cause:** `trade_*` commands operate on the MT5 account currently logged into the terminal. `trade_place` previews by default, but `trade_modify` and `trade_close` execute live unless you pass `--dry-run true`.
+**Cause:** `trade_*` commands operate on the MT5 account currently logged into the terminal. Some commands support `--dry-run true`, but live execution is still possible when you omit dry-run.
 
 **Immediate checks:**
 ```bash
@@ -294,7 +294,7 @@ mtdata-cli trade_get_pending --json
 **Safer next steps:**
 1. Confirm whether the MT5 terminal is logged into demo or live.
 2. Use exact tickets for `trade_close` and `trade_modify`.
-3. Keep `trade_place` at its default preview mode, and preview modify/close actions with `--dry-run true`.
+3. Preview supported actions with `--dry-run true`.
 4. Configure guardrails such as `MTDATA_TRADING_ENABLED=0`, `MTDATA_TRADE_ALLOWED_SYMBOLS`, and `MTDATA_TRADE_MAX_RISK_PCT_OF_EQUITY` in [ENV_VARS.md](ENV_VARS.md#trade-guardrails).
 
 ---
