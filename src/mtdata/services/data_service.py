@@ -1025,7 +1025,7 @@ def _trim_df_to_target(
             return out.copy() if copy_rows else out
         target_from = _utc_epoch_seconds(from_dt)
         target_to = _utc_epoch_seconds(to_dt)
-        out = df.loc[(df['__epoch'] >= target_from) & (df['__epoch'] < target_to)]
+        out = df.loc[(df['__epoch'] >= target_from) & (df['__epoch'] <= target_to)]
     elif start_datetime:
         from_dt = _parse_start_datetime(start_datetime)
         if not from_dt:
