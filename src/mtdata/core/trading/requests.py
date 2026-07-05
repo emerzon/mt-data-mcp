@@ -35,6 +35,13 @@ def _normalize_trade_direction_alias(value: Optional[str]) -> Optional[str]:
     return value
 
 
+class _SideNormalizedRequest(BaseModel):
+    @field_validator("side", mode="before", check_fields=False)
+    @classmethod
+    def _normalize_side(cls, value: Optional[str]) -> Optional[str]:
+        return _normalize_trade_side_alias(value)
+
+
 class TradePlaceRequest(BaseModel):
     model_config = {"populate_by_name": True}
 
@@ -203,7 +210,7 @@ class TradeCloseRequest(BaseModel):
     deviation: int = 20
 
 
-class TradeHistoryRequest(BaseModel):
+class TradeHistoryRequest(_SideNormalizedRequest):
     history_kind: Literal["deals", "orders"] = Field(
         default="deals",
         description=(
@@ -240,13 +247,8 @@ class TradeHistoryRequest(BaseModel):
     offset: int = 0
     page: Optional[int] = None
 
-    @field_validator("side", mode="before")
-    @classmethod
-    def _normalize_side(cls, value: Optional[str]) -> Optional[str]:
-        return _normalize_trade_side_alias(value)
 
-
-class TradeJournalAnalyzeRequest(BaseModel):
+class TradeJournalAnalyzeRequest(_SideNormalizedRequest):
     detail: CompactFullDetailLiteral = Field(
         default="compact",
         description=(
@@ -288,11 +290,6 @@ class TradeJournalAnalyzeRequest(BaseModel):
         default=False,
         description="Return sample sufficiency metadata without computing journal statistics.",
     )
-
-    @field_validator("side", mode="before")
-    @classmethod
-    def _normalize_side(cls, value: Optional[str]) -> Optional[str]:
-        return _normalize_trade_side_alias(value)
 
     @field_validator("breakdown_limit", "min_sample")
     @classmethod
@@ -460,7 +457,7 @@ class TradeStressTestRequest(BaseModel):
         return normalized
 
 
-class TradeGetOpenRequest(BaseModel):
+class TradeGetOpenRequest(_SideNormalizedRequest):
     symbol: Optional[str] = None
     ticket: Optional[Union[int, str]] = None
     side: Optional[str] = Field(
@@ -495,13 +492,8 @@ class TradeGetOpenRequest(BaseModel):
         ),
     )
 
-    @field_validator("side", mode="before")
-    @classmethod
-    def _normalize_side(cls, value: Optional[str]) -> Optional[str]:
-        return _normalize_trade_side_alias(value)
 
-
-class TradeGetPendingRequest(BaseModel):
+class TradeGetPendingRequest(_SideNormalizedRequest):
     symbol: Optional[str] = None
     ticket: Optional[Union[int, str]] = None
     side: Optional[str] = Field(
@@ -526,11 +518,6 @@ class TradeGetPendingRequest(BaseModel):
             "while preserving the standard read envelope."
         ),
     )
-
-    @field_validator("side", mode="before")
-    @classmethod
-    def _normalize_side(cls, value: Optional[str]) -> Optional[str]:
-        return _normalize_trade_side_alias(value)
 
     @field_validator("order_type", mode="before")
     @classmethod

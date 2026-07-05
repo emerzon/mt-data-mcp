@@ -369,7 +369,14 @@ SimplifySpecInput = Annotated[
 ]
 
 
-class DataFetchCandlesRequest(BaseModel):
+class _DetailNormalizedRequest(BaseModel):
+    @field_validator("detail", mode="before", check_fields=False)
+    @classmethod
+    def _normalize_detail(cls, value: Any) -> str:
+        return normalize_output_detail(value, default="compact")
+
+
+class DataFetchCandlesRequest(_DetailNormalizedRequest):
     symbol: str
     timeframe: TimeframeLiteral = "H1"
     detail: CompactStandardFullDetailLiteral = "compact"
@@ -437,13 +444,8 @@ class DataFetchCandlesRequest(BaseModel):
     def _validate_limit(cls, value: int) -> int:
         return _validate_positive_limit(value)
 
-    @field_validator("detail", mode="before")
-    @classmethod
-    def _normalize_detail(cls, value: Any) -> str:
-        return normalize_output_detail(value, default="compact")
 
-
-class DataFetchTicksRequest(BaseModel):
+class DataFetchTicksRequest(_DetailNormalizedRequest):
     symbol: str
     limit: int = Field(
         DATA_FETCH_TICKS_DEFAULT_LIMIT,
@@ -471,11 +473,6 @@ class DataFetchTicksRequest(BaseModel):
     def _reject_removed_output(cls, values: Any) -> Any:
         values = reject_removed_field(values, field_name="output", replacement="json")
         return reject_removed_field(values, field_name="output_mode", replacement="extras")
-
-    @field_validator("detail", mode="before")
-    @classmethod
-    def _normalize_detail(cls, value: Any) -> str:
-        return normalize_output_detail(value, default="compact")
 
     @field_validator("limit")
     @classmethod
