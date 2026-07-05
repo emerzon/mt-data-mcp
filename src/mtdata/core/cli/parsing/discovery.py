@@ -535,7 +535,8 @@ def resolve_param_kwargs(
     override_help = _COMMAND_PARAM_HELP_OVERRIDES.get((str(cmd_name or ""), str(param["name"])))
     if override_help:
         hint = override_help
-    kwargs = {"help": _escape_argparse_help(hint) or f"{param['name']} parameter", "dest": param["name"]}
+    fallback_help = f"Value for {str(param['name']).replace('_', ' ')}."
+    kwargs = {"help": _escape_argparse_help(hint) or fallback_help, "dest": param["name"]}
     is_mapping_type = False
 
     if param["name"] == "method" and (
