@@ -702,7 +702,6 @@ def get_support_resistance_response(
     symbol: str,
     timeframe: str,
     lookback: Optional[int],
-    limit: Optional[int],
     tolerance_pct: float,
     min_touches: int,
     max_levels: int,
@@ -714,7 +713,7 @@ def get_support_resistance_response(
     extras: Any,
     fetch_history_impl: Callable[..., Any],
 ) -> Dict[str, Any]:
-    effective_lookback = int(lookback if lookback is not None else limit if limit is not None else 200)
+    effective_lookback = int(lookback if lookback is not None else 200)
     try:
         result = compute_support_resistance_payload(
             fetch_history_impl=fetch_history_impl,
