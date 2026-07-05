@@ -388,6 +388,29 @@ def attach_collection_contract(
     return out
 
 
+def build_pagination_meta(
+    *,
+    total: int,
+    returned: int,
+    offset: int = 0,
+    limit: Optional[int] = None,
+) -> dict[str, Any]:
+    """Build normalized pagination metadata for list-style tool outputs."""
+    total_value = max(0, int(total or 0))
+    returned_value = max(0, int(returned or 0))
+    offset_value = max(0, int(offset or 0))
+    limit_value = None if limit is None else max(1, int(limit))
+    more_available = max(0, total_value - offset_value - returned_value)
+    return {
+        "total": total_value,
+        "returned": returned_value,
+        "offset": offset_value,
+        "limit": limit_value,
+        "has_more": more_available > 0,
+        "more_available": more_available,
+    }
+
+
 def apply_output_verbosity(
     result: Any,
     *,

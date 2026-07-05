@@ -2,14 +2,18 @@ import logging
 import re
 from typing import Any, Dict, List, Literal, Optional
 
+from ..shared.constants import DEFAULT_ROW_LIMIT
+from ..shared.schema import (
+    CategoryLiteral,
+    CompactFullDetailLiteral,
+    IndicatorNameLiteral,
+)
 from ..utils.indicators import clean_help_text as _clean_help_text
 from ..utils.indicators import list_ta_indicators as _list_ta_indicators
 from ..utils.utils import _table_from_rows
 from ._mcp_instance import mcp
-from ..shared.constants import DEFAULT_ROW_LIMIT
 from .execution_logging import run_logged_operation
-from .output_contract import normalize_output_detail
-from ..shared.schema import CategoryLiteral, CompactFullDetailLiteral, IndicatorNameLiteral
+from .output_contract import build_pagination_meta, normalize_output_detail
 
 logger = logging.getLogger(__name__)
 
@@ -585,6 +589,12 @@ def indicators_list(
             if style_q:
                 result["trading_style"] = style_q
             more_available = max(0, total_matches - offset_value - len(items))
+            result["pagination"] = build_pagination_meta(
+                total=total_matches,
+                returned=len(items),
+                offset=offset_value,
+                limit=limit_value,
+            )
             if total_matches > len(items) or offset_value:
                 result["total_count"] = total_matches
                 result["offset"] = offset_value

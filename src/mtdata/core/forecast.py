@@ -33,12 +33,14 @@ from ..utils.barriers import (
 from ..utils.barriers import (
     normalize_trade_direction,
 )
+from ..utils.coercion import is_explicit_false as _is_explicit_false
 from ..utils.mt5 import ensure_mt5_connection_or_raise
 from ..utils.utils import parse_kv_or_json as _parse_kv_or_json
 from ._mcp_instance import mcp
 from .error_envelope import build_error_payload
 from .execution_logging import run_logged_operation
 from .mt5_gateway import create_mt5_gateway, mt5_connection_error
+from .output_contract import build_pagination_meta
 
 logger = logging.getLogger(__name__)
 
@@ -624,15 +626,6 @@ def _get_registered_forecast_capabilities():
 
 def _get_library_forecast_capabilities(*args, **kwargs):
     return _forecast_capabilities_module().get_library_capabilities(*args, **kwargs)
-
-
-def _is_explicit_false(value: Any) -> bool:
-    if value is None:
-        return False
-    try:
-        return not bool(value)
-    except Exception:
-        return False
 
 
 def _genetic_search_impl(**kwargs):
@@ -1878,6 +1871,12 @@ def _forecast_list_methods_impl(  # noqa: C901
             out_full["methods_hidden"] = int(
                 max(0, total_filtered - offset_value - len(filtered_full))
             )
+            out_full["pagination"] = build_pagination_meta(
+                total=total_filtered,
+                returned=len(filtered_full),
+                offset=offset_value,
+                limit=limit_value,
+            )
             if offset_value:
                 out_full["methods_before"] = int(min(offset_value, total_filtered))
                 out_full["offset"] = int(offset_value)
@@ -2029,6 +2028,12 @@ def _forecast_list_methods_impl(  # noqa: C901
             "methods": selected_methods,
             "methods_shown": int(len(selected_methods)),
             "methods_hidden": hidden_count,
+            "pagination": build_pagination_meta(
+                total=len(compact_methods),
+                returned=len(selected_methods),
+                offset=offset_value,
+                limit=effective_limit_value,
+            ),
         }
         if detail_value == "standard":
             out["detail"] = "standard"

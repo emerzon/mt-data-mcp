@@ -130,10 +130,10 @@ def test_forecast_volatility_estimate_strips_duplicate_impl_sigma_fields():
 
     assert out["volatility_per_bar"] == pytest.approx(0.01)
     assert out["volatility_horizon"] == pytest.approx(0.02)
-    assert out["sigma_bar_return"] == pytest.approx(0.01)
-    assert out["sigma_annual_return"] == pytest.approx(0.5)
-    assert out["horizon_sigma_return"] == pytest.approx(0.02)
-    assert out["horizon_sigma_annual"] == pytest.approx(0.8)
+    assert "sigma_bar_return" not in out
+    assert "sigma_annual_return" not in out
+    assert "horizon_sigma_return" not in out
+    assert "horizon_sigma_annual" not in out
     assert out["volatility_interpretation"] == {"volatility_per_bar": "per bar"}
 
 

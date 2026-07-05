@@ -30,6 +30,14 @@ def test_denoise_list_methods_compact_lists_small_catalog_by_default(monkeypatch
     assert result["total"] == 12
     assert result["has_more"] is False
     assert result["methods_hidden"] == 0
+    assert result["pagination"] == {
+        "total": 12,
+        "returned": 12,
+        "offset": 0,
+        "limit": 30,
+        "has_more": False,
+        "more_available": 0,
+    }
     assert result["columns"] == ["method", "available", "causality"]
     assert set(result["methods"][0]) == {
         "method",
@@ -62,6 +70,14 @@ def test_denoise_list_methods_compact_reports_hidden_catalog_hint(monkeypatch):
     assert result["total"] == 35
     assert result["has_more"] is True
     assert result["methods_hidden"] == 5
+    assert result["pagination"] == {
+        "total": 35,
+        "returned": 30,
+        "offset": 0,
+        "limit": 30,
+        "has_more": True,
+        "more_available": 5,
+    }
     assert result["list_all_hint"] == "Pass limit=35 to list every method."
 
 
@@ -81,6 +97,14 @@ def test_denoise_list_methods_full_keeps_complete_catalog(monkeypatch):
     result = _raw_list_methods()(detail="full", limit=1)
 
     assert result["count"] == 1
+    assert result["pagination"] == {
+        "total": 1,
+        "returned": 1,
+        "offset": 0,
+        "limit": None,
+        "has_more": False,
+        "more_available": 0,
+    }
     assert result["methods"] == rows
     assert "has_more" not in result
 

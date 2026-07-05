@@ -404,6 +404,9 @@ def test_forecast_generate_compact_volatility_uses_summary_row(monkeypatch):
             "volatility_per_bar": 0.012345,
             "volatility_annualized": 0.194444,
             "volatility_horizon": 0.021234,
+            "sigma_bar_return": 0.012345,
+            "sigma_annual_return": 0.194444,
+            "horizon_sigma_return": 0.021234,
             "forecast_time": ["t1", "t2", "t3"],
         },
     )
@@ -420,6 +423,9 @@ def test_forecast_generate_compact_volatility_uses_summary_row(monkeypatch):
 
     assert out["volatility_per_bar"] == pytest.approx(0.012345)
     assert out["volatility_horizon"] == pytest.approx(0.021234)
+    assert "sigma_bar_return" not in out
+    assert "sigma_annual_return" not in out
+    assert "horizon_sigma_return" not in out
     assert out["forecast_summary_mode"] == "scalar_volatility_estimate"
     assert "no distinct per-step path is implied" in out["quantity_note"]
     assert "forecast_time" not in out
@@ -1071,6 +1077,8 @@ def test_run_forecast_generate_routes_date_range_to_impl(monkeypatch):
     )
 
     assert result["success"] is True
+    assert result["volatility_per_bar"] == pytest.approx(0.01)
+    assert "sigma_bar_return" not in result
     assert captured["start"] == "2023-01-01"
     assert captured["end"] == "2023-03-31"
 
@@ -1687,6 +1695,14 @@ def test_forecast_list_library_models_and_list_methods(monkeypatch):
     assert default_out["methods_shown"] == 25
     assert default_out["methods_hidden"] == 0
     assert "has_more" not in default_out
+    assert default_out["pagination"] == {
+        "total": 25,
+        "returned": 25,
+        "offset": 0,
+        "limit": None,
+        "has_more": False,
+        "more_available": 0,
+    }
     assert "truncation_reason" not in default_out
 
     page = _unwrap(cf.forecast_list_methods)(limit=5, offset=5, profile="all")
@@ -1701,6 +1717,14 @@ def test_forecast_list_library_models_and_list_methods(monkeypatch):
     assert page["methods_hidden"] == 15
     assert page["offset"] == 5
     assert page["has_more"] is True
+    assert page["pagination"] == {
+        "total": 25,
+        "returned": 5,
+        "offset": 5,
+        "limit": 5,
+        "has_more": True,
+        "more_available": 15,
+    }
     assert page["truncation_reason"] == (
         "Limit 5 at offset 5; set offset=10 for more filtered methods."
     )

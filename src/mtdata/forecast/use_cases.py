@@ -19,6 +19,7 @@ from ..core.execution_logging import (
     log_operation_start,
 )
 from ..core.output_contract import attach_collection_contract
+from ..utils.coercion import is_explicit_false as _is_explicit_false
 from ..utils.freshness import format_age_seconds as _format_age_seconds
 from ..utils.freshness import format_freshness_label
 from .backtest import execute_forecast_backtest as _forecast_backtest_impl
@@ -68,6 +69,12 @@ _VOLATILITY_PROXY_METHODS = {"arima", "sarima", "ets", "theta"}
 _PRETRAINED_FORECAST_METHODS = ("chronos2", "chronos_bolt", "timesfm")
 _DEFAULT_VOLATILITY_PROXY = "squared_return"
 _FORECAST_DIRECTION_NEUTRAL_THRESHOLD_PCT = 0.01
+_VOLATILITY_LEGACY_ALIASES = (
+    ("sigma_bar_return", "volatility_per_bar"),
+    ("sigma_annual_return", "volatility_annualized"),
+    ("horizon_sigma_return", "volatility_horizon"),
+    ("horizon_sigma_annual", "volatility_horizon_annualized"),
+)
 
 
 def _format_forecast_time_utc(value: Any) -> Any:
@@ -189,7 +196,7 @@ def _forecast_interval_summary(payload: Dict[str, Any]) -> Optional[Dict[str, fl
     try:
         widths = [
             float(upper) - float(lower)
-            for lower, upper in zip(lower_vals, upper_vals)
+            for lower, upper in zip(lower_vals, upper_vals, strict=False)
         ]
         if not widths:
             return None
@@ -270,22 +277,16 @@ def _forecast_compact_ci(payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     return out
 
 
-def _normalize_volatility_impl_aliases(payload: Dict[str, Any]) -> Dict[str, Any]:
+def _canonicalize_volatility_output(payload: Dict[str, Any]) -> Dict[str, Any]:
     if not isinstance(payload, dict):
         return payload
     out = dict(payload)
-    for legacy_key, trader_key in (
-        ("sigma_bar_return", "volatility_per_bar"),
-        ("sigma_annual_return", "volatility_annualized"),
-        ("horizon_sigma_return", "volatility_horizon"),
-        ("horizon_sigma_annual", "volatility_horizon_annualized"),
-    ):
+    for legacy_key, trader_key in _VOLATILITY_LEGACY_ALIASES:
         legacy_value = out.get(legacy_key)
         trader_value = out.get(trader_key)
         if trader_value is None and legacy_value is not None:
             out[trader_key] = legacy_value
-        elif legacy_value is None and trader_value is not None:
-            out[legacy_key] = trader_value
+        out.pop(legacy_key, None)
     return out
 
 
@@ -760,6 +761,7 @@ def _apply_forecast_generate_detail(
     payload = _round_forecast_generate_payload(payload)
     payload = _normalize_forecast_time_fields(payload)
     if str(payload.get("quantity") or request.quantity or "").strip().lower() == "volatility":
+        payload = _canonicalize_volatility_output(payload)
         payload = _round_forecast_volatility_payload(payload)
     training_period = _forecast_training_period(payload)
     volatility_rows = _forecast_generate_volatility_rows(
@@ -1621,14 +1623,6 @@ def _compact_backtest_result(result: Dict[str, Any]) -> Dict[str, Any]:
         except (TypeError, ValueError):
             return None
         return value_f if math.isfinite(value_f) else None
-
-    def _is_explicit_false(value: Any) -> bool:
-        if value is None:
-            return False
-        try:
-            return bool(value) is False
-        except Exception:
-            return False
 
     ranked_methods: list[Dict[str, Any]] = []
     methods_total = 0
@@ -3143,7 +3137,7 @@ def run_forecast_volatility_estimate(
         method=request.method,
         horizon=request.horizon,
     )
-    return _normalize_volatility_impl_aliases(result)
+    return _canonicalize_volatility_output(result)
 
 
 def run_forecast_optimize_hints(

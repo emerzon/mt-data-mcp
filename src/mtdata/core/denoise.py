@@ -10,7 +10,7 @@ from ..utils.denoise import get_denoise_methods_data
 from ._mcp_instance import mcp
 from .error_envelope import build_error_payload
 from .execution_logging import run_logged_operation
-from .output_contract import normalize_output_detail
+from .output_contract import build_pagination_meta, normalize_output_detail
 
 logger = logging.getLogger(__name__)
 
@@ -84,6 +84,12 @@ def denoise_list_methods(
             no_extras=no_extras,
         )
         if detail_mode == "full":
+            pagination = build_pagination_meta(
+                total=len(methods),
+                returned=len(methods),
+                offset=0,
+                limit=None,
+            )
             return {
                 "success": True,
                 "detail": detail_mode,
@@ -91,6 +97,7 @@ def denoise_list_methods(
                 "causality": str(causality).strip().lower() if causality else None,
                 "no_extras": bool(no_extras),
                 "count": len(methods),
+                "pagination": pagination,
                 "methods": methods,
             }
         limit_value = max(1, int(limit or _DENOISE_METHOD_DEFAULT_LIMIT))
@@ -125,6 +132,12 @@ def denoise_list_methods(
             "limit": limit_value,
             "has_more": hidden > 0,
             "methods_hidden": hidden,
+            "pagination": build_pagination_meta(
+                total=len(methods),
+                returned=len(visible),
+                offset=0,
+                limit=limit_value,
+            ),
             "columns": columns,
             "causality": str(causality).strip().lower() if causality else None,
             "no_extras": bool(no_extras),

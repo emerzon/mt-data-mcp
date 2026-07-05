@@ -26,3 +26,13 @@ def safe_float(value: Any, default: Optional[float] = None) -> Optional[float]:
     """Best-effort finite float coercion with an optional fallback."""
     out = coerce_finite_float(value)
     return default if out is None else out
+
+
+def is_explicit_false(value: Any) -> bool:
+    """Return True only when a supplied value is explicitly falsy."""
+    if value is None:
+        return False
+    try:
+        return not bool(value)
+    except Exception:
+        return False

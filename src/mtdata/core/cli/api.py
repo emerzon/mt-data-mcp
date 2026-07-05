@@ -36,8 +36,20 @@ from ...forecast.requests import ForecastGenerateRequest
 from .._mcp_instance import mcp
 from .._mcp_tools import _get_pydantic_model_fields
 from .._mcp_tools import get_tool_registry as get_registered_tools
+from ..output_contract import resolve_output_contract
+from .formatting import (
+    CLI_FORMAT_TOON,
+    _attach_cli_meta,
+    _build_cli_timezone_meta,
+    _build_cli_timezone_meta_brief,
+    _format_result_for_cli,
+    _json_default,
+    _resolve_cli_formatter,
+)
 from .parsing.discovery import (
     _COMMAND_PARAM_CHOICE_OVERRIDES,
+)
+from .parsing.discovery import (
     add_dynamic_arguments as _add_dynamic_arguments_impl,
 )
 from .parsing.discovery import (
@@ -61,24 +73,22 @@ from .parsing.discovery import (
 from .parsing.discovery import (
     should_expose_cli_param as _should_expose_cli_param_impl,
 )
-from .formatting import (
-    CLI_FORMAT_JSON,
-    CLI_FORMAT_TOON,
-    _attach_cli_meta,
-    _build_cli_timezone_meta,
-    _build_cli_timezone_meta_brief,
-    _format_result_for_cli,
-    _format_result_minimal,
-    _json_default,
-    _resolve_cli_formatter,
+from .runtime import (
+    _argparse_color_enabled,
+    _capture_runtime_warnings,
+    _configure_cli_logging,
+    _debug,
+    _debug_enabled,
+    _suppress_cli_side_output,
+    _temporary_environment,
 )
+from .runtime.commands import LIVE_TRADE_MUTATION_TOOLS, LIVE_TRADE_MUTATION_WARNING
 from .runtime.commands import (
     coerce_cli_scalar as _coerce_cli_scalar_impl,
 )
 from .runtime.commands import (
     create_command_function as _create_command_function_impl,
 )
-from .runtime.commands import LIVE_TRADE_MUTATION_TOOLS, LIVE_TRADE_MUTATION_WARNING
 from .runtime.commands import (
     merge_dict as _merge_dict_impl,
 )
@@ -90,16 +100,6 @@ from .runtime.commands import (
 )
 from .runtime.commands import (
     parse_set_overrides as _parse_set_overrides_impl,
-)
-from ..output_contract import resolve_output_contract
-from .runtime import (
-    _argparse_color_enabled,
-    _capture_runtime_warnings,
-    _configure_cli_logging,
-    _debug,
-    _debug_enabled,
-    _suppress_cli_side_output,
-    _temporary_environment,
 )
 
 
@@ -1145,23 +1145,88 @@ def _format_epilog_param_usage(
     return f"--{name.replace('_', '-')}{type_token}=[{default}]"
 
 
+_COMMAND_HELP_CATEGORY_ORDER = (
+    "DATA ACCESS",
+    "FORECASTING",
+    "TRADING",
+    "PATTERNS & LEVELS",
+    "MARKET CONTEXT",
+    "ANALYTICS",
+    "NEWS & FUNDAMENTALS",
+    "REPORTS & TOOLS",
+    "OTHER TOOLS",
+)
+
+
+def _command_help_category(command: str) -> str:
+    name = str(command or "").strip().lower()
+    if name.startswith("data_") or name.startswith("market_depth"):
+        return "DATA ACCESS"
+    if name.startswith("forecast_") or name == "strategy_backtest":
+        return "FORECASTING"
+    if name.startswith("trade_"):
+        return "TRADING"
+    if (
+        name.startswith("patterns_")
+        or name.startswith("pivot_")
+        or name in {"confluence_levels", "support_resistance_levels", "volume_profile"}
+    ):
+        return "PATTERNS & LEVELS"
+    if name.startswith("market_") or name.startswith("symbols_") or name.startswith("options_"):
+        return "MARKET CONTEXT"
+    if (
+        name.startswith("regime_")
+        or name.startswith("indicators_")
+        or name.startswith("denoise_")
+        or name.startswith("temporal_")
+        or name.startswith("causal_")
+        or name.startswith("labels_")
+        or name
+        in {
+            "cointegration_test",
+            "correlation_matrix",
+            "cross_correlation",
+            "outliers_detect",
+            "seasonality_detect",
+            "stationarity_test",
+        }
+    ):
+        return "ANALYTICS"
+    if name.startswith("finviz_") or name.startswith("news_"):
+        return "NEWS & FUNDAMENTALS"
+    if name.startswith("report_") or name.startswith("tools_") or name.startswith("diagnostics_"):
+        return "REPORTS & TOOLS"
+    return "OTHER TOOLS"
+
+
 def _build_epilog(functions: Dict[str, ToolInfo]) -> str:
     lines = []
-    lines.append("Commands and Arguments:")
+    lines.append("Commands and Arguments by Category:")
+    grouped: Dict[str, List[Tuple[str, ToolInfo]]] = {
+        category: [] for category in _COMMAND_HELP_CATEGORY_ORDER
+    }
     for cmd_name, tool in sorted(functions.items()):
-        func = tool["func"]
-        func_info = tool.setdefault("_cli_func_info", get_function_info(func))
-        _apply_schema_overrides(tool, func_info)
-        arg_strs = []
-        for index, param in enumerate(func_info["params"]):
-            rendered = _format_epilog_param_usage(param, cmd_name=cmd_name, index=index)
-            if rendered:
-                arg_strs.append(rendered)
-        meta = tool.get("meta") or {}
-        desc = meta.get("description") or _first_line(func_info.get("doc"))
-        lines.append(f"- {cmd_name}: {' '.join(arg_strs) if arg_strs else '(no args)'}")
-        if desc:
-            lines.append(f"  {desc}")
+        grouped.setdefault(_command_help_category(cmd_name), []).append((cmd_name, tool))
+    for category in _COMMAND_HELP_CATEGORY_ORDER:
+        rows = grouped.get(category) or []
+        if not rows:
+            continue
+        lines.append("")
+        lines.append(f"{category}:")
+        for cmd_name, tool in rows:
+            func = tool["func"]
+            func_info = tool.setdefault("_cli_func_info", get_function_info(func))
+            _apply_schema_overrides(tool, func_info)
+            arg_strs = []
+            for index, param in enumerate(func_info["params"]):
+                rendered = _format_epilog_param_usage(param, cmd_name=cmd_name, index=index)
+                if rendered:
+                    arg_strs.append(rendered)
+            meta = tool.get("meta") or {}
+            desc = meta.get("description") or _first_line(func_info.get("doc"))
+            lines.append(f"- {cmd_name}: {' '.join(arg_strs) if arg_strs else '(no args)'}")
+            if desc:
+                lines.append(f"  {desc}")
     lines.append("")
     lines.append("Tip: Use `--help <keyword>` to search commands and examples.")
     lines.append(

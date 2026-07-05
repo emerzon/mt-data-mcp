@@ -37,6 +37,7 @@ from mtdata.shared.schema import (
     get_shared_enum_lists,
     shared_defs,
 )
+from mtdata.utils.formatting import format_float
 
 # ---------------------------------------------------------------------------
 # Module imports
@@ -52,9 +53,7 @@ from mtdata.utils.indicators import (
     infer_defaults_from_doc,
     list_ta_indicators,
 )
-from mtdata.utils.formatting import format_float
 from mtdata.utils.utils import (
-    coerce_scalar,
     _format_numeric_rows_from_df,
     _format_time_minimal,
     _normalize_limit,
@@ -63,6 +62,7 @@ from mtdata.utils.utils import (
     _table_from_rows,
     _utc_epoch_seconds,
     align_finite,
+    coerce_scalar,
     parse_kv_or_json,
     to_float_np,
 )
@@ -554,6 +554,14 @@ Values above 70 often indicate overbought conditions.
         assert out["total_count"] == 30
         assert out["more_available"] == 5
         assert out["truncated"] is True
+        assert out["pagination"] == {
+            "total": 30,
+            "returned": 25,
+            "offset": 0,
+            "limit": 25,
+            "has_more": True,
+            "more_available": 5,
+        }
         assert out["search_hint"] == (
             "Use search_term to match indicator names, aliases, "
             "categories, or docs; detail='full' includes aliases."
@@ -608,6 +616,14 @@ Values above 70 often indicate overbought conditions.
         assert out["limit"] == 3
         assert out["has_more"] is True
         assert out["more_available"] == 3
+        assert out["pagination"] == {
+            "total": 10,
+            "returned": 3,
+            "offset": 4,
+            "limit": 3,
+            "has_more": True,
+            "more_available": 3,
+        }
 
     def test_indicators_list_full_detail_includes_aliases_and_descriptions(self, monkeypatch):
         from mtdata.core import indicators as core_indicators
