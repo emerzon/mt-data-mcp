@@ -46,6 +46,7 @@ _NO_TIMEOUT_TOOLS = frozenset(
 )
 _PUBLIC_OUTPUT_PARAMS = PUBLIC_OUTPUT_PARAMS
 _MARKET_DEPTH_FETCH_ENV = "MTDATA_ENABLE_MARKET_DEPTH_FETCH"
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -242,8 +243,12 @@ def _tool_catalog_parameters(func: Any) -> Dict[str, str]:
                     name: "required" if field.is_required() else "optional"
                     for name, field in annotation.model_fields.items()
                 }
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.exception(
+                "Failed to attach MCP signature for tool %s: %s",
+                getattr(func, "__name__", "tool"),
+                exc,
+            )
     out: Dict[str, str] = {}
     for param in params:
         if param.name.startswith("__"):
@@ -944,8 +949,12 @@ def _recording_tool_decorator(*dargs, **dkwargs):  # type: ignore[override]  # n
             _wrapped.__annotations__ = cleaned
             return_ann = cleaned.get("return", inspect._empty)
             _wrapped.__signature__ = inspect.Signature(parameters=params, return_annotation=return_ann)
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.exception(
+                "Failed to attach async MCP signature for tool %s: %s",
+                getattr(func, "__name__", "tool"),
+                exc,
+            )
 
         # Register an async wrapper with FastMCP so sync tool execution does not
         # block the event loop while the underlying work runs in a worker thread.
@@ -974,8 +983,12 @@ def _recording_tool_decorator(*dargs, **dkwargs):  # type: ignore[override]  # n
             _sig = getattr(_wrapped, "__signature__", None)
             if _sig is not None:
                 _async_wrapped.__signature__ = _sig
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.exception(
+                "Failed to attach MCP metadata for tool %s: %s",
+                getattr(func, "__name__", "tool"),
+                exc,
+            )
 
         res = dec(_async_wrapped)
         name = getattr(func, "__name__", None)
