@@ -95,6 +95,7 @@ def test_trade_place_routes_prefixed_market_order_type() -> None:
             volume=0.03,
             order_type="BUY",
             require_sl_tp=False,
+            dry_run=False,
             __cli_raw=True,
         )
         assert out == {"ok": True, "success": True}
@@ -115,6 +116,7 @@ def test_trade_place_logs_finish_event(caplog) -> None:
             volume=0.03,
             order_type="BUY",
             require_sl_tp=False,
+            dry_run=False,
             __cli_raw=True,
         )
 
@@ -146,6 +148,7 @@ def test_trade_place_blank_expiration_keeps_market_routing() -> None:
             order_type="BUY",
             expiration="",
             require_sl_tp=False,
+            dry_run=False,
             __cli_raw=True,
         )
         assert out == {"ok": True, "success": True}
@@ -163,6 +166,7 @@ def test_trade_place_require_sl_tp_needs_inputs_before_market_send() -> None:
             volume=0.03,
             order_type="BUY",
             require_sl_tp=True,
+            dry_run=False,
             __cli_raw=True,
         )
     assert "error" in out
@@ -187,6 +191,7 @@ def test_trade_place_reports_symbol_error_before_sl_tp_requirement() -> None:
             volume=0.03,
             order_type="BUY",
             require_sl_tp=True,
+            dry_run=False,
             __cli_raw=True,
         )
     assert out.get("error") == "Symbol FAKESYM not found"
@@ -201,6 +206,7 @@ def test_trade_place_require_sl_tp_false_allows_market_without_sl_tp() -> None:
             volume=0.03,
             order_type="BUY",
             require_sl_tp=False,
+            dry_run=False,
             __cli_raw=True,
         )
     assert out.get("retcode") == 10009
@@ -488,6 +494,7 @@ def test_trade_place_require_sl_tp_flags_unprotected_market_fill() -> None:
             stop_loss=64000,
             take_profit=68000,
             require_sl_tp=True,
+            dry_run=False,
             __cli_raw=True,
         )
     assert "error" in out
@@ -512,6 +519,7 @@ def test_trade_place_preserves_scalar_warning_on_unprotected_market_fill() -> No
             stop_loss=64000,
             take_profit=68000,
             require_sl_tp=True,
+            dry_run=False,
             __cli_raw=True,
         )
     assert "broker warning" in out.get("warnings", [])
@@ -536,6 +544,7 @@ def test_trade_place_require_sl_tp_flags_unverified_market_fill() -> None:
             stop_loss=64000,
             take_profit=68000,
             require_sl_tp=True,
+            dry_run=False,
             __cli_raw=True,
         )
     mock_close.assert_not_called()
@@ -562,6 +571,7 @@ def test_trade_place_defaults_to_auto_closing_unprotected_market_fill() -> None:
             order_type="BUY",
             stop_loss=64000,
             take_profit=68000,
+            dry_run=False,
             __cli_raw=True,
         )
     mock_close.assert_called_once()
@@ -591,6 +601,7 @@ def test_trade_place_auto_close_attempts_recovery_on_sl_tp_fail() -> None:
             stop_loss=64000,
             take_profit=68000,
             auto_close_on_sl_tp_fail=True,
+            dry_run=False,
             __cli_raw=True,
         )
     mock_close.assert_called_once()
@@ -617,6 +628,7 @@ def test_trade_place_preserves_atomic_protection_status_without_fallback_fields(
             order_type="BUY",
             stop_loss=64000,
             take_profit=68000,
+            dry_run=False,
             __cli_raw=True,
         )
     assert out.get("protection_status") == "protected"
