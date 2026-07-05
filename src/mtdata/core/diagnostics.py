@@ -73,6 +73,17 @@ def _diagnostic_series(frame: pd.DataFrame, target: str) -> pd.Series:
     return pd.Series(values, dtype=float).replace([np.inf, -np.inf], np.nan).dropna()
 
 
+def _seasonality_signal_quality(score: float, acf: float, spectral_strength: float) -> str:
+    signal = max(float(score), max(0.0, float(acf)), max(0.0, float(spectral_strength)))
+    if signal < 0.05:
+        return "very_weak"
+    if signal < 0.10:
+        return "weak"
+    if signal < 0.25:
+        return "moderate"
+    return "strong"
+
+
 def _critical_values(values: Any) -> Dict[str, float]:
     if not isinstance(values, dict):
         return {}
@@ -283,7 +294,11 @@ def seasonality_detect(
         frequencies, powers = periodogram(centered, detrend="linear", scaling="spectrum")
         spectral_by_period: Dict[int, float] = {}
         positive = frequencies > 0
-        for frequency, power in zip(frequencies[positive], powers[positive]):
+        for frequency, power in zip(
+            frequencies[positive],
+            powers[positive],
+            strict=False,
+        ):
             period = int(round(1.0 / float(frequency)))
             if int(min_period) <= period <= upper:
                 spectral_by_period[period] = max(spectral_by_period.get(period, 0.0), float(power))
@@ -304,14 +319,27 @@ def seasonality_detect(
             )
             acf_strength = max(0.0, min(1.0, acf_value))
             score = 0.55 * acf_strength + 0.45 * spectral_strength
+            score_rounded = round(score, 6)
+            acf_rounded = round(acf_value, 6)
+            spectral_rounded = round(spectral_strength, 6)
+            row: Dict[str, Any] = {
+                "period_bars": int(period),
+                "score": score_rounded,
+                "acf": acf_rounded,
+                "spectral_strength": spectral_rounded,
+                "signal_quality": _seasonality_signal_quality(
+                    score_rounded,
+                    acf_rounded,
+                    spectral_rounded,
+                ),
+                "cycles_observed": round(n / float(period), 2),
+            }
+            if spectral_rounded == 0.0:
+                row["spectral_strength_note"] = (
+                    "no_periodogram_power_at_this_rounded_period"
+                )
             rows.append(
-                {
-                    "period_bars": int(period),
-                    "score": round(score, 6),
-                    "acf": round(acf_value, 6),
-                    "spectral_strength": round(spectral_strength, 6),
-                    "cycles_observed": round(n / float(period), 2),
-                }
+                row
             )
         rows.sort(key=lambda row: (-float(row["score"]), int(row["period_bars"])))
         rows = rows[: int(top_n)]
@@ -327,6 +355,17 @@ def seasonality_detect(
             "dominant_period_bars": rows[0]["period_bars"] if rows else None,
             "score_formula": "0.55*acf_strength + 0.45*spectral_power_fraction; range 0-1, higher = stronger seasonality",
         }
+        if rows:
+            qualities = [str(row.get("signal_quality") or "") for row in rows]
+            out["signal_quality"] = rows[0].get("signal_quality")
+            if all(quality in {"very_weak", "weak"} for quality in qualities):
+                out["quality_note"] = (
+                    "Returned periods are weak statistical candidates; treat as exploratory, not confirmed seasonality."
+                )
+            if all(float(row.get("spectral_strength") or 0.0) == 0.0 for row in rows):
+                out["spectral_strength_note"] = (
+                    "All returned periods have zero rounded spectral strength; ranking is driven by autocorrelation only."
+                )
         if normalize_output_verbosity_detail(detail, default="compact") == "full":
             out["method"] = {
                 "acf_weight": 0.55,
@@ -548,6 +587,14 @@ def volatility_term_structure(
             "timeframe": timeframe,
             "annualized": bool(annualize),
             "unit": "annualized_decimal_volatility" if annualize else "per_bar_decimal_volatility",
+            "unit_note": (
+                "Volatility values are decimal return fractions; 0.01 means 1%."
+            ),
+            "units": {
+                "current_volatility": "decimal_return_fraction",
+                "cone": "decimal_return_fraction",
+                "percentile_rank": "percentage_points (0-100)",
+            },
             "cone_methodology": "percentiles of the historical distribution of rolling realized volatility at each horizon; percentile_rank shows where current vol sits in that distribution",
             "items": rows,
             "count": len(rows),
