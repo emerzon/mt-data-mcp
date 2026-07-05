@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import sys
 from collections import namedtuple
+from datetime import datetime, timezone
 from inspect import signature
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
@@ -104,7 +105,8 @@ def test_trade_account_info_rounds_margin_level_for_display() -> None:
             trade_allowed=True,
             trade_expert=True,
         ),
-        build_trade_preflight=lambda account_info=None: {},
+        terminal_info=lambda: None,
+        build_trade_preflight=lambda account_info=None, terminal_info=None: {},
     )
 
     raw = _unwrap(trade_account_info)
@@ -131,7 +133,8 @@ def test_trade_account_info_compact_detail_includes_account_fields_without_diagn
             trade_expert=True,
             login=123456,
         ),
-        build_trade_preflight=lambda account_info=None: {
+        terminal_info=lambda: None,
+        build_trade_preflight=lambda account_info=None, terminal_info=None: {
             "login": 123456,
             "server": "Demo-Server",
             "company": "Broker LLC",
@@ -151,6 +154,7 @@ def test_trade_account_info_compact_detail_includes_account_fields_without_diagn
     assert out["balance"] == 10000.0
     assert out["source"] == "mt5_account_snapshot"
     assert out["timezone"] == "UTC"
+    assert out["as_of_source"] == "client_utc_clock"
     assert out["as_of"].endswith("Z")
     assert out["retrieved_at"] == out["as_of"]
     assert out["profit"] == 50.0
@@ -170,6 +174,47 @@ def test_trade_account_info_compact_detail_includes_account_fields_without_diagn
     assert out["trade_allowed"] is True
     assert out["trade_expert"] is True
     assert "execution_ready" not in out
+
+
+def test_trade_account_info_includes_terminal_server_clock_when_available() -> None:
+    fixed_now = datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)
+
+    class FixedDatetime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return fixed_now if tz is not None else fixed_now.replace(tzinfo=None)
+
+    gateway = SimpleNamespace(
+        ensure_connection=lambda: None,
+        account_info=lambda: SimpleNamespace(
+            balance=10000.0,
+            equity=10050.0,
+            profit=50.0,
+            margin=100.0,
+            margin_free=9950.0,
+            margin_level=1000.0,
+            currency="USD",
+            leverage=100,
+            trade_allowed=True,
+            trade_expert=True,
+        ),
+        terminal_info=lambda: SimpleNamespace(server_time=fixed_now.timestamp() - 2.0),
+        build_trade_preflight=lambda account_info=None, terminal_info=None: {},
+    )
+
+    raw = _unwrap(trade_account_info)
+    with patch.object(core_trading_account, "create_trading_gateway", return_value=gateway), patch.object(
+        core_trading_account,
+        "datetime",
+        FixedDatetime,
+    ):
+        out = raw(detail="compact")
+
+    assert out["as_of"] == "2026-01-01T12:00:00Z"
+    assert out["as_of_source"] == "client_utc_clock"
+    assert out["server_time"] == "2026-01-01T11:59:58Z"
+    assert out["server_time_source"] == "mt5_terminal_info.server_time"
+    assert out["clock_skew_seconds"] == 2.0
 
 
 def test_trade_account_info_rejects_unsupported_detail_modes() -> None:
@@ -216,7 +261,8 @@ def test_trade_account_info_logs_finish_event(caplog) -> None:
             trade_allowed=True,
             trade_expert=True,
         ),
-        build_trade_preflight=lambda account_info=None: {
+        terminal_info=lambda: None,
+        build_trade_preflight=lambda account_info=None, terminal_info=None: {
             "server": "Demo-Server",
             "company": "Broker LLC",
             "trade_mode": "demo",

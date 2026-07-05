@@ -41,7 +41,12 @@ _TRADE_ACCOUNT_COMPACT_KEYS = (
     "source",
     "as_of",
     "retrieved_at",
+    "as_of_source",
     "timezone",
+    "broker_server_tz",
+    "server_time",
+    "server_time_source",
+    "clock_skew_seconds",
     "balance",
     "equity",
     "profit",
@@ -696,10 +701,64 @@ def _trade_account_payload_for_mode(payload: Dict[str, Any], *, mode: str) -> Di
     return {key: payload.get(key) for key in keys if key in payload}
 
 
+def _trade_account_iso_from_epoch(value: Any, *, milliseconds: bool = False) -> Optional[str]:
+    try:
+        epoch = float(value)
+    except Exception:
+        return None
+    if not math.isfinite(epoch) or epoch <= 0:
+        return None
+    if milliseconds or epoch > 10_000_000_000:
+        epoch /= 1000.0
+    try:
+        return (
+            datetime.fromtimestamp(epoch, tz=timezone.utc)
+            .replace(microsecond=0)
+            .isoformat()
+            .replace("+00:00", "Z")
+        )
+    except Exception:
+        return None
+
+
+def _trade_account_clock_fields(
+    terminal_info: Any,
+    *,
+    retrieved_at_epoch: float,
+) -> Dict[str, Any]:
+    fields: Dict[str, Any] = {"as_of_source": "client_utc_clock"}
+    broker_tz = str(getattr(mt5_config, "server_tz_name", "") or "").strip()
+    if broker_tz:
+        fields["broker_server_tz"] = broker_tz
+
+    for attr in ("server_time_msc", "time_msc", "server_time", "time"):
+        raw_value = getattr(terminal_info, attr, None) if terminal_info is not None else None
+        server_time = _trade_account_iso_from_epoch(
+            raw_value,
+            milliseconds=attr.endswith("_msc"),
+        )
+        if not server_time:
+            continue
+        fields["server_time"] = server_time
+        fields["server_time_source"] = f"mt5_terminal_info.{attr}"
+        try:
+            raw_epoch = float(raw_value)
+            if attr.endswith("_msc") or raw_epoch > 10_000_000_000:
+                raw_epoch /= 1000.0
+            fields["clock_skew_seconds"] = round(
+                abs(float(retrieved_at_epoch) - raw_epoch),
+                3,
+            )
+        except Exception:
+            pass
+        break
+    return fields
+
+
 def _trade_account_equity_balance_delta(info: Any) -> Optional[float]:
     try:
-        balance = float(getattr(info, "balance"))
-        equity = float(getattr(info, "equity"))
+        balance = float(info.balance)
+        equity = float(info.equity)
     except Exception:
         return None
     if not math.isfinite(balance) or not math.isfinite(equity):
@@ -737,7 +796,14 @@ def trade_account_info(
         info = mt5.account_info()
         if info is None:
             return {"error": "Failed to get account info"}
-        preflight = mt5.build_trade_preflight(account_info=info)
+        try:
+            terminal_info = mt5.terminal_info()
+        except Exception:
+            terminal_info = None
+        preflight = mt5.build_trade_preflight(
+            account_info=info,
+            terminal_info=terminal_info,
+        )
         login = preflight.get("login")
         if login is None:
             login = getattr(info, "login", None)
@@ -756,8 +822,9 @@ def trade_account_info(
         except Exception:
             pass
 
+        retrieved_dt = datetime.now(timezone.utc).replace(microsecond=0)
         retrieved_at = (
-            datetime.now(timezone.utc)
+            retrieved_dt
             .replace(microsecond=0)
             .isoformat()
             .replace("+00:00", "Z")
@@ -768,6 +835,10 @@ def trade_account_info(
             "as_of": retrieved_at,
             "retrieved_at": retrieved_at,
             "timezone": "UTC",
+            **_trade_account_clock_fields(
+                terminal_info,
+                retrieved_at_epoch=retrieved_dt.timestamp(),
+            ),
             "login": login,
             "balance": info.balance,
             "equity": info.equity,

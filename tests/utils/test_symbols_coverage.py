@@ -113,7 +113,7 @@ class TestSymbolsListNoSearch:
             "currency_base",
             "currency_profit",
             "digits",
-            "spread_float",
+            "spread_is_floating",
         ]
         assert res["data"] == [
             ["EURUSD", "Forex\\Majors", "Euro vs US Dollar", "EUR", "USD", 5, True]

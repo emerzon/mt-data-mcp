@@ -915,10 +915,14 @@ class TestMarketScan:
         assert {
             "symbol",
             "group",
+            "asset_class",
             "timeframe",
             "data_source",
             "time",
             "data_stale",
+            "market_status",
+            "market_status_reason",
+            "freshness_policy_relaxed",
             "freshness",
             "close",
             "price_change_pct",
@@ -967,7 +971,8 @@ class TestMarketScan:
 
         assert result["success"] is True
         row = result["data"][0]
-        assert row["spread_points"] == 50.0
+        assert row["spread_points"] == 50
+        assert isinstance(row["spread_points"], int)
         assert row["spread_pips"] is None
         assert "spread_pips" not in result["units"]
 

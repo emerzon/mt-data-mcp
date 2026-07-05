@@ -220,6 +220,7 @@ _SYMBOL_DESCRIBE_COMPACT_DIRECT_FIELDS: tuple[str, ...] = (
     "trade_calc_mode_label",
     "order_mode_labels",
     "filling_mode_labels",
+    "spread_is_floating",
     "swap_mode_label",
     "swap_long",
     "swap_short",
@@ -640,6 +641,16 @@ def _copy_symbol_describe_field(
     return True
 
 
+def _normalize_spread_float_field(payload: Dict[str, Any]) -> None:
+    if "spread_float" not in payload:
+        return
+    value = payload.pop("spread_float")
+    if isinstance(value, bool):
+        payload["spread_is_floating"] = value
+    elif value is not None:
+        payload["spread_is_floating"] = bool(value)
+
+
 def _infer_symbol_base_from_name(symbol_name: Any, quote_currency: Any) -> Optional[str]:
     name = re.sub(r"[^A-Z0-9]", "", str(symbol_name or "").upper())
     quote = str(quote_currency or "").strip().upper()
@@ -930,11 +941,13 @@ def symbols_list(  # noqa: C901
                     "currency_base",
                     "currency_profit",
                     "digits",
-                    "spread_float",
                 ):
                     value = _symbol_list_optional_attr(symbol, attr)
                     if value is not None:
                         row[attr] = value
+                spread_is_floating = _symbol_list_optional_attr(symbol, "spread_float")
+                if spread_is_floating is not None:
+                    row["spread_is_floating"] = bool(spread_is_floating)
                 symbol_list.append(row)
 
             limit_value = _normalize_limit(limit)
@@ -1033,7 +1046,7 @@ def symbols_list(  # noqa: C901
                     "currency_base",
                     "currency_profit",
                     "digits",
-                    "spread_float",
+                    "spread_is_floating",
                 ):
                     if any(s.get(optional_header) is not None for s in symbol_list):
                         headers.append(optional_header)
@@ -1408,6 +1421,7 @@ def symbols_describe(
                     symbol_data["price_change_basis"] = "session_open_to_session_close"
             symbol_data.pop("price_change", None)
 
+            _normalize_spread_float_field(symbol_data)
             _add_symbol_currency_diagnostics(symbol_data)
             if contract.detail == "summary":
                 symbol_data = _summary_symbol_describe_payload(symbol_data)
@@ -1486,6 +1500,16 @@ def _market_scan_round(value: Optional[float], digits: int = 6) -> Optional[floa
     if value is None:
         return None
     return round(float(value), max(0, int(digits)))
+
+
+def _market_scan_points(value: Optional[float]) -> Optional[int | float]:
+    rounded = _market_scan_round(value, digits=4)
+    if rounded is None:
+        return None
+    nearest = round(float(rounded))
+    if math.isclose(float(rounded), float(nearest), abs_tol=1e-9):
+        return int(nearest)
+    return rounded
 
 
 def _market_scan_stale_bar_seconds(timeframe: Optional[str]) -> int:
@@ -1656,7 +1680,7 @@ def _build_market_scan_spread_row(
             "ask": _market_scan_round(ask, digits=digits),
             **_market_scan_quote_freshness_fields(tick_time, symbol=symbol.name),
             "spread": _market_scan_round(spread_abs, digits=digits),
-            "spread_points": _market_scan_round(spread_points, digits=4),
+            "spread_points": _market_scan_points(spread_points),
             "spread_pips": _market_scan_round(spread_pips, digits=4),
             "spread_pct": _market_scan_round(spread_pct, digits=6),
             "spread_cost_per_lot": _market_scan_round(spread_cost_per_lot, digits=6),
@@ -2246,14 +2270,14 @@ def _market_scan_compute_rsi(closes: List[float], length: int) -> Optional[float
 
     gains: List[float] = []
     losses: List[float] = []
-    for prev_close, close in zip(closes[:-1], closes[1:]):
+    for prev_close, close in zip(closes[:-1], closes[1:], strict=False):
         delta = float(close - prev_close)
         gains.append(max(delta, 0.0))
         losses.append(max(-delta, 0.0))
 
     avg_gain = sum(gains[:length]) / float(length)
     avg_loss = sum(losses[:length]) / float(length)
-    for gain, loss in zip(gains[length:], losses[length:]):
+    for gain, loss in zip(gains[length:], losses[length:], strict=False):
         avg_gain = ((avg_gain * float(length - 1)) + float(gain)) / float(length)
         avg_loss = ((avg_loss * float(length - 1)) + float(loss)) / float(length)
 
@@ -3391,6 +3415,7 @@ def market_scan(  # noqa: C901
             full_headers = [
                 "symbol",
                 "group",
+                "asset_class",
                 "description",
                 "timeframe",
                 "time",
@@ -3400,6 +3425,9 @@ def market_scan(  # noqa: C901
                 "stale_after_seconds",
                 "bar_age_hours",
                 "data_stale",
+                "market_status",
+                "market_status_reason",
+                "freshness_policy_relaxed",
                 "stale_warning",
                 "previous_close",
                 "close",
@@ -3415,10 +3443,14 @@ def market_scan(  # noqa: C901
             compact_headers = [
                 "symbol",
                 "group",
+                "asset_class",
                 "timeframe",
                 "data_source",
                 "time",
                 "data_stale",
+                "market_status",
+                "market_status_reason",
+                "freshness_policy_relaxed",
                 "freshness",
                 "close",
                 "price_change_pct",
