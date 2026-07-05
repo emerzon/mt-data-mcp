@@ -181,6 +181,7 @@ def _run_data_fetch_candles_impl(
         indicators=request.indicators,
         denoise=request.denoise,
         simplify=request.simplify,
+        time_as_epoch=str(request.timestamp_format).strip().lower() != "iso",
         include_spread=request.include_spread,
         include_incomplete=request.include_incomplete,
         allow_stale=request.allow_stale,
@@ -859,6 +860,7 @@ def _run_data_fetch_ticks_impl(
         start=request.start,
         end=request.end,
         simplify=request.simplify,
+        time_as_epoch=str(request.timestamp_format).strip().lower() != "iso",
         format=_TICK_DETAIL_FORMATS.get(request.detail, "summary"),
     )
     if str(request.detail or "compact").strip().lower() == "compact":

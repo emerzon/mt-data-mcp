@@ -1367,9 +1367,11 @@ def test_data_fetch_ticks_request_uses_detail_control():
         "limit",
         "start",
         "end",
+        "timestamp_format",
         "simplify",
         "detail",
     ]
+    assert request.timestamp_format == "epoch"
 
 
 def test_data_fetch_ticks_request_rejects_removed_output_mode_field():

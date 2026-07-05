@@ -2528,6 +2528,7 @@ def fetch_ticks(  # noqa: C901
     start: Optional[str] = None,
     end: Optional[str] = None,
     simplify: Optional[SimplifySpec] = None,
+    time_as_epoch: bool = False,
     format: Literal["summary", "stats", "rows", "full_rows"] = "summary",
 ) -> Dict[str, Any]:
     """Fetch tick data and return either a summary (default) or raw rows.
@@ -2720,6 +2721,8 @@ def fetch_ticks(  # noqa: C901
         _use_ctz = client_tz is not None
 
         def _format_tick_time(epoch: float) -> str:
+            if time_as_epoch:
+                return int(epoch) if float(epoch).is_integer() else float(epoch)
             try:
                 dt = datetime.fromtimestamp(float(epoch), tz=dt_timezone.utc)
             except Exception:
@@ -3279,8 +3282,8 @@ def fetch_ticks(  # noqa: C901
 
         rows = []
         for i in select_indices:
-            time_str = _format_tick_time(_epochs[i])
-            values = [time_str]
+            time_value = _format_tick_time(_epochs[i])
+            values = [time_value]
             if full_rows:
                 epoch_value = _epochs[i]
                 values.append(int(epoch_value) if float(epoch_value).is_integer() else float(epoch_value))
