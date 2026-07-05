@@ -197,6 +197,21 @@ class TestAddForecastGenerateArgs:
         args = parser.parse_args(["EURUSD", "--detail", "summary"])
         assert args.detail == "summary"
 
+    def test_method_help_lists_registered_methods_without_restricting_custom_paths(self):
+        parser = argparse.ArgumentParser()
+        _add_forecast_generate_args(parser)
+
+        help_text = parser.format_help()
+        assert "Registered" in help_text
+        assert "built-in methods:" in help_text
+        assert "theta" in help_text
+        assert "forecast_list_methods" in help_text
+
+        args = parser.parse_args(
+            ["EURUSD", "--method", "sklearn.ensemble.RandomForestRegressor"]
+        )
+        assert args.method == "sklearn.ensemble.RandomForestRegressor"
+
 
 # ========================================================================
 # add_dynamic_arguments

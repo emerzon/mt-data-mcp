@@ -880,6 +880,30 @@ def _resolve_forecast_typed_cli_value(
     parser.error(f"{spec['flag']} expects a value. Examples: {examples}")
 
 
+def _forecast_method_help() -> str:
+    base = (
+        "Method name within the selected library. Registered built-in methods: "
+    )
+    try:
+        from mtdata.forecast.forecast_methods import get_forecast_method_names
+
+        names = sorted(set(get_forecast_method_names()))
+    except Exception:
+        names = []
+    if names:
+        return (
+            base
+            + ", ".join(names)
+            + ". Dotted class paths are also accepted for supported libraries; "
+            "use forecast_list_methods for details."
+        )
+    return (
+        "Method name within the selected library. Use forecast_list_methods to "
+        "browse registered methods; dotted class paths are also accepted for "
+        "supported libraries."
+    )
+
+
 def _add_forecast_generate_args(cmd_parser: argparse.ArgumentParser) -> None:
     cmd_parser.description = (
         "Generate forecasts with an optional preprocessing pipeline."
@@ -910,7 +934,7 @@ def _add_forecast_generate_args(cmd_parser: argparse.ArgumentParser) -> None:
         dest="method",
         type=str,
         default="theta",
-        help="Method name within the selected library.",
+        help=_forecast_method_help(),
     )
     group_method.add_argument(
         "--params",
