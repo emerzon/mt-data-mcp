@@ -30,6 +30,7 @@ from ..utils.utils import (
     _use_client_tz,
 )
 from ._mcp_instance import mcp
+from ._mcp_tools import unregister_tool
 from .error_envelope import build_error_payload
 from .execution_logging import run_logged_operation
 from .mt5_gateway import create_mt5_gateway
@@ -491,7 +492,10 @@ def market_depth_fetch(symbol: str, spread: bool = False, require_dom: bool = Fa
     return _market_depth_fetch_impl(symbol, spread=spread, require_dom=require_dom)
 
 
-market_depth_fetch = mcp.tool()(market_depth_fetch)
+if _market_depth_fetch_enabled():
+    market_depth_fetch = mcp.tool()(market_depth_fetch)
+else:
+    unregister_tool("market_depth_fetch", mcp_obj=mcp)
 
 
 @mcp.tool()

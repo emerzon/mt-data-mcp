@@ -1022,6 +1022,28 @@ def install_tool_registry(mcp_obj: Any) -> None:
         pass
 
 
+def unregister_tool(name: str, *, mcp_obj: Any = None) -> None:
+    """Remove a tool from mtdata and FastMCP registries when a feature gate is off."""
+    _remove_tool_registration_field(name, "function", default=None)
+    _remove_tool_registration_field(name, "tool_object", default=None)
+    if mcp_obj is None:
+        return
+    try:
+        remove_tool = getattr(mcp_obj, "remove_tool", None)
+        if callable(remove_tool):
+            remove_tool(name)
+            return
+    except Exception:
+        pass
+    try:
+        manager = getattr(mcp_obj, "_tool_manager", None)
+        remove_tool = getattr(manager, "remove_tool", None)
+        if callable(remove_tool):
+            remove_tool(name)
+    except Exception:
+        pass
+
+
 def get_tool_registry() -> Dict[str, Any]:
     tool_objects = _project_tool_registry("tool_object")
     if tool_objects:
