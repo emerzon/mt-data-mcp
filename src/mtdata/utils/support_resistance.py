@@ -2489,7 +2489,7 @@ def compact_support_resistance_level(level: Any) -> Optional[Dict[str, Any]]:
     ):
         value = level.get(key)
         if value is not None:
-            out[str(key)] = value
+            out[str(key)] = _round_support_resistance_display_metric(str(key), value)
     source_timeframes = level.get("source_timeframes")
     if isinstance(source_timeframes, list) and source_timeframes:
         out["source_timeframes"] = list(source_timeframes)
@@ -2526,7 +2526,7 @@ def _standard_support_resistance_level(level: Any) -> Optional[Dict[str, Any]]:
     ):
         value = level.get(key)
         if value is not None:
-            out[str(key)] = value
+            out[str(key)] = _round_support_resistance_display_metric(str(key), value)
     volume_sources = level.get("volume_sources")
     if isinstance(volume_sources, list) and volume_sources:
         out["volume_sources"] = list(volume_sources)
@@ -2537,6 +2537,25 @@ def _standard_support_resistance_level(level: Any) -> Optional[Dict[str, Any]]:
     if isinstance(dominant_source, str) and dominant_source.strip():
         out["dominant_source"] = dominant_source
     return out or None
+
+
+def _round_support_resistance_display_metric(key: str, value: Any) -> Any:
+    decimals_by_key = {
+        "score": 2,
+        "distance_pct": 4,
+        "zone_width_atr": 2,
+        "avg_test_volume_ratio": 3,
+        "strength_percentile": 2,
+        "strength_score_normalized": 3,
+    }
+    decimals = decimals_by_key.get(str(key))
+    if decimals is None:
+        return value
+    numeric = _as_finite_float(value)
+    if numeric is None:
+        return value
+    rounded = round(float(numeric), decimals)
+    return 0.0 if rounded == -0.0 else float(rounded)
 
 
 def _compact_support_resistance_levels(

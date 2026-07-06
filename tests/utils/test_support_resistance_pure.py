@@ -428,8 +428,14 @@ def test_compact_support_resistance_payload_omits_fibonacci_until_standard_detai
             "value",
             "distance_pct",
             "touches",
+            "episodes",
             "score",
             "strength_rank",
+            "last_touch",
+            "zone_width",
+            "zone_width_atr",
+            "avg_test_volume_ratio",
+            "volume_source",
             "role_transition",
             "source_timeframes",
             "dominant_source",
@@ -456,10 +462,14 @@ def test_compact_support_resistance_levels_keep_strength_context() -> None:
                 {
                     "type": "support",
                     "value": 1.095,
-                    "distance_pct": 0.45,
+                    "distance_pct": 0.454321,
                     "touches": 5,
-                    "score": 8.25,
+                    "score": 8.2567,
                     "strength_rank": 1,
+                    "zone_width_atr": 1.2345,
+                    "avg_test_volume_ratio": 1.23456,
+                    "strength_percentile": 0.8765,
+                    "strength_score_normalized": 0.76543,
                     "source_timeframes": ["H1", "H4"],
                     "dominant_source": "H4",
                     "score_breakdown": {"base": 8.25},
@@ -476,13 +486,41 @@ def test_compact_support_resistance_levels_keep_strength_context() -> None:
     assert level == {
         "type": "support",
         "value": 1.095,
-        "distance_pct": 0.45,
+        "distance_pct": 0.4543,
         "touches": 5,
-        "score": 8.25,
+        "score": 8.26,
         "strength_rank": 1,
+        "zone_width_atr": 1.23,
+        "avg_test_volume_ratio": 1.235,
         "source_timeframes": ["H1", "H4"],
         "dominant_source": "H4",
     }
+
+    standard = standard_support_resistance_payload(
+        {
+            "success": True,
+            "symbol": "EURUSD",
+            "timeframe": "auto",
+            "mode": "auto",
+            "current_price": 1.1,
+            "supports": [
+                {
+                    "type": "support",
+                    "value": 1.095,
+                    "distance_pct": 0.454321,
+                    "touches": 5,
+                    "score": 8.2567,
+                    "strength_rank": 1,
+                    "strength_percentile": 0.8765,
+                    "strength_score_normalized": 0.76543,
+                }
+            ],
+            "resistances": [],
+        }
+    )
+
+    assert standard["supports"][0]["strength_percentile"] == 0.88
+    assert standard["supports"][0]["strength_score_normalized"] == 0.765
 
 
 def test_full_support_resistance_payload_omits_duplicate_levels_array():
