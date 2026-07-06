@@ -598,6 +598,38 @@ def _forecast_point_mode(payload: Dict[str, Any]) -> Optional[str]:
     return "flat_anchor" if _forecast_path_flatness(payload) else None
 
 
+_FORECAST_FLAT_PATH_WARNING = (
+    "Forecast path is near-flat at displayed price precision; compare "
+    "another method or run forecast_conformal_intervals."
+)
+
+
+def _append_forecast_warning(payload: Dict[str, Any], warning: str) -> None:
+    warnings_out = payload.get("warnings")
+    if not isinstance(warnings_out, list):
+        warnings_out = []
+    if warning not in warnings_out:
+        warnings_out.append(warning)
+    payload["warnings"] = warnings_out
+
+
+def _annotate_forecast_generate_quality(payload: Dict[str, Any]) -> Dict[str, Any]:
+    out = dict(payload)
+    path_flatness = _forecast_path_flatness(out)
+    price_context = _forecast_vs_last_price(out)
+    if price_context:
+        if path_flatness:
+            price_context["direction"] = "neutral"
+            price_context["direction_basis"] = "flat_path"
+            price_context["direction_suppressed_reason"] = "flat_path"
+        out.setdefault("forecast_vs_last_price", price_context)
+    if path_flatness:
+        out.update(path_flatness)
+        out.setdefault("point_forecast_mode", "flat_anchor")
+        _append_forecast_warning(out, _FORECAST_FLAT_PATH_WARNING)
+    return out
+
+
 def _forecast_anchor_freshness(payload: Dict[str, Any]) -> Optional[str]:
     policy_relaxed = payload.get("freshness_policy_relaxed") is not False
     label = format_freshness_label(
@@ -763,6 +795,7 @@ def _apply_forecast_generate_detail(
     if str(payload.get("quantity") or request.quantity or "").strip().lower() == "volatility":
         payload = _canonicalize_volatility_output(payload)
         payload = _round_forecast_volatility_payload(payload)
+    payload = _annotate_forecast_generate_quality(payload)
     training_period = _forecast_training_period(payload)
     volatility_rows = _forecast_generate_volatility_rows(
         payload,
@@ -813,6 +846,9 @@ def _apply_forecast_generate_detail(
     ci_compact = _forecast_compact_ci(payload)
     if ci_compact:
         compact["uncertainty"] = ci_compact
+    if ci_unavailable:
+        compact["ci_status"] = "unavailable"
+        compact["forecast_mode"] = "point_only"
     ci_warning_dedup = ci_unavailable
     for key in (
         "last_observation_time",
@@ -848,8 +884,15 @@ def _apply_forecast_generate_detail(
             compact["quantity_note"] = (
                 "forecast rows show return; price is the reconstructed price path."
             )
-    path_flatness = _forecast_path_flatness(payload)
-    price_context = _forecast_vs_last_price(payload)
+    path_flatness = (
+        {
+            "path_flat": payload.get("path_flat"),
+            "path_range": payload.get("path_range"),
+        }
+        if payload.get("path_flat") is True
+        else None
+    )
+    price_context = payload.get("forecast_vs_last_price")
     if price_context:
         if path_flatness:
             price_context["direction"] = "neutral"
@@ -889,15 +932,11 @@ def _apply_forecast_generate_detail(
         compact.pop("forecast_price", None)
         compact.pop("forecast_return", None)
     if path_flatness:
-        warning = (
-            "Forecast path is near-flat at displayed price precision; compare "
-            "another method or run forecast_conformal_intervals."
-        )
         warnings_out = compact.get("warnings")
         if not isinstance(warnings_out, list):
             warnings_out = []
-        if warning not in warnings_out:
-            warnings_out.append(warning)
+        if _FORECAST_FLAT_PATH_WARNING not in warnings_out:
+            warnings_out.append(_FORECAST_FLAT_PATH_WARNING)
         compact["warnings"] = warnings_out
     for key, value in payload.items():
         if key in compact:

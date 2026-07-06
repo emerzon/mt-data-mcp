@@ -698,7 +698,8 @@ def test_forecast_generate_compact_marks_unavailable_ci(monkeypatch):
 
     assert "detail" not in out
     assert "ci" not in out
-    assert "ci_status" not in out
+    assert out["ci_status"] == "unavailable"
+    assert out["forecast_mode"] == "point_only"
     assert "ci_available" not in out
     assert "ci_alpha" not in out
     assert out["uncertainty"] == {
@@ -708,6 +709,41 @@ def test_forecast_generate_compact_marks_unavailable_ci(monkeypatch):
         "requested_alpha": 0.05,
     }
     assert out["warnings"] == ["Native theta fallback used."]
+
+
+def test_forecast_generate_full_flags_flat_theta_display(monkeypatch):
+    raw = _unwrap(cf.forecast_generate)
+    monkeypatch.setattr(
+        cf,
+        "_forecast_impl",
+        lambda **kwargs: {
+            "success": True,
+            "method": kwargs["method"],
+            "horizon": kwargs["horizon"],
+            "quantity": kwargs["quantity"],
+            "forecast_time": ["t1", "t2", "t3"],
+            "forecast_price": [1.168361, 1.168362, 1.168363],
+            "last_price": 1.16317,
+            "digits": 5,
+        },
+    )
+
+    out = raw(
+        request=ForecastGenerateRequest(
+            symbol="EURUSD",
+            timeframe="H1",
+            method="theta",
+            horizon=3,
+            detail="full",
+        )
+    )
+
+    assert out["path_flat"] is True
+    assert out["path_range"] == 0.0
+    assert out["point_forecast_mode"] == "flat_anchor"
+    assert out["forecast_vs_last_price"]["direction"] == "neutral"
+    assert out["forecast_vs_last_price"]["direction_basis"] == "flat_path"
+    assert any("near-flat at displayed price precision" in item for item in out["warnings"])
 
 
 def test_forecast_generate_compact_nests_available_ci(monkeypatch):
