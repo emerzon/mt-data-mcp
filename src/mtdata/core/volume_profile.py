@@ -416,9 +416,12 @@ def _profile_detail_payload(profile: Dict[str, Any], detail: str) -> Dict[str, A
     keys = [
         "success",
         "symbol",
+        "profile_source",
         "source",
+        "volume_profile_accuracy",
         "volume_source_quality",
         "is_synthetic",
+        "source_note",
         "window",
         "price_source",
         "volume_kind",
@@ -523,11 +526,19 @@ def _profile_source_quality(source: Any) -> Dict[str, Any]:
     source_value = str(source or "").strip().lower()
     if source_value == "m1_bars":
         return {
+            "profile_source": "m1_bars",
+            "volume_profile_accuracy": "approximated_from_m1_bars",
             "volume_source_quality": "estimated_m1_bar_proxy",
             "is_synthetic": True,
+            "source_note": (
+                "Volume profile is approximated from M1 bars; use source='ticks' "
+                "for tick-precise profiles when the window is small enough."
+            ),
         }
     if source_value == "ticks":
         return {
+            "profile_source": "ticks",
+            "volume_profile_accuracy": "tick_precise",
             "volume_source_quality": "raw_ticks",
             "is_synthetic": False,
         }

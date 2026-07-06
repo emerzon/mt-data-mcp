@@ -61,9 +61,12 @@ def test_compute_volume_profile_payload_uses_m1_fallback_for_large_auto_window(m
     )
 
     assert result["success"] is True
+    assert result["profile_source"] == "m1_bars"
     assert result["source"] == "m1_bars"
+    assert result["volume_profile_accuracy"] == "approximated_from_m1_bars"
     assert result["volume_source_quality"] == "estimated_m1_bar_proxy"
     assert result["is_synthetic"] is True
+    assert "source='ticks'" in result["source_note"]
     assert result["volume_kind"] == "tick_volume"
     assert result["diagnostics"]["auto_fallback_reason"] == "requested window exceeds bounded tick window"
     assert result["window"] == {
@@ -102,7 +105,9 @@ def test_compute_volume_profile_payload_uses_tick_rows(monkeypatch):
     )
 
     assert result["success"] is True
+    assert result["profile_source"] == "ticks"
     assert result["source"] == "ticks"
+    assert result["volume_profile_accuracy"] == "tick_precise"
     assert result["volume_source_quality"] == "raw_ticks"
     assert result["is_synthetic"] is False
     assert result["poc"]["level"] == "POC"
