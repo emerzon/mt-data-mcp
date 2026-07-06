@@ -47,6 +47,14 @@ def test_volatility_metadata_and_helper_functions(monkeypatch):
 
     assert vol._bars_per_year("H1") == 6048.0
     assert math.isnan(vol._bars_per_year("BAD"))
+    assert vol._volatility_annualization_context("EURUSD", "H1") == (
+        6048.0,
+        "252_trading_days_24h_intraday",
+    )
+    assert vol._volatility_annualization_context("BTCUSD", "H1") == (
+        8760.0,
+        "365_calendar_days_24h_crypto",
+    )
 
     assert vol._kernel_weight("bartlett", 1, 4) > 0
     assert vol._kernel_weight("parzen", 1, 4) > 0
@@ -261,6 +269,20 @@ def test_forecast_volatility_direct_methods_and_short_data(monkeypatch):
     assert out["data_window"]["input_bar_policy"] == "closed_bars_only"
     assert out["data_as_of"] == out["data_window"]["end"]
     assert out["freshness_basis"] == "bar_policy"
+
+    out = vol.forecast_volatility(
+        symbol="BTCUSD",
+        timeframe="H1",
+        horizon=5,
+        method="ewma",
+        params='{"lookback": 80, "lambda_": 0.9}',
+    )
+    assert out["success"] is True
+    assert out["bars_per_year"] == 8760.0
+    assert out["annualization_basis"] == "365_calendar_days_24h_crypto"
+    assert out["volatility_annualized"] == pytest.approx(
+        out["volatility_per_bar"] * math.sqrt(8760.0)
+    )
 
     out = vol.forecast_volatility(
         symbol="EURUSD",

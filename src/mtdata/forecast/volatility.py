@@ -13,6 +13,7 @@ from ..services.data_service import (
 )
 from ..shared.constants import SANITY_BARS_TOLERANCE, TIMEFRAME_MAP, TIMEFRAME_SECONDS
 from ..shared.schema import CompactFullDetailLiteral, DenoiseSpec, TimeframeLiteral
+from ..shared.symbols import is_probably_crypto_symbol
 from ..shared.validators import (
     invalid_timeframe_error,
     unsupported_timeframe_seconds_error,
@@ -456,6 +457,22 @@ def _annualize_horizon_sigma(
     return float(horizon_sigma_return * math.sqrt(bars_per_year / horizon_bars))
 
 
+def _volatility_annualization_context(symbol: str, timeframe: str) -> tuple[float, str]:
+    timeframe_name = str(timeframe or "").strip().upper()
+    if is_probably_crypto_symbol(symbol):
+        seconds = TIMEFRAME_SECONDS.get(timeframe_name)
+        try:
+            seconds_value = float(seconds)
+        except (TypeError, ValueError):
+            seconds_value = 0.0
+        if math.isfinite(seconds_value) and seconds_value > 0.0:
+            return (
+                float((365.0 * 24.0 * 60.0 * 60.0) / seconds_value),
+                "365_calendar_days_24h_crypto",
+            )
+    return float(_bars_per_year(timeframe_name)), "252_trading_days_24h_intraday"
+
+
 def _volatility_input_context(
     df: pd.DataFrame,
     *,
@@ -573,13 +590,13 @@ def _finalize_volatility_with_context(
     live_window: bool,
     detail: str,
 ) -> Dict[str, Any]:
-    annualization_bars = float(_bars_per_year(timeframe))
+    annualization_bars, annualization_basis = _volatility_annualization_context(
+        symbol,
+        timeframe,
+    )
     if math.isfinite(annualization_bars) and annualization_bars > 0:
         payload.setdefault("bars_per_year", round(annualization_bars, 4))
-        payload.setdefault(
-            "annualization_basis",
-            "252_trading_days_24h_intraday",
-        )
+        payload.setdefault("annualization_basis", annualization_basis)
     payload.update(
         _volatility_input_context(
             df,
@@ -841,7 +858,9 @@ def forecast_volatility(  # noqa: C901
         tf_secs = TIMEFRAME_SECONDS.get(timeframe)
         if not tf_secs:
             return {"error": unsupported_timeframe_seconds_error(timeframe)}
-        annualization_bars_per_year = float(_bars_per_year(timeframe))
+        annualization_bars_per_year, annualization_basis = (
+            _volatility_annualization_context(symbol, timeframe)
+        )
         method_l = str(method).lower().strip()
         garch_family = {'garch','egarch','gjr_garch','garch_t','egarch_t','gjr_garch_t','figarch'}
         valid_direct = {'ewma','parkinson','gk','rs','yang_zhang','rolling_std','realized_kernel','har_rv'} | garch_family
@@ -1018,6 +1037,8 @@ def forecast_volatility(  # noqa: C901
                     bpy,
                     int(horizon),
                 ),
+                "bars_per_year": round(bpy, 4),
+                "annualization_basis": annualization_basis,
                 "params_used": {
                     "methods": base_methods,
                     "aggregator": aggregator,
