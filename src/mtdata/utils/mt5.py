@@ -295,6 +295,27 @@ def _mt5_epoch_to_utc(epoch_seconds: float) -> float:
 _DEFAULT_MT5_EPOCH_TO_UTC = _mt5_epoch_to_utc
 
 
+def _broker_timezone_note(
+    *,
+    server_tz_name: Optional[str],
+    offset_seconds: Optional[int] = None,
+) -> str:
+    if server_tz_name:
+        return (
+            "MT5 timestamps are normalized to UTC using broker server timezone "
+            f"{server_tz_name}; candle/session boundaries follow broker server time."
+        )
+    if offset_seconds is not None:
+        return (
+            "MT5 timestamps are normalized to UTC using configured broker offset "
+            f"{offset_seconds} seconds; candle/session boundaries follow broker server time."
+        )
+    return (
+        "MT5 timestamps use raw broker server epoch values because no broker timezone "
+        "or offset is configured."
+    )
+
+
 def describe_mt5_time_normalization(*, auto_shift_seconds: int = 0) -> Dict[str, Any]:
     """Describe how MT5 timestamps are interpreted before public output."""
     metadata: Dict[str, Any] = {"raw_time_basis": "mt5_server_epoch"}
@@ -310,22 +331,32 @@ def describe_mt5_time_normalization(*, auto_shift_seconds: int = 0) -> Dict[str,
         metadata["broker_utc_offset_seconds"] = static_offset_minutes * 60
         if server_tz_name:
             metadata["broker_server_tz"] = server_tz_name
+        metadata["timezone_note"] = _broker_timezone_note(
+            server_tz_name=server_tz_name,
+            offset_seconds=static_offset_minutes * 60,
+        )
         return metadata
 
     if server_tz_name:
         metadata["time_basis"] = "utc_normalized"
         metadata["time_normalization"] = "dst_aware_server_timezone"
         metadata["broker_server_tz"] = server_tz_name
+        metadata["timezone_note"] = _broker_timezone_note(server_tz_name=server_tz_name)
         return metadata
 
     if int(auto_shift_seconds):
         metadata["time_basis"] = "utc_normalized"
         metadata["time_normalization"] = "live_auto_alignment"
         metadata["auto_shift_seconds"] = int(auto_shift_seconds)
+        metadata["timezone_note"] = (
+            "MT5 timestamps were live-shifted to UTC from broker server time; "
+            "candle/session boundaries still follow broker server time."
+        )
         return metadata
 
     metadata["time_basis"] = "raw_mt5_server_epoch"
     metadata["time_normalization"] = "unconfigured"
+    metadata["timezone_note"] = _broker_timezone_note(server_tz_name=None)
     return metadata
 
 

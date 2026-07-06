@@ -67,6 +67,7 @@ _COMPACT_TICK_TOP_LEVEL_FIELDS = (
 )
 
 _ANALYSIS_CANDLE_DEFAULT_LIMIT = 100
+_COMPACT_CANDLE_MAX_ROWS = 50
 
 
 def _ensure_gateway_connection(gateway: Any) -> Dict[str, Any] | None:
@@ -471,6 +472,7 @@ def _compact_candles_payload(
     result: Dict[str, Any],
     *,
     include_forming_booleans: bool = False,
+    truncate_rows: bool = True,
 ) -> Dict[str, Any]:
     compact = dict(result)
     public_diagnostics = _public_candle_diagnostics(result)
@@ -497,6 +499,9 @@ def _compact_candles_payload(
         compact.pop("forming_candle_skipped", None)
     if result.get("forming_candle_status") == "skipped" and result.get("hint"):
         compact["hint"] = result["hint"]
+    _attach_candle_timestamp_metadata(compact)
+    if truncate_rows:
+        _truncate_compact_candle_rows(compact)
     for key in (
         "query_type",
         "freshness",
@@ -522,6 +527,51 @@ def _compact_candles_payload(
     _attach_denoise_disclosure(compact)
     attach_candle_volume_semantics(compact)
     return compact
+
+
+def _attach_candle_timestamp_metadata(payload: Dict[str, Any]) -> None:
+    rows = payload.get("data")
+    if not isinstance(rows, list):
+        latest = payload.get("latest_candle")
+        rows = [latest] if isinstance(latest, dict) else []
+    for row in rows:
+        if not isinstance(row, dict) or "time" not in row:
+            continue
+        timestamp_value = row.get("time")
+        if isinstance(timestamp_value, bool):
+            continue
+        if isinstance(timestamp_value, (int, float)) and np.isfinite(float(timestamp_value)):
+            payload["timestamp_format"] = "epoch_seconds"
+            payload["timestamp_format_hint"] = (
+                "time is Unix epoch seconds in UTC; request timestamp_format=iso "
+                "for UTC text timestamps."
+            )
+            return
+        if isinstance(timestamp_value, str) and timestamp_value.strip():
+            payload["timestamp_format"] = "iso_utc"
+            payload["timestamp_format_hint"] = "time is a UTC timestamp string."
+            return
+
+
+def _truncate_compact_candle_rows(payload: Dict[str, Any]) -> None:
+    rows = payload.get("data")
+    if not isinstance(rows, list) or len(rows) <= _COMPACT_CANDLE_MAX_ROWS:
+        return
+    total_rows = len(rows)
+    payload["data"] = rows[-_COMPACT_CANDLE_MAX_ROWS:]
+    payload["data_rows_total"] = total_rows
+    payload["data_rows_shown"] = _COMPACT_CANDLE_MAX_ROWS
+    payload["data_truncated"] = True
+    payload["truncation"] = {
+        "reason": "compact_output_row_cap",
+        "retained": "last",
+        "limit": _COMPACT_CANDLE_MAX_ROWS,
+        "excluded_count": total_rows - _COMPACT_CANDLE_MAX_ROWS,
+    }
+    payload.setdefault("warnings", []).append(
+        f"Compact candle output shows the latest {_COMPACT_CANDLE_MAX_ROWS} of "
+        f"{total_rows} rows; use detail=standard or detail=full for all rows."
+    )
 
 
 def _normalize_denoise_columns(value: Any) -> List[str]:
@@ -592,6 +642,7 @@ def _slim_projected_candles_payload(payload: Dict[str, Any]) -> None:
     if "spread" not in projected_fields:
         payload.pop("spread_estimate", None)
         payload.pop("spread_unavailable", None)
+    _filter_candle_units_to_projected_fields(payload, projected_fields)
     if not bool(payload.get("forming_candle_included")):
         payload.pop("forming_candle_status", None)
         payload.pop("has_forming_candle", None)
@@ -599,8 +650,33 @@ def _slim_projected_candles_payload(payload: Dict[str, Any]) -> None:
         payload.pop("forming_candle_skipped", None)
 
 
+def _filter_candle_units_to_projected_fields(
+    payload: Dict[str, Any],
+    projected_fields: set[str],
+) -> None:
+    units = payload.get("units")
+    if not isinstance(units, dict):
+        return
+    allowed_fields = set(projected_fields)
+    if "volume" in allowed_fields:
+        allowed_fields.update({"tick_volume", "real_volume"})
+    filtered_units = {
+        key: value
+        for key, value in units.items()
+        if key in allowed_fields
+    }
+    if filtered_units:
+        payload["units"] = filtered_units
+    else:
+        payload.pop("units", None)
+
+
 def _standard_candles_payload(result: Dict[str, Any]) -> Dict[str, Any]:
-    standard = _compact_candles_payload(result, include_forming_booleans=True)
+    standard = _compact_candles_payload(
+        result,
+        include_forming_booleans=True,
+        truncate_rows=False,
+    )
     public_diagnostics = _public_candle_diagnostics(result)
     for key in (
         "query_type",
@@ -647,7 +723,11 @@ def _attach_candle_machine_freshness(payload: Dict[str, Any]) -> None:
 
 
 def _summary_candles_payload(result: Dict[str, Any]) -> Dict[str, Any]:
-    summary = _compact_candles_payload(result, include_forming_booleans=True)
+    summary = _compact_candles_payload(
+        result,
+        include_forming_booleans=True,
+        truncate_rows=False,
+    )
     for key, value in _public_candle_diagnostics(result).items():
         summary[key] = value
     summary["output"] = "summary"
@@ -660,6 +740,10 @@ def _summary_candles_payload(result: Dict[str, Any]) -> Dict[str, Any]:
                 for key in ("time", "open", "high", "low", "close", "tick_volume", "real_volume")
                 if key in latest
             }
+        statistics = _candle_summary_statistics(rows)
+        if statistics:
+            summary["summary_statistics"] = statistics
+        _attach_candle_timestamp_metadata(summary)
     summary.pop("data", None)
     summary.pop("session_gaps", None)
     for key in (
@@ -672,6 +756,80 @@ def _summary_candles_payload(result: Dict[str, Any]) -> Dict[str, Any]:
         if value not in (None, 0, [], {}):
             summary[key] = value
     return summary
+
+
+def _finite_candle_values(rows: List[Any], key: str) -> List[float]:
+    values: List[float] = []
+    for row in rows:
+        if not isinstance(row, dict) or key not in row:
+            continue
+        try:
+            value = float(row.get(key))
+        except Exception:
+            continue
+        if np.isfinite(value):
+            values.append(value)
+    return values
+
+
+def _round_candle_stat(value: float) -> float:
+    rounded = round(float(value), 6)
+    return 0.0 if rounded == -0.0 else rounded
+
+
+def _candle_summary_statistics(rows: List[Any]) -> Dict[str, Any]:
+    stats: Dict[str, Any] = {}
+    for field in ("open", "high", "low", "close"):
+        values = _finite_candle_values(rows, field)
+        if not values:
+            continue
+        stats[field] = {
+            "min": _round_candle_stat(min(values)),
+            "max": _round_candle_stat(max(values)),
+            "mean": _round_candle_stat(float(np.mean(values))),
+        }
+
+    close_values = _finite_candle_values(rows, "close")
+    if len(close_values) >= 2:
+        first_close = close_values[0]
+        last_close = close_values[-1]
+        change = last_close - first_close
+        close_stats = stats.setdefault("close", {})
+        close_stats["change"] = _round_candle_stat(change)
+        if first_close:
+            close_stats["change_pct"] = _round_candle_stat((change / first_close) * 100.0)
+
+    high_values = _finite_candle_values(rows, "high")
+    low_values = _finite_candle_values(rows, "low")
+    if high_values and low_values:
+        paired_ranges: List[float] = []
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            try:
+                high = float(row.get("high"))
+                low = float(row.get("low"))
+            except Exception:
+                continue
+            if np.isfinite(high) and np.isfinite(low):
+                paired_ranges.append(high - low)
+        if paired_ranges:
+            stats["range"] = {
+                "min": _round_candle_stat(min(paired_ranges)),
+                "max": _round_candle_stat(max(paired_ranges)),
+                "mean": _round_candle_stat(float(np.mean(paired_ranges))),
+            }
+
+    for field in ("tick_volume", "real_volume", "volume"):
+        values = _finite_candle_values(rows, field)
+        if values:
+            stats[field] = {
+                "min": _round_candle_stat(min(values)),
+                "max": _round_candle_stat(max(values)),
+                "mean": _round_candle_stat(float(np.mean(values))),
+                "sum": _round_candle_stat(float(np.sum(values))),
+            }
+    return stats
 
 
 def _public_candle_diagnostics(result: Dict[str, Any]) -> Dict[str, Any]:

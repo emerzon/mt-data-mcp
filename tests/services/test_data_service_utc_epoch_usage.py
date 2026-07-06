@@ -87,7 +87,9 @@ def test_fetch_candles_exposes_time_normalization_metadata() -> None:
     assert result["raw_time_basis"] == "mt5_server_epoch"
     assert result["time_normalization"] == "dst_aware_server_timezone"
     assert result["broker_server_tz"] == "Europe/Nicosia"
+    assert "broker server timezone Europe/Nicosia" in result["timezone_note"]
     assert (
         result["meta"]["diagnostics"]["time_normalization"]["broker_server_tz"]
         == "Europe/Nicosia"
     )
+    assert "timezone_note" in result["meta"]["diagnostics"]["time_normalization"]

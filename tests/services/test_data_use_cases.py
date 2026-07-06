@@ -334,6 +334,12 @@ def test_run_data_fetch_candles_projection_drops_hidden_volume_semantics():
             "volume_unit": "broker_tick_count",
             "real_volume_type": "traded_volume",
             "real_volume_unit": "traded_volume",
+            "units": {
+                "open": "absolute_price",
+                "close": "absolute_price",
+                "tick_volume": "broker_tick_count",
+                "real_volume": "traded_volume",
+            },
             "data": [{"time": 1, "close": 1.1}],
         },
     )
@@ -344,6 +350,8 @@ def test_run_data_fetch_candles_projection_drops_hidden_volume_semantics():
     assert "volume_semantics" not in result
     assert "real_volume_type" not in result
     assert "real_volume_unit" not in result
+    assert result["units"] == {"close": "absolute_price"}
+    assert result["timestamp_format"] == "epoch_seconds"
 
 
 def test_run_data_fetch_candles_compact_keeps_staleness_without_meta():
@@ -766,7 +774,24 @@ def test_run_data_fetch_candles_summary_omits_rows_and_keeps_metadata():
             "forming_candle_included": False,
             "forming_candle_skipped": True,
             "timezone": "UTC",
-            "data": [{"time": "2026-05-14 12:00", "close": 1.1}],
+            "data": [
+                {
+                    "time": "2026-05-14 11:00",
+                    "open": 1.0,
+                    "high": 1.2,
+                    "low": 0.9,
+                    "close": 1.1,
+                    "tick_volume": 10,
+                },
+                {
+                    "time": "2026-05-14 12:00",
+                    "open": 1.1,
+                    "high": 1.3,
+                    "low": 1.0,
+                    "close": 1.2,
+                    "tick_volume": 14,
+                },
+            ],
             "meta": {
                 "diagnostics": {
                     "query": {"mode": "latest", "latency_ms": 12.3},
@@ -799,8 +824,22 @@ def test_run_data_fetch_candles_summary_omits_rows_and_keeps_metadata():
     assert "data" not in result
     assert result["latest_candle"] == {
         "time": "2026-05-14 12:00",
-        "close": 1.1,
+        "open": 1.1,
+        "high": 1.3,
+        "low": 1.0,
+        "close": 1.2,
+        "tick_volume": 14,
     }
+    assert result["timestamp_format"] == "iso_utc"
+    assert result["summary_statistics"]["close"] == {
+        "min": 1.1,
+        "max": 1.2,
+        "mean": 1.15,
+        "change": 0.1,
+        "change_pct": pytest.approx(9.090909),
+    }
+    assert result["summary_statistics"]["range"]["mean"] == pytest.approx(0.3)
+    assert result["summary_statistics"]["tick_volume"]["sum"] == 24.0
     assert "meta" not in result
 
 
@@ -913,6 +952,37 @@ def test_run_data_fetch_candles_compact_keeps_anomaly_metadata():
     assert result["symbol"] == "EURUSD"
     assert result["timeframe"] == "H1"
     assert "candles_requested" not in result
+
+
+def test_run_data_fetch_candles_compact_truncates_large_row_sets():
+    rows = [
+        {"time": 1_700_000_000 + index * 60, "close": float(index)}
+        for index in range(125)
+    ]
+    request = DataFetchCandlesRequest(symbol="EURUSD", timeframe="M1", limit=125)
+
+    result = run_data_fetch_candles(
+        request,
+        gateway=SimpleNamespace(ensure_connection=lambda: None),
+        fetch_candles_impl=lambda **kwargs: {
+            "success": True,
+            "symbol": "EURUSD",
+            "timeframe": "M1",
+            "candles": len(rows),
+            "data": list(rows),
+        },
+    )
+
+    assert result["count"] == 125
+    assert len(result["data"]) == 50
+    assert result["data"][0]["close"] == 75.0
+    assert result["data_rows_total"] == 125
+    assert result["data_rows_shown"] == 50
+    assert result["data_truncated"] is True
+    assert result["truncation"]["reason"] == "compact_output_row_cap"
+    assert result["timestamp_format"] == "epoch_seconds"
+    assert "timestamp_format=iso" in result["timestamp_format_hint"]
+    assert any("latest 50 of 125 rows" in warning for warning in result["warnings"])
 
 
 def test_run_data_fetch_candles_standard_keeps_forming_booleans():

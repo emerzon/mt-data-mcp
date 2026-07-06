@@ -23,12 +23,12 @@ def test_describe_mt5_time_normalization_reports_server_timezone(monkeypatch) ->
 
     meta = mt5_mod.describe_mt5_time_normalization()
 
-    assert meta == {
-        "raw_time_basis": "mt5_server_epoch",
-        "time_basis": "utc_normalized",
-        "time_normalization": "dst_aware_server_timezone",
-        "broker_server_tz": "Europe/Nicosia",
-    }
+    assert meta["raw_time_basis"] == "mt5_server_epoch"
+    assert meta["time_basis"] == "utc_normalized"
+    assert meta["time_normalization"] == "dst_aware_server_timezone"
+    assert meta["broker_server_tz"] == "Europe/Nicosia"
+    assert "broker server timezone Europe/Nicosia" in meta["timezone_note"]
+    assert "candle/session boundaries follow broker server time" in meta["timezone_note"]
 
 
 def test_describe_mt5_time_normalization_reports_unconfigured_mode(monkeypatch) -> None:
@@ -37,11 +37,10 @@ def test_describe_mt5_time_normalization_reports_unconfigured_mode(monkeypatch) 
 
     meta = mt5_mod.describe_mt5_time_normalization()
 
-    assert meta == {
-        "raw_time_basis": "mt5_server_epoch",
-        "time_basis": "raw_mt5_server_epoch",
-        "time_normalization": "unconfigured",
-    }
+    assert meta["raw_time_basis"] == "mt5_server_epoch"
+    assert meta["time_basis"] == "raw_mt5_server_epoch"
+    assert meta["time_normalization"] == "unconfigured"
+    assert "no broker timezone or offset is configured" in meta["timezone_note"]
 
 
 @pytest.mark.skipif(pytz is None, reason="pytz is required for timezone normalization")
