@@ -5,6 +5,7 @@ from __future__ import annotations
 import datetime as _dt
 import email.utils as _email_utils
 import logging
+import re
 import threading as _threading
 import time as _time
 from typing import Any, Callable, Dict, List, Optional
@@ -158,6 +159,30 @@ def _get_yahoo_session() -> requests.Session:
         return _YAHOO_SESSION
 
 
+def _provider_remediation(provider: Any) -> str:
+    provider_text = str(provider or "yahoo").strip().lower()
+    if provider_text == "tradier":
+        return _TRADIER_AUTH_REMEDIATION
+    return _YAHOO_AUTH_REMEDIATION
+
+
+def _attach_provider_remediation(out: Dict[str, Any], provider: Any) -> None:
+    out["provider"] = str(provider or "yahoo").strip().lower() or "yahoo"
+    out["next_tool"] = "options_provider_status"
+    out["env_vars"] = ["MTDATA_OPTIONS_PROVIDER", "MTDATA_OPTIONS_API_KEY"]
+    out["remediation"] = _provider_remediation(out["provider"])
+
+
+def _retry_after_from_message(message: str) -> Optional[float]:
+    match = re.search(r"retry_after_seconds=([0-9]+(?:\.[0-9]+)?)", message)
+    if not match:
+        return None
+    try:
+        return max(0.0, float(match.group(1)))
+    except ValueError:
+        return None
+
+
 def _options_error(error: Any, *, prefix: Optional[str] = None) -> Dict[str, Any]:
     message_text = str(error)
     if prefix:
@@ -165,25 +190,19 @@ def _options_error(error: Any, *, prefix: Optional[str] = None) -> Dict[str, Any
     out: Dict[str, Any] = {"success": False, "error": message_text}
     if isinstance(error, _OptionsRateLimitError):
         out["error_code"] = "options_provider_rate_limit"
-        out["provider"] = error.provider
+        _attach_provider_remediation(out, error.provider)
         out["retry_after_seconds"] = error.retry_after_seconds
         return out
     if "Yahoo Finance options endpoint returned 401" in message_text:
         out["error_code"] = "options_provider_auth"
-        out["provider"] = "yahoo"
-        out["next_tool"] = "options_provider_status"
-        out["env_vars"] = ["MTDATA_OPTIONS_PROVIDER", "MTDATA_OPTIONS_API_KEY"]
-        out["remediation"] = _YAHOO_AUTH_REMEDIATION
+        _attach_provider_remediation(out, "yahoo")
     elif "Tradier options provider" in message_text or "Tradier options endpoint returned 401" in message_text:
         out["error_code"] = "options_provider_auth"
-        out["provider"] = "tradier"
-        out["next_tool"] = "options_provider_status"
-        out["env_vars"] = ["MTDATA_OPTIONS_PROVIDER", "MTDATA_OPTIONS_API_KEY"]
-        out["remediation"] = _TRADIER_AUTH_REMEDIATION
+        _attach_provider_remediation(out, "tradier")
     elif "429" in message_text or "rate limit" in message_text.lower():
         out["error_code"] = "options_provider_rate_limit"
-        out["provider"] = _configured_options_provider()
-        out["retry_after_seconds"] = None
+        _attach_provider_remediation(out, _configured_options_provider())
+        out["retry_after_seconds"] = _retry_after_from_message(message_text)
     return out
 
 

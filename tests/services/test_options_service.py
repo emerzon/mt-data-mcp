@@ -551,3 +551,31 @@ def test_get_options_expirations_handles_401_gracefully(monkeypatch):
     assert "MTDATA_OPTIONS_PROVIDER=tradier" in result["remediation"]
     assert "MTDATA_OPTIONS_API_KEY" in result["remediation"]
     assert "retry later" not in result["remediation"].lower()
+
+
+def test_get_options_expirations_handles_429_with_provider_remediation(monkeypatch):
+    """Verify that Yahoo rate limits tell users how to configure reliable access."""
+    response = MagicMock()
+    response.status_code = 429
+    response.headers = {"Retry-After": "30"}
+    response.raise_for_status.side_effect = requests.exceptions.HTTPError(
+        "429 Client Error: Too Many Requests"
+    )
+    response.close = lambda: None
+
+    session = MagicMock()
+    session.get.return_value = response
+
+    monkeypatch.setattr(osvc, "_get_yahoo_session", lambda: session)
+    monkeypatch.setattr(osvc, "_throttle_yahoo_request", lambda: None)
+    monkeypatch.setattr(osvc, "_YAHOO_MAX_ATTEMPTS", 1)
+
+    result = osvc.get_options_expirations("AAPL")
+
+    assert result["success"] is False
+    assert result["error_code"] == "options_provider_rate_limit"
+    assert result["provider"] == "yahoo"
+    assert result["retry_after_seconds"] == 30.0
+    assert result["next_tool"] == "options_provider_status"
+    assert "MTDATA_OPTIONS_PROVIDER=tradier" in result["remediation"]
+    assert "MTDATA_OPTIONS_API_KEY" in result["remediation"]
