@@ -2147,6 +2147,45 @@ def _parse_market_scan_symbols(symbols: Optional[str]) -> List[str]:
     return parsed
 
 
+def _market_scan_group_query_variants(value: Any) -> set[str]:
+    normalized = _normalize_group_path_query(str(value or "")).casefold()
+    tokens = [
+        token
+        for token in re.split(r"[^a-z0-9]+", normalized)
+        if token
+    ]
+
+    def _singular(token: str) -> str:
+        if token.endswith("ies") and len(token) > 3:
+            return token[:-3] + "y"
+        if token.endswith("s") and len(token) > 1:
+            return token[:-1]
+        return token
+
+    variants = {
+        normalized,
+        re.sub(r"[^a-z0-9]+", "", normalized),
+    }
+    if tokens:
+        variants.add("".join(tokens))
+        variants.add("".join(_singular(token) for token in tokens))
+        variants.update(tokens)
+        variants.update(_singular(token) for token in tokens)
+    return {variant for variant in variants if variant}
+
+
+def _market_scan_group_matches_query(group_path: str, requested: str) -> bool:
+    group_variants = _market_scan_group_query_variants(group_path)
+    requested_variants = _market_scan_group_query_variants(requested)
+    if group_variants.intersection(requested_variants):
+        return True
+    return any(
+        requested_variant in group_variant
+        for requested_variant in requested_variants
+        for group_variant in group_variants
+    )
+
+
 def _resolve_market_scan_group_path(
     all_symbols: List[Any],
     group: str,
@@ -2170,7 +2209,7 @@ def _resolve_market_scan_group_path(
     partial_matches = sorted(
         (
             value for value in groups.values()
-            if requested_lower in _normalize_group_path_query(value).lower()
+            if _market_scan_group_matches_query(value, requested_lower)
         ),
         key=_case_insensitive_sort_key,
     )
