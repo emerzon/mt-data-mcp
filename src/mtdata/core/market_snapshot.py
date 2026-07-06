@@ -578,10 +578,13 @@ def market_snapshot(
 ) -> Dict[str, Any]:
     """Return a unified pre-trade market snapshot with selectable analysis sections.
 
-    Default sections are quote,levels,patterns; pass sections=quote for quote-only.
-    The optional regime section uses HMM and the optional forecast section uses
-    Theta. `horizon` applies only to that built-in forecast section. Call the
-    dedicated regime or forecast tool for custom methods and parameters.
+    Default sections are quote,levels,patterns; pass sections=quote for quote-only
+    or sections=all for quote,levels,patterns,regime,forecast. `sections`
+    selects analysis modules; `detail` controls field verbosity inside the
+    selected modules and does not add heavier sections by itself. The optional
+    regime section uses HMM and the optional forecast section uses Theta.
+    `horizon` applies only to that built-in forecast section. Call the dedicated
+    regime or forecast tool for custom methods and parameters.
 
     Timestamp semantics: `as_of` tracks the latest quote time when available,
     `quote_as_of` duplicates that normalized quote timestamp explicitly, and

@@ -16,6 +16,8 @@ def test_market_snapshot_help_discloses_builtin_section_methods():
     assert "regime section uses HMM" in doc
     assert "forecast section uses" in doc
     assert "horizon` applies only" in doc
+    assert "selects analysis modules" in doc
+    assert "controls field verbosity" in doc
     assert "assembled_at" in doc
     assert "quote_as_of" in doc
 
