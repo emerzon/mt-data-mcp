@@ -42,6 +42,7 @@ logger = logging.getLogger(__name__)
 
 _TEMPORAL_RELIABLE_GROUP_BARS = 30
 _TEMPORAL_SAMPLE_WARNING_LIMIT = 10
+_PERCENTAGE_POINTS_UNIT = "percentage_points (1.0 = 1%)"
 _TEMPORAL_DEFAULT_LOOKBACK_DAYS = {
     "dow": 210,
     "hour": 60,
@@ -1348,10 +1349,10 @@ def temporal_analyze(  # noqa: C901
                 "group_by": group_norm,
                 "return_mode": return_mode,
                 "units": {
-                    "returns": "percentage_points",
+                    "returns": _PERCENTAGE_POINTS_UNIT,
                     "win_rate": "fraction",
-                    "win_rate_pct": "percentage_points",
-                    "avg_range_pct": "percentage_points",
+                    "win_rate_pct": _PERCENTAGE_POINTS_UNIT,
+                    "avg_range_pct": _PERCENTAGE_POINTS_UNIT,
                     "volatility": "percentage_point_return_stddev_per_bar",
                 },
                 "timezone": tz_name,
