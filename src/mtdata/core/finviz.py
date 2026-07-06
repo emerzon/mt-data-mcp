@@ -410,6 +410,7 @@ _FINVIZ_DETAIL_ERROR = (
 _FINVIZ_DELAYED_FRESHNESS = "finviz_delayed"
 _FINVIZ_DELAY_MINUTES_MIN = 15
 _FINVIZ_DELAY_MINUTES_MAX = 20
+_FINVIZ_DELAYED_DATA_QUALITY = "delayed_15_to_20_min"
 _FINVIZ_FOREX_DELAYED_PRICE_WARNING = (
     "Finviz forex prices are delayed web quotes, not executable MT5 bid/ask; "
     "use market_ticker before order placement."
@@ -599,6 +600,15 @@ def _mark_finviz_delayed_price(row: Dict[str, Any]) -> Dict[str, Any]:
     return out
 
 
+def _attach_finviz_delayed_root_metadata(out: Dict[str, Any]) -> None:
+    out["price_source"] = _FINVIZ_DELAYED_FRESHNESS
+    out["freshness"] = _FINVIZ_DELAYED_FRESHNESS
+    out["data_quality"] = _FINVIZ_DELAYED_DATA_QUALITY
+    out["data_delayed"] = True
+    out["delay_minutes_min"] = _FINVIZ_DELAY_MINUTES_MIN
+    out["delay_minutes_max"] = _FINVIZ_DELAY_MINUTES_MAX
+
+
 def _finviz_screen_units_for_rows(rows: Any) -> Dict[str, str]:
     if not isinstance(rows, list):
         return {}
@@ -705,6 +715,8 @@ def _normalize_finviz_market_payload(
     if has_price and rows_key in {"stocks", "pairs", "coins"}:
         out["price_source"] = _FINVIZ_DELAYED_FRESHNESS
         out["freshness"] = _FINVIZ_DELAYED_FRESHNESS
+    if has_price and rows_key in {"pairs", "coins"}:
+        _attach_finviz_delayed_root_metadata(out)
     if has_price and rows_key == "pairs":
         _append_finviz_warning(out, _FINVIZ_FOREX_DELAYED_PRICE_WARNING)
     if rows_key == "pairs" and symbol_filter_norm is not None and not output_rows:
@@ -713,8 +725,7 @@ def _normalize_finviz_market_payload(
             f"No Finviz forex row matched symbol {symbol_filter_norm}.",
         )
     if rows_key == "futures":
-        out["price_source"] = _FINVIZ_DELAYED_FRESHNESS
-        out["freshness"] = _FINVIZ_DELAYED_FRESHNESS
+        _attach_finviz_delayed_root_metadata(out)
         _append_finviz_warning(out, _FINVIZ_FUTURES_DELAYED_WARNING)
     if detail_mode != "full" and rows_key in {"pairs", "coins", "futures"}:
         out["performance_format"] = "percentage_points"

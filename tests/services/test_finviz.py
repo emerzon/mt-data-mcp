@@ -595,6 +595,10 @@ class TestFinvizTools:
         assert result["price_currency_basis"] == "quote_currency"
         assert result["price_source"] == "finviz_delayed"
         assert result["freshness"] == "finviz_delayed"
+        assert result["data_quality"] == "delayed_15_to_20_min"
+        assert result["data_delayed"] is True
+        assert result["delay_minutes_min"] == 15
+        assert result["delay_minutes_max"] == 20
         assert result["warnings"] == [
             "Finviz forex prices are delayed web quotes, not executable MT5 bid/ask; "
             "use market_ticker before order placement."
@@ -780,6 +784,10 @@ class TestFinvizTools:
         assert result["price_currency"] == "USD"
         assert result["price_source"] == "finviz_delayed"
         assert result["freshness"] == "finviz_delayed"
+        assert result["data_quality"] == "delayed_15_to_20_min"
+        assert result["data_delayed"] is True
+        assert result["delay_minutes_min"] == 15
+        assert result["delay_minutes_max"] == 20
         assert result["items"] == [
             {
                 "symbol": "BTC",
@@ -876,6 +884,10 @@ class TestFinvizTools:
         }
         assert result["price_source"] == "finviz_delayed"
         assert result["freshness"] == "finviz_delayed"
+        assert result["data_quality"] == "delayed_15_to_20_min"
+        assert result["data_delayed"] is True
+        assert result["delay_minutes_min"] == 15
+        assert result["delay_minutes_max"] == 20
         assert "delayed web data" in result["warnings"][0]
         assert result["items"] == [
             {
