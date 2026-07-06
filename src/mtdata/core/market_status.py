@@ -12,7 +12,7 @@ from zoneinfo import ZoneInfo
 import holidays
 
 from ..shared.schema import CompactFullDetailLiteral
-from ..shared.symbols import is_probably_crypto_symbol
+from ..shared.symbols import is_probably_crypto_symbol, is_probably_forex_symbol
 from ..utils.market_metadata import build_tick_freshness_context
 from ..utils.mt5 import MT5ConnectionError, ensure_mt5_connection_or_raise
 from ..utils.mt5_enums import decode_mt5_enum_label
@@ -932,6 +932,7 @@ def _check_symbol_market_status(
         "status": open_state,
         "status_source": "trade_mode_and_tick_freshness",
         "status_confidence": "heuristic",
+        "heuristic_note": _symbol_status_heuristic_note(symbol_name),
         "can_open_new_positions": can_open,
         "is_tradable": can_open,
         "is_tradable_confidence": "heuristic",
@@ -1000,6 +1001,19 @@ def _check_symbol_market_status(
     return result
 
 
+def _symbol_status_heuristic_note(symbol_name: str) -> str:
+    note = (
+        "Symbol status is inferred from MT5 trade_mode, tick freshness, "
+        "and recent broker M1 candles; it is not an exchange-calendar guarantee."
+    )
+    if is_probably_forex_symbol(symbol_name):
+        note += (
+            " FX weekly sessions typically run Sun 22:00-Fri 22:00 UTC, "
+            "subject to broker holidays and session gaps."
+        )
+    return note
+
+
 def _symbol_market_status_timezone_context(
     timezone_display: Any,
     *,
@@ -1045,6 +1059,7 @@ def _compact_symbol_market_status(row: Dict[str, Any], *, detail: str) -> Dict[s
         "symbol",
         "status",
         "status_confidence",
+        "heuristic_note",
         "is_tradable",
         "is_tradable_confidence",
         "can_open_new_positions",

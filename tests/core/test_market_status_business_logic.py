@@ -134,6 +134,12 @@ def test_market_status_symbol_mode_reports_heuristic_status(monkeypatch) -> None
     assert result["status"] == "probably_open"
     assert result["status_source"] == "trade_mode_and_tick_freshness"
     assert result["status_confidence"] == "heuristic"
+    assert result["heuristic_note"].startswith(
+        "Symbol status is inferred from MT5 trade_mode, tick freshness"
+    )
+    assert "FX weekly sessions typically run Sun 22:00-Fri 22:00 UTC" in result[
+        "heuristic_note"
+    ]
     assert result["can_open_new_positions"] is True
     assert result["trade_mode_allows_opening"] is True
     assert result["tick_freshness"] == "fresh"
@@ -311,6 +317,7 @@ def test_market_status_symbol_mode_handles_bool_like_trade_and_schedule(monkeypa
     assert result["status"] == "probably_open"
     assert result["can_open_new_positions"] is True
     assert result["trade_mode_allows_opening"] is True
+    assert "exchange-calendar guarantee" in result["heuristic_note"]
 
 
 def test_market_status_symbol_mode_blocks_weekend_opening(monkeypatch) -> None:
@@ -393,6 +400,7 @@ def test_market_status_symbol_mode_allows_crypto_on_weekend(monkeypatch) -> None
     assert result["trade_mode_allows_opening"] is True
     assert "reason" not in result
     assert result["tick_freshness"] == "fresh"
+    assert "FX weekly sessions" not in result["heuristic_note"]
 
 
 def test_market_status_symbol_mode_uses_recent_candles_for_weekend_session(
