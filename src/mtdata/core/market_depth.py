@@ -120,7 +120,7 @@ def _compact_market_ticker_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     primary_spread_key = next(
         (
             key
-            for key in ("spread_pips", "spread_points", "spread")
+            for key in ("spread_pips", "spread_pct", "spread_points", "spread")
             if payload.get(key) is not None
         ),
         None,
@@ -134,9 +134,14 @@ def _compact_market_ticker_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
         "bid",
         "ask",
         "mid",
+        "market_status",
         "freshness",
         "stale_after_seconds",
         "market_status_reason",
+        "contract_size",
+        "lot_definition",
+        "pricing_basis",
+        "pricing_basis_units",
         "time",
         "timezone",
     ):
@@ -148,13 +153,28 @@ def _compact_market_ticker_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
             value = payload.get(key)
         if value is not None:
             out[key] = value
+    market_state = out.pop("market_status", None)
+    if market_state is None:
+        if payload.get("data_stale") is True:
+            market_state = "unknown"
+        elif payload.get("data_stale") is False:
+            market_state = "open"
+    if market_state is not None:
+        out["market_state"] = market_state
     if primary_spread_key is not None:
         out[primary_spread_key] = payload.get(primary_spread_key)
     units = payload.get("units")
     if isinstance(units, dict):
         filtered_units = {
             key: units.get(key)
-            for key in ("bid", "ask", "mid", primary_spread_key)
+            for key in (
+                "bid",
+                "ask",
+                "mid",
+                primary_spread_key,
+                "contract_size",
+                "lot",
+            )
             if key and units.get(key) is not None
         }
         if filtered_units:
@@ -162,6 +182,16 @@ def _compact_market_ticker_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     elif units is not None:
         out["units"] = units
     return out
+
+
+def _positive_market_ticker_float(value: Any) -> Optional[float]:
+    try:
+        number = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    if not math.isfinite(number) or number <= 0.0:
+        return None
+    return number
 
 
 def _format_mt5_error_text(error: Any) -> str:
@@ -538,6 +568,9 @@ def market_ticker(
                 or ""
             ).strip() or None
             price_currency = spread_cost_currency
+            contract_size = _positive_market_ticker_float(
+                getattr(symbol_info, "trade_contract_size", None)
+            )
 
             bid = float(tick.bid) if tick.bid else None
             ask = float(tick.ask) if tick.ask else None
@@ -630,6 +663,13 @@ def market_ticker(
                     "spread_cost_per_lot": "currency_per_lot_estimate",
                 },
             }
+            if contract_size is not None:
+                out["contract_size"] = _round_market_ticker_value(contract_size, digits=6)
+                out["lot_definition"] = "1 broker lot equals contract_size contract units."
+                out["units"]["contract_size"] = "contract_units_per_lot"
+                out["units"]["lot"] = "broker_lot"
+                if pricing_basis == "per_1_lot_estimate":
+                    out["pricing_basis_units"] = "broker_lot"
             if spread_pips is not None:
                 out["units"]["spread_pips"] = "pips"
             if tick_volume not in (None, 0):
