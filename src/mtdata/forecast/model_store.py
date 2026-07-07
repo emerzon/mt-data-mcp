@@ -558,7 +558,7 @@ class ModelStore:
 
     def _lock_path_for_model_dir(self, model_dir: Path) -> Path:
         safe_model_dir = self._resolve_within_root(model_dir)
-        relative = safe_model_dir.relative_to(self._root)
+        relative = safe_model_dir.relative_to(self._root.resolve())
         return self._resolve_within_root(
             self._lock_root() / relative.parent / f"{relative.name}.lock"
         )
