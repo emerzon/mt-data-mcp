@@ -47,6 +47,7 @@ _TIMEOUT_DEFAULTS = {
     "heavy": 1800.0,
 }
 _TERMINAL_STATUSES = frozenset({"completed", "failed", "cancelled"})
+_PROCESS_QUEUE_EXCEPTIONS = (BrokenPipeError, EOFError, OSError, ValueError)
 
 
 @dataclass
@@ -443,6 +444,116 @@ class TaskManager:
         self._persist_task(snapshot)
         return snapshot
 
+    def _task_state(self, task_id: str) -> tuple[Optional[str], bool]:
+        with self._lock:
+            task = self._tasks.get(task_id)
+            if task is None:
+                return None, False
+            return task.status, bool(task.cancel_requested)
+
+    def _task_is_terminal(self, task_id: str) -> bool:
+        status, _ = self._task_state(task_id)
+        return status in _TERMINAL_STATUSES
+
+    def _stop_process(self, process: mp.Process, task_id: str, *, grace_seconds: float = 0.0) -> bool:
+        if grace_seconds > 0 and process.is_alive():
+            time.sleep(grace_seconds)
+        if not process.is_alive():
+            return True
+        try:
+            process.terminate()
+        except Exception:
+            logger.warning("Failed to terminate heavy training worker for task %s", task_id, exc_info=True)
+        process.join(timeout=1.0)
+        if not process.is_alive():
+            return True
+        kill = getattr(process, "kill", None)
+        if callable(kill):
+            try:
+                kill()
+            except Exception:
+                logger.warning("Failed to kill heavy training worker for task %s", task_id, exc_info=True)
+        process.join(timeout=1.0)
+        stopped = not process.is_alive()
+        if not stopped:
+            logger.error(
+                "Heavy training worker for task %s is still alive after terminate/kill escalation (pid=%s)",
+                task_id,
+                getattr(process, "pid", None),
+            )
+        return stopped
+
+    def _apply_process_event(self, task_id: str, spec: _TrainingSpec, event: Dict[str, Any]) -> bool:
+        try:
+            return self._handle_process_event(task_id, spec, event)
+        except Exception as exc:
+            logger.exception(
+                "Failed to process heavy training worker event for task %s: %r",
+                task_id,
+                event,
+            )
+            self._mutate_task(
+                task_id,
+                status="failed",
+                error=f"Malformed worker event: {type(exc).__name__}: {exc}",
+                completed_at=time.time(),
+                heartbeat_at=time.time(),
+            )
+            return True
+
+    def _drain_process_events(self, task_id: str, spec: _TrainingSpec, event_queue: Any) -> bool:
+        terminal = False
+        while True:
+            try:
+                pending_event = event_queue.get_nowait()
+            except queue.Empty:
+                break
+            except _PROCESS_QUEUE_EXCEPTIONS as exc:
+                logger.warning(
+                    "Failed to drain heavy training worker events for task %s: %s: %s",
+                    task_id,
+                    type(exc).__name__,
+                    exc,
+                )
+                break
+            if isinstance(pending_event, dict):
+                terminal = self._apply_process_event(task_id, spec, pending_event) or terminal
+        return terminal
+
+    def _finalize_dead_process(
+        self,
+        task_id: str,
+        process: mp.Process,
+        *,
+        error_text: Optional[str] = None,
+    ) -> None:
+        status, cancel_requested = self._task_state(task_id)
+        if status is None or status in _TERMINAL_STATUSES:
+            return
+        now = time.time()
+        if cancel_requested:
+            self._mutate_task(
+                task_id,
+                status="cancelled",
+                error="Training cancelled before the worker reported a terminal event.",
+                completed_at=now,
+                heartbeat_at=now,
+                cancel_requested=True,
+            )
+            return
+        if error_text is None:
+            if process.exitcode not in (0, None):
+                error_text = f"Training worker exited with code {process.exitcode}."
+            else:
+                error_text = "Training worker exited without reporting a terminal status."
+        self._mutate_task(
+            task_id,
+            status="failed",
+            error=error_text,
+            completed_at=now,
+            heartbeat_at=now,
+        )
+
     def _recover_persisted_tasks(self) -> None:
         stale = self._job_store.mark_active_jobs_failed(
             "Task registry recovered after process restart; in-flight task was orphaned.",
@@ -655,6 +766,8 @@ class TaskManager:
 
         def _on_progress(progress: TrainingProgress) -> None:
             token.raise_if_cancelled()
+            if self._task_is_terminal(task_id):
+                return
             self._mutate_task(
                 task_id,
                 progress=progress,
@@ -670,39 +783,46 @@ class TaskManager:
                 source_task_id=task_id,
             )
         except TrainingCancelledError as exc:
-            self._mutate_task(
-                task_id,
-                status="cancelled",
-                error=str(exc),
-                completed_at=time.time(),
-                heartbeat_at=time.time(),
-                cancel_requested=True,
-            )
+            if not self._task_is_terminal(task_id):
+                self._mutate_task(
+                    task_id,
+                    status="cancelled",
+                    error=str(exc),
+                    completed_at=time.time(),
+                    heartbeat_at=time.time(),
+                    cancel_requested=True,
+                )
         except BaseException as exc:
             logger.exception("Training failed: %s %s", spec.method_name, spec.data_scope)
-            self._mutate_task(
-                task_id,
-                status="failed",
-                error=str(exc),
-                completed_at=time.time(),
-                heartbeat_at=time.time(),
-            )
+            if not self._task_is_terminal(task_id):
+                self._mutate_task(
+                    task_id,
+                    status="failed",
+                    error=str(exc),
+                    completed_at=time.time(),
+                    heartbeat_at=time.time(),
+                )
         else:
-            self._mutate_task(
-                task_id,
-                result=handle,
-                status="completed",
-                completed_at=time.time(),
-                heartbeat_at=time.time(),
-            )
-            logger.info("Training completed: %s %s → %s", spec.method_name, spec.data_scope, handle.model_id)
+            if not self._task_is_terminal(task_id):
+                self._mutate_task(
+                    task_id,
+                    result=handle,
+                    status="completed",
+                    completed_at=time.time(),
+                    heartbeat_at=time.time(),
+                )
+                logger.info("Training completed: %s %s → %s", spec.method_name, spec.data_scope, handle.model_id)
         finally:
             with self._lock:
                 self._thread_cancel_events.pop(task_id, None)
 
     def _handle_process_event(self, task_id: str, spec: _TrainingSpec, event: Dict[str, Any]) -> bool:
+        if self._task_is_terminal(task_id):
+            return True
         event_type = str(event.get("type") or "").lower()
-        heartbeat_at = float(event.get("heartbeat_at", time.time()))
+        now = time.time()
+        raw_heartbeat_at = event.get("heartbeat_at")
+        heartbeat_at = float(raw_heartbeat_at) if raw_heartbeat_at is not None else now
         if event_type == "heartbeat":
             self._mutate_task(task_id, heartbeat_at=heartbeat_at)
             return False
@@ -714,18 +834,39 @@ class TaskManager:
             )
             return False
         if event_type == "completed":
+            raw_completed_at = event.get("completed_at")
+            completed_at = float(raw_completed_at) if raw_completed_at is not None else now
+            result_payload = event.get("result")
+            if not isinstance(result_payload, dict):
+                self._mutate_task(
+                    task_id,
+                    status="failed",
+                    error=f"Malformed completion event from worker: expected result object, got {type(result_payload).__name__}.",
+                    completed_at=completed_at,
+                    heartbeat_at=heartbeat_at,
+                )
+                return True
             handle = _deserialize_result(
-                event.get("result"),
+                result_payload,
                 method=spec.method_name,
                 data_scope=spec.data_scope,
                 params_hash=spec.params_hash,
-                created_at=float(event.get("completed_at", time.time())),
+                created_at=completed_at,
             )
+            if handle is None:
+                self._mutate_task(
+                    task_id,
+                    status="failed",
+                    error="Malformed completion event from worker: missing model handle.",
+                    completed_at=completed_at,
+                    heartbeat_at=heartbeat_at,
+                )
+                return True
             self._mutate_task(
                 task_id,
                 result=handle,
                 status="completed",
-                completed_at=float(event.get("completed_at", time.time())),
+                completed_at=completed_at,
                 heartbeat_at=heartbeat_at,
             )
             return True
@@ -734,7 +875,7 @@ class TaskManager:
                 task_id,
                 status="cancelled",
                 error=str(event.get("error") or "Training cancelled"),
-                completed_at=float(event.get("completed_at", time.time())),
+                completed_at=float(event.get("completed_at")) if event.get("completed_at") is not None else now,
                 heartbeat_at=heartbeat_at,
                 cancel_requested=True,
             )
@@ -744,7 +885,7 @@ class TaskManager:
                 task_id,
                 status="failed",
                 error=str(event.get("error") or "Training failed"),
-                completed_at=float(event.get("completed_at", time.time())),
+                completed_at=float(event.get("completed_at")) if event.get("completed_at") is not None else now,
                 heartbeat_at=heartbeat_at,
             )
             return True
@@ -778,68 +919,94 @@ class TaskManager:
         cancel_grace = self._cancel_grace_seconds()
         try:
             while True:
+                queue_error: Optional[str] = None
                 try:
                     event = event_queue.get(timeout=1.0)
                 except queue.Empty:
                     event = None
+                except _PROCESS_QUEUE_EXCEPTIONS as exc:
+                    event = None
+                    queue_error = f"Training worker communication failed: {type(exc).__name__}: {exc}"
+                    logger.warning("%s (task_id=%s)", queue_error, task_id)
                 if isinstance(event, dict):
-                    terminal = self._handle_process_event(task_id, spec, event) or terminal
+                    terminal = self._apply_process_event(task_id, spec, event) or terminal
 
                 if (
                     not terminal
+                    and not self._task_is_terminal(task_id)
                     and timeout_seconds > 0
                     and process.is_alive()
                     and (time.time() - started_at) > timeout_seconds
                 ):
                     cancel_event.set()
-                    time.sleep(cancel_grace)
+                    deadline = time.time() + cancel_grace
+                    while not terminal and process.is_alive():
+                        remaining = deadline - time.time()
+                        if remaining <= 0:
+                            break
+                        try:
+                            pending_event = event_queue.get(timeout=min(0.2, remaining))
+                        except queue.Empty:
+                            continue
+                        except _PROCESS_QUEUE_EXCEPTIONS as exc:
+                            queue_error = (
+                                f"Training worker communication failed during timeout handling: "
+                                f"{type(exc).__name__}: {exc}"
+                            )
+                            logger.warning("%s (task_id=%s)", queue_error, task_id)
+                            break
+                        if isinstance(pending_event, dict):
+                            terminal = self._apply_process_event(task_id, spec, pending_event) or terminal
+                    if not terminal and process.is_alive():
+                        stopped = self._stop_process(process, task_id)
+                        if not stopped:
+                            queue_error = (
+                                f"Training timed out after {int(timeout_seconds)} seconds and worker process "
+                                f"{getattr(process, 'pid', None)} could not be stopped cleanly."
+                            )
+                    terminal = self._drain_process_events(task_id, spec, event_queue) or terminal
+                    if not terminal and not self._task_is_terminal(task_id):
+                        self._mutate_task(
+                            task_id,
+                            status="failed",
+                            error=queue_error or f"Training timed out after {int(timeout_seconds)} seconds.",
+                            completed_at=time.time(),
+                            heartbeat_at=time.time(),
+                            cancel_requested=True,
+                        )
+                        terminal = True
+
+                if queue_error is not None and not terminal:
                     if process.is_alive():
-                        process.terminate()
-                        process.join(timeout=1.0)
-                    if process.is_alive():
-                        process.kill()
-                        process.join(timeout=1.0)
-                    self._mutate_task(
-                        task_id,
-                        status="failed",
-                        error=f"Training timed out after {int(timeout_seconds)} seconds.",
-                        completed_at=time.time(),
-                        heartbeat_at=time.time(),
-                        cancel_requested=True,
-                    )
-                    terminal = True
+                        cancel_event.set()
+                        stopped = self._stop_process(process, task_id)
+                        if not stopped and "could not be stopped cleanly" not in queue_error:
+                            queue_error = (
+                                f"{queue_error} Worker process {getattr(process, 'pid', None)} could not be "
+                                "stopped cleanly."
+                            )
+                    terminal = self._drain_process_events(task_id, spec, event_queue) or terminal
+                    if not terminal and not self._task_is_terminal(task_id):
+                        self._finalize_dead_process(task_id, process, error_text=queue_error)
+                        terminal = True
+                    break
 
                 if not process.is_alive():
-                    while True:
-                        try:
-                            pending_event = event_queue.get_nowait()
-                        except queue.Empty:
-                            break
-                        if terminal:
-                            continue
-                        if isinstance(pending_event, dict):
-                            terminal = self._handle_process_event(task_id, spec, pending_event) or terminal
-                    if not terminal:
-                        status = self.get_status(task_id)
-                        if status is None or status.status not in _TERMINAL_STATUSES:
-                            error_text = "Training worker exited unexpectedly."
-                            if process.exitcode not in (0, None):
-                                error_text = f"Training worker exited with code {process.exitcode}."
-                            self._mutate_task(
-                                task_id,
-                                status="failed",
-                                error=error_text,
-                                completed_at=time.time(),
-                                heartbeat_at=time.time(),
-                            )
+                    terminal = self._drain_process_events(task_id, spec, event_queue) or terminal
+                    if not terminal and not self._task_is_terminal(task_id):
+                        self._finalize_dead_process(task_id, process, error_text=queue_error)
+                    break
+
+                if terminal:
+                    process.join(timeout=1.0)
+                    if process.is_alive():
+                        self._stop_process(process, task_id)
+                    self._drain_process_events(task_id, spec, event_queue)
                     break
         finally:
-            process.join(timeout=1.0)
             if process.is_alive():
-                process.terminate()
-                process.join(timeout=1.0)
-            if process.is_alive():
-                process.kill()
+                self._stop_process(process, task_id)
+            else:
                 process.join(timeout=1.0)
             with self._lock:
                 self._process_controls.pop(task_id, None)
@@ -945,17 +1112,9 @@ class TaskManager:
         control: Optional[_HeavyProcessControl] = None
         cancel_event: Optional[threading.Event] = None
         with self._lock:
-            task_ref = self._tasks.get(task_id)
-            if task_ref is not None:
-                task_ref.cancel_requested = True
-                snapshot = _snapshot(task_ref)
-            else:
-                snapshot = None
             future = self._futures.get(task_id)
             control = self._process_controls.get(task_id)
             cancel_event = self._thread_cancel_events.get(task_id)
-        if snapshot is not None:
-            self._persist_task(snapshot)
 
         if future and future.cancel():
             self._mutate_task(
@@ -973,6 +1132,13 @@ class TaskManager:
                 "status": "cancelled",
             }
 
+        if cancel_event is not None or control is not None:
+            self._mutate_task(
+                task_id,
+                cancel_requested=True,
+                heartbeat_at=time.time(),
+            )
+
         if cancel_event is not None:
             cancel_event.set()
             cancel_requested = True
@@ -980,10 +1146,12 @@ class TaskManager:
         if control is not None:
             control.cancel_event.set()
             cancel_requested = True
-            time.sleep(self._cancel_grace_seconds())
-            if control.process.is_alive():
-                control.process.terminate()
-                terminated = True
+            process_was_alive = control.process.is_alive()
+            terminated = process_was_alive and self._stop_process(
+                control.process,
+                task_id,
+                grace_seconds=self._cancel_grace_seconds(),
+            )
 
         return {
             "task_id": task_id,
@@ -1033,15 +1201,49 @@ class TaskManager:
     def shutdown(self, wait: bool = False) -> None:
         self._shutdown = True
         self._sweeper_stop.set()
-        for control in list(self._process_controls.values()):
+        with self._lock:
+            controls = list(self._process_controls.items())
+            cancel_events = list(self._thread_cancel_events.values())
+            active_task_ids = [
+                task_id
+                for task_id, task in self._tasks.items()
+                if task.status not in _TERMINAL_STATUSES
+            ]
+        for cancel_event in cancel_events:
+            try:
+                cancel_event.set()
+            except Exception:
+                logger.debug("Failed to signal light training worker during shutdown", exc_info=True)
+        for task_id, control in controls:
             try:
                 control.cancel_event.set()
-                if control.process.is_alive():
-                    control.process.terminate()
+                self._stop_process(control.process, task_id)
             except Exception:
                 logger.debug("Failed to stop heavy training worker during shutdown", exc_info=True)
         self._light_executor.shutdown(wait=wait)
         self._heavy_executor.shutdown(wait=wait)
+        now = time.time()
+        for task_id in active_task_ids:
+            status, cancel_requested = self._task_state(task_id)
+            if status is None or status in _TERMINAL_STATUSES:
+                continue
+            if cancel_requested:
+                self._mutate_task(
+                    task_id,
+                    status="cancelled",
+                    error="Task cancelled during TaskManager shutdown.",
+                    completed_at=now,
+                    heartbeat_at=now,
+                    cancel_requested=True,
+                )
+            else:
+                self._mutate_task(
+                    task_id,
+                    status="failed",
+                    error="TaskManager shut down before task completed.",
+                    completed_at=now,
+                    heartbeat_at=now,
+                )
         self._sweeper.join(timeout=1.0)
 
 

@@ -340,7 +340,7 @@ class TestHeavyRuntimeScheduling(_TaskManagerTestCase):
 
         self.assertEqual(max_concurrent[0], 1)
 
-    def test_heavy_timeout_discards_late_terminal_events(self):
+    def test_heavy_timeout_drains_late_terminal_events(self):
         task = self.tm._create_task("heavy", "EURUSD_H1", "hash-1")
         spec = _TrainingSpec(
             task_kind="train",
@@ -355,7 +355,12 @@ class TestHeavyRuntimeScheduling(_TaskManagerTestCase):
 
         class _FakeQueue:
             def __init__(self):
-                self._pending = [{"type": "completed", "heartbeat_at": 2.0, "completed_at": 2.0}]
+                self._pending = [{
+                    "type": "completed",
+                    "heartbeat_at": 2.0,
+                    "completed_at": 2.0,
+                    "result": {"model_id": "heavy/EURUSD_H1/hash-1"},
+                }]
 
             def get(self, timeout=None):
                 raise queue.Empty
@@ -400,7 +405,7 @@ class TestHeavyRuntimeScheduling(_TaskManagerTestCase):
             patch("mtdata.forecast.task_manager.time.sleep", return_value=None),
             patch(
                 "mtdata.forecast.task_manager.time.time",
-                side_effect=[0.0, 0.0, 0.0, 2.0, 2.0, 2.0, 2.0],
+                side_effect=[0.0, 0.0, 0.0] + [2.0] * 20,
             ),
             patch.object(self.tm, "_handle_process_event", wraps=self.tm._handle_process_event) as handle_event,
         ):
@@ -408,9 +413,9 @@ class TestHeavyRuntimeScheduling(_TaskManagerTestCase):
 
         status = self.tm.get_status(task.task_id)
         self.assertIsNotNone(status)
-        self.assertEqual(status.status, "failed")
-        self.assertIn("timed out", status.error)
-        handle_event.assert_not_called()
+        self.assertEqual(status.status, "completed")
+        self.assertIsNotNone(status.result)
+        handle_event.assert_called_once()
 
     def test_heavy_task_finalizer_joins_queue_and_kills_lingering_process(self):
         task = self.tm._create_task("heavy", "EURUSD_H1", "hash-2")
@@ -477,9 +482,10 @@ class TestHeavyRuntimeScheduling(_TaskManagerTestCase):
 
         with (
             patch.object(self.tm, "_mp_context", fake_context),
+            patch.object(self.tm, "_cancel_grace_seconds", return_value=0.0),
             patch(
                 "mtdata.forecast.task_manager.time.time",
-                side_effect=[0.0, 0.0, 0.0, 2.0, 2.0, 2.0, 2.0],
+                side_effect=[0.0, 0.0, 0.0] + [2.0] * 20,
             ),
             patch("mtdata.forecast.task_manager.time.sleep", return_value=None),
         ):
