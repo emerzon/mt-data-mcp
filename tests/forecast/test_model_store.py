@@ -194,6 +194,7 @@ class TestModelStoreTTL(unittest.TestCase):
         with open(meta_path, "w") as f:
             json.dump(meta, f)
         self.assertIsNone(self.store.find("m", "d", "p"))
+        self.assertTrue(model_dir.exists())
 
     def test_load_refreshes_last_used(self):
         self.store.save("m", "d", "p", b"data")

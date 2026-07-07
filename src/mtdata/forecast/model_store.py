@@ -45,8 +45,9 @@ import shutil
 import tempfile
 import threading
 import time
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Iterator, List, Optional
 
 from .interface import TrainedModelHandle
 
@@ -241,41 +242,42 @@ class ModelStore:
         model_dir = self._model_dir(method, data_scope, params_hash)
         model_id = self._model_id(method, data_scope, params_hash)
 
-        with self._lock:
-            model_dir.mkdir(parents=True, exist_ok=True)
+        with self._model_dir_lock(model_dir, blocking=True):
+            with self._lock:
+                model_dir.mkdir(parents=True, exist_ok=True)
 
-            # Atomic write: artifact
-            artifact_path = model_dir / "model.bin"
-            self._atomic_write_bytes(artifact_path, artifact_bytes)
+                # Atomic write: artifact
+                artifact_path = model_dir / "model.bin"
+                self._atomic_write_bytes(artifact_path, artifact_bytes)
 
-            # Build handle
-            now = time.time()
-            store_metadata = self._build_store_metadata(created_at=now, last_used=now)
-            handle = TrainedModelHandle(
-                model_id=model_id,
-                method=method,
-                data_scope=data_scope,
-                params_hash=params_hash,
-                created_at=now,
-                metadata=dict(metadata or {}),
-                store_metadata=store_metadata,
-            )
+                # Build handle
+                now = time.time()
+                store_metadata = self._build_store_metadata(created_at=now, last_used=now)
+                handle = TrainedModelHandle(
+                    model_id=model_id,
+                    method=method,
+                    data_scope=data_scope,
+                    params_hash=params_hash,
+                    created_at=now,
+                    metadata=dict(metadata or {}),
+                    store_metadata=store_metadata,
+                )
 
-            # Atomic write: metadata (includes last_used)
-            meta_dict: Dict[str, Any] = {
-                "model_id": handle.model_id,
-                "method": handle.method,
-                "data_scope": handle.data_scope,
-                "params_hash": handle.params_hash,
-                "created_at": handle.created_at,
-                "last_used": now,
-                "metadata": handle.metadata,
-                "store_metadata": handle.store_metadata,
-            }
-            meta_path = model_dir / "metadata.json"
-            self._atomic_write_text(
-                meta_path, json.dumps(meta_dict, indent=2, default=str),
-            )
+                # Atomic write: metadata (includes last_used)
+                meta_dict: Dict[str, Any] = {
+                    "model_id": handle.model_id,
+                    "method": handle.method,
+                    "data_scope": handle.data_scope,
+                    "params_hash": handle.params_hash,
+                    "created_at": handle.created_at,
+                    "last_used": now,
+                    "metadata": handle.metadata,
+                    "store_metadata": handle.store_metadata,
+                }
+                meta_path = model_dir / "metadata.json"
+                self._atomic_write_text(
+                    meta_path, json.dumps(meta_dict, indent=2, default=str),
+                )
 
         logger.debug("Saved model %s to %s", model_id, model_dir)
         return handle
@@ -331,13 +333,19 @@ class ModelStore:
             for method_dir in sorted(self._root.iterdir()):
                 if not method_dir.is_dir():
                     continue
+                if method_dir.name.startswith("."):
+                    continue
                 if method and method_dir.name != method:
                     continue
                 for scope_dir in sorted(method_dir.iterdir()):
                     if not scope_dir.is_dir():
                         continue
+                    if scope_dir.name.startswith("."):
+                        continue
                     for hash_dir in sorted(scope_dir.iterdir()):
                         if not hash_dir.is_dir():
+                            continue
+                        if hash_dir.name.startswith("."):
                             continue
                         handle = self._read_handle(hash_dir, skip_expiry=True)
                         if handle is not None:
@@ -354,8 +362,9 @@ class ModelStore:
             model_dir = self._model_dir(method, data_scope, params_hash)
         except ValueError:
             return False
-        with self._lock:
-            return self._remove_dir(model_dir)
+        with self._model_dir_lock(model_dir, blocking=True):
+            with self._lock:
+                return self._remove_dir(model_dir)
 
     def describe_model(self, handle: TrainedModelHandle) -> Dict[str, Any]:
         """Return operational metadata for a stored model handle."""
@@ -401,22 +410,30 @@ class ModelStore:
             return 0
         removed = 0
         now = time.time()
-        with self._lock:
-            for handle in self.list_models():
-                meta = self._read_raw_meta(
-                    self._model_dir(handle.method, handle.data_scope, handle.params_hash)
-                )
-                last_used = (
-                    self._last_used_from_meta(meta, handle.created_at)
-                    if meta
-                    else handle.created_at
-                )
-                if (now - last_used) > self._ttl:
-                    if self._remove_dir(
-                        self._model_dir(handle.method, handle.data_scope, handle.params_hash)
-                    ):
+        for handle in self.list_models():
+            model_dir = self._model_dir(handle.method, handle.data_scope, handle.params_hash)
+            meta = self._read_raw_meta(model_dir)
+            last_used = (
+                self._last_used_from_meta(meta, handle.created_at)
+                if meta
+                else handle.created_at
+            )
+            if (now - last_used) <= self._ttl:
+                continue
+            with self._model_dir_lock(model_dir, blocking=False) as locked:
+                if not locked:
+                    logger.debug("Skipping cleanup for %s while another process is saving it", handle.model_id)
+                    continue
+                with self._lock:
+                    meta = self._read_raw_meta(model_dir)
+                    if meta is None:
+                        continue
+                    locked_last_used = self._last_used_from_meta(meta, handle.created_at)
+                    if (time.time() - locked_last_used) <= self._ttl:
+                        continue
+                    if self._remove_dir(model_dir):
                         removed += 1
-            return removed
+        return removed
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -433,7 +450,6 @@ class ModelStore:
         last_used = self._last_used_from_meta(meta, created_at)
 
         if not skip_expiry and self._ttl > 0 and (time.time() - last_used) > self._ttl:
-            self._remove_dir(model_dir)
             return None
 
         return TrainedModelHandle(
@@ -534,6 +550,75 @@ class ModelStore:
         except Exception as exc:
             logger.debug("Failed to update last_used for %s: %s", model_dir, exc)
 
+    def _lock_root(self) -> Path:
+        return self._resolve_within_root(self._root / ".locks")
+
+    def _deleted_root(self) -> Path:
+        return self._resolve_within_root(self._root / ".deleted")
+
+    def _lock_path_for_model_dir(self, model_dir: Path) -> Path:
+        safe_model_dir = self._resolve_within_root(model_dir)
+        relative = safe_model_dir.relative_to(self._root)
+        return self._resolve_within_root(
+            self._lock_root() / relative.parent / f"{relative.name}.lock"
+        )
+
+    @staticmethod
+    def _acquire_file_lock(fd: int, *, blocking: bool) -> bool:
+        if os.name == "nt":
+            import msvcrt
+
+            if os.fstat(fd).st_size == 0:
+                os.write(fd, b"0")
+            os.lseek(fd, 0, os.SEEK_SET)
+            mode = msvcrt.LK_LOCK if blocking else msvcrt.LK_NBLCK
+            try:
+                msvcrt.locking(fd, mode, 1)
+            except OSError:
+                return False
+            return True
+
+        import fcntl
+
+        flags = fcntl.LOCK_EX
+        if not blocking:
+            flags |= fcntl.LOCK_NB
+        try:
+            fcntl.flock(fd, flags)
+        except OSError:
+            return False
+        return True
+
+    @staticmethod
+    def _release_file_lock(fd: int) -> None:
+        if os.name == "nt":
+            import msvcrt
+
+            os.lseek(fd, 0, os.SEEK_SET)
+            msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+            return
+
+        import fcntl
+
+        fcntl.flock(fd, fcntl.LOCK_UN)
+
+    @contextmanager
+    def _model_dir_lock(self, model_dir: Path, *, blocking: bool) -> Iterator[bool]:
+        lock_path = self._lock_path_for_model_dir(model_dir)
+        with self._lock:
+            lock_path.parent.mkdir(parents=True, exist_ok=True)
+        fd = os.open(str(lock_path), os.O_RDWR | os.O_CREAT, 0o644)
+        acquired = False
+        try:
+            acquired = self._acquire_file_lock(fd, blocking=blocking)
+            if blocking and not acquired:
+                raise RuntimeError(f"Failed to acquire model-store lock for {model_dir}")
+            yield acquired
+        finally:
+            if acquired:
+                self._release_file_lock(fd)
+            os.close(fd)
+
     @staticmethod
     def _atomic_write_bytes(target: Path, data: bytes) -> None:
         """Write *data* atomically via temp file + ``os.replace``."""
@@ -577,9 +662,21 @@ class ModelStore:
     def _remove_dir(self, path: Path) -> bool:
         try:
             safe_path = self._resolve_within_root(path)
-            if safe_path.is_dir():
-                shutil.rmtree(safe_path)
-                return True
+            if not safe_path.is_dir():
+                return False
+            deleted_root = self._deleted_root()
+            deleted_root.mkdir(parents=True, exist_ok=True)
+            tombstone = self._resolve_within_root(
+                deleted_root / f"{safe_path.parent.name}-{safe_path.name}-{time.time_ns()}"
+            )
+            os.replace(str(safe_path), str(tombstone))
+            try:
+                shutil.rmtree(tombstone)
+            except FileNotFoundError:
+                pass
+            except Exception as exc:
+                logger.warning("Failed to remove staged model directory %s: %s", tombstone, exc)
+            return True
         except Exception as exc:
             logger.debug("Failed to remove %s: %s", path, exc)
         return False
