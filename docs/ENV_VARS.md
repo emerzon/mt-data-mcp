@@ -202,6 +202,7 @@ Optional pre-trade controls that can block `trade_place` and risk-increasing pen
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `MTDATA_TRADE_GUARDRAILS_ENABLED` | `false` | Master switch for guardrail evaluation. Guardrails also activate automatically when specific guardrail variables are configured. |
+| `MTDATA_TRADE_GUARDRAILS_IGNORE_ON_DEMO` | `true` | When `true`, configured guardrails are skipped for demo accounts. Set to `false` to apply configured guardrails to demo accounts too. This modifies guardrail behavior but does not activate guardrails by itself. |
 | `MTDATA_TRADING_ENABLED` | `true` | Set to `0` / `false` to block all new trade placements via mtdata. |
 | `MTDATA_TRADE_ALLOWED_SYMBOLS` | — | Comma-separated allowlist of tradable symbols, e.g. `EURUSD,BTCUSD,XAUUSD`. When set, symbols outside the list are blocked. |
 | `MTDATA_TRADE_BLOCKED_SYMBOLS` | — | Comma-separated blocklist of symbols that mtdata must refuse. |
@@ -222,7 +223,7 @@ Notes:
 
 - Wallet-risk caps require a quantifiable stop-loss and valid broker tick metadata.
 - Leave any variable unset to disable only that rule.
-- `trade_modify` guardrails apply only to pending-order changes that increase risk; close/reduce flows stay allowed.
+- `trade_modify` guardrails apply only to pending-order changes and position SL changes that increase risk; close/reduce flows stay allowed.
 
 ```ini
 # Example trade guardrail setup

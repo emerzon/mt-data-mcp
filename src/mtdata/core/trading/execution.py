@@ -43,6 +43,159 @@ def _protection_level_tolerance(*, point: float) -> float:
     return 1e-9
 
 
+def _position_matches_any_ticket(position: Any, ticket_values: set[int]) -> bool:
+    if not ticket_values:
+        return False
+    for field in ("ticket", "identifier", "position_id", "position", "order", "deal"):
+        value = validation._safe_int_ticket(getattr(position, field, None))
+        if value is not None and value in ticket_values:
+            return True
+    return False
+
+
+def _positions_excluding_current(
+    positions: Optional[List[Any]],
+    *,
+    resolved_ticket: Optional[int],
+    requested_ticket: Optional[int],
+) -> List[Any]:
+    ticket_values = {
+        value
+        for value in (
+            validation._safe_int_ticket(resolved_ticket),
+            validation._safe_int_ticket(requested_ticket),
+        )
+        if value is not None
+    }
+    return [
+        position
+        for position in list(positions or [])
+        if not _position_matches_any_ticket(position, ticket_values)
+    ]
+
+
+def _evaluate_position_modify_guardrails(
+    mt5: Any,
+    *,
+    position: Any,
+    resolved_ticket: Optional[int],
+    requested_ticket: Optional[int],
+    side: str,
+    symbol_info: Any,
+    current_stop_loss: Optional[float],
+    candidate_stop_loss: Optional[float],
+) -> Optional[Dict[str, Any]]:
+    position_volume = validation._safe_float_attr(position, "volume")
+    entry_price = validation._safe_float_attr(position, "price_open")
+    if not trade_guardrails_config.is_enabled() or position_volume is None:
+        return None
+    if not pending_order_risk_increased(
+        symbol_info=symbol_info,
+        side=side,
+        volume=abs(float(position_volume)),
+        existing_entry_price=entry_price,
+        existing_stop_loss=current_stop_loss,
+        candidate_entry_price=entry_price,
+        candidate_stop_loss=candidate_stop_loss,
+    ):
+        return None
+
+    try:
+        account_info = mt5.account_info()
+    except Exception:
+        account_info = None
+    try:
+        positions = mt5.positions_get()
+    except Exception:
+        positions = None
+    guardrail_block = evaluate_trade_guardrails(
+        trade_guardrails_config,
+        symbol=position.symbol,
+        volume=abs(float(position_volume)),
+        stop_loss=candidate_stop_loss,
+        deviation=None,
+        side=side,
+        entry_price=entry_price,
+        account_info=account_info,
+        existing_positions=_positions_excluding_current(
+            list(positions or []),
+            resolved_ticket=resolved_ticket,
+            requested_ticket=requested_ticket,
+        ),
+        symbol_info=symbol_info,
+        symbol_info_resolver=mt5.symbol_info,
+        enforce_symbol_rules=False,
+    )
+    if guardrail_block is not None:
+        guardrail_block["position_ticket"] = resolved_ticket
+        guardrail_block["ticket_requested"] = requested_ticket
+    return guardrail_block
+
+
+def _position_no_change_result(
+    mt5: Any,
+    *,
+    resolved_ticket: Optional[int],
+    requested_ticket: int,
+    ticket_resolution: Dict[str, Any],
+    desired_sl: Optional[float],
+    desired_tp: Optional[float],
+    dry_run: bool,
+) -> Dict[str, Any]:
+    no_change_code = validation._safe_int_attr(mt5, "TRADE_RETCODE_NO_CHANGES", 10025)
+    out: Dict[str, Any] = {
+        "success": True,
+        "retcode": no_change_code,
+        "retcode_name": mt5.retcode_name(no_change_code),
+        "comment": "No changes",
+        "request_id": 0,
+        "position_ticket": resolved_ticket,
+        "ticket_requested": requested_ticket,
+        "ticket_resolution": ticket_resolution,
+        "applied_sl": desired_sl,
+        "applied_tp": desired_tp,
+        "no_change": True,
+        "message": "Requested SL/TP already match the live position.",
+    }
+    if dry_run:
+        out.update(
+            {
+                "dry_run": True,
+                "actionability": "preview_only",
+                "operation": "modify_position",
+                "scope": "positions",
+                "would_send_order": False,
+            }
+        )
+    return out
+
+
+def _build_position_modify_request(
+    mt5: Any,
+    *,
+    position: Any,
+    resolved_ticket: Optional[int],
+    stop_loss: float,
+    take_profit: float,
+    comment: Optional[str],
+) -> Dict[str, Any]:
+    request: Dict[str, Any] = {
+        "action": mt5.TRADE_ACTION_SLTP,
+        "symbol": position.symbol,
+        "position": resolved_ticket,
+        "sl": stop_loss,
+        "tp": take_profit,
+        "comment": comments._normalize_trade_comment(
+            comment,
+            default="MCP modify position",
+        ),
+    }
+    request_magic = validation._safe_int_ticket(getattr(position, "magic", None))
+    if request_magic is not None:
+        request["magic"] = request_magic
+    return request
+
+
 def _unexpected_operation_error(
     operation: str,
     exc: Exception,
@@ -242,32 +395,15 @@ def _modify_position(
             desired_tp = _normalize_protection_level(norm_tp, tol=price_tol)
 
             if _protection_levels_match(current_sl, desired_sl, tol=price_tol) and _protection_levels_match(current_tp, desired_tp, tol=price_tol):
-                no_change_code = validation._safe_int_attr(mt5, "TRADE_RETCODE_NO_CHANGES", 10025)
-                out = {
-                    "success": True,
-                    "retcode": no_change_code,
-                    "retcode_name": mt5.retcode_name(no_change_code),
-                    "comment": "No changes",
-                    "request_id": 0,
-                    "position_ticket": resolved_ticket,
-                    "ticket_requested": ticket_id,
-                    "ticket_resolution": ticket_resolution,
-                    "applied_sl": desired_sl,
-                    "applied_tp": desired_tp,
-                    "no_change": True,
-                    "message": "Requested SL/TP already match the live position.",
-                }
-                if dry_run:
-                    out.update(
-                        {
-                            "dry_run": True,
-                            "actionability": "preview_only",
-                            "operation": "modify_position",
-                            "scope": "positions",
-                            "would_send_order": False,
-                        }
-                    )
-                return out
+                return _position_no_change_result(
+                    mt5,
+                    resolved_ticket=resolved_ticket,
+                    requested_ticket=ticket_id,
+                    ticket_resolution=ticket_resolution,
+                    desired_sl=desired_sl,
+                    desired_tp=desired_tp,
+                    dry_run=dry_run,
+                )
 
             side = _resolve_position_side(position, mt5)
             if side is None:
@@ -285,17 +421,28 @@ def _modify_position(
             if live_protection_error is not None:
                 return live_protection_error
 
-            request = {
-                "action": mt5.TRADE_ACTION_SLTP,
-                "symbol": position.symbol,
-                "position": resolved_ticket,
-                "sl": norm_sl,
-                "tp": norm_tp,
-                "comment": comments._normalize_trade_comment(comment, default="MCP modify position"),
-            }
-            request_magic = validation._safe_int_ticket(getattr(position, "magic", None))
-            if request_magic is not None:
-                request["magic"] = request_magic
+            guardrail_block = _evaluate_position_modify_guardrails(
+                mt5,
+                position=position,
+                resolved_ticket=resolved_ticket,
+                requested_ticket=ticket_id,
+                side=side,
+                symbol_info=symbol_info,
+                current_stop_loss=current_sl,
+                candidate_stop_loss=desired_sl,
+            )
+            if guardrail_block is not None:
+                guardrail_block["ticket_resolution"] = ticket_resolution
+                return guardrail_block
+
+            request = _build_position_modify_request(
+                mt5,
+                position=position,
+                resolved_ticket=resolved_ticket,
+                stop_loss=norm_sl,
+                take_profit=norm_tp,
+                comment=comment,
+            )
 
             if dry_run:
                 return {

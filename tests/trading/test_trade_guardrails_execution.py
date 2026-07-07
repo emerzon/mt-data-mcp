@@ -7,8 +7,10 @@ from unittest.mock import patch
 import pytest
 
 from mtdata.bootstrap.settings import trade_guardrails_config
-from mtdata.core.trading.execution import _modify_pending_order
-from mtdata.core.trading.gateway import create_trading_gateway as create_real_trading_gateway
+from mtdata.core.trading.execution import _modify_pending_order, _modify_position
+from mtdata.core.trading.gateway import (
+    create_trading_gateway as create_real_trading_gateway,
+)
 
 
 @pytest.fixture
@@ -26,8 +28,13 @@ def mock_mt5():
     mt5.ORDER_TYPE_SELL_LIMIT = 3
     mt5.ORDER_TYPE_BUY_STOP = 4
     mt5.ORDER_TYPE_SELL_STOP = 5
+    mt5.ORDER_TYPE_BUY = 0
+    mt5.ORDER_TYPE_SELL = 1
+    mt5.POSITION_TYPE_BUY = 0
+    mt5.POSITION_TYPE_SELL = 1
     mt5.ORDER_TIME_GTC = 0
     mt5.ORDER_TIME_SPECIFIED = 1
+    mt5.TRADE_ACTION_SLTP = 6
     mt5.TRADE_ACTION_MODIFY = 7
     mt5.TRADE_RETCODE_DONE = 10009
     mt5.retcode_name = lambda retcode: {10009: "TRADE_RETCODE_DONE"}.get(retcode, str(retcode))
@@ -136,3 +143,59 @@ def test_modify_pending_order_ignores_guardrails_for_demo_account(
 
     assert result["success"] is True
     assert result["pending_order_ticket"] == 100
+
+
+def test_modify_position_blocks_stop_loss_removal_when_required(
+    restore_trade_guardrails,
+    patch_gateway,
+):
+    trade_guardrails_config.enabled = True
+    trade_guardrails_config.safety_policy.require_stop_loss = True
+    position = SimpleNamespace(
+        ticket=200,
+        symbol="EURUSD",
+        price_open=1.1000,
+        sl=1.0990,
+        tp=1.1200,
+        type=patch_gateway.POSITION_TYPE_BUY,
+        volume=1.0,
+        magic=123,
+    )
+    patch_gateway.positions_get = lambda *args, **kwargs: [position]
+
+    result = _modify_position(ticket=200, stop_loss=0.0)
+
+    assert result["guardrail_blocked"] is True
+    assert result["guardrail_rule"] == "safety_policy"
+    assert "requires a stop-loss" in result["violations"][0]
+
+
+def test_modify_position_allows_tighter_stop_loss(
+    restore_trade_guardrails,
+    patch_gateway,
+):
+    trade_guardrails_config.enabled = True
+    trade_guardrails_config.wallet_risk_limits.max_risk_pct_of_equity = 1.0
+    position = SimpleNamespace(
+        ticket=200,
+        symbol="EURUSD",
+        price_open=1.1000,
+        sl=1.0990,
+        tp=1.1200,
+        type=patch_gateway.POSITION_TYPE_BUY,
+        volume=1.0,
+        magic=123,
+    )
+    patch_gateway.positions_get = lambda *args, **kwargs: [position]
+    patch_gateway.order_send = lambda request: SimpleNamespace(
+        retcode=patch_gateway.TRADE_RETCODE_DONE,
+        deal=0,
+        order=request["position"],
+        comment="ok",
+        request_id=1,
+    )
+
+    result = _modify_position(ticket=200, stop_loss=1.0995)
+
+    assert result["success"] is True
+    assert result["position_ticket"] == 200

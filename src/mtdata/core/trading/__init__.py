@@ -82,8 +82,9 @@ def trade_modify(request: TradeModifyRequest) -> dict:
 
     Defaults to live execution. Set `dry_run=true` to preview without sending a
     live modify request.
-    Risk-increasing pending-order changes can be blocked by configured trade
-    guardrails, while close/reduce flows remain allowed.
+    Risk-increasing pending-order and position-protection changes can be
+    blocked by configured trade guardrails, while close/reduce flows remain
+    allowed.
     Optional idempotency_key values suppress duplicate in-process retries for
     the same payload with an in-memory ~5-minute TTL. They are not persisted
     across restarts and do not provide broker-side idempotency.

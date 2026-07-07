@@ -265,7 +265,6 @@ class TradeGuardrailsRuntimeConfig(_GuardrailSection):
     def is_enabled(self) -> bool:
         return bool(
             self.enabled
-            or not self.ignore_on_demo
             or not self.trading_enabled
             or self.allowed_symbols
             or self.blocked_symbols

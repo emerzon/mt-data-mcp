@@ -6,7 +6,10 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from mtdata.bootstrap.settings import trade_guardrails_config
+from mtdata.bootstrap.settings import (
+    TradeGuardrailsRuntimeConfig,
+    trade_guardrails_config,
+)
 from mtdata.core.trading.requests import TradePlaceRequest
 from mtdata.core.trading.safety import (
     TradeGuardrailsConfig,
@@ -45,6 +48,35 @@ def test_trade_guardrails_config_reloads_from_env(monkeypatch, restore_trade_gua
     assert trade_guardrails_config.wallet_risk_limits.max_risk_pct_of_equity == 1.25
     assert trade_guardrails_config.ignore_on_demo is False
     assert trade_guardrails_config.is_enabled() is True
+
+
+def test_ignore_on_demo_does_not_activate_guardrails_by_itself(monkeypatch):
+    env_names = (
+        "MTDATA_TRADE_GUARDRAILS_ENABLED",
+        "MTDATA_TRADING_ENABLED",
+        "MTDATA_TRADE_ALLOWED_SYMBOLS",
+        "MTDATA_TRADE_BLOCKED_SYMBOLS",
+        "MTDATA_TRADE_MAX_VOLUME",
+        "MTDATA_TRADE_MAX_VOLUME_BY_SYMBOL",
+        "MTDATA_TRADE_SAFETY_MAX_VOLUME",
+        "MTDATA_TRADE_SAFETY_REQUIRE_STOP_LOSS",
+        "MTDATA_TRADE_SAFETY_MAX_DEVIATION",
+        "MTDATA_TRADE_SAFETY_REDUCE_ONLY",
+        "MTDATA_TRADE_MIN_MARGIN_LEVEL_PCT",
+        "MTDATA_TRADE_MAX_FLOATING_LOSS",
+        "MTDATA_TRADE_MAX_TOTAL_EXPOSURE_LOTS",
+        "MTDATA_TRADE_MAX_RISK_PCT_OF_EQUITY",
+        "MTDATA_TRADE_MAX_RISK_PCT_OF_BALANCE",
+        "MTDATA_TRADE_MAX_RISK_PCT_OF_FREE_MARGIN",
+    )
+    for name in env_names:
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("MTDATA_TRADE_GUARDRAILS_IGNORE_ON_DEMO", "false")
+
+    config = TradeGuardrailsRuntimeConfig()
+
+    assert config.ignore_on_demo is False
+    assert config.is_enabled() is False
 
 
 def test_preview_trade_guardrails_reports_dynamic_checks(restore_trade_guardrails):
