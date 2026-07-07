@@ -137,6 +137,49 @@ class TestTaskManagerHeavyRuntime(_TaskManagerBusinessLogicCase):
         self.assertEqual(status.status, "failed")
         self.assertIn("communication failed", status.error.lower())
 
+    def test_join_failure_in_finalizer_does_not_crash_runtime(self):
+        task = self.tm._create_task("heavy", "EURUSD_H1", "hash-1")
+
+        class _FakeQueue:
+            def get(self, timeout=None):
+                raise queue.Empty
+
+            def get_nowait(self):
+                raise queue.Empty
+
+            def close(self):
+                return None
+
+            def join_thread(self):
+                return None
+
+        class _FakeProcess:
+            def __init__(self):
+                self.pid = 4322
+                self.exitcode = -9
+
+            def start(self):
+                return None
+
+            def is_alive(self):
+                return False
+
+            def join(self, timeout=None):
+                raise ValueError("cannot join process before it has been started")
+
+        fake_context = SimpleNamespace(
+            Queue=lambda: _FakeQueue(),
+            Event=MagicMock(return_value=MagicMock()),
+            Process=MagicMock(return_value=_FakeProcess()),
+        )
+
+        with patch.object(self.tm, "_mp_context", fake_context):
+            self.tm._run_heavy_task(task.task_id, _make_spec(), timeout_seconds=30.0)
+
+        status = self.tm.get_status(task.task_id)
+        self.assertIsNotNone(status)
+        self.assertEqual(status.status, "failed")
+
     def test_cancelled_dead_worker_without_terminal_event_becomes_cancelled(self):
         task = self.tm._create_task("heavy", "EURUSD_H1", "hash-1")
         self.tm._mutate_task(

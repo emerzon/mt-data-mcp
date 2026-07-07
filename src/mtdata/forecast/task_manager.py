@@ -455,6 +455,19 @@ class TaskManager:
         status, _ = self._task_state(task_id)
         return status in _TERMINAL_STATUSES
 
+    def _safe_process_join(self, process: mp.Process, task_id: str) -> bool:
+        try:
+            process.join(timeout=1.0)
+        except (OSError, RuntimeError, ValueError) as exc:
+            logger.warning(
+                "Failed to join heavy training worker for task %s: %s: %s",
+                task_id,
+                type(exc).__name__,
+                exc,
+            )
+            return False
+        return True
+
     def _stop_process(self, process: mp.Process, task_id: str, *, grace_seconds: float = 0.0) -> bool:
         if grace_seconds > 0 and process.is_alive():
             time.sleep(grace_seconds)
@@ -464,7 +477,7 @@ class TaskManager:
             process.terminate()
         except Exception:
             logger.warning("Failed to terminate heavy training worker for task %s", task_id, exc_info=True)
-        process.join(timeout=1.0)
+        self._safe_process_join(process, task_id)
         if not process.is_alive():
             return True
         kill = getattr(process, "kill", None)
@@ -473,7 +486,7 @@ class TaskManager:
                 kill()
             except Exception:
                 logger.warning("Failed to kill heavy training worker for task %s", task_id, exc_info=True)
-        process.join(timeout=1.0)
+        self._safe_process_join(process, task_id)
         stopped = not process.is_alive()
         if not stopped:
             logger.error(
@@ -1007,7 +1020,7 @@ class TaskManager:
             if process.is_alive():
                 self._stop_process(process, task_id)
             else:
-                process.join(timeout=1.0)
+                self._safe_process_join(process, task_id)
             with self._lock:
                 self._process_controls.pop(task_id, None)
             try:
