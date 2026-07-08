@@ -66,6 +66,21 @@ def test_require_sl_blocks_nan():
     assert result is not None
 
 
+def test_require_sl_blocks_zero():
+    # stop_loss=0 (MT5 "no stop") is not a real stop-loss and must not satisfy
+    # the require_stop_loss policy.
+    policy = TradeSafetyPolicy(require_stop_loss=True)
+    result = _evaluate_safety_policy(policy, stop_loss=0.0)
+    assert result is not None
+    assert "stop-loss" in result["violations"][0].lower()
+
+
+def test_require_sl_blocks_negative():
+    policy = TradeSafetyPolicy(require_stop_loss=True)
+    result = _evaluate_safety_policy(policy, stop_loss=-1.0)
+    assert result is not None
+
+
 # ---------------------------------------------------------------------------
 # max_deviation
 # ---------------------------------------------------------------------------

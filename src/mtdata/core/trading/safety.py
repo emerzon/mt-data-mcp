@@ -217,7 +217,7 @@ def _evaluate_safety_policy(
             pass
 
     if policy.require_stop_loss:
-        if stop_loss is None or not math.isfinite(stop_loss):
+        if stop_loss is None or not math.isfinite(stop_loss) or stop_loss <= 0:
             violations.append("Safety policy requires a stop-loss on every order.")
 
     if policy.max_deviation is not None and deviation is not None:
