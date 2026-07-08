@@ -50,6 +50,21 @@ class TestModelStoreBusinessLogic(unittest.TestCase):
         self.assertEqual(len(staged_dirs), 1)
         self.assertEqual(self.store.list_models(), [])
 
+    def test_read_raw_meta_warns_on_corrupt_metadata(self):
+        self.store.save("m", "d", "p", b"data")
+        model_dir = self.store._model_dir("m", "d", "p")
+        (model_dir / "metadata.json").write_text("{corrupt json", encoding="utf-8")
+
+        with self.assertLogs("mtdata.forecast.model_store", level="WARNING") as captured:
+            self.assertIsNone(self.store._read_raw_meta(model_dir))
+        self.assertTrue(any("metadata.json" in msg for msg in captured.output))
+
+    def test_read_raw_meta_silent_when_metadata_missing(self):
+        model_dir = self.store._model_dir("m", "d", "absent")
+        model_dir.mkdir(parents=True, exist_ok=True)
+        # No metadata.json present: returns None without emitting a warning.
+        self.assertIsNone(self.store._read_raw_meta(model_dir))
+
 
 if __name__ == "__main__":
     unittest.main()

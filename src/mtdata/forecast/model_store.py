@@ -526,7 +526,14 @@ class ModelStore:
         try:
             with open(meta_path, "r", encoding="utf-8") as f:
                 return json.load(f)
-        except Exception:
+        except Exception as exc:
+            logger.warning(
+                "Corrupt or unreadable model metadata at %s: %s: %s; the model is "
+                "not visible to the store and its artifacts may be orphaned.",
+                meta_path,
+                type(exc).__name__,
+                exc,
+            )
             return None
 
     def _touch_last_used(self, model_dir: Path) -> None:
