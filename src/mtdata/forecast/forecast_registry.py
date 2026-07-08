@@ -20,8 +20,21 @@ class ForecastRegistry:
 
     @classmethod
     def register(cls, name: str):
-        """Decorator to register a forecast method class."""
+        """Decorator to register a forecast method class.
+
+        Registering two *different* classes under the same name is almost
+        always a mistake (a copy-paste name clash or an accidental shadow) and
+        would silently drop the earlier method, so it raises instead. Re-running
+        the same registration (e.g. a re-imported module) is a no-op.
+        """
         def decorator(method_cls: Type[ForecastMethod]):
+            existing = cls._methods.get(name)
+            if existing is not None and existing is not method_cls:
+                raise ValueError(
+                    f"Forecast method '{name}' is already registered to "
+                    f"'{existing.__name__}'; refusing to overwrite it with "
+                    f"'{method_cls.__name__}'."
+                )
             cls._methods[name] = method_cls
             return method_cls
         return decorator

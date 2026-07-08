@@ -581,7 +581,6 @@ def _unwrap_chronos_predict(mean_tensor: Any, *, model_name: str, pipe_name: Opt
 
 
 @ForecastRegistry.register("chronos_bolt")
-@ForecastRegistry.register("chronos2")
 class ChronosBoltMethod(PretrainedMethod):
     CAPABILITY_REQUIRES = {
         "chronos2": ("chronos-forecasting>=2.0.0", "torch"),
@@ -880,6 +879,21 @@ class ChronosBoltMethod(PretrainedMethod):
                         empty_cache()
             except Exception:
                 pass
+
+
+@ForecastRegistry.register("chronos2")
+class Chronos2Method(ChronosBoltMethod):
+    """Chronos-2 alias of :class:`ChronosBoltMethod`.
+
+    Shares the Chronos implementation but reports its own method identity so
+    diagnostics, fingerprints, and cached artifacts do not collide with the
+    ``chronos_bolt`` alias. Model-family defaults are resolved from the method
+    name at forecast time (see ``_resolve_chronos_model_defaults``).
+    """
+
+    @property
+    def name(self) -> str:
+        return "chronos2"
 
 
 def _resolve_timesfm_device(requested: Any, torch_module: Any) -> str:

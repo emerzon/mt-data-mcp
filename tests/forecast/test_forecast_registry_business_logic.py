@@ -258,3 +258,31 @@ def test_get_forecast_method_availability_snapshot_reuses_shared_snapshot_builde
         "theta": True,
         "timesfm": False,
     }
+
+
+def test_register_rejects_duplicate_name_with_different_class():
+    from mtdata.forecast.interface import ForecastMethod
+
+    unique = "dup_guard_test_method"
+    try:
+        @fr.ForecastRegistry.register(unique)
+        class _A(ForecastMethod):
+            pass
+
+        # Re-registering the identical class under the same name is a no-op.
+        assert fr.ForecastRegistry.register(unique)(_A) is _A
+
+        with pytest.raises(ValueError, match="already registered"):
+            @fr.ForecastRegistry.register(unique)
+            class _B(ForecastMethod):
+                pass
+    finally:
+        fr.ForecastRegistry._methods.pop(unique, None)
+
+
+def test_chronos_aliases_report_distinct_names():
+    c2 = fr.ForecastRegistry.get("chronos2")
+    cb = fr.ForecastRegistry.get("chronos_bolt")
+    assert c2.name == "chronos2"
+    assert cb.name == "chronos_bolt"
+    assert c2.name != cb.name
