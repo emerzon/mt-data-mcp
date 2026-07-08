@@ -197,6 +197,7 @@ def _attach_post_fill_protection(
     sl_tp_attempts = 0
     sl_tp_last_retcode = None
     sl_tp_last_comment = None
+    sl_tp_last_error = None
 
     try:
         # --- Phase 1: Resolve the open position ---
@@ -273,17 +274,21 @@ def _attach_post_fill_protection(
                     sl_tp_attempts = int(modify_try + 1)
                     try:
                         modify_result = mt5.order_send(modify_request)
-                        _sl_tp_last_error = validation._safe_last_error(mt5)
+                        sl_tp_last_error = validation._safe_last_error(mt5)
                     except Exception as ex:
                         modify_result = None
+                        sl_tp_last_error = str(ex)
                         sl_tp_error = f"Error setting TP/SL: {str(ex)}"
                     if modify_result is not None:
                         sl_tp_last_retcode = getattr(modify_result, "retcode", None)
                         sl_tp_last_comment = getattr(modify_result, "comment", None)
-                    if modify_result and getattr(modify_result, "retcode", None) == mt5.TRADE_RETCODE_DONE:
-                        break
-                    if sl_tp_last_retcode == invalid_stops_code:
-                        break
+                        # Only the current attempt's retcode may terminate the loop;
+                        # a None return from order_send must not let a prior attempt's
+                        # retcode (e.g. INVALID_STOPS) bail out this iteration.
+                        if sl_tp_last_retcode == mt5.TRADE_RETCODE_DONE:
+                            break
+                        if sl_tp_last_retcode == invalid_stops_code:
+                            break
                     if modify_try + 1 < max_modify_attempts:
                         _stdlib_time.sleep(0.35)
 
@@ -339,11 +344,15 @@ def _attach_post_fill_protection(
                         )
                         sl_tp_apply_status = "unverified"
                 else:
-                    sl_tp_error = (
-                        "Failed to set TP/SL"
-                        if sl_tp_error is None
-                        else sl_tp_error
-                    )
+                    if sl_tp_error is None:
+                        detail_bits = [f"after {sl_tp_attempts} attempt(s)"]
+                        if sl_tp_last_retcode is not None:
+                            detail_bits.append(f"retcode={sl_tp_last_retcode}")
+                        if sl_tp_last_comment:
+                            detail_bits.append(f"comment={sl_tp_last_comment!r}")
+                        if sl_tp_last_error:
+                            detail_bits.append(f"broker_error={sl_tp_last_error!r}")
+                        sl_tp_error = "Failed to set TP/SL (" + ", ".join(detail_bits) + ")"
                     sl_tp_apply_status = "failed"
         else:
             checked = ", ".join(str(v) for v in position_ticket_candidates) or "none"

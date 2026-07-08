@@ -418,6 +418,67 @@ class TestPlaceMarketOrder:
         assert request.get("tp") == pytest.approx(1.12)
 
     @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_sl_tp_attach_failure_surfaces_broker_diagnostics(self):
+        """When the post-fill SL/TP attach never returns DONE, the error must carry
+        the broker retcode/comment rather than a generic 'Failed to set TP/SL'."""
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+
+        calls = {"n": 0}
+
+        def _send(_req):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                return _order_result()  # market order fill
+            return _order_result(retcode=10004, comment="Requote")
+
+        mt5.order_send.side_effect = _send
+        # Position has no protection yet so the attach loop (Phase 2) runs.
+        mt5.positions_get.return_value = [_position(sl=0.0, tp=0.0)]
+        with patch("mtdata.core.trading.orders._stdlib_time.sleep", lambda *_a, **_k: None):
+            from mtdata.core.trading import _place_market_order
+            result = _place_market_order("EURUSD", 0.01, "BUY", stop_loss=1.09, take_profit=1.12)
+        sl_tp_result = result.get("sl_tp_result") or {}
+        assert sl_tp_result.get("status") == "failed"
+        error_text = str(sl_tp_result.get("error") or "")
+        assert "10004" in error_text
+        assert "Requote" in error_text
+        assert sl_tp_result.get("last_retcode") == 10004
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_sl_tp_attach_retries_through_transient_none_return(self):
+        """A transient None return from order_send must not abort the attach loop;
+        the loop should keep retrying until a terminal retcode is seen."""
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+
+        # place -> REQUOTE -> None (transient) -> DONE (then verified).
+        results = [
+            _order_result(),                                # market order fill
+            _order_result(retcode=10004, comment="Requote"),
+            None,
+            _order_result(retcode=10009, comment="done"),
+        ]
+        calls = {"n": 0}
+
+        def _send(_req):
+            idx = calls["n"]
+            calls["n"] += 1
+            return results[idx] if idx < len(results) else _order_result()
+
+        mt5.order_send.side_effect = _send
+        mt5.positions_get.side_effect = [
+            [_position(sl=0.0, tp=0.0)],   # initial resolution: no protection yet
+            [_position(sl=1.09, tp=1.12)],  # readback after DONE
+        ]
+        with patch("mtdata.core.trading.orders._stdlib_time.sleep", lambda *_a, **_k: None):
+            from mtdata.core.trading import _place_market_order
+            result = _place_market_order("EURUSD", 0.01, "BUY", stop_loss=1.09, take_profit=1.12)
+        # Placement + 3 attach attempts (REQUOTE, None, DONE) => 4 order_send calls.
+        assert calls["n"] == 4
+        assert (result.get("sl_tp_result") or {}).get("status") == "applied"
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
     def test_initial_protected_order_failure_returns_error(self):
         mt5 = sys.modules["MetaTrader5"]
         self._setup_mt5(mt5)
