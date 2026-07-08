@@ -842,9 +842,14 @@ class TestFetchCandlesCore(unittest.TestCase):
 
     @patch(_CACHED_INFO, side_effect=RuntimeError("boom"))
     def test_exception_returns_error(self, mock_info):
-        result = fetch_candles('EURUSD')
+        result = fetch_candles('EURUSD', 'H1')
         self.assertIn('error', result)
         self.assertIn('Error getting rates', result['error'])
+        self.assertIn('RuntimeError', result['error'])
+        detail = result.get('error_detail') or {}
+        self.assertEqual(detail.get('operation'), 'fetch_candles')
+        self.assertEqual(detail.get('symbol'), 'EURUSD')
+        self.assertEqual(detail.get('timeframe'), 'H1')
 
 
 if __name__ == '__main__':

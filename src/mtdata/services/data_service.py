@@ -2328,7 +2328,16 @@ def fetch_candles(  # noqa: C901
 
         return payload
     except Exception as e:
-        return {"error": f"Error getting rates: {str(e)}"}
+        return {
+            "error": f"Error getting rates: {type(e).__name__}: {e}",
+            "error_detail": {
+                "operation": "fetch_candles",
+                "symbol": symbol,
+                "timeframe": timeframe,
+                "start": str(start) if start else None,
+                "end": str(end) if end else None,
+            },
+        }
 
 
 def _live_tick_spread(symbol: str) -> Optional[float]:
