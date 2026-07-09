@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import atexit
 import copy
 import logging
 import multiprocessing as mp
@@ -11,9 +12,14 @@ import sqlite3
 import threading
 import time
 import uuid
+import weakref
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Literal, Optional
+
+# Keep weak refs so atexit can terminate orphaned heavy training processes on
+# interpreter exit (best-effort; SIGKILL/OOM still leave OS orphans).
+_LIVE_TASK_MANAGERS: weakref.WeakSet = weakref.WeakSet()
 
 import numpy as np
 import pandas as pd
@@ -391,6 +397,7 @@ class TaskManager:
 
         self._recover_persisted_tasks()
         self._sweeper.start()
+        _LIVE_TASK_MANAGERS.add(self)
 
     @property
     def store(self) -> ModelStore:
@@ -615,6 +622,26 @@ class TaskManager:
             self._cache_task(task)
         return task
 
+    def _get_existing_task_locked(
+        self, method_name: str, data_scope: str, params_hash: str
+    ) -> Optional[TrainingTask]:
+        """Like ``_get_existing_task`` but caller must hold ``self._lock``."""
+        dedup_key = (method_name, data_scope, params_hash)
+        existing_tid = self._active_keys.get(dedup_key)
+        if existing_tid is not None:
+            existing = self._tasks.get(existing_tid)
+            if existing and existing.status in ("pending", "running"):
+                return _snapshot(existing)
+        # Job store reads are safe outside the lock; re-check memory after.
+        # Release is not possible here, so query while holding the lock — JobStore
+        # is itself thread-safe via its own connection lock.
+        persisted = self._job_store.find_active(method_name, data_scope, params_hash)
+        if persisted is None:
+            return None
+        task = _job_record_to_task(persisted)
+        self._cache_task(task)
+        return task
+
     def _create_task(self, method_name: str, data_scope: str, params_hash: str) -> TrainingTask:
         task = TrainingTask(
             task_id=uuid.uuid4().hex[:12],
@@ -627,6 +654,20 @@ class TaskManager:
             self._cache_task(task)
         return task
 
+    def _create_task_locked(
+        self, method_name: str, data_scope: str, params_hash: str
+    ) -> TrainingTask:
+        """Like ``_create_task`` but caller must hold ``self._lock``."""
+        task = TrainingTask(
+            task_id=uuid.uuid4().hex[:12],
+            method=method_name,
+            data_scope=data_scope,
+            params_hash=params_hash,
+        )
+        self._persist_task(_snapshot(task))
+        self._cache_task(task)
+        return task
+
     def _submit_spec(
         self,
         spec: _TrainingSpec,
@@ -636,17 +677,27 @@ class TaskManager:
         if self._shutdown:
             raise RuntimeError("TaskManager is shut down")
 
-        existing = self._get_existing_task(spec.method_name, spec.data_scope, spec.params_hash)
-        if existing is not None:
-            return existing.task_id, False
-
-        try:
-            task = self._create_task(spec.method_name, spec.data_scope, spec.params_hash)
-        except sqlite3.IntegrityError:
-            existing = self._get_existing_task(spec.method_name, spec.data_scope, spec.params_hash)
+        # Hold the manager lock across check+create so concurrent identical
+        # submissions cannot both observe "no existing task" and start training.
+        with self._lock:
+            existing = self._get_existing_task_locked(
+                spec.method_name, spec.data_scope, spec.params_hash
+            )
             if existing is not None:
                 return existing.task_id, False
-            raise
+
+            try:
+                task = self._create_task_locked(
+                    spec.method_name, spec.data_scope, spec.params_hash
+                )
+            except sqlite3.IntegrityError:
+                existing = self._get_existing_task_locked(
+                    spec.method_name, spec.data_scope, spec.params_hash
+                )
+                if existing is not None:
+                    return existing.task_id, False
+                raise
+
         timeout_seconds = self._timeout_for_category(training_category)
 
         try:
@@ -1235,6 +1286,10 @@ class TaskManager:
                 logger.debug("Failed to stop heavy training worker during shutdown", exc_info=True)
         self._light_executor.shutdown(wait=wait)
         self._heavy_executor.shutdown(wait=wait)
+        try:
+            _LIVE_TASK_MANAGERS.discard(self)
+        except Exception:
+            pass
         now = time.time()
         for task_id in active_task_ids:
             status, cancel_requested = self._task_state(task_id)
@@ -1271,3 +1326,28 @@ def get_task_manager() -> TaskManager:
             if _global_manager is None:
                 _global_manager = TaskManager()
     return _global_manager
+
+
+def _atexit_stop_heavy_processes() -> None:
+    """Best-effort terminate of heavy training children on interpreter exit."""
+    managers = list(_LIVE_TASK_MANAGERS)
+    for manager in managers:
+        try:
+            with manager._lock:
+                controls = list(manager._process_controls.items())
+            for task_id, control in controls:
+                try:
+                    control.cancel_event.set()
+                    process = control.process
+                    if process.is_alive():
+                        process.terminate()
+                        process.join(timeout=0.5)
+                    if process.is_alive():
+                        process.kill()
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+
+atexit.register(_atexit_stop_heavy_processes)

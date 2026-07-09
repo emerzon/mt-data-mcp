@@ -19,7 +19,8 @@ def test_trim_df_to_target_uses_utc_epoch_seconds() -> None:
         out = data_service._trim_df_to_target(df, "2025-01-01 00:00", "2025-01-01 01:00", candles=100)
 
     assert mock_epoch.call_count == 2
-    assert out["__epoch"].tolist() == [200.0]
+    # End bound is inclusive: epochs in [150, 250] are kept.
+    assert out["__epoch"].tolist() == [200.0, 250.0]
 
 
 def test_fetch_rates_with_warmup_uses_utc_epoch_seconds_for_end_ts() -> None:

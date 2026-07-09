@@ -841,7 +841,14 @@ def _shift_rate_times(rates: Any, shift_seconds: int) -> Any:
         try:
             shifted_rates = rates.copy()
             shifted_rates["time"] = shifted_rates["time"] + shift_value
-        except Exception:
+        except Exception as exc:
+            logger.warning(
+                "Failed to apply time offset correction (%s seconds): %s. "
+                "Data timestamps may be in server-local time, not UTC. "
+                "Configure MT5_SERVER_TZ or MT5_TIME_OFFSET_MINUTES.",
+                shift_value,
+                exc,
+            )
             return rates
         return shifted_rates
 
@@ -849,6 +856,7 @@ def _shift_rate_times(rates: Any, shift_seconds: int) -> Any:
         if not any(isinstance(row, dict) and "time" in row for row in rates):
             return rates
         shifted_rows = []
+        shift_failures = 0
         for row in rates:
             if not isinstance(row, dict):
                 shifted_rows.append(row)
@@ -860,8 +868,16 @@ def _shift_rate_times(rates: Any, shift_seconds: int) -> Any:
             try:
                 shifted_row["time"] = float(shifted_row["time"]) + shift_value
             except Exception:
-                pass
+                shift_failures += 1
             shifted_rows.append(shifted_row)
+        if shift_failures:
+            logger.warning(
+                "Failed to shift time on %s/%s rate rows (offset %s seconds). "
+                "Some timestamps may be in server-local time, not UTC.",
+                shift_failures,
+                len(rates),
+                shift_value,
+            )
         return shifted_rows
     return rates
 

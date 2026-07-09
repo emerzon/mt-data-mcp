@@ -161,11 +161,11 @@ class TestTaskManagerBasic(_TaskManagerTestCase):
 
         with patch.object(
             self.tm,
-            "_get_existing_task",
+            "_get_existing_task_locked",
             side_effect=[None, existing],
         ), patch.object(
             self.tm,
-            "_create_task",
+            "_create_task_locked",
             side_effect=sqlite3.IntegrityError("UNIQUE constraint failed"),
         ):
             task_id, is_new = self.tm._submit_spec(spec, training_category="fast")
