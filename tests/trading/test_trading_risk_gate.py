@@ -44,6 +44,21 @@ def test_margin_level_no_account_info_passes():
     assert _evaluate_account_risk_gate(limits, account_info=None) is None
 
 
+def test_margin_level_allows_flat_account_with_zero_margin_level():
+    """MT5 reports margin_level=0 with no open margin; treat as N/A, not low."""
+    limits = AccountRiskLimits(min_margin_level_pct=200.0)
+    acct = SimpleNamespace(margin_level=0.0, margin=0.0, profit=0.0)
+    assert _evaluate_account_risk_gate(limits, account_info=acct) is None
+
+
+def test_margin_level_blocks_low_level_when_margin_is_used():
+    limits = AccountRiskLimits(min_margin_level_pct=200.0)
+    acct = SimpleNamespace(margin_level=150.0, margin=500.0, profit=-50.0)
+    result = _evaluate_account_risk_gate(limits, account_info=acct)
+    assert result is not None
+    assert "margin level" in result["violations"][0].lower()
+
+
 # ---------------------------------------------------------------------------
 # Floating loss
 # ---------------------------------------------------------------------------

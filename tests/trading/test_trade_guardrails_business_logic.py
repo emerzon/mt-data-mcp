@@ -141,6 +141,55 @@ def test_preview_trade_guardrails_surfaces_allowlist_context():
     assert "configured max_volume_by_symbol entries" in preview["suggestion"]
 
 
+def test_exposure_cap_allows_reducing_opposite_side_order():
+    from mtdata.core.trading.safety import AccountRiskLimits
+
+    limits = AccountRiskLimits(max_total_exposure_lots=2.0)
+    existing = [SimpleNamespace(symbol="EURUSD", type=0, volume=2.0)]
+    block = evaluate_trade_guardrails(
+        TradeGuardrailsConfig(
+            enabled=True,
+            account_risk_limits=limits,
+            ignore_on_demo=False,
+        ),
+        symbol="EURUSD",
+        volume=1.0,
+        side="SELL",
+        existing_positions=existing,
+        account_info=SimpleNamespace(
+            is_demo=False, margin_level=500.0, profit=0.0, margin=100.0
+        ),
+        enforce_wallet_risk=False,
+        enforce_safety_policy=False,
+    )
+    assert block is None
+
+
+def test_exposure_cap_blocks_same_side_increase_over_limit():
+    from mtdata.core.trading.safety import AccountRiskLimits
+
+    limits = AccountRiskLimits(max_total_exposure_lots=2.0)
+    existing = [SimpleNamespace(symbol="EURUSD", type=0, volume=2.0)]
+    block = evaluate_trade_guardrails(
+        TradeGuardrailsConfig(
+            enabled=True,
+            account_risk_limits=limits,
+            ignore_on_demo=False,
+        ),
+        symbol="EURUSD",
+        volume=0.5,
+        side="BUY",
+        existing_positions=existing,
+        account_info=SimpleNamespace(
+            is_demo=False, margin_level=500.0, profit=0.0, margin=100.0
+        ),
+        enforce_wallet_risk=False,
+        enforce_safety_policy=False,
+    )
+    assert block is not None
+    assert block["guardrail_rule"] == "account_risk"
+
+
 def test_evaluate_trade_guardrails_blocks_wallet_risk_threshold():
     config = TradeGuardrailsConfig(
         enabled=True,

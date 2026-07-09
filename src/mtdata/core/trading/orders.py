@@ -3,6 +3,7 @@
 import logging
 import math
 import time as _stdlib_time
+from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Dict, List, Optional, TypedDict, Union
 
 from ...bootstrap.settings import mt5_config, trade_guardrails_config
@@ -25,9 +26,57 @@ class _OrderSubmitOutcome(TypedDict):
     used_request: Dict[str, Any]
 
 
-_POSITION_RESOLUTION_WAIT_SCHEDULE_SECONDS = (0.15, 0.3, 0.6, 1.2)
+_POSITION_RESOLUTION_WAIT_SCHEDULE_SECONDS = (0.15, 0.3, 0.6, 1.2, 2.4)
+_TRADE_TICK_MAX_AGE_SECONDS = 10.0
+_POSITION_DEAL_LOOKUP_WINDOW_SECONDS = 30
 _DEFAULT_ORDER_MAGIC = 234000
 logger = logging.getLogger(__name__)
+
+
+def _expand_position_ticket_candidates_from_deals(
+    mt5: Any,
+    candidates: List[int],
+) -> List[int]:
+    """Augment ticket candidates with position IDs from recent deal history.
+
+    After a fill, ``result.deal`` / ``result.order`` may not equal the open
+    position ticket. Looking up the deal's ``position_id`` avoids attaching
+    SL/TP to a pre-existing same-symbol position via heuristic matching.
+    """
+    expanded: List[int] = []
+    for raw in candidates:
+        ticket = validation._safe_int_ticket(raw)
+        if ticket is not None and ticket not in expanded:
+            expanded.append(ticket)
+    if not expanded:
+        return expanded
+
+    now = datetime.now(timezone.utc)
+    try:
+        from ...utils.mt5 import _to_mt5_history_epoch_seconds
+
+        history_from = _to_mt5_history_epoch_seconds(
+            now - timedelta(seconds=_POSITION_DEAL_LOOKUP_WINDOW_SECONDS)
+        )
+        history_to = _to_mt5_history_epoch_seconds(now + timedelta(seconds=5))
+        rows = mt5.history_deals_get(history_from, history_to)
+    except Exception:
+        rows = None
+    if not rows:
+        return expanded
+
+    candidate_set = set(expanded)
+    for row in rows:
+        row_ticket = validation._safe_int_ticket(getattr(row, "ticket", None))
+        row_order = validation._safe_int_ticket(getattr(row, "order", None))
+        if row_ticket not in candidate_set and row_order not in candidate_set:
+            continue
+        for field in ("position_id", "position", "position_by_id"):
+            pos_id = validation._safe_int_ticket(getattr(row, field, None))
+            if pos_id is not None and pos_id not in expanded:
+                # Prefer position id at the front so exact ticket match wins.
+                expanded.insert(0, pos_id)
+    return expanded
 
 
 def _configured_order_magic() -> int:
@@ -205,6 +254,11 @@ def _attach_post_fill_protection(
         lookup_wait_schedule = _POSITION_RESOLUTION_WAIT_SCHEDULE_SECONDS
         lookup_attempts = len(lookup_wait_schedule) + 1
         last_resolve_info: Optional[Dict[str, Any]] = None
+        resolved_candidates = _expand_position_ticket_candidates_from_deals(
+            mt5, list(position_ticket_candidates or [])
+        )
+        if resolved_candidates:
+            position_ticket_candidates = resolved_candidates
         for attempt_idx in range(lookup_attempts):
             pos, resolved_ticket, resolve_info = _resolve_open_position(
                 mt5,
@@ -217,6 +271,22 @@ def _attach_post_fill_protection(
             if isinstance(resolve_info, dict):
                 last_resolve_info = dict(resolve_info)
             if pos is not None and resolved_ticket is not None:
+                # Guard against attaching protection to a pre-existing position
+                # when heuristics matched without an exact ticket hit.
+                open_time = validation._safe_float_attr(pos, "time", default=None)
+                if open_time is not None and open_time > 0:
+                    age_seconds = _stdlib_time.time() - float(open_time)
+                    method = str((resolve_info or {}).get("method") or "")
+                    if age_seconds > 30 and "heuristic" in method:
+                        last_resolve_info = {
+                            **dict(resolve_info or {}),
+                            "matched": False,
+                            "rejected_reason": "pre_existing_position",
+                            "position_age_seconds": round(age_seconds, 2),
+                        }
+                        pos = None
+                        resolved_ticket = None
+            if pos is not None and resolved_ticket is not None:
                 position_obj = pos
                 position_ticket = resolved_ticket
                 position_ticket_resolution = {
@@ -226,6 +296,12 @@ def _attach_post_fill_protection(
                 }
                 break
             if attempt_idx + 1 < lookup_attempts:
+                # Re-expand from deals between retries in case history lagged.
+                resolved_candidates = _expand_position_ticket_candidates_from_deals(
+                    mt5, list(position_ticket_candidates or [])
+                )
+                if resolved_candidates:
+                    position_ticket_candidates = resolved_candidates
                 _stdlib_time.sleep(float(lookup_wait_schedule[attempt_idx]))
         if position_ticket_resolution is None and last_resolve_info is not None:
             position_ticket_resolution = {
@@ -493,21 +569,25 @@ def _send_order_with_fill_mode_retry(
                 attempt["error"] = "order_send returned None"
                 if last_error is not None:
                     attempt["last_error"] = last_error
-            else:
-                retcode = getattr(result, "retcode", None)
-                attempt["retcode"] = retcode
-                attempt["retcode_name"] = mt5.retcode_name(retcode)
-                attempt["comment"] = getattr(result, "comment", None)
+                attempts.append(attempt)
+                last_result = result
+                last_request = request_to_send
+                # A missing response is ambiguous: the broker may already have
+                # accepted the order. Never retry with another fill mode.
+                return result, last_error, attempts, last_request
+            retcode = getattr(result, "retcode", None)
+            attempt["retcode"] = retcode
+            attempt["retcode_name"] = mt5.retcode_name(retcode)
+            attempt["comment"] = getattr(result, "comment", None)
             attempts.append(attempt)
             last_result = result
             last_request = request_to_send
             try:
-                if result is not None and validation._retcode_is_done(mt5, getattr(result, "retcode", -1)):
+                if validation._retcode_is_done(mt5, getattr(result, "retcode", -1)):
                     return result, last_error, attempts, last_request
             except Exception:
                 pass
 
-            retcode = getattr(result, "retcode", None) if result is not None else None
             if retcode in terminal_retcode_failures:
                 return result, last_error, attempts, last_request
             should_retry_same_fill = (
@@ -1072,6 +1152,18 @@ def _place_market_order(  # noqa: C901
             def _refresh_market_order_price(attempt_request: Dict[str, Any]) -> bool:
                 refreshed_tick = mt5.symbol_info_tick(symbol)
                 if refreshed_tick is None:
+                    return False
+                freshness_error = validation._validate_tick_freshness(
+                    refreshed_tick,
+                    symbol=symbol,
+                    max_age_seconds=_TRADE_TICK_MAX_AGE_SECONDS,
+                )
+                if freshness_error is not None:
+                    logger.warning(
+                        "Refreshed tick for %s is stale; aborting price retry: %s",
+                        symbol,
+                        freshness_error.get("error"),
+                    )
                     return False
                 refreshed_price = refreshed_tick.ask if side == "BUY" else refreshed_tick.bid
                 try:

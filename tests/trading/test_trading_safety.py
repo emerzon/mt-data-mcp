@@ -120,6 +120,33 @@ def test_reduce_only_blocks_no_position():
     assert "no existing position" in result["violations"][0].lower()
 
 
+def test_reduce_only_blocks_volume_that_would_flip_position():
+    policy = TradeSafetyPolicy(reduce_only=True)
+    result = _evaluate_safety_policy(
+        policy,
+        side="SELL",
+        existing_side="BUY",
+        volume=1.0,
+        existing_net_volume=0.10,
+    )
+    assert result is not None
+    assert any("exceeds" in v.lower() for v in result["violations"])
+
+
+def test_reduce_only_allows_volume_within_net_position():
+    policy = TradeSafetyPolicy(reduce_only=True)
+    assert (
+        _evaluate_safety_policy(
+            policy,
+            side="SELL",
+            existing_side="BUY",
+            volume=0.10,
+            existing_net_volume=0.10,
+        )
+        is None
+    )
+
+
 # ---------------------------------------------------------------------------
 # Multiple violations
 # ---------------------------------------------------------------------------

@@ -6,6 +6,51 @@ from mtdata.core.trading.requests import TradeModifyRequest, TradePlaceRequest
 from mtdata.core.trading.use_cases import run_trade_modify, run_trade_place
 
 
+def test_run_trade_place_idempotency_does_not_sticky_cache_connection_errors():
+    store = IdempotencyStore()
+    request = TradePlaceRequest(
+        symbol="EURUSD",
+        volume=0.1,
+        order_type="BUY",
+        require_sl_tp=False,
+        idempotency_key="k1",
+    )
+    place_market_order = MagicMock(
+        side_effect=[
+            {"error": "Failed to connect to MetaTrader5"},
+            {"success": True, "deal": 1, "order": 2},
+        ]
+    )
+
+    first = run_trade_place(
+        request,
+        normalize_order_type_input=lambda value: ("BUY", None),
+        normalize_pending_expiration=lambda value: (value, False),
+        prevalidate_trade_place_market_input=lambda symbol, volume: None,
+        place_market_order=place_market_order,
+        place_pending_order=MagicMock(),
+        close_positions=lambda **kwargs: {"closed_count": 1},
+        safe_int_ticket=lambda value: value,
+        idempotency_store=store,
+    )
+    second = run_trade_place(
+        request,
+        normalize_order_type_input=lambda value: ("BUY", None),
+        normalize_pending_expiration=lambda value: (value, False),
+        prevalidate_trade_place_market_input=lambda symbol, volume: None,
+        place_market_order=place_market_order,
+        place_pending_order=MagicMock(),
+        close_positions=lambda **kwargs: {"closed_count": 1},
+        safe_int_ticket=lambda value: value,
+        idempotency_store=store,
+    )
+
+    assert "error" in first
+    assert second.get("duplicate") is not True
+    assert second.get("deal") == 1
+    assert place_market_order.call_count == 2
+
+
 def test_run_trade_place_replays_duplicate_result_without_resending():
     store = IdempotencyStore()
     place_market_order = MagicMock(return_value={"success": True, "order_id": 7})

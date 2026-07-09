@@ -200,6 +200,7 @@ def _evaluate_safety_policy(
     deviation: Optional[int] = None,
     side: Optional[str] = None,
     existing_side: Optional[str] = None,
+    existing_net_volume: Optional[float] = None,
 ) -> Optional[Dict[str, Any]]:
     """Evaluate *policy* against the given order parameters."""
     if policy is None:
@@ -240,6 +241,28 @@ def _evaluate_safety_policy(
                 f"Reduce-only policy: order side {side} does not reduce "
                 f"existing {existing_side} position."
             )
+        elif volume is not None:
+            try:
+                order_volume = float(volume)
+                net_volume = (
+                    abs(float(existing_net_volume))
+                    if existing_net_volume is not None
+                    else None
+                )
+            except (TypeError, ValueError):
+                order_volume = None
+                net_volume = None
+            if (
+                order_volume is not None
+                and math.isfinite(order_volume)
+                and net_volume is not None
+                and math.isfinite(net_volume)
+                and order_volume > net_volume + 1e-9
+            ):
+                violations.append(
+                    f"Reduce-only policy: volume {order_volume} exceeds net "
+                    f"position {net_volume}."
+                )
 
     if not violations:
         return None
@@ -264,8 +287,17 @@ def _evaluate_account_risk_gate(
     violations: List[str] = []
 
     if limits.min_margin_level_pct is not None and account_info is not None:
+        margin = _safe_float_attr(account_info, "margin")
         margin_level = _safe_float_attr(account_info, "margin_level")
-        if margin_level is not None and margin_level < limits.min_margin_level_pct:
+        # MT5 reports margin_level=0 when used margin is zero (no positions).
+        # That is undefined / N/A, not a distressed level — match trade_account_info.
+        if margin is not None and margin <= 0:
+            margin_level = None
+        if (
+            margin_level is not None
+            and math.isfinite(margin_level)
+            and margin_level < limits.min_margin_level_pct
+        ):
             violations.append(
                 f"Margin level {margin_level:.1f}% is below the "
                 f"minimum threshold of {limits.min_margin_level_pct:.1f}%."
@@ -439,11 +471,12 @@ def _sum_existing_exposure_lots(existing_positions: Optional[List[Any]]) -> floa
     return total
 
 
-def _resolve_existing_symbol_side(
+def _resolve_existing_symbol_net(
     *,
     symbol: str,
     existing_positions: Optional[List[Any]],
-) -> Optional[str]:
+) -> tuple[Optional[str], float]:
+    """Return (net_side, abs_net_volume) for *symbol* across open positions."""
     normalized_symbol = _normalize_symbol(symbol)
     net_volume = 0.0
     for position in list(existing_positions or []):
@@ -455,10 +488,60 @@ def _resolve_existing_symbol_side(
             continue
         net_volume += float(volume) if side == "BUY" else -float(volume)
     if net_volume > 0:
-        return "BUY"
+        return "BUY", abs(net_volume)
     if net_volume < 0:
-        return "SELL"
-    return None
+        return "SELL", abs(net_volume)
+    return None, 0.0
+
+
+def _resolve_existing_symbol_side(
+    *,
+    symbol: str,
+    existing_positions: Optional[List[Any]],
+) -> Optional[str]:
+    side, _net = _resolve_existing_symbol_net(
+        symbol=symbol, existing_positions=existing_positions
+    )
+    return side
+
+
+def _projected_exposure_lots(
+    *,
+    existing_positions: Optional[List[Any]],
+    symbol: str,
+    side: Optional[str],
+    volume: Optional[float],
+) -> float:
+    """Project gross exposure after applying a candidate order.
+
+    Opposite-side volume up to the current net size reduces exposure; any
+    residual that would flip direction is counted as new exposure.
+    """
+    existing = _sum_existing_exposure_lots(existing_positions)
+    try:
+        new_volume = abs(float(volume or 0.0))
+    except (TypeError, ValueError):
+        new_volume = 0.0
+    if new_volume <= 0 or not math.isfinite(new_volume):
+        return existing
+
+    normalized_side = _normalize_side(side)
+    if normalized_side is None:
+        return existing + new_volume
+
+    net_side, net_volume = _resolve_existing_symbol_net(
+        symbol=symbol, existing_positions=existing_positions
+    )
+    opposite = {"BUY": "SELL", "SELL": "BUY"}
+    if net_side is None or net_volume <= 0:
+        return existing + new_volume
+    if normalized_side == net_side:
+        return existing + new_volume
+    if normalized_side == opposite.get(net_side):
+        reduce_by = min(new_volume, net_volume)
+        flip_by = max(0.0, new_volume - net_volume)
+        return max(0.0, existing - reduce_by + flip_by)
+    return existing + new_volume
 
 
 def _total_portfolio_risk_currency(
@@ -582,7 +665,70 @@ def _evaluate_wallet_risk_limits(
             context={"symbol": _normalize_symbol(symbol)},
         )
 
-    total_after = float(existing_total_risk) + float(candidate_risk)
+    # Project portfolio risk after a reduce/flip rather than always adding.
+    net_side, net_volume = _resolve_existing_symbol_net(
+        symbol=symbol, existing_positions=existing_positions
+    )
+    opposite = {"BUY": "SELL", "SELL": "BUY"}
+    order_volume = float(volume)
+    if (
+        net_side is not None
+        and net_volume > 0
+        and normalized_side == opposite.get(net_side)
+    ):
+        reduce_volume = min(order_volume, net_volume)
+        flip_volume = max(0.0, order_volume - net_volume)
+        # Risk released proportional to volume closed on the existing book.
+        released = 0.0
+        for position in list(existing_positions or []):
+            if _normalize_symbol(getattr(position, "symbol", None)) != _normalize_symbol(
+                symbol
+            ):
+                continue
+            pos_side = _position_side(position)
+            if pos_side != net_side:
+                continue
+            pos_volume = _safe_float_attr(position, "volume")
+            pos_entry = _safe_float_attr(position, "price_open")
+            pos_sl = _safe_float_attr(position, "sl")
+            if pos_volume is None or pos_entry is None or pos_sl is None:
+                continue
+            if math.isclose(pos_sl, 0.0, abs_tol=1e-12):
+                continue
+            pos_risk, _err = _estimate_order_risk_currency(
+                symbol_info=symbol_info,
+                volume=abs(pos_volume),
+                entry_price=pos_entry,
+                stop_loss=pos_sl,
+                side=pos_side,
+            )
+            if pos_risk is None or pos_volume <= 0:
+                continue
+            share = min(1.0, reduce_volume / abs(pos_volume)) if pos_volume else 0.0
+            released += float(pos_risk) * share
+            reduce_volume -= abs(pos_volume) * share
+            if reduce_volume <= 1e-12:
+                break
+        flip_risk = 0.0
+        if flip_volume > 1e-12:
+            flip_risk_val, flip_err = _estimate_order_risk_currency(
+                symbol_info=symbol_info,
+                volume=flip_volume,
+                entry_price=float(entry_price),
+                stop_loss=float(stop_loss),
+                side=normalized_side,
+            )
+            if flip_risk_val is None:
+                return _build_guardrail_block(
+                    [f"Unable to quantify flip residual risk ({flip_err})."],
+                    rule="wallet_risk",
+                    context={"symbol": _normalize_symbol(symbol)},
+                )
+            flip_risk = float(flip_risk_val)
+        total_after = max(0.0, float(existing_total_risk) - released + flip_risk)
+        candidate_risk = flip_risk  # residual risk introduced by this order
+    else:
+        total_after = float(existing_total_risk) + float(candidate_risk)
     thresholds = (
         (
             "equity",
@@ -664,11 +810,11 @@ def evaluate_trade_guardrails(
         if symbol_result is not None:
             return symbol_result
 
+    existing_side, existing_net_volume = _resolve_existing_symbol_net(
+        symbol=normalized_symbol,
+        existing_positions=existing_positions,
+    )
     if enforce_safety_policy:
-        existing_side = _resolve_existing_symbol_side(
-            symbol=normalized_symbol,
-            existing_positions=existing_positions,
-        )
         safety_result = _evaluate_safety_policy(
             config.safety_policy,
             volume=volume,
@@ -676,6 +822,7 @@ def evaluate_trade_guardrails(
             deviation=deviation,
             side=normalized_side,
             existing_side=existing_side,
+            existing_net_volume=existing_net_volume,
         )
         if safety_result is not None:
             return _build_guardrail_block(
@@ -684,19 +831,31 @@ def evaluate_trade_guardrails(
                 context={"symbol": normalized_symbol, "side": normalized_side},
             )
 
-    existing_volume = _sum_existing_exposure_lots(existing_positions)
     if enforce_account_risk:
+        projected_total = _projected_exposure_lots(
+            existing_positions=existing_positions,
+            symbol=normalized_symbol,
+            side=normalized_side,
+            volume=volume,
+        )
+        # Gate checks existing+new against the cap. Pass the full projected
+        # exposure as new_volume so reduces (including from already-over-cap
+        # books) are evaluated on post-trade risk, not additive volume.
         account_result = _evaluate_account_risk_gate(
             config.account_risk_limits,
             account_info=account_info,
-            new_volume=abs(float(volume or 0.0)),
-            existing_volume=existing_volume,
+            new_volume=projected_total,
+            existing_volume=0.0,
         )
         if account_result is not None:
             return _build_guardrail_block(
                 list(account_result.get("violations") or []),
                 rule="account_risk",
-                context={"symbol": normalized_symbol, "volume": volume},
+                context={
+                    "symbol": normalized_symbol,
+                    "volume": volume,
+                    "projected_exposure_lots": round(projected_total, 4),
+                },
             )
 
     if enforce_wallet_risk:

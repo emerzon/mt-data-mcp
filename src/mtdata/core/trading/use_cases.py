@@ -260,6 +260,66 @@ def _idempotency_duplicate_response(
     }
 
 
+def _should_persist_idempotency_outcome(result: Any) -> bool:
+    """Return True when *result* is safe to cache for idempotent retries.
+
+    Transient failures (connection flaps, ambiguous ``order_send`` timeouts,
+    temporary preflight errors) must not stick for the TTL — clients need to
+    retry the same key. Only confirmed successes, broker side-effects, and
+    already-deduped responses are recorded.
+    """
+    if not isinstance(result, dict):
+        return False
+    if result.get("duplicate"):
+        return True
+    if infer_result_success(result):
+        return True
+    for key in (
+        "deal",
+        "order",
+        "position_ticket",
+        "ticket",
+        "order_ticket",
+        "deal_ticket",
+    ):
+        value = result.get(key)
+        if value in (None, "", 0, "0"):
+            continue
+        try:
+            if int(value) != 0:
+                return True
+        except (TypeError, ValueError):
+            return True
+    # Nested auto-close after a partial fill is also a durable side effect.
+    if isinstance(result.get("auto_close_result"), dict):
+        nested = result["auto_close_result"]
+        for key in ("deal", "order", "ticket"):
+            if nested.get(key) not in (None, "", 0, "0"):
+                return True
+    return False
+
+
+def _record_or_release_idempotency(
+    store: Optional[IdempotencyStore],
+    key: Optional[str],
+    result: Any,
+    *,
+    request_signature: Optional[str],
+) -> bool:
+    """Persist or release an idempotency reservation. Returns True if handled."""
+    if store is None or key is None:
+        return False
+    if _should_persist_idempotency_outcome(result):
+        store.record(
+            key,
+            copy.deepcopy(result) if isinstance(result, dict) else result,
+            request_signature=request_signature,
+        )
+    else:
+        store.release(key, request_signature=request_signature)
+    return True
+
+
 def _begin_trade_idempotency(
     *,
     idempotency_store: Optional[IdempotencyStore],
@@ -1011,17 +1071,14 @@ def run_trade_place(  # noqa: C901
             operation="trade_place",
             default_error_code="trade_place_error",
         )
-        if (
-            not idempotency_consumed
-            and idempotency_store is not None
-            and idempotency_key is not None
-        ):
-            idempotency_store.record(
+        if not idempotency_consumed:
+            if _record_or_release_idempotency(
+                idempotency_store,
                 idempotency_key,
-                copy.deepcopy(result),
+                result,
                 request_signature=idempotency_signature,
-            )
-            idempotency_consumed = True
+            ):
+                idempotency_consumed = True
         log_operation_finish(
             logger,
             operation="trade_place",
@@ -1445,7 +1502,12 @@ def run_trade_place(  # noqa: C901
                         warnings_out.append(critical)
                     if warnings_out:
                         result["warnings"] = warnings_out
-                    if bool(request.auto_close_on_sl_tp_fail):
+                    # require_sl_tp implies auto-close on protection failure so
+                    # the flag is not a false sense of safety post-fill.
+                    should_auto_close = bool(request.auto_close_on_sl_tp_fail) or bool(
+                        request.require_sl_tp
+                    )
+                    if should_auto_close:
                         close_ticket = safe_int_ticket(pos_ticket)
                         if close_ticket is None:
                             for candidate_ticket in candidate_tickets:
@@ -1466,27 +1528,59 @@ def run_trade_place(  # noqa: C901
                         result["auto_close_result"] = auto_close_result
 
                         auto_close_ok = False
-                        if (
-                            isinstance(auto_close_result, dict)
-                            and "error" not in auto_close_result
-                        ):
-                            if auto_close_result.get("retcode") is not None:
-                                auto_close_ok = True
+                        if isinstance(auto_close_result, dict):
+                            if "error" not in auto_close_result:
+                                retcode = auto_close_result.get("retcode")
+                                if retcode is not None:
+                                    try:
+                                        # DONE / DONE_PARTIAL / PLACED
+                                        auto_close_ok = int(retcode) in {
+                                            10008,
+                                            10009,
+                                            10010,
+                                        }
+                                    except (TypeError, ValueError):
+                                        auto_close_ok = False
+                                else:
+                                    try:
+                                        auto_close_ok = (
+                                            int(auto_close_result.get("closed_count", 0))
+                                            > 0
+                                        )
+                                    except Exception:
+                                        auto_close_ok = False
                             else:
-                                try:
-                                    auto_close_ok = (
-                                        int(auto_close_result.get("closed_count", 0)) > 0
+                                # Position already gone: auto-close goal achieved.
+                                err_text = str(
+                                    auto_close_result.get("error") or ""
+                                ).lower()
+                                msg_text = str(
+                                    auto_close_result.get("message") or ""
+                                ).lower()
+                                if any(
+                                    phrase in err_text or phrase in msg_text
+                                    for phrase in (
+                                        "not found",
+                                        "no longer open",
+                                        "no open position",
                                     )
-                                except Exception:
-                                    auto_close_ok = False
+                                ):
+                                    auto_close_ok = True
+                                    auto_close_result = {
+                                        **auto_close_result,
+                                        "already_closed": True,
+                                    }
+                                    result["auto_close_result"] = auto_close_result
                         if auto_close_ok:
                             result["protection_status"] = "auto_closed_after_sl_tp_fail"
+                            result["success"] = False
                         else:
                             warnings_out = _coerce_warning_list(result.get("warnings"))
                             auto_close_warning = "AUTO-CLOSE FAILED: position remains unprotected; close immediately."
                             if auto_close_warning not in warnings_out:
                                 warnings_out.append(auto_close_warning)
                             result["warnings"] = warnings_out
+                            result["success"] = False
 
                 if (
                     bool(request.require_sl_tp)
@@ -1500,6 +1594,7 @@ def run_trade_place(  # noqa: C901
                         else "Order was executed, but TP/SL protection could not be verified."
                     )
                     result["require_sl_tp"] = bool(request.require_sl_tp)
+                    result["success"] = False
                     result["protection_status"] = (
                         result.get("protection_status")
                         or (
@@ -1573,17 +1668,14 @@ def run_trade_modify(
         pending: Optional[bool] = None,
     ) -> Dict[str, Any]:
         nonlocal idempotency_consumed
-        if (
-            not idempotency_consumed
-            and idempotency_store is not None
-            and idempotency_key is not None
-        ):
-            idempotency_store.record(
+        if not idempotency_consumed:
+            if _record_or_release_idempotency(
+                idempotency_store,
                 idempotency_key,
-                copy.deepcopy(result),
+                result,
                 request_signature=idempotency_signature,
-            )
-            idempotency_consumed = True
+            ):
+                idempotency_consumed = True
         log_operation_finish(
             logger,
             operation="trade_modify",

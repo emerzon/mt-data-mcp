@@ -116,7 +116,15 @@ def _comment_row_metadata(comment: Any) -> Dict[str, Any]:
     }
 
 
-def _invalid_comment_error_text(result: Any, last_error: Any) -> Optional[str]:
+def _invalid_comment_error_text(result: Any, last_error: Any = None) -> Optional[str]:
+    """Detect broker rejection of the comment field from the *current* result.
+
+    Sticky ``mt5.last_error()`` text is only consulted when the current result
+    has a non-success retcode, so a timeout (``result is None``) or unrelated
+    rejection cannot resubmit based on a prior comment error.
+    """
+    if result is None:
+        return None
     try:
         retcode = int(getattr(result, "retcode", None))
     except Exception:
@@ -131,15 +139,17 @@ def _invalid_comment_error_text(result: Any, last_error: Any) -> Optional[str]:
         result_comment = None
     if isinstance(result_comment, str) and result_comment.strip():
         texts.append(result_comment.strip())
-    if isinstance(last_error, tuple):
-        if len(last_error) >= 2 and isinstance(last_error[1], str) and last_error[1].strip():
-            texts.append(last_error[1].strip())
-        elif last_error:
+    # Only use sticky last_error when the current TradeResult itself failed.
+    if retcode is not None and last_error is not None:
+        if isinstance(last_error, tuple):
+            if len(last_error) >= 2 and isinstance(last_error[1], str) and last_error[1].strip():
+                texts.append(last_error[1].strip())
+            elif last_error:
+                texts.append(str(last_error))
+        elif isinstance(last_error, str) and last_error.strip():
+            texts.append(last_error.strip())
+        elif last_error not in (None, False):
             texts.append(str(last_error))
-    elif isinstance(last_error, str) and last_error.strip():
-        texts.append(last_error.strip())
-    elif last_error not in (None, False):
-        texts.append(str(last_error))
     combined = " | ".join(text for text in texts if text)
     lowered = combined.lower()
     if "invalid" in lowered and "comment" in lowered:
@@ -150,6 +160,9 @@ def _invalid_comment_error_text(result: Any, last_error: Any) -> Optional[str]:
 def _send_order_with_comment_fallback(mt5: Any, request: Dict[str, Any]) -> tuple[Any, Optional[Dict[str, Any]], Any]:
     result = mt5.order_send(request)
     last_error = validation._safe_last_error(mt5)
+    # Ambiguous send (timeout / COM failure): never resubmit with alternate comments.
+    if result is None:
+        return result, None, last_error
     invalid_comment = _invalid_comment_error_text(result, last_error)
     if invalid_comment is None:
         return result, None, last_error

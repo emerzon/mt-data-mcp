@@ -177,6 +177,24 @@ class TestNormalizeCloseTradeComment:
         assert fallback["used"] is True
         assert mt5.order_send.call_count == 2
 
+    def test_comment_fallback_does_not_retry_when_order_send_returns_none(self):
+        mt5 = MagicMock()
+        mt5.TRADE_RETCODE_DONE = 10009
+        mt5.order_send.side_effect = [None, SimpleNamespace(retcode=10009, comment="done")]
+        mt5.last_error.return_value = (1, 'Invalid "comment" argument')
+
+        returned, fallback, _last_error = _send_order_with_comment_fallback(
+            mt5,
+            {"comment": "x" * 40},
+        )
+
+        assert returned is None
+        assert fallback is None
+        assert mt5.order_send.call_count == 1
+
+    def test_invalid_comment_text_ignores_none_result(self):
+        assert _invalid_comment_error_text(None, (1, 'Invalid "comment" argument')) is None
+
 
 # ===================================================================
 #  _normalize_pending_expiration (mixed: some paths need config mock)
