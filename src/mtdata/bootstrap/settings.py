@@ -221,7 +221,13 @@ def _env_symbol_float_map(name: str) -> dict[str, float]:
 
 class _GuardrailSection:
     def model_dump(self) -> dict[str, object]:
-        return dict(self.__dict__)
+        # Exclude private runtime fields (locks, version counters) that are not
+        # part of the serializable policy surface and cannot be deep-copied.
+        return {
+            key: value
+            for key, value in self.__dict__.items()
+            if not str(key).startswith("_")
+        }
 
 
 class TradeSafetyPolicyConfig(_GuardrailSection):
@@ -250,6 +256,8 @@ class TradeGuardrailsRuntimeConfig(_GuardrailSection):
     """Mutable env-backed trade guardrail configuration."""
 
     def __init__(self) -> None:
+        self._reload_lock = threading.Lock()
+        self._policy_version = 0
         self.enabled = False
         self.ignore_on_demo = True
         self.trading_enabled = True
@@ -276,53 +284,61 @@ class TradeGuardrailsRuntimeConfig(_GuardrailSection):
         )
 
     def reload_from_env(self) -> None:
-        self.enabled = _env_bool("MTDATA_TRADE_GUARDRAILS_ENABLED", default=False)
-        self.ignore_on_demo = _env_bool(
-            "MTDATA_TRADE_GUARDRAILS_IGNORE_ON_DEMO",
-            default=True,
-        )
-        self.trading_enabled = _env_bool("MTDATA_TRADING_ENABLED", default=True)
-        self.allowed_symbols = [
-            symbol.upper() for symbol in _env_csv("MTDATA_TRADE_ALLOWED_SYMBOLS")
-        ]
-        self.blocked_symbols = [
-            symbol.upper() for symbol in _env_csv("MTDATA_TRADE_BLOCKED_SYMBOLS")
-        ]
-        self.max_volume = _env_optional_float("MTDATA_TRADE_MAX_VOLUME")
-        self.max_volume_by_symbol = _env_symbol_float_map("MTDATA_TRADE_MAX_VOLUME_BY_SYMBOL")
+        # Atomic field swap under lock so concurrent evaluations never observe
+        # a partially-updated multi-field policy.
+        with self._reload_lock:
+            self.enabled = _env_bool("MTDATA_TRADE_GUARDRAILS_ENABLED", default=False)
+            self.ignore_on_demo = _env_bool(
+                "MTDATA_TRADE_GUARDRAILS_IGNORE_ON_DEMO",
+                default=True,
+            )
+            self.trading_enabled = _env_bool("MTDATA_TRADING_ENABLED", default=True)
+            self.allowed_symbols = [
+                symbol.upper() for symbol in _env_csv("MTDATA_TRADE_ALLOWED_SYMBOLS")
+            ]
+            self.blocked_symbols = [
+                symbol.upper() for symbol in _env_csv("MTDATA_TRADE_BLOCKED_SYMBOLS")
+            ]
+            self.max_volume = _env_optional_float("MTDATA_TRADE_MAX_VOLUME")
+            self.max_volume_by_symbol = _env_symbol_float_map(
+                "MTDATA_TRADE_MAX_VOLUME_BY_SYMBOL"
+            )
 
-        self.safety_policy.max_volume = _env_optional_float("MTDATA_TRADE_SAFETY_MAX_VOLUME")
-        self.safety_policy.require_stop_loss = _env_bool(
-            "MTDATA_TRADE_SAFETY_REQUIRE_STOP_LOSS",
-            default=False,
-        )
-        self.safety_policy.max_deviation = _env_optional_int(
-            "MTDATA_TRADE_SAFETY_MAX_DEVIATION"
-        )
-        self.safety_policy.reduce_only = _env_bool(
-            "MTDATA_TRADE_SAFETY_REDUCE_ONLY",
-            default=False,
-        )
+            self.safety_policy.max_volume = _env_optional_float(
+                "MTDATA_TRADE_SAFETY_MAX_VOLUME"
+            )
+            self.safety_policy.require_stop_loss = _env_bool(
+                "MTDATA_TRADE_SAFETY_REQUIRE_STOP_LOSS",
+                default=False,
+            )
+            self.safety_policy.max_deviation = _env_optional_int(
+                "MTDATA_TRADE_SAFETY_MAX_DEVIATION"
+            )
+            self.safety_policy.reduce_only = _env_bool(
+                "MTDATA_TRADE_SAFETY_REDUCE_ONLY",
+                default=False,
+            )
 
-        self.account_risk_limits.min_margin_level_pct = _env_optional_float(
-            "MTDATA_TRADE_MIN_MARGIN_LEVEL_PCT"
-        )
-        self.account_risk_limits.max_floating_loss = _env_optional_float(
-            "MTDATA_TRADE_MAX_FLOATING_LOSS"
-        )
-        self.account_risk_limits.max_total_exposure_lots = _env_optional_float(
-            "MTDATA_TRADE_MAX_TOTAL_EXPOSURE_LOTS"
-        )
+            self.account_risk_limits.min_margin_level_pct = _env_optional_float(
+                "MTDATA_TRADE_MIN_MARGIN_LEVEL_PCT"
+            )
+            self.account_risk_limits.max_floating_loss = _env_optional_float(
+                "MTDATA_TRADE_MAX_FLOATING_LOSS"
+            )
+            self.account_risk_limits.max_total_exposure_lots = _env_optional_float(
+                "MTDATA_TRADE_MAX_TOTAL_EXPOSURE_LOTS"
+            )
 
-        self.wallet_risk_limits.max_risk_pct_of_equity = _env_optional_float(
-            "MTDATA_TRADE_MAX_RISK_PCT_OF_EQUITY"
-        )
-        self.wallet_risk_limits.max_risk_pct_of_balance = _env_optional_float(
-            "MTDATA_TRADE_MAX_RISK_PCT_OF_BALANCE"
-        )
-        self.wallet_risk_limits.max_risk_pct_of_free_margin = _env_optional_float(
-            "MTDATA_TRADE_MAX_RISK_PCT_OF_FREE_MARGIN"
-        )
+            self.wallet_risk_limits.max_risk_pct_of_equity = _env_optional_float(
+                "MTDATA_TRADE_MAX_RISK_PCT_OF_EQUITY"
+            )
+            self.wallet_risk_limits.max_risk_pct_of_balance = _env_optional_float(
+                "MTDATA_TRADE_MAX_RISK_PCT_OF_BALANCE"
+            )
+            self.wallet_risk_limits.max_risk_pct_of_free_margin = _env_optional_float(
+                "MTDATA_TRADE_MAX_RISK_PCT_OF_FREE_MARGIN"
+            )
+            self._policy_version += 1
 
 
 def load_environment(*, force: bool = False) -> bool:

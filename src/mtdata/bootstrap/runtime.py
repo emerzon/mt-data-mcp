@@ -82,6 +82,7 @@ class McpRuntimeSettings:
     sse_path: str = "/sse"
     message_path: str = "/message"
     allow_remote: bool = False
+    auth_token: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -109,6 +110,13 @@ def load_mcp_runtime_settings(
             host_env="FASTMCP_HOST",
             allow_remote_env="FASTMCP_ALLOW_REMOTE",
         )
+    auth_token_raw = os.getenv("MCP_AUTH_TOKEN")
+    auth_token = str(auth_token_raw or "").strip() or None
+    if transport != "stdio" and not is_loopback_host(host) and not auth_token:
+        raise ValueError(
+            "MCP_AUTH_TOKEN is required for non-loopback FASTMCP_HOST values "
+            "(SSE/streamable-HTTP expose trading tools)."
+        )
     return McpRuntimeSettings(
         transport=transport,
         host=host,
@@ -118,6 +126,7 @@ def load_mcp_runtime_settings(
         sse_path=(os.getenv("FASTMCP_SSE_PATH", "/sse").strip() or "/sse"),
         message_path=(os.getenv("FASTMCP_MESSAGE_PATH", "/message").strip() or "/message"),
         allow_remote=allow_remote,
+        auth_token=auth_token,
     )
 
 
@@ -159,3 +168,69 @@ def apply_mcp_runtime_settings(mcp: Any, settings: McpRuntimeSettings) -> None:
     runtime.mount_path = settings.mount_path
     runtime.sse_path = settings.sse_path
     runtime.message_path = settings.message_path
+    if settings.auth_token and settings.transport != "stdio":
+        _install_mcp_bearer_auth(mcp, settings.auth_token)
+
+
+def _install_mcp_bearer_auth(mcp: Any, token: str) -> None:
+    """Wrap FastMCP HTTP apps so requests require Bearer / X-API-Key auth."""
+    expected = str(token).strip()
+    if not expected:
+        return
+    if getattr(mcp, "_mtdata_auth_installed", False):
+        return
+
+    def _authorized(headers: Any) -> bool:
+        try:
+            auth = str(headers.get("authorization") or headers.get("Authorization") or "")
+        except Exception:
+            auth = ""
+        if auth.lower().startswith("bearer "):
+            provided = auth[7:].strip()
+            if provided and provided == expected:
+                return True
+        try:
+            api_key = str(headers.get("x-api-key") or headers.get("X-API-Key") or "")
+        except Exception:
+            api_key = ""
+        return bool(api_key) and api_key == expected
+
+    def _wrap_app_factory(original: Any) -> Any:
+        def factory(*args: Any, **kwargs: Any) -> Any:
+            app = original(*args, **kwargs)
+            try:
+                from starlette.middleware.base import BaseHTTPMiddleware
+                from starlette.responses import JSONResponse
+            except Exception:
+                return app
+
+            class _BearerAuthMiddleware(BaseHTTPMiddleware):
+                async def dispatch(self, request, call_next):  # type: ignore[no-untyped-def]
+                    if _authorized(request.headers):
+                        return await call_next(request)
+                    return JSONResponse(
+                        {
+                            "error": "Unauthorized",
+                            "error_code": "mcp_auth_required",
+                            "message": (
+                                "MCP HTTP transport requires Authorization: Bearer "
+                                "<MCP_AUTH_TOKEN> or X-API-Key."
+                            ),
+                        },
+                        status_code=401,
+                        headers={"WWW-Authenticate": "Bearer"},
+                    )
+
+            try:
+                app.add_middleware(_BearerAuthMiddleware)
+            except Exception:
+                return app
+            return app
+
+        return factory
+
+    for attr in ("sse_app", "streamable_http_app"):
+        original = getattr(mcp, attr, None)
+        if callable(original):
+            setattr(mcp, attr, _wrap_app_factory(original))
+    setattr(mcp, "_mtdata_auth_installed", True)

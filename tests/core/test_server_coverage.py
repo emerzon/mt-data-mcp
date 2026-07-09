@@ -39,6 +39,7 @@ class TestMcpRuntimeSettings:
         monkeypatch.setenv("MCP_TRANSPORT", "streamable-http")
         monkeypatch.setenv("FASTMCP_HOST", "1.2.3.4")
         monkeypatch.setenv("FASTMCP_ALLOW_REMOTE", "1")
+        monkeypatch.setenv("MCP_AUTH_TOKEN", "secret-token")
         monkeypatch.setenv("FASTMCP_PORT", "9999")
         monkeypatch.setenv("FASTMCP_LOG_LEVEL", "DEBUG")
         monkeypatch.setenv("FASTMCP_MOUNT_PATH", "/api")
@@ -49,6 +50,7 @@ class TestMcpRuntimeSettings:
         assert settings.port == 9999
         assert settings.log_level == "DEBUG"
         assert settings.mount_path == "/api"
+        assert settings.auth_token == "secret-token"
 
     def test_invalid_transport_falls_back(self, monkeypatch):
         from mtdata.bootstrap.runtime import load_mcp_runtime_settings
@@ -59,14 +61,25 @@ class TestMcpRuntimeSettings:
         settings = load_mcp_runtime_settings()
         assert settings.transport == "sse"
 
-    def test_non_loopback_host_warns_but_allows_bind(self, monkeypatch):
+    def test_non_loopback_host_requires_auth_token(self, monkeypatch):
         from mtdata.bootstrap.runtime import load_mcp_runtime_settings
 
         monkeypatch.setenv("FASTMCP_HOST", "0.0.0.0")
         monkeypatch.delenv("FASTMCP_ALLOW_REMOTE", raising=False)
+        monkeypatch.delenv("MCP_AUTH_TOKEN", raising=False)
+        with pytest.raises(ValueError, match="MCP_AUTH_TOKEN"):
+            load_mcp_runtime_settings()
+
+    def test_non_loopback_host_with_auth_token(self, monkeypatch):
+        from mtdata.bootstrap.runtime import load_mcp_runtime_settings
+
+        monkeypatch.setenv("FASTMCP_HOST", "0.0.0.0")
+        monkeypatch.setenv("MCP_AUTH_TOKEN", "remote-secret")
+        monkeypatch.delenv("FASTMCP_ALLOW_REMOTE", raising=False)
         with pytest.warns(RuntimeWarning, match="FASTMCP_ALLOW_REMOTE"):
             settings = load_mcp_runtime_settings()
         assert settings.host == "0.0.0.0"
+        assert settings.auth_token == "remote-secret"
 
     def test_stdio_skips_remote_bind_guard(self, monkeypatch):
         from mtdata.bootstrap.runtime import load_mcp_runtime_settings
@@ -1313,6 +1326,7 @@ class TestMainEntryPoints:
     def test_main_remote_bind_warns_and_starts(self, mock_mcp, mock_bootstrap, monkeypatch):
         monkeypatch.delenv("MCP_TRANSPORT", raising=False)
         monkeypatch.setenv("FASTMCP_HOST", "0.0.0.0")
+        monkeypatch.setenv("MCP_AUTH_TOKEN", "remote-secret")
         monkeypatch.delenv("FASTMCP_ALLOW_REMOTE", raising=False)
         mock_mcp.settings = None
         mock_mcp.run = MagicMock()
