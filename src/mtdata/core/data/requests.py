@@ -394,10 +394,10 @@ class DataFetchCandlesRequest(_DetailNormalizedRequest):
     start: Optional[str] = None
     end: Optional[str] = None
     timestamp_format: Literal["epoch", "iso"] = Field(
-        "epoch",
+        "iso",
         description=(
-            "Timestamp representation for candle rows. epoch returns Unix seconds "
-            "(CLI default); iso returns UTC ISO-8601 strings."
+            "Timestamp representation for candle rows. iso returns UTC ISO-8601 "
+            "strings (default); epoch returns Unix seconds."
         ),
     )
     ohlcv: Optional[str] = Field(
@@ -466,10 +466,10 @@ class DataFetchTicksRequest(_DetailNormalizedRequest):
     start: Optional[str] = None
     end: Optional[str] = None
     timestamp_format: Literal["epoch", "iso"] = Field(
-        "epoch",
+        "iso",
         description=(
-            "Timestamp representation for tick rows. epoch returns Unix seconds "
-            "(CLI default); iso returns UTC ISO-8601 strings where available."
+            "Timestamp representation for tick rows. iso returns UTC ISO-8601 "
+            "strings where available (default); epoch returns Unix seconds."
         ),
     )
     simplify: SimplifySpecInput = None

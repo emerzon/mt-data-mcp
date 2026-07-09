@@ -334,7 +334,7 @@ def get_history(
     ),
     include_incomplete: bool = Query(False, description="Include the latest forming candle."),
     timestamp_format: Literal["epoch", "iso"] = Query(
-        "epoch",
+        "iso",
         description="Timestamp encoding for returned candle rows.",
     ),
     denoise_method: Optional[str] = Query(None, description="Denoise method name; if set, returns extra *_dn columns."),
