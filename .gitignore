@@ -63,5 +63,10 @@ prompts/*
 !prompts/trading_agent_prompt.md
 !prompts/trader_active.md
 !prompts/trader_grid_scalper.md
+!prompts/mtdata_tool_playbook.md
+!prompts/agent_liquidity_scalper.md
+!prompts/agent_intraday_trend.md
+!prompts/agent_range_reversion.md
+!prompts/agent_risk_supervisor.md
 code-reports/*
 .soulforge
