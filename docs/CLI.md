@@ -57,6 +57,8 @@ mtdata-cli tools_list --category forecast --json   # filter/paginate the tool ca
 
 ## Output Contract
 
+Every tool returns the same canonical payload; the transport only adapts presentation. For the full response envelope — the `success`/error structure, `detail` levels, `extras` sections, pagination, and error codes — see [OUTPUT.md](OUTPUT.md).
+
 ### TOON (Default)
 Human-readable compact TOON output:
 ```bash
@@ -294,6 +296,14 @@ mtdata-cli patterns_detect EURUSD --timeframe H1 --mode fractal \
 
 See [LEVELS.md](LEVELS.md) for the full pivots, support/resistance, confluence, and volume-profile reference.
 
+### Denoising
+| Command | Description |
+|---------|-------------|
+| `denoise_list_methods` | List denoise methods with their dependencies, causality support, and auto parameters |
+| `denoise_describe` | Describe one denoise method and its supported options and defaults |
+
+Denoising is applied to data via the `--denoise`/`--denoise-params` flags (see [Reduce Large Outputs](#reduce-large-outputs-simplify) and the examples below). Use `denoise_list_methods`/`denoise_describe` to discover method names and parameters first. See [DENOISING.md](DENOISING.md) for the full reference.
+
 ### Trading
 | Command | Description |
 |---------|-------------|
@@ -341,6 +351,7 @@ For Kelly sizing, `trade_journal_analyze` is the quickest way to derive
 | `finviz_ratings` | Get analyst ratings history |
 | `finviz_peers` | Find peer companies |
 | `finviz_screen` | Screen stocks using Finviz filters |
+| `finviz_filters_list` | List valid screener filters and accepted values (pair with `finviz_screen`) |
 | `finviz_forex` | Get forex pairs performance snapshot |
 | `finviz_crypto` | Get cryptocurrency performance snapshot |
 | `finviz_futures` | Get futures market performance snapshot |
@@ -352,6 +363,7 @@ See [FINVIZ.md](FINVIZ.md) for detailed examples.
 ### Options & QuantLib
 | Command | Description |
 |---------|-------------|
+| `options_provider_status` | Report configured options-chain provider readiness without querying market data |
 | `options_expirations` | List available option expiration dates |
 | `options_chain` | Fetch options chain snapshot with filtering |
 | `options_barrier_price` | Price a barrier option using QuantLib |
@@ -411,6 +423,10 @@ mtdata-cli forecast_generate EURUSD --library pretrained --method chronos2 --hor
 
 # Monte Carlo simulation
 mtdata-cli forecast_generate EURUSD --method mc_gbm --params "n_sims=2000"
+
+# Search timeframes + methods + params for the best starting configuration
+mtdata-cli forecast_optimize_hints EURUSD --timeframes H1 H4 D1 \
+  --methods theta ets --horizon 12 --top-n 5 --json
 ```
 
 ### Backtest Trading Rules
@@ -436,28 +452,38 @@ mtdata-cli forecast_barrier_optimize EURUSD --horizon 12 \
   --grid-style volatility --objective edge
 ```
 
+### Pre-Trade Snapshot & Session Context
+```bash
+# One-shot pre-trade snapshot: quote + levels + patterns
+mtdata-cli market_snapshot EURUSD --timeframe H1 --json
+
+# Add the optional regime + forecast sections (sections=all)
+mtdata-cli market_snapshot EURUSD --timeframe H1 --sections all --horizon 8 --json
+
+# Global exchange status (NYSE, LSE, Tokyo, ...) or one broker symbol's tradability
+mtdata-cli market_status --region all --json
+mtdata-cli market_status --symbol EURUSD --json
+
+# Consolidated broker/session context (account, open/pending, quote, computed state)
+mtdata-cli trade_session_context EURUSD --json
+```
+
 ### Place Orders
 `trade_place` requires `symbol`, `volume`, and `order_type`.
 
-The examples below intentionally use `--dry-run true`. Remove it, or set `--dry-run false`, only when you are on the intended account and ready to send the order to MT5.
+The examples below intentionally use `--dry-run true`. Remove it, or set `--dry-run false`, only when you are on the intended account and ready to send the order to MT5. See [TRADING_SAFETY.md](TRADING_SAFETY.md) for the dry-run-first workflow, account guardrails, and broker behavior.
 
-Accepted `order_type` forms:
-- Canonical: `BUY`, `SELL`, `BUY_LIMIT`, `BUY_STOP`, `SELL_LIMIT`, `SELL_STOP`
-- MT5 aliases: `ORDER_TYPE_BUY`, `ORDER_TYPE_BUY_LIMIT`, etc.
-- MT5 numeric constants: `0..5`
+Accepted `order_type` values (case-insensitive; `-` or space is normalized to `_`):
+`BUY`, `SELL`, `BUY_LIMIT`, `BUY_STOP`, `SELL_LIMIT`, `SELL_STOP`. MT5 numeric constants (`0..5`) and `ORDER_TYPE_*` names are **not** accepted as input — they only appear when *reading* existing orders/positions.
 
 ```bash
 # Preview a pending order with canonical order_type
 mtdata-cli trade_place BTCUSD --volume 0.03 --order-type BUY_LIMIT --price 68750 \
   --stop-loss 67500 --take-profit 72000 --dry-run true
 
-# Same order_type using MT5 alias, still as a dry run
-mtdata-cli trade_place BTCUSD --volume 0.03 --order-type ORDER_TYPE_BUY_LIMIT --price 68750 \
-  --stop-loss 67500 --take-profit 72000 --dry-run true
-
-# Same order_type using MT5 numeric constant
-mtdata-cli trade_place BTCUSD --volume 0.03 --order-type 2 --price 68750 \
-  --stop-loss 67500 --take-profit 72000 --dry-run true
+# Case and separators are normalized (buy-stop -> BUY_STOP)
+mtdata-cli trade_place BTCUSD --volume 0.03 --order-type buy-stop --price 70200 \
+  --stop-loss 69000 --take-profit 73000 --dry-run true
 
 # Preview a market order with explicit protective levels
 mtdata-cli trade_place BTCUSD --volume 0.01 --order-type BUY \
@@ -596,6 +622,9 @@ MTDATA_CLI_DEBUG=1 mtdata-cli forecast_generate EURUSD
 ## See Also
 
 - [SETUP.md](SETUP.md) — Installation guide
+- [OUTPUT.md](OUTPUT.md) — Response envelope, `detail`/`extras`, and error codes
+- [TIMESTAMPS.md](TIMESTAMPS.md) — Timezone policy for inputs and output
+- [TRADING_SAFETY.md](TRADING_SAFETY.md) — Dry-run-first trading runbook and guardrails
 - [EXAMPLE.md](EXAMPLE.md) — Complete workflow example
 - [FINVIZ.md](FINVIZ.md) — Fundamental data commands
 - [OPTIONS_QUANTLIB.md](OPTIONS_QUANTLIB.md) — Options and QuantLib commands

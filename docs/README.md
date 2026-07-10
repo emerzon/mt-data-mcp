@@ -11,7 +11,7 @@ Safety note: `trade_*` commands can place/modify/close real orders on the accoun
 | Install and confirm MT5 connectivity | [SETUP.md](SETUP.md) | [TROUBLESHOOTING.md](TROUBLESHOOTING.md) if anything fails |
 | Learn the command line safely | [CLI.md](CLI.md) | [GLOSSARY.md](GLOSSARY.md), [SAMPLE-TRADE.md](SAMPLE-TRADE.md) |
 | Build a research workflow | [EXAMPLE.md](EXAMPLE.md) | [FORECAST.md](FORECAST.md), [BARRIER_FUNCTIONS.md](BARRIER_FUNCTIONS.md) |
-| Integrate with an app or agent | [WEB_API.md](WEB_API.md) | [ENV_VARS.md](ENV_VARS.md), [CLI.md](CLI.md) |
+| Integrate with an app or agent | [WEB_API.md](WEB_API.md) | [DEPLOYMENT.md](DEPLOYMENT.md), [ENV_VARS.md](ENV_VARS.md), [CLI.md](CLI.md) |
 | Prepare for trade execution | [SAMPLE-TRADE-ADVANCED.md](SAMPLE-TRADE-ADVANCED.md) | [ENV_VARS.md](ENV_VARS.md#trade-guardrails), [TROUBLESHOOTING.md](TROUBLESHOOTING.md) |
 
 ## Learning Path
@@ -31,14 +31,18 @@ Safety note: `trade_*` commands can place/modify/close real orders on the accoun
 | [SETUP.md](SETUP.md) | Installation, MT5 connection, environment variables |
 | [ENV_VARS.md](ENV_VARS.md) | Complete `.env` reference (MT5, MCP, Web API, GPU, etc.) |
 | [CLI.md](CLI.md) | Command conventions, output formats, help system |
+| [OUTPUT.md](OUTPUT.md) | Response envelope, `detail`/`extras`, pagination, and error codes |
+| [TIMESTAMPS.md](TIMESTAMPS.md) | Timezone policy: broker time, UTC, client-local, and provider time |
 | [GLOSSARY.md](GLOSSARY.md) | **Start here** — Explanations of all technical terms |
 | [LIMITATIONS.md](LIMITATIONS.md) | Practical caveats, provider limits, and documentation gaps |
+| [DEPLOYMENT.md](DEPLOYMENT.md) | Run the MCP server or Web API as a persistent local service |
 
 ## Core Topics
 
 | Document | Description |
 |----------|-------------|
 | [FORECAST.md](FORECAST.md) | Price forecasting methods, async training, and model store |
+| [forecast/METHODS.md](forecast/METHODS.md) | Per-method reference: categories, libraries, default parameters, dependencies |
 | [forecast/FORECAST_GENERATE.md](forecast/FORECAST_GENERATE.md) | Detailed `forecast_generate` reference (parameters, quantity modes, pipeline) |
 | [forecast/BACKTESTING.md](forecast/BACKTESTING.md) | Rolling backtests and parameter optimization |
 | [forecast/VOLATILITY.md](forecast/VOLATILITY.md) | Volatility estimation and forecasting |
@@ -75,6 +79,7 @@ Safety note: `trade_*` commands can place/modify/close real orders on the accoun
 | Document | Description |
 |----------|-------------|
 | [TRADING_RISK.md](TRADING_RISK.md) | Read-only risk analytics: position sizing (fixed-fraction + Kelly), VaR/CVaR, and scenario stress tests |
+| [TRADING_SAFETY.md](TRADING_SAFETY.md) | Safety runbook: dry-run previews, guardrails, validation, and broker behavior for `trade_*` |
 | [BARRIER_FUNCTIONS.md](BARRIER_FUNCTIONS.md) | TP/SL hit probability, optimization, and statistical robustness checks |
 
 ## Common Workflows (Recipes)
@@ -106,15 +111,15 @@ $symbols | % { mtdata-cli forecast_volatility_estimate $_ --timeframe H1 --horiz
 |----------|-------------|
 | [TROUBLESHOOTING.md](TROUBLESHOOTING.md) | Common issues and solutions |
 
-## Documentation Gaps Identified
+## Reference Coverage
 
-See [LIMITATIONS.md](LIMITATIONS.md) for the user-facing caveats and gap list. This review pass improved the main onboarding and reference pages, but these areas still deserve dedicated follow-up docs:
+See [LIMITATIONS.md](LIMITATIONS.md) for user-facing caveats. Recent review passes closed the previously-tracked documentation gaps, which now have dedicated references:
 
-- Per-method forecast defaults and reproducibility notes for every forecast model.
-- Response-schema examples for each CLI/MCP tool, especially fields that change by `detail` and `extras`.
-- A single timestamp policy that explains broker server time, UTC, client-local time, and external provider timezones in one place.
-- A trading safety runbook with dry-run examples for `trade_place`, `trade_modify`, `trade_close`, guardrails, and broker-specific order behavior.
-- Deployment-oriented guidance for running MCP/Web API as a long-lived local service.
+- Per-method forecast defaults, libraries, and dependencies → [forecast/METHODS.md](forecast/METHODS.md) (plus reproducibility notes in [FORECAST.md](FORECAST.md#reproducibility-notes)).
+- Response envelope, `detail`/`extras`, pagination, and error codes → [OUTPUT.md](OUTPUT.md).
+- A single timestamp policy (broker time, UTC, client-local, provider time) → [TIMESTAMPS.md](TIMESTAMPS.md).
+- Trading safety runbook with dry-run examples, guardrails, and broker behavior → [TRADING_SAFETY.md](TRADING_SAFETY.md).
+- Running the MCP server or Web API as a long-lived local service → [DEPLOYMENT.md](DEPLOYMENT.md).
 
 ## Quick Reference
 

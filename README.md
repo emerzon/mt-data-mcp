@@ -103,6 +103,7 @@ New here? Follow this learning path:
 
 ### Core Topics
 - **[Forecasting](docs/FORECAST.md)** — Price prediction methods (Theta, ARIMA, Chronos, etc.)
+- **[Forecast Methods Reference](docs/forecast/METHODS.md)** — Per-method categories, libraries, defaults, and dependencies
 - **[Volatility](docs/forecast/VOLATILITY.md)** — Estimating price movement magnitude
 - **[Regime Detection](docs/forecast/REGIMES.md)** — Identifying market states (trending vs. ranging)
 - **[Barrier Analysis](docs/BARRIER_FUNCTIONS.md)** — TP/SL hit probability calculation
@@ -112,6 +113,7 @@ New here? Follow this learning path:
 - **[Pattern Detection](docs/forecast/PATTERN_SEARCH.md)** — Candlestick and chart patterns
 - **[Temporal Analysis](docs/TEMPORAL.md)** — Session effects, day-of-week, and seasonal patterns
 - **[Trading Risk Analytics](docs/TRADING_RISK.md)** — Position sizing (fixed-fraction + Kelly), VaR/CVaR, stress tests
+- **[Trading Safety Runbook](docs/TRADING_SAFETY.md)** — Dry-run previews, guardrails, and broker behavior for `trade_*`
 
 ### External Data & Options
 - **[Finviz Fundamentals](docs/FINVIZ.md)** — US equity data, screening, news, calendars
@@ -124,7 +126,10 @@ New here? Follow this learning path:
 
 ### Reference
 - **[Environment Variables](docs/ENV_VARS.md)** — Complete `.env` reference (MT5, MCP, Web API, GPU, etc.)
+- **[Output Contract](docs/OUTPUT.md)** — Response envelope, `detail`/`extras`, pagination, and error codes
+- **[Timestamps & Timezones](docs/TIMESTAMPS.md)** — Broker time, UTC, client-local, and provider time
 - **[Web API](docs/WEB_API.md)** — REST endpoints for the Web UI and integrations
+- **[Deployment](docs/DEPLOYMENT.md)** — Run the MCP server or Web API as a persistent local service
 - **[Known Limitations](docs/LIMITATIONS.md)** — Practical caveats and documentation gaps
 - **[Troubleshooting](docs/TROUBLESHOOTING.md)** — Common issues and fixes
 

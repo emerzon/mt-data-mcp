@@ -1,0 +1,187 @@
+# Forecast Methods Reference
+
+This page lists the forecast methods available to `forecast_generate --method <key>` (and the tuning/backtest tools), grouped by category, with the key parameters you set through `--params` and their code defaults.
+
+> **The authoritative, environment-specific list is `forecast_list_methods`.** Method availability depends on which optional dependency groups you installed, so always confirm with:
+> ```bash
+> mtdata-cli forecast_list_methods --json
+> mtdata-cli forecast_list_methods --library statsforecast --json   # scope to one library
+> ```
+> Defaults below reflect the code; when a parameter is "auto" the engine estimates it from the data unless you override it via `--params`.
+
+For concepts (horizon, lookback, reproducibility) and workflow, see [FORECAST.md](../FORECAST.md). For per-method tuning and configuration search, see [FORECAST.md § Parameter Optimization](../FORECAST.md#parameter-optimization).
+
+---
+
+## Method keys at a glance
+
+```
+Baselines/classical : naive, drift, seasonal_naive, theta, fourier_ols
+Exp. smoothing/ARIMA: ses, holt, holt_winters_add, holt_winters_mul, ets, arima, sarima
+Monte Carlo         : mc_gbm, hmm_mc
+Analog / ensemble   : analog, ensemble
+Machine learning    : mlforecast, mlf_rf, mlf_lightgbm
+Foundation (pretr.) : chronos2, chronos_bolt, timesfm
+Neural              : nhits, nbeatsx, tft, patchtst
+StatsForecast       : statsforecast + sf_* family (sf_autoarima, sf_autoets, sf_theta, …)
+Sktime              : sktime + skt_theta, skt_naive, skt_autoets
+```
+
+The `sf_*` and `skt_*` families are convenience aliases that pin a specific model within the StatsForecast / sktime libraries (e.g. `sf_ets` → AutoETS). Browse them with `forecast_list_methods --library statsforecast`.
+
+---
+
+## Categories, libraries & dependencies
+
+| Category | Methods | Library | Optional dependency |
+|----------|---------|---------|---------------------|
+| Baseline / classical | `naive`, `drift`, `seasonal_naive`, `theta`, `fourier_ols` | native | none (core stack) |
+| Exp. smoothing / ARIMA | `ses`, `holt`, `holt_winters_add`, `holt_winters_mul`, `ets`, `arima`, `sarima` | native | `statsmodels` |
+| Monte Carlo | `mc_gbm`, `hmm_mc` | native | none (core stack) |
+| Analog | `analog` | native | none (scipy/numpy/pandas) |
+| Ensemble | `ensemble` | native | none |
+| Machine learning | `mlforecast`, `mlf_rf`, `mlf_lightgbm` | mlforecast | `mlforecast` + `scikit-learn` / `lightgbm` |
+| Foundation | `chronos2`, `chronos_bolt`, `timesfm` | pretrained | `chronos` / `timesfm` (+ `torch`) |
+| Neural | `nhits`, `nbeatsx`, `tft`, `patchtst` | neuralforecast | `neuralforecast` (+ `torch`) |
+| StatsForecast | `statsforecast`, `sf_*` | statsforecast | `statsforecast` |
+| Sktime | `sktime`, `skt_*` | sktime | `sktime` |
+
+`native` methods ship with the lean core install. Everything else follows the dependency groups in [SETUP.md](../SETUP.md) / [README](../../README.md#quick-start). Use `forecast_list_library_models --library <name>` to enumerate the concrete models within a library-backed method.
+
+---
+
+## Baseline & classical (`native`)
+
+Fast, dependency-free references and solid intraday baselines.
+
+| Method | Key params (default) | Notes |
+|--------|----------------------|-------|
+| `naive` | — | Last value carried forward |
+| `drift` | — | Last value plus average drift |
+| `seasonal_naive` | requires `seasonality` | Repeats the last seasonal cycle |
+| `theta` | `alpha=0.2` | Robust, fast general-purpose baseline |
+| `fourier_ols` | `terms=auto` (≈`min(3, m/2)`), `trend=true` | OLS on Fourier terms; good for periodic series |
+
+```bash
+mtdata-cli forecast_generate EURUSD --timeframe H1 --horizon 12 --method theta
+mtdata-cli forecast_generate EURUSD --method fourier_ols --params "terms=4,trend=true"
+```
+
+---
+
+## Exponential smoothing & ARIMA (`statsmodels`)
+
+| Method | Key params (default) | Notes |
+|--------|----------------------|-------|
+| `ses` | `alpha=auto` | Simple exponential smoothing |
+| `holt` | `damped=false`; `alpha`,`beta`=auto | Linear-trend smoothing |
+| `holt_winters_add` | `damped=false`; `alpha`,`beta`,`gamma`=auto; requires `seasonality` | Additive seasonality |
+| `holt_winters_mul` | `damped=false`; `alpha`,`beta`,`gamma`=auto; requires `seasonality` | Multiplicative seasonality |
+| `ets` | `trend=add`, `seasonal=auto`, `damped=false`; smoothing params auto | State-space ETS |
+| `arima` | order auto-selected when omitted | Non-seasonal ARIMA |
+| `sarima` | seasonal order auto-selected when omitted | Seasonal ARIMA |
+
+```bash
+mtdata-cli forecast_generate EURUSD --method ets --params "trend=add,damped=true"
+```
+
+---
+
+## Monte Carlo simulation (`native`)
+
+Simulation methods return distributional forecasts (paths + intervals), which pair naturally with the barrier tools.
+
+| Method | Key params (default) | Notes |
+|--------|----------------------|-------|
+| `mc_gbm` | `n_sims=500`, `seed=42`, `mu=auto`, `sigma=auto`, `ci_alpha=0.05` | Geometric Brownian motion paths |
+| `hmm_mc` | `n_states=2`, `n_sims=500`, `seed=42`, `ci_alpha=0.05` | Hidden-Markov regime-switched simulation |
+
+```bash
+mtdata-cli forecast_generate EURUSD --method mc_gbm --params "n_sims=2000,seed=7"
+```
+
+Set `seed` explicitly for reproducible simulation runs.
+
+---
+
+## Analog & ensemble (`native`)
+
+| Method | Key params (default) | Notes |
+|--------|----------------------|-------|
+| `analog` | `window_size=64`, `search_depth=5000`, `top_k=20`, `metric=euclidean`, `min_separation=window_size/4`, `ci_alpha=0.05` | Nearest-neighbour analogs from history |
+| `ensemble` | combines multiple methods | Blends member forecasts |
+
+```bash
+mtdata-cli forecast_generate EURUSD --method analog --params "window_size=96,top_k=30"
+```
+
+---
+
+## Machine learning (`mlforecast`)
+
+Gradient-boosted / tree models over lagged features. All MLForecast methods default their lags to `1..min(30, seasonality or 24)` when `lags` is omitted.
+
+| Method | Key params (default) | Notes |
+|--------|----------------------|-------|
+| `mlforecast` | `model` (required), `lags=auto` | Generic MLForecast wrapper; pick the underlying model |
+| `mlf_rf` | `n_estimators=200`, `max_depth=None`, `lags=auto` | Random-forest regressor |
+| `mlf_lightgbm` | `n_estimators=200`, `learning_rate=0.05`, `num_leaves=31`, `max_depth=-1`, `lags=auto` | LightGBM regressor |
+
+```bash
+mtdata-cli forecast_generate EURUSD --method mlf_lightgbm \
+  --params "n_estimators=400,learning_rate=0.03"
+```
+
+---
+
+## Foundation models (`pretrained`)
+
+Zero-shot pretrained forecasters. These download model weights on first use and benefit from a GPU (see [ENV_VARS.md § Forecasting & GPU](../ENV_VARS.md#forecasting--gpu)). Heavyweight fits are best run through the [async training / model store](../FORECAST.md#background-training--model-store).
+
+| Method | Key params (default) | Notes |
+|--------|----------------------|-------|
+| `chronos2` | `model_name=amazon/chronos-2` | Amazon Chronos-2 |
+| `chronos_bolt` | `model_name=amazon/chronos-bolt-base` | Faster Chronos-Bolt |
+| `timesfm` | model defaults | Google TimesFM (install via `pip install -e .[forecast-timesfm]`) |
+
+```bash
+mtdata-cli forecast_generate EURUSD --library pretrained --method chronos2 --horizon 24
+```
+
+---
+
+## Neural (`neuralforecast`)
+
+Deep models via NeuralForecast. Not installed by `requirements.txt` or any extra today — install manually with `pip install neuralforecast torch`.
+
+| Method | Key params (default) | Notes |
+|--------|----------------------|-------|
+| `nhits` | `input_size=auto`, `max_steps=50`, `batch_size=32` | N-HiTS |
+| `nbeatsx` | `input_size=auto`, `max_steps=50`, `batch_size=32` | N-BEATSx |
+| `tft` | `input_size=auto`, `max_steps=50`, `batch_size=32` | Temporal Fusion Transformer |
+| `patchtst` | `input_size=auto`, `max_steps=50`, `batch_size=32` | PatchTST |
+
+---
+
+## StatsForecast & sktime families
+
+| Method | Key params (default) | Notes |
+|--------|----------------------|-------|
+| `statsforecast` | `model_name=autoarima`, `season_length=auto` | Generic StatsForecast wrapper; pick the model |
+| `sf_*` | fixed model per alias (e.g. `sf_autoets`, `sf_theta`, `sf_garch`) | `season_length=auto` |
+| `sktime` | `estimator=ThetaForecaster`, `estimator_params` pass-through | Generic sktime wrapper |
+| `skt_theta` / `skt_naive` / `skt_autoets` | fixed estimator per alias | Seasonality injected as `sp` when supported |
+
+```bash
+mtdata-cli forecast_generate EURUSD --method sf_autoets --params "season_length=24"
+mtdata-cli forecast_list_methods --library statsforecast --json    # full sf_* catalog
+```
+
+---
+
+## See Also
+
+- [FORECAST.md](../FORECAST.md) — Concepts, workflow, reproducibility, and libraries
+- [FORECAST.md § Parameter Optimization](../FORECAST.md#parameter-optimization) — `forecast_tune_genetic`, `forecast_tune_optuna`, `forecast_optimize_hints`
+- [BACKTESTING.md](BACKTESTING.md) — Rolling backtests and metric selection
+- [UNCERTAINTY.md](UNCERTAINTY.md) — Confidence and conformal intervals

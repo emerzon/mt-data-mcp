@@ -51,6 +51,8 @@ Availability is environment-dependent:
 - NeuralForecast methods (`nhits`, `tft`, `patchtst`, `nbeatsx`) require a modern Nixtla `neuralforecast` release plus `torch` in a Python/Torch environment supported by that package. On Python 3.14, current NeuralForecast releases may not resolve cleanly.
 - `forecast_list_methods --json` is the source of truth for what your current environment can actually run.
 
+For the full per-method reference — keys, categories, libraries, default parameters, and dependencies — see [forecast/METHODS.md](forecast/METHODS.md).
+
 | Category | Models | When to Use |
 |----------|--------|-------------|
 | **Classical** | `theta`, `naive`, `drift`, `ses`, `holt`, `arima` | Fast baselines, short horizons |
@@ -268,7 +270,7 @@ See [DENOISING.md](DENOISING.md) for available filters.
 
 ## Parameter Optimization
 
-Two tools are available for automated hyperparameter tuning:
+Three tools are available for automated tuning and configuration search:
 
 ### Genetic Algorithm (`forecast_tune_genetic`)
 
@@ -303,6 +305,25 @@ mtdata-cli forecast_tune_optuna EURUSD --method theta --horizon 12 \
 | `--seed` | 42 | Random seed |
 
 *Requires: `pip install optuna`*
+
+### Configuration Search (`forecast_optimize_hints`)
+
+Broader than single-method tuning: `forecast_optimize_hints` runs a genetic search across **timeframes, methods, and method-specific parameters at once**, returning the top-N configurations ranked by a composite trading-fitness score (it falls back to forecast error and directional accuracy when trade metrics are unavailable). Use it to answer *"which timeframe/method/params should I even start from?"* before drilling in with `forecast_tune_genetic` / `forecast_tune_optuna`.
+
+```bash
+mtdata-cli forecast_optimize_hints EURUSD --timeframes H1 H4 D1 \
+  --methods theta ets arima --horizon 12 --top-n 5 --json
+```
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `--timeframes` | `H1 H4 D1 W1` | Timeframes to search (space- or comma-separated) |
+| `--methods` | (all eligible) | Methods to search; omit to let the search pick |
+| `--horizon` | 12 | Bars forecast after each backtest anchor |
+| `--steps` | 5 | Rolling-origin backtest anchors per candidate |
+| `--population` / `--generations` | 8 / 5 | Genetic search population and generation counts |
+| `--fitness-metric` | `composite` | Objective; `composite` blends trading metrics with accuracy |
+| `--top-n` | 5 | Number of ranked configurations to return |
 
 ---
 

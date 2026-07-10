@@ -5,7 +5,7 @@
 
 ## OVERVIEW
 
-MetaTrader 5 research/automation toolkit exposing 68 MCP tools (one of which — `market_depth_fetch` — is enabled only when `MTDATA_ENABLE_MARKET_DEPTH_FETCH=1`) for forecasting, regime detection, pattern recognition, signal processing, and trading. Python 3.14 backend (MCP server + CLI + FastAPI web API) with React/Vite frontend. ~70k Python LOC, ~3.4k TypeScript LOC.
+MetaTrader 5 research/automation toolkit exposing 86 MCP tools (plus a gated `market_depth_fetch` tool, enabled only when `MTDATA_ENABLE_MARKET_DEPTH_FETCH=1`) for forecasting, regime detection, pattern recognition, signal processing, and trading. Python 3.14 backend (MCP server + CLI + FastAPI web API) with React/Vite frontend. ~70k Python LOC, ~3.4k TypeScript LOC.
 
 ## STRUCTURE
 
