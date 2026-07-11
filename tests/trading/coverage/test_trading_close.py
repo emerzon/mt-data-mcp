@@ -920,6 +920,40 @@ class TestClosePositions:
         assert result["ticket"] == 42
         assert "tick data" in result["error"].lower()
 
+    def test_execute_single_close_rejects_stale_tick(self):
+        from mtdata.core.trading.gateway import create_trading_gateway
+
+        mt5 = MagicMock()
+        mt5.ORDER_FILLING_IOC = 1
+        mt5.ORDER_TIME_GTC = 0
+        mt5.TRADE_RETCODE_DONE = 10009
+        position = SimpleNamespace(
+            ticket=42, symbol="EURUSD", volume=0.1, type=0, magic=100,
+        )
+        mt5.symbol_info_tick.return_value = SimpleNamespace(
+            bid=1.05, ask=1.0501, time=1
+        )
+        gw = create_trading_gateway(
+            adapter=mt5,
+            include_retcode_name=True,
+            ensure_connection_impl=lambda: None,
+        )
+
+        result = _execute_single_close(
+            gw,
+            position,
+            requested_volume=None,
+            position_volume_before=0.1,
+            remaining_volume_estimate=None,
+            deviation=20,
+            comment=None,
+            fill_modes=[mt5.ORDER_FILLING_IOC],
+        )
+
+        assert result["error_code"] == "tick_stale"
+        assert result["tick_age_seconds"] > result["tick_max_age_seconds"]
+        mt5.order_send.assert_not_called()
+
     def test_execute_single_close_rejects_invalid_full_close_volume(self):
         from mtdata.core.trading.gateway import create_trading_gateway
         mt5 = MagicMock()

@@ -877,6 +877,7 @@ def _modify_pending_order(
 
 
 _CLOSE_ABORT_CONSECUTIVE_FAILURES = 3
+_CLOSE_TICK_MAX_AGE_SECONDS = 10.0
 
 
 def _execute_single_close(
@@ -933,6 +934,18 @@ def _execute_single_close(
                     "last_error": tick_error,
                 }
             ],
+        }
+    tick_freshness_error = validation._validate_tick_freshness(
+        tick,
+        symbol=position.symbol,
+        max_age_seconds=_CLOSE_TICK_MAX_AGE_SECONDS,
+    )
+    if tick_freshness_error is not None:
+        return {
+            "ticket": position.ticket,
+            "error_code": "tick_stale",
+            **tick_freshness_error,
+            "attempts": [{"error_code": "tick_stale", **tick_freshness_error}],
         }
 
     close_type_buy = getattr(mt5, "ORDER_TYPE_BUY", 0)
@@ -1020,6 +1033,15 @@ def _execute_single_close(
                 break
             refreshed_tick = mt5.symbol_info_tick(position.symbol)
             if refreshed_tick is None:
+                stop_retries = True
+                break
+            freshness_error = validation._validate_tick_freshness(
+                refreshed_tick,
+                symbol=position.symbol,
+                max_age_seconds=_CLOSE_TICK_MAX_AGE_SECONDS,
+            )
+            if freshness_error is not None:
+                attempts.append({"error_code": "tick_stale", **freshness_error})
                 stop_retries = True
                 break
             tick = refreshed_tick
