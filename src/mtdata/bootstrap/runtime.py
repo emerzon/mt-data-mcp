@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hmac
 import os
 import warnings
 from dataclasses import dataclass
@@ -187,13 +188,13 @@ def _install_mcp_bearer_auth(mcp: Any, token: str) -> None:
             auth = ""
         if auth.lower().startswith("bearer "):
             provided = auth[7:].strip()
-            if provided and provided == expected:
+            if provided and hmac.compare_digest(provided, expected):
                 return True
         try:
             api_key = str(headers.get("x-api-key") or headers.get("X-API-Key") or "")
         except Exception:
             api_key = ""
-        return bool(api_key) and api_key == expected
+        return bool(api_key) and hmac.compare_digest(api_key, expected)
 
     def _wrap_app_factory(original: Any) -> Any:
         def factory(*args: Any, **kwargs: Any) -> Any:
@@ -201,8 +202,10 @@ def _install_mcp_bearer_auth(mcp: Any, token: str) -> None:
             try:
                 from starlette.middleware.base import BaseHTTPMiddleware
                 from starlette.responses import JSONResponse
-            except Exception:
-                return app
+            except Exception as exc:
+                raise RuntimeError(
+                    "MCP authentication middleware dependencies are unavailable."
+                ) from exc
 
             class _BearerAuthMiddleware(BaseHTTPMiddleware):
                 async def dispatch(self, request, call_next):  # type: ignore[no-untyped-def]
@@ -223,14 +226,20 @@ def _install_mcp_bearer_auth(mcp: Any, token: str) -> None:
 
             try:
                 app.add_middleware(_BearerAuthMiddleware)
-            except Exception:
-                return app
+            except Exception as exc:
+                raise RuntimeError(
+                    "Failed to attach required MCP authentication middleware."
+                ) from exc
             return app
 
         return factory
 
+    wrapped = 0
     for attr in ("sse_app", "streamable_http_app"):
         original = getattr(mcp, attr, None)
         if callable(original):
             setattr(mcp, attr, _wrap_app_factory(original))
+            wrapped += 1
+    if wrapped == 0:
+        raise RuntimeError("FastMCP exposes no HTTP app factory to protect.")
     setattr(mcp, "_mtdata_auth_installed", True)

@@ -119,6 +119,32 @@ class TestMcpRuntimeSettings:
         assert mcp.settings.sse_path == "/events"
         assert mcp.settings.message_path == "/message"
 
+    def test_mcp_auth_factory_fails_closed_when_middleware_attach_fails(self):
+        from mtdata.bootstrap.runtime import _install_mcp_bearer_auth
+
+        app = MagicMock()
+        app.add_middleware.side_effect = TypeError("unsupported app")
+        mcp = MagicMock()
+        mcp._mtdata_auth_installed = False
+        mcp.sse_app = MagicMock(return_value=app)
+        mcp.streamable_http_app = None
+
+        _install_mcp_bearer_auth(mcp, "secret-token")
+
+        with pytest.raises(RuntimeError, match="required MCP authentication"):
+            mcp.sse_app()
+
+    def test_mcp_auth_install_requires_http_app_factory(self):
+        from mtdata.bootstrap.runtime import _install_mcp_bearer_auth
+
+        mcp = MagicMock()
+        mcp._mtdata_auth_installed = False
+        mcp.sse_app = None
+        mcp.streamable_http_app = None
+
+        with pytest.raises(RuntimeError, match="no HTTP app factory"):
+            _install_mcp_bearer_auth(mcp, "secret-token")
+
 
 class TestWebApiRuntimeSettings:
     def test_remote_bind_requires_auth_token(self, monkeypatch):
