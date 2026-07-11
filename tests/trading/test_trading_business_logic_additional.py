@@ -476,7 +476,7 @@ def test_run_trade_place_uses_candidate_tickets_when_position_ticket_is_missing(
         safe_int_ticket=lambda value: value,
     )
 
-    assert result["protection_status"] == "unprotected_position"
+    assert result["protection_status"] == "auto_closed_after_sl_tp_fail"
     assert any("trade_modify 111" in str(w) for w in result.get("warnings", []))
     assert any("trade_get_open" in str(w) for w in result.get("warnings", []))
 

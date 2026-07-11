@@ -1471,7 +1471,7 @@ def run_trade_place(  # noqa: C901
                 sl_tp_requested, sl_tp_status = _sl_tp_result_details(result)
                 sl_tp_failed = sl_tp_status == "failed"
                 sl_tp_unverified = sl_tp_status == "unverified"
-                if sl_tp_requested and sl_tp_failed:
+                if sl_tp_requested and (sl_tp_failed or sl_tp_unverified):
                     warnings_out = _coerce_warning_list(result.get("warnings"))
                     pos_ticket = result.get("position_ticket")
                     candidate_tickets = [
@@ -1522,7 +1522,7 @@ def run_trade_place(  # noqa: C901
                         else:
                             auto_close_result = close_positions(
                                 ticket=close_ticket,
-                                comment="AUTO-CLOSE: TP/SL apply failed",
+                                comment="AUTO-CLOSE: TP/SL protection unresolved",
                                 deviation=request.deviation,
                             )
                         result["auto_close_on_sl_tp_fail"] = True
@@ -1550,28 +1550,6 @@ def run_trade_place(  # noqa: C901
                                         )
                                     except Exception:
                                         auto_close_ok = False
-                            else:
-                                # Position already gone: auto-close goal achieved.
-                                err_text = str(
-                                    auto_close_result.get("error") or ""
-                                ).lower()
-                                msg_text = str(
-                                    auto_close_result.get("message") or ""
-                                ).lower()
-                                if any(
-                                    phrase in err_text or phrase in msg_text
-                                    for phrase in (
-                                        "not found",
-                                        "no longer open",
-                                        "no open position",
-                                    )
-                                ):
-                                    auto_close_ok = True
-                                    auto_close_result = {
-                                        **auto_close_result,
-                                        "already_closed": True,
-                                    }
-                                    result["auto_close_result"] = auto_close_result
                         if auto_close_ok:
                             result["protection_status"] = "auto_closed_after_sl_tp_fail"
                             result["success"] = False

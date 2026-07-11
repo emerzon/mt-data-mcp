@@ -535,6 +535,7 @@ def test_trade_place_require_sl_tp_flags_unverified_market_fill() -> None:
             "warnings": ["verify protection"],
             "sl_tp_result": {"status": "unverified", "requested": {"sl": 64000.0, "tp": 68000.0}},
             "protection_status": "protection_unverified",
+            "position_ticket_candidates": [456],
         },
     ), patch("mtdata.core.trading._close_positions") as mock_close:
         out = trade_place(
@@ -547,10 +548,42 @@ def test_trade_place_require_sl_tp_flags_unverified_market_fill() -> None:
             dry_run=False,
             __cli_raw=True,
         )
-    mock_close.assert_not_called()
+    mock_close.assert_called_once_with(
+        ticket=456,
+        comment="AUTO-CLOSE: TP/SL protection unresolved",
+        deviation=20,
+    )
     assert out.get("error") == "Order was executed, but TP/SL protection could not be verified."
     assert out.get("protection_status") == "protection_unverified"
-    assert out.get("warnings") == ["verify protection"]
+    assert "verify protection" in out.get("warnings", [])
+    assert any("AUTO-CLOSE FAILED" in warning for warning in out.get("warnings", [])), out
+
+
+def test_trade_place_does_not_treat_auto_close_not_found_as_closed() -> None:
+    with patch(
+        "mtdata.core.trading._place_market_order",
+        return_value={
+            "retcode": 10009,
+            "sl_tp_result": {"status": "failed", "requested": {"sl": 64000.0}},
+            "position_ticket": 456,
+        },
+    ), patch(
+        "mtdata.core.trading._close_positions",
+        return_value={"error": "Position 456 not found"},
+    ):
+        out = trade_place(
+            symbol="EURUSD",
+            volume=1.0,
+            order_type="BUY",
+            stop_loss=1.0,
+            take_profit=1.2,
+            dry_run=False,
+            __cli_raw=True,
+        )
+
+    assert out.get("protection_status") != "auto_closed_after_sl_tp_fail"
+    assert out.get("auto_close_result", {}).get("already_closed") is not True
+    assert any("AUTO-CLOSE FAILED" in warning for warning in out.get("warnings", [])), out
 
 
 def test_trade_place_defaults_to_auto_closing_unprotected_market_fill() -> None:
