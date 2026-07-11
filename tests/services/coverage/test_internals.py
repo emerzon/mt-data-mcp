@@ -162,7 +162,7 @@ class TestShiftRateTimes(unittest.TestCase):
 
         self.assertIs(shifted, rates)
 
-    def test_list_with_non_numeric_time_returns_shifted_copy_and_leaves_failing_row_unshifted(self):
+    def test_list_with_non_numeric_time_rejects_mixed_timestamp_alignment(self):
         rates = [
             {'time': 1704067200.0, 'close': 1.1},
             {'time': 'not-a-number', 'close': 1.2},
@@ -170,30 +170,22 @@ class TestShiftRateTimes(unittest.TestCase):
         ]
         original = [row.copy() for row in rates]
 
-        shifted = _shift_rate_times(rates, 60)
+        with self.assertRaisesRegex(ValueError, "mixed timestamp alignment"):
+            _shift_rate_times(rates, 60)
 
-        self.assertIsInstance(shifted, list)
-        self.assertIsNot(shifted, rates)
         self.assertEqual(rates, original)
-        self.assertEqual(shifted[0]['time'], 1704067260.0)
-        self.assertEqual(shifted[1]['time'], 'not-a-number')
-        self.assertEqual(shifted[2]['time'], 1704067380.0)
-        self.assertEqual(shifted[0]['close'], rates[0]['close'])
-        self.assertEqual(shifted[1]['close'], rates[1]['close'])
-        self.assertEqual(shifted[2]['close'], rates[2]['close'])
 
-    def test_structured_array_with_non_numeric_time_returns_original_untouched_input(self):
+    def test_structured_array_with_non_numeric_time_raises(self):
         rates = np.array(
             [('1704067200.0', 1.1), ('not-a-number', 1.2)],
             dtype=[('time', 'U32'), ('close', 'f8')],
         )
         original = rates.copy()
 
-        shifted = _shift_rate_times(rates, 60)
+        with self.assertRaisesRegex(ValueError, "cannot be safely treated as UTC"):
+            _shift_rate_times(rates, 60)
 
-        self.assertIs(shifted, rates)
         np.testing.assert_array_equal(rates, original)
-        np.testing.assert_array_equal(shifted, original)
 
 
 # ============================================================================

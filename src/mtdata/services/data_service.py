@@ -842,14 +842,10 @@ def _shift_rate_times(rates: Any, shift_seconds: int) -> Any:
             shifted_rates = rates.copy()
             shifted_rates["time"] = shifted_rates["time"] + shift_value
         except Exception as exc:
-            logger.warning(
-                "Failed to apply time offset correction (%s seconds): %s. "
-                "Data timestamps may be in server-local time, not UTC. "
-                "Configure MT5_SERVER_TZ or MT5_TIME_OFFSET_MINUTES.",
-                shift_value,
-                exc,
-            )
-            return rates
+            raise ValueError(
+                f"Failed to apply the {shift_value}-second time offset correction; "
+                "rate timestamps cannot be safely treated as UTC."
+            ) from exc
         return shifted_rates
 
     if isinstance(rates, list):
@@ -871,12 +867,10 @@ def _shift_rate_times(rates: Any, shift_seconds: int) -> Any:
                 shift_failures += 1
             shifted_rows.append(shifted_row)
         if shift_failures:
-            logger.warning(
-                "Failed to shift time on %s/%s rate rows (offset %s seconds). "
-                "Some timestamps may be in server-local time, not UTC.",
-                shift_failures,
-                len(rates),
-                shift_value,
+            raise ValueError(
+                f"Failed to apply the {shift_value}-second time offset correction "
+                f"to {shift_failures}/{len(rates)} rate rows; mixed timestamp "
+                "alignment is unsafe."
             )
         return shifted_rows
     return rates
