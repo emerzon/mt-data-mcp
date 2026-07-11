@@ -533,14 +533,8 @@ def _send_order_with_fill_mode_retry(
         validation._safe_int_attr(mt5, "TRADE_RETCODE_PRICE_CHANGED", 10020),
         validation._safe_int_attr(mt5, "TRADE_RETCODE_REQUOTE", 10004),
     }
-    terminal_retcode_failures = {
-        validation._safe_int_attr(mt5, "TRADE_RETCODE_REJECT", 10006),
-        validation._safe_int_attr(mt5, "TRADE_RETCODE_TRADE_DISABLED", 10017),
-        validation._safe_int_attr(mt5, "TRADE_RETCODE_MARKET_CLOSED", 10018),
-        validation._safe_int_attr(mt5, "TRADE_RETCODE_NO_MONEY", 10019),
-        validation._safe_int_attr(mt5, "TRADE_RETCODE_TOO_MANY_REQUESTS", 10024),
-        validation._safe_int_attr(mt5, "TRADE_RETCODE_INVALID_STOPS", 10016),
-        validation._safe_int_attr(mt5, "TRADE_RETCODE_INVALID", 10013),
+    invalid_fill_codes = {
+        validation._safe_int_attr(mt5, "TRADE_RETCODE_INVALID_FILL", 10030),
     }
     fill_modes: List[int] = []
     preferred_fill_mode = request.get("type_filling")
@@ -588,7 +582,10 @@ def _send_order_with_fill_mode_retry(
             except Exception:
                 pass
 
-            if retcode in terminal_retcode_failures:
+            # Trying another fill mode is safe only when the broker explicitly
+            # rejected the requested mode. Other failures, especially timeout,
+            # may have accepted the order despite the missing/negative reply.
+            if retcode not in invalid_fill_codes and retcode not in price_changed_codes:
                 return result, last_error, attempts, last_request
             should_retry_same_fill = (
                 retcode in price_changed_codes
@@ -738,7 +735,12 @@ def _submit_order_request(
     )
     if result is None:
         return None, {
-            "error": base_error,
+            "error": (
+                "Order submission outcome is unknown; the broker may have accepted "
+                "the request. Do not retry without reconciling open orders and positions."
+            ),
+            "error_code": "order_send_ambiguous",
+            "ambiguous": True,
             "last_error": last_error,
             "fill_mode_attempts": fill_mode_attempts,
         }
@@ -746,10 +748,18 @@ def _submit_order_request(
     retcode = _order_result_value(result, "retcode")
     if not validation._retcode_is_done(mt5, retcode):
         error_message = base_error
+        ambiguous = retcode == validation._safe_int_attr(
+            mt5, "TRADE_RETCODE_TIMEOUT", 10012
+        )
+        if ambiguous:
+            error_message = (
+                "Order submission timed out; the broker may have accepted the request. "
+                "Do not retry without reconciling open orders and positions."
+            )
         invalid_comment = comments._invalid_comment_error_text(result, last_error)
         if invalid_comment is not None:
             error_message = invalid_comment_error
-        return None, {
+        failure = {
             "error": error_message,
             "retcode": retcode,
             "retcode_name": _order_retcode_name(mt5, retcode),
@@ -758,6 +768,9 @@ def _submit_order_request(
             "last_error": last_error,
             "fill_mode_attempts": fill_mode_attempts,
         }
+        if ambiguous:
+            failure.update(error_code="order_send_ambiguous", ambiguous=True)
+        return None, failure
 
     return {
         "result": result,

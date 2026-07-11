@@ -263,14 +263,15 @@ def _idempotency_duplicate_response(
 def _should_persist_idempotency_outcome(result: Any) -> bool:
     """Return True when *result* is safe to cache for idempotent retries.
 
-    Transient failures (connection flaps, ambiguous ``order_send`` timeouts,
-    temporary preflight errors) must not stick for the TTL — clients need to
-    retry the same key. Only confirmed successes, broker side-effects, and
-    already-deduped responses are recorded.
+    Transient preflight failures must not stick for the TTL. Ambiguous live
+    submissions are deliberately retained so the same key cannot submit a
+    second order while the broker outcome is unknown.
     """
     if not isinstance(result, dict):
         return False
     if result.get("duplicate"):
+        return True
+    if result.get("ambiguous") or result.get("error_code") == "order_send_ambiguous":
         return True
     if infer_result_success(result):
         return True

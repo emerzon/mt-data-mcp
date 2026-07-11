@@ -43,9 +43,11 @@ sys.modules["MetaTrader5"] = _mt5_stub
 from mtdata.core.trading import (
     trade_place as _trade_place_tool,
 )
+from mtdata.core.trading.orders import _send_order_with_fill_mode_retry
 from mtdata.core.trading.requests import (
     TradePlaceRequest,
 )
+from mtdata.core.trading.use_cases import _should_persist_idempotency_outcome
 
 
 # ===================================================================
@@ -125,6 +127,58 @@ def _position(ticket=1, symbol="EURUSD", type_=0, volume=0.01,
             "time": time, "time_update": time_update, "swap": swap,
             "identifier": identifier, "position_id": position_id, "order": order, "deal": deal,
         },
+    )
+
+
+def test_place_does_not_retry_fill_mode_after_timeout():
+    mt5 = MagicMock()
+    mt5.TRADE_RETCODE_DONE = 10009
+    mt5.TRADE_RETCODE_DONE_PARTIAL = 10010
+    mt5.TRADE_RETCODE_PLACED = 10008
+    mt5.TRADE_RETCODE_TIMEOUT = 10012
+    mt5.TRADE_RETCODE_INVALID_FILL = 10030
+    mt5.retcode_name.side_effect = lambda value: str(value)
+    mt5.order_send.side_effect = [
+        _order_result(retcode=10012, comment="timeout"),
+        _order_result(),
+    ]
+
+    result, _, attempts, _ = _send_order_with_fill_mode_retry(
+        mt5, {"type_filling": 1}, symbol_info=None
+    )
+
+    assert result.retcode == 10012
+    assert len(attempts) == 1
+    assert mt5.order_send.call_count == 1
+
+
+def test_place_retries_fill_mode_only_after_invalid_fill():
+    mt5 = MagicMock()
+    mt5.TRADE_RETCODE_DONE = 10009
+    mt5.TRADE_RETCODE_DONE_PARTIAL = 10010
+    mt5.TRADE_RETCODE_PLACED = 10008
+    mt5.TRADE_RETCODE_INVALID_FILL = 10030
+    mt5.ORDER_FILLING_FOK = 0
+    mt5.ORDER_FILLING_IOC = 1
+    mt5.ORDER_FILLING_RETURN = 2
+    mt5.retcode_name.side_effect = lambda value: str(value)
+    mt5.order_send.side_effect = [
+        _order_result(retcode=10030, comment="invalid fill"),
+        _order_result(),
+    ]
+
+    result, _, attempts, _ = _send_order_with_fill_mode_retry(
+        mt5, {"type_filling": 1}, symbol_info=None
+    )
+
+    assert result.retcode == 10009
+    assert len(attempts) == 2
+    assert mt5.order_send.call_count == 2
+
+
+def test_ambiguous_order_send_outcome_is_idempotency_safe():
+    assert _should_persist_idempotency_outcome(
+        {"error_code": "order_send_ambiguous", "ambiguous": True}
     )
 
 
@@ -839,7 +893,9 @@ class TestPlacePendingOrder:
         mt5.last_error.return_value = (10006, "err")
         from mtdata.core.trading import _place_pending_order
         result = _place_pending_order("EURUSD", 0.01, "BUY_LIMIT", price=1.09)
-        assert "error" in result and "Failed" in result["error"]
+        assert result.get("error_code") == "order_send_ambiguous"
+        assert result.get("ambiguous") is True
+        assert mt5.order_send.call_count == 1
 
     @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
     def test_order_send_retcode_fail(self):
