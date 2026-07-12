@@ -13,9 +13,13 @@ from src.mtdata.core.patterns import _apply_config_to_obj, _build_pattern_respon
 from src.mtdata.patterns.classic import (
     ClassicDetectorConfig,
     ClassicPatternResult,
+    detect_classic_patterns,
+)
+from src.mtdata.patterns.classic_impl import shapes as shapes_mod
+from src.mtdata.patterns.classic_impl import trend as trend_mod
+from src.mtdata.patterns.classic_impl.utils import (
     _count_recent_touches,
     _fit_lines_and_arrays,
-    detect_classic_patterns,
 )
 
 
@@ -205,12 +209,14 @@ def test_detect_classic_channel_parallel_ratio_uses_config(monkeypatch):
     monkeypatch.setattr(
         classic_mod, "_detect_pivots_close", lambda c, cfg, *args: (peaks, troughs)
     )
-    monkeypatch.setattr(classic_mod, "_is_converging", lambda *args, **kwargs: False)
+    monkeypatch.setattr(trend_mod, "_is_converging", lambda *args, **kwargs: False)
+    monkeypatch.setattr(shapes_mod, "_is_converging", lambda *args, **kwargs: False)
 
     def _fake_fit_lines(ih, il, c, n, cfg):
         return 1.18, 150.0, 0.95, 1.00, 120.0, 0.95, upper, lower
 
-    monkeypatch.setattr(classic_mod, "_fit_lines_and_arrays", _fake_fit_lines)
+    monkeypatch.setattr(trend_mod, "_fit_lines_and_arrays", _fake_fit_lines)
+    monkeypatch.setattr(shapes_mod, "_fit_lines_and_arrays", _fake_fit_lines)
 
     out_default = detect_classic_patterns(
         df, ClassicDetectorConfig(min_channel_touches=2, max_consolidation_bars=5)
@@ -1577,7 +1583,7 @@ def test_dedupe_overlapping_head_shoulders_results():
     assert any(p.start_index == 70 and p.end_index == 100 for p in out)
 
 
-def test_detect_classic_patterns_disables_aliases_by_default(monkeypatch):
+def test_detect_classic_patterns_emits_specific_names_without_generic_aliases(monkeypatch):
     n = 150
     x = np.linspace(0, 4 * np.pi, n)
     close = 100 + 0.3 * np.arange(n) + 4.0 * np.sin(x)
@@ -1596,12 +1602,8 @@ def test_detect_classic_patterns_disables_aliases_by_default(monkeypatch):
     assert "Ascending Trend Line" in names_default
     assert "Trend Line" not in names_default
     assert "Trend Channel" not in names_default
-
-    out_alias = detect_classic_patterns(
-        df, ClassicDetectorConfig(include_aliases=True, max_consolidation_bars=5)
-    )
-    names_alias = {p.name for p in out_alias}
-    assert "Trend Line" in names_alias or "Trend Channel" in names_alias
+    assert "Wedge" not in names_default
+    assert "Continuation Pattern" not in names_default
 
 
 def test_detect_classic_patterns_reraises_internal_pivot_type_errors(monkeypatch):
@@ -1647,7 +1649,8 @@ def test_detect_classic_triangle_marks_completed_on_breakout(monkeypatch):
     def _fake_fit_lines(ih, il, c, n, cfg):
         return -0.03, 106.0, 0.9, 0.03, 94.0, 0.9, top_line.copy(), bot_line.copy()
 
-    monkeypatch.setattr(classic_mod, "_fit_lines_and_arrays", _fake_fit_lines)
+    monkeypatch.setattr(trend_mod, "_fit_lines_and_arrays", _fake_fit_lines)
+    monkeypatch.setattr(shapes_mod, "_fit_lines_and_arrays", _fake_fit_lines)
 
     out = detect_classic_patterns(
         df,
@@ -1700,7 +1703,8 @@ def test_detect_classic_converging_parallel_shape_excludes_channel(monkeypatch):
             bot_line.copy(),
         )
 
-    monkeypatch.setattr(classic_mod, "_fit_lines_and_arrays", _fake_fit_lines)
+    monkeypatch.setattr(trend_mod, "_fit_lines_and_arrays", _fake_fit_lines)
+    monkeypatch.setattr(shapes_mod, "_fit_lines_and_arrays", _fake_fit_lines)
 
     out = detect_classic_patterns(
         df,

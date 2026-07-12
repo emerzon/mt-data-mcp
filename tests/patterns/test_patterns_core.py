@@ -17,6 +17,8 @@ from src.mtdata.core.patterns_requests import PatternsDetectRequest
 from src.mtdata.patterns.classic import (
     ClassicDetectorConfig,
     ClassicPatternResult,
+)
+from src.mtdata.patterns.classic_impl.utils import (
     _count_recent_touches,
     _fit_lines_and_arrays,
 )

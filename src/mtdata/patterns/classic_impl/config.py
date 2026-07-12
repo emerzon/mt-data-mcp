@@ -177,9 +177,6 @@ class ClassicDetectorConfig:
     regime_alignment_bonus: float = 0.05
     regime_countertrend_penalty: float = 0.05
     # Output/completion controls
-    include_aliases: bool = (
-        False  # include generic aliases like "Trend Line"/"Trend Channel"
-    )
     completion_confirm_bars: int = (
         2  # touches needed near the right edge to mark completed
     )

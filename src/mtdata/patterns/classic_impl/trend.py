@@ -4,7 +4,6 @@ import numpy as np
 
 from .config import ClassicDetectorConfig, ClassicPatternResult
 from .utils import (
-    _alias,
     _boundaries_are_ordered,
     _conf,
     _count_recent_touches,
@@ -111,9 +110,6 @@ def detect_trend_lines(
             }
             base_item = _result(name, status, conf, int(idxs[0]), end_i, t, details)
             results.append(base_item)
-            
-            if tl_dir != 'Horizontal' and bool(cfg.include_aliases):
-                results.append(_alias(base_item, "Trend Line", 0.95))
     return results
 
 def detect_channels(
@@ -201,8 +197,5 @@ def detect_channels(
         }
         base = _result(name, status, conf, int(min(ih[0], il[0])), end_i, t, details)
         ch_results.append(base)
-        
-        if bool(cfg.include_aliases):
-            ch_results.append(_alias(base, "Trend Channel", 0.95))
-            
+
     return ch_results

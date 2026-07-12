@@ -27,33 +27,11 @@ from .classic_impl.shapes import (
 )
 from .classic_impl.trend import detect_channels, detect_trend_lines
 from .classic_impl.utils import (
-    _alias,
     _build_time_array,
     _calibrate_confidence,
-    _collect_calibration_points,
-    _compute_atr,
-    _conf,
-    _count_recent_touches,
-    _count_touches,
     _detect_pivots_close,
-    _dtw_distance,
-    _find_forward_level_breakout,
-    _find_recent_breakout,
-    _fit_line,
-    _fit_line_robust,
-    _fit_lines_and_arrays,
-    _is_converging,
-    _last_touch_indexes,
-    _level_close,
-    _paa,
-    _pivot_thresholds,
-    _result,
-    _template_hs,
-    _tol_abs_from_close,
-    _znorm,
 )
 
-# Re-export for backward compatibility
 __all__ = [
     "ClassicDetectorConfig",
     "ClassicPatternResult",

@@ -4,7 +4,6 @@ import numpy as np
 
 from .config import ClassicDetectorConfig, ClassicPatternResult
 from .utils import (
-    _alias,
     _apply_breakout_confidence_bonus,
     _conf,
     _detect_pivots_close,
@@ -165,9 +164,6 @@ def detect_flags_pennants(
             },
         )
         out.append(base)
-        if bool(cfg.include_aliases):
-            out.append(_alias(base, name, 0.95))
-            out.append(_alias(base, "Continuation Pattern", 0.9))
 
     return out
 

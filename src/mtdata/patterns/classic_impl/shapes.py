@@ -5,7 +5,6 @@ import numpy as np
 from ..common import PatternResultBase
 from .config import ClassicDetectorConfig, ClassicPatternResult
 from .utils import (
-    _alias,
     _apply_breakout_confidence_bonus,
     _boundaries_are_ordered,
     _conf,
@@ -70,8 +69,6 @@ def _build_line_bounded_pattern_results(
     t: np.ndarray,
     cfg: ClassicDetectorConfig,
     *,
-    alias_name: Optional[str] = None,
-    alias_scale: float = 0.95,
     bias: str = "neutral",
 ) -> List[ClassicPatternResult]:
     conf = _conf(shape["touches"], min(shape["r2h"], shape["r2l"]), 1.0, cfg)
@@ -108,10 +105,7 @@ def _build_line_bounded_pattern_results(
             "bias": str(bias),
         },
     )
-    results = [base]
-    if alias_name:
-        results.append(_alias(base, alias_name, alias_scale))
-    return results
+    return [base]
 
 
 def _required_rectangle_side_matches(count: int) -> int:
@@ -241,7 +235,7 @@ def detect_wedges(
 
     name = "Rising Wedge" if shape["sh"] > 0 and shape["sl"] > 0 else "Falling Wedge"
     bias = "bearish" if name == "Rising Wedge" else "bullish"
-    return _build_line_bounded_pattern_results(name, shape, t, cfg, alias_name="Wedge", bias=bias)
+    return _build_line_bounded_pattern_results(name, shape, t, cfg, bias=bias)
 
 def detect_broadening(
     c: np.ndarray,

@@ -328,19 +328,6 @@ def _result(name: str, status: str, confidence: float,
     )
 
 
-def _alias(base: ClassicPatternResult, name: str, conf_scale: float = 0.95) -> ClassicPatternResult:
-    return ClassicPatternResult(
-        name=name,
-        status=base.status,
-        confidence=min(1.0, float(base.confidence) * float(conf_scale)),
-        start_index=base.start_index,
-        end_index=base.end_index,
-        start_time=base.start_time,
-        end_time=base.end_time,
-        details=base.details,
-    )
-
-
 def _fit_lines_and_arrays(
     ih: np.ndarray,
     il: np.ndarray,
