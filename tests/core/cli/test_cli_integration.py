@@ -1514,6 +1514,29 @@ class TestForecastGenerateIntegration:
 
 
 class TestEdgeCases:
+
+    @patch("mtdata.core.cli.api.discover_tools")
+    def test_json_mode_formats_argparse_failures_as_json(self, mock_discover, capsys):
+        def choice_tool(mode: Literal["fast", "slow"] = "fast"):
+            return {"success": True, "mode": mode}
+
+        mock_discover.return_value = {
+            "choice_tool": {
+                "func": choice_tool,
+                "meta": {"description": "Choice tool"},
+            },
+        }
+
+        with patch(
+            "sys.argv",
+            ["cli.py", "choice_tool", "--mode", "invalid", "--json"],
+        ), pytest.raises(SystemExit, match="2"):
+            main()
+
+        payload = json.loads(capsys.readouterr().out)
+        assert payload["success"] is False
+        assert payload["error_code"] == "cli_invalid_arguments"
+        assert "invalid choice" in payload["error"]
     def test_coerce_cli_scalar_numeric_like_string(self):
         assert _coerce_cli_scalar("123abc") == "123abc"
 

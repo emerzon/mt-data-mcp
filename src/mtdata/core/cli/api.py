@@ -530,10 +530,32 @@ def _result_has_tool_error(result: Any) -> bool:
     return False
 
 
+def _json_parse_errors_requested() -> bool:
+    if "--json" in sys.argv[1:]:
+        return True
+    return str(os.getenv("MTDATA_OUTPUT_FORMAT") or "").strip().lower() == "json"
+
+
+class _CLIArgumentParser(argparse.ArgumentParser):
+    """Emit parse failures in the selected CLI transport format."""
+
+    def error(self, message: str) -> None:
+        if _json_parse_errors_requested():
+            payload = {
+                "success": False,
+                "error": str(message),
+                "error_code": "cli_invalid_arguments",
+                "remediation": f"Run '{self.prog} --help' to inspect valid arguments.",
+            }
+            _write_cli_text(json.dumps(payload, ensure_ascii=False, indent=2))
+            self.exit(2)
+        super().error(message)
+
+
 def _safe_argument_parser(*args: Any, **kwargs: Any) -> argparse.ArgumentParser:
     original_kwargs = dict(kwargs)
     try:
-        signature = inspect.signature(argparse.ArgumentParser)
+        signature = inspect.signature(_CLIArgumentParser)
         if not any(
             param.kind == inspect.Parameter.VAR_KEYWORD
             for param in signature.parameters.values()
@@ -549,14 +571,14 @@ def _safe_argument_parser(*args: Any, **kwargs: Any) -> argparse.ArgumentParser:
         fallback.pop("color", None)
         kwargs = fallback
     try:
-        return argparse.ArgumentParser(*args, **kwargs)
+        return _CLIArgumentParser(*args, **kwargs)
     except TypeError:
         fallback = dict(kwargs)
         fallback.pop("suggest_on_error", None)
         fallback.pop("color", None)
         if fallback == kwargs:
             raise
-        return argparse.ArgumentParser(*args, **fallback)
+        return _CLIArgumentParser(*args, **fallback)
 
 
 def _safe_add_subparser(
