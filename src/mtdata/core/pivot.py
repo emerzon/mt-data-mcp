@@ -148,7 +148,10 @@ _PIVOT_METHOD_INFO: Dict[str, Dict[str, str]] = {
         "intended_use": "Close-sensitive intraday pivot context.",
     },
     "demark": {
-        "method_description": "Uses open/close relationship to choose X, then computes PP, R1, and S1.",
+        "method_description": (
+            "Uses the open/close relationship to choose X; R1/S1 are canonical "
+            "DeMark levels and PP=X/4 is a common retail-platform extension."
+        ),
         "intended_use": "Directional single-level pivot context from the prior bar.",
     },
 }
@@ -598,6 +601,12 @@ def pivot_compute_points(  # noqa: C901
                     ),
                     "levels": compact_levels,
                 }
+                if isinstance(selected_method, dict) and selected_method.get(
+                    "pivot_convention"
+                ):
+                    compact_payload["pivot_convention"] = selected_method[
+                        "pivot_convention"
+                    ]
                 if period_note:
                     compact_payload["period_note"] = period_note
                 compact_payload["timezone"] = timezone_label

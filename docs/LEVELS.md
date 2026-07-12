@@ -33,6 +33,8 @@ mtdata-cli pivot_compute_points EURUSD --timeframe D1 --method camarilla --json
   Omit it to return every method at `--detail standard`/`full`; `--detail compact`
   returns the classic pivots only.
 - DeMark pivots depend on whether the bar closed above, below, or at its open.
+  Its R1/S1 formulas are canonical; the returned `PP=X/4` is a common retail
+  platform extension and is labeled `pivot_convention=retail_x_over_4_extension`.
 
 Use `support_resistance_levels` for complementary data-driven levels.
 

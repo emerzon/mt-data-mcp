@@ -11,6 +11,8 @@ from unittest.mock import MagicMock, PropertyMock, patch
 import numpy as np
 import pytest
 
+from mtdata.utils.pivot_points import compute_pivot_method_levels
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -173,10 +175,22 @@ def test_pivot_compute_points_demark_compact_returns_nonzero_levels():
     assert res["method"] == "demark"
     assert res["pivot"] == round(expected_x / 4.0, 5)
     assert res["levels"]["PP"] == round(expected_x / 4.0, 5)
+    assert res["pivot_convention"] == "retail_x_over_4_extension"
     assert res["levels"]["R1"] != 0.0
     assert res["levels"]["S1"] != 0.0
     assert "R2" not in res["levels"]
     assert "S2" not in res["levels"]
+
+
+def test_demark_rejects_nonfinite_open_price() -> None:
+    with pytest.raises(ValueError, match="finite open"):
+        compute_pivot_method_levels(
+            "demark",
+            open_price=math.nan,
+            high_price=2.0,
+            low_price=1.0,
+            close_price=1.5,
+        )
 
 
 class TestPivotSymbolGuardError:
