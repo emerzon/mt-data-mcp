@@ -20,14 +20,13 @@ mtdata/
 │   │   │   └── methods/     # HMM, BOCPD, MS-AR implementations
 │   │   ├── report/     # report_generate runtime, request models, rendering
 │   │   ├── report_templates/  # Per-style report templates (basic, intraday, swing, …)
-│   │   ├── reports/    # Legacy/shared report helpers
 │   │   └── trading/    # trade_*, account/positions/risk modules
 │   ├── forecast/       # Forecasting engines, backtests, methods registry, model store
 │   │   └── methods/    # Individual model implementations
 │   ├── patterns/       # Chart/candlestick/Elliott wave detection
 │   │   └── classic_impl/  # Classic pattern algorithm implementations
 │   ├── services/       # MT5 gateway, Finviz, options/news data access
-│   │   └── finviz/     # Finviz package with endpoints/ subdirectory
+│   │   └── finviz/     # Finviz package (api, client, pagination, symbols)
 │   ├── shared/         # Cross-module schemas and constants
 │   └── utils/          # Indicators, denoising, dimension reduction, formatting
 │       └── denoise/    # Denoising package with filters/ subdirectory
@@ -47,7 +46,7 @@ mtdata/
 | Add forecast method | `src/mtdata/forecast/methods/` + `forecast_registry.py` | Register in registry, implement interface |
 | Background training / model store | `src/mtdata/forecast/task_manager.py`, `forecast/model_store.py`, `core/forecast_tasks.py` | Concurrency caps via `MTDATA_TRAIN_WORKERS`/`MTDATA_HEAVY_LIMIT`; cache via `MTDATA_MODEL_STORE`/`MTDATA_MODEL_TTL_DAYS` |
 | Fix MT5 data access | `src/mtdata/services/data_service.py` | Main data gateway |
-| Fix Finviz integration | `src/mtdata/services/finviz/` | Package with endpoints/ subdirectory |
+| Fix Finviz integration | `src/mtdata/services/finviz/` | Package (`api`, `client`, `pagination`, `symbols`) |
 | Modify pattern detection | `src/mtdata/patterns/` | `classic.py` delegates to `classic_impl/` |
 | Change indicators | `src/mtdata/utils/indicators.py` | 100+ technical indicators |
 | Edit denoising filters | `src/mtdata/utils/denoise/` | Package with filters/ subdirectory |
