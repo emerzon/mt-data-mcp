@@ -405,6 +405,27 @@ def test_trade_risk_analyze_resolves_missing_entry_from_live_tick() -> None:
     assert out["trade_evaluation"]["entry_source"] == "live_tick_ask"
 
 
+def test_trade_risk_analyze_reanchors_omitted_entry_after_direction_inference() -> None:
+    mt5 = MagicMock()
+    mt5.account_info.return_value = SimpleNamespace(equity=1000.0, currency="USD")
+    mt5.positions_get.return_value = []
+    mt5.symbol_info.return_value = _make_symbol_info()
+    mt5.symbol_info_tick.return_value = SimpleNamespace(bid=99.8, ask=100.2)
+
+    with _patched_mt5_module(mt5):
+        out = trade_risk_analyze(
+            symbol="EURUSD",
+            desired_risk_pct=1.0,
+            stop_loss=95.0,
+            take_profit=112.5,
+        )
+
+    assert out["success"] is True
+    assert out["position_sizing"]["entry"] == 100.2
+    assert out["position_sizing"]["entry_source"] == "live_tick_ask"
+    assert out["trade_evaluation"]["entry"] == 100.2
+
+
 def test_trade_risk_analyze_keeps_exposure_analysis_with_partial_sizing_params() -> None:
     mt5 = MagicMock()
     mt5.account_info.return_value = SimpleNamespace(equity=1000.0, currency="USD")

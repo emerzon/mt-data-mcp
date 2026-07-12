@@ -2832,6 +2832,7 @@ def run_trade_risk_analyze(  # noqa: C901
 
     def _analyze_risk():  # noqa: C901
         try:
+            entry_was_omitted = request.entry is None
             account = gateway.account_info()
             if account is None:
                 return {"error": "Failed to get account info"}
@@ -3547,6 +3548,31 @@ def run_trade_risk_analyze(  # noqa: C901
                         },
                     )
                     return result
+
+                if entry_was_omitted:
+                    directional_entry, directional_source = (
+                        _resolve_live_trade_risk_entry(
+                            gateway=gateway,
+                            symbol=request.symbol,
+                            direction=direction_norm,
+                        )
+                    )
+                    if directional_entry is not None:
+                        request.entry = float(directional_entry)
+                        entry_source = directional_source or "live_tick"
+                        result["trade_evaluation"] = _build_trade_evaluation(
+                            symbol=request.symbol,
+                            direction=direction_norm,
+                            entry=float(request.entry),
+                            stop_loss=float(request.stop_loss),
+                            take_profit=(
+                                float(request.take_profit)
+                                if request.take_profit is not None
+                                else None
+                            ),
+                            sym_info=sym_info,
+                            entry_source=entry_source,
+                        )
                 level_error = _validate_trade_risk_levels(
                     direction=direction_norm,
                     entry=float(request.entry),
