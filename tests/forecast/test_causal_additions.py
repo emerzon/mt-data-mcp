@@ -37,6 +37,41 @@ def test_cross_correlation_identifies_first_symbol_lead(monkeypatch):
     assert result["success"] is True
     assert result["best"]["lag"] == 3
     assert result["best"]["leader"] == "LEFT"
+    assert result["context"]["lag_tests"] == 17
+    assert result["context"]["significance_correction"] == "bonferroni_across_lags"
+    assert result["context"]["ci_per_lag_confidence"] > 0.95
+
+
+def test_cross_correlation_adjusts_selected_lag_interval(monkeypatch):
+    index = pd.date_range("2025-01-01", periods=80, freq="h")
+    series = {
+        "LEFT": pd.Series(np.arange(80, dtype=float), index=index),
+        "RIGHT": pd.Series(np.arange(80, dtype=float), index=index),
+    }
+    observed: dict[str, float] = {}
+
+    monkeypatch.setattr(causal, "_causal_connection_error", lambda: None)
+    monkeypatch.setattr(
+        causal,
+        "_fetch_series_for_window",
+        lambda symbol, *args, **kwargs: (series[symbol], None),
+    )
+
+    def _ci(*args, confidence, **kwargs):
+        observed["confidence"] = confidence
+        return -0.01, 0.01
+
+    monkeypatch.setattr(causal, "_block_bootstrap_correlation_ci", _ci)
+    result = _raw(causal.cross_correlation)(
+        symbols="LEFT,RIGHT",
+        transform="level",
+        max_lag=2,
+        min_overlap=20,
+    )
+
+    assert result["success"] is True
+    assert observed["confidence"] == 0.99
+    assert result["best"]["significant"] is False
 
 
 def test_cointegration_johansen_reports_positive_rank(monkeypatch):

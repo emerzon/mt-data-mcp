@@ -95,7 +95,15 @@ It accepts either:
 
 ### `cross_correlation`
 
-This tool requires exactly two symbols and evaluates lags from `-max_lag` through `+max_lag`. A positive best lag means the first symbol leads the second; a negative lag means the second leads the first. The result includes a moving-block bootstrap confidence interval for the best-lag correlation.
+This tool requires exactly two symbols and evaluates lags from `-max_lag`
+through `+max_lag`. A positive best lag means the first symbol leads the second;
+a negative lag means the second leads the first. The result includes a
+moving-block bootstrap confidence interval for the best-lag correlation.
+Because the best lag is selected by maximum absolute correlation, the interval
+uses a Bonferroni-adjusted per-lag confidence level to provide 95% family-wise
+coverage across all evaluated lags. `best.significant` is true only when that
+adjusted interval excludes zero; the context reports the number of lag tests
+and both confidence levels.
 
 ### `causal_discover_signals`
 

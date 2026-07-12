@@ -2714,12 +2714,16 @@ def cross_correlation(  # noqa: C901
             int(best["lag"]),
         )
         block_size = max(2, int(round(math.sqrt(selected_left.size))))
+        lag_tests = len(rows)
+        familywise_confidence = 0.95
+        per_lag_confidence = 1.0 - ((1.0 - familywise_confidence) / lag_tests)
         ci_low, ci_high = _block_bootstrap_correlation_ci(
             selected_left,
             selected_right,
             method=method_value,
             samples=int(bootstrap_samples),
             block_size=block_size,
+            confidence=per_lag_confidence,
         )
         best_item = dict(best)
         best_item.update(
@@ -2745,6 +2749,10 @@ def cross_correlation(  # noqa: C901
                 "max_lag": int(max_lag),
                 "bootstrap_samples": int(bootstrap_samples),
                 "bootstrap_block_size": int(block_size),
+                "lag_tests": int(lag_tests),
+                "ci_familywise_confidence": familywise_confidence,
+                "ci_per_lag_confidence": round(per_lag_confidence, 8),
+                "significance_correction": "bonferroni_across_lags",
             },
             "meta": _causal_contract_meta(meta),
         }
