@@ -49,7 +49,17 @@ _DIRECTIONAL_BIAS_MIN_CONFIDENCE = 0.3
 
 
 def _round_value(x: Any) -> Any:
-    """Round numeric values to 8 decimal places."""
+    """Round floats while preserving JSON scalar and container types."""
+    if x is None:
+        return None
+    if isinstance(x, (bool, np.bool_)):
+        return bool(x)
+    if isinstance(x, (int, np.integer)):
+        return int(x)
+    if isinstance(x, dict):
+        return {str(key): _round_value(value) for key, value in x.items()}
+    if isinstance(x, (list, tuple)):
+        return [_round_value(value) for value in x]
     try:
         return float(np.round(float(x), 8))
     except Exception:
@@ -259,10 +269,10 @@ def _elliott_hidden_completed_note(
         conf = _safe_float(strongest.get("confidence"))
         if conf is not None:
             strongest_text = f"{strongest_text} (confidence {float(conf):.2f})".strip()
-    note = f"{int(completed_hidden)} completed pattern(s) hidden; "
+    note = f"{int(completed_hidden)} confirmed structure(s) hidden; "
     if strongest_text:
         note += f"strongest hidden count: {strongest_text}; "
-    note += "set include_completed=true to include them."
+    note += "set include_confirmed=true to include them."
     return note
 
 
@@ -973,8 +983,9 @@ _ALL_COMPACT_HARMONIC_KEYS = (
     "start_date", "end_date",
 )
 _ALL_COMPACT_ELLIOTT_KEYS = (
-    "timeframe", "wave_type", "status", "confidence",
-    "start_date", "end_date",
+    "timeframe", "wave_type", "status", "confidence", "structural_score",
+    "rule_valid", "is_recent", "bars_since_confirmation",
+    "scan_scale_id", "alternate_group_id", "start_date", "end_date",
 )
 _ALL_COMPACT_FRACTAL_KEYS = (
     "timeframe", "name", "status", "confidence", "direction", "bias",

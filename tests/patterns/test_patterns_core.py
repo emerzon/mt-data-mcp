@@ -510,12 +510,12 @@ def test_build_pattern_response_elliott_hidden_completed_preview_is_truthful():
 
     assert res["n_patterns"] == 0
     assert res["completed_patterns_hidden"] == 2
-    assert "No forming Elliott Wave structures detected" in res["diagnostic"]
+    assert "No developing Elliott Wave structures detected" in res["diagnostic"]
     assert "No valid Elliott Wave structures detected" not in res["diagnostic"]
     assert res["completed_patterns_preview"][0]["pattern"] == "Impulse"
     assert res["completed_patterns_preview"][0]["timeframe"] == "H4"
     assert "strongest hidden count" in res["note"]
-    assert "include_completed=true" in res["note"]
+    assert "include_confirmed=true" in res["note"]
 
 
 def test_build_pattern_response_elliott_compact_keeps_hidden_completed_preview():
@@ -1213,7 +1213,7 @@ def test_patterns_detect_elliott_with_explicit_timeframe_hidden_completed_is_tru
     assert res["success"] is True
     assert res["n_patterns"] == 0
     assert res["completed_patterns_hidden"] == 1
-    assert "No forming Elliott Wave structures detected" in res["diagnostic"]
+    assert "No developing Elliott Wave structures detected" in res["diagnostic"]
     assert "completed_patterns_preview" in res
     assert res["completed_patterns_preview"][0]["pattern"] == "Impulse"
 
@@ -1269,7 +1269,7 @@ def test_patterns_detect_elliott_scan_hidden_completed_is_truthful(monkeypatch):
     assert res["n_patterns"] == 0
     assert res["completed_patterns_hidden"] == 3
     assert (
-        "No forming Elliott Wave structures were detected across scanned timeframes."
+        "No developing Elliott Wave structures were detected across scanned timeframes."
         in res["diagnostic"]
     )
     assert len(res["completed_patterns_preview"]) == 3
@@ -1279,7 +1279,7 @@ def test_patterns_detect_elliott_scan_hidden_completed_is_truthful(monkeypatch):
         "D1",
     }
     assert all(
-        "No forming Elliott Wave structures detected" in row["diagnostic"]
+        "No developing Elliott Wave structures detected" in row["diagnostic"]
         for row in res["findings"]
     )
 

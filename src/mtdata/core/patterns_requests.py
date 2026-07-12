@@ -2,10 +2,9 @@ from __future__ import annotations
 
 from typing import Any, Dict, Literal, Optional
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from ..shared.schema import DenoiseSpec, TimeframeLiteral
-
 
 PatternsDetailLiteral = Literal["compact", "standard", "summary", "full"]
 PatternModeLiteral = Literal["candlestick", "classic", "harmonic", "fractal", "elliott", "all"]
@@ -53,3 +52,15 @@ class PatternsDetectRequest(BaseModel):
     include_series: bool = False
     series_time: str = "string"
     include_completed: bool = False
+    include_confirmed: Optional[bool] = Field(
+        None,
+        description=(
+            "Elliott v2 alias for include_completed; when supplied it takes precedence."
+        ),
+    )
+
+    @model_validator(mode="after")
+    def _resolve_include_confirmed(self) -> "PatternsDetectRequest":
+        if self.include_confirmed is not None:
+            self.include_completed = bool(self.include_confirmed)
+        return self

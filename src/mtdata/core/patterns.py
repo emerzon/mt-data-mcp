@@ -397,8 +397,8 @@ def _build_pattern_response(
     if str(mode).lower() == "elliott" and int(len(filtered)) == 0:
         if completed_hidden > 0:
             resp["diagnostic"] = (
-                f"No forming Elliott Wave structures detected in {int(limit)} {timeframe} bars. "
-                f"{int(completed_hidden)} completed structure(s) were detected but hidden by default. "
+                f"No developing Elliott Wave structures detected in {int(limit)} {timeframe} bars. "
+                f"{int(completed_hidden)} confirmed structure(s) were detected but hidden by default. "
                 f"{_elliott_timeframe_suggestion(timeframe)} "
                 "You can also increase lookback or focus on a clearer trending segment."
             )
@@ -532,7 +532,9 @@ def _build_pattern_response(
     return _dedupe_repeated_regime_context(resp)
 
 
-def _format_elliott_patterns(df: pd.DataFrame, cfg: _ElliottCfg) -> List[Dict[str, Any]]:
+def _format_elliott_patterns(  # noqa: C901 - response contract is intentionally explicit
+    df: pd.DataFrame, cfg: _ElliottCfg
+) -> List[Dict[str, Any]]:
     """Run Elliott detection on prepared data and normalize result rows."""
     pats = _detect_elliott_waves(df, cfg)
     out_list: List[Dict[str, Any]] = []
@@ -575,6 +577,19 @@ def _format_elliott_patterns(df: pd.DataFrame, cfg: _ElliottCfg) -> List[Dict[st
                 row["available_at_time"] = float(available_at_time)
             if details.get("structural_score") is not None:
                 row["structural_score"] = float(details["structural_score"])
+            for key in (
+                "rule_valid",
+                "template_fit",
+                "candidate_score",
+                "scan_threshold_pct",
+                "scan_scale_id",
+                "alternate_group_id",
+                "alternate_count",
+                "span_bars",
+                "span_share_of_lookback",
+            ):
+                if details.get(key) is not None:
+                    row[key] = details[key]
 
             if wave_type.strip().lower() == "candidate":
                 wave_points = details.get("wave_points_labeled") or details.get("wave_points") or []
@@ -601,7 +616,7 @@ def _format_elliott_patterns(df: pd.DataFrame, cfg: _ElliottCfg) -> List[Dict[st
                 else:
                     row["candidate_note"] = (
                         "Low-confidence fallback candidate; Elliott rules did not "
-                        "validate a specific impulse or zigzag-ABC correction."
+                        "validate a specific impulse or outer ABC structure."
                     )
                 if wave_count:
                     row["wave_count"] = int(wave_count)
@@ -617,21 +632,37 @@ def _format_elliott_patterns(df: pd.DataFrame, cfg: _ElliottCfg) -> List[Dict[st
             if terminal_confirmed is None and "has_unconfirmed_terminal_pivot" in details:
                 terminal_confirmed = not bool(details.get("has_unconfirmed_terminal_pivot"))
             try:
-                bars_since_end = max(0, int(n_bars) - 1 - int(p.end_index))
+                bars_since_geometry_end = max(
+                    0, int(n_bars) - 1 - int(p.end_index)
+                )
             except Exception:
-                bars_since_end = None
+                bars_since_geometry_end = None
+            available_index = getattr(p, "available_at_index", None)
+            if available_index is None:
+                available_index = details.get("available_at_index")
+            try:
+                bars_since_confirmation = max(
+                    0, int(n_bars) - 1 - int(available_index)
+                )
+            except Exception:
+                bars_since_confirmation = None
             if structure_complete is not None:
                 row["structure_complete"] = bool(structure_complete)
                 details["structure_complete"] = bool(structure_complete)
             if terminal_confirmed is not None:
                 row["terminal_confirmed"] = bool(terminal_confirmed)
                 details["terminal_confirmed"] = bool(terminal_confirmed)
-            if bars_since_end is not None:
-                row["bars_since_end"] = int(bars_since_end)
-                details["bars_since_end"] = int(bars_since_end)
+            if bars_since_geometry_end is not None:
+                row["bars_since_geometry_end"] = int(bars_since_geometry_end)
+                details["bars_since_geometry_end"] = int(bars_since_geometry_end)
+            if bars_since_confirmation is not None:
+                row["bars_since_confirmation"] = int(bars_since_confirmation)
+                details["bars_since_confirmation"] = int(bars_since_confirmation)
                 recent_bars = max(1, int(getattr(cfg, "recent_bars", 3)))
-                row["is_recent"] = bool(bars_since_end < recent_bars)
-                details["is_recent"] = bool(bars_since_end < recent_bars)
+                row["is_recent"] = bool(bars_since_confirmation < recent_bars)
+                details["is_recent"] = bool(
+                    bars_since_confirmation < recent_bars
+                )
             details.setdefault("status_basis", "causal_confirmation")
             row["details"] = details
             out_list.append(row)
@@ -1283,6 +1314,7 @@ def patterns_detect(
         Elliott v2 options include:
         - swing_threshold_pct for one exact scan, or scan_thresholds_pct for a multi-scale scan
         - scan_min_distances, pattern_types, min_impulse_bars, min_correction_bars
+        - min_structural_score, max_pattern_span_bars, max_pattern_age_bars
         - pivot_price_source: "close" or "ohlc"
         Elliott v2 reports outer-leg geometry and causal pivot confirmation. It
         does not infer nested degrees, internal 5-3-5 subdivisions, the current
@@ -1315,7 +1347,7 @@ def patterns_detect(
         Time format for series data
     
     include_completed : bool, optional (default=False)
-        Include completed patterns alongside forming results (when False, only forming patterns are returned)
+        Deprecated Elliott alias: include confirmed structures alongside developing/fallback results.
     
     Returns:
     --------

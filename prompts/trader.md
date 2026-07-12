@@ -505,6 +505,8 @@ Use these when they can sharpen the decision. Do not run them by default every c
   Treat v2 output as causal outer-leg geometry only. It does not infer nested
   degrees, internal 5-3-5 subdivisions, the current wave number, or the next leg;
   wave-5 targets are retrospective fit diagnostics.
+  Prefer `structural_score`, `rule_valid`, and `bars_since_confirmation` over
+  interpreting `confidence` as a calibrated probability.
 
 - `patterns_detect(mode="classic", detail="compact", config={"native_multiscale": true})`
   Use near consolidation, breakout, or measured-move structure when a plain candlestick read is too shallow.

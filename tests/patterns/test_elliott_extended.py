@@ -1015,7 +1015,7 @@ class TestDetectElliottWaves:
             ),
         )
 
-        monkeypatch.setattr(elliott_mod, "_zigzag_pivots_indices", lambda *_args, **_kwargs: ([0, 1, 2, 3, 4, 5], ["up"] * 6))
+        monkeypatch.setattr(elliott_mod, "_zigzag_pivots_indices", lambda *_args, **_kwargs: ([0, 1, 2, 3, 4, 5], ["down", "up", "down", "up", "down", "up"]))
 
         fake_gmm = type("FakeGMM", (), {"means_": np.array([[0.0, -0.1, 0.0], [0.0, 0.1, 0.0]])})()
         monkeypatch.setattr(
@@ -1058,7 +1058,7 @@ class TestDetectElliottWaves:
         monkeypatch.setattr(
             elliott_mod,
             "_zigzag_pivots_indices",
-            lambda *_args, **_kwargs: ([0, 1, 2, 3, 4, 5, 6], ["up"] * 7),
+            lambda *_args, **_kwargs: ([0, 1, 2, 3, 4, 5, 6], ["down", "up", "down", "up", "down", "up", "up"]),
         )
         monkeypatch.setattr(
             elliott_mod,
@@ -1107,7 +1107,7 @@ class TestDetectElliottWaves:
             ),
         )
 
-        monkeypatch.setattr(elliott_mod, "_zigzag_pivots_indices", lambda *_args, **_kwargs: ([0, 1, 2, 3, 4, 5], ["up"] * 6))
+        monkeypatch.setattr(elliott_mod, "_zigzag_pivots_indices", lambda *_args, **_kwargs: ([0, 1, 2, 3, 4, 5], ["down", "up", "down", "up", "down", "up"]))
         monkeypatch.setattr(
             elliott_mod,
             "_classify_waves",
@@ -1130,7 +1130,7 @@ class TestDetectElliottWaves:
         assert scenarios[0].pivot_confirmations[:-1] == [True] * (len(scenarios[0].pivot_confirmations) - 1)
         assert scenarios[0].pivot_confirmations[-1] is False
 
-    def test_analyze_once_uses_configured_blend_weights(self, monkeypatch):
+    def test_analyze_once_keeps_gmm_diagnostic_only(self, monkeypatch):
         close = _impulse_close()
         t = np.arange(close.size, dtype=float) * 3600 + 1_700_000_000
         analyzer = ElliottWaveAnalyzer(
@@ -1150,7 +1150,7 @@ class TestDetectElliottWaves:
             ),
         )
 
-        monkeypatch.setattr(elliott_mod, "_zigzag_pivots_indices", lambda *_args, **_kwargs: ([0, 1, 2, 3, 4, 5], ["up"] * 6))
+        monkeypatch.setattr(elliott_mod, "_zigzag_pivots_indices", lambda *_args, **_kwargs: ([0, 1, 2, 3, 4, 5], ["down", "up", "down", "up", "down", "up"]))
         monkeypatch.setattr(
             elliott_mod,
             "_classify_waves",
@@ -1167,7 +1167,7 @@ class TestDetectElliottWaves:
 
         assert scenarios
         rule_conf = _rule_confidence_from_eval(scenarios[0].rule_eval)
-        expected = (0.2 * rule_conf) + (0.8 * scenarios[0].cls_score)
+        expected = rule_conf
         adjusted, adjustments = _apply_confirmation_confidence_adjustments(
             expected,
             scenarios[0].pivot_confirmations,
@@ -1190,10 +1190,8 @@ class TestDetectElliottWaves:
             cfg,
         )
 
-        assert adjusted == pytest.approx(0.72)
-        assert adjustments["unconfirmed_pattern_penalty"] == pytest.approx(0.12)
-        assert adjustments["unconfirmed_terminal_pivot_penalty"] == pytest.approx(0.10)
-        assert adjustments["unconfirmed_terminal_pivot_confidence_cap"] == pytest.approx(0.72)
+        assert adjusted == pytest.approx(0.98 * 0.72)
+        assert adjustments["confirmation_factor"] == pytest.approx(0.72)
 
     def test_analyze_once_classifies_with_prefix_only(self, monkeypatch):
         close = np.array([100.0, 120.0, 108.0, 150.0, 135.0, 160.0, 148.0], dtype=float)
@@ -1216,7 +1214,7 @@ class TestDetectElliottWaves:
         monkeypatch.setattr(
             elliott_mod,
             "_zigzag_pivots_indices",
-            lambda *_args, **_kwargs: ([0, 1, 2, 3, 4, 5, 6], ["up"] * 7),
+            lambda *_args, **_kwargs: ([0, 1, 2, 3, 4, 5, 6], ["down", "up", "down", "up", "down", "up", "down"]),
         )
         monkeypatch.setattr(
             elliott_mod,

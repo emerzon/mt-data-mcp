@@ -5,6 +5,7 @@ import pandas as pd
 import pytest
 
 import mtdata.patterns.elliott as elliott
+from mtdata.core.patterns_requests import PatternsDetectRequest
 from mtdata.patterns.elliott import (
     ElliottPivot,
     ElliottRuleEvaluation,
@@ -14,6 +15,7 @@ from mtdata.patterns.elliott import (
     ElliottWaveResult,
     _build_pivot_records,
     _dedupe_similar_waves,
+    _group_scale_alternatives,
     _ohlc_zigzag_pivots_indices,
     detect_elliott_waves,
 )
@@ -30,6 +32,13 @@ def test_v2_rejects_empty_pattern_types() -> None:
         ElliottWaveConfig(pattern_types=[]).validate()
 
 
+def test_include_confirmed_alias_takes_precedence() -> None:
+    request = PatternsDetectRequest(
+        symbol="EURUSD", mode="elliott", include_completed=False, include_confirmed=True
+    )
+    assert request.include_completed is True
+
+
 @pytest.mark.parametrize(
     "config, message",
     [
@@ -37,6 +46,7 @@ def test_v2_rejects_empty_pattern_types() -> None:
         (ElliottWaveConfig(swing_threshold_pct=0.0), "threshold"),
         (ElliottWaveConfig(gmm_components=1), "gmm_components"),
         (ElliottWaveConfig(top_k=-1), "top_k"),
+        (ElliottWaveConfig(min_structural_score=-0.1), "min_structural_score"),
     ],
 )
 def test_v2_rejects_invalid_config(config: ElliottWaveConfig, message: str) -> None:
@@ -49,7 +59,11 @@ def test_causal_pivot_records_capture_confirmation_bar() -> None:
     records = _build_pivot_records([0, 1, 3, 4], close, threshold_pct=5.0)
 
     assert records[1] == ElliottPivot(
-        index=1, kind="peak", confirmed=True, confirmation_index=3
+        index=1,
+        kind="peak",
+        confirmed=True,
+        confirmation_index=3,
+        price=110.0,
     )
     assert records[-1].confirmed is False
     assert records[-1].confirmation_index is None
@@ -163,3 +177,89 @@ def test_ohlc_zigzag_uses_wick_extrema() -> None:
     pivots, _ = _ohlc_zigzag_pivots_indices(high, low, threshold_pct=5.0)
     assert pivots
     assert all(0 <= pivot < high.size for pivot in pivots)
+
+
+def test_ohlc_record_provenance_does_not_reinfer_kind_from_close() -> None:
+    close = np.array([100.0, 99.0, 98.0, 97.0])
+    high = np.array([102.0, 112.0, 108.0, 109.0])
+    low = np.array([95.0, 104.0, 96.0, 90.0])
+    kinds = {0: "trough", 1: "peak", 2: "trough", 3: "peak"}
+    prices = {0: 95.0, 1: 112.0, 2: 96.0, 3: 109.0}
+
+    records = _build_pivot_records(
+        [0, 1, 2, 3],
+        close,
+        threshold_pct=5.0,
+        high=high,
+        low=low,
+        kinds=kinds,
+        prices=prices,
+    )
+
+    assert [record.kind for record in records] == [
+        "trough",
+        "peak",
+        "trough",
+        "peak",
+    ]
+    assert [record.price for record in records] == [95.0, 112.0, 96.0, 109.0]
+    assert records[1].confirmation_index == 2
+
+
+def test_invalid_fallback_has_zero_structural_score() -> None:
+    close = np.array([100.0, 110.0, 105.0, 115.0, 112.0, 114.0])
+    scenario = ElliottScenario(
+        pivots=list(range(6)),
+        bullish=True,
+        confidence=0.2,
+        cls_score=0.5,
+        rule_eval=ElliottRuleEvaluation(
+            valid=False,
+            fib_score=0.75,
+            metrics={},
+            violations=["wave3_shortest"],
+        ),
+        threshold_used=0.5,
+        min_distance_used=1,
+        fallback_candidate=True,
+        wave_type="Candidate",
+    )
+    result = ElliottWaveAnalyzer(
+        close, np.arange(close.size, dtype=float), ElliottWaveConfig()
+    ).build_result(scenario)
+
+    assert result.details["template_fit"] == pytest.approx(0.75)
+    assert result.details["rule_valid"] is False
+    assert result.details["structural_score"] == 0.0
+    assert result.details["candidate_score"] == pytest.approx(0.2)
+
+
+def test_scale_grouping_collapses_alternatives_but_keeps_nested_degree() -> None:
+    def result(sequence, scale, score):
+        return ElliottWaveResult(
+            wave_type="Impulse",
+            wave_sequence=sequence,
+            confidence=score,
+            start_index=sequence[0],
+            end_index=sequence[-1],
+            start_time=None,
+            end_time=None,
+            details={
+                "sequence_direction": "bull",
+                "pattern_confirmed": True,
+                "structural_score": score,
+                "scan_scale_id": scale,
+            },
+            structure_state="confirmed",
+        )
+
+    grouped = _group_scale_alternatives(
+        [
+            result([0, 10, 20, 30, 40, 50], "t0.3-d3", 0.8),
+            result([1, 11, 21, 31, 41, 51], "t0.6-d5", 0.9),
+            result([15, 18, 21, 24, 27, 30], "t0.3-d3", 0.85),
+        ]
+    )
+
+    assert len(grouped) == 2
+    assert max(item.details["alternate_count"] for item in grouped) == 2

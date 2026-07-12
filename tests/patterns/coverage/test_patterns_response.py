@@ -223,6 +223,16 @@ class TestFormatElliottPatterns:
         from mtdata.core.patterns import _format_elliott_patterns
         return _format_elliott_patterns(df, cfg)
 
+    def test_rounding_preserves_json_scalar_types(self):
+        from mtdata.core.patterns_support import _round_value
+
+        payload = _round_value(
+            {"flag": True, "count": np.int64(3), "score": 0.123456789}
+        )
+        assert payload == {"flag": True, "count": 3, "score": 0.12345679}
+        assert isinstance(payload["flag"], bool)
+        assert isinstance(payload["count"], int)
+
     @patch("mtdata.core.patterns._detect_elliott_waves")
     def test_basic(self, mock_detect):
         mock_detect.return_value = [
@@ -261,7 +271,7 @@ class TestFormatElliottPatterns:
         assert "Low-confidence fallback candidate" in row["candidate_note"]
         assert "did not validate" in row["candidate_note"]
         assert row["validation_issues"] == ["fallback_candidate"]
-        assert "bars_since_end" in row
+        assert "bars_since_geometry_end" in row
         assert "status_basis" in row["details"]
 
     @patch("mtdata.core.patterns._detect_elliott_waves")
@@ -296,11 +306,18 @@ class TestFormatElliottPatterns:
         df = _make_ohlcv_df(50)
         mock_detect.return_value = [
             _mock_pattern_result(
-                end_index=48, details={"structure_state": "developing"}
+                end_index=48,
+                details={
+                    "structure_state": "developing",
+                    "available_at_index": 49,
+                },
             ),
         ]
         result = self._call(df, MagicMock())
         assert result[0]["status"] == "developing"
+        assert result[0]["bars_since_geometry_end"] == 1
+        assert result[0]["bars_since_confirmation"] == 0
+        assert result[0]["is_recent"] is True
 
     @patch("mtdata.core.patterns._detect_elliott_waves")
     def test_logs_when_pattern_is_dropped_during_formatting(self, mock_detect, caplog):
@@ -324,11 +341,18 @@ class TestFormatElliottPatterns:
         df = _make_ohlcv_df(100)
         mock_detect.return_value = [
             _mock_pattern_result(
-                end_index=10, details={"structure_state": "confirmed"}
+                end_index=10,
+                details={
+                    "structure_state": "confirmed",
+                    "available_at_index": 40,
+                },
             ),
         ]
         result = self._call(df, MagicMock())
         assert result[0]["status"] == "confirmed"
+        assert result[0]["bars_since_geometry_end"] == 89
+        assert result[0]["bars_since_confirmation"] == 59
+        assert result[0]["is_recent"] is False
 
     @patch("mtdata.core.patterns._detect_elliott_waves")
     def test_exception_skipped(self, mock_detect):

@@ -792,6 +792,7 @@ def run_patterns_detect(  # noqa: C901
             cfg.validate()
         except ValueError as exc:
             return {"error": f"Invalid Elliott config: {exc}"}
+        cfg.top_k = max(int(cfg.top_k), int(request.top_k))
 
         if tf_norm:
             df, err = _fetch_pattern_frame(
@@ -882,8 +883,8 @@ def run_patterns_detect(  # noqa: C901
             if int(len(filtered)) == 0:
                 if completed_hidden > 0:
                     finding_row["diagnostic"] = (
-                        f"No forming Elliott Wave structures detected in {int(request.limit)} {tf} bars. "
-                        f"{int(completed_hidden)} completed structure(s) were detected but hidden by default. "
+                        f"No developing Elliott Wave structures detected in {int(request.limit)} {tf} bars. "
+                        f"{int(completed_hidden)} confirmed structure(s) were detected but hidden by default. "
                         f"{deps.elliott_timeframe_suggestion(tf)}"
                     )
                 else:
@@ -947,8 +948,8 @@ def run_patterns_detect(  # noqa: C901
         if int(len(combined_patterns)) == 0:
             if completed_hidden_total > 0:
                 resp["diagnostic"] = (
-                    "No forming Elliott Wave structures were detected across scanned timeframes. "
-                    f"{int(completed_hidden_total)} completed structure(s) were detected but hidden by default. "
+                    "No developing Elliott Wave structures were detected across scanned timeframes. "
+                    f"{int(completed_hidden_total)} confirmed structure(s) were detected but hidden by default. "
                     "Try increasing lookback or focusing on higher-structure windows like H4/D1."
                 )
             else:
@@ -1049,6 +1050,7 @@ def run_patterns_detect(  # noqa: C901
             section_errors["elliott"] = {
                 tf: f"Invalid Elliott config: {exc}" for tf in timeframes
             }
+        elliott_cfg.top_k = max(int(elliott_cfg.top_k), int(request.top_k))
 
         classic_config_errors = deps.validate_classic_config_errors(classic_cfg)
         classic_config_error_msg: Optional[str] = None
