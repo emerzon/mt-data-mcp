@@ -118,6 +118,8 @@ def test_preprocessing_helpers_and_output_format():
     assert "ci_alpha_requested" not in res
     assert "ci_unavailable" not in res
     assert res["lower_return"] == [0.0, 0.01, -0.02]
+
+
     assert res["upper_return"] == [0.02, 0.03, 0.0]
     assert "lower_price" not in res
     assert "upper_price" not in res
@@ -158,6 +160,31 @@ def test_preprocessing_helpers_and_output_format():
     assert no_ci["last_price"] == float(df["close"].iloc[-1])
     assert "last_price_close" not in no_ci
     assert no_ci["last_price_source"] == "candle_close"
+
+
+def test_prepare_feature_context_surfaces_univariate_fallback(monkeypatch, caplog):
+    def _fail(*args, **kwargs):
+        raise ValueError("missing requested column")
+
+    monkeypatch.setattr(fe._forecast_preprocessing, "prepare_features", _fail)
+
+    X, future, info = fe._prepare_feature_context(
+        df=_df(10),
+        features={"columns": ["missing"]},
+        exog_used=None,
+        exog_future=None,
+        tf_secs=3600,
+        horizon=2,
+        target_series=_df(10)["close"],
+        dimred_method=None,
+        dimred_params=None,
+        symbol="EURUSD",
+    )
+
+    assert X is None
+    assert future is None
+    assert info == {"error": "feature_build_error: missing requested column"}
+    assert "using univariate fallback" in caplog.text
 
 
 def test_last_price_freshness_fields_mark_stale_anchor():

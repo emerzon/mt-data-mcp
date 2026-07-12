@@ -485,7 +485,7 @@ def _prepare_feature_context(
                 reducer_factory=_forecast_preprocessing._create_dimred_reducer,
             )
         except Exception as exc:
-            logger.debug("Feature preparation failed: %s", exc)
+            logger.warning("Feature preparation failed; using univariate fallback: %s", exc)
             X, built_future_exog, feat_info = None, None, {'error': f"feature_build_error: {str(exc)}"}
         if future_exog is None:
             future_exog = built_future_exog
@@ -553,7 +553,7 @@ def build_training_context(
     )
     if len(target_series) < 3:
         raise ValueError(f"Not enough valid data points in column '{base_col}'")
-    X, _, _ = _prepare_feature_context(
+    X, _, feature_info = _prepare_feature_context(
         df=df,
         features=features,
         exog_used=exog_used,
@@ -565,6 +565,11 @@ def build_training_context(
         dimred_params=dimred_params,
         symbol=symbol,
     )
+    if features and feature_info.get("error"):
+        raise ValueError(
+            "Requested features could not be prepared: "
+            f"{feature_info['error']}"
+        )
     return TrainingExecutionContext(
         method_l=method_l,
         data_scope=f"{symbol}_{timeframe}",
@@ -1415,6 +1420,18 @@ def forecast_engine(  # noqa: C901
             symbol=symbol,
             timeframe=timeframe,
         )
+        feature_error = str(feature_info.get("error") or "").strip()
+        if features and feature_error:
+            warnings = result.get("warnings")
+            if not isinstance(warnings, list):
+                warnings = []
+            warning_text = (
+                "Requested features were unavailable; forecast used a univariate "
+                f"fallback ({feature_error})."
+            )
+            if warning_text not in warnings:
+                warnings.append(warning_text)
+            result["warnings"] = warnings
         if broker_time_check_result and broker_time_check_result.get("status") == "misaligned":
             warning_text = str(broker_time_check_result.get("warning") or "").strip()
             if warning_text:
