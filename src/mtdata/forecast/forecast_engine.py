@@ -984,6 +984,7 @@ def _format_forecast_output(
     digits: Optional[int] = None,
     forecast_return_values: Optional[np.ndarray] = None,
     reconstructed_prices: Optional[np.ndarray] = None,
+    reconstructed_price_ci: Optional[Tuple[np.ndarray, np.ndarray]] = None,
     symbol: Optional[str] = None,
     timeframe: Optional[str] = None,
 ) -> Dict[str, Any]:
@@ -1078,6 +1079,8 @@ def _format_forecast_output(
         result["forecast_return"] = [float(v) for v in forecast_return_values]
         if reconstructed_prices is not None:
             result["forecast_price"] = [float(v) for v in reconstructed_prices]
+    elif reconstructed_prices is not None:
+        result["forecast_price"] = [float(v) for v in reconstructed_prices]
     else:
         result["forecast_price"] = [float(v) for v in forecast_values]
     
@@ -1107,8 +1110,16 @@ def _format_forecast_output(
                 result["lower"] = lower_vals
                 result["upper"] = upper_vals
             else:
-                result["lower_price"] = lower_vals
-                result["upper_price"] = upper_vals
+                if reconstructed_price_ci is not None:
+                    result["lower_price"] = [
+                        float(v) for v in reconstructed_price_ci[0]
+                    ]
+                    result["upper_price"] = [
+                        float(v) for v in reconstructed_price_ci[1]
+                    ]
+                else:
+                    result["lower_price"] = lower_vals
+                    result["upper_price"] = upper_vals
         else:
             if ci_alpha_value is not None:
                 warning_text = (
@@ -1391,13 +1402,39 @@ def forecast_engine(  # noqa: C901
         # Prepare output arrays
         forecast_return_vals = None
         reconstructed_prices = None
+        reconstructed_price_ci = None
+        target_transform = str(target_info.get("transform") or "none").strip().lower()
+        needs_price_reconstruction = (
+            quantity_l == "return" or target_transform != "none"
+        )
         if quantity_l == 'return':
             forecast_return_vals = np.asarray(forecast_values, dtype=float)
+        if needs_price_reconstruction:
             reconstructed_prices = _reconstruct_prices_from_target(
-                forecast_return_vals,
+                np.asarray(forecast_values, dtype=float),
                 price_anchor_history,
                 target_info,
             )
+            if reconstructed_prices is None:
+                return {
+                    "error": (
+                        "Unable to reconstruct price-scale forecast from target "
+                        f"transform '{target_transform}'."
+                    )
+                }
+            if ci_values is not None and len(ci_values) == 2:
+                lower_prices = _reconstruct_prices_from_target(
+                    np.asarray(ci_values[0], dtype=float),
+                    price_anchor_history,
+                    target_info,
+                )
+                upper_prices = _reconstruct_prices_from_target(
+                    np.asarray(ci_values[1], dtype=float),
+                    price_anchor_history,
+                    target_info,
+                )
+                if lower_prices is not None and upper_prices is not None:
+                    reconstructed_price_ci = (lower_prices, upper_prices)
 
         # Format and return output
         denoise_used = dn_spec_used is not None
@@ -1417,6 +1454,7 @@ def forecast_engine(  # noqa: C901
             digits=digits,
             forecast_return_values=forecast_return_vals,
             reconstructed_prices=reconstructed_prices,
+            reconstructed_price_ci=reconstructed_price_ci,
             symbol=symbol,
             timeframe=timeframe,
         )

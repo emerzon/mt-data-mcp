@@ -6,6 +6,7 @@ from unittest.mock import patch
 
 import numpy as np
 import pandas as pd
+import pytest
 
 from mtdata.forecast import forecast_engine as fe
 from mtdata.forecast import forecast_preprocessing as fp
@@ -888,6 +889,48 @@ def test_forecast_engine_warns_when_ci_requested_but_method_has_no_intervals(mon
     assert "forecast_conformal_intervals" in out["warnings"][0]
     assert "lower_price" not in out
     assert "upper_price" not in out
+
+
+def test_forecast_engine_inverts_price_target_transform_and_intervals(monkeypatch):
+    class LogForecaster:
+        def forecast(self, series, horizon, seasonality, params, exog_future=None, **kwargs):
+            return ForecastResult(
+                forecast=np.log(np.array([106.0, 107.0])),
+                ci_values=(
+                    np.log(np.array([105.0, 106.0])),
+                    np.log(np.array([107.0, 108.0])),
+                ),
+                params_used={},
+                metadata={},
+            )
+
+    class FakeRegistry:
+        @staticmethod
+        def get(name):
+            return LogForecaster()
+
+    monkeypatch.setattr(fe, "TIMEFRAME_MAP", {"H1": 1})
+    monkeypatch.setattr(fe, "TIMEFRAME_SECONDS", {"H1": 3600})
+    monkeypatch.setattr(fe, "_get_available_methods", lambda: ("naive",))
+    monkeypatch.setattr(fe, "_parse_kv_or_json", lambda v: dict(v or {}))
+    monkeypatch.setattr(fe, "ForecastRegistry", FakeRegistry)
+    monkeypatch.setattr(fe, "get_symbol_info_cached", lambda symbol: None)
+
+    out = fe.forecast_engine(
+        symbol="EURUSD",
+        timeframe="H1",
+        method="naive",
+        horizon=2,
+        quantity="price",
+        target_spec={"column": "close", "transform": "log"},
+        ci_alpha=0.1,
+        prefetched_df=_df(20),
+    )
+
+    assert out["success"] is True
+    assert out["forecast_price"] == pytest.approx([106.0, 107.0])
+    assert out["lower_price"] == pytest.approx([105.0, 106.0])
+    assert out["upper_price"] == pytest.approx([107.0, 108.0])
 
 
 def test_forecast_engine_injects_context_for_analog(monkeypatch):
