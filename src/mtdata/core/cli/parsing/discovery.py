@@ -532,6 +532,12 @@ def resolve_param_kwargs(
 ) -> Tuple[Dict[str, Any], bool]:
     """Resolve argparse kwargs for a single CLI parameter."""
 
+    def _is_model_type(value: Any) -> bool:
+        return isinstance(value, type) and (
+            callable(getattr(value, "model_validate", None))
+            or callable(getattr(value, "parse_obj", None))
+        )
+
     def _escape_argparse_help(text: Optional[str]) -> Optional[str]:
         return text.replace("%", "%%") if isinstance(text, str) else text
 
@@ -566,7 +572,12 @@ def resolve_param_kwargs(
             base_type, origin = unwrap_optional_type(ptype)
 
             is_typed_dict = is_typed_dict_type(base_type)
-            is_mapping_type = (base_type in (dict, Dict)) or (origin in (dict, Dict)) or is_typed_dict
+            is_mapping_type = (
+                (base_type in (dict, Dict))
+                or (origin in (dict, Dict))
+                or is_typed_dict
+                or _is_model_type(base_type)
+            )
 
             kwargs["type"] = str
 

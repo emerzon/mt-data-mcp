@@ -16,6 +16,7 @@ from unittest.mock import MagicMock, call, patch
 
 import pytest
 
+from mtdata.core.analytics_requests import BarrierSpec, StrategyValidateRequest
 from mtdata.core.data.requests import DataFetchCandlesRequest, WaitEventRequest
 from mtdata.core.trading.requests import (
     TradeGetOpenRequest,
@@ -415,6 +416,46 @@ class TestCreateCommandFunction:
         assert request.horizon == 24
         assert request.params == {"sp": 24}
         assert call_kwargs["__cli_raw"] is True
+
+    def test_nested_pydantic_model_json_is_reconstructed(self, capsys):
+        mock_fn = MagicMock(return_value={"ok": True})
+        func_info = {
+            "func": mock_fn,
+            "request_model": StrategyValidateRequest,
+            "request_param_name": "request",
+            "params": [
+                {"name": "symbol", "type": str, "required": True, "default": None},
+                {"name": "lookback", "type": int, "required": False, "default": 3000},
+                {
+                    "name": "candidates",
+                    "type": List[Dict[str, Any]],
+                    "required": True,
+                    "default": None,
+                },
+                {
+                    "name": "barrier",
+                    "type": BarrierSpec,
+                    "required": False,
+                    "default": BarrierSpec(),
+                },
+            ],
+        }
+        cmd_fn = create_command_function(func_info, cmd_name="strategy_validate")
+        args = argparse.Namespace(
+            symbol="EURUSD",
+            lookback=400,
+            candidates='[{"id":"cross","type":"builtin_strategy","strategy":"ema_cross"}]',
+            barrier='{"horizon":8,"tp_pct":0.3,"sl_pct":0.3}',
+            barrier_params=None,
+            set_overrides=None,
+            json=False,
+            verbose=False,
+        )
+
+        assert cmd_fn(args) == 0
+        request = mock_fn.call_args.kwargs["request"]
+        assert isinstance(request, StrategyValidateRequest)
+        assert request.barrier == BarrierSpec(horizon=8, tp_pct=0.3, sl_pct=0.3)
 
     def test_wait_event_single_quote_event_arrays_are_coerced(self, capsys):
         mock_fn = MagicMock(return_value={"ok": True})
