@@ -138,13 +138,16 @@ Identify support and resistance levels, plus Fibonacci retracement/extension lev
   - `reaction_bars` (int): Reaction window used for level qualification (default `6`).
   - `adx_period` (int): ADX period used in scoring (default `14`).
   - `decay_half_life_bars` (int, optional): Half-life for recency decay.
+  - `extras` (string, optional): Request richer sections, for example `metadata`.
 - **Response Notes:**
-  - Each level includes a price `zone_low`/`zone_high` envelope rather than only a single line.
-  - `status` and `breakout_analysis` expose broken levels and role-reversal confirmations.
+  - The default response is compact: it returns actionable support/resistance lists and omits heavier diagnostics.
+  - Pass a non-empty `extras` value for the rich shape described below.
+  - Rich level rows include a price `zone_low`/`zone_high` envelope rather than only a single line.
+  - Rich output includes `status` and `breakout_analysis` for broken levels and role-reversal confirmations.
   - In `auto` mode, overlapping same-event confirmations across timeframes are deduped instead of fully double-counted.
   - Qualification now uses distinct test `episodes`, while raw `touches` remain available as secondary detail.
-  - The response includes both base and effective adaptive settings: `tolerance_pct`/`reaction_bars` are the inputs, while `effective_tolerance_pct`/`effective_reaction_bars` reflect the current ATR regime.
-  - A `fibonacci` section exposes retracement levels `23.6%`, `38.2%`, `50%`, `61.8%`, `78.6%` and extensions `127.2%`, `161.8%`, anchored to ATR-filtered historical swings and labeled relative to the latest price.
+  - Rich output includes both base and effective adaptive settings: `tolerance_pct`/`reaction_bars` are the inputs, while `effective_tolerance_pct`/`effective_reaction_bars` reflect the current ATR regime.
+  - Rich output includes a `fibonacci` section with retracement levels `23.6%`, `38.2%`, `50%`, `61.8%`, `78.6%` and extensions `127.2%`, `161.8%`, anchored to ATR-filtered historical swings and labeled relative to the latest price.
 
 #### `GET /api/denoise/methods`
 List available denoising algorithms and their parameters.
