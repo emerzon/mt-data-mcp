@@ -97,8 +97,8 @@ class TestLabelsTripleBarrier:
             barrier_kwargs={"tp_pct": 0.5, "sl_pct": 0.5},
         )
 
-        assert len(result) == 8
-        assert result == ([], [], [], [], [], [], [], 0)
+        assert len(result) == 9
+        assert result == ([], [], [], [], [], [], [], [], 0)
 
     @patch(f"{_LABELS_MOD}._get_pip_size", return_value=0.0001)
     @patch(f"{_LABELS_MOD}._resolve_denoise_base_col", return_value="close")
@@ -628,6 +628,7 @@ class TestLabelsTripleBarrier:
         assert result["holding_bars"][0] == 1
         assert result["tp_time"][0] is None
         assert result["sl_time"][0] == "1970-01-01T01:00Z"
+        assert result["same_bar"][0] is True
 
 
 @patch(f"{_LABELS_MOD}._get_pip_size", return_value=0.0001)

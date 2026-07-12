@@ -99,6 +99,7 @@ def _triple_barrier_sample_row(
         "holding_bars": hold[idx],
         "tp_time": tp_times[idx],
         "sl_time": sl_times[idx],
+        "same_bar": bool(same_bar_flags and same_bar_flags[idx]),
     }
     try:
         entry_price = float(closes[idx])
@@ -147,13 +148,14 @@ def _build_triple_barrier_outputs(
     List[str],
     List[Optional[str]],
     List[Optional[str]],
+    List[bool],
     List[float],
     List[float],
     int,
 ]:
     max_entry_index = len(closes) - int(horizon)
     if max_entry_index <= 0:
-        return [], [], [], [], [], [], [], 0
+        return [], [], [], [], [], [], [], [], 0
 
     entry_prices = closes[:max_entry_index]
     valid_price_mask = np.isfinite(entry_prices) & (entry_prices > 0.0)
@@ -284,6 +286,7 @@ def _build_triple_barrier_outputs(
         entries,
         tp_times,
         sl_times,
+        same_bar_flags,
         max_favorable_moves_pct,
         max_adverse_moves_pct,
         skipped_entries,
@@ -501,6 +504,7 @@ def labels_triple_barrier(
                 t_entry,
                 tp_times,
                 sl_times,
+                same_bar_flags,
                 max_favorable_moves_pct,
                 max_adverse_moves_pct,
                 skipped_entries,
@@ -516,11 +520,6 @@ def labels_triple_barrier(
                 barrier_kwargs=barrier_kwargs,
                 same_bar_policy=same_bar_policy_value,
             )
-            same_bar_flags = [
-                tp_time is not None and tp_time == sl_time
-                for tp_time, sl_time in zip(tp_times, sl_times)
-            ]
-
             rows_before_labeling = int(N)
             labelable_rows = int(max(0, max_entry_index))
             rows_after_labeling = int(len(labels))
@@ -569,6 +568,7 @@ def labels_triple_barrier(
                 "holding_bars": hold,
                 "tp_time": tp_times,
                 "sl_time": sl_times,
+                "same_bar": same_bar_flags,
             }
             if price_digits > 0:
                 payload["price_precision"] = int(price_digits)
