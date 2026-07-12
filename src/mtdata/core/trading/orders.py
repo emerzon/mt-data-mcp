@@ -373,18 +373,15 @@ def _attach_post_fill_protection(
                     positions_after = None
                     try:
                         positions_after = mt5.positions_get(ticket=position_ticket)
-                        if not positions_after:
-                            fallback_pos, _, _ = _resolve_open_position(
-                                mt5,
-                                ticket_candidates=[position_ticket],
-                                symbol=symbol,
-                                side=side,
-                                volume=volume,
-                                magic=magic,
-                            )
-                            positions_after = [fallback_pos] if fallback_pos is not None else []
-                        if positions_after and len(positions_after) > 0:
-                            pos_after = positions_after[0]
+                        exact_positions = [
+                            position
+                            for position in (positions_after or [])
+                            if validation._safe_int_ticket(
+                                getattr(position, "ticket", None)
+                            ) == position_ticket
+                        ]
+                        if exact_positions:
+                            pos_after = exact_positions[0]
                             sl_applied, tp_applied = _position_protection_levels(pos_after)
                             confirmed, adjusted, adjustment = _evaluate_requested_protection(
                                 requested_sl=stop_loss,

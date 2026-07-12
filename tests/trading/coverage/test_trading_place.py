@@ -10,6 +10,7 @@ import importlib
 import math
 import os
 import sys
+import time
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -98,7 +99,7 @@ def _sym(
 
 
 def _tick(bid=1.10000, ask=1.10020):
-    return SimpleNamespace(bid=bid, ask=ask)
+    return SimpleNamespace(bid=bid, ask=ask, time_msc=time.time() * 1000.0)
 
 
 def _order_result(retcode=10009, deal=1, order=1, volume=0.01, price=1.1,
@@ -431,6 +432,24 @@ class TestPlaceMarketOrder:
         assert sl_tp_result.get("applied") == {"sl": pytest.approx(1.09), "tp": pytest.approx(1.12)}
         assert result.get("protection_status") == "protected"
         assert mt5.order_send.call_count == 2
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_sl_tp_readback_rejects_different_position_ticket(self):
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        mt5.order_send.side_effect = [_order_result(), _order_result()]
+        mt5.positions_get.side_effect = [
+            [_position(ticket=1, sl=0.0, tp=0.0)],
+            [_position(ticket=99, sl=1.09, tp=1.12)],
+        ]
+        from mtdata.core.trading import _place_market_order
+
+        result = _place_market_order(
+            "EURUSD", 0.01, "BUY", stop_loss=1.09, take_profit=1.12
+        )
+
+        assert (result.get("sl_tp_result") or {}).get("status") == "unverified"
+        assert result.get("protection_status") == "protection_unverified"
 
     @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
     def test_sl_tp_verification_tolerates_missing_symbol_point(self):
