@@ -517,6 +517,8 @@ def _compact_candles_payload(
         "query_end_gap_anchor",
         "query_end_gap_metric",
         "mt5_time_alignment",
+        "indicator_warmup_bars",
+        "history_bars_fetched",
     ):
         if key in public_diagnostics:
             compact[key] = public_diagnostics[key]
@@ -677,6 +679,8 @@ def _standard_candles_payload(result: Dict[str, Any]) -> Dict[str, Any]:
         "mt5_time_alignment",
         "stale_warning",
         "spread_estimate",
+        "indicator_warmup_bars",
+        "history_bars_fetched",
     ):
         if key in public_diagnostics:
             standard[key] = public_diagnostics[key]
@@ -827,6 +831,12 @@ def _public_candle_diagnostics(result: Dict[str, Any]) -> Dict[str, Any]:
         public["query_type"] = "latest"
     if isinstance(query, dict) and query.get("latency_ms") is not None:
         public["latency_ms"] = query["latency_ms"]
+    indicators = diagnostics.get("indicators")
+    if isinstance(indicators, dict) and indicators.get("requested") is True:
+        if isinstance(query, dict) and query.get("warmup_bars") is not None:
+            public["indicator_warmup_bars"] = int(query["warmup_bars"])
+        if isinstance(query, dict) and query.get("raw_bars_fetched") is not None:
+            public["history_bars_fetched"] = int(query["raw_bars_fetched"])
 
     spread_estimate = diagnostics.get("spread_estimate")
     if isinstance(spread_estimate, dict):

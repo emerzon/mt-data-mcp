@@ -955,6 +955,38 @@ def test_run_data_fetch_candles_compact_keeps_anomaly_metadata():
     assert "candles_requested" not in result
 
 
+def test_compact_indicator_candles_disclose_warmup_history() -> None:
+    request = DataFetchCandlesRequest(
+        symbol="EURUSD",
+        timeframe="H1",
+        limit=5,
+        indicators=[{"name": "rsi", "params": [14]}],
+    )
+    result = run_data_fetch_candles(
+        request,
+        gateway=SimpleNamespace(ensure_connection=lambda: None),
+        fetch_candles_impl=lambda **kwargs: {
+            "success": True,
+            "symbol": "EURUSD",
+            "timeframe": "H1",
+            "data": [],
+            "meta": {
+                "diagnostics": {
+                    "query": {
+                        "mode": "latest",
+                        "warmup_bars": 28,
+                        "raw_bars_fetched": 33,
+                    },
+                    "indicators": {"requested": True},
+                }
+            },
+        },
+    )
+
+    assert result["indicator_warmup_bars"] == 28
+    assert result["history_bars_fetched"] == 33
+
+
 def test_run_data_fetch_candles_compact_preserves_requested_rows():
     rows = [
         {"time": 1_700_000_000 + index * 60, "close": float(index)}
