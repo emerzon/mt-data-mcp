@@ -794,6 +794,9 @@ class TestFetchCandlesCore(unittest.TestCase):
         self.assertTrue(result['success'])
         self.assertEqual(result['candles'], 5)
         self.assertNotIn('error', result)
+        freshness = result['meta']['diagnostics']['freshness']
+        self.assertFalse(freshness['last_bar_within_policy_window'])
+        self.assertEqual(freshness['data_freshness_seconds'], float(10 * 60 * 60))
 
     # ------------------------------------------------------------------ #
     # Start / End datetime queries                                         #

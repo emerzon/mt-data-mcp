@@ -684,8 +684,6 @@ def _fetch_rates_with_warmup(  # noqa: C901
         if rates is not None and len(rates) > 0:
             if auto_shift_seconds:
                 rates = _shift_rate_times(rates, auto_shift_seconds)
-            if not sanity_check:
-                break
             last_t = rates[-1]["time"]
             freshness_cutoff = expected_end_ts - seconds_per_bar * (SANITY_BARS_TOLERANCE + extra_bars)
             freshness_meta = _build_candle_freshness_diagnostics(
@@ -707,6 +705,8 @@ def _fetch_rates_with_warmup(  # noqa: C901
                 )
             if diagnostics is not None:
                 diagnostics["freshness"] = freshness_meta
+            if not sanity_check:
+                break
             if bool(freshness_meta.get("last_bar_within_policy_window")):
                 stale_last_t = None
                 break
