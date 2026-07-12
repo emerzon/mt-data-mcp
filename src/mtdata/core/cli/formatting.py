@@ -639,7 +639,7 @@ def _prepare_cli_payload(
 def _attach_cli_meta(result: Any, *, cmd_name: str, verbose: bool) -> Any:
     detail = "full" if verbose else "compact"
     if cmd_name == "news" and isinstance(result, dict):
-        from ...news import normalize_news_output
+        from ..news import normalize_news_output
 
         result = normalize_news_output(result, detail=detail)
     return apply_output_verbosity(result, tool_name=cmd_name, detail=detail)

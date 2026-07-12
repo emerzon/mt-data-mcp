@@ -1514,6 +1514,17 @@ class TestEdgeCases:
         assert "tool" not in out["meta"]
         assert "runtime" in out["meta"]
 
+    def test_attach_cli_meta_normalizes_news_without_import_error(self):
+        from mtdata.core.cli.api import _attach_cli_meta
+
+        out = _attach_cli_meta(
+            {"success": True, "general_news": [], "symbol_news": []},
+            cmd_name="news",
+            verbose=False,
+        )
+
+        assert out["success"] is True
+
     def test_resolve_param_kwargs_type_resolution_failure(self):
         # A parameter with a weird type that causes exception
         from mtdata.core.cli.api import _resolve_param_kwargs
