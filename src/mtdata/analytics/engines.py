@@ -21,6 +21,8 @@ from ..core.analytics_requests import (
 )
 from ..shared.constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
 from ..utils.barriers import normalize_same_bar_policy
+from ..utils.freshness import closed_session_context
+from ..utils.time import format_epoch_utc
 
 
 def _mapping(row: Any) -> Dict[str, Any]:
@@ -141,6 +143,32 @@ def analyze_microstructure(request: MarketMicrostructureRequest, gateway: Any) -
     start, end = _window(request.start, request.end, request.minutes_back)
     df, truncated = _tick_frame(gateway, request.symbol, start, end, request.max_ticks)
     if len(df) < 20:
+        last_tick_epoch = float(df["epoch"].iloc[-1]) if len(df) else None
+        session = closed_session_context(
+            request.symbol,
+            now_epoch=end.timestamp(),
+            item="tick stream",
+            data_age_seconds=(
+                max(0.0, end.timestamp() - last_tick_epoch)
+                if last_tick_epoch is not None
+                else None
+            ),
+        )
+        if session and session.get("market_status") == "closed":
+            return {
+                "error": "Market is closed and fewer than 20 recent usable ticks are available.",
+                "error_code": "market_closed",
+                "remediation": (
+                    "Wait for the session to reopen or analyze a currently trading symbol."
+                ),
+                "ticks_available": int(len(df)),
+                "last_tick_time": (
+                    format_epoch_utc(last_tick_epoch)
+                    if last_tick_epoch is not None
+                    else None
+                ),
+                **session,
+            }
         return {"error": "At least 20 usable ticks are required.", "error_code": "insufficient_data"}
     quote_mask = np.isfinite(df["mid"])
     trade_mask = df["last"] > 0

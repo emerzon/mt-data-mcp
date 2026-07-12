@@ -137,6 +137,27 @@ def test_microstructure_distinguishes_trade_volume_from_quote_proxy() -> None:
     assert any("broker's tick feed" in warning for warning in result["warnings"])
 
 
+def test_microstructure_reports_closed_session_for_short_tick_stream(monkeypatch) -> None:
+    gateway = FakeGateway()
+    gateway.tick_rows = _ticks(3)
+    monkeypatch.setattr(
+        "mtdata.analytics.engines.closed_session_context",
+        lambda *args, **kwargs: {
+            "market_status": "closed",
+            "market_status_reason": "weekend",
+        },
+    )
+
+    result = analyze_microstructure(
+        MarketMicrostructureRequest(symbol="EURUSD", minutes_back=60), gateway
+    )
+
+    assert result["error_code"] == "market_closed"
+    assert result["ticks_available"] == 3
+    assert result["market_status_reason"] == "weekend"
+    assert "reopen" in result["remediation"]
+
+
 def test_execution_quality_matches_order_and_computes_markout() -> None:
     gateway = FakeGateway()
     start = _now() - 100
