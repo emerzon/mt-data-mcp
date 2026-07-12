@@ -428,6 +428,8 @@ def _snapshot_summary_payload(sections: Dict[str, Any]) -> Dict[str, Any]:
     quote = sections.get("quote")
     levels = sections.get("levels")
     patterns = sections.get("patterns")
+    regime = sections.get("regime")
+    forecast = sections.get("forecast")
 
     out: Dict[str, Any] = {}
     if isinstance(quote, dict):
@@ -484,6 +486,22 @@ def _snapshot_summary_payload(sections: Dict[str, Any]) -> Dict[str, Any]:
         applied_window = patterns.get("applied_last_n_bars")
         if applied_window is not None:
             out["pattern_window_bars"] = applied_window
+    if isinstance(regime, dict):
+        compact_regime = {
+            key: regime[key]
+            for key in ("current_regime", "regime", "label", "probabilities", "confidence")
+            if key in regime
+        }
+        if compact_regime:
+            out["regime"] = compact_regime
+    if isinstance(forecast, dict):
+        compact_forecast = {
+            key: forecast[key]
+            for key in ("method", "forecast", "values", "predictions", "horizon", "quantity")
+            if key in forecast
+        }
+        if compact_forecast:
+            out["forecast"] = compact_forecast
     return out
 
 

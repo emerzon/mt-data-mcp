@@ -195,6 +195,30 @@ def test_market_snapshot_compact_defaults_to_lean_snapshot(monkeypatch):
     assert "patterns" not in result
 
 
+def test_market_snapshot_compact_keeps_requested_regime_and_forecast(monkeypatch):
+    def fake_call_section(name, symbol, timeframe, horizon, detail):
+        if name == "regime":
+            return {"success": True, "current_regime": "trend_up", "confidence": 0.8}
+        if name == "forecast":
+            return {"success": True, "method": "theta", "forecast": [1.1, 1.2]}
+        return {"success": True}
+
+    monkeypatch.setattr(snapshot_mod, "_call_section", fake_call_section)
+
+    result = _raw_market_snapshot(
+        symbol="EURUSD", sections="regime,forecast", detail="compact"
+    )
+
+    assert result["snapshot"]["regime"] == {
+        "current_regime": "trend_up",
+        "confidence": 0.8,
+    }
+    assert result["snapshot"]["forecast"] == {
+        "method": "theta",
+        "forecast": [1.1, 1.2],
+    }
+
+
 def test_market_snapshot_nearest_levels_respect_quote_side(monkeypatch):
     def fake_call_section(name, symbol, timeframe, horizon, detail):
         if name == "quote":
