@@ -9,6 +9,7 @@ from ..shared.schema import DetailLiteral
 from ._mcp_instance import mcp
 from ._mcp_tools import registered_tool_catalog
 from .execution_logging import run_logged_operation
+from .output_contract import build_pagination_meta
 
 logger = logging.getLogger(__name__)
 
@@ -112,6 +113,12 @@ def tools_list(
         catalog["offset"] = offset_value
         catalog["limit"] = limit_value
         catalog["has_more"] = has_more
+        catalog["pagination"] = build_pagination_meta(
+            total=len(filtered),
+            returned=len(slimmed),
+            offset=offset_value,
+            limit=limit_value,
+        )
         catalog["filters"] = {
             "category": category_filter or None,
             "search": search_filter or None,

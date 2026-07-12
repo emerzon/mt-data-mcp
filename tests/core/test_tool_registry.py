@@ -180,6 +180,14 @@ def test_tools_list_filters_and_paginates_rows():
     assert out["offset"] == 1
     assert out["limit"] == 3
     assert out["has_more"] is True
+    assert out["pagination"] == {
+        "total": out["total_count"],
+        "returned": 3,
+        "offset": 1,
+        "limit": 3,
+        "has_more": True,
+        "more_available": out["total_count"] - 4,
+    }
     assert all(row["category"] == "forecast" for row in out["tools"])
 
 
