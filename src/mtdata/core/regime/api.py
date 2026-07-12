@@ -151,6 +151,22 @@ def _finite_raw_kurtosis(values: np.ndarray) -> float:
     return kurtosis if np.isfinite(kurtosis) else 3.0
 
 
+def _garch_tier_thresholds(
+    conditional_volatility: np.ndarray,
+    n_states: int,
+    explicit_threshold: Optional[float],
+) -> Tuple[List[float], str]:
+    """Return cut points for GARCH conditional-volatility tiers."""
+    if explicit_threshold is not None and int(n_states) == 2:
+        return [float(explicit_threshold)], "explicit_absolute"
+    percentiles = np.linspace(0, 100, int(n_states) + 1)[1:-1]
+    thresholds = [
+        float(np.percentile(conditional_volatility, percentile))
+        for percentile in percentiles
+    ]
+    return thresholds, "full_window_percentiles"
+
+
 def _lookup_regime_info_entry(regime_info: Any, regime_id: Any) -> Dict[str, Any]:
     if not isinstance(regime_info, dict):
         return {}
@@ -813,7 +829,7 @@ _REGIME_METHOD_RUNTIME_GUIDANCE: Dict[str, Dict[str, str]] = {
     },
     "garch": {
         "speed_tier": "medium",
-        "use_case": "volatility-regime classification",
+        "use_case": "GARCH conditional-volatility tier classification",
         "cost_notes": "optimization fit; convergence varies by symbol/history",
     },
     "wavelet": {
@@ -928,7 +944,7 @@ def regime_detect(  # noqa: C901
     - method: Default is 'rule_based' (fast trend/ranging/transition classification).
       Other options: 'bocpd' (Bayesian online change-point; Gaussian), 'pelt' (offline penalized change-point segmentation), 'hmm' (Gaussian hidden Markov model), 'gmm' (i.i.d. Gaussian mixture),
       'ms_ar' (Markov-switching AR), 'clustering' (rolling-feature clustering via tsfresh + KMeans/Spectral),
-      'garch' (GARCH-based volatility regimes),
+      'garch' (GARCH conditional-volatility tiers),
       'wavelet' (multi-resolution wavelet energy regime detection via PyWavelets),
       'ensemble' (consensus across multiple methods), 'all' (runs all methods for comparison, may be slow).
     - params (clustering): optional `algorithm` = 'kmeans' (default) | 'spectral' (sklearn SpectralClustering).
@@ -982,7 +998,9 @@ def regime_detect(  # noqa: C901
         - 'hmm', 'ms_ar', 'clustering': Return 'state' array and 'state_probabilities'.
           Labels like 'positive_low_vol' describe regime characteristics (return + volatility).
           Reliability based on model fit or cluster separation.
-        - 'garch': Volatility regime detection using GARCH(1,1) model.
+        - 'garch': Fits GARCH(1,1), then classifies its conditional-volatility
+          path into relative full-window percentile tiers (or an explicit
+          absolute threshold for two states). This is not a switching-GARCH model.
           n_states is AUTO-DETECTED by default from realized-vol percentile spread
           (vol_ratio_90_10) plus return kurtosis (see docs/forecast/REGIMES.md):
             wider 90/10 vol spread and/or heavy tails → more states (up to 4)
@@ -2473,13 +2491,11 @@ def regime_detect(  # noqa: C901
                     )
 
                 # Determine volatility thresholds
-                if vol_threshold is not None and n_states_garch == 2:
-                    # Binary classification with explicit threshold
-                    thresholds = [vol_threshold]
-                else:
-                    # Use percentiles for n_states
-                    percentiles = np.linspace(0, 100, n_states_garch + 1)[1:-1]
-                    thresholds = [np.percentile(valid_vol, p) for p in percentiles]
+                thresholds, threshold_scope = _garch_tier_thresholds(
+                    valid_vol,
+                    n_states_garch,
+                    vol_threshold,
+                )
 
                 # Assign states based on volatility levels
                 state = np.zeros(len(conditional_vol), dtype=int)
@@ -2570,7 +2586,9 @@ def regime_detect(  # noqa: C901
                         "transitions_after": int(
                             smoothing_meta.get("transitions_after", 0)
                         ),
-                        "threshold_scope": "full_window_percentiles",
+                        "classification": "conditional_volatility_tiers",
+                        "threshold_scope": threshold_scope,
+                        "volatility_thresholds": [float(v) for v in thresholds],
                         "model_fit_scope": "full_window",
                     },
                     "volatility_characteristics": vol_characteristics,
@@ -2580,7 +2598,8 @@ def regime_detect(  # noqa: C901
                 _append_warnings(payload, state_count_warnings)
                 _append_warnings(payload, _smoothing_warnings(method, smoothing_meta))
 
-                # Add reliability estimate based on model fit
+                # Model fit is reported separately; it is not a confidence
+                # score for the derived percentile-tier classification.
                 if hasattr(res, "aic") and hasattr(res, "bic"):
                     payload["model_fit"] = {
                         "aic": float(res.aic),
@@ -2589,24 +2608,6 @@ def regime_detect(  # noqa: C901
                         if hasattr(res, "loglikelihood")
                         else None,
                     }
-                    # Reliability: lower BIC = better model = higher reliability
-                    # Normalize to 0-1 scale (approximate)
-                    bic = float(res.bic)
-                    n_samples = len(x)
-                    # Heuristic: BIC per sample < -5 is very good, > 0 is poor
-                    bic_per_sample = bic / n_samples if n_samples > 0 else 0
-                    reliability_score = max(
-                        0.0, min(1.0, 1.0 - (bic_per_sample + 5) / 10)
-                    )
-                    payload["reliability"] = {
-                        "confidence": round(reliability_score, 4),
-                        "bic_per_sample": round(bic_per_sample, 4),
-                        "source": "bic_normalized",
-                    }
-                    payload["reliability"] = _common_reliability(
-                        payload["reliability"],
-                        source="bic_normalized",
-                    )
 
                 # Add summary for compact/summary output
                 if output in ("summary", "compact"):

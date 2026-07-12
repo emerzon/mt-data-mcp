@@ -847,6 +847,19 @@ def test_garch_rejects_price_target() -> None:
     assert "target='return'" in out["error"]
 
 
+def test_garch_tier_thresholds_report_relative_and_absolute_scope() -> None:
+    from mtdata.core.regime.api import _garch_tier_thresholds
+
+    values = np.arange(1.0, 10.0)
+    relative, relative_scope = _garch_tier_thresholds(values, 3, None)
+    absolute, absolute_scope = _garch_tier_thresholds(values, 2, 4.25)
+
+    assert relative == pytest.approx([3.6666666667, 6.3333333333])
+    assert relative_scope == "full_window_percentiles"
+    assert absolute == [4.25]
+    assert absolute_scope == "explicit_absolute"
+
+
 def test_wavelet_rejects_non_positive_energy_window() -> None:
     raw = _unwrap(regime_detect)
 

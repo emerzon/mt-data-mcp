@@ -294,6 +294,21 @@ Some methods infer `n_states` when it is not explicitly supplied:
 
 These methods can choose different state counts on the same data because they optimize for different regime concepts: volatility tiers for GARCH and consensus return/volatility granularity for ensemble.
 
+#### GARCH volatility tiers
+
+The `garch` method fits a single GARCH model to estimate conditional
+volatility, then bins that path into ordered volatility tiers. By default the
+cut points are percentiles of the full analysis window, so labels such as
+`low_vol` and `high_vol` are relative within that run and can change when the
+window changes. With two states, `params.vol_threshold` selects an explicit
+absolute cut point instead. The output reports `threshold_scope` and
+`volatility_thresholds` in `params_used`.
+
+This method is not a Markov-switching GARCH model and does not estimate latent
+regime dynamics. AIC, BIC, and log likelihood are exposed as `model_fit`
+diagnostics only; they are not converted into a generic regime-confidence
+score.
+
 ### Richer Sections
 ```bash
 mtdata-cli regime_detect EURUSD --timeframe H1 --method hmm --extras metadata,diagnostics --json
