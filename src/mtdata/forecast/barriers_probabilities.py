@@ -605,6 +605,9 @@ def forecast_barrier_hit_probabilities(  # noqa: C901
             "symbol": symbol,
             "timeframe": timeframe,
             "method": method_key,
+            "intra_bar_hit_detection": (
+                "brownian_bridge" if bb_enabled else "simulated_bar_close"
+            ),
             "horizon": horizon_val,
             "direction": direction_norm,
             "same_bar_policy": same_bar_policy_value,
@@ -646,6 +649,11 @@ def forecast_barrier_hit_probabilities(  # noqa: C901
                 out["auto_reason"] = auto_reason
         if bb_enabled:
             out["bridge_correction"] = True
+        else:
+            warnings_out.append(
+                "Barrier hits are evaluated at simulated bar closes; transient "
+                "intra-bar touches may be undercounted."
+            )
         if 'model_summary' in sim:
             out['model_summary'] = str(sim['model_summary'])
         # Expose simulation model metadata (e.g. HMM fitted vs requested states)

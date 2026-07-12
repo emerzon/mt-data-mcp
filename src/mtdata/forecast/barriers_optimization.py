@@ -2831,6 +2831,9 @@ def forecast_barrier_optimize(  # noqa: C901
             "symbol": symbol,
             "timeframe": timeframe,
             "method": method_name,
+            "intra_bar_hit_detection": (
+                "brownian_bridge" if bb_enabled else "simulated_bar_close"
+            ),
             "horizon": horizon_val,
             "direction": direction_norm,
             "mode": mode_val,

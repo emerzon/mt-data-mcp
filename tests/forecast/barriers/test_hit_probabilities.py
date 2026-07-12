@@ -84,6 +84,8 @@ class TestBarrierHitProbabilities(_BarrierTestBase):
         self.assertIn("prob_no_hit_ci95", result)
         self.assertIn("prob_tp_first_se", result)
         self.assertIn("prob_sl_first_se", result)
+        self.assertEqual(result["intra_bar_hit_detection"], "simulated_bar_close")
+        self.assertTrue(any("intra-bar touches" in item for item in result["warnings"]))
 
     def test_forecast_barrier_hit_probabilities_default_seed_is_deterministic(self):
         dates = pd.date_range(start='2023-01-01', periods=500, freq='h')
