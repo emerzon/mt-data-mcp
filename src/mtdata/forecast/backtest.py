@@ -4,10 +4,10 @@ from typing import Any, Dict, List, Literal, Optional, Tuple
 
 import numpy as np
 
+from ..core.output_contract import normalize_output_verbosity_detail
 from ..shared.constants import TIMEFRAME_MAP
 from ..shared.schema import CompactFullDetailLiteral, DenoiseSpec, TimeframeLiteral
 from ..shared.validators import invalid_timeframe_error
-from ..core.output_contract import normalize_output_verbosity_detail
 from ..utils.denoise import normalize_denoise_spec as _normalize_denoise_spec
 from ..utils.utils import _format_time_minimal
 from .common import (

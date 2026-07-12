@@ -12,23 +12,38 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from ..bootstrap.runtime import is_loopback_host, load_web_api_runtime_settings
+from ..bootstrap.settings import load_environment, mt5_config
 from ..forecast.common import fetch_history as _fetch_history_impl
 from ..forecast.forecast import get_forecast_methods_data as _get_methods_impl
 from ..forecast.volatility import (
     get_volatility_methods_data as _get_vol_methods,
 )
 from ..services.data_service import fetch_candles as _fetch_candles_impl
+from ..shared.constants import TIMEFRAME_MAP
 from ..utils.denoise import get_denoise_methods_data as _get_denoise_methods
 from ..utils.denoise import normalize_denoise_spec as _norm_dn
 from ..utils.dimred import list_dimred_methods as _list_dimred_methods
-from ..utils.mt5 import _ensure_symbol_ready, ensure_mt5_connection_or_raise, mt5, mt5_connection
+from ..utils.mt5 import (
+    _ensure_symbol_ready,
+    ensure_mt5_connection_or_raise,
+    mt5,
+    mt5_connection,
+)
 from ..utils.symbol import _extract_group_path as _extract_group_path_util
-from ..bootstrap.settings import load_environment, mt5_config
-from ..shared.constants import TIMEFRAME_MAP
 from .error_envelope import build_error_payload
+from .forecast import (
+    forecast_backtest_run as _forecast_backtest_tool,
+)
+from .forecast import (
+    forecast_generate as _forecast_generate_tool,
+)
+from .forecast import (
+    forecast_volatility_estimate as _forecast_volatility_tool,
+)
+from .forecast_tasks import forecast_models_list as _forecast_models_list_tool
 from .mt5_gateway import create_mt5_gateway, mt5_connection_error
 from .pivot import pivot_compute_points
-from .tool_calling import unwrap_tool_callable
+from .tool_calling import call_tool_sync_structured, unwrap_tool_callable
 from .web_api_handlers import (
     get_denoise_methods_response as _get_denoise_methods_response,
 )
@@ -71,19 +86,13 @@ from .web_api_handlers import (
 from .web_api_handlers import (
     post_forecast_volatility_response as _post_forecast_volatility_response,
 )
-from .forecast_tasks import forecast_models_list as _forecast_models_list_tool
-from .forecast import (
-    forecast_backtest_run as _forecast_backtest_tool,
-)
-from .forecast import (
-    forecast_generate as _forecast_generate_tool,
-)
-from .forecast import (
-    forecast_volatility_estimate as _forecast_volatility_tool,
-)
-from .tool_calling import call_tool_sync_structured
 from .web_api_models import BacktestBody, ForecastPriceBody, ForecastVolBody
-from .web_api_runtime import SafeJSONResponse, create_web_api_app, mount_webui, run_webapi
+from .web_api_runtime import (
+    SafeJSONResponse,
+    create_web_api_app,
+    mount_webui,
+    run_webapi,
+)
 
 API_PREFIXES = ("/api", "/api/v1")
 

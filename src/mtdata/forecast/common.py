@@ -10,13 +10,13 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 
-from ..shared.constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
-from ..shared.symbols import is_probably_crypto_symbol, is_probably_forex_symbol
 from ..services.data_service import (
     _is_last_bar_forming,
     _resolve_live_rate_auto_shift_seconds,
     _shift_rate_times,
 )
+from ..shared.constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
+from ..shared.symbols import is_probably_crypto_symbol, is_probably_forex_symbol
 from ..utils.mt5 import (
     _ensure_symbol_ready,
     _mt5_copy_rates_from,
@@ -856,7 +856,9 @@ def nf_setup_and_predict(  # noqa: C901
 
             # Instantiate model and NeuralForecast
             try:
-                from neuralforecast import NeuralForecast as _NeuralForecast  # type: ignore
+                from neuralforecast import (
+                    NeuralForecast as _NeuralForecast,  # type: ignore
+                )
             except Exception as ex:
                 raise RuntimeError(f"Failed to import neuralforecast: {ex}")
 

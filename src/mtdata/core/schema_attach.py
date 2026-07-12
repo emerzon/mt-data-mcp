@@ -520,16 +520,16 @@ def _attach_schema_to_tool(
     )
 
     if manager_tool is not None:
-        setattr(manager_tool, "parameters", copy.deepcopy(public_schema))
+        manager_tool.parameters = copy.deepcopy(public_schema)
         if concise_description:
-            setattr(manager_tool, "description", concise_description)
+            manager_tool.description = concise_description
     if obj is not None:
-        setattr(obj, "schema", copy.deepcopy(internal_schema))
+        obj.schema = copy.deepcopy(internal_schema)
         if concise_description:
-            setattr(obj, "description", concise_description)
-    setattr(func, "schema", copy.deepcopy(internal_schema))
+            obj.description = concise_description
+    func.schema = copy.deepcopy(internal_schema)
     if concise_description:
-        setattr(func, "description", concise_description)
+        func.description = concise_description
     return True
 
 
