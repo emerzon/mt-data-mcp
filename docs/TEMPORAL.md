@@ -33,7 +33,7 @@ mtdata-cli temporal_analyze EURUSD --timeframe D1 --group-by month --lookback 10
 | `--lookback` | auto | Bars to analyze when `--start`/`--end` are omitted. Auto-derived per timeframe (floor 200, cap 20,000). |
 | `--start` | (optional) | Start date (ISO or flexible format) |
 | `--end` | (optional) | End date (ISO or flexible format) |
-| `--group-by` | `dow` | Grouping: `dow` (day of week), `hour`, `month`, `session` (Asia/London/overlap/NY/off), `all` |
+| `--group-by` | `dow` | Grouping: `dow` (day of week), `hour`, `month`, `session` (Asia/London/overlap/NY/off), or `all` (all four breakdowns) |
 | `--day-of-week` | (optional) | Filter to a specific day (0–6 or name, e.g., `Mon`, `Friday`) |
 | `--month` | (optional) | Filter to a specific month (1–12 or name, e.g., `Jan`, `September`) |
 | `--time-range` | (optional) | Filter by time window `HH:MM-HH:MM` using a half-open interval `[start, end)` (wraps midnight, e.g., `22:00-02:00`) |
@@ -88,12 +88,14 @@ Shows seasonal effects across months. Best with daily data and a long history.
 mtdata-cli temporal_analyze EURUSD --timeframe D1 --group-by month --lookback 2000 --json
 ```
 
-### Overall Summary (`--group-by all`)
+### All Grouping Dimensions (`--group-by all`)
 
-Single aggregate summary across all bars.
+Returns day-of-week, hour, month, and session breakdowns in one call. With
+`--detail standard` or `--detail full`, the response also includes an
+`overall` block containing aggregate statistics across all analyzed bars.
 
 ```bash
-mtdata-cli temporal_analyze EURUSD --group-by all --json
+mtdata-cli temporal_analyze EURUSD --group-by all --detail standard --json
 ```
 
 ---
@@ -117,7 +119,10 @@ Each group includes these statistics:
 | `avg_range_pct` | Average range as percentage of close |
 | `avg_volume` | Average volume (real or tick) |
 
-Top-level response also includes `overall` (summary statistics) and `volume_source` (whether `real_volume` or `tick_volume` was used).
+At `standard` and `full` detail, the top-level response also includes `overall`
+(sample-wide summary statistics) and `volume_source` (whether `real_volume` or
+`tick_volume` was used). Compact detail focuses on grouped rows and omits the
+`overall` block.
 
 ---
 
@@ -167,6 +172,8 @@ mtdata-cli temporal_analyze SPX500 --timeframe D1 --group-by month --lookback 30
 | Day-of-week stats | `mtdata-cli temporal_analyze EURUSD --group-by dow` |
 | Hourly stats | `mtdata-cli temporal_analyze EURUSD --group-by hour` |
 | Monthly seasonality | `mtdata-cli temporal_analyze EURUSD --timeframe D1 --group-by month` |
+| All grouping dimensions | `mtdata-cli temporal_analyze EURUSD --group-by all` |
+| Sample-wide summary | `mtdata-cli temporal_analyze EURUSD --group-by all --detail standard` (read `overall`) |
 | Filter to Mondays | `mtdata-cli temporal_analyze EURUSD --group-by hour --day-of-week Mon` |
 | London session only | `mtdata-cli temporal_analyze EURUSD --group-by hour --time-range "08:00-16:00"` |
 

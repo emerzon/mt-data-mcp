@@ -920,7 +920,9 @@ def temporal_analyze(  # noqa: C901
     session labels (asia, london, london_ny_overlap, ny, off_session)
     evaluated in the same analysis timezone used for hour and time_range.
     Example: temporal_analyze(symbol="EURUSD", group_by="dow")
-    Use group_by='all' for a single overall summary.
+    Use group_by='all' to return day-of-week, hour, month, and session
+    breakdowns in one call. The overall sample statistics are included when
+    detail is 'standard' or 'full'.
     """
     def _run() -> Dict[str, Any]:  # noqa: C901
         context: Dict[str, Any] = {
