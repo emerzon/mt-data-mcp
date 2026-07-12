@@ -278,11 +278,15 @@ def _statsforecast_capabilities() -> List[Dict[str, Any]]:
             category="statsforecast",
             description=_get_statsforecast_model_description(attr),
             available=True,
-            supports={"price": True, "return": True, "volatility": True, "ci": True},
+            supports={"price": True, "return": True, "volatility": True, "ci": False},
             selector_key="model_name",
             selector_value=attr,
             selector_mode="class_name",
             source="library_discovery",
+            notes=(
+                "Confidence intervals are runtime-dependent for discovered "
+                "StatsForecast classes and are not advertised without a curated contract."
+            ),
         )
         capabilities.append(descriptor.to_record())
     return sorted(capabilities, key=lambda row: str(row.get("display_name")))
@@ -317,12 +321,16 @@ def _sktime_capabilities(
             category="sktime",
             description=f"sktime forecaster {class_name}.",
             available=True,
-            supports={"price": True, "return": True, "volatility": True, "ci": True},
+            supports={"price": True, "return": True, "volatility": True, "ci": False},
             aliases=(class_name,),
             selector_key="estimator",
             selector_value=dotted_path,
             selector_mode="dotted_path",
             source="library_discovery",
+            notes=(
+                "Prediction intervals are estimator-dependent and are not advertised "
+                "for dynamically discovered sktime classes."
+            ),
         )
         capabilities.append(descriptor.to_record())
     return capabilities
