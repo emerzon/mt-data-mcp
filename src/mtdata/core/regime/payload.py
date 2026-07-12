@@ -872,9 +872,17 @@ def _consolidate_payload(  # noqa: C901
             regime_params,
             method,
             target=payload.get("target"),
-            # HMM parameter arrays remain in model-native order. Other methods
-            # derive regime_params after canonicalizing their state labels.
-            label_mapping=label_mapping if method in {"hmm", "gmm"} else None,
+            # Older/native-order HMM and GMM payloads need the label mapping;
+            # current detector payloads publish parameters in canonical order.
+            label_mapping=(
+                label_mapping
+                if method in {"hmm", "gmm"}
+                and not (
+                    isinstance(params_used, dict)
+                    and params_used.get("regime_params_order") == "canonical"
+                )
+                else None
+            ),
         )
 
         final_segments = []

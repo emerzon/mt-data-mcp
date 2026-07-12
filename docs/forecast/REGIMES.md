@@ -65,6 +65,10 @@ summary:
 - **State 1:** High volatility (σ = 0.0007) — trending/active market
 - Currently in State 0 (low volatility)
 
+State IDs are ordered by ascending mean return, not by volatility. The example's
+State 0 happens to be the low-volatility state; always use
+`state_sigma[last_state]` to read the current state's fitted volatility.
+
 **Parameters:**
 | Parameter | Default | Description |
 |-----------|---------|-------------|

@@ -1125,8 +1125,22 @@ class TestRegimeDetectHMM:
 
         assert res["params_used"]["relabeled"] is True
         assert res["params_used"]["label_mapping"] == {"1": 0, "0": 1}
+        assert res["params_used"]["regime_params_order"] == "canonical"
+        assert res["regime_params"]["mu"] == pytest.approx([-0.001, 0.001])
+        assert res["regime_params"]["sigma"] == pytest.approx([0.001, 0.003])
         assert res["regime_info"][0]["mean_return"] == pytest.approx(-0.001)
         assert res["regime_info"][1]["mean_return"] == pytest.approx(0.001)
+
+        with patch(
+            "mtdata.core.regime.api.fit_gaussian_mixture_1d",
+            return_value=(w, mu, sigma, gamma, None),
+            create=True,
+        ):
+            summary_res = fn("EURUSD", limit=12, method="gmm", detail="summary")
+
+        assert summary_res["summary"]["state_sigma"] == pytest.approx(
+            {0: 0.001, 1: 0.003}
+        )
 
     @patch(_FMT, side_effect=_time_fmt_stub)
     @patch(_DENOISE, return_value="close")

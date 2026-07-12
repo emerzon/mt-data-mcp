@@ -1926,18 +1926,35 @@ def regime_detect(  # noqa: C901
             smoothing_meta["relabeled"] = canon_meta.get("relabeled", False)
             if not isinstance(gamma_for_payload, np.ndarray):
                 gamma_for_payload = gamma_matrix
+            label_mapping = {
+                int(old): int(new)
+                for old, new in canon_meta.get("mapping", {}).items()
+            }
+            if label_mapping:
+                native_order = sorted(
+                    range(len(mu)),
+                    key=lambda old: label_mapping.get(old, len(label_mapping) + old),
+                )
+                mu = mu[native_order]
+                sigma = sigma[native_order]
+                w = w[native_order]
             regime_params: Dict[str, Any] = {
                 "mu": [float(v) for v in mu.tolist()],
                 "sigma": [float(v) for v in sigma.tolist()],
             }
             if method == "hmm":
+                transition_matrix = np.asarray(hmm_fit["trans"], dtype=float)
+                initial_probabilities = np.asarray(hmm_fit["start_prob"], dtype=float)
+                if label_mapping:
+                    transition_matrix = transition_matrix[np.ix_(native_order, native_order)]
+                    initial_probabilities = initial_probabilities[native_order]
                 regime_params.update({
                     "transition_matrix": [
                         [float(v) for v in row]
-                        for row in np.asarray(hmm_fit["trans"], dtype=float).tolist()
+                        for row in transition_matrix.tolist()
                     ],
                     "initial_probabilities": [
-                        float(v) for v in np.asarray(hmm_fit["start_prob"], dtype=float).tolist()
+                        float(v) for v in initial_probabilities.tolist()
                     ],
                     "state_occupancy": [float(v) for v in w.tolist()],
                 })
@@ -1964,6 +1981,7 @@ def regime_detect(  # noqa: C901
                     "state_postprocess": "causal_confirmation",
                     "min_regime_bars": int(min_regime_bars_val),
                     "relabeled": bool(canon_meta.get("relabeled", False)),
+                    "regime_params_order": "canonical",
                     "smoothing_applied": bool(
                         smoothing_meta.get("smoothing_applied", False)
                     ),
