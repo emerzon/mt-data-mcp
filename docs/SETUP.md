@@ -334,7 +334,8 @@ Starts a FastAPI server.
 
 - Health check: `http://localhost:8000/health`
 - API base paths: `http://localhost:8000/api` and `http://localhost:8000/api/v1`
-- React UI: `http://localhost:8000/app`
+- React UI after `cd webui && npm install && npm run build`:
+  `http://localhost:8000/app`
 
 Web UI / API configuration:
 - `WEBAPI_HOST` (default `127.0.0.1`)
@@ -343,6 +344,10 @@ Web UI / API configuration:
 - `WEBAPI_AUTH_TOKEN` to require `Authorization: Bearer <token>` or `X-API-Key: <token>` on API requests
 - `CORS_ORIGINS` with explicit origins only (wildcard `*` is rejected when credentials are enabled)
 - `WEBUI_DIST_DIR` to override the built UI directory
+
+The Python package does not ship generated `webui/dist/` assets. Without a
+production build, the REST API remains available and `/app` is not mounted; use
+`npm run dev` for frontend development or `npm run build` before deployment.
 
 See [WEB_API.md](WEB_API.md) for endpoint details.
 

@@ -30,7 +30,7 @@ Keep MT5 set to start on logon and log in automatically (or store credentials vi
 | `mtdata-sse` | MCP over SSE (HTTP) | Remote or browser-based MCP clients connect over the network (default MCP mode) |
 | `mtdata-streamable-http` | MCP over streamable HTTP | MCP clients that prefer streamable-HTTP |
 | `mtdata-stdio` | MCP over stdio | An IDE/desktop client **spawns** the process itself (Claude Desktop, VS Code). **Not** a network service — do not daemonize it; see [SETUP.md](SETUP.md#mcp-server) |
-| `mtdata-webapi` | FastAPI REST + bundled Web UI | Apps, scripts, or the React UI call REST endpoints |
+| `mtdata-webapi` | FastAPI REST + optional built Web UI | Apps, scripts, or the React UI call REST endpoints |
 
 `mtdata-stdio` is launched on demand by its client, so the rest of this guide targets the long-lived network services: **`mtdata-sse`**, **`mtdata-streamable-http`**, and **`mtdata-webapi`**.
 

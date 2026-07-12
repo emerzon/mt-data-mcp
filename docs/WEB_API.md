@@ -1,6 +1,9 @@
 # Web API Reference
 
-The `mtdata` Web API exposes a focused REST surface for market data, forecasting, analysis, and the bundled Web UI. Use it when you want local HTTP access from dashboards, notebooks, scripts, or another application.
+The `mtdata` Web API exposes a focused REST surface for market data,
+forecasting, and analysis, and can serve a separately built Web UI. Use it when
+you want local HTTP access from dashboards, notebooks, scripts, or another
+application.
 
 **Base URL:** `http://localhost:8000` (default)
 
