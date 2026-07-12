@@ -589,24 +589,24 @@ class TestCoerceKwargsForCallable:
 class TestRuntimeHelpers:
 
     def test_get_runtime_signature_basic(self):
-        from mtdata.core._mcp_tools import _get_runtime_signature
+        from mtdata.shared.annotations import get_runtime_signature
         def fn(a: int, b: str = "x"): ...
-        sig = _get_runtime_signature(fn)
+        sig = get_runtime_signature(fn)
         assert "a" in sig.parameters
         assert "b" in sig.parameters
 
     def test_get_runtime_annotations_basic(self):
-        from mtdata.core._mcp_tools import _get_runtime_annotations
+        from mtdata.shared.annotations import get_runtime_annotations
         def fn(a: int, b: str = "x") -> bool: ...
-        ann = _get_runtime_annotations(fn)
+        ann = get_runtime_annotations(fn)
         assert ann.get("a") is int
         assert ann.get("return") is bool
 
     def test_get_runtime_annotations_no_annotations(self):
-        from mtdata.core._mcp_tools import _get_runtime_annotations
+        from mtdata.shared.annotations import get_runtime_annotations
         def fn(): ...
         fn.__annotations__ = None  # type: ignore
-        ann = _get_runtime_annotations(fn)
+        ann = get_runtime_annotations(fn)
         assert ann == {} or ann is None or isinstance(ann, dict)
 
 
