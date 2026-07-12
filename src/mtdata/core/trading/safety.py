@@ -7,8 +7,8 @@ from typing import Any, Callable, Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
+from . import validation
 from .sizing import _resolve_risk_tick_value
-from .validation import _safe_float_attr as _validation_safe_float_attr
 
 
 class TradeSafetyPolicy(BaseModel):
@@ -61,7 +61,7 @@ def _safe_float_attr(obj: Any, name: str) -> Optional[float]:
     missing-value default to ``None`` so guardrail checks can distinguish
     absent fields from genuine zeros.
     """
-    return _validation_safe_float_attr(obj, name, None)
+    return validation._safe_float_attr(obj, name, None)
 
 
 def _normalize_stop_loss_value(value: Optional[float]) -> Optional[float]:
@@ -446,22 +446,6 @@ def _estimate_order_risk_currency(
     return risk_currency, None
 
 
-def _position_side(position: Any) -> Optional[str]:
-    text = _normalize_side(getattr(position, "type", None))
-    if text in {"BUY", "SELL"}:
-        return text
-    raw_type = getattr(position, "type", None)
-    try:
-        numeric_type = int(raw_type)
-    except Exception:
-        numeric_type = None
-    if numeric_type == 0:
-        return "BUY"
-    if numeric_type == 1:
-        return "SELL"
-    return None
-
-
 def _sum_existing_exposure_lots(existing_positions: Optional[List[Any]]) -> float:
     total = 0.0
     for position in list(existing_positions or []):
@@ -483,7 +467,7 @@ def _resolve_existing_symbol_net(
         if _normalize_symbol(getattr(position, "symbol", None)) != normalized_symbol:
             continue
         volume = _safe_float_attr(position, "volume")
-        side = _position_side(position)
+        side = validation._resolve_position_side(position)
         if volume is None or side is None:
             continue
         net_volume += float(volume) if side == "BUY" else -float(volume)
@@ -561,7 +545,7 @@ def _total_portfolio_risk_currency(
         if not symbol:
             issues.append("position symbol missing")
             continue
-        side = _position_side(position)
+        side = validation._resolve_position_side(position)
         if side is None:
             issues.append(f"{symbol}: unable to determine position side")
             continue
@@ -685,7 +669,7 @@ def _evaluate_wallet_risk_limits(
                 symbol
             ):
                 continue
-            pos_side = _position_side(position)
+            pos_side = validation._resolve_position_side(position)
             if pos_side != net_side:
                 continue
             pos_volume = _safe_float_attr(position, "volume")

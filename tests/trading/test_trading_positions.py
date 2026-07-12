@@ -1,7 +1,7 @@
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
-from mtdata.core.trading import positions
+from mtdata.core.trading import positions, validation
 
 
 class _FakeMt5:
@@ -24,6 +24,13 @@ def test_position_side_matches_uses_numeric_defaults_when_mt5_constants_are_miss
     assert positions._position_side_matches(SimpleNamespace(type=0), "BUY", mt5) is True
     assert positions._position_side_matches(SimpleNamespace(type=1), "BUY", mt5) is False
     assert positions._position_side_matches(SimpleNamespace(type=1), "SELL", mt5) is True
+
+
+def test_position_side_resolution_accepts_text_without_mt5_constants():
+    assert validation._resolve_position_side(SimpleNamespace(type="buy")) == "BUY"
+    assert validation._resolve_position_side(SimpleNamespace(type="SELL_LIMIT")) == "SELL"
+    assert validation._resolve_position_side(SimpleNamespace(type=0)) == "BUY"
+    assert validation._resolve_position_side(SimpleNamespace(type=1)) == "SELL"
 
 
 def test_normalize_trade_read_output_keeps_request_echoes_by_default():

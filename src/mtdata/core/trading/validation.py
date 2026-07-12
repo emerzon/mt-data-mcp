@@ -252,7 +252,20 @@ def _safe_float_attr(obj: Any, name: str, default: Optional[float] = 0.0) -> Opt
     return value if math.isfinite(value) else default
 
 
-def _resolve_position_side(position: Any, mt5: Any) -> Optional[str]:
+def _resolve_position_side(position: Any, mt5: Any = None) -> Optional[str]:
+    """Resolve an MT5 position type to ``BUY`` or ``SELL``."""
+    try:
+        raw_type = getattr(position, "type")
+    except Exception:
+        return None
+
+    if isinstance(raw_type, str):
+        normalized = raw_type.strip().upper()
+        if normalized.startswith("BUY"):
+            return "BUY"
+        if normalized.startswith("SELL"):
+            return "SELL"
+
     position_type_buy = _safe_int_attr(
         mt5,
         "POSITION_TYPE_BUY",
@@ -264,7 +277,7 @@ def _resolve_position_side(position: Any, mt5: Any) -> Optional[str]:
         _safe_int_attr(mt5, "ORDER_TYPE_SELL", 1),
     )
     try:
-        position_type = int(getattr(position, "type"))
+        position_type = int(raw_type)
     except Exception:
         return None
     if position_type == int(position_type_buy):
