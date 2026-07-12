@@ -16,7 +16,7 @@ from ..utils.barriers import (
     normalize_trade_direction,
     resolve_same_bar_probabilities,
 )
-from ..utils.utils import UNPARSED_BOOL, parse_bool_like
+from ..utils.coercion import UNPARSED_BOOL, parse_bool_like
 from ..utils.utils import parse_kv_or_json as _parse_kv_or_json
 from .barrier_stats import (
     bootstrap_metric_uncertainty as _bootstrap_uncertainty,

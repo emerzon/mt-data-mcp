@@ -30,6 +30,7 @@ from ..patterns.harmonic import (
 )
 from ..shared.constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
 from ..shared.validators import invalid_timeframe_error
+from ..utils.coercion import UNPARSED_BOOL, parse_bool_like
 from ..utils.denoise import _apply_denoise as _apply_denoise_util
 from ..utils.denoise import normalize_denoise_spec as _normalize_denoise_spec
 from ..utils.mt5 import (
@@ -40,11 +41,7 @@ from ..utils.mt5 import (
 )
 from ..utils.ohlcv import validate_and_clean_ohlcv_frame
 from ..utils.time import _format_time_minimal
-from ..utils.utils import (
-    UNPARSED_BOOL,
-    _parse_start_datetime,
-    parse_bool_like,
-)
+from ..utils.utils import _parse_start_datetime
 from ..utils.utils import to_float_np as __to_float_np
 from ..utils.volume_profile import annotate_level_confluence
 from ._mcp_instance import mcp

@@ -31,7 +31,7 @@ from ..shared.schema import (
     CANONICAL_OUTPUT_DETAIL_ALIASES,
     CANONICAL_OUTPUT_SHAPE_DETAILS,
 )
-from ..utils.utils import UNPARSED_BOOL, parse_bool_like
+from ..utils.coercion import UNPARSED_BOOL, parse_bool_like
 from .runtime_metadata import build_runtime_timezone_meta
 
 _MISSING = object()

@@ -10,9 +10,9 @@ from fastapi import HTTPException
 
 from ..forecast.exceptions import ForecastError
 from ..forecast.forecast_methods import get_forecast_methods_payload
+from ..utils.coercion import UNPARSED_BOOL, parse_bool_like
 from ..utils.mt5 import MT5ConnectionError
 from ..utils.support_resistance import compact_support_resistance_payload
-from ..utils.utils import UNPARSED_BOOL, parse_bool_like
 from .error_envelope import build_error_payload
 from .mt5_gateway import create_mt5_gateway
 from .output_contract import ensure_common_meta, output_extras_shape_detail

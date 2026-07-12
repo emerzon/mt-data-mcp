@@ -6,6 +6,28 @@ import math
 from typing import Any, Optional
 
 
+UNPARSED_BOOL = object()
+
+
+def parse_bool_like(value: Any, *, allow_none: bool = False) -> Any:
+    """Parse common boolean spellings or return ``UNPARSED_BOOL``."""
+    if value is None:
+        return None if allow_none else UNPARSED_BOOL
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return bool(value)
+    if isinstance(value, str):
+        text = value.strip().lower()
+        if text in ("none", "null"):
+            return None if allow_none else UNPARSED_BOOL
+        if text in ("true", "1", "yes", "y", "on"):
+            return True
+        if text in ("false", "0", "no", "n", "off"):
+            return False
+    return UNPARSED_BOOL
+
+
 def coerce_finite_float(value: Any) -> Optional[float]:
     """Best-effort float coercion that rejects missing and non-finite values."""
     if value is None:

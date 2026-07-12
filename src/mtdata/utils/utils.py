@@ -53,28 +53,6 @@ def coerce_scalar(s: str):
         return s
 
 
-UNPARSED_BOOL = object()
-
-
-def parse_bool_like(value: Any, *, allow_none: bool = False) -> Any:
-    """Parse common boolean spellings and return a sentinel when unrecognized."""
-    if value is None:
-        return None if allow_none else UNPARSED_BOOL
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, (int, float)) and not isinstance(value, bool):
-        return bool(value)
-    if isinstance(value, str):
-        text = value.strip().lower()
-        if text in ("none", "null"):
-            return None if allow_none else UNPARSED_BOOL
-        if text in ("true", "1", "yes", "y", "on"):
-            return True
-        if text in ("false", "0", "no", "n", "off"):
-            return False
-    return UNPARSED_BOOL
-
-
 def _normalize_ohlcv_arg(ohlcv: Optional[str]) -> Optional[Set[str]]:
     """Normalize user-provided OHLCV selection into a set of letters.
 

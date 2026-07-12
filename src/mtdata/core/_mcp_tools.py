@@ -20,7 +20,8 @@ from ..shared.parameter_contracts import (
     OUTPUT_EXTRAS,
     PUBLIC_OUTPUT_PARAMS,
 )
-from ..utils.utils import UNPARSED_BOOL, coerce_scalar, parse_bool_like
+from ..utils.coercion import UNPARSED_BOOL, parse_bool_like
+from ..utils.utils import coerce_scalar
 from .error_envelope import (
     build_error_payload,
     log_transport_exception,
