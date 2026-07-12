@@ -30,12 +30,6 @@ _SUPPORTED_ORDER_TYPES = {
     "SELL_LIMIT",
     "SELL_STOP",
 }
-_TRADE_SIDE_FILTER_ALIASES = {
-    "BUY": "BUY",
-    "SELL": "SELL",
-}
-
-
 def _normalize_order_type_input(order_type: Any) -> Tuple[Optional[str], Optional[str]]:
     """Normalize order_type inputs from MCP clients into canonical MT5 order names."""
     if order_type is None:
@@ -83,9 +77,10 @@ def _normalize_trade_side_filter(side: Any) -> Tuple[Optional[str], Optional[str
     normalized = text.upper().replace("-", "_").replace(" ", "_")
     while "__" in normalized:
         normalized = normalized.replace("__", "_")
-    mapped = _TRADE_SIDE_FILTER_ALIASES.get(normalized)
-    if mapped is not None:
-        return mapped, None
+    if normalized in {"BUY", "LONG"}:
+        return "BUY", None
+    if normalized in {"SELL", "SHORT"}:
+        return "SELL", None
     return None, "side must be BUY or SELL."
 
 
