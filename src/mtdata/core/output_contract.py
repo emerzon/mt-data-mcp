@@ -212,7 +212,8 @@ def _resolve_requested_detail_value(source: Any, *, detail: Any = _MISSING) -> A
 
 
 def _normalize_detail_token(value: Any, *, default: str) -> str:
-    return str(default if value is None else value).strip().lower()
+    normalized = str(default if value is None else value).strip().lower()
+    return str(default).strip().lower() if not normalized else normalized
 
 
 def _normalize_detail_aliases(aliases: Optional[Mapping[str, str]]) -> dict[str, str]:

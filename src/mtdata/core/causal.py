@@ -1601,6 +1601,12 @@ def causal_discover_signals(  # noqa: C901
 
     def _run() -> Dict[str, Any]:  # noqa: C901
         requested_detail = str(detail or "compact").strip().lower()
+        if requested_detail not in {"compact", "standard", "summary", "full"}:
+            return _causal_error(
+                "detail must be one of: compact, standard, summary, full.",
+                code="invalid_detail",
+                meta={"detail": requested_detail},
+            )
         detail_mode = normalize_output_verbosity_detail(detail, default="compact")
         meta: Dict[str, Any] = {
             "_tool": "causal_discover_signals",
@@ -1617,12 +1623,6 @@ def causal_discover_signals(  # noqa: C901
             "normalize": bool(normalize),
             "detail": detail_mode,
         }
-        if requested_detail not in {"compact", "standard", "summary", "full"}:
-            return _causal_error(
-                "detail must be one of: compact, standard, summary, full.",
-                code="invalid_detail",
-                meta=meta,
-            )
         connection_error = _causal_connection_error()
         if connection_error is not None:
             return _causal_error(
