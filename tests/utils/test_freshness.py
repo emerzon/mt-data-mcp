@@ -1,6 +1,10 @@
 from datetime import datetime, timezone
 
-from mtdata.utils.freshness import closed_session_context, format_freshness_label
+from mtdata.utils.freshness import (
+    closed_session_context,
+    format_freshness_label,
+    is_standard_weekend_closure,
+)
 
 
 def test_closed_session_context_marks_weekend_fx_but_not_crypto():
@@ -23,9 +27,24 @@ def test_closed_session_context_marks_other_non_crypto_weekend_markets() -> None
 
 
 def test_closed_session_context_allows_fx_after_sunday_utc_reopen() -> None:
-    sunday_reopen = datetime(2026, 6, 14, 21, 30, tzinfo=timezone.utc).timestamp()
+    sunday_reopen = datetime(2026, 6, 14, 22, 0, tzinfo=timezone.utc).timestamp()
 
     assert closed_session_context("EURUSD", now_epoch=sunday_reopen) is None
+
+
+def test_standard_weekend_closure_uses_22_utc_boundaries() -> None:
+    assert is_standard_weekend_closure(
+        datetime(2026, 6, 14, 21, 59, tzinfo=timezone.utc)
+    )
+    assert not is_standard_weekend_closure(
+        datetime(2026, 6, 14, 22, 0, tzinfo=timezone.utc)
+    )
+    assert not is_standard_weekend_closure(
+        datetime(2026, 6, 12, 21, 59, tzinfo=timezone.utc)
+    )
+    assert is_standard_weekend_closure(
+        datetime(2026, 6, 12, 22, 0, tzinfo=timezone.utc)
+    )
 
 
 def test_closed_session_context_does_not_relax_very_old_data():

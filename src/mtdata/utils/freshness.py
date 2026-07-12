@@ -14,7 +14,7 @@ def is_standard_weekend_closure(now_utc: datetime) -> bool:
     weekday = now_utc.weekday()
     if weekday == 5:
         return True
-    if weekday == 6 and now_utc.hour < 21:
+    if weekday == 6 and now_utc.hour < 22:
         return True
     if weekday == 4 and now_utc.hour >= 22:
         return True

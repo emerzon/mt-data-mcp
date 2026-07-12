@@ -25,6 +25,7 @@ from ..utils.mt5 import (
     get_symbol_info_cached,
     mt5,
 )
+from ..utils.freshness import is_standard_weekend_closure
 from ..utils.utils import _parse_start_datetime, _utc_epoch_seconds
 
 _FORECAST_RESERVED_COLUMNS = {"unique_id", "ds", "y"}
@@ -364,14 +365,7 @@ def is_standard_weekend_closed_epoch(epoch: Any) -> bool:
         dt_utc = datetime.fromtimestamp(float(epoch), tz=timezone.utc)
     except Exception:
         return False
-    weekday = dt_utc.weekday()
-    if weekday == 5:
-        return True
-    if weekday == 6 and dt_utc.hour < 22:
-        return True
-    if weekday == 4 and dt_utc.hour >= 22:
-        return True
-    return False
+    return is_standard_weekend_closure(dt_utc)
 
 
 def uses_standard_weekend_projection(symbol: Optional[str], tf_secs: int) -> bool:

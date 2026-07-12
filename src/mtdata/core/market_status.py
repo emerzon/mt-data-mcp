@@ -14,6 +14,7 @@ import holidays
 from ..shared.schema import DetailLiteral
 from ..shared.symbols import is_probably_crypto_symbol, is_probably_forex_symbol
 from ..utils.market_metadata import build_tick_freshness_context
+from ..utils.freshness import is_standard_weekend_closure
 from ..utils.mt5 import (
     MT5ConnectionError,
     _normalize_times_in_struct,
@@ -921,9 +922,10 @@ def _check_symbol_market_status(
         _coerce_optional_bool(schedule_status.get("current_time_in_active_session"))
         is True
     )
-    weekend_closed_now = now_utc.weekday() == 5 or (
-        now_utc.weekday() == 6
-        and (not is_probably_forex_symbol(symbol_name) or now_utc.hour < 22)
+    weekend_closed_now = (
+        is_standard_weekend_closure(now_utc)
+        if is_probably_forex_symbol(symbol_name)
+        else now_utc.weekday() >= 5
     )
     tick_available = tick_status.get("tick_available") is True
     if (
