@@ -190,6 +190,35 @@ def test_exposure_cap_blocks_same_side_increase_over_limit():
     assert block["guardrail_rule"] == "account_risk"
 
 
+def test_exposure_cap_counts_opposite_order_on_hedging_account():
+    from mtdata.core.trading.safety import AccountRiskLimits
+
+    block = evaluate_trade_guardrails(
+        TradeGuardrailsConfig(
+            enabled=True,
+            account_risk_limits=AccountRiskLimits(max_total_exposure_lots=1.5),
+            ignore_on_demo=False,
+        ),
+        symbol="EURUSD",
+        volume=1.0,
+        side="SELL",
+        existing_positions=[SimpleNamespace(symbol="EURUSD", type=0, volume=1.0)],
+        account_info=SimpleNamespace(
+            is_demo=False,
+            margin_mode=2,
+            margin_level=500.0,
+            profit=0.0,
+            margin=100.0,
+        ),
+        enforce_wallet_risk=False,
+        enforce_safety_policy=False,
+    )
+
+    assert block is not None
+    assert block["guardrail_rule"] == "account_risk"
+    assert block["guardrail_context"]["projected_exposure_lots"] == 2.0
+
+
 def test_evaluate_trade_guardrails_blocks_wallet_risk_threshold():
     config = TradeGuardrailsConfig(
         enabled=True,
@@ -217,6 +246,51 @@ def test_evaluate_trade_guardrails_blocks_wallet_risk_threshold():
 
     assert result is not None
     assert result["guardrail_blocked"] is True
+    assert result["guardrail_rule"] == "wallet_risk"
+
+
+def test_wallet_risk_adds_opposite_order_risk_on_hedging_account():
+    config = TradeGuardrailsConfig(
+        enabled=True,
+        ignore_on_demo=False,
+        wallet_risk_limits=WalletRiskLimits(max_risk_pct_of_equity=1.5),
+    )
+    account = SimpleNamespace(
+        margin_mode=2,
+        equity=10000.0,
+        balance=10000.0,
+        margin_free=8000.0,
+    )
+    symbol_info = SimpleNamespace(
+        trade_tick_size=1.0,
+        trade_tick_value=1.0,
+        trade_tick_value_loss=1.0,
+    )
+    existing = [
+        SimpleNamespace(
+            symbol="EURUSD",
+            type=0,
+            volume=1.0,
+            price_open=100.0,
+            sl=0.0 + 0.01,
+        )
+    ]
+
+    result = evaluate_trade_guardrails(
+        config,
+        symbol="EURUSD",
+        volume=1.0,
+        stop_loss=200.0,
+        side="SELL",
+        entry_price=100.0,
+        account_info=account,
+        existing_positions=existing,
+        symbol_info=symbol_info,
+        symbol_info_resolver=lambda _symbol: symbol_info,
+        enforce_account_risk=False,
+    )
+
+    assert result is not None
     assert result["guardrail_rule"] == "wallet_risk"
 
 

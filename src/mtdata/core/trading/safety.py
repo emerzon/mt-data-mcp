@@ -503,6 +503,7 @@ def _projected_exposure_lots(
     symbol: str,
     side: Optional[str],
     volume: Optional[float],
+    account_info: Any = None,
 ) -> float:
     """Project gross exposure after applying a candidate order.
 
@@ -516,6 +517,8 @@ def _projected_exposure_lots(
         new_volume = 0.0
     if new_volume <= 0 or not math.isfinite(new_volume):
         return existing
+    if _account_uses_hedging(account_info):
+        return existing + new_volume
 
     normalized_side = _normalize_side(side)
     if normalized_side is None:
@@ -664,7 +667,8 @@ def _evaluate_wallet_risk_limits(
     opposite = {"BUY": "SELL", "SELL": "BUY"}
     order_volume = float(volume)
     if (
-        net_side is not None
+        not _account_uses_hedging(account_info)
+        and net_side is not None
         and net_volume > 0
         and normalized_side == opposite.get(net_side)
     ):
@@ -848,6 +852,7 @@ def evaluate_trade_guardrails(
             symbol=normalized_symbol,
             side=normalized_side,
             volume=volume,
+            account_info=account_info,
         )
         # Gate checks existing+new against the cap. Pass the full projected
         # exposure as new_volume so reduces (including from already-over-cap
