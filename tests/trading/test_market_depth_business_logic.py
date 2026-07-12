@@ -647,11 +647,12 @@ def test_market_ticker_treats_weekend_gap_as_closed_market() -> None:
         mt5.symbol_info_tick.return_value = tick
         out = _raw_market_ticker("EURUSD", detail="full")
 
-    assert out["data_stale"] is False
+    assert out["data_stale"] is True
+    assert out["usable_for_live_trading"] is False
     assert out["market_status"] == "closed"
     assert out["market_status_reason"] == "weekend"
     assert "latest completed session tick" in out["note"]
-    assert "warning" not in out
+    assert "warning" in out
 
 
 def test_market_ticker_includes_shared_meta_without_dropping_timezone_alias() -> None:

@@ -822,7 +822,7 @@ class TestSymbolsDescribe:
         assert sd["market_status"] == "closed"
         assert sd["market_status_reason"] == "weekend"
         assert "latest completed session tick" in sd["note"]
-        assert "warning" not in sd
+        assert "warning" in sd
 
     @patch(f"{_MT5}.symbol_info")
     def test_describe_warns_when_crypto_base_matches_profit_currency(self, mock_info):
