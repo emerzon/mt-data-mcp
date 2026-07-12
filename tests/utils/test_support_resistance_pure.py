@@ -421,6 +421,7 @@ def test_compact_support_resistance_payload_omits_fibonacci_until_standard_detai
     assert "zone_overlap" not in compact
     assert "nearest" not in compact
     assert compact["current_price"] == result["current_price"]
+    assert compact["current_price_source"] == "last_completed_bar_close"
     assert compact["supports"]
     assert set(compact["supports"][0]).issubset(
         {

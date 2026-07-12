@@ -2592,6 +2592,7 @@ def compact_support_resistance_payload(payload: Dict[str, Any]) -> Dict[str, Any
         "timeframe",
         "mode",
         "current_price",
+        "current_price_source",
         "source",
         "as_of",
         "timezone",
