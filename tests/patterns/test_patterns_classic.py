@@ -286,6 +286,7 @@ def test_detect_classic_patterns_historical_scan_finds_older_prefix_pattern(
             scan_historical=True,
             scan_step_bars=10,
             scan_min_prefix_bars=120,
+            auto_complete_stale_forming=True,
         ),
     )
     assert (
