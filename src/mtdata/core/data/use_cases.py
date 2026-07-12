@@ -1005,7 +1005,7 @@ def _run_data_fetch_ticks_impl(
 
 
 def _attach_tick_pagination(payload: Any, *, requested_limit: int) -> None:
-    """Echo the requested limit and flag a likely truncation for tick payloads."""
+    """Echo the requested limit and disclose whether the source cap was reached."""
     if not isinstance(payload, dict) or payload.get("error"):
         return
     count = payload.get("count")
@@ -1016,7 +1016,7 @@ def _attach_tick_pagination(payload: Any, *, requested_limit: int) -> None:
     except (TypeError, ValueError):
         return
     payload["requested_limit"] = limit_value
-    payload["has_more"] = bool(count >= limit_value)
+    payload["limit_reached"] = bool(count >= limit_value)
 
 
 def _attach_tick_freshness_contract(payload: Any) -> None:

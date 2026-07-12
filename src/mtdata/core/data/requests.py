@@ -459,7 +459,8 @@ class DataFetchTicksRequest(_DetailNormalizedRequest):
         description=(
             "Max ticks to return (default "
             f"{DATA_FETCH_TICKS_DEFAULT_LIMIT}, a recent snapshot). The response "
-            "echoes requested_limit and sets has_more=true when the cap is hit. "
+            "echoes requested_limit and sets limit_reached=true when the cap is hit; "
+            "this does not assert that another page exists. "
             f"Maximum {DATA_FETCH_TICKS_MAX_LIMIT} per request."
         ),
     )

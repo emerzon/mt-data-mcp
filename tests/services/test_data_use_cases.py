@@ -1155,14 +1155,15 @@ def test_run_data_fetch_ticks_maps_standard_detail_to_service_format(detail, exp
     assert captured["format"] == expected_format
 
 
-def test_run_data_fetch_ticks_echoes_limit_and_truncation_signal():
+def test_run_data_fetch_ticks_echoes_limit_and_cap_signal():
     capped = run_data_fetch_ticks(
         DataFetchTicksRequest(symbol="EURUSD", limit=2, detail="standard"),
         gateway=SimpleNamespace(ensure_connection=lambda: None),
         fetch_ticks_impl=lambda **_kwargs: {"success": True, "count": 2, "data": []},
     )
     assert capped["requested_limit"] == 2
-    assert capped["has_more"] is True
+    assert capped["limit_reached"] is True
+    assert "has_more" not in capped
 
     partial = run_data_fetch_ticks(
         DataFetchTicksRequest(symbol="EURUSD", limit=20, detail="standard"),
@@ -1170,7 +1171,7 @@ def test_run_data_fetch_ticks_echoes_limit_and_truncation_signal():
         fetch_ticks_impl=lambda **_kwargs: {"success": True, "count": 5, "data": []},
     )
     assert partial["requested_limit"] == 20
-    assert partial["has_more"] is False
+    assert partial["limit_reached"] is False
 
 
 def test_run_data_fetch_ticks_compact_prunes_row_diagnostics():
@@ -1284,7 +1285,7 @@ def test_run_data_fetch_ticks_compact_prunes_row_diagnostics():
         "quote_completeness_pct": 50.0,
         "quality": "partial_quotes=1/2; last=unavailable",
         "requested_limit": 2,
-        "has_more": True,
+        "limit_reached": True,
     }
 
 
