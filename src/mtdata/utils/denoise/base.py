@@ -36,5 +36,4 @@ __all__ = [
     "register_filter",
     "get_filter", 
     "list_filters",
-    "_series_like",
 ]
