@@ -13,11 +13,11 @@ def _raw_market_snapshot(**kwargs):
 def test_market_snapshot_help_discloses_builtin_section_methods():
     doc = snapshot_mod.market_snapshot.__doc__ or ""
 
-    assert "regime section uses HMM" in doc
-    assert "forecast section uses" in doc
-    assert "horizon` applies only" in doc
-    assert "selects analysis modules" in doc
-    assert "controls field verbosity" in doc
+    assert "regime (opt-in): HMM only" in doc
+    assert "forecast (opt-in): Theta only" in doc
+    assert "horizon`` applies here only" in doc
+    assert "selectable analysis sections" in doc
+    assert "detail`` mainly shapes" in doc
     assert "assembled_at" in doc
     assert "quote_as_of" in doc
 
