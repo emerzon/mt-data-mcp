@@ -957,9 +957,8 @@ def _last_price_freshness_fields(
         data_age_seconds=age_seconds,
     )
     if closed_session:
-        if closed_session.get("freshness_policy_relaxed"):
-            out["last_price_stale"] = False
         out.update(closed_session)
+    out["usable_for_live_trading"] = not out["last_price_stale"] and not bool(closed_session)
     if out["last_price_stale"]:
         out["stale_warning"] = (
             "Last forecast anchor is older than the bar freshness policy; "

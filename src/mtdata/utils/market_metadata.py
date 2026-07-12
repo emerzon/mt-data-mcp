@@ -4,7 +4,6 @@ import math
 from typing import Any, Callable, Dict
 
 from .freshness import (
-    MAX_STANDARD_WEEKEND_DATA_AGE_SECONDS,
     QUOTE_STALE_SECONDS,
     closed_session_context,
     format_freshness_label,
@@ -85,8 +84,6 @@ def build_tick_freshness_context(
         data_age_seconds=age_seconds,
     )
     data_stale = age_seconds > threshold
-    if closed_session and closed_session.get("freshness_policy_relaxed"):
-        data_stale = False
 
     rounded_age = age_rounder(age_seconds) if age_rounder is not None else round(age_seconds, 3)
     stale_after: int | float
@@ -104,11 +101,8 @@ def build_tick_freshness_context(
     }
     if closed_session:
         out.update(closed_session)
-    out["freshness_basis"] = (
-        f"weekend_relaxed_max_{int(MAX_STANDARD_WEEKEND_DATA_AGE_SECONDS // 86400)}d"
-        if normalize_policy_relaxed(out.get("freshness_policy_relaxed"))
-        else f"absolute_{stale_after}s"
-    )
+    out["freshness_basis"] = f"absolute_{stale_after}s"
+    out["usable_for_live_trading"] = not data_stale and not bool(closed_session)
 
     freshness = format_freshness_label(
         data_stale=data_stale,

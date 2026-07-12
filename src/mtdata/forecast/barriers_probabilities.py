@@ -117,9 +117,8 @@ def _history_freshness_context(
         data_age_seconds=age_seconds,
     )
     if closed_session:
-        if closed_session.get("freshness_policy_relaxed"):
-            out["data_stale"] = False
         out.update(closed_session)
+    out["usable_for_live_trading"] = not bool(out.get("data_stale")) and not bool(closed_session)
     freshness = format_freshness_label(
         data_stale=out.get("data_stale"),
         market_status=(
@@ -185,9 +184,8 @@ def _live_reference_time_context(
         data_age_seconds=age_seconds,
     )
     if closed_session:
-        if closed_session.get("freshness_policy_relaxed"):
-            out["reference_price_stale"] = False
         out.update(closed_session)
+    out["reference_usable_for_live"] = not bool(out.get("reference_price_stale")) and not bool(closed_session)
     return out
 
 
@@ -636,7 +634,15 @@ def forecast_barrier_hit_probabilities(  # noqa: C901
         }
         out.update(freshness_context)
         if str(last_price_source or "").startswith("live_tick"):
-            out.update(_live_reference_time_context(symbol, timeframe))
+            reference_context = _live_reference_time_context(symbol, timeframe)
+            out.update(reference_context)
+            if (
+                reference_context.get("reference_price_stale") is True
+                or reference_context.get("market_status") == "closed"
+            ):
+                out["last_price_source"] = str(last_price_source).replace(
+                    "live_tick", "last_tick", 1
+                )
         elif freshness_context.get("data_as_of"):
             out["reference_price_time"] = freshness_context.get("data_as_of")
             out["reference_price_time_epoch"] = freshness_context.get("data_as_of_epoch")

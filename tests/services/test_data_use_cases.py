@@ -422,7 +422,7 @@ def test_run_data_fetch_candles_compact_flags_stale_latest_data():
     assert "stale_warning" not in result
 
 
-def test_run_data_fetch_candles_closed_market_relaxation_is_not_stale():
+def test_run_data_fetch_candles_closed_market_keeps_absolute_staleness():
     request = DataFetchCandlesRequest(symbol="EURUSD", timeframe="H1", limit=5)
 
     result = run_data_fetch_candles(
@@ -454,7 +454,8 @@ def test_run_data_fetch_candles_closed_market_relaxation_is_not_stale():
 
     assert result["freshness"].startswith("closed or idle, bar ")
     assert result["query_type"] == "latest"
-    assert result["data_stale"] is False
+    assert result["data_stale"] is True
+    assert result["usable_for_live_trading"] is False
     assert result["data_age_seconds"] == 149668.6
     assert result["data_age_anchor"] == "wall_clock"
     assert result["data_age_metric"] == "last_completed_bar_age_seconds"

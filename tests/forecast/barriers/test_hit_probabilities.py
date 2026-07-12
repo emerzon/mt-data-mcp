@@ -24,7 +24,7 @@ from ._helpers import _BARRIER_OPT_ROOT, _BARRIER_PROB_ROOT, _BarrierTestBase
 # Standalone tests (no mock history needed)
 # ---------------------------------------------------------------------------
 
-def test_barrier_history_freshness_relaxes_for_closed_weekend():
+def test_barrier_history_freshness_keeps_absolute_weekend_staleness():
     saturday = datetime(2026, 6, 6, 12, tzinfo=timezone.utc).timestamp()
     friday_close = datetime(2026, 6, 5, 20, tzinfo=timezone.utc).timestamp()
     frame = pd.DataFrame({"time": [friday_close]})
@@ -36,7 +36,8 @@ def test_barrier_history_freshness_relaxes_for_closed_weekend():
         now_epoch=saturday,
     )
 
-    assert result["data_stale"] is False
+    assert result["data_stale"] is True
+    assert result["usable_for_live_trading"] is False
     assert result["market_status_reason"] == "weekend"
     assert result["freshness"].startswith("closed weekend, data ")
 
@@ -155,7 +156,8 @@ class TestBarrierHitProbabilities(_BarrierTestBase):
         self._set_flat_history(1.0, bars=200)
         paths = self._sample_paths()
         with patch(f'{_BARRIER_PROB_ROOT}._simulate_gbm_mc') as mock_sim, \
-             patch(f'{_BARRIER_PROB_ROOT}._get_live_reference_price', return_value=(1.2345, "live_tick_ask")):
+             patch(f'{_BARRIER_PROB_ROOT}._get_live_reference_price', return_value=(1.2345, "live_tick_ask")), \
+             patch(f'{_BARRIER_PROB_ROOT}._live_reference_time_context', return_value={"reference_price_stale": False}):
             mock_sim.return_value = {"price_paths": paths}
             result = forecast_barrier_hit_probabilities(
                 symbol="EURUSD",

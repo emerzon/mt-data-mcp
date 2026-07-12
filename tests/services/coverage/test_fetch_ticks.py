@@ -120,7 +120,7 @@ class TestFetchTicks(unittest.TestCase):
     @patch(_CACHED_INFO, return_value=SimpleNamespace(digits=5, point=0.00001))
     @patch(_RESOLVE_CTZ, return_value=None)
     @patch(_GUARD, _mock_symbol_guard)
-    def test_weekend_ticks_are_closed_not_stale(
+    def test_weekend_ticks_are_closed_and_stale_by_age(
         self,
         mock_ctz,
         mock_info,
@@ -135,7 +135,8 @@ class TestFetchTicks(unittest.TestCase):
         result = fetch_ticks('EURUSD', limit=5, format='rows')
 
         self.assertTrue(result.get('success'))
-        self.assertFalse(result['data_stale'])
+        self.assertTrue(result['data_stale'])
+        self.assertFalse(result['usable_for_live_trading'])
         self.assertEqual(result['market_status'], 'closed')
         self.assertEqual(result['market_status_reason'], 'weekend')
         self.assertEqual(result['freshness'], 'closed weekend, tick 16h 0m ago')

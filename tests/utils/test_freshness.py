@@ -5,6 +5,7 @@ from mtdata.utils.freshness import (
     format_freshness_label,
     is_standard_weekend_closure,
 )
+from mtdata.utils.market_metadata import build_tick_freshness_context
 
 
 def test_closed_session_context_marks_weekend_fx_but_not_crypto():
@@ -58,6 +59,23 @@ def test_closed_session_context_does_not_relax_very_old_data():
 
     assert result is not None
     assert result["freshness_policy_relaxed"] is False
+
+
+def test_weekend_tick_keeps_absolute_stale_flag() -> None:
+    saturday = datetime(2026, 6, 6, 12, tzinfo=timezone.utc).timestamp()
+    friday = datetime(2026, 6, 5, 20, tzinfo=timezone.utc).timestamp()
+
+    result = build_tick_freshness_context(
+        "EURUSD",
+        tick_epoch=friday,
+        now_epoch=saturday,
+        stale_after_seconds=300,
+    )
+
+    assert result["data_stale"] is True
+    assert result["freshness_policy_relaxed"] is True
+    assert result["usable_for_live_trading"] is False
+    assert result["freshness_basis"] == "absolute_300s"
 
 
 class _FalseLike:

@@ -1542,12 +1542,6 @@ def _market_scan_freshness_fields(
         item="bar",
         data_age_seconds=age_seconds,
     )
-    if (
-        data_stale
-        and closed_session
-        and closed_session.get("freshness_policy_relaxed")
-    ):
-        data_stale = False
     fields: Dict[str, Any] = {
         "data_freshness_seconds": _market_scan_round(age_seconds, digits=3),
         "data_freshness_anchor": FRESHNESS_ANCHOR_WALL_CLOCK,
@@ -1555,6 +1549,7 @@ def _market_scan_freshness_fields(
         "stale_after_seconds": stale_after_seconds,
         "bar_age_hours": _market_scan_round(age_seconds / 3600.0, digits=3),
         "data_stale": data_stale,
+        "usable_for_live_trading": not data_stale and not bool(closed_session),
         "freshness": format_freshness_label(
             data_stale=data_stale,
             age_seconds=age_seconds,

@@ -502,9 +502,8 @@ def _profile_freshness_meta(fetch_payload: Any) -> Dict[str, Any]:
             if age_seconds is not None:
                 out["data_age_seconds"] = age_seconds
             within_policy = freshness.get("last_bar_within_policy_window")
-            relaxed_policy = bool(freshness.get("freshness_policy_relaxed"))
             if within_policy is not None:
-                out["data_stale"] = bool(not bool(within_policy) and not relaxed_policy)
+                out["data_stale"] = not bool(within_policy)
     return out
 
 

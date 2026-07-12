@@ -557,9 +557,8 @@ def _volatility_input_context(
         data_age_seconds=age_seconds,
     )
     if closed_session:
-        if closed_session.get("freshness_policy_relaxed"):
-            out["data_stale"] = False
         out.update(closed_session)
+    out["usable_for_live_trading"] = not bool(out.get("data_stale")) and not bool(closed_session)
     freshness = format_freshness_label(
         data_stale=out.get("data_stale"),
         market_status=(

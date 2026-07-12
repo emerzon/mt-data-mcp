@@ -209,7 +209,7 @@ def test_last_price_freshness_fields_mark_stale_anchor():
     assert "stale_warning" in stale
 
 
-def test_last_price_freshness_relaxes_for_closed_weekend():
+def test_last_price_freshness_keeps_absolute_weekend_staleness():
     saturday = datetime(2026, 6, 6, 12, tzinfo=timezone.utc).timestamp()
     friday_close = datetime(2026, 6, 5, 20, tzinfo=timezone.utc).timestamp()
 
@@ -220,9 +220,10 @@ def test_last_price_freshness_relaxes_for_closed_weekend():
         symbol="EURUSD",
     )
 
-    assert result["last_price_stale"] is False
+    assert result["last_price_stale"] is True
+    assert result["usable_for_live_trading"] is False
     assert result["market_status_reason"] == "weekend"
-    assert "stale_warning" not in result
+    assert "stale_warning" in result
     assert _forecast_anchor_freshness(result).startswith("closed weekend, anchor ")
 
 

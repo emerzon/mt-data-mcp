@@ -57,6 +57,7 @@ _COMPACT_TICK_TOP_LEVEL_FIELDS = (
     "data_age_anchor",
     "data_age_metric",
     "data_stale",
+    "usable_for_live_trading",
     "market_status",
     "market_status_reason",
     "market_status_source",
@@ -505,6 +506,7 @@ def _compact_candles_payload(
         "data_age_anchor",
         "data_age_metric",
         "data_stale",
+        "usable_for_live_trading",
         "freshness_policy_relaxed",
         "market_status",
         "market_status_reason",
@@ -659,6 +661,7 @@ def _standard_candles_payload(result: Dict[str, Any]) -> Dict[str, Any]:
         "query_type",
         "freshness",
         "data_stale",
+        "usable_for_live_trading",
         "data_age_seconds",
         "data_age_anchor",
         "data_age_metric",
@@ -688,6 +691,7 @@ def _attach_candle_machine_freshness(payload: Dict[str, Any]) -> None:
         "data_age_anchor",
         "data_age_metric",
         "data_stale",
+        "usable_for_live_trading",
         "freshness_policy_relaxed",
         "query_end_gap_seconds",
         "query_end_gap",
@@ -906,8 +910,8 @@ def _public_candle_diagnostics(result: Dict[str, Any]) -> Dict[str, Any]:
             stale = (
                 within_policy is not None
                 and not bool(within_policy)
-                and not relaxed_policy
             )
+            public["usable_for_live_trading"] = not stale and not relaxed_policy
             public["data_stale"] = stale
             freshness_label = format_freshness_label(
                 data_stale=stale,
