@@ -79,6 +79,7 @@ class TestLabelsTripleBarrier:
         assert "summary" in result
         assert len(result["data"]) > 0
         assert "labels" not in result
+        assert "same_bar" not in result
 
     def test_triple_barrier_helper_short_history_keeps_return_arity(self):
         from mtdata.core.labels import _build_triple_barrier_outputs

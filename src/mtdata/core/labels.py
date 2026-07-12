@@ -793,6 +793,7 @@ def labels_triple_barrier(
                         "holding_bars",
                         "tp_time",
                         "sl_time",
+                        "same_bar",
                     ):
                         payload.pop(key, None)
                 elif output_mode == "standard":
@@ -810,6 +811,7 @@ def labels_triple_barrier(
                         "holding_bars",
                         "tp_time",
                         "sl_time",
+                        "same_bar",
                     ):
                         payload.pop(key, None)
             return payload
