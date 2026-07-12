@@ -1308,6 +1308,14 @@ def forecast_engine(  # noqa: C901
             dimred_params=dimred_params,
             symbol=symbol,
         )
+        if features and feature_info.get("error"):
+            return {
+                "error": (
+                    "Requested features could not be prepared: "
+                    f"{feature_info['error']}"
+                ),
+                "error_code": "feature_build_error",
+            }
 
         # Get last timestamp and values
         last_epoch = float(df['time'].iloc[-1])
@@ -1457,18 +1465,6 @@ def forecast_engine(  # noqa: C901
             symbol=symbol,
             timeframe=timeframe,
         )
-        feature_error = str(feature_info.get("error") or "").strip()
-        if features and feature_error:
-            warnings = result.get("warnings")
-            if not isinstance(warnings, list):
-                warnings = []
-            warning_text = (
-                "Requested features were unavailable; forecast used a univariate "
-                f"fallback ({feature_error})."
-            )
-            if warning_text not in warnings:
-                warnings.append(warning_text)
-            result["warnings"] = warnings
         if broker_time_check_result and broker_time_check_result.get("status") == "misaligned":
             warning_text = str(broker_time_check_result.get("warning") or "").strip()
             if warning_text:
