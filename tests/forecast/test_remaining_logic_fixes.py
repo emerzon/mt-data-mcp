@@ -56,7 +56,7 @@ def test_backtest_vol_proxy_not_mutated_across_anchors() -> None:
 
     with patch("mtdata.forecast.backtest._fetch_history", return_value=df), patch(
         "mtdata.forecast.backtest.forecast_volatility",
-        return_value={"horizon_sigma_return": 0.1},
+        return_value={"volatility_horizon": 0.1},
     ) as mock_vol:
         res = forecast_backtest(
             symbol="EURUSD",

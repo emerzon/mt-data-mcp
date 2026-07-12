@@ -505,8 +505,8 @@ class TestForecastVolatilityEWMA:
         with _mock_vol_env():
             result = forecast_volatility("EURUSD", "H1", 1, method="ewma")
             assert result.get("success") is True
-            for key in ("sigma_bar_return", "sigma_annual_return",
-                        "horizon_sigma_return", "horizon_sigma_annual"):
+            for key in ("volatility_per_bar", "volatility_annualized",
+                        "volatility_horizon", "volatility_horizon_annualized"):
                 assert key in result
                 assert isinstance(result[key], float)
                 assert math.isfinite(result[key])
@@ -538,13 +538,13 @@ class TestForecastVolatilityEWMA:
             r1 = forecast_volatility("EURUSD", "H1", 1, method="ewma")
             r5 = forecast_volatility("EURUSD", "H1", 5, method="ewma")
             assert r1.get("success") and r5.get("success")
-            assert r5["horizon_sigma_return"] > r1["horizon_sigma_return"]
+            assert r5["volatility_horizon"] > r1["volatility_horizon"]
 
     def test_ewma_sigma_positive(self):
         with _mock_vol_env():
             result = forecast_volatility("EURUSD", "H1", 1, method="ewma")
-            assert result["sigma_bar_return"] > 0
-            assert result["sigma_annual_return"] > 0
+            assert result["volatility_per_bar"] > 0
+            assert result["volatility_annualized"] > 0
 
 
 # ===================================================================
@@ -570,8 +570,8 @@ class TestForecastVolatilityRangeBased:
             result = forecast_volatility(
                 "EURUSD", "H1", 1, method=method, params={"window": 20})
             assert result.get("success") is True
-            assert result["sigma_bar_return"] >= 0
-            assert math.isfinite(result["sigma_bar_return"])
+            assert result["volatility_per_bar"] >= 0
+            assert math.isfinite(result["volatility_per_bar"])
 
     @pytest.mark.parametrize("method", [
         "parkinson", "gk", "rs", "yang_zhang", "rolling_std",
@@ -583,7 +583,7 @@ class TestForecastVolatilityRangeBased:
             r5 = forecast_volatility(
                 "EURUSD", "H1", 5, method=method, params={"window": 20})
             if r1.get("success") and r5.get("success"):
-                assert r5["horizon_sigma_return"] >= r1["horizon_sigma_return"]
+                assert r5["volatility_horizon"] >= r1["volatility_horizon"]
 
     def test_custom_window(self):
         with _mock_vol_env():
@@ -636,8 +636,8 @@ class TestForecastVolatilityRealizedKernel:
             result = forecast_volatility(
                 "EURUSD", "H1", 1, method="realized_kernel")
             assert result.get("success") is True
-            assert result["sigma_bar_return"] > 0
-            assert math.isfinite(result["sigma_annual_return"])
+            assert result["volatility_per_bar"] > 0
+            assert math.isfinite(result["volatility_annualized"])
 
 
 # ===================================================================
@@ -682,9 +682,9 @@ class TestForecastVolatilityGarch:
                 result = forecast_volatility(
                     "EURUSD", "H1", 3, method="garch")
                 assert result.get("success") is True
-                assert "sigma_bar_return" in result
-                assert "sigma_annual_return" in result
-                assert "horizon_sigma_return" in result
+                assert "volatility_per_bar" in result
+                assert "volatility_annualized" in result
+                assert "volatility_horizon" in result
 
     def test_garch_custom_params(self):
         with _mock_vol_env():
@@ -752,7 +752,7 @@ class TestForecastVolatilityHarRV:
                         "window_w": 3, "window_m": 10})
             if result.get("success"):
                 assert result["method"] == "har_rv"
-                assert "sigma_bar_return" in result
+                assert "volatility_per_bar" in result
                 assert "params_used" in result
 
     def test_har_rv_insufficient_intraday(self):
@@ -808,8 +808,8 @@ class TestForecastVolatilityGeneral:
                 "EURUSD", "H1", 5, method="theta",
                 proxy="squared_return")
             assert result.get("success") is True
-            for key in ("sigma_bar_return", "sigma_annual_return",
-                        "horizon_sigma_return", "horizon_sigma_annual"):
+            for key in ("volatility_per_bar", "volatility_annualized",
+                        "volatility_horizon", "volatility_horizon_annualized"):
                 assert key in result
                 assert math.isfinite(result[key])
             assert result["volatility_per_bar"] * math.sqrt(5) == pytest.approx(
@@ -955,8 +955,8 @@ class TestForecastVolatilityTimeframes:
             r_d1 = forecast_volatility("EURUSD", "D1", 1, method="ewma")
             assert r_h1.get("success") and r_d1.get("success")
             # Both should produce finite annualized values
-            assert math.isfinite(r_h1["sigma_annual_return"])
-            assert math.isfinite(r_d1["sigma_annual_return"])
+            assert math.isfinite(r_h1["volatility_annualized"])
+            assert math.isfinite(r_d1["volatility_annualized"])
 
 
 # ===================================================================
@@ -1034,7 +1034,7 @@ class TestForecastVolatilityEdgeCases:
                 "EURUSD", "H1", 1, method="yang_zhang",
                 params={"window": 30})
             assert result.get("success") is True
-            assert result["sigma_bar_return"] >= 0
+            assert result["volatility_per_bar"] >= 0
 
     def test_realized_kernel_parzen(self):
         with _mock_vol_env():

@@ -621,19 +621,17 @@ def _finalize_volatility_output(
 
     out = dict(payload)
     detail_mode = str(detail or "compact").strip().lower()
-    alias_pairs = (
+    # One-way migration for residual legacy keys; emit trader keys only.
+    for legacy_key, trader_key in (
         ("sigma_bar_return", "volatility_per_bar"),
         ("sigma_annual_return", "volatility_annualized"),
         ("horizon_sigma_return", "volatility_horizon"),
         ("horizon_sigma_annual", "volatility_horizon_annualized"),
-    )
-    for legacy_key, trader_key in alias_pairs:
+    ):
         legacy_value = out.get(legacy_key)
-        trader_value = out.get(trader_key)
-        if trader_value is None and legacy_value is not None:
+        if out.get(trader_key) is None and legacy_value is not None:
             out[trader_key] = legacy_value
-        elif legacy_value is None and trader_value is not None:
-            out[legacy_key] = trader_value
+        out.pop(legacy_key, None)
     out.setdefault("volatility_unit", "return_fraction")
     out.setdefault("volatility_measure", "standard_deviation_of_returns")
     out.setdefault(
@@ -672,10 +670,6 @@ def _finalize_volatility_output(
             "volatility_annualized",
             "volatility_horizon",
             "volatility_horizon_annualized",
-            "sigma_bar_return",
-            "sigma_annual_return",
-            "horizon_sigma_return",
-            "horizon_sigma_annual",
         ):
             try:
                 out[key] = round(float(out[key]), 6)
@@ -700,7 +694,6 @@ def _finalize_volatility_output(
             ):
                 out.pop("volatility_horizon_annualized", None)
                 out.pop("volatility_horizon_annualized_pct", None)
-                out.pop("horizon_sigma_annual", None)
                 out.setdefault(
                     "volatility_annualized_note",
                     "volatility_horizon_annualized equals volatility_annualized under sqrt-time scaling; "
@@ -959,12 +952,12 @@ def forecast_volatility(  # noqa: C901
                     continue
                 component_row: dict[str, Any] = {
                     "method": base_method,
-                    "sigma_bar_return": sigma_bar,
-                    "horizon_sigma_return": horizon_sigma,
-                    "sigma_annual_return": float(
+                    "volatility_per_bar": sigma_bar,
+                    "volatility_horizon": horizon_sigma,
+                    "volatility_annualized": float(
                         result.get('volatility_annualized', float('nan'))
                     ),
-                    "horizon_sigma_annual": float(
+                    "volatility_horizon_annualized": float(
                         result.get(
                             'volatility_horizon_annualized',
                             result.get('volatility_annualized', float('nan')),
@@ -1009,18 +1002,18 @@ def forecast_volatility(  # noqa: C901
                 return float(np.mean(values))
 
             bpy = annualization_bars_per_year
-            sigma_bar_return = _aggregate_metric('sigma_bar_return')
-            horizon_sigma_return = _aggregate_metric('horizon_sigma_return')
+            sigma_bar_return = _aggregate_metric('volatility_per_bar')
+            horizon_sigma_return = _aggregate_metric('volatility_horizon')
             out: Dict[str, Any] = {
                 "success": True,
                 "symbol": symbol,
                 "timeframe": timeframe,
                 "method": "ensemble",
                 "horizon": int(horizon),
-                "sigma_bar_return": sigma_bar_return,
-                "sigma_annual_return": float(sigma_bar_return * math.sqrt(bpy)),
-                "horizon_sigma_return": horizon_sigma_return,
-                "horizon_sigma_annual": _annualize_horizon_sigma(
+                "volatility_per_bar": sigma_bar_return,
+                "volatility_annualized": float(sigma_bar_return * math.sqrt(bpy)),
+                "volatility_horizon": horizon_sigma_return,
+                "volatility_horizon_annualized": _annualize_horizon_sigma(
                     horizon_sigma_return,
                     bpy,
                     int(horizon),
@@ -1224,8 +1217,8 @@ def forecast_volatility(  # noqa: C901
             bpy = annualization_bars_per_year
             return _finalize_volatility_with_context(
                 {"success": True, "symbol": symbol, "timeframe": timeframe, "method": method_l, "proxy": proxy_l,
-                 "horizon": int(horizon), "sigma_bar_return": sbar, "sigma_annual_return": float(sbar*math.sqrt(bpy)),
-                 "horizon_sigma_return": hsig, "horizon_sigma_annual": _annualize_horizon_sigma(hsig, bpy, int(horizon)),
+                 "horizon": int(horizon), "volatility_per_bar": sbar, "volatility_annualized": float(sbar*math.sqrt(bpy)),
+                 "volatility_horizon": hsig, "volatility_horizon_annualized": _annualize_horizon_sigma(hsig, bpy, int(horizon)),
                  "params_used": {
                      **p,
                      "per_bar_volatility_basis": "forecast_horizon_rms",
@@ -1334,8 +1327,8 @@ def forecast_volatility(  # noqa: C901
                 bpy = annualization_bars_per_year
                 return _finalize_volatility_with_context(
                     {"success": True, "symbol": symbol, "timeframe": timeframe, "method": method_l, "horizon": int(horizon),
-                     "sigma_bar_return": sbar, "sigma_annual_return": float(sbar*math.sqrt(bpy)),
-                     "horizon_sigma_return": hsig, "horizon_sigma_annual": _annualize_horizon_sigma(hsig, bpy, int(horizon)),
+                     "volatility_per_bar": sbar, "volatility_annualized": float(sbar*math.sqrt(bpy)),
+                     "volatility_horizon": hsig, "volatility_horizon_annualized": _annualize_horizon_sigma(hsig, bpy, int(horizon)),
                      "params_used": {"rv_timeframe": rv_tf, "window_w": w, "window_m": m,
                                       "beta": [float(b) for b in beta.tolist()],
                                       "days": days},
@@ -1428,8 +1421,8 @@ def forecast_volatility(  # noqa: C901
                 params_used["halflife"] = halflife_used
             return _finalize_volatility_with_context(
                 {"success": True, "symbol": symbol, "timeframe": timeframe, "method": method_l, "horizon": int(horizon),
-                 "sigma_bar_return": sbar, "sigma_annual_return": float(sbar*math.sqrt(bpy)),
-                 "horizon_sigma_return": hsig, "horizon_sigma_annual": _annualize_horizon_sigma(hsig, bpy, int(horizon)),
+                 "volatility_per_bar": sbar, "volatility_annualized": float(sbar*math.sqrt(bpy)),
+                 "volatility_horizon": hsig, "volatility_horizon_annualized": _annualize_horizon_sigma(hsig, bpy, int(horizon)),
                  "params_used": params_used,
                  "params_explained": _ewma_param_explanations(lambda_source),
                  "denoise_used": dn_spec_used},
@@ -1479,8 +1472,8 @@ def forecast_volatility(  # noqa: C901
             hsig = float(sbar * math.sqrt(max(1, int(horizon))))
             return _finalize_volatility_with_context(
                 {"success": True, "symbol": symbol, "timeframe": timeframe, "method": method_l, "horizon": int(horizon),
-                 "sigma_bar_return": sbar, "sigma_annual_return": float(sbar*math.sqrt(bpy)),
-                 "horizon_sigma_return": hsig, "horizon_sigma_annual": _annualize_horizon_sigma(hsig, bpy, int(horizon)),
+                 "volatility_per_bar": sbar, "volatility_annualized": float(sbar*math.sqrt(bpy)),
+                 "volatility_horizon": hsig, "volatility_horizon_annualized": _annualize_horizon_sigma(hsig, bpy, int(horizon)),
                  "params_used": {"window": int(window)},
                  "denoise_used": dn_spec_used},
                 df=df,
@@ -1512,10 +1505,10 @@ def forecast_volatility(  # noqa: C901
                     "timeframe": timeframe,
                     "method": method_l,
                     "horizon": int(horizon),
-                    "sigma_bar_return": float(sigma_bar),
-                    "sigma_annual_return": float(sigma_bar * math.sqrt(bpy)),
-                    "horizon_sigma_return": float(sigma_h),
-                    "horizon_sigma_annual": _annualize_horizon_sigma(float(sigma_h), bpy, int(horizon)),
+                    "volatility_per_bar": float(sigma_bar),
+                    "volatility_annualized": float(sigma_bar * math.sqrt(bpy)),
+                    "volatility_horizon": float(sigma_h),
+                    "volatility_horizon_annualized": _annualize_horizon_sigma(float(sigma_h), bpy, int(horizon)),
                     "params_used": {"window": int(window), "kernel": kernel, "bandwidth": bandwidth_val},
                     "denoise_used": dn_spec_used,
                 },
@@ -1567,8 +1560,8 @@ def forecast_volatility(  # noqa: C901
                     params_used['o'] = int(p.get('o', 1))
                 return _finalize_volatility_with_context(
                     {"success": True, "symbol": symbol, "timeframe": timeframe, "method": method_l, "horizon": int(horizon),
-                     "sigma_bar_return": sbar, "sigma_annual_return": float(sbar*math.sqrt(bpy)),
-                     "horizon_sigma_return": hsig, "horizon_sigma_annual": _annualize_horizon_sigma(hsig, bpy, int(horizon)),
+                     "volatility_per_bar": sbar, "volatility_annualized": float(sbar*math.sqrt(bpy)),
+                     "volatility_horizon": hsig, "volatility_horizon_annualized": _annualize_horizon_sigma(hsig, bpy, int(horizon)),
                      "params_used": params_used,
                      "denoise_used": dn_spec_used},
                     df=df,

@@ -1181,7 +1181,7 @@ def test_run_forecast_volatility_routes_date_range_to_impl():
 
     def fake_volatility_impl(**kwargs):
         captured.update(kwargs)
-        return {"success": True, "sigma_bar_return": 0.01}
+        return {"success": True, "volatility_per_bar": 0.01}
 
     result = forecast_use_cases.run_forecast_volatility_estimate(
         ForecastVolatilityEstimateRequest(

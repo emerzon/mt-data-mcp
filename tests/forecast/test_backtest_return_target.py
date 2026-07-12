@@ -63,7 +63,7 @@ def test_backtest_volatility_with_return_target_uses_price_truth_windows() -> No
 
     with patch("mtdata.forecast.backtest._fetch_history", return_value=df), patch(
         "mtdata.forecast.backtest.forecast_volatility",
-        return_value={"horizon_sigma_return": expected_sigma},
+        return_value={"volatility_horizon": expected_sigma},
     ):
         res = forecast_backtest(
             symbol="EURUSD",
@@ -93,8 +93,8 @@ def test_backtest_aggregates_volatility_rmse_from_squared_errors() -> None:
     with patch("mtdata.forecast.backtest._fetch_history", return_value=df), patch(
         "mtdata.forecast.backtest.forecast_volatility",
         side_effect=[
-            {"horizon_sigma_return": realized[0] + 1.0},
-            {"horizon_sigma_return": realized[1] + 5.0},
+            {"volatility_horizon": realized[0] + 1.0},
+            {"volatility_horizon": realized[1] + 5.0},
         ],
     ):
         result = forecast_backtest(

@@ -564,11 +564,11 @@ def template_basic(  # noqa: C901
                 continue
             sh = _first_volatility_value(
                 vres,
-                ('volatility_horizon', 'horizon_sigma_return', 'horizon_sigma_price'),
+                ('volatility_horizon', 'horizon_sigma_price'),
             )
             sb = _first_volatility_value(
                 vres,
-                ('volatility_per_bar', 'sigma_bar_return', 'sigma_bar_price'),
+                ('volatility_per_bar', 'sigma_bar_price'),
             )
             use_val = None
             try:
@@ -591,7 +591,7 @@ def template_basic(  # noqa: C901
                 )
                 psh = _first_volatility_value(
                     proxy_res,
-                    ('volatility_horizon', 'horizon_sigma_return', 'horizon_sigma_price'),
+                    ('volatility_horizon', 'horizon_sigma_price'),
                 )
                 try:
                     pf = float(psh) if psh is not None else None

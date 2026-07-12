@@ -69,11 +69,11 @@ def template_advanced(
         base['sections']['volatility_har_rv'] = {
             'volatility_per_bar': _first_volatility_value(
                 har,
-                ('volatility_per_bar', 'sigma_bar_return', 'sigma_bar_price'),
+                ('volatility_per_bar', 'sigma_bar_price'),
             ),
             'volatility_horizon': _first_volatility_value(
                 har,
-                ('volatility_horizon', 'horizon_sigma_return', 'horizon_sigma_price'),
+                ('volatility_horizon', 'horizon_sigma_price'),
             ),
         }
 

@@ -662,13 +662,13 @@ class TestHarRvBlock:
         with _mock_env(rates_side_effect=self._har_rv_side_effect()):
             r = forecast_volatility("EURUSD", "H1", 5, method="har_rv")
             assert r.get("success") is True
-            assert "sigma_bar_return" in r
+            assert "volatility_per_bar" in r
             assert "params_used" in r
             # Forex symbols annualize with the 260-weekday FX calendar.
             expected_bpy = _bars_per_year("H1", "EURUSD")
-            assert r["sigma_annual_return"] == pytest.approx(r["sigma_bar_return"] * math.sqrt(expected_bpy))
-            assert r["horizon_sigma_annual"] == pytest.approx(
-                r["horizon_sigma_return"] * math.sqrt(expected_bpy / 5)
+            assert r["volatility_annualized"] == pytest.approx(r["volatility_per_bar"] * math.sqrt(expected_bpy))
+            assert r["volatility_horizon_annualized"] == pytest.approx(
+                r["volatility_horizon"] * math.sqrt(expected_bpy / 5)
             )
             assert "beta" in r["params_used"]
 
@@ -799,7 +799,7 @@ class TestHarRvBlock:
             r1 = forecast_volatility("EURUSD", "H1", 1, method="har_rv")
             r5 = forecast_volatility("EURUSD", "H1", 5, method="har_rv")
             if r1.get("success") and r5.get("success"):
-                assert r5["horizon_sigma_return"] >= r1["horizon_sigma_return"]
+                assert r5["volatility_horizon"] >= r1["volatility_horizon"]
 
 
 # ===================================================================
@@ -922,5 +922,5 @@ class TestScatteredBranches:
                                         proxy="squared_return")
                 assert r.get("success") is True
                 for key in ("symbol", "timeframe", "method", "horizon",
-                            "sigma_bar_return", "sigma_annual_return"):
+                            "volatility_per_bar", "volatility_annualized"):
                     assert key in r, f"Missing key {key}"

@@ -198,7 +198,7 @@ class TestForecastBacktest:
     def test_default_methods_volatility(self, fetch):
         fetch.return_value = _make_df(500)
         with patch("mtdata.forecast.backtest.forecast_volatility") as fv:
-            fv.return_value = {"horizon_sigma_return": 0.05}
+            fv.return_value = {"volatility_horizon": 0.05}
             result = forecast_backtest("EURUSD", timeframe="H1", quantity="volatility")
         assert isinstance(result, dict)
 
@@ -384,7 +384,7 @@ class TestForecastBacktest:
     def test_volatility_forecast_with_realized(self, fetch):
         fetch.return_value = _make_df(500)
         with patch("mtdata.forecast.backtest.forecast_volatility") as fv:
-            fv.return_value = {"horizon_sigma_return": 0.03}
+            fv.return_value = {"volatility_horizon": 0.03}
             result = forecast_backtest(
                 "EURUSD", timeframe="H1", quantity="volatility",
                 methods=["ewma"], params_per_method={"ewma": {"proxy": "garman_klass"}},
@@ -396,7 +396,7 @@ class TestForecastBacktest:
         df = _make_df(500)
         fetch.return_value = df
         with patch("mtdata.forecast.backtest.forecast_volatility") as fv:
-            fv.return_value = {"horizon_sigma_return": 0.03}
+            fv.return_value = {"volatility_horizon": 0.03}
             result = forecast_backtest(
                 "EURUSD",
                 timeframe="H1",
