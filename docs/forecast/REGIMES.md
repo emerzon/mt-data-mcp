@@ -116,7 +116,7 @@ summary:
 | Parameter | Default | Description |
 |-----------|---------|-------------|
 | `threshold` | auto | Probability cutoff to flag a change point. Omit it for automatic asset/timeframe calibration; any supplied number, including `0.5`, is fixed. |
-| `lookback` | 300 | Historical bars to analyze |
+| `lookback` | timeframe-based | Recent window used for BOCPD summary statistics in compact/summary detail. `limit` controls the detection history. |
 
 **When to use:**
 - Detecting breakouts

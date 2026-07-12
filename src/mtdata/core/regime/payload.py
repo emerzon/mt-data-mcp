@@ -958,9 +958,14 @@ def _consolidate_payload(  # noqa: C901
                     latest_transition_probability,
                     payload.get("threshold"),
                 )
+                total_change_points_count = (
+                    len(payload.get("change_points", []))
+                    if isinstance(payload.get("change_points"), list)
+                    else 0
+                )
                 current_regime = {
                     "status": _bocpd_segment_status(
-                        change_points_count=recent_change_points_count,
+                        change_points_count=total_change_points_count,
                         bars_since_change=last_seg["bars"],
                         transition_risk=transition_risk,
                     ),

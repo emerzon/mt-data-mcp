@@ -732,22 +732,6 @@ def _apply_bocpd_output_mode(
     payload["summary"] = summary
     if output == "summary":
         return _summary_only_payload(payload)
-    if output == "compact" and n > 0:
-        tail_offset = len(payload.get("times", [])) - n
-        payload["times"] = payload["times"][-n:]
-        payload["cp_prob"] = payload["cp_prob"][-n:]
-        if isinstance(payload.get("_series_values"), list):
-            payload["_series_values"] = payload["_series_values"][-n:]
-        tail_cps: List[Dict[str, Any]] = []
-        for cp in payload.get("change_points", []):
-            if not isinstance(cp, dict):
-                continue
-            idx = cp.get("idx")
-            if isinstance(idx, int) and idx >= tail_offset:
-                cp_tail = dict(cp)
-                cp_tail["idx"] = idx - tail_offset
-                tail_cps.append(cp_tail)
-        payload["change_points"] = tail_cps
     return payload
 
 

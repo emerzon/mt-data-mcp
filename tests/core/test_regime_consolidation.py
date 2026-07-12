@@ -3,6 +3,7 @@ import numpy as np
 import pytest
 
 from mtdata.core.regime.api import (
+    _apply_bocpd_output_mode,
     _consolidate_payload,
     _summary_only_payload,
 )
@@ -19,6 +20,46 @@ def test_causal_state_confirmation_never_rewrites_prefix() -> None:
     assert full[:6].tolist() == prefix.tolist()
     assert full.tolist() == [0, 0, 0, 0, 0, 0, 0, 1]
     assert meta["postprocess"] == "causal_confirmation"
+
+
+def test_bocpd_compact_lookback_preserves_true_segment_age() -> None:
+    times = [f"T{i}" for i in range(200)]
+    cp_prob = np.zeros(200, dtype=float)
+    cp_prob[80] = 0.9
+    change_points = [{"idx": 80, "time": "T80", "prob": 0.9}]
+    payload = {
+        "success": True,
+        "symbol": "EURUSD",
+        "timeframe": "H1",
+        "method": "bocpd",
+        "target": "return",
+        "times": times,
+        "cp_prob": cp_prob.tolist(),
+        "change_points": change_points,
+        "_series_values": np.zeros(200, dtype=float).tolist(),
+        "threshold": 0.5,
+    }
+
+    compact_payload = _apply_bocpd_output_mode(
+        payload,
+        output="compact",
+        lookback=50,
+        cp_prob=cp_prob,
+        change_points=change_points,
+        raw_cp_idx=[80],
+        reliability={},
+        expected_fa_rate=0.02,
+        calibration_age_bars=200,
+        tuning_hint=None,
+    )
+    result = _consolidate_payload(compact_payload, "bocpd", "compact")
+
+    assert len(compact_payload["times"]) == 200
+    assert result["current_regime"]["since"] == "T80"
+    assert result["current_regime"]["bars_since_change"] == 120
+    assert result["current_regime"]["status"] == "post_change_segment"
+    assert result["transition_summary"]["recent_change_points_count"] == 0
+    assert result["total_regimes"] == 2
 
 
 def test_hard_probabilities_follow_causally_confirmed_state() -> None:
