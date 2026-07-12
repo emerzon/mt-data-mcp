@@ -14,11 +14,13 @@ from mtdata.patterns.elliott import (
     _classification_score_window,
     _classify_waves,
     _enforce_min_distance_on_pivots,
+    _enforce_pivot_alternation,
     _evaluate_correction_rules,
     _evaluate_impulse_rules,
     _filter_nested_results,
     _normalize_pattern_types,
     _result_sort_key,
+    _rule_confidence_from_eval,
     _segment_waves_from_pivots,
     _window_hit,
     _zigzag_pivots_indices,
@@ -271,6 +273,19 @@ class TestClassificationScoreWindow:
 
 # ===== _evaluate_impulse_rules and _evaluate_correction_rules ==============
 
+class TestPivotAlternation:
+    def test_merges_same_direction_legs(self):
+        close = np.array([100.0, 110.0, 115.0, 105.0, 120.0], dtype=float)
+        # 0→1→2 are same-direction up legs if all kept as pivots.
+        pivots = [0, 1, 2, 3, 4]
+        cleaned = _enforce_pivot_alternation(pivots, close)
+        prices = [float(close[i]) for i in cleaned]
+        for i in range(1, len(prices) - 1):
+            left = prices[i] - prices[i - 1]
+            right = prices[i + 1] - prices[i]
+            assert left * right < 0.0
+
+
 class TestEvaluateImpulseRules:
     def test_valid_bullish(self):
         c = _impulse_close()
@@ -330,6 +345,19 @@ class TestEvaluateImpulseRules:
         evaluation = _evaluate_impulse_rules(c, [0, 1, 2, 3, 4, 5], True)
         assert isinstance(evaluation.valid, bool)
         assert evaluation.fib_score == evaluation.metrics["fib_score"]
+        assert evaluation.metrics["fib_template_fit"] == evaluation.fib_score
+        assert evaluation.metrics["rule_confidence"] == pytest.approx(
+            _rule_confidence_from_eval(evaluation)
+        )
+        if evaluation.valid:
+            assert evaluation.metrics["rule_confidence"] >= 0.55
+
+    def test_valid_modest_extension_is_not_mid_scored(self):
+        # W3 ≈ 1.1×W1 — hard-valid but previously Fib-window mid-scored.
+        c = np.array([100.0, 120.0, 112.0, 134.0, 126.0, 146.0], dtype=float)
+        evaluation = _evaluate_impulse_rules(c, list(range(6)), bullish=True)
+        assert evaluation.valid is True
+        assert evaluation.metrics["rule_confidence"] >= 0.55
 
 
 class TestEvaluateCorrectionRules:
@@ -503,10 +531,12 @@ class TestBuildResult:
         labels = [wp["label"] for wp in result.details["wave_points_labeled"]]
         assert labels == ["S", "A", "B", "C"]
         assert result.details["pattern_family"] == "correction"
+        assert result.details["structure_type"] == "zigzag_abc"
         assert result.details["sequence_direction"] == "bull"
         assert result.details["prior_impulse_direction"] == "bear"
         assert result.details["trend_context"] == "counter_trend"
         assert "correction_metrics" in result.details
+        assert "zigzag" in str(result.details.get("taxonomy_note", "")).lower()
 
     def test_impulse_labels(self):
         c = _impulse_close()
@@ -520,7 +550,10 @@ class TestBuildResult:
         )
         result = analyzer.build_result(scenario)
         labels = [wp["label"] for wp in result.details["wave_points_labeled"]]
-        assert labels[0] == "W0"
+        assert labels == ["0", "1", "2", "3", "4", "5"]
+        assert result.details["structure_type"] == "impulse_strict"
+        assert result.details["rule_price_source"] == result.details["pivot_price_source"]
+        assert result.details["price_contract"] == "unified"
 
     def test_build_result_marks_unconfirmed_terminal_pivot_and_classifier_state(self):
         c = _impulse_close()
@@ -624,9 +657,12 @@ class TestBuildResult:
         assert [point["price"] for point in result.details["wave_points_labeled"]] == pytest.approx(expected_prices)
         assert result.details["invalidation_level"] == pytest.approx(97.0)
         assert result.details["pivot_price_source"] == "hybrid"
-        assert result.details["rule_price_source"] == "close"
+        # Unified contract: rules and display share the configured pivot source.
+        assert result.details["rule_price_source"] == "hybrid"
+        assert result.details["price_contract"] == "unified"
         assert result.details["wave5_targets"]["equal_wave1"] == pytest.approx(156.0)
         assert result.details["wave5_targets"]["wave3_0_618"] == pytest.approx(160.9)
+        assert result.details["wave5_targets"]["retrospective"] is True
 
 
 # ===== ElliottWaveAnalyzer.build_fallback (lines 623-651) ==================
@@ -1078,13 +1114,14 @@ class TestDetectElliottWaves:
 
         assert scenarios
         assert scenarios[0].classification_available is False
+        rule_conf = _rule_confidence_from_eval(scenarios[0].rule_eval)
         expected, adjustments = _apply_confirmation_confidence_adjustments(
-            scenarios[0].rule_eval.fib_score,
+            rule_conf,
             scenarios[0].pivot_confirmations,
             analyzer.config,
         )
         assert scenarios[0].confidence == pytest.approx(expected)
-        assert scenarios[0].base_confidence == pytest.approx(scenarios[0].rule_eval.fib_score)
+        assert scenarios[0].base_confidence == pytest.approx(rule_conf)
         assert scenarios[0].confidence_adjustments == adjustments
         assert scenarios[0].pivot_confirmations[:-1] == [True] * (len(scenarios[0].pivot_confirmations) - 1)
         assert scenarios[0].pivot_confirmations[-1] is False
@@ -1123,7 +1160,8 @@ class TestDetectElliottWaves:
         scenarios = analyzer.analyze_once(1.0, 1)
 
         assert scenarios
-        expected = (0.2 * scenarios[0].rule_eval.fib_score) + (0.8 * scenarios[0].cls_score)
+        rule_conf = _rule_confidence_from_eval(scenarios[0].rule_eval)
+        expected = (0.2 * rule_conf) + (0.8 * scenarios[0].cls_score)
         adjusted, adjustments = _apply_confirmation_confidence_adjustments(
             expected,
             scenarios[0].pivot_confirmations,

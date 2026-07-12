@@ -243,7 +243,7 @@ class TestFormatElliottPatterns:
                 confidence=0.1,
                 details={
                     "wave_points_labeled": [
-                        {"label": f"W{i}", "index": i, "price": 1.0 + i}
+                        {"label": f"{i}", "index": i, "price": 1.0 + i}
                         for i in range(6)
                     ],
                     "rule_violations": ["fallback_candidate"],
@@ -259,7 +259,37 @@ class TestFormatElliottPatterns:
         assert row["validation_status"] == "fallback_candidate"
         assert row["wave_count"] == 6
         assert "Low-confidence fallback candidate" in row["candidate_note"]
+        assert "did not validate" in row["candidate_note"]
         assert row["validation_issues"] == ["fallback_candidate"]
+        assert "bars_since_end" in row
+        assert "status_basis" in row["details"]
+
+    @patch("mtdata.core.patterns._detect_elliott_waves")
+    def test_candidate_note_honest_when_rules_validate(self, mock_detect):
+        mock_detect.return_value = [
+            _mock_pattern_result(
+                wave_type="Candidate",
+                confidence=0.3,
+                details={
+                    "wave_points_labeled": [
+                        {"label": f"{i}", "index": i, "price": 1.0 + i}
+                        for i in range(6)
+                    ],
+                    "candidate_validates_as": "impulse",
+                    "rule_violations": [],
+                    "structure_complete": True,
+                    "terminal_confirmed": False,
+                },
+            ),
+        ]
+        df = _make_ohlcv_df(50)
+        result = self._call(df, MagicMock())
+        row = result[0]
+        assert row["pattern"] == "Elliott impulse-validating candidate"
+        assert "passes impulse hard rules" in row["candidate_note"]
+        assert "did not validate" not in row["candidate_note"]
+        assert row["structure_complete"] is True
+        assert row["terminal_confirmed"] is False
 
     @patch("mtdata.core.patterns._detect_elliott_waves")
     def test_forming_status(self, mock_detect):

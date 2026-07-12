@@ -581,15 +581,46 @@ def _format_elliott_patterns(df: pd.DataFrame, cfg: _ElliottCfg) -> List[Dict[st
                     structure = "unvalidated"
                 row["pattern"] = f"Elliott {structure} candidate"
                 row["validation_status"] = "fallback_candidate"
-                row["candidate_note"] = (
-                    "Low-confidence fallback candidate; Elliott rules did not validate "
-                    "a specific impulse or correction."
-                )
+                if validates_as:
+                    row["candidate_note"] = (
+                        "Low-confidence fallback candidate; structure passes "
+                        f"{validates_as} hard rules but is not promoted to a full "
+                        "Elliott detection (recent-structure fallback only)."
+                    )
+                else:
+                    row["candidate_note"] = (
+                        "Low-confidence fallback candidate; Elliott rules did not "
+                        "validate a specific impulse or zigzag-ABC correction."
+                    )
                 if wave_count:
                     row["wave_count"] = int(wave_count)
                 violations = details.get("rule_violations")
                 if isinstance(violations, list) and violations:
                     row["validation_issues"] = [str(item) for item in violations[:3]]
+
+            # Status is recency-based ("forming" near series end); expose
+            # structure-completion flags separately from that label.
+            structure_complete = details.get("structure_complete")
+            if structure_complete is None:
+                structure_complete = details.get("pattern_confirmed")
+            terminal_confirmed = details.get("terminal_confirmed")
+            if terminal_confirmed is None and "has_unconfirmed_terminal_pivot" in details:
+                terminal_confirmed = not bool(details.get("has_unconfirmed_terminal_pivot"))
+            try:
+                bars_since_end = max(0, int(n_bars) - 1 - int(p.end_index))
+            except Exception:
+                bars_since_end = None
+            if structure_complete is not None:
+                row["structure_complete"] = bool(structure_complete)
+                details["structure_complete"] = bool(structure_complete)
+            if terminal_confirmed is not None:
+                row["terminal_confirmed"] = bool(terminal_confirmed)
+                details["terminal_confirmed"] = bool(terminal_confirmed)
+            if bars_since_end is not None:
+                row["bars_since_end"] = int(bars_since_end)
+                details["bars_since_end"] = int(bars_since_end)
+            details.setdefault("status_basis", "recency")
+            row["details"] = details
             out_list.append(row)
         except Exception:
             logger.debug("Dropping Elliott pattern during formatting", exc_info=True)

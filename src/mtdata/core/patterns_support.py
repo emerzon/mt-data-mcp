@@ -1740,10 +1740,18 @@ def _attach_elliott_volume_confirmation(
         return out
 
     family = str(details.get("pattern_family") or wave_type).strip().lower()
-    if family not in {"impulse", "correction"}:
+    structure_type = str(details.get("structure_type") or "").strip().lower()
+    if family not in {"impulse", "correction"} and structure_type not in {
+        "impulse_strict",
+        "zigzag_abc",
+    }:
         details["volume_confirmation"] = payload
         out["details"] = details
         return out
+    if structure_type == "impulse_strict":
+        family = "impulse"
+    elif structure_type == "zigzag_abc":
+        family = "correction"
 
     volume, source = _resolve_volume_series(df)
     payload["volume_source"] = source
