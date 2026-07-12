@@ -91,6 +91,8 @@ class TestWaveletRegime:
         assert params_used.get("wavelet") == "db4"
         assert params_used.get("n_states") == 3
         assert params_used.get("energy_window") == 40
+        assert params_used.get("energy_window_mode") == "trailing"
+        assert params_used.get("model_fit_scope") == "full_window"
 
     def test_wavelet_compact_output(self, _mock):
         res = regime_detect(

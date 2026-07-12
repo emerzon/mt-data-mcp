@@ -42,6 +42,9 @@ The implementation is a Gaussian HMM with an estimated transition matrix.
 bar under parameters fitted on the requested window. Use
 `params.inference=smoothed` only for retrospective segmentation because it uses
 later observations. State changes are confirmed causally by `min_regime_bars`.
+Model parameters are still fitted on the requested analysis window, and canonical
+state IDs are ordered by full-window state means. Historical canonical IDs are
+therefore retrospective labels; use rolling `as_of` calls for point-in-time tests.
 
 **Example:**
 ```bash
@@ -162,6 +165,10 @@ Like HMM, MS-AR defaults to filtered probabilities. Set
 ### 5. Clustering (`clustering`)
 
 **What it does:** Groups bars into regimes using distance-based clustering (e.g. KMeans on return/volatility features). Does not assume a hidden Markov structure.
+
+The scaler, optional PCA, cluster model, and canonical state ordering are fitted
+on the full requested window. Clustering output is descriptive; reproduce live
+behavior with rolling `as_of` calls. `min_regime_bars` confirmation itself is causal.
 
 **Example:**
 ```bash

@@ -46,9 +46,9 @@ from .payload import (
 from .smoothing import (
     _canonicalize_regime_labels,
     _confirm_state_changes_causally,
+    _smooth_short_state_runs,
     _count_state_transitions,
     _normalize_state_probability_matrix,
-    _smooth_short_state_runs,
     _state_runs,
 )
 
@@ -2186,10 +2186,8 @@ def regime_detect(  # noqa: C901
             # Smooth short runs and canonicalize on valid slice only
             valid_probs = np.zeros((int(valid_mask.sum()), n_states_cluster))
             valid_probs[np.arange(len(labels)), labels] = 1.0
-            labels, valid_probs, smoothing_meta = _smooth_short_state_runs(
-                state=np.asarray(labels, dtype=int),
-                probs=valid_probs,
-                min_regime_bars=min_regime_bars_val,
+            labels, smoothing_meta = _confirm_state_changes_causally(
+                np.asarray(labels, dtype=int), min_regime_bars_val
             )
             labels, valid_probs, canon_meta = _canonicalize_regime_labels(
                 labels,
@@ -2248,6 +2246,8 @@ def regime_detect(  # noqa: C901
                     "transitions_after": int(
                         smoothing_meta.get("transitions_after", 0)
                     ),
+                    "model_fit_scope": "full_window",
+                    "label_scope": "retrospective_canonical",
                 },
             }
             if clustering_warnings:
@@ -2474,10 +2474,8 @@ def regime_detect(  # noqa: C901
                         probs[i, state[i]] = 1.0
 
                 # Smooth short runs
-                state, probs, smoothing_meta = _smooth_short_state_runs(
-                    state=np.asarray(state, dtype=int),
-                    probs=probs,
-                    min_regime_bars=min_regime_bars_val,
+                state, smoothing_meta = _confirm_state_changes_causally(
+                    np.asarray(state, dtype=int), min_regime_bars_val
                 )
 
                 # Build regime parameters
@@ -2554,6 +2552,8 @@ def regime_detect(  # noqa: C901
                         "transitions_after": int(
                             smoothing_meta.get("transitions_after", 0)
                         ),
+                        "threshold_scope": "full_window_percentiles",
+                        "model_fit_scope": "full_window",
                     },
                     "volatility_characteristics": vol_characteristics,
                 }
@@ -2985,14 +2985,13 @@ def regime_detect(  # noqa: C901
             n_bars = len(x)
             n_bands = len(bands)
             energy_matrix = np.zeros((n_bars, n_bands))
-            half_win = energy_window // 2
             for bi, band in enumerate(bands):
                 sq = band**2
                 # Cumulative sum for fast rolling mean
                 cs = np.concatenate([[0.0], np.cumsum(sq)])
                 for t in range(n_bars):
-                    lo = max(0, t - half_win)
-                    hi = min(n_bars, t + half_win + 1)
+                    lo = max(0, t - energy_window + 1)
+                    hi = t + 1
                     energy_matrix[t, bi] = (cs[hi] - cs[lo]) / max(1, hi - lo)
 
             # Normalize energy rows to proportions (energy distribution across scales)
@@ -3040,10 +3039,8 @@ def regime_detect(  # noqa: C901
             probs_valid = inv_dist / inv_dist.sum(axis=1, keepdims=True)
 
             # Smooth and canonicalize
-            labels, probs_valid, smoothing_meta = _smooth_short_state_runs(
-                state=np.asarray(labels, dtype=int),
-                probs=probs_valid,
-                min_regime_bars=min_regime_bars_val,
+            labels, smoothing_meta = _confirm_state_changes_causally(
+                np.asarray(labels, dtype=int), min_regime_bars_val
             )
             labels, probs_valid, canon_meta = _canonicalize_regime_labels(
                 labels,
@@ -3104,6 +3101,8 @@ def regime_detect(  # noqa: C901
                     "n_states": n_states_wv,
                     "state_count_param": n_states_source,
                     "energy_window": energy_window,
+                    "energy_window_mode": "trailing",
+                    "model_fit_scope": "full_window",
                     "min_regime_bars": int(min_regime_bars_val),
                     "smoothing_applied": smoothing_meta.get("smoothing_applied", False),
                 },
@@ -3432,11 +3431,10 @@ def regime_detect(  # noqa: C901
             if not np.any(valid_ensemble_mask):
                 return _finish({"error": "No valid ensemble state rows after voting."})
 
-            valid_state, valid_probs, smoothing_meta = _smooth_short_state_runs(
-                state=ensemble_state[valid_ensemble_mask],
-                probs=ensemble_probs[valid_ensemble_mask],
-                min_regime_bars=min_regime_bars_val,
+            valid_state, smoothing_meta = _confirm_state_changes_causally(
+                ensemble_state[valid_ensemble_mask], min_regime_bars_val
             )
+            valid_probs = ensemble_probs[valid_ensemble_mask]
             valid_state, valid_probs, canon_meta = _canonicalize_regime_labels(
                 valid_state,
                 valid_probs,
