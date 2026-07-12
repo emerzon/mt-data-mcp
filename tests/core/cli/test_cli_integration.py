@@ -1182,6 +1182,29 @@ class TestForecastGenerateIntegration:
         assert request.detail == "full"
 
     @patch("mtdata.core.cli.api.discover_tools")
+    def test_forecast_generate_preserves_domain_detail(self, mock_discover):
+        mock_fn = MagicMock(return_value={"forecast": [1.0, 2.0]})
+        mock_fn.__module__ = "mtdata.core.server"
+        mock_fn.__name__ = "forecast_generate"
+        mock_fn.__doc__ = "Generate forecasts."
+        mock_discover.return_value = {
+            "forecast_generate": {
+                "func": mock_fn,
+                "meta": {"description": "Generate forecasts"},
+            },
+        }
+
+        with patch(
+            "sys.argv",
+            ["cli.py", "forecast_generate", "EURUSD", "--detail", "standard"],
+        ):
+            result = main()
+
+        assert result == 0
+        request = mock_fn.call_args[1]["request"]
+        assert request.detail == "standard"
+
+    @patch("mtdata.core.cli.api.discover_tools")
     def test_forecast_generate_accepts_symbol_flag_alias(self, mock_discover):
         mock_fn = MagicMock(return_value={"forecast": [1.0, 2.0]})
         mock_fn.__module__ = "mtdata.core.server"

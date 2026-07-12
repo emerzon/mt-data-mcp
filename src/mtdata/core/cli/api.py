@@ -1824,7 +1824,7 @@ def main():
                 target_spec=target_spec or None,
                 async_mode=bool(args.async_mode),
                 model_id=args.model_id,
-                detail=resolve_output_contract(args).shape_detail,
+                detail=resolve_output_contract(args).detail,
             )
 
             if getattr(args, "print_config", False):
