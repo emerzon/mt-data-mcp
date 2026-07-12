@@ -91,12 +91,11 @@ def test_detects_bullish_gartley_from_fibonacci_pivots():
     assert pattern.invalidation_price < pattern.entry_price
 
 
-def test_completed_harmonic_is_not_removed_when_forming_patterns_are_excluded():
-    patterns = detect_harmonic_patterns(
-        _harmonic_sample_df(),
-        _test_config(include_forming=False),
-    )
+def test_harmonic_config_does_not_advertise_unsupported_forming_output():
+    cfg = _test_config()
+    patterns = detect_harmonic_patterns(_harmonic_sample_df(), cfg)
 
+    assert not hasattr(cfg, "include_forming")
     assert patterns
     assert all(pattern.status == "completed" for pattern in patterns)
 

@@ -1233,11 +1233,6 @@ def run_patterns_detect(  # noqa: C901
                 for r in classic_patterns
                 if str(r.get("status", "")).lower() != "completed"
             ]
-            harmonic_patterns = [
-                r
-                for r in harmonic_patterns
-                if str(r.get("status", "")).lower() != "completed"
-            ]
             elliott_patterns = [
                 r
                 for r in elliott_patterns

@@ -402,6 +402,25 @@ def test_build_pattern_response_include_completed_filter_behavior():
     assert with_completed["n_patterns"] == 2
 
 
+def test_build_pattern_response_shows_completed_harmonics_by_default():
+    response = _build_pattern_response(
+        "EURUSD",
+        "H1",
+        100,
+        "harmonic",
+        [{"name": "Bullish Gartley", "status": "completed", "confidence": 0.8}],
+        include_completed=False,
+        include_series=False,
+        series_time="string",
+        df=pd.DataFrame({"time": [1, 2, 3], "close": [10.0, 11.0, 12.0]}),
+        detail="full",
+    )
+
+    assert response["n_patterns"] == 1
+    assert response["patterns"][0]["status"] == "completed"
+    assert "completed_patterns_hidden" not in response
+
+
 def test_build_pattern_response_hoists_repeated_regime_context():
     df = pd.DataFrame({"time": [1, 2, 3], "close": [10.0, 11.0, 12.0]})
     shared = {

@@ -57,7 +57,6 @@ class HarmonicDetectorConfig:
     max_pivots: int = 24
     min_confidence: float = 0.45
     stop_buffer_pct: float = 0.2
-    include_forming: bool = True
     recent_bars: int = 30
     max_pattern_age_bars: int = 300
     min_prominence_pct: float = 0.5
@@ -785,6 +784,4 @@ def detect_harmonic_patterns(
     if max_age > 0:
         cutoff = int(n_bars) - int(max_age)
         results = [r for r in results if int(r.end_index) >= cutoff]
-    if not bool(getattr(cfg, "include_forming", True)):
-        results = [r for r in results if str(r.status).lower() == "completed"]
     return _dedupe_results(results)

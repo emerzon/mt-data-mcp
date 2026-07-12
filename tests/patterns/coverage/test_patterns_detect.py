@@ -602,7 +602,7 @@ class TestPatternsDetect:
         mock_format.return_value = [
             {
                 "name": "Bullish Gartley",
-                "status": "forming",
+                "status": "completed",
                 "confidence": 0.82,
                 "direction": "bullish",
                 "bias": "bullish",
@@ -726,7 +726,7 @@ class TestPatternsDetectAllMode:
         }]
         mock_harmonic.return_value = [{
             "name": "Bullish Gartley",
-            "status": "forming",
+            "status": "completed",
             "confidence": 0.83,
             "bias": "bullish",
             "entry_price": 1.11,
