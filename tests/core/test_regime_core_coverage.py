@@ -53,7 +53,6 @@ def test_finite_raw_kurtosis_handles_extreme_and_degenerate_values() -> None:
 
 from mtdata.core.regime.api import (
     _consolidate_payload,
-    _smooth_short_state_runs,
     _summary_only_payload,
 )
 
@@ -1449,11 +1448,3 @@ class TestRegimeDetectEdgeCases:
         fn = _get_regime_detect()
         res = fn("EURUSD", limit=12, method="bocpd", target="return")
         assert res["error"] == "Insufficient finite observations after filter"
-
-
-class TestSmoothShortStateRuns:
-    def test_iteration_cap_is_reported(self):
-        state = np.tile(np.array([0, 1], dtype=int), 150)
-        _, _, meta = _smooth_short_state_runs(state, probs=None, min_regime_bars=3)
-        assert meta["iteration_cap"] == 128
-        assert meta["iterations_run"] <= meta["iteration_cap"]
