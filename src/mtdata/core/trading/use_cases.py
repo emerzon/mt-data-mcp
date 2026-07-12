@@ -4355,7 +4355,25 @@ def run_trade_var_cvar_calculate(  # noqa: C901
         position_type = validation._safe_int_attr(position, "type", position_type_sell)
         side = "BUY" if int(position_type) == int(position_type_buy) else "SELL"
         side_sign = 1.0 if side == "BUY" else -1.0
-        signed_notional = side_sign * volume * contract_size * mark_price
+        account_notional = _linearized_account_currency_notional(
+            volume=volume,
+            price=mark_price,
+            symbol_info=symbol_info,
+        )
+        if account_notional is None:
+            warnings.append(
+                {
+                    "ticket": getattr(position, "ticket", None),
+                    "symbol": symbol,
+                    "warning": (
+                        "Symbol tick value/tick size is unavailable; position "
+                        "cannot be included in account-currency VaR/CVaR."
+                    ),
+                }
+            )
+            continue
+        signed_notional = side_sign * account_notional
+        contract_price_product = abs(volume) * contract_size * mark_price
 
         position_exposures.append(
             {
@@ -4366,6 +4384,10 @@ def run_trade_var_cvar_calculate(  # noqa: C901
                 "mark_price": round(float(mark_price), 6),
                 "contract_size": round(float(contract_size), 6),
                 "signed_notional": round(float(signed_notional), 2),
+                "contract_price_product": round(
+                    float(contract_price_product), 2
+                ),
+                "notional_model": "tick_value_linear_sensitivity",
                 "unrealized_profit": round(
                     validation._safe_float_attr(position, "profit", 0.0), 2
                 ),
@@ -4386,9 +4408,12 @@ def run_trade_var_cvar_calculate(  # noqa: C901
         exposure["positions"] += 1
 
     if not position_exposures:
-        return _finish(
-            {"error": "No usable open positions available for VaR/CVaR calculation."}
-        )
+        result = {
+            "error": "No usable open positions available for VaR/CVaR calculation."
+        }
+        if warnings:
+            result["warnings"] = warnings
+        return _finish(result)
 
     return_series: Dict[str, Any] = {}
     for symbol in list(symbol_exposures.keys()):
@@ -4559,6 +4584,8 @@ def run_trade_var_cvar_calculate(  # noqa: C901
         "symbols": int(len(symbol_rows)),
         "gross_notional": round(total_abs_notional, 2),
         "net_exposure": round(net_exposure, 2),
+        "pnl_model": "tick_value_linear_sensitivity",
+        "pnl_unit": "account_currency",
         "var": round(float(var_value), 2),
         "cvar": round(float(cvar_value), 2),
         "tail_threshold": round(float(threshold), 2),

@@ -108,6 +108,12 @@ mtdata-cli trade_var_cvar_calculate --symbol EURUSD --method gaussian \
 per-position and per-symbol exposure breakdowns. With no open positions, `--detail full`
 returns the legacy zero-filled arrays.
 
+VaR/CVaR converts percentage price shocks to account-currency P&L with each
+symbol's broker-provided tick value and tick size (`pnl_model` is
+`tick_value_linear_sensitivity`). Positions without usable tick economics are rejected
+rather than mixed into a portfolio in incompatible quote-currency units. The model is
+linearized and does not include gaps, spread changes, swaps, or nonlinear payoff effects.
+
 ---
 
 ## `trade_stress_test`

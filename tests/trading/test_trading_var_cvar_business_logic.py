@@ -9,6 +9,16 @@ from mtdata.core.trading.use_cases import (
 )
 
 
+def _symbol_info(**overrides):
+    values = {
+        "trade_contract_size": 1.0,
+        "trade_tick_size": 1.0,
+        "trade_tick_value": 1.0,
+    }
+    values.update(overrides)
+    return SimpleNamespace(**values)
+
+
 def test_calculate_var_cvar_from_pnl_uses_conservative_historical_tail() -> None:
     var_value, cvar_value, threshold = _calculate_var_cvar_from_pnl(
         [10.0, -5.0, -15.0, 5.0],
@@ -47,7 +57,7 @@ def test_run_trade_var_cvar_calculate_summarizes_open_position_portfolio() -> No
         ensure_connection=lambda: None,
         account_info=lambda: SimpleNamespace(equity=1000.0, currency="USD"),
         positions_get=lambda symbol=None: [position],
-        symbol_info=lambda symbol: SimpleNamespace(trade_contract_size=1.0),
+        symbol_info=lambda symbol: _symbol_info(),
         copy_rates_from_pos=lambda symbol, timeframe, start, count: [
             {"time": 1, "close": 100.0},
             {"time": 2, "close": 95.0},
@@ -91,6 +101,93 @@ def test_run_trade_var_cvar_calculate_summarizes_open_position_portfolio() -> No
     assert out["worst_observations"][0]["simulated_pnl"] == -14.29
 
 
+def test_run_trade_var_cvar_uses_account_currency_tick_sensitivity() -> None:
+    position = SimpleNamespace(
+        ticket=12,
+        symbol="USDJPY",
+        type=0,
+        volume=1.0,
+        price_current=110.0,
+        price_open=109.0,
+        profit=0.0,
+    )
+    gateway = SimpleNamespace(
+        ensure_connection=lambda: None,
+        account_info=lambda: SimpleNamespace(equity=200_000.0, currency="USD"),
+        positions_get=lambda symbol=None: [position],
+        symbol_info=lambda symbol: _symbol_info(
+            trade_contract_size=100_000.0,
+            trade_tick_size=0.001,
+            trade_tick_value=0.91,
+        ),
+        copy_rates_from_pos=lambda symbol, timeframe, start, count: [
+            {"time": 1, "close": 100.0},
+            {"time": 2, "close": 95.0},
+            {"time": 3, "close": 105.0},
+            {"time": 4, "close": 90.0},
+            {"time": 5, "close": 110.0},
+        ],
+        POSITION_TYPE_BUY=0,
+        POSITION_TYPE_SELL=1,
+        ORDER_TYPE_BUY=0,
+        ORDER_TYPE_SELL=1,
+    )
+
+    out = run_trade_var_cvar_calculate(
+        TradeVarCvarRequest(
+            timeframe="H1",
+            lookback=5,
+            confidence=75,
+            method="historical",
+            transform="pct",
+            min_observations=4,
+            detail="full",
+        ),
+        gateway=gateway,
+    )
+
+    assert out["positions"][0]["signed_notional"] == 100_100.0
+    assert out["positions"][0]["contract_price_product"] == 11_000_000.0
+    assert out["summary"]["var"] == 14_300.0
+    assert out["summary"]["pnl_model"] == "tick_value_linear_sensitivity"
+    assert out["summary"]["pnl_unit"] == "account_currency"
+
+
+def test_run_trade_var_cvar_rejects_position_without_tick_economics() -> None:
+    position = SimpleNamespace(
+        ticket=13,
+        symbol="USDJPY",
+        type=0,
+        volume=1.0,
+        price_current=110.0,
+        price_open=109.0,
+        profit=0.0,
+    )
+    gateway = SimpleNamespace(
+        ensure_connection=lambda: None,
+        account_info=lambda: SimpleNamespace(equity=200_000.0, currency="USD"),
+        positions_get=lambda symbol=None: [position],
+        symbol_info=lambda symbol: _symbol_info(
+            trade_tick_size=0.0,
+            trade_tick_value=0.0,
+        ),
+        POSITION_TYPE_BUY=0,
+        POSITION_TYPE_SELL=1,
+        ORDER_TYPE_BUY=0,
+        ORDER_TYPE_SELL=1,
+    )
+
+    out = run_trade_var_cvar_calculate(
+        TradeVarCvarRequest(),
+        gateway=gateway,
+    )
+
+    assert out["error"] == (
+        "No usable open positions available for VaR/CVaR calculation."
+    )
+    assert "cannot be included" in out["warnings"][0]["warning"]
+
+
 def test_run_trade_var_cvar_calculate_converts_log_returns_to_price_changes() -> None:
     position = SimpleNamespace(
         ticket=11,
@@ -105,7 +202,7 @@ def test_run_trade_var_cvar_calculate_converts_log_returns_to_price_changes() ->
         ensure_connection=lambda: None,
         account_info=lambda: SimpleNamespace(equity=1000.0, currency="USD"),
         positions_get=lambda symbol=None: [position],
-        symbol_info=lambda symbol: SimpleNamespace(trade_contract_size=1.0),
+        symbol_info=lambda symbol: _symbol_info(),
         copy_rates_from_pos=lambda symbol, timeframe, start, count: [
             {"time": 1, "close": 100.0},
             {"time": 2, "close": 95.0},
@@ -156,7 +253,7 @@ def test_run_trade_var_cvar_calculate_compacts_non_empty_portfolio() -> None:
         ensure_connection=lambda: None,
         account_info=lambda: SimpleNamespace(equity=1000.0, currency="USD"),
         positions_get=lambda symbol=None: [position],
-        symbol_info=lambda symbol: SimpleNamespace(trade_contract_size=1.0),
+        symbol_info=lambda symbol: _symbol_info(),
         copy_rates_from_pos=lambda symbol, timeframe, start, count: [
             {"time": 1, "close": 100.0},
             {"time": 2, "close": 95.0},
@@ -208,7 +305,7 @@ def test_run_trade_var_cvar_calculate_low_sample_error_mentions_override() -> No
         ensure_connection=lambda: None,
         account_info=lambda: SimpleNamespace(equity=1000.0, currency="USD"),
         positions_get=lambda symbol=None: [position],
-        symbol_info=lambda symbol: SimpleNamespace(trade_contract_size=1.0),
+        symbol_info=lambda symbol: _symbol_info(),
         copy_rates_from_pos=lambda symbol, timeframe, start, count: rates[:count],
         POSITION_TYPE_BUY=0,
         POSITION_TYPE_SELL=1,
