@@ -1205,6 +1205,38 @@ class TestForecastGenerateIntegration:
         assert request.detail == "standard"
 
     @patch("mtdata.core.cli.api.discover_tools")
+    def test_forecast_generate_forwards_shared_output_controls(self, mock_discover):
+        mock_fn = MagicMock(return_value={"success": True, "forecast": [1.0]})
+        mock_fn.__module__ = "mtdata.core.server"
+        mock_fn.__name__ = "forecast_generate"
+        mock_fn.__doc__ = "Generate forecasts."
+        mock_discover.return_value = {
+            "forecast_generate": {
+                "func": mock_fn,
+                "meta": {"description": "Generate forecasts"},
+            },
+        }
+
+        with patch(
+            "sys.argv",
+            [
+                "cli.py",
+                "forecast_generate",
+                "EURUSD",
+                "--extras",
+                "metadata",
+                "--fields",
+                "forecast,method",
+            ],
+        ):
+            result = main()
+
+        assert result == 0
+        call = mock_fn.call_args.kwargs
+        assert call["extras"] == "metadata"
+        assert call["fields"] == "forecast,method"
+
+    @patch("mtdata.core.cli.api.discover_tools")
     def test_forecast_generate_accepts_symbol_flag_alias(self, mock_discover):
         mock_fn = MagicMock(return_value={"forecast": [1.0, 2.0]})
         mock_fn.__module__ = "mtdata.core.server"
@@ -1547,6 +1579,30 @@ class TestEdgeCases:
         )
 
         assert out["success"] is True
+
+    def test_render_cli_result_selects_requested_fields(self, capsys):
+        from argparse import Namespace
+        from mtdata.core.cli.api import _render_cli_result
+
+        _render_cli_result(
+            {"success": True, "bid": 1.1, "ask": 1.2, "symbol": "EURUSD"},
+            args=Namespace(
+                json=True,
+                extras=None,
+                fields="bid,ask",
+                precision=None,
+                verbose=False,
+            ),
+            cmd_name="market_ticker",
+        )
+
+        payload = json.loads(capsys.readouterr().out)
+        assert payload == {
+            "success": True,
+            "symbol": "EURUSD",
+            "bid": 1.1,
+            "ask": 1.2,
+        }
 
     def test_resolve_param_kwargs_type_resolution_failure(self):
         # A parameter with a weird type that causes exception

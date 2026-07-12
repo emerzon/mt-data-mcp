@@ -65,6 +65,17 @@ def add_global_args_to_parser(
             extras_kwargs["default"] = argparse.SUPPRESS
         parser.add_argument("--extras", **extras_kwargs)
 
+    if 'fields' not in exclude_params:
+        fields_kwargs = {
+            "dest": "fields",
+            "default": None,
+            "metavar": "FIELD[,FIELD...]",
+            "help": "Return only the selected output fields, plus envelope metadata.",
+        }
+        if suppress_defaults:
+            fields_kwargs["default"] = argparse.SUPPRESS
+        parser.add_argument("--fields", **fields_kwargs)
+
     if 'precision' not in exclude_params:
         precision_kwargs = {
             "choices": PRECISION_CHOICES,

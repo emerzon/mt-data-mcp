@@ -34,7 +34,7 @@ from ...bootstrap.settings import load_environment
 from ...bootstrap.tools import bootstrap_tools
 from ...forecast.requests import ForecastGenerateRequest
 from .._mcp_instance import mcp
-from .._mcp_tools import _get_pydantic_model_fields
+from .._mcp_tools import _get_pydantic_model_fields, _select_output_fields
 from .._mcp_tools import get_tool_registry as get_registered_tools
 from ..output_contract import resolve_output_contract
 from .formatting import (
@@ -505,6 +505,7 @@ def _write_cli_text(text: str, *, stream: Any = None) -> None:
 def _render_cli_result(result: Any, *, args: Any, cmd_name: str) -> None:
     verbose = resolve_output_contract(args).verbose
     result = _attach_cli_meta(result, cmd_name=cmd_name, verbose=verbose)
+    result = _select_output_fields(result, getattr(args, "fields", None))
     output = _format_result_for_cli(
         result,
         fmt=_resolve_cli_formatter(args),
@@ -1480,6 +1481,9 @@ _GLOBAL_FLAG_HELP: Dict[str, str] = {
         "--extras EXTRA[,EXTRA...]: include richer TOON output sections (e.g. diagnostics, "
         "metadata) that are omitted from compact output by default."
     ),
+    "fields": (
+        "--fields FIELD[,FIELD...]: return only selected output fields plus envelope metadata."
+    ),
     "json": (
         "--json: emit machine-readable JSON instead of TOON (always full precision)."
     ),
@@ -1843,7 +1847,12 @@ def main():
                 func,
                 args=args,
                 cmd_name="forecast_generate",
-                kwargs={"request": request, "__cli_raw": True},
+                kwargs={
+                    "request": request,
+                    "extras": getattr(args, "extras", None),
+                    "fields": getattr(args, "fields", None),
+                    "__cli_raw": True,
+                },
             )
             _render_cli_result(out, args=args, cmd_name="forecast_generate")
             return 1 if _result_has_tool_error(out) else 0

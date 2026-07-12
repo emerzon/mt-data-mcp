@@ -7,6 +7,7 @@ from pydantic import ValidationError
 from ...data.requests import (
     _normalize_indicator_specs as _shared_normalize_indicator_specs,
 )
+from ...output_contract import normalize_output_extras
 
 LIVE_TRADE_MUTATION_TOOLS = frozenset({"trade_place", "trade_modify", "trade_close"})
 LIVE_TRADE_MUTATION_WARNING = (
@@ -475,6 +476,12 @@ def create_command_function(  # noqa: C901
                 )
                 return 1
 
+        normalized_extras = normalize_output_extras(getattr(args, "extras", None))
+        if normalized_extras:
+            kwargs["extras"] = normalized_extras
+        fields = getattr(args, "fields", None)
+        if fields:
+            kwargs["fields"] = fields
         kwargs["__cli_raw"] = True
         if invoke_tool_function is not None:
             result = invoke_tool_function(
