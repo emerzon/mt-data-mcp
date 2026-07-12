@@ -367,7 +367,7 @@ def _method_parameter_warnings(
     method: str,
     params: Dict[str, Any],
     *,
-    threshold: float,
+    threshold: Optional[float],
     requested_lookback: int,
     requested_min_regime_bars: int,
     include_series: bool,
@@ -376,9 +376,7 @@ def _method_parameter_warnings(
     lookback_mapped_to_window: bool = False,
 ) -> List[str]:
     warnings_out: List[str] = []
-    if method != "bocpd" and (
-        abs(float(threshold) - 0.5) > 1e-12 or "threshold" in params
-    ):
+    if method != "bocpd" and (threshold is not None or "threshold" in params):
         warnings_out.append(
             "threshold only applies to BOCPD change-point detection and is ignored "
             f"for method='{method}'."
@@ -927,7 +925,7 @@ def regime_detect(  # noqa: C901
     target: Literal["return", "price"] = "return",  # type: ignore
     params: Optional[Dict[str, Any]] = None,
     denoise: Optional[DenoiseSpec] = None,
-    threshold: float = 0.5,
+    threshold: Optional[float] = None,
     detail: DetailLiteral = "compact",
     lookback: int = -1,  # -1 means use timeframe-based default
     include_series: bool = False,
@@ -951,10 +949,12 @@ def regime_detect(  # noqa: C901
       Optional `affinity` for spectral (default 'nearest_neighbors').
     - params (wavelet): optional `wavelet` (default 'db4'), `level` (auto), `n_states` (default 3),
       `energy_window` (default 30 bars).
-    - params (ensemble): optional `methods` list (default ['bocpd', 'hmm', 'clustering']),
+    - params (ensemble): optional `methods` list (default ['hmm', 'clustering', 'wavelet']),
       `voting` = 'soft' (probability averaging, default) | 'hard' (majority vote).
     - params (bocpd): optional `hazard_mode` = auto_default|auto_calibrated (defaults to auto_calibrated).
       Explicit `hazard_lambda` / `cp_threshold` always take precedence over auto selection.
+      The top-level `threshold` defaults to None for automatic calibration;
+      any numeric value, including 0.5, is a fixed cutoff.
       Optional robustness params:
         `cp_threshold_calibration_mode` (default `walkforward_quantile`),
         `threshold_target_false_alarm_rate`,
@@ -1293,17 +1293,16 @@ def regime_detect(  # noqa: C901
             elif "threshold" in p and p.get("threshold") is not None:
                 threshold_used = float(p.get("threshold"))
                 threshold_src = "params.threshold"
+            elif threshold is None:
+                threshold_used = float(auto_threshold)
+                threshold_src = (
+                    "auto_calibrated"
+                    if hazard_mode == "auto_calibrated"
+                    else "auto_default"
+                )
             else:
-                if abs(float(threshold) - 0.5) <= 1e-12:
-                    threshold_used = float(auto_threshold)
-                    threshold_src = (
-                        "auto_calibrated"
-                        if hazard_mode == "auto_calibrated"
-                        else "auto_default"
-                    )
-                else:
-                    threshold_used = float(threshold)
-                    threshold_src = "arg"
+                threshold_used = float(threshold)
+                threshold_src = "arg"
             max_rl, _ = _coerce_param(
                 p,
                 "max_run_length",

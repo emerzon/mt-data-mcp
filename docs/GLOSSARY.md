@@ -169,7 +169,7 @@ Bayesian Online Change Point Detection. Answers: "Did the market's underlying be
 **Output:** Probability (0-1) that each bar represents a regime shift.
 
 **When to use:**
-- If probability > 0.5, the previous pattern may be breaking down
+- If probability exceeds the configured cutoff (0.5 in the example), the previous pattern may be breaking down
 - Useful for detecting breakouts or structural changes
 
 **Example:**

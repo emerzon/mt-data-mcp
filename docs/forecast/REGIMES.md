@@ -115,7 +115,7 @@ summary:
 **Parameters:**
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| `threshold` | 0.5 | Probability cutoff to flag a change point |
+| `threshold` | auto | Probability cutoff to flag a change point. Omit it for automatic asset/timeframe calibration; any supplied number, including `0.5`, is fixed. |
 | `lookback` | 300 | Historical bars to analyze |
 
 **When to use:**
