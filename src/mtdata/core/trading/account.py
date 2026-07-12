@@ -779,7 +779,10 @@ def trade_account_info(
     """
 
     def _run() -> dict:
-        contract = resolve_output_contract(detail=detail, default_detail="compact")
+        try:
+            contract = resolve_output_contract(detail=detail, default_detail="compact")
+        except ValueError:
+            return {"error": "Invalid detail level. Use 'compact' or 'full'."}
         if contract.detail not in {"compact", "full"}:
             return {"error": "Invalid detail level. Use 'compact' or 'full'."}
         requested_mode = contract.detail
