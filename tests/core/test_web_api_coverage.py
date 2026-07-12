@@ -1225,7 +1225,7 @@ class TestGetTick:
             mock_mt5.symbol_info_tick.return_value = None
             mock_mt5.symbol_info.return_value = info
             resp = _client.get("/api/tick", params={"symbol": "EURUSD"})
-        assert resp.status_code == 500
+        assert resp.status_code == 503
 
     def test_tick_none_after_retry(self):
         with patch.object(web_api.mt5_connection, "_ensure_connection", return_value=True), \
