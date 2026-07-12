@@ -38,6 +38,24 @@ class TestInferStockPatternConfidence:
         assert self._call({}) == 0.6
 
 
+class TestInferStockPatternStatus:
+
+    def _call(self, row):
+        from mtdata.core.patterns import _infer_stock_pattern_status
+
+        return _infer_stock_pattern_status(row)
+
+    def test_missing_lifecycle_is_detected(self):
+        assert self._call({"pattern": "DTOP"}) == "detected"
+
+    def test_explicit_lifecycle_is_preserved(self):
+        assert self._call({"status": "forming"}) == "forming"
+        assert self._call({"status": "confirmed"}) == "completed"
+
+    def test_unknown_lifecycle_is_detected(self):
+        assert self._call({"status": "historical"}) == "detected"
+
+
 # ── _map_stock_pattern_name ──────────────────────────────────────────────
 
 class TestMapStockPatternName:

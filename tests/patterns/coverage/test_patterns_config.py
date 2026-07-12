@@ -17,13 +17,14 @@ class TestPatternStatusHelpers:
 
         rows = [
             {"status": " forming "},
+            {"status": "detected"},
             {"status": "COMPLETED"},
             {"status": "other"},
         ]
 
         visible = _visible_pattern_rows(rows, include_completed=False)
 
-        assert visible == [rows[0]]
+        assert visible == rows[:2]
         assert _count_patterns_with_status(rows, "forming") == 1
         assert _count_patterns_with_status(rows, "completed") == 1
 

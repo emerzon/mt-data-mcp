@@ -1036,6 +1036,16 @@ def _run_classic_engine_native(
     return merged, None
 
 
+def _infer_stock_pattern_status(row: Dict[str, Any]) -> str:
+    """Map explicit external lifecycle metadata without inventing a state."""
+    status = str(row.get("status") or "").strip().lower()
+    if status in {"completed", "confirmed"}:
+        return "completed"
+    if status in {"forming", "developing", "fallback"}:
+        return "forming"
+    return "detected"
+
+
 @_register_classic_engine("stock_pattern")
 def _run_classic_engine_stock_pattern(
     symbol: str,
@@ -1144,19 +1154,30 @@ def _run_classic_engine_stock_pattern(
         if isinstance(details, dict):
             details = dict(details)
             details.setdefault("bias", stock_pattern_bias.get(fn_name, "neutral"))
+        status = _infer_stock_pattern_status(res)
+        confidence_cap = 0.95 if status == "forming" else 1.0
         d: Dict[str, Any] = {
             "name": name,
-            "status": "forming",
-            "confidence": float(max(0.0, min(0.95, _infer_stock_pattern_confidence(res)))),
+            "status": status,
+            "confidence": float(
+                max(0.0, min(confidence_cap, _infer_stock_pattern_confidence(res)))
+            ),
             "start_index": int(s_idx),
             "end_index": int(e_idx),
             "start_date": _timestamp_to_label(start_ts),
             "end_date": _timestamp_to_label(end_ts),
             "details": {k: _round_value(v) for k, v in dict(details).items()} if isinstance(details, dict) else {"raw": details},
         }
-        est = _estimate_classic_bars_to_completion(name, d["details"], int(d["start_index"]), int(d["end_index"]), n_bars)
-        if est is not None:
-            d["bars_to_completion"] = int(est)
+        if status == "forming":
+            est = _estimate_classic_bars_to_completion(
+                name,
+                d["details"],
+                int(d["start_index"]),
+                int(d["end_index"]),
+                n_bars,
+            )
+            if est is not None:
+                d["bars_to_completion"] = int(est)
         out_list.append(d)
     return out_list, None
 

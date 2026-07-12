@@ -135,7 +135,12 @@ def _visible_pattern_rows(
 ) -> List[Dict[str, Any]]:
     if include_completed:
         return rows
-    return [row for row in rows if _pattern_has_status(row, "forming")]
+    return [
+        row
+        for row in rows
+        if _pattern_has_status(row, "forming")
+        or _pattern_has_status(row, "detected")
+    ]
 
 
 def _resolve_elliott_pattern_status(
@@ -2200,11 +2205,13 @@ def _summarize_engine_findings(
         n_total = int(len(rows))
         n_forming = _count_patterns_with_status(rows, "forming")
         n_completed = _count_patterns_with_status(rows, "completed")
-        n_shown = n_total if include_completed else n_forming
+        n_detected = _count_patterns_with_status(rows, "detected")
+        n_shown = n_total if include_completed else n_forming + n_detected
         item: Dict[str, Any] = {
             "engine": engine,
             "n_patterns": n_shown,
             "n_forming": n_forming,
+            "n_detected": n_detected,
             "n_completed": n_completed if include_completed else 0,
             "n_patterns_total": n_total,
         }
@@ -2559,14 +2566,15 @@ def _merge_classic_ensemble(
         )
         anchor = dict(by_engine[anchor_engine])
         statuses = [
-            str(by_engine[engine].get("status", "forming")).lower()
+            str(by_engine[engine].get("status", "detected")).lower()
             for engine in engines
         ]
-        anchor["status"] = (
-            "completed"
-            if any(status == "completed" for status in statuses)
-            else "forming"
-        )
+        if any(status in {"completed", "confirmed"} for status in statuses):
+            anchor["status"] = "completed"
+        elif any(status in {"forming", "developing", "fallback"} for status in statuses):
+            anchor["status"] = "forming"
+        else:
+            anchor["status"] = "detected"
         anchor["confidence"] = float(max(0.0, min(1.0, conf)))
         anchor["support_count"] = int(len(engines))
         anchor["source_engines"] = engines

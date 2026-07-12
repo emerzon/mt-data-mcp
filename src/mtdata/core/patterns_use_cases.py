@@ -256,7 +256,8 @@ def _classic_ensemble_breakdown(
             visible = [
                 row
                 for row in rows
-                if str(row.get("status", "")).strip().lower() == "forming"
+                if str(row.get("status", "")).strip().lower()
+                in {"forming", "detected"}
             ]
         weight = max(0.0, float(weights.get(engine, 1.0)))
         confidences: List[float] = []
