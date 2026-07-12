@@ -121,7 +121,7 @@ class TestSpectralClustering:
         params_used = res.get("params_used", {})
         assert params_used.get("algorithm") == "kmeans"
 
-    def test_legacy_state_aliases_are_ignored(self, _mock):
+    def test_n_states_controls_clustering_state_count(self, _mock):
         res = regime_detect(
             symbol="TEST",
             timeframe="H1",
@@ -129,8 +129,7 @@ class TestSpectralClustering:
             method="clustering",
             params={
                 "algorithm": "spectral",
-                "k_regimes": 2,
-                "n_clusters": 2,
+                "n_states": 3,
                 "window_size": 20,
             },
             detail="full",
@@ -141,6 +140,4 @@ class TestSpectralClustering:
         params_used = res.get("params_used", {})
         assert params_used.get("n_states") == 3
         assert "k_regimes" not in params_used
-        warnings = res.get("warnings", [])
-        assert any("Parameter 'k_regimes' is no longer accepted" in w for w in warnings)
-        assert any("Parameter 'n_clusters' is no longer accepted" in w for w in warnings)
+        assert "n_clusters" not in params_used

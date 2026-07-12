@@ -360,12 +360,6 @@ def _method_parameter_warnings(
     lookback_mapped_to_window: bool = False,
 ) -> List[str]:
     warnings_out: List[str] = []
-    for legacy_key in ("k_regimes", "n_clusters"):
-        if legacy_key in params and params.get(legacy_key) is not None:
-            warnings_out.append(
-                f"Parameter '{legacy_key}' is no longer accepted and is ignored "
-                "for regime detection; use 'n_states'."
-            )
     if method != "bocpd" and (
         abs(float(threshold) - 0.5) > 1e-12 or "threshold" in params
     ):

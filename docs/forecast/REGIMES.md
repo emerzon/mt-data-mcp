@@ -266,7 +266,7 @@ numeric `volatility` / `volatility_pct` fields for quantitative comparisons.
 
 ### Parameter applicability
 
-Use `n_states` as the canonical state-count parameter for HMM/GMM, MS-AR, clustering, GARCH, wavelet, and ensemble. Legacy aliases such as `k_regimes` or `n_clusters` are ignored and reported in `warnings`; use `n_states` to change the state count.
+Use `n_states` as the canonical state-count parameter for HMM/GMM, MS-AR, clustering, GARCH, wavelet, and ensemble.
 
 `threshold` only applies to BOCPD change-point detection. If supplied for non-BOCPD methods, the tool reports a warning rather than silently changing confidence filtering.
 
