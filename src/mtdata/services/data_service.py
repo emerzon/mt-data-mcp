@@ -2679,18 +2679,15 @@ def fetch_ticks(  # noqa: C901
                 )
             }
 
-        def _tick_field(tick: Any, name: str) -> Any:
-            return _tick_field_value(tick, name)
-
         def _tick_epoch_seconds(tick: Any) -> float:
-            time_msc = _tick_field(tick, "time_msc")
+            time_msc = _tick_field_value(tick, "time_msc")
             try:
                 time_msc_value = float(time_msc)
             except (TypeError, ValueError):
                 time_msc_value = float("nan")
             if math.isfinite(time_msc_value) and time_msc_value > 0.0:
                 return time_msc_value / 1000.0
-            return float(_tick_field(tick, "time"))
+            return float(_tick_field_value(tick, "time"))
 
         # Extract shared tick columns once so summary/stats, simplification,
         # and row rendering can all reuse the same values.
@@ -2706,14 +2703,14 @@ def fetch_ticks(  # noqa: C901
         quote_types: List[str] = []
         for tick in ticks:
             _epochs.append(_tick_epoch_seconds(tick))
-            bid_value = _finite_or_none(_tick_field(tick, "bid"))
-            ask_value = _finite_or_none(_tick_field(tick, "ask"))
+            bid_value = _finite_or_none(_tick_field_value(tick, "bid"))
+            ask_value = _finite_or_none(_tick_field_value(tick, "ask"))
             bid = float("nan") if bid_value is None else bid_value
             ask = float("nan") if ask_value is None else ask_value
-            flag_value = int(_tick_field(tick, "flags") or 0)
+            flag_value = int(_tick_field_value(tick, "flags") or 0)
             bids.append(bid)
             asks.append(ask)
-            last_value = _finite_or_none(_tick_field(tick, "last"))
+            last_value = _finite_or_none(_tick_field_value(tick, "last"))
             lasts.append(
                 float("nan")
                 if last_value is None or last_value <= 0.0
@@ -2732,11 +2729,11 @@ def fetch_ticks(  # noqa: C901
             else:
                 quote_types.append("bid_ask")
             try:
-                volumes.append(float(_tick_field(tick, "volume")))
+                volumes.append(float(_tick_field_value(tick, "volume")))
             except (TypeError, ValueError):
                 volumes.append(float("nan"))
             try:
-                volumes_real.append(float(_tick_field(tick, "volume_real")))
+                volumes_real.append(float(_tick_field_value(tick, "volume_real")))
             except (TypeError, ValueError):
                 volumes_real.append(float("nan"))
 
