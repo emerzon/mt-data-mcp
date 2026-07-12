@@ -8,7 +8,7 @@ import pandas as pd
 from scipy.signal import find_peaks
 
 from ..utils.utils import to_float_np
-from .common import PatternResultBase
+from .common import PatternResultBase, fallback_local_extrema
 
 _DEFAULT_PATTERN_TYPES = (
     "abcd",
@@ -320,48 +320,6 @@ def _pivot_thresholds(
     return float(max(1e-12, prom_abs)), int(min_dist)
 
 
-def _fallback_local_extrema(
-    src: np.ndarray,
-    min_dist: int,
-    order: int,
-    *,
-    prefer_high: bool,
-) -> np.ndarray:
-    values = np.asarray(src, dtype=float)
-    n = int(values.size)
-    if n < (2 * order + 1):
-        return np.asarray([], dtype=int)
-    candidates: List[int] = []
-    for idx in range(order, n - order):
-        center = float(values[idx])
-        if not np.isfinite(center):
-            continue
-        window = values[idx - order : idx + order + 1]
-        if not np.all(np.isfinite(window)):
-            continue
-        if prefer_high:
-            if center < float(np.max(window)):
-                continue
-        elif center > float(np.min(window)):
-            continue
-        candidates.append(int(idx))
-    if not candidates:
-        return np.asarray([], dtype=int)
-    reduced: List[int] = []
-    for idx in candidates:
-        if not reduced or (idx - reduced[-1]) >= int(min_dist):
-            reduced.append(int(idx))
-            continue
-        prev = int(reduced[-1])
-        better = (
-            idx
-            if (float(values[idx]) > float(values[prev]) if prefer_high else float(values[idx]) < float(values[prev]))
-            else prev
-        )
-        reduced[-1] = int(better)
-    return np.asarray(reduced, dtype=int)
-
-
 def _detect_pivots(
     close: np.ndarray,
     high: np.ndarray,
@@ -388,14 +346,14 @@ def _detect_pivots(
         return np.asarray([], dtype=int), np.asarray([], dtype=int)
     if bool(cfg.pivot_enable_fallback):
         if peaks.size < 2:
-            peaks = _fallback_local_extrema(
+            peaks = fallback_local_extrema(
                 src_hi,
                 min_dist,
                 max(1, int(cfg.pivot_fallback_order)),
                 prefer_high=True,
             )
         if troughs.size < 2:
-            troughs = _fallback_local_extrema(
+            troughs = fallback_local_extrema(
                 src_lo,
                 min_dist,
                 max(1, int(cfg.pivot_fallback_order)),

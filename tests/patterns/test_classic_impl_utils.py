@@ -7,6 +7,7 @@ import pytest
 
 import mtdata.patterns.classic_impl.utils as utils_mod
 from mtdata.patterns.classic_impl.config import ClassicDetectorConfig
+from mtdata.patterns.common import fallback_local_extrema
 from mtdata.patterns.classic_impl.utils import (
     _build_time_array,
     _calibrate_confidence,
@@ -290,7 +291,7 @@ class TestDetectPivotsClose:
         assert troughs.size >= 2
 
     def test_fallback_local_extrema_keeps_plateau_midpoint(self):
-        peaks = utils_mod._fallback_local_extrema(
+        peaks = fallback_local_extrema(
             np.array([1.0, 2.0, 2.0, 2.0, 1.0], dtype=float),
             min_dist=1,
             order=1,
@@ -300,7 +301,7 @@ class TestDetectPivotsClose:
         assert peaks.tolist() == [2]
 
     def test_fallback_local_extrema_allows_exact_window_boundary(self):
-        peaks = utils_mod._fallback_local_extrema(
+        peaks = fallback_local_extrema(
             np.array([1.0, 2.0, 3.0, 2.0, 1.0], dtype=float),
             min_dist=1,
             order=2,

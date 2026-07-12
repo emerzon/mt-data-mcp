@@ -1,13 +1,87 @@
 import math
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from typing import Any, Optional
+from typing import Any, List, Optional
 
 import numpy as np
 import pandas as pd
 
 from ..shared.constants import TIMEFRAME_SECONDS
 from ..shared.symbols import FIAT_CURRENCY_CODES, is_probably_crypto_symbol
+
+
+def fallback_local_extrema(
+    src: np.ndarray,
+    min_dist: int,
+    order: int,
+    *,
+    prefer_high: bool,
+) -> np.ndarray:
+    """Find local extrema with a sliding window when primary peak detection undershoots.
+
+    Plateau runs are collapsed to their midpoint so flat tops/bottoms yield a
+    single representative index. Candidates closer than ``min_dist`` keep the
+    more extreme value.
+    """
+    values = np.asarray(src, dtype=float)
+    n = int(values.size)
+    if n < (2 * order + 1):
+        return np.asarray([], dtype=int)
+    candidates: List[int] = []
+    for idx in range(order, n - order):
+        center = float(values[idx])
+        if not np.isfinite(center):
+            continue
+        window = values[idx - order : idx + order + 1]
+        if not np.all(np.isfinite(window)):
+            continue
+        plateau_tol = max(1e-12, abs(center) * 1e-12)
+        plateau_left = idx
+        while (
+            plateau_left > 0
+            and np.isfinite(values[plateau_left - 1])
+            and np.isclose(
+                values[plateau_left - 1],
+                center,
+                rtol=0.0,
+                atol=plateau_tol,
+            )
+        ):
+            plateau_left -= 1
+        plateau_right = idx
+        while (
+            plateau_right < (n - 1)
+            and np.isfinite(values[plateau_right + 1])
+            and np.isclose(
+                values[plateau_right + 1],
+                center,
+                rtol=0.0,
+                atol=plateau_tol,
+            )
+        ):
+            plateau_right += 1
+        if plateau_left != plateau_right:
+            if int((plateau_left + plateau_right) // 2) != int(idx):
+                continue
+        if prefer_high:
+            if center < float(np.max(window)):
+                continue
+        elif center > float(np.min(window)):
+            continue
+        candidates.append(int(idx))
+    if not candidates:
+        return np.asarray([], dtype=int)
+    reduced: List[int] = []
+    for idx in candidates:
+        if not reduced or (idx - reduced[-1]) >= int(min_dist):
+            reduced.append(int(idx))
+            continue
+        prev_idx = int(reduced[-1])
+        prev_val = float(values[prev_idx])
+        curr_val = float(values[idx])
+        better = idx if (curr_val > prev_val if prefer_high else curr_val < prev_val) else prev_idx
+        reduced[-1] = int(better)
+    return np.asarray(reduced, dtype=int)
 
 
 @dataclass

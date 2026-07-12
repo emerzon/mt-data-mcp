@@ -9,7 +9,7 @@ from scipy.signal import find_peaks
 
 from ...utils.dtw import dtw_distance_fallback
 from ...utils.utils import to_float_np
-from ..common import PatternResultBase
+from ..common import PatternResultBase, fallback_local_extrema
 from .config import ClassicDetectorConfig, ClassicPatternResult
 
 
@@ -268,71 +268,10 @@ def _detect_pivots_close(
         if need_peak_fallback or need_trough_fallback:
             order = max(2, int(getattr(cfg, "pivot_fallback_order", 2)))
             if need_peak_fallback:
-                peaks = _fallback_local_extrema(src_hi, min_dist, order, prefer_high=True)
+                peaks = fallback_local_extrema(src_hi, min_dist, order, prefer_high=True)
             if need_trough_fallback:
-                troughs = _fallback_local_extrema(src_lo, min_dist, order, prefer_high=False)
+                troughs = fallback_local_extrema(src_lo, min_dist, order, prefer_high=False)
     return peaks.astype(int), troughs.astype(int)
-
-
-def _fallback_local_extrema(
-    src: np.ndarray,
-    min_dist: int,
-    order: int,
-    *,
-    prefer_high: bool,
-) -> np.ndarray:
-    values = np.asarray(src, dtype=float)
-    n = int(values.size)
-    if n < (2 * order + 1):
-        return np.asarray([], dtype=int)
-    candidates: List[int] = []
-    for idx in range(order, n - order):
-        center = float(values[idx])
-        if not np.isfinite(center):
-            continue
-        window = values[idx - order : idx + order + 1]
-        if not np.all(np.isfinite(window)):
-            continue
-        plateau_tol = max(1e-12, abs(center) * 1e-12)
-        plateau_left = idx
-        while plateau_left > 0 and np.isfinite(values[plateau_left - 1]) and np.isclose(
-            values[plateau_left - 1],
-            center,
-            rtol=0.0,
-            atol=plateau_tol,
-        ):
-            plateau_left -= 1
-        plateau_right = idx
-        while plateau_right < (n - 1) and np.isfinite(values[plateau_right + 1]) and np.isclose(
-            values[plateau_right + 1],
-            center,
-            rtol=0.0,
-            atol=plateau_tol,
-        ):
-            plateau_right += 1
-        if plateau_left != plateau_right:
-            if int((plateau_left + plateau_right) // 2) != int(idx):
-                continue
-        if prefer_high:
-            if center < float(np.max(window)):
-                continue
-        else:
-            if center > float(np.min(window)):
-                continue
-        candidates.append(int(idx))
-    if not candidates:
-        return np.asarray([], dtype=int)
-    reduced: List[int] = []
-    for idx in candidates:
-        if not reduced or (idx - reduced[-1]) >= int(min_dist):
-            reduced.append(int(idx))
-            continue
-        prev_idx = int(reduced[-1])
-        prev_val = float(values[prev_idx])
-        curr_val = float(values[idx])
-        better = idx if (curr_val > prev_val if prefer_high else curr_val < prev_val) else prev_idx
-        reduced[-1] = int(better)
-    return np.asarray(reduced, dtype=int)
 
 
 def _last_touch_indexes(bound_y: np.ndarray, idxs: np.ndarray, y: np.ndarray, tol: float) -> List[int]:
