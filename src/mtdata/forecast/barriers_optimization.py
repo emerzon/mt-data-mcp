@@ -1595,6 +1595,10 @@ def forecast_barrier_optimize(  # noqa: C901
                 'ensemble_weights',
                 'ensemble_top_k',
                 'ensemble_vote_metric',
+                'tradable_only',
+                'min_ev',
+                'min_edge',
+                'min_kelly',
             ):
                 member_params.pop(extra_key, None)
 
@@ -1617,11 +1621,11 @@ def forecast_barrier_optimize(  # noqa: C901
                     params=member_params,
                     denoise=denoise,
                     objective=objective_val,  # type: ignore[arg-type]
-                    return_grid=False,
-                    top_k=1,
-                    output_mode='summary',  # type: ignore[arg-type]
-                    viable_only=viable_only_val,
-                    concise=concise_val,
+                    return_grid=True,
+                    top_k=None,
+                    output_mode='full',  # type: ignore[arg-type]
+                    viable_only=False,
+                    concise=False,
                     grid_style=grid_style_val,  # type: ignore[arg-type]
                     preset=preset_val,
                     vol_window=vol_window_val,
@@ -1634,7 +1638,7 @@ def forecast_barrier_optimize(  # noqa: C901
                     ratio_min=ratio_min_val,
                     ratio_max=ratio_max_val,
                     ratio_steps=ratio_steps_val,
-                    refine=refine_flag,
+                    refine=False,
                     refine_radius=refine_radius_val,
                     refine_steps=refine_steps_val,
                     min_prob_win=min_prob_win_val,
@@ -1642,7 +1646,7 @@ def forecast_barrier_optimize(  # noqa: C901
                     max_median_time=max_median_time_val,
                     fast_defaults=bool(search_profile_val == 'fast'),
                     search_profile=search_profile_val,  # type: ignore[arg-type]
-                    statistical_robustness=bool(statistical_robustness_requested),
+                    statistical_robustness=False,
                     target_ci_width=target_ci_width_val,
                     n_seeds_stability=n_seeds_stability_val,
                     enable_bootstrap=bool(enable_bootstrap_val),
@@ -1664,11 +1668,12 @@ def forecast_barrier_optimize(  # noqa: C901
                         err_msg = f"Member method {member_method} failed"
                     member_errors.append({"method": member_method, "error": str(err_msg)})
                     continue
-                best_row = member_out.get('best')
-                if not isinstance(best_row, dict):
-                    member_errors.append({"method": member_method, "error": "No best candidate returned"})
+                member_grid = member_out.get('grid')
+                if not isinstance(member_grid, list) or not member_grid:
+                    member_errors.append({"method": member_method, "error": "No candidate grid returned"})
                     continue
-                actual_best = dict(best_row)
+                best_row = member_out.get('best')
+                actual_best = dict(best_row) if isinstance(best_row, dict) else {}
                 actual_best["member_method"] = str(member_method)
                 actual_best["member_method_used"] = str(member_out.get('method', member_method))
                 _annotate_candidate_metrics(actual_best, cost_per_trade=cost_per_trade)
@@ -1676,6 +1681,7 @@ def forecast_barrier_optimize(  # noqa: C901
                     "method": member_method,
                     "method_used": member_out.get('method', member_method),
                     "best": actual_best,
+                    "grid": [dict(row) for row in member_grid if isinstance(row, dict)],
                     "output": member_out,
                 })
 
@@ -1689,15 +1695,15 @@ def forecast_barrier_optimize(  # noqa: C901
             ensemble_confidence = "high" if n_failed == 0 else ("medium" if n_succeeded > n_failed else "low")
 
             metric_keys = [
-                'tp', 'sl', 'rr', 'tp_price', 'sl_price',
                 'prob_win', 'prob_loss', 'prob_tp_first', 'prob_sl_first',
                 'prob_tp_strict_first', 'prob_sl_strict_first',
                 'prob_no_hit', 'prob_same_bar', 'prob_resolve', 'prob_unresolved',
-                'ev', 'ev_cond', 'edge', 'breakeven_win_rate', 'edge_vs_breakeven',
+                'ev', 'ev_gross', 'ev_net', 'ev_unresolved', 'ev_cond', 'edge',
                 'kelly', 'kelly_cond',
                 'ev_per_bar', 'profit_factor', 'utility',
                 't_hit_tp_median', 't_hit_sl_median',
                 't_hit_resolve_mean', 't_hit_resolve_median',
+                't_hit_resolve_mean_all', 't_hit_resolve_median_all',
             ]
 
             def _member_weight(row: Dict[str, Any]) -> float:
@@ -1706,14 +1712,14 @@ def forecast_barrier_optimize(  # noqa: C901
                     return float(ensemble_weight_map[member_key])
                 return 1.0
 
-            def _agg_metric(metric_name: str) -> Optional[float]:
+            def _agg_metric(
+                member_rows: List[Tuple[Dict[str, Any], Dict[str, Any]]],
+                metric_name: str,
+            ) -> Optional[float]:
                 vals: List[float] = []
                 wts: List[float] = []
-                for row in member_runs:
-                    best_row = row.get('best', {})
-                    if not isinstance(best_row, dict):
-                        continue
-                    raw = best_row.get(metric_name)
+                for member_run, candidate_row in member_rows:
+                    raw = candidate_row.get(metric_name)
                     try:
                         val = float(raw)
                     except Exception:
@@ -1721,7 +1727,7 @@ def forecast_barrier_optimize(  # noqa: C901
                     if not np.isfinite(val):
                         continue
                     vals.append(float(val))
-                    wts.append(_member_weight(row))
+                    wts.append(_member_weight(member_run))
                 if not vals:
                     return None
                 if ensemble_agg == 'weighted_mean':
@@ -1731,59 +1737,85 @@ def forecast_barrier_optimize(  # noqa: C901
                     return float(np.mean(np.asarray(vals, dtype=float)))
                 return float(np.median(np.asarray(vals, dtype=float)))
 
-            aggregate_metrics: Dict[str, Any] = {}
-            for metric_name in metric_keys:
-                val = _agg_metric(metric_name)
-                if val is not None:
-                    aggregate_metrics[metric_name] = val
-            if 'rr' not in aggregate_metrics and aggregate_metrics.get('tp') and aggregate_metrics.get('sl'):
-                try:
-                    tp_val = float(aggregate_metrics['tp'])
-                    sl_val = float(aggregate_metrics['sl'])
-                    if sl_val > 0:
-                        aggregate_metrics['rr'] = float(tp_val / sl_val)
-                except Exception:
-                    pass
-            if 'prob_resolve' not in aggregate_metrics and aggregate_metrics.get('prob_no_hit') is not None:
-                try:
-                    aggregate_metrics['prob_resolve'] = float(1.0 - float(aggregate_metrics['prob_no_hit']))
-                except Exception:
-                    pass
-            _annotate_candidate_metrics(aggregate_metrics, cost_per_trade=cost_per_trade)
+            grouped_candidates: Dict[
+                Tuple[int, int],
+                List[Tuple[Dict[str, Any], Dict[str, Any]]],
+            ] = {}
+            for member_run in member_runs:
+                for candidate_row in member_run.get('grid', []):
+                    try:
+                        key = (
+                            int(round(float(candidate_row['tp']) * 1e9)),
+                            int(round(float(candidate_row['sl']) * 1e9)),
+                        )
+                    except Exception:
+                        continue
+                    grouped_candidates.setdefault(key, []).append(
+                        (member_run, candidate_row)
+                    )
 
-            ranked_candidates = [
-                dict(row.get('best', {}))
-                for row in member_runs
-                if isinstance(row.get('best'), dict)
-            ]
+            ranked_candidates: List[Dict[str, Any]] = []
+            for member_rows in grouped_candidates.values():
+                if len(member_rows) != n_succeeded:
+                    continue
+                first_row = member_rows[0][1]
+                aggregate_row: Dict[str, Any] = {
+                    'tp': float(first_row['tp']),
+                    'sl': float(first_row['sl']),
+                    'rr': float(first_row['rr']),
+                    'tp_price': float(first_row['tp_price']),
+                    'sl_price': float(first_row['sl_price']),
+                    'same_bar_policy': first_row.get('same_bar_policy'),
+                    'ensemble_member_count': int(len(member_rows)),
+                    'ensemble_methods': [
+                        str(member_run.get('method'))
+                        for member_run, _ in member_rows
+                    ],
+                    'member_metrics': {
+                        str(member_run.get('method')): {
+                            metric_name: candidate_row.get(metric_name)
+                            for metric_name in (
+                                'ev', 'edge', 'prob_tp_first', 'prob_sl_first',
+                                'prob_no_hit', 'kelly', 'utility',
+                            )
+                        }
+                        for member_run, candidate_row in member_rows
+                    },
+                }
+                for metric_name in metric_keys:
+                    value = _agg_metric(member_rows, metric_name)
+                    if value is not None:
+                        aggregate_row[metric_name] = value
+                _annotate_candidate_metrics(
+                    aggregate_row,
+                    cost_per_trade=cost_per_trade,
+                )
+                ranked_candidates.append(aggregate_row)
+
+            if not ranked_candidates:
+                return {
+                    "error": "Ensemble failed: member methods produced no common TP/SL candidates.",
+                    "member_errors": member_errors,
+                }
             _sort_candidate_results(ranked_candidates, objective_val)
-            viable_candidates = [
-                row for row in ranked_candidates
-                if _candidate_is_viable(row, cost_per_trade=cost_per_trade)
-            ]
-            if viable_only_val:
-                candidates = viable_candidates
-            else:
-                candidates = ranked_candidates
-            if top_k_val is not None:
-                candidates = candidates[:top_k_val]
-            elif concise_val and not viable_candidates and len(candidates) > 5:
-                candidates = candidates[:5]
-
-            grid_out = candidates if (return_grid and not concise_val) else None
-            if output_mode == 'summary' and grid_out is not None:
-                limit = top_k_val or min(10, len(grid_out))
-                grid_out = grid_out[:limit]
-
-            results_limit = min(10, len(candidates))
-            if output_mode == 'summary':
-                if top_k_val is not None:
-                    results_limit = top_k_val
-                elif concise_val:
-                    results_limit = min(5, len(candidates))
-                else:
-                    results_limit = min(10, len(candidates))
-            summary_results = candidates[:results_limit]
+            ensemble_views = _select_barrier_candidate_views(
+                ranked_candidates,
+                cost_per_trade=cost_per_trade,
+                viable_only_val=viable_only_val,
+                tradable_only_val=tradable_only_val,
+                min_ev_val=min_ev_val,
+                min_edge_val=min_edge_val,
+                min_kelly_val=min_kelly_val,
+                concise_val=concise_val,
+                top_k_val=top_k_val,
+                return_grid=return_grid,
+                output_mode=output_mode,
+            )
+            ranked_candidates = ensemble_views['ranked_candidates']
+            viable_candidates = ensemble_views['viable_candidates']
+            candidates = ensemble_views['candidates']
+            grid_out = ensemble_views['grid_out']
+            summary_results = ensemble_views['summary_results']
 
             member_prices = [
                 float(r.get('output', {}).get('last_price'))
@@ -1801,7 +1833,8 @@ def forecast_barrier_optimize(  # noqa: C901
                 if member_close_prices else float(last_price_close)
             )
 
-            viability_filtered_out = bool(viable_only_val and not viable_candidates and ranked_candidates)
+            viability_filtered_out = bool(ensemble_views['viability_filtered_out'])
+            ensemble_warning = ensemble_views.get('warning')
             selected_best = candidates[0] if candidates else None
             if isinstance(selected_best, dict):
                 _annotate_candidate_metrics(selected_best, cost_per_trade=cost_per_trade)
@@ -1820,26 +1853,26 @@ def forecast_barrier_optimize(  # noqa: C901
                 )
 
             member_summaries: List[Dict[str, Any]] = []
+            selected_member_metrics = (
+                selected_best.get('member_metrics', {})
+                if isinstance(selected_best, dict)
+                else {}
+            )
             for row in member_runs:
-                best_row = row.get('best', {})
                 member_method = row.get('method')
+                method_metrics = selected_member_metrics.get(str(member_method), {})
                 member_summaries.append({
                     "method": member_method,
                     "method_used": row.get('method_used'),
-                    "ev": best_row.get('ev') if isinstance(best_row, dict) else None,
-                    "ev_per_bar": best_row.get('ev_per_bar') if isinstance(best_row, dict) else None,
-                    "prob_win": best_row.get('prob_win') if isinstance(best_row, dict) else None,
-                    "prob_loss": best_row.get('prob_loss') if isinstance(best_row, dict) else None,
-                    "prob_no_hit": best_row.get('prob_no_hit') if isinstance(best_row, dict) else None,
-                    "rr": best_row.get('rr') if isinstance(best_row, dict) else None,
-                    "edge_vs_breakeven": best_row.get('edge_vs_breakeven') if isinstance(best_row, dict) else None,
-                    "phantom_profit_risk": best_row.get('phantom_profit_risk') if isinstance(best_row, dict) else None,
-                    "tp": best_row.get('tp') if isinstance(best_row, dict) else None,
-                    "sl": best_row.get('sl') if isinstance(best_row, dict) else None,
-                    "selected": bool(
-                        isinstance(selected_best, dict)
-                        and str(selected_best.get("member_method")) == str(member_method)
-                    ),
+                    "ev": method_metrics.get('ev'),
+                    "prob_win": method_metrics.get('prob_tp_first'),
+                    "prob_loss": method_metrics.get('prob_sl_first'),
+                    "prob_no_hit": method_metrics.get('prob_no_hit'),
+                    "edge": method_metrics.get('edge'),
+                    "kelly": method_metrics.get('kelly'),
+                    "tp": selected_best.get('tp') if isinstance(selected_best, dict) else None,
+                    "sl": selected_best.get('sl') if isinstance(selected_best, dict) else None,
+                    "contributed": bool(method_metrics),
                 })
 
             out = {
@@ -1923,19 +1956,20 @@ def forecast_barrier_optimize(  # noqa: C901
                     "weights": ensemble_weight_map if ensemble_weight_map else None,
                     "members": member_summaries,
                     "member_errors": member_errors,
-                    "aggregate_metrics": aggregate_metrics or None,
+                    "aggregate_metrics": (
+                        {
+                            key: value
+                            for key, value in selected_best.items()
+                            if key not in {'member_metrics'}
+                        }
+                        if isinstance(selected_best, dict) else None
+                    ),
                     "n_total": n_total,
                     "n_succeeded": n_succeeded,
                     "n_failed": n_failed,
                     "degraded": ensemble_degraded,
                     "confidence": ensemble_confidence,
-                    "selected_member": (
-                        {
-                            "method": selected_best.get("member_method"),
-                            "method_used": selected_best.get("member_method_used"),
-                        }
-                        if isinstance(selected_best, dict) else None
-                    ),
+                    "selection_basis": "common_candidate_aggregate",
                 },
             }
             candidate_filters = _barrier_candidate_filter_config(
@@ -1953,6 +1987,8 @@ def forecast_barrier_optimize(  # noqa: C901
                 out["objective_used"] = objective_val
             if contract_warnings:
                 out["warnings"] = list(contract_warnings)
+            if ensemble_warning:
+                out["warning"] = str(ensemble_warning)
             if member_errors:
                 if ensemble_degraded:
                     out["warning"] = (
@@ -1975,25 +2011,25 @@ def forecast_barrier_optimize(  # noqa: C901
                 )
                 out.update(diagnostics)
             if statistical_robustness_requested and isinstance(selected_best, dict):
-                selected_output = next(
-                    (
-                        row.get("output")
-                        for row in member_runs
-                        if isinstance(row.get("best"), dict)
-                        and str(row.get("method")) == str(selected_best.get("member_method"))
+                dispersion_inputs = {
+                    index: dict(metrics)
+                    for index, metrics in enumerate(selected_member_metrics.values())
+                    if isinstance(metrics, dict)
+                }
+                out["statistical_robustness"] = {
+                    "source": "ensemble_common_candidate",
+                    "method_dispersion": _cross_seed_stability(
+                        dispersion_inputs,
+                        metric_keys=['prob_tp_first', 'prob_sl_first', 'ev', 'edge', 'kelly'],
+                        threshold_cv=0.10,
                     ),
-                    None,
-                )
-                if isinstance(selected_output, dict):
-                    selected_stats = selected_output.get("statistical_robustness")
-                    if isinstance(selected_stats, dict):
-                        stats_copy = dict(selected_stats)
-                        stats_copy["source"] = "selected_member"
-                        stats_copy["member_method"] = str(selected_best.get("member_method"))
-                        out["statistical_robustness"] = stats_copy
-                    min_sims_member = selected_output.get("min_sims_recommended")
-                    if min_sims_member is not None:
-                        out["min_sims_recommended"] = min_sims_member
+                    "minimum_simulations": {
+                        "recommended": int(min_sims_recommended),
+                        "used_per_member": int(sims),
+                        "target_ci_width": target_ci_width_val,
+                    },
+                }
+                out["min_sims_recommended"] = int(min_sims_recommended)
             if min_prob_resolve_val is not None:
                 out["min_prob_resolve"] = float(min_prob_resolve_val)
             if has_trading_costs:
@@ -3133,6 +3169,20 @@ def forecast_barrier_optimize(  # noqa: C901
             
             if n_seeds_stability_val > 1:
                 results_by_seed: Dict[int, Dict[str, Any]] = {}
+                selection_counts: Dict[Tuple[int, int], int] = {}
+                selected_pair_key = (
+                    int(round(float(best.get('tp', 0.0)) * 1e9)),
+                    int(round(float(best.get('sl', 0.0)) * 1e9)),
+                )
+                stability_candidates = _dedupe_ranked_barrier_candidates(
+                    [dict(row) for row in results if isinstance(row, dict)]
+                )
+                stability_pairs = [
+                    (float(row['tp']), float(row['sl']))
+                    for row in stability_candidates
+                    if row.get('tp') is not None and row.get('sl') is not None
+                ]
+                holdout_selected_row: Optional[Dict[str, Any]] = None
                 for seed_offset in range(1, min(n_seeds_stability_val, 5) + 1):
                     seed_key = offset_barrier_seed(request_seed_base, seed_offset)
                     try:
@@ -3147,7 +3197,7 @@ def forecast_barrier_optimize(  # noqa: C901
                     except (ValueError, RuntimeError, np.linalg.LinAlgError):
                         continue
                     seed_rows = _evaluate(
-                        [(float(best.get('tp', 0.0)), float(best.get('sl', 0.0)))],
+                        stability_pairs,
                         stability_paths,
                         stability_bb_enabled,
                         stability_bb_sigma,
@@ -3157,7 +3207,46 @@ def forecast_barrier_optimize(  # noqa: C901
                         count_invalid=False,
                     )
                     if seed_rows:
-                        results_by_seed[seed_key] = seed_rows[0]
+                        _sort_candidate_results(seed_rows, objective_val)
+                        seed_views = _select_barrier_candidate_views(
+                            seed_rows,
+                            cost_per_trade=cost_per_trade,
+                            viable_only_val=viable_only_val,
+                            tradable_only_val=tradable_only_val,
+                            min_ev_val=min_ev_val,
+                            min_edge_val=min_edge_val,
+                            min_kelly_val=min_kelly_val,
+                            concise_val=False,
+                            top_k_val=None,
+                            return_grid=False,
+                            output_mode='full',
+                        )
+                        seed_candidates = seed_views['candidates']
+                        if not seed_candidates:
+                            seed_candidates = seed_views['ranked_candidates']
+                        if not seed_candidates:
+                            continue
+                        seed_best = seed_candidates[0]
+                        results_by_seed[seed_key] = seed_best
+                        seed_pair_key = (
+                            int(round(float(seed_best['tp']) * 1e9)),
+                            int(round(float(seed_best['sl']) * 1e9)),
+                        )
+                        selection_counts[seed_pair_key] = (
+                            selection_counts.get(seed_pair_key, 0) + 1
+                        )
+                        if holdout_selected_row is None:
+                            holdout_selected_row = next(
+                                (
+                                    row
+                                    for row in seed_rows
+                                    if (
+                                        int(round(float(row['tp']) * 1e9)),
+                                        int(round(float(row['sl']) * 1e9)),
+                                    ) == selected_pair_key
+                                ),
+                                None,
+                            )
 
                 if len(results_by_seed) > 1:
                     stability_result = _cross_seed_stability(
@@ -3166,6 +3255,31 @@ def forecast_barrier_optimize(  # noqa: C901
                     )
                     stability_result["seeds_attempted"] = int(min(n_seeds_stability_val, 5))
                     stability_result["seeds_succeeded"] = int(len(results_by_seed))
+                    selected_frequency = (
+                        selection_counts.get(selected_pair_key, 0) / len(results_by_seed)
+                    )
+                    modal_pair, modal_count = max(
+                        selection_counts.items(),
+                        key=lambda item: item[1],
+                    )
+                    stability_result["selection_stability"] = {
+                        "stable": bool(selected_frequency >= 0.60),
+                        "selected_pair_frequency": float(selected_frequency),
+                        "unique_pairs_selected": int(len(selection_counts)),
+                        "modal_pair": {
+                            "tp": float(modal_pair[0] / 1e9),
+                            "sl": float(modal_pair[1] / 1e9),
+                            "frequency": float(modal_count / len(results_by_seed)),
+                        },
+                        "selection_counts": [
+                            {
+                                "tp": float(pair[0] / 1e9),
+                                "sl": float(pair[1] / 1e9),
+                                "count": int(count),
+                            }
+                            for pair, count in sorted(selection_counts.items())
+                        ],
+                    }
                     statistical_analysis['cross_seed_stability'] = stability_result
                 else:
                     statistical_analysis['cross_seed_stability'] = {
@@ -3174,6 +3288,33 @@ def forecast_barrier_optimize(  # noqa: C901
                         "seeds_attempted": int(min(n_seeds_stability_val, 5)),
                         "seeds_succeeded": int(len(results_by_seed)),
                         "recommendation": "Retry with a supported stochastic method or fewer failure-prone seeds.",
+                    }
+                if holdout_selected_row is not None:
+                    selected_objective = _safe_float(best.get(objective_val))
+                    holdout_objective = _safe_float(
+                        holdout_selected_row.get(objective_val)
+                    )
+                    statistical_analysis['post_selection_evaluation'] = {
+                        "source": "independent_seed",
+                        "seed": int(offset_barrier_seed(request_seed_base, 1)),
+                        "tp": float(best.get('tp')),
+                        "sl": float(best.get('sl')),
+                        "objective": objective_val,
+                        "selection_estimate": selected_objective,
+                        "holdout_estimate": holdout_objective,
+                        "optimism": (
+                            float(selected_objective - holdout_objective)
+                            if selected_objective is not None
+                            and holdout_objective is not None
+                            else None
+                        ),
+                        "metrics": {
+                            key: holdout_selected_row.get(key)
+                            for key in (
+                                'ev', 'edge', 'prob_tp_first', 'prob_sl_first',
+                                'prob_no_hit', 'kelly', 'utility',
+                            )
+                        },
                     }
 
             if enable_sensitivity_analysis_val and sensitivity_params_requested:

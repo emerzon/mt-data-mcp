@@ -218,7 +218,7 @@ class TestBarrierOptimizeProfilesEnsemble(_BarrierTestBase):
             "Latest close is non-finite; refresh history or enable a live reference price.",
         )
 
-    def test_forecast_barrier_optimize_ensemble_selects_real_member_candidate(self):
+    def test_forecast_barrier_optimize_ensemble_selects_common_aggregate_candidate(self):
         self._set_flat_history(1.0)
         gbm_paths = np.array([
             [1.0030, 1.0010, 1.0010, 1.0010],
@@ -259,15 +259,59 @@ class TestBarrierOptimizeProfilesEnsemble(_BarrierTestBase):
             )
         self.assertTrue(result.get("success"))
         self.assertEqual(result.get("method"), "ensemble")
-        self.assertEqual(result["best"].get("member_method"), "bootstrap")
-        self.assertEqual(result["ensemble"]["selected_member"]["method"], "bootstrap")
+        self.assertEqual(
+            result["ensemble"]["selection_basis"],
+            "common_candidate_aggregate",
+        )
+        self.assertEqual(result["best"].get("ensemble_member_count"), 2)
+        self.assertEqual(
+            set(result["best"].get("member_metrics", {})),
+            {"mc_gbm", "bootstrap"},
+        )
         aggregate = result["ensemble"].get("aggregate_metrics")
         self.assertIsInstance(aggregate, dict)
-        self.assertNotAlmostEqual(float(result["best"]["tp"]), float(aggregate["tp"]), places=8)
-        selected_rows = [m for m in result["ensemble"]["members"] if m.get("selected")]
-        self.assertEqual(len(selected_rows), 1)
-        self.assertAlmostEqual(float(selected_rows[0]["tp"]), float(result["best"]["tp"]), places=8)
-        self.assertAlmostEqual(float(selected_rows[0]["sl"]), float(result["best"]["sl"]), places=8)
+        self.assertAlmostEqual(float(result["best"]["tp"]), float(aggregate["tp"]), places=8)
+        contributed_rows = [m for m in result["ensemble"]["members"] if m.get("contributed")]
+        self.assertEqual(len(contributed_rows), 2)
+        for member in contributed_rows:
+            self.assertAlmostEqual(float(member["tp"]), float(result["best"]["tp"]), places=8)
+            self.assertAlmostEqual(float(member["sl"]), float(result["best"]["sl"]), places=8)
+
+    def test_ensemble_weights_change_common_candidate_selection(self):
+        self._set_flat_history(1.0)
+        gbm_paths = np.repeat(np.array([[1.0030, 0.9900]]), 4, axis=0)
+        bootstrap_paths = np.repeat(np.array([[1.0070, 1.0070]]), 4, axis=0)
+
+        def run(weights):
+            with patch(f'{_BARRIER_OPT_ROOT}._simulate_gbm_mc') as mock_gbm, \
+                 patch(f'{_BARRIER_OPT_ROOT}._simulate_bootstrap_mc') as mock_bootstrap, \
+                 patch(f'{_BARRIER_OPT_ROOT}._get_live_reference_price', return_value=(None, None)):
+                mock_gbm.return_value = {"price_paths": gbm_paths}
+                mock_bootstrap.return_value = {"price_paths": bootstrap_paths}
+                return forecast_barrier_optimize(
+                    symbol="EURUSD",
+                    timeframe="H1",
+                    horizon=2,
+                    method="ensemble",
+                    direction="long",
+                    mode="pct",
+                    tp_min=0.2, tp_max=0.6, tp_steps=2,
+                    sl_min=0.5, sl_max=0.5, sl_steps=1,
+                    objective="ev",
+                    params={
+                        "ensemble_methods": ["mc_gbm", "bootstrap"],
+                        "ensemble_agg": "weighted_mean",
+                        "ensemble_weights": weights,
+                        "n_sims": 4,
+                    },
+                    viable_only=False,
+                )
+
+        gbm_weighted = run({"mc_gbm": 10.0, "bootstrap": 1.0})
+        bootstrap_weighted = run({"mc_gbm": 1.0, "bootstrap": 10.0})
+
+        self.assertAlmostEqual(gbm_weighted["best"]["tp"], 0.2)
+        self.assertAlmostEqual(bootstrap_weighted["best"]["tp"], 0.6)
 
     def test_forecast_barrier_optimize_prefers_live_reference_price(self):
         self._set_flat_history(1.0, bars=200)

@@ -368,7 +368,7 @@ class TestBarrierTradingCosts(_BarrierTestBase):
         aggregate_ev = float(result["ensemble"]["aggregate_metrics"]["ev"])
         self.assertAlmostEqual(aggregate_ev, sum(member_evs) / len(member_evs), places=7)
 
-    def test_ensemble_surfaces_selected_member_statistical_robustness(self):
+    def test_ensemble_surfaces_common_candidate_method_dispersion(self):
         self._set_barrier_history(pd.DataFrame({
             'time': pd.date_range(start='2023-01-01', periods=500, freq='h'),
             'close': np.full(500, 1.0),
@@ -416,7 +416,11 @@ class TestBarrierTradingCosts(_BarrierTestBase):
 
         self.assertTrue(result.get("success"))
         self.assertIn("statistical_robustness", result)
-        self.assertEqual(result["statistical_robustness"].get("source"), "selected_member")
+        self.assertEqual(
+            result["statistical_robustness"].get("source"),
+            "ensemble_common_candidate",
+        )
+        self.assertIn("method_dispersion", result["statistical_robustness"])
         self.assertIn("minimum_simulations", result["statistical_robustness"])
         self.assertIn("min_sims_recommended", result)
 

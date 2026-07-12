@@ -554,8 +554,8 @@ class TestBarrierOptimizationWithStats(_BarrierOptimizationPatchMixin, unittest.
         n_sims_used = result['compute_profile']['n_sims']
         self.assertGreaterEqual(n_sims_used, 100)
 
-    def test_barrier_optimize_cross_seed_stability_replays_best_candidate(self):
-        """Cross-seed stability should re-evaluate the selected barrier for each seed."""
+    def test_barrier_optimize_cross_seed_stability_reruns_search(self):
+        """Cross-seed stability should rerun the candidate search for each seed."""
         from unittest.mock import patch
 
         from mtdata.forecast.barriers_optimization import forecast_barrier_optimize
@@ -601,10 +601,58 @@ class TestBarrierOptimizationWithStats(_BarrierOptimizationPatchMixin, unittest.
         self.assertFalse(stability['stable'])
         self.assertEqual(stability['n_seeds'], 3)
         self.assertEqual(stability['seeds_succeeded'], 3)
+        self.assertIn('selection_stability', stability)
+        self.assertEqual(stability['selection_stability']['selected_pair_frequency'], 1.0)
+        self.assertIn(
+            'post_selection_evaluation',
+            result['statistical_robustness'],
+        )
         self.assertEqual(seen_seeds.count(42), 1)
         self.assertIn(43, seen_seeds)
         self.assertIn(44, seen_seeds)
         self.assertIn(45, seen_seeds)
+
+    def test_cross_seed_selection_stability_detects_a_different_optimum(self):
+        from unittest.mock import patch
+
+        from mtdata.forecast.barriers_optimization import forecast_barrier_optimize
+
+        def fake_sim(prices, horizon, n_sims, seed, **kwargs):
+            base = float(prices[-1])
+            if int(seed) == 42:
+                path = np.array([base * 1.003, base * 0.990])
+            else:
+                path = np.array([base * 1.007, base * 1.007])
+            return {'price_paths': np.repeat(path[None, :], n_sims, axis=0)}
+
+        with patch(f'{_BARRIER_OPT_ROOT}._simulate_gbm_mc', side_effect=fake_sim):
+            result = forecast_barrier_optimize(
+                symbol="EURUSD",
+                timeframe="H1",
+                horizon=2,
+                method="mc_gbm",
+                direction="long",
+                mode="pct",
+                tp_min=0.2,
+                tp_max=0.6,
+                tp_steps=2,
+                sl_min=0.5,
+                sl_max=0.5,
+                sl_steps=1,
+                statistical_robustness=True,
+                target_ci_width=0.90,
+                n_seeds_stability=2,
+                enable_bootstrap=False,
+                enable_convergence_check=False,
+                viable_only=False,
+                params={'n_sims': 100, 'seed': 42},
+            )
+
+        stability = result['statistical_robustness']['cross_seed_stability']
+        selection = stability['selection_stability']
+        self.assertFalse(selection['stable'])
+        self.assertEqual(selection['selected_pair_frequency'], 0.0)
+        self.assertAlmostEqual(selection['modal_pair']['tp'], 0.6)
 
     def test_barrier_optimize_convergence_tracks_selected_objective(self):
         """Convergence should track the running estimate for the selected objective."""
