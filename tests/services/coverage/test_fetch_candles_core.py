@@ -329,7 +329,7 @@ class TestFetchCandlesCore(unittest.TestCase):
     @patch(_RESOLVE_CTZ, return_value=None)
     @patch(_ESTIMATE_WARMUP, return_value=0)
     @patch(_GUARD, _mock_symbol_guard)
-    def test_recent_broker_tick_drives_incomplete_bar_trim(self, mock_warmup, mock_ctz, mock_info, mock_from, mock_cfg):
+    def test_broker_tick_does_not_override_wall_clock_bar_classification(self, mock_warmup, mock_ctz, mock_info, mock_from, mock_cfg):
         base_ts = _NOW_TS
         mock_cfg.get_server_tz.return_value = None
         mock_cfg.get_time_offset_seconds.return_value = 0
@@ -339,13 +339,13 @@ class TestFetchCandlesCore(unittest.TestCase):
             result = fetch_candles('EURUSD', timeframe='H1', limit=5, time_as_epoch=True)
         self.assertTrue(result.get('success'))
         returned_times = [row['time'] for row in result.get('data', [])]
-        self.assertNotIn(base_ts, returned_times)
-        self.assertEqual(returned_times[-1], base_ts - 3600)
+        self.assertIn(base_ts, returned_times)
+        self.assertEqual(returned_times[-1], base_ts)
         self.assertNotIn('last_candle_open', result)
-        self.assertTrue(result['has_forming_candle'])
-        self.assertEqual(result['forming_candle_status'], 'skipped')
+        self.assertFalse(result['has_forming_candle'])
+        self.assertEqual(result['forming_candle_status'], 'none')
         self.assertFalse(result['forming_candle_included'])
-        self.assertTrue(result['forming_candle_skipped'])
+        self.assertFalse(result['forming_candle_skipped'])
 
     @patch(_MT5_CONFIG)
     @patch(_RATES_FROM)
@@ -353,7 +353,7 @@ class TestFetchCandlesCore(unittest.TestCase):
     @patch(_RESOLVE_CTZ, return_value=None)
     @patch(_ESTIMATE_WARMUP, return_value=0)
     @patch(_GUARD, _mock_symbol_guard)
-    def test_numpy_rates_trim_live_tail_before_limit_window(self, mock_warmup, mock_ctz, mock_info, mock_from, mock_cfg):
+    def test_numpy_rates_use_wall_clock_before_limit_window(self, mock_warmup, mock_ctz, mock_info, mock_from, mock_cfg):
         base_ts = _NOW_TS
         mock_cfg.get_server_tz.return_value = None
         mock_cfg.get_time_offset_seconds.return_value = 0
@@ -364,15 +364,15 @@ class TestFetchCandlesCore(unittest.TestCase):
         self.assertTrue(result.get('success'))
         returned_times = [row['time'] for row in result.get('data', [])]
         self.assertEqual(len(returned_times), 5)
-        self.assertEqual(returned_times[0], base_ts - (5 * 3600))
-        self.assertEqual(returned_times[-1], base_ts - 3600)
+        self.assertEqual(returned_times[0], base_ts - (4 * 3600))
+        self.assertEqual(returned_times[-1], base_ts)
         self.assertEqual(result['candles'], 5)
         self.assertEqual(result['candles_excluded'], 0)
-        self.assertEqual(result['incomplete_candles_skipped'], 1)
-        self.assertTrue(result['has_forming_candle'])
-        self.assertEqual(result['forming_candle_status'], 'skipped')
+        self.assertEqual(result['incomplete_candles_skipped'], 0)
+        self.assertFalse(result['has_forming_candle'])
+        self.assertEqual(result['forming_candle_status'], 'none')
         self.assertFalse(result['forming_candle_included'])
-        self.assertTrue(result['forming_candle_skipped'])
+        self.assertFalse(result['forming_candle_skipped'])
 
     @patch(_MT5_CONFIG)
     @patch(_RATES_FROM)

@@ -2127,7 +2127,7 @@ def test_forecast_conformal_intervals_success_and_errors(monkeypatch):
     assert raw(request=ForecastConformalIntervalsRequest(symbol="EURUSD", method="theta", horizon=2))["error"] == "backtest failed"
 
     monkeypatch.setattr(cf, "_forecast_backtest_impl", lambda **kwargs: {"results": {"theta": {"details": []}}})
-    assert "Conformal calibration failed" in raw(
+    assert "Residual-quantile interval calibration failed" in raw(
         request=ForecastConformalIntervalsRequest(symbol="EURUSD", method="theta", horizon=2)
     )["error"]
 
@@ -2286,6 +2286,11 @@ def test_run_forecast_conformal_intervals_compact_omits_technical_metadata():
         "calibration_spacing": 1,
         "coverage_target": 0.9,
         "coverage_evaluation": "leave_one_out_calibration_residuals",
+        "coverage_note": (
+            "Empirical residual quantiles from rolling backtest; not a "
+            "finite-sample conformal coverage guarantee."
+        ),
+        "interval_method": "rolling_residual_quantiles",
         "min_calibration_points": 1,
     }
     assert "per_step_q" not in result["conformal"]
