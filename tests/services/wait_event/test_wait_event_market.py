@@ -235,10 +235,7 @@ def test_support_resistance_watchers_use_compact_levels(monkeypatch) -> None:
         ),
     )
 
-    watchers = core_data._support_resistance_watchers(
-        symbol="BTCUSD",
-        timeframe="M15",
-    )
+    watchers = core_data._support_resistance_watchers(symbol="BTCUSD")
 
     assert watchers == [
         {"type": "price_touch_level", "symbol": "BTCUSD", "level": 99.5, "direction": "either"},
@@ -246,7 +243,7 @@ def test_support_resistance_watchers_use_compact_levels(monkeypatch) -> None:
         {"type": "price_touch_level", "symbol": "BTCUSD", "level": 101.0, "direction": "either"},
         {"type": "price_break_level", "symbol": "BTCUSD", "level": 101.0, "direction": "up"},
     ]
-    assert captured == {"symbol": "BTCUSD", "timeframe": "M15", "detail": "compact"}
+    assert captured == {"symbol": "BTCUSD", "timeframe": "auto", "detail": "compact"}
 
 def test_support_resistance_watchers_ignore_non_finite_levels(monkeypatch) -> None:
     monkeypatch.setattr(
@@ -261,10 +258,7 @@ def test_support_resistance_watchers_ignore_non_finite_levels(monkeypatch) -> No
         },
     )
 
-    watchers = core_data._support_resistance_watchers(
-        symbol="BTCUSD",
-        timeframe="H1",
-    )
+    watchers = core_data._support_resistance_watchers(symbol="BTCUSD")
 
     assert watchers == [
         {"type": "price_touch_level", "symbol": "BTCUSD", "level": 101.0, "direction": "either"},
