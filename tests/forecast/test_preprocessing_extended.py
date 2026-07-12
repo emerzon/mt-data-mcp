@@ -537,6 +537,28 @@ class TestReduceFeatureFrame:
         out, info = _reduce_feature_frame(X, "bad", None, reducer_factory=factory)
         assert "dimred_error" in info
 
+    def test_reducer_does_not_backfill_indicator_warmup(self):
+        captured = {}
+
+        class _CaptureReducer:
+            def fit_transform(self, values):
+                captured["values"] = values.copy()
+                return values
+
+        X = pd.DataFrame({"a": [np.nan, 2.0, 3.0], "b": [1.0, np.nan, 4.0]})
+        _reduce_feature_frame(
+            X,
+            "capture",
+            None,
+            reducer_factory=lambda _m, _p: (_CaptureReducer(), {}),
+        )
+
+        assert captured["values"].tolist() == [
+            [0.0, 1.0],
+            [2.0, 1.0],
+            [3.0, 4.0],
+        ]
+
 
 # ===== prepare_features (lines 548, 580, 588, 594) ========================
 

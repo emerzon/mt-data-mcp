@@ -512,7 +512,10 @@ def _reduce_feature_frame(
 
     X_num = X.apply(pd.to_numeric, errors="coerce")
     X_num = X_num.replace([np.inf, -np.inf], np.nan)
-    X_num = X_num.ffill().bfill()
+    # Preserve chronology: forward-fill values already observed, then use a
+    # fixed neutral value for indicator warm-up gaps. Back-filling here would
+    # copy later indicator values into earlier training rows.
+    X_num = X_num.ffill().fillna(0.0)
     try:
         reducer, meta = reducer_factory(dimred_method, dimred_params)
         arr = np.asarray(reducer.fit_transform(X_num.to_numpy(dtype=float)), dtype=float)
