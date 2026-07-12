@@ -304,11 +304,13 @@ def test_run_trade_place_dry_run_returns_preview_without_execution():
     assert result["dry_run_simulated"] is True
     assert result["pending"] is False
     assert result["action"] == "place_market_order"
-    assert result["validation_scope"] == "request_routing_only"
+    assert result["validation_scope"] == "local_preview_plus_estimates"
     assert "trade_gate_passed" not in result
     assert result["actionability"] == "preview_only"
-    assert "validation_not_performed" in result
-    assert "broker_acceptance" in result["validation_not_performed"]
+    assert "validation_not_performed" not in result
+    assert "protection_level_preview" in result["preview_checks_performed"]
+    assert "margin_estimate" in result["preview_checks_performed"]
+    assert "broker_acceptance" in result["broker_validation_not_performed"]
     assert result["requested_sl"] == 1.08
     assert result["requested_tp"] == 1.12
     place_market_order.assert_not_called()

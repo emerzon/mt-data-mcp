@@ -1150,13 +1150,13 @@ def run_trade_place(  # noqa: C901
             expiration_provided: bool,
         ) -> Dict[str, Any]:
             preview_detail = _resolve_trade_place_preview_detail(request)
-            validation_scope = "request_routing_only"
-            validation_not_performed = [
+            validation_scope = "local_preview_plus_estimates"
+            broker_validation_not_performed = [
                 "broker_acceptance",
-                "live_price_distance_rules",
-                "margin_and_funds",
-                "fillability",
-                "sl_tp_attachment",
+                "broker_price_distance_enforcement",
+                "broker_margin_reservation",
+                "broker_fillability",
+                "broker_sl_tp_attachment",
             ]
             local_blockers = [
                 f"missing_{field_name}"
@@ -1189,13 +1189,23 @@ def run_trade_place(  # noqa: C901
                     "Dry run did not execute MT5 or broker-side validation. "
                     "Use this preview for request routing only."
                 ),
-                "preview_scope_summary": "Routing and local request checks only.",
-                "validation_not_performed": list(validation_not_performed),
+                "preview_scope_summary": (
+                    "Routing, local level checks, and margin estimates only."
+                ),
+                "preview_checks_performed": [
+                    "request_routing",
+                    "local_safety_requirements",
+                    "protection_level_preview",
+                    "margin_estimate",
+                ],
+                "broker_validation_not_performed": list(
+                    broker_validation_not_performed
+                ),
                 "warnings": [
                     "Dry run only. Routing and local safety checks passed; MT5/broker validation was not executed.",
                     (
-                        "Not validated in dry run: broker acceptance, live price-distance rules, "
-                        "margin/funds, fillability, and SL/TP attachment."
+                        "Not validated in dry run: broker acceptance/enforcement, margin "
+                        "reservation, fillability, and broker-side SL/TP attachment."
                     ),
                 ],
                 "require_sl_tp": bool(request.require_sl_tp),
