@@ -47,7 +47,11 @@ Notes:
 
 ## Richer sections (extras)
 
-Compact output is implicit. To opt into heavier, optional sections, pass `extras`. The canonical tokens are:
+Compact output is implicit. To opt into heavier, optional sections, pass `extras`.
+The canonical tokens are listed below. Support is tool-specific: a token preserves
+or enables that section when the selected tool produces it; it does not synthesize
+metadata or diagnostics that the tool cannot provide. Use `tools_list` to inspect a
+tool's parameters and documentation.
 
 | Token | Adds |
 |-------|------|
@@ -59,7 +63,8 @@ Compact output is implicit. To opt into heavier, optional sections, pass `extras
 | `method_docs` | Inline documentation for the selected method/indicator |
 | `guidance` | Suggested next steps and related tools |
 
-The alias `all` expands to **every** supported section.
+The alias `all` requests every canonical section; the response includes the sections
+supported by that tool.
 
 ```bash
 # Just metadata + diagnostics
@@ -69,7 +74,9 @@ mtdata-cli market_status --extras metadata,diagnostics
 mtdata-cli forecast_generate EURUSD --horizon 12 --extras all --json
 ```
 
-`detail` and `extras` are complementary: `detail` tunes verbosity of the sections a tool already returns, while `extras` switches on additional sections.
+`detail` and `extras` are complementary: `detail` tunes verbosity of the sections a
+tool already returns, while `extras` asks the tool to include supported optional
+sections. Any non-empty `extras` request also preserves the full response shape.
 
 ---
 

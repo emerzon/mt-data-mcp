@@ -826,6 +826,10 @@ def _recording_tool_decorator(*dargs, **dkwargs):  # type: ignore[override]  # n
 
             try:
                 normalized_extras = normalize_output_extras(extras)
+                if normalized_extras and _callable_exposes_kwarg(func, "extras"):
+                    # Preserve tool-local section semantics (for example an
+                    # extras request that intentionally removes a row cap).
+                    kw["extras"] = normalized_extras
                 if normalized_extras and "detail" not in kw and _callable_exposes_kwarg(func, "detail"):
                     kw["detail"] = "full"
                 _coerce_kwargs_for_callable(func, kw)

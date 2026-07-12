@@ -900,6 +900,26 @@ class TestRecordingToolDecorator:
         finally:
             tools._ORIG_TOOL_DECORATOR = original
 
+    def test_wrapped_function_forwards_extras_to_tools_that_declare_them(self):
+        import mtdata.core._mcp_tools as tools
+
+        original = tools._ORIG_TOOL_DECORATOR
+        try:
+            tools._ORIG_TOOL_DECORATOR = lambda *a, **k: (lambda fn: fn)
+            dec = tools._recording_tool_decorator()
+
+            def sample_tool(extras=None):
+                return {"received_extras": extras}
+
+            dec(sample_tool)
+            wrapped = tools._TOOL_REGISTRY["sample_tool"]
+
+            result = wrapped(json=True, extras="metadata,diagnostics")
+
+            assert result["received_extras"] == ("metadata", "diagnostics")
+        finally:
+            tools._ORIG_TOOL_DECORATOR = original
+
     def test_public_wrapped_output_is_toon_by_default_and_json_on_flag(self):
         import mtdata.core._mcp_tools as tools
 
