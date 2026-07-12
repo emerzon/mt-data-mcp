@@ -5,9 +5,17 @@ import pandas as pd
 
 from mtdata.patterns.harmonic import (
     HarmonicDetectorConfig,
+    _ratio_abs_tolerance,
     detect_harmonic_patterns,
     validate_harmonic_detector_config,
 )
+
+
+def test_ratio_tolerance_is_proportional_for_small_and_large_ratios() -> None:
+    cfg = HarmonicDetectorConfig(ratio_tolerance=0.06)
+
+    assert _ratio_abs_tolerance(0.382, 0.382, cfg) == 0.06 * 0.382
+    assert _ratio_abs_tolerance(2.618, 2.618, cfg) == 0.06 * 2.618
 
 
 def _harmonic_sample_df() -> pd.DataFrame:

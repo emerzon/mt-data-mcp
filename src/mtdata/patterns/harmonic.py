@@ -526,7 +526,7 @@ def _ratios_abcd(points: List[_SwingPoint]) -> Optional[Dict[str, float]]:
 
 
 def _ratio_abs_tolerance(lo: float, hi: float, cfg: HarmonicDetectorConfig) -> float:
-    basis = max(1.0, abs(float(lo)), abs(float(hi)))
+    basis = max(abs(float(lo)), abs(float(hi)))
     return max(1e-9, float(cfg.ratio_tolerance) * basis)
 
 
