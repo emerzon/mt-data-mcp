@@ -575,22 +575,22 @@ mtdata-cli regime_detect EURUSD --method bocpd --threshold 0.5
 ```bash
 # Rank co-moving symbols with transformed-return correlations
 mtdata-cli correlation_matrix "EURUSD,GBPUSD,USDJPY" --timeframe H1 \
-  --limit 500 --method pearson --transform log_return --json
+  --window-bars 500 --method pearson --transform log_return --json
 
 # Use an explicit MT5 group path instead of naming symbols one-by-one
 mtdata-cli correlation_matrix --group "Forex\\Majors" --timeframe H1 \
-  --limit 120 --method pearson --transform log_return --extras metadata --json
+  --window-bars 500 --limit 120 --method pearson --transform log_return --extras metadata --json
 
 # Find candidate mean-reverting pairs inside an MT5 group
 mtdata-cli cointegration_test --group "Forex\\Majors" --timeframe H1 \
-  --limit 400 --transform log_level --significance 0.05 --json
+  --window-bars 400 --transform log_level --significance 0.05 --json
 
 # Compare a few symbols directly
 mtdata-cli causal_discover_signals "EURUSD,GBPUSD,USDJPY" --timeframe H1 \
-  --limit 800 --max-lag 5 --transform log_return --significance 0.05
+  --window-bars 800 --max-lag 5 --transform log_return --significance 0.05
 
 # Pass a single symbol to auto-expand its visible MT5 group (e.g., Forex\\Majors)
-mtdata-cli causal_discover_signals EURUSD --timeframe H1 --limit 800
+mtdata-cli causal_discover_signals EURUSD --timeframe H1 --window-bars 800
 ```
 
 For `market_scan`, `correlation_matrix`, `cointegration_test`, and

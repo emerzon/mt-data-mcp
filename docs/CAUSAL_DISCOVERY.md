@@ -16,15 +16,15 @@ If you want **co-movement**, use `correlation_matrix`. For a direct two-symbol l
 ```bash
 # Compare symbols by correlation strength
 mtdata-cli correlation_matrix "EURUSD,GBPUSD,USDJPY" --timeframe H1 \
-  --limit 500 --method pearson --transform log_return --json
+  --window-bars 500 --method pearson --transform log_return --json
 
 # Use an explicit MT5 group path for easier basket selection
 mtdata-cli correlation_matrix --group "Forex\\Majors" --timeframe H1 \
-  --limit 120 --method pearson --transform log_return --json
+  --window-bars 500 --limit 120 --method pearson --transform log_return --json
 
 # Test an MT5 group for candidate cointegrated pairs
 mtdata-cli cointegration_test --group "Forex\\Majors" --timeframe H1 \
-  --limit 400 --transform log_level --significance 0.05 --json
+  --window-bars 400 --transform log_level --significance 0.05 --json
 
 # Estimate whether the first symbol leads the second
 mtdata-cli cross_correlation "EURUSD,GBPUSD" --timeframe H1 \
@@ -36,10 +36,10 @@ mtdata-cli cointegration_test "EURUSD,GBPUSD,EURGBP" --timeframe H1 \
 
 # Provide an explicit list of symbols
 mtdata-cli causal_discover_signals "EURUSD,GBPUSD,USDJPY" --timeframe H1 \
-  --limit 800 --max-lag 5 --transform log_return --significance 0.05
+  --window-bars 800 --max-lag 5 --transform log_return --significance 0.05
 
 # Provide a single symbol to auto-expand its visible MT5 group (e.g., Forex\Majors)
-mtdata-cli causal_discover_signals EURUSD --timeframe H1 --limit 800
+mtdata-cli causal_discover_signals EURUSD --timeframe H1 --window-bars 800
 ```
 
 ---
@@ -61,7 +61,8 @@ It accepts either:
 
 `items` is the canonical compact payload. Each row includes the correlation,
 sample count, and pairwise period window; `context` records the timeframe,
-limit, transform, and `min_overlap` used. Use `extras=metadata` when you also
+`window_bars`, transform, and `min_overlap` used. A requested `limit` records
+the output page size, not the analysis sample size. Use `extras=metadata` when you also
 need derived convenience views such as `matrix`; omit `extras` to keep only the
 ranked pair rows plus summary highlights.
 
@@ -101,7 +102,9 @@ For each ordered pair of symbols `(cause → effect)`, the tool:
 |----------|---------|-------------|
 | `symbols` | (required) | Comma-separated MT5 symbols. If you pass **one** symbol, mtdata expands to other visible symbols in the same MT5 group. |
 | `timeframe` | `H1` | Bar timeframe (`M15`, `H1`, etc.). |
-| `limit` | `500` | Bars per symbol to analyze (after alignment). |
+| `window_bars` | `500` | Maximum overlapping transformed samples analyzed. |
+| `limit` | all rows | Optional maximum number of ranked result rows returned. |
+| `offset` | `0` | Number of ranked result rows to skip before applying `limit`. |
 | `max_lag` | `5` | Maximum lag to test (≥ 1). |
 | `significance` | `0.05` | Alpha threshold for reporting “causal” links. |
 | `transform` | `log_return` | One of: `log_return`, `log_level`, `pct`, `diff`, `level`. |
