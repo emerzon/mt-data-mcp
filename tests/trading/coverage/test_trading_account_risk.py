@@ -123,6 +123,33 @@ def _bypass_auto_connect(monkeypatch):
 
 class TestTradeAccountInfo:
 
+    def test_compact_account_info_keeps_execution_identity(self):
+        from mtdata.core.trading.account import _trade_account_payload_for_mode
+
+        payload = {
+            "success": True,
+            "login": 123456,
+            "server": "Broker-Demo",
+            "company": "Broker Inc.",
+            "account_type": "demo",
+            "is_demo": True,
+            "is_live": False,
+            "trade_mode": "demo",
+            "balance": 10000.0,
+            "execution_ready": True,
+        }
+
+        result = _trade_account_payload_for_mode(payload, mode="compact")
+
+        assert result["login"] == 123456
+        assert result["server"] == "Broker-Demo"
+        assert result["company"] == "Broker Inc."
+        assert result["account_type"] == "demo"
+        assert result["is_demo"] is True
+        assert result["is_live"] is False
+        assert result["trade_mode"] == "demo"
+        assert "execution_ready" not in result
+
     @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
     def test_account_info_success(self):
         mt5 = sys.modules["MetaTrader5"]
