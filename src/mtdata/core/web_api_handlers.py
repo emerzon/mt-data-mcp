@@ -216,7 +216,15 @@ def get_instruments_response(
 
 def _compact_forecast_method_definition(method_def: Dict[str, Any]) -> Dict[str, Any]:
     out: Dict[str, Any] = {}
-    for key in ("method", "available", "requires", "category", "description", "supports_ci"):
+    for key in (
+        "method",
+        "available",
+        "requires",
+        "category",
+        "description",
+        "supports_ci",
+        "params",
+    ):
         value = method_def.get(key)
         if value is not None:
             out[key] = value

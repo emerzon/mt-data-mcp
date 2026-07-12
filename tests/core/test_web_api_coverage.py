@@ -464,6 +464,7 @@ class TestGetMethods:
                     "category": "statistical",
                     "description": "Theta method",
                     "supports_ci": True,
+                    "params": [{"name": "season_length"}],
                 }
             ],
         }
