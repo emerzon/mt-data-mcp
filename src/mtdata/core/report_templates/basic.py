@@ -162,6 +162,19 @@ def _percentile_rank(values: List[float], current: float) -> int:
         return 0
 
 
+def _bars_since_latest_pivot(values: List[float], *, high: bool) -> int:
+    """Return bars since the latest one-bar confirmed local extremum."""
+    if len(values) < 3:
+        return 0
+    for index in range(len(values) - 2, 0, -1):
+        value = values[index]
+        if high and value >= values[index - 1] and value > values[index + 1]:
+            return (len(values) - 1) - index
+        if not high and value <= values[index - 1] and value < values[index + 1]:
+            return (len(values) - 1) - index
+    return 0
+
+
 def _compute_compact_trend(rows: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
     if not rows or len(rows) < 5:
         return None
@@ -279,14 +292,8 @@ def _compute_compact_trend(rows: List[Dict[str, Any]]) -> Optional[Dict[str, Any
     if lookback >= 2:
         segment_h = clean_high[-lookback:]
         segment_l = clean_low[-lookback:]
-        try:
-            last_peak = max(range(len(segment_h)), key=lambda i: segment_h[i])
-            last_trough = min(range(len(segment_l)), key=lambda i: segment_l[i])
-            h_idx = (lookback - 1) - last_peak
-            l_idx = (lookback - 1) - last_trough
-        except Exception:
-            h_idx = 0
-            l_idx = 0
+        h_idx = _bars_since_latest_pivot(segment_h, high=True)
+        l_idx = _bars_since_latest_pivot(segment_l, high=False)
 
     # ATR% of price as basis points (bps)
     v = int(round(((atr / last_price) * 10000.0) if last_price > 0 and atr > 0 else 0.0))

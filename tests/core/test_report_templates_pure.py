@@ -23,6 +23,7 @@ from mtdata.core.report_templates.basic import (
     _get_raw_result,
     _linreg_slope_r2,
     _percentile_rank,
+    _bars_since_latest_pivot,
     _safe_float,
 )
 
@@ -251,6 +252,17 @@ def test_wilder_rma_uses_sma_seed_then_wilder_smoothing():
     assert result[13] == pytest.approx(7.5)
     assert result[14] == pytest.approx(((7.5 * 13) + 15.0) / 14.0)
     assert result[15] == pytest.approx(((result[14] * 13) + 16.0) / 14.0)
+
+
+def test_bars_since_latest_pivot_uses_recent_local_extremum() -> None:
+    assert _bars_since_latest_pivot(
+        [110.0, 100.0, 105.0, 95.0, 108.0, 96.0],
+        high=True,
+    ) == 1
+    assert _bars_since_latest_pivot(
+        [90.0, 100.0, 95.0, 105.0, 92.0, 99.0],
+        high=False,
+    ) == 1
 
 class TestComputeCompactTrend:
     def test_none_for_too_few_rows(self):
