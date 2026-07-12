@@ -15,11 +15,11 @@ def test_closed_session_context_marks_weekend_fx_but_not_crypto():
     assert closed_session_context("BTCUSD", now_epoch=saturday) is None
 
 
-def test_closed_session_context_ignores_non_forex_symbols() -> None:
+def test_closed_session_context_marks_other_non_crypto_weekend_markets() -> None:
     saturday = datetime(2026, 6, 6, 12, tzinfo=timezone.utc).timestamp()
 
-    assert closed_session_context("US500", now_epoch=saturday) is None
-    assert closed_session_context("XAUUSD", now_epoch=saturday) is None
+    assert closed_session_context("US500", now_epoch=saturday)["market_status"] == "closed"
+    assert closed_session_context("XAUUSD", now_epoch=saturday)["market_status"] == "closed"
 
 
 def test_closed_session_context_allows_fx_after_sunday_utc_reopen() -> None:

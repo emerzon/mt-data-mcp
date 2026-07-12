@@ -4,7 +4,7 @@ import math
 from datetime import datetime, timezone
 from typing import Any, Optional
 
-from ..shared.symbols import is_probably_crypto_symbol, is_probably_forex_symbol
+from ..shared.symbols import is_probably_crypto_symbol
 
 QUOTE_STALE_SECONDS = 300
 MAX_STANDARD_WEEKEND_DATA_AGE_SECONDS = 3 * 24 * 60 * 60
@@ -31,7 +31,6 @@ def closed_session_context(
     if (
         not str(symbol or "").strip()
         or is_probably_crypto_symbol(symbol)
-        or not is_probably_forex_symbol(symbol)
     ):
         return None
     try:
