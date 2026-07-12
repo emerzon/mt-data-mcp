@@ -81,7 +81,12 @@ the lower p-value after testing both directions because that would cherry-pick
 the test result. For a two-symbol request, reverse the input order and run the
 tool again when the opposite economic orientation is relevant.
 
-With `method=engle_granger`, it evaluates unordered pairs. With `method=johansen`, it evaluates the aligned basket jointly and returns trace/max-eigenvalue rank estimates plus cointegrating vectors.
+With `method=engle_granger`, it evaluates unordered pairs. With
+`method=johansen`, it evaluates the aligned basket jointly and returns
+trace/max-eigenvalue rank estimates plus cointegrating vectors. Johansen's
+critical-value tables support `significance` values of `0.01`, `0.05`, and
+`0.1` only; other values return an `invalid_input` error. Engle-Granger accepts
+any significance value strictly between zero and one.
 
 It accepts either:
 

@@ -2810,6 +2810,8 @@ def cointegration_test(  # noqa: C901
         trend: Deterministic trend term for the test: "c", "ct", "ctt", or "n".
         k_ar_diff: Number of lagged differences for the Johansen test.
         significance: Alpha threshold for reporting cointegrated pairs.
+            Johansen supports only 0.01, 0.05, or 0.1 because its critical
+            value tables contain only those three levels.
         min_overlap: Minimum overlapping transformed samples required per pair;
             values above window_bars are capped to window_bars with a warning.
         detail: "compact" keeps pair results concise; "full" adds overlap/window

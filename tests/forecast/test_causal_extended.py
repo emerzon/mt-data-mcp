@@ -1280,6 +1280,15 @@ class TestCointegrationTest:
         assert result["success"] is False
         assert result["error_code"] == "invalid_trend"
 
+    @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})
+    def test_johansen_rejects_unsupported_significance(self):
+        result = self._unwrapped()("A,B", method="johansen", significance=0.025)
+        assert result["success"] is False
+        assert result["error_code"] == "invalid_input"
+        assert result["error"] == (
+            "Johansen significance must be one of: 0.01, 0.05, 0.1."
+        )
+
     def test_symbols_and_group_are_mutually_exclusive(self):
         result = self._unwrapped()("A,B", group="Forex\\Majors")
         assert result["success"] is False
