@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-"""Regime and change-point utilities.
+"""Bayesian Online Change-Point Detection (BOCPD) numeric helpers.
 
-Includes a lightweight Bayesian Online Change-Point Detection (BOCPD)
-implementation for Gaussian data with unknown mean/variance using a
-conjugate Normal-Inverse-Gamma model, following Adams & MacKay (2007).
-
-This file is self-contained (NumPy-only) and suitable for streaming or
-offline runs over a few thousand observations.
+Gaussian data with unknown mean/variance using a conjugate
+Normal-Inverse-Gamma model (Adams & MacKay, 2007). Owned by the regime
+stack; imported by ``core.regime.methods.bocpd`` and ``regime.api``.
+Self-contained (NumPy/SciPy) and suitable for streaming or offline runs
+over a few thousand observations.
 """
 
 from typing import Dict

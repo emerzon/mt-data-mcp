@@ -453,7 +453,7 @@ class TestRegimeDetectBOCPD:
         cp = np.zeros(49)
         cp[20] = 0.8
         with (
-            patch("mtdata.utils.regime.bocpd_gaussian", return_value={"cp_prob": cp}),
+            patch("mtdata.utils.bocpd.bocpd_gaussian", return_value={"cp_prob": cp}),
             caplog.at_level("DEBUG", logger="mtdata.core.regime"),
         ):
             fn = _get_regime_detect()
@@ -491,7 +491,7 @@ class TestRegimeDetectBOCPD:
         mock_fetch.return_value = df
         cp = np.zeros(59)
         cp[30] = 0.8
-        with patch("mtdata.utils.regime.bocpd_gaussian", return_value={"cp_prob": cp}):
+        with patch("mtdata.utils.bocpd.bocpd_gaussian", return_value={"cp_prob": cp}):
             fn = _get_regime_detect()
             res = fn(
                 "EURUSD",
@@ -511,7 +511,7 @@ class TestRegimeDetectBOCPD:
         mock_fetch.return_value = df
         cp = np.zeros(59)
         cp[30] = 0.8
-        with patch("mtdata.utils.regime.bocpd_gaussian", return_value={"cp_prob": cp}):
+        with patch("mtdata.utils.bocpd.bocpd_gaussian", return_value={"cp_prob": cp}):
             fn = _get_regime_detect()
             res = fn(
                 "EURUSD",
@@ -530,7 +530,7 @@ class TestRegimeDetectBOCPD:
         df = _make_df(50)
         mock_fetch.return_value = df
         cp = np.zeros(50)
-        with patch("mtdata.utils.regime.bocpd_gaussian", return_value={"cp_prob": cp}):
+        with patch("mtdata.utils.bocpd.bocpd_gaussian", return_value={"cp_prob": cp}):
             fn = _get_regime_detect()
             res = fn("EURUSD", limit=50, method="bocpd", target="price", detail="full")
         assert "error" not in res or isinstance(res.get("error"), str)
@@ -542,7 +542,7 @@ class TestRegimeDetectBOCPD:
         df = _make_df(60)
         mock_fetch.return_value = df
         cp = np.zeros(59)
-        with patch("mtdata.utils.regime.bocpd_gaussian", return_value={"cp_prob": cp}):
+        with patch("mtdata.utils.bocpd.bocpd_gaussian", return_value={"cp_prob": cp}):
             fn = _get_regime_detect()
             res = fn(
                 "EURUSD",
@@ -565,7 +565,7 @@ class TestRegimeDetectBOCPD:
         def _fake_bocpd(x, **_kwargs):
             return {"cp_prob": np.zeros(len(x))}
 
-        with patch("mtdata.utils.regime.bocpd_gaussian", side_effect=_fake_bocpd):
+        with patch("mtdata.utils.bocpd.bocpd_gaussian", side_effect=_fake_bocpd):
             fn = _get_regime_detect()
             res = fn(
                 "EURUSD",
@@ -592,7 +592,7 @@ class TestRegimeDetectBOCPD:
         df = _make_df(50)
         mock_fetch.return_value = df
         cp = np.zeros(49)
-        with patch("mtdata.utils.regime.bocpd_gaussian", return_value={"cp_prob": cp}):
+        with patch("mtdata.utils.bocpd.bocpd_gaussian", return_value={"cp_prob": cp}):
             fn = _get_regime_detect()
             res = fn(
                 "EURUSD", limit=50, method="bocpd", detail="full", include_series=True
@@ -607,7 +607,7 @@ class TestRegimeDetectBOCPD:
         mock_fetch.return_value = df
         cp = np.zeros(59)
         cp[40] = 0.9
-        with patch("mtdata.utils.regime.bocpd_gaussian", return_value={"cp_prob": cp}):
+        with patch("mtdata.utils.bocpd.bocpd_gaussian", return_value={"cp_prob": cp}):
             fn = _get_regime_detect()
             res = fn(
                 "EURUSD",
@@ -1404,7 +1404,7 @@ class TestRegimeDetectEdgeCases:
         df = _make_df(50)
         mock_fetch.return_value = df
         cp = np.zeros(49)
-        with patch("mtdata.utils.regime.bocpd_gaussian", return_value={"cp_prob": cp}):
+        with patch("mtdata.utils.bocpd.bocpd_gaussian", return_value={"cp_prob": cp}):
             fn = _get_regime_detect()
             res = fn(
                 "EURUSD",

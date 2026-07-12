@@ -376,7 +376,7 @@ def _walkforward_quantile_threshold_calibration(
     starts = starts[-max_w:]
 
     try:
-        from .....utils.regime import bocpd_gaussian
+        from .....utils.bocpd import bocpd_gaussian
 
         rng = np.random.default_rng(seed_val)
         null_maxima: List[float] = []

@@ -48,7 +48,7 @@ def test_regime_detect_defaults_to_compact_output() -> None:
             side_effect=lambda x: f"T{x}",
         ),
         patch(
-            "mtdata.utils.regime.bocpd_gaussian",
+            "mtdata.utils.bocpd.bocpd_gaussian",
             return_value={"cp_prob": cp},
         ),
     ):
@@ -77,7 +77,7 @@ def test_regime_detect_accepts_standard_detail_as_compact() -> None:
         patch("mtdata.core.regime.api._fetch_history", return_value=_sample_df(80)),
         patch("mtdata.core.regime.api._resolve_denoise_base_col", return_value="close"),
         patch("mtdata.core.regime.api._format_time_minimal", side_effect=lambda x: f"T{x}"),
-        patch("mtdata.utils.regime.bocpd_gaussian", return_value={"cp_prob": cp}),
+        patch("mtdata.utils.bocpd.bocpd_gaussian", return_value={"cp_prob": cp}),
     ):
         out = raw(
             symbol="EURUSD",
@@ -133,7 +133,7 @@ def test_bocpd_uses_crypto_sensitive_auto_hazard_default() -> None:
             side_effect=lambda x: f"T{x}",
         ),
         patch(
-            "mtdata.utils.regime.bocpd_gaussian",
+            "mtdata.utils.bocpd.bocpd_gaussian",
             side_effect=_fake_bocpd,
         ),
     ):
@@ -181,7 +181,7 @@ def test_bocpd_hazard_lambda_param_override_is_preserved() -> None:
             side_effect=lambda x: f"T{x}",
         ),
         patch(
-            "mtdata.utils.regime.bocpd_gaussian",
+            "mtdata.utils.bocpd.bocpd_gaussian",
             side_effect=_fake_bocpd,
         ),
     ):
@@ -217,7 +217,7 @@ def test_bocpd_cp_threshold_param_override_is_preserved() -> None:
             side_effect=lambda x: f"T{x}",
         ),
         patch(
-            "mtdata.utils.regime.bocpd_gaussian",
+            "mtdata.utils.bocpd.bocpd_gaussian",
             return_value={"cp_prob": cp},
         ),
     ):
@@ -251,7 +251,7 @@ def test_bocpd_hazard_mode_auto_calibrated_sets_sources_and_diagnostics() -> Non
             side_effect=lambda x: f"T{x}",
         ),
         patch(
-            "mtdata.utils.regime.bocpd_gaussian",
+            "mtdata.utils.bocpd.bocpd_gaussian",
             return_value={"cp_prob": cp},
         ),
     ):
@@ -290,7 +290,7 @@ def test_bocpd_hazard_lambda_override_beats_auto_calibrated_mode() -> None:
             side_effect=lambda x: f"T{x}",
         ),
         patch(
-            "mtdata.utils.regime.bocpd_gaussian",
+            "mtdata.utils.bocpd.bocpd_gaussian",
             return_value={"cp_prob": cp},
         ),
     ):
@@ -430,7 +430,7 @@ def test_bocpd_zero_change_points_includes_tuning_hint() -> None:
             side_effect=lambda x: f"T{x}",
         ),
         patch(
-            "mtdata.utils.regime.bocpd_gaussian",
+            "mtdata.utils.bocpd.bocpd_gaussian",
             return_value={"cp_prob": cp},
         ),
     ):
@@ -470,7 +470,7 @@ def test_bocpd_filters_last_bar_spike_with_strict_confirmation() -> None:
             side_effect=lambda x: f"T{x}",
         ),
         patch(
-            "mtdata.utils.regime.bocpd_gaussian",
+            "mtdata.utils.bocpd.bocpd_gaussian",
             side_effect=_fake_bocpd,
         ),
     ):
@@ -511,7 +511,7 @@ def test_bocpd_walkforward_threshold_calibration_metadata_is_exposed() -> None:
             side_effect=lambda x: f"T{x}",
         ),
         patch(
-            "mtdata.utils.regime.bocpd_gaussian",
+            "mtdata.utils.bocpd.bocpd_gaussian",
             side_effect=_fake_bocpd,
         ),
     ):
@@ -541,7 +541,7 @@ def test_bocpd_summary_contains_reliability_fields() -> None:
             side_effect=lambda x: f"T{x}",
         ),
         patch(
-            "mtdata.utils.regime.bocpd_gaussian",
+            "mtdata.utils.bocpd.bocpd_gaussian",
             return_value={"cp_prob": cp},
         ),
     ):
@@ -608,7 +608,7 @@ def test_bocpd_calibrated_threshold_does_not_overreject_at_edge_by_default() -> 
             return_value=fake_thr_cal,
         ),
         patch(
-            "mtdata.utils.regime.bocpd_gaussian",
+            "mtdata.utils.bocpd.bocpd_gaussian",
             side_effect=_fake_bocpd,
         ),
     ):
@@ -673,7 +673,7 @@ def test_bocpd_default_cp_confirm_bars_is_live_mode_one() -> None:
             return_value=fake_thr_cal,
         ),
         patch(
-            "mtdata.utils.regime.bocpd_gaussian",
+            "mtdata.utils.bocpd.bocpd_gaussian",
             side_effect=_fake_bocpd,
         ),
     ):

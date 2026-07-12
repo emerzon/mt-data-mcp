@@ -1189,7 +1189,7 @@ def regime_detect(  # noqa: C901
         t_fmt = [_format_time_minimal(tt) for tt in t]
 
         if method == "bocpd":
-            from ...utils.regime import bocpd_gaussian
+            from ...utils.bocpd import bocpd_gaussian
 
             hazard_mode = (
                 str(p.get("hazard_mode", "auto_calibrated") or "auto_calibrated")
