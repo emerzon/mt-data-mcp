@@ -491,84 +491,72 @@ def _build_internal_schema(public_schema: Dict[str, Any]) -> Dict[str, Any]:
     return internal_schema
 
 
+def _attach_schema_to_tool(
+    name: str,
+    obj: Any,
+    manager_tool: Any,
+    shared_defs: Dict[str, Any],
+) -> bool:
+    func = _extract_callable(obj) or _extract_callable(manager_tool)
+    if not callable(func):
+        return False
+    info = _get_function_info(func)
+    public_schema = getattr(manager_tool, "parameters", None)
+    if not isinstance(public_schema, dict) or not public_schema:
+        public_schema = _build_minimal_schema(info)
+        public_schema = _enrich_schema_with_shared_defs(public_schema, info)
+        public_schema = copy.deepcopy(_schema_obj(public_schema))
+    else:
+        public_schema = copy.deepcopy(public_schema)
+
+    _merge_shared_defs(public_schema, shared_defs)
+    for patcher in _TOOL_SCHEMA_PATCHERS.get(name, ()):
+        patcher(public_schema)
+    _enforce_public_output_contract(public_schema)
+    public_schema = _prune_unused_defs(_compact_schema_shape(public_schema))
+    internal_schema = _build_internal_schema(public_schema)
+    concise_description = _summarize_description(
+        str(getattr(manager_tool, "description", None) or info.get("doc") or "")
+    )
+
+    if manager_tool is not None:
+        setattr(manager_tool, "parameters", copy.deepcopy(public_schema))
+        if concise_description:
+            setattr(manager_tool, "description", concise_description)
+    if obj is not None:
+        setattr(obj, "schema", copy.deepcopy(internal_schema))
+        if concise_description:
+            setattr(obj, "description", concise_description)
+    setattr(func, "schema", copy.deepcopy(internal_schema))
+    if concise_description:
+        setattr(func, "description", concise_description)
+    return True
+
+
 def attach_schemas_to_tools(mcp: Any, shared_enums: Dict[str, Any]) -> None:
-    """Attach enriched JSON Schemas to registered MCP tools on the given server."""
+    """Attach schemas independently so one malformed tool cannot abort startup."""
     try:
         registry = get_mcp_registry(mcp) or {}
         manager_tools = dict(_iter_manager_tools(mcp))
-        if not registry and not manager_tools:
-            return
-
         shared_defs = server_shared_defs(shared_enums)
-        all_names = sorted(set(registry.keys()) | set(manager_tools.keys()))
+    except Exception as exc:
+        logger.error("schema attachment initialization failed: %s", exc)
+        return
 
-        for name in all_names:
-            obj = registry.get(name)
-            manager_tool = manager_tools.get(name)
-            func = _extract_callable(obj) or _extract_callable(manager_tool)
-            if not callable(func):
-                continue
-
-            info = _get_function_info(func)
-            public_schema = getattr(manager_tool, "parameters", None)
-            if not isinstance(public_schema, dict) or not public_schema:
-                public_schema = _build_minimal_schema(info)
-                public_schema = _enrich_schema_with_shared_defs(public_schema, info)
-                public_schema = copy.deepcopy(_schema_obj(public_schema))
-            else:
-                public_schema = copy.deepcopy(public_schema)
-
-            _safe_schema_op(
-                f"update_public_defs:{name}",
-                lambda: _merge_shared_defs(public_schema, shared_defs),
-            )
-            _safe_schema_op(
-                f"patch_public_params:{name}",
-                lambda: [patcher(public_schema) for patcher in _TOOL_SCHEMA_PATCHERS.get(name, ())],
-            )
-            _safe_schema_op(
-                f"enforce_output_contract:{name}",
-                lambda: _enforce_public_output_contract(public_schema),
-            )
-
-            public_schema = _compact_schema_shape(public_schema)
-            public_schema = _prune_unused_defs(public_schema)
-            internal_schema = _build_internal_schema(public_schema)
-
-            concise_description = _summarize_description(
-                str(getattr(manager_tool, "description", None) or info.get("doc") or "")
-            )
-
-            if manager_tool is not None:
-                _safe_schema_op(
-                    f"set_public_schema:{name}",
-                    lambda: setattr(manager_tool, "parameters", copy.deepcopy(public_schema)),
+    attached = 0
+    failed = 0
+    for name in sorted(set(registry.keys()) | set(manager_tools.keys())):
+        try:
+            attached += int(
+                _attach_schema_to_tool(
+                    name,
+                    registry.get(name),
+                    manager_tools.get(name),
+                    shared_defs,
                 )
-                if concise_description:
-                    _safe_schema_op(
-                        f"set_public_description:{name}",
-                        lambda: setattr(manager_tool, "description", concise_description),
-                    )
-
-            if obj is not None:
-                _safe_schema_op(
-                    f"set_obj_schema:{name}",
-                    lambda: setattr(obj, "schema", copy.deepcopy(internal_schema)),
-                )
-                if concise_description:
-                    _safe_schema_op(
-                        f"set_obj_description:{name}",
-                        lambda: setattr(obj, "description", concise_description),
-                    )
-
-            _safe_schema_op(
-                f"set_func_schema:{name}",
-                lambda: setattr(func, "schema", copy.deepcopy(internal_schema)),
             )
-            if concise_description:
-                _safe_schema_op(
-                    f"set_func_description:{name}",
-                    lambda: setattr(func, "description", concise_description),
-                )
-    except Exception:
-        pass
+        except Exception as exc:
+            failed += 1
+            logger.warning("schema attachment failed for tool %s: %s", name, exc)
+    if failed:
+        logger.warning("schema attachment completed: attached=%d failed=%d", attached, failed)

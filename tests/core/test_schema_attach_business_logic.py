@@ -36,6 +36,32 @@ def _attach_tool_schema(monkeypatch, tool_name: str, base_schema: dict, *, share
     return tool_obj, tool_func, apply_calls
 
 
+def test_schema_attachment_failure_is_isolated_per_tool(monkeypatch, caplog) -> None:
+    calls = []
+    monkeypatch.setattr(
+        schema_attach_mod,
+        "get_mcp_registry",
+        lambda _mcp: {"bad": object(), "good": object()},
+    )
+    monkeypatch.setattr(schema_attach_mod, "_iter_manager_tools", lambda _mcp: [])
+    monkeypatch.setattr(schema_attach_mod, "server_shared_defs", lambda _enums: {})
+
+    def attach(name, *_args):
+        calls.append(name)
+        if name == "bad":
+            raise TypeError("bad annotation")
+        return True
+
+    monkeypatch.setattr(schema_attach_mod, "_attach_schema_to_tool", attach)
+
+    with caplog.at_level("WARNING"):
+        schema_attach_mod.attach_schemas_to_tools(object(), {})
+
+    assert calls == ["bad", "good"]
+    assert "schema attachment failed for tool bad" in caplog.text
+    assert "attached=1 failed=1" in caplog.text
+
+
 def test_attach_schemas_to_tools_patches_forecast_generate(monkeypatch) -> None:
     tool_obj, tool_func, apply_calls = _attach_tool_schema(
         monkeypatch,
