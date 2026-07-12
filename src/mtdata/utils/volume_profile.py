@@ -446,24 +446,29 @@ def _compute_value_area(
     max_index = max(by_index)
 
     while included_volume < target and (min(included) > min_index or max(included) < max_index):
-        lower_index = min(included) - 1
-        upper_index = max(included) + 1
+        lower_candidates = [index for index in by_index if index < min(included)]
+        upper_candidates = [index for index in by_index if index > max(included)]
+        lower_index = max(lower_candidates) if lower_candidates else None
+        upper_index = min(upper_candidates) if upper_candidates else None
         lower_volume = (
-            float(by_index[lower_index]["volume"]) if lower_index in by_index else -1.0
+            float(by_index[lower_index]["volume"]) if lower_index is not None else -1.0
         )
         upper_volume = (
-            float(by_index[upper_index]["volume"]) if upper_index in by_index else -1.0
+            float(by_index[upper_index]["volume"]) if upper_index is not None else -1.0
         )
         if lower_volume < 0.0 and upper_volume < 0.0:
             break
         if lower_volume == upper_volume and lower_volume >= 0.0:
+            assert lower_index is not None and upper_index is not None
             included.add(lower_index)
             included.add(upper_index)
             included_volume += lower_volume + upper_volume
         elif lower_volume > upper_volume:
+            assert lower_index is not None
             included.add(lower_index)
             included_volume += lower_volume
         else:
+            assert upper_index is not None
             included.add(upper_index)
             included_volume += upper_volume
 

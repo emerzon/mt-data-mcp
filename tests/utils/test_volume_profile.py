@@ -71,6 +71,29 @@ def test_compute_volume_profile_expands_value_area_ties_deterministically():
     assert level_shares == {"POC": 0.5, "VAH": 0.2, "VAL": 0.2}
 
 
+def test_compute_volume_profile_expands_across_empty_price_buckets():
+    rows = [
+        {"last": 10.0, "real_volume": 10},
+        {"last": 12.0, "real_volume": 5},
+    ]
+
+    result = compute_volume_profile(
+        rows,
+        VolumeProfileConfig(
+            price_source="last",
+            bucket_size=1.0,
+            value_area_pct=0.90,
+            price_digits=0,
+            reference_price=10.0,
+        ),
+    )
+
+    assert result["value_area"]["bucket_indexes"] == [0, 2]
+    assert result["value_area"]["volume_share"] == 1.0
+    assert result["val"]["price"] == 10.0
+    assert result["vah"]["price"] == 13.0
+
+
 def test_compute_volume_profile_drops_missing_last_prices():
     rows = [
         {"bid": 1.0, "ask": 1.2, "last": 0, "tick_volume": 10},
