@@ -1,12 +1,10 @@
 import json
 import os
-import time
 from typing import Any, Callable, Dict, Optional
 
 from ....shared.output_precision import resolve_output_precision
 from ....utils.minimal_output import _is_empty_value
 from ....utils.minimal_output import format_result_minimal as _shared_minimal
-from ...mt5_gateway import create_mt5_gateway
 from ...output_contract import apply_output_verbosity
 from ...output_serialization import json_default as _json_default
 from ...output_serialization import sanitize_json as _sanitize_json
@@ -102,75 +100,6 @@ def _build_cli_timezone_meta_brief(result: Any) -> Dict[str, Any]:
     client_meta = full.get("client")
     if isinstance(client_meta, dict):
         out["client"] = {"tz": client_meta.get("tz"), "now": client_meta.get("now")}
-    return out
-
-
-def _build_candle_cli_verbose_meta(result: Any) -> Dict[str, Any]:
-    if not isinstance(result, dict):
-        return {}
-    out: Dict[str, Any] = {}
-    meta = result.get("meta")
-    diagnostics = meta.get("diagnostics") if isinstance(meta, dict) else None
-    if isinstance(diagnostics, dict):
-        for key in ("query", "indicators", "denoise", "session_gaps", "simplify"):
-            value = diagnostics.get(key)
-            if isinstance(value, dict):
-                out[key] = dict(value)
-    warnings = result.get("warnings")
-    if isinstance(warnings, list) and warnings:
-        out["warnings"] = [str(w) for w in warnings]
-    session_gaps = result.get("session_gaps")
-    if isinstance(session_gaps, list) and session_gaps:
-        out["session_gaps_preview"] = session_gaps[:3]
-    return out
-
-
-def _build_market_ticker_cli_verbose_meta(result: Any) -> Dict[str, Any]:
-    if not isinstance(result, dict):
-        return {}
-    out: Dict[str, Any] = {}
-    meta = result.get("meta")
-    diagnostics = meta.get("diagnostics") if isinstance(meta, dict) else None
-    if not isinstance(diagnostics, dict):
-        diagnostics = result.get("diagnostics")
-    if isinstance(diagnostics, dict):
-        for key in (
-            "source",
-            "cache_used",
-            "query_latency_ms",
-            "data_freshness_seconds",
-            "data_freshness_anchor",
-            "data_freshness_metric",
-        ):
-            if key in diagnostics:
-                out[key] = diagnostics.get(key)
-    tick_epoch = result.get("time")
-    if isinstance(tick_epoch, (int, float)):
-        out["tick_time_epoch"] = float(tick_epoch)
-        if "data_freshness_seconds" not in out:
-            try:
-                out["data_freshness_seconds"] = max(
-                    0.0,
-                    time.time() - float(tick_epoch),
-                )
-                out["data_freshness_anchor"] = "wall_clock"
-                out["data_freshness_metric"] = "last_tick_age_seconds"
-            except Exception:
-                pass
-    for field in ("bid", "ask", "spread", "spread_points", "spread_cost_per_lot"):
-        if field in result:
-            out[field] = result.get(field)
-    try:
-        mt5 = create_mt5_gateway()
-        terminal = mt5.terminal_info() if hasattr(mt5, "terminal_info") else None
-        if terminal is not None:
-            out["terminal"] = {
-                "connected": bool(getattr(terminal, "connected", False)),
-                "trade_allowed": bool(getattr(terminal, "trade_allowed", False)),
-                "ping_last": getattr(terminal, "ping_last", None),
-            }
-    except Exception:
-        pass
     return out
 
 
@@ -586,28 +515,6 @@ def _normalize_market_scan_cli_payload(result: Any, *, verbose: bool) -> Any:
         if not _is_empty_value(value):
             compact_out[key] = value
     return compact_out or result
-
-
-def _rows_to_table(rows: Any) -> Any:
-    if not isinstance(rows, list):
-        return rows
-    columns: list[str] = []
-    for row in rows:
-        if not isinstance(row, dict):
-            continue
-        for key in row:
-            col = str(key)
-            if col not in columns:
-                columns.append(col)
-    if not columns:
-        return {"columns": [], "rows": []}
-    return {
-        "columns": columns,
-        "rows": [
-            [row.get(col) if isinstance(row, dict) else None for col in columns]
-            for row in rows
-        ],
-    }
 
 
 def _normalize_candle_cli_payload(result: Any, *, fmt: str) -> Any:
