@@ -508,6 +508,33 @@ def test_market_ticker_price_field_returns_simple_price() -> None:
     assert out["meta"]["tool"] == "market_ticker"
 
 
+def test_market_ticker_reports_weekend_relaxed_freshness_basis() -> None:
+    tick = SimpleNamespace(bid=1.1, ask=1.2, last=1.15, volume=5, time=100.0)
+    freshness = {
+        "data_age_seconds": 1000,
+        "data_stale": False,
+        "stale_after_seconds": 300,
+        "freshness_policy_relaxed": True,
+        "freshness_basis": "weekend_relaxed_max_3d",
+    }
+    with patch("mtdata.core.market_depth.mt5") as mt5, patch(
+        "mtdata.core.market_depth.build_tick_freshness_context",
+        return_value=freshness,
+    ):
+        mt5.symbol_select.return_value = True
+        mt5.symbol_info.return_value = SimpleNamespace(
+            digits=5,
+            point=0.00001,
+            trade_tick_size=0.00001,
+            trade_tick_value=1.0,
+            currency_profit="USD",
+        )
+        mt5.symbol_info_tick.return_value = tick
+        out = _raw_market_ticker("EURUSD", price_field="mid")
+
+    assert out["freshness_basis"] == "weekend_relaxed_max_3d"
+
+
 def test_market_ticker_price_field_reports_unavailable_last() -> None:
     tick = SimpleNamespace(
         bid=1.1,

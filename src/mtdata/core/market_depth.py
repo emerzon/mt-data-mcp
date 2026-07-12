@@ -726,7 +726,6 @@ def market_ticker(
                 age_display = _market_ticker_age_display(rounded_age_seconds)
                 if age_display is not None:
                     out["data_age"] = age_display
-                out["freshness_basis"] = "absolute_300s"
                 if out["data_stale"]:
                     out["warning"] = (
                         "Tick data may be stale; last tick time is "

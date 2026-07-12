@@ -3,7 +3,12 @@ from __future__ import annotations
 import math
 from typing import Any, Callable, Dict
 
-from .freshness import QUOTE_STALE_SECONDS, closed_session_context, format_freshness_label
+from .freshness import (
+    MAX_STANDARD_WEEKEND_DATA_AGE_SECONDS,
+    QUOTE_STALE_SECONDS,
+    closed_session_context,
+    format_freshness_label,
+)
 
 TICK_VOLUME_SEMANTICS = "tick_volume_is_broker_tick_count_not_lots"
 
@@ -99,6 +104,11 @@ def build_tick_freshness_context(
     }
     if closed_session:
         out.update(closed_session)
+    out["freshness_basis"] = (
+        f"weekend_relaxed_max_{int(MAX_STANDARD_WEEKEND_DATA_AGE_SECONDS // 86400)}d"
+        if normalize_policy_relaxed(out.get("freshness_policy_relaxed"))
+        else f"absolute_{stale_after}s"
+    )
 
     freshness = format_freshness_label(
         data_stale=data_stale,
