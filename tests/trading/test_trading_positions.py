@@ -41,6 +41,14 @@ def test_ticket_resolution_uses_shared_mt5_field_priority():
     assert positions._resolved_ticket(SimpleNamespace(), fallback=7) == 7
 
 
+def test_position_sort_key_normalizes_milliseconds_to_seconds():
+    older = SimpleNamespace(time_update_msc=1_700_000_000_000)
+    newer = SimpleNamespace(time_update=1_700_000_001)
+
+    assert positions._position_sort_key(older) == 1_700_000_000
+    assert max([older, newer], key=positions._position_sort_key) is newer
+
+
 def test_normalize_trade_read_output_keeps_request_echoes_by_default():
     out = positions._normalize_trade_read_output(
         [{"ticket": 1, "symbol": "EURUSD"}],

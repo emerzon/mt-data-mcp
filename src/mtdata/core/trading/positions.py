@@ -47,26 +47,18 @@ def _utc_epoch_identity(value: Any) -> float:
 
 def _position_sort_key(position: Any) -> float:
     """Prefer the most recently updated position when multiple candidates exist."""
-    for field in ("time_update_msc", "time_msc", "time_update", "time"):
-        try:
-            value = float(getattr(position, field, 0.0) or 0.0)
-            if math.isfinite(value):
-                return value
-        except Exception:
-            continue
-    return 0.0
+    return validation._time_sort_key(
+        position,
+        ("time_update_msc", "time_msc", "time_update", "time"),
+    )
 
 
 def _order_sort_key(order: Any) -> float:
     """Prefer the most recently updated pending order when multiple candidates exist."""
-    for field in ("time_done_msc", "time_setup_msc", "time_done", "time_setup", "time"):
-        try:
-            value = float(getattr(order, field, 0.0) or 0.0)
-            if math.isfinite(value):
-                return value
-        except Exception:
-            continue
-    return 0.0
+    return validation._time_sort_key(
+        order,
+        ("time_done_msc", "time_setup_msc", "time_done", "time_setup", "time"),
+    )
 
 
 def _position_side_matches(position: Any, side: Optional[str], mt5: Any) -> bool:

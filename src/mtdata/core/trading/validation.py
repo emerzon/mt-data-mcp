@@ -247,6 +247,22 @@ def _safe_float_attr(obj: Any, name: str, default: Optional[float] = 0.0) -> Opt
     return value if math.isfinite(value) else default
 
 
+def _time_sort_key(obj: Any, fields: tuple[str, ...]) -> float:
+    """Return the first valid MT5 timestamp normalized to epoch seconds."""
+    for field in fields:
+        try:
+            raw_value = getattr(obj, field, None)
+            if raw_value is None or isinstance(raw_value, bool):
+                continue
+            value = float(raw_value)
+            if not math.isfinite(value) or value <= 0.0:
+                continue
+            return value / 1000.0 if field.endswith("_msc") else value
+        except Exception:
+            continue
+    return 0.0
+
+
 def _resolve_position_side(position: Any, mt5: Any = None) -> Optional[str]:
     """Resolve an MT5 position type to ``BUY`` or ``SELL``."""
     try:
