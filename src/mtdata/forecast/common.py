@@ -294,12 +294,29 @@ def _create_training_dataframes(series: np.ndarray, fh: int, exog_used: Optional
     return Y_df, X_df, Xf_df
 
 
-def default_seasonality(timeframe: str) -> int:
+def default_seasonality(timeframe: str, observed_times: Any = None) -> int:
     try:
         sec = TIMEFRAME_SECONDS.get(timeframe)
         if not sec or sec <= 0:
             return 0
         if sec < 86400:
+            if observed_times is not None:
+                try:
+                    observed = pd.Series(observed_times)
+                    times = pd.to_datetime(
+                        observed,
+                        unit="s" if pd.api.types.is_numeric_dtype(observed) else None,
+                        utc=True,
+                        errors="coerce",
+                    )
+                    valid = pd.Series(times).dropna()
+                    daily_counts = valid.groupby(valid.dt.date).size()
+                    if len(daily_counts) >= 2:
+                        empirical = int(round(float(daily_counts.median())))
+                        if empirical >= 2:
+                            return empirical
+                except Exception:
+                    pass
             return int(round(86400.0 / float(sec)))
         if timeframe == 'D1':
             return 5

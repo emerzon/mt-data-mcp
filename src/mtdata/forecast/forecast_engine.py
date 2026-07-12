@@ -542,6 +542,8 @@ def build_training_context(
         prefetched_denoise_spec=prefetched_denoise_spec,
         denoise=denoise,
     )
+    if p.get("seasonality") is None and "time" in df.columns:
+        seasonality = default_seasonality(timeframe, df["time"])
     target_series, _, base_col, _ = _prepare_target_series_context(
         df=df,
         quantity_l=quantity_l,
@@ -1244,6 +1246,8 @@ def forecast_engine(  # noqa: C901
             return {"error": str(ex)}
         except Exception as ex:
             return {"error": str(ex)}
+        if p.get("seasonality") is None and "time" in df.columns:
+            seasonality = default_seasonality(timeframe, df["time"])
         denoise_warnings = _consume_denoise_warnings(df)
 
         # Prepare target series, honoring target_spec if provided

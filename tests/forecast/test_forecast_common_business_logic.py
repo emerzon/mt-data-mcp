@@ -86,6 +86,18 @@ def test_timeframe_helpers_cover_key_branches():
     assert fc.default_seasonality("MN1") == 12
     assert fc.default_seasonality("NOPE") == 0
 
+
+def test_default_seasonality_uses_observed_session_bar_count() -> None:
+    sessions = pd.DatetimeIndex(
+        [
+            *pd.date_range("2026-01-05 14:30", periods=7, freq="h", tz="UTC"),
+            *pd.date_range("2026-01-06 14:30", periods=7, freq="h", tz="UTC"),
+            *pd.date_range("2026-01-07 14:30", periods=7, freq="h", tz="UTC"),
+        ]
+    )
+
+    assert fc.default_seasonality("H1", sessions) == 7
+
     assert fc.next_times_from_last(100.0, 60, 3) == [160.0, 220.0, 280.0]
     assert fc.pd_freq_from_timeframe("H4") == "4h"
     assert fc.pd_freq_from_timeframe("x") == "D"
