@@ -11,6 +11,7 @@ import numpy as np
 import pandas as pd
 
 from ..shared.constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
+from ..shared.symbols import is_probably_crypto_symbol, is_probably_forex_symbol
 from ..services.data_service import (
     _is_last_bar_forming,
     _resolve_live_rate_auto_shift_seconds,
@@ -311,8 +312,8 @@ def default_seasonality(timeframe: str) -> int:
         return 0
 
 
-def bars_per_year(timeframe: str) -> float:
-    """Approximate number of bars per year for a timeframe."""
+def bars_per_year(timeframe: str, symbol: Optional[str] = None) -> float:
+    """Approximate bars per year using the symbol's trading calendar."""
     try:
         tf = str(timeframe).upper().strip()
         secs = TIMEFRAME_SECONDS.get(tf)
@@ -322,9 +323,16 @@ def bars_per_year(timeframe: str) -> float:
             return 12.0
         if tf == "W1":
             return 52.0
+        days = (
+            365.0
+            if is_probably_crypto_symbol(symbol)
+            else 260.0
+            if is_probably_forex_symbol(symbol)
+            else 252.0
+        )
         if float(secs) >= 86400.0:
-            return float((252.0 * 86400.0) / float(secs))
-        return float((252.0 * 24.0 * 3600.0) / float(secs))
+            return float((days * 86400.0) / float(secs))
+        return float((days * 24.0 * 3600.0) / float(secs))
     except Exception:
         return float("nan")
 

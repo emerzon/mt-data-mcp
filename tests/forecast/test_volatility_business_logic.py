@@ -48,8 +48,8 @@ def test_volatility_metadata_and_helper_functions(monkeypatch):
     assert vol._bars_per_year("H1") == 6048.0
     assert math.isnan(vol._bars_per_year("BAD"))
     assert vol._volatility_annualization_context("EURUSD", "H1") == (
-        6048.0,
-        "252_trading_days_24h_intraday",
+        6240.0,
+        "260_fx_weekdays_24h",
     )
     assert vol._volatility_annualization_context("BTCUSD", "H1") == (
         8760.0,
@@ -217,12 +217,12 @@ def test_forecast_volatility_general_theta_and_proxy_errors(monkeypatch):
     assert out["proxy"] == "squared_return"
     assert out["volatility_horizon"] > 0
     assert "volatility_horizon" in out["volatility_interpretation"]
-    expected_bpy = vol._bars_per_year("H1")
+    expected_bpy = vol._bars_per_year("H1", "EURUSD")
     assert out["volatility_annualized"] == pytest.approx(
         out["volatility_per_bar"] * math.sqrt(expected_bpy)
     )
     assert out["bars_per_year"] == expected_bpy
-    assert out["annualization_basis"] == "252_trading_days_24h_intraday"
+    assert out["annualization_basis"] == "260_fx_weekdays_24h"
     assert out["volatility_horizon_annualized"] == pytest.approx(
         out["volatility_horizon"] * math.sqrt(expected_bpy / 4)
     )
@@ -254,7 +254,7 @@ def test_forecast_volatility_direct_methods_and_short_data(monkeypatch):
     assert "params_explained" in out
     assert "lambda_" in out["params_explained"]
     assert "decay_factor" in out["params_explained"]
-    expected_bpy = vol._bars_per_year("H1")
+    expected_bpy = vol._bars_per_year("H1", "EURUSD")
     assert out["volatility_annualized"] == pytest.approx(
         out["volatility_per_bar"] * math.sqrt(expected_bpy)
     )
@@ -527,7 +527,7 @@ def test_forecast_volatility_ensemble_aggregates_component_methods(monkeypatch):
     assert ensemble["volatility_horizon"] == pytest.approx(
         (float(ewma["volatility_horizon"]) + float(rolling_std["volatility_horizon"])) / 2.0
     )
-    expected_bpy = vol._bars_per_year("H1")
+    expected_bpy = vol._bars_per_year("H1", "EURUSD")
     assert ensemble["volatility_annualized"] == pytest.approx(
         ensemble["volatility_per_bar"] * math.sqrt(expected_bpy)
     )

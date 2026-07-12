@@ -347,11 +347,12 @@ def _compute_performance_metrics(
     horizon: int,
     slippage_bps: float,
     trade_spacing_bars: Optional[int] = None,
+    symbol: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Compute portfolio-level performance statistics from per-trade returns."""
 
     def _empty_metrics() -> Dict[str, Any]:
-        bars_per_year = _bars_per_year(timeframe)
+        bars_per_year = _bars_per_year(timeframe, symbol)
         cadence = (
             max(1, int(trade_spacing_bars))
             if trade_spacing_bars is not None
@@ -406,7 +407,7 @@ def _compute_performance_metrics(
 
     metrics: Dict[str, Any] = {}
 
-    bars_per_year = _bars_per_year(timeframe)
+    bars_per_year = _bars_per_year(timeframe, symbol)
     cadence = max(1, int(trade_spacing_bars)) if trade_spacing_bars is not None else max(1, int(horizon))
     trades_per_year = float(bars_per_year / cadence) if math.isfinite(bars_per_year) else float('nan')
 
@@ -1081,6 +1082,7 @@ def strategy_backtest(  # noqa: C901
             1,
             float(slippage_bps),
             trade_spacing_bars=trade_spacing,
+            symbol=symbol,
         ) if trade_returns else {}
         if detail_mode == "compact" and metrics:
             metrics = _compact_metrics_payload(metrics)
@@ -1836,6 +1838,7 @@ def forecast_backtest(  # noqa: C901
                     metrics = _compute_performance_metrics(
                         trade_returns, timeframe, int(horizon), float(slippage_bps),
                         trade_spacing_bars=_spacing,
+                        symbol=symbol,
                     ) if trade_returns else {}
                     if metrics:
                         if detail_mode == "compact":

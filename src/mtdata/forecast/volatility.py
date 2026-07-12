@@ -13,7 +13,7 @@ from ..services.data_service import (
 )
 from ..shared.constants import SANITY_BARS_TOLERANCE, TIMEFRAME_MAP, TIMEFRAME_SECONDS
 from ..shared.schema import CompactFullDetailLiteral, DenoiseSpec, TimeframeLiteral
-from ..shared.symbols import is_probably_crypto_symbol
+from ..shared.symbols import is_probably_crypto_symbol, is_probably_forex_symbol
 from ..shared.validators import (
     invalid_timeframe_error,
     unsupported_timeframe_seconds_error,
@@ -471,7 +471,9 @@ def _volatility_annualization_context(symbol: str, timeframe: str) -> tuple[floa
                 float((365.0 * 24.0 * 60.0 * 60.0) / seconds_value),
                 "365_calendar_days_24h_crypto",
             )
-    return float(_bars_per_year(timeframe_name)), "252_trading_days_24h_intraday"
+    if is_probably_forex_symbol(symbol):
+        return float(_bars_per_year(timeframe_name, symbol)), "260_fx_weekdays_24h"
+    return float(_bars_per_year(timeframe_name, symbol)), "252_trading_days_generic_session"
 
 
 def _volatility_input_context(
