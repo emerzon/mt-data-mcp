@@ -361,7 +361,7 @@ Configuration (see [ENV_VARS.md](ENV_VARS.md#async-training--model-store)):
 - `MTDATA_TRAIN_TIMEOUT_*_SECONDS` — per-category training timeouts for `instant`, `fast`, `moderate`, and `heavy` methods.
 - `MTDATA_FORECAST_HEARTBEAT_SECONDS`, `MTDATA_FORECAST_CANCEL_GRACE_SECONDS`, `MTDATA_FORECAST_SWEEPER_SECONDS` — task liveness, cancellation, and cleanup tuning.
 - `MTDATA_MODEL_STORE` — root directory for cached models (default `~/.mtdata/models`).
-- `MTDATA_MODEL_TTL_DAYS` — cache expiry in days (default `7`).
+- `MTDATA_MODEL_TTL_DAYS` — cache idle expiry in days since last use (default `7`); this is not a maximum model age.
 
 `forecast_generate` will also auto-train in the background when called with `async_mode=true` and the requested method is heavy / moderate; the response includes a `task_id` you can poll with `forecast_task_status`. Without `async_mode`, `forecast_generate` blocks until the fit completes (and still caches the result for next time).
 

@@ -6,7 +6,7 @@ retraining.
 
 Configuration:
     - ``MTDATA_MODEL_STORE``: root directory (default ``~/.mtdata/models``).
-    - ``MTDATA_MODEL_TTL_DAYS``: expiry in days (default 7).
+    - ``MTDATA_MODEL_TTL_DAYS``: idle expiry in days since last use (default 7).
 
 Directory layout::
 
