@@ -1077,6 +1077,25 @@ class TestReportWarnings:
             "No report sections were available for assessment."
         )
 
+    def test_unknown_section_selection_is_not_reported_as_success(self):
+        fn = _get_report_generate()
+        rep = _make_report(sections=_make_full_sections())
+        mock_basic = MagicMock(return_value=rep)
+        with patch("mtdata.core.report_templates.template_basic", mock_basic, create=True), \
+             patch(_FMT_NUM, side_effect=str):
+            res = fn(
+                "EURUSD",
+                template="basic",
+                include_sections=["not-a-section"],
+                format="toon",
+            )
+
+        assert res["sections"] == {}
+        assert res["success"] is False
+        assert res["completeness"] == "failed"
+        assert res["error_code"] == "report_sections_not_found"
+        assert res["section_controls"]["missing_requested_sections"] == ["not-a-section"]
+
 
     def test_report_generate_uses_data_timestamp_for_as_of(self):
         fn = _get_report_generate()

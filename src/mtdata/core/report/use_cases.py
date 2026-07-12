@@ -1302,16 +1302,35 @@ def run_report_generate(  # noqa: C901
                 summary_counts = sections_status.get("summary", {})
                 error_count = int(summary_counts.get("error", 0))
                 partial_count = int(summary_counts.get("partial", 0))
+                controls = rep.get("section_controls")
+                missing_requested = (
+                    controls.get("missing_requested_sections", [])
+                    if isinstance(controls, dict)
+                    else []
+                )
+                selection_failed = bool(
+                    request.include_sections
+                    and not sections
+                    and missing_requested
+                    and not summary_mode
+                )
                 rep["completeness"] = (
                     "failed"
-                    if error_count > 0
+                    if error_count > 0 or selection_failed
                     else "partial"
                     if partial_count > 0
                     else "summary_only"
                     if summary_mode
                     else "complete"
                 )
-                rep["success"] = bool(error_count == 0)
+                rep["success"] = bool(error_count == 0 and not selection_failed)
+                if selection_failed:
+                    rep["error_code"] = "report_sections_not_found"
+                    rep["error"] = (
+                        "None of the requested report sections were available: "
+                        + ", ".join(str(name) for name in missing_requested)
+                        + "."
+                    )
                 sections_with_issues: Dict[str, List[str]] = {}
                 partial_section_names = _report_section_names_by_status(sections_status, "partial")
                 error_section_names = _report_section_names_by_status(sections_status, "error")
