@@ -1296,12 +1296,14 @@ def _append_denoise_application(
     default_causality: str,
     default_keep_original: bool,
     added_columns: List[str],
+    overwritten_columns: List[str],
 ) -> None:
+    if not added_columns and not overwritten_columns:
+        return
     try:
         denoise_meta = dict(source_spec or {})
         columns = denoise_meta.get('columns', 'close')
         keep_original = bool(denoise_meta.get('keep_original', default_keep_original))
-        overwritten_columns = [] if keep_original else _normalize_denoise_display_columns(columns)
         denoise_apps.append(
             {
                 'method': str(denoise_meta.get('method', 'none')).lower(),
@@ -1358,6 +1360,12 @@ def _apply_pre_ti_denoise(
     added_columns: List[str] = []
     if normalized and str(normalized.get('when', 'pre_ti')).lower() == 'pre_ti':
         added_columns = _apply_denoise_util(df, normalized, default_when='pre_ti')
+        last_application = df.attrs.get("denoise_last_application")
+        overwritten_columns = (
+            list(last_application.get("overwrote_columns") or [])
+            if isinstance(last_application, dict)
+            else []
+        )
         _extend_unique_headers(headers, added_columns)
         _append_denoise_application(
             denoise_apps,
@@ -1366,6 +1374,7 @@ def _apply_pre_ti_denoise(
             default_causality='causal',
             default_keep_original=False,
             added_columns=added_columns,
+            overwritten_columns=overwritten_columns,
         )
 
 
@@ -1451,6 +1460,12 @@ def _apply_post_ti_denoise(
     added_columns: List[str] = []
     if normalized and str(normalized.get('when', 'post_ti')).lower() == 'post_ti':
         added_columns = _apply_denoise_util(df, normalized, default_when='post_ti')
+        last_application = df.attrs.get("denoise_last_application")
+        overwritten_columns = (
+            list(last_application.get("overwrote_columns") or [])
+            if isinstance(last_application, dict)
+            else []
+        )
         _extend_unique_headers(headers, added_columns)
         _append_denoise_application(
             denoise_apps,
@@ -1459,6 +1474,7 @@ def _apply_post_ti_denoise(
             default_causality='zero_phase',
             default_keep_original=True,
             added_columns=added_columns,
+            overwritten_columns=overwritten_columns,
         )
 
 

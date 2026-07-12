@@ -571,19 +571,22 @@ def _attach_denoise_disclosure(payload: Dict[str, Any]) -> None:
     for app in applications:
         if not isinstance(app, dict):
             continue
+        added_columns = app.get("added_columns")
+        overwritten_columns = app.get("overwrote_columns")
+        added = added_columns if isinstance(added_columns, list) else []
+        overwritten_for_app = (
+            overwritten_columns if isinstance(overwritten_columns, list) else []
+        )
+        if not added and not overwritten_for_app:
+            continue
         method = str(app.get("method") or "").strip().lower()
         if method and method != "none" and method not in methods:
             methods.append(method)
         if bool(app.get("keep_original")):
             continue
-        added_columns = app.get("added_columns")
-        added = {
-            str(item).strip()
-            for item in added_columns
-            if str(item).strip()
-        } if isinstance(added_columns, list) else set()
-        for column in _normalize_denoise_columns(app.get("columns")):
-            if column and column not in added and column not in overwritten:
+        for column in overwritten_for_app:
+            column = str(column).strip()
+            if column and column not in overwritten:
                 overwritten.append(column)
 
     if not methods and not overwritten:

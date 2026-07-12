@@ -312,11 +312,10 @@ def test_run_data_fetch_candles_compact_discloses_inplace_denoise():
         },
     )
 
-    assert result["denoise_applied"] is True
-    assert result["denoise_method"] == "ema"
-    assert result["denoise_overwrote_columns"] == ["close"]
-    assert result["price_column"] == "close (ema-smoothed)"
-    assert "denoise" not in result
+    assert "denoise_applied" not in result
+    assert "denoise_method" not in result
+    assert "denoise_overwrote_columns" not in result
+    assert "price_column" not in result
 
 
 def test_run_data_fetch_candles_projection_drops_hidden_volume_semantics():

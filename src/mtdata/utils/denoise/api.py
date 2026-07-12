@@ -305,6 +305,11 @@ def _apply_denoise(
 ) -> List[str]:
     """Apply denoising to DataFrame columns. Returns list of added column names."""
     added_cols: List[str] = []
+    overwritten_cols: List[str] = []
+    df.attrs["denoise_last_application"] = {
+        "added_columns": added_cols,
+        "overwrote_columns": overwritten_cols,
+    }
     if not spec or not isinstance(spec, dict):
         return added_cols
     method = str(spec.get('method', 'none')).lower()
@@ -407,6 +412,7 @@ def _apply_denoise(
             added_cols.append(new_col)
         else:
             df[col] = y
+            overwritten_cols.append(str(col))
     return added_cols
 
 

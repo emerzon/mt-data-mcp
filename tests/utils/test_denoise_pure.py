@@ -600,6 +600,10 @@ class TestApplyDenoise:
         assert added == []
         assert "denoise_warnings" in df.attrs
         assert "does not support causality='causal'" in df.attrs["denoise_warnings"][0]
+        assert df.attrs["denoise_last_application"] == {
+            "added_columns": [],
+            "overwrote_columns": [],
+        }
 
     def test_silent_fallback_appends_identity_warning(self):
         pytest.importorskip("scipy.signal")
