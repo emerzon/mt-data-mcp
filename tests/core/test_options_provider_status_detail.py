@@ -61,6 +61,18 @@ def test_provider_status_marks_tradier_without_key_as_yahoo_fallback(monkeypatch
     ]
 
 
+def test_provider_status_does_not_mark_yahoo_chain_configuration_ready(monkeypatch):
+    monkeypatch.setattr(options_data_config, "provider", "yahoo")
+    monkeypatch.setattr(options_data_config, "api_key", None)
+
+    out = _call("full")
+
+    assert out["configured_provider_ready"] is False
+    assert out["chain_provider_ready"] is False
+    assert out["chain_data_ready"] is False
+    assert out["action_required"] == "configure_options_provider"
+
+
 def test_options_expirations_compact_keeps_fallback_warning(monkeypatch):
     import mtdata.services.options_service as options_service
 

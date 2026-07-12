@@ -86,8 +86,10 @@ def _options_provider_readiness() -> Dict[str, Any]:
             else "yahoo" if provider == "auto"
             else provider
         )
-        configured_provider_ready = True
-        action_required = None
+        configured_provider_ready = effective_provider == "tradier" and api_key_configured
+        action_required = (
+            None if configured_provider_ready else "configure_options_provider"
+        )
         remediation = (
             "Yahoo options data is unauthenticated best-effort data and may return "
             "401/429. For reliable chains, set MTDATA_OPTIONS_PROVIDER=tradier and "
