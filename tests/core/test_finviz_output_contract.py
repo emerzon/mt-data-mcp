@@ -364,8 +364,8 @@ class TestFinvizCalendarOutputContract:
             {
                 "symbol": "ADI",
                 "exdate": "2026-06-02",
-                "ordinary": 1.1,
-                "yield": 1.004,
+                "ordinary_amount": 1.1,
+                "yield_pct": 1.004,
             }
         ]
 
