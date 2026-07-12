@@ -95,40 +95,29 @@ def _position_matches_required_filters(
     return True
 
 
-def _position_ticket_fields(position: Any) -> Dict[str, int]:
+_MT5_TICKET_FIELDS = (
+    "ticket",
+    "identifier",
+    "position_id",
+    "position",
+    "order",
+    "deal",
+)
+
+
+def _ticket_fields(obj: Any) -> Dict[str, int]:
+    """Return valid values from the standard MT5 ticket fields."""
     out: Dict[str, int] = {}
-    for field in ("ticket", "identifier", "position_id", "position", "order", "deal"):
-        ticket = validation._safe_int_ticket(getattr(position, field, None))
+    for field in _MT5_TICKET_FIELDS:
+        ticket = validation._safe_int_ticket(getattr(obj, field, None))
         if ticket is not None:
             out[field] = ticket
     return out
 
 
-def _resolved_position_ticket(
-    position: Any, *, fallback: Optional[int] = None
-) -> Optional[int]:
-    fields = _position_ticket_fields(position)
-    for field in ("ticket", "identifier", "position_id", "position", "order", "deal"):
-        ticket = fields.get(field)
-        if ticket is not None:
-            return ticket
-    return validation._safe_int_ticket(fallback)
-
-
-def _pending_order_ticket_fields(order: Any) -> Dict[str, int]:
-    out: Dict[str, int] = {}
-    for field in ("ticket", "identifier", "position_id", "position", "order", "deal"):
-        ticket = validation._safe_int_ticket(getattr(order, field, None))
-        if ticket is not None:
-            out[field] = ticket
-    return out
-
-
-def _resolved_pending_order_ticket(
-    order: Any, *, fallback: Optional[int] = None
-) -> Optional[int]:
-    fields = _pending_order_ticket_fields(order)
-    for field in ("ticket", "identifier", "position_id", "position", "order", "deal"):
+def _resolved_ticket(obj: Any, *, fallback: Optional[int] = None) -> Optional[int]:
+    fields = _ticket_fields(obj)
+    for field in _MT5_TICKET_FIELDS:
         ticket = fields.get(field)
         if ticket is not None:
             return ticket
@@ -1018,7 +1007,7 @@ def _select_position_candidate(
             pos
             for pos in candidates
             if any(
-                v in ticket_candidates for v in _position_ticket_fields(pos).values()
+                v in ticket_candidates for v in _ticket_fields(pos).values()
             )
         ]
         if ticket_filtered:
@@ -1121,7 +1110,7 @@ def _resolve_open_position(
             resolved = (
                 direct_ticket
                 if require_exact_ticket_match
-                else _resolved_position_ticket(picked, fallback=candidate)
+                else _resolved_ticket(picked, fallback=candidate)
             )
             diag: Dict[str, Any] = {
                 "method": "positions_get(ticket)",
@@ -1154,7 +1143,7 @@ def _resolve_open_position(
     exact_matches: List[Tuple[Any, str, int]] = []
     if candidate_ids:
         for pos in rows_list:
-            for field, value in _position_ticket_fields(pos).items():
+            for field, value in _ticket_fields(pos).items():
                 if (
                     require_exact_ticket_match
                     and not allow_alternate_ticket_match
@@ -1178,7 +1167,7 @@ def _resolve_open_position(
                 key=lambda item: _position_sort_key(item[0]), reverse=True
             )
             pos, field, matched_value = exact_matches[0]
-            resolved = _resolved_position_ticket(pos, fallback=matched_value)
+            resolved = _resolved_ticket(pos, fallback=matched_value)
             return (
                 pos,
                 resolved,
@@ -1221,7 +1210,7 @@ def _resolve_open_position(
                 "matched": False,
             },
         )
-    resolved = _resolved_position_ticket(picked)
+    resolved = _resolved_ticket(picked)
     diag = {"method": "positions_get(fallback_heuristic)"}
     if magic is not None:
         diag["magic_filter"] = magic
@@ -1258,7 +1247,7 @@ def _resolve_pending_order(
             resolved = (
                 direct_ticket
                 if require_exact_ticket_match
-                else _resolved_pending_order_ticket(picked, fallback=candidate)
+                else _resolved_ticket(picked, fallback=candidate)
             )
             return (
                 picked,
@@ -1285,7 +1274,7 @@ def _resolve_pending_order(
     exact_matches: List[Tuple[Any, str, int]] = []
     if candidate_ids:
         for order in rows_list:
-            for field, value in _pending_order_ticket_fields(order).items():
+            for field, value in _ticket_fields(order).items():
                 if require_exact_ticket_match and field != "ticket":
                     continue
                 if value in candidate_ids:
@@ -1293,7 +1282,7 @@ def _resolve_pending_order(
         if exact_matches:
             exact_matches.sort(key=lambda item: _order_sort_key(item[0]), reverse=True)
             order, field, matched_value = exact_matches[0]
-            resolved = _resolved_pending_order_ticket(order, fallback=matched_value)
+            resolved = _resolved_ticket(order, fallback=matched_value)
             return (
                 order,
                 resolved,
@@ -1328,7 +1317,7 @@ def _resolve_pending_order(
                 "matched": False,
             },
         )
-    resolved = _resolved_pending_order_ticket(picked)
+    resolved = _resolved_ticket(picked)
     return picked, resolved, {"method": "orders_get(fallback_heuristic)"}
 
 

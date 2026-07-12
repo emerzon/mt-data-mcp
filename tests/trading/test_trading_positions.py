@@ -33,6 +33,14 @@ def test_position_side_resolution_accepts_text_without_mt5_constants():
     assert validation._resolve_position_side(SimpleNamespace(type=1)) == "SELL"
 
 
+def test_ticket_resolution_uses_shared_mt5_field_priority():
+    obj = SimpleNamespace(ticket=None, identifier="42", order=99, deal="bad")
+
+    assert positions._ticket_fields(obj) == {"identifier": 42, "order": 99}
+    assert positions._resolved_ticket(obj, fallback=7) == 42
+    assert positions._resolved_ticket(SimpleNamespace(), fallback=7) == 7
+
+
 def test_normalize_trade_read_output_keeps_request_echoes_by_default():
     out = positions._normalize_trade_read_output(
         [{"ticket": 1, "symbol": "EURUSD"}],
