@@ -35,6 +35,43 @@ def _kalman_filter_1d(
     return xhat
 
 
+def _kalman_rts_smoother_1d(
+    x: np.ndarray,
+    process_var: float,
+    measurement_var: float,
+    initial_state: Optional[float] = None,
+    initial_cov: Optional[float] = None,
+) -> np.ndarray:
+    """Run a scalar random-walk Kalman filter followed by RTS smoothing."""
+    n = len(x)
+    if n == 0:
+        return np.asarray([], dtype=float)
+    meas = max(float(measurement_var), 1e-12)
+    proc = max(float(process_var), 1e-12)
+    filtered = np.zeros(n, dtype=float)
+    covariance = np.zeros(n, dtype=float)
+    predicted = np.zeros(n, dtype=float)
+    predicted_covariance = np.zeros(n, dtype=float)
+    filtered[0] = float(initial_state) if initial_state is not None else float(x[0])
+    covariance[0] = float(initial_cov) if initial_cov is not None else meas
+    predicted[0] = filtered[0]
+    predicted_covariance[0] = covariance[0]
+    for t in range(1, n):
+        predicted[t] = filtered[t - 1]
+        predicted_covariance[t] = covariance[t - 1] + proc
+        gain = predicted_covariance[t] / (predicted_covariance[t] + meas)
+        filtered[t] = predicted[t] + gain * (float(x[t]) - predicted[t])
+        covariance[t] = (1.0 - gain) * predicted_covariance[t]
+
+    smoothed = filtered.copy()
+    for t in range(n - 2, -1, -1):
+        smoothing_gain = covariance[t] / max(predicted_covariance[t + 1], 1e-12)
+        smoothed[t] = filtered[t] + smoothing_gain * (
+            smoothed[t + 1] - predicted[t + 1]
+        )
+    return smoothed
+
+
 @register_filter('kalman')
 def _denoise_kalman_series(
     s: pd.Series,
@@ -63,15 +100,13 @@ def _denoise_kalman_series(
         initial_cov=init_cov,
     )
     if causality == 'zero_phase':
-        bwd_initial_state = float(y_fwd[-1]) if y_fwd.size > 0 else init_state
-        y_bwd = _kalman_filter_1d(
-            x[::-1],
+        y = _kalman_rts_smoother_1d(
+            x,
             process_var=process_val,
             measurement_var=measurement_val,
-            initial_state=bwd_initial_state,
+            initial_state=init_state,
             initial_cov=init_cov,
-        )[::-1]
-        y = 0.5 * (y_fwd + y_bwd)
+        )
     else:
         y = y_fwd
     return _series_like(s, y)

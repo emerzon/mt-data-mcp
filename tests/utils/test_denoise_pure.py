@@ -24,6 +24,7 @@ from mtdata.utils.denoise.filters.specialized import (
     _bilateral_filter_1d,
     _hampel_filter,
     _kalman_filter_1d,
+    _kalman_rts_smoother_1d,
     _tv_denoise_1d,
 )
 from mtdata.utils.denoise.filters.spectral import _butterworth_filter
@@ -345,6 +346,15 @@ class TestDenoiseSeriesDispatch:
         s = _make_series(NOISY_SIGNAL)
         result = _denoise_series(s, method="kalman")
         _check_basic(result.values, N)
+
+    def test_kalman_zero_phase_uses_rts_backward_correction(self):
+        x = np.array([0.0, 0.0, 10.0, 10.0], dtype=float)
+        filtered = _kalman_filter_1d(x, process_var=0.1, measurement_var=1.0)
+        smoothed = _kalman_rts_smoother_1d(x, process_var=0.1, measurement_var=1.0)
+
+        assert smoothed[-1] == pytest.approx(filtered[-1])
+        assert smoothed[0] > filtered[0]
+        assert np.all(np.isfinite(smoothed))
 
     def test_tv(self):
         s = _make_series(NOISY_SIGNAL)
