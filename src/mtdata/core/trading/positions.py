@@ -9,7 +9,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from ...utils.time import (
     _format_datetime_second_explicit,
-    _format_time_minimal,
+    format_epoch_utc,
 )
 from ...utils.utils import (
     _normalize_limit,
@@ -1330,8 +1330,8 @@ def trade_get_open(
                 request,
                 gateway=gateway,
                 use_client_tz=lambda: False,
-                format_time_minimal=_format_time_minimal,
-                format_time_minimal_local=_format_time_minimal,
+                format_time_minimal=format_epoch_utc,
+                format_time_minimal_local=format_epoch_utc,
                 mt5_epoch_to_utc=_utc_epoch_identity,
                 normalize_limit=_normalize_limit,
                 comment_row_metadata=comments._comment_row_metadata,
@@ -1362,8 +1362,8 @@ def trade_get_pending(
                 request,
                 gateway=gateway,
                 use_client_tz=lambda: False,
-                format_time_minimal=_format_time_minimal,
-                format_time_minimal_local=_format_time_minimal,
+                format_time_minimal=format_epoch_utc,
+                format_time_minimal_local=format_epoch_utc,
                 mt5_epoch_to_utc=_utc_epoch_identity,
                 normalize_limit=_normalize_limit,
                 comment_row_metadata=comments._comment_row_metadata,
