@@ -429,6 +429,40 @@ def test_market_status_symbol_mode_allows_crypto_on_weekend(monkeypatch) -> None
     assert "FX weekly sessions" not in result["heuristic_note"]
 
 
+def test_market_status_symbol_mode_allows_fx_after_sunday_open(monkeypatch) -> None:
+    raw = _unwrap(market_status_mod.market_status)
+    fixed_now = datetime(2026, 4, 26, 22, 15, tzinfo=timezone.utc)
+
+    class FixedDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return fixed_now.replace(tzinfo=None) if tz is None else fixed_now.astimezone(tz)
+
+    class Gateway:
+        SYMBOL_TRADE_MODE_FULL = 4
+        SYMBOL_TRADE_MODE_DISABLED = 0
+        SYMBOL_TRADE_MODE_CLOSEONLY = 3
+        SYMBOL_TRADE_MODE_LONGONLY = 1
+        SYMBOL_TRADE_MODE_SHORTONLY = 2
+
+        def ensure_connection(self):
+            return None
+
+        def symbol_info(self, symbol):
+            return SimpleNamespace(name=symbol, visible=True, trade_mode=4)
+
+        def symbol_info_tick(self, symbol):
+            return SimpleNamespace(time=fixed_now.timestamp() - 60, bid=1.1, ask=1.2)
+
+    monkeypatch.setattr(market_status_mod, "datetime", FixedDateTime)
+    monkeypatch.setattr(market_status_mod, "create_mt5_gateway", lambda **kwargs: Gateway())
+
+    result = raw(symbol="EURUSD")
+
+    assert result["status"] == "probably_open"
+    assert result["can_open_new_positions"] is True
+
+
 def test_market_status_symbol_mode_uses_recent_candles_for_weekend_session(
     monkeypatch,
 ) -> None:

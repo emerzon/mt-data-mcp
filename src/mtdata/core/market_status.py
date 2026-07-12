@@ -921,9 +921,13 @@ def _check_symbol_market_status(
         _coerce_optional_bool(schedule_status.get("current_time_in_active_session"))
         is True
     )
+    weekend_closed_now = now_utc.weekday() == 5 or (
+        now_utc.weekday() == 6
+        and (not is_probably_forex_symbol(symbol_name) or now_utc.hour < 22)
+    )
     if (
         can_open is True
-        and now_utc.weekday() >= 5
+        and weekend_closed_now
         and not is_crypto_symbol
         and not recent_schedule_allows_now
     ):
