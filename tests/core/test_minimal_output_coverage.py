@@ -371,7 +371,7 @@ class TestNormalizeForecastPayload:
             "confidence_level": 0.95,
             "hint": (
                 "theta produces point forecasts only. "
-                "Use forecast_conformal_intervals for uncertainty bands."
+                "Use forecast_conformal_intervals for residual-quantile uncertainty bands."
             ),
         }
         assert result["warnings"][0].startswith("Point forecast only")
@@ -380,7 +380,7 @@ class TestNormalizeForecastPayload:
             "status": "unavailable",
             "ci_alpha": 0.05,
             "confidence_level": 0.95,
-            "hint": "theta produces point forecasts only. Use forecast_conformal_intervals for uncertainty bands.",
+            "hint": "theta produces point forecasts only. Use forecast_conformal_intervals for residual-quantile uncertainty bands.",
         }
         assert verbose_result["warnings"][0].startswith("Point forecast only")
 
@@ -612,7 +612,7 @@ class TestCompactForecastCi:
             "status": "unavailable",
             "ci_alpha": 0.1,
             "confidence_level": 0.9,
-            "hint": "theta produces point forecasts only. Use forecast_conformal_intervals for uncertainty bands.",
+            "hint": "theta produces point forecasts only. Use forecast_conformal_intervals for residual-quantile uncertainty bands.",
         }
 
 
