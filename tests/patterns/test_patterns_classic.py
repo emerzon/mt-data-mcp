@@ -1260,6 +1260,26 @@ def test_detect_tops_bottoms_merges_connected_same_level_cluster():
     assert triple_top.confidence == pytest.approx(0.7)
 
 
+def test_detect_tops_bottoms_scans_all_pivots_in_requested_window():
+    from src.mtdata.patterns.classic_impl.reversal import detect_tops_bottoms
+
+    close = np.arange(30, dtype=float) + 80.0
+    close[[1, 3]] = 100.0
+    peaks = np.array([1, 3, 5, 7, 9, 11, 13, 15, 17, 19, 21, 23], dtype=int)
+    close[peaks[2:]] = np.arange(10, dtype=float) + 110.0
+    troughs = np.array([2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22], dtype=int)
+
+    out = detect_tops_bottoms(
+        close,
+        peaks,
+        troughs,
+        np.arange(close.size, dtype=float),
+        ClassicDetectorConfig(same_level_tol_pct=0.2),
+    )
+
+    assert any(pattern.name == "Double Top" and pattern.start_index == 1 for pattern in out)
+
+
 def test_level_components_rejects_spread_beyond_tolerance():
     """Cluster members must all fit within tol_pct of each other (strict spread).
 

@@ -196,8 +196,11 @@ def detect_tops_bottoms(
                     },
                 ))
     
-    group_levels(peaks[-10:], "Double Top", "Triple Top", "top")
-    group_levels(troughs[-10:], "Double Bottom", "Triple Bottom", "bottom")
+    # The caller has already bounded these pivots to the requested chart
+    # lookback. Scan that complete window so increasing ``lookback`` can reveal
+    # older formations instead of silently imposing a second ten-pivot cap.
+    group_levels(peaks, "Double Top", "Triple Top", "top")
+    group_levels(troughs, "Double Bottom", "Triple Bottom", "bottom")
     return out
 
 def detect_head_shoulders(  # noqa: C901
