@@ -1158,6 +1158,32 @@ class TestCreateCommandFunction:
         call_kwargs = mock_fn.call_args[1]
         assert call_kwargs["simplify"] == {"method": "lttb"}
 
+    @pytest.mark.parametrize("shortcut", ["on", "auto", "off", "none", "true", "false"])
+    def test_simplify_request_shortcuts_remain_strings(self, shortcut, capsys):
+        mock_fn = MagicMock(return_value="ok")
+        func_info = {
+            "func": mock_fn,
+            "params": [
+                {
+                    "name": "simplify",
+                    "type": Dict[str, Any],
+                    "required": False,
+                    "default": None,
+                },
+            ],
+        }
+        cmd_fn = create_command_function(func_info, cmd_name="data_fetch_candles")
+        args = argparse.Namespace(
+            simplify=shortcut,
+            simplify_params=None,
+            json=False,
+            verbose=False,
+        )
+
+        cmd_fn(args)
+
+        assert mock_fn.call_args.kwargs["simplify"] == shortcut
+
     def test_mapping_companion_params(self, capsys):
         mock_fn = MagicMock(return_value="ok")
         func_info = {

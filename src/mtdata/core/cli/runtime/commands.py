@@ -405,6 +405,13 @@ def create_command_function(  # noqa: C901
                         parsed = parse_kv_string(arg_value)
                         if parsed is not None:
                             arg_value = parsed
+                        elif (
+                            param_name == "simplify"
+                            and arg_value.strip().lower()
+                            in {"on", "auto", "off", "none", "null", "true", "false"}
+                        ):
+                            # Preserve request-model shortcuts for its BeforeValidator.
+                            arg_value = arg_value.strip()
                         else:
                             arg_value = {"method": arg_value.strip()}
 
