@@ -17,6 +17,7 @@ import pytest
 from mtdata.core.report import _report_error_payload
 from mtdata.core.report_templates.basic import (
     _compute_compact_trend,
+    _wilder_rma,
     _compute_tr,
     _ema,
     _get_raw_result,
@@ -240,6 +241,16 @@ class TestPercentileRank:
 
 
 # ===== _compute_compact_trend ===============================================
+
+
+def test_wilder_rma_uses_sma_seed_then_wilder_smoothing():
+    values = [float(value) for value in range(1, 17)]
+
+    result = _wilder_rma(values, 14)
+
+    assert result[13] == pytest.approx(7.5)
+    assert result[14] == pytest.approx(((7.5 * 13) + 15.0) / 14.0)
+    assert result[15] == pytest.approx(((result[14] * 13) + 16.0) / 14.0)
 
 class TestComputeCompactTrend:
     def test_none_for_too_few_rows(self):

@@ -79,6 +79,23 @@ def _ema(values: List[float], length: int) -> List[float]:
     return out
 
 
+def _wilder_rma(values: List[float], length: int) -> List[float]:
+    """Return Wilder's moving average with an SMA seed."""
+    if length <= 1 or not values:
+        return list(values)
+    out: List[float] = []
+    running = 0.0
+    for idx, value in enumerate(values):
+        numeric = float(value)
+        if idx < length:
+            running += numeric
+            average = running / float(idx + 1)
+        else:
+            average = ((out[-1] * (length - 1)) + numeric) / float(length)
+        out.append(average)
+    return out
+
+
 def _compute_tr(high: List[float], low: List[float], close: List[float]) -> List[float]:
     n = len(close)
     if n == 0:
@@ -184,7 +201,7 @@ def _compute_compact_trend(rows: List[Dict[str, Any]]) -> Optional[Dict[str, Any
 
     # ATR(14) in price units
     tr = _compute_tr(clean_high, clean_low, clean_close)
-    atr_series = _ema(tr, 14)
+    atr_series = _wilder_rma(tr, 14)
     atr = atr_series[-1] if atr_series else 0.0
     last_price = clean_close[-1] if clean_close else 0.0
 
