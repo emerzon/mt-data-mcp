@@ -114,7 +114,7 @@ def test_reserve_waits_for_inflight_request_and_replays_outcome():
     assert duplicate["original_outcome"] == {"success": True}
 
 
-def test_stale_inflight_reservation_expires_and_allows_retry():
+def test_stale_inflight_reservation_does_not_allow_retry():
     store = IdempotencyStore(ttl_seconds=0.05)
     assert store.reserve("key-1", request_signature="sig-1") is None
 
@@ -125,10 +125,12 @@ def test_stale_inflight_reservation_expires_and_allows_retry():
 
     thread = threading.Thread(target=_reserve_again, daemon=True)
     thread.start()
-    thread.join(timeout=1.0)
+    time.sleep(0.1)
+    assert thread.is_alive()
 
-    assert not thread.is_alive()
-    assert second_result["value"] is None
+    store.record("key-1", {"success": True}, request_signature="sig-1")
+    thread.join(timeout=1.0)
+    assert second_result["value"]["original_outcome"] == {"success": True}
 
 
 def test_record_throttles_gc_scans(monkeypatch):

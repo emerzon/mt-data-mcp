@@ -108,11 +108,9 @@ class IdempotencyStore:
                 if entry.ready_event.is_set():
                     return _entry_duplicate_payload(entry)
                 wait_event = entry.ready_event
-                remaining = self._ttl - (time.monotonic() - entry.created_at)
-                if remaining <= 0:
-                    del self._entries[key]
-                    continue
-                wait_timeout = min(remaining, 1.0)
+                # Never expire a live reservation: doing so can admit a second
+                # broker submission while the first call is still running.
+                wait_timeout = 1.0
             wait_event.wait(timeout=wait_timeout)
 
     def record(
@@ -160,7 +158,7 @@ class IdempotencyStore:
 
     def _is_expired(self, entry: _IdempotencyEntry, *, now: Optional[float] = None) -> bool:
         observed_now = time.monotonic() if now is None else now
-        return (observed_now - entry.created_at) > self._ttl
+        return entry.ready_event.is_set() and (observed_now - entry.created_at) > self._ttl
 
     def _gc(self, *, now: Optional[float] = None) -> None:
         """Remove expired entries."""
