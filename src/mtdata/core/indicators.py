@@ -560,6 +560,19 @@ def indicators_list(
                         row.append(_indicator_trading_context(it).get("common_use", ""))
                     rows.append(row)
                 result = _table_from_rows(headers, rows)
+            elif detail_mode == "summary":
+                result = _table_from_rows(
+                    ["name", "category", "description", "params_count"],
+                    [
+                        [
+                            it.get("name", ""),
+                            it.get("category", ""),
+                            _extract_short_description(it.get("description", "")),
+                            len(it.get("params") or []),
+                        ]
+                        for it in items
+                    ],
+                )
             else:
                 result = _table_from_rows(
                     ["name", "category", "params_count"],

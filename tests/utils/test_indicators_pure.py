@@ -591,6 +591,16 @@ Values above 70 often indicate overbought conditions.
         assert standard["data"][0]["params"] == "length=14"
         assert "description" in standard["data"][0]
 
+        summary = raw_list(category="momentum", limit=25, detail="summary")
+        assert summary["detail"] == "summary"
+        assert set(summary["data"][0]) == {
+            "name",
+            "category",
+            "description",
+            "params_count",
+        }
+        assert "params" not in summary["data"][0]
+
     def test_indicators_list_rejects_invalid_limits(self):
         from mtdata.core import indicators as core_indicators
 
