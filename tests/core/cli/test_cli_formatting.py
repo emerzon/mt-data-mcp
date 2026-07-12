@@ -605,13 +605,14 @@ class TestFormatResultForCli:
         assert "std: 0.000007" in ticks
         assert "spread.mean: 0.00001234" in ticks
 
-    def test_market_ticker_json_uses_display_time_as_canonical_field(self):
+    def test_market_ticker_json_preserves_canonical_fields(self):
         payload = json.loads(
             _format_result_for_cli(
                 {
                     "success": True,
                     "symbol": "BTCUSD",
                     "time": 1700000000,
+                    "time_epoch": 1700000000,
                     "time_display": "2023-11-14 22:13",
                     "spread": 0.09,
                     "spread_points": 8.999999999992347,
@@ -623,14 +624,14 @@ class TestFormatResultForCli:
                 cmd_name="market_ticker",
             )
         )
-        assert payload["time"] == "2023-11-14 22:13"
+        assert payload["time"] == 1700000000
+        assert payload["time_epoch"] == 1700000000
+        assert payload["time_display"] == "2023-11-14 22:13"
         assert payload["spread"] == 0.09
         assert payload["spread_points"] == 8.999999999992347
         assert "spread_pips" not in payload
-        assert "spread_pct" not in payload
-        assert "spread_pct_display" not in payload
-        assert "time_display" not in payload
-        assert "time_epoch" not in payload
+        assert payload["spread_pct"] == 0.007795818842487513
+        assert payload["spread_pct_display"] == "0.007796%"
 
     def test_market_ticker_toon_preserves_error_envelope(self):
         result = _format_result_for_cli(

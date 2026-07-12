@@ -699,7 +699,7 @@ def _prepare_cli_payload(
         precision=precision,
     ).simplify_numbers
     adapter = _CLI_PRESENTATION_ADAPTERS.get(cmd_name)
-    if adapter is _normalize_market_ticker_cli_payload:
+    if adapter is _normalize_market_ticker_cli_payload and fmt == CLI_FORMAT_TOON:
         prepared = adapter(
             prepared,
             verbose=verbose,
