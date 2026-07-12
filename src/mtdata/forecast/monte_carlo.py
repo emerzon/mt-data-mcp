@@ -535,11 +535,12 @@ def simulate_heston_mc(
     rng = np.random.RandomState(seed)
     _, rets, last_price = _prepare_simulation_history(prices, "heston")
 
-    mu = float(np.mean(rets))
+    mu_log = float(np.mean(rets))
     ret_var = float(np.var(rets, ddof=1))
     ret_var = max(ret_var, 1e-10)
 
     theta_val = float(theta) if theta is not None else ret_var
+    mu_price = float(mu_log + 0.5 * theta_val)
     v0_val = float(v0) if v0 is not None else float(np.var(rets[-50:], ddof=1) if rets.size >= 50 else ret_var)
     rv = np.clip(rets * rets, 1e-12, None)
     kappa_emp = 2.0
@@ -599,7 +600,7 @@ def simulate_heston_mc(
         dv = kappa_val * (theta_val - v_pos) * dt + xi_val * np.sqrt(v_pos) * sqrt_dt * z2
         v = np.clip(v_pos + dv, 1e-10, None)
 
-        ret = (mu - 0.5 * v_pos) * dt + np.sqrt(v_pos) * sqrt_dt * z1
+        ret = (mu_price - 0.5 * v_pos) * dt + np.sqrt(v_pos) * sqrt_dt * z1
         cur = cur * np.exp(ret)
 
         ret_paths[:, t] = ret
@@ -611,7 +612,8 @@ def simulate_heston_mc(
         'return_paths': ret_paths,
         'vol_paths': vol_paths,
         'params': {
-            'mu': mu,
+            'mu': mu_log,
+            'price_drift': mu_price,
             'kappa': kappa_val,
             'theta': theta_val,
             'xi': xi_val,

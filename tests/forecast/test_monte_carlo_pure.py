@@ -281,6 +281,9 @@ class TestSimulateHestonMc:
         )
         assert result["params"]["kappa"] == 3.0
         assert result["params"]["rho"] == -0.5
+        assert result["params"]["price_drift"] == pytest.approx(
+            result["params"]["mu"] + 0.5 * result["params"]["theta"]
+        )
 
     def test_too_few(self):
         with pytest.raises(ValueError):
