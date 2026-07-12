@@ -11,6 +11,7 @@ from ...utils.time import (
     _format_datetime_second_explicit,
     format_epoch_utc,
 )
+from ...utils.market_metadata import build_tick_freshness_context
 from ...utils.utils import (
     _normalize_limit,
     _parse_start_datetime,
@@ -28,6 +29,71 @@ from .use_cases import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _attach_open_position_quote_context(
+    payload: Dict[str, Any],
+    gateway: Any,
+    *,
+    now_epoch: Optional[float] = None,
+) -> None:
+    items = payload.get("items")
+    if not isinstance(items, list):
+        return
+    current_epoch = (
+        float(now_epoch)
+        if now_epoch is not None
+        else datetime.now(timezone.utc).timestamp()
+    )
+    stale_count = 0
+    enriched_count = 0
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        symbol = str(item.get("symbol") or "").strip()
+        if not symbol:
+            continue
+        try:
+            tick = gateway.symbol_info_tick(symbol)
+        except Exception:
+            continue
+        if tick is None:
+            continue
+        tick_epoch = getattr(tick, "time_msc", None)
+        try:
+            tick_epoch = float(tick_epoch) / 1000.0 if tick_epoch else None
+        except (TypeError, ValueError):
+            tick_epoch = None
+        if tick_epoch is None:
+            tick_epoch = getattr(tick, "time", None)
+        freshness = build_tick_freshness_context(
+            symbol,
+            tick_epoch=tick_epoch,
+            now_epoch=current_epoch,
+        )
+        if not freshness:
+            continue
+        side = str(item.get("side") or "").strip().upper()
+        item["price_current_basis"] = "ask" if side == "SELL" else "bid" if side == "BUY" else "broker_mark"
+        item["quote_time"] = format_epoch_utc(tick_epoch)
+        for key in (
+            "data_age_seconds",
+            "data_stale",
+            "usable_for_live_trading",
+            "market_status",
+            "market_status_reason",
+            "freshness",
+        ):
+            if key in freshness:
+                item[key] = freshness[key]
+        enriched_count += 1
+        stale_count += int(freshness.get("data_stale") is True)
+    if enriched_count:
+        payload["quote_freshness_summary"] = {
+            "positions_enriched": enriched_count,
+            "stale_quotes": stale_count,
+            "live_usable_quotes": enriched_count - stale_count,
+        }
 
 _TRADE_VOLUME_UNITS = {
     "volume": "lots",
@@ -1325,7 +1391,7 @@ def trade_get_open(
     """
     def _run() -> Dict[str, Any]:
         gateway = create_trading_gateway()
-        return _normalize_trade_read_output(
+        out = _normalize_trade_read_output(
             run_trade_get_open(
                 request,
                 gateway=gateway,
@@ -1340,6 +1406,8 @@ def trade_get_open(
             kind="open_positions",
             account_currency=_gateway_account_currency(gateway),
         )
+        _attach_open_position_quote_context(out, gateway)
+        return out
 
     return run_logged_operation(
         logger,

@@ -1055,3 +1055,34 @@ def test_trade_get_pending_logs_finish_event(caplog) -> None:
         "event=finish operation=trade_get_pending success=True" in record.message
         for record in caplog.records
     )
+
+
+def test_open_position_quote_context_discloses_basis_and_staleness() -> None:
+    now_epoch = datetime(2026, 7, 12, 20, tzinfo=timezone.utc).timestamp()
+    payload = {
+        "items": [
+            {"symbol": "EURUSD", "side": "SELL", "price_current": 1.14155}
+        ]
+    }
+    gateway = SimpleNamespace(
+        symbol_info_tick=lambda symbol: SimpleNamespace(
+            time=now_epoch - 600,
+            time_msc=0,
+            bid=1.14139,
+            ask=1.14155,
+        )
+    )
+
+    core_trading_positions._attach_open_position_quote_context(
+        payload,
+        gateway,
+        now_epoch=now_epoch,
+    )
+
+    row = payload["items"][0]
+    assert row["price_current_basis"] == "ask"
+    assert row["quote_time"].endswith("Z")
+    assert row["data_age_seconds"] == 600.0
+    assert row["data_stale"] is True
+    assert row["usable_for_live_trading"] is False
+    assert payload["quote_freshness_summary"]["stale_quotes"] == 1
