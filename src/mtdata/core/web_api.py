@@ -349,7 +349,7 @@ def get_history(
         description="Indicator specification forwarded to data_fetch_candles.",
     ),
     timestamp_format: Literal["epoch", "iso"] = Query(
-        "iso",
+        "epoch",
         description="Timestamp encoding for returned candle rows.",
     ),
     denoise_method: Optional[str] = Query(None, description="Denoise method name; if set, returns extra *_dn columns."),

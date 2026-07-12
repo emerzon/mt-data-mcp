@@ -1,9 +1,16 @@
 from __future__ import annotations
 
+import inspect
 import os
 from unittest.mock import MagicMock, patch
 
 from mtdata.core import web_api
+
+
+def test_history_timestamp_format_defaults_to_epoch() -> None:
+    parameter = inspect.signature(web_api.get_history).parameters["timestamp_format"]
+
+    assert parameter.default.default == "epoch"
 
 
 def test_history_uses_start_end_ohlcv_and_preserves_canonical_forming_candle() -> None:
