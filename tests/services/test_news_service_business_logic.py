@@ -3,6 +3,8 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
+import pytest
+
 from mtdata.services import news_service as svc
 
 
@@ -131,6 +133,21 @@ def test_parse_records_scans_only_candidate_prefix_offsets(monkeypatch) -> None:
     first = svc.MT5NewsParser.HEADER_SIZE + len(b"noise")
     second = first + 12 + len(b"middle")
     assert offsets == [first, second]
+
+
+def test_parse_header_rejects_unknown_layout_size() -> None:
+    parser = svc.MT5NewsParser("unused.dat")
+    header = (508).to_bytes(4, "little") + b"\x00" * 500
+
+    with pytest.raises(ValueError, match="Unsupported MT5 news.dat layout"):
+        parser._parse_header(header)
+
+
+def test_parse_header_rejects_truncated_file() -> None:
+    parser = svc.MT5NewsParser("unused.dat")
+
+    with pytest.raises(ValueError, match="truncated"):
+        parser._parse_header(b"\x00" * 100)
 
 
 # ---------- parse_health diagnostics ----------

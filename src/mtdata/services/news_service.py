@@ -62,6 +62,7 @@ class MT5NewsParser:
     INDEX_ENTRY_SIZE = 40
     MIN_TIMESTAMP = 1577836800  # 2020-01-01
     MAX_TIMESTAMP = 2051222400  # 2035-01-01
+    LAYOUT_ID = "news_dat_header_504_index_0x118"
     
     def __init__(self, filepath: str):
         self.filepath = Path(filepath)
@@ -92,8 +93,19 @@ class MT5NewsParser:
     
     def _parse_header(self, header: bytes) -> None:
         """Parse the 504-byte header section."""
+        if len(header) < self.HEADER_SIZE:
+            raise ValueError(
+                f"Unsupported or truncated MT5 news.dat layout: expected a "
+                f"{self.HEADER_SIZE}-byte header, found {len(header)} bytes."
+            )
         # First 4 bytes: header size (should be 504)
         header_size = struct.unpack('<I', header[:4])[0]
+        if header_size != self.HEADER_SIZE:
+            raise ValueError(
+                "Unsupported MT5 news.dat layout: "
+                f"header declares {header_size} bytes, expected {self.HEADER_SIZE} "
+                f"for parser layout {self.LAYOUT_ID}."
+            )
         
         # Copyright string at offset 4 (UTF-16-LE, variable length, null-terminated)
         copyright_raw = header[4:132]
@@ -113,6 +125,7 @@ class MT5NewsParser:
             "header_size": header_size,
             "copyright": copyright_str,
             "identifier": news_id,
+            "parser_layout": self.LAYOUT_ID,
         }
         
         logger.debug(f"Parsed header: {self.header_info}")
