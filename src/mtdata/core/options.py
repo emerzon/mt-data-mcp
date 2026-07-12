@@ -181,6 +181,8 @@ def _barrier_pricing_inputs(payload: Dict[str, Any]) -> Dict[str, Any]:
     }
     if inputs:
         inputs["rate_unit"] = "decimal_fraction"
+        if "volatility" in inputs:
+            inputs["volatility_unit"] = "decimal_fraction"
     return inputs
 
 

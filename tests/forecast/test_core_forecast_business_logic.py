@@ -3221,6 +3221,7 @@ def test_options_barrier_compact_keeps_numeric_pricing_inputs():
         "volatility": 0.2,
         "rebate": 0.0,
         "rate_unit": "decimal_fraction",
+        "volatility_unit": "decimal_fraction",
     }
 
 
@@ -3340,6 +3341,7 @@ def test_options_tools_support_compact_and_full_detail(monkeypatch):
         "volatility": 0.2,
         "rebate": 0.0,
         "rate_unit": "decimal_fraction",
+        "volatility_unit": "decimal_fraction",
     }
     full_price = raw_price(100, 105, 120, 30, detail="full")
     assert full_price["delta"] == 0.4
