@@ -775,8 +775,8 @@ def test_collect_new_account_history_rows_keeps_same_second_coarse_rows() -> Non
 def test_collect_new_account_history_rows_advances_poll_cursor(monkeypatch) -> None:
     monkeypatch.setattr(
         wait_events_mod,
-        "_to_server_naive_dt",
-        lambda dt: wait_events_mod._normalize_utc_datetime(dt).replace(tzinfo=None),
+        "_to_server_query_dt",
+        lambda dt: wait_events_mod._normalize_utc_datetime(dt),
     )
 
     started = datetime(2026, 3, 15, 12, 0, 0, 500000, tzinfo=timezone.utc)
@@ -811,22 +811,22 @@ def test_collect_new_account_history_rows_advances_poll_cursor(monkeypatch) -> N
     assert second_rows == []
     assert calls == [
         (
-            datetime(2026, 3, 15, 12, 0, 0),
-            datetime(2026, 3, 15, 12, 0, 1, 100000),
+            datetime(2026, 3, 15, 12, 0, 0, tzinfo=timezone.utc),
+            datetime(2026, 3, 15, 12, 0, 1, 100000, tzinfo=timezone.utc),
         ),
         (
-            datetime(2026, 3, 15, 12, 0, 1),
-            datetime(2026, 3, 15, 12, 0, 1, 700000),
+            datetime(2026, 3, 15, 12, 0, 1, tzinfo=timezone.utc),
+            datetime(2026, 3, 15, 12, 0, 1, 700000, tzinfo=timezone.utc),
         ),
     ]
 
-def test_seed_account_history_keys_converts_window_to_server_naive(monkeypatch) -> None:
+def test_seed_account_history_keys_tags_server_window_as_utc(monkeypatch) -> None:
     calls = []
 
     monkeypatch.setattr(
         wait_events_mod,
-        "_to_server_naive_dt",
-        lambda dt: (dt - timedelta(hours=2)).replace(tzinfo=None),
+        "_to_server_query_dt",
+        lambda dt: (dt - timedelta(hours=2)).astimezone(timezone.utc),
     )
 
     def fetch_impl(dt_from, dt_to):
@@ -844,18 +844,18 @@ def test_seed_account_history_keys_converts_window_to_server_naive(monkeypatch) 
     assert seen == set()
     assert calls == [
         (
-            datetime(2026, 3, 15, 9, 59, 55),
-            datetime(2026, 3, 15, 10, 0, 0),
+            datetime(2026, 3, 15, 9, 59, 55, tzinfo=timezone.utc),
+            datetime(2026, 3, 15, 10, 0, 0, tzinfo=timezone.utc),
         )
     ]
 
-def test_fetch_market_ticks_range_converts_window_to_server_naive(monkeypatch) -> None:
+def test_fetch_market_ticks_range_tags_server_window_as_utc(monkeypatch) -> None:
     captured = {}
 
     monkeypatch.setattr(
         wait_events_mod,
-        "_to_server_naive_dt",
-        lambda dt: (dt - timedelta(hours=3)).replace(tzinfo=None),
+        "_to_server_query_dt",
+        lambda dt: (dt - timedelta(hours=3)).astimezone(timezone.utc),
     )
 
     class Gateway:
@@ -878,8 +878,8 @@ def test_fetch_market_ticks_range_converts_window_to_server_naive(monkeypatch) -
     assert out == []
     assert captured["args"] == (
         "EURUSD",
-        datetime(2026, 3, 15, 9, 0, 0),
-        datetime(2026, 3, 15, 9, 5, 0),
+        datetime(2026, 3, 15, 9, 0, 0, tzinfo=timezone.utc),
+        datetime(2026, 3, 15, 9, 5, 0, tzinfo=timezone.utc),
         0,
     )
 

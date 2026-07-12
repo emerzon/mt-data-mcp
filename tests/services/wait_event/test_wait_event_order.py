@@ -637,8 +637,8 @@ def test_run_wait_event_ignores_replayed_preexisting_order_history() -> None:
 def test_run_wait_event_advances_history_poll_cursors_per_stream(monkeypatch) -> None:
     monkeypatch.setattr(
         wait_events_mod,
-        "_to_server_naive_dt",
-        lambda dt: wait_events_mod._normalize_utc_datetime(dt).replace(tzinfo=None),
+        "_to_server_query_dt",
+        lambda dt: wait_events_mod._normalize_utc_datetime(dt),
     )
 
     clock = FakeClock(datetime(2026, 3, 15, 12, 0, 0, 500000, tzinfo=timezone.utc))
@@ -666,20 +666,20 @@ def test_run_wait_event_advances_history_poll_cursors_per_stream(monkeypatch) ->
     assert result["matched_event"] is None
     assert gateway.history_order_calls == [
         (
-            datetime(2026, 3, 15, 11, 59, 55, 500000),
-            datetime(2026, 3, 15, 12, 0, 0, 500000),
+            datetime(2026, 3, 15, 11, 59, 55, 500000, tzinfo=timezone.utc),
+            datetime(2026, 3, 15, 12, 0, 0, 500000, tzinfo=timezone.utc),
         ),
         (
-            datetime(2026, 3, 15, 12, 0, 0),
-            datetime(2026, 3, 15, 12, 0, 0, 500000),
+            datetime(2026, 3, 15, 12, 0, 0, tzinfo=timezone.utc),
+            datetime(2026, 3, 15, 12, 0, 0, 500000, tzinfo=timezone.utc),
         ),
         (
-            datetime(2026, 3, 15, 12, 0),
-            datetime(2026, 3, 15, 12, 0, 1, 100000),
+            datetime(2026, 3, 15, 12, 0, tzinfo=timezone.utc),
+            datetime(2026, 3, 15, 12, 0, 1, 100000, tzinfo=timezone.utc),
         ),
         (
-            datetime(2026, 3, 15, 12, 0, 1),
-            datetime(2026, 3, 15, 12, 0, 1, 700000),
+            datetime(2026, 3, 15, 12, 0, 1, tzinfo=timezone.utc),
+            datetime(2026, 3, 15, 12, 0, 1, 700000, tzinfo=timezone.utc),
         ),
     ]
     assert gateway.history_deal_calls == gateway.history_order_calls

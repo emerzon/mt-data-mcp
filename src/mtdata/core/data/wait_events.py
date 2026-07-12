@@ -8,7 +8,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Dict, List, Optional
 
 from ...shared.constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
-from ...utils.mt5 import _normalize_times_in_struct, _to_server_naive_dt
+from ...utils.mt5 import _normalize_times_in_struct, _to_server_query_dt
 from ..trading.time import _next_candle_wait_payload, _sleep_until_next_candle
 from .requests import (
     CandleCloseEventSpec,
@@ -765,8 +765,8 @@ def _seed_account_history_state(
     seed_from_utc = started_at_utc - timedelta(seconds=_ACCOUNT_HISTORY_SEED_LOOKBACK_SECONDS)
     try:
         rows = fetch_impl(
-            _to_server_naive_dt(seed_from_utc),
-            _to_server_naive_dt(started_at_utc),
+            _to_server_query_dt(seed_from_utc),
+            _to_server_query_dt(started_at_utc),
         )
     except Exception as exc:
         return {"error": f"Failed to fetch {label}: {exc}"}
@@ -951,8 +951,8 @@ def _collect_new_account_history_rows(
     try:
         rows = _coerce_rows(
             fetch_impl(
-                _to_server_naive_dt(fetch_from_utc),
-                _to_server_naive_dt(observed_at_utc),
+                _to_server_query_dt(fetch_from_utc),
+                _to_server_query_dt(observed_at_utc),
             )
         )
     except Exception as exc:
@@ -1472,7 +1472,7 @@ def _fetch_boundary_candle_rows(
             rows = gateway.copy_rates_from(
                 symbol,
                 mt5_timeframe,
-                _to_server_naive_dt(query_to_utc),
+                _to_server_query_dt(query_to_utc),
                 _BOUNDARY_CANDLE_LOOKBACK_BARS,
             )
             coerced = _coerce_rows(_normalize_times_in_struct(rows))
@@ -1486,8 +1486,8 @@ def _fetch_boundary_candle_rows(
             rows = gateway.copy_rates_range(
                 symbol,
                 mt5_timeframe,
-                _to_server_naive_dt(from_utc),
-                _to_server_naive_dt(query_to_utc),
+                _to_server_query_dt(from_utc),
+                _to_server_query_dt(query_to_utc),
             )
             return _coerce_rows(_normalize_times_in_struct(rows))
         except Exception:
@@ -2256,8 +2256,8 @@ def _fetch_market_ticks_range(
         flags = getattr(gateway, "COPY_TICKS_ALL", 0)
         rows = gateway.copy_ticks_range(
             symbol,
-            _to_server_naive_dt(from_dt_utc),
-            _to_server_naive_dt(to_dt_utc),
+            _to_server_query_dt(from_dt_utc),
+            _to_server_query_dt(to_dt_utc),
             flags,
         )
     except Exception as exc:
