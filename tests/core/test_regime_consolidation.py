@@ -182,7 +182,7 @@ class TestConsolidatePayload:
         assert result["regimes"][0]["state_label_canonical"] == "trending_down"
         assert result["current_regime"]["state_label_canonical"] == "trending_up"
         assert result["regime_info"][0]["label"] == "bearish_quiet"
-        assert result["regime_info"][0]["stat_label"] == "negative_very_low_vol"
+        assert result["regime_info"][0]["stat_label"] == "negative_low_vol"
         assert "downward drift" in result["regime_info"][0]["trading_interpretation"]
         assert result["regime_info"][1]["stat_label"] == "positive_high_vol"
         assert result["regime_info"][0]["mean_return"] == pytest.approx(-0.001)

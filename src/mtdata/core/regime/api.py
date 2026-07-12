@@ -210,18 +210,9 @@ def _normalize_volatility_signal(
     if "low_vol" in text or "stable" in text:
         return "low_vol"
 
-    sigma = _coerce_optional_float(volatility)
-    if sigma is None:
-        return None
-    if sigma < 0.0005:
-        return "very_low_vol"
-    if sigma < 0.001:
-        return "low_vol"
-    if sigma < 0.003:
-        return "moderate_vol"
-    if sigma < 0.006:
-        return "high_vol"
-    return "very_high_vol"
+    # Raw per-bar volatility has no symbol/timeframe-independent semantic
+    # threshold. Callers should supply a run-relative label when available.
+    return None
 
 
 def _normalize_regime_method_name(method: Any) -> str:

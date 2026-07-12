@@ -282,6 +282,43 @@ def test_ensemble_labels_follow_mean_return_sign() -> None:
     assert "bearish" not in descriptions[2]["label"]
 
 
+def test_regime_volatility_labels_are_scale_invariant() -> None:
+    low_scale = _build_regime_descriptions(
+        {
+            "mean_return": [-0.0002, 0.0002],
+            "volatility": [0.0001, 0.0004],
+        },
+        "hmm",
+    )
+    high_scale = _build_regime_descriptions(
+        {
+            "mean_return": [-0.0002, 0.0002],
+            "volatility": [0.01, 0.04],
+        },
+        "hmm",
+    )
+
+    assert [low_scale[i]["stat_label"] for i in range(2)] == [
+        "negative_low_vol",
+        "positive_high_vol",
+    ]
+    assert [high_scale[i]["stat_label"] for i in range(2)] == [
+        "negative_low_vol",
+        "positive_high_vol",
+    ]
+    assert low_scale[0]["label"] == "bearish_quiet"
+    assert high_scale[1]["label"] == "bullish_volatile"
+
+
+def test_single_regime_uses_neutral_relative_volatility_tier() -> None:
+    descriptions = _build_regime_descriptions(
+        {"mean_return": [0.0], "volatility": [0.25]},
+        "ensemble",
+    )
+
+    assert descriptions[0]["label"] == "neutral_mod_vol"
+
+
 def test_wavelet_labels_include_frequency_character() -> None:
     descriptions = _build_regime_descriptions(
         {
@@ -311,8 +348,8 @@ def test_wavelet_labels_include_frequency_character() -> None:
         "wavelet",
     )
 
-    assert descriptions[0]["label"] == "negative_mixed_freq_high_vol"
-    assert descriptions[1]["label"] == "negative_trend_dominant_high_vol"
+    assert descriptions[0]["label"] == "negative_mixed_freq_moderate_vol"
+    assert descriptions[1]["label"] == "negative_trend_dominant_low_vol"
     assert descriptions[2]["label"] == "positive_trend_dominant_high_vol"
 
 

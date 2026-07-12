@@ -250,6 +250,11 @@ Canonical fields for successful compact/full JSON responses:
 
 `current_regime.regime_confidence` and `regimes[].regime_confidence` are the canonical regime-confidence keys. Reliability diagnostics keep their own `reliability.confidence` field.
 
+Volatility words in state labels (`low_vol`, `high_vol`, `quiet`, and
+`volatile`) rank the fitted states within that run. They are not absolute
+thresholds and should not be compared across symbols or timeframes. Use the
+numeric `volatility` / `volatility_pct` fields for quantitative comparisons.
+
 ### Parameter applicability
 
 Use `n_states` as the canonical state-count parameter for HMM/GMM, MS-AR, clustering, GARCH, wavelet, and ensemble. Legacy aliases such as `k_regimes` or `n_clusters` are ignored and reported in `warnings`; use `n_states` to change the state count.
