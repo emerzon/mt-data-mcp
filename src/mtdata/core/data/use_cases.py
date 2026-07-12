@@ -67,7 +67,6 @@ _COMPACT_TICK_TOP_LEVEL_FIELDS = (
 )
 
 _ANALYSIS_CANDLE_DEFAULT_LIMIT = 100
-_COMPACT_CANDLE_MAX_ROWS = 50
 
 
 def _ensure_gateway_connection(gateway: Any) -> Dict[str, Any] | None:
@@ -472,7 +471,6 @@ def _compact_candles_payload(
     result: Dict[str, Any],
     *,
     include_forming_booleans: bool = False,
-    truncate_rows: bool = True,
 ) -> Dict[str, Any]:
     compact = dict(result)
     public_diagnostics = _public_candle_diagnostics(result)
@@ -500,8 +498,6 @@ def _compact_candles_payload(
     if result.get("forming_candle_status") == "skipped" and result.get("hint"):
         compact["hint"] = result["hint"]
     _attach_candle_timestamp_metadata(compact)
-    if truncate_rows:
-        _truncate_compact_candle_rows(compact)
     for key in (
         "query_type",
         "freshness",
@@ -551,27 +547,6 @@ def _attach_candle_timestamp_metadata(payload: Dict[str, Any]) -> None:
             payload["timestamp_format"] = "iso_utc"
             payload["timestamp_format_hint"] = "time is a UTC timestamp string."
             return
-
-
-def _truncate_compact_candle_rows(payload: Dict[str, Any]) -> None:
-    rows = payload.get("data")
-    if not isinstance(rows, list) or len(rows) <= _COMPACT_CANDLE_MAX_ROWS:
-        return
-    total_rows = len(rows)
-    payload["data"] = rows[-_COMPACT_CANDLE_MAX_ROWS:]
-    payload["data_rows_total"] = total_rows
-    payload["data_rows_shown"] = _COMPACT_CANDLE_MAX_ROWS
-    payload["data_truncated"] = True
-    payload["truncation"] = {
-        "reason": "compact_output_row_cap",
-        "retained": "last",
-        "limit": _COMPACT_CANDLE_MAX_ROWS,
-        "excluded_count": total_rows - _COMPACT_CANDLE_MAX_ROWS,
-    }
-    payload.setdefault("warnings", []).append(
-        f"Compact candle output shows the latest {_COMPACT_CANDLE_MAX_ROWS} of "
-        f"{total_rows} rows; use detail=standard or detail=full for all rows."
-    )
 
 
 def _normalize_denoise_columns(value: Any) -> List[str]:
@@ -675,7 +650,6 @@ def _standard_candles_payload(result: Dict[str, Any]) -> Dict[str, Any]:
     standard = _compact_candles_payload(
         result,
         include_forming_booleans=True,
-        truncate_rows=False,
     )
     public_diagnostics = _public_candle_diagnostics(result)
     for key in (
@@ -726,7 +700,6 @@ def _summary_candles_payload(result: Dict[str, Any]) -> Dict[str, Any]:
     summary = _compact_candles_payload(
         result,
         include_forming_booleans=True,
-        truncate_rows=False,
     )
     for key, value in _public_candle_diagnostics(result).items():
         summary[key] = value

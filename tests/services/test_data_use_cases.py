@@ -954,7 +954,7 @@ def test_run_data_fetch_candles_compact_keeps_anomaly_metadata():
     assert "candles_requested" not in result
 
 
-def test_run_data_fetch_candles_compact_truncates_large_row_sets():
+def test_run_data_fetch_candles_compact_preserves_requested_rows():
     rows = [
         {"time": 1_700_000_000 + index * 60, "close": float(index)}
         for index in range(125)
@@ -974,15 +974,11 @@ def test_run_data_fetch_candles_compact_truncates_large_row_sets():
     )
 
     assert result["count"] == 125
-    assert len(result["data"]) == 50
-    assert result["data"][0]["close"] == 75.0
-    assert result["data_rows_total"] == 125
-    assert result["data_rows_shown"] == 50
-    assert result["data_truncated"] is True
-    assert result["truncation"]["reason"] == "compact_output_row_cap"
+    assert len(result["data"]) == 125
+    assert result["data"][0]["close"] == 0.0
+    assert "data_truncated" not in result
     assert result["timestamp_format"] == "epoch_seconds"
     assert "timestamp_format=iso" in result["timestamp_format_hint"]
-    assert any("latest 50 of 125 rows" in warning for warning in result["warnings"])
 
 
 def test_run_data_fetch_candles_standard_keeps_forming_booleans():
