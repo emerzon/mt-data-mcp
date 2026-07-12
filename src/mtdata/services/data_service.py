@@ -646,12 +646,16 @@ def _fetch_rates_with_warmup(  # noqa: C901
         future_error = _future_start_error(start_datetime, from_date, seconds_per_bar)
         if future_error:
             return None, future_error
-        to_date = from_date + timedelta(seconds=seconds_per_bar * (candles + 2 + extra_bars))
-        from_date_internal = from_date - timedelta(seconds=seconds_per_bar * (warmup_bars + extra_bars))
+        to_date = datetime.now(dt_timezone.utc)
         expected_end_ts = _utc_epoch_seconds(to_date)
 
         def _fetch():
-            return _mt5_copy_rates_range(symbol, mt5_timeframe, from_date_internal, to_date)
+            return _mt5_copy_rates_from(
+                symbol,
+                mt5_timeframe,
+                to_date,
+                candles + warmup_bars + extra_bars,
+            )
 
     elif end_datetime:
         to_date, to_date_error = _parse_fetch_datetime_arg(end_datetime)
@@ -1067,7 +1071,7 @@ def _trim_df_to_target(
         target_from = _utc_epoch_seconds(from_dt)
         out = df.loc[df['__epoch'] >= target_from]
         if len(out) > candles:
-            out = out.iloc[:candles]
+            out = out.iloc[-candles:]
     elif end_datetime:
         to_dt = _parse_start_datetime(end_datetime)
         if not to_dt:

@@ -291,14 +291,14 @@ class TestFetchRatesWithWarmup(unittest.TestCase):
         self.assertIn('future', err)
         mock_range.assert_not_called()
 
-    @patch(_RATES_RANGE)
+    @patch(_RATES_FROM)
     @patch(_PARSE_START)
-    def test_start_only(self, mock_parse, mock_range):
+    def test_start_only(self, mock_parse, mock_from):
         """Only start_datetime provided."""
         t1 = datetime(2025, 1, 1, tzinfo=_UTC)
         mock_parse.return_value = t1
         rates = _make_rates(5, base_ts=t1.timestamp() + 600)
-        mock_range.return_value = rates
+        mock_from.return_value = rates
         result, err = _fetch_rates_with_warmup(
             'EURUSD', 16385, 'H1', 5, 0, '2025-01-01', None,
             retry=False, sanity_check=False,
@@ -643,6 +643,7 @@ class TestTrimDfToTarget(unittest.TestCase):
             out = _trim_df_to_target(df, '2025-01-01', None, 5)
         # 10 rows from index 10 onward, but capped at candles=5
         self.assertEqual(len(out), 5)
+        self.assertEqual(list(out['time']), [f"t{i}" for i in range(15, 20)])
 
     @patch(_PARSE_START)
     def test_start_only_invalid(self, mock_parse):
