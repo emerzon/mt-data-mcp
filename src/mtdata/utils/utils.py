@@ -15,7 +15,6 @@ from .formatting import (
     format_number,
 )
 from .formatting import optimal_decimals
-from .coercion import coerce_finite_float as _coerce_finite_float
 from .coercion import safe_float as _safe_float
 
 

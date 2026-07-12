@@ -8,7 +8,7 @@ from pydantic import ValidationError
 from ...services.data_service import fetch_candles, fetch_ticks
 from ...shared.schema import CompactFullDetailLiteral, TimeframeLiteral
 from ...utils.mt5 import ensure_mt5_connection_or_raise
-from ...utils.utils import _coerce_finite_float
+from ...utils.coercion import coerce_finite_float
 from .._mcp_instance import mcp
 from ..execution_logging import run_logged_operation
 from ..mt5_gateway import create_mt5_gateway
@@ -176,7 +176,7 @@ def _support_resistance_watchers(
     for level in levels:
         if not isinstance(level, dict):
             continue
-        level_value = _coerce_finite_float(level.get("value"))
+        level_value = coerce_finite_float(level.get("value"))
         if level_value is None:
             continue
         level_type = str(level.get("type") or "").strip().lower()
@@ -254,7 +254,7 @@ def _extract_pivot_levels(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
             continue
         values = [
             numeric
-            for numeric in (_coerce_finite_float(value) for key, value in row.items() if key != "level")
+            for numeric in (coerce_finite_float(value) for key, value in row.items() if key != "level")
             if numeric is not None
         ]
         if not values:
@@ -384,7 +384,7 @@ def _wait_event_monitored_types(criteria: Optional[Dict[str, Any]]) -> List[str]
 
 
 def _wait_event_next_poll_hint(poll_interval_seconds: Any) -> Optional[str]:
-    seconds = _coerce_finite_float(poll_interval_seconds)
+    seconds = coerce_finite_float(poll_interval_seconds)
     if seconds is None or seconds <= 0.0:
         return None
     return f"retry after {seconds:g}s"
