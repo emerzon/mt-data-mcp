@@ -1226,7 +1226,13 @@ def forecast_volatility(  # noqa: C901
             elif back == 'abs':
                 sig = np.maximum(0.0, yhat) * math.sqrt(math.pi/2.0)
             else:
-                sig = np.sqrt(np.exp(yhat))
+                # Duan smearing corrects the Jensen gap when converting a
+                # forecast of E[log(r²)] back to the arithmetic r² scale.
+                centered_log_r2 = y - float(np.mean(y))
+                log_r2_smearing_factor = float(np.mean(np.exp(centered_log_r2)))
+                if not math.isfinite(log_r2_smearing_factor) or log_r2_smearing_factor <= 0:
+                    log_r2_smearing_factor = 1.0
+                sig = np.sqrt(np.exp(yhat) * log_r2_smearing_factor)
             hsig = float(math.sqrt(np.sum(sig[:fh]**2)))
             # Root-mean-square forecast sigma per modeled horizon step.
             sbar = float(hsig / math.sqrt(max(1, int(fh))))
@@ -1235,7 +1241,15 @@ def forecast_volatility(  # noqa: C901
                 {"success": True, "symbol": symbol, "timeframe": timeframe, "method": method_l, "proxy": proxy_l,
                  "horizon": int(horizon), "sigma_bar_return": sbar, "sigma_annual_return": float(sbar*math.sqrt(bpy)),
                  "horizon_sigma_return": hsig, "horizon_sigma_annual": _annualize_horizon_sigma(hsig, bpy, int(horizon)),
-                 "params_used": {**p, "per_bar_volatility_basis": "forecast_horizon_rms"}},
+                 "params_used": {
+                     **p,
+                     "per_bar_volatility_basis": "forecast_horizon_rms",
+                     **(
+                         {"log_r2_smearing_factor": log_r2_smearing_factor}
+                         if back == "exp_sqrt"
+                         else {}
+                     ),
+                 }},
                 df=df,
                 symbol=symbol,
                 timeframe=timeframe,

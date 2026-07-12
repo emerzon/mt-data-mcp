@@ -792,6 +792,7 @@ class TestForecastVolatilityGeneral:
                 proxy="log_r2")
             assert result.get("success") is True
             assert result["proxy"] == "log_r2"
+            assert result["params_used"]["log_r2_smearing_factor"] > 1.0
 
     def test_theta_custom_alpha(self):
         with _mock_vol_env():
