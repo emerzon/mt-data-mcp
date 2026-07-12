@@ -151,6 +151,24 @@ def test_compute_volume_profile_caps_tiny_explicit_buckets():
     assert result["diagnostics"]["max_buckets_reached"] is True
 
 
+def test_compute_volume_profile_discloses_explicit_bucket_count_cap():
+    rows = [{"last": float(price), "tick_volume": 1} for price in range(100)]
+
+    result = compute_volume_profile(
+        rows,
+        VolumeProfileConfig(
+            price_source="last",
+            bucket_count=500,
+            max_buckets=20,
+        ),
+    )
+
+    assert result["success"] is True
+    assert result["diagnostics"]["bucket_count_requested"] == 500
+    assert result["diagnostics"]["max_buckets_reached"] is True
+    assert "was capped" in result["warning"]
+
+
 def test_compute_volume_profile_defaults_to_one_hundred_buckets_when_possible():
     rows = [{"last": float(price), "tick_volume": 1} for price in range(100)]
 

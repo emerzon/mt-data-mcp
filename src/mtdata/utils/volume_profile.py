@@ -134,10 +134,16 @@ def compute_volume_profile(
         "dropped_volume_rows": dropped_volume,
         "bucket_count": bucket_count,
     }
-    if buckets_capped:
+    explicit_bucket_cap = (
+        cfg.bucket_count is not None
+        and int(cfg.bucket_count) > int(cfg.max_buckets)
+    )
+    if cfg.bucket_count is not None:
+        diagnostics["bucket_count_requested"] = int(cfg.bucket_count)
+    if buckets_capped or explicit_bucket_cap:
         diagnostics["max_buckets_reached"] = True
 
-    return {
+    result = {
         "success": True,
         "price_source": price_source,
         "volume_kind": volume_kind,
@@ -158,6 +164,12 @@ def compute_volume_profile(
         "buckets": buckets,
         "diagnostics": diagnostics,
     }
+    if explicit_bucket_cap:
+        result["warning"] = (
+            f"bucket_count={int(cfg.bucket_count)} exceeded max_buckets="
+            f"{int(cfg.max_buckets)} and was capped."
+        )
+    return result
 
 
 def annotate_level_confluence(
