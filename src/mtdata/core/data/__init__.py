@@ -578,7 +578,7 @@ def data_fetch_candles(
         - success: bool
         - symbol: str
         - timeframe: str
-        - candles: int (number of candles returned)
+        - count: int (number of candles returned)
         - has_forming_candle: bool (true when the latest available candle is still forming)
         - forming_candle_status: str ("included", "skipped", "detected", or "none")
         - forming_candle_included: bool (true when the forming candle is present in data)

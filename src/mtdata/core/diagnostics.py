@@ -13,6 +13,7 @@ import pandas as pd
 from scipy.signal import find_peaks, periodogram
 
 from ..forecast.common import bars_per_year
+from ..shared.symbols import is_probably_crypto_symbol, is_probably_forex_symbol
 from ..shared.constants import TIMEFRAME_MAP
 from ..shared.schema import CompactFullDetailLiteral, TimeframeLiteral
 from ..utils.mt5 import (
@@ -552,7 +553,8 @@ def volatility_term_structure(
             return {"error": fetch_error}
         close = pd.to_numeric(frame["close"], errors="coerce")
         returns = np.log(close.where(close > 0)).diff().replace([np.inf, -np.inf], np.nan)
-        factor = math.sqrt(bars_per_year(timeframe)) if annualize else 1.0
+        bpy = bars_per_year(timeframe, symbol) if annualize else float("nan")
+        factor = math.sqrt(bpy) if annualize else 1.0
         if not math.isfinite(factor) or factor <= 0.0:
             factor = 1.0
         rows: List[Dict[str, Any]] = []
@@ -600,8 +602,13 @@ def volatility_term_structure(
             "count": len(rows),
         }
         if annualize:
-            out["bars_per_year"] = round(float(bars_per_year(timeframe)), 4)
-            out["annualization_basis"] = "252_trading_days_24h_intraday"
+            out["bars_per_year"] = round(float(bpy), 4) if math.isfinite(bpy) else None
+            if is_probably_crypto_symbol(symbol):
+                out["annualization_basis"] = "365_calendar_days_24h"
+            elif is_probably_forex_symbol(symbol):
+                out["annualization_basis"] = "260_fx_weekdays_24h"
+            else:
+                out["annualization_basis"] = "252_trading_days_24h_intraday"
         if normalize_output_verbosity_detail(detail, default="compact") == "full":
             out["method"] = "rolling_root_mean_square_log_return"
             out["lookback"] = int(lookback)
