@@ -170,6 +170,31 @@ def test_modify_position_blocks_stop_loss_removal_when_required(
     assert "requires a stop-loss" in result["violations"][0]
 
 
+def test_modify_position_blocks_unprotected_position_when_required(
+    restore_trade_guardrails,
+    patch_gateway,
+):
+    trade_guardrails_config.enabled = True
+    trade_guardrails_config.safety_policy.require_stop_loss = True
+    position = SimpleNamespace(
+        ticket=200,
+        symbol="EURUSD",
+        price_open=1.1000,
+        sl=0.0,
+        tp=1.1200,
+        type=patch_gateway.POSITION_TYPE_BUY,
+        volume=1.0,
+        magic=123,
+    )
+    patch_gateway.positions_get = lambda *args, **kwargs: [position]
+
+    result = _modify_position(ticket=200, take_profit=1.1300)
+
+    assert result["guardrail_blocked"] is True
+    assert result["guardrail_rule"] == "safety_policy"
+    assert "requires a stop-loss" in result["violations"][0]
+
+
 def test_modify_position_allows_tighter_stop_loss(
     restore_trade_guardrails,
     patch_gateway,

@@ -89,7 +89,7 @@ def _evaluate_position_modify_guardrails(
     entry_price = validation._safe_float_attr(position, "price_open")
     if not trade_guardrails_config.is_enabled() or position_volume is None:
         return None
-    if not pending_order_risk_increased(
+    risk_increased = pending_order_risk_increased(
         symbol_info=symbol_info,
         side=side,
         volume=abs(float(position_volume)),
@@ -97,7 +97,17 @@ def _evaluate_position_modify_guardrails(
         existing_stop_loss=current_stop_loss,
         candidate_entry_price=entry_price,
         candidate_stop_loss=candidate_stop_loss,
-    ):
+    )
+    stop_loss_required = bool(
+        trade_guardrails_config.safety_policy.require_stop_loss
+        or any(trade_guardrails_config.wallet_risk_limits.model_dump().values())
+    )
+    candidate_has_stop = bool(
+        candidate_stop_loss is not None
+        and math.isfinite(float(candidate_stop_loss))
+        and float(candidate_stop_loss) > 0.0
+    )
+    if not risk_increased and not (stop_loss_required and not candidate_has_stop):
         return None
 
     try:
