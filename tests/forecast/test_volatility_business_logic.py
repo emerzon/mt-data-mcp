@@ -228,6 +228,17 @@ def test_forecast_volatility_general_theta_and_proxy_errors(monkeypatch):
     )
 
 
+def test_forecast_volatility_rejects_proxy_for_direct_method():
+    out = vol.forecast_volatility(
+        symbol="EURUSD",
+        timeframe="H1",
+        method="ewma",
+        proxy="abs_return",
+    )
+
+    assert "does not accept proxy" in out["error"]
+
+
 def test_forecast_volatility_direct_methods_and_short_data(monkeypatch):
     monkeypatch.setattr(vol, "TIMEFRAME_MAP", {"H1": 1})
     monkeypatch.setattr(vol, "TIMEFRAME_SECONDS", {"H1": 3600})

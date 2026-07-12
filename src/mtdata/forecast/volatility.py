@@ -851,6 +851,13 @@ def forecast_volatility(  # noqa: C901
         valid_methods = valid_direct.union(valid_general).union(valid_meta)
         if method_l not in valid_methods:
             return _invalid_volatility_method_error(method, valid_methods=valid_methods)
+        if method_l in valid_direct and proxy is not None:
+            return {
+                "error": (
+                    f"Direct volatility method '{method_l}' does not accept proxy. "
+                    "Omit proxy or use arima, sarima, ets, or theta."
+                )
+            }
         if method_l in garch_family and not _ARCH_AVAILABLE:
             return {"error": f"{method_l} requires 'arch' package."}
 
@@ -930,7 +937,7 @@ def forecast_volatility(  # noqa: C901
                     timeframe=timeframe,
                     horizon=horizon,
                     method=base_method,  # type: ignore[arg-type]
-                    proxy=proxy,
+                    proxy=proxy if base_method in valid_general else None,
                     params=call_params or None,
                     as_of=as_of,
                     start=start,
