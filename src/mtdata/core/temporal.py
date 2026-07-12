@@ -616,6 +616,7 @@ def _base_temporal_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
             "return_mode",
             "units",
             "timezone",
+            "session_definition",
             "lookback",
             "lookback_source",
             "lookback_note",

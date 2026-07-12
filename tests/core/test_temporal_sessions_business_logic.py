@@ -102,3 +102,28 @@ def test_temporal_analyze_session_groups_use_analysis_timezone_clock() -> None:
     assert result["session_definition"]["clock"] == "Europe/London"
     assert [group["group"] for group in result["groups"]] == ["ny"]
     assert [group["group_label"] for group in result["groups"]] == ["ny"]
+
+
+def test_temporal_analyze_compact_keeps_session_clock_definition() -> None:
+    rates = _make_rates_from_epochs(
+        [
+            int(datetime(2026, 7, 15, 14, 30, tzinfo=timezone.utc).timestamp()),
+            int(datetime(2026, 7, 15, 15, 0, tzinfo=timezone.utc).timestamp()),
+            int(datetime(2026, 7, 15, 15, 30, tzinfo=timezone.utc).timestamp()),
+        ]
+    )
+    with patch(_P + "_fetch_rates", return_value=(rates, None)), patch(
+        _P + "_symbol_ready_guard", new=_guard_stub
+    ), patch(_P + "ensure_mt5_connection_or_raise", new=lambda: None), patch(
+        _P + "get_symbol_info_cached", new=_info_stub
+    ):
+        result = _raw_temporal_analyze(
+            symbol="EURUSD",
+            timeframe="M30",
+            lookback=100,
+            group_by="session",
+            detail="compact",
+        )
+
+    assert result["session_definition"]["basis"] == "dst_aware_market_sessions"
+    assert result["session_definition"]["clock"] == result["timezone"]
