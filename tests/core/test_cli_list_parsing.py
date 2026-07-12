@@ -9,7 +9,7 @@ from typing import List, Optional
 # Add src to path to ensure local package is found
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../src")))
 
-from mtdata.core import cli
+from mtdata.core.cli import api as cli
 
 
 class TestCliListParsing(unittest.TestCase):

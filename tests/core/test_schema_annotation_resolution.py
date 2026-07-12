@@ -4,7 +4,7 @@ from typing import get_args, get_origin
 
 from typing_extensions import TypedDict
 
-from mtdata.core import cli
+from mtdata.core.cli import api as cli
 from mtdata.shared.schema import get_function_info
 
 
