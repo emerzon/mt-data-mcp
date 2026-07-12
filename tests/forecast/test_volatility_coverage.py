@@ -999,6 +999,27 @@ class TestForecastVolatilityEdgeCases:
                 params={"window": 10})
             assert result.get("success") is True
 
+    def test_rolling_std_matches_simple_return_standard_deviation(self):
+        rates = _make_rates(30)
+        simple_returns = np.linspace(-0.01, 0.02, 29)
+        closes = [100.0]
+        for value in simple_returns:
+            closes.append(closes[-1] * (1.0 + value))
+        rates["close"] = np.asarray(closes)
+        rates["open"] = rates["close"]
+        rates["high"] = rates["close"]
+        rates["low"] = rates["close"]
+
+        with _mock_vol_env(rates_return=rates):
+            result = forecast_volatility(
+                "EURUSD", "H1", 1, method="rolling_std",
+                params={"window": 10},
+            )
+
+        assert result["volatility_per_bar"] == pytest.approx(
+            np.std(simple_returns[-10:], ddof=0)
+        )
+
     def test_yang_zhang_complex_estimator(self):
         with _mock_vol_env():
             result = forecast_volatility(

@@ -1465,7 +1465,14 @@ def forecast_volatility(  # noqa: C901
                 rs_mean = pd.Series(rs).rolling(window=window, min_periods=window).mean().to_numpy()
                 v = (oc_var + k*co_var + (1-k)*rs_mean)
             else:
-                v = pd.Series(r*r).rolling(window=window, min_periods=window).mean().to_numpy()
+                with np.errstate(divide='ignore', invalid='ignore'):
+                    simple_returns = np.diff(c) / c[:-1]
+                v = (
+                    pd.Series(simple_returns)
+                    .rolling(window=window, min_periods=window)
+                    .var(ddof=0)
+                    .to_numpy()
+                )
             sigma2 = float(v[-1]) if np.isfinite(v[-1]) else float(np.nanmean(v[-window:]))
             sbar = math.sqrt(max(0.0, sigma2))
             hsig = float(sbar * math.sqrt(max(1, int(horizon))))
