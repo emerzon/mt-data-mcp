@@ -587,7 +587,7 @@ Choose what to optimize. Each objective answers a different trading question:
 | `edge` | `P(win) - P(loss)` | General purpose, consistent win rate |
 | `prob_tp_first` | `P(win)` | Maximize win rate only |
 | `prob_resolve` | `1 - P(no hit)` | Ensure trades complete |
-| `kelly` | `P(tp_first) - P(sl_first)/net_RR` | Position sizing |
+| `kelly` | `P(tp_first) - P(sl_first)/net_RR` | Unconditional Kelly edge proxy |
 | `kelly_cond` | Kelly on resolved trades only | Position sizing (ignoring timeouts) |
 | `ev` | `P(tp_first)*net_TP - P(sl_first)*net_SL + P(no_hit)*timeout_MTM` | Maximize full-path profit per trade |
 | `ev_cond` | EV on resolved trades only | Profit per trade (ignoring timeouts) |
@@ -621,12 +621,15 @@ Choose what to optimize. Each objective answers a different trading question:
 - **Use when:** Capital turnover matters (reinvesting profits)
 - **Limitation:** May favor trades with higher transaction costs
 
-**`kelly`** — *"How much should I bet?"*
-- Optimal fraction of capital for maximum long-term growth
+**`kelly`** — *"How strong is the barrier edge for sizing?"*
+- An unconditional two-barrier Kelly edge proxy; timeout probability shrinks the value
 - Uses net reward/risk when trading costs are supplied
-- Kelly = 0.25 means bet 25% of capital (but use fractional Kelly in practice)
-- **Use when:** Position sizing decisions
-- **Limitation:** Full Kelly leads to large drawdowns; use 0.25× Kelly
+- Do not use the raw value directly as a lot or capital fraction
+- `kelly_cond` is the standard two-outcome Kelly fraction after conditioning on
+  TP/SL resolution; use fractional Kelly and an independent risk cap for sizing
+- **Use when:** Comparing barrier candidates with the same timeout semantics
+- **Limitation:** Neither variant models horizon mark-to-market outcomes; default
+  `ev` does, so Kelly and EV use different timeout payoff assumptions
 
 **`prob_resolve`** — *"Will my trade actually close?"*
 - Probability that TP or SL is hit within the horizon
