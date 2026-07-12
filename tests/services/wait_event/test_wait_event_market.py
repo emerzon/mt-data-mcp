@@ -29,6 +29,31 @@ class FakeClock:
         self.current = self.current + timedelta(seconds=float(seconds))
 
 
+def test_price_touch_scans_transient_crossing_inside_poll_batch() -> None:
+    spec = {
+        "type": "price_touch_level",
+        "symbol": "EURUSD",
+        "level": 100.0,
+        "tolerance": 0.0,
+        "direction": "up",
+        "price_source": "bid",
+    }
+    market_data = {
+        "ticks": [
+            {"epoch": 9.0, "bid": 99.0},
+            {"epoch": 10.0, "bid": 99.5},
+            {"epoch": 11.0, "bid": 100.5},
+            {"epoch": 12.0, "bid": 99.5},
+        ],
+    }
+
+    match = wait_events_mod._evaluate_price_touch_level(spec, market_data)
+
+    assert match is not None
+    assert match["observed"]["previous_price"] == 99.5
+    assert match["observed"]["current_price"] == 100.5
+
+
 class OversleepClock(FakeClock):
     def __init__(self, start: datetime, *, extra_sleep_seconds: float) -> None:
         super().__init__(start)

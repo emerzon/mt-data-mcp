@@ -1940,25 +1940,39 @@ def _evaluate_range_expansion(spec: Dict[str, Any], market_data: Any) -> Optiona
     }
 
 
+def _event_price_points(spec: Dict[str, Any], market_data: Any) -> List[tuple[float, float]]:
+    prices = _market_price_points(
+        list((market_data or {}).get("ticks", [])),
+        source=str(spec.get("price_source") or "auto"),
+    )
+    return prices
+
+
 def _evaluate_price_touch_level(spec: Dict[str, Any], market_data: Any) -> Optional[Dict[str, Any]]:
-    prices = _market_price_points(list((market_data or {}).get("ticks", [])), source=str(spec.get("price_source") or "auto"))
+    prices = _event_price_points(spec, market_data)
     if len(prices) < 2:
         return None
-    previous_price = float(prices[-2][1])
-    current_price = float(prices[-1][1])
     level = float(spec["level"])
     tolerance = float(spec.get("tolerance") or 0.0)
     lower = level - tolerance
     upper = level + tolerance
-    upward_touch = previous_price < lower and current_price >= lower
-    downward_touch = previous_price > upper and current_price <= upper
     direction = str(spec.get("direction") or "either")
-    if direction == "up" and not upward_touch:
+    matched_pair = None
+    for previous, current in zip(prices, prices[1:]):
+        previous_price = float(previous[1])
+        current_price = float(current[1])
+        upward_touch = previous_price < lower and current_price >= lower
+        downward_touch = previous_price > upper and current_price <= upper
+        if (
+            (direction == "up" and upward_touch)
+            or (direction == "down" and downward_touch)
+            or (direction == "either" and (upward_touch or downward_touch))
+        ):
+            matched_pair = (previous_price, current_price)
+            break
+    if matched_pair is None:
         return None
-    if direction == "down" and not downward_touch:
-        return None
-    if direction == "either" and not (upward_touch or downward_touch):
-        return None
+    previous_price, current_price = matched_pair
     return {
         "type": spec["type"],
         "criteria": {
@@ -1981,7 +1995,7 @@ def _evaluate_price_touch_level(spec: Dict[str, Any], market_data: Any) -> Optio
 
 
 def _evaluate_price_break_level(spec: Dict[str, Any], market_data: Any) -> Optional[Dict[str, Any]]:
-    prices = _market_price_points(list((market_data or {}).get("ticks", [])), source=str(spec.get("price_source") or "auto"))
+    prices = _event_price_points(spec, market_data)
     confirm_ticks = max(1, int(spec.get("confirm_ticks") or 1))
     if len(prices) < confirm_ticks + 1:
         return None
@@ -1989,17 +2003,23 @@ def _evaluate_price_break_level(spec: Dict[str, Any], market_data: Any) -> Optio
     tolerance = float(spec.get("tolerance") or 0.0)
     upper = level + tolerance
     lower = level - tolerance
-    previous_price = float(prices[-(confirm_ticks + 1)][1])
-    confirmed_prices = [float(price) for _, price in prices[-confirm_ticks:]]
-    breakout_up = previous_price < lower and all(price >= upper for price in confirmed_prices)
-    breakout_down = previous_price > upper and all(price <= lower for price in confirmed_prices)
     direction = str(spec.get("direction") or "either")
-    if direction == "up" and not breakout_up:
+    matched_window = None
+    for end in range(confirm_ticks + 1, len(prices) + 1):
+        previous_price = float(prices[end - confirm_ticks - 1][1])
+        confirmed_prices = [float(price) for _, price in prices[end - confirm_ticks : end]]
+        breakout_up = previous_price < lower and all(price >= upper for price in confirmed_prices)
+        breakout_down = previous_price > upper and all(price <= lower for price in confirmed_prices)
+        if (
+            (direction == "up" and breakout_up)
+            or (direction == "down" and breakout_down)
+            or (direction == "either" and (breakout_up or breakout_down))
+        ):
+            matched_window = (previous_price, confirmed_prices)
+            break
+    if matched_window is None:
         return None
-    if direction == "down" and not breakout_down:
-        return None
-    if direction == "either" and not (breakout_up or breakout_down):
-        return None
+    previous_price, confirmed_prices = matched_window
     return {
         "type": spec["type"],
         "criteria": {
@@ -2023,26 +2043,36 @@ def _evaluate_price_break_level(spec: Dict[str, Any], market_data: Any) -> Optio
 
 
 def _evaluate_price_enter_zone(spec: Dict[str, Any], market_data: Any) -> Optional[Dict[str, Any]]:
-    prices = _market_price_points(list((market_data or {}).get("ticks", [])), source=str(spec.get("price_source") or "auto"))
+    prices = _event_price_points(spec, market_data)
     if len(prices) < 2:
         return None
-    previous_price = float(prices[-2][1])
-    current_price = float(prices[-1][1])
     lower = float(spec["lower"])
     upper = float(spec["upper"])
-    if max(previous_price, current_price) < lower or min(previous_price, current_price) > upper:
-        return None
-    if _price_within_band(previous_price, lower=lower, upper=upper):
-        return None
     direction = str(spec.get("direction") or "either")
-    enter_up = previous_price < lower
-    enter_down = previous_price > upper
-    if direction == "up" and not enter_up:
+    matched_pair = None
+    for previous, current in zip(prices, prices[1:]):
+        previous_price = float(previous[1])
+        current_price = float(current[1])
+        crosses_zone = not (
+            max(previous_price, current_price) < lower
+            or min(previous_price, current_price) > upper
+        )
+        enter_up = previous_price < lower
+        enter_down = previous_price > upper
+        if (
+            crosses_zone
+            and not _price_within_band(previous_price, lower=lower, upper=upper)
+            and (
+                (direction == "up" and enter_up)
+                or (direction == "down" and enter_down)
+                or (direction == "either" and (enter_up or enter_down))
+            )
+        ):
+            matched_pair = (previous_price, current_price)
+            break
+    if matched_pair is None:
         return None
-    if direction == "down" and not enter_down:
-        return None
-    if direction == "either" and not (enter_up or enter_down):
-        return None
+    previous_price, current_price = matched_pair
     return {
         "type": spec["type"],
         "criteria": {
