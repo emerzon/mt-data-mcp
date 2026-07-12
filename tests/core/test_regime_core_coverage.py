@@ -449,7 +449,7 @@ class TestRegimeDetectBOCPD:
     @patch(_FETCH)
     def test_bocpd_full(self, mock_fetch, mock_denoise, mock_fmt, caplog):
         """Happy path: BOCPD with full output."""
-        mock_fetch.return_value = _make_df(50)
+        mock_fetch.return_value = _make_df(80)
         cp = np.zeros(49)
         cp[20] = 0.8
         with (
@@ -465,10 +465,15 @@ class TestRegimeDetectBOCPD:
                 target="return",
                 threshold=0.5,
                 detail="full",
+                start="2025-01-01",
+                end="2025-02-01",
             )
         assert "regimes" in res
         assert "current_regime" in res
         assert "transition_summary" in res
+        assert res["analysis_window"]["range_bars_fetched"] == 80
+        assert res["analysis_window"]["bars_analyzed"] == 50
+        assert res["analysis_window"]["truncated"] is True
         assert any(
             "event=finish operation=regime_detect success=True" in record.message
             for record in caplog.records

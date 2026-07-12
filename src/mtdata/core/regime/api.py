@@ -1013,6 +1013,7 @@ def regime_detect(  # noqa: C901
     method = _normalize_regime_method_name(requested_method)
     started_at = time.perf_counter()
     global_warnings: List[str] = []
+    analysis_window_meta: Dict[str, Any] = {}
     log_operation_start(
         logger,
         operation="regime_detect",
@@ -1036,6 +1037,8 @@ def regime_detect(  # noqa: C901
                     f"Requested method '{requested_method}' is handled by the '{method}' implementation.",
                 )
             _append_warnings(result, global_warnings)
+            if analysis_window_meta:
+                result.setdefault("analysis_window", dict(analysis_window_meta))
             result.setdefault("timezone", "UTC")
             _attach_regime_usage_notice(result)
         log_operation_finish(
@@ -1155,8 +1158,25 @@ def regime_detect(  # noqa: C901
         if start or end:
             history_kwargs.update({"start": start, "end": end})
         df = _fetch_history(symbol, timeframe, fetch_limit, **history_kwargs)
+        fetched_range_bars = len(df)
         if (start or end) and len(df) > fetch_limit:
             df = df.iloc[-fetch_limit:].reset_index(drop=True)
+        if start or end:
+            analysis_window_meta.update(
+                {
+                    "range_bars_fetched": int(fetched_range_bars),
+                    "bars_analyzed": int(len(df)),
+                    "truncated": bool(fetched_range_bars > len(df)),
+                    "limit_applied": int(fetch_limit),
+                }
+            )
+            if len(df) and "time" in df:
+                analysis_window_meta["effective_start"] = _format_time_minimal(
+                    float(df["time"].iloc[0])
+                )
+                analysis_window_meta["effective_end"] = _format_time_minimal(
+                    float(df["time"].iloc[-1])
+                )
         if len(df) < 10:
             return _finish({"error": "Insufficient history"})
         base_col = _resolve_denoise_base_col(
