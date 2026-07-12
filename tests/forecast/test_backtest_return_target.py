@@ -79,6 +79,38 @@ def test_backtest_volatility_with_return_target_uses_price_truth_windows() -> No
     assert abs(float(detail["realized_sigma"]) - expected_sigma) < 1e-12
 
 
+def test_backtest_aggregates_volatility_rmse_from_squared_errors() -> None:
+    times = np.arange(1700000000, 1700000000 + 70 * 3600, 3600, dtype=float)
+    close = np.linspace(100.0, 120.0, 70, dtype=float)
+    df = pd.DataFrame({"time": times, "close": close})
+    anchor_indices = [60, 61]
+    anchors = [_format_time_minimal(float(times[idx])) for idx in anchor_indices]
+    realized = []
+    for idx in anchor_indices:
+        path = close[idx : idx + 2]
+        realized.append(float(np.sqrt(np.sum(np.diff(np.log(path)) ** 2))))
+
+    with patch("mtdata.forecast.backtest._fetch_history", return_value=df), patch(
+        "mtdata.forecast.backtest.forecast_volatility",
+        side_effect=[
+            {"horizon_sigma_return": realized[0] + 1.0},
+            {"horizon_sigma_return": realized[1] + 5.0},
+        ],
+    ):
+        result = forecast_backtest(
+            symbol="EURUSD",
+            timeframe="H1",
+            horizon=1,
+            methods=["ewma"],
+            anchors=anchors,
+            quantity="volatility",
+        )
+
+    aggregate = result["results"]["ewma"]
+    assert aggregate["avg_mae"] == 3.0
+    assert aggregate["avg_rmse"] == np.sqrt(13.0)
+
+
 def test_backtest_return_target_converts_log_returns_to_simple_trade_returns() -> None:
     times = np.arange(1700000000, 1700000000 + 80 * 3600, 3600, dtype=float)
     close = np.linspace(100.0, 140.0, 80, dtype=float)

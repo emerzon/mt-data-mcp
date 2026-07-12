@@ -1624,6 +1624,8 @@ def forecast_backtest(  # noqa: C901
                         "success": np.isfinite(pred_sigma) and np.isfinite(realized_sigma),
                         "mae": mae,
                         "rmse": rmse,
+                        "_squared_error_sum": float((pred_sigma - realized_sigma) ** 2),
+                        "_error_count": 1,
                         "forecast_sigma": pred_sigma,
                         "realized_sigma": realized_sigma,
                     })
@@ -1761,6 +1763,10 @@ def forecast_backtest(  # noqa: C901
                         "success": True,
                         "mae": mae,
                         "rmse": rmse,
+                        "_squared_error_sum": float(
+                            np.sum((fcv[:m] - act[:m]) ** 2)
+                        ),
+                        "_error_count": int(m),
                         "directional_accuracy": da,
                         "directional_calls_made": directional_calls_made,
                         "directional_opportunities": directional_opportunities,
@@ -1787,14 +1793,23 @@ def forecast_backtest(  # noqa: C901
             # Aggregate
             ok = [x for x in per_anchor if x.get('success')]
             if ok:
+                squared_error_sum = float(
+                    sum(float(x.get('_squared_error_sum', 0.0)) for x in ok)
+                )
+                error_count = int(sum(int(x.get('_error_count', 0)) for x in ok))
                 agg = {
                     "success": True,
                     "avg_mae": float(np.mean([x['mae'] for x in ok])),
-                    "avg_rmse": float(np.mean([x['rmse'] for x in ok])),
+                    "avg_rmse": float(
+                        math.sqrt(squared_error_sum / error_count)
+                    ) if error_count > 0 else float('nan'),
                     "successful_tests": len(ok),
                     "num_tests": len(per_anchor),
                     "details": per_anchor,
                 }
+                for detail_row in per_anchor:
+                    detail_row.pop('_squared_error_sum', None)
+                    detail_row.pop('_error_count', None)
                 if quantity != 'volatility':
                     directional_calls_made = sum(int(x.get('directional_calls_made') or 0) for x in ok)
                     directional_opportunities = sum(int(x.get('directional_opportunities') or 0) for x in ok)
