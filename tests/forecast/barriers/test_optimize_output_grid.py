@@ -198,6 +198,9 @@ class TestBarrierOptimizeOutputGrid(_BarrierTestBase):
                 sl_min=0.5,
                 sl_max=1.0,
                 sl_steps=2,
+                refine=True,
+                refine_radius=0.3,
+                refine_steps=3,
                 return_grid=True,
             )
         self.assertTrue(result["success"])

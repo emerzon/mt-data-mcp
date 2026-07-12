@@ -18,6 +18,7 @@ from ..utils.barriers import (
 )
 from ..utils.coercion import UNPARSED_BOOL, parse_bool_like
 from ..utils.utils import parse_kv_or_json as _parse_kv_or_json
+from .barrier_outcomes import BarrierPathOutcomes, evaluate_barrier_path_outcomes
 from .barrier_stats import (
     bootstrap_metric_uncertainty as _bootstrap_uncertainty,
 )
@@ -348,13 +349,8 @@ def _candidate_hit_arrays(
     context: _BarrierEvaluationContext,
     bridge_inputs: _BarrierBridgeInputs,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    _, horizon_total = eval_paths.shape
-    if context.dir_long:
-        hit_tp = eval_paths >= tp_trigger
-        hit_sl = eval_paths <= sl_trigger
-    else:
-        hit_tp = eval_paths <= tp_trigger
-        hit_sl = eval_paths >= sl_trigger
+    extra_tp_hits = None
+    extra_sl_hits = None
     if (
         bridge_inputs.enabled
         and bridge_inputs.log_paths is not None
@@ -377,18 +373,23 @@ def _candidate_hit_arrays(
             direction=sl_dir,
             uniform=bridge_inputs.uniform_sl,
         )
-        hit_tp = hit_tp | tp_bridge
-        hit_sl = hit_sl | sl_bridge
-    any_tp = hit_tp.any(axis=1)
-    any_sl = hit_sl.any(axis=1)
-    first_tp = hit_tp.argmax(axis=1)
-    first_sl = hit_sl.argmax(axis=1)
-    first_tp[~any_tp] = horizon_total
-    first_sl[~any_sl] = horizon_total
-    wins = first_tp < first_sl
-    losses = first_sl < first_tp
-    ties = (first_tp == first_sl) & (first_tp < horizon_total)
-    return first_tp, first_sl, wins, losses, ties
+        extra_tp_hits = tp_bridge
+        extra_sl_hits = sl_bridge
+    outcomes = evaluate_barrier_path_outcomes(
+        eval_paths,
+        tp_trigger=tp_trigger,
+        sl_trigger=sl_trigger,
+        direction="long" if context.dir_long else "short",
+        extra_tp_hits=extra_tp_hits,
+        extra_sl_hits=extra_sl_hits,
+    )
+    return (
+        outcomes.first_tp,
+        outcomes.first_sl,
+        outcomes.wins,
+        outcomes.losses,
+        outcomes.ties,
+    )
 
 
 def _unresolved_terminal_pnl(
@@ -1194,6 +1195,23 @@ def forecast_barrier_optimize(  # noqa: C901
                 tmp.append((metric_name, _normalize_optuna_direction(mv, default='maximize')))
             if tmp:
                 pareto_objectives = tmp
+        valid_pareto_metrics = {
+            'edge', 'prob_tp_first', 'prob_loss', 'prob_resolve', 'kelly',
+            'kelly_cond', 'ev', 'ev_cond', 'ev_per_bar', 'profit_factor',
+            'utility', 't_hit_resolve_mean', 't_hit_resolve_median',
+        }
+        invalid_pareto_metrics = [
+            metric_name
+            for metric_name, _ in pareto_objectives
+            if metric_name not in valid_pareto_metrics
+        ]
+        if invalid_pareto_metrics:
+            return {
+                "error": (
+                    "Unsupported Optuna Pareto metric(s): "
+                    f"{', '.join(invalid_pareto_metrics)}."
+                )
+            }
 
         if top_k is not None:
             try:
@@ -2360,44 +2378,45 @@ def forecast_barrier_optimize(  # noqa: C901
             if tp_trigger is None or sl_trigger is None or reward is None or risk is None:
                 return None, None, None
 
-            hit_tp = (eval_paths >= tp_trigger) if dir_long else (eval_paths <= tp_trigger)
-            hit_sl = (eval_paths <= sl_trigger) if dir_long else (eval_paths >= sl_trigger)
-            any_tp = hit_tp.any(axis=1)
-            any_sl = hit_sl.any(axis=1)
-
-            first_tp = hit_tp.argmax(axis=1)
-            first_sl = hit_sl.argmax(axis=1)
-            first_tp[~any_tp] = horizon_total
-            first_sl[~any_sl] = horizon_total
-
-            wins_mask = first_tp < first_sl
-            losses_mask = first_sl < first_tp
-            ties_mask = (first_tp == first_sl) & (first_tp < horizon_total)
+            first_tp, first_sl, wins_mask, losses_mask, ties_mask = _candidate_hit_arrays(
+                eval_paths,
+                tp_trigger=tp_trigger,
+                sl_trigger=sl_trigger,
+                context=eval_context,
+                bridge_inputs=_BarrierBridgeInputs(
+                    enabled=bb_enabled,
+                    sigma=float(bb_sigma),
+                    log_paths=bb_log_paths,
+                    uniform_tp=bb_uniform_tp,
+                    uniform_sl=bb_uniform_sl,
+                ),
+            )
             unresolved_mask = ~(wins_mask | losses_mask | ties_mask)
 
             wins = wins_mask.astype(float)
             losses = losses_mask.astype(float)
             ties = ties_mask.astype(float)
-            resolves = wins + losses + ties
 
             trials = np.arange(1, eval_paths.shape[0] + 1, dtype=float)
             cum_wins = np.cumsum(wins)
             cum_losses = np.cumsum(losses)
             cum_ties = np.cumsum(ties)
-            cum_resolves = np.cumsum(resolves)
 
-            prob_win_series = cum_wins / trials
-            prob_loss_series = cum_losses / trials
             if same_bar_policy_value == "tp_first":
                 prob_tp_first_series = (cum_wins + cum_ties) / trials
                 prob_sl_first_series = cum_losses / trials
+                active_counts = cum_wins + cum_losses + cum_ties
             elif same_bar_policy_value == "neutral":
                 prob_tp_first_series = cum_wins / trials
                 prob_sl_first_series = cum_losses / trials
+                active_counts = cum_wins + cum_losses
             else:
                 prob_tp_first_series = cum_wins / trials
                 prob_sl_first_series = (cum_losses + cum_ties) / trials
-            prob_resolve_series = cum_resolves / trials
+                active_counts = cum_wins + cum_losses + cum_ties
+            prob_win_series = prob_tp_first_series
+            prob_loss_series = prob_sl_first_series
+            prob_resolve_series = active_counts / trials
 
             net_reward = reward - cost_per_trade if has_trading_costs else reward
             net_risk = risk + cost_per_trade if has_trading_costs else risk
@@ -2474,20 +2493,19 @@ def forecast_barrier_optimize(  # noqa: C901
                     if net_rr > 0 else np.zeros_like(prob_tp_first_series)
                 )
             elif objective_val == 'ev_cond':
-                active = cum_wins + cum_losses + cum_ties
-                active_mask = active > 0
+                active_mask = active_counts > 0
                 estimate_series = np.zeros_like(prob_tp_first_series)
                 if np.any(active_mask):
                     win_c = np.divide(
-                        cum_wins + 0.5 * cum_ties,
-                        active,
-                        out=np.zeros_like(active, dtype=float),
+                        prob_tp_first_series * trials,
+                        active_counts,
+                        out=np.zeros_like(active_counts, dtype=float),
                         where=active_mask,
                     )
                     loss_c = np.divide(
-                        cum_losses + 0.5 * cum_ties,
-                        active,
-                        out=np.zeros_like(active, dtype=float),
+                        prob_sl_first_series * trials,
+                        active_counts,
+                        out=np.zeros_like(active_counts, dtype=float),
                         where=active_mask,
                     )
                     estimate_series[active_mask] = (
@@ -2495,20 +2513,19 @@ def forecast_barrier_optimize(  # noqa: C901
                         - loss_c[active_mask] * net_risk
                     )
             elif objective_val == 'kelly_cond':
-                active = cum_wins + cum_losses + cum_ties
-                active_mask = active > 0
+                active_mask = active_counts > 0
                 estimate_series = np.zeros_like(prob_tp_first_series)
                 if np.any(active_mask) and net_rr > 0:
                     win_c = np.divide(
-                        cum_wins + 0.5 * cum_ties,
-                        active,
-                        out=np.zeros_like(active, dtype=float),
+                        prob_tp_first_series * trials,
+                        active_counts,
+                        out=np.zeros_like(active_counts, dtype=float),
                         where=active_mask,
                     )
                     loss_c = np.divide(
-                        cum_losses + 0.5 * cum_ties,
-                        active,
-                        out=np.zeros_like(active, dtype=float),
+                        prob_sl_first_series * trials,
+                        active_counts,
+                        out=np.zeros_like(active_counts, dtype=float),
                         where=active_mask,
                     )
                     estimate_series[active_mask] = (
@@ -2565,7 +2582,11 @@ def forecast_barrier_optimize(  # noqa: C901
             if sampler_name == 'random':
                 sampler_obj = optuna.samplers.RandomSampler(seed=optuna_seed)
             elif sampler_name == 'cmaes':
-                sampler_obj = optuna.samplers.CmaEsSampler(seed=optuna_seed)
+                if optuna_pareto_val:
+                    sampler_name = 'nsga2'
+                    sampler_obj = optuna.samplers.NSGAIISampler(seed=optuna_seed)
+                else:
+                    sampler_obj = optuna.samplers.CmaEsSampler(seed=optuna_seed)
             else:
                 sampler_name = 'tpe'
                 with warnings.catch_warnings():
@@ -2573,7 +2594,10 @@ def forecast_barrier_optimize(  # noqa: C901
                     sampler_obj = optuna.samplers.TPESampler(seed=optuna_seed, multivariate=True)
 
             pruner_name = optuna_pruner_val
-            if pruner_name in {'none'}:
+            if optuna_pareto_val:
+                pruner_name = 'none_multiobjective'
+                pruner_obj = optuna.pruners.NopPruner()
+            elif pruner_name in {'none'}:
                 pruner_obj = optuna.pruners.NopPruner()
             elif pruner_name == 'hyperband':
                 pruner_obj = optuna.pruners.HyperbandPruner()
@@ -2586,6 +2610,7 @@ def forecast_barrier_optimize(  # noqa: C901
             optuna.logging.set_verbosity(optuna.logging.WARNING)
             sampled_rows: List[Dict[str, Any]] = []
             trial_rows: Dict[int, Dict[str, Any]] = {}
+            pareto_rows_full: List[Dict[str, Any]] = []
 
             if optuna_pareto_val:
                 directions = [d for _, d in pareto_objectives]
@@ -2601,6 +2626,11 @@ def forecast_barrier_optimize(  # noqa: C901
 
                 def _metric_value(row: Dict[str, Any], metric: str, direction_name: str) -> float:
                     raw = row.get(metric)
+                    if metric == 'profit_factor' and raw is None:
+                        prob_win = _safe_float(row.get('prob_tp_first'))
+                        prob_loss = _safe_float(row.get('prob_sl_first'))
+                        if prob_win is not None and prob_win > 0.0 and prob_loss == 0.0:
+                            return 1e18 if direction_name == 'maximize' else -1e18
                     try:
                         value = float(raw)
                     except Exception:
@@ -2674,12 +2704,14 @@ def forecast_barrier_optimize(  # noqa: C901
 
                 if front:
                     front.sort(
-                        key=lambda x: (
-                            -float(x.get('ev', -1e18)) if x.get('ev') is not None else 1e18,
-                            float(x.get('prob_loss', 1e18)) if x.get('prob_loss') is not None else 1e18,
-                            float(x.get('t_hit_resolve_median', 1e18)) if x.get('t_hit_resolve_median') is not None else 1e18,
+                        key=lambda row: tuple(
+                            -_metric_value(row, metric_name, direction_name)
+                            if direction_name == 'maximize'
+                            else _metric_value(row, metric_name, direction_name)
+                            for metric_name, direction_name in pareto_objectives
                         )
                     )
+                pareto_rows_full = list(front)
                 pareto_front = front[:int(pareto_limit_val)]
             else:
                 maximize = objective_val != 'min_loss_prob'
@@ -2714,8 +2746,21 @@ def forecast_barrier_optimize(  # noqa: C901
                     trial.set_user_attr('tp', float(row.get('tp', tp_unit)))
                     trial.set_user_attr('sl', float(row.get('sl', sl_unit)))
                     if objective_val == 'min_loss_prob':
-                        return float(row.get('prob_loss', 1.0))
-                    return float(row.get(objective_val, row.get('ev', -1e18)))
+                        objective_value = float(row.get('prob_loss', 1.0))
+                    elif objective_val == 'profit_factor' and row.get('profit_factor') is None:
+                        prob_win = _safe_float(row.get('prob_tp_first'))
+                        prob_loss = _safe_float(row.get('prob_sl_first'))
+                        objective_value = (
+                            1e18
+                            if prob_win is not None and prob_win > 0.0 and prob_loss == 0.0
+                            else -1e18
+                        )
+                    else:
+                        objective_value = float(row.get(objective_val, row.get('ev', -1e18)))
+                    trial.report(objective_value, step=0)
+                    if trial.should_prune():
+                        raise optuna.TrialPruned()
+                    return objective_value
 
                 try:
                     with warnings.catch_warnings():
@@ -2734,7 +2779,8 @@ def forecast_barrier_optimize(  # noqa: C901
                     }
 
             dedup: Dict[Tuple[int, int], Dict[str, Any]] = {}
-            for row in sampled_rows:
+            source_rows = pareto_rows_full if optuna_pareto_val else sampled_rows
+            for row in source_rows:
                 try:
                     key = (int(round(float(row.get('tp', 0.0)) * 1e6)), int(round(float(row.get('sl', 0.0)) * 1e6)))
                 except Exception:
@@ -2781,15 +2827,61 @@ def forecast_barrier_optimize(  # noqa: C901
         _sort_candidate_results(results, objective_val)
 
         if refine_flag and results:
-            best_seed = results[0]
+            refine_seed_rows = list(results)
+            if tradable_only_val or min_ev_val is not None or min_edge_val is not None or min_kelly_val is not None:
+                refine_seed_rows = [
+                    row
+                    for row in refine_seed_rows
+                    if _candidate_passes_threshold_filters(
+                        row,
+                        cost_per_trade=cost_per_trade,
+                        tradable_only_val=tradable_only_val,
+                        min_ev_val=min_ev_val,
+                        min_edge_val=min_edge_val,
+                        min_kelly_val=min_kelly_val,
+                    )
+                ]
+            if viable_only_val:
+                refine_seed_rows = [
+                    row
+                    for row in refine_seed_rows
+                    if _candidate_is_viable(row, cost_per_trade=cost_per_trade)
+                ]
+            best_seed = refine_seed_rows[0] if refine_seed_rows else None
+        else:
+            best_seed = None
+
+        if best_seed is not None:
             tp_c = best_seed['tp']
             sl_c = best_seed['sl']
-            tp_a = max(1e-9, tp_c * (1.0 - refine_radius_val))
-            tp_b = tp_c * (1.0 + refine_radius_val)
-            sl_a = max(1e-9, sl_c * (1.0 - refine_radius_val))
-            sl_b = sl_c * (1.0 + refine_radius_val)
             refine_candidates: List[Tuple[float, float]] = []
-            _add_fixed(refine_candidates, tp_a, tp_b, refine_steps_val, sl_a, sl_b, refine_steps_val)
+            base_tp_values = [pair[0] for pair in base_candidates]
+            base_sl_values = [pair[1] for pair in base_candidates]
+            tp_floor = min(base_tp_values) if base_tp_values else tp_c
+            tp_ceiling = max(base_tp_values) if base_tp_values else tp_c
+            sl_floor = min(base_sl_values) if base_sl_values else sl_c
+            sl_ceiling = max(base_sl_values) if base_sl_values else sl_c
+            sl_a = max(sl_floor, sl_c * (1.0 - refine_radius_val))
+            sl_b = min(sl_ceiling, sl_c * (1.0 + refine_radius_val))
+            if grid_style_val == 'ratio':
+                ratio_c = tp_c / sl_c
+                ratio_a = max(ratio_min_val, ratio_c * (1.0 - refine_radius_val))
+                ratio_b = min(ratio_max_val, ratio_c * (1.0 + refine_radius_val))
+                for sl_refined in _linspace(sl_a, sl_b, refine_steps_val):
+                    for ratio_refined in _linspace(ratio_a, ratio_b, refine_steps_val):
+                        _push(sl_refined * ratio_refined, sl_refined, refine_candidates)
+            else:
+                tp_a = max(tp_floor, tp_c * (1.0 - refine_radius_val))
+                tp_b = min(tp_ceiling, tp_c * (1.0 + refine_radius_val))
+                _add_fixed(
+                    refine_candidates,
+                    tp_a,
+                    tp_b,
+                    refine_steps_val,
+                    sl_a,
+                    sl_b,
+                    refine_steps_val,
+                )
             results.extend(
                 _evaluate(
                     refine_candidates,
@@ -2985,6 +3077,41 @@ def forecast_barrier_optimize(  # noqa: C901
                     tp_trigger = float(best.get('tp_price', 0))
                     sl_trigger = float(best.get('sl_price', 0))
                     if tp_trigger > 0 and sl_trigger > 0:
+                        (
+                            bootstrap_first_tp,
+                            bootstrap_first_sl,
+                            bootstrap_wins,
+                            bootstrap_losses,
+                            bootstrap_ties,
+                        ) = _candidate_hit_arrays(
+                            paths,
+                            tp_trigger=tp_trigger,
+                            sl_trigger=sl_trigger,
+                            context=eval_context,
+                            bridge_inputs=_BarrierBridgeInputs(
+                                enabled=bb_enabled,
+                                sigma=float(bb_sigma),
+                                log_paths=bb_log_paths,
+                                uniform_tp=bb_uniform_tp,
+                                uniform_sl=bb_uniform_sl,
+                            ),
+                        )
+                        bootstrap_unresolved = ~(
+                            bootstrap_wins | bootstrap_losses | bootstrap_ties
+                        )
+                        bootstrap_outcomes = BarrierPathOutcomes(
+                            first_tp=bootstrap_first_tp,
+                            first_sl=bootstrap_first_sl,
+                            wins=bootstrap_wins,
+                            losses=bootstrap_losses,
+                            ties=bootstrap_ties,
+                            unresolved=bootstrap_unresolved,
+                            time_in_trade=np.minimum(
+                                np.minimum(bootstrap_first_tp, bootstrap_first_sl) + 1,
+                                paths.shape[1],
+                            ),
+                            horizon=int(paths.shape[1]),
+                        )
                         bootstrap_result = _bootstrap_uncertainty(
                             paths=paths,
                             tp_trigger=tp_trigger,
@@ -2997,6 +3124,7 @@ def forecast_barrier_optimize(  # noqa: C901
                             same_bar_policy=same_bar_policy_value,
                             n_bootstrap=n_bootstrap_val,
                             seed=request_seed_base,
+                            path_outcomes=bootstrap_outcomes,
                         )
                         if bootstrap_result:
                             statistical_analysis['bootstrap_uncertainty'] = bootstrap_result

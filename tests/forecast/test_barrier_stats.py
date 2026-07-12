@@ -234,6 +234,37 @@ class TestBarrierStats(unittest.TestCase):
                 self.assertIn('ci_low', result[metric])
                 self.assertIn('ci_high', result[metric])
 
+    def test_bootstrap_metric_uncertainty_uses_canonical_path_outcomes(self):
+        from mtdata.forecast.barrier_outcomes import BarrierPathOutcomes
+
+        paths = np.ones((4, 2), dtype=float)
+        outcomes = BarrierPathOutcomes(
+            first_tp=np.zeros(4, dtype=int),
+            first_sl=np.full(4, 2, dtype=int),
+            wins=np.ones(4, dtype=bool),
+            losses=np.zeros(4, dtype=bool),
+            ties=np.zeros(4, dtype=bool),
+            unresolved=np.zeros(4, dtype=bool),
+            time_in_trade=np.ones(4, dtype=int),
+            horizon=2,
+        )
+
+        result = bootstrap_metric_uncertainty(
+            paths=paths,
+            tp_trigger=2.0,
+            sl_trigger=0.5,
+            direction='long',
+            entry_price=1.0,
+            reward=1.0,
+            risk=1.0,
+            n_bootstrap=20,
+            path_outcomes=outcomes,
+            seed=7,
+        )
+
+        self.assertEqual(result['prob_win']['mean'], 1.0)
+        self.assertEqual(result['prob_loss']['mean'], 0.0)
+
     def test_bootstrap_metric_uncertainty_uses_entry_price(self):
         """EV/Kelly bootstrap estimates should use the entry/reference price."""
         from unittest.mock import patch

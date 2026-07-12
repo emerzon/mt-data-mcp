@@ -17,6 +17,7 @@ import numpy as np
 from scipy import stats as scipy_stats
 
 from ..utils.barriers import resolve_same_bar_probabilities
+from .barrier_outcomes import BarrierPathOutcomes, evaluate_barrier_path_outcomes
 
 BarrierPowerAnalysisValue = Union[float, int, str]
 
@@ -500,6 +501,7 @@ def bootstrap_metric_uncertainty(
     n_bootstrap: int = 500,
     metrics: Optional[List[str]] = None,
     seed: Optional[int] = None,
+    path_outcomes: Optional[BarrierPathOutcomes] = None,
 ) -> Dict[str, Dict[str, float]]:
     """Estimate uncertainty of barrier metrics via bootstrap resampling.
     
@@ -519,7 +521,7 @@ def bootstrap_metric_uncertainty(
     Returns:
         Dictionary mapping metric -> {mean, std, ci_low, ci_high}
     """
-    n_sims, horizon = paths.shape
+    n_sims, _ = paths.shape
     
     if metrics is None:
         metrics = [
@@ -533,30 +535,24 @@ def bootstrap_metric_uncertainty(
     
     dir_long = (direction == 'long')
     anchor_price = float(entry_price) if entry_price is not None else float(paths[0, 0])
+    if path_outcomes is None:
+        path_outcomes = evaluate_barrier_path_outcomes(
+            paths,
+            tp_trigger=tp_trigger,
+            sl_trigger=sl_trigger,
+            direction="long" if dir_long else "short",
+        )
+    if path_outcomes.wins.shape[0] != n_sims:
+        raise ValueError("path_outcomes must contain one outcome per simulated path.")
     
     for _ in range(n_bootstrap):
         indices = rng.choice(n_sims, size=n_sims, replace=True)
         bootstrap_paths = paths[indices]
         
-        if dir_long:
-            hit_tp = (bootstrap_paths >= tp_trigger)
-            hit_sl = (bootstrap_paths <= sl_trigger)
-        else:
-            hit_tp = (bootstrap_paths <= tp_trigger)
-            hit_sl = (bootstrap_paths >= sl_trigger)
-        
-        any_tp = hit_tp.any(axis=1)
-        any_sl = hit_sl.any(axis=1)
-        
-        first_tp = hit_tp.argmax(axis=1)
-        first_sl = hit_sl.argmax(axis=1)
-        first_tp[~any_tp] = horizon
-        first_sl[~any_sl] = horizon
-        
-        wins = (first_tp < first_sl)
-        losses = (first_sl < first_tp)
-        ties = (first_tp == first_sl) & (first_tp < horizon)
-        unresolved = ~(wins | losses | ties)
+        wins = path_outcomes.wins[indices]
+        losses = path_outcomes.losses[indices]
+        ties = path_outcomes.ties[indices]
+        unresolved = path_outcomes.unresolved[indices]
         
         n_wins = wins.sum()
         n_losses = losses.sum()

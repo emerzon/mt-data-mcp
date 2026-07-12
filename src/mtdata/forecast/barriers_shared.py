@@ -212,7 +212,19 @@ def _sort_candidate_results(res_list: List[Dict[str, Any]], objective_val: str) 
     elif objective_val == 'prob_resolve':
         res_list.sort(key=_metric('prob_resolve', descending=True), reverse=True)
     elif objective_val == 'profit_factor':
-        res_list.sort(key=_metric('profit_factor', descending=True), reverse=True)
+        def _profit_factor_rank(row: Dict[str, Any]) -> float:
+            value = _safe_float(row.get('profit_factor'))
+            if value is not None:
+                return float(value)
+            win_prob = _safe_float(row.get('prob_tp_first'))
+            loss_prob = _safe_float(row.get('prob_sl_first'))
+            reward = _safe_float(row.get('tp'))
+            if win_prob is not None and win_prob > 0.0 and reward is not None and reward > 0.0:
+                if loss_prob is not None and loss_prob <= 0.0:
+                    return float('inf')
+            return float('-inf')
+
+        res_list.sort(key=_profit_factor_rank, reverse=True)
     elif objective_val == 'min_loss_prob':
         res_list.sort(key=_metric('prob_loss', descending=False))
     elif objective_val == 'utility':

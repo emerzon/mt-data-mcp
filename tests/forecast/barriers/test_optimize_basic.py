@@ -149,6 +149,41 @@ class TestBarrierOptimizeBasic(_BarrierTestBase):
         self.assertTrue(result.get("grid"))
         self.assertIsInstance(result.get("best"), dict)
 
+    def test_forecast_barrier_optimize_optuna_profit_factor_handles_no_losses(self):
+        if importlib.util.find_spec("optuna") is None:
+            self.skipTest("optuna package not installed")
+        self._set_flat_history(1.0)
+        paths = np.array([
+            [1.002, 1.004, 1.006, 1.010],
+            [1.003, 1.005, 1.008, 1.012],
+        ])
+        with patch(f'{_BARRIER_OPT_ROOT}._simulate_gbm_mc') as mock_sim:
+            mock_sim.return_value = {"price_paths": paths}
+            result = forecast_barrier_optimize(
+                symbol="EURUSD",
+                timeframe="H1",
+                horizon=4,
+                method="mc_gbm",
+                direction="long",
+                mode="pct",
+                tp_min=0.1, tp_max=0.15, tp_steps=2,
+                sl_min=0.2, sl_max=0.3, sl_steps=2,
+                objective="profit_factor",
+                viable_only=False,
+                params={
+                    "optimizer": "optuna",
+                    "n_trials": 3,
+                    "sampler": "random",
+                    "pruner": "none",
+                    "seed": 1,
+                    "use_live_price": False,
+                },
+            )
+
+        self.assertTrue(result.get("success"))
+        self.assertIsNone(result["best"]["profit_factor"])
+        self.assertIn("no simulated losses", result["best"]["profit_factor_note"])
+
     def test_forecast_barrier_optimize_optuna_pareto_front(self):
         if importlib.util.find_spec("optuna") is None:
             self.skipTest("optuna package not installed")
@@ -190,6 +225,8 @@ class TestBarrierOptimizeBasic(_BarrierTestBase):
         self.assertIn("ev", row["objective_values"])
         self.assertIn("prob_loss", row["objective_values"])
         self.assertIn("t_hit_resolve_median", row["objective_values"])
+        front_pairs = {(entry["tp"], entry["sl"]) for entry in result["pareto_front"]}
+        self.assertIn((result["best"]["tp"], result["best"]["sl"]), front_pairs)
 
     def test_forecast_barrier_optimize_optuna_tpe_suppresses_multivariate_warning(self):
         if importlib.util.find_spec("optuna") is None:
