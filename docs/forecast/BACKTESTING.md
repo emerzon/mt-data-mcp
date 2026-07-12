@@ -118,6 +118,17 @@ mtdata-cli forecast_backtest_run EURUSD --quantity volatility --methods "ewma ga
 
 ### Trade Simulation
 
+The built-in strategy is a forecast-target exit heuristic, not a TP/SL
+backtest. A long exits at the first realized bar at or above the terminal
+forecast price; a short exits at the first bar at or below it. If the target is
+never reached, the trade exits at the forecast horizon. There is no stop-loss,
+so losing trades remain open to the horizon. In return mode, the equivalent
+rule is applied to cumulative log returns.
+
+Consequently, `win_rate`, Sharpe, drawdown, and return metrics describe this
+specific take-profit-only heuristic. They are not directly comparable to a
+hold-to-horizon or dual-barrier strategy.
+
 | Parameter | Default | Description |
 |-----------|---------|-------------|
 | `--slippage-bps` | 0.0 | Transaction cost in basis points (1 bp = 0.01%) |
@@ -183,7 +194,7 @@ mtdata-cli forecast_backtest_run EURUSD --horizon 12 --methods theta \
 | `avg_mae` | Mean Absolute Error (average) | Lower is better |
 | `avg_rmse` | Root Mean Squared Error (average) | Lower is better |
 | `avg_directional_accuracy` | % of correct direction predictions | > 0.55 |
-| `win_rate` | % of profitable trades | > 0.50 |
+| `win_rate` | % of profitable forecast-target/horizon trades | > 0.50 |
 | `successful_tests` | Tests that completed without error | = num_tests |
 
 ### Trading Performance Metrics
@@ -208,11 +219,11 @@ When `slippage-bps` or `trade-threshold` is set:
 
 | Metric | Description | Good Value |
 |--------|-------------|------------|
-| `sharpe_ratio` | Risk-adjusted return | > 1.0 |
+| `sharpe_ratio` | Risk-adjusted return under the built-in exit heuristic | > 1.0 |
 | `max_drawdown` | Largest peak-to-trough decline | < 0.10 (10%) |
 | `calmar_ratio` | Annual return / max drawdown | > 1.0 |
 | `cumulative_return` | Total return over test period | > 0 |
-| `win_rate` | Fraction of profitable trades | > 0.50 |
+| `win_rate` | Fraction of profitable forecast-target/horizon trades | > 0.50 |
 
 ### Per-Anchor Details
 
