@@ -1520,7 +1520,12 @@ def forecast_volatility(  # noqa: C901
             )
 
         if method_l in garch_family:
-            fit_bars = int(p.get('fit_bars', 2000)); mean_model = str(p.get('mean','Zero')).lower(); dist = str(p.get('dist','normal'))
+            fit_bars = int(p.get('fit_bars', 2000))
+            mean_model = {
+                'zero': 'Zero',
+                'constant': 'Constant',
+            }.get(str(p.get('mean', 'Zero')).strip().lower(), 'Zero')
+            dist = str(p.get('dist','normal'))
             r_pct = 100.0 * r
             r_fit = r_pct[-fit_bars:] if r_pct.size > fit_bars else r_pct
             try:
@@ -1530,14 +1535,14 @@ def forecast_volatility(  # noqa: C901
                 p_order = int(p.get('p', 1))
                 q_order = int(p.get('q', 1))
                 if base_method == 'egarch':
-                    am = _arch_model(r_fit, mean=mean_model if mean_model in ('zero','constant') else 'zero', vol='EGARCH', p=p_order, q=q_order, dist=dist)
+                    am = _arch_model(r_fit, mean=mean_model, vol='EGARCH', p=p_order, q=q_order, dist=dist)
                 elif base_method == 'gjr_garch':
                     o_order = int(p.get('o', 1))
-                    am = _arch_model(r_fit, mean=mean_model if mean_model in ('zero','constant') else 'zero', vol='GARCH', p=p_order, o=o_order, q=q_order, dist=dist)
+                    am = _arch_model(r_fit, mean=mean_model, vol='GARCH', p=p_order, o=o_order, q=q_order, dist=dist)
                 elif base_method == 'figarch':
-                    am = _arch_model(r_fit, mean=mean_model if mean_model in ('zero','constant') else 'zero', vol='FIGARCH', p=p_order, q=q_order, dist=dist)
+                    am = _arch_model(r_fit, mean=mean_model, vol='FIGARCH', p=p_order, q=q_order, dist=dist)
                 else:
-                    am = _arch_model(r_fit, mean=mean_model if mean_model in ('zero','constant') else 'zero', vol='GARCH', p=p_order, q=q_order, dist=dist)
+                    am = _arch_model(r_fit, mean=mean_model, vol='GARCH', p=p_order, q=q_order, dist=dist)
                 res = am.fit(disp='off')
                 fc = res.forecast(horizon=max(1, int(horizon)), reindex=False)
                 variances = fc.variance.values[-1]

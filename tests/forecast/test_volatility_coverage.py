@@ -697,6 +697,22 @@ class TestForecastVolatilityGarch:
                 assert result.get("success") is True
                 assert result["params_used"]["dist"] == "studentst"
 
+    def test_garch_passes_canonical_mean_name_to_arch(self):
+        arch_model = self._mock_arch_model(1)
+        with _mock_vol_env():
+            with (
+                patch(f"{MOD}._ARCH_AVAILABLE", True),
+                patch(f"{MOD}._arch_model", arch_model),
+            ):
+                result = forecast_volatility(
+                    "EURUSD", "H1", 1, method="garch",
+                    params={"mean": "constant"},
+                )
+
+        assert result.get("success") is True
+        assert arch_model.call_args.kwargs["mean"] == "Constant"
+        assert result["params_used"]["mean"] == "Constant"
+
     def test_garch_fit_error(self):
         mock_am = MagicMock()
         mock_am_inst = MagicMock()
