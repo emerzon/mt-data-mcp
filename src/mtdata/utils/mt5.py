@@ -256,10 +256,13 @@ def clear_symbol_info_cache() -> None:
 def _mt5_epoch_to_utc(epoch_seconds: float) -> float:
     """Convert MT5-reported epoch seconds to UTC.
 
-    If MT5_SERVER_TZ is set, interpret the epoch as server-local and convert to UTC with DST awareness.
-    Else, subtract configured static offset minutes.
+    A non-zero static offset takes precedence over MT5_SERVER_TZ. Otherwise,
+    interpret the epoch as server-local with DST awareness when a timezone is set.
     """
     try:
+        static_offset = _configured_static_offset_seconds(mt5_config)
+        if static_offset:
+            return float(epoch_seconds) - float(static_offset)
         tz = mt5_config.get_server_tz()
         if tz is not None:
             base = datetime(1970, 1, 1)
@@ -295,20 +298,31 @@ def _mt5_epoch_to_utc(epoch_seconds: float) -> float:
 _DEFAULT_MT5_EPOCH_TO_UTC = _mt5_epoch_to_utc
 
 
+def _configured_static_offset_seconds(config: Any) -> int:
+    """Return the explicitly configured fixed offset, excluding TZ-derived values."""
+    value = getattr(config, "time_offset_minutes", 0)
+    if not isinstance(value, (int, float, str)):
+        return 0
+    try:
+        return int(value or 0) * 60
+    except (TypeError, ValueError):
+        return 0
+
+
 def _broker_timezone_note(
     *,
     server_tz_name: Optional[str],
     offset_seconds: Optional[int] = None,
 ) -> str:
-    if server_tz_name:
-        return (
-            "MT5 timestamps are normalized to UTC using broker server timezone "
-            f"{server_tz_name}; candle/session boundaries follow broker server time."
-        )
     if offset_seconds is not None:
         return (
             "MT5 timestamps are normalized to UTC using configured broker offset "
             f"{offset_seconds} seconds; candle/session boundaries follow broker server time."
+        )
+    if server_tz_name:
+        return (
+            "MT5 timestamps are normalized to UTC using broker server timezone "
+            f"{server_tz_name}; candle/session boundaries follow broker server time."
         )
     return (
         "MT5 timestamps use raw broker server epoch values because no broker timezone "
@@ -375,6 +389,9 @@ def _rates_to_df(rates: Any):
 def _to_server_naive_dt(dt: datetime) -> datetime:
     """Convert a UTC-naive datetime to server-local naive datetime."""
     try:
+        static_offset = _configured_static_offset_seconds(mt5_config)
+        if static_offset:
+            return dt + timedelta(seconds=static_offset)
         tz = mt5_config.get_server_tz()
         if tz is None:
             offset_seconds = int(mt5_config.get_time_offset_seconds())
@@ -516,12 +533,13 @@ def _normalize_times_in_struct(arr: Any):
         if flags is not None and not bool(getattr(flags, "writeable", True)):
             out = arr.copy()
 
-        # Optimization: if using default function and no TZ (static offset),
-        # use vector subtraction.
+        # Optimization: apply an explicit static offset before considering TZ.
         if _mt5_epoch_to_utc is _DEFAULT_MT5_EPOCH_TO_UTC:
-            tz = mt5_config.get_server_tz()
+            offset_seconds = _configured_static_offset_seconds(mt5_config)
+            tz = None if offset_seconds else mt5_config.get_server_tz()
             if tz is None:
-                offset_seconds = int(mt5_config.get_time_offset_seconds())
+                if not offset_seconds:
+                    offset_seconds = int(mt5_config.get_time_offset_seconds())
                 if offset_seconds:
                     for field in time_fields:
                         try:

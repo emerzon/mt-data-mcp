@@ -242,13 +242,23 @@ class TestNormalizeObjectTimes:
 class TestMt5EpochToUtc:
     @patch("mtdata.utils.mt5.mt5_config")
     def test_no_tz_with_offset(self, cfg):
+        cfg.time_offset_minutes = 0
         cfg.get_server_tz.return_value = None
         cfg.get_time_offset_seconds.return_value = 7200
         result = _mt5_epoch_to_utc(1000000.0)
         assert result == 1000000.0 - 7200
 
     @patch("mtdata.utils.mt5.mt5_config")
+    def test_static_offset_overrides_server_timezone(self, cfg):
+        cfg.time_offset_minutes = 120
+        cfg.get_server_tz.return_value = MagicMock()
+
+        assert _mt5_epoch_to_utc(1000000.0) == 1000000.0 - 7200
+        cfg.get_server_tz.assert_not_called()
+
+    @patch("mtdata.utils.mt5.mt5_config")
     def test_with_tz_localize_success(self, cfg):
+        cfg.time_offset_minutes = 0
         tz = MagicMock()
         cfg.get_server_tz.return_value = tz
         dt_local = MagicMock()
@@ -258,6 +268,7 @@ class TestMt5EpochToUtc:
 
     @patch("mtdata.utils.mt5.mt5_config")
     def test_with_tz_localize_resolves_ambiguous_time(self, cfg, caplog):
+        cfg.time_offset_minutes = 0
         tz = MagicMock()
         cfg.get_server_tz.return_value = tz
         dt_local = MagicMock()
@@ -275,6 +286,7 @@ class TestMt5EpochToUtc:
 
     @patch("mtdata.utils.mt5.mt5_config")
     def test_with_tz_localize_shifts_nonexistent_time(self, cfg, caplog):
+        cfg.time_offset_minutes = 0
         tz = MagicMock()
         cfg.get_server_tz.return_value = tz
         dt_local = MagicMock()
@@ -292,6 +304,7 @@ class TestMt5EpochToUtc:
 
     @patch("mtdata.utils.mt5.mt5_config")
     def test_exception_returns_raw(self, cfg, caplog):
+        cfg.time_offset_minutes = 0
         cfg.get_server_tz.side_effect = Exception("boom")
         result = _mt5_epoch_to_utc(42.0)
         assert result == 42.0
@@ -453,7 +466,8 @@ class TestNormalizeTimesInStruct:
     def test_with_time_field_uses_static_offset_fast_path(self, cfg):
         dt = np.dtype([("time", float), ("close", float)])
         arr = np.array([(1000.0, 1.1), (2000.0, 1.2)], dtype=dt)
-        cfg.get_server_tz.return_value = None
+        cfg.time_offset_minutes = 1
+        cfg.get_server_tz.return_value = MagicMock()
         cfg.get_time_offset_seconds.return_value = 60
         sentinel = MagicMock(side_effect=AssertionError("slow path should not run"))
 
@@ -465,6 +479,7 @@ class TestNormalizeTimesInStruct:
 
         assert float(result[0]["time"]) == 940.0
         assert float(result[1]["time"]) == 1940.0
+        cfg.get_server_tz.assert_not_called()
         sentinel.assert_not_called()
 
     @patch("mtdata.utils.mt5.mt5_config")
