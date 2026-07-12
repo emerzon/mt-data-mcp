@@ -458,7 +458,7 @@ class TestCausalDiscoverSignals:
             None,
         )
         mock_granger.return_value = {
-            1: ({"ssr_ftest": (1.0, 0.01, 10, 1)}, None),
+            1: ({"ssr_ftest": (1.0, 0.001, 10, 1)}, None),
         }
 
         result = self._unwrapped()(
@@ -621,8 +621,8 @@ class TestCausalDiscoverSignals:
         mock_fetch.side_effect = _fetch_side_effect
         def _granger_side_effect(*args, **kwargs):
             return {
-                1: ({"ssr_ftest": (1.0, 0.02, 10, 1)}, None),
-                2: ({"ssr_ftest": (1.0, 0.03, 10, 1)}, None),
+                1: ({"ssr_ftest": (1.0, 0.005, 10, 1)}, None),
+                2: ({"ssr_ftest": (1.0, 0.006, 10, 1)}, None),
             }
 
         mock_granger.side_effect = _granger_side_effect
@@ -654,7 +654,7 @@ class TestCausalDiscoverSignals:
         assert "pairs" not in result
         assert "summary_text" not in result
         assert result["meta"]["stats"]["pairs_tested"] >= 1
-        assert result["meta"]["stats"]["p_value_correction"] == "bonferroni_across_lags"
+        assert result["meta"]["stats"]["p_value_correction"] == "bonferroni_across_lags_and_pairs"
         assert result["meta"]["tool"] == "causal_discover_signals"
         assert "legends" in result["meta"]
         assert not any("verbose" in str(w.message).lower() for w in records)
@@ -777,7 +777,9 @@ class TestCausalDiscoverSignals:
             2: ({"ssr_ftest": (1.0, 0.80, 10, 1)}, None),
         }
 
-        result = self._unwrapped()("A,B", max_lag=2, transform="diff", normalize=False)
+        result = self._unwrapped()(
+            "A,B", max_lag=2, transform="diff", normalize=False, detail="standard"
+        )
 
         assert result["success"] is True
         assert result["items"] == []
@@ -836,22 +838,26 @@ class TestCausalDiscoverSignals:
 
         mock_fetch.side_effect = _fetch_side_effect
         mock_granger.return_value = {
-            1: ({"ssr_ftest": (1.0, 0.02, 10, 1)}, None),
+            1: ({"ssr_ftest": (1.0, 0.01, 10, 1)}, None),
             2: ({"ssr_ftest": (1.0, 0.03, 10, 1)}, None),
         }
 
-        result = self._unwrapped()("A,B", max_lag=2, transform="diff", normalize=False)
+        result = self._unwrapped()(
+            "A,B", max_lag=2, transform="diff", normalize=False, detail="standard"
+        )
 
         assert result["success"] is True
         link = result["items"][0]
         assert link["lag"] == 1
-        assert link["p_value_raw"] == pytest.approx(0.02)
+        assert link["p_value_raw"] == pytest.approx(0.01)
         assert link["lag_tests_run"] == 2
+        assert link["p_value_lag_adjusted"] == pytest.approx(0.02)
+        assert link["pair_tests_run"] == 2
         assert link["p_value"] == pytest.approx(0.04)
-        assert link["significance_basis"] == "p_value_bonferroni_adjusted"
+        assert link["significance_basis"] == "p_value_global_bonferroni_adjusted"
         assert link["significance_threshold"] == pytest.approx(0.05)
         assert link["significant"] is True
-        assert result["summary"]["significance_basis"] == "p_value_bonferroni_adjusted"
+        assert result["summary"]["significance_basis"] == "p_value_global_bonferroni_adjusted"
         assert result["summary"]["significance_threshold"] == pytest.approx(0.05)
 
     @patch("statsmodels.tsa.stattools.grangercausalitytests")

@@ -2012,6 +2012,15 @@ def causal_discover_signals(  # noqa: C901
                         "significant": bool(best_p < significance),
                     }
                 )
+        pair_correction_factor = max(1, len(rows))
+        for row in rows:
+            lag_adjusted = float(row["p_value"])
+            row["p_value_lag_adjusted"] = lag_adjusted
+            row["p_value"] = float(min(1.0, lag_adjusted * pair_correction_factor))
+            row["pair_tests_run"] = pair_correction_factor
+            row["p_value_correction"] = "bonferroni_across_lags_and_pairs"
+            row["significance_basis"] = "p_value_global_bonferroni_adjusted"
+            row["significant"] = bool(float(row["p_value"]) < significance)
         rows_sorted = sorted(
             rows, key=lambda item: (item["p_value"], item["effect"], item["cause"])
         )
@@ -2026,7 +2035,8 @@ def causal_discover_signals(  # noqa: C901
                 "pairs_attempted": int(pair_attempts),
                 "pairs_tested": int(pair_success),
                 "pairs_failed": int(max(pair_attempts - pair_success, 0)),
-                "p_value_correction": "bonferroni_across_lags",
+                "p_value_correction": "bonferroni_across_lags_and_pairs",
+                "pair_correction_factor": pair_correction_factor,
             }
         )
         if pair_failures:
@@ -2071,7 +2081,7 @@ def causal_discover_signals(  # noqa: C901
             },
             "summary": {
                 "significance": float(significance),
-                "significance_basis": "p_value_bonferroni_adjusted",
+                "significance_basis": "p_value_global_bonferroni_adjusted",
                 "significance_threshold": float(significance),
                 "counts": {
                     "pairs_tested": int(pair_success),
