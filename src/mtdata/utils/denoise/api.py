@@ -67,6 +67,15 @@ _logger = logging.getLogger(__name__)
 
 # Default parameters for each method
 _DENOISE_BASE_DEFAULTS = {"columns": ["close"], "keep_original": False, "suffix": "_dn"}
+_DENOISE_SPEC_KEYS = {
+    "method",
+    "params",
+    "columns",
+    "when",
+    "causality",
+    "keep_original",
+    "suffix",
+}
 
 _DENOISE_METHOD_DEFAULT_PARAMS: Dict[str, Dict[str, Any]] = {
     "ema": {"span": 10},
@@ -463,10 +472,25 @@ def normalize_denoise_spec(spec: Any, default_when: str = 'pre_ti') -> Optional[
     if not spec:
         return None
     if isinstance(spec, dict):
+        # CLI and MCP callers commonly express filter tuning beside the stage
+        # controls (for example ``{"method": "ema", "alpha": 0.2}``). Keep
+        # one canonical nested representation for the filter dispatcher.
+        top_level_params = {
+            key: value
+            for key, value in spec.items()
+            if key not in _DENOISE_SPEC_KEYS and value is not None
+        }
         out = dict(base)
-        out.update({k: v for k, v in spec.items() if v is not None})
+        out.update(
+            {
+                key: value
+                for key, value in spec.items()
+                if key in _DENOISE_SPEC_KEYS and value is not None
+            }
+        )
         method = str(out.get('method') or 'none').strip().lower()
         params = deepcopy(_DENOISE_METHOD_DEFAULT_PARAMS.get(method, {}))
+        params.update(top_level_params)
         supplied_params = out.get('params')
         if isinstance(supplied_params, dict):
             params.update(supplied_params)

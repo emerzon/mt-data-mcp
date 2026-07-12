@@ -218,6 +218,22 @@ class TestNormalizeDenoiseSec:
         assert out["params"]["cutoff"] == 0.1
         assert out["params"]["order"] == 2
 
+    def test_dict_hoists_cli_style_filter_params(self):
+        out = normalize_denoise_spec(
+            {"method": "ema", "alpha": 0.2, "when": "post_ti"}
+        )
+
+        assert out["params"] == {"span": 10, "alpha": 0.2}
+        assert out["when"] == "post_ti"
+        assert "alpha" not in out
+
+    def test_nested_filter_params_override_top_level_values(self):
+        out = normalize_denoise_spec(
+            {"method": "ema", "span": 5, "params": {"span": 20}}
+        )
+
+        assert out["params"]["span"] == 20
+
 
 # ======================================================================
 # 2. _denoise_series – dispatch through pd.Series
