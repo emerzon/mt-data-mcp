@@ -114,6 +114,24 @@ class TestDetectClassicPatterns:
 
         assert [r.name for r in out] == ["Keeps"]
 
+    def test_postprocess_does_not_confirm_stale_forming_pattern_by_default(self):
+        cfg = ClassicDetectorConfig(min_confidence=0.0)
+        result = ClassicPatternResult(
+            name="Unconfirmed Triangle",
+            status="forming",
+            confidence=0.8,
+            start_index=20,
+            end_index=90,
+            start_time=None,
+            end_time=None,
+            details={},
+        )
+
+        out = _postprocess_classic_results([result], cfg, n=100)
+
+        assert out[0].status == "forming"
+        assert out[0].details["lifecycle_state"] == "forming"
+
     def test_detect_rectangles_rejects_multiple_side_outliers(self):
         n = 140
         close = np.full(n, 100.0, dtype=float)

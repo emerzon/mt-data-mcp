@@ -184,7 +184,7 @@ class ClassicDetectorConfig:
         2  # touches needed near the right edge to mark completed
     )
     completion_lookback_bars: int = 5  # lookback window for completion confirmation
-    auto_complete_stale_forming: bool = True
+    auto_complete_stale_forming: bool = False
     stale_completion_recent_bars: int = 10
     max_pattern_age_bars: int = 300  # maximum age (bars from current) for forming patterns; older patterns are filtered out
     max_pattern_span_bars: int = 200  # maximum span (end_index - start_index) for forming patterns; longer patterns are filtered out as too stale
