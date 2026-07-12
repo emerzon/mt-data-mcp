@@ -809,17 +809,10 @@ def _recording_tool_decorator(*dargs, **dkwargs):  # type: ignore[override]  # n
         return cleaned
 
     def _wrap(func):  # noqa: C901
-        def _fallback_minimal(value: Any, **_: Any) -> str:
-            return str(value) if value is not None else ""
-
-        try:
-            from ..utils.minimal_output import format_result_minimal as _fmt_min
-            from ..utils.minimal_output import (
-                to_methods_availability_toon as _fmt_methods,
-            )
-        except Exception:
-            _fmt_min = _fallback_minimal
-            _fmt_methods = None
+        from ..utils.minimal_output import format_result_minimal as _fmt_min
+        from ..utils.minimal_output import (
+            to_methods_availability_toon as _fmt_methods,
+        )
 
         @_wraps(func)
         def _wrapped(*a, **kw):

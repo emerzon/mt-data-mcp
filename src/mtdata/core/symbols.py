@@ -12,7 +12,7 @@ from ..shared.constants import (
     TIMEFRAME_SECONDS,
 )
 from ..shared.market_units import forex_points_per_pip
-from ..shared.schema import CompactFullDetailLiteral, TimeframeLiteral
+from ..shared.schema import DetailLiteral, TimeframeLiteral
 from ..shared.validators import invalid_timeframe_error
 from ..utils.freshness import (
     QUOTE_STALE_SECONDS,
@@ -809,7 +809,7 @@ def symbols_list(  # noqa: C901
         "exact",
         "all",
     ] = "auto",
-    detail: CompactFullDetailLiteral = "compact",  # type: ignore
+    detail: DetailLiteral = "compact",  # type: ignore
 ) -> Dict[str, Any]:
     """List symbols or symbol groups.
 
@@ -1129,7 +1129,7 @@ def _list_symbol_groups(
     limit: Optional[int] = DEFAULT_ROW_LIMIT,
     offset: int = 0,
     mt5_gateway: Any = None,
-    detail: CompactFullDetailLiteral = "compact",  # type: ignore
+    detail: DetailLiteral = "compact",  # type: ignore
 ) -> Dict[str, Any]:
     """List group paths as a tabular result with a single column: group."""
     try:
@@ -1251,7 +1251,7 @@ def _list_symbol_groups(
 @mcp.tool()
 def symbols_describe(
     symbol: str,
-    detail: CompactFullDetailLiteral = "compact",
+    detail: DetailLiteral = "compact",
 ) -> Dict[str, Any]:
     """Return symbol information as JSON for `symbol`.
     
@@ -2608,7 +2608,7 @@ def symbols_top_markets(  # noqa: C901
     timeframe: TimeframeLiteral = "H1",
     group: Optional[str] = None,
     category: Optional[str] = None,
-    detail: CompactFullDetailLiteral = "compact",
+    detail: DetailLiteral = "compact",
 ) -> Dict[str, Any]:
     """Quick MT5 market overview ranked by spread, tick volume, or price change.
 
@@ -3083,7 +3083,7 @@ def market_scan(  # noqa: C901
     offset: int = 0,
     universe: Literal["visible", "all"] = "visible",  # type: ignore
     timeframe: TimeframeLiteral = "H1",
-    detail: CompactFullDetailLiteral = "compact",
+    detail: DetailLiteral = "compact",
     lookback: int = 100,
     rsi_length: int = 14,
     sma_period: int = 20,

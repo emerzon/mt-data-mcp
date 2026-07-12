@@ -5,7 +5,7 @@ from typing import Any, Dict, Literal, Optional, Union
 
 from pydantic import AliasChoices, BaseModel, Field, field_validator
 
-from ...shared.schema import CompactFullDetailLiteral, TimeframeLiteral
+from ...shared.schema import DetailLiteral, TimeframeLiteral
 from ...utils.barriers import normalize_trade_direction
 from . import validation
 from .time import ExpirationValue
@@ -87,7 +87,7 @@ class TradePlaceRequest(BaseModel):
             "preview only."
         ),
     )
-    detail: CompactFullDetailLiteral = Field(
+    detail: DetailLiteral = Field(
         default="compact",
         description=(
             "Response detail level. Compact returns the lean dry-run preview; "
@@ -124,7 +124,7 @@ class TradeModifyRequest(BaseModel):
     model_config = {"populate_by_name": True}
 
     ticket: Union[int, str]
-    detail: CompactFullDetailLiteral = Field(
+    detail: DetailLiteral = Field(
         default="compact",
         description="Response detail level for modify previews and result payloads.",
     )
@@ -160,7 +160,7 @@ class TradeModifyRequest(BaseModel):
 
 class TradeCloseRequest(BaseModel):
     ticket: Optional[Union[int, str]] = None
-    detail: CompactFullDetailLiteral = Field(
+    detail: DetailLiteral = Field(
         default="compact",
         description="Response detail level for close previews and result payloads.",
     )
@@ -218,7 +218,7 @@ class TradeHistoryRequest(_SideNormalizedRequest):
             "orders = order lifecycle events for audit/reconciliation."
         ),
     )
-    detail: CompactFullDetailLiteral = "compact"
+    detail: DetailLiteral = "compact"
     column_style: Literal["snake_case", "humanized"] = Field(
         default="snake_case",
         description=(
@@ -249,7 +249,7 @@ class TradeHistoryRequest(_SideNormalizedRequest):
 
 
 class TradeJournalAnalyzeRequest(_SideNormalizedRequest):
-    detail: CompactFullDetailLiteral = Field(
+    detail: DetailLiteral = Field(
         default="compact",
         description=(
             "Response detail level. Compact returns summary only; standard adds "
@@ -304,7 +304,7 @@ class TradeRiskAnalyzeRequest(BaseModel):
     model_config = {"populate_by_name": True}
 
     symbol: Optional[str] = None
-    detail: CompactFullDetailLiteral = Field(
+    detail: DetailLiteral = Field(
         default="compact",
         description=(
             "Response detail level. Compact keeps sizing/action fields; full "
@@ -420,7 +420,7 @@ class TradeVarCvarRequest(BaseModel):
     method: str = "historical"
     transform: str = "log_return"
     min_observations: int = 50
-    detail: CompactFullDetailLiteral = Field(
+    detail: DetailLiteral = Field(
         default="compact",
         description=(
             "Response detail level. Compact returns the risk summary; full also "
@@ -438,7 +438,7 @@ class TradeStressTestRequest(BaseModel):
         ),
     )
     include_unshocked: bool = False
-    detail: CompactFullDetailLiteral = "compact"
+    detail: DetailLiteral = "compact"
 
     @field_validator("shocks")
     @classmethod
@@ -484,7 +484,7 @@ class TradeGetOpenRequest(_SideNormalizedRequest):
         ),
     )
     limit: Optional[int] = 50
-    detail: CompactFullDetailLiteral = Field(
+    detail: DetailLiteral = Field(
         default="compact",
         description=(
             "Response detail level. Use full to include echoed request metadata "
@@ -511,7 +511,7 @@ class TradeGetPendingRequest(_SideNormalizedRequest):
     )
     magic: Optional[int] = Field(default=None, description=MAGIC_NUMBER_DESCRIPTION)
     limit: Optional[int] = 50
-    detail: CompactFullDetailLiteral = Field(
+    detail: DetailLiteral = Field(
         default="compact",
         description=(
             "Response detail level. Use full to include echoed request metadata "
@@ -530,5 +530,5 @@ class TradeGetPendingRequest(_SideNormalizedRequest):
 
 class TradeSessionContextRequest(BaseModel):
     symbol: str
-    detail: CompactFullDetailLiteral = "compact"
+    detail: DetailLiteral = "compact"
     include_account: bool = True

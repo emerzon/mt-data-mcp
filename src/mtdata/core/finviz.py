@@ -33,7 +33,7 @@ from ..services.finviz import (
 )
 from ..services.news_text import normalize_news_text
 from ..services.finviz.symbols import looks_like_non_equity_symbol
-from ..shared.schema import CompactFullDetailLiteral
+from ..shared.schema import DetailLiteral
 from ..shared.symbols import finviz_forex_symbol_to_mt5
 from ._mcp_instance import mcp
 from .error_envelope import build_error_payload
@@ -1148,7 +1148,7 @@ def finviz_filters_list(
     filter_name: Optional[str] = None,
     limit: int = 20,
     offset: int = 0,
-    detail: CompactFullDetailLiteral = "compact",  # type: ignore
+    detail: DetailLiteral = "compact",  # type: ignore
 ) -> Dict[str, Any]:
     """List valid Finviz screener filters and accepted values."""
     try:
@@ -1348,7 +1348,7 @@ def _normalize_finviz_news_item(item: Any, *, kind: str = "headline") -> Any:
 def _normalize_finviz_news_payload(
     result: Dict[str, Any],
     *,
-    detail: CompactFullDetailLiteral = "compact",  # type: ignore
+    detail: DetailLiteral = "compact",  # type: ignore
     kind: str = "headline",
 ) -> Dict[str, Any]:
     out = dict(result)
@@ -2788,7 +2788,7 @@ def _filter_finviz_fundamentals_payload(
 @mcp.tool()
 def finviz_fundamentals(
     symbol: str,
-    detail: CompactFullDetailLiteral = "compact",  # type: ignore
+    detail: DetailLiteral = "compact",  # type: ignore
     category: str = "summary",
     fields: Optional[str] = None,
 ) -> Dict[str, Any]:
@@ -2868,7 +2868,7 @@ def _apply_finviz_description_detail(
 @mcp.tool()
 def finviz_description(
     symbol: str,
-    detail: CompactFullDetailLiteral = "compact",  # type: ignore
+    detail: DetailLiteral = "compact",  # type: ignore
 ) -> Dict[str, Any]:
     """
     Get company business description for a US stock.
@@ -2912,7 +2912,7 @@ def finviz_news(
     symbol: str,
     limit: int = 20,
     page: int = 1,
-    detail: CompactFullDetailLiteral = "compact",  # type: ignore
+    detail: DetailLiteral = "compact",  # type: ignore
 ) -> Dict[str, Any]:
     """
     Raw Finviz per-ticker news provider endpoint.
@@ -2967,7 +2967,7 @@ def finviz_insider(
     symbol: str,
     limit: int = 20,
     page: int = 1,
-    detail: CompactFullDetailLiteral = "compact",  # type: ignore
+    detail: DetailLiteral = "compact",  # type: ignore
 ) -> Dict[str, Any]:
     """
     Get insider trading activity for a US stock.
@@ -3014,7 +3014,7 @@ def finviz_insider(
 @mcp.tool()
 def finviz_ratings(
     symbol: str,
-    detail: CompactFullDetailLiteral = "compact",  # type: ignore
+    detail: DetailLiteral = "compact",  # type: ignore
     limit: int = 3,
     extras: Optional[str] = None,
 ) -> Dict[str, Any]:
@@ -3070,7 +3070,7 @@ def finviz_ratings(
 @mcp.tool()
 def finviz_peers(
     symbol: str,
-    detail: CompactFullDetailLiteral = "compact",  # type: ignore
+    detail: DetailLiteral = "compact",  # type: ignore
     limit: int = 5,
     offset: int = 0,
 ) -> Dict[str, Any]:
@@ -3118,7 +3118,7 @@ def finviz_screen(
     limit: int = 20,
     page: int = 1,
     view: Literal["overview", "valuation", "financial", "ownership", "performance", "technical"] = "overview",
-    detail: CompactFullDetailLiteral = "compact",
+    detail: DetailLiteral = "compact",
 ) -> Dict[str, Any]:
     """
     Screen stocks using Finviz screener with filters.
@@ -3222,7 +3222,7 @@ def finviz_market_news(
     news_type: Literal["news", "blogs"] = "news",
     limit: int = 20,
     page: int = 1,
-    detail: CompactFullDetailLiteral = "compact",  # type: ignore
+    detail: DetailLiteral = "compact",  # type: ignore
 ) -> Dict[str, Any]:
     """
     Raw Finviz general market news/blog provider endpoint.
@@ -3264,7 +3264,7 @@ def finviz_insider_activity(
     option: Literal["latest", "top week", "top owner trade", "insider buy", "insider sale"] = "latest",
     limit: int = 50,
     page: int = 1,
-    detail: CompactFullDetailLiteral = "compact",  # type: ignore
+    detail: DetailLiteral = "compact",  # type: ignore
 ) -> Dict[str, Any]:
     """
     Get general insider trading activity across the market.
@@ -3311,7 +3311,7 @@ def finviz_insider_activity(
 def finviz_forex(
     symbol: Optional[str] = None,
     limit: int = 20,
-    detail: CompactFullDetailLiteral = "compact",  # type: ignore
+    detail: DetailLiteral = "compact",  # type: ignore
 ) -> Dict[str, Any]:
     """
     Get forex currency pairs performance from Finviz.
@@ -3365,7 +3365,7 @@ def finviz_forex(
 @mcp.tool()
 def finviz_crypto(
     limit: int = 20,
-    detail: CompactFullDetailLiteral = "compact",  # type: ignore
+    detail: DetailLiteral = "compact",  # type: ignore
 ) -> Dict[str, Any]:
     """
     Get cryptocurrency performance from Finviz.
@@ -3399,7 +3399,7 @@ def finviz_crypto(
 @mcp.tool()
 def finviz_futures(
     limit: int = 20,
-    detail: CompactFullDetailLiteral = "compact",  # type: ignore
+    detail: DetailLiteral = "compact",  # type: ignore
 ) -> Dict[str, Any]:
     """
     Get futures market performance from Finviz.
@@ -3442,7 +3442,7 @@ def finviz_calendar(
     end: Optional[str] = None,
     limit: int = 20,
     page: int = 1,
-    detail: CompactFullDetailLiteral = "compact",  # type: ignore
+    detail: DetailLiteral = "compact",  # type: ignore
 ) -> Dict[str, Any]:
     """
     Get detailed Finviz calendar data (economic, earnings, or dividends).
@@ -3551,7 +3551,7 @@ def finviz_earnings(
     period: Literal["this-week", "next-week", "previous-week", "this-month"] = "this-week",
     limit: int = 10,
     page: int = 1,
-    detail: CompactFullDetailLiteral = "compact",  # type: ignore
+    detail: DetailLiteral = "compact",  # type: ignore
 ) -> Dict[str, Any]:
     """
     Get the quick upcoming earnings calendar from Finviz.

@@ -11,7 +11,7 @@ from ..services.data_service import (
     _shift_rate_times,
 )
 from ..shared.constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
-from ..shared.schema import CompactFullDetailLiteral, TimeframeLiteral
+from ..shared.schema import DetailLiteral, TimeframeLiteral
 from ..shared.validators import (
     invalid_timeframe_error,
     unsupported_timeframe_seconds_error,
@@ -894,7 +894,7 @@ def temporal_analyze(  # noqa: C901
     min_bars: Optional[int] = None,
     limit: Optional[int] = None,
     offset: int = 0,
-    detail: CompactFullDetailLiteral = "compact",
+    detail: DetailLiteral = "compact",
 ) -> Dict[str, Any]:
     """Temporal analysis by day-of-week, hour, market session, or month.
 

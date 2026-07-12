@@ -35,7 +35,7 @@ Successful tool responses are JSON objects that carry a `success` flag plus the 
 |-------|---------|
 | `compact` | **Default.** Essential fields only — the slim, token-efficient shape used for TOON output. |
 | `standard` | Adds moderate context to each row/section (e.g. `tools_list` includes per-parameter summaries). |
-| `summary` | A condensed summary form for tools that support it (`summary_only` is accepted as an alias). |
+| `summary` | A condensed summary form for tools that support it. |
 | `full` | Everything `compact` returns **plus** runtime metadata and verbose-only sections. |
 
 Notes:
@@ -59,7 +59,7 @@ Compact output is implicit. To opt into heavier, optional sections, pass `extras
 | `method_docs` | Inline documentation for the selected method/indicator |
 | `guidance` | Suggested next steps and related tools |
 
-Aliases `all`, `full`, and `verbose` expand to **every** supported section.
+The alias `all` expands to **every** supported section.
 
 ```bash
 # Just metadata + diagnostics

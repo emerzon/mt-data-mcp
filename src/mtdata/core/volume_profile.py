@@ -7,7 +7,7 @@ from typing import Any, Dict, Literal, Optional
 
 from ..services.data_service import fetch_candles, fetch_ticks
 from ..shared.constants import TIMEFRAME_SECONDS
-from ..shared.schema import CompactStandardFullDetailLiteral, TimeframeLiteral
+from ..shared.schema import DetailLiteral, TimeframeLiteral
 from ..utils.mt5 import (
     MT5ConnectionError,
     _symbol_ready_guard,
@@ -409,7 +409,7 @@ def _select_profile_rows(
 
 def _profile_detail_payload(profile: Dict[str, Any], detail: str) -> Dict[str, Any]:
     detail_value = str(detail or "compact").strip().lower()
-    if detail_value in {"summary", "summary_only"}:
+    if detail_value in {"summary"}:
         detail_value = "compact"
     if detail_value not in {"compact", "standard", "full"}:
         detail_value = "compact"
@@ -564,7 +564,7 @@ def compute_volume_profile_payload(
     max_tick_window_days: int = _DEFAULT_MAX_TICK_WINDOW_DAYS,
     max_ticks: int = _DEFAULT_MAX_TICKS,
     max_m1_bars: int = _DEFAULT_MAX_M1_BARS,
-    detail: CompactStandardFullDetailLiteral = "compact",
+    detail: DetailLiteral = "compact",
 ) -> Dict[str, Any]:
     if limit is not None and not timeframe:
         return {
@@ -665,7 +665,7 @@ def volume_profile_levels(  # noqa: PLR0913
     max_tick_window_days: int = _DEFAULT_MAX_TICK_WINDOW_DAYS,
     max_ticks: int = _DEFAULT_MAX_TICKS,
     max_m1_bars: int = _DEFAULT_MAX_M1_BARS,
-    detail: CompactStandardFullDetailLiteral = "compact",
+    detail: DetailLiteral = "compact",
     extras: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Compute volume-profile POC, VAH, and VAL from ticks or M1-bar approximation.

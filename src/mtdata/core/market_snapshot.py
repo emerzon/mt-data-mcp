@@ -7,7 +7,7 @@ import math
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
-from ..shared.schema import CompactStandardFullDetailLiteral, TimeframeLiteral
+from ..shared.schema import DetailLiteral, TimeframeLiteral
 from ._mcp_instance import mcp
 from .execution_logging import run_logged_operation
 from .tool_calling import call_tool_sync_structured
@@ -592,7 +592,7 @@ def market_snapshot(
     timeframe: TimeframeLiteral = "H1",
     sections: Optional[str] = None,
     horizon: int = 8,
-    detail: CompactStandardFullDetailLiteral = "compact",
+    detail: DetailLiteral = "compact",
 ) -> Dict[str, Any]:
     """Return a unified pre-trade market snapshot with selectable analysis sections.
 
@@ -644,7 +644,7 @@ def market_snapshot(
         }
         if quote_as_of is not None:
             payload["quote_as_of"] = quote_as_of
-        if detail_mode in {"summary", "summary_only", "compact"}:
+        if detail_mode in {"summary", "compact"}:
             summary_payload = _snapshot_summary_payload(section_payloads)
             if summary_payload:
                 payload["snapshot"] = summary_payload

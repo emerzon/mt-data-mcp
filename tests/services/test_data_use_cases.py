@@ -196,8 +196,9 @@ def test_data_fetch_candles_accepts_summary_detail():
 
 @pytest.mark.parametrize("request_cls", [DataFetchCandlesRequest, DataFetchTicksRequest])
 def test_data_fetch_requests_normalize_detail_aliases(request_cls):
-    assert request_cls(symbol="EURUSD", detail="summary_only").detail == "summary"
     assert request_cls(symbol="EURUSD", detail=" Full ").detail == "full"
+    with pytest.raises(Exception):
+        request_cls(symbol="EURUSD", detail="summary_only")
 
 
 def test_data_fetch_candles_schema_documents_ohlcv():

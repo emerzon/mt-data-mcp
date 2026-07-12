@@ -27,7 +27,10 @@ from ..shared.parameter_contracts import (
 from ..shared.parameter_contracts import (
     OUTPUT_EXTRAS as _OUTPUT_EXTRAS,
 )
-from ..shared.schema import CANONICAL_OUTPUT_DETAIL_ALIASES
+from ..shared.schema import (
+    CANONICAL_OUTPUT_DETAIL_ALIASES,
+    CANONICAL_OUTPUT_SHAPE_DETAILS,
+)
 from ..utils.utils import UNPARSED_BOOL, parse_bool_like
 from .runtime_metadata import build_runtime_timezone_meta
 
@@ -229,12 +232,16 @@ def normalize_output_detail(
     default: str = "compact",
     aliases: Optional[Mapping[str, str]] = None,
 ) -> str:
-    """Normalize detail-like values while preserving tool-specific legacy modes."""
+    """Normalize detail-like values to the canonical shape vocabulary."""
     normalized = _normalize_detail_token(value, default=default)
     normalized_aliases = _normalize_detail_aliases(aliases)
-    if not normalized_aliases:
-        return normalized
-    return normalized_aliases.get(normalized, normalized)
+    if normalized_aliases:
+        normalized = normalized_aliases.get(normalized, normalized)
+    allowed = set(CANONICAL_OUTPUT_SHAPE_DETAILS)
+    if normalized not in allowed:
+        allowed_text = ", ".join(repr(item) for item in CANONICAL_OUTPUT_SHAPE_DETAILS)
+        raise ValueError(f"Invalid detail level. Use {allowed_text}.")
+    return normalized
 
 
 def normalize_output_verbosity_detail(value: Any, *, default: str = "compact") -> str:

@@ -15,10 +15,10 @@ from mtdata.core.output_contract import (
 from mtdata.shared.schema import CANONICAL_OUTPUT_DETAIL_ALIASES
 
 
-def test_normalize_output_detail_preserves_summary_mode_aliases() -> None:
+def test_normalize_output_detail_preserves_summary_and_standard() -> None:
     assert (
         normalize_output_detail(
-            " Summary_Only ",
+            " Summary ",
             aliases=CANONICAL_OUTPUT_DETAIL_ALIASES,
         )
         == "summary"
@@ -32,15 +32,16 @@ def test_normalize_output_detail_preserves_summary_mode_aliases() -> None:
     )
 
 
-def test_normalize_output_detail_applies_canonical_aliases_by_default() -> None:
-    assert normalize_output_detail(" Summary_Only ") == "summary"
+def test_normalize_output_detail_rejects_removed_summary_only_alias() -> None:
+    with pytest.raises(ValueError, match="Invalid detail"):
+        normalize_output_detail(" Summary_Only ")
 
 
-def test_normalize_output_detail_normalizes_alias_mapping_keys_and_values() -> None:
+def test_normalize_output_detail_normalizes_custom_alias_mapping_keys_and_values() -> None:
     assert (
         normalize_output_detail(
-            " summary_only ",
-            aliases={" Summary_Only ": " Summary "},
+            " brief ",
+            aliases={" Brief ": " Summary "},
         )
         == "summary"
     )
@@ -49,13 +50,11 @@ def test_normalize_output_detail_normalizes_alias_mapping_keys_and_values() -> N
 def test_normalize_output_verbosity_detail_is_strict_compact_or_full() -> None:
     assert normalize_output_verbosity_detail(" summary ") == "compact"
     assert normalize_output_verbosity_detail(" standard ") == "compact"
-    assert normalize_output_verbosity_detail(" Summary_Only ") == "compact"
     assert normalize_output_verbosity_detail(" FULL ") == "full"
 
 
 def test_resolve_output_contract_tracks_full_detail_only() -> None:
     assert resolve_output_contract({"detail": " summary "}).verbose is False
-    assert resolve_output_contract({"detail": " Summary_Only "}).verbose is False
     assert resolve_output_contract({"detail": " full "}).verbose is True
 
 
@@ -67,9 +66,9 @@ def test_resolve_output_contract_maps_full_detail_to_full_state() -> None:
     assert state.verbose is True
 
 
-def test_resolve_output_contract_preserves_tool_specific_detail_aliases() -> None:
+def test_resolve_output_contract_preserves_summary_detail() -> None:
     state = resolve_output_contract(
-        {"detail": " summary_only "},
+        {"detail": " summary "},
         aliases=CANONICAL_OUTPUT_DETAIL_ALIASES,
     )
 

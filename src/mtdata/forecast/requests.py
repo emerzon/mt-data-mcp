@@ -5,8 +5,7 @@ from typing import Any, Dict, List, Literal, Optional
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from ..shared.schema import (
-    CompactFullDetailLiteral,
-    CompactStandardFullDetailLiteral,
+    DetailLiteral,
     DenoiseSpec,
     ForecastLibraryLiteral,
     TimeframeLiteral,
@@ -71,7 +70,7 @@ class ForecastGenerateRequest(BaseModel):
         None,
         description="Explicit trained-model params_hash to use for prediction. Skips training if the model exists in the store.",
     )
-    detail: CompactStandardFullDetailLiteral = "compact"
+    detail: DetailLiteral = "compact"
 
     @model_validator(mode="before")
     @classmethod
@@ -110,7 +109,7 @@ class ForecastBacktestRequest(BaseModel):
     dimred_params: Optional[Dict[str, Any]] = None
     slippage_bps: float = 0.0
     trade_threshold: float = Field(0.0, ge=0.0)
-    detail: CompactFullDetailLiteral = "compact"
+    detail: DetailLiteral = "compact"
 
     @model_validator(mode="before")
     @classmethod
@@ -137,7 +136,7 @@ class StrategyBacktestRequest(BaseModel):
     lookback: int = Field(500, ge=5)
     start: Optional[str] = None
     end: Optional[str] = None
-    detail: CompactFullDetailLiteral = "compact"
+    detail: DetailLiteral = "compact"
     position_mode: Literal["long_only", "long_short"] = "long_short"
     fast_period: int = Field(10, ge=1)
     slow_period: int = Field(30, ge=2)
@@ -180,7 +179,7 @@ class ForecastConformalIntervalsRequest(BaseModel):
     )
     denoise: Optional[DenoiseSpec] = None
     params: Optional[Dict[str, Any]] = None
-    detail: CompactFullDetailLiteral = "compact"
+    detail: DetailLiteral = "compact"
 
     @model_validator(mode="after")
     def _validate_spacing(self) -> "ForecastConformalIntervalsRequest":
@@ -213,7 +212,7 @@ class ForecastTuneGeneticRequest(BaseModel):
     features: Optional[Dict[str, Any]] = None
     dimred_method: Optional[str] = None
     dimred_params: Optional[Dict[str, Any]] = None
-    detail: CompactFullDetailLiteral = "compact"
+    detail: DetailLiteral = "compact"
 
 
 class ForecastTuneOptunaRequest(BaseModel):
@@ -240,7 +239,7 @@ class ForecastTuneOptunaRequest(BaseModel):
     features: Optional[Dict[str, Any]] = None
     dimred_method: Optional[str] = None
     dimred_params: Optional[Dict[str, Any]] = None
-    detail: CompactFullDetailLiteral = "compact"
+    detail: DetailLiteral = "compact"
 
 
 class ForecastBarrierProbRequest(BaseModel):
@@ -263,7 +262,7 @@ class ForecastBarrierProbRequest(BaseModel):
     barrier: float = 0.0
     mu: Optional[float] = None
     sigma: Optional[float] = None
-    detail: CompactStandardFullDetailLiteral = "compact"
+    detail: DetailLiteral = "compact"
 
     @model_validator(mode="before")
     @classmethod
@@ -309,7 +308,7 @@ class ForecastOptimizeHintsRequest(BaseModel):
     top_n: int = Field(5, ge=1, le=20)
     dimred_method: Optional[str] = None
     dimred_params: Optional[Dict[str, Any]] = None
-    detail: CompactFullDetailLiteral = "compact"
+    detail: DetailLiteral = "compact"
 
 
 class ForecastBarrierOptimizeRequest(BaseModel):
@@ -334,7 +333,7 @@ class ForecastBarrierOptimizeRequest(BaseModel):
     grid_style: str = "fixed"
     preset: Optional[str] = None
     search_profile: str = "medium"
-    detail: CompactStandardFullDetailLiteral = "compact"
+    detail: DetailLiteral = "compact"
 
     @model_validator(mode="before")
     @classmethod
@@ -360,7 +359,7 @@ class ForecastVolatilityEstimateRequest(BaseModel):
     start: Optional[str] = None
     end: Optional[str] = None
     denoise: Optional[DenoiseSpec] = None
-    detail: CompactFullDetailLiteral = "compact"
+    detail: DetailLiteral = "compact"
 
     @model_validator(mode="after")
     def _validate_time_window(self) -> "ForecastVolatilityEstimateRequest":

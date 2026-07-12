@@ -17,7 +17,7 @@ from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
-from ..shared.schema import CompactFullDetailLiteral, TimeframeLiteral
+from ..shared.schema import DetailLiteral, TimeframeLiteral
 from ..utils.time import format_epoch_utc
 from ._mcp_instance import mcp
 from .error_envelope import build_error_payload
@@ -25,7 +25,7 @@ from .execution_logging import run_logged_operation
 
 logger = logging.getLogger(__name__)
 
-DetailLevel = CompactFullDetailLiteral
+DetailLevel = DetailLiteral
 
 
 def _attach_time_field(

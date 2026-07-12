@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, Optional
 
-from ..shared.schema import CompactFullDetailLiteral
+from ..shared.schema import DetailLiteral
 from ._mcp_instance import mcp
 from ._mcp_tools import registered_tool_catalog
 from .execution_logging import run_logged_operation
@@ -20,7 +20,7 @@ def tools_list(
     limit: Optional[int] = None,
     offset: int = 0,
     include_related: bool = False,
-    detail: CompactFullDetailLiteral = "compact",
+    detail: DetailLiteral = "compact",
 ) -> Dict[str, Any]:
     """List mtdata tools with filters, pagination, and optional parameter summaries."""
 

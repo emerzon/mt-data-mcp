@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, List, Optional
 
-from ..shared.schema import CompactFullDetailLiteral
+from ..shared.schema import DetailLiteral
 from ..utils.denoise import get_denoise_methods_data
 from ._mcp_instance import mcp
 from .error_envelope import build_error_payload
@@ -68,7 +68,7 @@ def _filter_denoise_methods(
 
 @mcp.tool()
 def denoise_list_methods(
-    detail: CompactFullDetailLiteral = "compact",
+    detail: DetailLiteral = "compact",
     available_only: bool = False,
     causality: Optional[str] = None,
     no_extras: bool = False,

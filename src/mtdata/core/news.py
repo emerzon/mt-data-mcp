@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 from ..services.unified_news import fetch_unified_news
-from ..shared.schema import CompactFullDetailLiteral
+from ..shared.schema import DetailLiteral
 from ._mcp_instance import mcp
 from .execution_logging import run_logged_operation
 from .output_contract import normalize_output_verbosity_detail
@@ -345,7 +345,7 @@ def _attach_news_row_keys(result: Dict[str, Any]) -> Dict[str, Any]:
 @mcp.tool()
 def news(
     symbol: Optional[str] = None,
-    detail: CompactFullDetailLiteral = "compact",
+    detail: DetailLiteral = "compact",
     limit: Optional[int] = None,
     offset: int = 0,
     limit_per_bucket: Optional[int] = None,

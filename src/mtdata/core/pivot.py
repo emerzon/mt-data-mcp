@@ -9,7 +9,7 @@ from ..shared.constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
 from ..shared.schema import (
     _PIVOT_METHODS,
     AutoTimeframeLiteral,
-    CompactStandardFullDetailLiteral,
+    DetailLiteral,
     PivotMethodLiteral,
     TimeframeLiteral,
 )
@@ -277,7 +277,7 @@ def pivot_compute_points(  # noqa: C901
     symbol: str,
     timeframe: TimeframeLiteral = "D1",
     method: Optional[PivotMethodLiteral] = None,
-    detail: CompactStandardFullDetailLiteral = "compact",
+    detail: DetailLiteral = "compact",
 ) -> Dict[str, Any]:
     """Compute pivot point levels from the last completed bar on `timeframe`.
     Parameters: symbol, timeframe, method, detail
@@ -538,7 +538,7 @@ def pivot_compute_points(  # noqa: C901
                 )
 
             detail_value = str(detail).strip().lower()
-            if detail_value in {"summary", "summary_only"}:
+            if detail_value in {"summary"}:
                 detail_value = "compact"
             elif detail_value not in {"compact", "standard", "full"}:
                 detail_value = "compact"
@@ -656,7 +656,7 @@ def confluence_levels(  # noqa: C901
     volume_profile_source: Literal["auto", "ticks", "m1_bars"] = "auto",
     volume_profile_max_tick_window_days: int = 7,
     volume_profile_max_ticks: int = 50_000,
-    detail: CompactStandardFullDetailLiteral = "compact",
+    detail: DetailLiteral = "compact",
     extras: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Find nearby high-probability price zones where multiple level methods agree.
@@ -788,7 +788,7 @@ def confluence_levels(  # noqa: C901
             detail_value = str(detail).strip().lower()
             if normalize_output_extras(extras):
                 detail_value = "full"
-            if detail_value in {"summary", "summary_only"}:
+            if detail_value in {"summary"}:
                 detail_value = "compact"
             volume_profile_payload: Optional[Dict[str, Any]]
             vp_timeframe, max_m1_bars = _confluence_volume_profile_window(
@@ -926,7 +926,7 @@ def support_resistance_levels(
     reaction_bars: int = 6,
     adx_period: int = 14,
     decay_half_life_bars: Optional[int] = None,
-    detail: CompactStandardFullDetailLiteral = "compact",
+    detail: DetailLiteral = "compact",
     extras: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Detect support/resistance levels around the current price from historical structure.
@@ -981,7 +981,7 @@ def support_resistance_levels(
             detail_value = str(detail).strip().lower()
             if normalize_output_extras(extras):
                 detail_value = "full"
-            if detail_value in {"summary", "summary_only"}:
+            if detail_value in {"summary"}:
                 detail_value = "compact"
             if detail_value == "compact":
                 payload = compact_support_resistance_payload(result)

@@ -15,7 +15,7 @@ import numpy as np
 import pandas as pd
 
 from ..shared.constants import TIME_DISPLAY_FORMAT, TIMEFRAME_MAP, TIMEFRAME_SECONDS
-from ..shared.schema import CompactFullDetailLiteral, TimeframeLiteral
+from ..shared.schema import DetailLiteral, TimeframeLiteral
 from ..utils.mt5 import (
     _ensure_symbol_ready,
     _mt5_copy_rates_from,
@@ -549,7 +549,7 @@ def _pair_transform_guidance(
     *,
     detail: str,
 ) -> Dict[str, Any]:
-    if detail in {"compact", "summary", "summary_only"}:
+    if detail in {"compact", "summary"}:
         return {}
     return {
         "transform_reason": _causal_transform_reason(tool, transform),
@@ -1576,7 +1576,7 @@ def causal_discover_signals(  # noqa: C901
     significance: float = 0.05,
     transform: str = "log_return",
     normalize: bool = True,
-    detail: CompactFullDetailLiteral = "compact",
+    detail: DetailLiteral = "compact",
 ) -> Dict[str, Any]:
     """Run Granger-style causal discovery on MT5 symbols.
 
@@ -2160,7 +2160,7 @@ def correlation_matrix(  # noqa: C901
     method: str = "pearson",
     transform: str = "log_return",
     min_overlap: int = 30,
-    detail: CompactFullDetailLiteral = "compact",
+    detail: DetailLiteral = "compact",
 ) -> Dict[str, Any]:
     """Calculate pairwise symbol correlations from MT5 price history.
 
@@ -2575,7 +2575,7 @@ def cross_correlation(  # noqa: C901
     transform: str = "log_return",
     min_overlap: int = 50,
     bootstrap_samples: int = 300,
-    detail: CompactFullDetailLiteral = "compact",
+    detail: DetailLiteral = "compact",
 ) -> Dict[str, Any]:
     """Measure lead-lag correlation for an explicit pair of MT5 symbols.
 
@@ -2780,7 +2780,7 @@ def cointegration_test(  # noqa: C901
     k_ar_diff: int = 1,
     significance: float = 0.05,
     min_overlap: int = 80,
-    detail: CompactFullDetailLiteral = "compact",
+    detail: DetailLiteral = "compact",
 ) -> Dict[str, Any]:
     """Run Engle-Granger pair tests or a multivariate Johansen rank test.
 

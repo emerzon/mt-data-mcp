@@ -322,12 +322,8 @@ _TIMEFRAME_CHOICES = tuple(TIMEFRAME_MAP.keys())
 TimeframeLiteral = Literal[_TIMEFRAME_CHOICES]  # type: ignore
 AutoTimeframeLiteral = Union[TimeframeLiteral, Literal["auto"]]
 CANONICAL_OUTPUT_SHAPE_DETAILS = ("compact", "standard", "summary", "full")
-CANONICAL_OUTPUT_DETAIL_ALIASES = types.MappingProxyType(
-    {"summary_only": "summary"}
-)
+CANONICAL_OUTPUT_DETAIL_ALIASES = types.MappingProxyType({})
 DetailLiteral = Literal["compact", "standard", "summary", "full"]
-CompactFullDetailLiteral = DetailLiteral
-CompactStandardFullDetailLiteral = DetailLiteral
 SummaryCompactFullDetailLiteral = Literal["full", "summary", "compact"]
 
 # ---- Technical Indicators (dynamic discovery and application) ----

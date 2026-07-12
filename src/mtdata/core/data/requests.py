@@ -14,7 +14,7 @@ from pydantic import (
 )
 
 from ...shared.schema import (
-    CompactStandardFullDetailLiteral,
+    DetailLiteral,
     DenoiseSpec,
     IndicatorSpec,
     SimplifySpec,
@@ -379,7 +379,7 @@ class _DetailNormalizedRequest(BaseModel):
 class DataFetchCandlesRequest(_DetailNormalizedRequest):
     symbol: str
     timeframe: TimeframeLiteral = "H1"
-    detail: CompactStandardFullDetailLiteral = "compact"
+    detail: DetailLiteral = "compact"
     limit: int = Field(
         DATA_FETCH_CANDLES_DEFAULT_LIMIT,
         description=(
@@ -473,7 +473,7 @@ class DataFetchTicksRequest(_DetailNormalizedRequest):
         ),
     )
     simplify: SimplifySpecInput = None
-    detail: CompactStandardFullDetailLiteral = "compact"
+    detail: DetailLiteral = "compact"
 
     @field_validator("symbol")
     @classmethod

@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-from ..shared.schema import CompactFullDetailLiteral, TimeframeLiteral
+from ..shared.schema import DetailLiteral, TimeframeLiteral
 
 
 class MarketMicrostructureRequest(BaseModel):
@@ -17,7 +17,7 @@ class MarketMicrostructureRequest(BaseModel):
     minutes_back: int = 60
     max_ticks: int = Field(10_000, ge=20, le=50_000)
     bucket_seconds: int = Field(60, ge=1, le=86_400)
-    detail: CompactFullDetailLiteral = "compact"
+    detail: DetailLiteral = "compact"
 
     @field_validator("symbol")
     @classmethod
@@ -46,7 +46,7 @@ class TradeExecutionQualityRequest(BaseModel):
     quote_window_seconds: int = Field(5, ge=1, le=60)
     markout_seconds: List[int] = Field(default_factory=lambda: [1, 5, 30])
     min_sample: int = Field(30, ge=1)
-    detail: CompactFullDetailLiteral = "compact"
+    detail: DetailLiteral = "compact"
 
     @field_validator("symbol")
     @classmethod
@@ -114,7 +114,7 @@ class StrategyValidateRequest(BaseModel):
     bootstrap_samples: int = Field(500, ge=100, le=5_000)
     significance_alpha: float = Field(0.05, gt=0.0, lt=0.5)
     min_positive_fold_share: float = Field(0.8, ge=0.0, le=1.0)
-    detail: CompactFullDetailLiteral = "compact"
+    detail: DetailLiteral = "compact"
 
     @field_validator("symbol")
     @classmethod
@@ -147,7 +147,7 @@ class PortfolioRiskDecomposeRequest(BaseModel):
     simulations: int = Field(5_000, ge=500, le=50_000)
     proposed_trade: Optional[ProposedTrade] = None
     allow_partial: bool = False
-    detail: CompactFullDetailLiteral = "compact"
+    detail: DetailLiteral = "compact"
 
     @field_validator("horizon_bars")
     @classmethod
@@ -179,7 +179,7 @@ class MarketRelativeStrengthRequest(BaseModel):
     max_spread_pct: Optional[float] = Field(None, ge=0.0)
     min_tick_volume: Optional[int] = Field(None, ge=0)
     limit: int = Field(20, ge=1, le=100)
-    detail: CompactFullDetailLiteral = "compact"
+    detail: DetailLiteral = "compact"
 
     @model_validator(mode="after")
     def _ranking(self) -> "MarketRelativeStrengthRequest":

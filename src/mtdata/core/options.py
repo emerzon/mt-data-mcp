@@ -6,7 +6,7 @@ import logging
 import re
 from typing import Any, Dict, Literal, Optional
 
-from ..shared.schema import CompactFullDetailLiteral
+from ..shared.schema import DetailLiteral
 from ._mcp_instance import mcp
 from .execution_logging import run_logged_operation
 from .output_contract import normalize_output_verbosity_detail
@@ -304,7 +304,7 @@ def _apply_options_detail(
 
 @mcp.tool()
 def options_provider_status(
-    detail: CompactFullDetailLiteral = "compact",  # type: ignore
+    detail: DetailLiteral = "compact",  # type: ignore
 ) -> Dict[str, Any]:
     """Report configured options-chain provider readiness without querying market data."""
     payload: Dict[str, Any] = {
@@ -336,7 +336,7 @@ def options_provider_status(
 @mcp.tool()
 def options_expirations(
     symbol: str,
-    detail: CompactFullDetailLiteral = "compact",  # type: ignore
+    detail: DetailLiteral = "compact",  # type: ignore
 ) -> Dict[str, Any]:
     """Fetch option expirations using the configured options-chain provider.
 
@@ -386,7 +386,7 @@ def options_chain(
     min_open_interest: int = 0,
     min_volume: int = 0,
     limit: int = 200,
-    detail: CompactFullDetailLiteral = "compact",  # type: ignore
+    detail: DetailLiteral = "compact",  # type: ignore
 ) -> Dict[str, Any]:
     """Fetch option-chain snapshots using the configured chain provider.
 
@@ -455,7 +455,7 @@ def options_barrier_price(
     rebate: float = 0.0,
     calendar: str = "UnitedStates.NYSE",
     maturity_basis: Literal["calendar_days", "business_days"] = "calendar_days",  # type: ignore
-    detail: CompactFullDetailLiteral = "compact",  # type: ignore
+    detail: DetailLiteral = "compact",  # type: ignore
 ) -> Dict[str, Any]:
     """Price a barrier option using QuantLib with optional calendar overrides."""
     from ..forecast.quantlib_tools import price_barrier_option_quantlib as _impl
@@ -525,7 +525,7 @@ def options_heston_calibrate(
     max_contracts: int = 25,
     calendar: str = "UnitedStates.NYSE",
     maturity_basis: Literal["calendar_days", "business_days"] = "calendar_days",  # type: ignore
-    detail: CompactFullDetailLiteral = "compact",  # type: ignore
+    detail: DetailLiteral = "compact",  # type: ignore
 ) -> Dict[str, Any]:
     """Calibrate Heston from the configured options-chain provider.
 

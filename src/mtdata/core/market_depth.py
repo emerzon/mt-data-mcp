@@ -6,7 +6,7 @@ import time
 from typing import Any, Dict, Literal, Optional
 
 from ..shared.market_units import forex_points_per_pip
-from ..shared.schema import CompactFullDetailLiteral
+from ..shared.schema import DetailLiteral
 from ..utils.freshness import (
     QUOTE_STALE_SECONDS,
     format_age_seconds,
@@ -514,7 +514,7 @@ else:
 @mcp.tool()
 def market_ticker(
     symbol: str,
-    detail: CompactFullDetailLiteral = "compact",
+    detail: DetailLiteral = "compact",
     price_field: Optional[Literal["bid", "ask", "mid", "last", "spread"]] = None,
 ) -> Dict[str, Any]:
     """Return a lightweight quote snapshot with bid/ask/spread for `symbol`.

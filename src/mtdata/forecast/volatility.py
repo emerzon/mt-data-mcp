@@ -12,7 +12,7 @@ from ..services.data_service import (
     _shift_rate_times,
 )
 from ..shared.constants import SANITY_BARS_TOLERANCE, TIMEFRAME_MAP, TIMEFRAME_SECONDS
-from ..shared.schema import CompactFullDetailLiteral, DenoiseSpec, TimeframeLiteral
+from ..shared.schema import DetailLiteral, DenoiseSpec, TimeframeLiteral
 from ..shared.symbols import is_probably_crypto_symbol, is_probably_forex_symbol
 from ..shared.validators import (
     invalid_timeframe_error,
@@ -824,7 +824,7 @@ def forecast_volatility(  # noqa: C901
     start: Optional[str] = None,
     end: Optional[str] = None,
     denoise: Optional[DenoiseSpec] = None,
-    detail: CompactFullDetailLiteral = "full",
+    detail: DetailLiteral = "full",
 ) -> Dict[str, Any]:
     """Forecast volatility over `horizon` bars with direct estimators/GARCH or general forecasters on a proxy.
 

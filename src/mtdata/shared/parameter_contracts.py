@@ -16,8 +16,6 @@ OUTPUT_EXTRAS: Final[frozenset[str]] = frozenset(
 OUTPUT_EXTRA_FULL_ALIASES: Final[frozenset[str]] = frozenset(
     {
         "all",
-        "full",
-        "verbose",
     }
 )
 PUBLIC_OUTPUT_PARAMS: Final[frozenset[str]] = frozenset({"json", "extras", "fields"})

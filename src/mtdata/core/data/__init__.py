@@ -6,7 +6,7 @@ from typing import Any, Dict, List, Optional
 from pydantic import ValidationError
 
 from ...services.data_service import fetch_candles, fetch_ticks
-from ...shared.schema import CompactFullDetailLiteral, TimeframeLiteral
+from ...shared.schema import DetailLiteral, TimeframeLiteral
 from ...utils.mt5 import ensure_mt5_connection_or_raise
 from ...utils.coercion import coerce_finite_float
 from .._mcp_instance import mcp
@@ -395,7 +395,7 @@ def _compact_wait_event_public_result(
     *,
     explicit_watch_for: bool,
     explicit_end_on: bool,
-    detail: CompactFullDetailLiteral = "compact",
+    detail: DetailLiteral = "compact",
 ) -> Dict[str, Any]:
     out = dict(result)
     max_wait_seconds = out.pop("max_wait_seconds", None)
@@ -663,7 +663,7 @@ def wait_event(
     poll_interval_seconds: Optional[float] = None,
     watch_for: Optional[List[Dict[str, Any]]] = None,
     end_on: Optional[List[Dict[str, Any]]] = None,
-    detail: CompactFullDetailLiteral = "compact",
+    detail: DetailLiteral = "compact",
 ) -> Dict[str, Any]:
     """Wait for watch events on a symbol until the next timeframe boundary.
 

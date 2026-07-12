@@ -11,7 +11,7 @@ from zoneinfo import ZoneInfo
 
 import holidays
 
-from ..shared.schema import CompactFullDetailLiteral
+from ..shared.schema import DetailLiteral
 from ..shared.symbols import is_probably_crypto_symbol, is_probably_forex_symbol
 from ..utils.market_metadata import build_tick_freshness_context
 from ..utils.mt5 import (
@@ -1164,7 +1164,7 @@ def market_status(
     symbol: Optional[str] = None,
     region: Optional[Literal["us", "europe", "asia", "all"]] = "all",
     timezone_display: Optional[Literal["local", "utc", "server", "auto"]] = "auto",
-    detail: CompactFullDetailLiteral = "compact",
+    detail: DetailLiteral = "compact",
     extras: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Get global exchange status, or MT5 symbol tradability when `symbol` is supplied.

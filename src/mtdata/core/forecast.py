@@ -25,7 +25,7 @@ from ..forecast.requests import (
     ForecastVolatilityEstimateRequest,
     StrategyBacktestRequest,
 )
-from ..shared.schema import CompactFullDetailLiteral, CompactStandardFullDetailLiteral
+from ..shared.schema import DetailLiteral
 from ..utils.barriers import (
     build_barrier_kwargs_from as _build_barrier_kwargs_from,
 )
@@ -805,7 +805,7 @@ def forecast_generate(request: ForecastGenerateRequest) -> Dict[str, Any]:
 def forecast_list_library_models(
     library: Literal["native", "statsforecast", "sktime", "pretrained", "mlforecast", "all"] = "all",
     show_unavailable: bool = False,
-    detail: CompactFullDetailLiteral = "compact",  # type: ignore
+    detail: DetailLiteral = "compact",  # type: ignore
     limit: Optional[int] = None,
     offset: int = 0,
 ) -> Dict[str, Any]:
@@ -901,7 +901,7 @@ def forecast_volatility_estimate(
 
 @mcp.tool()
 def forecast_list_methods(
-    detail: CompactStandardFullDetailLiteral = "compact",
+    detail: DetailLiteral = "compact",
     limit: Optional[int] = None,
     offset: int = 0,
     search_term: Optional[str] = None,
@@ -1320,7 +1320,7 @@ def _forecast_list_library_models_impl(
     library: Literal["native", "statsforecast", "sktime", "pretrained", "mlforecast", "all"],
     *,
     show_unavailable: bool = False,
-    detail: CompactFullDetailLiteral = "compact",
+    detail: DetailLiteral = "compact",
     limit: Optional[int] = None,
     offset: int = 0,
 ) -> Dict[str, Any]:
@@ -1714,7 +1714,7 @@ def _forecast_volatility_methods_section(
 
 def _forecast_list_methods_impl(  # noqa: C901
     *,
-    detail: CompactStandardFullDetailLiteral = "compact",
+    detail: DetailLiteral = "compact",
     limit: Optional[int] = None,
     offset: int = 0,
     search: Optional[str] = None,
@@ -1731,7 +1731,7 @@ def _forecast_list_methods_impl(  # noqa: C901
         if not isinstance(data, dict):
             data = {}
         detail_value = str(detail or "compact").strip().lower()
-        if detail_value in {"summary", "summary_only"}:
+        if detail_value in {"summary"}:
             detail_value = "compact"
         elif detail_value not in {"compact", "standard", "full"}:
             detail_value = "compact"

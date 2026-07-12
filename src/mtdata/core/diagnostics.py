@@ -15,7 +15,7 @@ from scipy.signal import find_peaks, periodogram
 from ..forecast.common import bars_per_year
 from ..shared.symbols import is_probably_crypto_symbol, is_probably_forex_symbol
 from ..shared.constants import TIMEFRAME_MAP
-from ..shared.schema import CompactFullDetailLiteral, TimeframeLiteral
+from ..shared.schema import DetailLiteral, TimeframeLiteral
 from ..utils.mt5 import (
     _ensure_symbol_ready,
     _mt5_copy_rates_from,
@@ -122,7 +122,7 @@ def stationarity_test(
     tests: str = "adf,kpss,pp",
     trend: Literal["c", "ct"] = "c",
     significance: float = 0.05,
-    detail: CompactFullDetailLiteral = "compact",
+    detail: DetailLiteral = "compact",
 ) -> Dict[str, Any]:
     """Test an MT5 time series for stationarity using ADF, KPSS, and optional PP."""
 
@@ -260,7 +260,7 @@ def seasonality_detect(
     max_period: Optional[int] = None,
     min_cycles: int = 3,
     top_n: int = 5,
-    detail: CompactFullDetailLiteral = "compact",
+    detail: DetailLiteral = "compact",
 ) -> Dict[str, Any]:
     """Detect dominant seasonal periods using autocorrelation and spectral power."""
 
@@ -420,7 +420,7 @@ def outliers_detect(
     method: Literal["mad", "iqr", "zscore"] = "mad",
     threshold: float = 3.5,
     limit: int = 50,
-    detail: CompactFullDetailLiteral = "compact",
+    detail: DetailLiteral = "compact",
 ) -> Dict[str, Any]:
     """Detect anomalous MT5 bars using robust return, volume, and range scores."""
 
@@ -524,7 +524,7 @@ def volatility_term_structure(
     horizons: str = "1,5,10,20,60",
     percentiles: str = "10,25,50,75,90",
     annualize: bool = True,
-    detail: CompactFullDetailLiteral = "compact",
+    detail: DetailLiteral = "compact",
 ) -> Dict[str, Any]:
     """Compute current realized volatility and historical cones at multiple horizons."""
 

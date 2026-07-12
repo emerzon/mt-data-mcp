@@ -5,7 +5,7 @@ from typing import Any, Dict, List, Literal, Optional, Union
 from pydantic import BaseModel, Field, model_validator
 
 from ...shared.schema import (
-    CompactStandardFullDetailLiteral,
+    DetailLiteral,
     DenoiseSpec,
     TimeframeLiteral,
     reject_removed_field,
@@ -60,7 +60,7 @@ class ReportGenerateRequest(BaseModel):
             "cp_threshold, hmm_states, conformal_steps, conformal_spacing, conformal_alpha."
         ),
     )
-    detail: CompactStandardFullDetailLiteral = "compact"
+    detail: DetailLiteral = "compact"
 
     @model_validator(mode="before")
     @classmethod

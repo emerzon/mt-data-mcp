@@ -5,7 +5,7 @@ from typing import Any, Dict, List, Literal, Optional
 from ..shared.constants import DEFAULT_ROW_LIMIT
 from ..shared.schema import (
     CategoryLiteral,
-    CompactFullDetailLiteral,
+    DetailLiteral,
     IndicatorNameLiteral,
 )
 from ..utils.indicators import clean_help_text as _clean_help_text
@@ -469,7 +469,7 @@ def indicators_list(
     trading_style: Optional[Literal["intraday", "swing", "position"]] = None,
     limit: Optional[int] = DEFAULT_ROW_LIMIT,
     offset: int = 0,
-    detail: CompactFullDetailLiteral = "compact",
+    detail: DetailLiteral = "compact",
 ) -> Dict[str, Any]:  # type: ignore
     """List indicators as a tabular result with optional search, category, and detail filters.
 
@@ -617,7 +617,7 @@ def indicators_list(
 @mcp.tool()
 def indicators_describe(
     name: IndicatorNameLiteral,
-    detail: CompactFullDetailLiteral = "compact",
+    detail: DetailLiteral = "compact",
 ) -> Dict[str, Any]:  # type: ignore
     """Return indicator information with compact, standard, or full detail.
 

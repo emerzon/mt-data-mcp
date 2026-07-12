@@ -128,7 +128,7 @@ def _normalize_forecast_time_fields(payload: Dict[str, Any]) -> Dict[str, Any]:
 
 def _normalize_trader_detail(value: Any, *, default: str = "compact") -> str:
     normalized = str(default if value is None else value).strip().lower()
-    if normalized in {"summary", "summary_only"}:
+    if normalized in {"summary"}:
         return "compact"
     if normalized == "full":
         return "full"
@@ -139,8 +139,6 @@ def _normalize_trader_detail(value: Any, *, default: str = "compact") -> str:
 
 def _requested_detail_label(value: Any, *, default: str = "compact") -> str:
     normalized = str(default if value is None else value).strip().lower()
-    if normalized == "summary_only":
-        return "summary"
     if normalized in {"compact", "standard", "summary", "full"}:
         return normalized
     return str(default)

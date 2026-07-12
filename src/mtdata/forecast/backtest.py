@@ -6,7 +6,7 @@ import numpy as np
 
 from ..core.output_contract import normalize_output_verbosity_detail
 from ..shared.constants import TIMEFRAME_MAP
-from ..shared.schema import CompactFullDetailLiteral, DenoiseSpec, TimeframeLiteral
+from ..shared.schema import DetailLiteral, DenoiseSpec, TimeframeLiteral
 from ..shared.validators import invalid_timeframe_error
 from ..utils.denoise import normalize_denoise_spec as _normalize_denoise_spec
 from ..utils.utils import _format_time_minimal
@@ -85,7 +85,7 @@ def _attach_request_metadata(
     *,
     request: Dict[str, Any],
     resolved_request: Optional[Dict[str, Any]] = None,
-    detail: CompactFullDetailLiteral = "compact",
+    detail: DetailLiteral = "compact",
 ) -> Dict[str, Any]:
     out = dict(result)
     # Only include request metadata in full detail mode
@@ -900,7 +900,7 @@ def strategy_backtest(  # noqa: C901
     lookback: int = 500,
     start: Optional[str] = None,
     end: Optional[str] = None,
-    detail: CompactFullDetailLiteral = "compact",
+    detail: DetailLiteral = "compact",
     position_mode: Literal["long_only", "long_short"] = "long_short",  # type: ignore
     fast_period: int = 10,
     slow_period: int = 30,
@@ -1381,7 +1381,7 @@ def forecast_backtest(  # noqa: C901
     dimred_params: Optional[Dict[str, Any]] = None,
     slippage_bps: float = 0.0,
     trade_threshold: float = 0.0,
-    detail: CompactFullDetailLiteral = "compact",
+    detail: DetailLiteral = "compact",
 ) -> Dict[str, Any]:
     """Rolling-origin backtest over historical anchors using the forecast tool.
 

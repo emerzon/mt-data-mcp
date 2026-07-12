@@ -508,7 +508,7 @@ def build_level_confluence_payload(
         clusters.append(group)
 
     detail_value = str(detail or "compact").strip().lower()
-    if detail_value in {"summary", "summary_only"}:
+    if detail_value in {"summary"}:
         detail_value = "compact"
     if detail_value not in {"compact", "standard", "full"}:
         detail_value = "compact"
