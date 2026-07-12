@@ -35,6 +35,44 @@ def _kalman_filter_1d(
     return xhat
 
 
+def _kalman_filter_causal_auto_1d(
+    x: np.ndarray,
+    *,
+    process_var: Optional[float],
+    measurement_var: Optional[float],
+    initial_state: Optional[float] = None,
+    initial_cov: Optional[float] = None,
+) -> np.ndarray:
+    """Run a causal Kalman filter with expanding, prefix-only auto variances."""
+    n = len(x)
+    xhat = np.zeros(n, dtype=float)
+    covariance = np.zeros(n, dtype=float)
+    xhat[0] = float(initial_state) if initial_state is not None else float(x[0])
+    initial_measurement = max(float(measurement_var or 1.0), 1e-12)
+    covariance[0] = (
+        float(initial_cov) if initial_cov is not None else initial_measurement
+    )
+    for t in range(1, n):
+        prefix_variance = float(np.var(x[: t + 1]))
+        measurement = max(
+            float(measurement_var)
+            if measurement_var is not None
+            else (prefix_variance if prefix_variance > 0.0 else 1.0),
+            1e-12,
+        )
+        process = max(
+            float(process_var)
+            if process_var is not None
+            else measurement * 0.01,
+            1e-12,
+        )
+        predicted_covariance = covariance[t - 1] + process
+        gain = predicted_covariance / (predicted_covariance + measurement)
+        xhat[t] = xhat[t - 1] + gain * (float(x[t]) - xhat[t - 1])
+        covariance[t] = (1.0 - gain) * predicted_covariance
+    return xhat
+
+
 def _kalman_rts_smoother_1d(
     x: np.ndarray,
     process_var: float,
@@ -81,12 +119,24 @@ def _denoise_kalman_series(
 ) -> pd.Series:
     measurement_var = params.get('measurement_var', params.get('r', 'auto'))
     process_var = params.get('process_var', params.get('q', 'auto'))
+    measurement_auto = measurement_var == 'auto' or measurement_var is None
+    process_auto = process_var == 'auto' or process_var is None
+    if causality == 'causal' and (measurement_auto or process_auto):
+        y = _kalman_filter_causal_auto_1d(
+            x,
+            process_var=None if process_auto else float(process_var),
+            measurement_var=None if measurement_auto else float(measurement_var),
+            initial_state=params.get('initial_state'),
+            initial_cov=params.get('initial_cov'),
+        )
+        return _series_like(s, y)
+
     series_var = float(np.var(x))
-    if measurement_var == 'auto' or measurement_var is None:
+    if measurement_auto:
         measurement_val = series_var if series_var > 0 else 1.0
     else:
         measurement_val = float(measurement_var)
-    if process_var == 'auto' or process_var is None:
+    if process_auto:
         process_val = measurement_val * 0.01
     else:
         process_val = float(process_var)

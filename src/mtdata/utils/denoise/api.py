@@ -254,14 +254,26 @@ def _run_denoise_handler(
     # Materialize a writable contiguous buffer
     numeric = pd.to_numeric(s, errors="coerce").replace([np.inf, -np.inf], np.nan)
     missing_mask = numeric.isna()
-    prepared = numeric.ffill().bfill()
+    prepared = numeric.ffill() if causality == "causal" else numeric.ffill().bfill()
+    first_valid_position = 0
+    if causality == "causal":
+        valid_positions = np.flatnonzero(prepared.notna().to_numpy())
+        if valid_positions.size:
+            first_valid_position = int(valid_positions[0])
+            prepared = prepared.iloc[first_valid_position:]
     x = np.array(prepared.to_numpy(copy=True), dtype=float, copy=True, order='C')
     if x.size == 0 or not np.isfinite(x).any():
         series_name = str(getattr(s, "name", "") or "<unnamed>")
         raise ValueError(f"Series '{series_name}' contains no finite values for denoise")
-    result = handler(s, x, params, causality)
+    handler_series = s.iloc[first_valid_position:] if first_valid_position else s
+    result = handler(handler_series, x, params, causality)
     if not isinstance(result, pd.Series):
-        result = pd.Series(result, index=s.index)
+        result = pd.Series(result, index=handler_series.index)
+    if first_valid_position:
+        suffix_result = result
+        result = pd.Series(np.nan, index=s.index, name=s.name, dtype=float)
+        result.iloc[first_valid_position:] = suffix_result.to_numpy(dtype=float)
+        result.attrs.update(suffix_result.attrs)
     if bool(missing_mask.any()):
         result = result.copy()
         result.loc[missing_mask] = np.nan

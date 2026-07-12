@@ -469,6 +469,29 @@ class TestDenoiseSeriesDispatch:
         result = _denoise_series(s, method="kalman", causality="causal")
         _check_basic(result.values, N)
 
+    def test_kalman_causal_auto_is_prefix_invariant(self):
+        prefix = pd.Series([1.0, 1.2, 0.9, 1.1, 1.0], name="close")
+        extended = pd.concat(
+            [prefix, pd.Series([100.0, -100.0], name="close")],
+            ignore_index=True,
+        )
+
+        prefix_result = _denoise_series(prefix, method="kalman", causality="causal")
+        extended_result = _denoise_series(
+            extended, method="kalman", causality="causal"
+        )
+
+        np.testing.assert_allclose(prefix_result, extended_result.iloc[: len(prefix)])
+
+    def test_causal_denoise_does_not_backfill_leading_missing_values(self):
+        series = pd.Series([np.nan, np.nan, 1.0, 1.2, 0.9], name="close")
+
+        result = _denoise_series(series, method="kalman", causality="causal")
+        suffix = _denoise_series(series.iloc[2:], method="kalman", causality="causal")
+
+        assert result.iloc[:2].isna().all()
+        np.testing.assert_allclose(result.iloc[2:], suffix)
+
     def test_lms_causal(self):
         s = _make_series(NOISY_SIGNAL)
         result = _denoise_series(s, method="lms", causality="causal")
