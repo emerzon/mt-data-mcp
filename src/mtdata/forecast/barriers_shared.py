@@ -59,7 +59,8 @@ DEGENERATE_OBJECTIVE_MIN_RESOLVE = 0.20
 LOW_CONFIDENCE_CI_THRESHOLD = 0.10
 LOW_PRACTICAL_WIN_PROB_THRESHOLD = 0.05
 BARRIER_METRIC_BASIS_NOTE = (
-    "ev=mean simulated payoff in distance_unit, net of supplied costs; "
+    "ev=mean simulated barrier payoff plus timeout mark-to-market in distance_unit, "
+    "net of supplied costs; neutral same-bar ties contribute zero; "
     "edge=prob_win-prob_loss; edge_vs_breakeven=prob_tp_first-breakeven_win_rate; "
     "profit_factor=resolved reward/loss; higher is better, positive ev/edge is favorable."
 )

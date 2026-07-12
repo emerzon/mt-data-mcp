@@ -589,7 +589,7 @@ Choose what to optimize. Each objective answers a different trading question:
 | `prob_resolve` | `1 - P(no hit)` | Ensure trades complete |
 | `kelly` | `P(tp_first) - P(sl_first)/net_RR` | Position sizing |
 | `kelly_cond` | Kelly on resolved trades only | Position sizing (ignoring timeouts) |
-| `ev` | `P(tp_first)*net_TP - P(sl_first)*net_SL` | Maximize profit per trade |
+| `ev` | `P(tp_first)*net_TP - P(sl_first)*net_SL + P(no_hit)*timeout_MTM` | Maximize full-path profit per trade |
 | `ev_cond` | EV on resolved trades only | Profit per trade (ignoring timeouts) |
 | `ev_per_bar` | `EV / mean_time_in_trade_all_paths` | Fast trades, capital turnover |
 | `profit_factor` | `(P(tp_first)*net_TP) / (P(sl_first)*net_SL)` | Risk/reward ratio focus |
@@ -606,10 +606,13 @@ Choose what to optimize. Each objective answers a different trading question:
 
 **`ev` (Expected Value)** — *"What's my average profit per trade?"*
 - Accounts for both probability AND payoff size
+- Includes the horizon mark-to-market payoff for paths that hit neither barrier
+- Same-bar ties contribute zero when `same_bar_policy=neutral`
 - When spread, slippage, or commission inputs are supplied, EV is net of those costs
 - EV = 0.15% means you expect to gain 0.15% per trade on average
 - **Use when:** Payoff asymmetry matters (e.g., small wins, big losses)
-- **Limitation:** Doesn't account for trade duration
+- **Limitation:** Favorable timeout drift can dominate the barrier-hit edge; inspect
+  `ev_unresolved`, `prob_no_hit`, and `phantom_profit_risk`
 
 **`ev_per_bar`** — *"What's my profit per unit of time?"*
 - Normalizes EV by how long trades take

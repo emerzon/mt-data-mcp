@@ -502,17 +502,15 @@ def _evaluate_barrier_candidate(
 
     # Terminal PnL contribution from paths that never hit TP or SL.
     unresolved_mask = ~(wins | losses | ties)
-    if context.same_bar_policy == "neutral":
-        unresolved_mask = unresolved_mask | ties
     unresolved_mean_pnl = _unresolved_terminal_pnl(
         eval_paths, unresolved_mask, context=context,
     )
-    ev_unresolved = resolved["prob_unresolved"] * unresolved_mean_pnl
+    ev_unresolved = prob_no_hit * unresolved_mean_pnl
     # Unresolved paths still entail a round-trip entry+exit at the horizon,
     # so subtract full trading cost when costs are configured. Without this,
     # EV (net) understates costs by prob_neutral * cost_per_trade.
     ev_unresolved_net = (
-        resolved["prob_unresolved"] * (unresolved_mean_pnl - context.ev_deduct_cost)
+        prob_no_hit * (unresolved_mean_pnl - context.ev_deduct_cost)
         if context.has_trading_costs
         else ev_unresolved
     )
