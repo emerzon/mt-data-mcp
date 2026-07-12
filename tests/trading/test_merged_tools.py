@@ -6,7 +6,7 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from src.mtdata.utils.time import (
-    _format_time_minimal,
+    format_epoch_utc,
 )
 
 # Mock mt5 before importing the module
@@ -125,7 +125,7 @@ class TestMergedTools(unittest.TestCase):
         self.assertEqual(row.get("side"), "BUY")
         self.assertEqual(row.get("symbol"), "EURUSD")
         self.assertEqual(row.get("ticket"), 1)
-        expected_time = _format_time_minimal(1700000001)
+        expected_time = format_epoch_utc(1700000001)
         self.assertEqual(row.get("time"), expected_time)
         self.assertIsNone(row.get("time_msc"))
         self.assertIsNone(row.get("time_update"))
@@ -265,8 +265,8 @@ class TestMergedTools(unittest.TestCase):
         self.assertEqual(row.get("side"), "SELL")
         self.assertEqual(row.get("symbol"), "EURUSD")
         self.assertEqual(row.get("ticket"), 1)
-        expected_time = _format_time_minimal(1700000000)
-        expected_exp = _format_time_minimal(1700003600)
+        expected_time = format_epoch_utc(1700000000)
+        expected_exp = format_epoch_utc(1700003600)
         self.assertEqual(row.get("time"), expected_time)
         self.assertIn("expiration", row)
         self.assertEqual(row.get("expiration"), expected_exp)
