@@ -96,6 +96,36 @@ _TRADE_PLACE_PREVIEW_KEYS = (
     "expiration",
     "expiration_normalized",
 )
+
+
+def _linearized_account_currency_notional(
+    *,
+    volume: float,
+    price: float,
+    symbol_info: Any,
+) -> Optional[float]:
+    """Approximate account-currency exposure from broker tick economics."""
+    tick_size = validation._safe_float_attr(symbol_info, "trade_tick_size", 0.0)
+    tick_values = [
+        validation._safe_float_attr(symbol_info, "trade_tick_value", 0.0),
+        validation._safe_float_attr(symbol_info, "trade_tick_value_profit", 0.0),
+        validation._safe_float_attr(symbol_info, "trade_tick_value_loss", 0.0),
+    ]
+    tick_value = next(
+        (value for value in tick_values if math.isfinite(value) and value > 0.0),
+        0.0,
+    )
+    if (
+        not math.isfinite(volume)
+        or not math.isfinite(price)
+        or not math.isfinite(tick_size)
+        or volume < 0.0
+        or price < 0.0
+        or tick_size <= 0.0
+        or tick_value <= 0.0
+    ):
+        return None
+    return abs(float(volume)) * float(price) * tick_value / tick_size
 _TRADE_PLACE_BASIC_KEYS = _TRADE_PLACE_PREVIEW_KEYS + (
     "actionability",
     "actionability_reason",
@@ -2819,6 +2849,8 @@ def run_trade_risk_analyze(  # noqa: C901
             pending_orders_without_sl = 0
             total_notional_exposure = 0.0
             total_pending_notional_exposure = 0.0
+            notional_items_total = 0
+            notional_items_included = 0
             symbol_info_cache: Dict[str, Any] = {}
 
             for pos in positions:
@@ -2863,8 +2895,16 @@ def run_trade_risk_analyze(  # noqa: C901
                     if not math.isfinite(contract_size) or contract_size <= 0:
                         contract_size = 1.0
 
-                    notional_value = abs(volume) * contract_size * entry_price
-                    total_notional_exposure += notional_value
+                    contract_price_product = abs(volume) * contract_size * entry_price
+                    notional_value = _linearized_account_currency_notional(
+                        volume=volume,
+                        price=entry_price,
+                        symbol_info=sym_info,
+                    )
+                    notional_items_total += 1
+                    if notional_value is not None:
+                        total_notional_exposure += notional_value
+                        notional_items_included += 1
 
                     risk_currency = None
                     risk_pct = None
@@ -2926,7 +2966,12 @@ def run_trade_risk_analyze(  # noqa: C901
                             ),
                             "risk_pct": _round_optional_number(risk_pct, 2),
                             "risk_status": risk_status,
-                            "notional_value": round(notional_value, 2),
+                            "notional_value": _round_optional_number(
+                                notional_value, 2
+                            ),
+                            "contract_price_product": round(
+                                contract_price_product, 2
+                            ),
                             "reward_currency": _round_optional_number(
                                 reward_currency, 2
                             ),
@@ -3011,8 +3056,16 @@ def run_trade_risk_analyze(  # noqa: C901
                         if not math.isfinite(contract_size) or contract_size <= 0:
                             contract_size = 1.0
 
-                        notional_value = abs(volume) * contract_size * entry_price
-                        total_pending_notional_exposure += notional_value
+                        contract_price_product = abs(volume) * contract_size * entry_price
+                        notional_value = _linearized_account_currency_notional(
+                            volume=volume,
+                            price=entry_price,
+                            symbol_info=sym_info,
+                        )
+                        notional_items_total += 1
+                        if notional_value is not None:
+                            total_pending_notional_exposure += notional_value
+                            notional_items_included += 1
 
                         order_type = validation._safe_int_attr(order, "type", -1)
                         is_buy_order = int(order_type) in pending_buy_types
@@ -3069,7 +3122,12 @@ def run_trade_risk_analyze(  # noqa: C901
                                 "risk_currency": _round_optional_number(risk_currency, 2),
                                 "risk_pct": _round_optional_number(risk_pct, 2),
                                 "risk_status": risk_status,
-                                "notional_value": round(notional_value, 2),
+                                "notional_value": _round_optional_number(
+                                    notional_value, 2
+                                ),
+                                "contract_price_product": round(
+                                    contract_price_product, 2
+                                ),
                                 "reward_currency": _round_optional_number(reward_currency, 2),
                                 "rr_ratio": _round_optional_number(rr_ratio, 2),
                             }
@@ -3139,8 +3197,20 @@ def run_trade_risk_analyze(  # noqa: C901
                     "notional_exposure_pct": round(notional_exposure_pct, 2),
                     "open_position_notional_exposure": round(open_position_notional_exposure, 2),
                     "contingent_pending_notional_exposure": round(total_pending_notional_exposure, 2),
+                    "notional_exposure_complete": (
+                        notional_items_included == notional_items_total
+                    ),
+                    "notional_positions_included": notional_items_included,
+                    "notional_positions_total": notional_items_total,
+                    "notional_model": "tick_value_linear_sensitivity",
                 },
                 "positions": position_risks,
+                "units": {
+                    "risk_currency": "account_currency",
+                    "notional_value": "account_currency_linearized",
+                    "notional_exposure": "account_currency_linearized",
+                    "contract_price_product": "contract_size_times_price",
+                },
             }
             if request.symbol:
                 other_positions_count = None
@@ -3558,7 +3628,7 @@ def run_trade_risk_analyze(  # noqa: C901
                                 "risk_currency": "account_currency",
                                 "risk_pct": "percent_of_equity",
                                 "price": "symbol_price",
-                                "notional_value": "account_currency_approx",
+                                "notional_value": "account_currency_linearized",
                                 "tick_value": "account_currency_per_tick_per_lot",
                                 "kelly_fraction": "fraction",
                             },
@@ -3701,7 +3771,11 @@ def run_trade_risk_analyze(  # noqa: C901
                         if actual_risk > 0:
                             rr_ratio = reward_currency / actual_risk
 
-                    notional_value = abs(suggested_volume) * contract_size * float(request.entry)
+                    notional_value = _linearized_account_currency_notional(
+                        volume=abs(suggested_volume),
+                        price=float(request.entry),
+                        symbol_info=sym_info,
+                    )
                     margin_impact = None
                     order_calc_margin = getattr(
                         getattr(gateway, "adapter", None),
@@ -3790,14 +3864,14 @@ def run_trade_risk_analyze(  # noqa: C901
                             reward_currency, 2
                         ),
                         "rr_ratio": _round_optional_number(rr_ratio, 2),
-                        "notional_value": round(notional_value, 2),
+                        "notional_value": _round_optional_number(notional_value, 2),
                         "units": {
                             "account_currency": currency,
                             "volume": "lots",
                             "risk_currency": "account_currency",
                             "risk_pct": "percent_of_equity",
                             "price": "symbol_price",
-                            "notional_value": "account_currency_approx",
+                            "notional_value": "account_currency_linearized",
                             "tick_value": "account_currency_per_tick_per_lot",
                             **(
                                 {"kelly_fraction": "fraction"}

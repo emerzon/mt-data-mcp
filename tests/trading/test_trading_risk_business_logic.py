@@ -1012,6 +1012,45 @@ def test_trade_risk_analyze_uses_loss_tick_value_for_open_position_risk() -> Non
     assert out["portfolio_risk"]["total_risk_currency"] == 20.0
 
 
+def test_trade_risk_analyze_converts_notional_with_broker_tick_value() -> None:
+    gateway = MagicMock()
+    gateway.account_info.return_value = SimpleNamespace(
+        equity=100_000.0,
+        currency="USD",
+    )
+    gateway.positions_get.return_value = [
+        SimpleNamespace(
+            ticket=13,
+            symbol="USDJPY",
+            type=0,
+            volume=1.0,
+            price_open=110.0,
+            sl=109.0,
+            tp=111.0,
+        )
+    ]
+    gateway.orders_get.return_value = []
+    gateway.symbol_info.return_value = SimpleNamespace(
+        trade_contract_size=100_000.0,
+        trade_tick_size=0.001,
+        trade_tick_value=0.91,
+        trade_tick_value_loss=0.91,
+    )
+    gateway.POSITION_TYPE_BUY = 0
+    gateway.POSITION_TYPE_SELL = 1
+
+    out = run_trade_risk_analyze(
+        TradeRiskAnalyzeRequest(detail="full"),
+        gateway=gateway,
+    )
+
+    assert out["positions"][0]["contract_price_product"] == 11_000_000.0
+    assert out["positions"][0]["notional_value"] == 100_100.0
+    assert out["portfolio_risk"]["notional_exposure"] == 100_100.0
+    assert out["portfolio_risk"]["notional_exposure_complete"] is True
+    assert out["units"]["notional_value"] == "account_currency_linearized"
+
+
 def test_trade_risk_analyze_flags_invalid_tick_configuration_with_existing_stop_loss() -> None:
     mt5 = MagicMock()
     mt5.account_info.return_value = SimpleNamespace(equity=1000.0, currency="USD")

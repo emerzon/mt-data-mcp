@@ -66,6 +66,17 @@ by `kelly_fraction_multiplier` and capped by `kelly_max_risk_pct` (and
 `desired_risk_pct` when set). On a non-positive edge the tool reports
 `status="kelly_no_edge"` and a suggested volume of `0.0`.
 
+Portfolio stop risk is the gross sum of defined per-ticket losses at each stop. It is
+a conservative path-risk measure, not a same-symbol net-exposure estimate; a path can
+trigger both sides of a hedge sequentially. Pending-order stop risk is reported
+separately as contingent and is included in the total only when `include_pending=true`.
+
+`notional_value` and portfolio notional fields are linearized account-currency
+exposures derived from the broker's tick value and tick size. The per-position
+`contract_price_product` diagnostic preserves raw `volume × contract_size × price`
+with the explicit unit `contract_size_times_price`; it must not be compared with
+account equity or summed across unlike instruments.
+
 ---
 
 ## `trade_var_cvar_calculate`
