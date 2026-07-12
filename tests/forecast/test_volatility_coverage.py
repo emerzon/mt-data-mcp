@@ -810,6 +810,12 @@ class TestForecastVolatilityGeneral:
                         "horizon_sigma_return", "horizon_sigma_annual"):
                 assert key in result
                 assert math.isfinite(result[key])
+            assert result["volatility_per_bar"] * math.sqrt(5) == pytest.approx(
+                result["volatility_horizon"]
+            )
+            assert result["params_used"]["per_bar_volatility_basis"] == (
+                "forecast_horizon_rms"
+            )
 
     def test_arima_without_statsmodels(self):
         with _mock_vol_env():

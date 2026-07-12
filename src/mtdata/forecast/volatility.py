@@ -1226,14 +1226,14 @@ def forecast_volatility(  # noqa: C901
             else:
                 sig = np.sqrt(np.exp(yhat))
             hsig = float(math.sqrt(np.sum(sig[:fh]**2)))
-            # Current sigma (baseline)
-            sbar = float(np.std(r[-100:], ddof=0) if r.size>=5 else np.std(r, ddof=0))
+            # Root-mean-square forecast sigma per modeled horizon step.
+            sbar = float(hsig / math.sqrt(max(1, int(fh))))
             bpy = annualization_bars_per_year
             return _finalize_volatility_with_context(
                 {"success": True, "symbol": symbol, "timeframe": timeframe, "method": method_l, "proxy": proxy_l,
                  "horizon": int(horizon), "sigma_bar_return": sbar, "sigma_annual_return": float(sbar*math.sqrt(bpy)),
                  "horizon_sigma_return": hsig, "horizon_sigma_annual": _annualize_horizon_sigma(hsig, bpy, int(horizon)),
-                 "params_used": p},
+                 "params_used": {**p, "per_bar_volatility_basis": "forecast_horizon_rms"}},
                 df=df,
                 symbol=symbol,
                 timeframe=timeframe,
