@@ -18,11 +18,12 @@ def test_impulse_rule_rejects_wave3_shortest():
     assert isinstance(evaluation.metrics, dict)
 
 
-def test_impulse_rule_allows_wave3_to_tie_longest_non_shortest_wave():
+def test_impulse_rule_compares_actionary_waves_by_percentage():
     close = np.array([100.0, 120.0, 110.0, 130.0, 121.0, 146.0], dtype=float)
     evaluation = _evaluate_impulse_rules(close, [0, 1, 2, 3, 4, 5], bullish=True)
 
-    assert evaluation.valid is True
+    assert evaluation.valid is False
+    assert "wave3_shortest" in evaluation.violations
 
 
 def test_detect_elliott_waves_returns_candidate_for_fallback():

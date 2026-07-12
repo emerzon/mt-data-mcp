@@ -502,6 +502,9 @@ Use these when they can sharpen the decision. Do not run them by default every c
 - `patterns_detect(mode="elliott")`
   Use for higher-timeframe structural context, especially after extended trends, suspected exhaustion, or possible regime transition.
   If you omit `timeframe`, mtdata performs its built-in multi-timeframe Elliott scan.
+  Treat v2 output as causal outer-leg geometry only. It does not infer nested
+  degrees, internal 5-3-5 subdivisions, the current wave number, or the next leg;
+  wave-5 targets are retrospective fit diagnostics.
 
 - `patterns_detect(mode="classic", detail="compact", config={"native_multiscale": true})`
   Use near consolidation, breakout, or measured-move structure when a plain candlestick read is too shallow.

@@ -531,12 +531,11 @@ class TestBuildResult:
         labels = [wp["label"] for wp in result.details["wave_points_labeled"]]
         assert labels == ["S", "A", "B", "C"]
         assert result.details["pattern_family"] == "correction"
-        assert result.details["structure_type"] == "zigzag_abc"
+        assert result.details["structure_type"] == "outer_abc_candidate"
         assert result.details["sequence_direction"] == "bull"
-        assert result.details["prior_impulse_direction"] == "bear"
-        assert result.details["trend_context"] == "counter_trend"
+        assert "prior_impulse_direction" not in result.details
         assert "correction_metrics" in result.details
-        assert "zigzag" in str(result.details.get("taxonomy_note", "")).lower()
+        assert "outer abc" in str(result.details.get("taxonomy_note", "")).lower()
 
     def test_impulse_labels(self):
         c = _impulse_close()
@@ -637,7 +636,7 @@ class TestBuildResult:
         h = np.array([101.0, 123.0, 110.0, 155.0, 136.0, 165.0], dtype=float)
         l = np.array([97.0, 118.0, 105.0, 149.0, 130.0, 159.0], dtype=float)
         t = np.arange(6, dtype=float) * 3600 + 1_700_000_000
-        analyzer = ElliottWaveAnalyzer(c, t, ElliottWaveConfig(pivot_price_source="hybrid"), high=h, low=l)
+        analyzer = ElliottWaveAnalyzer(c, t, ElliottWaveConfig(pivot_price_source="ohlc"), high=h, low=l)
         rule_eval = _evaluate_impulse_rules(c, [0, 1, 2, 3, 4, 5], bullish=True)
         scenario = ElliottScenario(
             pivots=[0, 1, 2, 3, 4, 5],
@@ -656,9 +655,9 @@ class TestBuildResult:
         assert result.details["wave_points"] == pytest.approx(expected_prices)
         assert [point["price"] for point in result.details["wave_points_labeled"]] == pytest.approx(expected_prices)
         assert result.details["invalidation_level"] == pytest.approx(97.0)
-        assert result.details["pivot_price_source"] == "hybrid"
+        assert result.details["pivot_price_source"] == "ohlc"
         # Unified contract: rules and display share the configured pivot source.
-        assert result.details["rule_price_source"] == "hybrid"
+        assert result.details["rule_price_source"] == "ohlc"
         assert result.details["price_contract"] == "unified"
         assert result.details["wave5_targets"]["equal_wave1"] == pytest.approx(156.0)
         assert result.details["wave5_targets"]["wave3_0_618"] == pytest.approx(160.9)
@@ -1008,6 +1007,8 @@ class TestDetectElliottWaves:
                 autotune=False,
                 min_distance=1,
                 wave_min_len=1,
+                min_impulse_bars=1,
+                min_correction_bars=1,
                 min_confidence=0.0,
                 pattern_types=["impulse", "correction"],
                 include_fallback_candidate=False,
@@ -1044,6 +1045,8 @@ class TestDetectElliottWaves:
                 autotune=False,
                 min_distance=1,
                 wave_min_len=1,
+                min_impulse_bars=1,
+                min_correction_bars=1,
                 min_confidence=0.0,
                 pattern_types=["impulse", "correction"],
                 include_fallback_candidate=False,
@@ -1097,6 +1100,7 @@ class TestDetectElliottWaves:
                 autotune=False,
                 min_distance=1,
                 wave_min_len=1,
+                min_impulse_bars=1,
                 min_confidence=0.0,
                 pattern_types=["impulse"],
                 include_fallback_candidate=False,
@@ -1136,6 +1140,8 @@ class TestDetectElliottWaves:
                 autotune=False,
                 min_distance=1,
                 wave_min_len=1,
+                min_impulse_bars=1,
+                enable_gmm_classifier=True,
                 min_confidence=0.0,
                 pattern_types=["impulse"],
                 include_fallback_candidate=False,
@@ -1199,6 +1205,8 @@ class TestDetectElliottWaves:
                 autotune=False,
                 min_distance=1,
                 wave_min_len=1,
+                min_impulse_bars=1,
+                enable_gmm_classifier=True,
                 min_confidence=0.0,
                 pattern_types=["impulse"],
                 include_fallback_candidate=False,

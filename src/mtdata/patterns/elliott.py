@@ -19,7 +19,7 @@ class ElliottWaveConfig:
 
     Scope notes:
     - Impulses are *strict motive* 5-wave structures (no diagonals).
-    - Corrections are *zigzag-ABC only* (no flats, triangles, or combinations).
+    - Corrections are outer ABC candidates; internal 5-3-5 subdivisions are not validated.
     - Detection is single ZigZag degree; multi-degree nesting is not modeled.
 
     The detector blends hard-rule validity (with a Fib-template fit prior) and a
@@ -32,10 +32,14 @@ class ElliottWaveConfig:
     min_distance: int = 5
 
     # New options
-    pivot_price_source: str = "close"
+    schema_version: int = 2
+    pivot_price_source: str = "close"  # "close" or causal OHLC-extrema geometry
     swing_threshold_pct: Optional[float] = None  # ZigZag swing threshold in percent
+    scan_thresholds_pct: Optional[List[float]] = None
+    scan_min_distances: Optional[List[int]] = None
     gmm_components: int = 2  # Impulsive vs corrective clusters
     min_gmm_waves: int = 12
+    enable_gmm_classifier: bool = False
     wave_min_len: int = 3
     use_volume_confirmation: bool = True
     volume_confirm_min_ratio: float = 1.05
@@ -70,7 +74,7 @@ class ElliottWaveConfig:
     min_correction_bars: int = 20
 
     # Autotuning controls
-    autotune: bool = True
+    autotune: bool = False  # deprecated v1 alias for a multi-scale scan
     tune_thresholds: Optional[List[float]] = None
     tune_min_distance: Optional[List[int]] = None
     autotune_skip_repeated_pivots: bool = True
@@ -92,6 +96,9 @@ class ElliottWaveConfig:
     correction_exclusion_overlap_ratio: float = 0.9
     pattern_types: List[str] = field(default_factory=lambda: ["impulse", "correction"])
 
+    def validate(self) -> None:
+        _validate_config(self)
+
 
 @dataclass
 class ElliottWaveResult(PatternResultBase):
@@ -100,6 +107,17 @@ class ElliottWaveResult(PatternResultBase):
     wave_type: str  # "Impulse", "Correction", or "Candidate"
     wave_sequence: List[int]
     details: Dict[str, Any] = field(default_factory=dict)
+    available_at_index: Optional[int] = None
+    available_at_time: Optional[float] = None
+    structure_state: str = "developing"
+
+
+@dataclass(frozen=True)
+class ElliottPivot:
+    index: int
+    kind: str
+    confirmed: bool
+    confirmation_index: Optional[int] = None
 
 
 @dataclass
@@ -127,11 +145,14 @@ class ElliottScenario:
     base_confidence: Optional[float] = None
     pivot_confirmations: Optional[List[bool]] = None
     confidence_adjustments: Dict[str, float] = field(default_factory=dict)
+    pivot_records: Optional[List[ElliottPivot]] = None
 
 
-def _normalize_pattern_types(config: ElliottWaveConfig) -> set[str]:
+def _normalize_pattern_types(config: ElliottWaveConfig, *, strict: bool = False) -> set[str]:
     raw = getattr(config, "pattern_types", None)
     if not raw:
+        if strict:
+            raise ValueError("pattern_types must contain impulse and/or correction")
         return {"impulse", "correction"}
     out: set[str] = set()
     for item in raw:
@@ -140,7 +161,53 @@ def _normalize_pattern_types(config: ElliottWaveConfig) -> set[str]:
             out.add("impulse")
         elif s in ("correction", "corrective", "abc"):
             out.add("correction")
+    if strict and not out:
+        raise ValueError("pattern_types must contain impulse and/or correction")
     return out or {"impulse", "correction"}
+
+
+def _validate_config(config: ElliottWaveConfig) -> None:
+    if int(config.schema_version) != 2:
+        raise ValueError("schema_version must be 2")
+    source = str(config.pivot_price_source or "").strip().lower()
+    if source not in {"close", "ohlc"}:
+        raise ValueError("pivot_price_source must be 'close' or 'ohlc'")
+    _normalize_pattern_types(config, strict=True)
+
+    for name in (
+        "min_distance",
+        "wave_min_len",
+        "min_gmm_waves",
+        "min_impulse_bars",
+        "min_correction_bars",
+        "recent_bars",
+    ):
+        value = getattr(config, name)
+        if isinstance(value, bool) or int(value) < 1:
+            raise ValueError(f"{name} must be an integer >= 1")
+    if isinstance(config.top_k, bool) or int(config.top_k) < 0:
+        raise ValueError("top_k must be an integer >= 0")
+    if int(config.gmm_components) != 2:
+        raise ValueError("gmm_components must be 2")
+
+    thresholds: List[Any] = [config.min_prominence_pct]
+    if config.swing_threshold_pct is not None:
+        thresholds.append(config.swing_threshold_pct)
+    for values in (config.scan_thresholds_pct, config.tune_thresholds):
+        if values is not None:
+            if not isinstance(values, (list, tuple)):
+                raise ValueError("Elliott threshold scans must be lists")
+            thresholds.extend(values)
+    if not all(np.isfinite(float(v)) and float(v) > 0.0 for v in thresholds):
+        raise ValueError("all Elliott swing thresholds must be finite and > 0")
+    for values in (config.scan_min_distances, config.tune_min_distance):
+        if values is not None:
+            if not isinstance(values, (list, tuple)):
+                raise ValueError("Elliott distance scans must be lists")
+            if any(isinstance(v, bool) or int(v) < 1 for v in values):
+                raise ValueError("all Elliott scan distances must be integers >= 1")
+    if not np.isfinite(float(config.min_confidence)) or not 0.0 <= float(config.min_confidence) <= 1.0:
+        raise ValueError("min_confidence must be between 0 and 1")
 
 
 def _zigzag_pivots_indices(
@@ -260,6 +327,69 @@ def _zigzag_pivots_indices(
     return piv_idx, piv_dir
 
 
+def _ohlc_zigzag_pivots_indices(
+    high: np.ndarray, low: np.ndarray, threshold_pct: float
+) -> Tuple[List[int], List[str]]:
+    """Causal ZigZag that tracks peaks on highs and troughs on lows."""
+    if high.size != low.size or high.size <= 1:
+        return [], []
+    finite = np.flatnonzero(np.isfinite(high) & np.isfinite(low) & (high >= low))
+    if finite.size <= 1:
+        return [], []
+    start = int(finite[0])
+    pre_high_i = pre_low_i = start
+    pre_high = float(high[start])
+    pre_low = float(low[start])
+    trend: Optional[str] = None
+    ext_i = start
+    ext_price = pre_low
+    pivots: List[int] = []
+    directions: List[str] = []
+
+    for i in range(start + 1, int(high.size)):
+        hi, lo = float(high[i]), float(low[i])
+        if not (np.isfinite(hi) and np.isfinite(lo) and hi >= lo):
+            continue
+        if trend is None:
+            if hi >= pre_high:
+                pre_high, pre_high_i = hi, i
+            if lo <= pre_low:
+                pre_low, pre_low_i = lo, i
+            up = (hi - pre_low) / abs(pre_low) * 100.0 if pre_low else 0.0
+            down = (pre_high - lo) / abs(pre_high) * 100.0 if pre_high else 0.0
+            if up < threshold_pct and down < threshold_pct:
+                continue
+            if up >= down:
+                trend, ext_i, ext_price = "up", i, hi
+                pivots.append(pre_low_i)
+                directions.append("down")
+            else:
+                trend, ext_i, ext_price = "down", i, lo
+                pivots.append(pre_high_i)
+                directions.append("up")
+            continue
+        if trend == "up":
+            if hi > ext_price:
+                ext_i, ext_price = i, hi
+            reversal = (ext_price - lo) / abs(ext_price) * 100.0 if ext_price else 0.0
+            if reversal >= threshold_pct:
+                pivots.append(ext_i)
+                directions.append("up")
+                trend, ext_i, ext_price = "down", i, lo
+        else:
+            if lo < ext_price:
+                ext_i, ext_price = i, lo
+            reversal = (hi - ext_price) / abs(ext_price) * 100.0 if ext_price else 0.0
+            if reversal >= threshold_pct:
+                pivots.append(ext_i)
+                directions.append("down")
+                trend, ext_i, ext_price = "up", i, hi
+    if not pivots or pivots[-1] != ext_i:
+        pivots.append(ext_i)
+        directions.append("up" if trend == "up" else "down")
+    return pivots, directions
+
+
 def _enforce_min_distance_on_pivots(
     pivots: List[int], close: np.ndarray, min_distance: int
 ) -> List[int]:
@@ -350,6 +480,67 @@ def _enforce_pivot_alternation(pivots: List[int], close: np.ndarray) -> List[int
     return out
 
 
+def _build_pivot_records(
+    pivots: List[int],
+    close: np.ndarray,
+    threshold_pct: float,
+    *,
+    high: Optional[np.ndarray] = None,
+    low: Optional[np.ndarray] = None,
+) -> List[ElliottPivot]:
+    """Attach the first bar that made each geometric pivot causally knowable."""
+    records: List[ElliottPivot] = []
+    threshold = float(threshold_pct)
+    for pos, idx in enumerate(pivots):
+        if len(pivots) == 1:
+            kind = "unknown"
+        elif pos == 0:
+            kind = "trough" if close[pivots[1]] > close[idx] else "peak"
+        elif pos == len(pivots) - 1:
+            kind = "peak" if close[idx] > close[pivots[pos - 1]] else "trough"
+        else:
+            kind = "peak" if close[idx] > max(close[pivots[pos - 1]], close[pivots[pos + 1]]) else "trough"
+
+        confirmation_index: Optional[int] = None
+        if pos < len(pivots) - 1:
+            use_ohlc = (
+                isinstance(high, np.ndarray)
+                and isinstance(low, np.ndarray)
+                and high.size == close.size
+                and low.size == close.size
+            )
+            pivot_price = float(
+                high[idx] if use_ohlc and kind == "peak" else low[idx] if use_ohlc else close[idx]
+            )
+            for bar in range(int(idx) + 1, int(close.size)):
+                price = float(
+                    low[bar]
+                    if use_ohlc and kind == "peak"
+                    else high[bar]
+                    if use_ohlc
+                    else close[bar]
+                )
+                if not np.isfinite(price) or pivot_price == 0.0:
+                    continue
+                reversal = (
+                    (pivot_price - price) / abs(pivot_price) * 100.0
+                    if kind == "peak"
+                    else (price - pivot_price) / abs(pivot_price) * 100.0
+                )
+                if reversal >= threshold:
+                    confirmation_index = int(bar)
+                    break
+        records.append(
+            ElliottPivot(
+                index=int(idx),
+                kind=kind,
+                confirmed=confirmation_index is not None,
+                confirmation_index=confirmation_index,
+            )
+        )
+    return records
+
+
 def _segment_waves_from_pivots(pivots: List[int]) -> List[Tuple[int, int]]:
     waves: List[Tuple[int, int]] = []
     if len(pivots) < 2:
@@ -391,7 +582,9 @@ def _extract_wave_features_with_index(
 def _cluster_impulsive_score(cluster_mean: np.ndarray) -> float:
     price_change = abs(float(cluster_mean[1])) if cluster_mean.size > 1 else 0.0
     slope = abs(float(cluster_mean[2])) if cluster_mean.size > 2 else 0.0
-    duration = abs(float(cluster_mean[0])) if cluster_mean.size > 0 else 0.0
+    # A negative standardized duration means shorter-than-average, which must
+    # not become "impulsive" merely because it is far from the mean.
+    duration = max(0.0, float(cluster_mean[0])) if cluster_mean.size > 0 else 0.0
     return float(price_change + 0.75 * slope + 0.1 * duration)
 
 
@@ -563,9 +756,18 @@ def _evaluate_impulse_rules(
     if (not bullish) and w[2] >= w[0]:
         violations.append("wave2_over_retrace")
 
-    # Rule 3: Wave 3 is not the shortest among waves 1, 3, 5.
-    if absL[2] < min(absL[0], absL[4]):
+    # Rule 3 is defined in percentage terms. Arithmetic lengths are retained as
+    # diagnostics, but do not decide validity on instruments with large moves.
+    pct1 = absL[0] / abs(w[0]) if w[0] != 0 else 0.0
+    pct3 = absL[2] / abs(w[2]) if w[2] != 0 else 0.0
+    pct5 = absL[4] / abs(w[4]) if w[4] != 0 else 0.0
+    if pct3 < min(pct1, pct5):
         violations.append("wave3_shortest")
+
+    if bullish and w[3] <= w[1]:
+        violations.append("wave3_does_not_exceed_wave1")
+    if (not bullish) and w[3] >= w[1]:
+        violations.append("wave3_does_not_exceed_wave1")
 
     # Rule 4: Wave 4 does not overlap Wave 1 territory.
     if bullish and w[4] <= w[1]:
@@ -577,7 +779,7 @@ def _evaluate_impulse_rules(
     r4 = absL[3] / absL[2] if absL[2] > 0 else 0.0
     e3 = absL[2] / absL[0] if absL[0] > 0 else 0.0
     rel53 = absL[4] / absL[0] if absL[0] > 0 else 0.0
-    rel5_alt = absL[4] / abs(w[3] - w[1]) if (w[3] != w[1]) else 0.0
+    rel5_alt = absL[4] / abs(w[3] - w[0]) if (w[3] != w[0]) else 0.0
 
     # Wider common-practice windows (with taper outside). Narrow "ideal"
     # windows used to mid-score many hard-valid non-extended impulses.
@@ -611,6 +813,9 @@ def _evaluate_impulse_rules(
         "e3": float(e3),
         "rel53": float(rel53),
         "rel5_alt": float(rel5_alt),
+        "wave1_pct": float(pct1),
+        "wave3_pct": float(pct3),
+        "wave5_pct": float(pct5),
         "fib_score": fib_score,
         "fib_template_fit": float(fib_score),
         "rule_confidence": float(rule_confidence),
@@ -731,7 +936,7 @@ def _evaluate_correction_rules(
     bullish: bool,
     config: Optional[ElliottWaveConfig] = None,
 ) -> ElliottRuleEvaluation:
-    """Validate a 3-wave corrective sequence (ABC) and compute score."""
+    """Validate outer 3-leg ABC geometry and compute a template-fit score."""
 
     if len(piv) != 4:
         return ElliottRuleEvaluation(
@@ -783,9 +988,9 @@ def _evaluate_correction_rules(
         "fib_score": fib_score,
         "fib_template_fit": float(fib_score),
         "rule_confidence": float(rule_confidence),
-        "structure_type": "zigzag_abc",
+        "structure_type": "outer_abc_candidate",
         "taxonomy_note": (
-            "Strict zigzag-ABC only; flats, triangles, and combinations are not modeled."
+            "Outer ABC geometry only; internal 5-3-5 subdivisions are not validated."
         ),
     }
     return ElliottRuleEvaluation(
@@ -1182,13 +1387,23 @@ def _dedupe_similar_waves(
     for key, group in by_key.items():
         sorted_group = sorted(
             group,
-            key=lambda r: (-float(r.confidence), -int(r.end_index)),
+            key=lambda r: (
+                0 if bool((r.details or {}).get("pattern_confirmed", True)) else 1,
+                -float(r.confidence),
+                -int(r.end_index),
+            ),
         )
         for candidate in sorted_group:
             is_duplicate = False
             for kept_pattern in [k for k in kept if _group_key(k) == key]:
                 end_diff = abs(int(candidate.end_index) - int(kept_pattern.end_index))
-                if end_diff <= proximity_bars:
+                overlap = _interval_overlap_ratio(
+                    int(candidate.start_index),
+                    int(candidate.end_index),
+                    int(kept_pattern.start_index),
+                    int(kept_pattern.end_index),
+                )
+                if end_diff <= proximity_bars and overlap >= 0.5:
                     is_duplicate = True
                     break
             if not is_duplicate:
@@ -1219,6 +1434,7 @@ class ElliottWaveAnalyzer:
         self.low = low if isinstance(low, np.ndarray) else np.asarray([], dtype=float)
         # Request-scoped caches
         self._pivot_cache: Dict[Tuple[float, int], List[int]] = {}
+        self._pivot_record_cache: Dict[Tuple[float, int], List[ElliottPivot]] = {}
         self._wave_feature_cache: Dict[
             Tuple[float, int], Tuple[np.ndarray, Dict[int, int], List[Tuple[int, int]]]
         ] = {}
@@ -1229,7 +1445,7 @@ class ElliottWaveAnalyzer:
             .strip()
             .lower()
         )
-        return raw if raw in {"close", "hybrid", "hl"} else "close"
+        return raw if raw in {"close", "ohlc"} else "close"
 
     def _pivot_display_price(self, idx: int, *, pivot_pos: int, bullish: bool) -> float:
         close_price = float(self.close[idx])
@@ -1307,10 +1523,28 @@ class ElliottWaveAnalyzer:
         cached = self._pivot_cache.get(key)
         if cached is not None:
             return cached
-        piv_idx, _ = _zigzag_pivots_indices(self.close, float(threshold_pct))
-        piv_idx = _enforce_min_distance_on_pivots(piv_idx, self.close, min_distance)
-        piv_idx = _enforce_pivot_alternation(piv_idx, self.close)
+        if self._normalized_pivot_price_source() == "ohlc":
+            piv_idx, piv_dir = _ohlc_zigzag_pivots_indices(
+                self.high, self.low, float(threshold_pct)
+            )
+            geometry = np.array(self.close, copy=True, dtype=float)
+            for idx, direction in zip(piv_idx, piv_dir):
+                geometry[int(idx)] = float(
+                    self.high[int(idx)] if direction == "up" else self.low[int(idx)]
+                )
+        else:
+            piv_idx, _ = _zigzag_pivots_indices(self.close, float(threshold_pct))
+            geometry = self.close
+        piv_idx = _enforce_min_distance_on_pivots(piv_idx, geometry, min_distance)
+        piv_idx = _enforce_pivot_alternation(piv_idx, geometry)
         self._pivot_cache[key] = piv_idx
+        self._pivot_record_cache[key] = _build_pivot_records(
+            piv_idx,
+            self.close,
+            float(threshold_pct),
+            high=self.high if self._normalized_pivot_price_source() == "ohlc" else None,
+            low=self.low if self._normalized_pivot_price_source() == "ohlc" else None,
+        )
         return piv_idx
 
     def pivot_signature(
@@ -1362,6 +1596,12 @@ class ElliottWaveAnalyzer:
             int,
             Tuple[Optional[np.ndarray], Optional[np.ndarray], bool, Optional[int]],
         ] = {}
+        record_by_index = {
+            int(record.index): record
+            for record in self._pivot_record_cache.get(
+                (float(threshold_pct), int(min_distance)), []
+            )
+        }
 
         if "impulse" in pattern_types:
             for k in range(0, total_waves - 4):
@@ -1370,6 +1610,8 @@ class ElliottWaveAnalyzer:
                     continue
 
                 if any((piv_seq[j + 1] - piv_seq[j]) < min_wave_span for j in range(5)):
+                    continue
+                if (piv_seq[-1] - piv_seq[0] + 1) < int(self.config.min_impulse_bars):
                     continue
 
                 bullish_opt = self._sequence_bullish(piv_seq)
@@ -1384,15 +1626,16 @@ class ElliottWaveAnalyzer:
                 if not rule_eval.valid:
                     continue
 
-                probs, cluster_means, classification_available, impulsive_cluster = (
-                    _classify_waves_through_index(
+                if bool(getattr(self.config, "enable_gmm_classifier", False)):
+                    probs, cluster_means, classification_available, impulsive_cluster = _classify_waves_through_index(
                         features,
                         self.config,
                         wave_index_map,
                         through_wave_idx=int(k + 4),
                         cache=classification_cache,
                     )
-                )
+                else:
+                    probs, cluster_means, classification_available, impulsive_cluster = (None, None, False, None)
                 cls_score = _classification_score_window(
                     probs,
                     cluster_means,
@@ -1404,9 +1647,8 @@ class ElliottWaveAnalyzer:
                     wave_index_map=wave_index_map,
                     impulsive_cluster=impulsive_cluster,
                 )
-                pivot_confirmations = [True] * len(piv_seq)
-                if piv_seq and int(piv_seq[-1]) == int(piv_idx[-1]):
-                    pivot_confirmations[-1] = False
+                scenario_records = [record_by_index[idx] for idx in piv_seq]
+                pivot_confirmations = [record.confirmed for record in scenario_records]
                 base_confidence = _blend_confidence(
                     _rule_confidence_from_eval(rule_eval),
                     cls_score,
@@ -1440,6 +1682,7 @@ class ElliottWaveAnalyzer:
                         classification_available=classification_available,
                         pivot_confirmations=pivot_confirmations,
                         confidence_adjustments=confidence_adjustments,
+                        pivot_records=scenario_records,
                     )
                 )
                 correction_exclusions.extend(_contiguous_pivot_slices(piv_seq, 4))
@@ -1462,6 +1705,8 @@ class ElliottWaveAnalyzer:
 
                 if any((piv_seq[j + 1] - piv_seq[j]) < min_wave_span for j in range(3)):
                     continue
+                if (piv_seq[-1] - piv_seq[0] + 1) < int(self.config.min_correction_bars):
+                    continue
 
                 bullish_opt = self._sequence_bullish(piv_seq)
                 if bullish_opt is None:
@@ -1478,15 +1723,16 @@ class ElliottWaveAnalyzer:
                 if not rule_eval.valid:
                     continue
 
-                probs, cluster_means, classification_available, impulsive_cluster = (
-                    _classify_waves_through_index(
+                if bool(getattr(self.config, "enable_gmm_classifier", False)):
+                    probs, cluster_means, classification_available, impulsive_cluster = _classify_waves_through_index(
                         features,
                         self.config,
                         wave_index_map,
                         through_wave_idx=int(k + 2),
                         cache=classification_cache,
                     )
-                )
+                else:
+                    probs, cluster_means, classification_available, impulsive_cluster = (None, None, False, None)
                 cls_score = _classification_score_window(
                     probs,
                     cluster_means,
@@ -1498,9 +1744,8 @@ class ElliottWaveAnalyzer:
                     wave_index_map=wave_index_map,
                     impulsive_cluster=impulsive_cluster,
                 )
-                pivot_confirmations = [True] * len(piv_seq)
-                if piv_seq and int(piv_seq[-1]) == int(piv_idx[-1]):
-                    pivot_confirmations[-1] = False
+                scenario_records = [record_by_index[idx] for idx in piv_seq]
+                pivot_confirmations = [record.confirmed for record in scenario_records]
                 base_confidence = _blend_confidence(
                     _rule_confidence_from_eval(rule_eval),
                     cls_score,
@@ -1536,6 +1781,7 @@ class ElliottWaveAnalyzer:
                         classification_available=classification_available,
                         pivot_confirmations=pivot_confirmations,
                         confidence_adjustments=confidence_adjustments,
+                        pivot_records=scenario_records,
                     )
                 )
 
@@ -1548,9 +1794,9 @@ class ElliottWaveAnalyzer:
         pivot_price_source = self._normalized_pivot_price_source()
         wave_type_key = str(scenario.wave_type).lower()
         if wave_type_key == "correction" and len(piv_seq) == 4:
-            # S/A/B/C are pivot labels for a zigzag-ABC structure.
+        # S/A/B/C are outer pivot labels; internal subdivisions are not modeled.
             labels = ["S", "A", "B", "C"]
-            structure_type = "zigzag_abc"
+            structure_type = "outer_abc_candidate"
             pattern_family = "correction"
         elif wave_type_key == "impulse" and len(piv_seq) == 6:
             # Standard Elliott pivot numbers 0..5 (not wave-leg names).
@@ -1596,6 +1842,18 @@ class ElliottWaveAnalyzer:
         )
         pattern_confirmed = bool(all(confirmations)) if confirmations else True
         terminal_confirmed = bool(confirmations[-1]) if confirmations else True
+        records = scenario.pivot_records or []
+        available_at_index = end_index
+        if records and all(record.confirmed for record in records):
+            confirmed_at = [
+                int(record.confirmation_index)
+                for record in records
+                if record.confirmation_index is not None
+            ]
+            if confirmed_at:
+                available_at_index = max(confirmed_at)
+        elif self.close.size:
+            available_at_index = int(self.close.size - 1)
         invalidation_level = float(pivot_prices[0]) if pivot_prices else None
         sequence_direction = "bull" if scenario.bullish else "bear"
         rule_confidence = _rule_confidence_from_eval(scenario.rule_eval)
@@ -1608,12 +1866,16 @@ class ElliottWaveAnalyzer:
             "sequence_direction": sequence_direction,
             "pattern_family": pattern_family,
             "structure_type": structure_type,
+            "schema_version": 2,
+            "validation_scope": "outer_leg_heuristic",
             "pivot_price_source": pivot_price_source,
             # Unified price contract: rules and display share pivot_price_source.
             "rule_price_source": pivot_price_source,
             "price_contract": "unified",
             "fib_metrics": dict(scenario.rule_eval.metrics),
             "fib_template_fit": float(scenario.rule_eval.fib_score),
+            "structural_score": float(scenario.rule_eval.fib_score),
+            "confidence_basis": "heuristic_not_probability",
             "rule_confidence": float(rule_confidence),
             "rule_violations": list(scenario.rule_eval.violations),
             "cls_score": float(scenario.cls_score),
@@ -1632,8 +1894,43 @@ class ElliottWaveAnalyzer:
             "terminal_confirmed": terminal_confirmed,
             "has_unconfirmed_terminal_pivot": not terminal_confirmed,
             "invalidation_level": invalidation_level,
-            "status_basis": "recency",
+            "structure_state": (
+                "fallback"
+                if scenario.fallback_candidate
+                else "confirmed"
+                if pattern_confirmed
+                else "developing"
+            ),
+            "geometry_end_index": end_index,
+            "available_at_index": int(available_at_index),
+            "available_at_time": PatternResultBase.resolve_time(
+                self.times, int(available_at_index)
+            ),
+            "status_basis": "causal_confirmation",
         }
+        if records:
+            details["pivots"] = [
+                {
+                    "index": int(record.index),
+                    "time": PatternResultBase.resolve_time(
+                        self.times, int(record.index)
+                    ),
+                    "price": float(pivot_prices[pos]),
+                    "kind": str(record.kind),
+                    "confirmed": bool(record.confirmed),
+                    "confirmation_index": (
+                        int(record.confirmation_index)
+                        if record.confirmation_index is not None
+                        else None
+                    ),
+                    "confirmation_time": PatternResultBase.resolve_time(
+                        self.times, int(record.confirmation_index)
+                    )
+                    if record.confirmation_index is not None
+                    else None,
+                }
+                for pos, record in enumerate(records)
+            ]
         if scenario.confidence_adjustments:
             details["confidence_adjustments"] = {
                 str(key): float(value)
@@ -1641,10 +1938,8 @@ class ElliottWaveAnalyzer:
             }
         if wave_type_key == "correction":
             details["correction_metrics"] = dict(scenario.rule_eval.metrics)
-            details["prior_impulse_direction"] = "bear" if scenario.bullish else "bull"
-            details["trend_context"] = "counter_trend"
             details["taxonomy_note"] = (
-                "Strict zigzag-ABC only; flats, triangles, and combinations are not modeled."
+                "Outer ABC geometry only; 5-3-5 subdivisions and larger-degree trend are not validated."
             )
         if wave_type_key == "impulse":
             details["taxonomy_note"] = (
@@ -1684,6 +1979,11 @@ class ElliottWaveAnalyzer:
             start_time=PatternResultBase.resolve_time(self.times, start_index),
             end_time=PatternResultBase.resolve_time(self.times, end_index),
             details=details,
+            available_at_index=int(available_at_index),
+            available_at_time=PatternResultBase.resolve_time(
+                self.times, int(available_at_index)
+            ),
+            structure_state=str(details["structure_state"]),
         )
 
     def build_fallback(
@@ -1695,13 +1995,11 @@ class ElliottWaveAnalyzer:
         n = int(self.close.size)
         if n < 2:
             return None
+        if not np.isfinite(float(self.close[-1])):
+            return None
 
         thr_cand = float(min(0.2, max(0.01, threshold_base)))
-        piv_idx, _ = _zigzag_pivots_indices(self.close, thr_cand)
-        piv_idx = _enforce_min_distance_on_pivots(
-            piv_idx, self.close, max(1, min_distance)
-        )
-        piv_idx = _enforce_pivot_alternation(piv_idx, self.close)
+        piv_idx = list(self._get_pivots(thr_cand, max(1, min_distance)))
         if len(piv_idx) < 1:
             return None
 
@@ -1709,6 +2007,12 @@ class ElliottWaveAnalyzer:
         if int(piv_idx[-1]) != int(n - 1):
             piv_idx = list(piv_idx) + [int(n - 1)]
             synthetic_terminal_pivot = True
+            piv_idx = _enforce_min_distance_on_pivots(
+                piv_idx, self.close, max(1, min_distance)
+            )
+            piv_idx = _enforce_pivot_alternation(piv_idx, self.close)
+            if not piv_idx or int(piv_idx[-1]) != int(n - 1):
+                return None
         if len(piv_idx) < 2:
             return None
 
@@ -1716,6 +2020,12 @@ class ElliottWaveAnalyzer:
         preferred_len = 6 if "impulse" in pattern_types else 4
         seq_len = min(preferred_len, len(piv_idx))
         piv_seq = [int(i) for i in piv_idx[-seq_len:]]
+        min_wave_span = int(max(1, max(min_distance, self.config.wave_min_len)))
+        if any(
+            (piv_seq[j + 1] - piv_seq[j]) < min_wave_span
+            for j in range(len(piv_seq) - 1)
+        ):
+            return None
         bullish_opt = self._sequence_bullish(piv_seq)
         bullish = bool(bullish_opt) if bullish_opt is not None else bool(
             float(self.close[piv_seq[-1]]) > float(self.close[piv_seq[0]])
@@ -1749,6 +2059,32 @@ class ElliottWaveAnalyzer:
         else:
             conf_raw = 0.2
         conf = float(min(0.45, max(0.1, conf_raw)))
+        required_span = (
+            int(self.config.min_impulse_bars)
+            if len(piv_seq) == 6
+            else int(self.config.min_correction_bars)
+            if len(piv_seq) == 4
+            else 1
+        )
+        if (piv_seq[-1] - piv_seq[0] + 1) < required_span:
+            return None
+        if conf < float(self.config.min_confidence):
+            return None
+
+        pivot_records = _build_pivot_records(
+            piv_seq,
+            self.close,
+            thr_cand,
+            high=self.high if self._normalized_pivot_price_source() == "ohlc" else None,
+            low=self.low if self._normalized_pivot_price_source() == "ohlc" else None,
+        )
+        if pivot_records:
+            pivot_records[-1] = ElliottPivot(
+                index=pivot_records[-1].index,
+                kind=pivot_records[-1].kind,
+                confirmed=False,
+                confirmation_index=None,
+            )
 
         scenario = ElliottScenario(
             pivots=piv_seq,
@@ -1763,17 +2099,18 @@ class ElliottWaveAnalyzer:
             wave_type="Candidate",
             validated_wave_type=validated_wave_type,
             classification_available=False,
-            pivot_confirmations=([True] * max(0, len(piv_seq) - 1))
-            + ([False] if piv_seq else []),
+            pivot_confirmations=[record.confirmed for record in pivot_records],
+            pivot_records=pivot_records,
         )
         return self.build_result(scenario)
 
 
-def detect_elliott_waves(
+def detect_elliott_waves(  # noqa: C901 - orchestration kept explicit for scan auditability
     df: pd.DataFrame, config: Optional[ElliottWaveConfig] = None
 ) -> List[ElliottWaveResult]:
     if config is None:
         config = ElliottWaveConfig()
+    _validate_config(config)
 
     if not isinstance(df, pd.DataFrame) or "close" not in df.columns:
         return []
@@ -1789,31 +2126,48 @@ def detect_elliott_waves(
     h = to_float_np(df["high"]) if "high" in df.columns else np.asarray([], dtype=float)
     l = to_float_np(df["low"]) if "low" in df.columns else np.asarray([], dtype=float)
     n = int(c.size)
-    pattern_types = _normalize_pattern_types(config)
-    min_pattern_pivots = 6 if "impulse" in pattern_types else 4
-    min_floor = (
-        int(getattr(config, "min_impulse_bars", 30))
-        if min_pattern_pivots == 6
-        else int(getattr(config, "min_correction_bars", 20))
-    )
-    min_required = max(min_pattern_pivots * max(1, int(config.min_distance)), min_floor)
-    if n < min_required:
+    if n == 0 or not np.any(np.isfinite(c)):
         return []
+    pattern_types = _normalize_pattern_types(config, strict=True)
+    gap = max(int(config.min_distance), int(config.wave_min_len))
+    family_minimums: List[int] = []
+    if "impulse" in pattern_types:
+        family_minimums.append(max(5 * gap + 1, int(config.min_impulse_bars)))
+    if "correction" in pattern_types:
+        family_minimums.append(max(3 * gap + 1, int(config.min_correction_bars)))
+    if not family_minimums or n < min(family_minimums):
+        return []
+    if str(config.pivot_price_source).lower() == "ohlc":
+        if h.size != n or l.size != n:
+            raise ValueError("pivot_price_source='ohlc' requires matching high and low columns")
+        valid_ohlc = np.isfinite(h) & np.isfinite(l) & (h >= l)
+        if not np.all(valid_ohlc):
+            raise ValueError("OHLC pivot geometry requires finite high >= low on every bar")
 
     analyzer = ElliottWaveAnalyzer(c, t, config, high=h, low=l)
 
     results_by_key: Dict[Tuple[str, Tuple[int, ...]], ElliottWaveResult] = {}
+    fallback_result: Optional[ElliottWaveResult] = None
 
-    if bool(getattr(config, "autotune", False)):
+    explicit_scan = isinstance(config.scan_thresholds_pct, list) and bool(config.scan_thresholds_pct)
+    use_multi_scan = explicit_scan or (
+        config.swing_threshold_pct is None and bool(getattr(config, "autotune", False))
+    )
+    if use_multi_scan:
         thr_list = (
-            config.tune_thresholds
+            config.scan_thresholds_pct
+            if explicit_scan
+            else config.tune_thresholds
             if isinstance(config.tune_thresholds, list)
             and len(config.tune_thresholds) > 0
             else [0.2, 0.3, 0.5, 0.75, 1.0]
         )
         md_base = int(max(1, config.min_distance))
         md_list = (
-            config.tune_min_distance
+            config.scan_min_distances
+            if isinstance(config.scan_min_distances, list)
+            and len(config.scan_min_distances) > 0
+            else config.tune_min_distance
             if isinstance(config.tune_min_distance, list)
             and len(config.tune_min_distance) > 0
             else sorted({max(1, md_base - 2), md_base, md_base + 2, md_base + 4})
@@ -1897,6 +2251,7 @@ def detect_elliott_waves(
         )
         fallback = analyzer.build_fallback(thr_base, int(max(1, config.min_distance)))
         if fallback is not None:
+            fallback_result = fallback
             _upsert_elliott_result(results_by_key, fallback)
             results = _filter_nested_results(
                 _filter_overlapping_corrections(list(results_by_key.values()))
@@ -1908,4 +2263,13 @@ def detect_elliott_waves(
     k = int(getattr(config, "top_k", 10))
     if k > 0:
         results = results[:k]
+        if fallback_result is not None and all(
+            _elliott_result_key(result) != _elliott_result_key(fallback_result)
+            for result in results
+        ):
+            if results:
+                results[-1] = fallback_result
+            else:
+                results = [fallback_result]
+            results.sort(key=_result_sort_key)
     return results

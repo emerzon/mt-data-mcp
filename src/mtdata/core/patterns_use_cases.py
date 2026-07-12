@@ -788,6 +788,10 @@ def run_patterns_detect(  # noqa: C901
         )
         if unknown_cfg:
             return {"error": f"Invalid config key(s): {sorted(unknown_cfg)}"}
+        try:
+            cfg.validate()
+        except ValueError as exc:
+            return {"error": f"Invalid Elliott config: {exc}"}
 
         if tf_norm:
             df, err = _fetch_pattern_frame(
@@ -840,7 +844,8 @@ def run_patterns_detect(  # noqa: C901
                 else [
                     d
                     for d in tf_patterns
-                    if str(d.get("status", "")).lower() == "forming"
+                    if str(d.get("status", "")).lower()
+                    in {"forming", "developing", "fallback"}
                 ]
             )
             completed_hidden = (
@@ -850,7 +855,7 @@ def run_patterns_detect(  # noqa: C901
                     sum(
                         1
                         for d in tf_patterns
-                        if str(d.get("status", "")).lower() == "completed"
+                        if str(d.get("status", "")).lower() in {"completed", "confirmed"}
                     )
                 )
             )
@@ -858,7 +863,7 @@ def run_patterns_detect(  # noqa: C901
             hidden_completed_rows = [
                 {**dict(d), "timeframe": tf}
                 for d in tf_patterns
-                if str(d.get("status", "")).lower() == "completed"
+                if str(d.get("status", "")).lower() in {"completed", "confirmed"}
             ]
             completed_preview = _elliott_completed_preview(hidden_completed_rows)
             hidden_completed_rows_total.extend(hidden_completed_rows)
@@ -1038,6 +1043,13 @@ def run_patterns_detect(  # noqa: C901
                     msg = f"Invalid config key(s): {section_keys}"
                     section_errors[section_name] = {tf: msg for tf in timeframes}
 
+        try:
+            elliott_cfg.validate()
+        except ValueError as exc:
+            section_errors["elliott"] = {
+                tf: f"Invalid Elliott config: {exc}" for tf in timeframes
+            }
+
         classic_config_errors = deps.validate_classic_config_errors(classic_cfg)
         classic_config_error_msg: Optional[str] = None
         if classic_config_errors:
@@ -1199,7 +1211,7 @@ def run_patterns_detect(  # noqa: C901
             elliott_patterns = [
                 r
                 for r in elliott_patterns
-                if str(r.get("status", "")).lower() != "completed"
+                if str(r.get("status", "")).lower() not in {"completed", "confirmed"}
             ]
             fractal_patterns = [
                 r

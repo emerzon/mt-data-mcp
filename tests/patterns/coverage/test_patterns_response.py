@@ -292,13 +292,15 @@ class TestFormatElliottPatterns:
         assert row["terminal_confirmed"] is False
 
     @patch("mtdata.core.patterns._detect_elliott_waves")
-    def test_forming_status(self, mock_detect):
+    def test_developing_status_is_causal_not_recency_based(self, mock_detect):
         df = _make_ohlcv_df(50)
         mock_detect.return_value = [
-            _mock_pattern_result(end_index=48),  # near end
+            _mock_pattern_result(
+                end_index=48, details={"structure_state": "developing"}
+            ),
         ]
         result = self._call(df, MagicMock())
-        assert result[0]["status"] == "forming"
+        assert result[0]["status"] == "developing"
 
     @patch("mtdata.core.patterns._detect_elliott_waves")
     def test_logs_when_pattern_is_dropped_during_formatting(self, mock_detect, caplog):
@@ -318,13 +320,15 @@ class TestFormatElliottPatterns:
         assert any("Dropping Elliott pattern during formatting" in record.message for record in caplog.records)
 
     @patch("mtdata.core.patterns._detect_elliott_waves")
-    def test_completed_status(self, mock_detect):
+    def test_confirmed_status_is_causal_not_recency_based(self, mock_detect):
         df = _make_ohlcv_df(100)
         mock_detect.return_value = [
-            _mock_pattern_result(end_index=10),  # far from end
+            _mock_pattern_result(
+                end_index=10, details={"structure_state": "confirmed"}
+            ),
         ]
         result = self._call(df, MagicMock())
-        assert result[0]["status"] == "completed"
+        assert result[0]["status"] == "confirmed"
 
     @patch("mtdata.core.patterns._detect_elliott_waves")
     def test_exception_skipped(self, mock_detect):
@@ -374,7 +378,8 @@ class TestFormatElliottPatterns:
         )
 
         volume_confirmation = result[0]["details"]["volume_confirmation"]
-        assert result[0]["confidence"] == pytest.approx(0.8)
+        assert result[0]["confidence"] == pytest.approx(0.7)
+        assert volume_confirmation["context_score_delta"] == pytest.approx(0.1)
         assert volume_confirmation["status"] == "confirmed"
         assert volume_confirmation["trend_to_counter_ratio"] > 1.1
 
@@ -417,4 +422,5 @@ class TestFormatElliottPatterns:
         assert regime_context["state"] == "trending"
         assert regime_context["direction"] == "bearish"
         assert regime_context["status"] == "aligned"
-        assert result[0]["confidence"] == pytest.approx(0.61)
+        assert result[0]["confidence"] == pytest.approx(0.55)
+        assert regime_context["context_score_delta"] == pytest.approx(0.06)

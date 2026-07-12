@@ -71,7 +71,6 @@ from .patterns_support import (
     _normalize_engine_name,
     _parse_engine_list,
     _parse_native_scale_factors,
-    _resolve_elliott_pattern_status,
     _resolve_engine_weights,
     _round_value,
     _summarize_engine_findings,
@@ -542,18 +541,22 @@ def _format_elliott_patterns(df: pd.DataFrame, cfg: _ElliottCfg) -> List[Dict[st
     for p in pats:
         try:
             start_date, end_date = _format_pattern_dates(p.start_time, p.end_time)
-            raw_recent_bars = getattr(cfg, "recent_bars", 3)
-            if isinstance(raw_recent_bars, (int, float, np.integer, np.floating)) and not isinstance(raw_recent_bars, bool):
-                recent_bars = max(1, int(raw_recent_bars))
-            else:
-                recent_bars = 3
-            status = _resolve_elliott_pattern_status(
-                p.end_index,
-                n_bars=n_bars,
-                recent_bars=recent_bars,
-            )
             details = {k: _round_value(v) for k, v in (p.details or {}).items()}
             wave_type = str(p.wave_type or "")
+            state = str(
+                details.get("structure_state")
+                or getattr(p, "structure_state", "")
+                or ""
+            ).strip().lower()
+            if not state and "pattern_confirmed" in details:
+                state = "confirmed" if bool(details.get("pattern_confirmed")) else "developing"
+            status = (
+                "fallback"
+                if wave_type.strip().lower() == "candidate" or state == "fallback"
+                else "confirmed"
+                if state == "confirmed"
+                else "developing"
+            )
             row: Dict[str, Any] = {
                 "wave_type": wave_type,
                 "status": status,
@@ -564,6 +567,14 @@ def _format_elliott_patterns(df: pd.DataFrame, cfg: _ElliottCfg) -> List[Dict[st
                 "end_date": end_date,
                 "details": details,
             }
+            available_at_index = getattr(p, "available_at_index", None)
+            if available_at_index is not None:
+                row["available_at_index"] = int(available_at_index)
+            available_at_time = getattr(p, "available_at_time", None)
+            if available_at_time is not None:
+                row["available_at_time"] = float(available_at_time)
+            if details.get("structural_score") is not None:
+                row["structural_score"] = float(details["structural_score"])
 
             if wave_type.strip().lower() == "candidate":
                 wave_points = details.get("wave_points_labeled") or details.get("wave_points") or []
@@ -598,8 +609,7 @@ def _format_elliott_patterns(df: pd.DataFrame, cfg: _ElliottCfg) -> List[Dict[st
                 if isinstance(violations, list) and violations:
                     row["validation_issues"] = [str(item) for item in violations[:3]]
 
-            # Status is recency-based ("forming" near series end); expose
-            # structure-completion flags separately from that label.
+            # v2 status is causal; recency is independent metadata.
             structure_complete = details.get("structure_complete")
             if structure_complete is None:
                 structure_complete = details.get("pattern_confirmed")
@@ -619,7 +629,10 @@ def _format_elliott_patterns(df: pd.DataFrame, cfg: _ElliottCfg) -> List[Dict[st
             if bars_since_end is not None:
                 row["bars_since_end"] = int(bars_since_end)
                 details["bars_since_end"] = int(bars_since_end)
-            details.setdefault("status_basis", "recency")
+                recent_bars = max(1, int(getattr(cfg, "recent_bars", 3)))
+                row["is_recent"] = bool(bars_since_end < recent_bars)
+                details["is_recent"] = bool(bars_since_end < recent_bars)
+            details.setdefault("status_basis", "causal_confirmation")
             row["details"] = details
             out_list.append(row)
         except Exception:
@@ -1267,6 +1280,13 @@ def patterns_detect(
         - native_scale_factors: list[float] (e.g. [0.8, 1.0, 1.25])
         - pivot_use_hl, pivot_use_atr_adaptive_prominence, pivot_use_atr_adaptive_distance
         - calibrate_confidence, confidence_calibration_map, confidence_calibration_blend
+        Elliott v2 options include:
+        - swing_threshold_pct for one exact scan, or scan_thresholds_pct for a multi-scale scan
+        - scan_min_distances, pattern_types, min_impulse_bars, min_correction_bars
+        - pivot_price_source: "close" or "ohlc"
+        Elliott v2 reports outer-leg geometry and causal pivot confirmation. It
+        does not infer nested degrees, internal 5-3-5 subdivisions, the current
+        wave number, or a prospective next leg.
         Useful fractal options include:
         - left_bars, right_bars
         - breakout_basis: "close" or "high_low"

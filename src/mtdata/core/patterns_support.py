@@ -105,7 +105,13 @@ def _pattern_status_value(row: Any) -> str:
 
 
 def _pattern_has_status(row: Any, status: str) -> bool:
-    return _pattern_status_value(row) == str(status).strip().lower()
+    actual = _pattern_status_value(row)
+    requested = str(status).strip().lower()
+    if requested == "forming":
+        return actual in {"forming", "developing", "fallback"}
+    if requested == "completed":
+        return actual in {"completed", "confirmed"}
+    return actual == requested
 
 
 def _count_patterns_with_status(rows: List[Dict[str, Any]], status: str) -> int:
@@ -1531,6 +1537,8 @@ def _attach_regime_context(
     row: Dict[str, Any],
     regime_context: Optional[Dict[str, Any]],
     config: Any,
+    *,
+    adjust_confidence: bool = True,
 ) -> Dict[str, Any]:
     out = dict(row)
     details = out.get("details")
@@ -1590,8 +1598,11 @@ def _attach_regime_context(
         payload["status"] = "not_directional"
 
     if abs(confidence_delta) > 1e-12:
-        payload["confidence_delta"] = _round_value(confidence_delta)
-        _apply_confidence_delta(out, confidence_delta)
+        payload[
+            "confidence_delta" if adjust_confidence else "context_score_delta"
+        ] = _round_value(confidence_delta)
+        if adjust_confidence:
+            _apply_confidence_delta(out, confidence_delta)
 
     details["regime_context"] = payload
     out["details"] = details
@@ -1743,14 +1754,14 @@ def _attach_elliott_volume_confirmation(
     structure_type = str(details.get("structure_type") or "").strip().lower()
     if family not in {"impulse", "correction"} and structure_type not in {
         "impulse_strict",
-        "zigzag_abc",
+        "outer_abc_candidate",
     }:
         details["volume_confirmation"] = payload
         out["details"] = details
         return out
     if structure_type == "impulse_strict":
         family = "impulse"
-    elif structure_type == "zigzag_abc":
+    elif structure_type == "outer_abc_candidate":
         family = "correction"
 
     volume, source = _resolve_volume_series(df)
@@ -1769,7 +1780,7 @@ def _attach_elliott_volume_confirmation(
     segment_averages: Dict[int, float] = {}
     for segment_index in range(len(pivots) - 1):
         seg_avg = _volume_window_mean(
-            volume, pivots[segment_index], pivots[segment_index + 1]
+            volume, pivots[segment_index] + 1, pivots[segment_index + 1]
         )
         if seg_avg is not None:
             segment_averages[segment_index] = float(seg_avg)
@@ -1814,8 +1825,7 @@ def _attach_elliott_volume_confirmation(
             payload["status"] = "neutral"
 
     if abs(confidence_delta) > 1e-12:
-        payload["confidence_delta"] = _round_value(confidence_delta)
-        _apply_confidence_delta(out, confidence_delta)
+        payload["context_score_delta"] = _round_value(confidence_delta)
 
     details["volume_confirmation"] = payload
     out["details"] = details
@@ -2099,12 +2109,24 @@ def _enrich_elliott_patterns(
     rows: List[Dict[str, Any]], df: pd.DataFrame, config: Any = None
 ) -> List[Dict[str, Any]]:
     out: List[Dict[str, Any]] = []
-    regime_context = _infer_market_regime(df, config)
     for row in rows:
         if not isinstance(row, dict):
             continue
+        details = row.get("details") if isinstance(row.get("details"), dict) else {}
+        available_at = _safe_float(details.get("available_at_index"))
+        if available_at is None:
+            available_at = _safe_float(row.get("end_index"))
+        context_df = df
+        if available_at is not None:
+            end = max(0, min(len(df), int(available_at) + 1))
+            context_df = df.iloc[:end]
+        regime_context = _infer_market_regime(context_df, config)
         enriched = _attach_elliott_volume_confirmation(row, df, config)
-        out.append(_attach_regime_context(enriched, regime_context, config))
+        out.append(
+            _attach_regime_context(
+                enriched, regime_context, config, adjust_confidence=False
+            )
+        )
     return out
 
 
