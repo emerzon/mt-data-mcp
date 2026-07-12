@@ -928,7 +928,7 @@ def forecast_models_cleanup(request: ForecastModelsCleanupRequest) -> Dict[str, 
     def _execute() -> Dict[str, Any]:
         detail_mode = _detail_mode(request.detail)
         store = _get_model_store()
-        handles = store.list_models(method=request.method)
+        handles = store.list_models(method=request.method, include_expired=True)
         generated_at = time.time()
         matches = []
         for handle in handles:

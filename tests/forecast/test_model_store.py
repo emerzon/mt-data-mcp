@@ -7,6 +7,7 @@ import threading
 import time
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from mtdata.forecast.model_store import (
     ModelStore,
@@ -182,6 +183,12 @@ class TestModelStoreTTL(unittest.TestCase):
     def tearDown(self):
         import shutil
         shutil.rmtree(self._tmpdir, ignore_errors=True)
+
+    def test_default_listing_excludes_expired_models(self):
+        self.store.save("a", "scope", "params", b"data")
+        with mock.patch("mtdata.forecast.model_store.time.time", return_value=time.time() + 2):
+            self.assertEqual(self.store.list_models(), [])
+            self.assertEqual(len(self.store.list_models(include_expired=True)), 1)
 
     def test_find_returns_none_after_ttl(self):
         self.store.save("m", "d", "p", b"data")

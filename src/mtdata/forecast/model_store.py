@@ -324,8 +324,10 @@ class ModelStore:
     def list_models(
         self,
         method: Optional[str] = None,
+        *,
+        include_expired: bool = False,
     ) -> List[TrainedModelHandle]:
-        """List all stored model handles, optionally filtered by method."""
+        """List usable model handles, optionally including expired artifacts."""
         handles: List[TrainedModelHandle] = []
         with self._lock:
             if not self._root.is_dir():
@@ -348,7 +350,10 @@ class ModelStore:
                             continue
                         if hash_dir.name.startswith("."):
                             continue
-                        handle = self._read_handle(hash_dir, skip_expiry=True)
+                        handle = self._read_handle(
+                            hash_dir,
+                            skip_expiry=include_expired,
+                        )
                         if handle is not None:
                             handles.append(handle)
             return handles
@@ -411,7 +416,7 @@ class ModelStore:
             return 0
         removed = 0
         now = time.time()
-        for handle in self.list_models():
+        for handle in self.list_models(include_expired=True):
             model_dir = self._model_dir(handle.method, handle.data_scope, handle.params_hash)
             meta = self._read_raw_meta(model_dir)
             last_used = (
