@@ -338,9 +338,6 @@ def _evaluate_symbol_guardrails(
     normalized_symbol = _normalize_symbol(symbol)
     allowlist_details: Optional[Dict[str, Any]] = None
 
-    if not config.trading_enabled:
-        violations.append("Trading is disabled by guardrail configuration.")
-
     if normalized_symbol:
         blocked = {_normalize_symbol(item) for item in config.blocked_symbols}
         allowed = {_normalize_symbol(item) for item in config.allowed_symbols}
@@ -779,6 +776,12 @@ def evaluate_trade_guardrails(
     """Evaluate configured guardrails against an order request."""
     if not _guardrails_active(config):
         return None
+    if config is not None and not config.trading_enabled:
+        return _build_guardrail_block(
+            ["Trading is disabled by guardrail configuration."],
+            rule="trading_disabled",
+            context={"symbol": _normalize_symbol(symbol)},
+        )
     if _guardrails_ignored_for_demo(config, account_info=account_info):
         return None
 
@@ -880,7 +883,11 @@ def preview_trade_guardrails(
             "checks_not_performed": [],
             "message": "No trade guardrails are configured.",
         }
-    if _guardrails_ignored_for_demo(config, account_info=account_info):
+    if (
+        config is not None
+        and config.trading_enabled
+        and _guardrails_ignored_for_demo(config, account_info=account_info)
+    ):
         return {
             "enabled": True,
             "blocked": False,

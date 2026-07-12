@@ -254,6 +254,39 @@ def test_evaluate_trade_guardrails_allows_demo_account_by_default():
     assert result is None
 
 
+def test_evaluate_trade_guardrails_kill_switch_blocks_demo_account():
+    config = TradeGuardrailsConfig(
+        trading_enabled=False,
+        ignore_on_demo=True,
+    )
+
+    result = evaluate_trade_guardrails(
+        config,
+        symbol="EURUSD",
+        volume=0.1,
+        side="BUY",
+        account_info=SimpleNamespace(trade_mode=0),
+    )
+
+    assert result is not None
+    assert result["guardrail_rule"] == "trading_disabled"
+    assert result["violations"] == ["Trading is disabled by guardrail configuration."]
+
+
+def test_preview_trade_guardrails_kill_switch_blocks_demo_account():
+    preview = preview_trade_guardrails(
+        TradeGuardrailsConfig(trading_enabled=False, ignore_on_demo=True),
+        symbol="EURUSD",
+        volume=0.1,
+        side="BUY",
+        account_info=SimpleNamespace(trade_mode=0),
+    )
+
+    assert preview["blocked"] is True
+    assert preview["rule"] == "trading_disabled"
+    assert preview.get("ignored_for_demo") is not True
+
+
 def test_estimate_order_risk_treats_zero_stop_loss_as_missing():
     symbol_info = SimpleNamespace(
         trade_tick_size=0.0001,
