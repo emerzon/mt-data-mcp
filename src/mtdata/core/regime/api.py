@@ -15,7 +15,7 @@ from ...shared.schema import DenoiseSpec, DetailLiteral, TimeframeLiteral
 from ...utils.denoise import _resolve_denoise_base_col
 from ...utils.mt5 import MT5ConnectionError, ensure_mt5_connection_or_raise
 from ...utils.regime_heuristics import infer_market_regime
-from ...utils.utils import _format_time_minimal
+from ...utils.time import _format_time_minimal
 from .. import features as _features_module
 from .._mcp_instance import mcp
 from ..execution_logging import (

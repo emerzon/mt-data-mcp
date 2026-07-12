@@ -14,7 +14,7 @@ from mtdata.forecast.backtest import (
     _compute_performance_metrics,
     forecast_backtest,
 )
-from mtdata.utils.utils import _format_time_minimal
+from mtdata.utils.time import _format_time_minimal
 
 
 def _make_df(n: int, base_time: float = 1700000000.0, base_close: float = 100.0):

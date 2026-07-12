@@ -26,7 +26,7 @@ from ..utils.denoise import (
 )
 from ..utils.freshness import closed_session_context
 from ..utils.mt5 import get_cached_mt5_time_alignment, get_symbol_info_cached
-from ..utils.utils import (
+from ..utils.time import (
     _format_time_minimal,
     _format_time_minimal_local,
     _resolve_client_tz,

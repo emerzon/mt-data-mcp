@@ -53,9 +53,9 @@ from mtdata.utils.indicators import (
     infer_defaults_from_doc,
     list_ta_indicators,
 )
+from mtdata.utils.time import _format_time_minimal
 from mtdata.utils.utils import (
     _format_numeric_rows_from_df,
-    _format_time_minimal,
     _normalize_limit,
     _normalize_ohlcv_arg,
     _parse_start_datetime,

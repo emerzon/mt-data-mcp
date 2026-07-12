@@ -26,7 +26,7 @@ from mtdata.forecast.backtest import (
     _get_forecast_methods_data_safe,
     forecast_backtest,
 )
-from mtdata.utils.utils import _format_time_minimal
+from mtdata.utils.time import _format_time_minimal
 
 # ── Helper to build a fake df ────────────────────────────────────────────────
 
@@ -275,7 +275,7 @@ class TestForecastBacktest:
     def test_explicit_anchors(self, fetch):
         df = _make_df(500)
         fetch.return_value = df
-        from mtdata.utils.utils import _format_time_minimal
+        from mtdata.utils.time import _format_time_minimal
         anchor_time = _format_time_minimal(float(df["time"].iloc[100]))
         with patch("mtdata.forecast.backtest.forecast") as fc:
             fc.return_value = {"forecast_price": [101.0] * 12}
@@ -288,7 +288,7 @@ class TestForecastBacktest:
     def test_rejects_overlapping_explicit_anchor_windows(self, fetch):
         df = _make_df(500)
         fetch.return_value = df
-        from mtdata.utils.utils import _format_time_minimal
+        from mtdata.utils.time import _format_time_minimal
 
         anchors = [
             _format_time_minimal(float(df["time"].iloc[100])),
@@ -405,7 +405,7 @@ class TestForecastBacktest:
                 horizon=3,
             )
         entry = result["results"]["ewma"]["details"][0]
-        from mtdata.utils.utils import _format_time_minimal
+        from mtdata.utils.time import _format_time_minimal
 
         anchor_idx = next(i for i, ts in enumerate(df["time"]) if _format_time_minimal(float(ts)) == entry["anchor"])
         path = df["close"].iloc[anchor_idx: anchor_idx + 4].to_numpy(dtype=float)

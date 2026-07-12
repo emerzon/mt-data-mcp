@@ -23,7 +23,7 @@ from ..utils.mt5 import (
     mt5,
     resolve_broker_symbol_name,
 )
-from ..utils.utils import (
+from ..utils.time import (
     _format_time_explicit,
     _format_time_explicit_local,
     _resolve_client_tz,

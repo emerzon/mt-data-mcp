@@ -27,7 +27,7 @@ from ..utils.barriers import (
 )
 from ..utils.denoise import _resolve_denoise_base_col
 from ..utils.mt5 import MT5ConnectionError, ensure_mt5_connection_or_raise
-from ..utils.utils import _format_time_minimal
+from ..utils.time import _format_time_minimal
 from ._mcp_instance import mcp
 from .execution_logging import run_logged_operation
 from .mt5_gateway import create_mt5_gateway

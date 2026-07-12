@@ -31,7 +31,8 @@ from ..utils.mt5 import (
     _mt5_copy_rates_range,
     mt5,
 )
-from ..utils.utils import _format_time_minimal, _parse_start_datetime, parse_kv_or_json
+from ..utils.time import _format_time_minimal
+from ..utils.utils import _parse_start_datetime, parse_kv_or_json
 from .common import (
     bars_per_year as _bars_per_year,
 )

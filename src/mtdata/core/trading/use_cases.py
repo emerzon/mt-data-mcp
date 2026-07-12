@@ -21,7 +21,7 @@ from ...utils.mt5 import (
     _to_mt5_history_epoch_seconds,
     mt5_adapter,
 )
-from ...utils.utils import _format_datetime_second_explicit
+from ...utils.time import _format_datetime_second_explicit
 from ..error_envelope import normalize_error_payload
 from ..execution_logging import (
     infer_result_success,

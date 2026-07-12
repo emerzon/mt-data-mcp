@@ -39,9 +39,9 @@ from ..utils.mt5 import (
     mt5,
 )
 from ..utils.ohlcv import validate_and_clean_ohlcv_frame
+from ..utils.time import _format_time_minimal
 from ..utils.utils import (
     UNPARSED_BOOL,
-    _format_time_minimal,
     _parse_start_datetime,
     parse_bool_like,
 )

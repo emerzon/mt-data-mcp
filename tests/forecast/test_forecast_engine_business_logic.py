@@ -11,7 +11,7 @@ from mtdata.forecast import forecast_engine as fe
 from mtdata.forecast import forecast_preprocessing as fp
 from mtdata.forecast.interface import ForecastResult
 from mtdata.forecast.use_cases import _forecast_anchor_freshness
-from mtdata.utils.utils import _format_time_minimal
+from mtdata.utils.time import _format_time_minimal
 
 
 def _df(n: int = 20) -> pd.DataFrame:

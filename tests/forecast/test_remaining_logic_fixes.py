@@ -12,7 +12,7 @@ from mtdata.forecast.backtest import forecast_backtest
 from mtdata.forecast.forecast import _create_dimred_reducer
 from mtdata.forecast.forecast_preprocessing import _apply_dimensionality_reduction
 from mtdata.services.data_service import fetch_ticks
-from mtdata.utils.utils import _format_time_minimal
+from mtdata.utils.time import _format_time_minimal
 
 
 @contextmanager

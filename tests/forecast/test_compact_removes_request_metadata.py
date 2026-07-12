@@ -15,7 +15,7 @@ for _p in (_SRC, _ROOT):
         sys.path.insert(0, _p)
 
 from mtdata.forecast.backtest import forecast_backtest, strategy_backtest
-from mtdata.utils.utils import _format_time_minimal
+from mtdata.utils.time import _format_time_minimal
 
 
 def test_forecast_backtest_compact_excludes_request_metadata() -> None:

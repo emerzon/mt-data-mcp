@@ -27,7 +27,7 @@ from ..utils.freshness import (
     format_age_seconds,
     format_freshness_label,
 )
-from ..utils.utils import (
+from ..utils.time import (
     _format_time_minimal,
     _format_time_minimal_local,
     _use_client_tz,

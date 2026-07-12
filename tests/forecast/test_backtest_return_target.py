@@ -18,7 +18,7 @@ from mtdata.forecast.backtest import (
     _compute_performance_metrics,
     forecast_backtest,
 )
-from mtdata.utils.utils import _format_time_minimal
+from mtdata.utils.time import _format_time_minimal
 
 
 def test_backtest_return_target_scores_against_returns() -> None:

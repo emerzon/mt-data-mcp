@@ -9,7 +9,7 @@ from typing import Any, Dict, List, Optional
 
 from ..core.runtime_metadata import build_runtime_timezone_meta
 from ..utils.mt5 import _mt5_epoch_to_utc
-from ..utils.utils import _resolve_client_tz, _use_client_tz
+from ..utils.time import _resolve_client_tz, _use_client_tz
 from .news_text import normalize_news_text
 
 logger = logging.getLogger(__name__)

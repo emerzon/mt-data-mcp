@@ -6,11 +6,13 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from mtdata.utils.utils import (
-    coerce_scalar,
+from mtdata.utils.time import (
     _format_datetime_second_explicit,
     _format_time_explicit,
     _format_time_minimal,
+)
+from mtdata.utils.utils import (
+    coerce_scalar,
     _normalize_limit,
     _normalize_ohlcv_arg,
     _safe_float,

@@ -119,7 +119,7 @@ def display_timezone_label(
         return "UTC"
     try:
         if resolve_client_tz is None:
-            from ..utils.utils import _resolve_client_tz as default_resolver
+            from ..utils.time import _resolve_client_tz as default_resolver
 
             resolve_client_tz = default_resolver
         client_tz = resolve_client_tz()

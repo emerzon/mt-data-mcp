@@ -7,9 +7,11 @@ import math
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
-from ...utils.utils import (
+from ...utils.time import (
     _format_datetime_second_explicit,
     _format_time_minimal,
+)
+from ...utils.utils import (
     _normalize_limit,
     _parse_start_datetime,
 )

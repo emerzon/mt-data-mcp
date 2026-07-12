@@ -9,7 +9,7 @@ from ..shared.constants import TIMEFRAME_MAP
 from ..shared.schema import DetailLiteral, DenoiseSpec, TimeframeLiteral
 from ..shared.validators import invalid_timeframe_error
 from ..utils.denoise import normalize_denoise_spec as _normalize_denoise_spec
-from ..utils.utils import _format_time_minimal
+from ..utils.time import _format_time_minimal
 from .common import (
     bars_per_year as _bars_per_year,
 )

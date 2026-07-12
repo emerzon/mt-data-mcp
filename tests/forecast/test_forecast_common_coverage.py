@@ -40,7 +40,7 @@ from mtdata.forecast.forecast_preprocessing import (
     _prepare_base_data,
     _process_include_specification,
 )
-from mtdata.utils.utils import _format_time_minimal
+from mtdata.utils.time import _format_time_minimal
 
 RS = np.random.RandomState(42)
 

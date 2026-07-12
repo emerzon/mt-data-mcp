@@ -25,11 +25,13 @@ from ..utils.mt5 import (
     get_symbol_info_cached,
     mt5,
 )
-from ..utils.utils import (
+from ..utils.time import (
     _format_time_minimal,
     _format_time_minimal_local,
-    _parse_start_datetime,
     _resolve_client_tz,
+)
+from ..utils.utils import (
+    _parse_start_datetime,
     _safe_float,
 )
 from ._mcp_instance import mcp

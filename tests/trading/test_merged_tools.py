@@ -5,7 +5,7 @@ from collections import namedtuple
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
-from src.mtdata.utils.utils import (
+from src.mtdata.utils.time import (
     _format_time_minimal,
 )
 

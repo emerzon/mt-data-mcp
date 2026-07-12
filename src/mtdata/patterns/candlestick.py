@@ -19,11 +19,10 @@ from ..core.patterns_support import (
 )
 from ..shared.constants import TIME_DISPLAY_FORMAT, TIMEFRAME_SECONDS
 from ..shared.validators import invalid_timeframe_error
+from ..utils.time import _format_time_minimal_local, _use_client_tz
 from ..utils.utils import (
-    _format_time_minimal_local,
     _parse_start_datetime,
     _table_from_rows,
-    _use_client_tz,
 )
 from .common import data_quality_warnings, should_drop_last_live_bar
 

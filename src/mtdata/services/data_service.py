@@ -80,15 +80,17 @@ from ..utils.simplify import (
     _select_indices_for_timeseries,
     _simplify_dataframe_rows_ext,
 )
-from ..utils.time import format_epoch_utc
-from ..utils.utils import (
+from ..utils.time import (
     _format_datetime_minute_explicit,
-    _format_numeric_rows_from_df,
     _format_time_explicit,
     _format_time_explicit_local,
+    _resolve_client_tz,
+    format_epoch_utc,
+)
+from ..utils.utils import (
+    _format_numeric_rows_from_df,
     _normalize_ohlcv_arg,
     _parse_start_datetime,
-    _resolve_client_tz,
     _table_from_rows,
     _utc_epoch_seconds,
     coerce_scalar,
