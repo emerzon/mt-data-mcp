@@ -8,9 +8,13 @@ from unittest.mock import patch
 import numpy as np
 import pandas as pd
 
-from ._helpers import _BarrierTestBase, _BARRIER_PROB_ROOT, _BARRIER_OPT_ROOT
 from mtdata.forecast.barriers_optimization import forecast_barrier_optimize
-from mtdata.forecast.barriers_shared import _build_actionability_payload, _build_selection_diagnostics
+from mtdata.forecast.barriers_shared import (
+    _build_actionability_payload,
+    _build_selection_diagnostics,
+)
+
+from ._helpers import _BARRIER_OPT_ROOT, _BARRIER_PROB_ROOT, _BarrierTestBase
 
 
 class TestBarrierOptimizeOutputGrid(_BarrierTestBase):
@@ -305,23 +309,19 @@ class TestBarrierOptimizeOutputGrid(_BarrierTestBase):
         grid = result.get("grid")
         self.assertTrue(grid)
         for entry in grid:
-            total = entry["prob_win"] + entry["prob_loss"] + entry["prob_tie"] + entry["prob_no_hit"]
+            total = entry["prob_tp_strict_first"] + entry["prob_sl_strict_first"] + entry["prob_same_bar"] + entry["prob_no_hit"]
             self.assertAlmostEqual(total, 1.0, places=7)
-            self.assertAlmostEqual(entry["prob_tie"], 1.0, places=7)
+            self.assertAlmostEqual(entry["prob_same_bar"], 1.0, places=7)
             self.assertAlmostEqual(entry["prob_no_hit"], 0.0, places=7)
-            self.assertAlmostEqual(entry["prob_tp_first"], 0.5, places=7)
-            self.assertAlmostEqual(entry["prob_sl_first"], 0.5, places=7)
-            expected_ev = 0.5 * entry["tp"] - 0.5 * entry["sl"]
+            self.assertAlmostEqual(entry["prob_tp_first"], 0.0, places=7)
+            self.assertAlmostEqual(entry["prob_sl_first"], 1.0, places=7)
+            expected_ev = -entry["sl"]
             self.assertAlmostEqual(entry["ev"], expected_ev, places=7)
             expected_kelly = entry["prob_tp_first"] - (entry["prob_sl_first"] / entry["rr"])
             self.assertAlmostEqual(entry["kelly"], expected_kelly, places=7)
             self.assertAlmostEqual(entry["ev_cond"], expected_ev, places=7)
             self.assertAlmostEqual(entry["kelly_cond"], expected_kelly, places=7)
-            expected_profit_factor = (
-                (entry["prob_tp_first"] * entry["tp"])
-                / (entry["prob_sl_first"] * entry["sl"])
-            )
-            self.assertAlmostEqual(entry["profit_factor"], expected_profit_factor, places=7)
+            self.assertAlmostEqual(entry["profit_factor"], 0.0, places=7)
             reward_frac = entry["tp"] / 100.0
             risk_frac = entry["sl"] / 100.0
             expected_utility = (
@@ -355,6 +355,7 @@ class TestBarrierOptimizeOutputGrid(_BarrierTestBase):
                 sl_max=0.5,
                 sl_steps=1,
                 min_prob_win=0.5,
+                params={"same_bar_policy": "tp_first"},
                 objective="ev",
                 return_grid=True,
                 viable_only=False,
@@ -369,8 +370,8 @@ class TestBarrierOptimizeOutputGrid(_BarrierTestBase):
         self.assertEqual(result.get("actionability"), "actionable")
         self.assertNotIn("ev_edge_conflict", result)
         best = result["best"]
-        self.assertAlmostEqual(best["prob_win"], 0.0, places=7)
-        self.assertAlmostEqual(best["prob_tp_first"], 0.5, places=7)
+        self.assertAlmostEqual(best["prob_win"], 1.0, places=7)
+        self.assertAlmostEqual(best["prob_tp_first"], 1.0, places=7)
         self.assertGreater(float(best["edge_vs_breakeven"]), 0.0)
 
     def test_forecast_barrier_optimize_no_action_follows_trade_gate_when_status_ok(self):

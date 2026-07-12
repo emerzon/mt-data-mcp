@@ -387,12 +387,16 @@ def _round_barrier_prob_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
         "prob_hit",
         "prob_tp_first",
         "prob_sl_first",
-        "prob_tie",
+        "prob_tp_strict_first",
+        "prob_sl_strict_first",
+        "prob_same_bar",
         "prob_no_hit",
+        "prob_resolve",
+        "prob_unresolved",
         "probability_edge",
         "prob_tp_first_se",
         "prob_sl_first_se",
-        "prob_tie_se",
+        "prob_same_bar_se",
         "prob_no_hit_se",
     ):
         if key in out:
@@ -400,7 +404,7 @@ def _round_barrier_prob_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     for key in (
         "prob_tp_first_ci95",
         "prob_sl_first_ci95",
-        "prob_tie_ci95",
+        "prob_same_bar_ci95",
         "prob_no_hit_ci95",
     ):
         if key in out:
@@ -426,7 +430,10 @@ _BARRIER_OPTIMIZE_METRIC_DIGITS = {
     "prob_tp_first": 6,
     "prob_sl_first": 6,
     "prob_no_hit": 6,
-    "prob_tie": 6,
+    "prob_same_bar": 6,
+    "prob_tp_strict_first": 6,
+    "prob_sl_strict_first": 6,
+    "prob_unresolved": 6,
     "prob_resolve": 6,
     "ev": 6,
     "ev_gross": 6,
@@ -1359,10 +1366,10 @@ def _apply_barrier_prob_detail(
             "prob_sl_first_ci95",
             "prob_sl_first_se",
             "prob_no_hit_ci95",
-            "prob_tie",
-            "prob_tie_se",
+            "prob_same_bar",
+            "prob_same_bar_se",
             "prob_no_hit_se",
-            "prob_tie_ci95",
+            "prob_same_bar_ci95",
             "last_price",
             "last_price_close",
             "last_price_source",
@@ -2860,6 +2867,7 @@ def run_forecast_barrier_prob(
                 horizon=request.horizon,
                 method=method_val,
                 direction=direction,
+                same_bar_policy=request.same_bar_policy,
                 **barrier_kwargs,
                 params=request.params,
                 denoise=request.denoise,
@@ -2992,6 +3000,7 @@ def run_forecast_barrier_optimize(
     params_norm = parse_kv_or_json(request.params)
     if not isinstance(params_norm, dict):
         params_norm = {}
+    params_norm["same_bar_policy"] = request.same_bar_policy
     for threshold_key in ("min_ev", "min_edge", "min_kelly"):
         threshold_value = getattr(request, threshold_key, None)
         if threshold_value is not None:

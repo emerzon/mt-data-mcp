@@ -48,7 +48,7 @@ def _run(tool_name: str, request: Any, engine: Callable[[Any, Any], Dict[str, An
 
 @mcp.tool()
 def market_microstructure_analyze(request: MarketMicrostructureRequest) -> Dict[str, Any]:
-    """Analyze MT5 tick liquidity, quote pressure, and applicable trade-flow metrics."""
+    """Analyze broker-feed tick liquidity and applicable trade-flow proxies."""
     return _run("market_microstructure_analyze", request, analyze_microstructure)
 
 
@@ -60,13 +60,13 @@ def trade_execution_quality(request: TradeExecutionQualityRequest) -> Dict[str, 
 
 @mcp.tool()
 def strategy_validate(request: StrategyValidateRequest) -> Dict[str, Any]:
-    """Validate strategy candidates with purged walk-forward, barrier, and cost analysis."""
+    """Run anchored fixed-candidate OOS validation with horizon-safe outcomes."""
     return _run("strategy_validate", request, validate_strategies)
 
 
 @mcp.tool()
 def portfolio_risk_decompose(request: PortfolioRiskDecomposeRequest) -> Dict[str, Any]:
-    """Decompose current-position tail risk with filtered historical scenarios."""
+    """Decompose current-position tail risk and explicit portfolio stresses."""
     return _run("portfolio_risk_decompose", request, decompose_portfolio_risk)
 
 

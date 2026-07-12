@@ -114,7 +114,9 @@ For each historical bar, ask: "Within the next N bars, did price hit the take-pr
 - `-1` (Loss): SL hit first
 - `0` (Neutral): Neither hit within horizon
 
-In `high_low` mode, if the same bar touches both barriers, the label is resolved conservatively as `-1` because the intrabar order is unknown.
+In `high_low` mode, `same_bar_policy` resolves a bar that touches both
+barriers. The default is conservatively `sl_first`; `tp_first` and `neutral`
+are explicit alternatives.
 
 ### Usage
 

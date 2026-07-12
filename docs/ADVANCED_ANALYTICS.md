@@ -31,12 +31,13 @@ mtdata-cli trade_execution_quality --symbol EURUSD --minutes-back 43200 \
 Positive slippage is worse for the trader; positive markout is favorable.
 Unmatched or unbenchmarked fills are counted rather than silently discarded.
 
-## Leakage-resistant strategy validation
+## Fixed-candidate chronological validation
 
-`strategy_validate` evaluates explicit built-in or forecast-threshold
-candidates with expanding walk-forward folds, horizon-aware purge/embargo,
-triple-barrier outcomes, observed/fixed costs, block-bootstrap intervals,
-calibration diagnostics, and multiple-testing adjustments.
+`strategy_validate` evaluates predeclared built-in or forecast-threshold
+candidates with anchored expanding chronological folds. Outcomes must finish
+inside their test fold; prior calibration samples are horizon-purged and
+embargo bars are excluded. Evidence uses block-bootstrap expectancy tests with
+Holm correction and reports `positive`, `negative`, or `inconclusive`.
 
 ```bash
 mtdata-cli strategy_validate EURUSD --timeframe H1 --lookback 3000 \
@@ -46,6 +47,8 @@ mtdata-cli strategy_validate EURUSD --timeframe H1 --lookback 3000 \
 
 Candidate parameters are fixed before validation; this tool does not optimize
 and validate on the same sample.
+
+Same-bar TP/SL touches default to `sl_first` and are echoed in the result.
 
 ## Portfolio risk decomposition
 
@@ -62,6 +65,9 @@ mtdata-cli portfolio_risk_decompose --timeframe H1 --lookback 1000 \
 The default fails closed if a material position cannot be priced safely. Use
 `--allow-partial true` only when an explicitly partial portfolio result is
 acceptable.
+
+The perfect-positive-correlation stress applies a common one-sigma factor to
+horizon marginal volatilities. Opposing sensitivities therefore offset.
 
 ## Relative strength and breadth
 
@@ -85,5 +91,7 @@ different trading sessions can produce less comparable cross-sectional ranks.
 - `last` and `volume_real` are commonly zero for OTC instruments.
 - DOM is not required by these tools and remains a separate, gated live
   snapshot through `market_depth_fetch`.
+- Volume-impact estimates describe only the connected broker's tick feed,
+  even when `volume_real` is present.
 - The focused FastAPI/Web UI does not expose these tools in v1; use MCP or the
   dynamic CLI.

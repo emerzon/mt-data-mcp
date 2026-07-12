@@ -37,6 +37,12 @@ A strategy that profits in one regime may lose in another. Regime detection help
 2. Each state has characteristic mean return and volatility
 3. Uses observed data to estimate which state is currently active
 
+The implementation is a Gaussian HMM with an estimated transition matrix.
+`params.inference=filtered` is the default and uses observations through each
+bar under parameters fitted on the requested window. Use
+`params.inference=smoothed` only for retrospective segmentation because it uses
+later observations. State changes are confirmed causally by `min_regime_bars`.
+
 **Example:**
 ```bash
 mtdata-cli regime_detect EURUSD --timeframe H1 --method hmm --params "n_states=2"
@@ -63,6 +69,7 @@ summary:
 | Parameter | Default | Description |
 |-----------|---------|-------------|
 | `n_states` | 2 | Number of regimes to detect |
+| `inference` | `filtered` | `filtered` for live interpretation or `smoothed` for retrospective segmentation |
 
 **When to use:**
 - Ongoing regime classification
@@ -139,6 +146,8 @@ mtdata-cli regime_detect EURUSD --timeframe H1 --method ms_ar --params "n_states
 ```
 
 Use `n_states` to choose the number of regimes.
+Like HMM, MS-AR defaults to filtered probabilities. Set
+`params.inference=smoothed` only for retrospective analysis.
 
 **When to use:**
 - When regime changes affect both mean and autocorrelation structure
@@ -156,6 +165,11 @@ mtdata-cli regime_detect EURUSD --timeframe H1 --method clustering --params "n_s
 ```
 
 Use `n_states` to choose the number of regimes; legacy aliases are ignored.
+
+### 6. Gaussian mixture (`gmm`)
+
+`gmm` is independent Gaussian soft clustering. It has no transition matrix or
+Markov persistence and must not be interpreted as an HMM state filter.
 
 **When to use:**
 - Exploratory regime discovery without a parametric model
@@ -227,8 +241,7 @@ Canonical fields for successful compact/full JSON responses:
 
 | Field | Applies to | Notes |
 |-------|------------|-------|
-| `method` | all methods | Normalized implementation method. For example, requesting `gmm` runs the HMM-lite implementation and reports `method: "hmm"`. |
-| `requested_method` | aliases | Present when the requested method differs from `method`, such as `gmm -> hmm`. |
+| `method` | all methods | Actual implementation method. `hmm` and `gmm` are distinct. |
 | `current_regime` | all methods | Uses `regime_id`, `label`, `since`, `bars`, and `regime_confidence` when those concepts apply. BOCPD also includes transition-oriented fields such as `status` and `transition_risk`. |
 | `regimes` | all compact/full methods | Uses `start`, `end`, `bars`, and `regime_confidence` consistently where regime confidence applies. |
 | `regime_info` | state/rule methods | Describes regime labels and statistics. Clustering labels are derived from return/volatility when available instead of opaque `regime_N` names. |
@@ -270,6 +283,7 @@ Adds supported richer sections such as metadata and diagnostics.
 |------|---------|
 | Classify regimes (2 states) | `mtdata-cli regime_detect EURUSD --method hmm --params "n_states=2"` |
 | Classify regimes (3 states) | `mtdata-cli regime_detect EURUSD --method hmm --params "n_states=3"` |
+| Cluster return distributions without Markov persistence | `mtdata-cli regime_detect EURUSD --method gmm --params "n_states=2"` |
 | Detect change points | `mtdata-cli regime_detect EURUSD --method bocpd --threshold 0.5` |
 | Segment structural breaks | `mtdata-cli regime_detect EURUSD --method pelt --params "model=rbf penalty=auto"` |
 | Markov-switching AR | `mtdata-cli regime_detect EURUSD --method ms_ar --params "n_states=2"` |

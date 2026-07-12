@@ -664,7 +664,7 @@ def test_rule_based_lookback_controls_window_when_window_bars_omitted() -> None:
     assert "lookback is not used by rule_based" not in "\n".join(out.get("warnings", []))
 
 
-def test_gmm_alias_reports_requested_method_and_common_reliability() -> None:
+def test_gmm_reports_distinct_method_and_common_reliability() -> None:
     raw = _unwrap(regime_detect)
     history = _downtrend_df(40)
     gamma = np.tile(np.array([[0.9, 0.1], [0.2, 0.8]], dtype=float), (20, 1))[:39]
@@ -691,17 +691,16 @@ def test_gmm_alias_reports_requested_method_and_common_reliability() -> None:
             detail="full",
         )
 
-    assert out["method"] == "hmm"
-    assert out["requested_method"] == "gmm"
-    assert out["method_effective"] == "hmm"
-    assert "gmm" in out["method_note"]
+    assert out["method"] == "gmm"
+    assert "requested_method" not in out
+    assert "method_effective" not in out
     assert out["reliability"]["reliability_label"] in {
         "high",
         "medium",
         "low",
         "very_low",
     }
-    assert out["reliability"]["source"] == "hmm_state_probabilities"
+    assert out["reliability"]["source"] == "gmm_component_responsibilities"
 
 
 def test_ensemble_bocpd_uses_submethod_threshold_for_vote() -> None:

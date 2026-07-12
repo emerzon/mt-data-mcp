@@ -10,15 +10,15 @@ from unittest.mock import patch
 import numpy as np
 import pandas as pd
 
-from ._helpers import _BarrierTestBase, _BARRIER_PROB_ROOT, _BARRIER_OPT_ROOT
+from mtdata.forecast.barriers_optimization import forecast_barrier_optimize
 from mtdata.forecast.barriers_probabilities import (
     _history_freshness_context,
     forecast_barrier_closed_form,
     forecast_barrier_hit_probabilities,
 )
-from mtdata.forecast.barriers_optimization import forecast_barrier_optimize
 from mtdata.forecast.monte_carlo import gbm_single_barrier_upcross_prob
 
+from ._helpers import _BARRIER_OPT_ROOT, _BARRIER_PROB_ROOT, _BarrierTestBase
 
 # ---------------------------------------------------------------------------
 # Standalone tests (no mock history needed)
@@ -77,7 +77,8 @@ class TestBarrierHitProbabilities(_BarrierTestBase):
         self.assertTrue(result["success"])
         self.assertIn("prob_tp_first", result)
         self.assertIn("prob_sl_first", result)
-        self.assertIn("prob_tie", result)
+        self.assertIn("prob_same_bar", result)
+        self.assertEqual(result["same_bar_policy"], "sl_first")
         self.assertIn("prob_tp_first_ci95", result)
         self.assertIn("prob_sl_first_ci95", result)
         self.assertIn("prob_no_hit_ci95", result)

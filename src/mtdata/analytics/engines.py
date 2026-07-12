@@ -20,6 +20,7 @@ from ..core.analytics_requests import (
     TradeExecutionQualityRequest,
 )
 from ..shared.constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
+from ..utils.barriers import normalize_same_bar_policy
 
 
 def _mapping(row: Any) -> Dict[str, Any]:
@@ -93,6 +94,28 @@ def _bootstrap_mean_ci(values: Sequence[float], samples: int, seed: int = 42) ->
     return [float(np.quantile(means, 0.025)), float(np.quantile(means, 0.975))]
 
 
+def _block_bootstrap_positive_mean_p_value(
+    values: Sequence[float], samples: int, seed: int = 42
+) -> Optional[float]:
+    """One-sided p-value for positive mean under a centered block-bootstrap null."""
+    arr = np.asarray(values, dtype=float)
+    arr = arr[np.isfinite(arr)]
+    if len(arr) < 5:
+        return None
+    observed = float(np.mean(arr))
+    centered = arr - observed
+    rng = np.random.default_rng(seed)
+    block = max(2, int(round(math.sqrt(len(arr)))))
+    exceed = 0
+    for _ in range(int(samples)):
+        starts = rng.integers(0, len(centered), size=math.ceil(len(centered) / block))
+        draw = np.concatenate(
+            [centered[(start + np.arange(block)) % len(centered)] for start in starts]
+        )[: len(centered)]
+        exceed += int(float(np.mean(draw)) >= observed)
+    return float((exceed + 1) / (int(samples) + 1))
+
+
 def _tick_frame(gateway: Any, symbol: str, start: datetime, end: datetime, max_ticks: int) -> Tuple[pd.DataFrame, bool]:
     flags = getattr(gateway, "COPY_TICKS_ALL", 0)
     df = _frame(gateway.copy_ticks_range(symbol, start, end, flags))
@@ -155,7 +178,7 @@ def analyze_microstructure(request: MarketMicrostructureRequest, gateway: Any) -
         "spread": _percentiles(q["spread"]),
         "quote_gap_seconds": _percentiles(q["dt"].dropna()),
         "mid_realized_volatility": float(np.sqrt(np.nansum(np.square(q["mid_return"])))) if len(q) > 1 else None,
-        "quote_revision_pressure": revision_pressure,
+        "broker_quote_revision_imbalance": revision_pressure,
     }
     applicability = {
         "quote_metrics": bool(len(q) >= 20),
@@ -182,15 +205,17 @@ def analyze_microstructure(request: MarketMicrostructureRequest, gateway: Any) -
             if int(valid.sum()) >= 20:
                 x = dv[valid].to_numpy(dtype=float)
                 y = returns[valid].to_numpy(dtype=float)
-                summary["kyle_lambda"] = float(np.dot(x, y) / np.dot(x, x)) if np.dot(x, x) > 0 else None
-                summary["amihud_impact"] = float(np.nanmean(np.abs(y) / np.maximum(np.abs(x), 1e-12)))
+                summary["broker_tick_signed_volume_impact_slope"] = float(np.dot(x, y) / np.dot(x, x)) if np.dot(x, x) > 0 else None
+                summary["broker_tick_abs_return_per_real_volume"] = float(np.nanmean(np.abs(y) / np.maximum(np.abs(x), 1e-12)))
+                summary["volume_impact_observations"] = int(valid.sum())
     p95 = summary["spread"].get("p95")
     events = [item for item in windows if p95 is not None and item.get("spread_p95") is not None and item["spread_p95"] >= p95][:10]
     warnings = []
     if tier != "trade_volume":
         warnings.append("Real trade volume is insufficient; volume-impact metrics were omitted.")
-    if tier == "quote_only":
-        warnings.append("Quote revisions are liquidity proxies, not centralized order flow.")
+    warnings.append(
+        "Metrics describe the connected broker's tick feed and do not establish centralized market-wide order flow or liquidity."
+    )
     return {
         "success": True,
         "symbol": request.symbol,
@@ -209,7 +234,19 @@ def analyze_microstructure(request: MarketMicrostructureRequest, gateway: Any) -
             "observed_end_epoch": float(df["epoch"].iloc[-1]),
         },
         "method_applicability": applicability,
-        "units": {"spread": "price", "quote_gap_seconds": "seconds", "quote_revision_pressure": "signed_fraction"},
+        "estimator_scope": {
+            "market_scope": "connected_broker_tick_feed",
+            "trade_sign_method": "prevailing_quote_then_tick_rule",
+            "volume_source": "volume_real" if tier == "trade_volume" else None,
+            "volume_unit": "broker_reported_real_volume" if tier == "trade_volume" else None,
+        },
+        "units": {
+            "spread": "price",
+            "quote_gap_seconds": "seconds",
+            "broker_quote_revision_imbalance": "signed_fraction",
+            "broker_tick_signed_volume_impact_slope": "log_return_per_broker_real_volume",
+            "broker_tick_abs_return_per_real_volume": "absolute_log_return_per_broker_real_volume",
+        },
         "warnings": warnings,
     }
 
@@ -435,7 +472,14 @@ def _forecast_signal(df: pd.DataFrame, candidate: StrategyCandidate, symbol: str
     return signal
 
 
-def _barrier_returns(df: pd.DataFrame, signal: pd.Series, horizon: int, tp_pct: float, sl_pct: float) -> Tuple[np.ndarray, np.ndarray]:
+def _barrier_returns(
+    df: pd.DataFrame,
+    signal: pd.Series,
+    horizon: int,
+    tp_pct: float,
+    sl_pct: float,
+    same_bar_policy: str = "sl_first",
+) -> Tuple[np.ndarray, np.ndarray]:
     indices: List[int] = []
     outcomes: List[float] = []
     tp = float(tp_pct) / 100.0
@@ -451,10 +495,20 @@ def _barrier_returns(df: pd.DataFrame, signal: pd.Series, horizon: int, tp_pct: 
             low = float(df["low"].iloc[idx + step])
             favorable = (high / entry - 1.0) if direction > 0 else (1.0 - low / entry)
             adverse = (1.0 - low / entry) if direction > 0 else (high / entry - 1.0)
-            if adverse >= sl:
+            adverse_hit = adverse >= sl
+            favorable_hit = favorable >= tp
+            if adverse_hit and favorable_hit:
+                if same_bar_policy == "tp_first":
+                    result = tp
+                elif same_bar_policy == "neutral":
+                    result = 0.0
+                else:
+                    result = -sl
+                break
+            if adverse_hit:
                 result = -sl
                 break
-            if favorable >= tp:
+            if favorable_hit:
                 result = tp
                 break
         if result is None:
@@ -488,31 +542,69 @@ def validate_strategies(request: StrategyValidateRequest, gateway: Any) -> Dict[
         return {"error": "At least 200 completed bars are required.", "error_code": "insufficient_data"}
     spread_bps, spread_source, complete = _observed_spread_bps(request, gateway)
     round_trip_bps = spread_bps + 2.0 * (request.commission_bps + request.slippage_bps)
-    purge = request.purge_bars if request.purge_bars is not None else max(request.barrier.horizon, max(item.horizon for item in request.candidates))
-    embargo = request.embargo_bars if request.embargo_bars is not None else purge
+    purge = int(request.purge_bars or 0)
+    embargo = int(
+        request.embargo_bars
+        if request.embargo_bars is not None
+        else request.barrier.horizon
+    )
+    labelable_end = len(df) - int(request.barrier.horizon) - 1
+    edges = np.linspace(
+        0, max(0, labelable_end + 1), request.n_splits + 2, dtype=int
+    )
+    fold_windows = []
+    embargo_intervals: List[Tuple[int, int]] = []
+    for fold in range(request.n_splits):
+        block_start = int(edges[fold + 1])
+        test_start = block_start + embargo
+        test_end = int(edges[fold + 2]) - 1
+        if embargo > 0:
+            embargo_intervals.append((block_start, min(test_start - 1, test_end)))
+        fold_windows.append((test_start, test_end))
     results = []
     for candidate in request.candidates:
         signal = _builtin_signal(df["close"], candidate) if candidate.type == "builtin_strategy" else _forecast_signal(df, candidate, request.symbol, request.timeframe)
-        indices, gross = _barrier_returns(df, signal, request.barrier.horizon, request.barrier.tp_pct, request.barrier.sl_pct)
+        same_bar_policy = normalize_same_bar_policy(request.barrier.same_bar_policy)
+        indices, gross = _barrier_returns(
+            df,
+            signal,
+            request.barrier.horizon,
+            request.barrier.tp_pct,
+            request.barrier.sl_pct,
+            same_bar_policy,
+        )
         if len(indices) < request.n_splits * 5:
-            results.append({"id": candidate.id, "status": "insufficient_data", "trades": int(len(indices))})
+            results.append({"id": candidate.id, "evaluation_status": "insufficient_data", "trades": int(len(indices))})
             continue
-        fold_size = max(1, len(indices) // request.n_splits)
         fold_rows = []
         all_net = []
         calibrated_probabilities: List[float] = []
         calibrated_labels: List[int] = []
-        for fold in range(request.n_splits):
-            lo = fold * fold_size
-            hi = len(indices) if fold == request.n_splits - 1 else (fold + 1) * fold_size
-            test_indices = indices[lo:hi]
-            test = gross[lo:hi] - round_trip_bps / 10_000.0
-            train_end_bar = int(test_indices[0]) - int(purge)
-            train_count = int(np.sum(indices < train_end_bar))
+        for fold, (test_start, test_end) in enumerate(fold_windows):
+            if test_start > test_end:
+                continue
+            test_mask = (
+                (indices >= test_start)
+                & (indices + int(request.barrier.horizon) <= test_end)
+            )
+            test_indices = indices[test_mask]
+            test_gross = gross[test_mask]
+            if not len(test_indices):
+                continue
+            test = test_gross - round_trip_bps / 10_000.0
+            train_mask = (
+                indices + int(request.barrier.horizon) < int(test_start) - purge
+            )
+            embargo_excluded = np.zeros(len(indices), dtype=bool)
+            for gap_start, gap_end in embargo_intervals:
+                if gap_start >= test_start:
+                    break
+                embargo_excluded |= (indices >= gap_start) & (indices <= gap_end)
+            train_mask &= ~embargo_excluded
+            train_count = int(np.sum(train_mask))
             if train_count < 5:
                 continue
             all_net.extend(test.tolist())
-            train_mask = indices < train_end_bar
             if train_count >= 100:
                 try:
                     from sklearn.linear_model import LogisticRegression
@@ -523,7 +615,7 @@ def validate_strategies(request: StrategyValidateRequest, gateway: Any) -> Dict[
                     if len(np.unique(train_y)) > 1 and np.all(np.isfinite(train_x)) and np.all(np.isfinite(test_x)):
                         calibrator = LogisticRegression(random_state=42).fit(train_x, train_y)
                         calibrated_probabilities.extend(calibrator.predict_proba(test_x)[:, 1].tolist())
-                        calibrated_labels.extend((gross[lo:hi] > 0).astype(int).tolist())
+                        calibrated_labels.extend((test_gross > 0).astype(int).tolist())
                 except Exception:
                     pass
             fold_rows.append({
@@ -532,13 +624,17 @@ def validate_strategies(request: StrategyValidateRequest, gateway: Any) -> Dict[
                 "test_trades": int(len(test)),
                 "test_start_bar": int(test_indices[0]),
                 "test_end_bar": int(test_indices[-1]),
-                "embargo_end_bar": int(test_indices[-1] + embargo),
+                "test_window_start_bar": int(test_start),
+                "test_window_end_bar": int(test_end),
+                "horizon_tail_excluded": int(request.barrier.horizon),
+                "embargo_bars_excluded": int(embargo),
+                "extra_purge_bars": int(purge),
                 "net_expectancy": float(np.mean(test)),
                 "win_rate": float(np.mean(test > 0)),
             })
         arr = np.asarray(all_net, dtype=float)
         if not len(arr):
-            results.append({"id": candidate.id, "status": "insufficient_data", "trades": 0})
+            results.append({"id": candidate.id, "evaluation_status": "insufficient_data", "trades": 0})
             continue
         equity = np.cumprod(1.0 + np.clip(arr, -0.999, None))
         peaks = np.maximum.accumulate(equity)
@@ -558,9 +654,10 @@ def validate_strategies(request: StrategyValidateRequest, gateway: Any) -> Dict[
         psr_denom = math.sqrt(max(1e-12, 1.0 - skewness * per_trade_sharpe + ((kurt - 1.0) / 4.0) * per_trade_sharpe**2))
         deflated_probability = float(norm.cdf((per_trade_sharpe - expected_max) * math.sqrt(max(1, len(arr) - 1)) / psr_denom))
         expectancy_ci = _bootstrap_mean_ci(arr.tolist(), request.bootstrap_samples)
+        mean_return_p_value = _block_bootstrap_positive_mean_p_value(
+            arr.tolist(), request.bootstrap_samples
+        )
         fold_expectancies = [item["net_expectancy"] for item in fold_rows]
-        positive_ci = bool(expectancy_ci and expectancy_ci[0] > 0)
-        status = "robust" if positive_ci and len(fold_rows) == request.n_splits and np.mean(np.asarray(fold_expectancies) > 0) >= 0.8 else "fragile"
         calibration = {"status": "insufficient_data", "observations": len(calibrated_labels)}
         if calibrated_labels:
             probs = np.asarray(calibrated_probabilities, dtype=float)
@@ -574,7 +671,7 @@ def validate_strategies(request: StrategyValidateRequest, gateway: Any) -> Dict[
         results.append({
             "id": candidate.id,
             "type": candidate.type,
-            "status": status,
+            "evaluation_status": "complete",
             "trades": int(len(arr)),
             "net_expectancy": float(np.mean(arr)),
             "expectancy_ci_95": expectancy_ci,
@@ -582,14 +679,15 @@ def validate_strategies(request: StrategyValidateRequest, gateway: Any) -> Dict[
             "profit_factor": float(arr[arr > 0].sum() / abs(arr[arr < 0].sum())) if np.any(arr < 0) else None,
             "sharpe": sharpe,
             "deflated_sharpe_probability": deflated_probability,
-            "multiple_testing_p_value": float(1.0 - deflated_probability),
+            "mean_return_p_value": mean_return_p_value,
             "max_drawdown": float(np.min(drawdown)),
             "fold_stability": float(np.mean(np.asarray(fold_expectancies) > 0)) if fold_expectancies else 0.0,
+            "same_bar_policy": same_bar_policy,
             "calibration": calibration,
             **({"folds": fold_rows} if request.detail == "full" else {}),
         })
     eligible_p = sorted(
-        [(idx, float(item["multiple_testing_p_value"])) for idx, item in enumerate(results) if item.get("multiple_testing_p_value") is not None],
+        [(idx, float(item["mean_return_p_value"])) for idx, item in enumerate(results) if item.get("mean_return_p_value") is not None],
         key=lambda pair: pair[1],
     )
     running = 0.0
@@ -597,13 +695,53 @@ def validate_strategies(request: StrategyValidateRequest, gateway: Any) -> Dict[
         adjusted = min(1.0, p_value * (len(eligible_p) - rank))
         running = max(running, adjusted)
         results[idx]["holm_adjusted_p_value"] = running
+    for item in results:
+        if item.get("evaluation_status") != "complete":
+            continue
+        ci = item.get("expectancy_ci_95")
+        fold_share = float(item.get("fold_stability") or 0.0)
+        adjusted_p = item.get("holm_adjusted_p_value")
+        criteria = {
+            "expectancy_ci_above_zero": bool(ci and float(ci[0]) > 0.0),
+            "holm_adjusted_p_at_most_alpha": bool(
+                adjusted_p is not None
+                and float(adjusted_p) <= request.significance_alpha
+            ),
+            "positive_fold_share_at_least_minimum": bool(
+                fold_share >= request.min_positive_fold_share
+            ),
+        }
+        if all(criteria.values()):
+            classification = "positive"
+        elif ci and float(ci[1]) < 0.0:
+            classification = "negative"
+        else:
+            classification = "inconclusive"
+        item["evidence"] = {
+            "classification": classification,
+            "criteria": criteria,
+            "significance_alpha": float(request.significance_alpha),
+            "minimum_positive_fold_share": float(request.min_positive_fold_share),
+        }
     ranked = sorted(results, key=lambda item: (item.get("net_expectancy") is None, -(item.get("net_expectancy") or -1e9)))
     return {
         "success": True,
         "symbol": request.symbol,
         "timeframe": request.timeframe,
         "rankings": ranked,
-        "validation": {"protocol": "expanding_walk_forward", "n_splits": request.n_splits, "purge_bars": purge, "embargo_bars": embargo, "completed_candles_only": True},
+        "validation": {
+            "protocol": "anchored_expanding_fixed_candidate_oos",
+            "n_splits": request.n_splits,
+            "outcome_horizon_bars": int(request.barrier.horizon),
+            "extra_purge_bars": purge,
+            "embargo_bars": embargo,
+            "candidate_parameters_reestimated": False,
+            "forecast_models_refit_per_anchor": any(
+                item.type == "forecast_threshold" for item in request.candidates
+            ),
+            "same_bar_policy": request.barrier.same_bar_policy,
+            "completed_candles_only": True,
+        },
         "cost_model": {"source": spread_source, "spread_bps": spread_bps, "commission_bps_per_side": request.commission_bps, "slippage_bps_per_side": request.slippage_bps, "round_trip_bps": round_trip_bps, "complete": complete},
         "data_quality": {"bars": len(df), "cost_model_complete": complete},
         "warnings": [] if complete else ["Observed spread was used, but commission/slippage completeness could not be proven from sufficient matched fills."],
@@ -678,7 +816,8 @@ def decompose_portfolio_risk(request: PortfolioRiskDecomposeRequest, gateway: An
         return {"error": "At least 100 aligned returns are required.", "error_code": "insufficient_data", "aligned_rows": len(returns)}
     returns.columns = list(series)
     alpha = 1.0 - math.exp(math.log(0.5) / request.ewma_half_life)
-    current_vol = returns.ewm(alpha=alpha, adjust=False).std().iloc[-1].replace(0, np.nan)
+    ewma_vol = returns.ewm(alpha=alpha, adjust=False).std().iloc[-1].replace(0, np.nan)
+    current_vol = ewma_vol.copy()
     standardized = returns.div(returns.ewm(alpha=alpha, adjust=False).std()).replace([np.inf, -np.inf], np.nan).dropna()
     if request.method == "historical":
         standardized = returns.copy()
@@ -724,9 +863,30 @@ def decompose_portfolio_risk(request: PortfolioRiskDecomposeRequest, gateway: An
     weights = exposure_abs / exposure_abs.sum() if exposure_abs.sum() else exposure_abs
     correlation = returns.corr()
     worst_historical = (returns * sensitivity_vec).sum(axis=1)
+    perfect_correlation = []
+    for horizon in request.horizon_bars:
+        if request.method == "filtered_historical":
+            horizon_vol = ewma_vol * math.sqrt(float(horizon))
+        else:
+            horizon_vol = returns.rolling(int(horizon)).sum().std(ddof=1)
+        horizon_vol = horizon_vol.reindex(standardized.columns).fillna(0.0)
+        signed_loading = float(
+            np.dot(sensitivity_vec, horizon_vol.to_numpy(dtype=float))
+        )
+        shock_direction = -1.0 if signed_loading >= 0.0 else 1.0
+        perfect_correlation.append({
+            "horizon_bars": int(horizon),
+            "shock_sigma": 1.0,
+            "common_factor_direction": shock_direction,
+            "pnl": float(-abs(signed_loading)),
+            "marginal_volatility": {
+                str(symbol): float(value)
+                for symbol, value in horizon_vol.items()
+            },
+        })
     stresses = {
         "volatility_double_worst_pnl": float(min(np.min(values) * 2.0 for values in scenario_details.values())),
-        "correlation_to_one_loss_proxy": float(-np.sum(np.abs(sensitivity_vec) * current_vol.to_numpy(dtype=float))),
+        "perfect_positive_correlation_1sigma": perfect_correlation,
         "worst_historical_bar_pnl": float(worst_historical.min()),
     }
     proposed = request.proposed_trade
@@ -748,7 +908,12 @@ def decompose_portfolio_risk(request: PortfolioRiskDecomposeRequest, gateway: An
         "stresses": stresses,
         "proposed_trade": proposed_context,
         "data_quality": {"pricing_failures": failures, "allow_partial": request.allow_partial, "aligned_coverage": float(len(returns) / max(len(item) for item in series.values()))},
-        "units": {"var": "account_currency", "expected_shortfall": "account_currency", "sensitivity": "account_currency_per_1.0_return"},
+        "units": {
+            "var": "account_currency",
+            "expected_shortfall": "account_currency",
+            "sensitivity": "account_currency_per_1.0_return",
+            "stresses": "account_currency",
+        },
         **({"correlation": correlation.to_dict()} if request.detail == "full" else {}),
     }
 

@@ -7,7 +7,24 @@ from mtdata.utils.barriers import (
     build_barrier_kwargs_from,
     normalize_trade_direction,
     resolve_barrier_prices,
+    resolve_same_bar_probabilities,
 )
+
+
+@pytest.mark.parametrize(
+    ("policy", "tp", "sl", "unresolved"),
+    [("sl_first", 0.2, 0.4, 0.4), ("tp_first", 0.3, 0.3, 0.4), ("neutral", 0.2, 0.3, 0.5)],
+)
+def test_same_bar_probability_resolution(policy, tp, sl, unresolved):
+    result = resolve_same_bar_probabilities(
+        tp_strict=0.2, sl_strict=0.3, same_bar=0.1, no_hit=0.4, policy=policy
+    )
+    assert result["prob_tp_first"] == pytest.approx(tp)
+    assert result["prob_sl_first"] == pytest.approx(sl)
+    assert result["prob_unresolved"] == pytest.approx(unresolved)
+    assert sum(result[key] for key in (
+        "prob_tp_strict_first", "prob_sl_strict_first", "prob_same_bar", "prob_no_hit"
+    )) == pytest.approx(1.0)
 
 
 class TestResolveBarrierPrices:

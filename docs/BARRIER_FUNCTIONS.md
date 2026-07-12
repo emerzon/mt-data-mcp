@@ -168,8 +168,8 @@ Transition: P(s_t = j | s_{t-1} = i) = A_{ij}
 ```
 
 **How it works**:
-1. Fit Gaussian mixture to log-returns (EM algorithm)
-2. Estimate transition matrix from soft assignments
+1. Fit a Gaussian HMM to log-returns (Baum-Welch)
+2. Use its transition matrix and filtered final state distribution
 3. Simulate state paths via Markov chain
 4. Sample returns conditional on current state
 5. Build price paths
@@ -921,7 +921,7 @@ mtdata-cli forecast_barrier_optimize \
 
 **Interpretation**:
 - Focus on `ev` (expected value)
-- Check `prob_tie` (should be low)
+- Check `prob_same_bar` (should be low)
 - Verify jump parameters via `model_summary`
 
 ---

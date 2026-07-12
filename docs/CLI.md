@@ -335,7 +335,7 @@ For Kelly sizing, `trade_journal_analyze` is the quickest way to derive
 | Command | Description |
 |---------|-------------|
 | `market_microstructure_analyze` | Analyze tick liquidity and feed-appropriate order-flow proxies |
-| `strategy_validate` | Run purged walk-forward strategy validation with barrier outcomes and costs |
+| `strategy_validate` | Run anchored fixed-candidate OOS validation with horizon-safe barrier outcomes and costs |
 | `portfolio_risk_decompose` | Decompose filtered-historical VaR/ES and proposed-trade risk |
 | `market_relative_strength` | Rank a bounded MT5 universe by robust factor-adjusted momentum and breadth |
 

@@ -146,6 +146,10 @@ The current "behavior mode" of the market. Different regimes require different s
 ### Hidden Markov Model (HMM)
 An algorithm that assumes the market switches between hidden "states" (regimes). It estimates which state generated the current data based on observed returns and volatility.
 
+In `regime_detect`, `hmm` is a Gaussian HMM with explicit transition
+probabilities. Filtered inference is the live-oriented default; smoothed
+inference is retrospective. `gmm` is a separate i.i.d. Gaussian mixture.
+
 **Output:** State ID (0, 1, 2...) and confidence probability.
 
 **Important:** The model doesn't know "Bull" or "Bear." You must interpret what each state means by examining its mean return and volatility.
@@ -225,7 +229,9 @@ A method to label historical data based on which barrier was hit first:
 - **-1 (Loss):** SL hit first
 - **0 (Neutral):** Neither hit within horizon
 
-For triple-barrier labeling in `high_low` mode, if one bar touches both TP and SL, the tie is resolved conservatively as a loss (`-1`) because intrabar order is unknown.
+For triple-barrier labeling in `high_low` mode, `same_bar_policy` controls a
+bar that touches both TP and SL. It defaults to conservative `sl_first`;
+`tp_first` and `neutral` are explicit alternatives.
 
 **Use case:** Creating labels for machine learning models.
 

@@ -7,11 +7,6 @@ import numpy as np
 from ..shared.constants import SANITY_BARS_TOLERANCE, TIMEFRAME_SECONDS
 from ..shared.schema import DenoiseSpec, TimeframeLiteral
 from ..shared.validators import unsupported_timeframe_seconds_error
-from ..utils.freshness import (
-    closed_session_context,
-    format_age_seconds,
-    format_freshness_label,
-)
 from ..utils.barriers import (
     barrier_prices_are_valid as _barrier_prices_are_valid,
 )
@@ -19,12 +14,19 @@ from ..utils.barriers import (
     get_pip_size as _get_pip_size,
 )
 from ..utils.barriers import (
+    normalize_same_bar_policy,
     normalize_trade_direction,
+    resolve_same_bar_probabilities,
+    validate_barrier_unit_family_exclusivity,
 )
 from ..utils.barriers import (
     resolve_barrier_prices as _resolve_barrier_prices,
 )
-from ..utils.barriers import validate_barrier_unit_family_exclusivity
+from ..utils.freshness import (
+    closed_session_context,
+    format_age_seconds,
+    format_freshness_label,
+)
 from ..utils.utils import (
     _format_time_minimal,
     _format_time_minimal_local,
@@ -36,12 +38,12 @@ from .barriers_shared import (
     _binomial_se,
     _binomial_wilson_95,
     _brownian_bridge_hits,
-    barrier_method_error,
     _get_live_reference_price,
     _resolve_reference_prices,
     _scale_price_paths_to_reference,
     _stable_barrier_seed,
     _symbol_price_precision,
+    barrier_method_error,
     normalize_barrier_method,
     normalize_barrier_seed,
     offset_barrier_seed,
@@ -243,6 +245,7 @@ def forecast_barrier_hit_probabilities(  # noqa: C901
     horizon: int = 12,
     method: Literal['mc_gbm','mc_gbm_bb','hmm_mc','garch','bootstrap','heston','jump_diffusion','auto'] = 'hmm_mc',
     direction: Literal['long','short'] = 'long',
+    same_bar_policy: Literal['sl_first','tp_first','neutral'] = 'sl_first',
     tp_abs: Optional[float] = None,
     sl_abs: Optional[float] = None,
     tp_pct: Optional[float] = None,
@@ -258,8 +261,8 @@ def forecast_barrier_hit_probabilities(  # noqa: C901
     - Barriers are provided via absolute prices (tp_abs/sl_abs), percentages
       (tp_pct/sl_pct), or ticks (tp_ticks/sl_ticks; uses `trade_tick_size`).
       Use exactly one unit family per request; mixed units are rejected.
-    - In discrete time, TP and SL can be hit in the same bar. Those ties are
-      split 50/50 into `prob_tp_first` and `prob_sl_first`.
+    - In discrete time, TP and SL can be hit in the same bar. Resolution is
+      controlled explicitly by `same_bar_policy`.
     """
     try:
         if timeframe not in TIMEFRAME_SECONDS:
@@ -273,6 +276,10 @@ def forecast_barrier_hit_probabilities(  # noqa: C901
         direction_norm, direction_error = normalize_trade_direction(direction)
         if direction_error:
             return {"error": direction_error}
+        try:
+            same_bar_policy_value = normalize_same_bar_policy(same_bar_policy)
+        except ValueError as exc:
+            return {"error": str(exc)}
         p = _parse_kv_or_json(params)
         warnings_out: List[str] = []
         try:
@@ -557,15 +564,22 @@ def forecast_barrier_hit_probabilities(  # noqa: C901
         sl_any_by_t = _compute_cum_curve(idx_sl, any_sl, H)
 
         S_f = float(S)
-        prob_tp_first = (tp_first + 0.5 * both_tie) / S_f
-        prob_sl_first = (sl_first + 0.5 * both_tie) / S_f
-        prob_tie = both_tie / S_f
-        prob_no_hit = no_hit / S_f
+        resolved_probabilities = resolve_same_bar_probabilities(
+            tp_strict=tp_first / S_f,
+            sl_strict=sl_first / S_f,
+            same_bar=both_tie / S_f,
+            no_hit=no_hit / S_f,
+            policy=same_bar_policy_value,
+        )
+        prob_tp_first = resolved_probabilities["prob_tp_first"]
+        prob_sl_first = resolved_probabilities["prob_sl_first"]
+        prob_same_bar = resolved_probabilities["prob_same_bar"]
+        prob_no_hit = resolved_probabilities["prob_no_hit"]
         tp_any_curve = (tp_any_by_t / S_f).tolist()
         sl_any_curve = (sl_any_by_t / S_f).tolist()
         tp_lo, tp_hi = _binomial_wilson_95(prob_tp_first, int(S))
         sl_lo, sl_hi = _binomial_wilson_95(prob_sl_first, int(S))
-        tie_lo, tie_hi = _binomial_wilson_95(prob_tie, int(S))
+        tie_lo, tie_hi = _binomial_wilson_95(prob_same_bar, int(S))
         no_hit_lo, no_hit_hi = _binomial_wilson_95(prob_no_hit, int(S))
 
         def _stats(arr: list[int]) -> Dict[str, float]:
@@ -593,6 +607,7 @@ def forecast_barrier_hit_probabilities(  # noqa: C901
             "method": method_key,
             "horizon": horizon_val,
             "direction": direction_norm,
+            "same_bar_policy": same_bar_policy_value,
             "last_price": last_price,
             "last_price_close": float(last_price_close),
             "last_price_source": last_price_source,
@@ -601,17 +616,14 @@ def forecast_barrier_hit_probabilities(  # noqa: C901
             "n_sims": int(S),
             "seed": int(request_seed_base),
             "seed_source": "params" if seed_provided else "request",
-            "prob_tp_first": float(prob_tp_first),
-            "prob_sl_first": float(prob_sl_first),
-            "prob_tie": float(prob_tie),
-            "prob_no_hit": float(prob_no_hit),
+            **resolved_probabilities,
             "prob_tp_first_se": _binomial_se(prob_tp_first, int(S)),
             "prob_sl_first_se": _binomial_se(prob_sl_first, int(S)),
-            "prob_tie_se": _binomial_se(prob_tie, int(S)),
+            "prob_same_bar_se": _binomial_se(prob_same_bar, int(S)),
             "prob_no_hit_se": _binomial_se(prob_no_hit, int(S)),
             "prob_tp_first_ci95": {"low": float(tp_lo), "high": float(tp_hi)},
             "prob_sl_first_ci95": {"low": float(sl_lo), "high": float(sl_hi)},
-            "prob_tie_ci95": {"low": float(tie_lo), "high": float(tie_hi)},
+            "prob_same_bar_ci95": {"low": float(tie_lo), "high": float(tie_hi)},
             "prob_no_hit_ci95": {"low": float(no_hit_lo), "high": float(no_hit_hi)},
             "probability_edge": probability_edge,
             "tp_hit_prob_by_t": [float(v) for v in tp_any_curve],

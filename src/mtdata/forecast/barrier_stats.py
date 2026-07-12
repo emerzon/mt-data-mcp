@@ -16,6 +16,8 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 import numpy as np
 from scipy import stats as scipy_stats
 
+from ..utils.barriers import resolve_same_bar_probabilities
+
 BarrierPowerAnalysisValue = Union[float, int, str]
 
 
@@ -494,6 +496,7 @@ def bootstrap_metric_uncertainty(
     reward: Optional[float] = None,
     risk: Optional[float] = None,
     cost_per_trade: float = 0.0,
+    same_bar_policy: str = "sl_first",
     n_bootstrap: int = 500,
     metrics: Optional[List[str]] = None,
     seed: Optional[int] = None,
@@ -520,7 +523,7 @@ def bootstrap_metric_uncertainty(
     
     if metrics is None:
         metrics = [
-            'prob_win', 'prob_loss', 'prob_tie', 'prob_tp_first', 'prob_sl_first',
+            'prob_win', 'prob_loss', 'prob_same_bar', 'prob_tp_first', 'prob_sl_first',
             'ev', 'ev_unresolved', 'ev_cond', 'edge', 'kelly', 'kelly_cond',
             'prob_no_hit', 'prob_resolve',
         ]
@@ -559,13 +562,20 @@ def bootstrap_metric_uncertainty(
         n_losses = losses.sum()
         n_ties = ties.sum()
         
-        prob_win = n_wins / n_sims
-        prob_loss = n_losses / n_sims
-        prob_tie = n_ties / n_sims
-        prob_tp_first = (n_wins + 0.5 * n_ties) / n_sims
-        prob_sl_first = (n_losses + 0.5 * n_ties) / n_sims
         prob_no_hit = unresolved.sum() / n_sims
-        prob_resolve = 1.0 - prob_no_hit
+        resolved = resolve_same_bar_probabilities(
+            tp_strict=n_wins / n_sims,
+            sl_strict=n_losses / n_sims,
+            same_bar=n_ties / n_sims,
+            no_hit=prob_no_hit,
+            policy=same_bar_policy,
+        )
+        prob_win = resolved["prob_tp_first"]
+        prob_loss = resolved["prob_sl_first"]
+        prob_same_bar = resolved["prob_same_bar"]
+        prob_tp_first = prob_win
+        prob_sl_first = prob_loss
+        prob_resolve = resolved["prob_resolve"]
         
         edge = prob_win - prob_loss
 
@@ -743,7 +753,7 @@ def ensemble_ci_from_multiple_methods(
     
     # Only clamp to [0, 1] for probability-range metrics.
     _PROB_METRICS = frozenset({
-        'prob_win', 'prob_loss', 'prob_tie', 'prob_no_hit', 'prob_resolve',
+        'prob_win', 'prob_loss', 'prob_same_bar', 'prob_no_hit', 'prob_resolve',
         'prob_tp_first', 'prob_sl_first',
     })
     if metric in _PROB_METRICS:

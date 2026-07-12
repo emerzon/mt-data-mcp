@@ -131,6 +131,10 @@ def test_microstructure_distinguishes_trade_volume_from_quote_proxy() -> None:
     assert result["summary"]["feed_tier"] == "trade_volume"
     assert result["method_applicability"]["volume_impact_metrics"] is True
     assert "signed_volume_imbalance" in result["summary"]
+    assert "kyle_lambda" not in result["summary"]
+    assert "amihud_impact" not in result["summary"]
+    assert result["estimator_scope"]["market_scope"] == "connected_broker_tick_feed"
+    assert any("broker's tick feed" in warning for warning in result["warnings"])
 
 
 def test_execution_quality_matches_order_and_computes_markout() -> None:
@@ -166,12 +170,21 @@ def test_strategy_validation_returns_walk_forward_oos_metrics() -> None:
         cost_model="fixed",
         spread_bps=1.0,
         bootstrap_samples=100,
+        detail="full",
     )
     result = validate_strategies(request, gateway)
     assert result["success"] is True
-    assert result["validation"]["purge_bars"] == 5
+    assert result["validation"]["outcome_horizon_bars"] == 5
+    assert result["validation"]["extra_purge_bars"] == 0
+    assert result["validation"]["protocol"] == "anchored_expanding_fixed_candidate_oos"
     assert result["rankings"][0]["id"] == "cross"
     assert result["rankings"][0]["trades"] > 0
+    assert result["rankings"][0]["evaluation_status"] == "complete"
+    assert result["rankings"][0]["evidence"]["classification"] in {
+        "positive", "negative", "inconclusive"
+    }
+    for fold in result["rankings"][0]["folds"]:
+        assert fold["test_end_bar"] + request.barrier.horizon <= fold["test_window_end_bar"]
 
 
 def test_portfolio_risk_reconciles_component_expected_shortfall() -> None:
@@ -188,6 +201,8 @@ def test_portfolio_risk_reconciles_component_expected_shortfall() -> None:
     row = result["risk"][0]
     component_total = sum(item["value"] for item in row["component_expected_shortfall"])
     assert component_total == pytest.approx(row["expected_shortfall"])
+    assert "correlation_to_one_loss_proxy" not in result["stresses"]
+    assert result["stresses"]["perfect_positive_correlation_1sigma"][0]["horizon_bars"] == 1
 
 
 def test_relative_strength_ranks_and_reports_breadth() -> None:

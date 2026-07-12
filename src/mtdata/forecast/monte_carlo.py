@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import warnings
 from dataclasses import dataclass
-from typing import Dict, Optional, Tuple, Union
+from typing import Any, Dict, Optional, Tuple, Union
 
 import numpy as np
 from sklearn.mixture import GaussianMixture
@@ -257,20 +257,21 @@ def _is_hmm_degenerate(
     return False
 
 
-def _fit_hmmlearn_gaussian_hmm_1d(
+def fit_gaussian_hmm_1d(
     x: np.ndarray,
     n_states: int = 2,
     max_iter: int = 80,
     tol: float = 1e-6,
     seed: Optional[int] = 42,
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    """Fit a 1D GaussianHMM via hmmlearn, with automatic degeneracy fallback.
+) -> Dict[str, Any]:
+    """Fit a 1D GaussianHMM and expose filtered and smoothed posteriors.
 
     If the fitted model has ghost/collapsed states (detected via
     ``_is_hmm_degenerate``), the function silently re-fits with fewer
     components until a non-degenerate fit is found (minimum K=1).
 
-    Returns (mu, sigma, A, init).
+    The filtered posterior is computed with a scaled forward recursion. The
+    smoothed posterior comes from hmmlearn and is retrospective.
     """
     from hmmlearn.hmm import GaussianHMM
 
@@ -312,7 +313,24 @@ def _fit_hmmlearn_gaussian_hmm_1d(
     covars = np.asarray(model.covars_, dtype=float)
     sigma = np.sqrt(np.clip(covars.reshape(K, -1)[:, 0], 1e-12, None))
     A = _normalize_transition_matrix(np.asarray(model.transmat_, dtype=float))
-    init = _normalize_probability_vector(gamma[-1])
+    start_prob = _normalize_probability_vector(
+        np.asarray(model.startprob_, dtype=float)
+    )
+
+    # Scaled forward filtering: alpha_t = p(S_t | x_1:t, fitted parameters).
+    variance = np.maximum(sigma * sigma, 1e-12)
+    centered = x[:, None] - mu[None, :]
+    emission = np.exp(-0.5 * centered * centered / variance[None, :]) / np.sqrt(
+        2.0 * np.pi * variance[None, :]
+    )
+    filtered = np.zeros_like(emission)
+    alpha = start_prob * emission[0]
+    alpha = _normalize_probability_vector(alpha)
+    filtered[0] = alpha
+    for row in range(1, N):
+        alpha = (alpha @ A) * emission[row]
+        alpha = _normalize_probability_vector(alpha)
+        filtered[row] = alpha
 
     # Keep stable state ordering (ascending mean) and reorder transition
     # matrix/initial distribution accordingly.
@@ -320,8 +338,42 @@ def _fit_hmmlearn_gaussian_hmm_1d(
     mu = mu[order]
     sigma = sigma[order]
     A = A[np.ix_(order, order)]
-    init = _normalize_probability_vector(init[order])
-    return mu, sigma, A, init
+    start_prob = _normalize_probability_vector(start_prob[order])
+    gamma = gamma[:, order]
+    filtered = filtered[:, order]
+    return {
+        "mu": mu,
+        "sigma": sigma,
+        "trans": A,
+        "start_prob": start_prob,
+        "filtered_probabilities": filtered,
+        "smoothed_probabilities": gamma,
+        "last_filtered_probabilities": _normalize_probability_vector(filtered[-1]),
+        "state_occupancy": np.mean(gamma, axis=0),
+        "log_likelihood": float(model.score(x2)),
+        "converged": bool(getattr(getattr(model, "monitor_", None), "converged", False)),
+        "requested_n_states": int(requested_K),
+        "fitted_n_states": int(K),
+    }
+
+
+def _fit_hmmlearn_gaussian_hmm_1d(
+    x: np.ndarray,
+    n_states: int = 2,
+    max_iter: int = 80,
+    tol: float = 1e-6,
+    seed: Optional[int] = 42,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Compatibility helper for the Monte Carlo simulator."""
+    fit = fit_gaussian_hmm_1d(
+        x, n_states=n_states, max_iter=max_iter, tol=tol, seed=seed
+    )
+    return (
+        np.asarray(fit["mu"], dtype=float),
+        np.asarray(fit["sigma"], dtype=float),
+        np.asarray(fit["trans"], dtype=float),
+        np.asarray(fit["last_filtered_probabilities"], dtype=float),
+    )
 
 
 def estimate_transition_matrix_from_gamma(gamma: np.ndarray) -> np.ndarray:

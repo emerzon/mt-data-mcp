@@ -44,6 +44,7 @@ from .payload import (
 # Import from package submodules directly to avoid circular imports
 from .smoothing import (
     _canonicalize_regime_labels,
+    _confirm_state_changes_causally,
     _count_state_transitions,
     _normalize_state_probability_matrix,
     _smooth_short_state_runs,
@@ -225,8 +226,6 @@ def _normalize_volatility_signal(
 
 def _normalize_regime_method_name(method: Any) -> str:
     text = str(method or "").strip().lower()
-    if text == "gmm":
-        return "hmm"
     return text
 
 
@@ -814,12 +813,12 @@ _REGIME_METHOD_RUNTIME_GUIDANCE: Dict[str, Dict[str, str]] = {
     "hmm": {
         "speed_tier": "medium",
         "use_case": "probabilistic return/price state segmentation",
-        "cost_notes": "Gaussian mixture fit; usually cheaper than MS-AR",
+        "cost_notes": "Gaussian HMM fit with forward filtering",
     },
     "gmm": {
         "speed_tier": "medium",
-        "use_case": "alias for HMM-lite Gaussian mixture segmentation",
-        "cost_notes": "same runtime profile as hmm",
+        "use_case": "independent Gaussian mixture segmentation",
+        "cost_notes": "i.i.d. mixture fit without Markov transitions",
     },
     "clustering": {
         "speed_tier": "medium",
@@ -941,7 +940,7 @@ def regime_detect(  # noqa: C901
       caps bars analysed after the window is fetched; omitted limit uses the
       effective lookback cap.
     - method: Default is 'rule_based' (fast trend/ranging/transition classification).
-      Other options: 'bocpd' (Bayesian online change-point; Gaussian), 'pelt' (offline penalized change-point segmentation), 'hmm' / 'gmm' (Gaussian mixture/HMM-lite),
+      Other options: 'bocpd' (Bayesian online change-point; Gaussian), 'pelt' (offline penalized change-point segmentation), 'hmm' (Gaussian hidden Markov model), 'gmm' (i.i.d. Gaussian mixture),
       'ms_ar' (Markov-switching AR), 'clustering' (rolling-feature clustering via tsfresh + KMeans/Spectral),
       'garch' (GARCH-based volatility regimes),
       'wavelet' (multi-resolution wavelet energy regime detection via PyWavelets),
@@ -1693,15 +1692,20 @@ def regime_detect(  # noqa: C901
                 )
                 maxiter, _ = _coerce_param(p, "maxiter", default=100, cast=int)
                 res = mod.fit(disp=False, maxiter=maxiter)
-                smoothed = res.smoothed_marginal_probabilities
-                if hasattr(smoothed, "values"):
-                    smoothed = smoothed.values
-                probs = np.asarray(smoothed, dtype=float)
-                state = np.argmax(probs, axis=1)
-                state, probs, smoothing_meta = _smooth_short_state_runs(
-                    state=np.asarray(state, dtype=int),
-                    probs=probs,
-                    min_regime_bars=min_regime_bars_val,
+                inference = str(p.get("inference", "filtered")).strip().lower()
+                if inference not in {"filtered", "smoothed"}:
+                    return _finish({"error": "params.inference must be 'filtered' or 'smoothed'."})
+                marginal = (
+                    res.filtered_marginal_probabilities
+                    if inference == "filtered"
+                    else res.smoothed_marginal_probabilities
+                )
+                if hasattr(marginal, "values"):
+                    marginal = marginal.values
+                probs = np.asarray(marginal, dtype=float)
+                raw_state = np.argmax(probs, axis=1)
+                state, smoothing_meta = _confirm_state_changes_causally(
+                    np.asarray(raw_state, dtype=int), min_regime_bars_val
                 )
                 state, probs, canon_meta = _canonicalize_regime_labels(
                     state,
@@ -1753,6 +1757,9 @@ def regime_detect(  # noqa: C901
                     "n_states": int(n_states_msar),
                     "state_count_param": n_states_source,
                     "order": order,
+                    "inference": inference,
+                    "model_fit_scope": "full_window",
+                    "state_postprocess": "causal_confirmation",
                     "min_regime_bars": int(min_regime_bars_val),
                     "relabeled": bool(canon_meta.get("relabeled", False)),
                     "smoothing_applied": bool(
@@ -1786,7 +1793,7 @@ def regime_detect(  # noqa: C901
             )
             payload["reliability"] = _common_reliability(
                 reliability,
-                source="ms_ar_smoothed_probabilities",
+                source=f"ms_ar_{inference}_probabilities",
             )
 
             if output in ("summary", "compact"):
@@ -1831,53 +1838,103 @@ def regime_detect(  # noqa: C901
                 )
             )
 
-        elif method == "hmm":  # 'hmm' (mixture/HMM-lite)
+        elif method in {"hmm", "gmm"}:
             n_states, n_states_error, n_states_source, state_count_warnings = (
                 _resolve_state_count_param(
                     p,
                     default=2,
-                    method="hmm",
+                    method=method,
                 )
             )
             if n_states_error is not None:
                 return _finish({"error": n_states_error})
             if n_states is None or n_states < 2:
-                return _finish({"error": "n_states must be >= 2 for hmm."})
-            try:
-                from ...forecast.monte_carlo import fit_gaussian_mixture_1d
-            except Exception as ex:
-                return _finish({"error": f"HMM-lite import error: {ex}"})
-            fit_gaussian_mixture_1d = globals().get(
-                "fit_gaussian_mixture_1d", fit_gaussian_mixture_1d
-            )
-            w, mu, sigma, gamma, _ = fit_gaussian_mixture_1d(x, n_states=n_states)
+                return _finish({"error": f"n_states must be >= 2 for {method}."})
+            inference = str(p.get("inference", "filtered")).strip().lower()
+            if inference not in {"filtered", "smoothed"}:
+                return _finish({"error": "params.inference must be 'filtered' or 'smoothed'."})
+            hmm_fit: Dict[str, Any] = {}
+            if method == "hmm":
+                try:
+                    from ...forecast.monte_carlo import fit_gaussian_hmm_1d
+                except Exception as ex:
+                    return _finish({"error": f"Gaussian HMM import error: {ex}"})
+                fit_gaussian_hmm_1d = globals().get(
+                    "fit_gaussian_hmm_1d", fit_gaussian_hmm_1d
+                )
+                try:
+                    hmm_fit = fit_gaussian_hmm_1d(
+                        x,
+                        n_states=n_states,
+                        max_iter=int(p.get("maxiter", 80)),
+                        tol=float(p.get("tol", 1e-6)),
+                        seed=int(p.get("seed", 42)),
+                    )
+                except ImportError:
+                    return _finish({
+                        "error": "hmmlearn GaussianHMM is unavailable.",
+                        "error_code": "dependency_missing",
+                        "details": {"method": "hmm", "requires": ["hmmlearn"]},
+                    })
+                mu = np.asarray(hmm_fit["mu"], dtype=float)
+                sigma = np.asarray(hmm_fit["sigma"], dtype=float)
+                w = np.asarray(hmm_fit["state_occupancy"], dtype=float)
+                gamma = np.asarray(
+                    hmm_fit[f"{inference}_probabilities"], dtype=float
+                )
+            else:
+                try:
+                    from ...forecast.monte_carlo import fit_gaussian_mixture_1d
+                except Exception as ex:
+                    return _finish({"error": f"Gaussian mixture import error: {ex}"})
+                fit_gaussian_mixture_1d = globals().get(
+                    "fit_gaussian_mixture_1d", fit_gaussian_mixture_1d
+                )
+                w, mu, sigma, gamma, _ = fit_gaussian_mixture_1d(
+                    x, n_states=n_states
+                )
+                if "inference" in p:
+                    state_count_warnings.append(
+                        "params.inference does not apply to gmm responsibilities."
+                    )
             gamma_matrix = _normalize_state_probability_matrix(
                 gamma,
                 rows=x.size,
-                requested_states=n_states,
+                requested_states=len(mu),
             )
-            state = (
+            raw_state = (
                 np.argmax(gamma_matrix, axis=1)
                 if gamma_matrix.size
                 else np.zeros(x.size, dtype=int)
             )
-            gamma_smoothed: Optional[np.ndarray] = gamma_matrix
-            state, gamma_smoothed, smoothing_meta = _smooth_short_state_runs(
-                state=np.asarray(state, dtype=int),
-                probs=gamma_smoothed,
-                min_regime_bars=min_regime_bars_val,
+            state, smoothing_meta = _confirm_state_changes_causally(
+                np.asarray(raw_state, dtype=int), min_regime_bars_val
             )
-            state, gamma_smoothed, canon_meta = _canonicalize_regime_labels(
+            state, gamma_for_payload, canon_meta = _canonicalize_regime_labels(
                 state,
-                gamma_smoothed,
+                gamma_matrix,
                 x,
             )
             smoothing_meta["relabeled"] = canon_meta.get("relabeled", False)
-            gamma_for_payload = (
-                gamma_smoothed
-                if isinstance(gamma_smoothed, np.ndarray)
-                else gamma_matrix
-            )
+            if not isinstance(gamma_for_payload, np.ndarray):
+                gamma_for_payload = gamma_matrix
+            regime_params: Dict[str, Any] = {
+                "mu": [float(v) for v in mu.tolist()],
+                "sigma": [float(v) for v in sigma.tolist()],
+            }
+            if method == "hmm":
+                regime_params.update({
+                    "transition_matrix": [
+                        [float(v) for v in row]
+                        for row in np.asarray(hmm_fit["trans"], dtype=float).tolist()
+                    ],
+                    "initial_probabilities": [
+                        float(v) for v in np.asarray(hmm_fit["start_prob"], dtype=float).tolist()
+                    ],
+                    "state_occupancy": [float(v) for v in w.tolist()],
+                })
+            else:
+                regime_params["weights"] = [float(v) for v in w.tolist()]
             payload = {
                 "success": True,
                 "symbol": symbol,
@@ -1889,15 +1946,14 @@ def regime_detect(  # noqa: C901
                 "state_probabilities": [
                     [float(v) for v in row] for row in gamma_for_payload.tolist()
                 ],
-                "regime_params": {
-                    "weights": [float(v) for v in w.tolist()],
-                    "mu": [float(v) for v in mu.tolist()],
-                    "sigma": [float(v) for v in sigma.tolist()],
-                },
+                "regime_params": regime_params,
                 "params_used": {
                     "n_states": int(n_states),
                     "fitted_n_states": int(len(mu)),
                     "state_count_param": n_states_source,
+                    "inference": inference if method == "hmm" else "component_responsibility",
+                    "model_fit_scope": "full_window",
+                    "state_postprocess": "causal_confirmation",
                     "min_regime_bars": int(min_regime_bars_val),
                     "relabeled": bool(canon_meta.get("relabeled", False)),
                     "smoothing_applied": bool(
@@ -1911,15 +1967,33 @@ def regime_detect(  # noqa: C901
                     ),
                 },
             }
+            if method == "hmm":
+                payload["params_used"].update({
+                    "converged": bool(hmm_fit.get("converged", False)),
+                    "log_likelihood": float(hmm_fit.get("log_likelihood", 0.0)),
+                })
             if canon_meta.get("mapping"):
                 payload["params_used"]["label_mapping"] = canon_meta["mapping"]
             _append_warnings(payload, state_count_warnings)
             _append_warnings(payload, _smoothing_warnings(method, smoothing_meta))
+            if method == "hmm" and len(mu) < n_states:
+                _append_warnings(
+                    payload,
+                    [
+                        "HMM state collapse: requested "
+                        f"{int(n_states)} states but fitted {int(len(mu))}; "
+                        "regime output uses the reduced-state model."
+                    ],
+                )
             # Add reliability info
             reliability = _hmm_reliability_from_gamma(gamma_for_payload)
             payload["reliability"] = _common_reliability(
                 reliability,
-                source="hmm_state_probabilities",
+                source=(
+                    f"hmm_{inference}_probabilities"
+                    if method == "hmm"
+                    else "gmm_component_responsibilities"
+                ),
             )
 
             if output in ("summary", "compact"):
@@ -3059,7 +3133,7 @@ def regime_detect(  # noqa: C901
         elif method == "ensemble":
             # Consensus regime detection: run multiple fast methods and
             # aggregate their state_probabilities via soft or hard voting.
-            _STATE_METHODS = {"hmm", "ms_ar", "clustering", "garch", "wavelet"}
+            _STATE_METHODS = {"hmm", "gmm", "ms_ar", "clustering", "garch", "wavelet"}
             default_sub = ["bocpd", "hmm", "clustering", "wavelet"]
             sub_methods_raw = p.get("methods", default_sub)
             if isinstance(sub_methods_raw, str):

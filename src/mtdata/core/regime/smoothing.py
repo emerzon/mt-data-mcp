@@ -178,6 +178,57 @@ def _smooth_short_state_runs(
     }
 
 
+def _confirm_state_changes_causally(
+    state: np.ndarray,
+    min_regime_bars: int,
+) -> Tuple[np.ndarray, Dict[str, Any]]:
+    """Confirm state changes using past observations only.
+
+    A new raw state must persist for ``min_regime_bars`` consecutive rows
+    before it becomes the emitted state. Earlier rows are never revised.
+    """
+    raw = np.asarray(state, dtype=int)
+    if raw.size == 0:
+        return raw.copy(), {
+            "min_regime_bars": max(1, int(min_regime_bars)),
+            "postprocess": "causal_confirmation",
+            "transitions_before": 0,
+            "transitions_after": 0,
+        }
+    required = max(1, int(min_regime_bars))
+    emitted = np.empty_like(raw)
+    confirmed = int(raw[0])
+    candidate = confirmed
+    candidate_count = 0
+    emitted[0] = confirmed
+    for idx in range(1, raw.size):
+        observed = int(raw[idx])
+        if observed == confirmed:
+            candidate = confirmed
+            candidate_count = 0
+        else:
+            if observed != candidate:
+                candidate = observed
+                candidate_count = 1
+            else:
+                candidate_count += 1
+            if candidate_count >= required:
+                confirmed = candidate
+                candidate_count = 0
+        emitted[idx] = confirmed
+    before = _count_state_transitions(raw)
+    after = _count_state_transitions(emitted)
+    return emitted, {
+        "min_regime_bars": required,
+        "postprocess": "causal_confirmation",
+        "smoothing_applied": bool(np.any(emitted != raw)),
+        "transitions_before": before,
+        "transitions_after": after,
+        "pending_state": int(candidate) if candidate != confirmed else None,
+        "pending_bars": int(candidate_count),
+    }
+
+
 def _normalize_state_probability_matrix(
     probs: Any,
     *,
@@ -286,6 +337,7 @@ __all__ = [
     "_count_state_transitions",
     "_state_runs",
     "_smooth_short_state_runs",
+    "_confirm_state_changes_causally",
     "_normalize_state_probability_matrix",
     "_canonicalize_regime_labels",
 ]

@@ -5,6 +5,7 @@ from typing import Any, Dict, List, Literal, Optional
 import numpy as np
 
 from ..forecast.common import fetch_history as _fetch_history
+from ..shared.schema import DenoiseSpec, DetailLiteral, TimeframeLiteral
 from ..utils.barriers import (
     barrier_prices_are_valid as _barrier_prices_are_valid,
 )
@@ -15,12 +16,15 @@ from ..utils.barriers import (
     get_pip_size as _get_pip_size,
 )
 from ..utils.barriers import (
+    normalize_same_bar_policy,
+    validate_barrier_unit_family_exclusivity,
+)
+from ..utils.barriers import (
     normalize_trade_direction as _normalize_trade_direction,
 )
 from ..utils.barriers import (
     resolve_barrier_prices as _resolve_barrier_prices,
 )
-from ..utils.barriers import validate_barrier_unit_family_exclusivity
 from ..utils.denoise import _resolve_denoise_base_col
 from ..utils.mt5 import MT5ConnectionError, ensure_mt5_connection_or_raise
 from ..utils.utils import _format_time_minimal
@@ -28,7 +32,6 @@ from ._mcp_instance import mcp
 from .execution_logging import run_logged_operation
 from .mt5_gateway import create_mt5_gateway
 from .output_contract import normalize_output_detail
-from ..shared.schema import DenoiseSpec, DetailLiteral, TimeframeLiteral
 
 logger = logging.getLogger(__name__)
 _COMPACT_LABEL_SAMPLE_SIZE = 10
@@ -82,12 +85,17 @@ def _triple_barrier_sample_row(
     pip_size: float,
     barrier_kwargs: Dict[str, Any],
     price_digits: int = 0,
+    same_bar_flags: Optional[List[bool]] = None,
 ) -> Dict[str, Any]:
     label = int(labels[idx])
     row: Dict[str, Any] = {
         "entry_time": t_entry[idx],
         "label": label,
-        "outcome": _label_outcome(label),
+        "outcome": (
+            "same_bar_neutral"
+            if same_bar_flags and same_bar_flags[idx] and label == 0
+            else _label_outcome(label)
+        ),
         "holding_bars": hold[idx],
         "tp_time": tp_times[idx],
         "sl_time": sl_times[idx],
@@ -132,6 +140,7 @@ def _build_triple_barrier_outputs(
     direction_value: str,
     pip_size: float,
     barrier_kwargs: Dict[str, Any],
+    same_bar_policy: str = "sl_first",
 ) -> tuple[
     List[int],
     List[int],
@@ -212,6 +221,7 @@ def _build_triple_barrier_outputs(
     entries: List[str] = []
     tp_times: List[Optional[str]] = []
     sl_times: List[Optional[str]] = []
+    same_bar_flags: List[bool] = []
     max_favorable_moves_pct: List[float] = []
     max_adverse_moves_pct: List[float] = []
 
@@ -234,6 +244,8 @@ def _build_triple_barrier_outputs(
 
         tp_offset = int(hit_tp[idx])
         sl_offset = int(hit_sl[idx])
+        is_same_bar = bool(tp_offset > 0 and tp_offset == sl_offset)
+        same_bar_flags.append(is_same_bar)
         if tp_offset < 0 and sl_offset < 0:
             labels.append(0)
             hold.append(int(horizon))
@@ -244,6 +256,16 @@ def _build_triple_barrier_outputs(
             hold.append(tp_offset)
             tp_times.append(_format_time_minimal(times[idx + tp_offset]))
             sl_times.append(None)
+        elif is_same_bar and same_bar_policy == "tp_first":
+            labels.append(1)
+            hold.append(tp_offset)
+            tp_times.append(_format_time_minimal(times[idx + tp_offset]))
+            sl_times.append(_format_time_minimal(times[idx + sl_offset]))
+        elif is_same_bar and same_bar_policy == "neutral":
+            labels.append(0)
+            hold.append(tp_offset)
+            tp_times.append(_format_time_minimal(times[idx + tp_offset]))
+            sl_times.append(_format_time_minimal(times[idx + sl_offset]))
         elif sl_offset > 0 and (tp_offset < 0 or sl_offset <= tp_offset):
             labels.append(-1)
             hold.append(sl_offset)
@@ -283,6 +305,7 @@ def labels_triple_barrier(
     denoise: Optional[DenoiseSpec] = None,
     direction: Literal["long", "short"] = "long",  # type: ignore
     label_on: Literal["close", "high_low"] = "high_low",  # type: ignore
+    same_bar_policy: Literal["sl_first", "tp_first", "neutral"] = "sl_first",  # type: ignore
     detail: DetailLiteral = "compact",
     lookback: int = _DEFAULT_LABEL_LOOKBACK,
 ) -> Dict[str, Any]:
@@ -295,8 +318,8 @@ def labels_triple_barrier(
       Use exactly one barrier unit family per call; mixed units are rejected.
 
     label_on='high_low' considers intrabar extremes for barrier hits; 'close' uses closes only.
-    When both TP and SL are touched in the same high/low bar, the result is treated
-    conservatively as SL-first because the intrabar ordering is unknowable.
+    same_bar_policy explicitly resolves bars that touch both barriers; the default
+    is conservative SL-first because the intrabar ordering is unknowable.
     direction='long' or 'short' controls which side is treated as TP/SL.
     Outputs label: +1 (TP first), -1 (SL first), 0 (neither by horizon), and holding_bars until decision.
     """
@@ -318,7 +341,18 @@ def labels_triple_barrier(
             direction_value, direction_error = _normalize_trade_direction(direction)
             if direction_error or direction_value is None:
                 return {"error": direction_error or "Invalid direction."}
+            try:
+                same_bar_policy_value = normalize_same_bar_policy(same_bar_policy)
+            except ValueError as exc:
+                return {"error": str(exc)}
             warnings_out: List[str] = []
+            raw_detail = str(detail or "").strip().lower()
+            if raw_detail not in {"full", "standard", "summary", "compact"}:
+                return {
+                    "error": (
+                        "Invalid detail level. Use 'compact', 'standard', 'full', or 'summary'."
+                    )
+                }
             output_mode = normalize_output_detail(detail)
             if output_mode not in {"full", "standard", "summary", "compact"}:
                 return {
@@ -386,6 +420,14 @@ def labels_triple_barrier(
                 **barrier_kwargs,
             )
             if sample_tp is None or sample_sl is None:
+                if tp_abs is not None or sl_abs is not None:
+                    return {
+                        "error": (
+                            "Invalid absolute TP/SL levels for the entry price. "
+                            "tp_abs/sl_abs are price levels; use tp_pct/sl_pct or "
+                            "tp_ticks/sl_ticks for offset-style barriers."
+                        )
+                    }
                 return {
                     "error": (
                         "Missing barriers. Provide either tp_pct and sl_pct, "
@@ -472,7 +514,12 @@ def labels_triple_barrier(
                 direction_value=direction_value,
                 pip_size=pip_size,
                 barrier_kwargs=barrier_kwargs,
+                same_bar_policy=same_bar_policy_value,
             )
+            same_bar_flags = [
+                tp_time is not None and tp_time == sl_time
+                for tp_time, sl_time in zip(tp_times, sl_times)
+            ]
 
             rows_before_labeling = int(N)
             labelable_rows = int(max(0, max_entry_index))
@@ -504,6 +551,7 @@ def labels_triple_barrier(
                 "timeframe": timeframe,
                 "direction": direction_value,
                 "horizon": horizon_bars,
+                "same_bar_policy": same_bar_policy_value,
                 "rows_before_labeling": rows_before_labeling,
                 "rows_after_labeling": rows_after_labeling,
                 "horizon_trimmed": horizon_trimmed,
@@ -514,7 +562,10 @@ def labels_triple_barrier(
                 "sample_limit": sample_limit,
                 "entries": t_entry,
                 "labels": labels,
-                "outcomes": [_label_outcome(label) for label in labels],
+                "outcomes": [
+                    "same_bar_neutral" if same_bar and label == 0 else _label_outcome(label)
+                    for label, same_bar in zip(labels, same_bar_flags)
+                ],
                 "holding_bars": hold,
                 "tp_time": tp_times,
                 "sl_time": sl_times,
@@ -671,6 +722,7 @@ def labels_triple_barrier(
                             hold=hold,
                             tp_times=tp_times,
                             sl_times=sl_times,
+                            same_bar_flags=same_bar_flags,
                             direction_value=direction_value,
                             pip_size=pip_size,
                             barrier_kwargs=barrier_kwargs,

@@ -16,8 +16,23 @@ from mtdata.forecast.monte_carlo import (
     _DEGEN_MIN_OCCUPANCY_FRAC,
     _fit_hmmlearn_gaussian_hmm_1d,
     _is_hmm_degenerate,
+    fit_gaussian_hmm_1d,
     simulate_hmm_mc,
 )
+
+
+def test_true_hmm_fit_exposes_markov_and_inference_outputs() -> None:
+    prices = _two_regime_prices(n=300)
+    returns = np.diff(np.log(prices))
+    fit = fit_gaussian_hmm_1d(returns, n_states=2, seed=7)
+
+    transition = np.asarray(fit["trans"], dtype=float)
+    filtered = np.asarray(fit["filtered_probabilities"], dtype=float)
+    smoothed = np.asarray(fit["smoothed_probabilities"], dtype=float)
+    assert transition.shape == (fit["fitted_n_states"], fit["fitted_n_states"])
+    assert np.allclose(transition.sum(axis=1), 1.0)
+    assert filtered.shape == smoothed.shape == (len(returns), fit["fitted_n_states"])
+    assert np.allclose(filtered.sum(axis=1), 1.0)
 
 
 # ---------------------------------------------------------------------------

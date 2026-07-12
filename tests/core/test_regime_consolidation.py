@@ -7,6 +7,16 @@ from mtdata.core.regime.api import (
     _smooth_short_state_runs,
     _summary_only_payload,
 )
+from mtdata.core.regime.smoothing import _confirm_state_changes_causally
+
+
+def test_causal_state_confirmation_never_rewrites_prefix() -> None:
+    raw = np.array([0, 0, 1, 1, 0, 1, 1, 1], dtype=int)
+    full, meta = _confirm_state_changes_causally(raw, 3)
+    prefix, _ = _confirm_state_changes_causally(raw[:6], 3)
+    assert full[:6].tolist() == prefix.tolist()
+    assert full.tolist() == [0, 0, 0, 0, 0, 0, 0, 1]
+    assert meta["postprocess"] == "causal_confirmation"
 
 
 class TestSummaryOnlyPayload:

@@ -12,7 +12,9 @@ from ..utils.barriers import (
     get_pip_size as _get_pip_size,
 )
 from ..utils.barriers import (
+    normalize_same_bar_policy,
     normalize_trade_direction,
+    resolve_same_bar_probabilities,
 )
 from ..utils.utils import UNPARSED_BOOL, parse_bool_like
 from ..utils.utils import parse_kv_or_json as _parse_kv_or_json
@@ -40,7 +42,6 @@ from .barriers_shared import (
     LOW_PRACTICAL_WIN_PROB_THRESHOLD,
     _annotate_candidate_metrics,
     _auto_barrier_method,
-    barrier_method_error,
     _binomial_se,
     _binomial_wilson_95,
     _brownian_bridge_hits,
@@ -53,9 +54,10 @@ from .barriers_shared import (
     _resolve_reference_prices,
     _safe_float,
     _scale_price_paths_to_reference,
-    _stable_barrier_seed,
     _sort_candidate_results,
+    _stable_barrier_seed,
     _symbol_price_precision,
+    barrier_method_error,
     normalize_barrier_method,
     normalize_barrier_seed,
     offset_barrier_seed,
@@ -127,6 +129,7 @@ class _BarrierEvaluationContext:
     max_prob_no_hit_val: Optional[float]
     min_prob_resolve_val: Optional[float]
     max_median_time_val: Optional[float]
+    same_bar_policy: str = "sl_first"
 
 
 @dataclass(frozen=True)
@@ -468,13 +471,20 @@ def _evaluate_barrier_candidate(
     n_losses = int(losses.sum())
     n_ties = int(ties.sum())
 
-    prob_win = n_wins / sims_total
-    prob_loss = n_losses / sims_total
-    prob_tie = n_ties / sims_total
-    prob_neutral = max(0.0, 1.0 - prob_win - prob_loss - prob_tie)
-    prob_resolve = 1.0 - prob_neutral
-    prob_tp_first = (n_wins + 0.5 * n_ties) / sims_total
-    prob_sl_first = (n_losses + 0.5 * n_ties) / sims_total
+    prob_tp_strict = n_wins / sims_total
+    prob_sl_strict = n_losses / sims_total
+    prob_same_bar = n_ties / sims_total
+    prob_no_hit = max(0.0, 1.0 - prob_tp_strict - prob_sl_strict - prob_same_bar)
+    resolved = resolve_same_bar_probabilities(
+        tp_strict=prob_tp_strict,
+        sl_strict=prob_sl_strict,
+        same_bar=prob_same_bar,
+        no_hit=prob_no_hit,
+        policy=context.same_bar_policy,
+    )
+    prob_tp_first = resolved["prob_tp_first"]
+    prob_sl_first = resolved["prob_sl_first"]
+    prob_resolve = resolved["prob_resolve"]
     effective_prob_win = prob_tp_first
     effective_prob_loss = prob_sl_first
 
@@ -492,15 +502,17 @@ def _evaluate_barrier_candidate(
 
     # Terminal PnL contribution from paths that never hit TP or SL.
     unresolved_mask = ~(wins | losses | ties)
+    if context.same_bar_policy == "neutral":
+        unresolved_mask = unresolved_mask | ties
     unresolved_mean_pnl = _unresolved_terminal_pnl(
         eval_paths, unresolved_mask, context=context,
     )
-    ev_unresolved = prob_neutral * unresolved_mean_pnl
+    ev_unresolved = resolved["prob_unresolved"] * unresolved_mean_pnl
     # Unresolved paths still entail a round-trip entry+exit at the horizon,
     # so subtract full trading cost when costs are configured. Without this,
     # EV (net) understates costs by prob_neutral * cost_per_trade.
     ev_unresolved_net = (
-        prob_neutral * (unresolved_mean_pnl - context.ev_deduct_cost)
+        resolved["prob_unresolved"] * (unresolved_mean_pnl - context.ev_deduct_cost)
         if context.has_trading_costs
         else ev_unresolved
     )
@@ -511,11 +523,11 @@ def _evaluate_barrier_candidate(
         if context.has_trading_costs
         else ev_gross
     )
-    edge = prob_win - prob_loss
-    win_lo, win_hi = _binomial_wilson_95(prob_win, int(sims_total))
-    loss_lo, loss_hi = _binomial_wilson_95(prob_loss, int(sims_total))
-    tie_lo, tie_hi = _binomial_wilson_95(prob_tie, int(sims_total))
-    no_hit_lo, no_hit_hi = _binomial_wilson_95(prob_neutral, int(sims_total))
+    edge = effective_prob_win - effective_prob_loss
+    win_lo, win_hi = _binomial_wilson_95(effective_prob_win, int(sims_total))
+    loss_lo, loss_hi = _binomial_wilson_95(effective_prob_loss, int(sims_total))
+    tie_lo, tie_hi = _binomial_wilson_95(prob_same_bar, int(sims_total))
+    no_hit_lo, no_hit_hi = _binomial_wilson_95(prob_no_hit, int(sims_total))
 
     kelly_val = 0.0
     if net_rr > 0:
@@ -570,7 +582,7 @@ def _evaluate_barrier_candidate(
 
     if context.min_prob_win_val is not None and effective_prob_win < context.min_prob_win_val:
         return None, False
-    if context.max_prob_no_hit_val is not None and prob_neutral > context.max_prob_no_hit_val:
+    if context.max_prob_no_hit_val is not None and resolved["prob_unresolved"] > context.max_prob_no_hit_val:
         return None, False
     if context.min_prob_resolve_val is not None and prob_resolve < context.min_prob_resolve_val:
         return None, False
@@ -589,19 +601,17 @@ def _evaluate_barrier_candidate(
         "rr": rr,
         "tp_price": float(tp_price),
         "sl_price": float(sl_price),
-        "prob_win": prob_win,
-        "prob_loss": prob_loss,
-        "prob_tp_first": prob_tp_first,
-        "prob_sl_first": prob_sl_first,
-        "prob_no_hit": prob_neutral,
-        "prob_tie": prob_tie,
-        "prob_win_se": _binomial_se(prob_win, int(sims_total)),
-        "prob_loss_se": _binomial_se(prob_loss, int(sims_total)),
-        "prob_tie_se": _binomial_se(prob_tie, int(sims_total)),
-        "prob_no_hit_se": _binomial_se(prob_neutral, int(sims_total)),
+        "same_bar_policy": context.same_bar_policy,
+        **resolved,
+        "prob_win": effective_prob_win,
+        "prob_loss": effective_prob_loss,
+        "prob_win_se": _binomial_se(effective_prob_win, int(sims_total)),
+        "prob_loss_se": _binomial_se(effective_prob_loss, int(sims_total)),
+        "prob_same_bar_se": _binomial_se(prob_same_bar, int(sims_total)),
+        "prob_no_hit_se": _binomial_se(prob_no_hit, int(sims_total)),
         "prob_win_ci95": {"low": float(win_lo), "high": float(win_hi)},
         "prob_loss_ci95": {"low": float(loss_lo), "high": float(loss_hi)},
-        "prob_tie_ci95": {"low": float(tie_lo), "high": float(tie_hi)},
+        "prob_same_bar_ci95": {"low": float(tie_lo), "high": float(tie_hi)},
         "prob_no_hit_ci95": {"low": float(no_hit_lo), "high": float(no_hit_hi)},
         "prob_resolve": prob_resolve,
         "ev": ev_val,
@@ -1071,6 +1081,12 @@ def forecast_barrier_optimize(  # noqa: C901
             return {"error": direction_error}
 
         params_dict = _parse_kv_or_json(params)
+        try:
+            same_bar_policy_value = normalize_same_bar_policy(
+                params_dict.get("same_bar_policy", "sl_first")
+            )
+        except ValueError as exc:
+            return {"error": str(exc)}
         if "profile" in params_dict:
             return {
                 "error": (
@@ -1641,7 +1657,8 @@ def forecast_barrier_optimize(  # noqa: C901
             metric_keys = [
                 'tp', 'sl', 'rr', 'tp_price', 'sl_price',
                 'prob_win', 'prob_loss', 'prob_tp_first', 'prob_sl_first',
-                'prob_no_hit', 'prob_tie', 'prob_resolve',
+                'prob_tp_strict_first', 'prob_sl_strict_first',
+                'prob_no_hit', 'prob_same_bar', 'prob_resolve', 'prob_unresolved',
                 'ev', 'ev_cond', 'edge', 'breakeven_win_rate', 'edge_vs_breakeven',
                 'kelly', 'kelly_cond',
                 'ev_per_bar', 'profit_factor', 'utility',
@@ -2284,6 +2301,7 @@ def forecast_barrier_optimize(  # noqa: C901
             max_prob_no_hit_val=max_prob_no_hit_val,
             min_prob_resolve_val=min_prob_resolve_val,
             max_median_time_val=max_median_time_val,
+            same_bar_policy=same_bar_policy_value,
         )
 
         def _evaluate(
@@ -2354,8 +2372,15 @@ def forecast_barrier_optimize(  # noqa: C901
 
             prob_win_series = cum_wins / trials
             prob_loss_series = cum_losses / trials
-            prob_tp_first_series = (cum_wins + 0.5 * cum_ties) / trials
-            prob_sl_first_series = (cum_losses + 0.5 * cum_ties) / trials
+            if same_bar_policy_value == "tp_first":
+                prob_tp_first_series = (cum_wins + cum_ties) / trials
+                prob_sl_first_series = cum_losses / trials
+            elif same_bar_policy_value == "neutral":
+                prob_tp_first_series = cum_wins / trials
+                prob_sl_first_series = cum_losses / trials
+            else:
+                prob_tp_first_series = cum_wins / trials
+                prob_sl_first_series = (cum_losses + cum_ties) / trials
             prob_resolve_series = cum_resolves / trials
 
             net_reward = reward - cost_per_trade if has_trading_costs else reward
@@ -2379,7 +2404,13 @@ def forecast_barrier_optimize(  # noqa: C901
             path_payoff = (
                 wins * net_reward
                 - losses * net_risk
-                + ties * (0.5 * net_reward - 0.5 * net_risk)
+                + ties * (
+                    net_reward
+                    if same_bar_policy_value == "tp_first"
+                    else 0.0
+                    if same_bar_policy_value == "neutral"
+                    else -net_risk
+                )
                 + unresolved_payoff
             )
             cumulative_payoff = np.cumsum(path_payoff)
@@ -2944,8 +2975,9 @@ def forecast_barrier_optimize(  # noqa: C901
                             reward=float(best.get('tp', 0.0)),
                             risk=float(best.get('sl', 0.0)),
                             cost_per_trade=float(cost_per_trade),
+                            same_bar_policy=same_bar_policy_value,
                             n_bootstrap=n_bootstrap_val,
-                            seed=seed,
+                            seed=request_seed_base,
                         )
                         if bootstrap_result:
                             statistical_analysis['bootstrap_uncertainty'] = bootstrap_result

@@ -247,6 +247,7 @@ class ForecastBarrierProbRequest(BaseModel):
     horizon: int = Field(12, ge=1, le=MAX_FORECAST_HORIZON)
     method: str = "hmm_mc"
     direction: str = "long"
+    same_bar_policy: Literal["sl_first", "tp_first", "neutral"] = "sl_first"
     tp_abs: Optional[float] = Field(None, description="Take-profit absolute price. Do not combine with percent or tick barriers.")
     sl_abs: Optional[float] = Field(None, description="Stop-loss absolute price. Do not combine with percent or tick barriers.")
     tp_pct: Optional[float] = Field(None, description="Take-profit percent move, e.g. 2.0 for 2%. Do not combine with price or tick barriers.")
@@ -315,6 +316,7 @@ class ForecastBarrierOptimizeRequest(BaseModel):
     horizon: int = Field(12, ge=1, le=MAX_FORECAST_HORIZON)
     method: str = "auto"
     direction: str = "long"
+    same_bar_policy: Literal["sl_first", "tp_first", "neutral"] = "sl_first"
     mode: str = "pct"
     params: Optional[Dict[str, Any]] = None
     denoise: Optional[DenoiseSpec] = None

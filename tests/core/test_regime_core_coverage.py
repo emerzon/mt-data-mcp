@@ -812,6 +812,7 @@ class TestRegimeDetectMSAR:
         ]
         mock_res = MagicMock()
         mock_res.smoothed_marginal_probabilities = probs
+        mock_res.filtered_marginal_probabilities = probs
         mock_res.mle_retvals = {"converged": np.bool_(False)}
         mock_mod = MagicMock()
         mock_mod.return_value = mock_mod
@@ -934,7 +935,7 @@ class TestRegimeDetectHMM:
     @patch(_FMT, side_effect=_time_fmt_stub)
     @patch(_DENOISE, return_value="close")
     @patch(_FETCH)
-    def test_gmm_alias_routes_to_hmm_path(self, mock_fetch, mock_denoise, mock_fmt):
+    def test_gmm_is_a_distinct_mixture_method(self, mock_fetch, mock_denoise, mock_fmt):
         df = _make_df(60)
         mock_fetch.return_value = df
         gamma = np.random.default_rng(20).random((59, 2))
@@ -950,7 +951,8 @@ class TestRegimeDetectHMM:
             fn = _get_regime_detect()
             res = fn("EURUSD", limit=60, method="gmm", detail="full")
         assert isinstance(res, dict)
-        assert res.get("method") == "hmm"
+        assert res.get("method") == "gmm"
+        assert "transition_matrix" not in res["regime_params"]
         assert "regime_params" in res
 
     @patch(_FMT, side_effect=_time_fmt_stub)
@@ -976,7 +978,7 @@ class TestRegimeDetectHMM:
         ):
             fn = _get_regime_detect()
             res = fn(
-                "EURUSD", limit=30, method="hmm", detail="summary", min_regime_bars=2
+                "EURUSD", limit=30, method="gmm", detail="summary", min_regime_bars=2
             )
         assert isinstance(res, dict)
         summary = res.get("summary", {})
@@ -1031,7 +1033,7 @@ class TestRegimeDetectHMM:
         mu = np.array([0.0])
         sigma = np.array([0.001])
         with patch(
-            "mtdata.forecast.monte_carlo.fit_gaussian_mixture_1d",
+            "mtdata.core.regime.api.fit_gaussian_mixture_1d",
             return_value=(w, mu, sigma, gamma, None),
             create=True,
         ):
@@ -1039,14 +1041,14 @@ class TestRegimeDetectHMM:
             res = fn(
                 "EURUSD",
                 limit=50,
-                method="hmm",
+                method="gmm",
                 params={"n_states": 3},
                 detail="full",
                 include_series=True,
             )
         assert isinstance(res, dict)
-        assert len(res["series"]["state_probabilities"][0]) == 3
-        assert res["series"]["state_probabilities"][0] == [1.0, 0.0, 0.0]
+        assert len(res["series"]["state_probabilities"][0]) == 1
+        assert res["series"]["state_probabilities"][0] == [1.0]
         assert res["params_used"]["fitted_n_states"] == 1
 
     @patch(_FMT, side_effect=_time_fmt_stub)
@@ -1119,7 +1121,7 @@ class TestRegimeDetectHMM:
             create=True,
         ):
             fn = _get_regime_detect()
-            res = fn("EURUSD", limit=12, method="hmm", detail="full")
+            res = fn("EURUSD", limit=12, method="gmm", detail="full")
 
         assert res["params_used"]["relabeled"] is True
         assert res["params_used"]["label_mapping"] == {"1": 0, "0": 1}

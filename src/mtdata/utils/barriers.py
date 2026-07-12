@@ -1,8 +1,11 @@
 import math
 from typing import Any, Dict, Literal, Optional, Tuple
 
-from .mt5 import get_symbol_info_cached
 from .coercion import coerce_finite_float
+from .mt5 import get_symbol_info_cached
+
+SameBarPolicy = Literal["sl_first", "tp_first", "neutral"]
+SAME_BAR_POLICIES = {"sl_first", "tp_first", "neutral"}
 
 _BARRIER_FAMILY_FIELDS = (
     ("abs", ("tp_abs", "sl_abs")),
@@ -12,6 +15,47 @@ _BARRIER_FAMILY_FIELDS = (
 _BARRIER_FAMILY_ERROR = (
     "Use one TP/SL barrier unit family: tp_abs/sl_abs, tp_pct/sl_pct, or tp_ticks/sl_ticks."
 )
+
+
+def normalize_same_bar_policy(value: Any) -> SameBarPolicy:
+    """Validate the common TP/SL same-bar resolution policy."""
+    policy = str(value or "sl_first").strip().lower()
+    if policy not in SAME_BAR_POLICIES:
+        raise ValueError(
+            "same_bar_policy must be 'sl_first', 'tp_first', or 'neutral'."
+        )
+    return policy  # type: ignore[return-value]
+
+
+def resolve_same_bar_probabilities(
+    *,
+    tp_strict: float,
+    sl_strict: float,
+    same_bar: float,
+    no_hit: float,
+    policy: Any,
+) -> Dict[str, float]:
+    """Return raw and policy-resolved mutually exclusive barrier probabilities."""
+    normalized = normalize_same_bar_policy(policy)
+    tp_resolved = float(tp_strict)
+    sl_resolved = float(sl_strict)
+    unresolved = float(no_hit)
+    if normalized == "sl_first":
+        sl_resolved += float(same_bar)
+    elif normalized == "tp_first":
+        tp_resolved += float(same_bar)
+    else:
+        unresolved += float(same_bar)
+    return {
+        "prob_tp_strict_first": float(tp_strict),
+        "prob_sl_strict_first": float(sl_strict),
+        "prob_same_bar": float(same_bar),
+        "prob_no_hit": float(no_hit),
+        "prob_tp_first": tp_resolved,
+        "prob_sl_first": sl_resolved,
+        "prob_resolve": tp_resolved + sl_resolved,
+        "prob_unresolved": unresolved,
+    }
 
 
 def validate_barrier_unit_family_exclusivity(values: Any) -> Any:

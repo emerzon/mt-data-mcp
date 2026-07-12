@@ -472,7 +472,7 @@ def _interpret_regime_label(
         return f"price_regime_{regime_id}"
 
     if (
-        method in ("hmm", "ms_ar", "clustering")
+        method in ("hmm", "gmm", "ms_ar", "clustering")
         and mu is not None
         and sigma is not None
     ):
@@ -562,7 +562,7 @@ def _build_regime_descriptions(
     weights_list = regime_params.get("weights")
 
     # Only skip if we don't have the expected parameters for this method type
-    if method in ("hmm", "ms_ar", "garch") and (not mu_list or not sigma_list):
+    if method in ("hmm", "gmm", "ms_ar", "garch") and (not mu_list or not sigma_list):
         return {}
 
     if not isinstance(mu_list, (list, tuple)) or not isinstance(
@@ -615,7 +615,7 @@ def _build_regime_descriptions(
             )
 
         desc: Dict[str, Any] = {"label": label}
-        if method == "hmm" and target_name != "price" and mu is not None and sigma is not None:
+        if method in {"hmm", "gmm"} and target_name != "price" and mu is not None and sigma is not None:
             stat_label = label
             label = _trader_hmm_label(float(mu), float(sigma))
             desc["label"] = label
@@ -700,7 +700,7 @@ def _consolidate_payload(  # noqa: C901
                     params_used["relabeled"] = True
                     params_used["label_mapping"] = canon_meta.get("mapping", {})
 
-        elif method in ("ms_ar", "hmm", "clustering", "garch", "wavelet", "ensemble"):
+        elif method in ("ms_ar", "hmm", "gmm", "clustering", "garch", "wavelet", "ensemble"):
             raw_state = payload.get("state")
             if isinstance(raw_state, list):
                 states = raw_state
@@ -847,7 +847,7 @@ def _consolidate_payload(  # noqa: C901
             target=payload.get("target"),
             # HMM parameter arrays remain in model-native order. Other methods
             # derive regime_params after canonicalizing their state labels.
-            label_mapping=label_mapping if method == "hmm" else None,
+            label_mapping=label_mapping if method in {"hmm", "gmm"} else None,
         )
 
         final_segments = []
