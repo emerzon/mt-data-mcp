@@ -250,6 +250,15 @@ Canonical fields for successful compact/full JSON responses:
 
 `current_regime.regime_confidence` and `regimes[].regime_confidence` are the canonical regime-confidence keys. Reliability diagnostics keep their own `reliability.confidence` field.
 
+**Method-specific meaning of `regime_confidence`:**
+
+| Method | Meaning |
+|--------|---------|
+| `hmm`, `gmm`, `ms_ar`, `clustering`, … | Average posterior probability of the assigned state over the segment (classification confidence). |
+| `bocpd` | Segment **stability**: `1 - mean(change-point probability)` over bars in the segment. High values mean low internal CP mass (stable stretch). Boundary evidence is separate: `transition_prob_at_start` and `avg_transition_prob`. |
+
+Do not treat BOCPD `regime_confidence` as "how sure we are of a bullish/bearish label"; BOCPD segments are change-point intervals, and bias labels (when present) come from post-change return statistics.
+
 Volatility words in state labels (`low_vol`, `high_vol`, `quiet`, and
 `volatile`) rank the fitted states within that run. They are not absolute
 thresholds and should not be compared across symbols or timeframes. Use the

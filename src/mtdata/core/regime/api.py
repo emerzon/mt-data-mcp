@@ -1,6 +1,7 @@
 """Regime detection implementation."""
 
 import logging
+import math
 import time
 import warnings
 from collections import Counter
@@ -987,10 +988,10 @@ def regime_detect(  # noqa: C901
           Labels like 'positive_low_vol' describe regime characteristics (return + volatility).
           Reliability based on model fit or cluster separation.
         - 'garch': Volatility regime detection using GARCH(1,1) model.
-          n_states is AUTO-DETECTED by default based on volatility coefficient of variation (CV):
-            CV > 2.0 → 4 states (very_low/low/high/very_high) for very volatile assets (BTC, meme stocks)
-            CV > 1.0 → 3 states (low/moderate/high) for moderately volatile assets
-            CV ≤ 1.0 → 2 states (low/high) for stable assets (major forex pairs)
+          n_states is AUTO-DETECTED by default from realized-vol percentile spread
+          (vol_ratio_90_10) plus return kurtosis (see docs/forecast/REGIMES.md):
+            wider 90/10 vol spread and/or heavy tails → more states (up to 4)
+            tighter spreads → 2 states (low/high)
           Explicit n_states parameter overrides auto-detection.
           Uses percentile-based classification with volatility characteristics reported in output.
         - 'rule_based': Returns `current_regime` and a single-item `regimes` list with
@@ -1221,7 +1222,28 @@ def regime_detect(  # noqa: C901
                 )
 
             if "hazard_lambda" in p and p.get("hazard_lambda") is not None:
-                hazard_lambda = int(p.get("hazard_lambda"))
+                raw_hazard = p.get("hazard_lambda")
+                try:
+                    hazard_f = float(raw_hazard)
+                except (TypeError, ValueError):
+                    return _finish(
+                        {
+                            "error": (
+                                f"params.hazard_lambda must be a positive integer "
+                                f"(got {raw_hazard!r})."
+                            )
+                        }
+                    )
+                if not math.isfinite(hazard_f) or hazard_f != int(hazard_f) or int(hazard_f) < 1:
+                    return _finish(
+                        {
+                            "error": (
+                                "params.hazard_lambda must be a positive integer "
+                                f"(got {raw_hazard!r})."
+                            )
+                        }
+                    )
+                hazard_lambda = int(hazard_f)
             else:
                 hazard_lambda = int(auto_hazard)
                 hazard_src = (
@@ -1672,7 +1694,8 @@ def regime_detect(  # noqa: C901
                 return _finish({"error": n_states_error})
             if n_states_msar is None or n_states_msar < 2:
                 return _finish({"error": "n_states must be >= 2 for ms_ar."})
-            order, _ = _coerce_param(p, "order", default=0, cast=int)
+            # Default AR(1) so MS-AR is an actual switching autoregression, not intercept-only.
+            order, _ = _coerce_param(p, "order", default=1, cast=int)
             try:
                 mod = MarkovRegression(
                     endog=x,

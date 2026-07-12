@@ -844,10 +844,11 @@ def _consolidate_payload(  # noqa: C901
                     }
                 )
 
-        # Post-process segments for readability
-        # For BOCPD, regime_confidence is derived from average transition probability.
-        # Maybe we want the PEAK prob? or just drop it.
-        # For HMM, regime_confidence is avg prob of that state.
+        # Post-process segments for readability.
+        # BOCPD: regime_confidence = 1 - mean(cp_prob over segment) = segment
+        # stability (low internal change-point mass), not label-class confidence.
+        # Peak boundary evidence is exposed separately as transition_prob_at_start.
+        # HMM/GMM/etc.: regime_confidence is average state probability over the segment.
 
         params_used = payload.get("params_used")
         label_mapping = (
