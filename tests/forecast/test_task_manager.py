@@ -187,6 +187,55 @@ class TestTaskManagerBasic(_TaskManagerTestCase):
         self.assertTrue(new2)
         self.assertNotEqual(tid1, tid2)
 
+    def test_forecast_request_hash_uses_resolved_training_context(self):
+        fake = _FakeMethod()
+        context = SimpleNamespace(
+            method_l="fake",
+            data_scope="EURUSD_H1",
+            target_series=_make_series(),
+            horizon=5,
+            seasonality=18,
+            method_params={"lr": 0.01},
+            exog_used=None,
+            timeframe="H1",
+        )
+
+        with (
+            patch("mtdata.forecast.task_manager.ForecastRegistry") as mock_reg,
+            patch(
+                "mtdata.forecast.forecast_engine.build_training_context",
+                return_value=context,
+            ),
+            patch.object(self.tm, "_submit_spec", return_value=("task-1", True)) as submit,
+        ):
+            mock_reg.get.return_value = fake
+            mock_reg.get_method_info.return_value = {
+                "training_category": "fast",
+                "supports_training": True,
+            }
+            result = self.tm.submit_forecast_request(
+                symbol="EURUSD",
+                timeframe="H1",
+                method_name="fake",
+                horizon=5,
+                params={"lr": 0.01},
+            )
+
+        self.assertEqual(result, ("task-1", True))
+        spec = submit.call_args.args[0]
+        expected_hash = ForecastMethod.hash_fingerprint(
+            fake.training_fingerprint(
+                horizon=5,
+                seasonality=18,
+                params={"lr": 0.01, "quantity": "price"},
+                timeframe="H1",
+                has_exog=False,
+            )
+        )
+        self.assertEqual(spec.task_kind, "prepared")
+        self.assertEqual(spec.seasonality, 18)
+        self.assertEqual(spec.params_hash, expected_hash)
+
     def test_progress_and_heartbeat_update_task(self):
         fake = _FakeMethod(delay=0.05)
         with patch("mtdata.forecast.task_manager.ForecastRegistry") as mock_reg:

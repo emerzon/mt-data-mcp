@@ -780,46 +780,47 @@ class TaskManager:
     ) -> tuple[str, bool]:
         if self._shutdown:
             raise RuntimeError("TaskManager is shut down")
-        from .common import default_seasonality
+        from .forecast_engine import build_training_context
 
         info = ForecastRegistry.get_method_info(method_name)
         if not info.get("supports_training"):
             raise ValueError(f"Method '{method_name}' does not support separate training.")
 
-        data_scope = f"{symbol}_{timeframe}"
         request_params = dict(params or {})
-        if request_params.get("seasonality") is not None:
-            seasonality = int(request_params["seasonality"])
-        else:
-            seasonality = int(default_seasonality(timeframe))
-        params_for_hash = dict(request_params)
+        context = build_training_context(
+            symbol=symbol,
+            timeframe=timeframe,
+            method=method_name,
+            horizon=int(horizon),
+            lookback=lookback,
+            params=request_params,
+            quantity=quantity,
+        )
+        params_for_hash = dict(context.method_params)
         params_for_hash["quantity"] = str(quantity)
         canonical_hash = self._compute_params_hash(
-            method_name,
-            horizon=int(horizon),
-            seasonality=seasonality,
+            context.method_l,
+            horizon=context.horizon,
+            seasonality=context.seasonality,
             params=params_for_hash,
-            timeframe=str(timeframe),
-            has_exog=False,
+            timeframe=context.timeframe,
+            has_exog=context.exog_used is not None,
         )
         spec = _TrainingSpec(
-            task_kind="forecast_request",
-            method_name=method_name,
-            data_scope=data_scope,
+            task_kind="prepared",
+            method_name=context.method_l,
+            data_scope=context.data_scope,
             params_hash=canonical_hash,
-            horizon=int(horizon),
-            seasonality=seasonality,
-            params=dict(request_params),
-            timeframe=str(timeframe),
-            request_payload={
-                "symbol": symbol,
-                "timeframe": timeframe,
-                "method": method_name,
-                "horizon": int(horizon),
-                "lookback": lookback,
-                "params": dict(request_params),
-                "quantity": quantity,
-            },
+            horizon=context.horizon,
+            seasonality=context.seasonality,
+            params=dict(context.method_params),
+            timeframe=context.timeframe,
+            series=context.target_series.copy(),
+            exog=(
+                np.array(context.exog_used, copy=True)
+                if isinstance(context.exog_used, np.ndarray)
+                else context.exog_used
+            ),
         )
         return self._submit_spec(spec, training_category=str(info.get("training_category", "moderate")))
 
