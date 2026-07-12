@@ -731,7 +731,9 @@ def get_tick_response(
             info = mt5.symbol_info(symbol)
             if info is None:
                 raise _http_error(404, f"Unknown symbol {symbol}", code="unknown_symbol", operation="get_tick")
-            raise _http_error(500, str(err), code="tick_symbol_ready_failed", operation="get_tick")
+            # Transient broker/session activation failure — align with other
+            # service-unavailable paths (503), not an internal 500.
+            raise _http_error(503, str(err), code="tick_symbol_ready_failed", operation="get_tick")
         tick = mt5.symbol_info_tick(symbol)
     if tick is None:
         raise _http_error(404, f"No tick data for {symbol}", code="tick_data_missing", operation="get_tick")

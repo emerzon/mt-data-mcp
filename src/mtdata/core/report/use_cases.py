@@ -435,7 +435,7 @@ def _compact_report_payload(
         return [f"Barrier EV/edge conflict detected for {joined} direction(s)."]
 
     compact: Dict[str, Any] = {
-        "success": bool(report.get("success", True)),
+        "success": bool(report.get("success", False)),
         "symbol": symbol,
         "template": template,
         "detail": "compact",

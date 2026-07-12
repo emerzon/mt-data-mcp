@@ -1,3 +1,21 @@
+"""Shared output verbosity contract (extras / detail / compact vs full strip).
+
+Two layers of "detail" exist and must not be conflated:
+
+1. **Tool-local detail** — many tools accept ``detail`` with richer labels
+   (e.g. patterns: compact / standard / summary / full) and implement their own
+   payload shaping before returning.
+
+2. **Shared compact/full strip** — ``normalize_output_verbosity_detail`` and
+   ``apply_output_verbosity`` collapse any non-``full`` value to ``compact`` and
+   strip transport-verbose keys (``meta``, ``diagnostics``, ``debug``, …).
+   Aliases such as ``standard`` / ``summary`` therefore do **not** create extra
+   shared levels; only ``full`` preserves those keys at this layer.
+
+``extras`` is orthogonal and can request series/rows/groups or force full shape.
+``verbose=True`` is treated as detail=full for compatibility.
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass

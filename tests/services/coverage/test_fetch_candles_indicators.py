@@ -202,17 +202,17 @@ class TestFetchCandlesIndicators(unittest.TestCase):
     @patch(_RESOLVE_CTZ, return_value=None)
     @patch(_ESTIMATE_WARMUP, return_value=20)
     @patch(_GUARD, _mock_symbol_guard)
-    def test_bollinger_alias_indicator_string_spec(self, mock_warmup, mock_ctz, mock_info, mock_from, mock_ti, mock_cfg):
+    def test_bbands_canonical_indicator_string_spec(self, mock_warmup, mock_ctz, mock_info, mock_from, mock_ti, mock_cfg):
         mock_cfg.get_time_offset_seconds.return_value = 0
         mock_from.return_value = _make_rates(30)
 
         def add_col(df, spec):
-            self.assertEqual(spec, 'bb(20)')
+            self.assertEqual(spec, 'bbands(20)')
             df['BBL_20_2.0'] = 1.1
             return ['BBL_20_2.0']
 
         mock_ti.side_effect = add_col
-        result = fetch_candles('EURUSD', limit=10, indicators='bb(20)')
+        result = fetch_candles('EURUSD', limit=10, indicators='bbands(20)')
         self.assertTrue(result.get('success'))
 
     @patch(_MT5_CONFIG)

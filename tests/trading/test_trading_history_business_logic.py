@@ -491,7 +491,7 @@ def test_trade_history_filters_deals_by_side_alias() -> None:
     ]
 
     with patch("mtdata.core.trading.account._use_client_tz", lambda: False):
-        out = trade_history(history_kind="deals", side="long", detail="full", __cli_raw=True)
+        out = trade_history(history_kind="deals", side="buy", detail="full", __cli_raw=True)
     if prev is not None:
         sys.modules["MetaTrader5"] = prev
 
@@ -505,8 +505,10 @@ def test_trade_history_filters_deals_by_side_alias() -> None:
 
 def test_trade_history_request_normalizes_buy_sell_aliases() -> None:
     assert TradeHistoryRequest(side="buy").side == "BUY"
-    assert TradeHistoryRequest(side="short").side == "SELL"
+    assert TradeHistoryRequest(side="sell").side == "SELL"
     assert TradeHistoryRequest(side="weird").side == "weird"
+    assert TradeHistoryRequest(side="long").side == "long"
+    assert TradeHistoryRequest(side="short").side == "short"
     assert TradeHistoryRequest().detail == "compact"
     assert TradeJournalAnalyzeRequest().detail == "compact"
     assert TradeGetOpenRequest().detail == "compact"
@@ -881,8 +883,16 @@ def test_trade_history_rejects_invalid_side_filter() -> None:
     out = trade_history(history_kind="deals", side="flat", detail="full", __cli_raw=True)
 
     assert out["success"] is False
-    assert out["error"] == "side must be BUY/SELL or LONG/SHORT."
+    assert out["error"] == "side must be BUY or SELL."
     assert out["request_echo"]["side"] == "flat"
+
+
+def test_trade_history_rejects_long_short_side_aliases() -> None:
+    out = trade_history(history_kind="deals", side="long", detail="full", __cli_raw=True)
+
+    assert out["success"] is False
+    assert out["error"] == "side must be BUY or SELL."
+    assert out["request_echo"]["side"] == "long"
 
 
 def test_trade_history_compact_hides_comment_limit_metadata() -> None:
@@ -1576,7 +1586,7 @@ def test_trade_journal_analyze_forwards_side_filter() -> None:
         "mtdata.core.trading.account._run_trade_history_request",
         side_effect=_fake_history,
     ):
-        out = trade_journal_analyze(side="short", __cli_raw=True)
+        out = trade_journal_analyze(side="sell", __cli_raw=True)
 
     assert captured["request"].side == "SELL"
     assert out["success"] is True

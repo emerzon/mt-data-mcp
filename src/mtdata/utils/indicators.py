@@ -17,13 +17,6 @@ except ModuleNotFoundError as exc:
     ) from exc
 
 
-_INDICATOR_ALIASES: dict[str, str] = {
-    "bb": "bbands",
-    "boll": "bbands",
-    "bollinger": "bbands",
-    "bollinger_bands": "bbands",
-    "bollingerbands": "bbands",
-}
 _INDICATOR_SERIES_NAMES = ("open", "high", "low", "close", "volume")
 _VOLUME_SOURCE_COLUMNS = ("volume", "real_volume", "tick_volume")
 _TA_INDICATOR_CATEGORIES = (
@@ -43,13 +36,8 @@ _DEFAULT_MISSING = object()
 
 
 def _normalize_ta_indicator_name(name: str) -> str:
-    lname = str(name or "").strip().lower()
-    return _INDICATOR_ALIASES.get(lname, lname)
-
-
-def _indicator_aliases(name: str) -> List[str]:
-    canonical = _normalize_ta_indicator_name(name)
-    return sorted(alias for alias, target in _INDICATOR_ALIASES.items() if target == canonical and alias != canonical)
+    """Return the canonical lowercase indicator name (no historical nicknames)."""
+    return str(name or "").strip().lower()
 
 
 def _resolve_ta_category_module(category: str) -> Optional[ModuleType]:
@@ -227,7 +215,6 @@ def list_ta_indicators(*, detailed: bool = False) -> List[Dict[str, Any]]:
                     "params": params,
                     "description": desc,
                     "category": category,
-                    "aliases": _indicator_aliases(name),
                 })
         except Exception:
             continue
@@ -502,9 +489,17 @@ def _apply_ta_indicators(df: pd.DataFrame, ti_spec: str) -> List[str]:  # noqa: 
                     df[out.name or lname] = out
             except ValueError:
                 raise
-            except Exception:
-                logger.warning("Indicator %s failed while applying output", lname, exc_info=True)
-                continue
+            except Exception as apply_exc:
+                # Surface unexpected apply failures instead of silently omitting columns.
+                logger.warning(
+                    "Indicator %s failed while applying output: %s",
+                    lname,
+                    apply_exc,
+                    exc_info=True,
+                )
+                raise ValueError(
+                    f"Indicator '{lname}' produced unusable output: {apply_exc}"
+                ) from apply_exc
             new_cols = [c for c in df.columns if c not in before]
             added_cols.extend(new_cols)
             before = set(df.columns)
@@ -536,9 +531,19 @@ def _estimate_warmup_bars(ti_spec: Optional[str]) -> int:
         if lname in ("sma", "ema", "rsi"):
             warm = geti("length", 14)
         elif lname == "macd":
-            fast = kwargs.get("fast", args[0] if len(args) > 0 else 12)
-            slow = kwargs.get("slow", args[1] if len(args) > 1 else 26)
-            signal = kwargs.get("signal", args[2] if len(args) > 2 else 9)
+            # Accept both short names and pandas_ta-style *_period kwargs.
+            fast = kwargs.get(
+                "fast",
+                kwargs.get("fast_period", args[0] if len(args) > 0 else 12),
+            )
+            slow = kwargs.get(
+                "slow",
+                kwargs.get("slow_period", args[1] if len(args) > 1 else 26),
+            )
+            signal = kwargs.get(
+                "signal",
+                kwargs.get("signal_period", args[2] if len(args) > 2 else 9),
+            )
             try:
                 warm = max(int(fast), int(slow)) + int(signal)
             except Exception:

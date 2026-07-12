@@ -395,31 +395,20 @@ def _indicator_search_rank(item: Dict[str, Any], query: str) -> tuple[int, str] 
         return None
 
     name = str(item.get("name") or "").strip().lower()
-    aliases = [
-        str(alias).strip().lower()
-        for alias in (item.get("aliases") or [])
-        if str(alias).strip()
-    ]
     category = str(item.get("category") or "").strip().lower()
 
     if name == q:
         return (0, name)
-    if q in aliases:
-        return (1, name)
     if name.startswith(q):
-        return (2, name)
-    if any(alias.startswith(q) for alias in aliases):
-        return (3, name)
+        return (1, name)
     if q in name:
-        return (4, name)
-    if any(q in alias for alias in aliases):
-        return (5, name)
+        return (2, name)
     if category == q:
-        return (6, name)
+        return (3, name)
     if category.startswith(q):
-        return (7, name)
+        return (4, name)
     if q in category:
-        return (8, name)
+        return (5, name)
     return None
 
 
@@ -537,7 +526,6 @@ def indicators_list(
                             _extract_short_description(docs.get("description") or it.get("description", "")),
                             len(params),
                             params,
-                            ", ".join(str(alias) for alias in (it.get("aliases") or []) if str(alias).strip()),
                             _indicator_trading_context(it),
                             docs.get("description") or it.get("description", ""),
                         ]
@@ -549,7 +537,6 @@ def indicators_list(
                         "summary",
                         "params_count",
                         "params",
-                        "aliases",
                         "trading_context",
                         "description",
                     ],
@@ -605,8 +592,8 @@ def indicators_list(
                 if more_available > 0:
                     result["truncated"] = True
                     result["search_hint"] = (
-                        "Use search_term to match indicator names, aliases, "
-                        "categories, or docs; detail='full' includes aliases."
+                        "Use search_term to match indicator names, "
+                        "categories, or docs."
                     )
             return result
         except Exception as exc:
@@ -644,12 +631,7 @@ def indicators_describe(
                 (
                     it
                     for it in items
-                    if it.get('name','').lower() == str(name).lower()
-                    or str(name).lower() in {
-                        str(alias).strip().lower()
-                        for alias in (it.get("aliases") or [])
-                        if str(alias).strip()
-                    }
+                    if it.get("name", "").lower() == str(name).lower()
                 ),
                 None,
             )

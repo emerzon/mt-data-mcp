@@ -231,12 +231,15 @@ class TestParseTiSpecs:
         assert name == "stoch"
         assert 14 in args or kwargs.get("length") == 14
 
-    def test_bollinger_alias_normalizes_to_bbands(self):
-        specs = _parse_ti_specs("bb(20),boll(20),bollinger_bands(20)")
-        assert [name for name, _args, _kwargs in specs] == ["bbands", "bbands", "bbands"]
+    def test_canonical_bbands_name_is_preserved(self):
+        specs = _parse_ti_specs("bbands(20)")
+        assert [name for name, _args, _kwargs in specs] == ["bbands"]
 
-    def test_bollinger_aliases_are_not_reported_as_unknown(self):
-        assert _find_unknown_ta_indicators("bb(20),boll(20),bollinger_bands(20)") == []
+    def test_historical_bollinger_nicknames_are_not_aliased(self):
+        specs = _parse_ti_specs("bb(20),boll(20),bollinger_bands(20)")
+        assert [name for name, _args, _kwargs in specs] == ["bb", "boll", "bollinger_bands"]
+        unknown = _find_unknown_ta_indicators("bb(20),boll(20),bollinger_bands(20)")
+        assert set(unknown) >= {"bb", "boll", "bollinger_bands"}
 
     def test_indicator_call_failure_is_not_retried_with_different_bindings(self, monkeypatch):
         import mtdata.utils.indicators as indicators_mod
@@ -578,8 +581,8 @@ Values above 70 often indicate overbought conditions.
             "more_available": 5,
         }
         assert out["search_hint"] == (
-            "Use search_term to match indicator names, aliases, "
-            "categories, or docs; detail='full' includes aliases."
+            "Use search_term to match indicator names, "
+            "categories, or docs."
         )
         assert "show_all_hint" not in out
 
@@ -640,7 +643,7 @@ Values above 70 often indicate overbought conditions.
             "more_available": 3,
         }
 
-    def test_indicators_list_full_detail_includes_aliases_and_descriptions(self, monkeypatch):
+    def test_indicators_list_full_detail_includes_descriptions(self, monkeypatch):
         from mtdata.core import indicators as core_indicators
 
         monkeypatch.setattr(
@@ -651,21 +654,20 @@ Values above 70 often indicate overbought conditions.
                     "name": "bbands",
                     "category": "volatility",
                     "description": "Bollinger Bands volatility envelope.",
-                    "aliases": ["bb", "bollinger_bands"],
                     "params": [{"name": "length", "default": 20}],
                 }
             ],
         )
 
         raw_list = getattr(core_indicators.indicators_list, "__wrapped__", core_indicators.indicators_list)
-        out = raw_list(search_term="bb", detail="full")
+        out = raw_list(search_term="bbands", detail="full")
 
         assert out["success"] is True
         assert out["detail"] == "full"
         assert out["data"][0]["summary"] == "Bollinger Bands volatility envelope."
         assert out["data"][0]["params_count"] == 1
         assert out["data"][0]["params"] == [{"name": "length", "default": 20}]
-        assert out["data"][0]["aliases"] == "bb, bollinger_bands"
+        assert "aliases" not in out["data"][0]
         assert "Bollinger Bands" in out["data"][0]["description"]
 
     def test_indicators_list_full_detail_strips_signature_and_doc_sections(self, monkeypatch):
@@ -733,7 +735,7 @@ Values above 70 often indicate overbought conditions.
         assert category_out["success"] is True
         assert [row["name"] for row in category_out["data"]] == ["lrsi", "rsi", "stochrsi"]
 
-    def test_indicators_describe_accepts_aliases(self, monkeypatch):
+    def test_indicators_describe_requires_canonical_name(self, monkeypatch):
         from mtdata.core import indicators as core_indicators
 
         monkeypatch.setattr(
@@ -745,17 +747,19 @@ Values above 70 often indicate overbought conditions.
                     "category": "volatility",
                     "params": [{"name": "length", "default": 20}],
                     "description": "Bollinger Bands volatility envelope.",
-                    "aliases": ["bb", "bollinger_bands"],
                 }
             ],
         )
 
         raw_describe = getattr(core_indicators.indicators_describe, "__wrapped__", core_indicators.indicators_describe)
-        out = raw_describe("bb")
+        out = raw_describe("bbands")
 
         assert out["success"] is True
         assert out["indicator"]["name"] == "bbands"
         assert "usage_examples" not in out["indicator"]
+
+        missing = raw_describe("bb")
+        assert missing.get("error") == "Indicator 'bb' not found"
 
 
 # ===================================================================

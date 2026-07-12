@@ -1030,6 +1030,7 @@ def _place_market_order(  # noqa: C901
             tick_freshness_error = validation._validate_tick_freshness(
                 validate_tick,
                 symbol=symbol,
+                max_age_seconds=_TRADE_TICK_MAX_AGE_SECONDS,
             )
             if tick_freshness_error is not None:
                 return tick_freshness_error
@@ -1082,6 +1083,7 @@ def _place_market_order(  # noqa: C901
             tick_freshness_error = validation._validate_tick_freshness(
                 send_tick,
                 symbol=symbol,
+                max_age_seconds=_TRADE_TICK_MAX_AGE_SECONDS,
             )
             if tick_freshness_error is not None:
                 return tick_freshness_error

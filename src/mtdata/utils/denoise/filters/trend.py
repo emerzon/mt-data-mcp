@@ -43,7 +43,9 @@ def _denoise_hp_series(
     causality: str,
 ) -> pd.Series:
     del causality
-    lamb = params.get('lamb', params.get('lambda', 1600.0))
+    # 1600 is the Hodrick–Prescott quarterly macro convention and is too smooth
+    # for most trading bars. Prefer a milder default unless the caller sets lamb.
+    lamb = params.get('lamb', params.get('lambda', 100.0))
     y = _hp_filter(x, float(lamb))
     return _series_like(s, y)
 

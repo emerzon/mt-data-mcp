@@ -230,6 +230,7 @@ def _serialize_model_handle(
         compatibility = describe_store_metadata_compatibility(store_metadata)
     except Exception:
         compatibility = {}
+    # Surface a light status only; full migration diagnostics stay in the store layer.
     compatibility_status = compatibility.get("status") if isinstance(compatibility, dict) else None
     if compatibility_status:
         payload["compatibility_status"] = compatibility_status
@@ -247,7 +248,6 @@ def _serialize_model_handle(
             payload["model_dir"] = store_info.get("model_dir")
         payload["metadata"] = model_metadata
         payload["store_metadata"] = sanitize_store_metadata(store_metadata)
-        payload["compatibility"] = compatibility
     return payload
 
 

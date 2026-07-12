@@ -597,12 +597,21 @@ def market_snapshot(
     """Return a unified pre-trade market snapshot with selectable analysis sections.
 
     Default sections are quote,levels,patterns; pass sections=quote for quote-only
-    or sections=all for quote,levels,patterns,regime,forecast. `sections`
-    selects analysis modules; `detail` controls field verbosity inside the
-    selected modules and does not add heavier sections by itself. The optional
-    regime section uses HMM and the optional forecast section uses Theta.
-    `horizon` applies only to that built-in forecast section. Call the dedicated
-    regime or forecast tool for custom methods and parameters.
+    or sections=all for quote,levels,patterns,regime,forecast.
+
+    Fixed per-section recipe (intentionally not fully parameterized — call the
+    dedicated tools for custom methods/lookbacks):
+
+    - quote: ``market_ticker``; honors top-level ``detail``
+    - levels: support/resistance, detail=compact, lookback=200, max_levels=4
+    - patterns: candlestick mode only, detail=summary, top_k=3, last_n_bars=3
+    - regime (opt-in): HMM only, detail=summary
+    - forecast (opt-in): Theta only, detail=compact; ``horizon`` applies here only
+
+    Top-level ``detail`` mainly shapes the assembled snapshot envelope
+    (summary vs embedded sections). Sub-tools use the fixed recipe above so the
+    snapshot stays fast and comparable. Call dedicated regime/forecast/pattern
+    tools for custom methods and parameters.
 
     Timestamp semantics: `as_of` tracks the latest quote time when available,
     `quote_as_of` duplicates that normalized quote timestamp explicitly, and
