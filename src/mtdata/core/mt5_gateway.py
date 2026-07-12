@@ -43,6 +43,7 @@ _MT5_CONSTANT_NAMES = frozenset(
         "DEAL_REASON_TP",
         "DEAL_TYPE_BUY",
         "DEAL_TYPE_SELL",
+        "COPY_TICKS_ALL",
         "SYMBOL_FILLING_FOK",
         "SYMBOL_FILLING_IOC",
         "SYMBOL_FILLING_RETURN",
@@ -143,6 +144,19 @@ class MT5Gateway:
 
     def order_send(self, request: Any) -> Any:
         return self.adapter.order_send(request)
+
+    def order_calc_margin(self, action: Any, symbol: str, volume: float, price: float) -> Any:
+        return self.adapter.order_calc_margin(action, symbol, volume, price)
+
+    def order_calc_profit(
+        self,
+        action: Any,
+        symbol: str,
+        volume: float,
+        price_open: float,
+        price_close: float,
+    ) -> Any:
+        return self.adapter.order_calc_profit(action, symbol, volume, price_open, price_close)
 
     def orders_get(self, **kwargs: Any) -> Any:
         return self.adapter.orders_get(**kwargs)

@@ -1,6 +1,6 @@
 # core/ — API-Facing Layer
 
-All 86 MCP tools (+1 conditional), CLI commands, web API endpoints, and server transport logic live here. This is the largest module (56 files, 8 files >500 lines).
+All 91 MCP tools (+1 conditional), CLI commands, web API endpoints, and server transport logic live here. This is the largest module.
 
 ## FILE MAP
 

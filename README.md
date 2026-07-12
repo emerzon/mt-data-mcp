@@ -40,6 +40,7 @@ Use it to explore ideas, build repeatable research workflows, and integrate MT5 
 | **Diagnostics** | Flag anomalous returns, volume, and bar ranges | `outliers_detect` |
 | **Multi-asset** | Explore correlation, lead/lag structure, and pairwise or multivariate cointegration | `correlation_matrix`, `cross_correlation`, `cointegration_test` |
 | **Scanning** | Screen MT5 symbols by spread, price change, volume, RSI, and SMA | `symbols_top_markets`, `market_scan` |
+| **Advanced Analytics** | Analyze tick liquidity, execution quality, robust strategy evidence, portfolio tail risk, and relative strength | `market_microstructure_analyze`, `trade_execution_quality`, `strategy_validate`, `portfolio_risk_decompose`, `market_relative_strength` |
 | **Strategy Backtesting** | Backtest simple SMA/EMA/RSI trading rules on MT5 candles | `strategy_backtest` |
 | **Trading** | Place orders, manage positions, review performance, and estimate tail or scenario risk | `trade_place`, `trade_close`, `trade_var_cvar_calculate`, `trade_stress_test` |
 | **Async Training** | Run heavyweight forecast training in the background and reuse cached models | `forecast_train`, `forecast_task_status`, `forecast_task_wait`, `forecast_models_list`, `forecast_models_delete` |
@@ -99,6 +100,7 @@ New here? Follow this learning path:
 - **[Setup & Configuration](docs/SETUP.md)** — Installation, MT5 connection, environment variables
 - **[CLI Guide](docs/CLI.md)** — Command conventions, output formats, help system
 - **[Glossary](docs/GLOSSARY.md)** — Explanations of all technical terms with real-world examples
+- **[Advanced Analytics](docs/ADVANCED_ANALYTICS.md)** — MT5-native microstructure, execution, validation, portfolio-risk, and relative-strength tools
 - **[Docs Index](docs/README.md)** — One-page map of all docs
 
 ### Core Topics

@@ -55,6 +55,7 @@ Safety note: `trade_*` commands can place/modify/close real orders on the accoun
 | [DENOISING.md](DENOISING.md) | Smoothing filters and noise reduction |
 | [SIMPLIFICATION.md](SIMPLIFICATION.md) | Downsampling and output reduction (`--simplify`) |
 | [CAUSAL_DISCOVERY.md](CAUSAL_DISCOVERY.md) | Granger-style causal signal discovery |
+| [ADVANCED_ANALYTICS.md](ADVANCED_ANALYTICS.md) | Tick microstructure, execution quality, robust strategy validation, portfolio risk decomposition, and relative strength |
 | [TEMPORAL.md](TEMPORAL.md) | Session effects, day-of-week, hourly and monthly patterns |
 | [forecast/PATTERN_SEARCH.md](forecast/PATTERN_SEARCH.md) | Pattern detection and similarity search |
 

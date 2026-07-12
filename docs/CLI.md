@@ -316,6 +316,7 @@ Denoising is applied to data via the `--denoise`/`--denoise-params` flags (see [
 | `trade_get_pending` | Get pending orders |
 | `trade_history` | Get trading history |
 | `trade_journal_analyze` | Summarize realized exit-deal performance |
+| `trade_execution_quality` | Analyze slippage, latency, partial fills, fees, and markouts |
 | `trade_risk_analyze` | Analyze position risk |
 | `trade_var_cvar_calculate` | Estimate portfolio VaR/CVaR from open positions |
 | `trade_stress_test` | Apply deterministic percentage shocks to open positions |
@@ -328,6 +329,17 @@ For Kelly sizing, `trade_journal_analyze` is the quickest way to derive
 | Command | Description |
 |---------|-------------|
 | `news` | Unified, ranked news feed (general + symbol-relevant + economic calendar). Pass `--symbol` to focus the feed on an instrument. |
+
+### Advanced MT5-native analytics
+
+| Command | Description |
+|---------|-------------|
+| `market_microstructure_analyze` | Analyze tick liquidity and feed-appropriate order-flow proxies |
+| `strategy_validate` | Run purged walk-forward strategy validation with barrier outcomes and costs |
+| `portfolio_risk_decompose` | Decompose filtered-historical VaR/ES and proposed-trade risk |
+| `market_relative_strength` | Rank a bounded MT5 universe by robust factor-adjusted momentum and breadth |
+
+See [ADVANCED_ANALYTICS.md](ADVANCED_ANALYTICS.md) for data requirements, examples, and caveats.
 
 ### Reports
 | Command | Description |
