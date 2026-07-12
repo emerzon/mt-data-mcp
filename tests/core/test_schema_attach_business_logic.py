@@ -190,6 +190,7 @@ def test_attach_schemas_to_tools_patches_barrier_method_enums(monkeypatch) -> No
     opt_method = opt_obj.schema["parameters"]["properties"]["method"]
     assert "closed_form" not in opt_method["enum"]
     assert "auto" in opt_method["enum"]
+    assert "ensemble" in opt_method["enum"]
 
 
 def test_attach_schemas_to_tools_keeps_barrier_inputs_flat(monkeypatch) -> None:

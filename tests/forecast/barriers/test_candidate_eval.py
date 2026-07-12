@@ -150,6 +150,40 @@ class TestUnresolvedTerminalPnl(unittest.TestCase):
         self.assertEqual(result["prob_same_bar"], 0.5)
         self.assertEqual(result["ev_unresolved"], 0.0)
 
+    def test_max_prob_no_hit_does_not_count_neutral_same_bar_ties(self):
+        from dataclasses import replace
+        from mtdata.forecast.barriers_optimization import (
+            _BarrierBridgeInputs,
+            _evaluate_barrier_candidate,
+        )
+
+        ctx = replace(
+            self._make_context(same_bar_policy="neutral"),
+            max_prob_no_hit_val=0.75,
+        )
+        bridge = _BarrierBridgeInputs(
+            enabled=False, sigma=0.0, log_paths=None, uniform_tp=None, uniform_sl=None
+        )
+        paths = np.array([[1.1020], [1.1000]])
+        with patch(
+            "mtdata.forecast.barriers_optimization._candidate_hit_arrays",
+            return_value=(
+                np.array([0, 1]),
+                np.array([0, 1]),
+                np.array([False, False]),
+                np.array([False, False]),
+                np.array([True, False]),
+            ),
+        ):
+            result, is_invalid = _evaluate_barrier_candidate(
+                10.0, 10.0, paths, context=ctx, bridge_inputs=bridge
+            )
+
+        self.assertFalse(is_invalid)
+        self.assertIsNotNone(result)
+        self.assertEqual(result["prob_no_hit"], 0.5)
+        self.assertEqual(result["prob_unresolved"], 1.0)
+
     def test_evaluate_barrier_candidate_rejects_empty_paths(self):
         from mtdata.forecast.barriers_optimization import (
             _BarrierBridgeInputs,

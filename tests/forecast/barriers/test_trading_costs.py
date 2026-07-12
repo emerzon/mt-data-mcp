@@ -41,6 +41,22 @@ class TestBarrierTradingCosts(_BarrierTestBase):
         self.assertEqual(tc["cost_unit"], "pct")
         self.assertAlmostEqual(tc["spread_pct"], 0.02)
 
+    def test_optimize_rejects_negative_or_non_finite_costs(self):
+        for key, value in (
+            ("spread_pct", -0.01),
+            ("commission_bps", float("nan")),
+            ("slippage_pips", float("inf")),
+        ):
+            with self.subTest(key=key, value=value):
+                result = forecast_barrier_optimize(
+                    symbol="EURUSD", timeframe="H1", horizon=10,
+                    method="mc_gbm", direction="long", mode="pct",
+                    tp_min=0.5, tp_max=0.5, tp_steps=1,
+                    sl_min=0.5, sl_max=0.5, sl_steps=1,
+                    params={key: value},
+                )
+                self.assertIn("must be numeric, finite, and >= 0", result.get("error", ""))
+
     def test_optimize_with_bps_aliases_produces_trading_costs(self):
         result = forecast_barrier_optimize(
             symbol="EURUSD", timeframe="H1", horizon=10,
@@ -455,7 +471,7 @@ class TestBarrierTradingCosts(_BarrierTestBase):
         self.assertEqual(result.get("status"), "non_viable")
         self.assertTrue(result.get("no_action"))
         self.assertTrue(result["best"].get("phantom_profit_risk"))
-        self.assertLess(float(result["best"]["edge_vs_breakeven"]), 0.0)
+        self.assertGreater(float(result["best"]["edge_vs_breakeven"]), 0.0)
 
     def test_breakeven_win_rate_net_computed_with_costs(self):
         """breakeven_win_rate_net should be computed and > gross breakeven when costs present."""
@@ -489,6 +505,24 @@ class TestBarrierTradingCosts(_BarrierTestBase):
         self.assertAlmostEqual(row["breakeven_win_rate"], 0.4, places=7)
         self.assertAlmostEqual(row["edge_vs_breakeven"], 0.1, places=7)
         self.assertFalse(row["phantom_profit_risk"])
+
+    def test_edge_vs_breakeven_conditions_on_resolved_paths(self):
+        from mtdata.forecast.barriers_shared import _annotate_candidate_metrics
+
+        row = {
+            "tp": 1.0,
+            "sl": 1.0,
+            "rr": 1.0,
+            "prob_tp_first": 0.4,
+            "prob_sl_first": 0.2,
+            "prob_no_hit": 0.4,
+            "prob_resolve": 0.6,
+        }
+        _annotate_candidate_metrics(row, cost_per_trade=0.0)
+
+        self.assertAlmostEqual(row["prob_win_resolved"], 2.0 / 3.0, places=7)
+        self.assertAlmostEqual(row["edge_vs_breakeven"], 1.0 / 6.0, places=7)
+        self.assertEqual(row["edge_vs_breakeven_basis"], "resolved_trades")
 
     def test_breakeven_win_rate_net_is_1_when_cost_exceeds_tp(self):
         """If cost >= tp, net reward <= 0, breakeven_win_rate_net should be 1.0."""

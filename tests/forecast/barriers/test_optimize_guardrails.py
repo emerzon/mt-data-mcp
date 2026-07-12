@@ -216,7 +216,7 @@ class TestBarrierOptimizeGuardrails(_BarrierTestBase):
         self.assertTrue(result.get("no_action"))
         self.assertIn("unresolved paths", result.get("status_reason", "").lower())
         self.assertTrue(result["best"].get("phantom_profit_risk"))
-        self.assertLess(float(result["best"]["edge_vs_breakeven"]), 0.0)
+        self.assertGreater(float(result["best"]["edge_vs_breakeven"]), 0.0)
         self.assertAlmostEqual(float(result["best"]["breakeven_win_rate"]), 1.0 / 1.1, places=6)
         self.assertTrue(result.get("ev_edge_conflict"))
         self.assertIn("unresolved", result.get("ev_edge_conflict_reason", "").lower())

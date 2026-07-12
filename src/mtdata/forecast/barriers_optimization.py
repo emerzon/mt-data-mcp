@@ -244,7 +244,7 @@ def _barrier_candidate_filter_config(
         out["min_ev"] = _safe_float(min_ev)
     if min_edge is not None:
         out["min_edge"] = _safe_float(min_edge)
-        out["min_edge_basis"] = "edge_vs_breakeven"
+        out["min_edge_basis"] = "resolved_edge_vs_breakeven"
     if min_kelly is not None:
         out["min_kelly"] = _safe_float(min_kelly)
     return out
@@ -580,7 +580,7 @@ def _evaluate_barrier_candidate(
 
     if context.min_prob_win_val is not None and effective_prob_win < context.min_prob_win_val:
         return None, False
-    if context.max_prob_no_hit_val is not None and resolved["prob_unresolved"] > context.max_prob_no_hit_val:
+    if context.max_prob_no_hit_val is not None and prob_no_hit > context.max_prob_no_hit_val:
         return None, False
     if context.min_prob_resolve_val is not None and prob_resolve < context.min_prob_resolve_val:
         return None, False
@@ -615,7 +615,9 @@ def _evaluate_barrier_candidate(
         "ev": ev_val,
         "ev_gross": ev_gross if context.has_trading_costs else None,
         "ev_net": ev_val if context.has_trading_costs else None,
-        "ev_unresolved": ev_unresolved,
+        "ev_unresolved": ev_unresolved_net,
+        "ev_unresolved_gross": ev_unresolved,
+        "ev_unresolved_net": ev_unresolved_net,
         "ev_cond": ev_cond,
         "edge": edge,
         "kelly": kelly_val,
@@ -971,7 +973,7 @@ def forecast_barrier_optimize(  # noqa: C901
     symbol: str,
     timeframe: TimeframeLiteral = "H1",
     horizon: int = 12,
-    method: Literal['mc_gbm','mc_gbm_bb','hmm_mc','garch','bootstrap','heston','jump_diffusion','auto'] = 'hmm_mc',
+    method: Literal['mc_gbm','mc_gbm_bb','hmm_mc','garch','bootstrap','heston','jump_diffusion','auto','ensemble'] = 'hmm_mc',
     direction: Literal['long','short'] = 'long',
     mode: Literal['pct','ticks'] = 'pct',
     tp_min: float = 0.25,
@@ -1208,6 +1210,13 @@ def forecast_barrier_optimize(  # noqa: C901
             grid_style_val = 'fixed'
         preset_candidate = params_dict.get('grid_preset', params_dict.get('preset', preset))
         preset_val = str(preset_candidate).lower() if isinstance(preset_candidate, str) and preset_candidate else None
+        if grid_style_val == 'preset' and preset_val is not None and preset_val not in BARRIER_GRID_PRESETS:
+            return {
+                "error": (
+                    f"Invalid barrier grid preset: {preset_val}. Use one of: "
+                    f"{', '.join(sorted(BARRIER_GRID_PRESETS))}."
+                )
+            }
 
         refine_default = _resolve_profile_param(
             params_dict,
@@ -1427,8 +1436,10 @@ def forecast_barrier_optimize(  # noqa: C901
                 added = _apply_denoise_util(df, denoise, default_when='pre_ti')
                 if f"{base_col}_dn" in added:
                     base_col = f"{base_col}_dn"
-            except Exception:
-                pass
+            except Exception as ex:
+                contract_warnings.append(
+                    f"Denoise request failed; using raw close prices instead: {ex}"
+                )
         prices = df[base_col].astype(float).to_numpy()
 
         sims_default = int(profile_cfg['n_sims'])
@@ -1450,7 +1461,14 @@ def forecast_barrier_optimize(  # noqa: C901
                 sims = min_sims_recommended
 
         def _cost_param_float(key: str) -> float:
-            return float(params_dict.get(key, 0.0) or 0.0)
+            raw = params_dict.get(key, 0.0)
+            try:
+                value = float(raw or 0.0)
+            except Exception as ex:
+                raise ValueError(f"{key} must be numeric, finite, and >= 0.") from ex
+            if not np.isfinite(value) or value < 0.0:
+                raise ValueError(f"{key} must be numeric, finite, and >= 0.")
+            return value
 
         spread_pips_val = _cost_param_float('spread_pips')
         spread_bps_val = _cost_param_float('spread_bps')

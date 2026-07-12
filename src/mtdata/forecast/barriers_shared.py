@@ -61,7 +61,8 @@ LOW_PRACTICAL_WIN_PROB_THRESHOLD = 0.05
 BARRIER_METRIC_BASIS_NOTE = (
     "ev=mean simulated barrier payoff plus timeout mark-to-market in distance_unit, "
     "net of supplied costs; neutral same-bar ties contribute zero; "
-    "edge=prob_win-prob_loss; edge_vs_breakeven=prob_tp_first-breakeven_win_rate; "
+    "edge=prob_win-prob_loss; edge_vs_breakeven="
+    "prob_win_resolved-breakeven_win_rate; "
     "profit_factor=resolved reward/loss; higher is better, positive ev/edge is favorable."
 )
 
@@ -261,18 +262,25 @@ def _annotate_candidate_metrics(row: Optional[Dict[str, Any]], cost_per_trade: f
             row["breakeven_win_rate_net"] = breakeven_win_rate_net
 
     edge_vs_breakeven: Optional[float] = None
+    prob_win_resolved: Optional[float] = None
     effective_breakeven = breakeven_win_rate_net if breakeven_win_rate_net is not None else breakeven_win_rate
-    if effective_prob_win is not None and effective_breakeven is not None:
-        edge_vs_breakeven = float(effective_prob_win - effective_breakeven)
+    if effective_prob_win is not None and effective_prob_loss is not None:
+        active_probability = effective_prob_win + effective_prob_loss
+        if active_probability > 0.0:
+            prob_win_resolved = float(effective_prob_win / active_probability)
+            row["prob_win_resolved"] = prob_win_resolved
+            row["prob_loss_resolved"] = float(effective_prob_loss / active_probability)
+    if prob_win_resolved is not None and effective_breakeven is not None:
+        edge_vs_breakeven = float(prob_win_resolved - effective_breakeven)
         row["edge_vs_breakeven"] = edge_vs_breakeven
+        row["resolved_edge_vs_breakeven"] = edge_vs_breakeven
+        row["edge_vs_breakeven_basis"] = "resolved_trades"
 
     phantom_profit_risk = bool(
         effective_prob_loss is not None
         and prob_no_hit is not None
-        and edge_vs_breakeven is not None
         and effective_prob_loss < PHANTOM_PROFIT_LOSS_THRESHOLD
         and prob_no_hit > PHANTOM_PROFIT_NO_HIT_THRESHOLD
-        and edge_vs_breakeven < 0.0
     )
     row["phantom_profit_risk"] = phantom_profit_risk
 
@@ -320,6 +328,14 @@ def _candidate_status_reason(row: Optional[Dict[str, Any]], cost_per_trade: floa
         return (
             "Selected candidate relies on unresolved paths and a near-zero loss rate "
             "to appear profitable."
+        )
+    win_rate = _safe_float(row.get("prob_tp_first"))
+    if win_rate is None:
+        win_rate = _safe_float(row.get("prob_win"))
+    if win_rate is not None and win_rate < LOW_PRACTICAL_WIN_PROB_THRESHOLD:
+        return (
+            f"Selected candidate win probability is below the "
+            f"{LOW_PRACTICAL_WIN_PROB_THRESHOLD:.0%} practical threshold."
         )
     return None
 
@@ -403,13 +419,18 @@ def _build_selection_diagnostics(row: Optional[Dict[str, Any]], cost_per_trade: 
             "TP-first reward against SL-first loss."
         )
 
-    if best_ev is not None and edge_vs_breakeven is not None:
-        if (best_ev > 0.0 and edge_vs_breakeven < 0.0) or (best_ev < 0.0 and edge_vs_breakeven > 0.0):
+    # Compare resolved-trade metrics only. Full-path EV includes timeout MTM and
+    # can legitimately have a different sign from the resolved-trade edge.
+    resolved_ev = _safe_float(row.get("ev_cond"))
+    if resolved_ev is not None and edge_vs_breakeven is not None:
+        if (resolved_ev > 0.0 and edge_vs_breakeven < 0.0) or (
+            resolved_ev < 0.0 and edge_vs_breakeven > 0.0
+        ):
             ev_edge_conflict = True
-            ev_edge_conflict_reason = "ev and edge_vs_breakeven have opposite signs"
+            ev_edge_conflict_reason = "ev_cond and resolved edge_vs_breakeven have opposite signs"
             warnings_out.append(
-                "EV and break-even-adjusted edge disagree; inspect win probability, "
-                "reward/risk, and unresolved-path share before trading."
+                "Resolved-trade EV and break-even-adjusted resolved edge disagree; "
+                "inspect win probability, reward/risk, and supplied costs."
             )
 
     if bool(row.get("phantom_profit_risk")):

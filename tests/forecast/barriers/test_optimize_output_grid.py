@@ -403,19 +403,20 @@ class TestBarrierOptimizeOutputGrid(_BarrierTestBase):
         self.assertTrue(result.get("success"))
         self.assertEqual(result.get("status"), "ok")
         self.assertTrue(result.get("viable"))
-        self.assertTrue(result.get("ev_edge_conflict"))
-        self.assertEqual(result.get("actionability"), "blocked")
+        self.assertNotIn("ev_edge_conflict", result)
+        self.assertEqual(result.get("actionability"), "review")
         self.assertFalse(result.get("trade_gate_passed"))
         self.assertFalse(result.get("tradable"))
         self.assertTrue(result.get("mathematically_viable"))
         self.assertIn("EV screen", result.get("viability_note", ""))
         self.assertIn("metric_interpretation", result)
         self.assertIn(
-            "edge_vs_breakeven=prob_tp_first-breakeven_win_rate",
+            "edge_vs_breakeven=prob_win_resolved-breakeven_win_rate",
             result["metric_interpretation"],
         )
         self.assertTrue(result.get("no_action"))
-        self.assertIn("ev_edge_conflict", result.get("actionability_flags", []))
+        self.assertNotIn("ev_edge_conflict", result.get("actionability_flags", []))
+        self.assertIn("selection_warnings", result.get("actionability_flags", []))
 
     def test_barrier_diagnostics_block_low_practical_win_probability(self):
         row = {
