@@ -1175,7 +1175,6 @@ def run_trade_place(  # noqa: C901
                     "blockers": local_blockers,
                     "broker_validation_performed": False,
                 },
-                "trade_gate_passed": False,
                 "actionability": "preview_only",
                 "actionability_reason": (
                     "Dry run did not execute MT5 or broker-side validation. "
