@@ -6,7 +6,10 @@ from mtdata.core.regime.api import (
     _consolidate_payload,
     _summary_only_payload,
 )
-from mtdata.core.regime.smoothing import _confirm_state_changes_causally
+from mtdata.core.regime.smoothing import (
+    _confirm_state_changes_causally,
+    _hard_state_probability_matrix,
+)
 
 
 def test_causal_state_confirmation_never_rewrites_prefix() -> None:
@@ -16,6 +19,16 @@ def test_causal_state_confirmation_never_rewrites_prefix() -> None:
     assert full[:6].tolist() == prefix.tolist()
     assert full.tolist() == [0, 0, 0, 0, 0, 0, 0, 1]
     assert meta["postprocess"] == "causal_confirmation"
+
+
+def test_hard_probabilities_follow_causally_confirmed_state() -> None:
+    raw = np.array([0, 0, 1, 1, 1, 0, 0], dtype=int)
+    emitted, _ = _confirm_state_changes_causally(raw, 3)
+    probs = _hard_state_probability_matrix(emitted, 2)
+
+    assert emitted.tolist() == [0, 0, 0, 0, 1, 1, 1]
+    assert np.all(probs[np.arange(emitted.size), emitted] == 1.0)
+    assert np.allclose(probs.sum(axis=1), 1.0)
 
 
 class TestSummaryOnlyPayload:

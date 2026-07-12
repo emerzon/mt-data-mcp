@@ -95,6 +95,20 @@ def _confirm_state_changes_causally(
     }
 
 
+def _hard_state_probability_matrix(
+    state: np.ndarray,
+    n_states: int,
+) -> np.ndarray:
+    """Build one-hot probabilities that match an emitted hard state path."""
+    state_arr = np.asarray(state, dtype=int)
+    out = np.zeros((state_arr.size, max(1, int(n_states))), dtype=float)
+    valid = (state_arr >= 0) & (state_arr < out.shape[1])
+    if np.any(valid):
+        rows = np.flatnonzero(valid)
+        out[rows, state_arr[valid]] = 1.0
+    return out
+
+
 def _normalize_state_probability_matrix(
     probs: Any,
     *,
@@ -203,6 +217,7 @@ __all__ = [
     "_count_state_transitions",
     "_state_runs",
     "_confirm_state_changes_causally",
+    "_hard_state_probability_matrix",
     "_normalize_state_probability_matrix",
     "_canonicalize_regime_labels",
 ]

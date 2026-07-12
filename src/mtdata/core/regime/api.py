@@ -47,6 +47,7 @@ from .smoothing import (
     _canonicalize_regime_labels,
     _confirm_state_changes_causally,
     _count_state_transitions,
+    _hard_state_probability_matrix,
     _normalize_state_probability_matrix,
     _state_runs,
 )
@@ -2204,10 +2205,11 @@ def regime_detect(  # noqa: C901
                 labels = kmeans.fit_predict(X_final)
 
             # Smooth short runs and canonicalize on valid slice only
-            valid_probs = np.zeros((int(valid_mask.sum()), n_states_cluster))
-            valid_probs[np.arange(len(labels)), labels] = 1.0
             labels, smoothing_meta = _confirm_state_changes_causally(
                 np.asarray(labels, dtype=int), min_regime_bars_val
+            )
+            valid_probs = _hard_state_probability_matrix(
+                labels, n_states_cluster
             )
             labels, valid_probs, canon_meta = _canonicalize_regime_labels(
                 labels,
@@ -2487,16 +2489,12 @@ def regime_detect(  # noqa: C901
                 # Handle non-finite values
                 state[~np.isfinite(conditional_vol)] = -1
 
-                # Create probability matrix (hard assignment for GARCH)
-                probs = np.zeros((len(state), n_states_garch))
-                for i in range(len(state)):
-                    if 0 <= state[i] < n_states_garch:
-                        probs[i, state[i]] = 1.0
-
-                # Smooth short runs
+                # Causally confirm changes, then align the hard-assignment
+                # probabilities with the emitted state path.
                 state, smoothing_meta = _confirm_state_changes_causally(
                     np.asarray(state, dtype=int), min_regime_bars_val
                 )
+                probs = _hard_state_probability_matrix(state, n_states_garch)
 
                 # Build regime parameters
                 regime_params = {"volatility": [], "mean_return": []}
