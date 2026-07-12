@@ -44,6 +44,25 @@ def _get_select_market_scan_symbols():
     return _select_market_scan_symbols
 
 
+def test_market_scan_freshness_uses_broker_crypto_category_on_weekends() -> None:
+    from mtdata.core.symbols import _market_scan_freshness_fields
+
+    saturday = datetime(2026, 7, 11, 12, tzinfo=timezone.utc).timestamp()
+    recent_bar = saturday - 3600
+    symbol = SimpleNamespace(name="TRUMPUSD", path="Crypto\\Altcoins")
+
+    with patch("mtdata.core.symbols.time.time", return_value=saturday):
+        result = _market_scan_freshness_fields(
+            recent_bar,
+            timeframe="H1",
+            symbol=symbol,
+        )
+
+    assert result["data_stale"] is False
+    assert result["usable_for_live_trading"] is True
+    assert "market_status" not in result
+
+
 def test_market_scan_error_uses_standard_error_envelope():
     from mtdata.core.symbols import _market_scan_error
 

@@ -1536,8 +1536,12 @@ def _market_scan_freshness_fields(
         return {}
     stale_after_seconds = _market_scan_stale_bar_seconds(timeframe)
     data_stale = age_seconds > stale_after_seconds
+    symbol_name = getattr(symbol, "name", symbol)
+    session_symbol = (
+        None if _symbol_category(symbol) == "crypto" else symbol_name
+    )
     closed_session = closed_session_context(
-        symbol,
+        session_symbol,
         now_epoch=now_epoch,
         item="bar",
         data_age_seconds=age_seconds,
@@ -1745,7 +1749,7 @@ def _build_market_scan_bar_row(
             "timeframe": timeframe,
             "data_source": f"{timeframe}_bars",
             "time": _format_time_explicit(bar_time) if bar_time is not None else None,
-            **_market_scan_freshness_fields(bar_time, timeframe=timeframe, symbol=symbol.name),
+            **_market_scan_freshness_fields(bar_time, timeframe=timeframe, symbol=symbol),
             "open": _market_scan_round(open_price, digits=digits),
             "close": _market_scan_round(close_price, digits=digits),
             "tick_volume": tick_volume,
@@ -2383,7 +2387,7 @@ def _build_market_scan_signal_row(
             "timeframe": timeframe,
             "data_source": f"{timeframe}_bars",
             "time": _format_time_explicit(bar_time) if bar_time is not None else None,
-            **_market_scan_freshness_fields(bar_time, timeframe=timeframe, symbol=symbol.name),
+            **_market_scan_freshness_fields(bar_time, timeframe=timeframe, symbol=symbol),
             "previous_close": _market_scan_round(previous_close, digits=digits),
             "open": _market_scan_round(open_price, digits=digits),
             "close": _market_scan_round(close_price, digits=digits),
