@@ -84,6 +84,7 @@ export async function getHistory(params: HistoryParams, signal?: AbortSignal): P
     start: params.start,
     end: params.end,
     include_incomplete: params.include_incomplete,
+    timestamp_format: 'epoch',
   }
 
   const dn = params.denoise
