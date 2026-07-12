@@ -1556,7 +1556,7 @@ class TestGetSupportResistance:
         assert kwargs["adx_period"] == 14
         assert kwargs["decay_half_life_bars"] is None
 
-    def test_lookback_overrides_legacy_limit_alias(self):
+    def test_lookback_passed_to_compute_payload(self):
         payload = {
             "symbol": "EURUSD",
             "timeframe": "H1",
@@ -1571,7 +1571,7 @@ class TestGetSupportResistance:
         with patch("mtdata.core.web_api_handlers.compute_support_resistance_payload", return_value=payload) as mock_compute:
             resp = _client.get(
                 "/api/support-resistance",
-                params={"symbol": "EURUSD", "lookback": 250, "limit": 800, "extras": "metadata"},
+                params={"symbol": "EURUSD", "lookback": 250, "extras": "metadata"},
             )
         assert resp.status_code == 200
         assert mock_compute.call_args.kwargs["limit"] == 250
