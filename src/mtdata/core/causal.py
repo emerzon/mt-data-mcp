@@ -1026,7 +1026,9 @@ def _evaluate_cointegration_pair(
     failures: List[Dict[str, Any]] = []
     best_row: Dict[str, Any] | None = None
 
-    for dependent, hedge in ((left, right), (right, left)):
+    # Engle-Granger is orientation-sensitive. Use the caller's stable pair
+    # ordering instead of testing both directions and cherry-picking min(p).
+    for dependent, hedge in ((left, right),):
         try:
             test_stat, p_value, critical_values = coint_func(
                 subset[dependent],
@@ -1109,6 +1111,7 @@ def _evaluate_cointegration_pair(
             "relationship": "cointegrated"
             if float(p_value) < significance
             else "no_cointegration",
+            "orientation_policy": "left_dependent",
         }
         if best_row is None or float(row["p_value"]) < float(best_row["p_value"]):
             best_row = row

@@ -9,6 +9,7 @@ from mtdata.core.causal import (
     _build_correlation_matrix,
     _build_correlation_summary,
     _fit_cointegration_hedge,
+    _evaluate_cointegration_pair,
     _format_summary,
     _normalize_cointegration_transform,
     _normalize_cointegration_trend,
@@ -23,6 +24,29 @@ from mtdata.core.causal import (
     _transform_frame,
 )
 from mtdata.core.output_contract import related_tools_for
+
+
+def test_cointegration_pair_uses_stable_left_dependent_orientation():
+    idx = pd.date_range("2024-01-01", periods=40, freq="h")
+    frame = pd.DataFrame(
+        {"A": np.arange(40, dtype=float), "B": np.arange(40, dtype=float) * 2.0},
+        index=idx,
+    )
+    calls = []
+
+    def fake_coint(dependent, hedge, *, trend):
+        calls.append((dependent.name, hedge.name, trend))
+        return -4.0, 0.02, [-3.9, -3.3, -3.0]
+
+    row, failures = _evaluate_cointegration_pair(
+        frame, "A", "B", trend="c", significance=0.05, coint_func=fake_coint
+    )
+
+    assert failures == []
+    assert calls == [("A", "B", "c")]
+    assert row["dependent"] == "A"
+    assert row["hedge"] == "B"
+    assert row["orientation_policy"] == "left_dependent"
 
 
 class TestParseSymbols:
