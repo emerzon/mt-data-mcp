@@ -171,7 +171,7 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
     ("symbols_list", "limit"): "Max symbols or groups to return.",
     ("symbols_top_markets", "rank_by"): (
         "Leaderboard to compute: abs_price_change_pct (default), all, "
-        "spread/spread_pct, volume/tick_volume, price_change/price_change_pct, "
+        "spread/spread_pct, tick_volume, price_change/price_change_pct, "
         "or abs_price_change/abs_price_change_pct."
     ),
     ("symbols_top_markets", "limit"): (

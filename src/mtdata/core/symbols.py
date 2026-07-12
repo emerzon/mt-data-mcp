@@ -2536,7 +2536,6 @@ def _market_scan_sort_rows(
 _RANK_BY_ALIASES = {
     "abs_price_change": "abs_price_change_pct",
     "price_change": "price_change_pct",
-    "volume": "tick_volume",
     "spread": "spread_pct",
 }
 
@@ -2554,7 +2553,6 @@ _MARKET_SCAN_RANK_BY_CHOICES = (
     "price_change_pct",
     "price_change",
     "tick_volume",
-    "volume",
     "rsi",
     "spread_pct",
     "spread",
@@ -2598,7 +2596,6 @@ def symbols_top_markets(  # noqa: C901
     rank_by: Literal[
         "all",
         "spread",
-        "volume",
         "price_change",
         "spread_pct",
         "tick_volume",
@@ -2613,7 +2610,7 @@ def symbols_top_markets(  # noqa: C901
     category: Optional[str] = None,
     detail: CompactFullDetailLiteral = "compact",
 ) -> Dict[str, Any]:
-    """Quick MT5 market overview ranked by spread, volume, or price change.
+    """Quick MT5 market overview ranked by spread, tick volume, or price change.
 
     Defaults to visible tradable symbols for responsiveness. Set `group` or
     `category` (forex, crypto, indices, commodities, stocks, bonds, etfs) to keep
@@ -2634,6 +2631,13 @@ def symbols_top_markets(  # noqa: C901
     def _run() -> Dict[str, Any]:  # noqa: C901
         try:
             raw_rank_by_value = str(rank_by or "abs_price_change_pct").strip().lower()
+            if raw_rank_by_value == "volume":
+                return {
+                    "error": (
+                        "rank_by='volume' is ambiguous; use rank_by='tick_volume' "
+                        "for broker tick counts."
+                    )
+                }
             rank_by_value = _RANK_BY_ALIASES.get(
                 raw_rank_by_value,
                 raw_rank_by_value,
@@ -2652,7 +2656,7 @@ def symbols_top_markets(  # noqa: C901
                 return {
                     "error": (
                         "rank_by must be one of: all, spread/spread_pct, "
-                        "volume/tick_volume, price_change/price_change_pct, "
+                        "tick_volume, price_change/price_change_pct, "
                         "abs_price_change/abs_price_change_pct."
                     )
                 }
@@ -2942,7 +2946,7 @@ def symbols_top_markets(  # noqa: C901
                     include_contract_meta=detail_mode == "full",
                 )
                 out.update(scan_meta)
-                out["ranking"] = "highest_volume"
+                out["ranking"] = "highest_tick_volume"
                 out.update(_scope_fields("volume", volume_rows))
                 out.update(
                     _market_scan_freshness_summary(
@@ -2990,7 +2994,7 @@ def symbols_top_markets(  # noqa: C901
 
             all_rows = [
                 *_ranked_top_market_rows("lowest_spread", spread_rows),
-                *_ranked_top_market_rows("highest_volume", volume_rows),
+                *_ranked_top_market_rows("highest_tick_volume", volume_rows),
                 *_ranked_top_market_rows("highest_price_change_pct", price_change_rows),
             ]
             out = _market_scan_table(
@@ -3002,19 +3006,19 @@ def symbols_top_markets(  # noqa: C901
             out["ranking"] = "all"
             out["rank_categories"] = [
                 "lowest_spread",
-                "highest_volume",
+                "highest_tick_volume",
                 "highest_price_change_pct",
             ]
             out["requested_limit"] = int(limit_value)
             out["universe_size"] = int(len(selected_symbols))
             out["returned_counts"] = {
                 "lowest_spread": len(spread_rows),
-                "highest_volume": len(volume_rows),
+                "highest_tick_volume": len(volume_rows),
                 "highest_price_change_pct": len(price_change_rows),
             }
             out["available_counts"] = {
                 "lowest_spread": evaluated_counts["spread"],
-                "highest_volume": evaluated_counts["volume"],
+                "highest_tick_volume": evaluated_counts["volume"],
                 "highest_price_change_pct": evaluated_counts["price_change"],
             }
             out.update(
@@ -3090,7 +3094,7 @@ def market_scan(  # noqa: C901
     rsi_below: Optional[float] = None,
     rsi_above: Optional[float] = None,
     price_vs_sma: Optional[Literal["above", "below"]] = None,  # type: ignore
-    rank_by: Literal["abs_price_change_pct", "abs_price_change", "price_change_pct", "price_change", "tick_volume", "volume", "rsi", "spread_pct", "spread"] = "abs_price_change_pct",  # type: ignore
+    rank_by: Literal["abs_price_change_pct", "abs_price_change", "price_change_pct", "price_change", "tick_volume", "rsi", "spread_pct", "spread"] = "abs_price_change_pct",  # type: ignore
     rank_order: Literal["auto", "asc", "desc", "ascending", "descending"] = "auto",  # type: ignore
 ) -> Dict[str, Any]:
     """Filtered MT5 market scanner with one flat table and technical filters.

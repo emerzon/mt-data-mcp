@@ -506,7 +506,7 @@ class TestSymbolsTopMarkets:
         result = fn(rank_by="tick_volume", limit=5, detail="full")
 
         assert result["success"] is True
-        assert result["ranking"] == "highest_volume"
+        assert result["ranking"] == "highest_tick_volume"
         assert result["rank_by"] == "tick_volume"
         assert result["rank_by_input"] is None
 
@@ -538,14 +538,14 @@ class TestSymbolsTopMarkets:
             if row["rank"] == 1
         }
         assert top_by_category["lowest_spread"]["symbol"] == "EURUSD"
-        assert top_by_category["highest_volume"]["symbol"] == "EURUSD"
+        assert top_by_category["highest_tick_volume"]["symbol"] == "EURUSD"
         assert top_by_category["highest_price_change_pct"]["symbol"] == "GBPUSD"
         assert result["collection_kind"] == "table"
         assert result["canonical_source"] == "data"
         assert result["ranking"] == "all"
         assert result["rank_categories"] == [
             "lowest_spread",
-            "highest_volume",
+            "highest_tick_volume",
             "highest_price_change_pct",
         ]
         assert "groups" not in result
@@ -661,7 +661,7 @@ class TestSymbolsTopMarkets:
         assert result["universe_size"] == 2
         assert result["returned_counts"] == {
             "lowest_spread": 2,
-            "highest_volume": 2,
+            "highest_tick_volume": 2,
             "highest_price_change_pct": 2,
         }
         assert result["available_counts"] == result["returned_counts"]
@@ -675,7 +675,7 @@ class TestSymbolsTopMarkets:
         first_volume = next(
             row
             for row in result["data"]
-            if row["rank_category"] == "highest_volume" and row["rank"] == 1
+            if row["rank_category"] == "highest_tick_volume" and row["rank"] == 1
         )
         first_price_change = next(
             row
@@ -705,7 +705,7 @@ class TestSymbolsTopMarkets:
 
         assert result == {
             "error": (
-                "rank_by must be one of: all, spread/spread_pct, volume/tick_volume, "
+                "rank_by must be one of: all, spread/spread_pct, tick_volume, "
                 "price_change/price_change_pct, abs_price_change/abs_price_change_pct."
             )
         }
@@ -713,7 +713,7 @@ class TestSymbolsTopMarkets:
     def test_invalid_timeframe_returns_error_for_bar_metrics(self):
         fn = _get_symbols_top_markets()
 
-        result = fn(rank_by="volume", timeframe="BAD")
+        result = fn(rank_by="tick_volume", timeframe="BAD")
 
         assert "error" in result
         assert "Invalid timeframe" in result["error"]
@@ -760,7 +760,7 @@ class TestSymbolsTopMarkets:
         }[symbol]
 
         fn = _get_symbols_top_markets()
-        result = fn(rank_by="volume", timeframe="H1", limit=5, detail="full")
+        result = fn(rank_by="tick_volume", timeframe="H1", limit=5, detail="full")
 
         assert result["success"] is True
         assert result["evaluated_symbols"] == 1
@@ -777,7 +777,7 @@ class TestSymbolsTopMarkets:
         ]
 
         fn = _get_symbols_top_markets()
-        result = fn(rank_by="volume", timeframe="H1", limit=5, detail="full")
+        result = fn(rank_by="tick_volume", timeframe="H1", limit=5, detail="full")
 
         assert result["success"] is True
         assert [row["symbol"] for row in result["skipped_examples"]] == ["EURUSD", "usdjpy"]
