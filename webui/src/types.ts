@@ -352,16 +352,14 @@ export type BacktestResult = {
   horizon: number
   steps: number
   spacing: number
-  results: {
-    method: string
-    mae?: number
-    mape?: number
-    rmse?: number
-    direction_accuracy?: number
-    predictions?: number[][]
-    actuals?: number[][]
-    anchor_times?: number[]
-  }[]
+  results: Record<string, {
+    success: boolean
+    avg_mae?: number
+    avg_rmse?: number
+    avg_directional_accuracy?: number
+    successful_tests?: number
+    num_tests?: number
+  }>
 }
 
 // ============================================================================

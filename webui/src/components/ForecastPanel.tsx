@@ -502,30 +502,35 @@ function BacktestTab({ symbol, timeframe }: { symbol: string; timeframe: string 
             <thead>
               <tr className="text-slate-400 border-b border-slate-700">
                 <th className="text-left px-2 py-2">Method</th>
-                <th className="text-right px-2 py-2">MAPE</th>
+                <th className="text-right px-2 py-2">MAE</th>
                 <th className="text-right px-2 py-2">Dir%</th>
               </tr>
             </thead>
             <tbody>
-              {result.results.map((item) => (
-                <tr key={item.method} className="border-b border-slate-700/50">
-                  <td className="px-2 py-1.5 text-slate-200">{item.method}</td>
+              {Object.entries(result.results).map(([method, item]) => {
+                const directionPercent = item.avg_directional_accuracy == null
+                  ? null
+                  : item.avg_directional_accuracy * 100
+                return (
+                <tr key={method} className="border-b border-slate-700/50">
+                  <td className="px-2 py-1.5 text-slate-200">{method}</td>
                   <td className="text-right px-2 py-1.5 text-slate-300 font-mono">
-                    {item.mape?.toFixed(2) ?? '-'}
+                    {item.avg_mae?.toFixed(4) ?? '-'}
                   </td>
                   <td
                     className={`text-right px-2 py-1.5 font-mono ${
-                      (item.direction_accuracy ?? 0) >= 60
+                      (directionPercent ?? 0) >= 60
                         ? 'text-emerald-400'
-                        : (item.direction_accuracy ?? 0) >= 50
+                        : (directionPercent ?? 0) >= 50
                           ? 'text-amber-400'
                           : 'text-rose-400'
                     }`}
                   >
-                    {item.direction_accuracy?.toFixed(0) ?? '-'}
+                    {directionPercent?.toFixed(0) ?? '-'}
                   </td>
                 </tr>
-              ))}
+                )
+              })}
             </tbody>
           </table>
         </div>
