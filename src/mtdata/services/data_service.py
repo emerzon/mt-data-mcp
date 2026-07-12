@@ -434,25 +434,9 @@ def _indicator_param_syntax_error(ti_spec: Optional[str]) -> Optional[str]:
 
 
 def _resolve_live_bar_reference_epoch(symbol: Optional[str], timeframe: str) -> float:
-    """Prefer a fresh broker tick timestamp when classifying the live bar."""
-    seconds_per_bar = int(TIMEFRAME_SECONDS.get(timeframe, 3600) or 3600)
+    """Use wall-clock time when classifying whether the latest bar is live."""
+    del symbol, timeframe
     system_epoch = _utc_epoch_seconds(datetime.now(dt_timezone.utc))
-    symbol_name = str(symbol or "").strip()
-    if not symbol_name:
-        return float(system_epoch)
-    try:
-        tick = mt5.symbol_info_tick(symbol_name)
-        tick_time = getattr(tick, "time", None) if tick is not None else None
-        if tick_time is None:
-            return float(system_epoch)
-        tick_epoch = float(tick_time)
-        if not math.isfinite(tick_epoch):
-            return float(system_epoch)
-        freshness_limit = float(max(seconds_per_bar, 300))
-        if abs(float(system_epoch) - tick_epoch) <= freshness_limit:
-            return tick_epoch
-    except Exception:
-        pass
     return float(system_epoch)
 
 
