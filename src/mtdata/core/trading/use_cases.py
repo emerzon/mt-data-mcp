@@ -256,6 +256,15 @@ def _best_effort_trade_guardrail_account_info() -> Any:
         return None
 
 
+def _best_effort_trade_guardrail_positions() -> List[Any]:
+    if not trade_guardrails_config.is_enabled():
+        return []
+    try:
+        return list(mt5_adapter.positions_get() or [])
+    except Exception:
+        return []
+
+
 def _normalize_idempotency_key(value: Any) -> Optional[str]:
     if value is None:
         return None
@@ -1410,6 +1419,7 @@ def run_trade_place(  # noqa: C901
 
         if bool(request.dry_run):
             guardrail_account_info = _best_effort_trade_guardrail_account_info()
+            guardrail_positions = _best_effort_trade_guardrail_positions()
             guardrail_preview = preview_trade_guardrails(
                 trade_guardrails_config,
                 symbol=symbol_norm,
@@ -1418,6 +1428,7 @@ def run_trade_place(  # noqa: C901
                 deviation=request.deviation,
                 side=_guardrail_order_side(order_type_norm),
                 account_info=guardrail_account_info,
+                existing_positions=guardrail_positions,
             )
             if guardrail_preview.get("blocked"):
                 violations = list(guardrail_preview.get("violations") or [])
@@ -1471,6 +1482,8 @@ def run_trade_place(  # noqa: C901
                 pending=is_pending,
             )
 
+        guardrail_account_info = _best_effort_trade_guardrail_account_info()
+        guardrail_positions = _best_effort_trade_guardrail_positions()
         static_guardrail = evaluate_trade_guardrails(
             trade_guardrails_config,
             symbol=symbol_norm,
@@ -1478,7 +1491,8 @@ def run_trade_place(  # noqa: C901
             stop_loss=request.stop_loss,
             deviation=request.deviation,
             side=_guardrail_order_side(order_type_norm),
-            account_info=_best_effort_trade_guardrail_account_info(),
+            account_info=guardrail_account_info,
+            existing_positions=guardrail_positions,
             enforce_account_risk=False,
             enforce_wallet_risk=False,
         )

@@ -150,6 +150,10 @@ Guardrails span several layers:
 
 > **Note:** A per-symbol volume map (`MTDATA_TRADE_MAX_VOLUME_BY_SYMBOL`) also acts as an allowlist — a symbol missing from the map is rejected. Wallet-risk caps require a quantifiable stop-loss and valid broker tick metadata.
 
+Reduce-only checks the current open positions before allowing an opposite-side
+order no larger than the net position. On hedging accounts, `trade_place` cannot
+guarantee a reduction, so use `trade_close` with a position ticket instead.
+
 See [ENV_VARS.md § Trade Guardrails](ENV_VARS.md#trade-guardrails) for every variable, defaults, formats, and a ready-to-copy `.env` block. A dry run returns a `guardrails_preview` so you can confirm which rules would fire before going live.
 
 ---

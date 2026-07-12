@@ -415,6 +415,63 @@ def test_run_trade_place_blocks_static_guardrail_before_send(restore_trade_guard
     place_market_order.assert_not_called()
 
 
+def test_run_trade_place_reduce_only_uses_open_positions(restore_trade_guardrails):
+    trade_guardrails_config.enabled = True
+    trade_guardrails_config.ignore_on_demo = False
+    trade_guardrails_config.safety_policy.reduce_only = True
+    place_market_order = MagicMock(return_value={"success": True})
+    existing = [SimpleNamespace(symbol="EURUSD", type=0, volume=0.5)]
+
+    with (
+        patch(
+            "mtdata.core.trading.use_cases.mt5_adapter.account_info",
+            return_value=SimpleNamespace(trade_mode=1, margin_mode=0),
+        ),
+        patch(
+            "mtdata.core.trading.use_cases.mt5_adapter.positions_get",
+            return_value=existing,
+        ),
+    ):
+        result = run_trade_place(
+            TradePlaceRequest(
+                symbol="EURUSD",
+                volume=0.25,
+                order_type="SELL",
+                require_sl_tp=False,
+            ),
+            normalize_order_type_input=lambda value: ("SELL", None),
+            normalize_pending_expiration=lambda value: (value, False),
+            prevalidate_trade_place_market_input=lambda symbol, volume: None,
+            place_market_order=place_market_order,
+            place_pending_order=lambda **kwargs: {"ok": True},
+            close_positions=lambda **kwargs: {"closed_count": 1},
+            safe_int_ticket=lambda value: value,
+        )
+
+    assert result["success"] is True
+    place_market_order.assert_called_once()
+
+
+def test_reduce_only_blocks_trade_place_on_hedging_account():
+    config = TradeGuardrailsConfig(
+        enabled=True,
+        ignore_on_demo=False,
+    )
+    config.safety_policy.reduce_only = True
+
+    result = evaluate_trade_guardrails(
+        config,
+        symbol="EURUSD",
+        volume=0.25,
+        side="SELL",
+        account_info=SimpleNamespace(trade_mode=1, margin_mode=2),
+        existing_positions=[SimpleNamespace(symbol="EURUSD", type=0, volume=0.5)],
+    )
+
+    assert result is not None
+    assert "trade_close" in result["violations"][0]
+
+
 def test_run_trade_place_live_ignores_static_guardrails_for_demo_account(
     restore_trade_guardrails,
 ):

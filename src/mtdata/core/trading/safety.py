@@ -486,6 +486,17 @@ def _resolve_existing_symbol_side(
     return side
 
 
+def _account_uses_hedging(account_info: Any) -> bool:
+    """Return whether MT5 reports retail hedging rather than netting mode."""
+    margin_mode = getattr(account_info, "margin_mode", None)
+    if "HEDGING" in str(margin_mode or "").upper():
+        return True
+    try:
+        return int(margin_mode) == 2
+    except (TypeError, ValueError):
+        return False
+
+
 def _projected_exposure_lots(
     *,
     existing_positions: Optional[List[Any]],
@@ -802,6 +813,19 @@ def evaluate_trade_guardrails(
         existing_positions=existing_positions,
     )
     if enforce_safety_policy:
+        if (
+            config.safety_policy is not None
+            and config.safety_policy.reduce_only
+            and _account_uses_hedging(account_info)
+        ):
+            return _build_guardrail_block(
+                [
+                    "Reduce-only trade_place is unavailable on hedging accounts; "
+                    "use trade_close with a position ticket."
+                ],
+                rule="safety_policy",
+                context={"symbol": normalized_symbol, "side": normalized_side},
+            )
         safety_result = _evaluate_safety_policy(
             config.safety_policy,
             volume=volume,
@@ -873,6 +897,7 @@ def preview_trade_guardrails(
     deviation: Optional[int] = None,
     side: Optional[str] = None,
     account_info: Any = None,
+    existing_positions: Optional[List[Any]] = None,
 ) -> Dict[str, Any]:
     """Produce a dry-run friendly preview of guardrail checks."""
     enabled = _guardrails_active(config)
@@ -904,6 +929,7 @@ def preview_trade_guardrails(
         deviation=deviation,
         side=side,
         account_info=account_info,
+        existing_positions=existing_positions,
         enforce_account_risk=False,
         enforce_wallet_risk=False,
     )
