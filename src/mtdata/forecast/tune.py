@@ -995,6 +995,14 @@ def genetic_search_optimize_hints(  # noqa: C901
 
     start_time = time.time()
     rng = random.Random(int(seed))
+    maximize_metrics = {
+        'sharpe_ratio',
+        'win_rate',
+        'calmar_ratio',
+        'annual_return',
+        'avg_directional_accuracy',
+    }
+    metric_mode = 'max' if fitness_metric in maximize_metrics else 'min'
 
     # Build search space if not provided
     if search_space is None:
@@ -1098,7 +1106,7 @@ def genetic_search_optimize_hints(  # noqa: C901
             spacing=spacing,
             candidate_params={'method': method, **params},
             metric=fitness_metric if fitness_metric != 'composite' else 'avg_rmse',
-            mode='min' if fitness_metric != 'composite' else 'min',
+            mode=metric_mode,
             denoise=denoise,
             features=features,
             dimred_method=dimred_method,
@@ -1239,7 +1247,11 @@ def genetic_search_optimize_hints(  # noqa: C901
             'timeframe': tf,
             'method': method,
             'method_params': params,
-            'fitness_score': 1.0 - fitness if fitness_metric == 'composite' else fitness,
+            'fitness_score': (
+                1.0 - fitness
+                if fitness_metric == 'composite'
+                else (-fitness if metric_mode == 'max' else fitness)
+            ),
         }
         fitness_source = (
             backtest_res.get('_optimization_fitness_source')
@@ -1282,12 +1294,12 @@ def genetic_search_optimize_hints(  # noqa: C901
             'generations': int(generations),
             'elapsed_seconds': round(elapsed, 2),
             'fitness_metric': fitness_metric,
-            'fitness_score_direction': 'higher_is_better',
-            'history_score_direction': (
-                'lower_is_better_internal_objective'
-                if fitness_metric == 'composite'
+            'fitness_score_direction': (
+                'higher_is_better'
+                if fitness_metric == 'composite' or metric_mode == 'max'
                 else 'lower_is_better'
             ),
+            'history_score_direction': 'lower_is_better_internal_objective',
             'timeframes_searched': list(tf_choices),
             'methods_searched': list(method_choices),
             'total_evaluations': int(population) * int(generations),

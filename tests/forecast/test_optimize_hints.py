@@ -311,6 +311,36 @@ def test_genetic_search_optimize_hints_labels_composite_history_scores():
     assert "avg_fitness_score" in history
 
 
+def test_genetic_search_maximizes_higher_is_better_metric():
+    backtest_result = {
+        "results": {
+            "naive": {
+                "success": True,
+                "metrics": {"sharpe_ratio": 0.8},
+            }
+        }
+    }
+
+    with patch(
+        "mtdata.forecast.tune._eval_candidate",
+        return_value=(-0.8, backtest_result),
+    ) as evaluate:
+        result = genetic_search_optimize_hints(
+            symbol="EURUSD",
+            timeframes=["H1"],
+            methods=["naive"],
+            population=2,
+            generations=1,
+            top_n=1,
+            fitness_metric="sharpe_ratio",
+            seed=42,
+        )
+
+    assert all(call.kwargs["mode"] == "max" for call in evaluate.call_args_list)
+    assert result["hints"][0]["fitness_score"] == 0.8
+    assert result["search_summary"]["fitness_score_direction"] == "higher_is_better"
+
+
 @pytest.mark.skip(reason="Long-running integration test; run manually")
 class TestGeneticSearchOptimizeHints:
     """Integration test for genetic search (skipped by default)."""
