@@ -168,9 +168,12 @@ class TestTickUtils:
         assert _validate_tick_freshness(tick, symbol="GOLD", max_age_seconds=5.0) is None
 
     def test_validate_tick_freshness_no_timestamp(self):
-        """Tick without timestamp passes (preserves existing null-tick semantics)."""
+        """Tick without timestamp fails closed because age is unknown."""
         tick = SimpleNamespace()
-        assert _validate_tick_freshness(tick, symbol="EURUSD") is None
+        result = _validate_tick_freshness(tick, symbol="EURUSD")
+        assert result is not None
+        assert result["tick_age_status"] == "unknown"
+        assert "freshness cannot be verified" in result["error"]
 
 
 # ===================================================================

@@ -952,11 +952,7 @@ def _validate_tick_freshness(
     symbol: str,
     max_age_seconds: Optional[float] = None,
 ) -> Optional[Dict[str, Any]]:
-    """Return an error dict if *tick* is stale; ``None`` when fresh or age unknown.
-
-    When the tick carries no timestamp, the validator does **not** reject it
-    (preserving existing null-tick-only failure semantics).
-    """
+    """Return an error dict if *tick* is stale or has unknown age."""
     threshold = (
         float(max_age_seconds)
         if max_age_seconds is not None
@@ -964,7 +960,11 @@ def _validate_tick_freshness(
     )
     age = _tick_age_seconds(tick)
     if age is None:
-        return None
+        return {
+            "error": f"Tick for {symbol} has no usable timestamp; freshness cannot be verified.",
+            "tick_age_status": "unknown",
+            "tick_max_age_seconds": threshold,
+        }
     if age <= threshold:
         return None
     return {
