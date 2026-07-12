@@ -72,7 +72,8 @@ def test_detects_bullish_gartley_from_fibonacci_pivots():
     assert patterns
     pattern = patterns[0]
     assert pattern.name == "Bullish Gartley"
-    assert pattern.status == "forming"
+    assert pattern.status == "completed"
+    assert pattern.details["completion_freshness"] == "recent"
     assert pattern.bias == "bullish"
     assert pattern.start_index == 20
     assert pattern.end_index == 100
@@ -88,6 +89,16 @@ def test_detects_bullish_gartley_from_fibonacci_pivots():
     assert pattern.details["prz_low"] <= pattern.entry_price <= pattern.details["prz_high"]
     assert pattern.target_prices[0] > pattern.entry_price
     assert pattern.invalidation_price < pattern.entry_price
+
+
+def test_completed_harmonic_is_not_removed_when_forming_patterns_are_excluded():
+    patterns = detect_harmonic_patterns(
+        _harmonic_sample_df(),
+        _test_config(include_forming=False),
+    )
+
+    assert patterns
+    assert all(pattern.status == "completed" for pattern in patterns)
 
 
 def test_pattern_type_filter_limits_candidates():

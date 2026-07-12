@@ -649,7 +649,9 @@ def _build_result(
     prz_high = float(max(prz_values))
     prz_mid = float((prz_low + prz_high) / 2.0)
     bars_since_d = int(max(0, (n_bars - 1) - int(points[-1].index)))
-    status = "forming" if bars_since_d <= int(cfg.recent_bars) else "completed"
+    completion_freshness = (
+        "recent" if bars_since_d <= int(cfg.recent_bars) else "historical"
+    )
 
     details: Dict[str, Any] = {
         "pattern_family": "harmonic",
@@ -672,10 +674,11 @@ def _build_result(
         "target_price_2": float(target_2),
         "invalidation_price": float(invalidation),
         "bars_since_completion_pivot": int(bars_since_d),
+        "completion_freshness": completion_freshness,
     }
     return HarmonicPatternResult(
         name=f"{direction_label} {spec.display}",
-        status=status,
+        status="completed",
         confidence=confidence,
         start_index=int(points[0].index),
         end_index=int(points[-1].index),
