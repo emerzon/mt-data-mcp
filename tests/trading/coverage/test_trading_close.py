@@ -551,6 +551,41 @@ class TestClosePositions:
         result = _close_positions(loss_only=True)
         assert result["attempted_count"] == 1
 
+    @patch("mtdata.core.trading.execution._execute_single_close")
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_bulk_all_fail_sets_top_level_failure(self, mock_execute):
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        mt5.positions_get.return_value = [_position(ticket=1), _position(ticket=2)]
+        mock_execute.side_effect = [{"error": "rejected"}, {"error": "timeout"}]
+        from mtdata.core.trading import _close_positions
+
+        result = _close_positions()
+
+        assert result["success"] is False
+        assert result["closed_count"] == 0
+        assert result["attempted_count"] == 2
+        assert result["partial_failure"] is False
+        assert "error" in result
+
+    @patch("mtdata.core.trading.execution._execute_single_close")
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_bulk_mixed_result_sets_partial_failure(self, mock_execute):
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        mt5.positions_get.return_value = [_position(ticket=1), _position(ticket=2)]
+        mock_execute.side_effect = [
+            {"retcode": mt5.TRADE_RETCODE_DONE},
+            {"error": "timeout"},
+        ]
+        from mtdata.core.trading import _close_positions
+
+        result = _close_positions()
+
+        assert result["success"] is False
+        assert result["closed_count"] == 1
+        assert result["partial_failure"] is True
+
     @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
     def test_profit_only_excludes_breakeven_positions(self):
         mt5 = sys.modules["MetaTrader5"]

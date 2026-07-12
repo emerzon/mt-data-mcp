@@ -1582,10 +1582,15 @@ def _close_positions(  # noqa: C901
                 return results[0]
             success_count = _count_done_results(mt5, results)
             bulk_result: Dict[str, Any] = {
+                "success": bool(results) and success_count == len(results),
                 "closed_count": success_count,
                 "attempted_count": len(results),
                 "results": results,
             }
+            if success_count < len(results):
+                bulk_result["partial_failure"] = success_count > 0
+                if success_count == 0:
+                    bulk_result["error"] = "Failed to close any targeted positions."
             if close_priority:
                 bulk_result["close_priority"] = close_priority
             return bulk_result
