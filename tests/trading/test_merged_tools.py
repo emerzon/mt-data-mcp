@@ -64,6 +64,20 @@ class TestMergedTools(unittest.TestCase):
         # (which do ``import MetaTrader5 as mt5`` at call time) pick it up.
         self.mt5 = MagicMock()
         sys.modules['MetaTrader5'] = self.mt5
+        # These tests assert raw UTC epochs. Isolate them from broker timezone
+        # configuration mutated by other full-suite tests.
+        offset_patch = patch(
+            "src.mtdata.utils.mt5._configured_static_offset_seconds",
+            return_value=0,
+        )
+        timezone_patch = patch(
+            "src.mtdata.utils.mt5.mt5_config.get_server_tz",
+            return_value=None,
+        )
+        offset_patch.start()
+        timezone_patch.start()
+        self.addCleanup(offset_patch.stop)
+        self.addCleanup(timezone_patch.stop)
 
     def test_trading_open_get_positions(self):
         # Setup mock
