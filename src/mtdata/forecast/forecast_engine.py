@@ -850,9 +850,11 @@ def _run_registered_forecast_method(
 
         # No stored model — async route for any trainable method when requested
         if async_mode:
+            # Pass training_params (includes quantity) so TaskManager's recomputed
+            # hash matches the model-store key used above.
             async_resp = _submit_async_training(
                 forecaster, method_l, target_series,
-                horizon, seasonality, method_params,
+                horizon, seasonality, training_params,
                 data_scope, params_hash, str(timeframe), X,
             )
             raise _AsyncTrainingStarted(async_resp)
@@ -1107,12 +1109,12 @@ def _format_forecast_output(
                 warning_text = (
                     f"ci_alpha={ci_alpha_value:g} was requested but confidence intervals "
                     f"are unavailable for method '{method}'; returning a point forecast only. "
-                    "Use forecast_conformal_intervals for calibrated uncertainty bands."
+                    "Use forecast_conformal_intervals for residual-quantile uncertainty bands."
                 )
             else:
                 warning_text = (
                     f"Point forecast only for method '{method}'; confidence intervals are unavailable. "
-                    "Use forecast_conformal_intervals for uncertainty bands."
+                    "Use forecast_conformal_intervals for residual-quantile uncertainty bands."
                 )
             warnings = result.get("warnings")
             if not isinstance(warnings, list):

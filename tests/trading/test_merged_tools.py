@@ -300,7 +300,7 @@ class TestMergedTools(unittest.TestCase):
     def test_forecast_barrier_prob(self):
         with patch('src.mtdata.forecast.barriers_probabilities.forecast_barrier_hit_probabilities') as mock_mc:
             mock_mc.return_value = {"success": True}
-            res = barrier_prob(symbol="EURUSD", method="mc", __cli_raw=True)
+            res = barrier_prob(symbol="EURUSD", method="hmm_mc", __cli_raw=True)
             self.assertTrue(res.get("success"))
             self.assertEqual(res.get("detail"), "compact")
             self.assertEqual(res.get("symbol"), "EURUSD")
@@ -340,7 +340,7 @@ class TestMergedTools(unittest.TestCase):
     def test_forecast_barrier_prob_direction_normalization(self):
         with patch('src.mtdata.forecast.barriers_probabilities.forecast_barrier_hit_probabilities') as mock_mc:
             mock_mc.return_value = {"success": True}
-            barrier_prob(symbol="EURUSD", method="mc", direction="LONG", __cli_raw=True)
+            barrier_prob(symbol="EURUSD", method="hmm_mc", direction="LONG", __cli_raw=True)
             self.assertEqual(mock_mc.call_args.kwargs.get("direction"), "long")
 
         with patch('src.mtdata.forecast.barriers_probabilities.forecast_barrier_closed_form') as mock_cf:
@@ -350,7 +350,7 @@ class TestMergedTools(unittest.TestCase):
 
     def test_forecast_barrier_prob_rejects_invalid_direction(self):
         with patch('src.mtdata.forecast.barriers_probabilities.forecast_barrier_hit_probabilities') as mock_mc:
-            res = barrier_prob(symbol="EURUSD", method="mc", direction="SIDEWAYS", __cli_raw=True)
+            res = barrier_prob(symbol="EURUSD", method="hmm_mc", direction="SIDEWAYS", __cli_raw=True)
             self.assertIn("error", res)
             self.assertIn("Invalid direction", res["error"])
             mock_mc.assert_not_called()

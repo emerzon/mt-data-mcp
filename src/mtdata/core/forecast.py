@@ -10,7 +10,6 @@ from importlib import import_module
 from typing import Any, Dict, List, Literal, Optional
 
 from ..forecast.barriers_shared import (
-    BARRIER_METHOD_ALIASES,
     BARRIER_MONTE_CARLO_METHODS,
 )
 from ..forecast.exceptions import ForecastError
@@ -179,6 +178,16 @@ def _attach_timezone(result: Dict[str, Any], *, operation: str) -> Dict[str, Any
 
 
 def _forecast_process_isolation_mode() -> str:
+    """Return process-isolation mode: off | gpu | all.
+
+    Isolation uses ``multiprocessing`` spawn (required on Windows). Spawned
+    children re-initialize independently and cannot share the parent's MT5
+    terminal connection. Operations that need live MT5 data in the child will
+    re-call ``ensure_mt5_connection_or_raise()``; concurrent parent+child MT5
+    use can fail on Windows. Prefer ``MTDATA_FORECAST_PROCESS_ISOLATION=off``
+    when only MT5-backed classical methods run, or keep the default ``gpu`` so
+    only GPU/heavy paths isolate (still re-connects MT5 in the child if needed).
+    """
     raw = os.environ.get(
         _FORECAST_PROCESS_ISOLATION_ENV,
         _FORECAST_PROCESS_ISOLATION_DEFAULT,
@@ -274,6 +283,9 @@ def _forecast_payload_may_use_gpu(operation: str, payload: Dict[str, Any]) -> bo
 
 
 def _should_isolate_forecast_operation(operation: str, payload: Optional[Dict[str, Any]]) -> bool:
+    # Note: spawn isolation does not inherit the parent MT5 session. On Windows
+    # (spawn is the only start method) the child must open its own MT5 handle;
+    # running MT5-heavy work in parent and child concurrently is unsupported.
     if _in_forecast_process_child():
         return False
     if operation not in _FORECAST_ISOLATABLE_OPERATIONS:
@@ -493,6 +505,10 @@ def _run_forecast_payload_direct(operation: str, payload: Dict[str, Any]) -> Dic
 
 
 def _run_forecast_payload_in_process(operation: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+    # Always spawn (not fork): portable and required on Windows. The child does
+    # not share the parent's MetaTrader5 connection; connection-required
+    # operations re-initialize MT5 inside the child (see _run_forecast_payload_direct).
+    # GPU isolation is the main benefit; treat concurrent parent MT5 use as unsafe.
     ctx = mp.get_context("spawn")
     parent_conn, child_conn = ctx.Pipe(duplex=False)
     process = ctx.Process(
@@ -945,10 +961,17 @@ def forecast_list_methods(
 
 @mcp.tool()
 def forecast_conformal_intervals(request: ForecastConformalIntervalsRequest) -> Dict[str, Any]:
-    """Conformalized forecast intervals via rolling-origin calibration.
+    """Empirical residual-quantile forecast bands via rolling-origin backtest.
 
-    - Calibrates per-step absolute residual quantiles using `steps` historical anchors (spaced by `spacing`).
-    - Returns point forecast (from `method`) and conformal bands per step.
+    These are **not** finite-sample conformal prediction guarantees. The tool:
+
+    - Fits the chosen `method` at `steps` historical anchors (spaced by `spacing`)
+    - Collects absolute residuals ``|forecast - actual|`` per horizon step
+    - Builds symmetric bands from residual quantiles at level ``1 - ci_alpha``
+
+    Coverage is **empirical / historical** and may not hold under regime change,
+    non-stationarity, or asymmetric errors. Output metadata sets
+    ``interval_method: "rolling_residual_quantiles"``.
     """
     def _execute() -> Dict[str, Any]:
         return run_forecast_conformal_intervals(
@@ -965,7 +988,7 @@ def forecast_conformal_intervals(request: ForecastConformalIntervalsRequest) -> 
         horizon=request.horizon,
         require_connection=True,
         catch_forecast_error=True,
-        generic_error_prefix="Error computing conformal forecast: ",
+        generic_error_prefix="Error computing residual-quantile forecast intervals: ",
         process_payload=_model_payload(request),
         func=_execute,
     )
@@ -1814,11 +1837,6 @@ def _forecast_list_methods_impl(  # noqa: C901
 
         barrier_methods = {
             "methods": list(BARRIER_MONTE_CARLO_METHODS),
-            "aliases": {
-                key: value
-                for key, value in BARRIER_METHOD_ALIASES.items()
-                if key.startswith("monte_carlo")
-            },
             "probability_only_methods": ["closed_form"],
             "optimizer_only_methods": ["ensemble"],
             "note": "Barrier methods are for forecast_barrier_prob and forecast_barrier_optimize; forecast_generate uses the main forecast method registry.",

@@ -108,20 +108,6 @@ def offset_barrier_seed(seed_base: Any, offset: int = 0) -> int:
     return normalize_barrier_seed(int(seed_base) + int(offset))
 
 
-BARRIER_METHOD_ALIASES: Dict[str, str] = {
-    "mc": "hmm_mc",
-    "gbm": "mc_gbm",
-    "gbm_bb": "mc_gbm_bb",
-    "hmm": "hmm_mc",
-    "jump": "jump_diffusion",
-    "jump_diff": "jump_diffusion",
-    "monte_carlo": "mc_gbm",
-    "monte_carlo_gbm": "mc_gbm",
-    "monte_carlo_bb": "mc_gbm_bb",
-    "monte_carlo_gbm_bb": "mc_gbm_bb",
-}
-
-
 def normalize_barrier_method(
     method: Any,
     *,
@@ -129,7 +115,6 @@ def normalize_barrier_method(
     allow_ensemble: bool = False,
 ) -> Optional[str]:
     method_key = str(method or "").strip().lower()
-    method_key = BARRIER_METHOD_ALIASES.get(method_key, method_key)
     allowed = set(BARRIER_MONTE_CARLO_METHODS)
     if allow_closed_form:
         allowed.add("closed_form")
@@ -149,15 +134,7 @@ def barrier_method_error(
         allowed.append("closed_form")
     if allow_ensemble:
         allowed.append("ensemble")
-    aliases = ", ".join(
-        f"{alias}->{target}"
-        for alias, target in sorted(BARRIER_METHOD_ALIASES.items())
-        if alias.startswith("monte_carlo")
-    )
-    return (
-        f"Unsupported barrier method: {method}. Use one of: {', '.join(allowed)}. "
-        f"Aliases: {aliases}."
-    )
+    return f"Unsupported barrier method: {method}. Use one of: {', '.join(allowed)}."
 
 
 def _binomial_wilson_95(p_hat: float, n: int) -> Tuple[float, float]:

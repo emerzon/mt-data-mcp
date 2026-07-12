@@ -375,14 +375,37 @@ def validate_seasonality_for_method(method: str, seasonality: Optional[int]) -> 
 
 def check_method_dependencies(method: str) -> List[str]:
     """Check if required dependencies are installed for a method."""
-    errors = []
+    import importlib.util
+
+    errors: List[str] = []
     requirements = get_method_requirements(method)
+    module_name_overrides = {
+        "scikit-learn": "sklearn",
+        "chronos-forecasting": "chronos",
+        "chronos-forecasting>=2.0.0": "chronos",
+        "python-dotenv": "dotenv",
+    }
 
     for package in requirements:
-        try:
-            __import__(package)
-        except ImportError:
-            errors.append(f"Missing required package: {package}")
+        # Registry availability notes may join packages with commas.
+        for raw in str(package).split(","):
+            pkg = raw.strip()
+            if not pkg:
+                continue
+            if pkg.lower().startswith("python "):
+                continue
+            name = pkg
+            for sep in (">=", "==", "<=", "~=", ">", "<"):
+                if sep in name:
+                    name = name.split(sep, 1)[0].strip()
+                    break
+            name = module_name_overrides.get(name, name)
+            try:
+                missing = importlib.util.find_spec(name) is None
+            except Exception:
+                missing = True
+            if missing:
+                errors.append(f"Missing required package: {pkg}")
 
     return errors
 

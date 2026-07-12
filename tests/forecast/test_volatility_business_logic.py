@@ -250,10 +250,10 @@ def test_forecast_volatility_direct_methods_and_short_data(monkeypatch):
     assert out["method"] == "ewma"
     assert out["params_used"]["lookback"] == 80
     assert out["params_used"]["lambda_source"] == "lambda_"
-    assert out["params_used"]["decay_factor"] == pytest.approx(0.9)
+    assert out["params_used"]["lambda_"] == pytest.approx(0.9)
+    assert "decay_factor" not in out["params_used"]
     assert "params_explained" in out
     assert "lambda_" in out["params_explained"]
-    assert "decay_factor" in out["params_explained"]
     expected_bpy = vol._bars_per_year("H1", "EURUSD")
     assert out["volatility_annualized"] == pytest.approx(
         out["volatility_per_bar"] * math.sqrt(expected_bpy)

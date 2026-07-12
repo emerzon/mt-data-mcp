@@ -2020,12 +2020,12 @@ def _compact_forecast_ci(
             if method:
                 out["hint"] = (
                     f"{method} produces point forecasts only. "
-                    "Use forecast_conformal_intervals for uncertainty bands."
+                    "Use forecast_conformal_intervals for residual-quantile uncertainty bands."
                 )
             else:
                 out["hint"] = (
                     "This method produces point forecasts only. "
-                    "Use forecast_conformal_intervals for uncertainty bands."
+                    "Use forecast_conformal_intervals for residual-quantile uncertainty bands."
                 )
 
     interval_summary = payload.get("interval_summary")

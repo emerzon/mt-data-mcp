@@ -114,12 +114,12 @@ class ForecastBacktestRequest(BaseModel):
 
     @model_validator(mode="before")
     @classmethod
-    def _normalize_method_alias(cls, values: Any) -> Any:
+    def _normalize_methods_field(cls, values: Any) -> Any:
         if not isinstance(values, dict):
             return values
         out = dict(values)
-        if "methods" not in out and "method" in out:
-            out["methods"] = out.pop("method")
+        # Singular `method` is not accepted; use plural `methods` only.
+        reject_removed_field(out, field_name="method", replacement="methods")
         if "methods" in out:
             out["methods"] = _normalize_methods_value(out["methods"])
         return out
@@ -172,7 +172,11 @@ class ForecastConformalIntervalsRequest(BaseModel):
         0.1,
         gt=0.0,
         lt=1.0,
-        description="Conformal alpha; 0.10 gives 90% confidence, 0.05 gives 95%. Values outside 0.05-0.20 are warned.",
+        description=(
+            "Residual-quantile alpha for rolling-backtest absolute-error bands "
+            "(not a true conformal coverage guarantee). 0.10 ≈ 90% empirical "
+            "target, 0.05 ≈ 95%. Values outside 0.05-0.20 are warned."
+        ),
     )
     denoise: Optional[DenoiseSpec] = None
     params: Optional[Dict[str, Any]] = None

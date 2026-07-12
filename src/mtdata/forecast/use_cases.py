@@ -1089,12 +1089,14 @@ def _conformal_summary(conformal: Any) -> Optional[Dict[str, Any]]:
     out = {
         key: conformal.get(key)
         for key in (
+            "interval_method",
             "ci_alpha",
             "calibration_steps",
             "calibration_spacing",
             "empirical_coverage",
             "coverage_target",
             "coverage_evaluation",
+            "coverage_note",
             "min_calibration_points",
         )
         if conformal.get(key) not in (None, "", [], {})
@@ -1157,6 +1159,7 @@ def _apply_conformal_intervals_detail(
         "upper_price",
         "lower_return",
         "upper_return",
+        "interval_method",
         "ci_alpha",
         "confidence_level",
         "ci_status",
@@ -2267,6 +2270,13 @@ def run_forecast_conformal_intervals(
     backtest_impl: Any = _forecast_backtest_impl,
     forecast_impl: Any = _forecast_impl,
 ) -> Dict[str, Any]:
+    """Build residual-quantile forecast bands from rolling backtest residuals.
+
+    Not true split-conformal prediction: residuals come from rolling-origin
+    backtest fits (different models per anchor), bands are symmetric absolute-
+    residual quantiles, and reported coverage is empirical leave-one-out on
+    those residuals—not a guaranteed finite-sample coverage bound.
+    """
     started_at = time.perf_counter()
     detail_value = _normalize_trader_detail(getattr(request, "detail", "compact"))
     log_operation_start(
@@ -2292,7 +2302,9 @@ def run_forecast_conformal_intervals(
         ))
         res = bt.get("results", {}).get(str(request.method))
         if not res or not res.get("details"):
-            raise ForecastError("Conformal calibration failed: no backtest details")
+            raise ForecastError(
+                "Residual-quantile interval calibration failed: no backtest details"
+            )
 
         # Build per-step residuals |y_hat_i - y_i|.
         fh = int(request.horizon)
@@ -2339,7 +2351,7 @@ def run_forecast_conformal_intervals(
         ))
         yhat = out.get("forecast_price") or []
         if not yhat:
-            raise ForecastError("Empty point forecast for conformal intervals")
+            raise ForecastError("Empty point forecast for residual-quantile intervals")
         yhat_arr = _np.array(yhat, dtype=float)
         fh_eff = min(fh, yhat_arr.size)
         lo = _np.empty(fh_eff, dtype=float)
@@ -2351,7 +2363,9 @@ def run_forecast_conformal_intervals(
 
         result = dict(out)
         result["detail"] = detail_value
+        result["interval_method"] = "rolling_residual_quantiles"
         result["conformal"] = {
+            "interval_method": "rolling_residual_quantiles",
             "ci_alpha": float(request.ci_alpha),
             "calibration_steps": int(request.steps),
             "calibration_spacing": int(request.spacing),
@@ -2362,6 +2376,10 @@ def run_forecast_conformal_intervals(
             "empirical_coverage": empirical_coverage,
             "coverage_target": round(1.0 - float(request.ci_alpha), 6),
             "coverage_evaluation": "leave_one_out_calibration_residuals",
+            "coverage_note": (
+                "Empirical residual quantiles from rolling backtest; not a "
+                "finite-sample conformal coverage guarantee."
+            ),
         }
         result["lower_price"] = [float(v) for v in lo.tolist()]
         result["upper_price"] = [float(v) for v in hi.tolist()]
@@ -2389,9 +2407,10 @@ def run_forecast_conformal_intervals(
             result["warnings"] = warnings_list
         if min_calibration_points < 30:
             sample_warning = (
-                "Conformal calibration has as few as "
+                "Residual-quantile calibration has as few as "
                 f"{min_calibration_points} residual(s) per forecast step; "
-                "tail quantiles and empirical coverage may be unstable below 30."
+                "tail quantiles and empirical coverage may be unstable below 30. "
+                "These bands are not true conformal prediction intervals."
             )
             warnings_list = result.get("warnings")
             if not isinstance(warnings_list, list):

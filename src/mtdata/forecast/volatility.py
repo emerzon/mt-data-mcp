@@ -431,19 +431,16 @@ def _realized_kernel_variance(
 def _ewma_param_explanations(lambda_source: str) -> Dict[str, str]:
     """Human-readable explanations for EWMA parameters in API output."""
     out = {
-        "decay_factor": (
-            "EWMA decay factor for volatility weights. "
-            "Higher values retain older bars longer; lower values react faster to recent moves."
-        ),
         "lambda_": (
-            "Legacy name for the EWMA decay factor, retained for compatibility."
+            "EWMA decay factor for volatility weights (0-1). "
+            "Higher values retain older bars longer; lower values react faster to recent moves."
         ),
     }
     if lambda_source == "halflife":
         out["halflife"] = (
-            "Half-life in bars used to derive decay_factor "
-            "(decay_factor = exp(-ln(2) / halflife); for halflife=22, "
-            "decay_factor is approximately 0.969)."
+            "Half-life in bars used to derive lambda_ "
+            "(lambda_ = exp(-ln(2) / halflife); for halflife=22, "
+            "lambda_ is approximately 0.969)."
         )
     return out
 
@@ -740,18 +737,6 @@ def _finalize_volatility_output(
             "horizon=1, so volatility_horizon equals volatility_per_bar."
         )
     out.setdefault("volatility_interpretation", interpretation)
-
-    params_used = out.get("params_used")
-    if isinstance(params_used, dict) and "lambda_" in params_used:
-        params_copy = dict(params_used)
-        params_copy.setdefault("decay_factor", params_copy.get("lambda_"))
-        out["params_used"] = params_copy
-
-    params_explained = out.get("params_explained")
-    if isinstance(params_explained, dict) and "lambda_" in params_explained:
-        explained_copy = dict(params_explained)
-        explained_copy.setdefault("decay_factor", explained_copy["lambda_"])
-        out["params_explained"] = explained_copy
 
     return out
 

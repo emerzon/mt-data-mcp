@@ -497,8 +497,13 @@ def test_forecast_generate_compact_normalizes_utc_times_and_neutral_delta(monkey
     assert out["forecast_vs_last_price"]["direction_threshold_pct"] == 0.01
 
 
-def test_forecast_backtest_request_accepts_method_alias():
-    request = ForecastBacktestRequest(symbol="EURUSD", method="theta")
+def test_forecast_backtest_request_rejects_singular_method_alias():
+    with pytest.raises(ValueError, match="method was removed; use methods"):
+        ForecastBacktestRequest(symbol="EURUSD", method="theta")
+
+
+def test_forecast_backtest_request_accepts_methods():
+    request = ForecastBacktestRequest(symbol="EURUSD", methods=["theta"])
 
     assert request.methods == ["theta"]
 
@@ -2464,42 +2469,29 @@ def test_forecast_tune_genetic_and_barrier_prob_routing(monkeypatch):
     out = raw_barrier(request=ForecastBarrierProbRequest(symbol="EURUSD", method="mystery"))
     assert out["error_code"] == "unsupported_method"
     assert "Unsupported barrier method: mystery" in out["error"]
-    assert "monte_carlo->mc_gbm" in out["error"]
+    assert "mc_gbm" in out["error"]
 
 
-def test_forecast_barrier_methods_accept_monte_carlo_aliases():
-    called: dict[str, str] = {}
-
-    def fake_barrier_hit(**kwargs):
-        called["prob_method"] = kwargs["method"]
-        return {"success": True}
-
+def test_forecast_barrier_methods_reject_legacy_aliases():
     out = forecast_use_cases.run_forecast_barrier_prob(
         ForecastBarrierProbRequest(symbol="EURUSD", method="monte_carlo"),
         build_barrier_kwargs=lambda _values: {},
         normalize_trade_direction=lambda _direction: ("long", None),
-        barrier_hit_probabilities_impl=fake_barrier_hit,
+        barrier_hit_probabilities_impl=lambda **_kwargs: {"success": True},
         barrier_closed_form_impl=lambda **_kwargs: {"unused": True},
     )
-
-    assert out["success"] is True
-    assert called["prob_method"] == "mc_gbm"
-
-    def fake_optimize(**kwargs):
-        called["optimize_method"] = kwargs["method"]
-        called["optimize_output_mode"] = kwargs["output_mode"]
-        assert "format" not in kwargs
-        return {"success": True, "best": {}}
+    assert out.get("error_code") == "unsupported_method" or "Unsupported barrier method" in str(
+        out.get("error", "")
+    )
 
     out_opt = forecast_use_cases.run_forecast_barrier_optimize(
         ForecastBarrierOptimizeRequest(symbol="EURUSD", method="monte_carlo_bb"),
         parse_kv_or_json=lambda value: value or {},
-        barrier_optimize_impl=fake_optimize,
+        barrier_optimize_impl=lambda **_kwargs: {"success": True, "best": {}},
     )
-
-    assert out_opt["success"] is True
-    assert called["optimize_method"] == "mc_gbm_bb"
-    assert called["optimize_output_mode"] == "summary"
+    assert out_opt.get("error_code") == "unsupported_method" or "Unsupported barrier method" in str(
+        out_opt.get("error", "")
+    )
 
 
 def test_forecast_barrier_prob_applies_default_pct_barriers_when_missing(monkeypatch):
