@@ -166,6 +166,7 @@ def _require_api_access(
         code="web_api_remote_forbidden",
     )
 
+load_environment()
 app = create_web_api_app()
 api_router = APIRouter(dependencies=[Depends(_require_api_access)])
 
