@@ -320,6 +320,32 @@ def test_market_status_symbol_mode_handles_bool_like_trade_and_schedule(monkeypa
     assert "exchange-calendar guarantee" in result["heuristic_note"]
 
 
+def test_inferred_symbol_schedule_normalizes_server_epochs_to_utc(monkeypatch) -> None:
+    now_utc = datetime(2026, 4, 20, 12, 0, tzinfo=timezone.utc)
+    server_epoch = (now_utc + timedelta(hours=3)).timestamp()
+
+    class Gateway:
+        TIMEFRAME_M1 = 1
+
+        def copy_rates_range(self, symbol, timeframe, start, end):
+            return [{"time": server_epoch}]
+
+    monkeypatch.setattr(
+        market_status_mod,
+        "_normalize_times_in_struct",
+        lambda rows: [{**row, "time": row["time"] - 3 * 3600} for row in rows],
+    )
+
+    result = market_status_mod._infer_symbol_schedule_from_recent_candles(
+        "TEST",
+        Gateway(),
+        now_utc=now_utc,
+    )
+
+    assert result["active_hours_utc"] == {"monday": ["12:00-13:00"]}
+    assert result["current_time_in_active_session"] is True
+
+
 def test_market_status_symbol_mode_blocks_weekend_opening(monkeypatch) -> None:
     raw = _unwrap(market_status_mod.market_status)
     fixed_now = datetime(2026, 4, 25, 3, 14, tzinfo=timezone.utc)

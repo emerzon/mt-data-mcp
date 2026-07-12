@@ -14,7 +14,11 @@ import holidays
 from ..shared.schema import CompactFullDetailLiteral
 from ..shared.symbols import is_probably_crypto_symbol, is_probably_forex_symbol
 from ..utils.market_metadata import build_tick_freshness_context
-from ..utils.mt5 import MT5ConnectionError, ensure_mt5_connection_or_raise
+from ..utils.mt5 import (
+    MT5ConnectionError,
+    _normalize_times_in_struct,
+    ensure_mt5_connection_or_raise,
+)
 from ..utils.mt5_enums import decode_mt5_enum_label
 from ._mcp_instance import mcp
 from .execution_logging import run_logged_operation
@@ -793,6 +797,7 @@ def _infer_symbol_schedule_from_recent_candles(
             "confidence": "unavailable",
             "candles_analyzed": 0,
         }
+    rates = _normalize_times_in_struct(rates)
 
     slots: set[Tuple[int, int]] = set()
     active_weekdays: set[int] = set()
