@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timezone
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -72,6 +73,39 @@ class TestSameDayEarlyClose:
         result = ms_mod._check_market_status("TEST", now)
         assert result["status"] == "closed"
         assert result["reason"] == "holiday"
+
+
+class TestUsProductionEarlyCloseCalendar:
+    @pytest.mark.parametrize("market_id", ["NYSE", "NASDAQ"])
+    def test_christmas_eve_2026_closes_at_one(self, market_id):
+        now = datetime(2026, 12, 24, 12, 0, tzinfo=ZoneInfo("America/New_York"))
+
+        result = ms_mod._check_market_status(market_id, now)
+
+        assert result["status"] == "open"
+        assert result["minutes_until_close"] == 60
+        assert result["early_close"] is True
+        assert result["early_close_time"] == "13:00"
+
+    @pytest.mark.parametrize("market_id", ["NYSE", "NASDAQ"])
+    def test_independence_day_eve_2025_closes_at_one(self, market_id):
+        now = datetime(2025, 7, 3, 12, 0, tzinfo=ZoneInfo("America/New_York"))
+
+        result = ms_mod._check_market_status(market_id, now)
+
+        assert result["status"] == "open"
+        assert result["minutes_until_close"] == 60
+        assert result["early_close"] is True
+
+    @pytest.mark.parametrize("market_id", ["NYSE", "NASDAQ"])
+    def test_observed_independence_day_2026_remains_closed(self, market_id):
+        now = datetime(2026, 7, 3, 12, 0, tzinfo=ZoneInfo("America/New_York"))
+
+        result = ms_mod._check_market_status(market_id, now)
+
+        assert result["status"] == "closed"
+        assert result["reason"] == "holiday"
+        assert "early_close" not in result
 
 
 # ---- _check_market_status: day-after early close ----

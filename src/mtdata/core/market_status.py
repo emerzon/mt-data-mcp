@@ -48,6 +48,7 @@ _MARKETS = {
         "early_close": (13, 0),  # 1:00 PM on some holidays
         "early_close_holidays": [],
         "early_close_day_after": ["Thanksgiving"],
+        "early_close_eves": ["Independence Day", "Christmas Day"],
     },
     "NASDAQ": {
         "name": "NASDAQ",
@@ -58,6 +59,7 @@ _MARKETS = {
         "early_close": (13, 0),
         "early_close_holidays": [],
         "early_close_day_after": ["Thanksgiving"],
+        "early_close_eves": ["Independence Day", "Christmas Day"],
     },
     "LSE": {
         "name": "London Stock Exchange",
@@ -292,6 +294,12 @@ def _is_early_close_session(
             if h_name.lower() in holiday_name.lower():
                 return True
 
+    # An observed full-day holiday takes precedence over an adjacent-date rule.
+    # For example, July 3 is closed when July 4 falls on Saturday; it must not
+    # be reclassified as the early-close eve of Independence Day.
+    if is_holiday_result:
+        return False
+
     if market.get("early_close_day_after"):
         yesterday = session_dt - timedelta(days=1)
         _, yesterday_holiday = _is_holiday(country, yesterday)
@@ -386,6 +394,14 @@ def _check_market_status(market_id: str, now_local: datetime) -> Dict[str, Any]:
     
     open_time = now_local.replace(hour=open_hour, minute=open_minute, second=0, microsecond=0)
     close_time = now_local.replace(hour=close_hour, minute=close_minute, second=0, microsecond=0)
+    session_fields = (
+        {
+            "early_close": True,
+            "early_close_time": f"{close_hour:02d}:{close_minute:02d}",
+        }
+        if is_early_close
+        else {}
+    )
     
     # Check pre-market (before open)
     now_norm = _normalize_time(now_local)
@@ -399,6 +415,7 @@ def _check_market_status(market_id: str, now_local: datetime) -> Dict[str, Any]:
             "message": f"{market_id}: Pre-market (opening in {_format_duration(minutes_until_open)})",
             "next_open": open_time.isoformat(),
             "minutes_until_open": minutes_until_open,
+            **session_fields,
         }
     
     # Check if during lunch break
@@ -416,6 +433,7 @@ def _check_market_status(market_id: str, now_local: datetime) -> Dict[str, Any]:
                 "message": f"{market_id}: Lunch break (resuming in {_format_duration(minutes_until_resume)})",
                 "next_open": lunch_end.isoformat(),
                 "minutes_until_open": minutes_until_resume,
+                **session_fields,
             }
     
     # Check if market is open
@@ -429,6 +447,7 @@ def _check_market_status(market_id: str, now_local: datetime) -> Dict[str, Any]:
             "message": f"{market_id}: Open (closing in {_format_duration(minutes_until_close)})",
             "next_close": close_time.isoformat(),
             "minutes_until_close": minutes_until_close,
+            **session_fields,
         }
     
     # Market closed for the day
@@ -444,6 +463,7 @@ def _check_market_status(market_id: str, now_local: datetime) -> Dict[str, Any]:
         "message": f"{market_id}: Closed (opening in {_format_duration(minutes_until)})",
         "next_open": next_open.isoformat(),
         "minutes_until_open": minutes_until,
+        **session_fields,
     }
 
 
@@ -1185,6 +1205,9 @@ def market_status(
             - `next_open` / `next_close`: ISO timestamp of next event
             - `minutes_until_open` / `minutes_until_close`: Minutes until the
               named next event.
+            - `early_close`: True on a shortened session.
+            - `early_close_time`: Effective local close time (HH:MM) on a
+              shortened session.
     """
 
     detail_mode = normalize_output_verbosity_detail(detail)
