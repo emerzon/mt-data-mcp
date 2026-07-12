@@ -20,6 +20,35 @@ def format_epoch_utc(value: Any) -> Optional[str]:
         return None
 
 
+def format_relative_time(value: datetime, *, now: Optional[datetime] = None) -> str:
+    """Format a datetime as a compact past- or future-relative label."""
+    timestamp = value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+    timestamp = timestamp.astimezone(timezone.utc)
+    current = now or datetime.now(timezone.utc)
+    current = (
+        current.astimezone(timezone.utc)
+        if current.tzinfo
+        else current.replace(tzinfo=timezone.utc)
+    )
+    delta_seconds = int(round((current - timestamp).total_seconds()))
+    if abs(delta_seconds) < 60:
+        return "just now"
+
+    seconds = abs(delta_seconds)
+    for unit_seconds, unit_name in (
+        (30 * 86400, "month"),
+        (7 * 86400, "week"),
+        (86400, "day"),
+        (3600, "hour"),
+        (60, "minute"),
+    ):
+        if seconds >= unit_seconds:
+            amount = max(1, seconds // unit_seconds)
+            label = f"{amount} {unit_name}{'' if amount == 1 else 's'}"
+            return f"in {label}" if delta_seconds < 0 else f"{label} ago"
+    return "just now"
+
+
 def _format_time_minimal(epoch_seconds: float) -> str:
     """Format epoch seconds as a minute-resolution RFC 3339 UTC string."""
     dt = datetime.fromtimestamp(epoch_seconds, tz=timezone.utc)

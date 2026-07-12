@@ -8,6 +8,7 @@ from typing import Any, Dict, Optional
 
 from ..services.unified_news import fetch_unified_news
 from ..shared.schema import DetailLiteral
+from ..utils.time import format_relative_time
 from ._mcp_instance import mcp
 from .execution_logging import run_logged_operation
 from .output_contract import normalize_output_verbosity_detail
@@ -92,37 +93,6 @@ def _news_data_fetched_at() -> str:
     )
 
 
-def _news_relative_time_text(value: datetime) -> Optional[str]:
-    published_at = value.astimezone(timezone.utc)
-
-    now = datetime.now(timezone.utc)
-    delta_seconds = int(round((now - published_at).total_seconds()))
-    if abs(delta_seconds) < 60:
-        return "just now"
-
-    seconds = abs(delta_seconds)
-    if seconds < 3600:
-        amount = max(1, seconds // 60)
-        unit = "minute"
-    elif seconds < 86400:
-        amount = max(1, seconds // 3600)
-        unit = "hour"
-    elif seconds < 604800:
-        amount = max(1, seconds // 86400)
-        unit = "day"
-    elif seconds < 2592000:
-        amount = max(1, seconds // 604800)
-        unit = "week"
-    else:
-        amount = max(1, seconds // 2592000)
-        unit = "month"
-
-    plural = "" if amount == 1 else "s"
-    if delta_seconds < 0:
-        return f"in {amount} {unit}{plural}"
-    return f"{amount} {unit}{plural} ago"
-
-
 def _news_compact_time_field(
     published_at_value: Any,
     *,
@@ -133,7 +103,7 @@ def _news_compact_time_field(
         return "relative_time", metadata_relative_time
     if published_at is None:
         return None, None
-    relative_time = _news_relative_time_text(published_at)
+    relative_time = format_relative_time(published_at)
     if relative_time:
         return "relative_time", relative_time
     return "time_utc", _news_time_utc_text(published_at)

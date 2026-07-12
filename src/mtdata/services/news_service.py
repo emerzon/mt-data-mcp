@@ -9,7 +9,7 @@ from typing import Any, Dict, List, Optional
 
 from ..core.runtime_metadata import build_runtime_timezone_meta
 from ..utils.mt5 import _mt5_epoch_to_utc
-from ..utils.time import _resolve_client_tz, _use_client_tz
+from ..utils.time import _resolve_client_tz, _use_client_tz, format_relative_time
 from .news_text import normalize_news_text
 
 logger = logging.getLogger(__name__)
@@ -36,7 +36,7 @@ class MT5NewsRecord:
     
     def to_dict(self, now: Optional[datetime] = None) -> Dict[str, Any]:
         return {
-            "relative_time": _relative_time_text(self.timestamp, now=now),
+            "relative_time": format_relative_time(self.timestamp, now=now),
             "subject": self.subject,
             "category": self.category,
             "source": self.source,
@@ -270,31 +270,6 @@ class MT5NewsParser:
 
         timestamp_utc = _mt5_epoch_to_utc(float(timestamp_raw))
         return datetime.fromtimestamp(timestamp_utc, tz=timezone.utc)
-
-
-def _relative_time_text(timestamp: datetime, now: Optional[datetime] = None) -> str:
-    """Return a compact relative-time label like '5 minutes ago'."""
-    current = now or datetime.now(timezone.utc)
-    current_utc = current.astimezone(timezone.utc) if current.tzinfo else current.replace(tzinfo=timezone.utc)
-    timestamp_utc = timestamp.astimezone(timezone.utc) if timestamp.tzinfo else timestamp.replace(tzinfo=timezone.utc)
-
-    delta_seconds = int(round((current_utc - timestamp_utc).total_seconds()))
-    if abs(delta_seconds) < 60:
-        return "just now" if delta_seconds >= 0 else "in less than a minute"
-
-    future = delta_seconds < 0
-    delta_seconds = abs(delta_seconds)
-    units = (
-        (86400, "day"),
-        (3600, "hour"),
-        (60, "minute"),
-    )
-    for unit_seconds, unit_name in units:
-        if delta_seconds >= unit_seconds:
-            count = delta_seconds // unit_seconds
-            label = f"{count} {unit_name}{'' if count == 1 else 's'}"
-            return f"in {label}" if future else f"{label} ago"
-    return "just now"
 
 
 def _parse_news_filter_datetime(value: str, client_tz: Any = None) -> datetime:
