@@ -71,8 +71,15 @@ ranked pair rows plus summary highlights.
 For each unordered pair of symbols `(A, B)`, the tool:
 1. Fetches recent price histories
 2. Applies a level-style transform (`log_level` by default)
-3. Runs Engle-Granger cointegration tests in both orientations
-4. Keeps the orientation with the lower p-value and reports spread diagnostics
+3. Runs one Engle-Granger test with the first symbol in stable input/group
+   order as the dependent series
+4. Reports that orientation's p-value, hedge ratio, spread diagnostics, and
+   `orientation_policy="left_dependent"`
+
+Engle-Granger is orientation-sensitive. The tool deliberately avoids selecting
+the lower p-value after testing both directions because that would cherry-pick
+the test result. For a two-symbol request, reverse the input order and run the
+tool again when the opposite economic orientation is relevant.
 
 With `method=engle_granger`, it evaluates unordered pairs. With `method=johansen`, it evaluates the aligned basket jointly and returns trace/max-eigenvalue rank estimates plus cointegrating vectors.
 
