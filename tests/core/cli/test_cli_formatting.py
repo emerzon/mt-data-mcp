@@ -31,13 +31,13 @@ from mtdata.core.cli import (
     _first_line,
     _format_cli_literal,
     _format_result_for_cli,
-    _format_result_minimal,
     _json_default,
     _quote_cli_value,
     _render_cli_result,
     _resolve_cli_formatter,
     _write_cli_text,
 )
+from mtdata.core.cli.formatting import _format_result_minimal
 
 # ========================================================================
 # _json_default
