@@ -294,6 +294,13 @@ Some methods infer `n_states` when it is not explicitly supplied:
 
 These methods can choose different state counts on the same data because they optimize for different regime concepts: volatility tiers for GARCH and consensus return/volatility granularity for ensemble.
 
+The ensemble defaults to `hmm`, `clustering`, and `wavelet`. Ensemble voters
+must emit state IDs canonicalized by return, so supported overrides are
+`hmm`, `gmm`, `ms_ar`, `clustering`, and `wavelet`. BOCPD/PELT change points,
+rule-based labels, and GARCH volatility tiers are different concepts and are
+rejected as ensemble voters instead of being mapped into the same state-ID
+space. Use those methods separately as transition or volatility gates.
+
 #### GARCH volatility tiers
 
 The `garch` method fits a single GARCH model to estimate conditional

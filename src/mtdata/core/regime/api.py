@@ -1015,6 +1015,9 @@ def regime_detect(  # noqa: C901
         - 'wavelet': Returns 'regime_params' with 'energy_profiles' showing frequency distribution.
           Best for detecting regimes at different time scales.
         - 'ensemble': Consensus across multiple methods with AUTO-DETECTED n_states.
+          Default voters are HMM, clustering, and wavelet. Only state methods
+          whose IDs are canonicalized by return are accepted; change-point,
+          rule-based, and GARCH volatility-tier methods cannot vote.
           n_states determined by return distribution kurtosis:
             kurtosis > 6.0 → 6 states
             kurtosis > 4.5 → 5 states
@@ -3177,18 +3180,34 @@ def regime_detect(  # noqa: C901
         elif method == "ensemble":
             # Consensus regime detection: run multiple fast methods and
             # aggregate their state_probabilities via soft or hard voting.
-            _STATE_METHODS = {"hmm", "gmm", "ms_ar", "clustering", "garch", "wavelet"}
-            default_sub = ["bocpd", "hmm", "clustering", "wavelet"]
+            state_methods = {"hmm", "gmm", "ms_ar", "clustering", "wavelet"}
+            default_sub = ["hmm", "clustering", "wavelet"]
             sub_methods_raw = p.get("methods", default_sub)
             if isinstance(sub_methods_raw, str):
                 sub_methods_raw = [m.strip() for m in sub_methods_raw.split(",")]
             sub_methods: List[str] = []
+            unsupported_methods: List[str] = []
             for candidate in sub_methods_raw:
                 normalized = _normalize_regime_method_name(candidate)
-                if normalized in ("ensemble", "all", "rule_based"):
+                if normalized not in state_methods:
+                    if normalized not in unsupported_methods:
+                        unsupported_methods.append(normalized)
                     continue
                 if normalized not in sub_methods:
                     sub_methods.append(normalized)
+            if unsupported_methods:
+                return _finish(
+                    {
+                        "error": (
+                            "Ensemble methods must be return-canonicalized state "
+                            "classifiers. Supported methods: clustering, gmm, hmm, "
+                            "ms_ar, wavelet. Unsupported: "
+                            + ", ".join(unsupported_methods)
+                            + "."
+                        ),
+                        "error_code": "invalid_ensemble_methods",
+                    }
+                )
             if not sub_methods:
                 return _finish({"error": "No valid sub-methods for ensemble."})
 
@@ -3235,14 +3254,7 @@ def regime_detect(  # noqa: C901
                 sub_params = dict(p)
                 sub_params.pop("methods", None)
                 sub_params.pop("voting", None)
-                # Only pass n_states to sub-methods if explicitly provided in params
-                # This allows methods like GARCH to auto-detect optimal n_states
-                if sm in _STATE_METHODS:
-                    # Don't override n_states for garch - let it auto-detect
-                    if sm != "garch":
-                        sub_params.setdefault("n_states", n_states_ens)
-                    # For garch, if n_states is already in sub_params, keep it
-                    # Otherwise leave it out to trigger auto-detection
+                sub_params.setdefault("n_states", n_states_ens)
                 try:
                     sr = call_tool_sync_structured(
                         regime_detect,
@@ -3275,8 +3287,7 @@ def regime_detect(  # noqa: C901
                     }
                 )
 
-            # Extract state arrays from sub-results
-            # For BOCPD (changepoint), convert cp_prob > threshold to binary state
+            # Extract return-canonicalized state arrays from sub-results.
             state_arrays: List[np.ndarray] = []
             prob_arrays: List[np.ndarray] = []  # (n_bars, n_states) per method
             prob_valid_masks: List[np.ndarray] = []
@@ -3288,71 +3299,6 @@ def regime_detect(  # noqa: C901
                 sr = sr_info["result"]
                 series = sr.get("series", {})
 
-                if sm_name == "bocpd":
-                    # BOCPD returns cp_prob, not state — convert to binary
-                    cp_prob = series.get("cp_prob", sr.get("cp_prob", []))
-                    if cp_prob is not None and len(cp_prob) == ref_len:
-                        cp_arr_raw = np.asarray(cp_prob, dtype=float)
-                        valid_mask = np.isfinite(cp_arr_raw)
-                        cp_arr = np.clip(
-                            np.nan_to_num(
-                                cp_arr_raw,
-                                nan=0.0,
-                                posinf=1.0,
-                                neginf=0.0,
-                            ),
-                            0.0,
-                            1.0,
-                        )
-                        params_used = (
-                            sr.get("params_used") if isinstance(sr, dict) else None
-                        )
-                        bocpd_threshold = _coerce_optional_float(sr.get("threshold"))
-                        if bocpd_threshold is None and isinstance(params_used, dict):
-                            bocpd_threshold = _coerce_optional_float(
-                                params_used.get("cp_threshold")
-                            )
-                        if bocpd_threshold is None:
-                            bocpd_threshold = float(threshold)
-                        if float(bocpd_threshold) <= 0.0:
-                            cp_vote_prob = np.where(cp_arr > 0.0, 1.0, 0.0)
-                        elif float(bocpd_threshold) >= 1.0:
-                            cp_vote_prob = cp_arr
-                        else:
-                            below_threshold = cp_arr < float(bocpd_threshold)
-                            cp_vote_prob = np.empty_like(cp_arr)
-                            cp_vote_prob[below_threshold] = (
-                                cp_arr[below_threshold]
-                                / (2.0 * float(bocpd_threshold))
-                            )
-                            cp_vote_prob[~below_threshold] = 0.5 + (
-                                0.5
-                                * (
-                                    cp_arr[~below_threshold]
-                                    - float(bocpd_threshold)
-                                )
-                                / (1.0 - float(bocpd_threshold))
-                            )
-                            cp_vote_prob = np.clip(cp_vote_prob, 0.0, 1.0)
-                        st = np.full(ref_len, -1, dtype=int)
-                        st[valid_mask] = np.where(
-                            cp_arr[valid_mask] >= float(bocpd_threshold),
-                            1,
-                            0,
-                        ).astype(int)
-                        pr = np.zeros((ref_len, n_states_ens))
-                        pr[valid_mask, 0] = 1.0 - cp_vote_prob[valid_mask]
-                        if n_states_ens >= 2:
-                            pr[valid_mask, 1] = cp_vote_prob[valid_mask]
-                        if not np.any(valid_mask):
-                            continue
-                        state_arrays.append(st)
-                        prob_arrays.append(pr)
-                        prob_valid_masks.append(valid_mask)
-                        method_names.append(sm_name)
-                    continue
-
-                # State-based methods
                 raw_state = series.get("state", sr.get("state", []))
                 raw_probs = series.get(
                     "state_probabilities", sr.get("state_probabilities", [])

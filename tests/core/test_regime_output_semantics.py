@@ -740,7 +740,7 @@ def test_gmm_reports_distinct_method_and_common_reliability() -> None:
     assert out["reliability"]["source"] == "gmm_component_responsibilities"
 
 
-def test_ensemble_bocpd_uses_submethod_threshold_for_vote() -> None:
+def test_ensemble_rejects_bocpd_change_point_votes() -> None:
     raw = _unwrap(regime_detect)
     n = 40
     history = pd.DataFrame(
@@ -749,22 +749,11 @@ def test_ensemble_bocpd_uses_submethod_threshold_for_vote() -> None:
             "close": np.linspace(100.0, 120.0, n),
         }
     )
-    cp_prob = [0.0] * (n - 1) + [0.45]
-
-    def fake_call_tool(_tool, **_kwargs):
-        return {
-            "success": True,
-            "method": "bocpd",
-            "threshold": 0.4,
-            "series": {"cp_prob": cp_prob},
-            "params_used": {"cp_threshold": 0.4},
-        }
-
     with (
         patch("mtdata.core.regime.api._fetch_history", return_value=history),
         patch("mtdata.core.regime.api._resolve_denoise_base_col", return_value="close"),
         patch("mtdata.core.regime.api._format_time_minimal", side_effect=lambda x: f"T{x}"),
-        patch("mtdata.core.regime.api.call_tool_sync_structured", side_effect=fake_call_tool),
+        patch("mtdata.core.regime.api.call_tool_sync_structured") as call_tool,
     ):
         out = raw(
             symbol="TEST",
@@ -779,8 +768,9 @@ def test_ensemble_bocpd_uses_submethod_threshold_for_vote() -> None:
             min_regime_bars=1,
         )
 
-    assert out["series"]["state"][-1] == 1
-    assert out["current_regime"]["regime_id"] == 1
+    assert out["error_code"] == "invalid_ensemble_methods"
+    assert "Unsupported: bocpd" in out["error"]
+    call_tool.assert_not_called()
 
 
 def test_ensemble_keeps_invalid_leading_submethod_rows_undefined() -> None:

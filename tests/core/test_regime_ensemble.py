@@ -65,9 +65,9 @@ class TestEnsembleRegime:
 
         params_used = res.get("params_used", {})
         assert params_used.get("n_methods_succeeded", 0) >= 3
-        assert {"bocpd", "hmm", "wavelet"}.issubset(params_used.get("methods", []))
+        assert {"hmm", "wavelet"}.issubset(params_used.get("methods", []))
         assert set(params_used.get("methods", [])).issubset(
-            {"bocpd", "hmm", "clustering", "wavelet"}
+            {"hmm", "clustering", "wavelet"}
         )
 
     def test_ensemble_soft_voting(self, _mock):
@@ -158,8 +158,7 @@ class TestEnsembleRegime:
         assert "last_state" in summary
         assert "mean_agreement" in summary
 
-    def test_ensemble_excludes_self(self, _mock):
-        """If 'ensemble' is passed as a sub-method, it's silently excluded."""
+    def test_ensemble_rejects_self_as_incommensurate(self, _mock):
         res = regime_detect(
             symbol="TEST",
             timeframe="H1",
@@ -170,9 +169,8 @@ class TestEnsembleRegime:
             __cli_raw=True,
         )
         assert isinstance(res, dict)
-        assert res.get("success") or not res.get("error")
-        methods_used = res.get("params_used", {}).get("methods", [])
-        assert "ensemble" not in methods_used
+        assert res.get("error_code") == "invalid_ensemble_methods"
+        assert "Unsupported: ensemble" in res.get("error", "")
 
     def test_ensemble_with_wavelet(self, _mock):
         """Ensemble with wavelet sub-method."""
@@ -214,4 +212,4 @@ class TestEnsembleRegime:
             __cli_raw=True,
         )
         assert isinstance(res, dict)
-        assert "error" in res
+        assert res.get("error_code") == "invalid_ensemble_methods"
