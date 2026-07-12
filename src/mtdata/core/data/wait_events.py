@@ -9,6 +9,8 @@ from typing import Any, Callable, Dict, List, Optional
 
 from ...shared.constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
 from ...utils.mt5 import _normalize_times_in_struct, _to_server_query_dt
+from ...utils.market_metadata import build_tick_freshness_context
+from ...utils.time import format_epoch_utc
 from ..trading.time import _next_candle_wait_payload, _sleep_until_next_candle
 from .requests import (
     CandleCloseEventSpec,
@@ -216,6 +218,7 @@ def run_wait_event_loop(
                     watch_for_payload=watch_for_payload,
                     market_state=market_state,
                     gateway=gateway,
+                    observed_at_utc=evaluation_at_utc,
                 ),
             )
 
@@ -247,6 +250,7 @@ def run_wait_event_loop(
                     watch_for_payload=watch_for_payload,
                     market_state=snapshot.get("market_data"),
                     gateway=gateway,
+                    observed_at_utc=evaluation_at_utc,
                 ),
             )
 
@@ -269,6 +273,7 @@ def run_wait_event_loop(
                     watch_for_payload=watch_for_payload,
                     market_state=snapshot.get("market_data"),
                     gateway=gateway,
+                    observed_at_utc=observed_at_utc,
                 ),
             )
 
@@ -612,6 +617,7 @@ def _run_candle_boundary_only(
         watch_for_payload=[],
         market_state=None,
         gateway=gateway,
+        observed_at_utc=now_utc,
     )
     max_wait_seconds = request.max_wait_seconds
     if max_wait_seconds is not None and float(preview["sleep_seconds"]) > float(max_wait_seconds):
@@ -673,6 +679,11 @@ def _run_candle_boundary_only(
         watch_for_payload=[],
         market_state=None,
         gateway=gateway,
+        observed_at_utc=(
+            started_at_value + timedelta(seconds=float(payload.get("slept_seconds") or 0.0))
+            if started_at_value is not None
+            else now_utc
+        ),
     )
     if quote_after_wait:
         payload.update(quote_after_wait)
@@ -2425,6 +2436,7 @@ def _wait_result_quote_payload(
     watch_for_payload: List[Dict[str, Any]],
     market_state: Optional[Dict[str, Any]],
     gateway: Any,
+    observed_at_utc: datetime,
 ) -> Dict[str, Any]:
     symbol = _resolved_wait_result_symbol(
         request,
@@ -2440,6 +2452,21 @@ def _wait_result_quote_payload(
     if tick_row is None:
         tick_row = _latest_quote_row_from_gateway(gateway, symbol=symbol)
     payload = _quote_payload_from_row(tick_row)
+    tick_epoch = _finite_number(_row_value(tick_row, "epoch"))
+    if tick_epoch is None:
+        tick_msc = _finite_number(_row_value(tick_row, "time_msc"))
+        tick_epoch = tick_msc / 1000.0 if tick_msc else _finite_number(
+            _row_value(tick_row, "time")
+        )
+    if payload and tick_epoch is not None:
+        payload["quote_time"] = format_epoch_utc(tick_epoch)
+        payload.update(
+            build_tick_freshness_context(
+                symbol,
+                tick_epoch=tick_epoch,
+                now_epoch=observed_at_utc.timestamp(),
+            )
+        )
     precision = _symbol_price_precision_from_gateway(gateway, symbol=symbol)
     if precision is not None:
         payload["price_precision"] = precision

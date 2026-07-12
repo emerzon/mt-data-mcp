@@ -29,6 +29,37 @@ class FakeClock:
         self.current = self.current + timedelta(seconds=float(seconds))
 
 
+def test_wait_quote_payload_includes_quote_freshness() -> None:
+    observed = datetime(2026, 7, 12, 20, tzinfo=timezone.utc)
+    quote_time = observed - timedelta(hours=24)
+    gateway = SequenceGateway(
+        ticks_by_symbol={
+            "EURUSD": [
+                {
+                    "time": quote_time.timestamp(),
+                    "time_msc": int(quote_time.timestamp() * 1000),
+                    "bid": 1.14139,
+                    "ask": 1.14155,
+                }
+            ]
+        }
+    )
+
+    result = wait_events_mod._wait_result_quote_payload(
+        request=WaitEventRequest(symbol="EURUSD", max_wait_seconds=2),
+        watch_for_payload=[],
+        market_state=None,
+        gateway=gateway,
+        observed_at_utc=observed,
+    )
+
+    assert result["quote_time"].endswith("Z")
+    assert result["data_age_seconds"] == 86400.0
+    assert result["data_stale"] is True
+    assert result["market_status"] == "closed"
+    assert result["usable_for_live_trading"] is False
+
+
 class OversleepClock(FakeClock):
     def __init__(self, start: datetime, *, extra_sleep_seconds: float) -> None:
         super().__init__(start)
