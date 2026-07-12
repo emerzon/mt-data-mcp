@@ -486,7 +486,7 @@ def _extract_candlestick_rows(
         span_bars = int(span_values[col_idx])
         span_bonus = min(0.10, 0.05 * max(0, span_bars - 1))
         raw_bonus = (
-            np.clip((np.abs(values[:, col_idx]) - 100.0) / 100.0, 0.0, 1.0) * 0.20
+            np.clip(np.abs(values[:, col_idx]) / 100.0, 0.0, 1.0) * 0.20
         )
         strength_values[:, col_idx] = np.clip(
             base_strength + span_bonus + raw_bonus, 0.0, 1.0

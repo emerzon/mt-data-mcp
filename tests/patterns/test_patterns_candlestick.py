@@ -195,8 +195,31 @@ def test_extract_candlestick_rows_includes_metrics_when_enabled():
     assert rows[0][0] == "T1"
     assert rows[0][1] == "Bullish ENGULFING"
     assert rows[0][2] == "bullish"
-    assert rows[0][3] == pytest.approx(0.95)
+    assert rows[0][3] == pytest.approx(1.0)
     assert rows[0][4:] == [100, 101.5, "T0", "T1", 2, 0, 1]
+
+
+def test_extract_candlestick_rows_strength_tracks_signal_magnitude():
+    df_tail = pd.DataFrame(
+        {"time": ["T0", "T1"], "close": [100.0, 101.0]}
+    )
+    temp_tail = pd.DataFrame({"cdl_alpha": [50.0, 100.0]})
+
+    rows = _extract_candlestick_rows(
+        df_tail,
+        temp_tail,
+        ["cdl_alpha"],
+        threshold=0.0,
+        robust_only=False,
+        robust_set=set(),
+        whitelist_set=None,
+        min_gap=0,
+        top_k=1,
+        deprioritize=set(),
+        include_metrics=True,
+    )
+
+    assert [row[3] for row in rows] == pytest.approx([0.85, 0.95])
 
 
 def test_detect_candlestick_patterns_rejects_out_of_range_min_strength():
@@ -487,7 +510,7 @@ def test_detect_candlestick_patterns_top_k_uses_semantic_strength(monkeypatch):
 
     assert res["success"] is True
     assert res["data"][0]["pattern"] == "Bullish ENGULFING"
-    assert res["data"][0]["confidence"] == pytest.approx(0.95)
+    assert res["data"][0]["confidence"] == pytest.approx(1.0)
 
 
 def test_detect_candlestick_patterns_dedupes_redundant_same_window_hits(monkeypatch):
