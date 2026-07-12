@@ -170,10 +170,14 @@ def _make_fake_quantlib():  # noqa: C901
             self.unit = unit
 
     class _HestonModelHelper:
-        def __init__(self, _maturity, _calendar, spot, strike, iv_handle, _rf_ts, _div_ts, _err_type):
+        created = []
+
+        def __init__(self, _maturity, _calendar, spot, strike, iv_handle, _rf_ts, _div_ts, _err_type, option_type="call"):
             self.spot = float(spot)
             self.strike = float(strike)
             self.iv = float(iv_handle.quote.value)
+            self.option_type = option_type
+            type(self).created.append(self)
 
         def setPricingEngine(self, _engine):
             return None
@@ -349,6 +353,35 @@ def test_calibrate_heston_quantlib_from_options_with_fake_backend(monkeypatch):
     assert out["contracts_used"] == 5
     assert set(out["params"].keys()) == {"kappa", "theta", "sigma", "rho", "v0"}
     assert out["calibration_error_rmse"] is not None
+
+
+def test_calibrate_heston_uses_contract_option_side(monkeypatch):
+    fake = _make_fake_quantlib()
+    monkeypatch.setitem(__import__("sys").modules, "QuantLib", fake)
+    monkeypatch.setattr(
+        qtools,
+        "get_options_chain",
+        lambda **kwargs: {
+            "success": True,
+            "symbol": kwargs["symbol"],
+            "expiration": "2026-12-19",
+            "underlying_price": 100.0,
+            "options": [
+                {"strike": strike, "implied_volatility": 0.25, "side": side}
+                for strike, side in zip((90, 95, 100, 105, 110), ("put", "call", "put", "call", "put"))
+            ],
+        },
+    )
+
+    out = qtools.calibrate_heston_quantlib_from_options(
+        symbol="AAPL", expiration="2026-12-19", option_type="both", valuation_date="2026-12-01"
+    )
+
+    assert out["success"] is True
+    assert {helper.option_type for helper in fake.HestonModelHelper.created} == {
+        fake.Option.Call,
+        fake.Option.Put,
+    }
 
 
 def test_calibrate_heston_quantlib_uses_calendar_override_for_business_days(monkeypatch):

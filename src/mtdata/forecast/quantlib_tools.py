@@ -485,8 +485,16 @@ def calibrate_heston_quantlib_from_options(
     model = ql.HestonModel(process)
     engine = ql.AnalyticHestonEngine(model)
     helpers: List[Any] = []
-    maturity = ql.Period(int(days_to_expiry), ql.Days)
+    # HestonModelHelper Period(Days) is calendar-based. Anchor it to the
+    # contract's actual expiry date even when diagnostics use business days.
+    maturity_calendar_days = max(1, int((expiry_date - valuation_day).days))
+    maturity = ql.Period(maturity_calendar_days, ql.Days)
     for row in rows:
+        helper_option_type = (
+            ql.Option.Put
+            if str(row.get("side") or "").strip().lower() == "put"
+            else ql.Option.Call
+        )
         helper = ql.HestonModelHelper(
             maturity,
             calendar_obj,
@@ -496,6 +504,7 @@ def calibrate_heston_quantlib_from_options(
             rf_ts,
             div_ts,
             ql.BlackCalibrationHelper.ImpliedVolError,
+            helper_option_type,
         )
         helper.setPricingEngine(engine)
         helpers.append(helper)
