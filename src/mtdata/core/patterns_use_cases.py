@@ -682,7 +682,7 @@ def run_patterns_detect(  # noqa: C901
             else [
                 row
                 for row in out_list
-                if str(row.get("status", "")).strip().lower() == "forming"
+                if str(row.get("status", "")).strip().lower() == "active"
             ]
         )
         resp = deps.build_pattern_response(
@@ -1242,7 +1242,7 @@ def run_patterns_detect(  # noqa: C901
             fractal_patterns = [
                 r
                 for r in fractal_patterns
-                if str(r.get("status", "")).lower() != "completed"
+                if str(r.get("status", "")).lower() != "broken"
             ]
 
         # Score and sort each section by relevance (confidence + recency)

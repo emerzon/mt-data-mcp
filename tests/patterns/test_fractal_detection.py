@@ -36,31 +36,35 @@ def test_detect_fractal_patterns_marks_broken_levels_and_breakout_direction():
     bullish = by_direction["bullish"]
 
     assert bearish.name == "Bearish Fractal"
-    assert bearish.status == "completed"
+    assert bearish.status == "broken"
+    assert bearish.details["bias"] == "bullish"
     assert bearish.details["breakout_direction"] == "bullish"
     assert bearish.details["level_state"] == "broken"
     assert bearish.end_index == bearish.details["breakout_index"]
 
     assert bullish.name == "Bullish Fractal"
-    assert bullish.status == "completed"
+    assert bullish.status == "broken"
+    assert bullish.details["bias"] == "bearish"
     assert bullish.details["breakout_direction"] == "bearish"
     assert bullish.details["level_state"] == "broken"
     assert bullish.end_index == bullish.details["breakout_index"]
 
 
-def test_detect_fractal_patterns_keeps_unbroken_levels_forming():
+def test_detect_fractal_patterns_keeps_unbroken_levels_active_and_neutral():
     results = detect_fractal_patterns(_fractal_active_frame(), FractalDetectorConfig())
 
     by_direction = {result.direction: result for result in results}
     bearish = by_direction["bearish"]
     bullish = by_direction["bullish"]
 
-    assert bearish.status == "forming"
+    assert bearish.status == "active"
+    assert bearish.details["bias"] == "neutral"
     assert bearish.details["level_state"] == "active"
     assert bearish.details["lifecycle_state"] == "active"
     assert "breakout_direction" not in bearish.details
 
-    assert bullish.status == "forming"
+    assert bullish.status == "active"
+    assert bullish.details["bias"] == "neutral"
     assert bullish.details["level_state"] == "active"
     assert bullish.details["lifecycle_state"] == "active"
     assert "breakout_direction" not in bullish.details
@@ -80,8 +84,8 @@ def test_detect_fractal_patterns_supports_high_low_breakout_basis():
         result for result in high_low_results if result.direction == "bearish"
     )
 
-    assert close_bearish.status == "forming"
-    assert high_low_bearish.status == "completed"
+    assert close_bearish.status == "active"
+    assert high_low_bearish.status == "broken"
     assert high_low_bearish.details["breakout_direction"] == "bullish"
 
 

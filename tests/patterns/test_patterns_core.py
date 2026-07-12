@@ -744,7 +744,7 @@ def test_build_pattern_response_compact_keeps_fractal_breakout_fields():
     patterns = [
         {
             "name": "Bullish Fractal",
-            "status": "completed",
+            "status": "broken",
             "confidence": 0.82,
             "end_index": 2,
             "direction": "bullish",
@@ -778,23 +778,23 @@ def test_build_pattern_response_compact_keeps_fractal_breakout_fields():
     assert "recent_patterns" not in compact
 
 
-def test_build_pattern_response_compact_hides_completed_fractal_rows_by_default():
+def test_build_pattern_response_compact_hides_broken_fractal_rows_by_default():
     df = pd.DataFrame({"time": [1, 2, 3], "close": [10.0, 10.5, 9.8]})
     patterns = [
         {
             "name": "Active Fractal",
-            "status": "forming",
+            "status": "active",
             "confidence": 0.82,
             "end_index": 1,
             "direction": "bullish",
-            "bias": "bullish",
+            "bias": "neutral",
             "price": 9.9,
             "level_price": 9.9,
             "level_state": "active",
         },
         {
             "name": "Broken Fractal",
-            "status": "completed",
+            "status": "broken",
             "confidence": 0.88,
             "end_index": 2,
             "direction": "bearish",
@@ -820,7 +820,8 @@ def test_build_pattern_response_compact_hides_completed_fractal_rows_by_default(
     )
 
     assert compact["top_patterns"][0]["name"] == "Active Fractal"
-    assert compact["completed_patterns_hidden"] == 1
+    assert compact["broken_levels_hidden"] == 1
+    assert "completed_patterns_hidden" not in compact
 
 
 def test_build_pattern_response_compact_counts_omitted_rows_when_truncated():

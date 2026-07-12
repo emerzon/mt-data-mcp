@@ -140,6 +140,7 @@ def _visible_pattern_rows(
         for row in rows
         if _pattern_has_status(row, "forming")
         or _pattern_has_status(row, "detected")
+        or _pattern_has_status(row, "active")
     ]
 
 
@@ -831,6 +832,7 @@ def _compact_patterns_payload(
         "warnings",
         "note",
         "completed_patterns_hidden",
+        "broken_levels_hidden",
         "completed_patterns_preview",
     ):
         value = payload.get(key)

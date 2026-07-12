@@ -370,7 +370,12 @@ def _build_pattern_response(
     include_completed = bool(include_completed or str(mode).lower() == "harmonic")
     # Filter patterns based on include_completed
     filtered = _visible_pattern_rows(patterns, include_completed=include_completed)
-    completed_hidden = 0 if include_completed else _count_patterns_with_status(patterns, "completed")
+    hidden_status = "broken" if str(mode).lower() == "fractal" else "completed"
+    completed_hidden = (
+        0
+        if include_completed
+        else _count_patterns_with_status(patterns, hidden_status)
+    )
     elliott_preview = (
         _elliott_completed_preview(patterns, timeframe=timeframe)
         if str(mode).lower() == "elliott" and completed_hidden > 0
@@ -391,15 +396,27 @@ def _build_pattern_response(
         if isinstance(adaptation, dict):
             resp["adaptation"] = _round_value(adaptation)
     if completed_hidden > 0:
-        resp["completed_patterns_hidden"] = int(completed_hidden)
+        hidden_count_key = (
+            "broken_levels_hidden"
+            if str(mode).lower() == "fractal"
+            else "completed_patterns_hidden"
+        )
+        resp[hidden_count_key] = int(completed_hidden)
         if elliott_preview:
             resp["completed_patterns_preview"] = elliott_preview
         resp["note"] = (
             _elliott_hidden_completed_note(completed_hidden, elliott_preview)
             if str(mode).lower() == "elliott"
             else (
-                f"{int(completed_hidden)} completed pattern(s) hidden; "
-                "set include_completed=true to include them."
+                (
+                    f"{int(completed_hidden)} broken fractal level(s) hidden; "
+                    "set include_completed=true to include them."
+                )
+                if str(mode).lower() == "fractal"
+                else (
+                    f"{int(completed_hidden)} completed pattern(s) hidden; "
+                    "set include_completed=true to include them."
+                )
             )
         )
     if str(mode).lower() == "elliott" and int(len(filtered)) == 0:

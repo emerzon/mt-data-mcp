@@ -122,10 +122,16 @@ mtdata-cli patterns_detect EURUSD --timeframe H1 --mode fractal \
 | Field | Meaning |
 |-------|---------|
 | `level_price` | Confirmed fractal high/low level |
+| `status` | Level lifecycle: `active` or `broken` (not pattern completion) |
 | `level_state` | `active` when unbroken, `broken` after price breaches the level |
 | `confirmation_date` | When the fractal became knowable after the right-side bars closed |
 | `breakout_direction` | Direction of the later level break (`bullish` or `bearish`) |
 | `breakout_date` | When the breakout occurred, if any |
+
+Active levels are informational support/resistance context and have neutral
+signal bias. A broken level takes the breakout direction as its bias. By
+default, active levels are returned and historical broken levels are hidden;
+use `--include-completed true` to include broken levels as well.
 
 ### Parameters
 

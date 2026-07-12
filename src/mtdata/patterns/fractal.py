@@ -183,11 +183,11 @@ def _build_fractal_result(
     confirmation_time = PatternResultBase.resolve_time(times, int(confirmation_index))
     is_broken = breakout_index is not None and breakout_direction is not None
     level_state = "broken" if is_broken else "active"
-    status = "completed" if is_broken else "forming"
+    status = level_state
     bias = (
         str(breakout_direction)
         if is_broken and breakout_direction not in (None, "")
-        else str(direction)
+        else "neutral"
     )
     end_index = int(breakout_index) if is_broken else int(confirmation_index)
     breakout_time = (
@@ -246,7 +246,9 @@ def _resolve_fractal_lifecycle_state(
     details = result.details if isinstance(result.details, dict) else {}
     level_state = str(details.get("level_state") or "").strip().lower()
     if level_state not in {"active", "broken"}:
-        level_state = "broken" if str(result.status).strip().lower() == "completed" else "active"
+        level_state = (
+            "broken" if str(result.status).strip().lower() == "broken" else "active"
+        )
     if level_state == "broken" or int(max_age_bars) <= 0:
         return level_state
 

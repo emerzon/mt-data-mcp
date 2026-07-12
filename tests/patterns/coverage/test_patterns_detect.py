@@ -543,10 +543,10 @@ class TestPatternsDetect:
         mock_format.return_value = [
             {
                 "name": "Bullish Fractal",
-                "status": "forming",
+                "status": "active",
                 "confidence": 0.82,
                 "direction": "bullish",
-                "bias": "bullish",
+                "bias": "neutral",
                 "level_state": "active",
                 "price": 1.101,
                 "level_price": 1.101,
@@ -712,10 +712,10 @@ class TestPatternsDetectAllMode:
         }]
         mock_fractal.return_value = [{
             "name": "Bearish Fractal",
-            "status": "forming",
+            "status": "active",
             "confidence": 0.76,
             "direction": "bearish",
-            "bias": "bearish",
+            "bias": "neutral",
             "level_state": "active",
             "price": 1.2,
             "level_price": 1.2,
@@ -770,10 +770,10 @@ class TestPatternsDetectAllMode:
         mock_format.return_value = [
             {
                 "name": "Bullish Fractal",
-                "status": "forming",
+                "status": "active",
                 "confidence": 0.82,
                 "direction": "bullish",
-                "bias": "bullish",
+                "bias": "neutral",
                 "level_state": "active",
                 "price": 1.101,
                 "level_price": 1.101,
@@ -785,7 +785,7 @@ class TestPatternsDetectAllMode:
             },
             {
                 "name": "Bearish Fractal",
-                "status": "completed",
+                "status": "broken",
                 "confidence": 0.78,
                 "direction": "bearish",
                 "bias": "bullish",
@@ -811,7 +811,8 @@ class TestPatternsDetectAllMode:
 
         assert result.get("success") is True
         assert [row["name"] for row in result["patterns"]] == ["Bullish Fractal"]
-        assert result["completed_patterns_hidden"] == 1
+        assert result["broken_levels_hidden"] == 1
+        assert "completed_patterns_hidden" not in result
         assert "latest_breakouts" not in result
         assert result.get("active_levels", {}).get("bullish", {}).get("level_price") == 1.101
 
@@ -836,10 +837,10 @@ class TestPatternsDetectAllMode:
         mock_fractal.return_value = [
             {
                 "name": f"Fractal {i}",
-                "status": "forming",
+                "status": "active",
                 "confidence": 0.8,
                 "direction": "bullish" if i % 2 == 0 else "bearish",
-                "bias": "bullish" if i % 2 == 0 else "bearish",
+                "bias": "neutral",
                 "level_state": "active",
                 "price": 1.1 + (i * 0.01),
                 "level_price": 1.1 + (i * 0.01),
@@ -934,10 +935,10 @@ class TestPatternsDetectAllMode:
         mock_fractal.return_value = [
             {
                 "name": "Active Fractal",
-                "status": "forming",
+                "status": "active",
                 "confidence": 0.8,
                 "direction": "bullish",
-                "bias": "bullish",
+                "bias": "neutral",
                 "level_state": "active",
                 "price": 1.1,
                 "level_price": 1.1,
@@ -948,7 +949,7 @@ class TestPatternsDetectAllMode:
             },
             {
                 "name": "Broken Fractal",
-                "status": "completed",
+                "status": "broken",
                 "confidence": 0.9,
                 "direction": "bearish",
                 "bias": "bullish",

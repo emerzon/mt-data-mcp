@@ -18,15 +18,18 @@ class TestPatternStatusHelpers:
         rows = [
             {"status": " forming "},
             {"status": "detected"},
+            {"status": "active"},
             {"status": "COMPLETED"},
+            {"status": "broken"},
             {"status": "other"},
         ]
 
         visible = _visible_pattern_rows(rows, include_completed=False)
 
-        assert visible == rows[:2]
+        assert visible == rows[:3]
         assert _count_patterns_with_status(rows, "forming") == 1
         assert _count_patterns_with_status(rows, "completed") == 1
+        assert _count_patterns_with_status(rows, "broken") == 1
 
     def test_resolve_elliott_pattern_status_uses_recent_window(self):
         from mtdata.core.patterns_support import _resolve_elliott_pattern_status
