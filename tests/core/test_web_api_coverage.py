@@ -700,6 +700,23 @@ class TestGetHistory:
             resp = _client.get("/api/history", params={"symbol": "EURUSD"})
         assert resp.status_code == 503
 
+    def test_forwards_staleness_and_indicator_options(self):
+        with patch.object(web_api.mt5_connection, "_ensure_connection", return_value=True), \
+             patch("mtdata.core.web_api._fetch_candles_impl", return_value={"data": []}) as fetch, \
+             patch("mtdata.core.web_api.mt5_config"):
+            resp = _client.get(
+                "/api/history",
+                params={
+                    "symbol": "EURUSD",
+                    "allow_stale": "true",
+                    "indicators": "RSI_14",
+                },
+            )
+
+        assert resp.status_code == 200
+        assert fetch.call_args.kwargs["allow_stale"] is True
+        assert fetch.call_args.kwargs["indicators"] == "RSI_14"
+
     def test_basic_success(self):
         payload = {"data": [{"time": 1.0, "close": 1.1}], "has_forming_candle": False}
         with patch.object(web_api.mt5_connection, "_ensure_connection", return_value=True), \
@@ -714,7 +731,7 @@ class TestGetHistory:
         res = resp.json()
         assert res["data"] == [{"time": 1.0, "close": 1.1}]
         assert "last_candle_open" not in res
-        assert res["count"] == 1
+        assert "count" not in res
         assert "candles" not in res
         assert res["meta"]["tool"] == "data_fetch_candles"
         assert res["meta"]["runtime"]["timezone"] == {
@@ -750,7 +767,7 @@ class TestGetHistory:
             },
         }
 
-    def test_strips_incomplete_candle(self):
+    def test_preserves_canonical_forming_candle_payload(self):
         payload = {
             "data": [{"time": 1.0}, {"time": 2.0}],
             "has_forming_candle": True,
@@ -763,12 +780,10 @@ class TestGetHistory:
             mock_cfg.get_time_offset_seconds.return_value = 0
             resp = _client.get("/api/history", params={"symbol": "EURUSD", "include_incomplete": "false"})
         res = resp.json()
-        assert len(res["data"]) == 1
+        assert len(res["data"]) == 2
         assert res["has_forming_candle"] is True
-        assert res["forming_candle_status"] == "skipped"
-        assert res["forming_candle_included"] is False
-        assert res["forming_candle_skipped"] is True
-        assert res["incomplete_candles_skipped"] == 1
+        assert res["forming_candle_status"] == "included"
+        assert res["forming_candle_included"] is True
         assert "last_candle_open" not in res
 
     def test_keeps_incomplete_candle_when_flag(self):
@@ -1031,7 +1046,7 @@ class TestGetHistory:
             mock_cfg.get_time_offset_seconds.return_value = 0
             resp = _client.get("/api/history", params={"symbol": "EURUSD"})
         res = resp.json()
-        assert res["data"] == []
+        assert res["data"] == "not_a_list"
 
 
 # ===========================================================================

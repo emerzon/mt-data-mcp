@@ -397,6 +397,8 @@ def get_history_response(  # noqa: C901
     ohlcv: Optional[str],
     include_spread: bool,
     include_incomplete: bool,
+    allow_stale: bool,
+    indicators: Optional[str],
     timestamp_format: str,
     denoise_method: Optional[str],
     denoise_params: Optional[str],
@@ -540,10 +542,11 @@ def get_history_response(  # noqa: C901
             end=end,
             ohlcv=ohlcv,
             include_spread=include_spread,
-            indicators=None,
+            indicators=indicators,
             denoise=denoise_spec,
             simplify=None,
             include_incomplete=include_incomplete,
+            allow_stale=allow_stale,
             time_as_epoch=str(timestamp_format).strip().lower() != "iso",
         )
     except Exception as exc:
@@ -554,46 +557,8 @@ def get_history_response(  # noqa: C901
     if result.get("error"):
         raise _http_error(400, str(result["error"]), code="history_tool_error", operation="get_history")
 
-    rows_raw = result.get("data")
-    rows: List[Dict[str, Any]] = rows_raw if isinstance(rows_raw, list) else []
-
-    forming_status = str(result.get("forming_candle_status") or "").strip().lower()
-    forming_candle_included = bool(result.get("forming_candle_included")) or forming_status == "included"
-    trimmed_forming_candle = False
-    if not include_incomplete and forming_candle_included and rows:
-        rows = rows[:-1]
-        trimmed_forming_candle = True
-
-    result_out = dict(result)
-    if trimmed_forming_candle:
-        try:
-            skipped_count = int(result_out.get("incomplete_candles_skipped") or 0)
-        except Exception:
-            skipped_count = 0
-        result_out["has_forming_candle"] = True
-        result_out["forming_candle_status"] = "skipped"
-        result_out["forming_candle_included"] = False
-        result_out["forming_candle_skipped"] = True
-        result_out["incomplete_candles_skipped"] = max(1, skipped_count + 1)
-    result_out["data"] = rows
-    result_out.pop("candles", None)
-    result_out["count"] = len(rows)
-    requested_value = result.get("candles_requested")
-    try:
-        candles_requested = int(requested_value)
-    except Exception:
-        candles_requested = int(len(rows))
-    result_out["candles_requested"] = candles_requested
-    excluded_value = result.get("candles_excluded")
-    try:
-        candles_excluded = int(excluded_value)
-    except Exception:
-        candles_excluded = max(0, candles_requested - int(len(rows)))
-    if trimmed_forming_candle:
-        candles_excluded = max(candles_excluded, candles_requested - int(len(rows)))
-    result_out["candles_excluded"] = max(0, candles_excluded)
     return ensure_common_meta(
-        result_out,
+        result,
         tool_name="data_fetch_candles",
         mt5_config=mt5_config,
     )

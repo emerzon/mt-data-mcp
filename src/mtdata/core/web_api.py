@@ -334,6 +334,11 @@ def get_history(
         description="Append historical candle spread to each row.",
     ),
     include_incomplete: bool = Query(False, description="Include the latest forming candle."),
+    allow_stale: bool = Query(False, description="Return data even when freshness checks fail."),
+    indicators: Optional[str] = Query(
+        None,
+        description="Indicator specification forwarded to data_fetch_candles.",
+    ),
     timestamp_format: Literal["epoch", "iso"] = Query(
         "iso",
         description="Timestamp encoding for returned candle rows.",
@@ -350,6 +355,8 @@ def get_history(
         ohlcv=ohlcv,
         include_spread=include_spread,
         include_incomplete=include_incomplete,
+        allow_stale=allow_stale,
+        indicators=indicators,
         timestamp_format=timestamp_format,
         denoise_method=denoise_method,
         denoise_params=denoise_params,

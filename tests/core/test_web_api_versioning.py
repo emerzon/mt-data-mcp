@@ -88,9 +88,6 @@ def test_history_available_on_versioned_route() -> None:
         "has_forming_candle": False,
         "forming_candle_status": "none",
         "forming_candle_included": False,
-        "count": 2,
-        "candles_requested": 2,
-        "candles_excluded": 0,
         "meta": {
             "tool": "data_fetch_candles",
             "runtime": {
