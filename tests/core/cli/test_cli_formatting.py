@@ -27,7 +27,7 @@ pytestmark = pytest.mark.usefixtures("_isolate_env")
 
 # We import lazily inside tests where heavy server machinery is needed,
 # but the pure-logic helpers can be imported directly.
-from mtdata.core.cli import (
+from mtdata.core.cli.api import (
     _first_line,
     _format_cli_literal,
     _format_result_for_cli,

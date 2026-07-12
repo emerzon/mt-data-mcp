@@ -279,7 +279,7 @@ class TestFinvizService:
         assert "Perf WTD" not in result["coins"][0]
         assert "Perf WTD" not in result["coins"][1]
 
-    @patch("mtdata.services.finviz._finviz_http_get")
+    @patch("mtdata.services.finviz.api._finviz_http_get")
     def test_get_futures_performance_parses_current_page_payload(self, mock_get):
         from mtdata.services.finviz import get_futures_performance
 
@@ -338,7 +338,7 @@ class TestFinvizService:
         assert "error" in result
         assert "Invalid period" in result["error"]
 
-    @patch("mtdata.services.finviz._fetch_finviz_economic_calendar_items")
+    @patch("mtdata.services.finviz.api._fetch_finviz_economic_calendar_items")
     def test_get_economic_calendar_success(self, mock_fetch_items):
         """Test economic calendar fetch."""
         from mtdata.services.finviz import get_economic_calendar
@@ -405,7 +405,7 @@ class TestFinvizService:
         assert result_high["total"] == 1
         assert len(result_high["items"]) == 1
 
-    @patch("mtdata.services.finviz._fetch_finviz_economic_calendar_items")
+    @patch("mtdata.services.finviz.api._fetch_finviz_economic_calendar_items")
     def test_get_economic_calendar_invalid_impact(self, mock_fetch_items):
         """Test economic calendar with invalid impact filter."""
         from mtdata.services.finviz import get_economic_calendar
@@ -416,7 +416,7 @@ class TestFinvizService:
 
         assert "error" in result
 
-    @patch("mtdata.services.finviz._fetch_finviz_economic_calendar_items")
+    @patch("mtdata.services.finviz.api._fetch_finviz_economic_calendar_items")
     def test_get_economic_calendar_date_from_defaults_to_week(self, mock_fetch_items):
         """If date_from is provided without date_to, default to a 7-day window."""
         from mtdata.services.finviz import get_economic_calendar
@@ -429,7 +429,7 @@ class TestFinvizService:
         assert kwargs["date_from"] == "2026-01-05"
         assert kwargs["date_to"] == "2026-01-12"
 
-    @patch("mtdata.services.finviz._fetch_finviz_economic_calendar_items")
+    @patch("mtdata.services.finviz.api._fetch_finviz_economic_calendar_items")
     def test_get_economic_calendar_weekend_anchor_shifts_to_monday(self, mock_fetch_items):
         """If date_from is a weekend, shift the API anchor to the next Monday but keep the requested range."""
         from mtdata.services.finviz import get_economic_calendar
@@ -457,7 +457,7 @@ class TestFinvizService:
         _, kwargs = mock_fetch_items.call_args
         assert kwargs["date_from"] == "2025-01-06"
 
-    @patch("mtdata.services.finviz._fetch_finviz_economic_calendar_items")
+    @patch("mtdata.services.finviz.api._fetch_finviz_economic_calendar_items")
     def test_get_economic_calendar_accepts_iso_datetime_date_from(self, mock_fetch_items):
         """ISO datetime date_from inputs should normalize before weekend alignment."""
         from mtdata.services.finviz import get_economic_calendar
@@ -474,7 +474,7 @@ class TestFinvizService:
         assert kwargs["date_from"] == "2025-01-06"
         assert kwargs["date_to"] == "2025-01-12"
 
-    @patch("mtdata.services.finviz._fetch_finviz_calendar_paged")
+    @patch("mtdata.services.finviz.api._fetch_finviz_calendar_paged")
     def test_get_earnings_calendar_api_success(self, mock_fetch_paged):
         """Test earnings calendar API fetch."""
         from mtdata.services.finviz import get_earnings_calendar_api
@@ -498,7 +498,7 @@ class TestFinvizService:
         assert len(result["items"]) == 1
         assert "earnings" not in result
 
-    @patch("mtdata.services.finviz._fetch_finviz_calendar_paged")
+    @patch("mtdata.services.finviz.api._fetch_finviz_calendar_paged")
     def test_get_earnings_calendar_api_applies_client_limit(self, mock_fetch_paged):
         from mtdata.services.finviz import get_earnings_calendar_api
 
@@ -517,7 +517,7 @@ class TestFinvizService:
         assert result["pages"] == 2
         assert [item["ticker"] for item in result["items"]] == ["SYM0", "SYM1", "SYM2"]
 
-    @patch("mtdata.services.finviz._fetch_finviz_calendar_paged")
+    @patch("mtdata.services.finviz.api._fetch_finviz_calendar_paged")
     def test_get_dividends_calendar_api_success(self, mock_fetch_paged):
         """Test dividends calendar API fetch."""
         from mtdata.services.finviz import get_dividends_calendar_api
@@ -540,7 +540,7 @@ class TestFinvizService:
         assert result["total"] == 1
         assert len(result["items"]) == 1
 
-    @patch("mtdata.services.finviz._fetch_finviz_calendar_paged")
+    @patch("mtdata.services.finviz.api._fetch_finviz_calendar_paged")
     def test_get_dividends_calendar_api_applies_client_limit(self, mock_fetch_paged):
         from mtdata.services.finviz import get_dividends_calendar_api
 
@@ -1689,7 +1689,7 @@ class TestFinvizTools:
         assert result["error_code"] == "finviz_earnings_invalid_detail"
         mock_get_earnings.assert_not_called()
 
-    @patch('mtdata.services.finviz.get_stock_fundamentals')
+    @patch('mtdata.services.finviz.api.get_stock_fundamentals')
     def test_finviz_fundamentals_tool(self, mock_get_fundamentals):
         """Test finviz_fundamentals tool."""
         # Import the service function directly to test logic without MCP server init
@@ -1706,7 +1706,7 @@ class TestFinvizTools:
         mock_get_fundamentals.assert_called_once_with("AAPL")
         assert result["success"] is True
 
-    @patch('mtdata.services.finviz.screen_stocks')
+    @patch('mtdata.services.finviz.api.screen_stocks')
     def test_finviz_screen_tool_with_filters(self, mock_screen):
         """Test finviz_screen tool with JSON filters."""
         import json

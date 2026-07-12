@@ -3,7 +3,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from mtdata.core.cli import _add_forecast_generate_args, main
+from mtdata.core.cli.api import _add_forecast_generate_args, main
 
 
 class TestForecastTypedArgs:
@@ -32,7 +32,7 @@ class TestForecastTypedArgs:
         args = parser.parse_args(["BTCUSD", "--detail", "full"])
         assert args.detail == "full"
 
-    @patch("mtdata.core.cli.discover_tools")
+    @patch("mtdata.core.cli.api.discover_tools")
     def test_main_shows_targeted_error_for_bare_denoise(self, mock_discover, capsys):
         mock_fn = MagicMock(return_value="ok")
         mock_fn.__module__ = "mtdata.core.server"
@@ -50,7 +50,7 @@ class TestForecastTypedArgs:
         assert "--denoise ema" in err
         mock_fn.assert_not_called()
 
-    @patch("mtdata.core.cli.discover_tools")
+    @patch("mtdata.core.cli.api.discover_tools")
     def test_main_allows_bare_denoise_when_set_supplies_value(self, mock_discover):
         mock_fn = MagicMock(return_value="ok")
         mock_fn.__module__ = "mtdata.core.server"

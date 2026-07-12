@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from mtdata.core.cli import _build_epilog, get_function_info
+from mtdata.core.cli.api import _build_epilog, get_function_info
 
 
 def test_build_epilog_formats_required_args_like_runtime_parser() -> None:

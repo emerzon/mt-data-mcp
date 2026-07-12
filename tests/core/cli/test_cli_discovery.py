@@ -40,7 +40,7 @@ def _isolate_env(monkeypatch):
 
 # We import lazily inside tests where heavy server machinery is needed,
 # but the pure-logic helpers can be imported directly.
-from mtdata.core.cli import (
+from mtdata.core.cli.api import (
     _apply_schema_overrides,
     _extract_function_from_tool_obj,
     _extract_metadata_from_tool_obj,
@@ -136,7 +136,7 @@ class TestGetFunctionInfo:
 
 class TestApplySchemaOverrides:
     @patch(
-        "mtdata.core.cli.enrich_schema_with_shared_defs", side_effect=lambda s, fi: s
+        "mtdata.core.cli.api.enrich_schema_with_shared_defs", side_effect=lambda s, fi: s
     )
     def test_basic_override(self, mock_enrich):
         tool = {
@@ -152,7 +152,7 @@ class TestApplySchemaOverrides:
         assert func_info["params"][0]["required"] is True
 
     @patch(
-        "mtdata.core.cli.enrich_schema_with_shared_defs", side_effect=lambda s, fi: s
+        "mtdata.core.cli.api.enrich_schema_with_shared_defs", side_effect=lambda s, fi: s
     )
     def test_no_schema(self, mock_enrich):
         tool = {"meta": {}}
@@ -163,7 +163,7 @@ class TestApplySchemaOverrides:
         assert isinstance(schema, dict)
 
     @patch(
-        "mtdata.core.cli.enrich_schema_with_shared_defs", side_effect=lambda s, fi: s
+        "mtdata.core.cli.api.enrich_schema_with_shared_defs", side_effect=lambda s, fi: s
     )
     def test_schema_with_parameters_key(self, mock_enrich):
         tool = {
@@ -1262,9 +1262,9 @@ class TestCreateCommandFunction:
 
 
 class TestDiscoverTools:
-    @patch("mtdata.core.cli.get_mcp_registry")
-    @patch("mtdata.core.cli.bootstrap_tools", return_value=())
-    @patch("mtdata.core.cli.mcp", new_callable=MagicMock)
+    @patch("mtdata.core.cli.api.get_mcp_registry")
+    @patch("mtdata.core.cli.api.bootstrap_tools", return_value=())
+    @patch("mtdata.core.cli.api.mcp", new_callable=MagicMock)
     def test_discover_from_registry(self, mock_mcp, mock_bootstrap, mock_get_reg):
 
         def fake_tool(symbol: str):
@@ -1288,9 +1288,9 @@ class TestDiscoverTools:
         tools = discover_tools()
         assert "fake_tool" in tools
 
-    @patch("mtdata.core.cli.get_mcp_registry")
-    @patch("mtdata.core.cli.bootstrap_tools")
-    @patch("mtdata.core.cli.mcp", new_callable=MagicMock)
+    @patch("mtdata.core.cli.api.get_mcp_registry")
+    @patch("mtdata.core.cli.api.bootstrap_tools")
+    @patch("mtdata.core.cli.api.mcp", new_callable=MagicMock)
     def test_discover_from_registry_includes_submodule_tools(
         self, mock_mcp, mock_bootstrap, mock_get_reg
     ):
@@ -1319,9 +1319,9 @@ class TestDiscoverTools:
         tools = discover_tools()
         assert "trade_get_open" in tools
 
-    @patch("mtdata.core.cli.get_registered_tools", return_value={})
-    @patch("mtdata.core.cli.get_mcp_registry", return_value=None)
-    @patch("mtdata.core.cli.mcp", None)
+    @patch("mtdata.core.cli.api.get_registered_tools", return_value={})
+    @patch("mtdata.core.cli.api.get_mcp_registry", return_value=None)
+    @patch("mtdata.core.cli.api.mcp", None)
     def test_discover_fallback_scan(self, mock_get_reg, mock_get_registered):
         def public_tool(x: int):
             """A public tool."""
@@ -1335,22 +1335,22 @@ class TestDiscoverTools:
         fake_module = FakeModule()
         fake_module.public_tool = public_tool
 
-        with patch("mtdata.core.cli.bootstrap_tools", return_value=(fake_module,)):
+        with patch("mtdata.core.cli.api.bootstrap_tools", return_value=(fake_module,)):
             tools = discover_tools()
         assert "public_tool" in tools
 
-    @patch("mtdata.core.cli.get_registered_tools", return_value={})
-    @patch("mtdata.core.cli.get_mcp_registry", return_value=None)
-    @patch("mtdata.core.cli.bootstrap_tools", return_value=())
-    @patch("mtdata.core.cli.mcp", None)
+    @patch("mtdata.core.cli.api.get_registered_tools", return_value={})
+    @patch("mtdata.core.cli.api.get_mcp_registry", return_value=None)
+    @patch("mtdata.core.cli.api.bootstrap_tools", return_value=())
+    @patch("mtdata.core.cli.api.mcp", None)
     def test_discover_empty(self, mock_bootstrap, mock_get_reg, mock_get_registered):
         tools = discover_tools()
         assert tools == {}
 
-    @patch("mtdata.core.cli.get_registered_tools", return_value={})
-    @patch("mtdata.core.cli.get_mcp_registry", return_value=None)
-    @patch("mtdata.core.cli.bootstrap_tools", side_effect=RuntimeError("missing optional package"))
-    @patch("mtdata.core.cli.mcp", None)
+    @patch("mtdata.core.cli.api.get_registered_tools", return_value={})
+    @patch("mtdata.core.cli.api.get_mcp_registry", return_value=None)
+    @patch("mtdata.core.cli.api.bootstrap_tools", side_effect=RuntimeError("missing optional package"))
+    @patch("mtdata.core.cli.api.mcp", None)
     def test_discover_records_bootstrap_failure(
         self, mock_bootstrap, mock_get_reg, mock_get_registered
     ):

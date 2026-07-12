@@ -3,7 +3,7 @@ import types
 
 import pandas as pd
 
-from mtdata.services import finviz as svc
+from mtdata.services.finviz import api as svc
 from mtdata.services.finviz import client as finviz_client
 from mtdata.services.finviz import pagination as finviz_pagination
 

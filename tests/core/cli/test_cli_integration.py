@@ -27,7 +27,7 @@ pytestmark = pytest.mark.usefixtures("_isolate_env")
 
 # We import lazily inside tests where heavy server machinery is needed,
 # but the pure-logic helpers can be imported directly.
-from mtdata.core.cli import (
+from mtdata.core.cli.api import (
     _argparse_color_enabled,
     _build_epilog,
     _build_usage_examples,
@@ -58,11 +58,11 @@ from mtdata.core.cli import (
 
 
 class TestMain:
-    @patch("mtdata.core.cli.discover_tools")
+    @patch("mtdata.core.cli.api.discover_tools")
     def test_version_flag_exits_without_tool_discovery(self, mock_discover, capsys):
         with (
             patch("sys.argv", ["cli.py", "--version"]),
-            patch("mtdata.core.cli._cli_version", return_value="9.8.7"),
+            patch("mtdata.core.cli.api._cli_version", return_value="9.8.7"),
         ):
             result = main()
 
@@ -70,7 +70,7 @@ class TestMain:
         mock_discover.assert_not_called()
         assert capsys.readouterr().out.strip() == "mtdata-cli 9.8.7"
 
-    @patch("mtdata.core.cli.discover_tools", return_value={})
+    @patch("mtdata.core.cli.api.discover_tools", return_value={})
     def test_no_tools(self, mock_discover, capsys):
         result = main()
         assert result == 1
@@ -85,7 +85,7 @@ class TestMain:
             )
             return {}
 
-        with patch("mtdata.core.cli.discover_tools", side_effect=fail_discovery):
+        with patch("mtdata.core.cli.api.discover_tools", side_effect=fail_discovery):
             result = main()
 
         error_output = capsys.readouterr().err
@@ -93,8 +93,8 @@ class TestMain:
         assert "Discovery error: bootstrap_tools failed: missing optional package" in error_output
         assert "MTDATA_CLI_DEBUG=1" in error_output
 
-    @patch("mtdata.core.cli.sys")
-    @patch("mtdata.core.cli.discover_tools")
+    @patch("mtdata.core.cli.api.sys")
+    @patch("mtdata.core.cli.api.discover_tools")
     def test_help_query_mode(self, mock_discover, mock_sys, capsys):
         def my_tool(symbol: str):
             """My tool."""
@@ -115,7 +115,7 @@ class TestMain:
         result = main()
         assert result == 0
 
-    @patch("mtdata.core.cli.discover_tools")
+    @patch("mtdata.core.cli.api.discover_tools")
     def test_no_command_shows_help(self, mock_discover, capsys):
         def my_tool(symbol: str):
             """My tool."""
@@ -133,7 +133,7 @@ class TestMain:
         assert "{my_tool,my-tool}" not in out
         assert out.count("    my_tool") == 1
 
-    @patch("mtdata.core.cli.discover_tools")
+    @patch("mtdata.core.cli.api.discover_tools")
     def test_command_execution(self, mock_discover, capsys):
         mock_fn = MagicMock(return_value="output text")
         mock_fn.__module__ = "mtdata.core.server"
@@ -159,7 +159,7 @@ class TestMain:
         assert result == 0
         mock_fn.assert_called_once()
 
-    @patch("mtdata.core.cli.discover_tools")
+    @patch("mtdata.core.cli.api.discover_tools")
     def test_hyphenated_command_alias_executes_tool(self, mock_discover):
         mock_fn = MagicMock(return_value="output text")
         mock_fn.__module__ = "mtdata.core.server"
@@ -187,7 +187,7 @@ class TestMain:
         assert result == 0
         mock_fn.assert_called_once_with(search_term="BTC", __cli_raw=True)
 
-    @patch("mtdata.core.cli.discover_tools")
+    @patch("mtdata.core.cli.api.discover_tools")
     def test_correlation_matrix_keeps_optional_first_positional_symbols(
         self, mock_discover
     ):
@@ -219,7 +219,7 @@ class TestMain:
         assert result == 0
         mock_fn.assert_called_once_with(symbols="EURUSD,GBPUSD", __cli_raw=True)
 
-    @patch("mtdata.core.cli.discover_tools")
+    @patch("mtdata.core.cli.api.discover_tools")
     def test_correlation_matrix_accepts_group_without_symbols(self, mock_discover):
         mock_fn = MagicMock(return_value="output text")
         mock_fn.__module__ = "mtdata.core.server"
@@ -251,7 +251,7 @@ class TestMain:
         assert result == 0
         mock_fn.assert_called_once_with(group="Forex\\Majors", __cli_raw=True)
 
-    @patch("mtdata.core.cli.discover_tools")
+    @patch("mtdata.core.cli.api.discover_tools")
     def test_causal_discover_signals_accepts_group_without_symbols(
         self,
         mock_discover,
@@ -287,7 +287,7 @@ class TestMain:
         assert result == 0
         mock_fn.assert_called_once_with(group="Forex\\Majors", __cli_raw=True)
 
-    @patch("mtdata.core.cli.discover_tools")
+    @patch("mtdata.core.cli.api.discover_tools")
     def test_cointegration_test_keeps_optional_first_positional_symbols(
         self, mock_discover
     ):
@@ -319,7 +319,7 @@ class TestMain:
         assert result == 0
         mock_fn.assert_called_once_with(symbols="EURUSD,GBPUSD", __cli_raw=True)
 
-    @patch("mtdata.core.cli.discover_tools")
+    @patch("mtdata.core.cli.api.discover_tools")
     def test_cointegration_test_accepts_group_without_symbols(self, mock_discover):
         mock_fn = MagicMock(return_value="output text")
         mock_fn.__module__ = "mtdata.core.server"
@@ -351,7 +351,7 @@ class TestMain:
         assert result == 0
         mock_fn.assert_called_once_with(group="Forex\\Majors", __cli_raw=True)
 
-    @patch("mtdata.core.cli.discover_tools")
+    @patch("mtdata.core.cli.api.discover_tools")
     def test_trade_risk_analyze_accepts_optional_positional_symbol(
         self, mock_discover
     ):
@@ -383,7 +383,7 @@ class TestMain:
         assert isinstance(request, TradeRiskAnalyzeRequest)
         assert request.symbol == "EURUSD"
 
-    @patch("mtdata.core.cli.discover_tools")
+    @patch("mtdata.core.cli.api.discover_tools")
     def test_trade_get_open_accepts_optional_positional_symbol(self, mock_discover):
         mock_fn = MagicMock(return_value={"success": True})
         mock_fn.__module__ = "mtdata.core.server"
@@ -413,7 +413,7 @@ class TestMain:
         assert isinstance(request, TradeGetOpenRequest)
         assert request.symbol == "EURUSD"
 
-    @patch("mtdata.core.cli.discover_tools")
+    @patch("mtdata.core.cli.api.discover_tools")
     def test_market_scan_keeps_optional_first_positional_symbols(self, mock_discover):
         mock_fn = MagicMock(return_value="output text")
         mock_fn.__module__ = "mtdata.core.server"
@@ -441,7 +441,7 @@ class TestMain:
         assert result == 0
         mock_fn.assert_called_once_with(symbols="EURUSD,GBPUSD", __cli_raw=True)
 
-    @patch("mtdata.core.cli.discover_tools")
+    @patch("mtdata.core.cli.api.discover_tools")
     def test_market_scan_accepts_group_without_symbols(self, mock_discover):
         mock_fn = MagicMock(return_value="output text")
         mock_fn.__module__ = "mtdata.core.server"
@@ -469,7 +469,7 @@ class TestMain:
         assert result == 0
         mock_fn.assert_called_once_with(group="Forex\\Majors", __cli_raw=True)
 
-    @patch("mtdata.core.cli.discover_tools")
+    @patch("mtdata.core.cli.api.discover_tools")
     def test_market_status_keeps_optional_first_positional_symbol(self, mock_discover):
         mock_fn = MagicMock(return_value="output text")
         mock_fn.__module__ = "mtdata.core.server"
@@ -497,7 +497,7 @@ class TestMain:
         assert result == 0
         mock_fn.assert_called_once_with(symbol="EURUSD", region="all", __cli_raw=True)
 
-    @patch("mtdata.core.cli.discover_tools")
+    @patch("mtdata.core.cli.api.discover_tools")
     def test_global_timeframe_before_command_is_applied(self, mock_discover):
         mock_fn = MagicMock(return_value="output text")
         mock_fn.__module__ = "mtdata.core.server"
@@ -523,7 +523,7 @@ class TestMain:
         assert result == 0
         assert mock_fn.call_args[1]["timeframe"] == "D1"
 
-    @patch("mtdata.core.cli.discover_tools")
+    @patch("mtdata.core.cli.api.discover_tools")
     def test_command_timeframe_overrides_global_timeframe(self, mock_discover):
         mock_fn = MagicMock(return_value="output text")
         mock_fn.__module__ = "mtdata.core.server"
@@ -552,7 +552,7 @@ class TestMain:
         assert result == 0
         assert mock_fn.call_args[1]["timeframe"] == "H1"
 
-    @patch("mtdata.core.cli.discover_tools")
+    @patch("mtdata.core.cli.api.discover_tools")
     def test_json_output_suppresses_mtdata_logs_in_non_verbose_mode(
         self, mock_discover, capsys
     ):
@@ -590,7 +590,7 @@ class TestMain:
         assert json.loads(out.out)["ok"] is True
         assert "noise that should be suppressed" not in out.err
 
-    @patch("mtdata.core.cli.discover_tools")
+    @patch("mtdata.core.cli.api.discover_tools")
     def test_env_output_format_json_uses_json_default(
         self, mock_discover, monkeypatch, capsys
     ):
@@ -614,7 +614,7 @@ class TestMain:
         out = capsys.readouterr()
         assert json.loads(out.out)["ok"] is True
 
-    @patch("mtdata.core.cli.discover_tools")
+    @patch("mtdata.core.cli.api.discover_tools")
     def test_json_output_suppresses_stream_noise_and_third_party_logs(
         self, mock_discover, capsys
     ):
@@ -653,7 +653,7 @@ class TestMain:
         assert "stderr noise" not in out.err
         assert "third-party noise" not in out.err
 
-    @patch("mtdata.core.cli.discover_tools")
+    @patch("mtdata.core.cli.api.discover_tools")
     def test_toon_output_suppresses_stream_noise_but_keeps_structured_warnings(
         self, mock_discover, capsys
     ):
@@ -685,7 +685,7 @@ class TestMain:
         assert "warnings[1]:" in out.out
         assert "runtime warning" in out.out
 
-    @patch("mtdata.core.cli.discover_tools")
+    @patch("mtdata.core.cli.api.discover_tools")
     def test_cli_ignores_deprecation_warnings_in_structured_output(
         self, mock_discover, capsys
     ):
@@ -715,7 +715,7 @@ class TestMain:
         assert "deprecated runtime path" not in out.out
         assert "pending deprecation path" not in out.out
 
-    @patch("mtdata.core.cli.discover_tools")
+    @patch("mtdata.core.cli.api.discover_tools")
     def test_cli_ignores_resource_warnings_in_structured_output(
         self, mock_discover, capsys
     ):
@@ -749,7 +749,7 @@ class TestMain:
         assert "ResourceWarning" not in out.out
         assert "unclosed database" not in out.out
 
-    @patch("mtdata.core.cli.discover_tools")
+    @patch("mtdata.core.cli.api.discover_tools")
     def test_cli_ignores_third_party_future_warnings_in_structured_output(
         self, mock_discover, capsys
     ):
@@ -783,7 +783,7 @@ class TestMain:
         assert "pandas concat behavior is deprecated" not in out.out
         assert "site-packages" not in out.out
 
-    @patch("mtdata.core.cli.discover_tools")
+    @patch("mtdata.core.cli.api.discover_tools")
     def test_help_hides_irrelevant_timeframe_for_trade_account_info(
         self, mock_discover, capsys
     ):
@@ -814,7 +814,7 @@ class TestMain:
         out = capsys.readouterr().out
         assert "--timeframe" not in out
 
-    @patch("mtdata.core.cli.discover_tools")
+    @patch("mtdata.core.cli.api.discover_tools")
     def test_root_help_documents_global_timeframe_precedence(self, mock_discover, capsys):
         def my_tool(symbol: str, timeframe: str = "H1"):
             """My tool."""
@@ -841,7 +841,7 @@ class TestMain:
         assert "Default MT5 timeframe for commands with a timeframe parameter" in out
         assert "command-level --timeframe overrides it" in out
 
-    @patch("mtdata.core.cli.discover_tools")
+    @patch("mtdata.core.cli.api.discover_tools")
     def test_help_hides_duplicate_symbol_option_for_required_first_arg(
         self, mock_discover, capsys
     ):
@@ -874,7 +874,7 @@ class TestMain:
         assert "symbol" in out
         assert "--symbol" not in out
 
-    @patch("mtdata.core.cli.discover_tools")
+    @patch("mtdata.core.cli.api.discover_tools")
     def test_trade_history_days_alias_converts_to_minutes(self, mock_discover):
         mock_fn = MagicMock(return_value=[])
         mock_fn.__module__ = "mtdata.core.server"
@@ -905,7 +905,7 @@ class TestMain:
         assert request.minutes_back == 2880
         assert str(request.position_ticket) == "123456"
 
-    @patch("mtdata.core.cli.discover_tools")
+    @patch("mtdata.core.cli.api.discover_tools")
     def test_trade_history_minutes_back_overrides_days_alias(self, mock_discover):
         mock_fn = MagicMock(return_value=[])
         mock_fn.__module__ = "mtdata.core.server"
@@ -935,7 +935,7 @@ class TestMain:
         request = mock_fn.call_args[1]["request"]
         assert request.minutes_back == 60
 
-    @patch("mtdata.core.cli.discover_tools")
+    @patch("mtdata.core.cli.api.discover_tools")
     def test_trade_history_side_flag_populates_request(self, mock_discover):
         mock_fn = MagicMock(return_value=[])
         mock_fn.__module__ = "mtdata.core.server"
@@ -963,7 +963,7 @@ class TestMain:
         assert isinstance(request, TradeHistoryRequest)
         assert request.side == "SELL"
 
-    @patch("mtdata.core.cli.discover_tools")
+    @patch("mtdata.core.cli.api.discover_tools")
     def test_command_exception_handled(self, mock_discover, capsys):
         mock_fn = MagicMock(side_effect=RuntimeError("fail!"))
         mock_fn.__module__ = "mtdata.core.server"
@@ -989,7 +989,7 @@ class TestMain:
         assert result == 1
         assert "Error" in capsys.readouterr().err
 
-    @patch("mtdata.core.cli.discover_tools")
+    @patch("mtdata.core.cli.api.discover_tools")
     def test_command_tool_error_result_returns_nonzero(self, mock_discover, capsys):
         mock_fn = MagicMock(return_value={"error": "bad input"})
         mock_fn.__module__ = "mtdata.core.server"
@@ -1014,7 +1014,7 @@ class TestMain:
             result = main()
         assert result == 1
 
-    @patch("mtdata.core.cli.discover_tools")
+    @patch("mtdata.core.cli.api.discover_tools")
     def test_command_no_action_result_returns_nonzero(self, mock_discover, capsys):
         mock_fn = MagicMock(
             return_value={"message": "No action taken", "no_action": True}
@@ -1041,7 +1041,7 @@ class TestMain:
             result = main()
         assert result == 1
 
-    @patch("mtdata.core.cli.discover_tools")
+    @patch("mtdata.core.cli.api.discover_tools")
     def test_command_successful_no_action_result_returns_zero(
         self, mock_discover, capsys
     ):
@@ -1075,7 +1075,7 @@ class TestMain:
             result = main()
         assert result == 0
 
-    @patch("mtdata.core.cli.discover_tools")
+    @patch("mtdata.core.cli.api.discover_tools")
     def test_keyboard_interrupt(self, mock_discover, capsys):
         mock_fn = MagicMock(side_effect=KeyboardInterrupt)
         mock_fn.__module__ = "mtdata.core.server"
@@ -1101,7 +1101,7 @@ class TestMain:
         assert result == 1
         assert "Aborted" in capsys.readouterr().err
 
-    @patch("mtdata.core.cli.discover_tools")
+    @patch("mtdata.core.cli.api.discover_tools")
     def test_debug_mode_traceback(self, mock_discover, capsys, monkeypatch):
         monkeypatch.setenv("MTDATA_CLI_DEBUG", "1")
         mock_fn = MagicMock(side_effect=ValueError("debug test"))
@@ -1136,7 +1136,7 @@ class TestMain:
 
 
 class TestForecastGenerateIntegration:
-    @patch("mtdata.core.cli.discover_tools")
+    @patch("mtdata.core.cli.api.discover_tools")
     def test_forecast_generate_basic(self, mock_discover, capsys):
         mock_fn = MagicMock(return_value={"forecast": [1.0, 2.0]})
         mock_fn.__module__ = "mtdata.core.server"
@@ -1162,7 +1162,7 @@ class TestForecastGenerateIntegration:
         assert request.detail == "compact"
         assert call_kwargs["__cli_raw"] is True
 
-    @patch("mtdata.core.cli.discover_tools")
+    @patch("mtdata.core.cli.api.discover_tools")
     def test_forecast_generate_maps_extras_to_internal_detail(self, mock_discover):
         mock_fn = MagicMock(return_value={"forecast": [1.0, 2.0]})
         mock_fn.__module__ = "mtdata.core.server"
@@ -1181,7 +1181,7 @@ class TestForecastGenerateIntegration:
         request = mock_fn.call_args[1]["request"]
         assert request.detail == "full"
 
-    @patch("mtdata.core.cli.discover_tools")
+    @patch("mtdata.core.cli.api.discover_tools")
     def test_forecast_generate_accepts_symbol_flag_alias(self, mock_discover):
         mock_fn = MagicMock(return_value={"forecast": [1.0, 2.0]})
         mock_fn.__module__ = "mtdata.core.server"
@@ -1200,7 +1200,7 @@ class TestForecastGenerateIntegration:
         request = mock_fn.call_args[1]["request"]
         assert request.symbol == "BTCUSD"
 
-    @patch("mtdata.core.cli.discover_tools")
+    @patch("mtdata.core.cli.api.discover_tools")
     def test_forecast_generate_print_config(self, mock_discover, capsys):
         mock_fn = MagicMock(return_value={"forecast": [1.0]})
         mock_fn.__module__ = "mtdata.core.server"
@@ -1223,7 +1223,7 @@ class TestForecastGenerateIntegration:
         out = capsys.readouterr().out
         assert "EURUSD" in out
 
-    @patch("mtdata.core.cli.discover_tools")
+    @patch("mtdata.core.cli.api.discover_tools")
     def test_forecast_generate_print_config_honors_json(self, mock_discover, capsys):
         mock_fn = MagicMock(return_value={"forecast": [1.0]})
         mock_fn.__module__ = "mtdata.core.server"
@@ -1247,7 +1247,7 @@ class TestForecastGenerateIntegration:
         payload = json.loads(capsys.readouterr().out)
         assert payload["forecast_generate"]["symbol"] == "EURUSD"
 
-    @patch("mtdata.core.cli.discover_tools")
+    @patch("mtdata.core.cli.api.discover_tools")
     def test_forecast_generate_json_format(self, mock_discover, capsys):
         mock_fn = MagicMock(return_value="text forecast")
         mock_fn.__module__ = "mtdata.core.server"
@@ -1267,7 +1267,7 @@ class TestForecastGenerateIntegration:
         parsed = json.loads(out)
         assert parsed["text"] == "text forecast"
 
-    @patch("mtdata.core.cli.discover_tools")
+    @patch("mtdata.core.cli.api.discover_tools")
     def test_forecast_generate_tool_error_returns_nonzero(self, mock_discover, capsys):
         mock_fn = MagicMock(return_value={"error": "forecast failed"})
         mock_fn.__module__ = "mtdata.core.server"
@@ -1284,7 +1284,7 @@ class TestForecastGenerateIntegration:
             result = main()
         assert result == 1
 
-    @patch("mtdata.core.cli.discover_tools")
+    @patch("mtdata.core.cli.api.discover_tools")
     def test_forecast_generate_with_overrides(self, mock_discover, capsys):
         mock_fn = MagicMock(return_value={"forecast": [1.0]})
         mock_fn.__module__ = "mtdata.core.server"
@@ -1315,7 +1315,7 @@ class TestForecastGenerateIntegration:
         assert request.params["sp"] == 24
         assert request.params["max_epochs"] == 20
 
-    @patch("mtdata.core.cli.discover_tools")
+    @patch("mtdata.core.cli.api.discover_tools")
     def test_forecast_generate_uses_global_timeframe_before_command(
         self, mock_discover
     ):
@@ -1338,7 +1338,7 @@ class TestForecastGenerateIntegration:
         request = mock_fn.call_args[1]["request"]
         assert request.timeframe == "D1"
 
-    @patch("mtdata.core.cli.discover_tools")
+    @patch("mtdata.core.cli.api.discover_tools")
     def test_forecast_generate_with_denoise(self, mock_discover, capsys):
         mock_fn = MagicMock(return_value="ok")
         mock_fn.__module__ = "mtdata.core.server"
@@ -1360,7 +1360,7 @@ class TestForecastGenerateIntegration:
         request = mock_fn.call_args[1]["request"]
         assert request.denoise == {"method": "wavelet"}
 
-    @patch("mtdata.core.cli.discover_tools")
+    @patch("mtdata.core.cli.api.discover_tools")
     def test_forecast_generate_rejects_removed_verbose_flag(self, mock_discover, capsys):
         mock_fn = MagicMock(return_value={"forecast": [1.0, 2.0, 3.0]})
         mock_fn.__module__ = "mtdata.core.server"
@@ -1377,7 +1377,7 @@ class TestForecastGenerateIntegration:
             with pytest.raises(SystemExit, match="2"):
                 main()
 
-    @patch("mtdata.core.cli.discover_tools")
+    @patch("mtdata.core.cli.api.discover_tools")
     def test_forecast_generate_omits_redundant_ci_block_when_bounds_rendered(
         self, mock_discover, capsys
     ):
@@ -1410,7 +1410,7 @@ class TestForecastGenerateIntegration:
         assert "forecast[1]{time,forecast,lower,upper}:" in out
         assert "\nci:" not in out
 
-    @patch("mtdata.core.cli.discover_tools")
+    @patch("mtdata.core.cli.api.discover_tools")
     def test_forecast_generate_default_output_includes_compact_context(
         self, mock_discover, capsys
     ):
@@ -1501,13 +1501,13 @@ class TestEdgeCases:
         assert isinstance(result, str)
 
     def test_build_cli_timezone_meta_local_tz(self):
-        from mtdata.core.cli import _build_cli_timezone_meta
+        from mtdata.core.cli.formatting import _build_cli_timezone_meta
         result = _build_cli_timezone_meta({})
         assert "local" not in result
         assert result["utc"]["tz"] == "UTC"
 
     def test_attach_cli_meta_with_none_cmd(self):
-        from mtdata.core.cli import _attach_cli_meta
+        from mtdata.core.cli.api import _attach_cli_meta
         r = {"data": 1}
         out = _attach_cli_meta(r, cmd_name=None, verbose=True)
         assert "cli_meta" not in out
@@ -1516,7 +1516,7 @@ class TestEdgeCases:
 
     def test_resolve_param_kwargs_type_resolution_failure(self):
         # A parameter with a weird type that causes exception
-        from mtdata.core.cli import _resolve_param_kwargs
+        from mtdata.core.cli.api import _resolve_param_kwargs
         class WeirdType:
             pass
 
@@ -1591,7 +1591,7 @@ class TestEdgeCases:
         assert _quote_cli_value("abc123") == "abc123"
 
     def test_example_value_with_tuple_type(self):
-        from mtdata.core.cli import _example_value
+        from mtdata.core.cli.api import _example_value
         param = {"name": "weird", "type": tuple, "default": None}
         result = _example_value(param, prefer_default=False)
         assert isinstance(result, str)

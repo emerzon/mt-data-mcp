@@ -39,7 +39,7 @@ def _isolate_env(monkeypatch):
 
 # We import lazily inside tests where heavy server machinery is needed,
 # but the pure-logic helpers can be imported directly.
-from mtdata.core.cli import (
+from mtdata.core.cli.api import (
     _configure_cli_logging,
     _debug,
     _debug_enabled,

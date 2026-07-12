@@ -38,10 +38,7 @@ from .._mcp_tools import _get_pydantic_model_fields
 from .._mcp_tools import get_tool_registry as get_registered_tools
 from ..output_contract import resolve_output_contract
 from .formatting import (
-    CLI_FORMAT_TOON,
     _attach_cli_meta,
-    _build_cli_timezone_meta,
-    _build_cli_timezone_meta_brief,
     _format_result_for_cli,
     _json_default,
     _resolve_cli_formatter,
@@ -80,7 +77,6 @@ from .runtime import (
     _debug,
     _debug_enabled,
     _suppress_cli_side_output,
-    _temporary_environment,
 )
 from .runtime.commands import LIVE_TRADE_MUTATION_TOOLS, LIVE_TRADE_MUTATION_WARNING
 from .runtime.commands import (
@@ -108,16 +104,6 @@ class _CLIHelpFormatter(
     argparse.ArgumentDefaultsHelpFormatter,
 ):
     """Preserve command descriptions while showing effective defaults."""
-
-# Keep formatting helpers in this module namespace for backward-compatible
-# exports via mtdata.core.cli.__init__'s namespace copy.
-_CLI_NAMESPACE_EXPORTS = (
-    CLI_FORMAT_TOON,
-    _build_cli_timezone_meta,
-    _build_cli_timezone_meta_brief,
-    _temporary_environment,
-)
-
 
 def _is_typed_dict_type(value: Any) -> bool:
     try:
