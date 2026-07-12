@@ -1134,6 +1134,20 @@ class TestGetDenoiseMethodsData:
         methods = [m["method"] for m in data["methods"]]
         assert "ema" in methods
 
+    def test_method_params_include_ui_metadata(self):
+        data = get_denoise_methods_data()
+        methods = {entry["method"]: entry for entry in data["methods"]}
+
+        assert methods["ema"]["params"] == [
+            {"name": "span", "type": "integer", "default": 10}
+        ]
+        assert {param["name"] for param in methods["wavelet"]["params"]} == {
+            "wavelet",
+            "level",
+            "threshold",
+            "mode",
+        }
+
     def test_schema_version(self):
         data = get_denoise_methods_data()
         assert data["schema_version"] == 1
