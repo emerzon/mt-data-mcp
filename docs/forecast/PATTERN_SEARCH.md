@@ -140,6 +140,12 @@ mtdata-cli patterns_detect EURUSD --timeframe H1 --mode fractal \
 
 ### Filtering Patterns
 
+Classic detector config values `max_pattern_age_bars` and
+`max_pattern_span_bars` bound all detector results, including completed
+patterns. `--include-completed true` adds completed structures that remain
+inside those detection bounds; it does not request an unbounded historical
+scan.
+
 **By name:**
 ```bash
 mtdata-cli patterns_detect EURUSD --mode candlestick \

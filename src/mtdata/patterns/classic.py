@@ -219,13 +219,13 @@ def _postprocess_classic_results(
             if r.status == "forming" and r.end_index < (n - recent_bars):
                 results[i] = replace(r, status="completed")
 
-    # Filter out old forming patterns based on max_pattern_age_bars
+    # Apply the configured result recency bound to every lifecycle state.
     max_age = int(getattr(cfg, "max_pattern_age_bars", 500))
     if max_age > 0:
         cutoff_index = n - max_age
         results = [r for r in results if r.end_index >= cutoff_index]
 
-    # Filter out patterns that span too many bars (stale long-running patterns)
+    # Apply the configured geometry-span bound to every lifecycle state.
     max_span = int(getattr(cfg, "max_pattern_span_bars", 0))
     if max_span > 0:
         results = [r for r in results if (r.end_index - r.start_index) <= max_span]

@@ -183,8 +183,11 @@ class ClassicDetectorConfig:
     completion_lookback_bars: int = 5  # lookback window for completion confirmation
     auto_complete_stale_forming: bool = False
     stale_completion_recent_bars: int = 10
-    max_pattern_age_bars: int = 300  # maximum age (bars from current) for forming patterns; older patterns are filtered out
-    max_pattern_span_bars: int = 200  # maximum span (end_index - start_index) for forming patterns; longer patterns are filtered out as too stale
+    # Detection-window bounds for all returned patterns, including completed
+    # structures. include_completed controls lifecycle visibility; it does not
+    # bypass these recency and geometry-quality limits.
+    max_pattern_age_bars: int = 300
+    max_pattern_span_bars: int = 200
     include_lifecycle_metadata: bool = True
     # Optional confidence calibration map:
     # { "default": {"0.40": 0.35, "0.70": 0.62, "0.90": 0.82},
