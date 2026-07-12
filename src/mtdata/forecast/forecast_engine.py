@@ -570,13 +570,23 @@ def build_training_context(
             "Requested features could not be prepared: "
             f"{feature_info['error']}"
         )
+    training_params = dict(p)
+    training_params["_training_context"] = _training_context_fingerprint(
+        df=df,
+        target_series=target_series,
+        base_col=base_col,
+        denoise=denoise,
+        features=features,
+        target_spec=target_spec,
+        exog=X,
+    )
     return TrainingExecutionContext(
         method_l=method_l,
         data_scope=f"{symbol}_{timeframe}",
         target_series=target_series,
         horizon=int(horizon),
         seasonality=int(seasonality),
-        method_params=dict(p),
+        method_params=training_params,
         timeframe=str(timeframe),
         exog_used=X,
     )
@@ -643,6 +653,41 @@ def _compute_model_key(
     return _FM.hash_fingerprint(fp)
 
 
+def _stable_training_value(value: Any) -> Any:
+    if hasattr(value, "model_dump"):
+        return value.model_dump(mode="json")
+    if isinstance(value, dict):
+        return {
+            str(key): _stable_training_value(item)
+            for key, item in sorted(value.items(), key=lambda pair: str(pair[0]))
+        }
+    if isinstance(value, (list, tuple)):
+        return [_stable_training_value(item) for item in value]
+    return value
+
+
+def _training_context_fingerprint(
+    *,
+    df: pd.DataFrame,
+    target_series: pd.Series,
+    base_col: str,
+    denoise: Any,
+    features: Any,
+    target_spec: Any,
+    exog: Optional[np.ndarray],
+) -> Dict[str, Any]:
+    return {
+        "target_points": int(len(target_series)),
+        "history_start_epoch": float(df["time"].iloc[0]),
+        "training_end_epoch": float(df["time"].iloc[-1]),
+        "base_col": str(base_col),
+        "denoise": _stable_training_value(denoise),
+        "features": _stable_training_value(features),
+        "target_spec": _stable_training_value(target_spec),
+        "exog_shape": list(exog.shape) if exog is not None else None,
+    }
+
+
 def _try_predict_with_stored_model(
     forecaster: "ForecastMethod",
     method_l: str,
@@ -654,6 +699,7 @@ def _try_predict_with_stored_model(
     method_params: Dict[str, Any],
     future_exog: Optional[np.ndarray],
     call_kwargs: Dict[str, Any],
+    current_anchor_epoch: Optional[float] = None,
 ) -> Optional[Tuple[np.ndarray, Optional[np.ndarray], Dict[str, Any]]]:
     """Attempt to load a trained model and predict. Returns None if no model found."""
     try:
@@ -662,6 +708,19 @@ def _try_predict_with_stored_model(
         handle = _store.find(method_l, data_scope, params_hash)
         if handle is None:
             return None
+        if current_anchor_epoch is not None:
+            training_context = handle.metadata.get("training_context")
+            if not isinstance(training_context, dict):
+                return None
+            trained_anchor = training_context.get("training_end_epoch")
+            try:
+                anchor_matches = abs(
+                    float(trained_anchor) - float(current_anchor_epoch)
+                ) < 1e-6
+            except (TypeError, ValueError):
+                anchor_matches = False
+            if not anchor_matches:
+                return None
         raw = _store.load_bytes(handle.model_id)
         if raw is None:
             return None
@@ -778,6 +837,7 @@ def _run_registered_forecast_method(
     future_exog: Optional[np.ndarray],
     features: Optional[Dict[str, Any]] = None,
     feature_info: Optional[Dict[str, Any]] = None,
+    target_spec: Optional[Dict[str, Any]] = None,
     async_mode: bool = False,
     model_id: Optional[str] = None,
 ) -> Tuple[np.ndarray, Optional[np.ndarray], Dict[str, Any]]:
@@ -834,6 +894,15 @@ def _run_registered_forecast_method(
         has_exog = X is not None
         training_params = dict(method_params)
         training_params["quantity"] = quantity_l
+        training_params["_training_context"] = _training_context_fingerprint(
+            df=df,
+            target_series=target_series,
+            base_col=base_col,
+            denoise=denoise_spec_used,
+            features=features,
+            target_spec=target_spec,
+            exog=X,
+        )
         params_hash = requested_model_id or _compute_model_key(
             forecaster, method_l, horizon, seasonality,
             training_params, str(timeframe), has_exog,
@@ -843,6 +912,7 @@ def _run_registered_forecast_method(
             forecaster, method_l, data_scope, params_hash,
             target_series, horizon, seasonality,
             method_params, future_exog, call_kwargs,
+            float(df["time"].iloc[-1]),
         )
         if stored_result is not None:
             return stored_result
@@ -1389,6 +1459,7 @@ def forecast_engine(  # noqa: C901
                 future_exog=future_exog,
                 features=features,
                 feature_info=feature_info,
+                target_spec=target_spec,
                 async_mode=async_mode,
                 model_id=model_id,
             )

@@ -145,12 +145,66 @@ class TestComputeModelKey:
         key_yes = fe._compute_model_key(stub, "stub_trainable", 10, 24, {}, "H1", True)
         assert key_no != key_yes
 
+    def test_pipeline_context_affects_hash(self):
+        stub = _StubTrainable()
+        first = fe._compute_model_key(
+            stub,
+            "stub_trainable",
+            10,
+            24,
+            {"_training_context": {"target_points": 500, "denoise": {"method": "ema"}}},
+            "H1",
+            False,
+        )
+        second = fe._compute_model_key(
+            stub,
+            "stub_trainable",
+            10,
+            24,
+            {"_training_context": {"target_points": 2000, "denoise": None}},
+            "H1",
+            False,
+        )
+
+        assert first != second
+
 
 # ---------------------------------------------------------------------------
 # Tests: _try_predict_with_stored_model
 # ---------------------------------------------------------------------------
 
 class TestTryPredictWithStoredModel:
+
+    def test_rejects_model_trained_at_different_anchor(self):
+        stub = _StubTrainable()
+        handle = TrainedModelHandle(
+            model_id="stub_trainable/EURUSD_H1/abc123",
+            method="stub_trainable",
+            data_scope="EURUSD_H1",
+            params_hash="abc123",
+            created_at=1000.0,
+            metadata={"training_context": {"training_end_epoch": 1000.0}},
+        )
+        mock_store = MagicMock()
+        mock_store.find.return_value = handle
+
+        with patch(_PATCH_MODEL_STORE, mock_store):
+            result = fe._try_predict_with_stored_model(
+                stub,
+                "stub_trainable",
+                "EURUSD_H1",
+                "abc123",
+                _sample_series(),
+                3,
+                24,
+                {},
+                None,
+                {},
+                current_anchor_epoch=2000.0,
+            )
+
+        assert result is None
+        mock_store.load_bytes.assert_not_called()
 
     def test_returns_none_when_no_model(self):
         stub = _StubTrainable()
@@ -434,6 +488,11 @@ class TestRunRegisteredForecastMethodIntegration:
             data_scope="EURUSD_H1",
             params_hash="abc",
             created_at=1000.0,
+            metadata={
+                "training_context": {
+                    "training_end_epoch": float(_sample_df(100)["time"].iloc[-1])
+                }
+            },
         )
         mock_store = MagicMock()
         mock_store.find.return_value = handle
@@ -514,6 +573,11 @@ class TestRunRegisteredForecastMethodIntegration:
             data_scope="EURUSD_H1",
             params_hash="custom_id",
             created_at=2000.0,
+            metadata={
+                "training_context": {
+                    "training_end_epoch": float(_sample_df(100)["time"].iloc[-1])
+                }
+            },
         )
         mock_store = MagicMock()
         mock_store.find.return_value = handle
@@ -623,6 +687,11 @@ class TestForecastEngineAsyncRouting:
             data_scope="EURUSD_H1",
             params_hash="abc",
             created_at=1000.0,
+            metadata={
+                "training_context": {
+                    "training_end_epoch": float(_sample_df(50)["time"].iloc[-1])
+                }
+            },
             store_metadata={
                 "metadata_version": 2,
                 "compatibility_version": 3,

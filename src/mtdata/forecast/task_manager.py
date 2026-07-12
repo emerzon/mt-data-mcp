@@ -273,11 +273,13 @@ def _execute_training_spec(
     prepared = _prepare_spec_inputs(spec)
     cancel_token.raise_if_cancelled()
     method_obj = ForecastRegistry.get(prepared["method_name"])
+    training_params = dict(prepared["params"])
+    training_context = training_params.pop("_training_context", None)
     result = method_obj.train(
         prepared["series"],
         int(prepared["horizon"]),
         int(prepared["seasonality"]),
-        dict(prepared["params"]),
+        training_params,
         progress_callback=progress_callback,
         cancel_token=cancel_token,
         exog=prepared["exog"],
@@ -294,6 +296,7 @@ def _execute_training_spec(
             **(result.metadata or {}),
             "params_used": result.params_used,
             "source_task_id": source_task_id,
+            "training_context": training_context,
         },
     )
 
