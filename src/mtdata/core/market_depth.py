@@ -40,6 +40,8 @@ from .runtime_metadata import display_timezone_label
 logger = logging.getLogger(__name__)
 _MARKET_DEPTH_ENABLE_ENV = "MTDATA_ENABLE_MARKET_DEPTH_FETCH"
 _MARKET_TICKER_STALE_SECONDS = QUOTE_STALE_SECONDS
+_MARKET_DEPTH_INITIAL_SNAPSHOT_ATTEMPTS = 20
+_MARKET_DEPTH_INITIAL_SNAPSHOT_INTERVAL_SECONDS = 0.01
 _MARKET_DEPTH_BOOK_UNITS = {
     "volume": "book_volume",
     "volume_real": "book_volume_real",
@@ -319,7 +321,18 @@ def _market_depth_fetch_impl(symbol: str, spread: bool = False, require_dom: boo
             except Exception:
                 book_subscription_active = False
             try:
-                depth = mt5_gateway.market_book_get(symbol)
+                depth = None
+                attempts = (
+                    _MARKET_DEPTH_INITIAL_SNAPSHOT_ATTEMPTS
+                    if book_subscription_active
+                    else 1
+                )
+                for attempt in range(attempts):
+                    depth = mt5_gateway.market_book_get(symbol)
+                    if depth is not None and len(depth) > 0:
+                        break
+                    if attempt + 1 < attempts:
+                        time.sleep(_MARKET_DEPTH_INITIAL_SNAPSHOT_INTERVAL_SECONDS)
             finally:
                 if book_subscription_active:
                     try:

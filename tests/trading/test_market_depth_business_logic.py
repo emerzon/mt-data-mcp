@@ -173,7 +173,7 @@ def test_market_depth_releases_book_after_empty_snapshot() -> None:
     )
     with patch("mtdata.core.market_depth.mt5") as mt5, patch(
         "mtdata.core.market_depth._use_client_tz", return_value=False
-    ):
+    ), patch("mtdata.core.market_depth.time.sleep"):
         mt5.symbol_select.return_value = True
         mt5.symbol_info.return_value = SimpleNamespace(digits=2)
         mt5.market_book_add.return_value = True
@@ -185,6 +185,27 @@ def test_market_depth_releases_book_after_empty_snapshot() -> None:
     assert out["success"] is True
     assert out["type"] == "quote_fallback"
     mt5.market_book_add.assert_called_once_with("BTCUSD")
+    mt5.market_book_release.assert_called_once_with("BTCUSD")
+
+
+def test_market_depth_waits_for_initial_subscribed_snapshot() -> None:
+    depth = [
+        {"price": 65601.0, "volume": 1.0, "volume_real": 1.0, "type": 0},
+    ]
+    with patch("mtdata.core.market_depth.mt5") as mt5, patch(
+        "mtdata.core.market_depth.time.sleep"
+    ) as sleep:
+        mt5.symbol_select.return_value = True
+        mt5.symbol_info.return_value = SimpleNamespace(digits=2)
+        mt5.market_book_add.return_value = True
+        mt5.market_book_get.side_effect = [[], depth]
+
+        out = _raw_market_depth_fetch("BTCUSD")
+
+    assert out["success"] is True
+    assert out["type"] == "full_depth"
+    assert mt5.market_book_get.call_count == 2
+    sleep.assert_called_once_with(0.01)
     mt5.market_book_release.assert_called_once_with("BTCUSD")
 
 
