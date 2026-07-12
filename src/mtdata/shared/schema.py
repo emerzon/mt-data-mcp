@@ -421,10 +421,7 @@ _DENOISE_METHODS = (
     "ceemdan",     # complementary EEMD with adaptive noise (PyEMD optional)    
 )
 
-try:
-    DenoiseMethodLiteral = Literal[_DENOISE_METHODS]  # type: ignore
-except Exception:
-    DenoiseMethodLiteral = str  # fallback for typing
+DenoiseMethodLiteral = Literal[_DENOISE_METHODS]  # type: ignore
 
 class DenoiseSpec(TypedDict, total=False):
     method: DenoiseMethodLiteral  # type: ignore
@@ -447,20 +444,10 @@ _SIMPLIFY_MODES = (
 _SIMPLIFY_METHODS = (
     'lttb', 'rdp', 'pla', 'apca'
 )
-try:
-    SimplifyModeLiteral = Literal[_SIMPLIFY_MODES]  # type: ignore
-except Exception:
-    SimplifyModeLiteral = str
-try:
-    SimplifyMethodLiteral = Literal[_SIMPLIFY_METHODS]  # type: ignore
-except Exception:
-    SimplifyMethodLiteral = str
-try:
-    EncodeSchemaLiteral = Literal['envelope','delta']  # type: ignore
-    SymbolicSchemaLiteral = Literal['sax']  # type: ignore
-except Exception:
-    EncodeSchemaLiteral = str
-    SymbolicSchemaLiteral = str
+SimplifyModeLiteral = Literal[_SIMPLIFY_MODES]  # type: ignore
+SimplifyMethodLiteral = Literal[_SIMPLIFY_METHODS]  # type: ignore
+EncodeSchemaLiteral = Literal['envelope', 'delta']  # type: ignore
+SymbolicSchemaLiteral = Literal['sax']  # type: ignore
 
 class SimplifySpec(TypedDict, total=False):
     # Common
@@ -498,18 +485,7 @@ _PIVOT_METHODS = (
     "demark",
 )
 
-try:
-    PivotMethodLiteral = Literal[_PIVOT_METHODS]  # type: ignore
-except Exception:
-    PivotMethodLiteral = str  # fallback for typing
-
-# ---- Fast Forecast methods (enums) ----
-# Dynamically fetch available methods + ensemble
-# We need to ensure methods are registered, but avoiding heavy imports if possible.
-# However, to get the full list, we essentially need to import the method modules.
-# For schema purposes, we might want a superset or a hardcoded list if imports are too heavy.
-# Given this is a CLI tool, maybe hardcoding is safer for startup time, but it drifts.
-# Let's stick to the hardcoded list for now but ensure it's up to date with our knowledge.
+PivotMethodLiteral = Literal[_PIVOT_METHODS]  # type: ignore
 
 # ---- Fast Forecast methods (enums) ----
 #
@@ -554,10 +530,7 @@ ForecastLibraryLiteral = Literal[
     "pretrained",
 ]
 
-try:
-    ForecastMethodLiteral = Literal[_FORECAST_METHODS]  # type: ignore
-except Exception:
-    ForecastMethodLiteral = str  # fallback for typing
+ForecastMethodLiteral = Literal[_FORECAST_METHODS]  # type: ignore
 
 
 
