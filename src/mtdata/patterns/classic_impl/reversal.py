@@ -105,6 +105,13 @@ def _neckline_quality_score(
     return float(0.5 * neck_penalty + 0.5 * max(0.0, min(1.0, float(r2))))
 
 
+def _normalized_dtw_distance(a: np.ndarray, b: np.ndarray) -> float:
+    """Return RMS-scaled DTW so thresholds do not depend on PAA length."""
+    raw = float(_dtw_distance(a, b))
+    width = max(1, int(np.asarray(a).size), int(np.asarray(b).size))
+    return float(raw / np.sqrt(float(width)))
+
+
 def _formation_neckline(
     close: np.ndarray,
     cluster_indices: np.ndarray,
@@ -319,7 +326,7 @@ def detect_head_shoulders(  # noqa: C901
             seg = c[seg_start: seg_end + 1].astype(float)
             seg_n = _znorm(_paa(seg, int(getattr(cfg, 'dtw_paa_len', 80))))
             dist = min(
-                _dtw_distance(seg_n, tpl)
+                _normalized_dtw_distance(seg_n, tpl)
                 for tpl in _template_hs_variants(len(seg_n), inverse=not regular)
             )
             maxd = float(getattr(cfg, 'dtw_max_dist', 0.6))
