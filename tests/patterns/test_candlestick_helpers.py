@@ -78,26 +78,36 @@ class TestCandlestickStrengthScore:
             deprioritize={"doji"},
         )
 
-        assert engulfing == pytest.approx(0.95)
-        assert doji == pytest.approx(0.55)
+        # base + span_bonus + raw_signal_bonus (raw 100 → +0.20)
+        assert engulfing == pytest.approx(1.0)
+        assert doji == pytest.approx(0.75)
         assert engulfing > doji
 
     def test_larger_raw_signal_receives_bonus(self):
-        base = _candlestick_strength_score(
+        weak = _candlestick_strength_score(
+            "cdl_alpha",
+            50.0,
+            robust_set=set(),
+            deprioritize=set(),
+        )
+        full = _candlestick_strength_score(
             "cdl_alpha",
             100.0,
             robust_set=set(),
             deprioritize=set(),
         )
-        boosted = _candlestick_strength_score(
+        # Raw signals above 100 cap at the same bonus as 100 (pandas_ta scale).
+        capped = _candlestick_strength_score(
             "cdl_alpha",
             200.0,
             robust_set=set(),
             deprioritize=set(),
         )
 
-        assert base == pytest.approx(0.75)
-        assert boosted == pytest.approx(0.95)
+        assert weak == pytest.approx(0.85)
+        assert full == pytest.approx(0.95)
+        assert capped == pytest.approx(0.95)
+        assert full > weak
 
 
 class TestIsCandlestickAllowed:

@@ -72,12 +72,26 @@ def _prepare_classic_inputs(
 
     t = _build_time_array(df)
     c = to_float_np(df["close"])
-    h = to_float_np(df["high"]) if "high" in df.columns else c
-    l = to_float_np(df["low"]) if "low" in df.columns else c
+    used_close_for_high = "high" not in df.columns
+    used_close_for_low = "low" not in df.columns
+    h = to_float_np(df["high"]) if not used_close_for_high else c
+    l = to_float_np(df["low"]) if not used_close_for_low else c
     if h.size != c.size:
+        used_close_for_high = True
         h = c
     if l.size != c.size:
+        used_close_for_low = True
         l = c
+    if used_close_for_high or used_close_for_low:
+        import logging
+
+        logging.getLogger(__name__).warning(
+            "Classic pattern detection falling back to close for missing/mismatched "
+            "high/low columns (high_fallback=%s, low_fallback=%s); pivot geometry "
+            "will be less reliable than true OHLC.",
+            used_close_for_high,
+            used_close_for_low,
+        )
     n = c.size
     min_input_bars = max(20, int(getattr(cfg, "min_input_bars", 100)))
     if n < min_input_bars:

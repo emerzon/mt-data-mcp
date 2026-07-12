@@ -626,9 +626,13 @@ def _conf(touches: int, r2: float, geom_ok: float, cfg: ClassicDetectorConfig) -
         raw_weights = np.asarray([1.0 / 3.0, 1.0 / 3.0, 1.0 / 3.0], dtype=float)
     else:
         raw_weights = raw_weights / total
+    # Soft-saturate touch quality so meeting min_touches is not already a full score.
+    # 1.0 requires roughly 2x min_touches (or more), rewarding extra confirmations.
+    min_touches = max(1, int(cfg.min_touches))
+    touch_score = min(1.0, float(touches) / float(2 * min_touches))
     scores = np.asarray(
         [
-            min(1.0, float(touches) / max(1, int(cfg.min_touches))),
+            touch_score,
             max(0.0, min(1.0, float(r2))),
             max(0.0, min(1.0, float(geom_ok))),
         ],

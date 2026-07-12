@@ -319,9 +319,13 @@ class TestConfidenceHelpers:
             min_touches=2,
         )
 
+        # min_touches=2 → touch_score saturates at 2*min_touches; 2 touches → 0.5
         conf = _conf(2, 1.0, 1.0, cfg)
+        # weights 2/1/1 → [0.5, 0.25, 0.25]; scores [0.5, 1, 1] → 0.5*0.5+0.25+0.25=0.75
+        assert conf == pytest.approx(0.75)
 
-        assert conf == pytest.approx(1.0)
+        conf_full = _conf(4, 1.0, 1.0, cfg)
+        assert conf_full == pytest.approx(1.0)
 
 
 class TestIsConverging:

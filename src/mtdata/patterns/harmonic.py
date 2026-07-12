@@ -414,12 +414,25 @@ def _prepare_inputs(
         df = df.iloc[-int(cfg.max_bars) :].copy()
 
     close = to_float_np(df["close"])
-    high = to_float_np(df["high"]) if "high" in df.columns else close
-    low = to_float_np(df["low"]) if "low" in df.columns else close
+    used_close_for_high = "high" not in df.columns
+    used_close_for_low = "low" not in df.columns
+    high = to_float_np(df["high"]) if not used_close_for_high else close
+    low = to_float_np(df["low"]) if not used_close_for_low else close
     if high.size != close.size:
+        used_close_for_high = True
         high = close
     if low.size != close.size:
+        used_close_for_low = True
         low = close
+    if used_close_for_high or used_close_for_low:
+        import logging
+
+        logging.getLogger(__name__).warning(
+            "Harmonic pattern detection falling back to close for missing/mismatched "
+            "high/low columns (high_fallback=%s, low_fallback=%s).",
+            used_close_for_high,
+            used_close_for_low,
+        )
     n = int(close.size)
     if n < max(10, int(cfg.min_input_bars)):
         return None
@@ -547,8 +560,13 @@ def _score_ratio(
         if dist > tol:
             return None
         return float(max(0.0, 1.0 - dist / tol))
+    # Peak at band midpoint so wide acceptance ranges do not inflate confidence.
+    mid = 0.5 * (lo_f + hi_f)
+    half = 0.5 * (hi_f - lo_f)
     if lo_f <= value_f <= hi_f:
-        return 1.0
+        if half <= 1e-12:
+            return 1.0
+        return float(max(0.0, 1.0 - abs(value_f - mid) / half))
     dist = lo_f - value_f if value_f < lo_f else value_f - hi_f
     if dist > tol:
         return None

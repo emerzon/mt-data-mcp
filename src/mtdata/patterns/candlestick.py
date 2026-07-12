@@ -285,7 +285,8 @@ def _candlestick_strength_score(
         deprioritize=deprioritize,
     )
     span_bonus = min(0.10, 0.05 * max(0, span_bars - 1))
-    raw_signal_bonus = min(0.20, 0.20 * max(0.0, raw - 100.0) / 100.0)
+    # pandas_ta CDL outputs are typically in [-100, 100]; scale magnitude into [0, 0.20].
+    raw_signal_bonus = min(0.20, 0.20 * min(raw, 100.0) / 100.0)
     return float(max(0.0, min(1.0, base + span_bonus + raw_signal_bonus)))
 
 

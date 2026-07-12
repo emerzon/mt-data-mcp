@@ -66,7 +66,8 @@ def _is_bearish_fractal(
         return False
     if not np.all(np.isfinite(left)) or not np.all(np.isfinite(right)):
         return False
-    return bool(np.all(center > left) and np.all(center >= right))
+    # Strict on both sides so plateaus do not create a left/right directional bias.
+    return bool(np.all(center > left) and np.all(center > right))
 
 
 def _is_bullish_fractal(
@@ -80,7 +81,8 @@ def _is_bullish_fractal(
         return False
     if not np.all(np.isfinite(left)) or not np.all(np.isfinite(right)):
         return False
-    return bool(np.all(center < left) and np.all(center <= right))
+    # Strict on both sides so plateaus do not create a left/right directional bias.
+    return bool(np.all(center < left) and np.all(center < right))
 
 
 def _fractal_prominence_pct(
