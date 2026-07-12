@@ -189,6 +189,7 @@ def test_strategy_validation_returns_walk_forward_oos_metrics() -> None:
 
 def test_portfolio_risk_reconciles_component_expected_shortfall() -> None:
     gateway = FakeGateway()
+    gateway.account_info = lambda: SimpleNamespace(currency="USD", equity=25000.0)
     gateway.positions = [
         {"ticket": 1, "symbol": "EURUSD", "type": 0, "volume": 1.0, "price_current": 1.1},
         {"ticket": 2, "symbol": "GBPUSD", "type": 1, "volume": 0.5, "price_current": 1.1},
@@ -198,6 +199,8 @@ def test_portfolio_risk_reconciles_component_expected_shortfall() -> None:
         gateway,
     )
     assert result["success"] is True
+    assert result["currency"] == "USD"
+    assert result["equity"] == 25000.0
     row = result["risk"][0]
     component_total = sum(item["value"] for item in row["component_expected_shortfall"])
     assert component_total == pytest.approx(row["expected_shortfall"])

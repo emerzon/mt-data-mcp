@@ -775,6 +775,13 @@ def _position_sensitivity(gateway: Any, row: Dict[str, Any]) -> Tuple[Optional[f
 
 
 def decompose_portfolio_risk(request: PortfolioRiskDecomposeRequest, gateway: Any) -> Dict[str, Any]:
+    account = None
+    try:
+        account_info = getattr(gateway, "account_info", None)
+        if callable(account_info):
+            account = account_info()
+    except Exception:
+        account = None
     positions = [_mapping(row) for row in (gateway.positions_get() or [])]
     base_position_count = len(positions)
     if request.proposed_trade:
@@ -900,9 +907,18 @@ def decompose_portfolio_risk(request: PortfolioRiskDecomposeRequest, gateway: An
             proposed_context = {"symbol": proposed.symbol, "side": proposed.side, "volume": proposed.volume, "margin_required": float(margin) if margin is not None else None}
         except Exception:
             proposed_context = {"symbol": proposed.symbol, "margin_required": None}
+    account_context = {
+        key: value
+        for key, value in {
+            "currency": getattr(account, "currency", None),
+            "equity": getattr(account, "equity", None),
+        }.items()
+        if value is not None
+    }
     return {
         "success": True,
         "method": request.method,
+        **account_context,
         "summary": {"positions": base_position_count, "positions_after_proposed": len(positions), "symbols": len(sensitivities), "aligned_rows": len(returns), "concentration_hhi": float(np.sum(weights**2))},
         "risk": risk_rows,
         "stresses": stresses,
