@@ -306,6 +306,9 @@ class TestSimulateJumpDiffusionMc:
             jump_lambda=0.1, jump_mu=-0.02, jump_sigma=0.05,
         )
         assert result["params"]["jump_lambda"] == 0.1
+        assert result["params"]["expected_log_return"] == pytest.approx(
+            result["params"]["mu"]
+        )
 
     def test_too_few(self):
         with pytest.raises(ValueError):

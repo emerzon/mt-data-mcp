@@ -1,4 +1,3 @@
-import math
 import traceback
 import warnings
 from dataclasses import dataclass
@@ -18,7 +17,11 @@ from ..utils.barriers import (
 )
 from ..utils.coercion import UNPARSED_BOOL, parse_bool_like
 from ..utils.utils import parse_kv_or_json as _parse_kv_or_json
-from .barrier_outcomes import BarrierPathOutcomes, evaluate_barrier_path_outcomes
+from .barrier_outcomes import (
+    BarrierPathOutcomes,
+    barrier_path_payoffs,
+    evaluate_barrier_path_outcomes,
+)
 from .barrier_stats import (
     bootstrap_metric_uncertainty as _bootstrap_uncertainty,
 )
@@ -131,6 +134,7 @@ class _BarrierEvaluationContext:
     min_prob_resolve_val: Optional[float]
     max_median_time_val: Optional[float]
     same_bar_policy: str = "sl_first"
+    gap_aware_stops: bool = False
 
 
 @dataclass(frozen=True)
@@ -418,33 +422,6 @@ def _unresolved_terminal_pnl(
     return float(np.mean(pnl_pct))
 
 
-def _barrier_return_fractions(
-    net_reward: float,
-    net_risk: float,
-    *,
-    tp_price: float,
-    sl_price: float,
-    context: _BarrierEvaluationContext,
-) -> Tuple[float, float]:
-    if context.mode_val == "pct":
-        reward_frac = net_reward / 100.0
-        risk_frac = net_risk / 100.0
-    elif context.last_price > 0 and context.pip_size:
-        unit_to_return = float(context.pip_size) / float(context.last_price)
-        reward_frac = net_reward * unit_to_return
-        risk_frac = net_risk * unit_to_return
-    elif context.last_price > 0:
-        reward_frac = abs(tp_price - context.last_price) / context.last_price
-        risk_frac = abs(sl_price - context.last_price) / context.last_price
-    else:
-        reward_frac = 0.0
-        risk_frac = 0.0
-    reward_frac = max(reward_frac, -0.999)
-    if risk_frac >= 1.0:
-        risk_frac = 0.999
-    return reward_frac, risk_frac
-
-
 def _evaluate_barrier_candidate(
     tp_unit: float,
     sl_unit: float,
@@ -489,6 +466,21 @@ def _evaluate_barrier_candidate(
     effective_prob_win = prob_tp_first
     effective_prob_loss = prob_sl_first
 
+    unresolved_mask = ~(wins | losses | ties)
+    path_outcomes = BarrierPathOutcomes(
+        first_tp=first_tp,
+        first_sl=first_sl,
+        wins=wins,
+        losses=losses,
+        ties=ties,
+        unresolved=unresolved_mask,
+        time_in_trade=np.minimum(
+            np.minimum(first_tp, first_sl) + 1,
+            horizon_total,
+        ),
+        horizon=int(horizon_total),
+    )
+
     risk = sl_unit
     reward = tp_unit
     rr = reward / risk if risk > 0 else 0
@@ -501,27 +493,33 @@ def _evaluate_barrier_candidate(
     net_risk = risk + context.ev_deduct_cost if context.has_trading_costs else risk
     net_rr = net_reward / net_risk if net_risk > 0 else 0.0
 
-    # Terminal PnL contribution from paths that never hit TP or SL.
-    unresolved_mask = ~(wins | losses | ties)
-    unresolved_mean_pnl = _unresolved_terminal_pnl(
-        eval_paths, unresolved_mask, context=context,
+    payoffs = barrier_path_payoffs(
+        eval_paths,
+        path_outcomes,
+        entry_price=context.last_price,
+        reward=reward,
+        risk=risk,
+        direction="long" if context.dir_long else "short",
+        mode=context.mode_val,  # type: ignore[arg-type]
+        pip_size=context.pip_size,
+        cost_per_trade=(context.ev_deduct_cost if context.has_trading_costs else 0.0),
+        same_bar_policy=context.same_bar_policy,  # type: ignore[arg-type]
+        gap_aware_stops=context.gap_aware_stops,
     )
-    ev_unresolved = prob_no_hit * unresolved_mean_pnl
-    # Unresolved paths still entail a round-trip entry+exit at the horizon,
-    # so subtract full trading cost when costs are configured. Without this,
-    # EV (net) understates costs by prob_neutral * cost_per_trade.
-    ev_unresolved_net = (
-        prob_no_hit * (unresolved_mean_pnl - context.ev_deduct_cost)
-        if context.has_trading_costs
-        else ev_unresolved
+    ev_unresolved = float(np.sum(payoffs.terminal_unresolved) / sims_total)
+    ev_unresolved_net = float(
+        np.sum(
+            np.where(
+                unresolved_mask,
+                payoffs.terminal_unresolved - (
+                    context.ev_deduct_cost if context.has_trading_costs else 0.0
+                ),
+                0.0,
+            )
+        ) / sims_total
     )
-
-    ev_gross = effective_prob_win * reward - effective_prob_loss * risk + ev_unresolved
-    ev_val = (
-        effective_prob_win * net_reward - effective_prob_loss * net_risk + ev_unresolved_net
-        if context.has_trading_costs
-        else ev_gross
-    )
+    ev_gross = float(np.mean(payoffs.gross))
+    ev_val = float(np.mean(payoffs.net if context.has_trading_costs else payoffs.gross))
     edge = effective_prob_win - effective_prob_loss
     win_lo, win_hi = _binomial_wilson_95(effective_prob_win, int(sims_total))
     loss_lo, loss_hi = _binomial_wilson_95(effective_prob_loss, int(sims_total))
@@ -533,10 +531,14 @@ def _evaluate_barrier_candidate(
         kelly_val = effective_prob_win - (effective_prob_loss / net_rr)
 
     active = effective_prob_win + effective_prob_loss
-    if active > 0:
+    if active > 0 and np.any(payoffs.active):
         prob_win_c = effective_prob_win / active
         prob_loss_c = effective_prob_loss / active
-        ev_cond = prob_win_c * net_reward - prob_loss_c * net_risk
+        ev_cond = float(
+            np.mean(
+                (payoffs.net if context.has_trading_costs else payoffs.gross)[payoffs.active]
+            )
+        )
         kelly_cond = prob_win_c - (prob_loss_c / net_rr if net_rr > 0 else 0.0)
     else:
         ev_cond = 0.0
@@ -560,24 +562,26 @@ def _evaluate_barrier_candidate(
 
     profit_factor: Optional[float] = 0.0
     profit_factor_note: Optional[str] = None
-    denom = effective_prob_loss * net_risk
-    if denom > 0:
-        profit_factor = (effective_prob_win * net_reward) / denom
-    elif effective_prob_win > 0 and net_reward > 0:
+    active_payoffs = (
+        payoffs.net if context.has_trading_costs else payoffs.gross
+    )[payoffs.active]
+    gross_profit = float(np.sum(active_payoffs[active_payoffs > 0.0]))
+    gross_loss = float(-np.sum(active_payoffs[active_payoffs < 0.0]))
+    if gross_loss > 0:
+        profit_factor = gross_profit / gross_loss
+    elif gross_profit > 0:
         profit_factor = None
         profit_factor_note = "Undefined: no simulated losses for this barrier pair."
 
-    reward_frac, risk_frac = _barrier_return_fractions(
-        net_reward,
-        net_risk,
-        tp_price=tp_price,
-        sl_price=sl_price,
-        context=context,
+    unit_to_return = (
+        0.01
+        if context.mode_val == 'pct'
+        else float(context.pip_size) / float(context.last_price)
     )
-    utility_val = (
-        (effective_prob_win * math.log1p(reward_frac))
-        + (effective_prob_loss * math.log1p(-risk_frac))
-    )
+    path_returns = (
+        payoffs.net if context.has_trading_costs else payoffs.gross
+    ) * unit_to_return
+    utility_val = float(np.mean(np.log1p(np.maximum(path_returns, -0.999999))))
 
     if context.min_prob_win_val is not None and effective_prob_win < context.min_prob_win_val:
         return None, False
@@ -619,6 +623,11 @@ def _evaluate_barrier_candidate(
         "ev_unresolved": ev_unresolved_net,
         "ev_unresolved_gross": ev_unresolved,
         "ev_unresolved_net": ev_unresolved_net,
+        "realized_loss_mean": (
+            float(np.mean(payoffs.realized_loss_units[losses]))
+            if np.any(losses) else None
+        ),
+        "gap_aware_stops": bool(context.gap_aware_stops),
         "ev_cond": ev_cond,
         "edge": edge,
         "kelly": kelly_val,
@@ -836,12 +845,15 @@ _BARRIER_CONCISE_CANDIDATE_KEYS = (
     "edge",
     "edge_vs_breakeven",
     "ev",
+    "ev_unresolved",
     "kelly",
     "profit_factor",
     "profit_factor_note",
     "phantom_profit_risk",
     "low_confidence",
     "low_practical_win_probability",
+    "gap_aware_stops",
+    "realized_loss_mean",
     "member_method",
     "member_method_used",
     "warning",
@@ -1416,6 +1428,38 @@ def forecast_barrier_optimize(  # noqa: C901
             sensitivity_params_requested = [
                 str(p).strip().lower() for p in sensitivity_params_requested if str(p).strip()
             ]
+        enable_drift_stress_val = _coerce_barrier_bool_flag(
+            params_dict.get('enable_drift_stress', statistical_robustness_requested),
+            default=bool(statistical_robustness_requested),
+        )
+        drift_multipliers_raw = params_dict.get(
+            'drift_stress_multipliers',
+            [0.0, 0.5, 1.0, 1.5],
+        )
+        if not isinstance(drift_multipliers_raw, (list, tuple)):
+            drift_multipliers_raw = [0.0, 0.5, 1.0, 1.5]
+        drift_multipliers_val = sorted({
+            float(value)
+            for value in drift_multipliers_raw
+            if _optional_finite_float(value) is not None
+        })
+        enable_oos_validation_val = _coerce_barrier_bool_flag(
+            params_dict.get('enable_oos_validation', False),
+            default=False,
+        )
+        if enable_oos_validation_val and grid_style_val == 'volatility':
+            return {
+                "error": (
+                    "Walk-forward OOS validation currently requires fixed, ratio, "
+                    "or preset grids so candidate generation cannot use holdout volatility."
+                )
+            }
+        oos_folds_val = max(2, min(10, int(params_dict.get('oos_folds', 5))))
+        oos_sims_requested = max(100, int(params_dict.get('oos_n_sims', 1000)))
+        oos_holdout_bars_val = max(
+            horizon_val * oos_folds_val,
+            int(params_dict.get('oos_holdout_bars', 250)),
+        )
 
         if _prefetched_history is not None:
             try:
@@ -1475,8 +1519,9 @@ def forecast_barrier_optimize(  # noqa: C901
                 confidence=0.95,
                 conservative=True,
             )
-            if sims < min_sims_recommended:
-                sims = min_sims_recommended
+            if sims * n_seeds < min_sims_recommended:
+                sims = int(np.ceil(min_sims_recommended / n_seeds))
+        oos_sims_val = min(int(sims), int(oos_sims_requested))
 
         def _cost_param_float(key: str) -> float:
             raw = params_dict.get(key, 0.0)
@@ -1919,6 +1964,8 @@ def forecast_barrier_optimize(  # noqa: C901
                 "compute_profile": {
                     "profile": search_profile_val,
                     "n_sims": int(sims),
+                    "n_seeds": int(n_seeds),
+                    "paths_evaluated_per_member": int(sims * n_seeds),
                     "n_trials": int(optuna_trials_val) if optimizer_val == 'optuna' else None,
                     "tp_steps": int(tp_steps_val),
                     "sl_steps": int(sl_steps_val),
@@ -1937,6 +1984,8 @@ def forecast_barrier_optimize(  # noqa: C901
                         "power_analysis_enabled": bool(enable_power_analysis_val),
                         "power_effect_size": power_effect_size_val,
                         "sensitivity_analysis_enabled": bool(enable_sensitivity_analysis_val),
+                        "drift_stress_enabled": bool(enable_drift_stress_val),
+                        "oos_validation_enabled": bool(enable_oos_validation_val),
                     } if statistical_robustness_requested else None,
                 },
                 "results": summary_results,
@@ -2114,6 +2163,8 @@ def forecast_barrier_optimize(  # noqa: C901
         def _simulate_paths_for_seed_range(
             seed_base: Optional[int],
             seed_count: int,
+            history_prices: Optional[np.ndarray] = None,
+            sims_override: Optional[int] = None,
         ) -> Tuple[
             np.ndarray,
             bool,
@@ -2123,6 +2174,12 @@ def forecast_barrier_optimize(  # noqa: C901
             Optional[np.ndarray],
         ]:
             local_paths_list: List[np.ndarray] = []
+            calibration_prices = (
+                np.asarray(history_prices, dtype=float)
+                if history_prices is not None
+                else prices
+            )
+            local_sims = int(sims_override) if sims_override is not None else int(sims)
             local_bb_enabled = method_name == 'mc_gbm_bb'
             effective_seed_count = max(1, int(seed_count))
             local_seed_base = (
@@ -2134,20 +2191,21 @@ def forecast_barrier_optimize(  # noqa: C901
             if method_name in ('mc_gbm', 'mc_gbm_bb'):
                 for offset in range(effective_seed_count):
                     sim = _simulate_gbm_mc(
-                        prices,
+                        calibration_prices,
                         horizon=horizon_val,
-                        n_sims=int(sims),
+                        n_sims=local_sims,
                         seed=offset_barrier_seed(local_seed_base, offset),
+                        antithetic=False,
                     )
                     local_paths_list.append(np.asarray(sim['price_paths'], dtype=float))
             elif method_name == 'hmm_mc':
                 n_states = int(params_dict.get('n_states', 2) or 2)
                 for offset in range(effective_seed_count):
                     sim = _simulate_hmm_mc(
-                        prices,
+                        calibration_prices,
                         horizon=horizon_val,
                         n_states=int(n_states),
-                        n_sims=int(sims),
+                        n_sims=local_sims,
                         seed=offset_barrier_seed(local_seed_base, offset),
                     )
                     local_paths_list.append(np.asarray(sim['price_paths'], dtype=float))
@@ -2156,9 +2214,9 @@ def forecast_barrier_optimize(  # noqa: C901
                 q_order = int(params_dict.get('q', 1))
                 for offset in range(effective_seed_count):
                     sim = _simulate_garch_mc(
-                        prices,
+                        calibration_prices,
                         horizon=horizon_val,
-                        n_sims=int(sims),
+                        n_sims=local_sims,
                         seed=offset_barrier_seed(local_seed_base, offset),
                         p_order=p_order,
                         q_order=q_order,
@@ -2170,9 +2228,9 @@ def forecast_barrier_optimize(  # noqa: C901
                     bs = int(bs)
                 for offset in range(effective_seed_count):
                     sim = _simulate_bootstrap_mc(
-                        prices,
+                        calibration_prices,
                         horizon=horizon_val,
-                        n_sims=int(sims),
+                        n_sims=local_sims,
                         seed=offset_barrier_seed(local_seed_base, offset),
                         block_size=bs,
                     )
@@ -2180,9 +2238,9 @@ def forecast_barrier_optimize(  # noqa: C901
             elif method_name == 'heston':
                 for offset in range(effective_seed_count):
                     sim = _simulate_heston_mc(
-                        prices,
+                        calibration_prices,
                         horizon=horizon_val,
-                        n_sims=int(sims),
+                        n_sims=local_sims,
                         seed=offset_barrier_seed(local_seed_base, offset),
                         kappa=params_dict.get('kappa'),
                         theta=params_dict.get('theta'),
@@ -2194,9 +2252,9 @@ def forecast_barrier_optimize(  # noqa: C901
             elif method_name == 'jump_diffusion':
                 for offset in range(effective_seed_count):
                     sim = _simulate_jump_diffusion_mc(
-                        prices,
+                        calibration_prices,
                         horizon=horizon_val,
-                        n_sims=int(sims),
+                        n_sims=local_sims,
                         seed=offset_barrier_seed(local_seed_base, offset),
                         jump_lambda=params_dict.get('jump_lambda', params_dict.get('lambda')),
                         jump_mu=params_dict.get('jump_mu'),
@@ -2217,7 +2275,7 @@ def forecast_barrier_optimize(  # noqa: C901
                 else local_paths_list[0]
             )
             try:
-                sim_anchor_price = float(prices[-1])
+                sim_anchor_price = float(calibration_prices[-1])
             except Exception:
                 sim_anchor_price = float(last_price_close)
             local_paths = _scale_price_paths_to_reference(
@@ -2231,7 +2289,7 @@ def forecast_barrier_optimize(  # noqa: C901
             local_bb_uniform_tp = None
             local_bb_uniform_sl = None
             if local_bb_enabled:
-                rets = _log_returns_from_prices(prices)
+                rets = _log_returns_from_prices(calibration_prices)
                 rets = rets[np.isfinite(rets)]
                 local_bb_sigma = float(np.std(rets, ddof=1)) if rets.size else 0.0
                 if not np.isfinite(local_bb_sigma) or local_bb_sigma <= 0:
@@ -2372,6 +2430,10 @@ def forecast_barrier_optimize(  # noqa: C901
             min_prob_resolve_val=min_prob_resolve_val,
             max_median_time_val=max_median_time_val,
             same_bar_policy=same_bar_policy_value,
+            gap_aware_stops=_coerce_barrier_bool_flag(
+                params_dict.get('gap_aware_stops', False),
+                default=False,
+            ),
         )
 
         def _evaluate(
@@ -2458,49 +2520,46 @@ def forecast_barrier_optimize(  # noqa: C901
             net_risk = risk + cost_per_trade if has_trading_costs else risk
             net_rr = net_reward / net_risk if net_risk > 0 else 0.0
 
-            terminal_prices = eval_paths[:, -1]
-            if mode_val == 'pct' and last_price > 0:
-                terminal_pnl = (terminal_prices - last_price) / last_price * 100.0
-            elif pip_size and pip_size > 0:
-                terminal_pnl = (terminal_prices - last_price) / float(pip_size)
-            else:
-                terminal_pnl = np.zeros_like(terminal_prices, dtype=float)
-            if not dir_long:
-                terminal_pnl = -terminal_pnl
-            unresolved_payoff = np.where(
-                unresolved_mask,
-                terminal_pnl - (cost_per_trade if has_trading_costs else 0.0),
-                0.0,
+            convergence_outcomes = BarrierPathOutcomes(
+                first_tp=first_tp,
+                first_sl=first_sl,
+                wins=wins_mask,
+                losses=losses_mask,
+                ties=ties_mask,
+                unresolved=unresolved_mask,
+                time_in_trade=np.minimum(
+                    np.minimum(first_tp, first_sl) + 1,
+                    horizon_total,
+                ),
+                horizon=int(horizon_total),
+            )
+            convergence_payoffs = barrier_path_payoffs(
+                eval_paths,
+                convergence_outcomes,
+                entry_price=last_price,
+                reward=reward,
+                risk=risk,
+                direction="long" if dir_long else "short",
+                mode=mode_val,  # type: ignore[arg-type]
+                pip_size=float(pip_size),
+                cost_per_trade=(cost_per_trade if has_trading_costs else 0.0),
+                same_bar_policy=same_bar_policy_value,
+                gap_aware_stops=eval_context.gap_aware_stops,
             )
             path_payoff = (
-                wins * net_reward
-                - losses * net_risk
-                + ties * (
-                    net_reward
-                    if same_bar_policy_value == "tp_first"
-                    else 0.0
-                    if same_bar_policy_value == "neutral"
-                    else -net_risk
-                )
-                + unresolved_payoff
+                convergence_payoffs.net
+                if has_trading_costs
+                else convergence_payoffs.gross
             )
             cumulative_payoff = np.cumsum(path_payoff)
-
-            reward_frac = 0.0
-            risk_frac = 0.0
-            if mode_val == 'pct':
-                reward_frac = net_reward / 100.0
-                risk_frac = net_risk / 100.0
-            elif last_price > 0 and pip_size:
-                unit_to_return = float(pip_size) / float(last_price)
-                reward_frac = net_reward * unit_to_return
-                risk_frac = net_risk * unit_to_return
-            elif last_price > 0:
-                reward_frac = abs(tp_trigger - last_price) / last_price
-                risk_frac = abs(sl_trigger - last_price) / last_price
-            reward_frac = max(reward_frac, -0.999)
-            if risk_frac >= 1.0:
-                risk_frac = 0.999
+            unit_to_return = (
+                0.01
+                if mode_val == 'pct'
+                else float(pip_size) / float(last_price)
+            )
+            path_utility = np.log1p(
+                np.maximum(path_payoff * unit_to_return, -0.999999)
+            )
 
             event = f"selected_objective_{objective_val}"
             if objective_val == 'prob_tp_first':
@@ -2532,21 +2591,14 @@ def forecast_barrier_optimize(  # noqa: C901
                 active_mask = active_counts > 0
                 estimate_series = np.zeros_like(prob_tp_first_series)
                 if np.any(active_mask):
-                    win_c = np.divide(
-                        prob_tp_first_series * trials,
-                        active_counts,
-                        out=np.zeros_like(active_counts, dtype=float),
-                        where=active_mask,
-                    )
-                    loss_c = np.divide(
-                        prob_sl_first_series * trials,
-                        active_counts,
-                        out=np.zeros_like(active_counts, dtype=float),
-                        where=active_mask,
+                    active_payoff = np.where(
+                        convergence_payoffs.active,
+                        path_payoff,
+                        0.0,
                     )
                     estimate_series[active_mask] = (
-                        win_c[active_mask] * net_reward
-                        - loss_c[active_mask] * net_risk
+                        np.cumsum(active_payoff)[active_mask]
+                        / active_counts[active_mask]
                     )
             elif objective_val == 'kelly_cond':
                 active_mask = active_counts > 0
@@ -2568,17 +2620,15 @@ def forecast_barrier_optimize(  # noqa: C901
                         win_c[active_mask] - (loss_c[active_mask] / net_rr)
                     )
             elif objective_val == 'profit_factor':
-                denom = prob_sl_first_series * net_risk
+                cumulative_profit = np.cumsum(np.maximum(path_payoff, 0.0))
+                denom = np.cumsum(np.maximum(-path_payoff, 0.0))
                 estimate_series = np.zeros_like(prob_tp_first_series)
                 valid = denom > 0
-                estimate_series[valid] = (prob_tp_first_series[valid] * net_reward) / denom[valid]
-                positive_no_loss = (~valid) & (prob_tp_first_series > 0) & (net_reward > 0)
+                estimate_series[valid] = cumulative_profit[valid] / denom[valid]
+                positive_no_loss = (~valid) & (cumulative_profit > 0)
                 estimate_series[positive_no_loss] = 1e9
             elif objective_val == 'utility':
-                estimate_series = (
-                    prob_tp_first_series * math.log1p(reward_frac)
-                    + prob_sl_first_series * math.log1p(-risk_frac)
-                )
+                estimate_series = np.cumsum(path_utility) / trials
             else:
                 estimate_series = prob_resolve_series
 
@@ -3013,6 +3063,8 @@ def forecast_barrier_optimize(  # noqa: C901
             "compute_profile": {
                 "profile": search_profile_val,
                 "n_sims": int(sims),
+                "n_seeds": int(n_seeds),
+                "paths_evaluated": int(S),
                 "seed": int(request_seed_base),
                 "seed_source": "params" if seed_provided else "request",
                 "n_trials": int(optuna_trials_val) if optimizer_val == 'optuna' else None,
@@ -3033,6 +3085,8 @@ def forecast_barrier_optimize(  # noqa: C901
                     "power_analysis_enabled": bool(enable_power_analysis_val),
                     "power_effect_size": power_effect_size_val,
                     "sensitivity_analysis_enabled": bool(enable_sensitivity_analysis_val),
+                    "drift_stress_enabled": bool(enable_drift_stress_val),
+                    "oos_validation_enabled": bool(enable_oos_validation_val),
                 } if statistical_robustness_requested else None,
             },
             "results": summary_results,
@@ -3069,7 +3123,8 @@ def forecast_barrier_optimize(  # noqa: C901
             statistical_analysis: Dict[str, Any] = {
                 "minimum_simulations": {
                     "recommended": int(min_sims_recommended),
-                    "used": int(sims),
+                    "used": int(S),
+                    "used_per_seed": int(sims),
                     "target_ci_width": target_ci_width_val,
                     "confidence": 0.95,
                 }
@@ -3080,7 +3135,7 @@ def forecast_barrier_optimize(  # noqa: C901
                 power_result = _power_analysis(
                     base_prob=prob_win_val,
                     effect_size=power_effect_size_val,
-                    n_sims=int(sims),
+                    n_sims=int(S),
                     alpha=0.05,
                 )
                 if 'error' not in power_result:
@@ -3148,6 +3203,19 @@ def forecast_barrier_optimize(  # noqa: C901
                             ),
                             horizon=int(paths.shape[1]),
                         )
+                        bootstrap_payoffs = barrier_path_payoffs(
+                            paths,
+                            bootstrap_outcomes,
+                            entry_price=last_price,
+                            reward=float(best.get('tp', 0.0)),
+                            risk=float(best.get('sl', 0.0)),
+                            direction=direction_norm,
+                            mode=mode_val,
+                            pip_size=float(pip_size),
+                            cost_per_trade=float(cost_per_trade),
+                            same_bar_policy=same_bar_policy_value,
+                            gap_aware_stops=eval_context.gap_aware_stops,
+                        )
                         bootstrap_result = _bootstrap_uncertainty(
                             paths=paths,
                             tp_trigger=tp_trigger,
@@ -3161,6 +3229,7 @@ def forecast_barrier_optimize(  # noqa: C901
                             n_bootstrap=n_bootstrap_val,
                             seed=request_seed_base,
                             path_outcomes=bootstrap_outcomes,
+                            path_payoffs=bootstrap_payoffs,
                         )
                         if bootstrap_result:
                             statistical_analysis['bootstrap_uncertainty'] = bootstrap_result
@@ -3315,6 +3384,184 @@ def forecast_barrier_optimize(  # noqa: C901
                                 'prob_no_hit', 'kelly', 'utility',
                             )
                         },
+                    }
+
+            if enable_drift_stress_val and drift_multipliers_val:
+                historical_returns = _log_returns_from_prices(prices)
+                historical_returns = historical_returns[np.isfinite(historical_returns)]
+                historical_drift = (
+                    float(np.mean(historical_returns))
+                    if historical_returns.size else 0.0
+                )
+                steps = np.arange(1, paths.shape[1] + 1, dtype=float)
+                drift_scenarios: List[Dict[str, Any]] = []
+                for multiplier in drift_multipliers_val:
+                    adjustment = np.exp(
+                        (float(multiplier) - 1.0) * historical_drift * steps
+                    )
+                    stressed_paths = paths * adjustment[None, :]
+                    stressed_log_paths = None
+                    if bb_enabled:
+                        stressed_log_paths = np.concatenate(
+                            [
+                                np.full(
+                                    (stressed_paths.shape[0], 1),
+                                    np.log(max(last_price, 1e-12)),
+                                ),
+                                np.log(np.clip(stressed_paths, 1e-12, None)),
+                            ],
+                            axis=1,
+                        )
+                    stressed_rows = _evaluate(
+                        [(float(best['tp']), float(best['sl']))],
+                        stressed_paths,
+                        bb_enabled,
+                        bb_sigma,
+                        stressed_log_paths,
+                        bb_uniform_tp,
+                        bb_uniform_sl,
+                        count_invalid=False,
+                    )
+                    if stressed_rows:
+                        stressed_row = stressed_rows[0]
+                        drift_scenarios.append({
+                            "multiplier": float(multiplier),
+                            "drift_per_bar": float(historical_drift * multiplier),
+                            "ev": stressed_row.get('ev'),
+                            "edge": stressed_row.get('edge'),
+                            "prob_tp_first": stressed_row.get('prob_tp_first'),
+                            "prob_sl_first": stressed_row.get('prob_sl_first'),
+                            "prob_no_hit": stressed_row.get('prob_no_hit'),
+                            "objective_value": stressed_row.get(objective_val),
+                        })
+                if drift_scenarios:
+                    finite_evs = [
+                        float(row['ev'])
+                        for row in drift_scenarios
+                        if _optional_finite_float(row.get('ev')) is not None
+                    ]
+                    statistical_analysis['drift_stress'] = {
+                        "historical_drift_per_bar": historical_drift,
+                        "scenarios": drift_scenarios,
+                        "worst_ev": min(finite_evs) if finite_evs else None,
+                        "best_ev": max(finite_evs) if finite_evs else None,
+                    }
+
+            if enable_oos_validation_val:
+                last_entry = int(len(prices) - horizon_val - 1)
+                first_entry = max(50, int(len(prices) - oos_holdout_bars_val - 1))
+                if last_entry >= first_entry:
+                    fold_entries = sorted(set(
+                        np.linspace(
+                            first_entry,
+                            last_entry,
+                            oos_folds_val,
+                            dtype=int,
+                        ).tolist()
+                    ))
+                    walk_forward_pairs = list(base_candidates)
+                    fold_results: List[Dict[str, Any]] = []
+                    for fold_index, entry_index in enumerate(fold_entries):
+                        training_prices = np.asarray(
+                            prices[:entry_index + 1],
+                            dtype=float,
+                        )
+                        try:
+                            (
+                                fold_paths,
+                                fold_bb_enabled,
+                                fold_bb_sigma,
+                                fold_bb_log_paths,
+                                fold_bb_uniform_tp,
+                                fold_bb_uniform_sl,
+                            ) = _simulate_paths_for_seed_range(
+                                seed_base=offset_barrier_seed(
+                                    request_seed_base,
+                                    100 + fold_index,
+                                ),
+                                seed_count=1,
+                                history_prices=training_prices,
+                                sims_override=oos_sims_val,
+                            )
+                        except (ValueError, RuntimeError, np.linalg.LinAlgError):
+                            continue
+                        fold_rows = _evaluate(
+                            walk_forward_pairs,
+                            fold_paths,
+                            fold_bb_enabled,
+                            fold_bb_sigma,
+                            fold_bb_log_paths,
+                            fold_bb_uniform_tp,
+                            fold_bb_uniform_sl,
+                            count_invalid=False,
+                        )
+                        if not fold_rows:
+                            continue
+                        _sort_candidate_results(fold_rows, objective_val)
+                        fold_best = fold_rows[0]
+                        entry_price_actual = float(prices[entry_index])
+                        future_actual = np.asarray(
+                            prices[entry_index + 1:entry_index + 1 + horizon_val],
+                            dtype=float,
+                        )
+                        if future_actual.size != horizon_val or entry_price_actual <= 0.0:
+                            continue
+                        actual_path = (
+                            future_actual / entry_price_actual * float(last_price)
+                        )[None, :]
+                        actual_rows = _evaluate(
+                            [(float(fold_best['tp']), float(fold_best['sl']))],
+                            actual_path,
+                            False,
+                            0.0,
+                            None,
+                            None,
+                            None,
+                            count_invalid=False,
+                        )
+                        if not actual_rows:
+                            continue
+                        actual_row = actual_rows[0]
+                        fold_results.append({
+                            "entry_index": int(entry_index),
+                            "training_bars": int(entry_index + 1),
+                            "tp": float(fold_best['tp']),
+                            "sl": float(fold_best['sl']),
+                            "selection_objective": fold_best.get(objective_val),
+                            "realized_ev": actual_row.get('ev'),
+                            "realized_outcome": (
+                                "tp" if actual_row.get('prob_tp_first') == 1.0
+                                else "sl" if actual_row.get('prob_sl_first') == 1.0
+                                else "unresolved"
+                            ),
+                            "realized_no_hit": actual_row.get('prob_no_hit'),
+                        })
+                    if fold_results:
+                        realized_values = np.asarray(
+                            [float(row['realized_ev']) for row in fold_results],
+                            dtype=float,
+                        )
+                        statistical_analysis['walk_forward_oos'] = {
+                            "enabled": True,
+                            "folds_requested": int(oos_folds_val),
+                            "folds_completed": int(len(fold_results)),
+                            "holdout_bars": int(oos_holdout_bars_val),
+                            "n_sims_per_fold": int(oos_sims_val),
+                            "mean_realized_ev": float(np.mean(realized_values)),
+                            "positive_fold_rate": float(np.mean(realized_values > 0.0)),
+                            "candidate_space": "request_grid_without_refinement",
+                            "path_basis": "historical_close_only",
+                            "folds": fold_results,
+                        }
+                    else:
+                        statistical_analysis['walk_forward_oos'] = {
+                            "enabled": True,
+                            "error": "No walk-forward folds completed successfully.",
+                        }
+                else:
+                    statistical_analysis['walk_forward_oos'] = {
+                        "enabled": True,
+                        "error": "Insufficient history for the requested holdout and horizon.",
                     }
 
             if enable_sensitivity_analysis_val and sensitivity_params_requested:

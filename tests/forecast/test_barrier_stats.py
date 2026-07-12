@@ -169,6 +169,8 @@ class TestBarrierStats(unittest.TestCase):
         self.assertIn('window_mean', result)
         self.assertIn('window_std', result)
         self.assertIn('recommendation', result)
+        self.assertEqual(result['method'], 'non_overlapping_batch_means')
+        self.assertIn('ci_half_width', result)
     
     def test_mc_convergence_diagnostic_not_enough_samples(self):
         """Test convergence diagnostic with insufficient samples."""
@@ -496,6 +498,7 @@ class TestBarrierOptimizationWithStats(_BarrierOptimizationPatchMixin, unittest.
         self.assertTrue(result['success'])
         self.assertIn('statistical_robustness', result)
         self.assertIn('power_analysis', result['statistical_robustness'])
+        self.assertIn('drift_stress', result['statistical_robustness'])
         self.assertIn('compute_profile', result)
         self.assertIn('statistical_robustness', result['compute_profile'])
         self.assertTrue(result['compute_profile']['statistical_robustness']['enabled'])
@@ -755,6 +758,57 @@ class TestBarrierOptimizationWithStats(_BarrierOptimizationPatchMixin, unittest.
         self.assertIn('tp', sensitivity)
         self.assertTrue(sensitivity['tp']['success'])
         self.assertGreaterEqual(sensitivity['tp']['values_tested'], 3)
+
+    def test_barrier_optimize_walk_forward_oos_validation(self):
+        from unittest.mock import patch
+
+        from mtdata.forecast.barriers_optimization import forecast_barrier_optimize
+
+        def fake_sim(prices, horizon, n_sims, seed, **kwargs):
+            base = float(prices[-1])
+            up = np.full((n_sims // 2, horizon), base * 1.01)
+            down = np.full((n_sims - n_sims // 2, horizon), base * 0.99)
+            return {'price_paths': np.vstack([up, down])}
+
+        with patch(f'{_BARRIER_OPT_ROOT}._simulate_gbm_mc', side_effect=fake_sim):
+            result = forecast_barrier_optimize(
+                symbol="EURUSD",
+                timeframe="H1",
+                horizon=2,
+                method="mc_gbm",
+                direction="long",
+                mode="pct",
+                tp_min=0.2,
+                tp_max=0.2,
+                tp_steps=1,
+                sl_min=0.2,
+                sl_max=0.2,
+                sl_steps=1,
+                statistical_robustness=True,
+                target_ci_width=0.90,
+                n_seeds_stability=2,
+                enable_bootstrap=False,
+                enable_convergence_check=False,
+                viable_only=False,
+                params={
+                    'n_sims': 100,
+                    'seed': 42,
+                    'use_live_price': False,
+                    'enable_oos_validation': True,
+                    'oos_folds': 3,
+                    'oos_holdout_bars': 50,
+                    'oos_n_sims': 100,
+                },
+            )
+
+        validation = result['statistical_robustness']['walk_forward_oos']
+        self.assertTrue(validation['enabled'])
+        self.assertGreaterEqual(validation['folds_completed'], 2)
+        self.assertEqual(
+            validation['candidate_space'],
+            'request_grid_without_refinement',
+        )
+        self.assertEqual(validation['path_basis'], 'historical_close_only')
 
 
 if __name__ == '__main__':

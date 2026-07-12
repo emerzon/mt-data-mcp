@@ -652,8 +652,11 @@ def simulate_jump_diffusion_mc(
         mu_j = float(jump_mu) if jump_mu is not None else 0.0
         sigma_j = float(jump_sigma) if jump_sigma is not None else float(max(0.5 * sigma, 1e-6))
 
-    k = np.exp(mu_j + 0.5 * sigma_j * sigma_j) - 1.0
-    drift = mu - lambda_val * k
+    # ``mu`` is calibrated as a mean log return. Compensate the compound
+    # Poisson term by E[log jump] so expected simulated log return remains
+    # anchored to that estimate.
+    jump_log_mean = lambda_val * mu_j
+    drift = mu - jump_log_mean
 
     price_paths = np.zeros((int(n_sims), int(horizon)), dtype=float)
     ret_paths = np.zeros_like(price_paths, dtype=float)
@@ -680,6 +683,8 @@ def simulate_jump_diffusion_mc(
             'jump_mu': mu_j,
             'jump_sigma': sigma_j,
             'jump_threshold': float(jump_threshold),
+            'continuous_log_drift': drift,
+            'expected_log_return': drift + jump_log_mean,
         },
     }
 

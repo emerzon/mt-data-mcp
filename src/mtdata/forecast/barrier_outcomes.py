@@ -20,6 +20,17 @@ class BarrierPathOutcomes:
     horizon: int
 
 
+@dataclass(frozen=True)
+class BarrierPathPayoffs:
+    """Gross and net payoff vectors in optimizer distance units."""
+
+    gross: np.ndarray
+    net: np.ndarray
+    terminal_unresolved: np.ndarray
+    realized_loss_units: np.ndarray
+    active: np.ndarray
+
+
 def evaluate_barrier_path_outcomes(
     paths: np.ndarray,
     *,
@@ -84,4 +95,72 @@ def evaluate_barrier_path_outcomes(
         unresolved=unresolved,
         time_in_trade=time_in_trade,
         horizon=int(horizon),
+    )
+
+
+def barrier_path_payoffs(
+    paths: np.ndarray,
+    outcomes: BarrierPathOutcomes,
+    *,
+    entry_price: float,
+    reward: float,
+    risk: float,
+    direction: Literal["long", "short"],
+    mode: Literal["pct", "ticks"],
+    pip_size: float,
+    cost_per_trade: float,
+    same_bar_policy: Literal["sl_first", "tp_first", "neutral"],
+    gap_aware_stops: bool = False,
+) -> BarrierPathPayoffs:
+    """Build path-level payoffs with optional adverse stop-gap realization."""
+    eval_paths = np.asarray(paths, dtype=float)
+    gross = np.zeros(eval_paths.shape[0], dtype=float)
+    gross[outcomes.wins] = float(reward)
+
+    realized_loss = np.full(eval_paths.shape[0], float(risk), dtype=float)
+    if gap_aware_stops and np.any(outcomes.losses):
+        rows = np.flatnonzero(outcomes.losses)
+        exits = eval_paths[rows, outcomes.first_sl[rows]]
+        signed_move = (
+            float(entry_price) - exits
+            if direction == "long"
+            else exits - float(entry_price)
+        )
+        if mode == "pct":
+            observed_loss = signed_move / float(entry_price) * 100.0
+        else:
+            observed_loss = signed_move / float(pip_size)
+        realized_loss[rows] = np.maximum(float(risk), observed_loss)
+    gross[outcomes.losses] = -realized_loss[outcomes.losses]
+
+    if same_bar_policy == "tp_first":
+        gross[outcomes.ties] = float(reward)
+        active = outcomes.wins | outcomes.losses | outcomes.ties
+    elif same_bar_policy == "sl_first":
+        gross[outcomes.ties] = -float(risk)
+        active = outcomes.wins | outcomes.losses | outcomes.ties
+    else:
+        active = outcomes.wins | outcomes.losses
+
+    terminal = np.zeros(eval_paths.shape[0], dtype=float)
+    terminal_prices = eval_paths[:, -1]
+    signed_terminal_move = (
+        terminal_prices - float(entry_price)
+        if direction == "long"
+        else float(entry_price) - terminal_prices
+    )
+    if mode == "pct":
+        terminal = signed_terminal_move / float(entry_price) * 100.0
+    else:
+        terminal = signed_terminal_move / float(pip_size)
+    terminal_unresolved = np.where(outcomes.unresolved, terminal, 0.0)
+    gross[outcomes.unresolved] = terminal[outcomes.unresolved]
+
+    net = gross - max(0.0, float(cost_per_trade))
+    return BarrierPathPayoffs(
+        gross=gross,
+        net=net,
+        terminal_unresolved=terminal_unresolved,
+        realized_loss_units=realized_loss,
+        active=active,
     )

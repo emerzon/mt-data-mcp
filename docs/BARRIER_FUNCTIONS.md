@@ -466,6 +466,12 @@ Note: `garch` requires the `arch` package; auto falls back to `heston` if it is 
 
 Searches combinations of TP/SL to maximize an objective function.
 
+With `method=ensemble`, every member simulator evaluates the same TP/SL grid.
+The optimizer aggregates each candidate's metrics by `ensemble_agg` and optional
+`ensemble_weights`, then selects the best aggregate candidate. Member metrics
+for that exact TP/SL pair are returned under `best.member_metrics`; the ensemble
+does not combine statistics from different member-specific optima.
+
 **Search Profiles**: Control the compute budget with `--search-profile`:
 
 | Profile | n_sims | n_trials | Grid density | Refine |
@@ -607,7 +613,7 @@ Choose what to optimize. Each objective answers a different trading question:
 **`ev` (Expected Value)** — *"What's my average profit per trade?"*
 - Accounts for both probability AND payoff size
 - Includes the horizon mark-to-market payoff for paths that hit neither barrier
-- Same-bar ties contribute zero when `same_bar_policy=neutral`
+- Same-bar ties contribute zero gross payoff when `same_bar_policy=neutral`; configured round-trip costs still apply
 - When spread, slippage, or commission inputs are supplied, EV is net of those costs
 - EV = 0.15% means you expect to gain 0.15% per trade on average
 - **Use when:** Payoff asymmetry matters (e.g., small wins, big losses)
@@ -659,6 +665,15 @@ Notes:
 - `_cond` variants (e.g., `ev_cond`, `kelly_cond`) calculate metrics only on trades that resolved (hit TP or SL), ignoring timeouts, and remain cost-adjusted when trading costs are supplied.
 - `ev_per_bar` uses unconditional time-in-trade (`t_hit_resolve_mean_all`), counting unresolved paths at horizon expiry.
 - `t_hit_tp_median` and `t_hit_sl_median` are conditional medians for paths that hit that barrier; `t_hit_tp_median_cond` and `t_hit_sl_median_cond` are aliases.
+- `edge_vs_breakeven` compares the win rate conditional on TP/SL resolution with the matching two-outcome break-even rate. Full-path EV is kept separate because it includes timeout mark-to-market.
+
+#### Execution-aware stop gaps
+
+Set `gap_aware_stops=true` in `params` to value an SL at the first simulated
+crossing price when that crossing is worse than the requested stop. TP remains
+valued at the target, matching a resting limit-order premise. The result adds
+`realized_loss_mean` and `gap_aware_stops`. This is particularly useful with
+`jump_diffusion`, bootstrap, and other models capable of discrete gap moves.
 
 ---
 
@@ -723,6 +738,9 @@ Enable it with `statistical_robustness=true` in `params` or with the Python keyw
 - Optional bootstrap uncertainty for `prob_win`, `prob_loss`, `ev`, `edge`, `kelly`, and related metrics
 - Optional power analysis
 - Optional local sensitivity analysis around the selected `tp` and `sl`
+- Drift-stress scenarios (enabled with statistical robustness by default)
+- Independent-seed post-selection evaluation and full-search selection stability
+- Optional held-out walk-forward validation with `enable_oos_validation=true`
 
 **Important:** These checks do not make a trade valid by themselves. They are quality controls on the simulation and on the optimizer output.
 
@@ -774,13 +792,19 @@ Use Python when you want to pass `sensitivity_params` explicitly.
 | `statistical_robustness` | `False` | Enables the extra diagnostics block |
 | `target_ci_width` | `0.05` | Requested width used for minimum-simulation guidance |
 | `n_seeds_stability` | `3` | Number of seed re-runs requested for the selected barrier pair |
-| `enable_convergence_check` | `True` | Adds `convergence_diagnostic` |
+| `enable_convergence_check` | `True` | Adds a non-overlapping batch-means precision diagnostic |
 | `enable_bootstrap` | `False` | Adds `bootstrap_uncertainty` |
 | `n_bootstrap` | `200` | Number of bootstrap resamples |
 | `enable_power_analysis` | `False` | Adds `power_analysis` |
 | `power_effect_size` | `0.05` | Effect size assumed in the power calculation |
 | `enable_sensitivity_analysis` | `False` | Adds local `tp`/`sl` sensitivity checks |
 | `sensitivity_params` | `["tp", "sl"]` | Parameters varied in the sensitivity pass |
+| `enable_drift_stress` | `True` with robustness | Stress the selected pair over scaled historical drift |
+| `drift_stress_multipliers` | `[0, 0.5, 1, 1.5]` | Drift scenarios to evaluate |
+| `enable_oos_validation` | `False` | Enable held-out walk-forward selection and realized validation |
+| `oos_folds` | `5` | Number of walk-forward folds |
+| `oos_n_sims` | `1000` | Maximum simulation paths per fold |
+| `oos_holdout_bars` | `250` | Trailing history reserved for folds |
 
 #### Output Shape
 
@@ -844,8 +868,15 @@ Only the sections you enable are returned. `cross_seed_stability` may also repor
 
 - For a quick research pass, start with `target_ci_width=0.10`, `n_seeds_stability=2`, and leave bootstrap off.
 - For a fuller review, use `target_ci_width=0.05`, `n_seeds_stability=3`, and turn on bootstrap.
-- Treat failed convergence or unstable cross-seed metrics as a reason to increase `n_sims` or simplify the setup before trusting the optimizer output.
+- Treat a wide batch-means CI, unstable cross-seed candidate selection, or poor held-out EV as a reason to increase `n_sims`, simplify the setup, or reject it.
 - Sensitivity analysis is most useful after you already have a candidate worth inspecting; it is not a replacement for the main grid search.
+
+Walk-forward validation supports fixed, ratio, and preset grids. Volatility
+grids are rejected in this mode so holdout volatility cannot leak into candidate
+generation. Each fold calibrates only on bars available before that fold,
+selects from the original request grid, and scores the following realized close
+path. This remains a close-only research validation; it is not an execution
+backtest with bid/ask or intrabar OHLC ordering.
 
 ---
 

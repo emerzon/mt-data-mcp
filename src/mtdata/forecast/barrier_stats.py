@@ -17,7 +17,11 @@ import numpy as np
 from scipy import stats as scipy_stats
 
 from ..utils.barriers import resolve_same_bar_probabilities
-from .barrier_outcomes import BarrierPathOutcomes, evaluate_barrier_path_outcomes
+from .barrier_outcomes import (
+    BarrierPathOutcomes,
+    BarrierPathPayoffs,
+    evaluate_barrier_path_outcomes,
+)
 
 BarrierPowerAnalysisValue = Union[float, int, str]
 
@@ -224,10 +228,11 @@ def mc_convergence_diagnostic(
     window_size: int = 50,
     threshold: float = 0.01,
 ) -> Dict[str, Any]:
-    """Check if Monte Carlo simulation has converged.
-    
-    Analyzes the stability of the probability estimate over the last
-    window_size simulations.
+    """Check Monte Carlo precision using non-overlapping batch estimates.
+
+    The prior rolling cumulative-estimate check became smoother mechanically
+    as ``n`` grew. This implementation recovers path-level contributions and
+    estimates uncertainty from independent, non-overlapping batches.
     
     Args:
         cumulative_successes: Array of cumulative success counts
@@ -258,29 +263,56 @@ def mc_convergence_diagnostic(
             "samples_needed": window_size,
         }
     
-    probs = cumulative_successes / cumulative_trials
-    recent_probs = probs[-window_size:]
-    
-    window_mean = float(np.mean(recent_probs))
-    window_std = float(np.std(recent_probs, ddof=1))
-    max_change = float(np.max(np.abs(np.diff(recent_probs))))
-    current_estimate = float(probs[-1])
-    
-    converged = (window_std < threshold) and (max_change < threshold)
-    
-    if not converged:
-        if window_std > threshold:
-            recommendation = (
-                f"Increase simulations - high variance in recent window "
-                f"(std={window_std:.4f} > {threshold})"
-            )
-        else:
-            recommendation = (
-                f"Increase simulations - large jumps detected "
-                f"(max_change={max_change:.4f} > {threshold})"
-            )
-    else:
-        recommendation = "Simulation appears converged"
+    cumulative_values = np.asarray(cumulative_successes, dtype=float)
+    cumulative_counts = np.asarray(cumulative_trials, dtype=float)
+    if np.any(~np.isfinite(cumulative_values)) or np.any(~np.isfinite(cumulative_counts)):
+        raise ValueError("Convergence inputs must be finite")
+    if np.any(np.diff(cumulative_counts) <= 0.0):
+        raise ValueError("cumulative_trials must be strictly increasing")
+
+    path_values = np.diff(np.concatenate(([0.0], cumulative_values)))
+    path_counts = np.diff(np.concatenate(([0.0], cumulative_counts)))
+    contributions = np.divide(
+        path_values,
+        path_counts,
+        out=np.zeros_like(path_values),
+        where=path_counts > 0.0,
+    )
+    batch_size = max(10, int(window_size))
+    n_batches = int(contributions.size // batch_size)
+    if n_batches < 2:
+        return {
+            "converged": False,
+            "current_estimate": float(cumulative_values[-1] / cumulative_counts[-1]),
+            "window_mean": float("nan"),
+            "window_std": float("nan"),
+            "max_change": float("nan"),
+            "recommendation": "Need at least two independent batches for convergence check",
+            "samples_collected": int(contributions.size),
+            "samples_needed": int(2 * batch_size),
+            "batch_size": int(batch_size),
+            "n_batches": int(n_batches),
+            "method": "non_overlapping_batch_means",
+        }
+
+    trimmed = contributions[-n_batches * batch_size:]
+    batch_estimates = trimmed.reshape(n_batches, batch_size).mean(axis=1)
+    current_estimate = float(cumulative_values[-1] / cumulative_counts[-1])
+    window_mean = float(np.mean(batch_estimates))
+    window_std = float(np.std(batch_estimates, ddof=1))
+    max_change = float(np.max(np.abs(np.diff(batch_estimates))))
+    standard_error = float(window_std / math.sqrt(n_batches))
+    t_critical = float(scipy_stats.t.ppf(0.975, df=n_batches - 1))
+    ci_half_width = float(t_critical * standard_error)
+    converged = bool(np.isfinite(ci_half_width) and ci_half_width <= threshold)
+    recommendation = (
+        "Simulation precision meets the requested threshold"
+        if converged
+        else (
+            "Increase simulations or independent seeds; batch-mean 95% CI "
+            f"half-width {ci_half_width:.4f} exceeds {threshold:.4f}."
+        )
+    )
     
     return {
         "converged": converged,
@@ -291,6 +323,15 @@ def mc_convergence_diagnostic(
         "recommendation": recommendation,
         "samples_collected": len(cumulative_trials),
         "window_size": window_size,
+        "batch_size": int(batch_size),
+        "n_batches": int(n_batches),
+        "standard_error": standard_error,
+        "ci_half_width": ci_half_width,
+        "ci95": {
+            "low": float(current_estimate - ci_half_width),
+            "high": float(current_estimate + ci_half_width),
+        },
+        "method": "non_overlapping_batch_means",
     }
 
 
@@ -349,9 +390,10 @@ def cross_seed_stability(
         
         mean_val = float(np.mean(values))
         std_val = float(np.std(values, ddof=1))
-        cv = std_val / abs(mean_val) if abs(mean_val) > 1e-10 else float('inf')
-        
-        stable = cv < threshold_cv
+        scale = max(abs(mean_val), 1e-6)
+        cv = std_val / scale
+        absolute_tolerance = float(threshold_cv * max(1.0, np.max(np.abs(values))))
+        stable = bool(std_val <= absolute_tolerance or cv < threshold_cv)
         if not stable:
             all_stable = False
         
@@ -444,8 +486,8 @@ def sensitivity_analysis_single_parameter(
                 "std": float(np.nanstd(values_arr, ddof=1)),
                 "mean": float(np.nanmean(values_arr)),
                 "elasticity": float(
-                    (np.nanmax(values_arr) - np.nanmin(values_arr)) / 
-                    (np.nanmean(values_arr) + 1e-10)
+                    (np.nanmax(values_arr) - np.nanmin(values_arr)) /
+                    max(abs(float(np.nanmean(values_arr))), 1e-10)
                 ) if len(values) > 0 else 0.0,
             }
     
@@ -502,6 +544,7 @@ def bootstrap_metric_uncertainty(
     metrics: Optional[List[str]] = None,
     seed: Optional[int] = None,
     path_outcomes: Optional[BarrierPathOutcomes] = None,
+    path_payoffs: Optional[BarrierPathPayoffs] = None,
 ) -> Dict[str, Dict[str, float]]:
     """Estimate uncertainty of barrier metrics via bootstrap resampling.
     
@@ -544,6 +587,8 @@ def bootstrap_metric_uncertainty(
         )
     if path_outcomes.wins.shape[0] != n_sims:
         raise ValueError("path_outcomes must contain one outcome per simulated path.")
+    if path_payoffs is not None and path_payoffs.net.shape[0] != n_sims:
+        raise ValueError("path_payoffs must contain one payoff per simulated path.")
     
     for _ in range(n_bootstrap):
         indices = rng.choice(n_sims, size=n_sims, replace=True)
@@ -602,12 +647,22 @@ def bootstrap_metric_uncertainty(
         )
         ev_unresolved = prob_no_hit * (unresolved_mean_pnl - cost)
         ev = prob_tp_first * net_reward - prob_sl_first * net_risk + ev_unresolved
+        if path_payoffs is not None:
+            sampled_net_payoffs = path_payoffs.net[indices]
+            ev = float(np.mean(sampled_net_payoffs))
+            ev_unresolved = float(
+                np.mean(np.where(unresolved, sampled_net_payoffs, 0.0))
+            )
         kelly = prob_tp_first - (prob_sl_first / net_rr) if net_rr > 0 else 0.0
 
         if prob_resolve > 0:
             prob_win_c = prob_tp_first / prob_resolve
             prob_loss_c = prob_sl_first / prob_resolve
             ev_cond = prob_win_c * net_reward - prob_loss_c * net_risk
+            if path_payoffs is not None:
+                sampled_active = path_payoffs.active[indices]
+                if np.any(sampled_active):
+                    ev_cond = float(np.mean(sampled_net_payoffs[sampled_active]))
             kelly_cond = prob_win_c - (prob_loss_c / net_rr) if net_rr > 0 else 0.0
         else:
             ev_cond = 0.0

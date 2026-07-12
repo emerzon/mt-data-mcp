@@ -204,6 +204,40 @@ class TestUnresolvedTerminalPnl(unittest.TestCase):
         self.assertIsNone(result)
         self.assertTrue(is_invalid)
 
+    def test_gap_aware_stops_use_adverse_crossing_price(self):
+        from dataclasses import replace
+        from mtdata.forecast.barriers_optimization import (
+            _BarrierBridgeInputs,
+            _evaluate_barrier_candidate,
+        )
+
+        base_context = self._make_context(
+            mode="pct",
+            last_price=100.0,
+            pip_size=0.01,
+        )
+        bridge = _BarrierBridgeInputs(False, 0.0, None, None, None)
+        paths = np.array([[95.0]])
+
+        fixed, _ = _evaluate_barrier_candidate(
+            1.0,
+            1.0,
+            paths,
+            context=replace(base_context, gap_aware_stops=False),
+            bridge_inputs=bridge,
+        )
+        gap_aware, _ = _evaluate_barrier_candidate(
+            1.0,
+            1.0,
+            paths,
+            context=replace(base_context, gap_aware_stops=True),
+            bridge_inputs=bridge,
+        )
+
+        self.assertAlmostEqual(fixed["ev"], -1.0)
+        self.assertAlmostEqual(gap_aware["ev"], -5.0)
+        self.assertAlmostEqual(gap_aware["realized_loss_mean"], 5.0)
+
 
 class TestCandidateBarrierGeometry(unittest.TestCase):
     """Tests for _candidate_barrier_geometry_is_valid."""
