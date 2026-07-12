@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from functools import partial
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
@@ -11,6 +12,7 @@ from sklearn.preprocessing import StandardScaler
 from ..utils.utils import to_float_np
 from .common import PatternResultBase
 from .common import interval_overlap_ratio as _interval_overlap_ratio
+from .elliott_adaptation import resolve_elliott_adaptation
 
 
 @dataclass
@@ -22,14 +24,19 @@ class ElliottWaveConfig:
     - Corrections are outer ABC candidates; internal 5-3-5 subdivisions are not validated.
     - Detection is single ZigZag degree; multi-degree nesting is not modeled.
 
-    The detector blends hard-rule validity (with a Fib-template fit prior) and a
-    lightweight GMM classifier (impulsive vs smaller-magnitude legs when enough
-    waves exist). Blend weight pairs are renormalized at runtime.
+    Structural scoring is based on hard-rule validity and Fibonacci-template
+    fit. The optional GMM classifier is diagnostic-only. When scale_mode is
+    "auto", request-scoped causal calibration selects market-relative ZigZag
+    scales and may conservatively smooth the close-based pivot signal.
     """
 
     # Pivot detection controls (used by analysis and autotune)
     min_prominence_pct: float = 0.5
     min_distance: int = 5
+    scale_mode: str = "auto"  # "auto" derives request-scoped market scales
+    adaptive_denoise: str = "auto"  # "auto", "off", or "diagnostic"
+    adaptive_window_bars: int = 240
+    adaptive_min_improvement: float = 0.05
 
     # New options
     schema_version: int = 2
@@ -91,7 +98,7 @@ class ElliottWaveConfig:
     unconfirmed_terminal_pivot_confidence_cap: float = 0.72
     top_k: int = 10
     include_fallback_candidate: bool = True
-    recent_bars: int = 3
+    recent_bars: Optional[int] = None
     correction_min_c_vs_a: float = 0.25
     correction_exclusion_bar_tolerance: int = 1
     correction_exclusion_overlap_ratio: float = 0.9
@@ -177,6 +184,14 @@ def _validate_config(config: ElliottWaveConfig) -> None:
     source = str(config.pivot_price_source or "").strip().lower()
     if source not in {"close", "ohlc"}:
         raise ValueError("pivot_price_source must be 'close' or 'ohlc'")
+    if str(config.scale_mode or "").strip().lower() not in {"auto", "fixed"}:
+        raise ValueError("scale_mode must be 'auto' or 'fixed'")
+    if str(config.adaptive_denoise or "").strip().lower() not in {
+        "auto",
+        "off",
+        "diagnostic",
+    }:
+        raise ValueError("adaptive_denoise must be 'auto', 'off', or 'diagnostic'")
     _normalize_pattern_types(config, strict=True)
 
     for name in (
@@ -185,11 +200,15 @@ def _validate_config(config: ElliottWaveConfig) -> None:
         "min_gmm_waves",
         "min_impulse_bars",
         "min_correction_bars",
-        "recent_bars",
+        "adaptive_window_bars",
     ):
         value = getattr(config, name)
         if isinstance(value, bool) or int(value) < 1:
             raise ValueError(f"{name} must be an integer >= 1")
+    if config.recent_bars is not None and (
+        isinstance(config.recent_bars, bool) or int(config.recent_bars) < 1
+    ):
+        raise ValueError("recent_bars must be None or an integer >= 1")
     if isinstance(config.top_k, bool) or int(config.top_k) < 0:
         raise ValueError("top_k must be an integer >= 0")
     if int(config.gmm_components) != 2:
@@ -215,6 +234,8 @@ def _validate_config(config: ElliottWaveConfig) -> None:
         raise ValueError("min_confidence must be between 0 and 1")
     if not np.isfinite(float(config.min_structural_score)) or not 0.0 <= float(config.min_structural_score) <= 1.0:
         raise ValueError("min_structural_score must be between 0 and 1")
+    if not np.isfinite(float(config.adaptive_min_improvement)) or not 0.0 <= float(config.adaptive_min_improvement) <= 1.0:
+        raise ValueError("adaptive_min_improvement must be between 0 and 1")
     for name in ("max_pattern_span_bars", "max_pattern_age_bars"):
         value = getattr(config, name)
         if value is not None and (isinstance(value, bool) or int(value) < 1):
@@ -1553,8 +1574,15 @@ class ElliottWaveAnalyzer:
         *,
         high: Optional[np.ndarray] = None,
         low: Optional[np.ndarray] = None,
+        pivot_signal: Optional[np.ndarray] = None,
     ):
         self.close = close
+        self.pivot_signal = (
+            np.asarray(pivot_signal, dtype=float)
+            if isinstance(pivot_signal, np.ndarray)
+            and int(pivot_signal.size) == int(close.size)
+            else close
+        )
         self.times = times
         self.config = config
         self.high = (
@@ -1707,16 +1735,21 @@ class ElliottWaveAnalyzer:
                 )
         else:
             piv_idx, piv_dir = _zigzag_pivots_indices(
-                self.close, float(threshold_pct)
+                self.pivot_signal, float(threshold_pct)
             )
-            geometry = self.close
+            geometry = self.pivot_signal
         kind_by_index = {
             int(idx): "peak" if direction == "up" else "trough"
             for idx, direction in zip(piv_idx, piv_dir)
             if direction in {"up", "down"}
         }
         price_by_index = {
-            int(idx): float(geometry[int(idx)]) for idx in piv_idx
+            int(idx): float(
+                geometry[int(idx)]
+                if self._normalized_pivot_price_source() == "ohlc"
+                else self.close[int(idx)]
+            )
+            for idx in piv_idx
         }
         piv_idx = _enforce_min_distance_on_pivots(piv_idx, geometry, min_distance)
         piv_idx = _enforce_pivot_alternation(piv_idx, geometry)
@@ -1726,7 +1759,7 @@ class ElliottWaveAnalyzer:
         self._pivot_cache[key] = piv_idx
         self._pivot_record_cache[key] = _build_pivot_records(
             piv_idx,
-            self.close,
+            self.pivot_signal,
             float(threshold_pct),
             high=self.high if self._normalized_pivot_price_source() == "ohlc" else None,
             low=self.low if self._normalized_pivot_price_source() == "ohlc" else None,
@@ -2220,9 +2253,9 @@ class ElliottWaveAnalyzer:
             piv_idx = list(piv_idx) + [int(n - 1)]
             synthetic_terminal_pivot = True
             piv_idx = _enforce_min_distance_on_pivots(
-                piv_idx, self.close, max(1, min_distance)
+                piv_idx, self.pivot_signal, max(1, min_distance)
             )
-            piv_idx = _enforce_pivot_alternation(piv_idx, self.close)
+            piv_idx = _enforce_pivot_alternation(piv_idx, self.pivot_signal)
             if not piv_idx or int(piv_idx[-1]) != int(n - 1):
                 return None
         if len(piv_idx) < 2:
@@ -2308,7 +2341,7 @@ class ElliottWaveAnalyzer:
         }
         pivot_records = _build_pivot_records(
             piv_seq,
-            self.close,
+            self.pivot_signal,
             thr_cand,
             high=self.high if self._normalized_pivot_price_source() == "ohlc" else None,
             low=self.low if self._normalized_pivot_price_source() == "ohlc" else None,
@@ -2342,6 +2375,56 @@ class ElliottWaveAnalyzer:
             pivot_records=pivot_records,
         )
         return self.build_result(scenario)
+
+
+def _adaptive_close_pivots(
+    signal: np.ndarray, threshold_pct: float, min_distance: int
+) -> List[int]:
+    """Build close-signal pivots with the same cleanup used by the analyzer."""
+    pivots, directions = _zigzag_pivots_indices(signal, float(threshold_pct))
+    kinds = {
+        int(index): "peak" if direction == "up" else "trough"
+        for index, direction in zip(pivots, directions)
+        if direction in {"up", "down"}
+    }
+    prices = {int(index): float(signal[int(index)]) for index in pivots}
+    pivots = _enforce_min_distance_on_pivots(
+        pivots, signal, max(1, int(min_distance))
+    )
+    pivots = _enforce_pivot_alternation(pivots, signal)
+    return _enforce_kind_alternation(pivots, kinds, prices)
+
+
+def _adaptive_ohlc_pivots(
+    signal: np.ndarray,
+    threshold_pct: float,
+    min_distance: int,
+    *,
+    high: np.ndarray,
+    low: np.ndarray,
+) -> List[int]:
+    """Build OHLC pivots for adaptive density selection."""
+    n = int(signal.size)
+    h = np.asarray(high[:n], dtype=float)
+    l = np.asarray(low[:n], dtype=float)
+    pivots, directions = _ohlc_zigzag_pivots_indices(
+        h, l, float(threshold_pct)
+    )
+    geometry = np.asarray(signal, dtype=float).copy()
+    kinds: Dict[int, str] = {}
+    prices: Dict[int, float] = {}
+    for index, direction in zip(pivots, directions):
+        idx = int(index)
+        kind = "peak" if direction == "up" else "trough"
+        price = float(h[idx] if kind == "peak" else l[idx])
+        kinds[idx] = kind
+        prices[idx] = price
+        geometry[idx] = price
+    pivots = _enforce_min_distance_on_pivots(
+        pivots, geometry, max(1, int(min_distance))
+    )
+    pivots = _enforce_pivot_alternation(pivots, geometry)
+    return _enforce_kind_alternation(pivots, kinds, prices)
 
 
 def detect_elliott_waves(  # noqa: C901 - orchestration kept explicit for scan auditability
@@ -2383,16 +2466,138 @@ def detect_elliott_waves(  # noqa: C901 - orchestration kept explicit for scan a
         if not np.all(valid_ohlc):
             raise ValueError("OHLC pivot geometry requires finite high >= low on every bar")
 
-    analyzer = ElliottWaveAnalyzer(c, t, config, high=h, low=l)
+    explicit_scan = isinstance(config.scan_thresholds_pct, list) and bool(config.scan_thresholds_pct)
+    explicit_scale = bool(
+        explicit_scan
+        or config.swing_threshold_pct is not None
+        or bool(getattr(config, "autotune", False))
+    )
+    adaptive_scan_pairs: Optional[List[Tuple[float, int]]] = None
+    pivot_signal = c
+    if str(config.scale_mode).strip().lower() == "auto" and not explicit_scale:
+        pivot_builder = _adaptive_close_pivots
+        if str(config.pivot_price_source).strip().lower() == "ohlc":
+            pivot_builder = partial(
+                _adaptive_ohlc_pivots,
+                high=h,
+                low=l,
+            )
+        adaptation = resolve_elliott_adaptation(
+            c,
+            h,
+            l,
+            pivot_builder=pivot_builder,
+            scale_mode=config.scale_mode,
+            adaptive_denoise=config.adaptive_denoise,
+            adaptive_window_bars=int(config.adaptive_window_bars),
+            adaptive_min_improvement=float(config.adaptive_min_improvement),
+            min_distance=int(config.min_distance),
+            pivot_price_source=str(config.pivot_price_source),
+            external_denoise_applied=bool(
+                getattr(config, "_external_denoise_applied", False)
+            ),
+            fallback_threshold_pct=float(config.min_prominence_pct),
+        )
+        pivot_signal = adaptation.pivot_signal
+        adaptive_scan_pairs = list(adaptation.scan_pairs)
+        adaptation_diagnostics = dict(adaptation.diagnostics)
+    else:
+        threshold = float(
+            config.swing_threshold_pct
+            if config.swing_threshold_pct is not None
+            else config.min_prominence_pct
+        )
+        diagnostic_thresholds = [threshold]
+        diagnostic_distances = [int(config.min_distance)]
+        if explicit_scan:
+            diagnostic_thresholds = [
+                float(value) for value in config.scan_thresholds_pct or []
+            ]
+            diagnostic_distances = (
+                [int(value) for value in config.scan_min_distances]
+                if isinstance(config.scan_min_distances, list)
+                and config.scan_min_distances
+                else [int(value) for value in config.tune_min_distance]
+                if isinstance(config.tune_min_distance, list)
+                and config.tune_min_distance
+                else sorted(
+                    {
+                        max(1, int(config.min_distance) - 2),
+                        int(config.min_distance),
+                        int(config.min_distance) + 2,
+                        int(config.min_distance) + 4,
+                    }
+                )
+            )
+        elif bool(getattr(config, "autotune", False)):
+            diagnostic_thresholds = (
+                [float(value) for value in config.tune_thresholds]
+                if isinstance(config.tune_thresholds, list)
+                and config.tune_thresholds
+                else [0.2, 0.3, 0.5, 0.75, 1.0]
+            )
+            diagnostic_distances = (
+                [int(value) for value in config.tune_min_distance]
+                if isinstance(config.tune_min_distance, list)
+                and config.tune_min_distance
+                else sorted(
+                    {
+                        max(1, int(config.min_distance) - 2),
+                        int(config.min_distance),
+                        int(config.min_distance) + 2,
+                        int(config.min_distance) + 4,
+                    }
+                )
+            )
+        adaptation_diagnostics = {
+            "adaptive": False,
+            "mode": str(config.scale_mode),
+            "causality": "causal",
+            "fallback_reason": (
+                "explicit_scale_precedence" if explicit_scale else "fixed_mode"
+            ),
+            "selected_filter": {
+                "method": (
+                    "external_explicit"
+                    if bool(getattr(config, "_external_denoise_applied", False))
+                    else "none"
+                ),
+                "params": {},
+            },
+            "scan_pairs": [
+                {
+                    "threshold_pct": float(scan_threshold),
+                    "min_distance": int(scan_distance),
+                }
+                for scan_threshold in diagnostic_thresholds
+                for scan_distance in diagnostic_distances
+            ],
+        }
+    df.attrs["elliott_adaptation"] = adaptation_diagnostics
+
+    analyzer = ElliottWaveAnalyzer(
+        c,
+        t,
+        config,
+        high=h,
+        low=l,
+        pivot_signal=pivot_signal,
+    )
 
     results_by_key: Dict[Tuple[str, Tuple[int, ...]], ElliottWaveResult] = {}
     fallback_result: Optional[ElliottWaveResult] = None
 
-    explicit_scan = isinstance(config.scan_thresholds_pct, list) and bool(config.scan_thresholds_pct)
     use_multi_scan = explicit_scan or (
         config.swing_threshold_pct is None and bool(getattr(config, "autotune", False))
     )
-    if use_multi_scan:
+    if adaptive_scan_pairs is not None:
+        for threshold, distance in adaptive_scan_pairs:
+            scenarios = analyzer.analyze_once(float(threshold), int(distance))
+            for scenario in scenarios:
+                _upsert_elliott_result(
+                    results_by_key, analyzer.build_result(scenario)
+                )
+    elif use_multi_scan:
         thr_list = (
             config.scan_thresholds_pct
             if explicit_scan
@@ -2472,7 +2677,15 @@ def detect_elliott_waves(  # noqa: C901 - orchestration kept explicit for scan a
         for scenario in scenarios:
             _upsert_elliott_result(results_by_key, analyzer.build_result(scenario))
 
-    recent_bars = int(max(1, getattr(config, "recent_bars", 3)))
+    configured_recent = getattr(config, "recent_bars", None)
+    recent_bars = int(
+        max(
+            1,
+            int(configured_recent)
+            if configured_recent is not None
+            else max(3, min(20, round(n * 0.05))),
+        )
+    )
     results = _filter_overlapping_corrections(list(results_by_key.values()))
     # Apply proximity-based deduplication (Option C) to remove near-duplicate patterns
     results = _dedupe_similar_waves(results, proximity_bars=24)
@@ -2495,7 +2708,9 @@ def detect_elliott_waves(  # noqa: C901 - orchestration kept explicit for scan a
     )
     if not has_recent:
         thr_base = float(
-            config.swing_threshold_pct
+            adaptation_diagnostics.get("base_threshold_pct")
+            if adaptation_diagnostics.get("base_threshold_pct") is not None
+            else config.swing_threshold_pct
             if config.swing_threshold_pct is not None
             else config.min_prominence_pct
         )
@@ -2531,4 +2746,16 @@ def detect_elliott_waves(  # noqa: C901 - orchestration kept explicit for scan a
                     result, n_bars=n, recent_bars=recent_bars
                 )
             )
+    adaptation_summary = {
+        key: value
+        for key, value in adaptation_diagnostics.items()
+        if key != "candidate_metrics"
+    }
+    selected_filter = adaptation_summary.get("selected_filter")
+    for result in results:
+        details = result.details if isinstance(result.details, dict) else {}
+        details["adaptation"] = adaptation_summary
+        if isinstance(selected_filter, dict):
+            details["pivot_filter"] = dict(selected_filter)
+        result.details = details
     return results

@@ -551,6 +551,28 @@ def _pattern_data_quality_summary(warnings_in: Any) -> Optional[Dict[str, Any]]:
     }
 
 
+def _compact_elliott_adaptation(value: Any) -> Any:
+    if not isinstance(value, dict):
+        return value
+    keys = (
+        "adaptive",
+        "mode",
+        "causality",
+        "calibration_bars",
+        "base_threshold_pct",
+        "scan_pairs",
+        "selected_filter",
+        "denoise_mode",
+        "denoise_skip_reason",
+        "fallback_reason",
+    )
+    return {
+        key: value[key]
+        for key in keys
+        if key in value and value[key] not in (None, "", [], {})
+    }
+
+
 def _compact_patterns_payload(
     payload: Dict[str, Any],
     *,
@@ -565,7 +587,10 @@ def _compact_patterns_payload(
     elif isinstance(payload.get("data"), list):
         rows = [row for row in payload.get("data", []) if isinstance(row, dict)]
     if not rows:
-        return payload
+        out = dict(payload)
+        if "adaptation" in out:
+            out["adaptation"] = _compact_elliott_adaptation(out.get("adaptation"))
+        return out
 
     indexed_rows: List[Tuple[int, Dict[str, Any]]] = []
     for idx, row in enumerate(rows):
@@ -714,6 +739,7 @@ def _compact_patterns_payload(
         "n_patterns": total_i,
         "applied_last_n_bars": payload.get("applied_last_n_bars"),
         "effective_window": payload.get("effective_window"),
+        "adaptation": _compact_elliott_adaptation(payload.get("adaptation")),
     }
     compact = {key: value for key, value in compact.items() if value is not None}
     compact["patterns_shown"] = len(top_patterns)
@@ -825,9 +851,14 @@ def _compact_patterns_payload(
                     "diagnostic",
                     "note",
                     "warnings",
+                    "adaptation",
                 }
                 and value not in (None, "", [], {})
             }
+            if isinstance(compact_item.get("adaptation"), dict):
+                compact_item["adaptation"] = _compact_elliott_adaptation(
+                    compact_item["adaptation"]
+                )
             if compact_item:
                 compact_findings.append(compact_item)
             tf_summary.append(
@@ -1305,6 +1336,14 @@ def _compact_all_mode_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
             value = section.get(key)
             if value not in (None, "", [], {}):
                 result[key] = value
+        if section_name == "elliott":
+            adaptations = section.get("adaptation_by_timeframe")
+            if isinstance(adaptations, dict) and adaptations:
+                result["adaptation_by_timeframe"] = {
+                    str(timeframe): _compact_elliott_adaptation(adaptation)
+                    for timeframe, adaptation in adaptations.items()
+                    if isinstance(adaptation, dict)
+                }
         compact[section_name] = result
 
     errors = payload.get("errors")
@@ -1344,6 +1383,15 @@ def _highlights_all_mode_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
 
     if section_counts:
         compact["section_counts"] = section_counts
+    elliott_section = payload.get("elliott")
+    if isinstance(elliott_section, dict):
+        adaptations = elliott_section.get("adaptation_by_timeframe")
+        if isinstance(adaptations, dict) and adaptations:
+            compact["elliott_adaptation_by_timeframe"] = {
+                str(timeframe): _compact_elliott_adaptation(adaptation)
+                for timeframe, adaptation in adaptations.items()
+                if isinstance(adaptation, dict)
+            }
     signal_bias = _summarize_pattern_bias(signal_inputs)
     if signal_bias:
         compact["signal_bias"] = signal_bias

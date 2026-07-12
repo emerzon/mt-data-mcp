@@ -382,6 +382,10 @@ def _build_pattern_response(
         "patterns": filtered,
         "n_patterns": int(len(filtered)),
     }
+    if str(mode).lower() == "elliott":
+        adaptation = df.attrs.get("elliott_adaptation")
+        if isinstance(adaptation, dict):
+            resp["adaptation"] = _round_value(adaptation)
     if completed_hidden > 0:
         resp["completed_patterns_hidden"] = int(completed_hidden)
         if elliott_preview:
@@ -526,9 +530,14 @@ def _build_pattern_response(
                     "warnings",
                     "note",
                     "failed_timeframes",
+                    "adaptation",
                 }
             }
         return compact_resp
+    if detail_value == "standard" and isinstance(resp.get("adaptation"), dict):
+        standard_adaptation = dict(resp["adaptation"])
+        standard_adaptation.pop("candidate_metrics", None)
+        resp["adaptation"] = standard_adaptation
     return _dedupe_repeated_regime_context(resp)
 
 
@@ -658,7 +667,13 @@ def _format_elliott_patterns(  # noqa: C901 - response contract is intentionally
             if bars_since_confirmation is not None:
                 row["bars_since_confirmation"] = int(bars_since_confirmation)
                 details["bars_since_confirmation"] = int(bars_since_confirmation)
-                recent_bars = max(1, int(getattr(cfg, "recent_bars", 3)))
+                configured_recent = getattr(cfg, "recent_bars", None)
+                recent_bars = max(
+                    1,
+                    int(configured_recent)
+                    if configured_recent is not None
+                    else max(3, min(20, round(n_bars * 0.05))),
+                )
                 row["is_recent"] = bool(bars_since_confirmation < recent_bars)
                 details["is_recent"] = bool(
                     bars_since_confirmation < recent_bars
@@ -1312,6 +1327,9 @@ def patterns_detect(
         - pivot_use_hl, pivot_use_atr_adaptive_prominence, pivot_use_atr_adaptive_distance
         - calibrate_confidence, confidence_calibration_map, confidence_calibration_blend
         Elliott v2 options include:
+        - scale_mode: "auto" (default) or "fixed"
+        - adaptive_denoise: "auto", "off", or "diagnostic"
+        - adaptive_window_bars and adaptive_min_improvement
         - swing_threshold_pct for one exact scan, or scan_thresholds_pct for a multi-scale scan
         - scan_min_distances, pattern_types, min_impulse_bars, min_correction_bars
         - min_structural_score, max_pattern_span_bars, max_pattern_age_bars

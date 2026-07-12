@@ -793,8 +793,19 @@ def run_patterns_detect(  # noqa: C901
         except ValueError as exc:
             return {"error": f"Invalid Elliott config: {exc}"}
         cfg.top_k = max(int(cfg.top_k), int(request.top_k))
+        cfg._external_denoise_applied = bool(request.denoise)
+        elliott_user_cfg = request.config if isinstance(request.config, dict) else {}
+        if "recent_bars" not in elliott_user_cfg:
+            cfg.recent_bars = max(3, min(20, round(int(request.limit) * 0.05)))
 
         if tf_norm:
+            age_bars, span_bars = _timeframe_aware_age_limits(
+                tf_norm, int(request.limit)
+            )
+            if "max_pattern_age_bars" not in elliott_user_cfg:
+                cfg.max_pattern_age_bars = age_bars
+            if "max_pattern_span_bars" not in elliott_user_cfg:
+                cfg.max_pattern_span_bars = span_bars
             df, err = _fetch_pattern_frame(
                 tf_norm,
                 request.limit,
@@ -829,6 +840,13 @@ def run_patterns_detect(  # noqa: C901
         hidden_completed_rows_total: List[Dict[str, Any]] = []
 
         for tf in scanned_timeframes:
+            age_bars, span_bars = _timeframe_aware_age_limits(
+                tf, int(request.limit)
+            )
+            if "max_pattern_age_bars" not in elliott_user_cfg:
+                cfg.max_pattern_age_bars = age_bars
+            if "max_pattern_span_bars" not in elliott_user_cfg:
+                cfg.max_pattern_span_bars = span_bars
             df, err = _fetch_pattern_frame(
                 tf,
                 request.limit,
@@ -873,6 +891,9 @@ def run_patterns_detect(  # noqa: C901
                 "n_patterns": int(len(filtered)),
                 "patterns": filtered,
             }
+            adaptation = df.attrs.get("elliott_adaptation")
+            if isinstance(adaptation, dict):
+                finding_row["adaptation"] = dict(adaptation)
             if completed_hidden > 0:
                 finding_row["completed_patterns_hidden"] = int(completed_hidden)
                 if completed_preview:
@@ -984,6 +1005,7 @@ def run_patterns_detect(  # noqa: C901
         classic_patterns: List[Dict[str, Any]] = []
         harmonic_patterns: List[Dict[str, Any]] = []
         elliott_patterns: List[Dict[str, Any]] = []
+        elliott_adaptations: Dict[str, Dict[str, Any]] = {}
         fractal_patterns: List[Dict[str, Any]] = []
         section_errors: Dict[str, Dict[str, str]] = {}
 
@@ -1051,6 +1073,7 @@ def run_patterns_detect(  # noqa: C901
                 tf: f"Invalid Elliott config: {exc}" for tf in timeframes
             }
         elliott_cfg.top_k = max(int(elliott_cfg.top_k), int(request.top_k))
+        elliott_cfg._external_denoise_applied = bool(request.denoise)
 
         classic_config_errors = deps.validate_classic_config_errors(classic_cfg)
         classic_config_error_msg: Optional[str] = None
@@ -1073,12 +1096,12 @@ def run_patterns_detect(  # noqa: C901
             for tf in timeframes:
                 section_errors["harmonic"][tf] = msg
 
-        # Elliott waves are multi-bar structures: a wave ending 20+ bars from
-        # the tip is still actively developing.  The default recent_bars=3 is
-        # too tight for all-mode and causes every pattern to be marked
-        # "completed" then filtered.  Use 10 % of the fetch window (floor 20).
+        # Elliott waves are multi-bar structures. Resolve omitted recency from
+        # the analysis window consistently with single-mode detection.
         if not (isinstance(request.config, dict) and "recent_bars" in request.config):
-            elliott_cfg.recent_bars = max(20, request.limit // 10)
+            elliott_cfg.recent_bars = max(
+                3, min(20, round(int(request.limit) * 0.05))
+            )
 
         effective_top_k = max(request.top_k, 3)
 
@@ -1091,9 +1114,11 @@ def run_patterns_detect(  # noqa: C901
             if "max_pattern_age_bars" not in user_cfg:
                 age_bars, _ = _timeframe_aware_age_limits(tf, tf_limit)
                 classic_cfg.max_pattern_age_bars = age_bars
+                elliott_cfg.max_pattern_age_bars = age_bars
             if "max_pattern_span_bars" not in user_cfg:
                 _, span_bars = _timeframe_aware_age_limits(tf, tf_limit)
                 classic_cfg.max_pattern_span_bars = span_bars
+                elliott_cfg.max_pattern_span_bars = span_bars
             if "max_age_bars" not in user_cfg:
                 fractal_age, _ = _timeframe_aware_age_limits(tf, tf_limit)
                 fractal_cfg.max_age_bars = fractal_age
@@ -1178,6 +1203,9 @@ def run_patterns_detect(  # noqa: C901
             # ── Elliott ──
             try:
                 elliott_rows = deps.format_elliott_patterns(df, elliott_cfg)
+                adaptation = df.attrs.get("elliott_adaptation")
+                if isinstance(adaptation, dict):
+                    elliott_adaptations[tf] = dict(adaptation)
                 for row in elliott_rows:
                     if isinstance(row, dict):
                         row["timeframe"] = tf
@@ -1266,6 +1294,7 @@ def run_patterns_detect(  # noqa: C901
             "elliott": {
                 "n_patterns": len(elliott_patterns),
                 "patterns": elliott_patterns,
+                "adaptation_by_timeframe": elliott_adaptations,
             },
             "fractal": {
                 "n_patterns": len(fractal_patterns),
