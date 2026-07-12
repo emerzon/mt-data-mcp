@@ -309,6 +309,7 @@ class TestFormatSummary:
         text = _format_summary(rows, ["A", "B"], "log_return", 0.05)
         assert "causal" in text
         assert "B <- A" in text
+        assert "tested lags and all successfully tested directed pairs" in text
 
     def test_no_link(self):
         rows = [{"effect": "B", "cause": "A", "lag": 1, "p_value": 0.99, "samples": 50}]
@@ -655,6 +656,7 @@ class TestCausalDiscoverSignals:
         assert "summary_text" not in result
         assert result["meta"]["stats"]["pairs_tested"] >= 1
         assert result["meta"]["stats"]["p_value_correction"] == "bonferroni_across_lags_and_pairs"
+        assert "directed pairs" in result["meta"]["legends"]["note_p_value_correction"]
         assert result["meta"]["tool"] == "causal_discover_signals"
         assert "legends" in result["meta"]
         assert not any("verbose" in str(w.message).lower() for w in records)

@@ -1250,7 +1250,8 @@ def _format_summary(
         "Lag refers to the history length of the cause series used in the best-performing test (ssr_ftest)."
     )
     lines.append(
-        "Displayed p-values use Bonferroni correction across tested lags for each pair."
+        "Displayed p-values use Bonferroni correction across tested lags and "
+        "all successfully tested directed pairs."
     )
     lines.append("Results are pairwise and do not imply full causal graphs.")
     return "\n".join(lines)
@@ -1592,7 +1593,8 @@ def causal_discover_signals(  # noqa: C901
         start: Optional UTC-compatible start date/time for the analysis window.
         end: Optional UTC-compatible end date/time; end-only anchors recent history.
         max_lag: Maximum lag order for tests (>=1).
-        significance: Alpha level for reporting causal links.
+        significance: Family-wise alpha level for reporting causal links after
+            Bonferroni correction across tested lags and directed pairs.
         transform: Preprocessing transform: "log_return", "pct", "diff", "level", or "log_level".
         normalize: Z-score columns before testing to stabilise scale.
         detail: "compact" returns significant links plus top pair summaries; "full"
@@ -2094,7 +2096,7 @@ def causal_discover_signals(  # noqa: C901
                     "transform": _TRANSFORM_LEGEND,
                     "note_p_value": "Lower p-values indicate stronger evidence of causality. Values < significance threshold indicate significant Granger-causal relationship.",
                     "note_lag": "Optimal lag order (bars) at which past values of 'cause' best predict current 'effect'",
-                    "note_p_value_correction": "Displayed p-values use Bonferroni correction across tested lags for each pair.",
+                    "note_p_value_correction": "Displayed p-values use Bonferroni correction across tested lags and all successfully tested directed pairs.",
                 },
             ),
         }

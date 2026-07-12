@@ -99,7 +99,16 @@ For each ordered pair of symbols `(cause → effect)`, the tool:
 2. Applies a transform (by default `log_return`) to improve stationarity
 3. Optionally z-scores the series (`normalize=true`)
 4. Runs Granger causality tests for lags `1..max_lag`
-5. Reports the **best (lowest p-value) lag** per pair using `ssr_ftest`
+5. Selects the **best (lowest raw p-value) lag** per pair using `ssr_ftest`
+6. Applies Bonferroni correction first across the tested lags, then across all
+   successfully tested directed pairs
+
+The primary `p_value` and `significant` fields use this global family-wise
+correction. `p_value_raw` is the selected lag's unadjusted value, and
+`p_value_lag_adjusted` is corrected only for the lag search. The correction
+becomes stricter as the basket grows; use full detail to inspect non-significant
+exploratory candidates rather than interpreting an empty compact result as
+proof that no predictive relationships exist.
 
 ---
 
@@ -113,7 +122,7 @@ For each ordered pair of symbols `(cause → effect)`, the tool:
 | `limit` | all rows | Optional maximum number of ranked result rows returned. |
 | `offset` | `0` | Number of ranked result rows to skip before applying `limit`. |
 | `max_lag` | `5` | Maximum lag to test (≥ 1). |
-| `significance` | `0.05` | Alpha threshold for reporting “causal” links. |
+| `significance` | `0.05` | Family-wise alpha threshold after Bonferroni correction across tested lags and directed pairs. |
 | `transform` | `log_return` | One of: `log_return`, `log_level`, `pct`, `diff`, `level`. |
 | `normalize` | `true` | Z-score each series before testing. |
 
@@ -127,7 +136,7 @@ The tool returns a plain-text table:
 Effect <- Cause | Lag | p-value | Samples | Conclusion
 ```
 
-- **Conclusion** is `causal` when `p-value < significance`, otherwise `no-link`.
+- **Conclusion** is `causal` when the globally Bonferroni-adjusted `p-value < significance`, otherwise `no-link`.
 - **Lag** is the best-performing lag for the pair under the selected test statistic.
 
 Tip: `--json` returns the structured payload instead of default TOON text.
