@@ -980,6 +980,13 @@ class TestRecordingToolDecorator:
         import mtdata.core._mcp_tools as tools
 
         original = tools._ORIG_TOOL_DECORATOR
+        previous = tools._TOOL_METADATA_REGISTRY.get("market_scan")
+        previous_function = (
+            None if previous is None else getattr(previous, "function", tools._REGISTRY_UNSET)
+        )
+        previous_tool_object = (
+            None if previous is None else getattr(previous, "tool_object", tools._REGISTRY_UNSET)
+        )
         try:
             tools._ORIG_TOOL_DECORATOR = lambda *a, **k: (lambda fn: fn)
             dec = tools._recording_tool_decorator()
@@ -1005,6 +1012,16 @@ class TestRecordingToolDecorator:
             assert result["related_tools"] == ["symbols_top_markets", "symbols_list"]
         finally:
             tools._ORIG_TOOL_DECORATOR = original
+            # The decorator registers under the function name; restore the real
+            # market_scan tool so later catalog/schema tests are not polluted.
+            if previous is None:
+                tools.unregister_tool("market_scan")
+            else:
+                tools._upsert_tool_registration(
+                    "market_scan",
+                    function=previous_function,
+                    tool_object=previous_tool_object,
+                )
 
     def test_async_wrapped_skips_transport_timeout_for_forecast_tuning_tools(self):
         import asyncio
@@ -1012,6 +1029,13 @@ class TestRecordingToolDecorator:
         import mtdata.core._mcp_tools as tools
 
         original = tools._ORIG_TOOL_DECORATOR
+        previous = tools._TOOL_METADATA_REGISTRY.get("forecast_optimize_hints")
+        previous_function = (
+            None if previous is None else getattr(previous, "function", tools._REGISTRY_UNSET)
+        )
+        previous_tool_object = (
+            None if previous is None else getattr(previous, "tool_object", tools._REGISTRY_UNSET)
+        )
         try:
             tools._ORIG_TOOL_DECORATOR = lambda *a, **k: (lambda fn: fn)
             dec = tools._recording_tool_decorator()
@@ -1029,6 +1053,14 @@ class TestRecordingToolDecorator:
             wait_for.assert_not_called()
         finally:
             tools._ORIG_TOOL_DECORATOR = original
+            if previous is None:
+                tools.unregister_tool("forecast_optimize_hints")
+            else:
+                tools._upsert_tool_registration(
+                    "forecast_optimize_hints",
+                    function=previous_function,
+                    tool_object=previous_tool_object,
+                )
 
     def test_skips_variadic_args_in_exposed_signature(self):
         import mtdata.core._mcp_tools as tools
@@ -1246,6 +1278,7 @@ class TestMcpToolSchemas:
         assert props["method"]["type"] == "string"
         assert props["method"]["enum"] == [
             "bocpd",
+            "pelt",
             "hmm",
             "gmm",
             "ms_ar",

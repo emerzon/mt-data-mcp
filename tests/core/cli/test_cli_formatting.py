@@ -2043,8 +2043,26 @@ class TestRenderCliResult:
         assert "meta:" in out
         assert "tool: sample_tool" in out
 
-    def test_symbols_describe_default_full_detail_does_not_force_meta(self, capsys):
+    def test_symbols_describe_full_detail_includes_runtime_meta(self, capsys):
         args = argparse.Namespace(detail="full", json=True, verbose=False)
+
+        _render_cli_result(
+            {
+                "success": True,
+                "symbol": "EURUSD",
+                "details": {"time_epoch": 1700000000.0},
+            },
+            args=args,
+            cmd_name="symbols_describe",
+        )
+
+        payload = json.loads(capsys.readouterr().out)
+        assert payload["meta"]["tool"] == "symbols_describe"
+        assert payload["symbol"] == "EURUSD"
+        assert payload["details"]["time_epoch"] == 1700000000.0
+
+    def test_symbols_describe_compact_detail_strips_meta_and_time_epoch(self, capsys):
+        args = argparse.Namespace(detail="compact", json=True, verbose=False)
 
         _render_cli_result(
             {

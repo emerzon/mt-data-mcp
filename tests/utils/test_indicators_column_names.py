@@ -13,11 +13,14 @@ if str(SRC) not in sys.path:
 
 
 INDICATORS_PATH = SRC / "mtdata" / "utils" / "indicators.py"
-spec = importlib.util.spec_from_file_location("mtdata.utils.indicators", INDICATORS_PATH)
+# Load from source under a private module name so this file cannot pollute the
+# real `mtdata.utils.indicators` entry used by other tests.
+_MODULE_NAME = "mtdata.utils.indicators_column_names_under_test"
+spec = importlib.util.spec_from_file_location(_MODULE_NAME, INDICATORS_PATH)
 if spec is None or spec.loader is None:
     raise ImportError(f"Cannot load indicators module from {INDICATORS_PATH}")
 indicators = importlib.util.module_from_spec(spec)
-sys.modules["mtdata.utils.indicators"] = indicators
+sys.modules[_MODULE_NAME] = indicators
 spec.loader.exec_module(indicators)
 _apply_ta_indicators = indicators._apply_ta_indicators
 

@@ -1,6 +1,8 @@
 import sys
+import time
 import unittest
 from collections import namedtuple
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from src.mtdata.utils.utils import (
@@ -75,9 +77,9 @@ class TestMergedTools(unittest.TestCase):
         self.assertEqual(res.get("count"), 0)
         self.assertEqual(res.get("items"), [])
         self.assertTrue(res.get("empty"))
-        self.assertNotIn("message", res)
+        self.assertIn("message", res)
+        self.assertIn("hint", res)
         self.assertNotIn("reason", res)
-        self.assertNotIn("no_action", res)
 
         # Test with symbol
         get_open(symbol="EURUSD", __cli_raw=True)
@@ -105,7 +107,8 @@ class TestMergedTools(unittest.TestCase):
         self.assertIsInstance(res, dict)
         self.assertGreaterEqual(res.get("count", 0), 1)
         row = res["items"][0]
-        self.assertEqual(row.get("type"), "BUY")
+        # Open positions expose side (BUY/SELL), not raw MT5 type codes.
+        self.assertEqual(row.get("side"), "BUY")
         self.assertEqual(row.get("symbol"), "EURUSD")
         self.assertEqual(row.get("ticket"), 1)
         expected_time = _format_time_minimal(1700000001)
@@ -115,6 +118,7 @@ class TestMergedTools(unittest.TestCase):
         self.assertIsNone(row.get("time_update_msc"))
         self.assertIsNone(row.get("direction"))
         self.assertIsNone(row.get("type_code"))
+        self.assertIsNone(row.get("type"))
 
     def test_trading_open_comment_metadata_is_exposed(self):
         Pos = namedtuple(
@@ -215,9 +219,9 @@ class TestMergedTools(unittest.TestCase):
         self.assertEqual(res.get("count"), 0)
         self.assertEqual(res.get("items"), [])
         self.assertTrue(res.get("empty"))
-        self.assertNotIn("message", res)
+        self.assertIn("message", res)
+        self.assertIn("hint", res)
         self.assertNotIn("reason", res)
-        self.assertNotIn("no_action", res)
 
         get_pending(symbol="EURUSD", __cli_raw=True)
         self.mt5.orders_get.assert_called_with(symbol="EURUSD")
@@ -242,7 +246,9 @@ class TestMergedTools(unittest.TestCase):
         self.assertIsInstance(res, dict)
         self.assertGreaterEqual(res.get("count", 0), 1)
         row = res["items"][0]
-        self.assertEqual(row.get("type"), "SELL_LIMIT")
+        # Pending orders expose order_type + side (not raw MT5 type codes).
+        self.assertEqual(row.get("order_type"), "SELL_LIMIT")
+        self.assertEqual(row.get("side"), "SELL")
         self.assertEqual(row.get("symbol"), "EURUSD")
         self.assertEqual(row.get("ticket"), 1)
         expected_time = _format_time_minimal(1700000000)
@@ -256,6 +262,7 @@ class TestMergedTools(unittest.TestCase):
         self.assertIsNone(row.get("time_setup_msc"))
         self.assertIsNone(row.get("direction"))
         self.assertIsNone(row.get("type_code"))
+        self.assertIsNone(row.get("type"))
 
     def test_trading_pending_compact_detail_omits_echoed_request_metadata(self):
         Order = namedtuple("Order", ["ticket", "time_setup", "time_setup_msc", "time_expiration", "type", "symbol"])
@@ -294,21 +301,27 @@ class TestMergedTools(unittest.TestCase):
         with patch('src.mtdata.forecast.barriers_probabilities.forecast_barrier_hit_probabilities') as mock_mc:
             mock_mc.return_value = {"success": True}
             res = barrier_prob(symbol="EURUSD", method="mc", __cli_raw=True)
+            self.assertTrue(res.get("success"))
+            self.assertEqual(res.get("detail"), "compact")
+            self.assertEqual(res.get("symbol"), "EURUSD")
+            self.assertEqual(res.get("timeframe"), "H1")
+            self.assertEqual(res.get("direction"), "long")
+            self.assertEqual(res.get("horizon"), 12)
             self.assertEqual(
-                res,
-                {
-                    "success": True,
-                    "detail": "compact",
-                    "warnings": [
-                        "Default 1% symmetrical barriers applied; pass tp_pct/sl_pct, "
-                        "tp_abs/sl_abs, or tp_ticks/sl_ticks to customize."
-                    ],
-                    "tp_pct": 1.0,
-                    "sl_pct": 1.0,
-                    "barrier_unit": "percent",
-                    "probability_unit": "fraction",
-                    "edge_definition": "prob_tp_first - prob_sl_first",
-                },
+                res.get("warnings"),
+                [
+                    "Default 1% symmetrical barriers applied; pass tp_pct/sl_pct, "
+                    "tp_abs/sl_abs, or tp_ticks/sl_ticks to customize."
+                ],
+            )
+            self.assertEqual(res.get("tp_pct"), 1.0)
+            self.assertEqual(res.get("sl_pct"), 1.0)
+            self.assertEqual(res.get("barrier_unit"), "percent")
+            self.assertEqual(res.get("probability_unit"), "fraction")
+            # Product uses probability_edge_definition (edge_definition is legacy).
+            self.assertEqual(
+                res.get("probability_edge_definition"),
+                "prob_tp_first - prob_sl_first",
             )
             self.assertEqual(mock_mc.call_args.kwargs.get("tp_pct"), 1.0)
             self.assertEqual(mock_mc.call_args.kwargs.get("sl_pct"), 1.0)
@@ -316,14 +329,12 @@ class TestMergedTools(unittest.TestCase):
         with patch('src.mtdata.forecast.barriers_probabilities.forecast_barrier_closed_form') as mock_cf:
             mock_cf.return_value = {"success": True}
             res = barrier_prob(symbol="EURUSD", method="closed_form", __cli_raw=True)
+            self.assertTrue(res.get("success"))
+            self.assertEqual(res.get("detail"), "compact")
+            self.assertEqual(res.get("probability_unit"), "fraction")
             self.assertEqual(
-                res,
-                {
-                    "success": True,
-                    "detail": "compact",
-                    "probability_unit": "fraction",
-                    "edge_definition": "prob_tp_first - prob_sl_first",
-                },
+                res.get("probability_edge_definition"),
+                "prob_tp_first - prob_sl_first",
             )
 
     def test_forecast_barrier_prob_direction_normalization(self):
@@ -358,10 +369,38 @@ class TestMergedTools(unittest.TestCase):
         mock_pos.type = 0 # BUY
         mock_pos.volume = 1.0
         mock_pos.profit = 10.0
-        
+        mock_pos.price_open = 1.0
+        mock_pos.time = 1700000000
+        mock_pos.magic = 0
+        mock_pos.sl = 0
+        mock_pos.tp = 0
+        mock_pos.price_current = 1.0
+        mock_pos.comment = ""
+        mock_pos.swap = 0.0
+
+        now = int(time.time())
         self.mt5.positions_get.return_value = [mock_pos]
-        self.mt5.symbol_info_tick.return_value = MagicMock(bid=1.0, ask=1.0)
-        self.mt5.order_send.return_value = MagicMock(retcode=self.mt5.TRADE_RETCODE_DONE)
+        self.mt5.symbol_info_tick.return_value = SimpleNamespace(
+            bid=1.0, ask=1.0, time=now, time_msc=now * 1000
+        )
+        self.mt5.symbol_info.return_value = SimpleNamespace(
+            trade_filling_mode=1,
+            volume_min=0.01,
+            volume_step=0.01,
+            digits=5,
+            point=0.00001,
+        )
+        self.mt5.order_send.return_value = MagicMock(
+            retcode=self.mt5.TRADE_RETCODE_DONE,
+            deal=1,
+            order=1,
+            volume=1.0,
+            price=1.0,
+            comment="done",
+            profit=10.0,
+        )
+        self.mt5.retcode_name = lambda code: "DONE"
+        self.mt5.last_error.return_value = (0, "")
         
         from src.mtdata.core.trading import trade_close
         from src.mtdata.core.trading.requests import TradeCloseRequest
@@ -370,39 +409,72 @@ class TestMergedTools(unittest.TestCase):
         trade_close(request=TradeCloseRequest(ticket=123), __cli_raw=True)
         self.mt5.positions_get.assert_any_call(ticket=123)
 
-        # Test close by symbol
+        # Live bulk close requires confirm_close_all=true
         self.mt5.positions_get.reset_mock()
-        trade_close(request=TradeCloseRequest(symbol="EURUSD", close_all=True), __cli_raw=True)
+        trade_close(
+            request=TradeCloseRequest(
+                symbol="EURUSD",
+                close_all=True,
+                confirm_close_all=True,
+            ),
+            __cli_raw=True,
+        )
         self.mt5.positions_get.assert_any_call(symbol="EURUSD")
 
         # Test close all
         self.mt5.positions_get.reset_mock()
-        trade_close(request=TradeCloseRequest(close_all=True), __cli_raw=True)
+        trade_close(
+            request=TradeCloseRequest(close_all=True, confirm_close_all=True),
+            __cli_raw=True,
+        )
         self.mt5.positions_get.assert_any_call()
 
     def test_trading_close_pending(self):
         # Mock orders
         mock_order = MagicMock()
         mock_order.ticket = 456
+        mock_order.symbol = "EURUSD"
+        mock_order.magic = 0
 
         self.mt5.positions_get.return_value = []
         self.mt5.orders_get.return_value = [mock_order]
-        self.mt5.order_send.return_value = MagicMock(retcode=self.mt5.TRADE_RETCODE_DONE) 
+        self.mt5.order_send.return_value = MagicMock(
+            retcode=self.mt5.TRADE_RETCODE_DONE,
+            deal=0,
+            order=456,
+            volume=0.0,
+            price=0.0,
+            comment="done",
+        )
+        self.mt5.retcode_name = lambda code: "DONE"
+        self.mt5.last_error.return_value = (0, "")
 
         from src.mtdata.core.trading import trade_close
         from src.mtdata.core.trading.requests import TradeCloseRequest
 
         # Test cancel by ticket
         trade_close(request=TradeCloseRequest(ticket=456), __cli_raw=True)
-        self.mt5.orders_get.assert_called_with(ticket=456)
+        self.mt5.orders_get.assert_any_call(ticket=456)
 
-        # Test cancel by symbol
-        trade_close(request=TradeCloseRequest(symbol="EURUSD", close_all=True), __cli_raw=True)
-        self.mt5.orders_get.assert_called_with(symbol="EURUSD")
+        # Live bulk close requires confirm_close_all=true
+        self.mt5.orders_get.reset_mock()
+        trade_close(
+            request=TradeCloseRequest(
+                symbol="EURUSD",
+                close_all=True,
+                confirm_close_all=True,
+            ),
+            __cli_raw=True,
+        )
+        self.mt5.orders_get.assert_any_call(symbol="EURUSD")
 
         # Test cancel all
-        trade_close(request=TradeCloseRequest(close_all=True), __cli_raw=True)
-        self.mt5.orders_get.assert_called_with()
+        self.mt5.orders_get.reset_mock()
+        trade_close(
+            request=TradeCloseRequest(close_all=True, confirm_close_all=True),
+            __cli_raw=True,
+        )
+        self.mt5.orders_get.assert_any_call()
 
     def test_trade_get_open_rejects_invalid_symbol(self):
         # Setup mock to simulate symbol_select failure

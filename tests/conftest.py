@@ -138,11 +138,78 @@ def _restore_mt5_config_state(snapshot) -> None:
     module._WARNED_SERVER_TZ = snapshot["warned_server_tz"]
 
 
+# Local developer .env often configures broker timezone and live trade
+# guardrails. Entrypoints such as web_api call load_environment() at import
+# time; without neutralizing those values, pure unit tests become order- and
+# machine-dependent after the first such import.
+_TEST_NEUTRAL_ENV_KEYS = (
+    "MT5_SERVER_TZ",
+    "MT5_TIME_OFFSET_MINUTES",
+    "CLIENT_TZ",
+    "MT5_CLIENT_TZ",
+    "MTDATA_TRADE_GUARDRAILS_ENABLED",
+    "MTDATA_TRADING_ENABLED",
+    "MTDATA_TRADE_ALLOWED_SYMBOLS",
+    "MTDATA_TRADE_BLOCKED_SYMBOLS",
+    "MTDATA_TRADE_MAX_VOLUME",
+    "MTDATA_TRADE_MAX_VOLUME_BY_SYMBOL",
+    "MTDATA_TRADE_SAFETY_MAX_VOLUME",
+    "MTDATA_TRADE_SAFETY_REQUIRE_STOP_LOSS",
+    "MTDATA_TRADE_SAFETY_MAX_DEVIATION",
+    "MTDATA_TRADE_SAFETY_REDUCE_ONLY",
+    "MTDATA_TRADE_MIN_MARGIN_LEVEL_PCT",
+    "MTDATA_TRADE_MAX_FLOATING_LOSS",
+    "MTDATA_TRADE_MAX_TOTAL_EXPOSURE_LOTS",
+    "MTDATA_TRADE_MAX_RISK_PCT_OF_EQUITY",
+    "MTDATA_TRADE_MAX_RISK_PCT_OF_BALANCE",
+    "MTDATA_TRADE_MAX_RISK_PCT_OF_FREE_MARGIN",
+    "MTDATA_TRADE_GUARDRAILS_IGNORE_ON_DEMO",
+)
+
+
+def _neutralize_local_runtime_config(mt5_snapshot) -> None:
+    for key in _TEST_NEUTRAL_ENV_KEYS:
+        os.environ.pop(key, None)
+
+    if mt5_snapshot is None:
+        return
+
+    config_obj = mt5_snapshot.get("config")
+    if config_obj is not None:
+        config_obj.server_tz_name = None
+        config_obj.client_tz_name = None
+        config_obj.time_offset_minutes = 0
+
+    guardrails = mt5_snapshot.get("trade_guardrails_config")
+    if guardrails is None:
+        return
+    # Prefer a full env reload into a disabled policy when available.
+    reload = getattr(guardrails, "reload_from_env", None)
+    if callable(reload):
+        try:
+            reload()
+            return
+        except Exception:
+            pass
+    for name, value in {
+        "enabled": False,
+        "ignore_on_demo": True,
+        "trading_enabled": True,
+        "allowed_symbols": [],
+        "blocked_symbols": [],
+        "max_volume": None,
+        "max_volume_by_symbol": {},
+    }.items():
+        if hasattr(guardrails, name):
+            setattr(guardrails, name, value)
+
+
 @pytest.fixture(autouse=True)
 def _restore_mtdata_process_state():
     """Keep env and MT5 bootstrap mutations from leaking across tests."""
     env_snapshot = dict(os.environ)
     mt5_snapshot = _snapshot_mt5_config_state()
+    _neutralize_local_runtime_config(mt5_snapshot)
 
     yield
 

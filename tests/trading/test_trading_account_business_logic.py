@@ -386,7 +386,7 @@ def test_run_trade_get_open_accepts_simplenamespace_rows() -> None:
 
     assert out[0]["ticket"] == 1
     assert out[0]["time"] == "t1700000000"
-    assert out[0]["type"] == "BUY"
+    assert out[0]["side"] == "BUY"
     assert out[0]["profit"] == 5.0
 
 
@@ -656,8 +656,12 @@ def test_run_trade_get_open_limit_prefers_latest_valid_timestamps() -> None:
         },
     )
 
-    assert [row["ticket"] for row in out] == [3, 4]
-    assert [row["time"] for row in out] == ["t200", "t300"]
+    rows = out["items"] if isinstance(out, dict) and "items" in out else out
+    assert [row["ticket"] for row in rows] == [3, 4]
+    assert [row["time"] for row in rows] == ["t200", "t300"]
+    if isinstance(out, dict) and "items" in out:
+        assert out["has_more"] is True
+        assert out["truncated"] is True
 
 
 def test_run_trade_get_pending_limit_prefers_latest_valid_timestamps() -> None:
@@ -711,8 +715,12 @@ def test_run_trade_get_pending_limit_prefers_latest_valid_timestamps() -> None:
         },
     )
 
-    assert [row["ticket"] for row in out] == [13, 14]
-    assert [row["time"] for row in out] == ["t200", "t300"]
+    rows = out["items"] if isinstance(out, dict) and "items" in out else out
+    assert [row["ticket"] for row in rows] == [13, 14]
+    assert [row["time"] for row in rows] == ["t200", "t300"]
+    if isinstance(out, dict) and "items" in out:
+        assert out["has_more"] is True
+        assert out["truncated"] is True
 
 
 def test_run_trade_get_open_uses_snake_case_columns() -> None:
@@ -761,12 +769,14 @@ def test_run_trade_get_open_uses_snake_case_columns() -> None:
 
     assert out[0]["ticket"] == 21
     assert out[0]["time"] == "t1700000100"
-    assert out[0]["type"] == "BUY"
-    assert out[0]["price_open"] == 1.1
+    assert out[0]["side"] == "BUY"
+    assert out[0]["entry_price"] == 1.1
     assert out[0]["price_current"] == 1.15
     assert out[0]["comment"] == "note"
     assert out[0]["magic"] == 7
     assert "Ticket" not in out[0]
+    assert "type" not in out[0]
+    assert "price_open" not in out[0]
 
 
 def test_run_trade_get_pending_uses_snake_case_columns() -> None:
@@ -821,12 +831,15 @@ def test_run_trade_get_pending_uses_snake_case_columns() -> None:
     assert out[0]["ticket"] == 31
     assert out[0]["time"] == "t1700000200"
     assert out[0]["expiration"] == "GTC"
-    assert out[0]["type"] == "BUY_LIMIT"
-    assert out[0]["price_open"] == 1.1
+    assert out[0]["order_type"] == "BUY_LIMIT"
+    assert out[0]["side"] == "BUY"
+    assert out[0]["trigger_price"] == 1.1
     assert out[0]["price_current"] == 1.15
     assert out[0]["comment"] == "pending"
     assert out[0]["magic"] == 9
     assert "Ticket" not in out[0]
+    assert "type" not in out[0]
+    assert "price_open" not in out[0]
 
 
 def test_run_trade_get_pending_filters_by_magic() -> None:
@@ -934,7 +947,7 @@ def test_run_trade_get_open_falls_back_to_time_column() -> None:
 
     assert out[0]["ticket"] == 21
     assert out[0]["time"] == "t1700000100"
-    assert out[0]["type"] == "BUY"
+    assert out[0]["side"] == "BUY"
 
 
 def test_run_trade_get_pending_falls_back_to_volume_initial() -> None:
@@ -988,7 +1001,8 @@ def test_run_trade_get_pending_falls_back_to_volume_initial() -> None:
 
     assert out[0]["ticket"] == 22
     assert out[0]["volume"] == 0.3
-    assert out[0]["type"] == "BUY_LIMIT"
+    assert out[0]["order_type"] == "BUY_LIMIT"
+    assert out[0]["side"] == "BUY"
 
 
 def test_trade_get_open_logs_finish_event(caplog) -> None:

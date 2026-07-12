@@ -470,7 +470,10 @@ class TestFetchCandlesCore(unittest.TestCase):
     @patch(_GUARD, _mock_symbol_guard)
     def test_meta_includes_query_diagnostics(self, mock_warmup, mock_ctz, mock_info, mock_from, mock_cfg):
         mock_cfg.get_time_offset_seconds.return_value = 0
-        mock_from.return_value = _make_rates(10, step=3600)
+        # Anchor bars to the test clock, not module-import time, so age stays
+        # stable even when this file is collected early in a long suite.
+        now_ts = datetime.now(timezone.utc).timestamp()
+        mock_from.return_value = _make_rates(10, base_ts=now_ts, step=3600)
         result = fetch_candles('EURUSD', limit=5)
         self.assertTrue(result.get('success'))
         self.assertEqual(result['candles_requested'], 5)
@@ -742,24 +745,29 @@ class TestFetchCandlesCore(unittest.TestCase):
     @patch(_RESOLVE_CTZ, return_value=None)
     @patch(_ESTIMATE_WARMUP, return_value=0)
     @patch(_GUARD, _mock_symbol_guard)
-    def test_stale_rates_are_rejected(self, mock_warmup, mock_ctz, mock_info, mock_from, mock_parse, mock_cfg):
+    def test_historical_end_returns_freshness_without_hard_reject(
+        self, mock_warmup, mock_ctz, mock_info, mock_from, mock_parse, mock_cfg
+    ):
+        """Historical end bounds skip hard stale rejection; freshness is diagnostic only."""
         to_date = datetime(2025, 1, 2, tzinfo=_UTC)
         mock_parse.return_value = to_date
         mock_cfg.get_time_offset_seconds.return_value = 0
         mock_from.return_value = _make_rates(5, base_ts=to_date.timestamp() - (10 * 60 * 60), step=60 * 60)
         with patch(f'{_DS}.FETCH_RETRY_ATTEMPTS', 2), patch(f'{_DS}.FETCH_RETRY_DELAY', 0):
             result = fetch_candles('EURUSD', limit=5, end='2025-01-02')
-        self.assertIn('error', result)
-        self.assertIn('Data appears stale for EURUSD H1', result['error'])
-        self.assertIn('allow_stale=true', result['error'])
+        self.assertTrue(result.get('success'))
+        self.assertNotIn('error', result)
+        freshness = result['meta']['diagnostics']['freshness']
         self.assertEqual(
-            result['details']['diagnostics']['freshness'],
+            freshness,
             {
                 'last_bar_epoch': float(to_date.timestamp() - (10 * 60 * 60)),
                 'expected_end_epoch': float(to_date.timestamp()),
                 'freshness_cutoff_epoch': float(to_date.timestamp() - (4 * 60 * 60)),
                 'data_freshness_seconds': float(10 * 60 * 60),
                 'last_bar_within_policy_window': False,
+                'data_freshness_anchor': 'query_expected_end',
+                'data_freshness_metric': 'requested_range_end_gap_seconds',
             },
         )
 
@@ -816,16 +824,19 @@ class TestFetchCandlesCore(unittest.TestCase):
         self.assertTrue(result.get('success'))
 
     @patch(_MT5_CONFIG)
-    @patch(_RATES_RANGE)
+    @patch(_RATES_FROM)
     @patch(_CACHED_INFO, return_value=MagicMock())
     @patch(_RESOLVE_CTZ, return_value=None)
     @patch(_ESTIMATE_WARMUP, return_value=0)
     @patch(_GUARD, _mock_symbol_guard)
-    def test_start_only(self, mock_warmup, mock_ctz, mock_info, mock_range, mock_cfg):
+    def test_start_only(self, mock_warmup, mock_ctz, mock_info, mock_from, mock_cfg):
+        # start-only queries fetch recent bars via copy_rates_from (bounded by limit),
+        # not a full open-ended range fetch.
         mock_cfg.get_time_offset_seconds.return_value = 0
-        mock_range.return_value = _make_rates(20)
+        mock_from.return_value = _make_rates(20)
         result = fetch_candles('EURUSD', limit=5, start='2025-01-01')
         self.assertTrue(result.get('success'))
+        mock_from.assert_called()
 
     @patch(_MT5_CONFIG)
     @patch(_RATES_FROM)

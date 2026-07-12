@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 from mtdata.core import web_api
 
 
-def test_history_uses_start_end_ohlcv_and_drops_open_bar() -> None:
+def test_history_uses_start_end_ohlcv_and_preserves_canonical_forming_candle() -> None:
     payload = {
         "success": True,
         "data": [
@@ -31,14 +31,13 @@ def test_history_uses_start_end_ohlcv_and_drops_open_bar() -> None:
             include_incomplete=False,
         )
 
-    assert len(res["data"]) == 2
-    assert res["count"] == 2
+    # Web API preserves the canonical candles payload; forming-bar policy is
+    # owned by data_fetch_candles via the forwarded include_incomplete flag.
+    assert len(res["data"]) == 3
     assert "candles" not in res
     assert res["has_forming_candle"] is True
-    assert res["forming_candle_status"] == "skipped"
-    assert res["forming_candle_included"] is False
-    assert res["forming_candle_skipped"] is True
-    assert res["incomplete_candles_skipped"] == 1
+    assert res["forming_candle_status"] == "included"
+    assert res["forming_candle_included"] is True
     assert "last_candle_open" not in res
     kwargs = mock_fetch.call_args.kwargs
     assert kwargs["start"] == "2025-01-01 00:00"

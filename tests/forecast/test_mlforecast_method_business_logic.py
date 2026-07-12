@@ -240,6 +240,7 @@ def test_mlforecast_lightgbm_get_model(monkeypatch):
         "num_leaves": 16,
         "max_depth": 6,
         "random_state": 42,
+        "verbosity": -1,
     }
     assert mlm.MLFLightGBM().required_packages == ["mlforecast", "lightgbm"]
 

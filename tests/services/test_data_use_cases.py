@@ -1437,7 +1437,7 @@ def test_data_fetch_ticks_request_uses_detail_control():
         "simplify",
         "detail",
     ]
-    assert request.timestamp_format == "epoch"
+    assert request.timestamp_format == "iso"
 
 
 def test_data_fetch_ticks_request_rejects_removed_output_mode_field():

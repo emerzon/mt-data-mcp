@@ -236,14 +236,14 @@ class TestFinvizService:
         assert result["coins"][0]["Price"] == "1.5e-09"
 
     @patch('finvizfinance.crypto.Crypto')
-    def test_get_crypto_performance_adds_wtd_alias_when_day_week_identical(self, mock_crypto_class):
-        """When day/week values are identical for all rows, add WTD alias and warning."""
+    def test_get_crypto_performance_drops_week_when_day_week_identical(self, mock_crypto_class):
+        """When day/week values are identical, drop unreliable week fields and warn."""
         from mtdata.services.finviz import get_crypto_performance
 
         mock_crypto = MagicMock()
         mock_df = pd.DataFrame([
-            {"Ticker": "BTCUSD", "Perf Day": -0.0242, "Perf Week": -0.0242},
-            {"Ticker": "ETHUSD", "Perf Day": -0.0310, "Perf Week": -0.0310},
+            {"Ticker": "BTCUSD", "Perf Day": -0.0242, "Perf Week": -0.0242, "Perf WTD": -0.0242},
+            {"Ticker": "ETHUSD", "Perf Day": -0.0310, "Perf Week": -0.0310, "Perf WTD": -0.0310},
         ])
         mock_crypto.performance.return_value = mock_df
         mock_crypto_class.return_value = mock_crypto
@@ -252,9 +252,12 @@ class TestFinvizService:
 
         assert result["success"] is True
         assert "warnings" in result
-        assert "Perf WTD" in result["coins"][0]
-        assert result["coins"][0]["Perf WTD"] == result["coins"][0]["Perf Week"]
-        assert result["coins"][1]["Perf WTD"] == result["coins"][1]["Perf Week"]
+        assert "identical 'Perf Day' and 'Perf Week'" in result["warnings"][0]
+        assert "Perf Day" in result["coins"][0]
+        assert "Perf Week" not in result["coins"][0]
+        assert "Perf WTD" not in result["coins"][0]
+        assert "Perf Week" not in result["coins"][1]
+        assert "Perf WTD" not in result["coins"][1]
 
     @patch('finvizfinance.crypto.Crypto')
     def test_get_crypto_performance_no_wtd_alias_when_values_differ(self, mock_crypto_class):
@@ -299,41 +302,41 @@ class TestFinvizService:
         response.raise_for_status.assert_called_once_with()
         response.close.assert_called_once_with()
 
-    @patch("finvizfinance.earnings.Earnings")
-    def test_get_earnings_calendar_success(self, mock_earnings_class):
-        """Test earnings calendar fetch."""
+    @patch("finvizfinance.screener.financial.Financial")
+    def test_get_earnings_calendar_success(self, mock_financial_class):
+        """Test earnings calendar fetch via Financial screener filter."""
         from mtdata.services.finviz import get_earnings_calendar
 
-        mock_earnings = MagicMock()
+        mock_screener = MagicMock()
         mock_df = pd.DataFrame(
             [
                 {"Ticker": "AAPL", "Earnings": "2026-01-10", "EPS Est": "2.10"},
                 {"Ticker": "MSFT", "Earnings": "2026-01-11", "EPS Est": "3.20"},
             ]
         )
-        mock_earnings.df = mock_df
-        mock_earnings_class.return_value = mock_earnings
+        mock_screener.screener_view.return_value = mock_df
+        mock_financial_class.return_value = mock_screener
 
         result = get_earnings_calendar(period="This Week", limit=10, page=1)
 
-        mock_earnings_class.assert_called_once_with(period="This Week")
+        mock_financial_class.assert_called_once_with()
+        mock_screener.set_filter.assert_called_once_with(
+            filters_dict={"Earnings Date": "This Week"}
+        )
+        mock_screener.screener_view.assert_called_once()
         assert result["success"] is True
         assert result["period"] == "This Week"
         assert result["count"] == 2
         assert len(result["earnings"]) == 2
 
-    @patch("finvizfinance.earnings.Earnings")
-    def test_get_earnings_calendar_invalid_period(self, mock_earnings_class):
+    def test_get_earnings_calendar_invalid_period(self):
         """Test earnings calendar with invalid period."""
         from mtdata.services.finviz import get_earnings_calendar
-
-        mock_earnings_class.side_effect = ValueError(
-            "Invalid period 'Bad'. Available period: ['This Week', 'Next Week']"
-        )
 
         result = get_earnings_calendar(period="Bad")
 
         assert "error" in result
+        assert "Invalid period" in result["error"]
 
     @patch("mtdata.services.finviz._fetch_finviz_economic_calendar_items")
     def test_get_economic_calendar_success(self, mock_fetch_items):
@@ -828,7 +831,7 @@ class TestFinvizTools:
         assert result["items"][0]["perf_day_pct"] == 0.91
 
     @patch("mtdata.core.finviz.get_crypto_performance")
-    def test_finviz_crypto_compact_prefers_perf_wtd_alias(self, mock_get_crypto):
+    def test_finviz_crypto_compact_maps_wtd_to_week_when_week_missing(self, mock_get_crypto):
         from mtdata.core.finviz import finviz_crypto
 
         mock_get_crypto.return_value = {
@@ -841,11 +844,9 @@ class TestFinvizTools:
                     "Name": "Bitcoin",
                     "Price": "90000",
                     "Perf Day": "2.5%",
-                    "Perf Week": "2.5%",
                     "Perf WTD": "2.5%",
                 }
             ],
-            "warnings": ["added Perf WTD alias"],
         }
 
         raw = getattr(finviz_crypto, "__wrapped__", finviz_crypto)
@@ -855,12 +856,17 @@ class TestFinvizTools:
             {
                 "symbol": "BTC",
                 "name": "Bitcoin",
-                "price": "90000",
+                "price": 90000.0,
+                "price_source": "finviz_delayed",
+                "data_delayed": True,
+                "delay_minutes_min": 15,
+                "delay_minutes_max": 20,
                 "perf_day_pct": 2.5,
-                "perf_wtd_pct": 2.5,
+                "perf_week_pct": 2.5,
+                "perf_week_basis": "week_to_date",
             }
         ]
-        assert "perf_week" not in result["items"][0]
+        assert "perf_wtd_pct" not in result["items"][0]
 
     @patch("mtdata.core.finviz.get_futures_performance")
     def test_finviz_futures_uses_items_with_snake_case_rows(self, mock_get_futures):
@@ -1306,6 +1312,10 @@ class TestFinvizTools:
         assert result["fundamentals"] == {
             "price": 270.0,
             "change_pct": 1.2,
+            "price_source": "finviz_delayed",
+            "data_delayed": True,
+            "delay_minutes_min": 15,
+            "delay_minutes_max": 20,
         }
         assert result["available_field_count"] == 4
         assert result["omitted_field_count"] == 2
@@ -1737,7 +1747,8 @@ class TestFinvizTools:
         assert result["success"] is False
         assert result["error_code"] == "finviz_screen_filters_invalid"
         assert result["operation"] == "finviz_screen"
-        assert result["details"] == {"received_type": "str"}
+        assert result["details"]["received_type"] == "str"
+        assert isinstance(result["details"].get("valid_filter_examples"), list)
         assert result["related_tools"] == ["finviz_filters_list"]
         assert "finviz_filters_list" in result["remediation"]
         assert isinstance(result.get("request_id"), str)
@@ -1755,7 +1766,8 @@ class TestFinvizTools:
         assert "Got: '[\"NASDAQ\"]'" in result["error"]
         assert result["success"] is False
         assert result["error_code"] == "finviz_screen_filters_invalid"
-        assert result["details"] == {"received_type": "str"}
+        assert result["details"]["received_type"] == "str"
+        assert isinstance(result["details"].get("valid_filter_examples"), list)
 
     def test_finviz_screen_invalid_shorthand_identifies_bad_token(self):
         from mtdata.core.finviz import finviz_screen
@@ -1830,6 +1842,10 @@ class TestFinvizTools:
                 "change_pct": 0.87,
                 "volume": 123456,
                 "pe_ratio": "28.5",
+                "price_source": "finviz_delayed",
+                "data_delayed": True,
+                "delay_minutes_min": 15,
+                "delay_minutes_max": 20,
             }
         ]
 
@@ -1882,11 +1898,15 @@ class TestFinvizTools:
                 "price": 298.21,
                 "change_pct": 0.87,
                 "volume": 123456,
-                "rsi_14": "45.1",
-                "sma20_distance_pct": "2.0%",
-                "sma50_distance_pct": "-1.2%",
+                "rsi_14": 45.1,
+                "sma20_distance_pct": 2.0,
+                "sma50_distance_pct": -1.2,
                 "atr_14": "3.4",
                 "beta": "1.2",
+                "price_source": "finviz_delayed",
+                "data_delayed": True,
+                "delay_minutes_min": 15,
+                "delay_minutes_max": 20,
             }
         ]
 
@@ -1931,6 +1951,10 @@ class TestFinvizTools:
                 "peg": "2.3",
                 "price_to_sales": "8.1",
                 "price_to_book": "36.2",
+                "price_source": "finviz_delayed",
+                "data_delayed": True,
+                "delay_minutes_min": 15,
+                "delay_minutes_max": 20,
             }
         ]
 

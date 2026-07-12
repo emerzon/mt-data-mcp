@@ -568,7 +568,8 @@ def test_forecast_generate_rounds_price_outputs_to_symbol_digits(monkeypatch):
             "horizon": kwargs["horizon"],
             "quantity": kwargs["quantity"],
             "forecast_time": ["t1", "t2"],
-            "forecast_price": [1.1731445723463942, 1.1731467944693543],
+            # Span more than one tick so path-flatness does not suppress direction.
+            "forecast_price": [1.1731445723463942, 1.1741467944693543],
             "last_price": 1.17266,
             "last_price_source": "candle_close",
             "digits": 5,
@@ -582,14 +583,14 @@ def test_forecast_generate_rounds_price_outputs_to_symbol_digits(monkeypatch):
         "direction_basis": "horizon_end",
         "direction_threshold_pct": 0.01,
         "first_step_delta": 0.00048,
-        "horizon_delta": 0.00049,
+        "horizon_delta": 0.00149,
         "first_step_delta_pct": 0.0409,
-        "horizon_delta_pct": 0.0418,
+        "horizon_delta_pct": 0.1271,
     }
     assert "forecast_price" not in out
     assert out["forecast"] == [
         {"time": "t1", "value": 1.17314},
-        {"time": "t2", "value": 1.17315},
+        {"time": "t2", "value": 1.17415},
     ]
     assert "series" not in out
 
@@ -1100,13 +1101,19 @@ def test_run_forecast_generate_routes_date_range_to_impl(monkeypatch):
 
     def fake_forecast_impl(**kwargs):
         captured.update(kwargs)
-        return {"success": True, "forecast_price": [1.0, 1.1]}
+        return {
+            "success": True,
+            "forecast_price": [1.0, 1.1],
+            "sigma_bar_return": 0.01,
+            "quantity": "volatility",
+        }
 
     result = forecast_use_cases.run_forecast_generate(
         ForecastGenerateRequest(
             symbol="EURUSD",
             start="2023-01-01",
             end="2023-03-31",
+            quantity="volatility",
         ),
         forecast_impl=fake_forecast_impl,
         resolve_sktime_forecaster=lambda _query: None,
@@ -2254,10 +2261,20 @@ def test_run_forecast_conformal_intervals_compact_omits_technical_metadata():
     )
 
     assert result["detail"] == "compact"
-    assert result["forecast_time"] == ["2026-05-29 21:00"]
-    assert result["forecast_price"] == [100.12346]
-    assert result["lower_price"] == [99.12346]
-    assert result["upper_price"] == [101.12346]
+    # Compact mode folds point/interval series into forecast rows and drops the
+    # parallel technical arrays/metadata fields.
+    assert "forecast_time" not in result
+    assert "forecast_price" not in result
+    assert "lower_price" not in result
+    assert "upper_price" not in result
+    assert result["forecast"] == [
+        {
+            "time": "2026-05-29T21:00Z",
+            "value": 100.12346,
+            "lower": 99.12346,
+            "upper": 101.12346,
+        }
+    ]
     assert result["conformal"] == {
         "ci_alpha": 0.1,
         "calibration_steps": 1,
@@ -2271,7 +2288,6 @@ def test_run_forecast_conformal_intervals_compact_omits_technical_metadata():
         "forecast_epoch",
         "forecast_anchor",
         "forecast_step_seconds",
-        "forecast",
         "params_used",
     ):
         assert key not in result
@@ -2991,7 +3007,14 @@ def test_forecast_tune_optuna_routing(monkeypatch):
 
     monkeypatch.setattr(tune_mod, "default_search_space", fake_default_search_space)
     out = raw_tune(request=ForecastTuneOptunaRequest(symbol="EURUSD", method="theta", search_space=None))
-    assert out == {"ok": True, "detail": "compact"}
+    assert out["ok"] is True
+    assert out["detail"] == "compact"
+    assert out["compute_intensity"] == "high"
+    assert out["compute_cost"] == {
+        "unit": "rolling_backtests",
+        "estimated": 200,
+        "drivers": "n_trials*steps*methods",
+    }
     assert captured["method"] == "theta"
     assert ss_calls["method"] == "theta"
     assert ss_calls["methods"] is None
@@ -3002,10 +3025,13 @@ def test_forecast_tune_optuna_routing(monkeypatch):
             symbol="EURUSD",
             method="theta",
             methods=["theta", "naive"],
-            search_space={"x": {"type": "int"}},
+            search_space={"x": {"type": "int", "min": 1, "max": 3}},
         )
     )
-    assert out == {"ok": True, "detail": "compact"}
+    assert out["ok"] is True
+    assert out["detail"] == "compact"
+    assert out["compute_intensity"] == "high"
+    assert "compute_cost" in out
     assert captured["method"] is None
 
     monkeypatch.setattr(cf, "_optuna_search_impl", lambda **kwargs: (_ for _ in ()).throw(RuntimeError("fail")))

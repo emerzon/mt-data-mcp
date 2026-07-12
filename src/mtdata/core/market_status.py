@@ -925,6 +925,7 @@ def _check_symbol_market_status(
         now_utc.weekday() == 6
         and (not is_probably_forex_symbol(symbol_name) or now_utc.hour < 22)
     )
+    tick_available = tick_status.get("tick_available") is True
     if (
         can_open is True
         and weekend_closed_now
@@ -935,6 +936,11 @@ def _check_symbol_market_status(
         can_open = False
         reason = "weekend"
     elif can_open is True and tick_freshness == "fresh":
+        open_state = "probably_open"
+    elif can_open is True and recent_schedule_allows_now and tick_available:
+        # Recent M1 candles show this hour is an active session (e.g. weekend-trading
+        # metals). Treat as open even when weekend freshness policy labels the tick
+        # as a closed-session snapshot rather than "fresh".
         open_state = "probably_open"
     elif can_open is True:
         open_state = "trade_mode_allows_opening"

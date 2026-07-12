@@ -73,12 +73,20 @@ _STUBS = {
     "sktime.forecasting.ets": _sktime_forecasting_ets,
 }
 
-_originals = {}
+_originals = {name: sys.modules.get(name) for name in _STUBS}
+# Capture whether real sktime was already importable before we inject stubs.
+_real_sktime_available = None
+try:
+    import importlib.util as _ilu
+
+    _real_sktime_available = _ilu.find_spec("sktime") is not None
+except Exception:
+    _real_sktime_available = False
+
 for name, mod in _STUBS.items():
-    _originals[name] = sys.modules.get(name)
     sys.modules[name] = mod
 
-# Patch _HAS_SKTIME before importing sktime module
+# Patch _HAS_SKTIME before importing sktime module helpers used by these tests.
 import mtdata.forecast.methods.sktime as _sktime_mod  # noqa: E402
 
 _orig_has_sktime = _sktime_mod._HAS_SKTIME
@@ -101,7 +109,9 @@ def _restore_sys_modules():
             sys.modules.pop(name, None)
         else:
             sys.modules[name] = orig
-    _sktime_mod._HAS_SKTIME = _orig_has_sktime
+    # Prefer the pre-stub real availability so later integration tests still see
+    # the installed package, not a leftover False from stub-only import time.
+    _sktime_mod._HAS_SKTIME = bool(_real_sktime_available or _orig_has_sktime)
 
 
 # ===========================================================================

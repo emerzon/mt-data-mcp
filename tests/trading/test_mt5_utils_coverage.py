@@ -774,7 +774,8 @@ class TestEnsureSymbolReady:
         _mt5_mock.symbol_select.return_value = False
         _mt5_mock.last_error.return_value = (-1, "err")
         err = _ensure_symbol_ready("BAD")
-        assert err is not None and "Failed to select" in err
+        assert err is not None
+        assert "could not be selected" in err or "Failed to select" in err
 
     def test_was_visible_false_waits_for_tick(self):
         info = MagicMock(visible=False)

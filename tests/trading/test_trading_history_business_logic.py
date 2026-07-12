@@ -96,7 +96,8 @@ def test_trade_history_deals_normalizes_time_to_utc_string() -> None:
     assert out["kind"] == "trade_history"
     assert out["history_kind"] == "deals"
     assert out["count"] == 1
-    assert out["items"][0]["time"] == _format_utc_seconds(
+    # Compact deals expose fill_time (not raw MT5 `time`).
+    assert out["items"][0]["fill_time"] == _format_utc_seconds(
         _mt5_epoch_to_utc(1700000000)
     )
     assert out["timezone"] == "UTC"
@@ -172,7 +173,9 @@ def test_trade_history_deals_accept_simplenamespace_rows() -> None:
     assert out["success"] is True
     assert out["count"] == 1
     assert out["items"][0]["ticket"] == 1
-    assert out["items"][0]["time"] == _format_utc_seconds(_mt5_epoch_to_utc(1700000000))
+    assert out["items"][0]["fill_time"] == _format_utc_seconds(
+        _mt5_epoch_to_utc(1700000000)
+    )
 
 
 def test_trade_history_orders_normalizes_setup_and_done_times() -> None:
@@ -190,10 +193,11 @@ def test_trade_history_orders_normalizes_setup_and_done_times() -> None:
     assert out["success"] is True
     assert out["history_kind"] == "orders"
     assert out["count"] == 1
-    assert out["items"][0]["time_setup"] == _format_utc_seconds(
+    # Compact orders expose placed_time/done_time (not raw time_setup/time_done).
+    assert out["items"][0]["placed_time"] == _format_utc_seconds(
         _mt5_epoch_to_utc(1700000000)
     )
-    assert out["items"][0]["time_done"] == _format_utc_seconds(
+    assert out["items"][0]["done_time"] == _format_utc_seconds(
         _mt5_epoch_to_utc(1700003600)
     )
     assert out["timezone"] == "UTC"
@@ -260,11 +264,13 @@ def test_trade_history_compact_omits_parallel_normalized_rows() -> None:
     row = out["items"][0]
     assert out["row_key"] == "items"
     assert row == {
-        "time": "2024-01-01 12:00:00",
+        "fill_time": "2024-01-01 12:00:00",
         "ticket": 11,
         "symbol": "EURUSD",
         "type": "Buy",
         "action": "close",
+        "deal_effect": "close",
+        "position_side": "short",
         "volume": 0.5,
         "price": 1.2345,
         "profit": -1.0,
@@ -301,6 +307,7 @@ def test_trade_history_full_detail_uses_normalized_deal_items() -> None:
             "volume": 0.5,
             "price": 1.2345,
             "action": "close",
+            "deal_effect": "close",
             "order": 22,
             "time": "2024-01-01 12:00:00",
             "time_msc": 1704110400000,
@@ -445,10 +452,12 @@ def test_trade_history_compact_humanized_column_style_renames_order_times() -> N
         ),
     )
 
-    assert out["items"][0]["Setup Time"] == "2024-01-01 12:00:00"
+    # Compact humanized orders rename placed_time/done_time (not raw setup fields).
+    assert out["items"][0]["Placed Time"] == "2024-01-01 12:00:00"
     assert out["items"][0]["Done Time"] == "2024-01-01 12:05:00"
     assert out["items"][0]["Initial Volume"] == 1.0
     assert "time_setup" not in out["items"][0]
+    assert "Setup Time" not in out["items"][0]
     assert "normalized_items" not in out
 
 
@@ -524,7 +533,8 @@ def test_trade_history_filters_orders_by_side_prefix() -> None:
     assert out["count"] == 1
     assert out["items"][0]["ticket"] == 12
     assert out["items"][0]["type"] == "Sell Stop"
-    assert "order_details" not in out["items"][0]
+    # Non-top-level labels (e.g. type_label) remain under order_details.
+    assert out["items"][0].get("order_details", {}).get("type_label") == "Sell Stop"
 
 
 def test_trade_history_deals_decodes_enum_codes_to_labels() -> None:
@@ -1307,6 +1317,7 @@ def test_trade_journal_analyze_standard_uses_lite_symbol_breakdown() -> None:
         "symbol",
         "closed_deals",
         "win_rate",
+        "win_rate_pct",
         "net_pnl",
         "expectancy",
     }

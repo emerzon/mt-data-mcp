@@ -248,12 +248,16 @@ def test_wait_event_tool_exposes_minimal_public_contract(monkeypatch) -> None:
     assert tuple(sig.parameters.keys()) == (
         "symbol",
         "timeframe",
+        "wait_next_bar",
         "watch_tick_count_spike",
+        "max_wait_seconds",
+        "poll_interval_seconds",
         "watch_for",
         "end_on",
         "detail",
         "json",
         "extras",
+        "fields",
     )
 
     raw = getattr(core_data.wait_event, "__wrapped__", core_data.wait_event)
@@ -549,6 +553,12 @@ def test_wait_event_tool_compacts_matched_event_by_default(monkeypatch) -> None:
 
     assert result["matched_event"] == {
         "type": "price_touch_level",
+        "watcher_type": "price_touch_level",
+        "trigger_reason": "price_touch_level, level=100.0, direction=up",
+        "criteria": {
+            "direction": "up",
+            "level": 100.0,
+        },
         "symbol": "BTCUSD",
         "observed": {
             "symbol": "BTCUSD",
@@ -615,6 +625,8 @@ def test_wait_event_tool_preserves_shared_account_identity_fields(monkeypatch) -
     assert result["order_ticket"] == 7001
     assert result["matched_event"] == {
         "type": "order_created",
+        "watcher_type": "order_created",
+        "trigger_reason": "order_created",
         "symbol": "EURUSD",
         "ticket": 7001,
         "order_ticket": 7001,

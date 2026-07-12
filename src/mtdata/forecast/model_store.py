@@ -38,6 +38,7 @@ Usage::
 
 from __future__ import annotations
 
+import errno
 import json
 import logging
 import os
@@ -565,7 +566,20 @@ class ModelStore:
 
     def _lock_path_for_model_dir(self, model_dir: Path) -> Path:
         safe_model_dir = self._resolve_within_root(model_dir)
-        relative = safe_model_dir.relative_to(self._root.resolve())
+        root = self._root.resolve()
+
+        def _strip_extended_prefix(value: Path) -> Path:
+            text = str(value)
+            if text.startswith("\\\\?\\"):
+                text = text[4:]
+            return Path(text)
+
+        # Windows may resolve one side with the \\?\ extended prefix and the
+        # other without; normalize before relative_to() so concurrent saves do
+        # not spuriously fail path containment checks.
+        relative = _strip_extended_prefix(safe_model_dir).relative_to(
+            _strip_extended_prefix(root)
+        )
         return self._resolve_within_root(
             self._lock_root() / relative.parent / f"{relative.name}.lock"
         )
@@ -627,6 +641,34 @@ class ModelStore:
             os.close(fd)
 
     @staticmethod
+    def _replace_with_retry(tmp_path: str, target: Path, *, attempts: int = 16) -> None:
+        """``os.replace`` with brief retries for Windows file-lock races."""
+        last_exc: Optional[OSError] = None
+        max_attempts = max(1, int(attempts))
+        for attempt in range(max_attempts):
+            try:
+                os.replace(tmp_path, str(target))
+                return
+            except PermissionError as exc:
+                # Antivirus / concurrent handle release can briefly deny replace on Windows.
+                last_exc = exc
+            except OSError as exc:
+                # Only retry transient sharing/permission failures.
+                if getattr(exc, "winerror", None) not in {5, 32} and exc.errno not in {
+                    getattr(errno, "EACCES", 13),
+                    getattr(errno, "EPERM", 1),
+                }:
+                    raise
+                last_exc = exc
+            if attempt + 1 >= max_attempts:
+                break
+            # Exponential-ish backoff capped at 50ms; total wait stays under ~0.5s.
+            time.sleep(min(0.05, 0.005 * (2 ** attempt)))
+        if last_exc is not None:
+            raise last_exc
+        raise PermissionError(f"Failed to replace {target}")
+
+    @staticmethod
     def _atomic_write_bytes(target: Path, data: bytes) -> None:
         """Write *data* atomically via temp file + ``os.replace``."""
         fd, tmp_path = tempfile.mkstemp(
@@ -636,7 +678,7 @@ class ModelStore:
             os.write(fd, data)
             os.close(fd)
             fd = -1
-            os.replace(tmp_path, str(target))
+            ModelStore._replace_with_retry(tmp_path, target)
         except BaseException:
             if fd >= 0:
                 os.close(fd)
@@ -656,7 +698,7 @@ class ModelStore:
             os.write(fd, text.encode("utf-8"))
             os.close(fd)
             fd = -1
-            os.replace(tmp_path, str(target))
+            ModelStore._replace_with_retry(tmp_path, target)
         except BaseException:
             if fd >= 0:
                 os.close(fd)

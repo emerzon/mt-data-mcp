@@ -450,7 +450,8 @@ class TestForecastVolatilityValidation:
         with _mock_vol_env():
             result = forecast_volatility("EURUSD", "H1", 1, method="bogus")
             assert "error" in result
-            assert "Invalid method" in result["error"]
+            assert "Invalid volatility method" in result["error"]
+            assert "bogus" in result["error"]
 
     def test_garch_without_arch_package(self):
         with _mock_vol_env():

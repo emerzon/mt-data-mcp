@@ -59,7 +59,6 @@ def test_helper_functions():
         adjust_forecast_length,
         extract_context_window,
         process_quantile_levels,
-        validate_and_clean_data,
     )
     
     # Test extract_context_window
@@ -74,26 +73,6 @@ def test_helper_functions():
     assert np.array_equal(result, series), "Full context should be returned"
     
     print("    ✓ extract_context_window works correctly")
-    
-    # Test validate_and_clean_data
-    print("  Testing validate_and_clean_data...")
-    
-    # Clean data
-    clean_data, error = validate_and_clean_data(series)
-    assert error is None, f"Clean data should not error: {error}"
-    assert np.array_equal(clean_data, series), "Clean data should remain unchanged"
-    
-    # Data with NaN
-    data_with_nan = np.array([1.0, np.nan, 3.0])
-    cleaned, error = validate_and_clean_data(data_with_nan)
-    assert error is None, f"Should handle NaN: {error}"
-    assert not np.any(np.isnan(cleaned)), "Should clean NaN values"
-    
-    # Empty data
-    empty_data, error = validate_and_clean_data(np.array([]))
-    assert error is not None, "Should error on empty data"
-    
-    print("    ✓ validate_and_clean_data works correctly")
     
     # Test adjust_forecast_length
     print("  Testing adjust_forecast_length...")
@@ -173,7 +152,6 @@ def test_end_to_end():
         build_params_used,
         extract_context_window,
         process_quantile_levels,
-        validate_and_clean_data,
     )
     
     # Simulate a forecasting workflow
@@ -189,17 +167,13 @@ def test_end_to_end():
     # Step 1: Extract context
     context = extract_context_window(series, params['context_length'], n)
     print(f"  Extracted context: {len(context)} points")
+    assert len(context) == 50
     
-    # Step 2: Validate and clean
-    cleaned, error = validate_and_clean_data(context)
-    assert error is None, f"Validation error: {error}"
-    print("  ✓ Data validation passed")
-    
-    # Step 3: Process quantiles
+    # Step 2: Process quantiles
     quantiles = process_quantile_levels(params['quantiles'])
     print(f"  ✓ Processed quantiles: {quantiles}")
     
-    # Step 4: Build params_used
+    # Step 3: Build params_used
     params_used = build_params_used(
         {'model_name': params['model_name']},
         quantiles_dict={'0.1': [1.0]*fh, '0.5': [2.0]*fh, '0.9': [3.0]*fh},

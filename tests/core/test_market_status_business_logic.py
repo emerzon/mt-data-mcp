@@ -123,10 +123,20 @@ def test_market_status_symbol_mode_reports_heuristic_status(monkeypatch) -> None
             assert symbol == "EURUSD"
             return SimpleNamespace(time=now_epoch, bid=1.1, ask=1.2)
 
-    monkeypatch.setattr(market_status_mod, "datetime", FixedDateTime)
-    monkeypatch.setattr(market_status_mod, "create_mt5_gateway", lambda **kwargs: Gateway())
+    class GatewayWithEmptySchedule(Gateway):
+        TIMEFRAME_M1 = 1
 
-    result = raw(symbol="eurusd")
+        def copy_rates_range(self, symbol: str, timeframe: int, start, end):
+            return []
+
+    monkeypatch.setattr(market_status_mod, "datetime", FixedDateTime)
+    monkeypatch.setattr(
+        market_status_mod,
+        "create_mt5_gateway",
+        lambda **kwargs: GatewayWithEmptySchedule(),
+    )
+
+    result = raw(symbol="eurusd", timezone_display="utc")
 
     assert result["mode"] == "symbol"
     assert result["symbol"] == "EURUSD"

@@ -84,8 +84,13 @@ def _unwrap_mcp(result):
     return str(result)
 
 
-def _tick(bid=1.10000, ask=1.10020):
-    return SimpleNamespace(bid=bid, ask=ask)
+def _tick(bid=1.10000, ask=1.10020, time=None, time_msc=None):
+    # Close paths require a usable tick timestamp for freshness checks.
+    import time as _time
+
+    now = int(_time.time()) if time is None else int(time)
+    msc = int(now * 1000) if time_msc is None else int(time_msc)
+    return SimpleNamespace(bid=bid, ask=ask, time=now, time_msc=msc)
 
 
 def _order_result(retcode=10009, deal=1, order=1, volume=0.01, price=1.1,
@@ -823,7 +828,7 @@ class TestClosePositions:
             retcode=10009, deal=500, order=600, volume=0.1,
             price=1.05000, comment="close", profit=10.0,
         )
-        mt5.symbol_info_tick.return_value = SimpleNamespace(bid=1.05000, ask=1.05010)
+        mt5.symbol_info_tick.return_value = _tick(bid=1.05000, ask=1.05010)
 
         gw = create_trading_gateway(
             adapter=mt5, include_retcode_name=True,
@@ -865,8 +870,8 @@ class TestClosePositions:
             ),
         ]
         mt5.symbol_info_tick.side_effect = [
-            SimpleNamespace(bid=1.05000, ask=1.05010),
-            SimpleNamespace(bid=1.04990, ask=1.05000),
+            _tick(bid=1.05000, ask=1.05010),
+            _tick(bid=1.04990, ask=1.05000),
         ]
 
         gw = create_trading_gateway(

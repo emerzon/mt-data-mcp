@@ -137,23 +137,28 @@ def test_screen_stocks_uses_bounded_screener_view(monkeypatch):
     assert int(FakeOverview.last_kwargs.get("verbose")) == 0
 
 
-def test_get_earnings_calendar_uses_earnings_contract_with_pagination(monkeypatch):
-    class FakeEarnings:
-        last_period = None
+def test_get_earnings_calendar_uses_financial_screener_with_pagination(monkeypatch):
+    class FakeFinancial:
+        last_filters = None
+        last_kwargs = None
 
-        def __init__(self, period):
-            FakeEarnings.last_period = period
-            self.df = pd.DataFrame(
+        def set_filter(self, filters_dict=None, **kwargs):
+            FakeFinancial.last_filters = filters_dict
+
+        def screener_view(self, **kwargs):
+            FakeFinancial.last_kwargs = kwargs
+            return pd.DataFrame(
                 {
                     "Ticker": [f"E{i}" for i in range(120)],
                     "Earnings": ["Mon"] * 120,
                 }
             )
 
-    earnings_mod = types.ModuleType("finvizfinance.earnings")
-    earnings_mod.Earnings = FakeEarnings
-    monkeypatch.setitem(sys.modules, "finvizfinance.earnings", earnings_mod)
+    financial_mod = types.ModuleType("finvizfinance.screener.financial")
+    financial_mod.Financial = FakeFinancial
+    monkeypatch.setitem(sys.modules, "finvizfinance.screener.financial", financial_mod)
     monkeypatch.setattr(svc, "_apply_finvizfinance_timeout_patch", lambda: None)
+    monkeypatch.setattr(svc, "_FINVIZ_SCREENER_MAX_ROWS", 120)
     monkeypatch.setattr(svc, "_FINVIZ_PAGE_LIMIT_MAX", 500)
 
     result = svc.get_earnings_calendar(period="This Week", limit=50, page=3)
@@ -162,8 +167,11 @@ def test_get_earnings_calendar_uses_earnings_contract_with_pagination(monkeypatc
     assert result.get("count") == 20
     assert result.get("page") == 3
     assert result.get("pages") == 3
-    assert result.get("truncated") is False
-    assert FakeEarnings.last_period == "This Week"
+    assert result.get("truncated") is True
+    assert FakeFinancial.last_filters == {"Earnings Date": "This Week"}
+    assert FakeFinancial.last_kwargs is not None
+    assert int(FakeFinancial.last_kwargs.get("limit")) == 120
+    assert FakeFinancial.last_kwargs.get("order") == "Earnings Date"
 
 
 # ---------------------------------------------------------------------------

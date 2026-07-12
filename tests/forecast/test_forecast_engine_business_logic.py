@@ -855,18 +855,20 @@ def test_forecast_engine_warns_when_ci_requested_but_method_has_no_intervals(mon
     assert "ci_requested" not in out
     assert "ci_alpha_requested" not in out
     assert "warnings" in out
-    assert "Point forecast only" in out["warnings"][0]
-    assert "EURUSD" in out["warnings"][0]
-    assert "--timeframe H1" in out["warnings"][0]
-    assert " SYMBOL " not in out["warnings"][0]
+    assert "point forecast only" in out["warnings"][0].lower()
+    assert "ci_alpha=0.1" in out["warnings"][0]
+    assert "naive" in out["warnings"][0]
+    assert "forecast_conformal_intervals" in out["warnings"][0]
     assert "lower_price" not in out
     assert "upper_price" not in out
 
 
 def test_forecast_engine_injects_context_for_analog(monkeypatch):
+    from mtdata.forecast.methods.analog import AnalogMethod
+
     captured = {}
 
-    class CaptureForecaster(fe._analog_methods.AnalogMethod):
+    class CaptureForecaster(AnalogMethod):
         def forecast(self, series, horizon, seasonality, params, exog_future=None, **kwargs):
             captured["params"] = dict(params)
             captured["kwargs"] = dict(kwargs)
@@ -911,9 +913,11 @@ def test_forecast_engine_injects_context_for_analog(monkeypatch):
 
 
 def test_forecast_engine_fetches_sufficient_history_for_analog(monkeypatch):
+    from mtdata.forecast.methods.analog import AnalogMethod
+
     captured = {}
 
-    class CaptureForecaster(fe._analog_methods.AnalogMethod):
+    class CaptureForecaster(AnalogMethod):
         def forecast(self, series, horizon, seasonality, params, exog_future=None, **kwargs):
             return ForecastResult(
                 forecast=np.array([float(series.iloc[-1])], dtype=float),
@@ -962,9 +966,11 @@ def test_forecast_engine_fetches_sufficient_history_for_analog(monkeypatch):
 
 
 def test_forecast_engine_injects_denoise_context_for_analog(monkeypatch):
+    from mtdata.forecast.methods.analog import AnalogMethod
+
     captured = {}
 
-    class CaptureForecaster(fe._analog_methods.AnalogMethod):
+    class CaptureForecaster(AnalogMethod):
         def forecast(self, series, horizon, seasonality, params, exog_future=None, **kwargs):
             captured["params"] = dict(params)
             captured["kwargs"] = dict(kwargs)

@@ -149,14 +149,28 @@ class TestSymbolsListNoSearch:
 
         res = fn(search_term=None, limit=25, detail="summary")
 
-        assert res == {
-            "success": True,
-            "list_mode": "symbols",
-            "count": 2,
-            "search_term": None,
-            "search_mode": "auto",
-            "limit": 25,
-        }
+        assert res["success"] is True
+        assert res["list_mode"] == "symbols"
+        assert res["count"] == 2
+        assert res["search_term"] is None
+        assert res["search_mode"] == "auto"
+        assert res["limit"] == 25
+        assert res["universe"] == "visible"
+        assert res["visible_count"] == 2
+        assert res["broker_symbol_count"] == 2
+        assert res["sample_count"] == 2
+        assert res["sample"] == [
+            {
+                "symbol": "EURUSD",
+                "group": "Forex\\Majors",
+                "description": "Euro vs US Dollar",
+            },
+            {
+                "symbol": "GBPUSD",
+                "group": "Forex\\Majors",
+                "description": "Euro vs US Dollar",
+            },
+        ]
 
     @patch(_NORM_LIMIT, return_value=25)
     @patch(_TABLE, side_effect=lambda h, r: {"headers": h, "data": r})
@@ -218,13 +232,20 @@ class TestSymbolsListSearch:
             fn = _get_symbols_list()
             res = fn(search_term="AAPL", limit=25)
 
-        assert res["headers"] == ["symbol", "group", "description", "session_type"]
+        assert res["headers"] == [
+            "symbol",
+            "group",
+            "description",
+            "match_reason",
+            "session_type",
+        ]
         assert res["data"] == [
-            ["AAPL.NAS", "Stock CFD's\\Nasdaq", "Apple Inc CFD", "regular"],
+            ["AAPL.NAS", "Stock CFD's\\Nasdaq", "Apple Inc CFD", "name_prefix", "regular"],
             [
                 "AAPL.NAS-24",
                 "Stock CFD's\\Nasdaq\\24HR NAS",
                 "Apple Inc 24/5 CFD",
+                "name_prefix",
                 "extended_24h",
             ],
         ]
@@ -749,10 +770,11 @@ class TestSymbolsDescribe:
         assert "n_fields" not in sd
         assert "n_sequence_fields" not in sd
 
+    @patch("mtdata.core.symbols._resolve_client_tz", return_value=None)
     @patch("mtdata.core.symbols.time.time", return_value=1700000301.0)
     @patch(f"{_MT5}.symbol_info")
-    def test_default_describe_uses_compact_detail(self, mock_info, mock_time):
-        del mock_time
+    def test_default_describe_uses_compact_detail(self, mock_info, mock_time, mock_tz):
+        del mock_time, mock_tz
         info = MagicMock()
         info.__dir__ = lambda self: ["name", "time", "digits", "point"]
         info.name = "EURUSD"
@@ -777,7 +799,8 @@ class TestSymbolsDescribe:
         assert "quote_age_seconds" not in sd
         assert "time_epoch" not in sd
 
-    @patch("mtdata.core.symbols.time.time", return_value=1779656400.0)
+    # Sunday 20:00 UTC is still within standard weekend closure; 21:00 is market open.
+    @patch("mtdata.core.symbols.time.time", return_value=1779652800.0)
     @patch(f"{_MT5}.symbol_info")
     def test_describe_treats_weekend_gap_as_closed_market(self, mock_info, mock_time):
         del mock_time

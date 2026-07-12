@@ -236,8 +236,9 @@ class TestAnnualizationCadence:
             )
         r = result["results"]["naive"]
         if "metrics" in r:
-            # trades_per_year should reflect spacing=30, not horizon=12
-            expected_tpy = (252.0 * 24.0) / 30.0
+            # trades_per_year should reflect spacing=30, not horizon=12.
+            # EURUSD uses the forex calendar (260 sessions/year), not equity 252.
+            expected_tpy = (260.0 * 24.0) / 30.0
             assert r["metrics"]["trades_per_year"] == pytest.approx(expected_tpy, rel=0.01)
 
     def test_metrics_sharpe_scales_with_cadence(self):

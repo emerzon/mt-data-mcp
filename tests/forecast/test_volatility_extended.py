@@ -199,12 +199,13 @@ class TestParamsParsing:
             assert r.get("success") is True
 
     def test_brace_colon_trailing_no_value(self):
-        """Line 375: key: with no following token → p[key]=''."""
+        """Unknown brace keys are rejected by EWMA allow-list validation."""
         with _mock_env():
-            # Use a key that won't break ewma param parsing
             r = forecast_volatility("EURUSD", "H1", 1, method="ewma",
                                     params="{extra:}")
-            assert r.get("success") is True
+            assert "error" in r
+            assert "Unknown EWMA parameter" in r["error"]
+            assert "extra" in r["error"]
 
     def test_brace_stray_token(self):
         """Line 378: token without = or trailing colon."""
@@ -221,11 +222,13 @@ class TestParamsParsing:
             assert r.get("success") is True
 
     def test_brace_mixed_formats(self):
-        """Lines 363-378: mixed =, colon, stray, comma."""
+        """Mixed brace tokens: valid lookback accepted parsing, unknown keys rejected."""
         with _mock_env():
             r = forecast_volatility("EURUSD", "H1", 1, method="ewma",
                                     params="{lookback=300, extra: 5, junk}")
-            assert r.get("success") is True
+            assert "error" in r
+            assert "Unknown EWMA parameter" in r["error"]
+            assert "extra" in r["error"]
 
     def test_comma_separated_kv_pairs_without_spaces(self):
         with _mock_env():
@@ -234,7 +237,7 @@ class TestParamsParsing:
                 "H1",
                 1,
                 method="ewma",
-                params="lookback=300,lambda=0.9",
+                params="lookback=300,lambda_=0.9",
             )
             assert r.get("success") is True
             assert r["params_used"]["lookback"] == 300
@@ -661,7 +664,8 @@ class TestHarRvBlock:
             assert r.get("success") is True
             assert "sigma_bar_return" in r
             assert "params_used" in r
-            expected_bpy = _bars_per_year("H1")
+            # Forex symbols annualize with the 260-weekday FX calendar.
+            expected_bpy = _bars_per_year("H1", "EURUSD")
             assert r["sigma_annual_return"] == pytest.approx(r["sigma_bar_return"] * math.sqrt(expected_bpy))
             assert r["horizon_sigma_annual"] == pytest.approx(
                 r["horizon_sigma_return"] * math.sqrt(expected_bpy / 5)

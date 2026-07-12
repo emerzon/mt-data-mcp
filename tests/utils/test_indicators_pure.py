@@ -252,10 +252,13 @@ class TestParseTiSpecs:
             "pta",
             type("PtaStub", (), {"rsi": staticmethod(broken_indicator)})(),
         )
+        # Availability is cached against the module-level pta object; clear so the
+        # stubbed rsi is visible to unknown-indicator checks.
+        indicators_mod._is_available_ta_indicator.cache_clear()
 
         with pytest.raises(
             ValueError,
-            match=r"Indicator 'rsi' failed with parameters length: invalid calculation",
+            match=r"Indicator 'rsi' failed with parameters close, length: invalid calculation",
         ):
             _apply_ta_indicators(_make_ohlcv_df(20), "rsi(10)")
 
@@ -352,12 +355,12 @@ class TestEstimateWarmupBars:
 # 2. mtdata.core.indicators  (canonical utility imports)
 # ===================================================================
 class TestCoreIndicatorsWrappers:
-    def test_try_number_delegation(self):
-        """core.indicators._try_number uses the canonical indicators utility."""
-        from mtdata.core.indicators import _try_number as core_try
-        assert core_try("42") == 42
-        assert core_try("3.14") == pytest.approx(3.14)
-        assert core_try("bad") is None
+    def test_try_number_lives_in_utils_indicators(self):
+        """Numeric parsing for indicator args lives in utils.indicators."""
+        from mtdata.utils.indicators import _try_number as util_try
+        assert util_try("42") == 42
+        assert util_try("3.14") == pytest.approx(3.14)
+        assert util_try("bad") is None
 
     def test_clean_help_text_delegation(self):
         """core.indicators._clean_help_text uses the canonical indicators utility."""
@@ -489,17 +492,29 @@ Values above 70 often indicate overbought conditions.
         standard = raw_describe("rsi", detail="standard")
 
         assert compact["detail"] == "compact"
-        assert compact["indicator"] == {
-            "name": "rsi",
-            "category": "momentum",
-            "description": "Relative Strength Index",
-            "params": [{"name": "length", "default": 14}, {"name": "scalar"}],
-        }
-        assert "documentation" not in compact["indicator"]
+        indicator = compact["indicator"]
+        assert indicator["name"] == "rsi"
+        assert indicator["category"] == "momentum"
+        assert indicator["description"] == "Relative Strength Index"
+        assert indicator["params"] == [
+            {"name": "length", "default": 14},
+            {"name": "scalar"},
+        ]
+        assert indicator["interpretation"] == (
+            "Values above 70 often indicate overbought conditions."
+        )
+        assert indicator["see_also"] == ["stochrsi", "tsi", "mfi"]
+        assert indicator["trading_context"]["common_use"] == (
+            "overbought/oversold, momentum reversal, and divergence checks"
+        )
+        assert "compact_spec" in indicator["usage"]
+        assert "documentation" not in indicator
         assert standard["detail"] == "standard"
         params = {p["name"]: p for p in standard["indicator"]["params"]}
         assert params["length"]["description"] == "Window length."
         assert "documentation" not in standard["indicator"]
+        assert "trading_context" in standard["indicator"]
+        assert "usage" in standard["indicator"]
 
     def test_indicators_describe_logs_finish_event(self, monkeypatch, caplog):
         from mtdata.core import indicators as core_indicators

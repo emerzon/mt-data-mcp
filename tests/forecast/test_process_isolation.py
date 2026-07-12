@@ -137,7 +137,7 @@ def test_direct_payload_dispatch_preserves_forecast_list_pagination(monkeypatch)
             "detail": "compact",
             "limit": 5,
             "offset": 10,
-            "all": True,
+            "profile": "all",
             "search_term": "theta",
         },
     )
@@ -145,7 +145,7 @@ def test_direct_payload_dispatch_preserves_forecast_list_pagination(monkeypatch)
     assert result == {"success": True}
     assert captured["limit"] == 5
     assert captured["offset"] == 10
-    assert captured["include_all"] is True
+    assert captured["profile"] == "all"
     assert captured["search"] == "theta"
 
 

@@ -200,7 +200,7 @@ class TestNormalizeGroupBy:
 
 def test_temporal_analyze_group_by_literal_exposes_canonical_modes_only():
     annotation = inspect.signature(_raw_temporal_analyze).parameters["group_by"].annotation
-    assert set(get_args(annotation)) == {"dow", "hour", "month", "all"}
+    assert set(get_args(annotation)) == {"dow", "hour", "month", "session", "all"}
 
 
 def test_temporal_analyze_signature_exposes_limit_offset():
@@ -724,7 +724,12 @@ class TestTemporalAnalyze:
             "Fri",
         ]
         assert r["bars"] == 240
-        assert r["filters"]["min_bars"] == {"value": 12, "auto": True}
+        assert r["filters"]["min_bars"] == {
+            "value": 12,
+            "auto": True,
+            "source": "auto",
+            "purpose": "exclude grouped rows below this sample size",
+        }
         assert r["excluded_groups"] == [
             {
                 "group": 7,
@@ -782,7 +787,12 @@ class TestTemporalAnalyze:
         )
 
         assert r.get("success") is True
-        assert [item["dimension"] for item in r["groups"]] == ["dow", "hour", "month"]
+        assert [item["dimension"] for item in r["groups"]] == [
+            "dow",
+            "hour",
+            "month",
+            "session",
+        ]
         assert all(len(item["breakdown"]) == 1 for item in r["groups"])
         assert r["groups"][0]["breakdown"][0]["group_label"] == "Tue"
         assert r["groups"][0]["total_count"] == 7
@@ -840,7 +850,12 @@ class TestTemporalAnalyze:
         assert r.get("success") is True
         assert r["group_by"] == "all"
         assert "overall" in r
-        assert [group["dimension"] for group in r["groups"]] == ["dow", "hour", "month"]
+        assert [group["dimension"] for group in r["groups"]] == [
+            "dow",
+            "hour",
+            "month",
+            "session",
+        ]
         assert all("breakdown" in group for group in r["groups"])
         assert r["groups"][0]["breakdown"][0]["group"] == 1
         assert r["groups"][0]["breakdown"][0]["group_label"] == "Mon"
@@ -848,6 +863,8 @@ class TestTemporalAnalyze:
         assert r["groups"][1]["breakdown"][0]["group_label"] == "00:00"
         assert r["groups"][2]["breakdown"][0]["group"] == 1
         assert r["groups"][2]["breakdown"][0]["group_label"] == "Jan"
+        assert isinstance(r["groups"][3]["breakdown"][0]["group"], str)
+        assert r["groups"][3]["breakdown"][0]["group_label"]
 
     def test_group_by_all_standard_detail_sets_dimension_best_rows(self):
         from mtdata.core.temporal import _standard_temporal_payload
@@ -892,11 +909,22 @@ class TestTemporalAnalyze:
 
         assert r.get("success") is True
         assert "overall" not in r
-        assert [group["dimension"] for group in r["groups"]] == ["dow", "hour", "month"]
-        assert "avg_range" not in r["groups"][0]["breakdown"][0]
-        assert "group" not in r["groups"][0]["breakdown"][0]
-        assert "group" not in r["best"]["dow"]
-        assert set(r["best"]) == {"dow", "hour", "month"}
+        # Compact flattens multi-dimension groups into rows tagged by dimension.
+        dims = {group["dimension"] for group in r["groups"]}
+        assert dims == {"dow", "hour", "month", "session"}
+        assert all("breakdown" not in group for group in r["groups"])
+        assert "avg_range" not in r["groups"][0]
+        assert "group_label" in r["groups"][0]
+        assert "win_rate_pct" in r["groups"][0]
+        assert "win_rate" not in r["groups"][0]
+        assert isinstance(r["best"], list)
+        assert {row["dimension"] for row in r["best"]} == {
+            "dow",
+            "hour",
+            "month",
+            "session",
+        }
+        assert all("group_label" in row for row in r["best"])
 
     @_apply_analyze_patches
     def test_filter_day_of_week(self, mock_fetch, *_):

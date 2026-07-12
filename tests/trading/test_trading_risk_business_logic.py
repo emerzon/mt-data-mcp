@@ -326,7 +326,9 @@ def test_trade_risk_analyze_marks_position_sizing_incomplete_without_required_in
     assert "Portfolio risk analysis completed" in out["position_sizing"]["message"]
     assert "--desired-risk-pct" in out["position_sizing"]["message"]
     assert "desired_risk_pct" not in out["position_sizing"]["message"]
-    assert "note" not in out["position_sizing"]
+    # Compact missing-inputs payload keeps a short note, not the full required_for_sizing list.
+    assert "note" in out["position_sizing"]
+    assert "desired-risk-pct" in out["position_sizing"]["note"]
     assert "required_for_sizing" not in out["position_sizing"]
 
 
@@ -846,6 +848,7 @@ def test_run_trade_risk_analyze_logs_finish_event(caplog) -> None:
         ensure_connection=lambda: None,
         account_info=lambda: SimpleNamespace(equity=1000.0, currency="USD"),
         positions_get=lambda symbol=None: [],
+        orders_get=lambda symbol=None, ticket=None: [],
     )
 
     with caplog.at_level("DEBUG", logger="mtdata.core.trading.use_cases"):
@@ -895,6 +898,7 @@ def test_run_trade_risk_analyze_uses_gateway_position_type_constants() -> None:
                 tp=120.0,
             )
         ],
+        orders_get=lambda symbol=None, ticket=None: [],
         symbol_info=lambda symbol: _make_symbol_info(),
     )
 
@@ -938,6 +942,7 @@ def test_run_trade_risk_analyze_caches_symbol_info_per_symbol() -> None:
                 tp=111.0,
             ),
         ],
+        orders_get=lambda symbol=None, ticket=None: [],
         symbol_info=_symbol_info,
     )
 
@@ -1145,6 +1150,7 @@ def test_trade_risk_analyze_preserves_quantified_risk_level_with_unlimited_posit
                 tp=0.0,
             ),
         ],
+        orders_get=lambda symbol=None, ticket=None: [],
         symbol_info=lambda symbol: _make_symbol_info(),
     )
 
