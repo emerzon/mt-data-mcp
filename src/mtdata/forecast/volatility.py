@@ -442,7 +442,8 @@ def _ewma_param_explanations(lambda_source: str) -> Dict[str, str]:
     if lambda_source == "halflife":
         out["halflife"] = (
             "Half-life in bars used to derive decay_factor "
-            "(decay_factor = 1 - ln(2) / halflife in this implementation)."
+            "(decay_factor = exp(-ln(2) / halflife); for halflife=22, "
+            "decay_factor is approximately 0.969)."
         )
     return out
 
