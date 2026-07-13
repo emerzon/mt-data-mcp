@@ -273,11 +273,6 @@ def _build_triple_barrier_outputs(
             hold.append(sl_offset)
             tp_times.append(None)
             sl_times.append(_format_time_minimal(times[idx + sl_offset]))
-        else:
-            labels.append(0)
-            hold.append(min(tp_offset, sl_offset))
-            tp_times.append(_format_time_minimal(times[idx + tp_offset]))
-            sl_times.append(_format_time_minimal(times[idx + sl_offset]))
         entries.append(_format_time_minimal(times[idx]))
 
     return (
