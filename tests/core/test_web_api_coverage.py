@@ -1526,7 +1526,10 @@ class TestGetSupportResistance:
         })
 
         with patch("mtdata.core.web_api._fetch_history_impl", return_value=frame) as mock_fetch:
-            resp = _client.get("/api/support-resistance", params={"symbol": "EURUSD"})
+            resp = _client.get(
+                "/api/support-resistance",
+                params={"symbol": "EURUSD", "min_touches": 1},
+            )
 
         assert resp.status_code == 200
         body = resp.json()

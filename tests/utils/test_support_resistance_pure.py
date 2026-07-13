@@ -672,7 +672,7 @@ def test_no_extrema_returns_empty_levels():
     assert result["resistances"] == []
 
 
-def test_falls_back_to_best_cluster_when_touch_requirement_is_strict():
+def test_strict_touch_requirement_returns_no_unqualified_clusters():
     result = compute_support_resistance_levels(
         _weighted_supports_frame(),
         min_touches=5,
@@ -681,7 +681,9 @@ def test_falls_back_to_best_cluster_when_touch_requirement_is_strict():
         reaction_bars=4,
     )
 
-    assert len(result["levels"]) == 1
+    assert result["levels"] == []
+    assert result["supports"] == []
+    assert result["resistances"] == []
 
 
 def test_max_distance_filter_hides_far_levels_but_preserves_coverage_gap_metadata():

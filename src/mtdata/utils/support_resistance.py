@@ -2191,16 +2191,6 @@ def merge_support_resistance_results(  # noqa: C901
                 cluster.setdefault("merge_signatures", []).append(merge_signature)
 
     usable_clusters = [cluster for cluster in clusters if int(cluster.get("episodes", cluster.get("touches", 0))) >= max(1, int(min_touches))]
-    if not usable_clusters and clusters:
-        usable_clusters = sorted(
-            clusters,
-            key=lambda cluster: (
-                float(cluster.get("score", 0.0)),
-                int(cluster.get("episodes", cluster.get("touches", 0))),
-                int(cluster.get("touches", 0)),
-            ),
-            reverse=True,
-        )[:1]
 
     current_price = _pick_first_current_price(results)
     formatted_levels: List[Dict[str, Any]] = []
@@ -2737,17 +2727,6 @@ def compute_support_resistance_levels(
             tolerance_pct=effective_tolerance_value,
         )
     usable_clusters = [cluster for cluster in clusters if int(cluster.get("episodes", cluster["touches"])) >= min_touches_value]
-    if not usable_clusters and clusters:
-        usable_clusters = sorted(
-            clusters,
-            key=lambda cluster: (
-                float(cluster.get("score", 0.0)),
-                int(cluster.get("episodes", cluster.get("touches", 0))),
-                int(cluster.get("touches", 0)),
-                int(cluster.get("last_index", -1)),
-            ),
-            reverse=True,
-        )[:1]
 
     formatted_levels = [
         _format_level(
