@@ -866,6 +866,47 @@ class TestTemporalAnalyze:
         assert isinstance(r["groups"][3]["breakdown"][0]["group"], str)
         assert r["groups"][3]["breakdown"][0]["group_label"]
 
+    @_apply_analyze_patches
+    def test_group_by_all_applies_min_bars_to_each_breakdown(self, mock_fetch, *_):
+        r = self._call(
+            mock_fetch,
+            rates=_make_weekday_heavy_rates(),
+            group_by="all",
+            min_bars=12,
+        )
+
+        assert r.get("success") is True
+        by_dimension = {item["dimension"]: item["breakdown"] for item in r["groups"]}
+        assert "Sun" not in {
+            row["group_label"] for row in by_dimension["dow"]
+        }
+        assert all(
+            int(row["bars"]) >= 12
+            for breakdown in by_dimension.values()
+            for row in breakdown
+        )
+        assert r["min_bars_applied"] == 12
+        assert r["groups_excluded"] == len(r["excluded_groups"])
+        assert any(
+            row["dimension"] == "dow" and row["group_label"] == "Sun"
+            for row in r["excluded_groups"]
+        )
+
+    @_apply_analyze_patches
+    def test_group_by_all_auto_filters_only_sparse_dow_groups(self, mock_fetch, *_):
+        r = self._call(
+            mock_fetch,
+            rates=_make_weekday_heavy_rates(),
+            group_by="all",
+        )
+
+        by_dimension = {item["dimension"]: item["breakdown"] for item in r["groups"]}
+        assert "Sun" not in {
+            row["group_label"] for row in by_dimension["dow"]
+        }
+        assert r["filters"]["min_bars"]["auto"] is True
+        assert all(row["dimension"] == "dow" for row in r["excluded_groups"])
+
     def test_group_by_all_standard_detail_sets_dimension_best_rows(self):
         from mtdata.core.temporal import _standard_temporal_payload
 

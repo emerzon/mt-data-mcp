@@ -38,6 +38,7 @@ mtdata-cli temporal_analyze EURUSD --timeframe D1 --group-by month --lookback 10
 | `--month` | (optional) | Filter to a specific month (1–12 or name, e.g., `Jan`, `September`) |
 | `--time-range` | (optional) | Filter by time window `HH:MM-HH:MM` using a half-open interval `[start, end)` (wraps midnight, e.g., `22:00-02:00`) |
 | `--return-mode` | `pct` | Return calculation: `pct` (percentage) or `log` (logarithmic) |
+| `--min-bars` | auto for DOW | Exclude grouped rows below this sample count. Explicit values apply to every breakdown under `--group-by all`; automatic filtering applies to its DOW breakdown. |
 
 ---
 
@@ -93,6 +94,8 @@ mtdata-cli temporal_analyze EURUSD --timeframe D1 --group-by month --lookback 20
 Returns day-of-week, hour, month, and session breakdowns in one call. With
 `--detail standard` or `--detail full`, the response also includes an
 `overall` block containing aggregate statistics across all analyzed bars.
+An explicit `--min-bars` floor is applied independently to each breakdown;
+excluded rows include their dimension in `excluded_groups`.
 
 ```bash
 mtdata-cli temporal_analyze EURUSD --group-by all --detail standard --json

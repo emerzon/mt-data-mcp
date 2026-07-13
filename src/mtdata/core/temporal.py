@@ -1256,10 +1256,7 @@ def temporal_analyze(  # noqa: C901
                         )
             elif group_norm == "all":
                 for dimension in ("dow", "hour", "month", "session"):
-                    breakdown = [
-                        {key: value for key, value in row.items() if key != "_group_key"}
-                        for row in _groups_for_dimension(dimension)
-                    ]
+                    breakdown = _groups_for_dimension(dimension)
                     if breakdown:
                         grouped_dimensions.append(
                             {
@@ -1272,11 +1269,20 @@ def temporal_analyze(  # noqa: C901
             auto_min_bars = False
             if (
                 min_bars_value is None
-                and group_norm == "dow"
+                and group_norm in {"dow", "all"}
                 and dow_val is None
-                and groups_out
             ):
-                bar_counts = [int(row.get("bars", 0) or 0) for row in groups_out]
+                dow_groups = groups_out
+                if group_norm == "all":
+                    dow_groups = next(
+                        (
+                            item.get("breakdown", [])
+                            for item in grouped_dimensions
+                            if item.get("dimension") == "dow"
+                        ),
+                        [],
+                    )
+                bar_counts = [int(row.get("bars", 0) or 0) for row in dow_groups]
                 median_bars = float(np.median(bar_counts)) if bar_counts else 0.0
                 min_bars_value = max(2, int(median_bars * 0.25))
                 auto_min_bars = True
@@ -1308,10 +1314,53 @@ def temporal_analyze(  # noqa: C901
                     groups_out = included
                     analysis_df = df[~df["__group"].isin(excluded_keys)]
 
+            if min_bars_value is not None and min_bars_value > 0 and grouped_dimensions:
+                for item in grouped_dimensions:
+                    dimension = str(item.get("dimension") or "")
+                    if auto_min_bars and dimension != "dow":
+                        continue
+                    breakdown = item.get("breakdown")
+                    if not isinstance(breakdown, list):
+                        continue
+                    excluded = [
+                        row
+                        for row in breakdown
+                        if int(row.get("bars", 0) or 0) < min_bars_value
+                    ]
+                    included = [
+                        row
+                        for row in breakdown
+                        if int(row.get("bars", 0) or 0) >= min_bars_value
+                    ]
+                    if excluded:
+                        item["breakdown"] = included
+                        excluded_groups.extend(
+                            {
+                                "dimension": dimension,
+                                "group": row.get("group"),
+                                "group_label": row.get("group_label"),
+                                "bars": int(row.get("bars", 0) or 0),
+                                "min_bars": int(min_bars_value),
+                                "auto": bool(auto_min_bars),
+                            }
+                            for row in excluded
+                        )
+
             groups_out = [
                 {key: value for key, value in row.items() if key != "_group_key"}
                 for row in groups_out
             ]
+            for item in grouped_dimensions:
+                breakdown = item.get("breakdown")
+                if isinstance(breakdown, list):
+                    item["breakdown"] = [
+                        {
+                            key: value
+                            for key, value in row.items()
+                            if key != "_group_key"
+                        }
+                        for row in breakdown
+                    ]
             pagination_meta: Dict[str, Any] = {}
             if grouped_dimensions and (limit_value is not None or offset_value):
                 paged_dimensions = []
