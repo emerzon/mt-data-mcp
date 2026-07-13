@@ -45,6 +45,9 @@ mtdata-cli volatility_term_structure EURUSD --timeframe H1 --lookback 1000 \
 ```
 
 By default values are annualized decimal volatility. Set `--annualize false` for per-bar decimal volatility.
+For intraday data, annualization uses the median observed bars per complete UTC
+session multiplied by the symbol-class calendar (365 crypto, 260 FX, or 252
+other sessions). The response reports both inputs and the resulting basis.
 
 ## Typical Workflow
 

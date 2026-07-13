@@ -12,10 +12,10 @@ import numpy as np
 import pandas as pd
 from scipy.signal import find_peaks, periodogram
 
-from ..forecast.common import bars_per_year
-from ..shared.symbols import is_probably_crypto_symbol, is_probably_forex_symbol
-from ..shared.constants import TIMEFRAME_MAP
+from ..forecast.common import bars_per_year, observed_bars_per_session
+from ..shared.constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
 from ..shared.schema import DetailLiteral, TimeframeLiteral
+from ..shared.symbols import is_probably_crypto_symbol, is_probably_forex_symbol
 from ..utils.mt5 import (
     _ensure_symbol_ready,
     _mt5_copy_rates_from,
@@ -553,7 +553,17 @@ def volatility_term_structure(
             return {"error": fetch_error}
         close = pd.to_numeric(frame["close"], errors="coerce")
         returns = np.log(close.where(close > 0)).diff().replace([np.inf, -np.inf], np.nan)
-        bpy = bars_per_year(timeframe, symbol) if annualize else float("nan")
+        observed_times = frame["time"] if "time" in frame else None
+        timeframe_seconds = TIMEFRAME_SECONDS.get(str(timeframe).strip().upper())
+        intraday = bool(timeframe_seconds and float(timeframe_seconds) < 86400.0)
+        bars_per_session = (
+            observed_bars_per_session(observed_times) if intraday else None
+        )
+        bpy = (
+            bars_per_year(timeframe, symbol, observed_times=observed_times)
+            if annualize
+            else float("nan")
+        )
         factor = math.sqrt(bpy) if annualize else 1.0
         if not math.isfinite(factor) or factor <= 0.0:
             factor = 1.0
@@ -603,10 +613,23 @@ def volatility_term_structure(
         }
         if annualize:
             out["bars_per_year"] = round(float(bpy), 4) if math.isfinite(bpy) else None
-            if is_probably_crypto_symbol(symbol):
+            sessions_per_year = (
+                365 if is_probably_crypto_symbol(symbol)
+                else 260 if is_probably_forex_symbol(symbol)
+                else 252
+            )
+            if bars_per_session is not None:
+                out["bars_per_session"] = round(float(bars_per_session), 4)
+                out["sessions_per_year"] = sessions_per_year
+                out["annualization_basis"] = (
+                    f"observed_median_bars_per_utc_session_x_{sessions_per_year}_sessions"
+                )
+            elif is_probably_crypto_symbol(symbol):
                 out["annualization_basis"] = "365_calendar_days_24h"
             elif is_probably_forex_symbol(symbol):
                 out["annualization_basis"] = "260_fx_weekdays_24h"
+            elif not intraday:
+                out["annualization_basis"] = "252_trading_days_calendar"
             else:
                 out["annualization_basis"] = "252_trading_days_24h_intraday"
         if normalize_output_verbosity_detail(detail, default="compact") == "full":

@@ -330,8 +330,37 @@ def default_seasonality(timeframe: str, observed_times: Any = None) -> int:
         return 0
 
 
-def bars_per_year(timeframe: str, symbol: Optional[str] = None) -> float:
-    """Approximate bars per year using the symbol's trading calendar."""
+def observed_bars_per_session(observed_times: Any) -> Optional[float]:
+    """Estimate median complete UTC-session bar count from observed timestamps."""
+    try:
+        observed = pd.Series(observed_times)
+        times = pd.to_datetime(
+            observed,
+            unit="s" if pd.api.types.is_numeric_dtype(observed) else None,
+            utc=True,
+            errors="coerce",
+        )
+        valid = pd.Series(times).dropna().sort_values()
+        daily_counts = valid.groupby(valid.dt.date).size()
+        if len(daily_counts) < 3:
+            return None
+        # Fetch windows commonly start and end mid-session. Excluding those
+        # edges prevents partial days from lowering the session estimate.
+        complete_counts = daily_counts.iloc[1:-1]
+        if complete_counts.empty:
+            return None
+        median = float(complete_counts.median())
+        return median if math.isfinite(median) and median >= 1.0 else None
+    except Exception:
+        return None
+
+
+def bars_per_year(
+    timeframe: str,
+    symbol: Optional[str] = None,
+    observed_times: Any = None,
+) -> float:
+    """Approximate bars per year using calendar and observed session density."""
     try:
         tf = str(timeframe).upper().strip()
         secs = TIMEFRAME_SECONDS.get(tf)
@@ -350,6 +379,9 @@ def bars_per_year(timeframe: str, symbol: Optional[str] = None) -> float:
         )
         if float(secs) >= 86400.0:
             return float((days * 86400.0) / float(secs))
+        observed_per_session = observed_bars_per_session(observed_times)
+        if observed_per_session is not None:
+            return float(days * observed_per_session)
         return float((days * 24.0 * 3600.0) / float(secs))
     except Exception:
         return float("nan")

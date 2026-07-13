@@ -26,6 +26,18 @@ def _bars(close: np.ndarray, *, volume: np.ndarray | None = None) -> pd.DataFram
     )
 
 
+def _session_bars(close: np.ndarray, *, bars_per_day: int) -> pd.DataFrame:
+    days = pd.bdate_range("2024-01-02", periods=int(np.ceil(len(close) / bars_per_day)))
+    timestamps = [
+        day + pd.Timedelta(hours=14 + offset)
+        for day in days
+        for offset in range(bars_per_day)
+    ][: len(close)]
+    frame = _bars(close)
+    frame["time"] = np.asarray([stamp.timestamp() for stamp in timestamps], dtype=float)
+    return frame
+
+
 def _raw(tool):
     return getattr(tool, "__wrapped__", tool)
 
@@ -149,4 +161,29 @@ def test_volatility_term_structure_returns_requested_horizons(monkeypatch):
     assert result["units"]["cone"] == "decimal_return_fraction"
     assert result["units"]["percentile_rank"] == "percentage_points (0-100)"
     assert result["bars_per_year"] == 6048.0
-    assert result["annualization_basis"] == "252_trading_days_24h_intraday"
+    assert result["bars_per_session"] == 24.0
+    assert result["annualization_basis"] == "observed_median_bars_per_utc_session_x_252_sessions"
+
+
+def test_volatility_term_structure_uses_observed_session_density(monkeypatch):
+    rng = np.random.default_rng(12)
+    close = 100.0 * np.exp(np.cumsum(rng.normal(0.0, 0.01, 420)))
+    frame = _session_bars(close, bars_per_day=7)
+    monkeypatch.setattr(diagnostics, "create_mt5_gateway", lambda **kwargs: _Gateway())
+    monkeypatch.setattr(
+        diagnostics,
+        "_fetch_diagnostic_bars",
+        lambda *args, **kwargs: (frame, None),
+    )
+
+    result = _raw(diagnostics.volatility_term_structure)(
+        symbol="US500",
+        timeframe="H1",
+        horizons="1,5,20",
+    )
+
+    assert result["success"] is True
+    assert result["bars_per_session"] == 7.0
+    assert result["sessions_per_year"] == 252
+    assert result["bars_per_year"] == 1764.0
+    assert result["annualization_basis"] == "observed_median_bars_per_utc_session_x_252_sessions"
