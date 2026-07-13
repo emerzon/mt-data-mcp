@@ -612,6 +612,7 @@ def test_run_wait_event_matches_price_touch_level() -> None:
 
     result = run_wait_event(
         WaitEventRequest(
+            accept_preexisting=True,
             watch_for=[
                 {
                     "type": "price_touch_level",
@@ -631,7 +632,7 @@ def test_run_wait_event_matches_price_touch_level() -> None:
         now_utc_impl=clock.now_utc,
     )
 
-    assert result["status"] == "matched"
+    assert result["status"] == "already_satisfied"
     assert result["matched_event"]["type"] == "price_touch_level"
 
 def test_run_wait_event_matches_price_touch_level_when_price_gaps_over_band() -> None:
@@ -645,6 +646,7 @@ def test_run_wait_event_matches_price_touch_level_when_price_gaps_over_band() ->
 
     result = run_wait_event(
         WaitEventRequest(
+            accept_preexisting=True,
             watch_for=[
                 {
                     "type": "price_touch_level",
@@ -664,7 +666,7 @@ def test_run_wait_event_matches_price_touch_level_when_price_gaps_over_band() ->
         now_utc_impl=clock.now_utc,
     )
 
-    assert result["status"] == "matched"
+    assert result["status"] == "already_satisfied"
     assert result["matched_event"]["type"] == "price_touch_level"
 
 def test_run_wait_event_matches_price_break_level() -> None:
@@ -679,6 +681,7 @@ def test_run_wait_event_matches_price_break_level() -> None:
 
     result = run_wait_event(
         WaitEventRequest(
+            accept_preexisting=True,
             watch_for=[
                 {
                     "type": "price_break_level",
@@ -698,7 +701,7 @@ def test_run_wait_event_matches_price_break_level() -> None:
         now_utc_impl=clock.now_utc,
     )
 
-    assert result["status"] == "matched"
+    assert result["status"] == "already_satisfied"
     assert result["matched_event"]["type"] == "price_break_level"
 
 def test_run_wait_event_matches_price_enter_zone() -> None:
@@ -712,6 +715,7 @@ def test_run_wait_event_matches_price_enter_zone() -> None:
 
     result = run_wait_event(
         WaitEventRequest(
+            accept_preexisting=True,
             watch_for=[
                 {
                     "type": "price_enter_zone",
@@ -731,7 +735,7 @@ def test_run_wait_event_matches_price_enter_zone() -> None:
         now_utc_impl=clock.now_utc,
     )
 
-    assert result["status"] == "matched"
+    assert result["status"] == "already_satisfied"
     assert result["matched_event"]["type"] == "price_enter_zone"
 
 def test_run_wait_event_matches_price_enter_zone_when_price_gaps_over_zone() -> None:
@@ -745,6 +749,7 @@ def test_run_wait_event_matches_price_enter_zone_when_price_gaps_over_zone() -> 
 
     result = run_wait_event(
         WaitEventRequest(
+            accept_preexisting=True,
             watch_for=[
                 {
                     "type": "price_enter_zone",
@@ -764,8 +769,78 @@ def test_run_wait_event_matches_price_enter_zone_when_price_gaps_over_zone() -> 
         now_utc_impl=clock.now_utc,
     )
 
-    assert result["status"] == "matched"
+    assert result["status"] == "already_satisfied"
     assert result["matched_event"]["type"] == "price_enter_zone"
+
+
+def test_wait_event_does_not_replay_pre_start_touch_by_default() -> None:
+    clock = FakeClock(datetime(2026, 3, 15, 12, 0, 0, tzinfo=timezone.utc))
+    base_epoch = int(clock.now_utc().timestamp()) - 2
+    gateway = SequenceGateway(
+        ticks_by_symbol={
+            "EURUSD": [
+                {"time": base_epoch, "bid": 99.7, "ask": 99.9, "last": 99.8},
+                {"time": base_epoch + 1, "bid": 99.95, "ask": 100.05, "last": 100.0},
+            ]
+        }
+    )
+
+    result = run_wait_event(
+        WaitEventRequest(
+            watch_for=[{
+                "type": "price_touch_level",
+                "symbol": "EURUSD",
+                "level": 100.0,
+                "price_source": "mid",
+                "direction": "up",
+                "tolerance": 0.05,
+            }],
+            poll_interval_seconds=0.5,
+            max_wait_seconds=0.0,
+        ),
+        gateway=gateway,
+        sleep_impl=clock.sleep,
+        monotonic_impl=clock.monotonic,
+        now_utc_impl=clock.now_utc,
+    )
+
+    assert result["status"] == "timeout"
+    assert result["matched_event"] is None
+
+
+def test_wait_event_matches_touch_observed_after_start() -> None:
+    clock = FakeClock(datetime(2026, 3, 15, 12, 0, 0, tzinfo=timezone.utc))
+    start_epoch = int(clock.now_utc().timestamp())
+    gateway = SequenceGateway(
+        ticks_by_symbol={
+            "EURUSD": [
+                {"time": start_epoch - 1, "bid": 99.7, "ask": 99.9, "last": 99.8},
+                {"time": start_epoch + 1, "bid": 99.95, "ask": 100.05, "last": 100.0},
+            ]
+        }
+    )
+
+    result = run_wait_event(
+        WaitEventRequest(
+            watch_for=[{
+                "type": "price_touch_level",
+                "symbol": "EURUSD",
+                "level": 100.0,
+                "price_source": "mid",
+                "direction": "up",
+                "tolerance": 0.05,
+            }],
+            poll_interval_seconds=0.5,
+            max_wait_seconds=2.0,
+        ),
+        gateway=gateway,
+        sleep_impl=clock.sleep,
+        monotonic_impl=clock.monotonic,
+        now_utc_impl=clock.now_utc,
+    )
+
+    assert result["status"] == "matched"
+    assert result["matched_event"]["type"] == "price_touch_level"
 
 def test_collect_new_account_history_rows_keeps_same_second_coarse_rows() -> None:
     started = datetime(2026, 3, 15, 12, 0, 0, 500000, tzinfo=timezone.utc)

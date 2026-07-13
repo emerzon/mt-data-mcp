@@ -8,8 +8,8 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Dict, List, Optional
 
 from ...shared.constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
-from ...utils.mt5 import _normalize_times_in_struct, _to_server_query_dt
 from ...utils.market_metadata import build_tick_freshness_context
+from ...utils.mt5 import _normalize_times_in_struct, _to_server_query_dt
 from ...utils.time import format_epoch_utc
 from ..trading.time import _next_candle_wait_payload, _sleep_until_next_candle
 from .requests import (
@@ -199,6 +199,9 @@ def run_wait_event_loop(
             snapshot=snapshot,
             gateway=gateway,
             live_state_cutoff_utc=evaluation_at_utc if crossed_boundary is not None else None,
+            event_start_utc=(
+                None if request.accept_preexisting else started_at_utc
+            ),
         )
         if matched_event is not None:
             return _build_wait_result(
@@ -1165,6 +1168,7 @@ def _evaluate_watch_events(  # noqa: C901
     snapshot: Dict[str, Any],
     gateway: Any,
     live_state_cutoff_utc: Optional[datetime] = None,
+    event_start_utc: Optional[datetime] = None,
 ) -> Optional[Dict[str, Any]]:
     for spec in watch_for:
         event_type = spec["type"]
@@ -1271,6 +1275,7 @@ def _evaluate_watch_events(  # noqa: C901
                 snapshot=snapshot,
                 gateway=gateway,
                 live_state_cutoff_utc=live_state_cutoff_utc,
+                event_start_utc=event_start_utc,
             )
             if match is not None:
                 return match
@@ -1688,6 +1693,7 @@ def _evaluate_market_event(
     snapshot: Dict[str, Any],
     gateway: Any,
     live_state_cutoff_utc: Optional[datetime] = None,
+    event_start_utc: Optional[datetime] = None,
 ) -> Optional[Dict[str, Any]]:
     event_type = str(spec.get("type") or "")
     if event_type == "price_change":
@@ -1701,11 +1707,23 @@ def _evaluate_market_event(
     if event_type == "range_expansion":
         return _evaluate_range_expansion(spec, market_data)
     if event_type == "price_touch_level":
-        return _evaluate_price_touch_level(spec, market_data)
+        return _evaluate_price_touch_level(
+            spec,
+            market_data,
+            event_start_utc=event_start_utc,
+        )
     if event_type == "price_break_level":
-        return _evaluate_price_break_level(spec, market_data)
+        return _evaluate_price_break_level(
+            spec,
+            market_data,
+            event_start_utc=event_start_utc,
+        )
     if event_type == "price_enter_zone":
-        return _evaluate_price_enter_zone(spec, market_data)
+        return _evaluate_price_enter_zone(
+            spec,
+            market_data,
+            event_start_utc=event_start_utc,
+        )
     if event_type == "pending_near_fill":
         if live_state_cutoff_utc is not None:
             return None
@@ -1948,7 +1966,12 @@ def _event_price_points(spec: Dict[str, Any], market_data: Any) -> List[tuple[fl
     return prices
 
 
-def _evaluate_price_touch_level(spec: Dict[str, Any], market_data: Any) -> Optional[Dict[str, Any]]:
+def _evaluate_price_touch_level(
+    spec: Dict[str, Any],
+    market_data: Any,
+    *,
+    event_start_utc: Optional[datetime] = None,
+) -> Optional[Dict[str, Any]]:
     prices = _event_price_points(spec, market_data)
     if len(prices) < 2:
         return None
@@ -1959,6 +1982,8 @@ def _evaluate_price_touch_level(spec: Dict[str, Any], market_data: Any) -> Optio
     direction = str(spec.get("direction") or "either")
     matched_pair = None
     for previous, current in zip(prices, prices[1:]):
+        if event_start_utc is not None and float(current[0]) <= event_start_utc.timestamp():
+            continue
         previous_price = float(previous[1])
         current_price = float(current[1])
         upward_touch = previous_price < lower and current_price >= lower
@@ -1994,7 +2019,12 @@ def _evaluate_price_touch_level(spec: Dict[str, Any], market_data: Any) -> Optio
     }
 
 
-def _evaluate_price_break_level(spec: Dict[str, Any], market_data: Any) -> Optional[Dict[str, Any]]:
+def _evaluate_price_break_level(
+    spec: Dict[str, Any],
+    market_data: Any,
+    *,
+    event_start_utc: Optional[datetime] = None,
+) -> Optional[Dict[str, Any]]:
     prices = _event_price_points(spec, market_data)
     confirm_ticks = max(1, int(spec.get("confirm_ticks") or 1))
     if len(prices) < confirm_ticks + 1:
@@ -2007,7 +2037,13 @@ def _evaluate_price_break_level(spec: Dict[str, Any], market_data: Any) -> Optio
     matched_window = None
     for end in range(confirm_ticks + 1, len(prices) + 1):
         previous_price = float(prices[end - confirm_ticks - 1][1])
-        confirmed_prices = [float(price) for _, price in prices[end - confirm_ticks : end]]
+        confirmed_points = prices[end - confirm_ticks : end]
+        if event_start_utc is not None and any(
+            float(epoch) <= event_start_utc.timestamp()
+            for epoch, _ in confirmed_points
+        ):
+            continue
+        confirmed_prices = [float(price) for _, price in confirmed_points]
         breakout_up = previous_price < lower and all(price >= upper for price in confirmed_prices)
         breakout_down = previous_price > upper and all(price <= lower for price in confirmed_prices)
         if (
@@ -2042,7 +2078,12 @@ def _evaluate_price_break_level(spec: Dict[str, Any], market_data: Any) -> Optio
     }
 
 
-def _evaluate_price_enter_zone(spec: Dict[str, Any], market_data: Any) -> Optional[Dict[str, Any]]:
+def _evaluate_price_enter_zone(
+    spec: Dict[str, Any],
+    market_data: Any,
+    *,
+    event_start_utc: Optional[datetime] = None,
+) -> Optional[Dict[str, Any]]:
     prices = _event_price_points(spec, market_data)
     if len(prices) < 2:
         return None
@@ -2051,6 +2092,8 @@ def _evaluate_price_enter_zone(spec: Dict[str, Any], market_data: Any) -> Option
     direction = str(spec.get("direction") or "either")
     matched_pair = None
     for previous, current in zip(prices, prices[1:]):
+        if event_start_utc is not None and float(current[0]) <= event_start_utc.timestamp():
+            continue
         previous_price = float(previous[1])
         current_price = float(current[1])
         crosses_zone = not (
