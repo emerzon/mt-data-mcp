@@ -66,7 +66,7 @@ def _ransac_residual_threshold(x: np.ndarray, y: np.ndarray, cfg: ClassicDetecto
     if not np.isfinite(resid_scale) or resid_scale <= 1e-9:
         finite_y = y[np.isfinite(y)]
         resid_scale = float(np.ptp(finite_y)) if finite_y.size else 0.0
-    return max(1e-9, float(cfg.ransac_residual_pct) * max(1e-9, resid_scale))
+    return max(1e-9, float(cfg.ransac_residual_scale) * max(1e-9, resid_scale))
 
 
 def _fit_line_robust(x: np.ndarray, y: np.ndarray, cfg: ClassicDetectorConfig) -> Tuple[float, float, float]:

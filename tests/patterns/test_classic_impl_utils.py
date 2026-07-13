@@ -7,7 +7,6 @@ import pytest
 
 import mtdata.patterns.classic_impl.utils as utils_mod
 from mtdata.patterns.classic_impl.config import ClassicDetectorConfig
-from mtdata.patterns.common import fallback_local_extrema
 from mtdata.patterns.classic_impl.utils import (
     _build_time_array,
     _calibrate_confidence,
@@ -28,6 +27,7 @@ from mtdata.patterns.classic_impl.utils import (
     _tol_abs_from_close,
     _znorm,
 )
+from mtdata.patterns.common import fallback_local_extrema
 
 
 class TestLevelClose:
@@ -96,6 +96,16 @@ class TestFitLineRobust:
         assert abs(slope - 2.0) < 0.5
         assert r2 > 0.99
 
+    def test_ransac_uses_consensus_for_moderately_noisy_small_sample(self):
+        cfg = ClassicDetectorConfig(use_robust_fit=True)
+        x = np.arange(4, dtype=float)
+        y = np.array([10.0, 11.0, 10.5, 12.0], dtype=float)
+
+        robust = _fit_line_robust(x, y, cfg)
+        ordinary = _fit_line(x, y)
+
+        assert robust == pytest.approx(ordinary)
+
     def test_ransac_preserves_unit_r2_for_perfect_horizontal_line(self):
         cfg = ClassicDetectorConfig(use_robust_fit=True)
         x = np.arange(6, dtype=float)
@@ -121,7 +131,7 @@ class TestFitLineRobust:
 
         monkeypatch.setattr(utils_mod, "_get_ransac_regressor_cls", lambda: _FakeRansac)
 
-        cfg = ClassicDetectorConfig(use_robust_fit=True, ransac_residual_pct=0.15)
+        cfg = ClassicDetectorConfig(use_robust_fit=True, ransac_residual_scale=2.5)
         x = np.arange(6, dtype=float)
         y = np.array([0.0, 1.0, 2.0, 3.0, 4.0, 50.0], dtype=float)
 

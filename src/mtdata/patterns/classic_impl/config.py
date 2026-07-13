@@ -154,9 +154,7 @@ class ClassicDetectorConfig:
     geometry_weight: float = 0.30
     # Robust fitting and shape checks
     use_robust_fit: bool = True  # use RANSAC for line fits when available
-    ransac_residual_pct: float = (
-        0.15  # residual threshold as fraction of baseline residual scale
-    )
+    ransac_residual_scale: float = 2.5  # multiplier for baseline residual scale
     ransac_min_samples: int = 2
     ransac_max_trials: int = 50
     use_dtw_check: bool = True  # optional DTW shape confirmation for select patterns
