@@ -2,10 +2,15 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
+import pytest
 
 from mtdata.patterns.harmonic import (
     HarmonicDetectorConfig,
+    _SwingPoint,
+    _XABCD_SPECS,
     _ratio_abs_tolerance,
+    _ratios_xabcd,
+    _score_spec,
     detect_harmonic_patterns,
     validate_harmonic_detector_config,
 )
@@ -16,6 +21,37 @@ def test_ratio_tolerance_is_proportional_for_small_and_large_ratios() -> None:
 
     assert _ratio_abs_tolerance(0.382, 0.382, cfg) == 0.06 * 0.382
     assert _ratio_abs_tolerance(2.618, 2.618, cfg) == 0.06 * 2.618
+
+
+def _cypher_points(c_price: float, d_price: float) -> list[_SwingPoint]:
+    return [
+        _SwingPoint(0, "low", 100.0),
+        _SwingPoint(1, "high", 200.0),
+        _SwingPoint(2, "low", 150.0),
+        _SwingPoint(3, "high", c_price),
+        _SwingPoint(4, "low", d_price),
+    ]
+
+
+def test_cypher_scores_c_extension_against_xa() -> None:
+    cfg = HarmonicDetectorConfig(ratio_tolerance=0.03)
+    ratios = _ratios_xabcd(_cypher_points(240.0, 129.96))
+
+    assert ratios is not None
+    assert ratios["xca"] == pytest.approx(1.4)
+    assert ratios["abc"] == pytest.approx(1.8)
+    assert ratios["xcd"] == pytest.approx(0.786)
+    assert _score_spec(ratios, _XABCD_SPECS["cypher"], cfg) is not None
+
+
+def test_cypher_rejects_bc_ab_fit_without_xa_extension() -> None:
+    cfg = HarmonicDetectorConfig(ratio_tolerance=0.03)
+    ratios = _ratios_xabcd(_cypher_points(215.0, 124.61))
+
+    assert ratios is not None
+    assert ratios["abc"] == pytest.approx(1.3)
+    assert ratios["xca"] == pytest.approx(1.15)
+    assert _score_spec(ratios, _XABCD_SPECS["cypher"], cfg) is None
 
 
 def _harmonic_sample_df() -> pd.DataFrame:

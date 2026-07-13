@@ -182,7 +182,7 @@ _XABCD_SPECS: Dict[str, _PatternSpec] = {
         "XABCD",
         {
             "xab": (0.382, 0.618),
-            "abc": (1.13, 1.414),
+            "xca": (1.272, 1.414),
             "xcd": (0.786, 0.786),
         },
     ),
@@ -466,6 +466,7 @@ def _ratios_xabcd(points: List[_SwingPoint]) -> Optional[Dict[str, float]]:
         return None
     ratios = {
         "xab": ab / xa,
+        "xca": xc / xa,
         "abc": bc / ab,
         "bcd": cd / bc,
         "cd_ab": cd / ab,
