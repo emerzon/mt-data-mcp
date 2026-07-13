@@ -139,7 +139,7 @@ def test_detect_flags_pennants_measure_pole_from_tip_not_last_bar(monkeypatch):
     assert out
     assert out[0].name == "Bull Pennant"
     assert out[0].details["pole_return_pct"] > 4.0
-    assert out[0].details["pole_tip_price"] == pytest.approx(106.0)
+    assert out[0].details["pole_tip_price"] == pytest.approx(106.2)
 
 
 def test_detect_flags_pennants_reject_protrend_consolidation(monkeypatch):
@@ -165,10 +165,10 @@ def test_detect_flags_pennants_reject_protrend_consolidation(monkeypatch):
         continuation,
         "_fit_lines_and_arrays",
         lambda *_args, **_kwargs: (
-            0.06,
+            0.08,
             104.0,
             0.9,
-            0.06,
+            0.08,
             102.0,
             0.9,
             top.copy(),
@@ -808,10 +808,10 @@ def test_detect_flags_pennants_excludes_pole_from_consolidation_fit(monkeypatch)
         return np.array([2, 7, 12, 17], dtype=int), np.array([4, 9, 14, 19], dtype=int)
 
     monkeypatch.setattr(continuation, "_detect_pivots_close", _fake_pivots)
-    monkeypatch.setattr(
-        continuation,
-        "_fit_lines_and_arrays",
-        lambda *_args, **_kwargs: (
+    def _fake_fit_lines(*_args, **kwargs):
+        captured["upper_source"] = kwargs["upper_source"].copy()
+        captured["lower_source"] = kwargs["lower_source"].copy()
+        return (
             -0.08,
             110.0,
             0.9,
@@ -820,8 +820,9 @@ def test_detect_flags_pennants_excludes_pole_from_consolidation_fit(monkeypatch)
             0.9,
             np.linspace(110.0, 106.5, 21),
             np.linspace(107.5, 104.5, 21),
-        ),
-    )
+        )
+
+    monkeypatch.setattr(continuation, "_fit_lines_and_arrays", _fake_fit_lines)
 
     out = continuation.detect_flags_pennants(
         close,
@@ -835,6 +836,8 @@ def test_detect_flags_pennants_excludes_pole_from_consolidation_fit(monkeypatch)
     assert out
     assert captured["seg"].size == 21
     assert captured["seg"][0] == pytest.approx(110.0)
+    np.testing.assert_allclose(captured["upper_source"], high[-21:])
+    np.testing.assert_allclose(captured["lower_source"], low[-21:])
     assert out[0].details["consolidation_start_index"] == (n - window + 9)
 
 
@@ -1345,6 +1348,38 @@ def test_detect_tops_bottoms_merges_connected_same_level_cluster():
     assert triple_top.confidence == pytest.approx(0.7)
 
 
+def test_detect_tops_bottoms_uses_wick_geometry_with_high_low_pivots():
+    from src.mtdata.patterns.classic_impl.reversal import detect_tops_bottoms
+
+    close = np.array([98.0, 99.5, 96.0, 98.5, 95.0, 97.0, 96.0])
+    high = close + 0.2
+    low = close - 0.2
+    peaks = np.array([1, 3, 5], dtype=int)
+    troughs = np.array([2, 4], dtype=int)
+    high[peaks] = 100.0
+    low[troughs] = np.array([94.5, 94.0])
+    cfg = ClassicDetectorConfig(same_level_tol_pct=0.4)
+
+    close_only = detect_tops_bottoms(
+        close, peaks, troughs, np.arange(close.size, dtype=float), cfg
+    )
+    wick_aware = detect_tops_bottoms(
+        close,
+        peaks,
+        troughs,
+        np.arange(close.size, dtype=float),
+        cfg,
+        high=high,
+        low=low,
+    )
+
+    assert not any(pattern.name == "Triple Top" for pattern in close_only)
+    triple_top = next(pattern for pattern in wick_aware if pattern.name == "Triple Top")
+    assert triple_top.details["level"] == pytest.approx(100.0)
+    assert triple_top.details["neckline"] == pytest.approx(94.0)
+    assert triple_top.details["geometry_price_source"] == "high_low"
+
+
 def test_detect_tops_bottoms_scans_all_pivots_in_requested_window():
     from src.mtdata.patterns.classic_impl.reversal import detect_tops_bottoms
 
@@ -1463,6 +1498,43 @@ def test_detect_head_shoulders_fits_neckline_with_reaction_troughs(monkeypatch):
     assert out[0].details["neckline_source"] == "troughs"
     assert out[0].details["neck_points"] == 2
     assert out[0].details["neck_validation_points"] == 1
+
+
+def test_detect_head_shoulders_uses_wick_geometry_with_high_low_pivots():
+    from src.mtdata.patterns.classic_impl.reversal import detect_head_shoulders
+
+    close = np.array([98.0, 101.5, 96.0, 100.0, 105.0, 100.0, 95.5, 99.0, 98.0])
+    high = close + 0.2
+    low = close - 0.2
+    peaks = np.array([1, 4, 7], dtype=int)
+    troughs = np.array([2, 6], dtype=int)
+    high[peaks] = np.array([102.0, 106.0, 102.0])
+    low[troughs] = np.array([95.0, 95.5])
+    cfg = ClassicDetectorConfig(
+        same_level_tol_pct=1.0,
+        use_dtw_check=False,
+        use_robust_fit=False,
+    )
+
+    close_only = detect_head_shoulders(
+        close, peaks, troughs, np.arange(close.size, dtype=float), cfg
+    )
+    wick_aware = detect_head_shoulders(
+        close,
+        peaks,
+        troughs,
+        np.arange(close.size, dtype=float),
+        cfg,
+        high=high,
+        low=low,
+    )
+
+    assert close_only == []
+    pattern = next(item for item in wick_aware if item.name == "Head and Shoulders")
+    assert pattern.details["left_shoulder"] == pytest.approx(102.0)
+    assert pattern.details["right_shoulder"] == pytest.approx(102.0)
+    assert pattern.details["head"] == pytest.approx(106.0)
+    assert pattern.details["geometry_price_source"] == "high_low"
 
 
 def test_detect_inverse_head_shoulders_uses_reaction_peaks_for_neckline(monkeypatch):

@@ -102,8 +102,12 @@ def _detect_classic_patterns_once(
     results.extend(detect_wedges(c, peaks, troughs, t, cfg, high=h, low=l))
     results.extend(detect_broadening(c, peaks, troughs, t, cfg, high=h, low=l))
     results.extend(detect_diamonds(c, t, cfg, h, l, peaks=peaks, troughs=troughs))
-    results.extend(detect_tops_bottoms(c, peaks, troughs, t, cfg))
-    results.extend(detect_head_shoulders(c, peaks, troughs, t, cfg))
+    results.extend(
+        detect_tops_bottoms(c, peaks, troughs, t, cfg, high=h, low=l)
+    )
+    results.extend(
+        detect_head_shoulders(c, peaks, troughs, t, cfg, high=h, low=l)
+    )
     results.extend(detect_rounding(c, t, cfg))
     results.extend(
         detect_flags_pennants(c, h, l, t, n, cfg, peaks=peaks, troughs=troughs)

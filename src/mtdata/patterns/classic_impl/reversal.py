@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Optional
 
 import numpy as np
 
@@ -113,7 +113,7 @@ def _normalized_dtw_distance(a: np.ndarray, b: np.ndarray) -> float:
 
 
 def _formation_neckline(
-    close: np.ndarray,
+    price_source: np.ndarray,
     cluster_indices: np.ndarray,
     opposing_pivots: np.ndarray,
     kind: str,
@@ -124,15 +124,15 @@ def _formation_neckline(
     outer cluster peaks; for bottoms it is the highest opposing (peak) pivot.
     Only pivots strictly inside the formation span are considered, so unrelated
     deep lows / high highs outside the pattern are not mis-attributed as the
-    neckline. When no qualifying opposing pivot exists, the extreme close
+    neckline. When no qualifying opposing pivot exists, the extreme price
     between the outer peaks is used as a fallback.
     """
-    c = np.asarray(close, dtype=float)
+    source = np.asarray(price_source, dtype=float)
     if cluster_indices.size < 2:
         return float("nan")
     start_i = int(cluster_indices[0])
     end_i = int(cluster_indices[-1])
-    fallback_slice = c[start_i : end_i + 1]
+    fallback_slice = source[start_i : end_i + 1]
     if fallback_slice.size == 0:
         return float("nan")
     if opposing_pivots.size == 0:
@@ -140,7 +140,7 @@ def _formation_neckline(
     mask = (opposing_pivots > start_i) & (opposing_pivots < end_i)
     if not mask.any():
         return float(np.min(fallback_slice)) if kind == "top" else float(np.max(fallback_slice))
-    opposing_vals = c[opposing_pivots[mask]]
+    opposing_vals = source[opposing_pivots[mask]]
     if opposing_vals.size == 0:
         return float(np.min(fallback_slice)) if kind == "top" else float(np.max(fallback_slice))
     return float(np.min(opposing_vals)) if kind == "top" else float(np.max(opposing_vals))
@@ -150,14 +150,29 @@ def detect_tops_bottoms(
     peaks: np.ndarray,
     troughs: np.ndarray,
     t: np.ndarray,
-    cfg: ClassicDetectorConfig
+    cfg: ClassicDetectorConfig,
+    *,
+    high: Optional[np.ndarray] = None,
+    low: Optional[np.ndarray] = None,
 ) -> List[ClassicPatternResult]:
     out: List[ClassicPatternResult] = []
-    
+
+    high_values = np.asarray(high, dtype=float) if high is not None else np.asarray([])
+    low_values = np.asarray(low, dtype=float) if low is not None else np.asarray([])
+    use_high_low = (
+        bool(cfg.pivot_use_hl)
+        and high_values.shape == c.shape
+        and low_values.shape == c.shape
+    )
+    upper_source = high_values if use_high_low else c
+    lower_source = low_values if use_high_low else c
+
     def group_levels(idxs: np.ndarray, name_top: str, name_triple: str, kind: str):
         if idxs.size < 2:
             return
-        vals = c[idxs]
+        level_source = upper_source if kind == "top" else lower_source
+        neckline_source = lower_source if kind == "top" else upper_source
+        vals = level_source[idxs]
         tol_abs = _tol_abs_from_close(c, cfg.same_level_tol_pct)
         for cluster in _level_components(vals.astype(float), float(cfg.same_level_tol_pct)):
             if len(cluster) >= 2:
@@ -167,7 +182,12 @@ def detect_tops_bottoms(
                 start_i, end_i = int(ii_sorted[0]), int(ii_sorted[-1])
                 status = "forming"
                 level = float(np.median(vals[cluster]))
-                neckline = _formation_neckline(c, ii_sorted, troughs if kind == "top" else peaks, kind)
+                neckline = _formation_neckline(
+                    neckline_source,
+                    ii_sorted,
+                    troughs if kind == "top" else peaks,
+                    kind,
+                )
                 direction = "down" if kind == "top" else "up"
                 breakout_look = max(int(cfg.completion_lookback_bars), int(max(1, cfg.breakout_lookahead)))
                 break_i = _find_forward_level_breakout(
@@ -200,6 +220,7 @@ def detect_tops_bottoms(
                         "breakout_direction": direction if break_i is not None else None,
                         "breakout_index": int(break_i) if break_i is not None else None,
                         "bias": "bearish" if "Top" in name else "bullish",
+                        "geometry_price_source": "high_low" if use_high_low else "close",
                     },
                 ))
     
@@ -215,13 +236,26 @@ def detect_head_shoulders(  # noqa: C901
     peaks: np.ndarray,
     troughs: np.ndarray,
     t: np.ndarray,
-    cfg: ClassicDetectorConfig
+    cfg: ClassicDetectorConfig,
+    *,
+    high: Optional[np.ndarray] = None,
+    low: Optional[np.ndarray] = None,
 ) -> List[ClassicPatternResult]:
     out: List[ClassicPatternResult] = []
     n = c.size
     if peaks.size < 3 or troughs.size < 2:
         return out
-        
+
+    high_values = np.asarray(high, dtype=float) if high is not None else np.asarray([])
+    low_values = np.asarray(low, dtype=float) if low is not None else np.asarray([])
+    use_high_low = (
+        bool(cfg.pivot_use_hl)
+        and high_values.shape == c.shape
+        and low_values.shape == c.shape
+    )
+    upper_source = high_values if use_high_low else c
+    lower_source = low_values if use_high_low else c
+
     tol_pct = float(cfg.same_level_tol_pct)
     breakout_look = max(int(cfg.completion_lookback_bars), int(max(1, cfg.breakout_lookahead)))
     pivot_cap = int(getattr(cfg, "head_shoulders_max_peak_candidates", 0))
@@ -243,11 +277,13 @@ def detect_head_shoulders(  # noqa: C901
     ) -> None:
         if neck_idxs.size < 2:
             return
-        head_price = float(c[head_idx])
-        ls_p = float(c[lsh])
-        rs_p = float(c[rsh])
+        extreme_source = upper_source if regular else lower_source
+        neckline_source = lower_source if regular else upper_source
+        head_price = float(extreme_source[head_idx])
+        ls_p = float(extreme_source[lsh])
+        rs_p = float(extreme_source[rsh])
         neck_x = neck_idxs.astype(float)
-        neck_y = c[neck_idxs]
+        neck_y = neckline_source[neck_idxs]
         slope, intercept, r2 = _fit_line(neck_x, neck_y)
         neck_idx_set = {int(v) for v in neck_idxs.tolist()}
         neck_validation_points = int(
@@ -350,6 +386,7 @@ def detect_head_shoulders(  # noqa: C901
             'neck_points': int(neck_idxs.size),
             'neck_validation_points': int(neck_validation_points),
             'bias': 'bearish' if regular else 'bullish',
+            'geometry_price_source': 'high_low' if use_high_low else 'close',
         }
         out.append(ClassicPatternResult(
             name=name,
@@ -373,9 +410,9 @@ def detect_head_shoulders(  # noqa: C901
         rsh = int(rs_candidates[0])
         if lsh < 0 or rsh >= n:
             continue
-        head_price = float(c[head_idx])
-        ls_p = float(c[lsh])
-        rs_p = float(c[rsh])
+        head_price = float(upper_source[head_idx])
+        ls_p = float(upper_source[lsh])
+        rs_p = float(upper_source[rsh])
         if not ((ls_p < head_price) and (rs_p < head_price)):
             continue
         if not _level_close(ls_p, rs_p, tol_pct * 1.5):
@@ -405,9 +442,9 @@ def detect_head_shoulders(  # noqa: C901
         rsh = int(rs_candidates[0])
         if lsh < 0 or rsh >= n:
             continue
-        head_price = float(c[head_idx])
-        ls_p = float(c[lsh])
-        rs_p = float(c[rsh])
+        head_price = float(lower_source[head_idx])
+        ls_p = float(lower_source[lsh])
+        rs_p = float(lower_source[rsh])
         if not ((ls_p > head_price) and (rs_p > head_price)):
             continue
         if not _level_close(ls_p, rs_p, tol_pct * 1.5):
