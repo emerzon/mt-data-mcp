@@ -53,6 +53,25 @@ def _finite_metric(metrics: Dict[str, Any], key: str) -> Optional[float]:
     return value if math.isfinite(value) else None
 
 
+def _extract_method_backtest_metrics(
+    backtest_res: Dict[str, Any],
+    method_name: str,
+) -> Dict[str, Any]:
+    """Return one canonical metric map across nested and aggregate layouts."""
+    if not isinstance(backtest_res, dict):
+        return {}
+    method_results = backtest_res.get("results", {}).get(method_name, {})
+    if not isinstance(method_results, dict):
+        return {}
+    nested = method_results.get("metrics")
+    merged = dict(nested) if isinstance(nested, dict) else {}
+    for key, value in method_results.items():
+        if key == "metrics" or isinstance(value, (dict, list, tuple, set)):
+            continue
+        merged.setdefault(str(key), value)
+    return merged
+
+
 def _has_trading_fitness_metrics(metrics: Dict[str, Any]) -> bool:
     return any(
         _finite_metric(metrics, key) is not None
@@ -334,16 +353,16 @@ def _eval_candidate(
     r = res.get('results', {}).get(sel_method) if isinstance(res, dict) else None
     if not isinstance(r, dict) or not r.get('success'):
         return (math.inf if mode == 'min' else -math.inf, res)
-    val = r.get(metric)
-    try:
-        score = float(val)
-    except Exception:
-        # Fallback to rmse/mae if metric missing
-        val2 = r.get('avg_rmse', r.get('avg_mae'))
-        try:
-            score = float(val2)
-        except Exception:
-            score = math.inf if mode == 'min' else -math.inf
+    metrics = _extract_method_backtest_metrics(res, sel_method)
+    score = _finite_metric(metrics, str(metric))
+    if score is None:
+        result = {'_sel_method': sel_method, **(res or {})}
+        result['tuning_error'] = (
+            f"Requested metric '{metric}' is missing or non-finite for method "
+            f"'{sel_method}'."
+        )
+        result['metric_requested'] = str(metric)
+        return math.inf, result
     return (score if mode == 'min' else -score, {'_sel_method': sel_method, **(res or {})})
 
 
@@ -1065,31 +1084,6 @@ def genetic_search_optimize_hints(  # noqa: C901
             if rng.random() < mutation_rate:
                 mutant[param_name] = _mutate_value(mutant.get(param_name), param_spec or {}, rng)
         return mutant
-
-    # Helper: evaluate candidate
-    def _extract_method_backtest_metrics(backtest_res: Dict[str, Any], method_name: str) -> Dict[str, Any]:
-        if not isinstance(backtest_res, dict):
-            return {}
-        method_results = backtest_res.get('results', {}).get(method_name, {})
-        if not isinstance(method_results, dict):
-            return {}
-        metrics = method_results.get('metrics')
-        if isinstance(metrics, dict):
-            merged = dict(metrics)
-            for key in (
-                'avg_mae',
-                'avg_rmse',
-                'avg_directional_accuracy',
-                'successful_tests',
-                'num_tests',
-                'metrics_available',
-                'metrics_reason',
-                'trade_status',
-            ):
-                if key in method_results and key not in merged:
-                    merged[key] = method_results.get(key)
-            return merged
-        return method_results
 
     def _evaluate(individual: Dict[str, Any]) -> Tuple[float, Dict[str, Any]]:
         tf = str(individual.get('timeframe', 'H1'))

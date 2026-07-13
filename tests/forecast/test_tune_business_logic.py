@@ -86,6 +86,8 @@ def test_eval_candidate_handles_method_selection_and_failures(monkeypatch):
         m = kwargs["methods"][0]
         if m == "bad":
             return {"results": {m: {"success": False}}}
+        if m == "nested_metric":
+            return {"results": {m: {"success": True, "metrics": {"sharpe_ratio": 2.5}}}}
         if m == "missing_metric":
             return {"results": {m: {"success": True, "avg_mae": 2.5}}}
         return {"results": {m: {"success": True, "avg_rmse": 1.2}}}
@@ -126,12 +128,26 @@ def test_eval_candidate_handles_method_selection_and_failures(monkeypatch):
         horizon=2,
         steps=2,
         spacing=1,
+        candidate_params={"method": "nested_metric"},
+        metric="sharpe_ratio",
+        mode="max",
+    )
+    assert score == -2.5
+    assert result["_sel_method"] == "nested_metric"
+
+    score, result = tune._eval_candidate(
+        symbol="EURUSD",
+        timeframe="H1",
+        method=None,
+        horizon=2,
+        steps=2,
+        spacing=1,
         candidate_params={"method": "missing_metric"},
         metric="avg_rmse",
         mode="max",
     )
-    assert score == -2.5
-    assert result["_sel_method"] == "missing_metric"
+    assert score == float("inf")
+    assert "Requested metric 'avg_rmse'" in result["tuning_error"]
 
     score, result = tune._eval_candidate(
         symbol="EURUSD",
