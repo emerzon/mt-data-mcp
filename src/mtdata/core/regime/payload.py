@@ -1001,6 +1001,23 @@ def _consolidate_payload(  # noqa: C901
                     ),
                     "calibration_status": _bocpd_calibration_status(reliability),
                 }
+                for source_key, output_key in (
+                    ("max_cp_prob", "max_transition_probability"),
+                    ("mean_cp_prob", "mean_transition_probability"),
+                ):
+                    probability_value = _finite_float(summary.get(source_key))
+                    if probability_value is not None:
+                        transition_summary[output_key] = round(
+                            probability_value,
+                            4,
+                        )
+                for source_key in (
+                    "raw_change_points_count",
+                    "filtered_change_points_count",
+                ):
+                    count_value = summary.get(source_key)
+                    if count_value is not None:
+                        transition_summary[source_key] = int(count_value)
                 expected_false_alarm_rate = _finite_float(
                     reliability.get("expected_false_alarm_rate"),
                 )

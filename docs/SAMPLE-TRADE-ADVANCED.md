@@ -30,10 +30,10 @@ Detect structural breaks and label regimes so you avoid trading through hostile 
 
 ```bash
 mtdata-cli regime_detect EURUSD --timeframe H1 --limit 1500 \
-  --method bocpd --threshold 0.6 --lookback 300 --json
+  --method bocpd --threshold 0.6 --lookback 24 --json
 ```
 
-- Gate: if `max(cp_prob[-24:]) >= 0.6` → stand down or reduce size; retrain/recalibrate models.
+- Gate: if `transition_summary.max_transition_probability >= 0.6` → stand down or reduce size; retrain/recalibrate models.
 
 1.2 HMM‑lite regimes (returns)
 

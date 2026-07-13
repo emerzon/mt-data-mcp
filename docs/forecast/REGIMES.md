@@ -101,14 +101,19 @@ mtdata-cli regime_detect EURUSD --timeframe H1 --method bocpd --threshold 0.5
 
 **Output:**
 ```
-summary:
-  last_cp_prob: 0.471
-  max_cp_prob: 0.471
-  change_points_count: 0
+current_regime:
+  latest_transition_probability: 0.471
+  transition_risk: elevated
+transition_summary:
+  max_transition_probability: 0.471
+  recent_change_points_count: 0
+  raw_change_points_count: 0
+  filtered_change_points_count: 0
 ```
 
 **Interpretation:**
-- `last_cp_prob: 0.471` — 47% probability that a regime change just occurred
+- `latest_transition_probability: 0.471` — 47% probability that a regime change just occurred
+- `max_transition_probability` is the maximum probability inside `lookback`
 - Below threshold (0.5), so not flagged as a change point
 - Higher probabilities indicate likely structural breaks
 
@@ -210,9 +215,10 @@ Monitor for regime transitions and reduce exposure when detected:
 
 ```bash
 # Check for recent change points
-mtdata-cli regime_detect EURUSD --timeframe H1 --method bocpd --threshold 0.6
+mtdata-cli regime_detect EURUSD --timeframe H1 --method bocpd \
+  --threshold 0.6 --lookback 24
 
-# If last_cp_prob > 0.6:
+# If transition_summary.max_transition_probability >= 0.6:
 #   → Tighten stops
 #   → Reduce position size
 #   → Consider closing positions
@@ -254,6 +260,7 @@ Canonical fields for successful compact/full JSON responses:
 |-------|------------|-------|
 | `method` | all methods | Actual implementation method. `hmm` and `gmm` are distinct. |
 | `current_regime` | all methods | Uses `regime_id`, `label`, `since`, `bars`, and `regime_confidence` when those concepts apply. BOCPD also includes transition-oriented fields such as `status` and `transition_risk`. |
+| `transition_summary` | BOCPD | Recent-window transition maximum, accepted/raw/filtered change-point counts, activity, and calibration status. Raw `cp_prob` requires `detail=full` with `include_series=true`. |
 | `regimes` | all compact/full methods | Uses `start`, `end`, `bars`, and `regime_confidence` consistently where regime confidence applies. |
 | `regime_info` | state/rule methods | Describes regime labels and statistics. Clustering labels are derived from return/volatility when available instead of opaque `regime_N` names. |
 | `reliability` | all methods | Always includes `confidence`, `reliability_label`, and `source`; method-specific diagnostics may add more fields. |

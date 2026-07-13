@@ -373,7 +373,11 @@ def test_bocpd_consolidation_uses_segment_language() -> None:
             "summary": {
                 "lookback": 4,
                 "last_cp_prob": 0.08,
+                "max_cp_prob": 0.9,
+                "mean_cp_prob": 0.2825,
                 "change_points_count": 1,
+                "raw_change_points_count": 2,
+                "filtered_change_points_count": 1,
             },
         },
         "bocpd",
@@ -383,6 +387,10 @@ def test_bocpd_consolidation_uses_segment_language() -> None:
     assert "current_regime" in out
     assert out["current_regime"]["status"] == "recent_change_detected"
     assert out["transition_summary"]["recent_change_points_count"] == 1
+    assert out["transition_summary"]["max_transition_probability"] == 0.9
+    assert out["transition_summary"]["mean_transition_probability"] == 0.2825
+    assert out["transition_summary"]["raw_change_points_count"] == 2
+    assert out["transition_summary"]["filtered_change_points_count"] == 1
     assert out["transition_summary"]["calibration_status"] == "calibrated"
     assert out["regime_context"]["source"] == "derived_from_return_series"
     assert out["regimes"][1]["transition_prob_at_start"] == 0.9
