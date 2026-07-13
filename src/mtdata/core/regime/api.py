@@ -369,6 +369,38 @@ def _align_states_to_return_centroids(
     return aligned_states, aligned_probabilities, valid_mask, state_map
 
 
+def _wavelet_detail_bands(
+    series: np.ndarray,
+    wavelet_name: str,
+    level: int,
+    *,
+    boundary_mode: str = "symmetric",
+    pywt_module: Any = None,
+) -> List[np.ndarray]:
+    """Reconstruct DWT detail bands without circular window coupling."""
+    if pywt_module is None:
+        import pywt as pywt_module
+
+    values = np.asarray(series, dtype=float).reshape(-1)
+    coeffs = pywt_module.wavedec(
+        values,
+        wavelet_name,
+        mode=boundary_mode,
+        level=level,
+    )
+    bands: List[np.ndarray] = []
+    for index in range(1, len(coeffs)):
+        isolated = [np.zeros_like(coefficient) for coefficient in coeffs]
+        isolated[index] = coeffs[index]
+        band = pywt_module.waverec(
+            isolated,
+            wavelet_name,
+            mode=boundary_mode,
+        )
+        bands.append(np.asarray(band[: values.size], dtype=float))
+    return bands
+
+
 def _append_warnings(payload: Dict[str, Any], warnings_to_add: List[str]) -> None:
     if not warnings_to_add:
         return
@@ -3060,18 +3092,15 @@ def regime_detect(  # noqa: C901
             else:
                 level = max(1, min(4, max_level))
 
-            # DWT decomposition
-            coeffs = _pywt.wavedec(x, wavelet_name, mode="periodization", level=level)
-            # coeffs[0] = approx (low-freq trend), coeffs[1..level] = details (high→low freq)
-
-            # Reconstruct each detail band at full length
-            bands: List[np.ndarray] = []
-            for i in range(1, len(coeffs)):
-                # Zero out all coefficients except band i
-                zeroed = [np.zeros_like(c) for c in coeffs]
-                zeroed[i] = coeffs[i]
-                band = _pywt.waverec(zeroed, wavelet_name, mode="periodization")
-                bands.append(np.asarray(band[: len(x)], dtype=float))
+            # Symmetric extension avoids coupling the window head into its tail.
+            boundary_mode = "symmetric"
+            bands = _wavelet_detail_bands(
+                x,
+                wavelet_name,
+                level,
+                boundary_mode=boundary_mode,
+                pywt_module=_pywt,
+            )
 
             if not bands:
                 return _finish(
@@ -3199,6 +3228,7 @@ def regime_detect(  # noqa: C901
                     "state_count_param": n_states_source,
                     "energy_window": energy_window,
                     "energy_window_mode": "trailing",
+                    "boundary_mode": boundary_mode,
                     "model_fit_scope": "full_window",
                     "min_regime_bars": int(min_regime_bars_val),
                     "smoothing_applied": smoothing_meta.get("smoothing_applied", False),

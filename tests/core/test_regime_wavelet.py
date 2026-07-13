@@ -13,6 +13,7 @@ import pandas as pd
 import pytest
 
 from mtdata.core.regime import regime_detect
+from mtdata.core.regime.api import _wavelet_detail_bands
 
 
 def _mock_fetch_history(symbol: str, timeframe: str, limit: int, as_of=None) -> pd.DataFrame:
@@ -92,6 +93,7 @@ class TestWaveletRegime:
         assert params_used.get("n_states") == 3
         assert params_used.get("energy_window") == 40
         assert params_used.get("energy_window_mode") == "trailing"
+        assert params_used.get("boundary_mode") == "symmetric"
         assert params_used.get("model_fit_scope") == "full_window"
 
     def test_wavelet_compact_output(self, _mock):
@@ -212,3 +214,33 @@ class TestWaveletRegime:
         )
         assert isinstance(res, dict)
         assert "error" in res
+
+
+def test_wavelet_symmetric_boundary_does_not_wrap_head_into_tail() -> None:
+    pywt = pytest.importorskip("pywt")
+    rng = np.random.default_rng(0)
+    original = rng.normal(0.0, 1.0, 256)
+    changed_head = original.copy()
+    changed_head[:20] = 100.0
+
+    original_bands = _wavelet_detail_bands(
+        original,
+        "db4",
+        3,
+        boundary_mode="symmetric",
+        pywt_module=pywt,
+    )
+    changed_bands = _wavelet_detail_bands(
+        changed_head,
+        "db4",
+        3,
+        boundary_mode="symmetric",
+        pywt_module=pywt,
+    )
+
+    assert any(
+        not np.allclose(first[:30], second[:30])
+        for first, second in zip(original_bands, changed_bands)
+    )
+    for first, second in zip(original_bands, changed_bands):
+        np.testing.assert_allclose(first[-30:], second[-30:], atol=1e-12, rtol=0.0)
