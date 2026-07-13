@@ -12,6 +12,30 @@ from pydantic import ValidationError
 
 from mtdata.utils.mt5 import MT5ConnectionError
 
+
+def test_sections_status_preserves_intentional_omissions():
+    from mtdata.core.report.use_cases import _build_sections_status
+
+    status = _build_sections_status(
+        {
+            "context": {"close": 1.2},
+            "pivot": {
+                "status": "omitted",
+                "reason": "current_only_section_omitted",
+            },
+        }
+    )
+
+    assert status["sections"] == {"context": "ok", "pivot": "omitted"}
+    assert status["summary"] == {
+        "ok": 1,
+        "partial": 0,
+        "error": 0,
+        "omitted": 1,
+        "total": 2,
+    }
+    assert status["details"]["pivot"]["reason"] == "current_only_section_omitted"
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

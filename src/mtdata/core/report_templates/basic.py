@@ -1,6 +1,7 @@
 from math import isfinite
 from typing import Any, Dict, List, Optional
 
+from ...shared.schema import DenoiseSpec
 from ...utils.utils import _safe_float
 from ..report.utils import (
     attach_candle_freshness_diagnostics,
@@ -11,7 +12,6 @@ from ..report.utils import (
     resolve_report_context_indicators,
     summarize_barrier_grid,
 )
-from ...shared.schema import DenoiseSpec
 from ..tool_calling import call_tool_sync_structured
 
 _TREND_COMPACT_LEGEND: Dict[str, str] = {
@@ -24,6 +24,30 @@ _TREND_COMPACT_LEGEND: Dict[str, str] = {
     "bars_since_swing_low": "Bars since most recent swing low (within lookback window).",
     "data_quality": "Missing-input summary when close/high/low values were imputed for trend calculations.",
 }
+
+_CURRENT_ONLY_OMISSION_REASON = "current_only_section_omitted"
+
+
+def _is_bounded_report_window(start: Any, end: Any) -> bool:
+    return start not in (None, "") or end not in (None, "")
+
+
+def _current_only_section_omission(
+    section: str,
+    *,
+    start: Any,
+    end: Any,
+) -> Dict[str, Any]:
+    return {
+        "status": "omitted",
+        "reason": _CURRENT_ONLY_OMISSION_REASON,
+        "section": section,
+        "requested_window": {"start": start, "end": end},
+        "message": (
+            f"{section} was omitted because it cannot currently honor the "
+            "report's bounded market window."
+        ),
+    }
 
 
 def _get_raw_result(
@@ -354,6 +378,7 @@ def template_basic(  # noqa: C901
     tf = str(p.get('timeframe', 'H1'))
     start = p.get('start')
     end = p.get('end')
+    bounded_window = _is_bounded_report_window(start, end)
     
     report: Dict[str, Any] = {
         'meta': {
@@ -425,31 +450,19 @@ def template_basic(  # noqa: C901
                 ctx_obj['trend_compact_legend'] = dict(_TREND_COMPACT_LEGEND)
             report['sections']['context'] = attach_candle_freshness_diagnostics(ctx_obj, ctx)
 
-    # Pivots (D1)
-    from ..pivot import pivot_compute_points
-
-    piv = _get_raw_result(pivot_compute_points, symbol=symbol, timeframe='D1')
-
-    if 'error' in piv:
-        report['sections']['pivot'] = {'error': piv['error']}
-    else:
-        report['sections']['pivot'] = {
-            'levels': piv.get('levels'),
-            'methods': piv.get('methods'),
-            'source': piv.get('source'),
-            'period': piv.get('period'),
-            'timeframe': 'D1',
-            'calculation_basis': piv.get('calculation_basis'),
-            'timezone': piv.get('timezone'),
-        }
-        # Attach multi-timeframe context and pivots for MTF alignment (lightweight)
+    # Pivots use the current completed source bar and cannot honor a report
+    # window. Keep bounded reports temporally coherent by omitting them.
+    if bounded_window:
+        report['sections']['pivot'] = _current_only_section_omission(
+            'pivot', start=start, end=end
+        )
         try:
             attach_multi_timeframes(
                 report,
                 symbol,
                 denoise,
                 extra_timeframes=['M15','H1','H4','D1'],
-                pivot_timeframes=['H4','D1'],
+                pivot_timeframes=[],
                 context_indicators=indicators,
                 start=start,
                 end=end,
@@ -457,6 +470,38 @@ def template_basic(  # noqa: C901
             )
         except Exception:
             pass
+    else:
+        from ..pivot import pivot_compute_points
+
+        piv = _get_raw_result(pivot_compute_points, symbol=symbol, timeframe='D1')
+
+        if 'error' in piv:
+            report['sections']['pivot'] = {'error': piv['error']}
+        else:
+            report['sections']['pivot'] = {
+                'levels': piv.get('levels'),
+                'methods': piv.get('methods'),
+                'source': piv.get('source'),
+                'period': piv.get('period'),
+                'timeframe': 'D1',
+                'calculation_basis': piv.get('calculation_basis'),
+                'timezone': piv.get('timezone'),
+            }
+            # Attach multi-timeframe context and pivots for MTF alignment (lightweight)
+            try:
+                attach_multi_timeframes(
+                    report,
+                    symbol,
+                    denoise,
+                    extra_timeframes=['M15','H1','H4','D1'],
+                    pivot_timeframes=['H4','D1'],
+                    context_indicators=indicators,
+                    start=start,
+                    end=end,
+                    _fetch_cache=_fetch_cache,
+                )
+            except Exception:
+                pass
 
 
     # Fallback: if MTF sections missing, build minimal ones inline
@@ -485,7 +530,11 @@ def template_basic(  # noqa: C901
                     ctxs[tf_i] = snap
             if ctxs:
                 secs['contexts_multi'] = ctxs
-        if 'pivot_multi' not in secs:
+        if bounded_window:
+            secs['pivot_multi'] = _current_only_section_omission(
+                'pivot_multi', start=start, end=end
+            )
+        elif 'pivot_multi' not in secs:
             from ..pivot import pivot_compute_points as _compute_pivot_points
             pivs: Dict[str, Any] = {}
             pivot_sec = secs.get('pivot')
@@ -925,38 +974,44 @@ def template_basic(  # noqa: C901
 
     mode_val = str(p.get('mode', 'pct'))
     barrier_method = str(p.get('barrier_method', 'hmm_mc'))
-    grid_long = _get_raw_result(forecast_barrier_optimize,
-        symbol=symbol,
-        timeframe=tf,
-        horizon=int(horizon),
-        method=barrier_method,
-        mode=mode_val,
-        params=p.get('params'),
-        objective=str(p.get('objective','ev')),
-        top_k=int(p.get('top_k', 5)),
-        grid_style=str(p.get('grid_style', 'fixed')),
-        preset=p.get('grid_preset', p.get('preset')),
-        search_profile=str(p.get('search_profile', 'medium')),
-        direction='long',
-    )
-    grid_short = _get_raw_result(forecast_barrier_optimize,
-        symbol=symbol,
-        timeframe=tf,
-        horizon=int(horizon),
-        method=barrier_method,
-        mode=mode_val,
-        params=p.get('params'),
-        objective=str(p.get('objective','ev')),
-        top_k=int(p.get('top_k', 5)),
-        grid_style=str(p.get('grid_style', 'fixed')),
-        preset=p.get('grid_preset', p.get('preset')),
-        search_profile=str(p.get('search_profile', 'medium')),
-        direction='short',
-    )
+    if bounded_window:
+        grid_long = grid_short = None
+    else:
+        grid_long = _get_raw_result(forecast_barrier_optimize,
+            symbol=symbol,
+            timeframe=tf,
+            horizon=int(horizon),
+            method=barrier_method,
+            mode=mode_val,
+            params=p.get('params'),
+            objective=str(p.get('objective','ev')),
+            top_k=int(p.get('top_k', 5)),
+            grid_style=str(p.get('grid_style', 'fixed')),
+            preset=p.get('grid_preset', p.get('preset')),
+            search_profile=str(p.get('search_profile', 'medium')),
+            direction='long',
+        )
+        grid_short = _get_raw_result(forecast_barrier_optimize,
+            symbol=symbol,
+            timeframe=tf,
+            horizon=int(horizon),
+            method=barrier_method,
+            mode=mode_val,
+            params=p.get('params'),
+            objective=str(p.get('objective','ev')),
+            top_k=int(p.get('top_k', 5)),
+            grid_style=str(p.get('grid_style', 'fixed')),
+            preset=p.get('grid_preset', p.get('preset')),
+            search_profile=str(p.get('search_profile', 'medium')),
+            direction='short',
+        )
     sec_bar: Dict[str, Any] = {}
-    if 'error' in grid_long and 'error' in grid_short:
+    if bounded_window:
+        sec_bar = _current_only_section_omission('barriers', start=start, end=end)
+    elif isinstance(grid_long, dict) and isinstance(grid_short, dict) and 'error' in grid_long and 'error' in grid_short:
         sec_bar = {'error': grid_long.get('error') or grid_short.get('error') or 'Barrier optimization failed'}
     else:
+        assert isinstance(grid_long, dict) and isinstance(grid_short, dict)
         if 'error' not in grid_long:
             sec_bar['long'] = summarize_barrier_grid(grid_long, top_k=int(p.get('top_k', 5)))
         else:

@@ -16,15 +16,15 @@ import pytest
 
 from mtdata.core.report import _report_error_payload
 from mtdata.core.report_templates.basic import (
+    _bars_since_latest_pivot,
     _compute_compact_trend,
-    _wilder_rma,
     _compute_tr,
     _ema,
     _get_raw_result,
     _linreg_slope_r2,
     _percentile_rank,
-    _bars_since_latest_pivot,
     _safe_float,
+    _wilder_rma,
 )
 
 # ---------------------------------------------------------------------------
@@ -631,6 +631,41 @@ class TestTemplateBasic:
         assert "slope_atr_scores" in ctx["trend_compact_legend"]
         assert "trend_compact_explained" not in ctx
         assert "sparkline_close" not in ctx
+
+    @patch(f"{_BASIC_MODULE}._get_raw_result")
+    @patch(f"{_BASIC_MODULE}.now_utc_iso", return_value="2024-01-15T00:00:00Z")
+    @patch(f"{_BASIC_MODULE}.parse_table_tail", return_value=_mock_candle_data()["rows"])
+    @patch(f"{_BASIC_MODULE}.pick_best_forecast_method", return_value=None)
+    @patch(f"{_BASIC_MODULE}.attach_multi_timeframes")
+    def test_bounded_basic_report_omits_current_only_sections(
+        self, mock_mtf, mock_pick, mock_tail, mock_now, mock_raw,
+    ):
+        def raw_side_effect(func, *args, **kwargs):
+            name = getattr(func, "__name__", "")
+            assert "pivot" not in name.lower()
+            assert "barrier" not in name.lower()
+            if "candle" in name.lower() or "data_fetch" in name.lower():
+                return _mock_candle_data()
+            if "volatility" in name.lower():
+                return _mock_vol_data()
+            if "backtest" in name.lower():
+                return {"results": {}}
+            if "pattern" in name.lower():
+                return _mock_patterns_data()
+            return {"data": "ok"}
+
+        mock_raw.side_effect = raw_side_effect
+
+        from mtdata.core.report_templates.basic import template_basic
+
+        report = template_basic(
+            "EURUSD", 12, None, {"start": "2024-01-01", "end": "2024-01-31"}
+        )
+
+        for section in ("pivot", "pivot_multi", "barriers"):
+            assert report["sections"][section]["status"] == "omitted"
+            assert report["sections"][section]["reason"] == "current_only_section_omitted"
+        assert mock_mtf.call_args.kwargs["pivot_timeframes"] == []
 
     @patch(f"{_BASIC_MODULE}._get_raw_result")
     @patch(f"{_BASIC_MODULE}.now_utc_iso", return_value="2024-01-15T00:00:00Z")
@@ -1378,6 +1413,29 @@ class TestTemplateAdvanced:
         report = template_advanced("EURUSD", 12, None, {})
 
         assert "forecast_conformal" not in report.get("sections", {})
+
+    @patch(f"{_ADV_MODULE}.template_basic")
+    @patch(f"{_ADV_MODULE}._get_raw_result")
+    def test_bounded_advanced_report_omits_conformal(self, mock_raw, mock_basic):
+        mock_basic.return_value = {
+            "meta": {"symbol": "EURUSD", "template": "basic"},
+            "sections": {"backtest": {"best_method": {"method": "ema"}}},
+        }
+        mock_raw.return_value = {"summary": "ok"}
+
+        from mtdata.core.report_templates.advanced import template_advanced
+
+        report = template_advanced(
+            "EURUSD", 12, None, {"end": "2024-01-31"}
+        )
+
+        conformal = report["sections"]["forecast_conformal"]
+        assert conformal["status"] == "omitted"
+        assert conformal["reason"] == "current_only_section_omitted"
+        assert all(
+            "conformal" not in getattr(call.args[0], "__name__", "").lower()
+            for call in mock_raw.call_args_list
+        )
 
     @patch(f"{_ADV_MODULE}.template_basic")
     @patch(f"{_ADV_MODULE}._get_raw_result")

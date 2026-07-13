@@ -187,8 +187,21 @@ def _is_user_facing_report_warning(warning_obj: Any) -> bool:
 def _build_sections_status(sections: Dict[str, Any]) -> Dict[str, Any]:
     statuses: Dict[str, str] = {}
     details: Dict[str, Dict[str, Any]] = {}
-    summary = {"ok": 0, "partial": 0, "error": 0}
+    summary = {"ok": 0, "partial": 0, "error": 0, "omitted": 0}
     for name, payload in sections.items():
+        declared_status = (
+            str(payload.get("status") or "").strip().lower()
+            if isinstance(payload, dict)
+            else ""
+        )
+        if declared_status == "omitted":
+            statuses[str(name)] = "omitted"
+            summary["omitted"] += 1
+            details[str(name)] = {
+                "status": "omitted",
+                "reason": payload.get("reason") or "section omitted",
+            }
+            continue
         has_error = _has_payload_error(payload)
         has_content = _has_payload_content(payload)
         errors = _collect_payload_errors(payload)
@@ -218,6 +231,7 @@ def _build_sections_status(sections: Dict[str, Any]) -> Dict[str, Any]:
             "ok": "section returned usable data and no nested errors",
             "partial": "section returned usable data but one or more nested sub-results failed",
             "error": "section returned no usable data because it failed",
+            "omitted": "section was intentionally not run because it could not honor the request",
         },
     }
     if details:
@@ -627,10 +641,12 @@ def _build_overall_report_assessment(report: Dict[str, Any]) -> Dict[str, Any]:
     total = int(summary.get("total", 0) or 0)
     errors = int(summary.get("error", 0) or 0)
     partial = int(summary.get("partial", 0) or 0)
+    omitted = int(summary.get("omitted", 0) or 0)
     ok = int(summary.get("ok", 0) or 0)
 
     failed_sections = _report_section_names_by_status(sections_status, "error")
     partial_sections = _report_section_names_by_status(sections_status, "partial")
+    omitted_sections = _report_section_names_by_status(sections_status, "omitted")
 
     if total <= 0:
         confidence = "low"
@@ -644,6 +660,10 @@ def _build_overall_report_assessment(report: Dict[str, Any]) -> Dict[str, Any]:
         confidence = "medium"
         recommended_action = "review_partial_sections"
         summary_text = "Report is mostly usable, but partial sections reduce confidence."
+    elif omitted > 0:
+        confidence = "medium"
+        recommended_action = "review_omitted_sections"
+        summary_text = "Report is temporally coherent, but some current-only sections were omitted."
     else:
         confidence = "high" if ok >= 3 else "medium"
         recommended_action = "review_key_levels_and_risk"
@@ -658,6 +678,7 @@ def _build_overall_report_assessment(report: Dict[str, Any]) -> Dict[str, Any]:
             "ok": ok,
             "partial": partial,
             "error": errors,
+            "omitted": omitted,
             "total": total,
         },
     }
@@ -665,6 +686,8 @@ def _build_overall_report_assessment(report: Dict[str, Any]) -> Dict[str, Any]:
         assessment["failed_sections"] = failed_sections[:6]
     if partial_sections:
         assessment["partial_sections"] = partial_sections[:6]
+    if omitted_sections:
+        assessment["omitted_sections"] = omitted_sections[:6]
     return assessment
 
 
@@ -1306,6 +1329,7 @@ def run_report_generate(  # noqa: C901
                 summary_counts = sections_status.get("summary", {})
                 error_count = int(summary_counts.get("error", 0))
                 partial_count = int(summary_counts.get("partial", 0))
+                omitted_count = int(summary_counts.get("omitted", 0))
                 controls = rep.get("section_controls")
                 missing_requested = (
                     controls.get("missing_requested_sections", [])
@@ -1322,7 +1346,7 @@ def run_report_generate(  # noqa: C901
                     "failed"
                     if error_count > 0 or selection_failed
                     else "partial"
-                    if partial_count > 0
+                    if partial_count > 0 or omitted_count > 0
                     else "summary_only"
                     if summary_mode
                     else "complete"
@@ -1338,10 +1362,13 @@ def run_report_generate(  # noqa: C901
                 sections_with_issues: Dict[str, List[str]] = {}
                 partial_section_names = _report_section_names_by_status(sections_status, "partial")
                 error_section_names = _report_section_names_by_status(sections_status, "error")
+                omitted_section_names = _report_section_names_by_status(sections_status, "omitted")
                 if partial_section_names:
                     sections_with_issues["partial"] = partial_section_names
                 if error_section_names:
                     sections_with_issues["error"] = error_section_names
+                if omitted_section_names:
+                    sections_with_issues["omitted"] = omitted_section_names
                 if sections_with_issues:
                     rep["sections_with_issues"] = sections_with_issues
                 rep["overall_assessment"] = _build_overall_report_assessment(rep)

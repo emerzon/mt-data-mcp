@@ -1,7 +1,13 @@
 from typing import Any, Dict, Optional
 
 from ...shared.schema import DenoiseSpec
-from .basic import _first_volatility_value, _get_raw_result, template_basic
+from .basic import (
+    _current_only_section_omission,
+    _first_volatility_value,
+    _get_raw_result,
+    _is_bounded_report_window,
+    template_basic,
+)
 
 
 def template_advanced(
@@ -82,7 +88,11 @@ def template_advanced(
         best_method = base.get('sections', {}).get('backtest', {}).get('best_method', {}).get('method')
     except Exception:
         best_method = None
-    if best_method:
+    if _is_bounded_report_window(start, end):
+        base['sections']['forecast_conformal'] = _current_only_section_omission(
+            'forecast_conformal', start=start, end=end
+        )
+    elif best_method:
         from ..forecast import forecast_conformal_intervals
         conf = _get_raw_result(forecast_conformal_intervals,
             symbol=symbol,

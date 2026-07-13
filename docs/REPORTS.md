@@ -63,6 +63,10 @@ Useful controls:
 
 - `--horizon` sets the forecast horizon in bars.
 - `--timeframe`, `--start`, and `--end` constrain the requested market window.
+- When `--start` or `--end` bounds a report, sections that only support current-market
+  analysis are not run. Their section payloads use `status: omitted` with reason
+  `current_only_section_omitted`, and the report is marked partial rather than mixing
+  current data into the bounded analysis.
 - `--methods` supplies comma- or space-separated forecast methods.
 - `--include-sections` filters the sections returned after computation;
   `--max-sections` caps their count.
