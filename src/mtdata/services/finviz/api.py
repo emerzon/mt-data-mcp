@@ -5,13 +5,13 @@ import json
 import logging
 from typing import Any, Dict, List, Literal, Optional
 
+from ..news_text import normalize_news_text
 from .client import (
     get_finviz_http_timeout,
     get_finviz_page_limit_max,
     get_finviz_screener_max_rows,
 )
 from .symbols import looks_like_non_equity_symbol
-from ..news_text import normalize_news_text
 
 logger = logging.getLogger(__name__)
 
@@ -160,6 +160,23 @@ def _paginate_finviz_records(
         limit=limit,
         page=page,
         page_limit_max=_FINVIZ_PAGE_LIMIT_MAX,
+    )
+
+
+def _screener_pagination_metadata(
+    *,
+    fetched_count: int,
+    fetch_limit: int,
+    limit: int,
+    page: int,
+) -> Dict[str, Any]:
+    from .pagination import screener_pagination_metadata
+
+    return screener_pagination_metadata(
+        fetched_count=fetched_count,
+        fetch_limit=fetch_limit,
+        limit=limit,
+        page=page,
     )
 
 
@@ -649,7 +666,7 @@ def screen_stocks(
         if df is None:
             return {"error": "Failed to fetch screener results from Finviz."}
 
-        stocks_list, total, safe_limit, safe_page, pages = _paginate_finviz_records(
+        stocks_list, total, safe_limit, safe_page, _pages = _paginate_finviz_records(
             df,
             limit=limit,
             page=page,
@@ -665,17 +682,20 @@ def screen_stocks(
                 "message": "No stocks matched the filter criteria",
             }
 
-        truncated = bool(total >= fetch_limit and fetch_limit >= _FINVIZ_SCREENER_MAX_ROWS)
+        pagination_meta = _screener_pagination_metadata(
+            fetched_count=total,
+            fetch_limit=fetch_limit,
+            limit=safe_limit,
+            page=safe_page,
+        )
         return {
             "success": True,
             "view": view_lower,
             "filters": filters or {},
             "order": order_applied,
             "count": len(stocks_list),
-            "total": total,
             "page": safe_page,
-            "pages": pages,
-            "truncated": truncated,
+            **pagination_meta,
             "stocks": stocks_list,
         }
     except Exception as e:
@@ -902,19 +922,23 @@ def get_earnings_calendar(
         if df is None or df.empty:
             return {"error": "No earnings calendar data available"}
 
-        items_list, total, safe_limit, safe_page, pages = _paginate_finviz_records(
+        items_list, total, safe_limit, safe_page, _pages = _paginate_finviz_records(
             df,
             limit=limit,
             page=page,
+        )
+        pagination_meta = _screener_pagination_metadata(
+            fetched_count=total,
+            fetch_limit=fetch_limit,
+            limit=safe_limit,
+            page=safe_page,
         )
         return {
             "success": True,
             "period": period,
             "count": len(items_list),
-            "total": total,
             "page": safe_page,
-            "pages": pages,
-            "truncated": bool(total >= fetch_limit),
+            **pagination_meta,
             "earnings": items_list,
         }
     except ValueError as e:

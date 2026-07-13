@@ -1,6 +1,6 @@
 """Pagination utilities for Finviz service."""
 import math
-from typing import Any, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from .client import get_finviz_page_limit_max, get_finviz_screener_max_rows
 
@@ -79,8 +79,40 @@ def compute_screener_fetch_limit(
         get_finviz_screener_max_rows() if max_rows is None else max_rows,
         default=get_finviz_screener_max_rows(),
     )
-    needed = safe_limit * safe_page
+    # Fetch one sentinel row beyond the requested page. Without it, a full
+    # prefix is indistinguishable from a complete provider result.
+    needed = (safe_limit * safe_page) + 1
     return max(1, min(safe_max_rows, needed))
+
+
+def screener_pagination_metadata(
+    *,
+    fetched_count: int,
+    fetch_limit: int,
+    limit: int,
+    page: int,
+) -> Dict[str, Any]:
+    """Describe exact or lower-bound pagination for a bounded prefix fetch."""
+    safe_limit, safe_page = sanitize_pagination(limit, page)
+    fetched = max(0, int(fetched_count))
+    complete = fetched < int(fetch_limit)
+    requested_end = safe_limit * safe_page
+    has_more = bool(fetched > requested_end or not complete)
+    if complete:
+        pages = 0 if fetched == 0 else (fetched + safe_limit - 1) // safe_limit
+        return {
+            "total": fetched,
+            "pages": pages,
+            "has_more": has_more,
+            "truncated": False,
+        }
+    return {
+        "total": None,
+        "pages": None,
+        "has_more": True,
+        "total_lower_bound": fetched,
+        "truncated": True,
+    }
 
 
 def paginate_finviz_records(
@@ -143,6 +175,7 @@ __all__ = [
     "sanitize_pagination",
     "compute_screener_fetch_limit",
     "paginate_finviz_records",
+    "screener_pagination_metadata",
     "run_screener_view",
     "_sanitize_finviz_cell",
 ]

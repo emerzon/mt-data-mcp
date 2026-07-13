@@ -58,7 +58,7 @@ class TestSanitizePagination:
 class TestComputeScreenerFetchLimit:
     def test_normal(self):
         r = svc._compute_screener_fetch_limit(50, 2, 5000)
-        assert r == 100
+        assert r == 101
 
     def test_caps_at_max(self):
         r = svc._compute_screener_fetch_limit(5000, 100, 5000)

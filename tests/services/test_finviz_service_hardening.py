@@ -11,9 +11,9 @@ from mtdata.services.finviz import pagination as finviz_pagination
 def test_compute_screener_fetch_limit_is_bounded(monkeypatch):
     monkeypatch.setattr(svc, "_FINVIZ_PAGE_LIMIT_MAX", 500)
 
-    assert svc._compute_screener_fetch_limit(limit=50, page=1, max_rows=5000) == 50
+    assert svc._compute_screener_fetch_limit(limit=50, page=1, max_rows=5000) == 51
     assert svc._compute_screener_fetch_limit(limit=50, page=3, max_rows=120) == 120
-    assert svc._compute_screener_fetch_limit(limit=-1, page=0, max_rows=120) == 1
+    assert svc._compute_screener_fetch_limit(limit=-1, page=0, max_rows=120) == 2
     assert svc._compute_screener_fetch_limit(limit=9999, page=1, max_rows=120) == 120
 
 
@@ -103,6 +103,35 @@ def test_pagination_helpers_coerce_invalid_override_values(monkeypatch):
     )
 
 
+def test_screener_pagination_distinguishes_complete_and_prefix_results():
+    complete = finviz_pagination.screener_pagination_metadata(
+        fetched_count=50,
+        fetch_limit=51,
+        limit=50,
+        page=1,
+    )
+    prefix = finviz_pagination.screener_pagination_metadata(
+        fetched_count=51,
+        fetch_limit=51,
+        limit=50,
+        page=1,
+    )
+
+    assert complete == {
+        "total": 50,
+        "pages": 1,
+        "has_more": False,
+        "truncated": False,
+    }
+    assert prefix == {
+        "total": None,
+        "pages": None,
+        "has_more": True,
+        "total_lower_bound": 51,
+        "truncated": True,
+    }
+
+
 def test_screen_stocks_uses_bounded_screener_view(monkeypatch):
     class FakeOverview:
         last_kwargs = None
@@ -131,6 +160,10 @@ def test_screen_stocks_uses_bounded_screener_view(monkeypatch):
     assert result.get("count") == 20
     assert result.get("page") == 3
     assert result.get("truncated") is True
+    assert result.get("total") is None
+    assert result.get("pages") is None
+    assert result.get("has_more") is True
+    assert result.get("total_lower_bound") == 120
     assert FakeOverview.last_kwargs is not None
     assert int(FakeOverview.last_kwargs.get("limit")) == 120
     assert int(FakeOverview.last_kwargs.get("sleep_sec")) == 0
@@ -166,7 +199,10 @@ def test_get_earnings_calendar_uses_financial_screener_with_pagination(monkeypat
     assert result.get("success") is True
     assert result.get("count") == 20
     assert result.get("page") == 3
-    assert result.get("pages") == 3
+    assert result.get("pages") is None
+    assert result.get("total") is None
+    assert result.get("has_more") is True
+    assert result.get("total_lower_bound") == 120
     assert result.get("truncated") is True
     assert FakeFinancial.last_filters == {"Earnings Date": "This Week"}
     assert FakeFinancial.last_kwargs is not None
