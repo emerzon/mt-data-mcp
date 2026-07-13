@@ -76,6 +76,14 @@ class TestBocpdGaussian:
         baseline = np.mean(cp[20:80])
         assert np.max(peak_region) > baseline
 
+    def test_change_probability_is_data_responsive(self):
+        x = np.concatenate([np.zeros(80), np.full(20, 10.0)])
+        cp = bocpd_gaussian(x, hazard_lambda=100)["cp_prob"]
+
+        baseline = float(np.mean(cp[30:70]))
+        assert np.ptp(cp) > 0.1
+        assert float(np.max(cp[80:85])) > baseline * 10.0
+
     def test_nan_filtered(self):
         x = np.array([1.0, np.nan, 2.0, np.inf, 3.0])
         result = bocpd_gaussian(x)

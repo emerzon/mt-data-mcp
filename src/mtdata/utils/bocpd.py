@@ -98,8 +98,20 @@ def bocpd_gaussian(
         # Growth probabilities (r -> r+1)
         log_growth = log_pred + log_r + np.log(1.0 - H)
 
-        # Changepoint probability (r -> 0) sum over r
-        log_cp = np.logaddexp.reduce(log_pred + log_r + np.log(H))
+        # A reset predicts the observation from the prior, not from each
+        # existing run's posterior. Reusing ``log_pred`` here makes the
+        # normalized reset probability algebraically equal to the constant
+        # hazard for every observation.
+        log_prior_pred = float(
+            _student_t_logpdf(
+                xt,
+                np.array([mu0]),
+                np.array([kappa0]),
+                np.array([alpha0]),
+                np.array([beta0]),
+            )[0]
+        )
+        log_cp = log_prior_pred + np.logaddexp.reduce(log_r + np.log(H))
 
         # New run-length distribution
         new_log_r = -np.inf * np.ones(R, dtype=float)
