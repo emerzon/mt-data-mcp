@@ -1,13 +1,15 @@
-# Timestamp & Timezone Policy
+# Timestamps and timezones
 
-mtdata touches up to **four different clocks**, and mixing them up is the most common source of "my candles look shifted" confusion. This page explains each clock, how mtdata normalizes MT5 timestamps, which timezone appears in output, and how to make it deterministic.
+“My candles look shifted” almost always means **two clocks got mixed up**. mtdata may touch four of them. Configure broker time once in `.env`, keep the `timezone` field with saved results, and prefer `MT5_SERVER_TZ` when you know the IANA name (DST-aware).
 
 | Clock | Where it comes from |
 |-------|---------------------|
-| **Broker server time** | The wall-clock the MT5 terminal reports on every candle/tick. Varies by broker (often UTC+2/+3). |
-| **UTC** | The canonical internal basis mtdata normalizes to before shaping output. |
-| **Client-local time** | The display timezone — your machine's timezone by default. |
-| **External provider time** | Finviz, news, and options sources report in their own timezones (usually US market time). |
+| **Broker server time** | Wall-clock on every MT5 candle/tick (often UTC+2/+3; varies by broker) |
+| **UTC** | Internal basis mtdata normalizes to before shaping output |
+| **Client-local time** | Display timezone (your machine by default) |
+| **External provider time** | Finviz, news, options (often US market time) |
+
+**Related:** [Setup](SETUP.md) · [Env vars](ENV_VARS.md) · [Output contract](OUTPUT.md)
 
 ---
 

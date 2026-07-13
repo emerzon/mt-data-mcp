@@ -1,28 +1,32 @@
-## Advanced Forecast‑to‑Trade Playbook (EURUSD, H1)
+# Advanced forecast-to-trade playbook
 
-**Related Documentation:**
-- [SAMPLE-TRADE.md](SAMPLE-TRADE.md) — Basic workflow (start here if new)
-- [CLI.md](CLI.md) — CLI usage and output formats
-- [BARRIER_FUNCTIONS.md](BARRIER_FUNCTIONS.md) — Barrier analytics (concepts + methods)
+Builds on the [basic sample trade](SAMPLE-TRADE.md) with **regime filters**, **conformal intervals**, **HAR-RV volatility**, **Monte Carlo barriers**, and **disciplined risk/execution gates**. Modular by design: run each block, inspect the output, and only continue when your own thresholds (calibrated via backtests) say so.
 
-This guide extends the basic workflow with regime filters, conformal intervals, realized‑volatility (HAR‑RV), Monte‑Carlo barrier analytics, and disciplined risk/execution controls. It is designed to be modular: run each block, inspect outputs, and gate the next step by thresholds you calibrate via backtests.
+**Not financial advice.** Use a demo account for any execution steps. See [TRADING_SAFETY.md](TRADING_SAFETY.md).
 
-Assumptions
-- Horizon: 12 H1 bars (≈ half‑day)
-- Symbol/TF: EURUSD/H1
-- All commands are runnable via `mtdata-cli <tool> ... --json`
+**Dense terms used below:** [BOCPD](GLOSSARY.md#change-point-detection-bocpd) · [HMM](GLOSSARY.md#hidden-markov-model-hmm) · [HAR-RV](GLOSSARY.md#har-rv-heterogeneous-autoregressive-realized-volatility) · [Conformal](GLOSSARY.md#conformal-intervals) · [Kelly](GLOSSARY.md#kelly-criterion) · [VaR](GLOSSARY.md#var-value-at-risk) · [Edge](GLOSSARY.md#edge)
 
----
+**Related:** [Sample trade](SAMPLE-TRADE.md) · [CLI](CLI.md) · [Barriers](BARRIER_FUNCTIONS.md) · [Regimes](forecast/REGIMES.md) · [Glossary](GLOSSARY.md)
 
-### 0) Safety & Hygiene
+## Assumptions
 
-- Skip high‑impact news windows (e.g., ±60 minutes of CPI/NFP/FOMC).
-- Enforce daily loss cap (e.g., 1–2× average daily VaR) and per‑trade risk cap (e.g., 0.25–1.0% equity).
-- Consider minimum spread/liquidity filter (e.g., spread < 1.5× median) before entry.
+| Item | Value |
+|------|--------|
+| Symbol / timeframe | EURUSD / H1 |
+| Horizon | 12 bars (~half day) |
+| Interface | `mtdata-cli <tool> ... --json` |
 
 ---
 
-### 1) Regime & Break Detection (Gatekeeper)
+## 0) Safety and hygiene
+
+- Skip high-impact news windows (for example ±60 minutes around CPI, NFP, FOMC).
+- Enforce a daily loss cap (for example 1–2× average daily VaR) and a per-trade risk cap (for example 0.25–1.0% of equity).
+- Consider a spread/liquidity filter (for example spread under 1.5× median) before entry.
+
+---
+
+## 1) Regime & Break Detection (Gatekeeper)
 
 Detect structural breaks and label regimes so you avoid trading through hostile phases.
 
@@ -53,7 +57,7 @@ mtdata-cli regime_detect EURUSD --timeframe H1 --limit 1500 \
 
 ---
 
-### 2) Realized Volatility & Risk Budget (HAR‑RV)
+## 2) Realized Volatility & Risk Budget (HAR‑RV)
 
 Estimate daily realized variance from intraday returns, then map to H1.
 
@@ -67,7 +71,7 @@ mtdata-cli forecast_volatility_estimate EURUSD --timeframe H1 --horizon 12 \
 
 ---
 
-### 3) Denoise + Quick Technical Context
+## 3) Denoise + Quick Technical Context
 
 Pull data with light denoising and a few TIs for situational awareness (no heavy feature stacks in this flow).
 
@@ -82,7 +86,7 @@ mtdata-cli data_fetch_candles EURUSD --timeframe H1 --limit 300 \
 
 ---
 
-### 4) Forecast with Valid Intervals (Conformal)
+## 4) Forecast with Valid Intervals (Conformal)
 
 Calibrate per‑step residual quantiles via rolling backtest; then get point + conformal bands.
 
@@ -96,7 +100,7 @@ mtdata-cli forecast_conformal_intervals EURUSD --timeframe H1 --method fourier_o
 
 ---
 
-### 5) Barrier Analytics (MC + Closed‑Form)
+## 5) Barrier Analytics (MC + Closed‑Form)
 
 5.1 Optimize TP/SL grid with HMM MC paths
 
@@ -120,15 +124,15 @@ mtdata-cli forecast_barrier_prob EURUSD --timeframe H1 --horizon 12 \
 5.3 Closed‑form GBM sanity check (fast)
 
 ```bash
-mtdata-cli forecast_barrier_prob EURUSD --timeframe H1 --horizon 12 \  
-  --method closed_form --direction long --barrier 1.1795 --json      
+mtdata-cli forecast_barrier_prob EURUSD --timeframe H1 --horizon 12 \
+  --method closed_form --direction long --barrier 1.1795 --json
 ```
 
 - Flag discrepancies (e.g., MC>>GBM) to reduce size or re‑check calibration.
 
 ---
 
-### 6) Labeling & Threshold Calibration (Optional but Recommended)
+## 6) Labeling & Threshold Calibration (Optional but Recommended)
 
 Use triple‑barrier labels offline for signal evaluation and meta‑models.
 
@@ -142,7 +146,7 @@ mtdata-cli labels_triple_barrier EURUSD --timeframe H1 --limit 2000 \
 
 ---
 
-### 7) Position Sizing & Execution
+## 7) Position Sizing & Execution
 
 - Position size (conservative Kelly/VaR):
   - Kelly_cap = 0.25 × Kelly (from optimizer) or ≤ 1.0% equity, whichever is smaller.
@@ -155,7 +159,7 @@ mtdata-cli labels_triple_barrier EURUSD --timeframe H1 --limit 2000 \
 
 ---
 
-### 8) Backtest & Walk‑Forward Checks
+## 8) Backtest & Walk‑Forward Checks
 
 1) Rolling backtest for chosen forecast method(s)
 
@@ -169,7 +173,7 @@ mtdata-cli forecast_backtest_run EURUSD --timeframe H1 --horizon 12 \
 
 ---
 
-### 9) Trade Plans (Examples)
+## 9) Trade Plans (Examples)
 
 Plan A – Breakout with pullback filter
 - Gates: regime in {trend}, cp_prob<0.6, price>EMA(20)>EMA(50), conformal.lower>pivot.
@@ -182,7 +186,7 @@ Plan B – Mean‑reversion in range regime (reduced size)
 
 ---
 
-### 10) Monitoring & Drift Handling
+## 10) Monitoring & Drift Handling
 
 - Update BOCPD and HMM twice per session; stand down on cp spikes.
 - Refresh HAR‑RV daily (intraday M5 RV aggregation).
@@ -193,13 +197,13 @@ Plan B – Mean‑reversion in range regime (reduced size)
 
 ## TL;DR – Advanced Flow
 
-1) Filter: regime & cp_prob gates.  
-2) Calibrate risk with HAR‑RV; set budget.  
-3) Denoise + quick TI context (EMA/RSI/MACD).  
-4) Forecast with conformal intervals; gate by bands.  
-5) Optimize TP/SL via MC; sanity‑check with GBM closed‑form.  
-6) (Optional) Label history with triple‑barrier; tune thresholds.  
-7) Execute with VaR/Kelly‑capped sizing, time stop, and costs.  
+1) Filter: regime & cp_prob gates.
+2) Calibrate risk with HAR‑RV; set budget.
+3) Denoise + quick TI context (EMA/RSI/MACD).
+4) Forecast with conformal intervals; gate by bands.
+5) Optimize TP/SL via MC; sanity‑check with GBM closed‑form.
+6) (Optional) Label history with triple‑barrier; tune thresholds.
+7) Execute with VaR/Kelly‑capped sizing, time stop, and costs.
 8) Walk‑forward checks; adjust thresholds and monitoring cadence.
 
 ---

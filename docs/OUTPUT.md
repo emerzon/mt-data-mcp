@@ -1,8 +1,8 @@
-# Response & Output Contract
+# Response and output contract
 
-Every mtdata tool returns the **same canonical payload** regardless of channel (CLI, MCP, or Web API). The transport only adapts presentation — it never changes the meaning of the data. This page is the reference for that payload: the success/error envelope, the `detail` verbosity levels, the `extras` richer sections, field selection, and pagination.
+One of mtdata’s strengths: **CLI, [MCP](GLOSSARY.md#mcp-model-context-protocol), and Web API share the same payload meaning**. Transports only change presentation ([TOON](GLOSSARY.md#toon) vs JSON, HTTP status), not the underlying data model. This page is the reference for that model — success/error envelope, `detail`, `extras`, field selection, and pagination.
 
-For the presentation layer (TOON vs JSON, `--precision`, exit codes), see [CLI.md](CLI.md#output-contract).
+Presentation flags and exit codes: [CLI.md](CLI.md#output-contract).
 
 ---
 

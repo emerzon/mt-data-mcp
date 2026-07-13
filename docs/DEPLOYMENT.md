@@ -1,13 +1,10 @@
-# Running mtdata as a Long-Lived Local Service
+# Running mtdata as a local service
 
-This guide covers running the MCP server or Web API as a **persistent background service** on Windows so agents and apps can reach mtdata without you keeping a terminal open.
+Keep the MCP server or Web API running in the background on Windows so agents and apps can reach mtdata without a terminal open. For one-off foreground runs, use [SETUP.md](SETUP.md#running-mtdata) instead.
 
-For one-off/foreground runs and the full environment-variable reference, start with:
-- [SETUP.md](SETUP.md#running-mtdata) — install and run each entry point interactively
-- [ENV_VARS.md](ENV_VARS.md#mcp-server) — MCP Server and Web API variables
-- [WEB_API.md](WEB_API.md) — REST endpoints and authentication
+**Related:** [Setup (run modes)](SETUP.md#running-mtdata) · [Env vars](ENV_VARS.md#mcp-server) · [Web API](WEB_API.md) · [Trading safety](TRADING_SAFETY.md)
 
-> **Safety:** A running service exposes the same tools as the CLI, including `trade_*` tools that can place, modify, and close **real orders** on the account logged into MT5. Bind to loopback, require an auth token, and use a demo account until you trust the setup. See [Security hardening](#security-hardening).
+> **Safety:** An MCP service exposes the full CLI tool surface, including `trade_*` on the MT5 account that is logged in. The focused Web API currently has no trading routes, but it still exposes account-connected market workflows. Bind either service to loopback, require an auth token, and prefer a demo account until you trust the setup. See [Security hardening](#security-hardening).
 
 ---
 

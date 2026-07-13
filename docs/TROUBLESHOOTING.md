@@ -1,16 +1,12 @@
 # Troubleshooting
 
-Common issues when running mtdata and how to resolve them.
+Something broken? Start with a **small read-only snapshot** — it usually tells you whether the problem is install, MT5 connection, symbol visibility, or history. Then jump to the matching section below.
 
-**Related:**
-- [SETUP.md](SETUP.md) — Installation and configuration
-- [CLI.md](CLI.md) — Command usage
+**Related:** [Setup](SETUP.md) · [CLI](CLI.md) · [Limitations](LIMITATIONS.md) · [Timestamps](TIMESTAMPS.md)
 
 ---
 
-## Start Here: Diagnostic Snapshot
-
-When something fails, collect a small read-only snapshot first. It usually separates install, MT5 connection, symbol, and data-history problems quickly.
+## Start here: diagnostic snapshot
 
 ```bash
 python --version
@@ -429,10 +425,10 @@ These models require PyTorch and a NeuralForecast dependency stack compatible wi
 
 ---
 
-## See Also
+## See also
 
-- [SETUP.md](SETUP.md) — Installation guide
-- [CLI.md](CLI.md) — Command usage
-- [GLOSSARY.md](GLOSSARY.md) — Term definitions
-- [FINVIZ.md](FINVIZ.md) — Finviz fundamental data reference
-- [OPTIONS_QUANTLIB.md](OPTIONS_QUANTLIB.md) — Options & QuantLib tools
+- [SETUP.md](SETUP.md) — Install and first connection
+- [CLI.md](CLI.md) — Commands and output
+- [LIMITATIONS.md](LIMITATIONS.md) — Known caveats
+- [TIMESTAMPS.md](TIMESTAMPS.md) — Shifted candle times
+- [TRADING_SAFETY.md](TRADING_SAFETY.md) — Live order concerns

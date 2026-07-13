@@ -1,32 +1,29 @@
-# Denoising & Smoothing
+# Denoising and smoothing
 
-Denoising removes random fluctuations ("noise") from price data to reveal the underlying trend ("signal").
+Prices are a mix of **structure** and **noise** (microstructure bounce, spreads, short bursts). Denoising smooths series so trends and indicators are easier to read — optionally as a preprocess step for forecasts.
 
-**Related:**
-- [CLI.md](CLI.md) — Command usage
-- [TECHNICAL_INDICATORS.md](TECHNICAL_INDICATORS.md) — Indicators to denoise
-- [FORECAST.md](FORECAST.md) — Using denoising in forecasts
-- [GLOSSARY.md](GLOSSARY.md) — Term definitions
+**Trade-off:** more smoothing → clearer trend, more **lag**. Prefer light filters first.
 
----
+**Dense terms:** [Denoising](GLOSSARY.md#denoising) · [Causal filters](GLOSSARY.md#causal-vs-non-causal-filters) · [Kalman](GLOSSARY.md#kalman-filter) · [Wavelet](GLOSSARY.md#wavelet-denoise--regimes) · [EMA](GLOSSARY.md#moving-average)
 
-## Why Denoise?
-
-Market data contains:
-- **Signal:** The true underlying trend or pattern
-- **Noise:** Random fluctuations from microstructure, spreads, and short-term volatility
-
-Denoising helps:
-- Reduce false indicator crossovers
-- Clarify trend direction
-- Improve model stability
-- Remove outliers and spikes
-
-**Trade-off:** More smoothing = clearer trend but more lag (delay in detecting changes).
+**Related:** [CLI](CLI.md) · [Indicators](TECHNICAL_INDICATORS.md) · [Forecasting](FORECAST.md) · [Simplification](SIMPLIFICATION.md) · [Glossary](GLOSSARY.md)
 
 ---
 
-## Quick Start
+## Why denoise?
+
+| Goal | How denoise helps |
+|------|-------------------|
+| Cleaner signals | Fewer false indicator flips |
+| Clearer trend | Underlying path is easier to see |
+| Stabler models | Less outlier-driven fit noise |
+| Spike control | Median / robust filters dampen extremes |
+
+**Simplify vs denoise:** [SIMPLIFICATION.md](SIMPLIFICATION.md) reduces *how many points* you return; denoise changes *the values*.
+
+---
+
+## Quick start
 
 **Smooth closing prices:**
 ```bash

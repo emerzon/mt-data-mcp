@@ -1,18 +1,16 @@
-# Backtesting Guide
+# Backtesting
 
-Backtesting validates forecast accuracy by testing models on historical data. This guide covers rolling-origin backtests, performance metrics, and parameter optimization.
+Ask “**did this method work historically on this symbol and timeframe?**” before you trust a live forecast. Covers rolling-origin evaluation, metrics, and parameter search.
 
-**Related:**
-- [GLOSSARY.md](../GLOSSARY.md) — Definitions of MAE, RMSE, Sharpe ratio, etc.
-- [FORECAST.md](../FORECAST.md) — Forecasting methods
-- [FORECAST_GENERATE.md](FORECAST_GENERATE.md) — Detailed forecast options
-- [VOLATILITY.md](VOLATILITY.md) — Volatility forecasting
+**Dense terms:** [MAE](../GLOSSARY.md#mae-mean-absolute-error) · [RMSE](../GLOSSARY.md#rmse-root-mean-squared-error) · [Directional accuracy](../GLOSSARY.md#directional-accuracy) · [Horizon](../GLOSSARY.md#horizon) · [Lookback](../GLOSSARY.md#lookback) · [Sharpe](../GLOSSARY.md#sharpe-ratio)
+
+**Related:** [Glossary](../GLOSSARY.md) · [Forecasting](../FORECAST.md) · [forecast_generate](FORECAST_GENERATE.md) · [Volatility](VOLATILITY.md) · [Methods](METHODS.md)
 
 ---
 
-## Key Concepts
+## Key concepts
 
-### What is Backtesting?
+### What is backtesting?
 
 Backtesting answers: *"How well would this forecast method have performed on past data?"*
 
@@ -34,7 +32,7 @@ Timeline: [----history----][forecast horizon]
 
 **Parameters:**
 - **steps**: Number of anchor points to test
-- **spacing**: Bars between anchor points  
+- **spacing**: Bars between anchor points
 - **horizon**: How far ahead each forecast predicts
 
 **Example:** `steps=20, spacing=10, horizon=12` creates 20 test points, each 10 bars apart, each forecasting 12 bars ahead.
@@ -162,7 +160,7 @@ mtdata-cli forecast_backtest_run EURUSD --horizon 12 --methods mlf_lightgbm \
 
 **Example with denoising:**
 ```bash
-mtdata-cli forecast_backtest_run EURUSD --horizon 12 --methods theta \       
+mtdata-cli forecast_backtest_run EURUSD --horizon 12 --methods theta \
   --denoise ema --denoise-params "alpha=0.2"
 ```
 
@@ -441,20 +439,20 @@ mtdata-cli forecast_backtest_run EURUSD --horizon 12 --methods theta \
 
 ### Good Results Checklist
 
-✅ `avg_rmse` is small relative to price volatility  
-✅ `avg_directional_accuracy` > 0.55 (better than random)  
-✅ `win_rate` > 0.50 with positive `avg_trade_return`  
-✅ `sharpe_ratio` > 1.0  
-✅ `max_drawdown` < 10-15%  
-✅ Results consistent across different `spacing` values  
+✅ `avg_rmse` is small relative to price volatility
+✅ `avg_directional_accuracy` > 0.55 (better than random)
+✅ `win_rate` > 0.50 with positive `avg_trade_return`
+✅ `sharpe_ratio` > 1.0
+✅ `max_drawdown` < 10-15%
+✅ Results consistent across different `spacing` values
 
 ### Warning Signs
 
-⚠️ Very high accuracy on backtests but poor live results → overfitting  
-⚠️ `successful_tests` << `num_tests` → method fails frequently  
-⚠️ `avg_rmse` much larger than `avg_mae` → outlier errors  
-⚠️ `max_drawdown` > 20% → high risk  
-⚠️ Results vary wildly with small parameter changes → unstable  
+⚠️ Very high accuracy on backtests but poor live results → overfitting
+⚠️ `successful_tests` << `num_tests` → method fails frequently
+⚠️ `avg_rmse` much larger than `avg_mae` → outlier errors
+⚠️ `max_drawdown` > 20% → high risk
+⚠️ Results vary wildly with small parameter changes → unstable
 
 ### Avoiding Overfitting
 

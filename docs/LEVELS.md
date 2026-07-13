@@ -1,10 +1,12 @@
-# Price Levels: Pivots, Support/Resistance, Confluence, Volume Profile
+# Price levels
 
-These read-only tools locate price levels that traders watch for reactions: formula
-pivot points, touch-derived support/resistance, multi-method confluence zones, and
-volume-profile value areas. They are exploratory analytics, not trade signals.
+Find **prices the market may care about** — formula pivots, retested support/resistance, multi-method confluence, and volume-profile value areas. All of these tools are **read-only** and exploratory: they map structure, they do not issue trade signals.
 
-## Choosing a Tool
+**Dense terms:** [Pivot points](GLOSSARY.md#pivot-points) · [Support and resistance](GLOSSARY.md#support-and-resistance) · [Confluence](GLOSSARY.md#confluence) · [Volume profile (POC/VAH/VAL)](GLOSSARY.md#volume-profile-poc-vah-val)
+
+**Related:** [Sample trade](SAMPLE-TRADE.md) · [CLI](CLI.md) · [Glossary](GLOSSARY.md)
+
+## Choosing a tool
 
 | Tool | Source of levels | Use when you want… |
 |------|------------------|--------------------|

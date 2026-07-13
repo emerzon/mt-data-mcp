@@ -1,13 +1,15 @@
-# Causal Signal Discovery
+# Causal signal discovery
 
-The `causal_discover_signals` tool performs **pairwise Granger-style causal discovery** between symbols using recent MT5 close prices. It is intended for exploratory analysis (feature discovery / watchlist relationships), not “true causality”.
+Explore **who might lead whom** across symbols with pairwise Granger-style tests on recent MT5 closes. This is **exploratory feature discovery** for watchlists — not a claim of true economic causality.
 
-If you want **co-movement**, use `correlation_matrix`. For a direct two-symbol lead/lag estimate, use `cross_correlation`. For candidate **mean-reverting / spread** relationships, use `cointegration_test`.
+| If you want… | Prefer | Concept |
+|--------------|--------|---------|
+| Simple co-movement | `correlation_matrix` | [Correlation](GLOSSARY.md#correlation) |
+| Two-symbol lead/lag | `cross_correlation` | [Cross-correlation](GLOSSARY.md#cross-correlation-lead--lag) |
+| Mean-reverting / spread pairs | `cointegration_test` | [Cointegration](GLOSSARY.md#cointegration) |
+| Directed predictive links | `causal_discover_signals` | [Granger causality](GLOSSARY.md#granger-causality) |
 
-**Related:**
-- [CLI.md](CLI.md) — Command usage and output formats
-- [SETUP.md](SETUP.md) — MT5 connection and dependencies
-- [GLOSSARY.md](GLOSSARY.md) — Time series terms
+**Related:** [CLI](CLI.md) · [Setup](SETUP.md) · [Glossary](GLOSSARY.md) · [Diagnostics](TIME_SERIES_DIAGNOSTICS.md)
 
 ---
 
@@ -182,5 +184,3 @@ Tip: `--json` returns the structured payload instead of default TOON text.
 - [FORECAST.md](FORECAST.md) — Forecasting methods overview
 - [TECHNICAL_INDICATORS.md](TECHNICAL_INDICATORS.md) — Indicator reference
 - [GLOSSARY.md](GLOSSARY.md) — Term definitions
-
-

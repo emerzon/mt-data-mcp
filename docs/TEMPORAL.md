@@ -1,15 +1,12 @@
-# Temporal Analysis
+# Temporal analysis
 
-The `temporal_analyze` command computes grouped statistics (returns, volatility, volume) by time period—day of week, hour of day, or calendar month. Use it to discover session effects, optimal trading windows, and seasonal patterns.
+Does this market behave differently on **Monday vs Friday**, at the **London open**, or in **certain months**? `temporal_analyze` groups returns, volatility, and volume by calendar bucket so you can spot session effects and seasonality before you lock a strategy.
 
-**Related:**
-- [CLI.md](CLI.md) — Command usage and output formats
-- [GLOSSARY.md](GLOSSARY.md) — Term definitions
-- [forecast/VOLATILITY.md](forecast/VOLATILITY.md) — Volatility estimation
+**Related:** [CLI](CLI.md) · [Glossary](GLOSSARY.md) · [Volatility](forecast/VOLATILITY.md) · [Diagnostics](TIME_SERIES_DIAGNOSTICS.md)
 
 ---
 
-## Quick Start
+## Quick start
 
 ```bash
 # Average returns by day of week

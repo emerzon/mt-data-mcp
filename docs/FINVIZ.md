@@ -1,15 +1,14 @@
-# Finviz Fundamental Data
+# Finviz fundamentals
 
-The `finviz_*` tools provide access to US equity fundamental data, screening, news, insider activity, and macro market snapshots (forex, crypto, futures, economic calendars) via [Finviz](https://finviz.com).
+Pull **US equity fundamentals**, screens, news, insider activity, and macro snapshots (forex, crypto, futures, economic calendars) via [Finviz](https://finviz.com) — useful when your MT5 workflow also needs equity or calendar context.
 
-**Related:**
-- [CLI.md](CLI.md) — Command usage and output formats
-- [GLOSSARY.md](GLOSSARY.md) — Term definitions
-- [SETUP.md](SETUP.md) — Installation and configuration
+These tools complement MT5; they do not replace the terminal for live FX/CFD quotes.
+
+**Related:** [CLI](CLI.md) · [Glossary](GLOSSARY.md) · [Setup](SETUP.md)
 
 ---
 
-> **Note:** Finviz data covers **US-listed equities** and global macro snapshots. It is separate from MT5 market data. Data may be delayed 15–20 minutes depending on the source.
+> **Note:** Coverage is mainly **US-listed equities** plus global macro snapshots. Data may be delayed 15–20 minutes depending on the source.
 
 ---
 

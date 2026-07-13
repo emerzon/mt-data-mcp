@@ -1,16 +1,12 @@
-# `forecast_generate` Reference
+# `forecast_generate` reference
 
-Detailed reference for the `forecast_generate` command, which produces price forecasts for the next N bars.
+Deep dive into the main price-path command: next **N bars**, many methods, optional indicators/denoise, and quantity modes. Start with [FORECAST.md](../FORECAST.md) for the big picture; use this page for flags and pipeline detail.
 
-**Related:**
-- [../FORECAST.md](../FORECAST.md) — Forecasting overview
-- [../TECHNICAL_INDICATORS.md](../TECHNICAL_INDICATORS.md) — Indicators as features
-- [../DENOISING.md](../DENOISING.md) — Preprocessing
-- [../BARRIER_FUNCTIONS.md](../BARRIER_FUNCTIONS.md) — Using forecasts for TP/SL
+**Related:** [Forecasting](../FORECAST.md) · [Methods](METHODS.md) · [Indicators](../TECHNICAL_INDICATORS.md) · [Denoising](../DENOISING.md) · [Barriers](../BARRIER_FUNCTIONS.md)
 
 ---
 
-## Basic Usage
+## Basic usage
 
 ```bash
 mtdata-cli forecast_generate EURUSD --timeframe H1 --horizon 12 --method theta
@@ -150,7 +146,7 @@ On the supported Python 3.14 install path:
 - `timesfm` remains a Git-backed extra
 
 ```bash
-mtdata-cli forecast_generate EURUSD --library pretrained --method chronos2    
+mtdata-cli forecast_generate EURUSD --library pretrained --method chronos2
 mtdata-cli forecast_generate EURUSD --library pretrained --method chronos_bolt
 mtdata-cli forecast_generate EURUSD --library pretrained --method timesfm
 ```

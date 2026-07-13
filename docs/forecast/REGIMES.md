@@ -1,15 +1,14 @@
-# Regime Detection
+# Regime detection
 
-Regime detection identifies the current market "behavior mode" (trending, ranging, volatile). Different strategies work in different regimes.
+Markets switch **behavior modes** — trending, ranging, high-vol stress. Strategies that work in one regime often fail in another. `regime_detect` labels the current state so you can **filter** or **resize** before forecasting or trading.
 
-**Related:**
-- [GLOSSARY.md](../GLOSSARY.md) — Definitions of HMM, BOCPD, etc.
-- [FORECAST.md](../FORECAST.md) — Price forecasting
-- [SAMPLE-TRADE-ADVANCED.md](../SAMPLE-TRADE-ADVANCED.md) — Using regimes as trade filters
+**Dense terms (friendly defs):** [Regime](../GLOSSARY.md#regime) · [HMM](../GLOSSARY.md#hidden-markov-model-hmm) · [BOCPD](../GLOSSARY.md#change-point-detection-bocpd) · [PELT](../GLOSSARY.md#pelt-change-point-detection) · [MS-AR](../GLOSSARY.md#markov-switching-ar-ms-ar) · [GMM](../GLOSSARY.md#gaussian-mixture-gmm) · [Filtered vs smoothed](../GLOSSARY.md#filtered-vs-smoothed-inference)
+
+**Related:** [Glossary](../GLOSSARY.md) · [Forecasting](../FORECAST.md) · [Advanced playbook](../SAMPLE-TRADE-ADVANCED.md)
 
 ---
 
-## Why Regimes Matter
+## Why regimes matter
 
 Markets cycle through distinct behavioral phases:
 
@@ -315,6 +314,32 @@ and the `return_quantile_centroids` alignment mode. This is a directional-return
 consensus heuristic, not proof that methods discovered an identical latent
 partition; use volatility-focused methods separately as transition or volatility
 gates.
+
+#### Clustering reliability
+
+The `clustering` method learns regimes in its scaled feature space (after PCA
+when dimensionality reduction is active), not from the one-dimensional return
+series alone. Its `reliability.source` is `feature_cluster_separation`, and
+`feature_variance_ratio` reports the share of total feature-space variance
+explained by the final labels. `reliability.confidence` is the corresponding
+bounded score.
+
+The scaler, PCA transform, and clusters are fitted over the full analysis
+window. Treat the resulting labels and reliability as retrospective. For
+live-style evaluation or backtests, roll the window and advance `as_of` rather
+than fitting once on the complete history.
+
+#### Wavelet boundaries and causality
+
+The `wavelet` method uses symmetric finite-signal extension and reports
+`params_used.boundary_mode=symmetric`. This avoids circular head-to-tail
+coupling at the series boundary, although ordinary endpoint effects can still
+affect the first and last coefficients.
+
+Wavelet energy features use trailing windows, but the scaler and K-means model
+are fitted over the full analysis window (`model_fit_scope=full_window`). The
+reported labels are therefore retrospective. Roll `as_of` through history for
+an honest live-style or backtest evaluation.
 
 #### GARCH volatility tiers
 

@@ -1,16 +1,14 @@
-# Technical Indicators
+# Technical indicators
 
-Technical indicators transform OHLCV data into signals for trend, momentum, volatility, and volume analysis.
+Turn raw OHLCV into **trend, momentum, volatility, and volume** context. mtdata ships **100+** indicators you can attach when fetching candles or explore via the catalog tools.
 
-**Related:**
-- [CLI.md](CLI.md) — How to run commands
-- [DENOISING.md](DENOISING.md) — Smoothing indicator outputs
-- [FORECAST.md](FORECAST.md) — Using indicators as forecast features
-- [GLOSSARY.md](GLOSSARY.md) — Term definitions
+Indicators are decision support — combine them with structure, volatility, and risk tools rather than treating any single reading as a trade by itself.
+
+**Related:** [CLI](CLI.md) · [Denoising](DENOISING.md) · [Forecasting](FORECAST.md) · [Glossary](GLOSSARY.md)
 
 ---
 
-## Quick Start
+## Quick start
 
 **List available indicators:**
 ```bash
@@ -218,4 +216,3 @@ See [DENOISING.md](DENOISING.md) for more options.
 - [GLOSSARY.md](GLOSSARY.md) — Term definitions
 - [DENOISING.md](DENOISING.md) — Smoothing techniques
 - [FORECAST.md](FORECAST.md) — Using indicators in forecasts
-

@@ -1,18 +1,22 @@
-# Trading Safety Runbook
+# Trading safety runbook
 
-The `trade_*` tools send **real requests** to the MT5 account currently logged into the terminal. This runbook is the safety-first workflow for `trade_place`, `trade_modify`, and `trade_close`: how to preview, what gets validated, how account guardrails work, and broker-specific behavior to expect.
+If you only skim one trading doc, make it this one. The `trade_*` tools send **real requests** to the MT5 account currently logged into the terminal. This runbook covers previewing orders, validation, account guardrails, and broker quirks for `trade_place`, `trade_modify`, and `trade_close`.
 
-> ⚠️ **These tools default to LIVE execution.** `dry_run` defaults to **`false`** on `trade_place`, `trade_modify`, and `trade_close`. If you do not pass `--dry-run true`, the request is sent to MT5. Use a **demo account** until you fully trust your setup — mtdata has no separate paper-trading mode.
+> **These tools default to LIVE execution.** `dry_run` defaults to **`false`**. Without `--dry-run true`, the request goes to MT5. Use a **demo account** until you trust your setup — mtdata has no separate paper-trading mode.
+
+**Dense terms:** [Dry-run](GLOSSARY.md#dry-run) · [Trade guardrails](GLOSSARY.md#trade-guardrails) · [Slippage](GLOSSARY.md#slippage) · [Lot size](GLOSSARY.md#lot-size) · [TP/SL](GLOSSARY.md#tpsl-take-profit--stop-loss)
+
+**Related:** [Risk analytics](TRADING_RISK.md) · [Env vars (guardrails)](ENV_VARS.md#trade-guardrails) · [CLI](CLI.md) · [Sample trade](SAMPLE-TRADE.md) · [Glossary](GLOSSARY.md)
 
 ---
 
 ## Golden rules
 
-1. **Preview first.** Add `--dry-run true` to every order until you have verified the request.
-2. **Trade a demo account** while learning. There is no simulated mode besides an MT5 demo.
-3. **Enable guardrails** on any account that can place orders (see [Account guardrails](#account-guardrails)).
-4. **Use exact tickets** for `trade_modify` / `trade_close`; be extremely careful with `--close-all`.
-5. **Attach protective levels.** `trade_place` requires SL **and** TP on market orders by default (`--require-sl-tp`).
+1. **Preview first** — `--dry-run true` until the request looks right.
+2. **Demo while learning** — no simulated mode except an MT5 demo.
+3. **Enable guardrails** on any account that can place orders ([Account guardrails](#account-guardrails)).
+4. **Exact tickets** for modify/close; treat `--close-all` as nuclear.
+5. **Protective levels** — market orders require SL **and** TP by default (`--require-sl-tp`).
 
 ---
 

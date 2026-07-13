@@ -1,19 +1,18 @@
-## A Sample Forecast Analysis Guide
+# Sample trade workflow
 
-**Related Documentation:**
-- [GLOSSARY.md](GLOSSARY.md) — Terms (TP/SL, pips, spread, indicators)
-- [CLI.md](CLI.md) — CLI usage and output formats
-- [SAMPLE-TRADE-ADVANCED.md](SAMPLE-TRADE-ADVANCED.md) — Next step (regimes, volatility, barriers, risk controls)
+A friendly, step-by-step research walkthrough for **short-term EURUSD analysis** using mtdata. Each step shows **which tool**, **why those inputs**, and **how to read the output** — no quant background required.
 
-Looking for a more advanced, risk‑aware version? See [SAMPLE-TRADE-ADVANCED.md](SAMPLE-TRADE-ADVANCED.md) (regimes, HAR‑RV, conformal intervals, Monte‑Carlo barrier optimization, and execution controls).
+This is a **research example**, not financial advice. Numbers below are illustrative of one historical session; re-run the commands on live data for current levels.
 
-Below is a step‑by‑step walk‑through of the analysis that produced the expert report, targeting a short term trading in EURUSD.
-Each step shows **what tool was used**, **why that particular input was chosen**, and **what the output tells us**.  
-The language is kept simple so anyone with a basic interest in trading can follow the logic.
+**Terms used:** [EMA / RSI / MACD](GLOSSARY.md#moving-average) · [Pivot points](GLOSSARY.md#pivot-points) · [EWMA vol](GLOSSARY.md#ewma-exponentially-weighted-moving-average) · [Theta](GLOSSARY.md#theta-method) · [Edge](GLOSSARY.md#edge) · [Monte Carlo barriers](GLOSSARY.md#monte-carlo-simulation) — full [glossary quick find](GLOSSARY.md#quick-find).
+
+**Related:** [Glossary](GLOSSARY.md) · [CLI](CLI.md) · [Advanced playbook](SAMPLE-TRADE-ADVANCED.md)
+
+When you are comfortable with this flow, continue to [SAMPLE-TRADE-ADVANCED.md](SAMPLE-TRADE-ADVANCED.md) for regimes, HAR-RV, conformal intervals, Monte Carlo barriers, and tighter risk gates.
 
 ---
 
-### 1. Pull the most recent price data (candles)
+## 1. Pull the most recent price data (candles)
 
 | Tool | Call | Why we used it |
 |------|------|----------------|
@@ -22,7 +21,7 @@ The language is kept simple so anyone with a basic interest in trading can follo
 
 ---
 
-### 2. Get the daily price range for pivot‑point calculation
+## 2. Get the daily price range for pivot‑point calculation
 
 | Tool | Call | Why we used it |
 |------|------|----------------|
@@ -31,7 +30,7 @@ The language is kept simple so anyone with a basic interest in trading can follo
 
 ---
 
-### 3. Compute classic pivot‑point levels
+## 3. Compute classic pivot‑point levels
 
 | Tool | Call | Why we used it |
 |------|------|----------------|
@@ -42,7 +41,7 @@ Use **`confluence_levels`** when you want the pivot ladder ranked against data-d
 
 ---
 
-### 4. Estimate near‑future volatility
+## 4. Estimate near‑future volatility
 
 | Tool | Call | Why we used it |
 |------|------|----------------|
@@ -51,7 +50,7 @@ Use **`confluence_levels`** when you want the pivot ladder ranked against data-d
 
 ---
 
-### 5. Forecast the price path for the next 12 hours
+## 5. Forecast the price path for the next 12 hours
 
 | Tool | Call | Why we used it |
 |------|------|----------------|
@@ -60,7 +59,7 @@ Use **`confluence_levels`** when you want the pivot ladder ranked against data-d
 
 ---
 
-### 6. Find the statistically‑optimal TP/SL (Take‑Profit / Stop‑Loss) levels
+## 6. Find the statistically‑optimal TP/SL (Take‑Profit / Stop‑Loss) levels
 
 | Tool | Call | Why we used it |
 |------|------|----------------|
@@ -69,7 +68,7 @@ Use **`confluence_levels`** when you want the pivot ladder ranked against data-d
 
 ---
 
-### 7. Putting it all together – Trade ideas
+## 7. Putting it all together – Trade ideas
 
 | Step | How the previous outputs shaped the idea |
 |------|------------------------------------------|
@@ -81,23 +80,23 @@ Use **`confluence_levels`** when you want the pivot ladder ranked against data-d
 
 ---
 
-## TL;DR – The “Why” in Plain English
+## TL;DR — the “why” in plain English
 
-1. **Grab recent price data** (hourly candles) and add a few simple indicators (moving averages, RSI, MACD) to see the short‑term trend and momentum.  
-2. **Pull the previous day’s high/low/close** to calculate classic support/resistance levels (pivot points).  
-3. **Estimate how much the price normally wiggles** over the next half‑day (EWMA volatility).  
-4. **Ask a forecasting model** what price it expects in the next 12 hours – it suggests a modest pull‑back toward the pivot.  
-5. **Run a Monte‑Carlo simulation** that tries many possible TP/SL combos and tells us which pair gives the highest statistical edge.  
-6. **Combine everything**: the trend, the pivot, the volatility, the forecast, and the edge‑analysis to craft concrete trade setups with clear entry, target, and stop levels.
+1. **Recent prices + a few indicators** (EMAs, RSI, MACD) for short-term trend and momentum.
+2. **Daily high/low/close → pivot levels** so you know nearby support and resistance.
+3. **Volatility** (how far price usually travels over the next half-day).
+4. **A forecast** for the next 12 hours (here: a modest pull-back toward the pivot).
+5. **Barrier simulation** to score many TP/SL pairs and highlight statistical edge.
+6. **Combine** structure, vol, forecast, and barriers into concrete setups with entry, target, and stop.
 
-By following these steps you move from raw price numbers to **data‑driven trade ideas** that are backed by both technical analysis and statistical probability. This is the same logical chain that underlies the expert report you received.
+That is the full path from raw candles to research ideas you can stress-test further. It is **not** a guaranteed trade.
 
 ---
 
-## See Also
+## Next steps
 
-- [SAMPLE-TRADE-ADVANCED.md](SAMPLE-TRADE-ADVANCED.md) — Advanced playbook with regimes, conformal intervals, Monte Carlo
-- [FORECAST.md](FORECAST.md) — Forecasting methods guide
-- [BARRIER_FUNCTIONS.md](BARRIER_FUNCTIONS.md) — Barrier optimization deep dive
-- [GLOSSARY.md](GLOSSARY.md) — Term definitions
-- [FINVIZ.md](FINVIZ.md) — Fundamental data (for equity analysis)
+- [SAMPLE-TRADE-ADVANCED.md](SAMPLE-TRADE-ADVANCED.md) — Regimes, conformal intervals, HAR-RV, tighter gates
+- [FORECAST.md](FORECAST.md) — Methods and research stages
+- [BARRIER_FUNCTIONS.md](BARRIER_FUNCTIONS.md) — Barrier deep dive
+- [TRADING_SAFETY.md](TRADING_SAFETY.md) — If you move from ideas to orders (demo first)
+- [GLOSSARY.md](GLOSSARY.md) — Terms used above

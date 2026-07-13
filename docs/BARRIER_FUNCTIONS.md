@@ -1,20 +1,16 @@
-# Barrier Functions - Comprehensive Guide
+# Barrier functions
 
-## Overview
+Answer the trader’s question: **“How likely is my take-profit to hit before my stop-loss within this horizon?”**
 
-**Related:**
-- [GLOSSARY.md](GLOSSARY.md) — TP/SL, pips, and spread
-- [SAMPLE-TRADE.md](SAMPLE-TRADE.md) — Practical workflow example
-- [CLI.md](CLI.md) — CLI usage and output formats
-- [forecast/UNCERTAINTY.md](forecast/UNCERTAINTY.md) — Confidence and interval concepts
+mtdata simulates many price paths (or uses richer models), scores TP/SL pairs, and can search a grid of levels for better [edge](GLOSSARY.md#edge), [Kelly](GLOSSARY.md#kelly-criterion), or [expected value](GLOSSARY.md#ev-expected-value) objectives. Use barriers after you have a market view and a volatility sense — not as a standalone signal.
 
-Barrier functions are essential tools for risk management in trading. They help answer the critical question: *"What's the probability that my take-profit will be hit before my stop-loss within a given time horizon?"*
+**Dense terms:** [Barrier](GLOSSARY.md#barrier) · [Monte Carlo](GLOSSARY.md#monte-carlo-simulation) · [GBM](GLOSSARY.md#gbm-geometric-brownian-motion) · [Edge](GLOSSARY.md#edge) · [Kelly](GLOSSARY.md#kelly-criterion) · [prob_tp_first](GLOSSARY.md#prob_tp_first) · [grid_style](GLOSSARY.md#grid_style)
 
-This document provides a deep dive into the barrier analytics available in mtdata, covering the underlying algorithms, when to use each method, and real-world trading scenarios.
+**Related:** [Glossary](GLOSSARY.md) · [Sample trade](SAMPLE-TRADE.md) · [CLI](CLI.md) · [Uncertainty](forecast/UNCERTAINTY.md) · [Volatility](forecast/VOLATILITY.md)
 
 ---
 
-## Quick Start (Simple Usage First)
+## Quick start
 
 ### 1) Probability for one TP/SL pair
 

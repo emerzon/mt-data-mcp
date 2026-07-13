@@ -1,12 +1,40 @@
 # Glossary
 
-This glossary explains technical terms used in mtdata with simple language and real-world trading examples.
+Plain-language definitions for the trading and forecasting terms you will see in mtdata docs and tool output. Each entry aims for **enough to follow the examples**, not a textbook — plus **where it shows up in mtdata**.
+
+**Tip:** Skim [Basic trading concepts](#basic-trading-concepts-start-here) if you are new. Use the [quick find](#quick-find) table when a command or doc drops an acronym (BOCPD, Kelly, ADF, …).
+
+**Related:** [README](../README.md) · [Sample trade](SAMPLE-TRADE.md) · [Forecasting](FORECAST.md) · [Docs index](README.md)
 
 ---
 
-## Basic Trading Concepts (Start Here)
+## Quick find
 
-If you're new to trading, skim this section first. It's enough to follow the examples in this repo.
+Jump straight to dense concepts that show up in tools and docs:
+
+| Concept | Plain idea | Jump |
+|---------|------------|------|
+| **BOCPD** | “Did the market just change regime?” (change-point prob) | [BOCPD](#change-point-detection-bocpd) |
+| **HMM / GMM / MS-AR / PELT** | Label or segment market “modes” | [HMM](#hidden-markov-model-hmm) · [GMM](#gaussian-mixture-gmm) · [MS-AR](#markov-switching-ar-ms-ar) · [PELT](#pelt-change-point-detection) |
+| **Kelly** | How large a bet maximizes long-run growth (often use a fraction) | [Kelly](#kelly-criterion) |
+| **Edge / EV** | Win-rate advantage vs dollar expectation | [Edge](#edge) · [EV](#ev-expected-value) |
+| **VaR / CVaR** | Statistical loss thresholds for open risk | [VaR](#var-value-at-risk) · [CVaR](#cvar-conditional-var--expected-shortfall) |
+| **EWMA / GARCH / HAR-RV** | How much price tends to move | [EWMA](#ewma-exponentially-weighted-moving-average) · [GARCH](#garch-generalized-autoregressive-conditional-heteroskedasticity) · [HAR-RV](#har-rv-heterogeneous-autoregressive-realized-volatility) |
+| **Conformal intervals** | Bands from past forecast errors (not a normal-curve assumption) | [Conformal](#conformal-intervals) |
+| **GBM / Monte Carlo** | Random simulated price paths | [Monte Carlo](#monte-carlo-simulation) · [GBM](#gbm-geometric-brownian-motion) |
+| **ADF / KPSS** | Is the series stationary enough to model? | [Stationarity tests](#stationarity-tests-adf-kpss-phillipsperron) |
+| **Granger / cointegration** | Predictive lead-lag vs shared long-run levels | [Granger](#granger-causality) · [Cointegration](#cointegration) |
+| **POC / VAH / VAL** | Volume-by-price fair value | [Volume profile](#volume-profile-poc-vah-val) |
+| **LTTB** | Downsample a series while keeping shape | [LTTB](#lttb-largest-triangle-three-buckets) |
+| **Dry-run / guardrails** | Preview orders; cap symbols, size, and risk | [Dry-run](#dry-run) · [Guardrails](#trade-guardrails) |
+| **TOON / MCP** | Default CLI presentation; agent tool protocol | [TOON](#toon) · [MCP](#mcp-model-context-protocol) |
+| **Heston / QuantLib** | Stochastic vol & option pricing | [Heston](#heston-model) · [QuantLib](#quantlib) |
+
+---
+
+## Basic trading concepts (start here)
+
+If you are new to trading, this section is enough to follow the walkthroughs in this repo.
 
 ### Long vs Short
 - **Long**: you profit if price goes **up** (buy now, sell later).
@@ -81,9 +109,9 @@ Exponential smoothing that weighs recent observations more heavily than older on
 **When to use:** Data with clear seasonal patterns (e.g., higher volatility during market opens).
 
 ### Monte Carlo Simulation
-Generates thousands of possible future price paths by randomly sampling from historical return distributions.
+Generates thousands of possible future price paths by randomly sampling from a model of returns (often GBM or a richer process). Essential for **ranges**, **barrier hit odds**, and risk sizing — not for a single “the” price.
 
-**When to use:** When you need a *range* of outcomes rather than a single prediction. Essential for risk sizing and barrier analysis.
+**When to use:** Barrier tools (`forecast_barrier_prob` / `forecast_barrier_optimize`), path simulation methods (`mc_gbm`, `hmm_mc`, …).
 
 **Example:**
 ```bash
@@ -91,18 +119,45 @@ mtdata-cli forecast_generate EURUSD --timeframe H1 --horizon 12 \
   --method mc_gbm --params "n_sims=2000"
 ```
 
-**Interpretation:** Instead of one forecast line, you get percentile bands showing where price might land.
+**Interpretation:** Percentile bands and hit rates across paths — not a guaranteed path.
 
-### Chronos
-A foundation model for time series (like GPT for text). Pre-trained on millions of time series, then applied to your data.
+### GBM (Geometric Brownian Motion)
+A standard random-walk-with-drift model for prices: continuous paths, log-returns roughly normal, constant vol in the basic form. mtdata’s `mc_gbm` draws many GBM paths; variants add fat tails, jumps, or stochastic vol.
 
-**When to use:** When you want state-of-the-art accuracy without tuning. Requires `chronos` and `torch` packages.
+**Limitation:** Real markets jump, cluster volatility, and switch regimes — so treat GBM as a **baseline simulator**, not truth.
+
+**In mtdata:** `mc_gbm` (and related barrier methods). See [BARRIER_FUNCTIONS.md](BARRIER_FUNCTIONS.md).
+
+### Barrier simulation methods (quick map)
+| Method key | Plain idea |
+|------------|------------|
+| `mc_gbm` | Classic GBM Monte Carlo |
+| `hmm_mc` | Simulate paths that can **switch regimes** (HMM) |
+| `garch` | Paths with **clustered** volatility |
+| `heston` | **Stochastic volatility** (vol itself wanders) |
+| `jump_diffusion` | Continuous moves **plus jumps** |
+| `bootstrap` | Resample historical returns |
+| `auto` / `ensemble` | Pick or blend methods from diagnostics |
+
+Defaults and when-to-use details: [BARRIER_FUNCTIONS.md](BARRIER_FUNCTIONS.md).
+
+### Chronos / foundation models
+**Foundation models** (Chronos, Chronos-Bolt, TimesFM, …) are pre-trained on huge collections of series, then applied to your symbol with little or no task-specific training — analogous to large language models for text.
+
+**When to use:** Strong baselines without hand-tuning ARIMA orders; needs optional deps (`chronos-forecasting`, `torch`; TimesFM via extra).
 
 **Example:**
 ```bash
 mtdata-cli forecast_generate EURUSD --timeframe H1 --horizon 24 \
   --library pretrained --method chronos2
 ```
+
+**In mtdata:** `forecast_list_methods --json` shows what your install can run. See [FORECAST.md](FORECAST.md) and [forecast/METHODS.md](forecast/METHODS.md).
+
+### Ensemble (forecast)
+Combines several methods (average, Bayesian model averaging-style, stacking, …) so no single model owns the call. Useful when methods disagree or you want robustness over one hero model.
+
+**In mtdata:** `--method ensemble` on forecast tools; see [forecast/FORECAST_GENERATE.md](forecast/FORECAST_GENERATE.md).
 
 ---
 
@@ -144,15 +199,13 @@ The current "behavior mode" of the market. Different regimes require different s
 | **High Volatility / Crisis** | Large, unpredictable swings | Reduce position sizes |
 
 ### Hidden Markov Model (HMM)
-An algorithm that assumes the market switches between hidden "states" (regimes). It estimates which state generated the current data based on observed returns and volatility.
+Assumes the market flips between a few **hidden states** you never observe directly. The implementation fits the selected one-dimensional target (returns by default, or price), then infers each state's mean, volatility, and transition probabilities.
 
-In `regime_detect`, `hmm` is a Gaussian HMM with explicit transition
-probabilities. Filtered inference is the live-oriented default; smoothed
-inference is retrospective. `gmm` is a separate i.i.d. Gaussian mixture.
+**Friendly picture:** Like labeling weather as Calm / Stormy without a perfect sensor — you only see rain intensity, and the model estimates the label.
 
-**Output:** State ID (0, 1, 2...) and confidence probability.
+In `regime_detect`, `hmm` is a **Gaussian HMM**. Prefer [filtered inference](#filtered-vs-smoothed-inference) for live use; smoothed is retrospective. **`gmm` is not an HMM** (no transitions).
 
-**Important:** The model doesn't know "Bull" or "Bear." You must interpret what each state means by examining its mean return and volatility.
+**Output:** State IDs (0, 1, …), probabilities, and per-state σ / μ — you name the states by reading those stats (the model will not say “bull”).
 
 **Example:**
 ```bash
@@ -160,22 +213,76 @@ mtdata-cli regime_detect EURUSD --timeframe H1 --method hmm --params "n_states=2
 ```
 
 **Interpretation:**
-- State 0: Low volatility (σ = 0.0003) → Ranging market
-- State 1: High volatility (σ = 0.0008) → Trending or volatile market
+- State 0: Low volatility (σ = 0.0003) → quiet / ranging
+- State 1: High volatility (σ = 0.0008) → active / stressed
+
+**In mtdata:** `regime_detect --method hmm`; barrier sim `hmm_mc`. See [forecast/REGIMES.md](forecast/REGIMES.md).
 
 ### Change-Point Detection (BOCPD)
-Bayesian Online Change Point Detection. Answers: "Did the market's underlying behavior just change?"
+**Bayesian Online Change-Point Detection** answers a simpler question than HMM: *“Did the market’s statistical behavior just change?”* — not *“which named regime are we in?”*
 
-**Output:** Probability (0-1) that each bar represents a regime shift.
+Think of it as a smoke alarm for structure: it raises a **transition probability** (0–1) that the recent bars no longer match the recent past (mean/vol shifts, breaks). High probability → stand down, shrink size, or retrain — not “buy” or “sell” by itself.
+
+**Output (typical):** `latest_transition_probability`, `transition_summary.max_transition_probability`, change-point counts, and (at full detail) a series of probabilities.
 
 **When to use:**
-- If probability exceeds the configured cutoff (0.5 in the example), the previous pattern may be breaking down
-- Useful for detecting breakouts or structural changes
+- Gate trades after a suspected breakout or news shock
+- Invalidate stale forecasts when the series “feels different”
+- Cross-check with PELT or HMM labels
 
 **Example:**
 ```bash
 mtdata-cli regime_detect EURUSD --timeframe H1 --method bocpd --threshold 0.5
 ```
+
+Omit `--threshold` when you want automatic asset/timeframe calibration; a fixed number (including `0.5`) is treated as fixed.
+
+**In mtdata:** `regime_detect --method bocpd`. Deep dive: [forecast/REGIMES.md](forecast/REGIMES.md).
+
+### PELT (change-point detection)
+**Pruned Exact Linear Time** segments a series at structural breaks (from the `ruptures` library). Unlike BOCPD’s online “probability right now,” PELT is often used to **cut history into regimes** for retrospective analysis.
+
+**When to use:** Segment history before fitting forecasts; confirm breaks BOCPD flagged.
+
+**Example:**
+```bash
+mtdata-cli regime_detect EURUSD --timeframe H1 --method pelt \
+  --params "model=rbf penalty=auto min_size=5"
+```
+
+**In mtdata:** `regime_detect --method pelt`. See [forecast/REGIMES.md](forecast/REGIMES.md).
+
+### Markov-Switching AR (MS-AR)
+Combines **regime switches** with an **autoregressive** model: each state has its own AR dynamics (how past returns map to the next bar), not only a mean/vol label.
+
+**When to use:** When autocorrelation as well as volatility changes by regime; research-style workflows.
+
+**Example:**
+```bash
+mtdata-cli regime_detect EURUSD --timeframe H1 --method ms_ar --params "n_states=2 order=1"
+```
+
+**In mtdata:** `regime_detect --method ms_ar`. Defaults to filtered inference (live-oriented); `inference=smoothed` is retrospective.
+
+### Gaussian Mixture (GMM)
+Soft clustering of the selected one-dimensional target (returns by default, or price) into Gaussian components **without** a Markov transition matrix. Volatility is each component's fitted sigma; it is not a separate input feature. Bars are assigned by similarity to the components, not by “how long we stay in a state.”
+
+**Do not** read GMM output as an HMM filter — no persistence model is assumed.
+
+**In mtdata:** `regime_detect --method gmm`.
+
+### Clustering (regimes)
+Distance-based grouping (e.g. K-means style) on return/volatility features. Descriptive exploration when parametric HMM/MS-AR fits are unstable.
+
+**In mtdata:** `regime_detect --method clustering`.
+
+### Filtered vs smoothed inference
+| Mode | Uses data… | Good for |
+|------|------------|----------|
+| **Filtered** (default for HMM/MS-AR) | Up through each bar | Live / causal decisions |
+| **Smoothed** | The whole analysis window, including later bars | Retrospective segmentation only |
+
+Using smoothed probabilities for “what should I do *now*” leaks future information.
 
 ---
 
@@ -192,27 +299,33 @@ A measure of how much price typically moves. Higher volatility = larger price sw
 | **Implied** | Market's expectation (from options prices) |
 
 ### EWMA (Exponentially Weighted Moving Average)
-A volatility estimator that gives more weight to recent observations.
+A volatility estimator that gives more weight to recent observations — a fast “how wild has it been lately?” gauge.
 
-**Parameter:** `lambda` (0.94 is standard). Higher = slower adaptation; lower = faster reaction to new data.
+**Parameter:** `lambda` / `lambda_` near **0.94** is a common RiskMetrics-style default. Higher = slower adaptation; lower = reacts faster.
 
 **Example:**
 ```bash
 mtdata-cli forecast_volatility_estimate EURUSD --timeframe H1 \
-  --horizon 12 --method ewma --params "lambda=0.94"
+  --horizon 12 --method ewma --params "lambda_=0.94"
 ```
 
 **Interpretation:** If output is `sigma_bar_return: 0.0006`, expect hourly returns to have ~0.06% standard deviation.
 
-### GARCH (Generalized Autoregressive Conditional Heteroskedasticity)
-A model that captures *volatility clustering*—the tendency for high-volatility periods to follow high-volatility periods.
+**In mtdata:** `forecast_volatility_estimate --method ewma`. See [forecast/VOLATILITY.md](forecast/VOLATILITY.md).
 
-**When to use:** When you observe that big moves cluster together. Common in equity and FX markets.
+### GARCH (Generalized Autoregressive Conditional Heteroskedasticity)
+Models **volatility clustering** — quiet periods follow quiet periods, wild follows wild. Variants add fat tails (`garch_t`), asymmetry (`egarch`, `gjr_garch`), or long memory (`figarch`).
+
+**When to use:** When big moves cluster; slower than EWMA but richer for multi-step vol forecasts and some barrier sims.
+
+**In mtdata:** `forecast_volatility_estimate` GARCH family methods; barrier method `garch`. See [forecast/VOLATILITY.md](forecast/VOLATILITY.md).
 
 ### HAR-RV (Heterogeneous AutoRegressive Realized Volatility)
-Uses realized volatility at multiple time scales (daily, weekly, monthly) to forecast future volatility.
+Uses realized volatility at **multiple horizons** (e.g. daily / weekly / monthly components) to forecast future vol — “slow and fast traders” intuition.
 
-**When to use:** When you have access to high-frequency intraday data and want more accurate volatility forecasts.
+**When to use:** When you can build RV from denser bars (e.g. M5) for an H1 decision horizon.
+
+**In mtdata:** `forecast_volatility_estimate --method har_rv`. See [forecast/VOLATILITY.md](forecast/VOLATILITY.md).
 
 ---
 
@@ -258,22 +371,31 @@ When optimizing TP/SL levels, you must choose what to maximize. Each objective a
 ---
 
 ### Kelly Criterion
-**What it measures:** The optimal fraction of your capital to bet for maximum long-term growth.
+**What it measures:** The stake size (as a **fraction of bankroll**) that maximizes long-run growth if your win odds and payoff ratio are correct.
 
-**Formula:** `Kelly = P(win) - (P(loss) / (TP/SL))`
+**Intuition:** If you bet too small, you under-compound. If you bet too large, a string of losses can crush you. Kelly is the theoretical “sweet spot” — and it is **aggressive**.
 
-**Example:** Kelly = 0.25 means bet 25% of capital per trade for maximum growth.
+**Simplified form (even-money-style barrier framing):**
+`Kelly ≈ P(win) − P(loss) / (TP/SL)` when TP/SL are percent distances (net reward/risk).
+
+**Example:** Kelly = 0.25 → full Kelly would risk **25% of equity** per trade. Most people use **fractional Kelly** (e.g. ¼ or ½ Kelly → 6–12% in that example, still large for many accounts).
 
 **When to use:**
-- Position sizing decisions
-- When you want to grow capital as fast as possible
-- Long-term systematic trading
+- Compare TP/SL grids on a growth-oriented objective (`objective=kelly`)
+- Cross-check with `trade_risk_analyze --sizing-method kelly` when you have win-rate / avg win / avg loss
 
-**Limitation:** Full Kelly is aggressive and leads to large drawdowns. Most traders use "fractional Kelly" (e.g., 0.25 × Kelly).
+**Limitation:** Wrong inputs → wrong size. Full Kelly has large drawdowns. Prefer fractional Kelly and hard risk caps (see guardrails).
 
-**Interpretation of output:**
-- `kelly`: Raw Kelly fraction based on all paths
-- `kelly_cond`: Kelly fraction based only on paths that resolved (TP or SL hit)
+**Interpretation of barrier output:**
+- `kelly`: from all simulated paths
+- `kelly_cond`: only paths that hit TP or SL (resolved)
+
+**In mtdata:** barrier optimize/prob metrics; `trade_risk_analyze` Kelly sizing; journal-derived win stats via `trade_journal_analyze`. See [TRADING_RISK.md](TRADING_RISK.md) and [BARRIER_FUNCTIONS.md](BARRIER_FUNCTIONS.md).
+
+### Fixed-fraction sizing
+Risk a **fixed percent of equity** per trade (e.g. 1% from entry to stop). Simpler and more common than full Kelly; often combined with a Kelly *cap*.
+
+**In mtdata:** `trade_risk_analyze` default `sizing_method=fixed_fraction` with `--desired-risk-pct`.
 
 ---
 
@@ -562,10 +684,91 @@ mtdata-cli data_fetch_candles EURUSD --timeframe H1 --limit 500 \
 ```
 
 ### Stationarity
-A statistical property where mean and variance don't change over time. Most forecasting models assume stationarity.
+A statistical property where mean and variance don't change over time. Many forecasting models assume stationarity.
 
-**Problem:** Raw prices are *not* stationary (they trend up or down).
-**Solution:** Use returns (percent change) instead, which are typically stationary.
+**Problem:** Raw prices are *not* stationary (they wander and trend).
+**Solution:** Often model **returns** (or other transforms) instead of raw price.
+
+### Stationarity tests (ADF, KPSS, Phillips–Perron)
+Three classical checks for whether a series looks stationary enough to model:
+
+| Test | Null hypothesis (plain English) | Rule of thumb |
+|------|----------------------------------|---------------|
+| **ADF** (Augmented Dickey–Fuller) | “There *is* a unit root” (non-stationary) | Reject null → evidence *for* stationarity |
+| **PP** (Phillips–Perron) | Same idea as ADF, different correction | Same interpretation as ADF |
+| **KPSS** | “The series *is* stationary” | Reject null → evidence *against* stationarity |
+
+mtdata combines them into a short `conclusion`: `stationary`, `non_stationary`, `mixed`, or `inconclusive`.
+
+**In mtdata:** `stationarity_test`. See [TIME_SERIES_DIAGNOSTICS.md](TIME_SERIES_DIAGNOSTICS.md).
+
+### Log return
+`log(price_t / price_{t-1})` — a standard transform for modeling and correlation. Closer to stationary than raw prices; additive over time.
+
+### Autocorrelation / seasonality (periodogram)
+**Autocorrelation** measures how much today’s value relates to lags of itself. A **periodogram** looks for cyclic strength by frequency. Together they suggest candidate seasonal periods (e.g. 24 bars on H1 ≈ daily).
+
+**In mtdata:** `seasonality_detect`. Confirm on held-out history; peaks are not proof of a tradable calendar edge.
+
+### Outlier scores (MAD, IQR, z-score)
+Ways to flag extreme bars:
+
+| Method | Idea |
+|--------|------|
+| **z-score** | Distance from mean in standard deviations (sensitive to extremes) |
+| **IQR** | Outside the interquartile range fence |
+| **MAD** | Median absolute deviation — more robust to outliers |
+
+**In mtdata:** `outliers_detect`.
+
+### Causal vs non-causal filters
+A **causal** filter uses only past (and present) data — safe for live trading and honest backtests. A **non-causal** (zero-phase) filter uses future bars to smooth, which looks great on charts but **leaks** future information.
+
+**In mtdata:** See [DENOISING.md](DENOISING.md); `denoise_list_methods` reports causality.
+
+### LTTB (Largest Triangle Three Buckets)
+A **downsampling** algorithm that keeps a small number of points while preserving visual shape (peaks/valleys). It does **not** smooth values — it drops rows.
+
+**In mtdata:** `--simplify lttb` on data tools. See [SIMPLIFICATION.md](SIMPLIFICATION.md).
+
+### Kalman filter
+A recursive estimator that blends a simple process model with noisy observations — often used as an **adaptive smoother** for price or indicators.
+
+**In mtdata:** `--denoise kalman`. See [DENOISING.md](DENOISING.md).
+
+### Wavelet (denoise / regimes)
+Decomposes a series into frequency bands (detail vs trend). Used for **denoising** (drop noisy bands) and, in some regime modes, **energy-profile** style state labels.
+
+**In mtdata:** denoise `wavelet`; regime method `wavelet` where enabled. See [DENOISING.md](DENOISING.md) and [forecast/REGIMES.md](forecast/REGIMES.md).
+
+---
+
+## Multi-asset relationships
+
+### Correlation
+How two series move **together** (usually on returns). High correlation ≠ “A causes B”; it is co-movement over the window.
+
+**In mtdata:** `correlation_matrix`. See [CAUSAL_DISCOVERY.md](CAUSAL_DISCOVERY.md).
+
+### Cross-correlation (lead / lag)
+Correlation at different time lags: does A tend to move **before** B?
+
+**In mtdata:** `cross_correlation`.
+
+### Granger causality
+A **predictive** test: does past of A improve forecasts of B beyond B’s own past? This is **not** philosophical causality — only lead-lag predictability in-sample.
+
+**In mtdata:** `causal_discover_signals`. See [CAUSAL_DISCOVERY.md](CAUSAL_DISCOVERY.md).
+
+### Cointegration
+Two (or more) series can wander individually yet keep a **stable long-run relationship** (a mean-reverting spread). Classic pairs-trading intuition.
+
+| Flavor | Idea |
+|--------|------|
+| **Engle–Granger** | Pairwise: regress one on the other, test residual stationarity |
+| **Johansen** | Multivariate: how many cointegrating relations in a basket |
+
+**In mtdata:** `cointegration_test` (`engle_granger` pairs or `johansen`). Prefer level/log-level transforms as documented in the tool.
 
 ---
 
@@ -688,11 +891,51 @@ The loss your positions are not expected to exceed over a holding period at a gi
 **In mtdata:** Estimated for open positions by `trade_var_cvar_calculate` (historical or Gaussian). See [TRADING_RISK.md](TRADING_RISK.md).
 
 ### CVaR (Conditional VaR / Expected Shortfall)
-The average loss in the worst cases beyond the VaR threshold — a measure of tail severity.
+The average loss in the worst cases beyond the VaR threshold — a measure of **tail severity**. Also called **Expected Shortfall (ES)**.
 
 **Example:** If the 95% VaR is $120, the 95% CVaR is the average loss across the worst 5% of outcomes, which is ≥ $120.
 
-**In mtdata:** Returned alongside VaR by `trade_var_cvar_calculate`. See [TRADING_RISK.md](TRADING_RISK.md).
+**In mtdata:** Returned alongside VaR by `trade_var_cvar_calculate`; portfolio tools may say ES. See [TRADING_RISK.md](TRADING_RISK.md) and [ADVANCED_ANALYTICS.md](ADVANCED_ANALYTICS.md).
+
+### Sharpe ratio
+Return per unit of volatility (often excess return / σ). Higher is “more reward per risk unit” under strong assumptions; sensitive to sample and path.
+
+**In mtdata:** Appears in some backtest / strategy validation summaries. See [forecast/BACKTESTING.md](forecast/BACKTESTING.md).
+
+### Dry-run
+A **preview** of a trading request: validation and routing checks **without** sending the order to MT5. Clean dry-runs are necessary but not sufficient (broker margin/stops still apply live).
+
+**In mtdata:** `--dry-run true` on `trade_place` / `trade_modify` / `trade_close`. Defaults are **live** unless you pass dry-run. See [TRADING_SAFETY.md](TRADING_SAFETY.md).
+
+### Trade guardrails
+Optional environment limits: allowed symbols, max volume, max risk % of equity, blocklists, etc. Defense-in-depth so a bad agent or typo cannot empty an account.
+
+**In mtdata:** `MTDATA_TRADE_*` variables in [ENV_VARS.md](ENV_VARS.md#trade-guardrails); behavior in [TRADING_SAFETY.md](TRADING_SAFETY.md).
+
+### MCP (Model Context Protocol)
+A standard way for AI assistants (and other clients) to call tools on a server. mtdata exposes its research/trading tools over MCP transports (`mtdata-stdio`, `mtdata-sse`, …).
+
+**In mtdata:** [SETUP.md](SETUP.md#mcp-server) · [DEPLOYMENT.md](DEPLOYMENT.md).
+
+### TOON
+mtdata’s default **human-readable compact** CLI presentation (tabular-ish text with a schema hint). Use `--json` for scripts and agents.
+
+**In mtdata:** [CLI.md](CLI.md) · [OUTPUT.md](OUTPUT.md).
+
+### Microstructure
+Tick-level structure of the market: spreads, quote updates, short-horizon liquidity — “how the tape behaves,” not daily chart patterns.
+
+**In mtdata:** `market_microstructure_analyze`. See [ADVANCED_ANALYTICS.md](ADVANCED_ANALYTICS.md).
+
+### Execution quality
+How fills and latency compare to what you intended (slippage, adverse selection, etc.).
+
+**In mtdata:** `trade_execution_quality`. See [ADVANCED_ANALYTICS.md](ADVANCED_ANALYTICS.md).
+
+### Relative strength
+How one symbol’s performance compares to peers or a basket over a window (not the RSI indicator).
+
+**In mtdata:** `market_relative_strength`. See [ADVANCED_ANALYTICS.md](ADVANCED_ANALYTICS.md).
 
 ---
 
@@ -755,9 +998,17 @@ Analyzing how a symbol's behavior varies across time dimensions — day of week,
 
 ---
 
-## See Also
+## See also
 
-- [Forecasting Guide](FORECAST.md)
-- [Regime Detection](forecast/REGIMES.md)
-- [Barrier Analysis](BARRIER_FUNCTIONS.md)
-- [Technical Indicators](TECHNICAL_INDICATORS.md)
+| Topic | Doc |
+|-------|-----|
+| Forecasting stages & methods | [FORECAST.md](FORECAST.md) · [forecast/METHODS.md](forecast/METHODS.md) |
+| Regimes & change points | [forecast/REGIMES.md](forecast/REGIMES.md) |
+| Barriers, edge, Kelly objectives | [BARRIER_FUNCTIONS.md](BARRIER_FUNCTIONS.md) |
+| VaR, sizing, stress | [TRADING_RISK.md](TRADING_RISK.md) |
+| Live orders, dry-run | [TRADING_SAFETY.md](TRADING_SAFETY.md) |
+| Stationarity, outliers, vol cone | [TIME_SERIES_DIAGNOSTICS.md](TIME_SERIES_DIAGNOSTICS.md) |
+| Correlation, Granger, cointegration | [CAUSAL_DISCOVERY.md](CAUSAL_DISCOVERY.md) |
+| Indicators & denoise | [TECHNICAL_INDICATORS.md](TECHNICAL_INDICATORS.md) · [DENOISING.md](DENOISING.md) |
+| Levels (pivots, POC, confluence) | [LEVELS.md](LEVELS.md) |
+| Full doc map | [docs/README.md](README.md) |

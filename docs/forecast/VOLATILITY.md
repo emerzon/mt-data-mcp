@@ -1,18 +1,14 @@
-# Volatility Forecasting
+# Volatility forecasting
 
-Volatility measures how much price typically moves. It's essential for:
-- Setting realistic stop-loss and take-profit distances
-- Sizing positions (risk more when volatility is low)
-- Understanding barrier hit probabilities
+How much does price usually move? Volatility answers that — and it drives **realistic TP/SL distances**, **position size**, and **barrier hit odds**. mtdata estimates and forecasts vol with EWMA, HAR-RV, GARCH-family methods, and term-structure views.
 
-**Related:**
-- [GLOSSARY.md](../GLOSSARY.md) — Definitions of volatility terms
-- [FORECAST.md](../FORECAST.md) — Price forecasting
-- [BARRIER_FUNCTIONS.md](../BARRIER_FUNCTIONS.md) — Using volatility for TP/SL sizing
+**Dense terms:** [Volatility](../GLOSSARY.md#volatility) · [EWMA](../GLOSSARY.md#ewma-exponentially-weighted-moving-average) · [GARCH](../GLOSSARY.md#garch-generalized-autoregressive-conditional-heteroskedasticity) · [HAR-RV](../GLOSSARY.md#har-rv-heterogeneous-autoregressive-realized-volatility) · [ATR](../GLOSSARY.md#atr-average-true-range)
+
+**Related:** [Glossary](../GLOSSARY.md) · [Forecasting](../FORECAST.md) · [Barriers](../BARRIER_FUNCTIONS.md) · [Risk analytics](../TRADING_RISK.md)
 
 ---
 
-## Quick Start
+## Quick start
 
 ```bash
 # EWMA volatility (fast, reliable)

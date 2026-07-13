@@ -1,20 +1,18 @@
-# Web API Reference
+# Web API
 
-The `mtdata` Web API exposes a focused REST surface for market data,
-forecasting, and analysis, and can serve a separately built Web UI. Use it when
-you want local HTTP access from dashboards, notebooks, scripts, or another
-application.
+Local HTTP access to mtdata for dashboards, notebooks, scripts, and apps — plus an optional React UI after you build `webui/`. Same research strengths as the CLI; **smaller surface** than full CLI/MCP (if a tool is missing here, use those instead).
 
 **Base URL:** `http://localhost:8000` (default)
 
-Route versioning:
-- Every API route below is available under both `/api/...` and `/api/v1/...`.
-- Prefer `/api/v1` for new integrations.
-- The examples below use `/api` for brevity.
+| Versioning | Guidance |
+|------------|----------|
+| `/api/...` and `/api/v1/...` | Both work for every route below |
+| New integrations | Prefer `/api/v1` |
+| Examples on this page | Use `/api` for brevity |
 
-The Web API is intentionally smaller than the full CLI/MCP tool surface. If an endpoint is not listed here, use `mtdata-cli` or an MCP client for that tool.
+**Related:** [Setup](SETUP.md) · [Deployment](DEPLOYMENT.md) · [Env vars](ENV_VARS.md) · [Output contract](OUTPUT.md)
 
-## Quick Start
+## Quick start
 
 Start the local server:
 
@@ -101,7 +99,7 @@ Fetch OHLCV candles for a symbol.
   - `include_incomplete` (bool): Include the latest forming candle.
   - `timestamp_format` (`epoch` | `iso`): Timestamp encoding for returned rows. Default `epoch`; use `iso` to match the data tool's default.
   - `denoise_method` (string, optional): Apply denoising (e.g., "ema").
-  - `denoise_params` (string, optional): JSON or "k=v" params for denoising.    
+  - `denoise_params` (string, optional): JSON or "k=v" params for denoising.
 - **Response Notes:**
   - Both `/api/history` and `/api/v1/history` include modern runtime timezone
     metadata under `meta.runtime.timezone` (`utc`, `server`, and `client` when
@@ -271,8 +269,10 @@ Control the server host and port via environment variables:
 
 ---
 
-## See Also
+## See also
 
-- [SETUP.md](SETUP.md) — Installation and MCP server configuration
-- [CLI.md](CLI.md) — CLI command reference
+- [SETUP.md](SETUP.md) — Install and run modes
+- [DEPLOYMENT.md](DEPLOYMENT.md) — Long-lived local service
+- [CLI.md](CLI.md) — Full tool surface via CLI
+- [OUTPUT.md](OUTPUT.md) — Shared payload contract
 - [TROUBLESHOOTING.md](TROUBLESHOOTING.md) — Common issues

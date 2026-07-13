@@ -1,18 +1,16 @@
-# End-to-End Trading Workflow Example
+# End-to-end research loop
 
-**Related:**
-- [SETUP.md](SETUP.md) — Installation and MT5 connection
-- [CLI.md](CLI.md) — CLI usage patterns and output formats
-- [SAMPLE-TRADE.md](SAMPLE-TRADE.md) — Guided workflow (start here if new)
+A compact **command recipe** for the full mtdata research loop: discover methods → fetch data → add context → forecast → size risk → validate. Prefer this when you already know the CLI; if you want narrative “why each step,” start with [SAMPLE-TRADE.md](SAMPLE-TRADE.md).
 
-This walkthrough shows a practical “research loop”: discover methods, fetch data, add context (indicators/denoise), generate forecasts, size risk (volatility + barriers), and validate with a quick backtest.
+**Related:** [Setup](SETUP.md) · [CLI](CLI.md) · [Sample trade](SAMPLE-TRADE.md) · [Forecasting](FORECAST.md)
 
-Assumptions:
-- MetaTrader 5 terminal is running.
-- You call tools via `mtdata-cli <command> ...`.
-- Replace `EURUSD` and `H1` with your symbol/timeframe.
+**Assumptions**
 
-Tip: add `--json` for structured output.
+- MetaTrader 5 is running and logged in
+- You call tools via `mtdata-cli <command> ...`
+- Swap `EURUSD` / `H1` for your market
+
+Tip: add `--json` when you want structured output for scripts or agents.
 
 ---
 

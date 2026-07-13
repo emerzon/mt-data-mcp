@@ -1,57 +1,57 @@
-# Forecasting Guide
+# Forecasting guide
 
-This guide covers tools for predicting future market behavior: price direction, volatility, and uncertainty.
+Predict **where price might go**, **how wide the range is**, and **how much it might move** — then validate before you act. mtdata covers classical baselines, ML, foundation models, simulation methods, and async training with a model cache.
 
-**Related:**
-- [GLOSSARY.md](GLOSSARY.md) — Definitions of terms
-- [forecast/VOLATILITY.md](forecast/VOLATILITY.md) — Volatility estimation
-- [forecast/UNCERTAINTY.md](forecast/UNCERTAINTY.md) — Confidence intervals
+Forecasts are **estimates**, not guarantees. Pair point forecasts with uncertainty, barriers, and backtests.
 
----
+**Dense terms:** [Horizon](GLOSSARY.md#horizon) · [Lookback](GLOSSARY.md#lookback) · [Theta](GLOSSARY.md#theta-method) · [ARIMA](GLOSSARY.md#arima-autoregressive-integrated-moving-average) · [Monte Carlo](GLOSSARY.md#monte-carlo-simulation) · [Foundation models](GLOSSARY.md#chronos--foundation-models) · [Conformal](GLOSSARY.md#conformal-intervals) · [MAE / RMSE](GLOSSARY.md#mae-mean-absolute-error)
 
-## Key Concepts
-
-### Horizon
-How far ahead the forecast predicts, measured in bars.
-
-**Example:** `--horizon 12` with H1 timeframe = predict the next 12 hours.
-
-### Lookback
-How much historical data the model uses. More data can improve accuracy but increases computation time.
-
-### Confidence vs. Reality
-Forecasts are estimates, not guarantees. Always:
-1. Use confidence intervals to understand uncertainty
-2. Validate with backtests before trading
-3. Size positions based on volatility, not point forecasts
+**Related:** [Glossary](GLOSSARY.md) · [Methods reference](forecast/METHODS.md) · [Volatility](forecast/VOLATILITY.md) · [Uncertainty](forecast/UNCERTAINTY.md) · [Barriers](BARRIER_FUNCTIONS.md)
 
 ---
 
-## Price Forecasting (`forecast_generate`)
+## Key concepts
 
-### Basic Usage
+| Term | Meaning |
+|------|---------|
+| **Horizon** | How far ahead (in bars). `--horizon 12` on H1 ≈ next 12 hours. |
+| **Lookback** | How much history the model sees. More can help, but costs time. |
+| **Quantity** | Often price, returns, or other targets depending on method and flags. |
+
+**Confidence vs reality**
+
+1. Read intervals, not only the midline
+2. Validate with [backtests](forecast/BACKTESTING.md) before trading ideas
+3. Size risk from **volatility**, not a single point forecast
+
+---
+
+## Price forecasting (`forecast_generate`)
+
+### Basic usage
 
 ```bash
-# Theta method (fast, reliable baseline)
+# Fast, reliable baseline
 mtdata-cli forecast_generate EURUSD --timeframe H1 --horizon 12 --method theta
 
-# With JSON output for programmatic use
+# Structured output for scripts / agents
 mtdata-cli forecast_generate EURUSD --timeframe H1 --horizon 12 --method theta --json
 ```
 
-### Choosing a Method
+### Choosing a method
 
-Run this to see available methods:
 ```bash
 mtdata-cli forecast_list_methods
+mtdata-cli forecast_list_methods --json   # source of truth for *your* install
 ```
 
-Availability is environment-dependent:
-- On the supported Python 3.14 install path, mtdata ships Chronos, Chronos-Bolt, and TimesFM as the supported pretrained foundation-model options.
-- NeuralForecast methods (`nhits`, `tft`, `patchtst`, `nbeatsx`) require a modern Nixtla `neuralforecast` release plus `torch` in a Python/Torch environment supported by that package. On Python 3.14, current NeuralForecast releases may not resolve cleanly.
-- `forecast_list_methods --json` is the source of truth for what your current environment can actually run.
+Availability depends on extras you installed:
 
-For the full per-method reference — keys, categories, libraries, default parameters, and dependencies — see [forecast/METHODS.md](forecast/METHODS.md).
+- Supported foundation options on the Python 3.14 path include Chronos, Chronos-Bolt, and TimesFM (TimesFM via opt-in extra).
+- NeuralForecast methods (`nhits`, `tft`, `patchtst`, `nbeatsx`) need a manual `neuralforecast` + `torch` setup; they may not resolve cleanly on Python 3.14.
+- Always trust `forecast_list_methods --json` over static docs for what runs locally.
+
+Full per-method keys, defaults, and dependencies: [forecast/METHODS.md](forecast/METHODS.md).
 
 | Category | Models | When to Use |
 |----------|--------|-------------|
@@ -68,9 +68,9 @@ For the full per-method reference — keys, categories, libraries, default param
 
 ---
 
-## Recommended Workflow
+## Recommended workflow
 
-Use the forecast tools as separate stages so each result answers one question:
+Treat forecast tools as **stages**, each answering one question:
 
 | Stage | Question | Tool |
 |-------|----------|------|
@@ -92,9 +92,9 @@ mtdata-cli forecast_barrier_optimize EURUSD --timeframe H1 --horizon 12 --direct
 mtdata-cli forecast_backtest_run EURUSD --timeframe H1 --horizon 12 --methods theta --steps 20 --spacing 12
 ```
 
-### Reproducibility Notes
+### Reproducibility notes
 
-Forecast defaults vary by method and may change as implementations improve. For any result you plan to compare later, make the run self-describing:
+Defaults vary by method and can change over time. For any result you want to compare later, make the run **self-describing**:
 
 - Save the exact command, including `--symbol`, `--timeframe`, `--horizon`, `--lookback`, `--method`, `--library`, and `--params`.
 - Prefer `--json` for stored results so downstream scripts do not depend on text formatting.

@@ -1,15 +1,14 @@
-# Environment Variables Reference
+# Environment variables
 
-Complete reference for all environment variables recognized by mtdata. Set these in a `.env` file in the project root or export them in your shell.
+Full reference for settings mtdata reads from the environment or a project-root `.env` file. Start with MT5 login + timezone; add MCP/Web API, guardrails, and provider keys only when you need them.
 
-**Related:**
-- [SETUP.md](SETUP.md) — Installation and quick-start configuration
-- [WEB_API.md](WEB_API.md) — Web API endpoint details
-- [TROUBLESHOOTING.md](TROUBLESHOOTING.md) — Common issues
+**Related:** [Setup](SETUP.md) · [Web API](WEB_API.md) · [Timestamps](TIMESTAMPS.md) · [Trading safety](TRADING_SAFETY.md) · [Troubleshooting](TROUBLESHOOTING.md)
+
+Never commit real credentials. Keep `.env` local.
 
 ---
 
-## MT5 Connection
+## MT5 connection
 
 | Variable | Default | Description |
 |----------|---------|-------------|

@@ -1,15 +1,17 @@
-# Forecast Methods Reference
+# Forecast methods reference
 
-This page lists the forecast methods available to `forecast_generate --method <key>` (and the tuning/backtest tools), grouped by category, with the key parameters you set through `--params` and their code defaults.
+Catalog of `--method` keys for `forecast_generate` (and related tune/backtest tools): categories, libraries, default `--params`, and dependencies.
 
-> **The authoritative, environment-specific list is `forecast_list_methods`.** Method availability depends on which optional dependency groups you installed, so always confirm with:
+Plain-language method families: [Theta](../GLOSSARY.md#theta-method) · [ARIMA](../GLOSSARY.md#arima-autoregressive-integrated-moving-average) · [ETS](../GLOSSARY.md#ets-error-trend-seasonality) · [Monte Carlo / GBM](../GLOSSARY.md#monte-carlo-simulation) · [Foundation models](../GLOSSARY.md#chronos--foundation-models) · [Ensemble](../GLOSSARY.md#ensemble-forecast).
+
+> **Your install is the source of truth.** Optional extras change what is available:
 > ```bash
 > mtdata-cli forecast_list_methods --json
-> mtdata-cli forecast_list_methods --library statsforecast --json   # scope to one library
+> mtdata-cli forecast_list_methods --library statsforecast --json
 > ```
-> Defaults below reflect the code; when a parameter is "auto" the engine estimates it from the data unless you override it via `--params`.
+> Defaults below match the code; `"auto"` parameters are estimated from data unless you override them.
 
-For concepts (horizon, lookback, reproducibility) and workflow, see [FORECAST.md](../FORECAST.md). For per-method tuning and configuration search, see [FORECAST.md § Parameter Optimization](../FORECAST.md#parameter-optimization).
+**Related:** [Forecasting concepts](../FORECAST.md) · [Parameter optimization](../FORECAST.md#parameter-optimization) · [forecast_generate](FORECAST_GENERATE.md) · [Glossary](../GLOSSARY.md)
 
 ---
 

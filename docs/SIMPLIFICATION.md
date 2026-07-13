@@ -1,14 +1,13 @@
-# Data Simplification (Downsampling)
+# Data simplification (downsampling)
 
-mtdata supports **time-series simplification** via the `simplify` option on data tools such as `data_fetch_candles` and raw tick output in `data_fetch_ticks`. This reduces the number of returned rows for charting, dashboards, and large exports.
+Return **fewer points** from candles or ticks so charts, dashboards, and exports stay manageable. Enable via the `simplify` option on tools like `data_fetch_candles` and tick paths in `data_fetch_ticks`.
 
-Simplification is different from denoising:
-- **Simplify** reduces *how many points you return*.
-- **Denoise** changes *the values* to smooth noise.
+| Approach | What it changes |
+|----------|-----------------|
+| **Simplify** | *How many* points you get back ([LTTB](GLOSSARY.md#lttb-largest-triangle-three-buckets)) |
+| **Denoise** | *The values* (smoothing) — see [DENOISING.md](DENOISING.md) |
 
-**Related:**
-- [CLI.md](CLI.md) — CLI usage patterns
-- [DENOISING.md](DENOISING.md) — Smoothing filters
+**Related:** [CLI](CLI.md) · [Denoising](DENOISING.md) · [Glossary (LTTB)](GLOSSARY.md#lttb-largest-triangle-three-buckets)
 
 ---
 

@@ -1,11 +1,12 @@
-# Options & QuantLib Tools
+# Options and QuantLib
 
-mtdata includes tools for fetching US equity options data and pricing exotic options using [QuantLib](https://www.quantlib.org/).
+Fetch **US equity options chains** and price **barrier / exotic** structures with [QuantLib](https://www.quantlib.org/). Chains default to Yahoo Finance (Tradier optional). Pure QuantLib pricing does not need a live chain provider.
 
-**Related:**
-- [BARRIER_FUNCTIONS.md](BARRIER_FUNCTIONS.md) — Barrier probability analysis (MT5-based)
-- [FINVIZ.md](FINVIZ.md) — Fundamental data for equities
-- [CLI.md](CLI.md) — Command usage and output formats
+For *MT5 path* TP/SL hit probabilities on underlyings, see [BARRIER_FUNCTIONS.md](BARRIER_FUNCTIONS.md) — related idea, different stack.
+
+**Dense terms:** [QuantLib](GLOSSARY.md#quantlib) · [Heston](GLOSSARY.md#heston-model) · [Barrier option](GLOSSARY.md#barrier-option) · [Implied vol](GLOSSARY.md#volatility)
+
+**Related:** [Barriers (MT5)](BARRIER_FUNCTIONS.md) · [Finviz](FINVIZ.md) · [CLI](CLI.md) · [Glossary](GLOSSARY.md)
 
 ---
 

@@ -1,23 +1,22 @@
-# Uncertainty & Confidence Intervals
+# Uncertainty and confidence intervals
 
-Forecasts are estimates, not guarantees. Understanding uncertainty helps you size positions appropriately and avoid overconfidence.
+A point forecast without a range invites overconfidence. This page covers **model intervals** and **conformal intervals** so you can size risk and set levels with eyes open.
 
-**Related:**
-- [FORECAST.md](../FORECAST.md) — Price forecasting
-- [BARRIER_FUNCTIONS.md](../BARRIER_FUNCTIONS.md) — TP/SL probability analysis
-- [GLOSSARY.md](../GLOSSARY.md) — Term definitions
+**Dense terms:** [Confidence interval](../GLOSSARY.md#confidence-interval) · [Conformal intervals](../GLOSSARY.md#conformal-intervals) · [CI alpha](../GLOSSARY.md#ci-alpha) · [Horizon](../GLOSSARY.md#horizon)
+
+**Related:** [Forecasting](../FORECAST.md) · [Barriers](../BARRIER_FUNCTIONS.md) · [Volatility](VOLATILITY.md) · [Glossary](../GLOSSARY.md)
 
 ---
 
-## Types of Uncertainty
+## Types of uncertainty
 
-### Model Confidence Intervals
-Intervals derived from the forecasting model's assumptions (e.g., normal distribution of errors).
+### Model confidence intervals
+Intervals from the model’s assumptions (for example normal errors).
 
-**Limitation:** Financial data often violates these assumptions (fat tails, regime changes), so intervals may be too narrow.
+**Limitation:** Markets often have fat tails and regime shifts, so these bands can be **too narrow**.
 
-### Conformal Intervals
-Intervals calibrated from historical forecast errors. No distributional assumptions—just empirical coverage.
+### Conformal intervals
+Bands calibrated from **historical forecast errors** — empirical coverage without strong distributional assumptions.
 
 **Advantage:** More realistic bounds based on actual performance.
 

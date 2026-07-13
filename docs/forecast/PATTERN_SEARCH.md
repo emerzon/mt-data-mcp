@@ -1,19 +1,19 @@
-# Pattern Detection & Similarity Search
+# Pattern detection and similarity search
 
-This document covers two related capabilities:
-1. **Pattern Detection:** Identify known candlestick and chart patterns
-2. **Analog Forecasting:** Find historical windows similar to the current market
+Two related ideas:
 
-**Related:**
-- [../FORECAST.md](../FORECAST.md) — Price forecasting
-- [../TECHNICAL_INDICATORS.md](../TECHNICAL_INDICATORS.md) — Technical analysis context
-- [../GLOSSARY.md](../GLOSSARY.md) — Term definitions
+1. **Pattern detection** — flag known candlestick and chart shapes
+2. **Analog / similarity search** — find historical windows that look like *now*, then study what happened next
+
+Use patterns as **context**, not automatic entry rules. Confirm with regime, volatility, and risk tools.
+
+**Related:** [Forecasting](../FORECAST.md) · [Indicators](../TECHNICAL_INDICATORS.md) · [Glossary](../GLOSSARY.md) · [Levels](../LEVELS.md)
 
 ---
 
-## Pattern Detection (`patterns_detect`)
+## Pattern detection (`patterns_detect`)
 
-Identifies specific visual patterns that traders use for entry/exit signals.
+Identifies visual patterns traders often watch for structure and timing context.
 
 ### Candlestick Patterns
 
@@ -339,4 +339,3 @@ data[5]{time,pattern}:
 - [../FORECAST.md](../FORECAST.md) — Price forecasting overview
 - [../TECHNICAL_INDICATORS.md](../TECHNICAL_INDICATORS.md) — Technical indicators
 - [../GLOSSARY.md](../GLOSSARY.md) — Term definitions
-

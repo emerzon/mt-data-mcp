@@ -1,49 +1,47 @@
 # Setup & Configuration
 
-Use this guide to install mtdata, connect it to MetaTrader 5, and verify a safe read-only workflow before enabling any trading actions.
+Get mtdata installed, talking to MetaTrader 5, and through a **safe first workflow** — all before you enable any trading.
 
-**Related:**
-- [README.md](../README.md) — Project overview
-- [ENV_VARS.md](ENV_VARS.md) — Complete environment variables reference
-- [CLI.md](CLI.md) — Command usage
-- [TROUBLESHOOTING.md](TROUBLESHOOTING.md) — Common issues
+You do not need every optional dependency on day one. Start lean, confirm candles work, then add forecasting or web extras as you need them.
+
+**Related:** [README](../README.md) · [Env vars](ENV_VARS.md) · [CLI](CLI.md) · [Troubleshooting](TROUBLESHOOTING.md)
 
 ---
 
-> Important: The MetaTrader 5 Python integration is **Windows-only**. If you're on macOS/Linux, run `mtdata` on a Windows VM or Windows machine and connect remotely (MCP/Web API).
+> **Platform:** The MetaTrader 5 Python integration is **Windows-only**. On macOS/Linux, run mtdata on a Windows machine or VM and connect remotely (MCP or Web API).
 
-## Requirements
+## What you need
 
-- **Operating System:** Windows (required for MetaTrader 5)
-- **Python:** 3.14
-- **MetaTrader 5:** Installed and running
-- **Windows Build Tools:** Visual Studio Build Tools 2022 with the **Desktop development with C++** workload for `pip install -r requirements.txt`, Git-backed extras, and optional native accelerators
+| Requirement | Detail |
+|-------------|--------|
+| **OS** | Windows (required for MT5) |
+| **Python** | **3.14** |
+| **MetaTrader 5** | Installed, running, and logged in (demo recommended) |
+| **Build tools** | Visual Studio Build Tools 2022 with **Desktop development with C++** for the full install, Git-backed extras, and optional native builds |
 
----
+## Recommended first run
 
-## Recommended First-Run Path
+1. Install the lean package: `pip install -e .`
+2. Confirm MT5 connectivity: `mtdata-cli symbols_list --limit 10`
+3. Set broker timezone before trusting timestamps or backtests
+4. Stay **read-only** at first: symbols, candles, forecast, report
+5. Only then try `trade_*` — on a **demo** account, with `--dry-run true` when the command supports it
 
-1. Install the lean package with `pip install -e .`.
-2. Confirm MT5 connectivity with `mtdata-cli symbols_list --limit 10`.
-3. Set broker timezone configuration before relying on timestamps or backtests.
-4. Run read-only examples first: symbols, candles, forecast, and report commands.
-5. Use a demo account and `--dry-run true` before testing any `trade_*` command that supports it.
+### Install path cheatsheet
 
-Choose the smallest install that fits your current task:
-
-| Need | Install Path |
-|------|--------------|
+| Need | Install |
+|------|---------|
 | CLI, MT5 data, indicators, core analysis | `pip install -e .` |
-| Validated local research stack used by most docs | `pip install -r requirements.txt` |
-| Web API / Web UI backend only | `pip install -e .[web]` |
-| Heavy forecasting and optimization extras | `pip install -e .[forecast-classical]` and/or `pip install -e .[forecast-foundation]` |
-| Git-backed experimental integrations | Install the specific Git-backed extra only when needed |
+| Full research stack used by most docs | `pip install -r requirements.txt` |
+| Web API / UI backend only | `pip install -e .[web]` |
+| Heavy forecast extras | `pip install -e .[forecast-classical]` and/or `pip install -e .[forecast-foundation]` |
+| Git-backed experiments (TimesFM, etc.) | Install that extra only when you need it |
 
 ---
 
 ## Installation
 
-### 1. Create an Isolated Conda Environment (Optional but Recommended)
+### 1. Create an isolated conda environment (optional but recommended)
 
 If you use Conda/Miniconda, start with a clean Python 3.14 environment:
 
@@ -268,6 +266,8 @@ What happens if it's wrong?
 
 ## Running mtdata
 
+Same toolkit, three surfaces — pick what fits the job.
+
 ### CLI
 
 ```bash
@@ -275,9 +275,9 @@ What happens if it's wrong?
 mtdata-cli <command> [options]
 ```
 
-### MCP Server
+### MCP server
 
-mtdata supports three MCP transport modes:
+Three transports for AI clients and custom hosts:
 
 ```bash
 # SSE transport (default) — for browser/HTTP-based MCP clients
@@ -452,11 +452,14 @@ See [TROUBLESHOOTING.md](TROUBLESHOOTING.md) for more issues.
 
 ---
 
-## Next Steps
+## Next steps
 
-- [CLI.md](CLI.md) — Learn command usage
-- [EXAMPLE.md](EXAMPLE.md) — Follow an end-to-end workflow
-- [GLOSSARY.md](GLOSSARY.md) — Understand terminology
-- [LIMITATIONS.md](LIMITATIONS.md) — Review practical caveats before deeper integrations
-- [FINVIZ.md](FINVIZ.md) — Fundamental data and screening
-- [TEMPORAL.md](TEMPORAL.md) — Session and seasonal analysis
+Once candles list and a simple forecast run:
+
+1. [CLI.md](CLI.md) — Commands, help, and output formats
+2. [GLOSSARY.md](GLOSSARY.md) — Terms used across the docs
+3. [SAMPLE-TRADE.md](SAMPLE-TRADE.md) — Guided research workflow
+4. [EXAMPLE.md](EXAMPLE.md) — Compact end-to-end research loop
+5. [LIMITATIONS.md](LIMITATIONS.md) — Caveats before deep integrations
+
+Also useful later: [FINVIZ.md](FINVIZ.md) · [TEMPORAL.md](TEMPORAL.md) · [FORECAST.md](FORECAST.md)

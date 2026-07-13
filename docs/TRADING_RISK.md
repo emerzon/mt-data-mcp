@@ -1,17 +1,16 @@
-# Trading Risk Analytics
+# Trading risk analytics
 
-These are **read-only** risk tools. They inspect the account and open positions and
-return analytics — they never place, modify, or close orders. Use them to size a new
-trade, estimate tail risk, and stress-test the portfolio against scenarios.
+**Read-only** tools for sizing, tail risk, and stress tests. They inspect the account and open positions — they **never** place, modify, or close orders. Pair them with [TRADING_SAFETY.md](TRADING_SAFETY.md) when you move from analysis to execution.
 
 | Tool | Answers |
 |------|---------|
-| `trade_risk_analyze` | "How big can this trade be?" and "How much am I risking right now?" |
-| `trade_var_cvar_calculate` | "What is my statistical worst-case loss over one bar?" |
-| `trade_stress_test` | "What happens to my open positions under these price shocks?" |
+| `trade_risk_analyze` | “How big can this trade be?” and “How much am I risking right now?” |
+| `trade_var_cvar_calculate` | “What is my statistical worst-case loss over one bar?” |
+| `trade_stress_test` | “What happens to open positions under these price shocks?” |
 
-See [SAMPLE-TRADE.md](SAMPLE-TRADE.md) and [SAMPLE-TRADE-ADVANCED.md](SAMPLE-TRADE-ADVANCED.md)
-for end-to-end workflows, and [ENV_VARS.md](ENV_VARS.md#trade-guardrails) for guardrails.
+**Dense terms:** [Fixed-fraction sizing](GLOSSARY.md#fixed-fraction-sizing) · [Kelly](GLOSSARY.md#kelly-criterion) · [VaR](GLOSSARY.md#var-value-at-risk) · [CVaR / ES](GLOSSARY.md#cvar-conditional-var--expected-shortfall) · [Drawdown](GLOSSARY.md#drawdown)
+
+**Related:** [Sample trade](SAMPLE-TRADE.md) · [Advanced playbook](SAMPLE-TRADE-ADVANCED.md) · [Guardrails](ENV_VARS.md#trade-guardrails) · [Barriers](BARRIER_FUNCTIONS.md)
 
 ---
 
@@ -152,8 +151,9 @@ metadata is available — `equity_before`/`equity_after`/`impact_pct`.
 - Kelly sizing is only as good as its inputs — estimate `win_rate` and average win/loss
   from a sufficient out-of-sample track record (see `trade_journal_analyze`).
 
-## See Also
+## See also
 
 - [BARRIER_FUNCTIONS.md](BARRIER_FUNCTIONS.md) — TP/SL hit probabilities
-- [GLOSSARY.md](GLOSSARY.md) — VaR, CVaR, Kelly, and risk term definitions
-- [SAMPLE-TRADE-ADVANCED.md](SAMPLE-TRADE-ADVANCED.md) — Risk gating in a full workflow
+- [TRADING_SAFETY.md](TRADING_SAFETY.md) — Execution preview and guardrails
+- [GLOSSARY.md](GLOSSARY.md) — VaR, CVaR, Kelly
+- [SAMPLE-TRADE-ADVANCED.md](SAMPLE-TRADE-ADVANCED.md) — Risk gates in a full workflow
