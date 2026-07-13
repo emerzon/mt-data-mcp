@@ -303,6 +303,72 @@ def _feature_cluster_separation(
     return float(np.clip(1.0 - (within_ss / total_ss), 0.0, 1.0))
 
 
+def _align_states_to_return_centroids(
+    states: np.ndarray,
+    probabilities: np.ndarray,
+    target_series: np.ndarray,
+    target_centroids: np.ndarray,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray, Dict[int, int]]:
+    """Map one voter's states into shared return-centroid bins."""
+    state_array = np.asarray(states, dtype=int).reshape(-1)
+    probability_array = np.asarray(probabilities, dtype=float)
+    series_array = np.asarray(target_series, dtype=float).reshape(-1)
+    centroids = np.asarray(target_centroids, dtype=float).reshape(-1)
+    if (
+        probability_array.ndim != 2
+        or probability_array.shape[0] != state_array.size
+        or series_array.size != state_array.size
+        or probability_array.shape[1] < 1
+        or centroids.size < 2
+    ):
+        raise ValueError("State probabilities cannot be aligned to ensemble centroids.")
+
+    probability_array = np.nan_to_num(
+        probability_array,
+        nan=0.0,
+        posinf=0.0,
+        neginf=0.0,
+    )
+    probability_array = np.clip(probability_array, 0.0, None)
+    row_sums = np.sum(probability_array, axis=1, keepdims=True)
+    positive_rows = row_sums[:, 0] > 0.0
+    probability_array[positive_rows] /= row_sums[positive_rows]
+
+    source_count = int(probability_array.shape[1])
+    fallback_bins = np.rint(
+        np.linspace(0, centroids.size - 1, source_count)
+    ).astype(int)
+    state_map: Dict[int, int] = {}
+    finite_series = np.isfinite(series_array)
+    for source_state in range(source_count):
+        observations = series_array[
+            (state_array == source_state) & finite_series
+        ]
+        source_centroid = (
+            float(np.mean(observations))
+            if observations.size
+            else float(centroids[fallback_bins[source_state]])
+        )
+        state_map[source_state] = int(
+            np.argmin(np.abs(centroids - source_centroid))
+        )
+
+    aligned_probabilities = np.zeros((state_array.size, centroids.size), dtype=float)
+    for source_state, target_state in state_map.items():
+        aligned_probabilities[:, target_state] += probability_array[:, source_state]
+
+    valid_mask = (
+        (state_array >= 0)
+        & (state_array < source_count)
+        & positive_rows
+    )
+    aligned_states = np.full(state_array.size, -1, dtype=int)
+    for source_state, target_state in state_map.items():
+        aligned_states[valid_mask & (state_array == source_state)] = target_state
+    aligned_probabilities[~valid_mask] = 0.0
+    return aligned_states, aligned_probabilities, valid_mask, state_map
+
+
 def _append_warnings(payload: Dict[str, Any], warnings_to_add: List[str]) -> None:
     if not warnings_to_add:
         return
@@ -3311,7 +3377,14 @@ def regime_detect(  # noqa: C901
             prob_arrays: List[np.ndarray] = []  # (n_bars, n_states) per method
             prob_valid_masks: List[np.ndarray] = []
             method_names: List[str] = []
+            sub_method_state_counts: Dict[str, int] = {}
+            sub_method_state_maps: Dict[str, Dict[str, int]] = {}
             ref_len = len(t_fmt)
+            finite_target = x[np.isfinite(x)]
+            target_quantiles = (
+                np.arange(n_states_ens, dtype=float) + 0.5
+            ) / float(n_states_ens)
+            target_centroids = np.quantile(finite_target, target_quantiles)
 
             for sr_info in sub_results:
                 sm_name = sr_info["method"]
@@ -3323,43 +3396,64 @@ def regime_detect(  # noqa: C901
                     "state_probabilities", sr.get("state_probabilities", [])
                 )
                 if raw_state is None or len(raw_state) != ref_len:
+                    sub_errors.append(
+                        f"{sm_name}: state series did not match the ensemble window"
+                    )
                     continue
 
                 st = np.asarray(raw_state, dtype=int)
                 if raw_probs is not None and len(raw_probs) == ref_len:
                     pr = np.asarray(raw_probs, dtype=float)
-                    if pr.ndim != 2:
-                        pr = np.zeros((ref_len, n_states_ens))
-                    else:
-                        pr = np.nan_to_num(pr, nan=0.0, posinf=0.0, neginf=0.0)
-                        # Pad or trim columns to n_states_ens
-                        if pr.shape[1] < n_states_ens:
-                            pr = np.pad(
-                                pr,
-                                ((0, 0), (0, n_states_ens - pr.shape[1])),
-                            )
-                        elif pr.shape[1] > n_states_ens:
-                            pr = pr[:, :n_states_ens]
-                    row_sums = np.sum(pr, axis=1, keepdims=True)
-                    positive_rows = np.isfinite(row_sums[:, 0]) & (row_sums[:, 0] > 0)
-                    if np.any(positive_rows):
-                        pr[positive_rows] = pr[positive_rows] / row_sums[positive_rows]
-                    valid_mask = (st >= 0) & (st < n_states_ens) & positive_rows
-                    pr[~valid_mask] = 0.0
+                    if pr.ndim != 2 or pr.shape[1] < 1:
+                        sub_errors.append(
+                            f"{sm_name}: state probabilities were not a usable matrix"
+                        )
+                        continue
                 else:
-                    # Hard assignment fallback
-                    pr = np.zeros((ref_len, n_states_ens))
-                    valid_mask = (st >= 0) & (st < n_states_ens)
+                    reported_params = sr.get("regime_params", {})
+                    reported_count = 0
+                    if isinstance(reported_params, dict):
+                        for key in ("mean_return", "mu", "volatility", "sigma"):
+                            values = reported_params.get(key)
+                            if isinstance(values, (list, tuple, np.ndarray)):
+                                reported_count = max(reported_count, len(values))
+                    occupied_count = int(np.max(st)) + 1 if np.any(st >= 0) else 0
+                    source_count = max(reported_count, occupied_count)
+                    if source_count < 1:
+                        sub_errors.append(
+                            f"{sm_name}: no usable states or probabilities"
+                        )
+                        continue
+                    pr = np.zeros((ref_len, source_count))
                     for i, s in enumerate(st):
-                        if bool(valid_mask[i]):
+                        if 0 <= int(s) < source_count:
                             pr[i, s] = 1.0
 
+                source_count = int(pr.shape[1])
+                sub_method_state_counts[sm_name] = source_count
+                try:
+                    st, pr, valid_mask, state_map = (
+                        _align_states_to_return_centroids(
+                            st,
+                            pr,
+                            x,
+                            target_centroids,
+                        )
+                    )
+                except ValueError as exc:
+                    sub_errors.append(f"{sm_name}: {exc}")
+                    continue
                 if not np.any(valid_mask):
+                    sub_errors.append(f"{sm_name}: no valid aligned state rows")
                     continue
                 state_arrays.append(st)
                 prob_arrays.append(pr)
                 prob_valid_masks.append(valid_mask)
                 method_names.append(sm_name)
+                sub_method_state_maps[sm_name] = {
+                    str(source): int(target)
+                    for source, target in state_map.items()
+                }
 
             if not prob_arrays:
                 return _finish({"error": "No sub-methods produced usable state data."})
@@ -3479,6 +3573,12 @@ def regime_detect(  # noqa: C901
                     "sub_methods": method_names,
                     "voting": voting,
                     "mean_agreement": mean_agreement,
+                    "alignment_mode": "return_quantile_centroids",
+                    "shared_state_centroids": [
+                        float(value) for value in target_centroids.tolist()
+                    ],
+                    "sub_method_state_counts": sub_method_state_counts,
+                    "sub_method_state_maps": sub_method_state_maps,
                 },
                 "params_used": {
                     "methods": method_names,
@@ -3503,7 +3603,7 @@ def regime_detect(  # noqa: C901
                     "confidence": mean_agreement,
                     "methods_considered": method_names,
                 },
-                source="ensemble_agreement",
+                source="ensemble_return_centroid_agreement",
             )
 
             if output in ("summary", "compact"):

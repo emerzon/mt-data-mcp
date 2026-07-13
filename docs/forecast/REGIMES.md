@@ -306,11 +306,15 @@ GARCH and ensemble can choose different counts on the same data because their
 heuristics use different inputs.
 
 The ensemble defaults to `hmm`, `clustering`, and `wavelet`. Ensemble voters
-must emit state IDs canonicalized by return, so supported overrides are
+are mapped into shared return-quantile centroid bins before voting, so supported overrides are
 `hmm`, `gmm`, `ms_ar`, `clustering`, and `wavelet`. BOCPD/PELT change points,
 rule-based labels, and GARCH volatility tiers are different concepts and are
 rejected as ensemble voters instead of being mapped into the same state-ID
-space. Use those methods separately as transition or volatility gates.
+space. `ensemble_info` reports each voter's emitted state count, state mapping,
+and the `return_quantile_centroids` alignment mode. This is a directional-return
+consensus heuristic, not proof that methods discovered an identical latent
+partition; use volatility-focused methods separately as transition or volatility
+gates.
 
 #### GARCH volatility tiers
 

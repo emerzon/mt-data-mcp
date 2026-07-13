@@ -112,6 +112,55 @@ class TestEnsembleRegime:
         assert res.get("success") or not res.get("error")
         assert res.get("params_used", {}).get("voting") == "hard"
 
+    def test_ensemble_rebins_collapsed_state_count(self, _mock):
+        limit = 120
+        history = _mock_fetch_history("TEST", "H1", limit)
+        returns = np.diff(np.log(history["close"].to_numpy(dtype=float)))
+        hmm_states = (returns > np.median(returns)).astype(int)
+        cluster_states = np.digitize(
+            returns,
+            np.quantile(returns, [0.25, 0.5, 0.75]),
+        ).astype(int)
+
+        def _sub_result(_tool, **kwargs):
+            states = hmm_states if kwargs["method"] == "hmm" else cluster_states
+            state_count = 2 if kwargs["method"] == "hmm" else 4
+            probabilities = np.eye(state_count, dtype=float)[states]
+            return {
+                "success": True,
+                "series": {
+                    "state": states.tolist(),
+                    "state_probabilities": probabilities.tolist(),
+                },
+            }
+
+        with patch(
+            "mtdata.core.regime.api.call_tool_sync_structured",
+            side_effect=_sub_result,
+        ):
+            res = regime_detect(
+                symbol="TEST",
+                timeframe="H1",
+                limit=limit,
+                method="ensemble",
+                params={
+                    "n_states": 4,
+                    "methods": ["hmm", "clustering"],
+                    "voting": "soft",
+                },
+                detail="full",
+                __cli_raw=True,
+            )
+
+        assert "error" not in res
+        info = res["ensemble_info"]
+        assert info["alignment_mode"] == "return_quantile_centroids"
+        assert info["sub_method_state_counts"] == {"hmm": 2, "clustering": 4}
+        assert set(info["sub_method_state_maps"]["hmm"].values()) == {0, 3}
+        assert res["reliability"]["source"] == (
+            "ensemble_return_centroid_agreement"
+        )
+
     def test_ensemble_agreement_score(self, _mock):
         """Ensemble should report agreement in its canonical metadata."""
         res = regime_detect(
