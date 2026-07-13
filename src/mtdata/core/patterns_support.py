@@ -1856,7 +1856,8 @@ def _attach_elliott_volume_confirmation(
             payload["status"] = "neutral"
 
     if abs(confidence_delta) > 1e-12:
-        payload["context_score_delta"] = _round_value(confidence_delta)
+        payload["confidence_delta"] = _round_value(confidence_delta)
+        _apply_confidence_delta(out, confidence_delta)
 
     details["volume_confirmation"] = payload
     out["details"] = details
@@ -2153,12 +2154,18 @@ def _enrich_elliott_patterns(
             context_df = df.iloc[:end]
         regime_context = _infer_market_regime(context_df, config)
         enriched = _attach_elliott_volume_confirmation(row, df, config)
-        out.append(
-            _attach_regime_context(
-                enriched, regime_context, config, adjust_confidence=False
-            )
-        )
-    return out
+        out.append(_attach_regime_context(enriched, regime_context, config))
+    raw_min_confidence = getattr(config, "min_confidence", 0.0)
+    min_confidence = (
+        float(raw_min_confidence)
+        if isinstance(raw_min_confidence, (int, float, np.integer, np.floating))
+        else 0.0
+    )
+    return [
+        row
+        for row in out
+        if _row_confidence_weight(row) >= min(1.0, float(min_confidence))
+    ]
 
 
 def _summarize_engine_findings(

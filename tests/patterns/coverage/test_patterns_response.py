@@ -402,8 +402,8 @@ class TestFormatElliottPatterns:
         )
 
         volume_confirmation = result[0]["details"]["volume_confirmation"]
-        assert result[0]["confidence"] == pytest.approx(0.7)
-        assert volume_confirmation["context_score_delta"] == pytest.approx(0.1)
+        assert result[0]["confidence"] == pytest.approx(0.8)
+        assert volume_confirmation["confidence_delta"] == pytest.approx(0.1)
         assert volume_confirmation["status"] == "confirmed"
         assert volume_confirmation["trend_to_counter_ratio"] > 1.1
 
@@ -446,5 +446,5 @@ class TestFormatElliottPatterns:
         assert regime_context["state"] == "trending"
         assert regime_context["direction"] == "bearish"
         assert regime_context["status"] == "aligned"
-        assert result[0]["confidence"] == pytest.approx(0.55)
-        assert regime_context["context_score_delta"] == pytest.approx(0.06)
+        assert result[0]["confidence"] == pytest.approx(0.61)
+        assert regime_context["confidence_delta"] == pytest.approx(0.06)
