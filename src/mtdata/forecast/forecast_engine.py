@@ -688,6 +688,27 @@ def _training_context_fingerprint(
     }
 
 
+def _params_hash_from_model_id(
+    model_id: str,
+    *,
+    method: str,
+    data_scope: str,
+) -> str:
+    parts = str(model_id).split("/")
+    if len(parts) != 3 or any(not part for part in parts):
+        raise ValueError(
+            "model_id must use the canonical method/data_scope/params_hash format "
+            "returned by forecast_train or forecast_models_list."
+        )
+    stored_method, stored_scope, params_hash = parts
+    if stored_method != method or stored_scope != data_scope:
+        raise ValueError(
+            f"model_id '{model_id}' does not match requested method '{method}' "
+            f"and data scope '{data_scope}'."
+        )
+    return params_hash
+
+
 def _try_predict_with_stored_model(
     forecaster: "ForecastMethod",
     method_l: str,
@@ -903,9 +924,17 @@ def _run_registered_forecast_method(
             target_spec=target_spec,
             exog=X,
         )
-        params_hash = requested_model_id or _compute_model_key(
-            forecaster, method_l, horizon, seasonality,
-            training_params, str(timeframe), has_exog,
+        params_hash = (
+            _params_hash_from_model_id(
+                requested_model_id,
+                method=method_l,
+                data_scope=data_scope,
+            )
+            if requested_model_id
+            else _compute_model_key(
+                forecaster, method_l, horizon, seasonality,
+                training_params, str(timeframe), has_exog,
+            )
         )
 
         stored_result = _try_predict_with_stored_model(
@@ -918,7 +947,7 @@ def _run_registered_forecast_method(
             return stored_result
         if requested_model_id:
             raise ValueError(
-                f"Model with ID or params_hash '{requested_model_id}' was not found "
+                f"Model with ID '{requested_model_id}' was not found "
                 "in the model store or could not be loaded. Use forecast_models_list "
                 "to see available models, or omit model_id for an on-the-fly forecast."
             )

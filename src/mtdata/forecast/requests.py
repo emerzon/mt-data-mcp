@@ -5,8 +5,8 @@ from typing import Any, Dict, List, Literal, Optional
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from ..shared.schema import (
-    DetailLiteral,
     DenoiseSpec,
+    DetailLiteral,
     ForecastLibraryLiteral,
     TimeframeLiteral,
     reject_removed_field,
@@ -68,7 +68,10 @@ class ForecastGenerateRequest(BaseModel):
     )
     model_id: Optional[str] = Field(
         None,
-        description="Explicit trained-model params_hash to use for prediction. Skips training if the model exists in the store.",
+        description=(
+            "Canonical trained model ID (method/data_scope/params_hash) returned by "
+            "forecast_train or forecast_models_list. Skips training when found."
+        ),
     )
     detail: DetailLiteral = "compact"
 

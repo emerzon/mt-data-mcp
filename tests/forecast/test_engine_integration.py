@@ -426,7 +426,9 @@ class TestRunRegisteredForecastMethodIntegration:
         with patch.object(fe, "ForecastRegistry", FakeReg):
             with pytest.raises(ValueError, match="does not support stored model prediction"):
                 fe._run_registered_forecast_method(
-                    **_common_call_kwargs(model_id="missing_model"),
+                    **_common_call_kwargs(
+                        model_id="stub_trainable/EURUSD_H1/missing_model"
+                    ),
                 )
 
     def test_trainable_no_stored_model_falls_to_sync(self):
@@ -464,7 +466,9 @@ class TestRunRegisteredForecastMethodIntegration:
              patch(_PATCH_MODEL_STORE, mock_store):
             with pytest.raises(ValueError, match="was not found in the model store"):
                 fe._run_registered_forecast_method(
-                    **_common_call_kwargs(model_id="missing_model"),
+                    **_common_call_kwargs(
+                        model_id="stub_trainable/EURUSD_H1/missing_model"
+                    ),
                 )
 
         mock_store.find.assert_called_once_with(
@@ -558,8 +562,7 @@ class TestRunRegisteredForecastMethodIntegration:
         assert exc_info.value.response["task_id"] == "task-fast"
         assert exc_info.value.response["status"] == "pending"
 
-    def test_model_id_overrides_computed_hash(self):
-        """When model_id is given, it is used as params_hash for store lookup."""
+    def test_canonical_model_id_overrides_computed_hash(self):
         stub = _StubTrainable(category="heavy")
 
         class FakeReg:
@@ -586,13 +589,31 @@ class TestRunRegisteredForecastMethodIntegration:
         with patch.object(fe, "ForecastRegistry", FakeReg), \
              patch(_PATCH_MODEL_STORE, mock_store):
             result = fe._run_registered_forecast_method(
-                **_common_call_kwargs(model_id="custom_id"),
+                **_common_call_kwargs(
+                    model_id="stub_trainable/EURUSD_H1/custom_id"
+                ),
             )
 
         # Should have used custom_id for lookup
         mock_store.find.assert_called_once_with("stub_trainable", "EURUSD_H1", "custom_id")
         forecast_arr, ci, metadata = result
         assert metadata["model_info"]["model_id"] == "stub_trainable/EURUSD_H1/custom_id"
+
+    def test_model_id_rejects_mismatched_scope(self):
+        stub = _StubTrainable(category="heavy")
+
+        class FakeReg:
+            @staticmethod
+            def get(name):
+                return stub
+
+        with patch.object(fe, "ForecastRegistry", FakeReg):
+            with pytest.raises(ValueError, match="does not match requested method"):
+                fe._run_registered_forecast_method(
+                    **_common_call_kwargs(
+                        model_id="stub_trainable/GBPUSD_H1/custom_id"
+                    ),
+                )
 
 
 # ---------------------------------------------------------------------------
