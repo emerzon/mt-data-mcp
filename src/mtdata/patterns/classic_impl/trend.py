@@ -40,26 +40,31 @@ def detect_trend_lines(
     peaks: np.ndarray,
     troughs: np.ndarray,
     t: np.ndarray,
-    cfg: ClassicDetectorConfig
+    cfg: ClassicDetectorConfig,
+    high: np.ndarray | None = None,
+    low: np.ndarray | None = None,
 ) -> List[ClassicPatternResult]:
     results: List[ClassicPatternResult] = []
     n = c.size
     confirm_needed = max(1, int(cfg.completion_confirm_bars))
     confirm_lookback = max(confirm_needed, int(cfg.completion_lookback_bars))
 
+    upper_source = high if bool(cfg.pivot_use_hl) and high is not None else c
+    lower_source = low if bool(cfg.pivot_use_hl) and low is not None else c
     for side, piv in (("high", peaks), ("low", troughs)):
         if piv.size >= max(3, cfg.min_touches):
             k = min(int(cfg.max_pattern_pivots), piv.size)
             idxs = piv[-k:]
             xs = idxs.astype(float)
-            ys = c[idxs]
+            boundary_source = upper_source if side == "high" else lower_source
+            ys = boundary_source[idxs]
             slope, intercept, r2 = _fit_line_robust(xs, ys, cfg) if cfg.use_robust_fit else _fit_line(xs, ys)
             if not np.isfinite(r2) or float(r2) < float(cfg.min_r2):
                 continue
             
             line_vals = slope * np.arange(n, dtype=float) + intercept
             tol_abs = _tol_abs_from_close(c, cfg.same_level_tol_pct)
-            touches = len(_last_touch_indexes(line_vals, idxs, c, tol_abs))
+            touches = len(_last_touch_indexes(line_vals, idxs, boundary_source, tol_abs))
             geom_ok = 1.0
             conf = _conf(touches, r2, geom_ok, cfg)
             status = "forming"
@@ -117,7 +122,9 @@ def detect_channels(
     peaks: np.ndarray,
     troughs: np.ndarray,
     t: np.ndarray,
-    cfg: ClassicDetectorConfig
+    cfg: ClassicDetectorConfig,
+    high: np.ndarray | None = None,
+    low: np.ndarray | None = None,
 ) -> List[ClassicPatternResult]:
     ch_results: List[ClassicPatternResult] = []
     if peaks.size < 3 or troughs.size < 3:
@@ -128,7 +135,17 @@ def detect_channels(
     ih = peaks[-k:]
     il = troughs[-k:]
     
-    sh, bh, r2h, sl, bl, r2l, upper, lower = _fit_lines_and_arrays(ih, il, c, n, cfg)
+    upper_source = high if bool(cfg.pivot_use_hl) and high is not None else c
+    lower_source = low if bool(cfg.pivot_use_hl) and low is not None else c
+    sh, bh, r2h, sl, bl, r2l, upper, lower = _fit_lines_and_arrays(
+        ih,
+        il,
+        c,
+        n,
+        cfg,
+        upper_source=upper_source,
+        lower_source=lower_source,
+    )
     channel_start = int(min(ih[0], il[0]))
     if not _boundaries_are_ordered(upper, lower, start_idx=channel_start, end_idx=n - 1):
         return ch_results
@@ -147,7 +164,16 @@ def detect_channels(
     
     touches = 0
     tol_abs = _tol_abs_from_close(c, cfg.same_level_tol_pct)
-    touches += _count_touches(upper, lower, peaks[-k:], troughs[-k:], c, tol_abs)
+    touches += _count_touches(
+        upper,
+        lower,
+        peaks[-k:],
+        troughs[-k:],
+        c,
+        tol_abs,
+        upper_source=upper_source,
+        lower_source=lower_source,
+    )
     
     name = "Trend Channel"
     if sh > cfg.max_flat_slope and sl > cfg.max_flat_slope:

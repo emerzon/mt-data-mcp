@@ -334,14 +334,19 @@ def _fit_lines_and_arrays(
     c: np.ndarray,
     n: int,
     cfg: ClassicDetectorConfig,
+    *,
+    upper_source: Optional[np.ndarray] = None,
+    lower_source: Optional[np.ndarray] = None,
 ):
+    upper_values = c if upper_source is None else np.asarray(upper_source, dtype=float)
+    lower_values = c if lower_source is None else np.asarray(lower_source, dtype=float)
     fit_func = _fit_line_robust if bool(cfg.use_robust_fit) else _fit_line
     if fit_func is _fit_line_robust:
-        sh, bh, r2h = fit_func(ih.astype(float), c[ih], cfg)
-        sl, bl, r2l = fit_func(il.astype(float), c[il], cfg)
+        sh, bh, r2h = fit_func(ih.astype(float), upper_values[ih], cfg)
+        sl, bl, r2l = fit_func(il.astype(float), lower_values[il], cfg)
     else:
-        sh, bh, r2h = fit_func(ih.astype(float), c[ih])
-        sl, bl, r2l = fit_func(il.astype(float), c[il])
+        sh, bh, r2h = fit_func(ih.astype(float), upper_values[ih])
+        sl, bl, r2l = fit_func(il.astype(float), lower_values[il])
     x = np.arange(n, dtype=float)
     upper = sh * x + bh
     lower = sl * x + bl
@@ -373,10 +378,15 @@ def _boundaries_are_ordered(
 
 def _count_touches(upper: np.ndarray, lower: np.ndarray,
                    peak_idxs: np.ndarray, trough_idxs: np.ndarray,
-                   c: np.ndarray, tol_abs: float) -> int:
+                   c: np.ndarray, tol_abs: float,
+                   *,
+                   upper_source: Optional[np.ndarray] = None,
+                   lower_source: Optional[np.ndarray] = None) -> int:
+    upper_values = c if upper_source is None else np.asarray(upper_source, dtype=float)
+    lower_values = c if lower_source is None else np.asarray(lower_source, dtype=float)
     touches = 0
-    touches += len(_last_touch_indexes(upper, peak_idxs, c, tol_abs))
-    touches += len(_last_touch_indexes(lower, trough_idxs, c, tol_abs))
+    touches += len(_last_touch_indexes(upper, peak_idxs, upper_values, tol_abs))
+    touches += len(_last_touch_indexes(lower, trough_idxs, lower_values, tol_abs))
     return touches
 
 

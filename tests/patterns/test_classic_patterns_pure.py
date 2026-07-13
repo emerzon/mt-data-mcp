@@ -209,6 +209,37 @@ class TestDetectClassicPatterns:
         assert isinstance(results, list)
 
 
+def test_rectangles_fit_high_low_extremes_when_enabled() -> None:
+    from mtdata.patterns.classic_impl.shapes import detect_rectangles
+
+    n = 80
+    close = np.full(n, 100.0)
+    high = np.full(n, 101.0)
+    low = np.full(n, 99.0)
+    peaks = np.array([20, 35, 50, 65], dtype=int)
+    troughs = np.array([15, 30, 45, 60], dtype=int)
+    high[peaks] = 110.0
+    low[troughs] = 90.0
+
+    results = detect_rectangles(
+        close,
+        peaks,
+        troughs,
+        np.arange(n, dtype=float),
+        ClassicDetectorConfig(
+            pivot_use_hl=True,
+            use_robust_fit=False,
+            min_channel_touches=4,
+        ),
+        high=high,
+        low=low,
+    )
+
+    assert results
+    assert results[0].details["resistance"] == pytest.approx(110.0)
+    assert results[0].details["support"] == pytest.approx(90.0)
+
+
 class TestClassicDetectorConfig:
     def test_defaults(self):
         cfg = ClassicDetectorConfig()

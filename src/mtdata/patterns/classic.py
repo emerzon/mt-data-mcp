@@ -95,12 +95,12 @@ def _detect_classic_patterns_once(
         troughs = np.asarray(troughs, dtype=int)
 
     results: List[ClassicPatternResult] = []
-    results.extend(detect_trend_lines(c, peaks, troughs, t, cfg))
-    results.extend(detect_channels(c, peaks, troughs, t, cfg))
-    results.extend(detect_rectangles(c, peaks, troughs, t, cfg))
-    results.extend(detect_triangles(c, peaks, troughs, t, cfg))
-    results.extend(detect_wedges(c, peaks, troughs, t, cfg))
-    results.extend(detect_broadening(c, peaks, troughs, t, cfg))
+    results.extend(detect_trend_lines(c, peaks, troughs, t, cfg, high=h, low=l))
+    results.extend(detect_channels(c, peaks, troughs, t, cfg, high=h, low=l))
+    results.extend(detect_rectangles(c, peaks, troughs, t, cfg, high=h, low=l))
+    results.extend(detect_triangles(c, peaks, troughs, t, cfg, high=h, low=l))
+    results.extend(detect_wedges(c, peaks, troughs, t, cfg, high=h, low=l))
+    results.extend(detect_broadening(c, peaks, troughs, t, cfg, high=h, low=l))
     results.extend(detect_diamonds(c, t, cfg, h, l, peaks=peaks, troughs=troughs))
     results.extend(detect_tops_bottoms(c, peaks, troughs, t, cfg))
     results.extend(detect_head_shoulders(c, peaks, troughs, t, cfg))

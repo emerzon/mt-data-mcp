@@ -66,7 +66,7 @@ def test_detect_classic_uses_singular_pennant_name(monkeypatch):
 
     monkeypatch.setattr(continuation, "_detect_pivots_close", _fake_pivots)
 
-    def _fake_fit_lines(ih, il, c, n, cfg):
+    def _fake_fit_lines(ih, il, c, n, cfg, **_kwargs):
         if n >= 20:
             return (
                 -0.07,
@@ -212,7 +212,7 @@ def test_detect_classic_channel_parallel_ratio_uses_config(monkeypatch):
     monkeypatch.setattr(trend_mod, "_is_converging", lambda *args, **kwargs: False)
     monkeypatch.setattr(shapes_mod, "_is_converging", lambda *args, **kwargs: False)
 
-    def _fake_fit_lines(ih, il, c, n, cfg):
+    def _fake_fit_lines(ih, il, c, n, cfg, **_kwargs):
         return 1.18, 150.0, 0.95, 1.00, 120.0, 0.95, upper, lower
 
     monkeypatch.setattr(trend_mod, "_fit_lines_and_arrays", _fake_fit_lines)
@@ -1688,7 +1688,7 @@ def test_detect_classic_triangle_marks_completed_on_breakout(monkeypatch):
         classic_mod, "_detect_pivots_close", lambda c, cfg, *args: (peaks, troughs)
     )
 
-    def _fake_fit_lines(ih, il, c, n, cfg):
+    def _fake_fit_lines(ih, il, c, n, cfg, **_kwargs):
         return -0.03, 106.0, 0.9, 0.03, 94.0, 0.9, top_line.copy(), bot_line.copy()
 
     monkeypatch.setattr(trend_mod, "_fit_lines_and_arrays", _fake_fit_lines)
@@ -1733,7 +1733,7 @@ def test_detect_classic_converging_parallel_shape_excludes_channel(monkeypatch):
         classic_mod, "_detect_pivots_close", lambda c, cfg, *args: (peaks, troughs)
     )
 
-    def _fake_fit_lines(ih, il, c, n, cfg):
+    def _fake_fit_lines(ih, il, c, n, cfg, **_kwargs):
         return (
             -0.020,
             110.0,

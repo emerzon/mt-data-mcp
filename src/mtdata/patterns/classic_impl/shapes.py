@@ -29,6 +29,8 @@ def _fit_line_bounded_shape(
     cfg: ClassicDetectorConfig,
     *,
     min_points: int,
+    high: Optional[np.ndarray] = None,
+    low: Optional[np.ndarray] = None,
 ) -> Optional[Dict[str, Any]]:
     n = c.size
     k = min(int(cfg.max_pattern_pivots), peaks.size, troughs.size)
@@ -37,12 +39,31 @@ def _fit_line_bounded_shape(
 
     ih = peaks[-k:]
     il = troughs[-k:]
-    sh, bh, r2h, sl, bl, r2l, top, bot = _fit_lines_and_arrays(ih, il, c, n, cfg)
+    upper_source = high if bool(cfg.pivot_use_hl) and high is not None else c
+    lower_source = low if bool(cfg.pivot_use_hl) and low is not None else c
+    sh, bh, r2h, sl, bl, r2l, top, bot = _fit_lines_and_arrays(
+        ih,
+        il,
+        c,
+        n,
+        cfg,
+        upper_source=upper_source,
+        lower_source=lower_source,
+    )
     start_idx = int(min(ih[0], il[0]))
     if not _boundaries_are_ordered(top, bot, start_idx=start_idx, end_idx=n - 1):
         return None
     tol_abs = _tol_abs_from_close(c, cfg.same_level_tol_pct)
-    touches = _count_touches(top, bot, ih, il, c, tol_abs)
+    touches = _count_touches(
+        top,
+        bot,
+        ih,
+        il,
+        c,
+        tol_abs,
+        upper_source=upper_source,
+        lower_source=lower_source,
+    )
     return {
         "c": c,
         "n": n,
@@ -118,7 +139,9 @@ def detect_rectangles(
     peaks: np.ndarray,
     troughs: np.ndarray,
     t: np.ndarray,
-    cfg: ClassicDetectorConfig
+    cfg: ClassicDetectorConfig,
+    high: Optional[np.ndarray] = None,
+    low: Optional[np.ndarray] = None,
 ) -> List[ClassicPatternResult]:
     out: List[ClassicPatternResult] = []
     n = c.size
@@ -126,7 +149,9 @@ def detect_rectangles(
     if k < 3:
         return out
         
-    ph = c[peaks[-k:]]; pl = c[troughs[-k:]]
+    upper_source = high if bool(cfg.pivot_use_hl) and high is not None else c
+    lower_source = low if bool(cfg.pivot_use_hl) and low is not None else c
+    ph = upper_source[peaks[-k:]]; pl = lower_source[troughs[-k:]]
     top = _robust_level_center(ph, cfg)
     bot = _robust_level_center(pl, cfg)
     if top is None or bot is None:
@@ -189,9 +214,13 @@ def detect_triangles(
     peaks: np.ndarray,
     troughs: np.ndarray,
     t: np.ndarray,
-    cfg: ClassicDetectorConfig
+    cfg: ClassicDetectorConfig,
+    high: Optional[np.ndarray] = None,
+    low: Optional[np.ndarray] = None,
 ) -> List[ClassicPatternResult]:
-    shape = _fit_line_bounded_shape(c, peaks, troughs, cfg, min_points=4)
+    shape = _fit_line_bounded_shape(
+        c, peaks, troughs, cfg, min_points=4, high=high, low=low
+    )
     if shape is None or not _is_converging(shape["top"], shape["bot"], shape["k"], shape["n"], cfg):
         return []
     same_sign = (shape["sh"] > 0 and shape["sl"] > 0) or (shape["sh"] < 0 and shape["sl"] < 0)
@@ -222,9 +251,13 @@ def detect_wedges(
     peaks: np.ndarray,
     troughs: np.ndarray,
     t: np.ndarray,
-    cfg: ClassicDetectorConfig
+    cfg: ClassicDetectorConfig,
+    high: Optional[np.ndarray] = None,
+    low: Optional[np.ndarray] = None,
 ) -> List[ClassicPatternResult]:
-    shape = _fit_line_bounded_shape(c, peaks, troughs, cfg, min_points=4)
+    shape = _fit_line_bounded_shape(
+        c, peaks, troughs, cfg, min_points=4, high=high, low=low
+    )
     if shape is None or not _is_converging(shape["top"], shape["bot"], shape["k"], shape["n"], cfg):
         return []
     same_sign = (shape["sh"] > 0 and shape["sl"] > 0) or (shape["sh"] < 0 and shape["sl"] < 0)
@@ -242,7 +275,9 @@ def detect_broadening(
     peaks: np.ndarray,
     troughs: np.ndarray,
     t: np.ndarray,
-    cfg: ClassicDetectorConfig
+    cfg: ClassicDetectorConfig,
+    high: Optional[np.ndarray] = None,
+    low: Optional[np.ndarray] = None,
 ) -> List[ClassicPatternResult]:
     out: List[ClassicPatternResult] = []
     n = c.size
@@ -251,12 +286,14 @@ def detect_broadening(
         return out
         
     ih = peaks[-k:]; il = troughs[-k:]
+    upper_source = high if bool(cfg.pivot_use_hl) and high is not None else c
+    lower_source = low if bool(cfg.pivot_use_hl) and low is not None else c
     if bool(cfg.use_robust_fit):
-        sh, bh, r2h = _fit_line_robust(ih.astype(float), c[ih], cfg)
-        sl, bl, r2l = _fit_line_robust(il.astype(float), c[il], cfg)
+        sh, bh, r2h = _fit_line_robust(ih.astype(float), upper_source[ih], cfg)
+        sl, bl, r2l = _fit_line_robust(il.astype(float), lower_source[il], cfg)
     else:
-        sh, bh, r2h = _fit_line(ih.astype(float), c[ih])
-        sl, bl, r2l = _fit_line(il.astype(float), c[il])
+        sh, bh, r2h = _fit_line(ih.astype(float), upper_source[ih])
+        sl, bl, r2l = _fit_line(il.astype(float), lower_source[il])
     
     diverging = (sh > cfg.max_flat_slope and sl < -cfg.max_flat_slope)
     if diverging:
@@ -347,9 +384,14 @@ def detect_diamonds(
     best: Optional[Dict[str, Any]] = None
     min_slope = float(max(1e-6, cfg.max_flat_slope * 2.0))
 
-    def _fit_boundary(idxs: np.ndarray) -> tuple[float, float, float]:
+    upper_geometry = seg_h if bool(cfg.pivot_use_hl) else seg
+    lower_geometry = seg_l if bool(cfg.pivot_use_hl) else seg
+
+    def _fit_boundary(
+        idxs: np.ndarray, source: np.ndarray
+    ) -> tuple[float, float, float]:
         xs = idxs.astype(float)
-        ys = seg[idxs]
+        ys = source[idxs]
         if bool(cfg.use_robust_fit):
             return _fit_line_robust(xs, ys, cfg)
         return _fit_line(xs, ys)
@@ -362,10 +404,10 @@ def detect_diamonds(
         if min(left_peaks.size, right_peaks.size, left_troughs.size, right_troughs.size) < min_side:
             continue
 
-        lh_slope, lh_intercept, lh_r2 = _fit_boundary(left_peaks)
-        ll_slope, ll_intercept, ll_r2 = _fit_boundary(left_troughs)
-        rh_slope, rh_intercept, rh_r2 = _fit_boundary(right_peaks)
-        rl_slope, rl_intercept, rl_r2 = _fit_boundary(right_troughs)
+        lh_slope, lh_intercept, lh_r2 = _fit_boundary(left_peaks, upper_geometry)
+        ll_slope, ll_intercept, ll_r2 = _fit_boundary(left_troughs, lower_geometry)
+        rh_slope, rh_intercept, rh_r2 = _fit_boundary(right_peaks, upper_geometry)
+        rl_slope, rl_intercept, rl_r2 = _fit_boundary(right_troughs, lower_geometry)
 
         if not (
             lh_slope > min_slope
