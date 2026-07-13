@@ -1082,6 +1082,13 @@ class TestRecordingToolDecorator:
                     tool_object=previous_tool_object,
                 )
 
+    def test_live_trade_mutations_are_not_given_cancellable_thread_timeouts(self):
+        import mtdata.core._mcp_tools as tools
+
+        assert {"trade_place", "trade_modify", "trade_close"}.issubset(
+            tools._NO_TIMEOUT_TOOLS
+        )
+
     def test_skips_variadic_args_in_exposed_signature(self):
         import mtdata.core._mcp_tools as tools
 

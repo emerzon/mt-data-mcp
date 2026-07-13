@@ -43,6 +43,12 @@ _NO_TIMEOUT_TOOLS = frozenset(
         "forecast_optimize_hints",
         "forecast_tune_genetic",
         "forecast_tune_optuna",
+        # A thread running an MT5 mutation cannot be cancelled safely by
+        # asyncio.wait_for. Keep the transport attached until the broker call
+        # returns so callers never receive a false timeout while it continues.
+        "trade_place",
+        "trade_modify",
+        "trade_close",
     }
 )
 _PUBLIC_OUTPUT_PARAMS = PUBLIC_OUTPUT_PARAMS
