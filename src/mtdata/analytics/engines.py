@@ -465,6 +465,9 @@ def _builtin_signal(close: pd.Series, candidate: StrategyCandidate) -> pd.Series
     return pd.Series(np.where(rsi < oversold, 1.0, np.where(rsi > overbought, -1.0, 0.0)), index=close.index).where(rsi.notna())
 
 
+_MAX_FORECAST_SIGNAL_ANCHORS = 200
+
+
 def _forecast_signal(df: pd.DataFrame, candidate: StrategyCandidate, symbol: str, timeframe: str) -> pd.Series:
     from ..forecast.forecast import execute_forecast
 
@@ -472,8 +475,8 @@ def _forecast_signal(df: pd.DataFrame, candidate: StrategyCandidate, symbol: str
     model_lookback = int(candidate.params.get("lookback", 200))
     params = {key: value for key, value in candidate.params.items() if key != "lookback"}
     eligible = list(range(model_lookback, len(df) - candidate.horizon, max(1, candidate.horizon)))
-    if len(eligible) > 200:
-        eligible = eligible[-200:]
+    if len(eligible) > _MAX_FORECAST_SIGNAL_ANCHORS:
+        eligible = eligible[-_MAX_FORECAST_SIGNAL_ANCHORS:]
     for idx in eligible:
         history = df.iloc[: idx + 1].copy()
         try:
@@ -498,6 +501,31 @@ def _forecast_signal(df: pd.DataFrame, candidate: StrategyCandidate, symbol: str
         except Exception:
             continue
     return signal
+
+
+def _walk_forward_windows(
+    start_bar: int,
+    end_bar: int,
+    *,
+    n_splits: int,
+    embargo: int,
+) -> Tuple[List[Tuple[int, int]], List[Tuple[int, int]]]:
+    edges = np.linspace(
+        int(start_bar),
+        max(int(start_bar), int(end_bar) + 1),
+        int(n_splits) + 2,
+        dtype=int,
+    )
+    fold_windows: List[Tuple[int, int]] = []
+    embargo_intervals: List[Tuple[int, int]] = []
+    for fold in range(int(n_splits)):
+        block_start = int(edges[fold + 1])
+        test_start = block_start + int(embargo)
+        test_end = int(edges[fold + 2]) - 1
+        if embargo > 0:
+            embargo_intervals.append((block_start, min(test_start - 1, test_end)))
+        fold_windows.append((test_start, test_end))
+    return fold_windows, embargo_intervals
 
 
 def _barrier_returns(
@@ -557,7 +585,9 @@ def _observed_spread_bps(request: StrategyValidateRequest, gateway: Any) -> Tupl
     return 0.0, "unavailable", False
 
 
-def validate_strategies(request: StrategyValidateRequest, gateway: Any) -> Dict[str, Any]:
+def validate_strategies(  # noqa: C901
+    request: StrategyValidateRequest, gateway: Any
+) -> Dict[str, Any]:
     df = _rates(
         gateway,
         request.symbol,
@@ -577,21 +607,35 @@ def validate_strategies(request: StrategyValidateRequest, gateway: Any) -> Dict[
         else request.barrier.horizon
     )
     labelable_end = len(df) - int(request.barrier.horizon) - 1
-    edges = np.linspace(
-        0, max(0, labelable_end + 1), request.n_splits + 2, dtype=int
+    fold_windows, embargo_intervals = _walk_forward_windows(
+        0,
+        labelable_end,
+        n_splits=request.n_splits,
+        embargo=embargo,
     )
-    fold_windows = []
-    embargo_intervals: List[Tuple[int, int]] = []
-    for fold in range(request.n_splits):
-        block_start = int(edges[fold + 1])
-        test_start = block_start + embargo
-        test_end = int(edges[fold + 2]) - 1
-        if embargo > 0:
-            embargo_intervals.append((block_start, min(test_start - 1, test_end)))
-        fold_windows.append((test_start, test_end))
     results = []
     for candidate in request.candidates:
         signal = _builtin_signal(df["close"], candidate) if candidate.type == "builtin_strategy" else _forecast_signal(df, candidate, request.symbol, request.timeframe)
+        candidate_fold_windows = fold_windows
+        candidate_embargo_intervals = embargo_intervals
+        valid_signal_bars = np.flatnonzero(signal.notna().to_numpy())
+        signal_coverage = {
+            "anchors_computed": int(len(valid_signal_bars)),
+            "first_bar": int(valid_signal_bars[0]) if len(valid_signal_bars) else None,
+            "last_bar": int(valid_signal_bars[-1]) if len(valid_signal_bars) else None,
+            "anchor_limit": (
+                _MAX_FORECAST_SIGNAL_ANCHORS
+                if candidate.type == "forecast_threshold"
+                else None
+            ),
+        }
+        if candidate.type == "forecast_threshold" and len(valid_signal_bars):
+            candidate_fold_windows, candidate_embargo_intervals = _walk_forward_windows(
+                int(valid_signal_bars[0]),
+                labelable_end,
+                n_splits=request.n_splits,
+                embargo=embargo,
+            )
         same_bar_policy = normalize_same_bar_policy(request.barrier.same_bar_policy)
         indices, gross = _barrier_returns(
             df,
@@ -605,11 +649,13 @@ def validate_strategies(request: StrategyValidateRequest, gateway: Any) -> Dict[
             results.append({"id": candidate.id, "evaluation_status": "insufficient_data", "trades": int(len(indices))})
             continue
         fold_rows = []
+        skipped_folds: List[Dict[str, Any]] = []
         all_net = []
         calibrated_probabilities: List[float] = []
         calibrated_labels: List[int] = []
-        for fold, (test_start, test_end) in enumerate(fold_windows):
+        for fold, (test_start, test_end) in enumerate(candidate_fold_windows):
             if test_start > test_end:
+                skipped_folds.append({"fold": fold + 1, "reason": "empty_test_window"})
                 continue
             test_mask = (
                 (indices >= test_start)
@@ -618,19 +664,25 @@ def validate_strategies(request: StrategyValidateRequest, gateway: Any) -> Dict[
             test_indices = indices[test_mask]
             test_gross = gross[test_mask]
             if not len(test_indices):
+                skipped_folds.append({"fold": fold + 1, "reason": "no_test_trades"})
                 continue
             test = test_gross - round_trip_bps / 10_000.0
             train_mask = (
                 indices + int(request.barrier.horizon) < int(test_start) - purge
             )
             embargo_excluded = np.zeros(len(indices), dtype=bool)
-            for gap_start, gap_end in embargo_intervals:
+            for gap_start, gap_end in candidate_embargo_intervals:
                 if gap_start >= test_start:
                     break
                 embargo_excluded |= (indices >= gap_start) & (indices <= gap_end)
             train_mask &= ~embargo_excluded
             train_count = int(np.sum(train_mask))
             if train_count < 5:
+                skipped_folds.append({
+                    "fold": fold + 1,
+                    "reason": "insufficient_training_trades",
+                    "train_trades": train_count,
+                })
                 continue
             all_net.extend(test.tolist())
             if train_count >= 100:
@@ -686,6 +738,11 @@ def validate_strategies(request: StrategyValidateRequest, gateway: Any) -> Dict[
             arr.tolist(), request.bootstrap_samples
         )
         fold_expectancies = [item["net_expectancy"] for item in fold_rows]
+        folds_evaluated = int(len(fold_rows))
+        fold_coverage = float(folds_evaluated / request.n_splits)
+        fold_stability = float(
+            np.sum(np.asarray(fold_expectancies) > 0) / request.n_splits
+        ) if fold_expectancies else 0.0
         calibration = {"status": "insufficient_data", "observations": len(calibrated_labels)}
         if calibrated_labels:
             probs = np.asarray(calibrated_probabilities, dtype=float)
@@ -709,7 +766,12 @@ def validate_strategies(request: StrategyValidateRequest, gateway: Any) -> Dict[
             "deflated_sharpe_probability": deflated_probability,
             "mean_return_p_value": mean_return_p_value,
             "max_drawdown": float(np.min(drawdown)),
-            "fold_stability": float(np.mean(np.asarray(fold_expectancies) > 0)) if fold_expectancies else 0.0,
+            "fold_stability": fold_stability,
+            "folds_requested": int(request.n_splits),
+            "folds_evaluated": folds_evaluated,
+            "fold_coverage": fold_coverage,
+            "signal_coverage": signal_coverage,
+            "skipped_folds": skipped_folds,
             "same_bar_policy": same_bar_policy,
             "calibration": calibration,
             **({"folds": fold_rows} if request.detail == "full" else {}),
@@ -730,6 +792,9 @@ def validate_strategies(request: StrategyValidateRequest, gateway: Any) -> Dict[
         fold_share = float(item.get("fold_stability") or 0.0)
         adjusted_p = item.get("holm_adjusted_p_value")
         criteria = {
+            "all_requested_folds_evaluated": bool(
+                int(item.get("folds_evaluated") or 0) == request.n_splits
+            ),
             "expectancy_ci_above_zero": bool(ci and float(ci[0]) > 0.0),
             "holm_adjusted_p_at_most_alpha": bool(
                 adjusted_p is not None
@@ -752,6 +817,14 @@ def validate_strategies(request: StrategyValidateRequest, gateway: Any) -> Dict[
             "minimum_positive_fold_share": float(request.min_positive_fold_share),
         }
     ranked = sorted(results, key=lambda item: (item.get("net_expectancy") is None, -(item.get("net_expectancy") or -1e9)))
+    warnings_out = [] if complete else ["Observed spread was used, but commission/slippage completeness could not be proven from sufficient matched fills."]
+    for item in results:
+        folds_evaluated = int(item.get("folds_evaluated") or 0)
+        if item.get("evaluation_status") == "complete" and folds_evaluated < request.n_splits:
+            warnings_out.append(
+                f"Candidate {item.get('id')} evaluated {folds_evaluated} of "
+                f"{request.n_splits} requested folds; positive classification is disabled."
+            )
     return {
         "success": True,
         "symbol": request.symbol,
@@ -767,12 +840,13 @@ def validate_strategies(request: StrategyValidateRequest, gateway: Any) -> Dict[
             "forecast_models_refit_per_anchor": any(
                 item.type == "forecast_threshold" for item in request.candidates
             ),
+            "forecast_signal_anchor_limit": _MAX_FORECAST_SIGNAL_ANCHORS,
             "same_bar_policy": request.barrier.same_bar_policy,
             "completed_candles_only": True,
         },
         "cost_model": {"source": spread_source, "spread_bps": spread_bps, "commission_bps_per_side": request.commission_bps, "slippage_bps_per_side": request.slippage_bps, "round_trip_bps": round_trip_bps, "complete": complete},
         "data_quality": {"bars": len(df), "cost_model_complete": complete},
-        "warnings": [] if complete else ["Observed spread was used, but commission/slippage completeness could not be proven from sufficient matched fills."],
+        "warnings": warnings_out,
     }
 
 

@@ -208,6 +208,52 @@ def test_strategy_validation_returns_walk_forward_oos_metrics() -> None:
         assert fold["test_end_bar"] + request.barrier.horizon <= fold["test_window_end_bar"]
 
 
+def test_forecast_strategy_folds_cover_computed_signal_window(monkeypatch) -> None:
+    gateway = FakeGateway()
+
+    def fake_execute_forecast(**kwargs):
+        history_length = len(kwargs["prefetched_df"])
+        return {"expected_return": 0.01 if history_length % 2 else -0.01}
+
+    monkeypatch.setattr(
+        "mtdata.forecast.forecast.execute_forecast",
+        fake_execute_forecast,
+    )
+    request = StrategyValidateRequest(
+        symbol="EURUSD",
+        lookback=400,
+        candidates=[
+            {
+                "id": "forecast",
+                "type": "forecast_threshold",
+                "method": "naive",
+                "params": {"lookback": 20},
+                "horizon": 1,
+                "long_above": 0.0,
+                "short_below": 0.0,
+            }
+        ],
+        barrier={"horizon": 1, "tp_pct": 0.15, "sl_pct": 0.15},
+        n_splits=3,
+        cost_model="fixed",
+        spread_bps=1.0,
+        bootstrap_samples=100,
+        detail="full",
+    )
+
+    result = validate_strategies(request, gateway)
+    candidate = result["rankings"][0]
+
+    assert candidate["evaluation_status"] == "complete"
+    assert candidate["signal_coverage"]["anchors_computed"] == 200
+    assert candidate["signal_coverage"]["anchor_limit"] == 200
+    assert candidate["folds_requested"] == 3
+    assert candidate["folds_evaluated"] == 3
+    assert candidate["fold_coverage"] == 1.0
+    assert candidate["evidence"]["criteria"]["all_requested_folds_evaluated"] is True
+    assert result["validation"]["forecast_signal_anchor_limit"] == 200
+
+
 def test_portfolio_risk_reconciles_component_expected_shortfall() -> None:
     gateway = FakeGateway()
     gateway.account_info = lambda: SimpleNamespace(currency="USD", equity=25000.0)

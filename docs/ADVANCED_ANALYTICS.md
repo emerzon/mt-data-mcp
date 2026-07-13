@@ -48,6 +48,12 @@ mtdata-cli strategy_validate EURUSD --timeframe H1 --lookback 3000 \
 Candidate parameters are fixed before validation; this tool does not optimize
 and validate on the same sample.
 
+Forecast-threshold candidates execute at most the latest 200 eligible forecast
+anchors to keep validation bounded. Their folds partition that computed signal
+window rather than empty earlier history. Each candidate reports signal range,
+requested/evaluated folds, skipped-fold reasons, and fold coverage; incomplete
+coverage cannot receive a positive evidence classification.
+
 Same-bar TP/SL touches default to `sl_first` and are echoed in the result.
 
 ## Portfolio risk decomposition
