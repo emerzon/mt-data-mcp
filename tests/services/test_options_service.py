@@ -133,6 +133,24 @@ def test_get_options_chain_filters_and_selects_expiration(monkeypatch):
     assert out["options"][0]["contract"] == "AAPL260417C00100000"
 
 
+def test_both_option_sides_share_the_global_limit():
+    items = [
+        {"side": side, "strike": strike, "contract": f"{side}-{strike}"}
+        for side in ("call", "put")
+        for strike in (90.0, 100.0, 110.0)
+    ]
+
+    selected = osvc._limit_option_contracts(
+        items,
+        option_type="both",
+        limit=4,
+        underlying_price=100.0,
+    )
+
+    assert [item["side"] for item in selected] == ["call", "put", "call", "put"]
+    assert {item["strike"] for item in selected[:2]} == {100.0}
+
+
 def test_get_options_chain_rejects_unavailable_expiration(monkeypatch):
     expiry = osvc._ymd_to_epoch("2026-04-17")
     monkeypatch.setattr(

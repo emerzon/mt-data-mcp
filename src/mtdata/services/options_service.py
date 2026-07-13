@@ -590,6 +590,52 @@ def _tradier_option_side(row: Dict[str, Any]) -> str:
     return raw or "unknown"
 
 
+def _limit_option_contracts(
+    items: List[Dict[str, Any]],
+    *,
+    option_type: str,
+    limit: int,
+    underlying_price: Any,
+) -> List[Dict[str, Any]]:
+    """Apply a bounded, two-sided selection when both sides are requested."""
+    safe_limit = max(1, int(limit))
+    try:
+        spot = float(underlying_price)
+    except Exception:
+        spot = float("nan")
+
+    def _key(item: Dict[str, Any]) -> tuple[float, float]:
+        strike = float(item.get("strike", 0.0))
+        distance = abs(strike - spot) if spot == spot else float("inf")
+        return distance, strike
+
+    if option_type != "both":
+        return sorted(items, key=lambda item: float(item.get("strike", 0.0)))[:safe_limit]
+
+    calls = sorted((item for item in items if item.get("side") == "call"), key=_key)
+    puts = sorted((item for item in items if item.get("side") == "put"), key=_key)
+    selected: List[Dict[str, Any]] = []
+    for index in range(max(len(calls), len(puts))):
+        if index < len(calls) and len(selected) < safe_limit:
+            selected.append(calls[index])
+        if index < len(puts) and len(selected) < safe_limit:
+            selected.append(puts[index])
+        if len(selected) >= safe_limit:
+            break
+    return selected
+
+
+def _option_side_coverage(items: List[Dict[str, Any]]) -> str:
+    sides = {str(item.get("side")) for item in items}
+    if {"call", "put"}.issubset(sides):
+        return "both"
+    if "call" in sides:
+        return "call_only"
+    if "put" in sides:
+        return "put_only"
+    return "none"
+
+
 def _normalize_tradier_options(
     rows: List[Dict[str, Any]],
     *,
@@ -606,6 +652,8 @@ def _normalize_tradier_options(
         underlying = float("nan")
     for row in rows:
         side = _tradier_option_side(row)
+        if side not in {"call", "put"}:
+            continue
         if option_type != "both" and side != option_type:
             continue
         oi = max(0, _to_numeric(row.get("open_interest"), int, 0, field_name="open_interest"))
@@ -652,8 +700,12 @@ def _normalize_tradier_options(
             "currency": row.get("currency") or "USD",
         }
         out.append(entry)
-    out.sort(key=lambda item: (item.get("side") != "call", float(item.get("strike", 0.0))))
-    return out[:limit]
+    return _limit_option_contracts(
+        out,
+        option_type=option_type,
+        limit=limit,
+        underlying_price=underlying,
+    )
 
 
 def _get_tradier_options_expirations(symbol: str) -> Dict[str, Any]:
@@ -739,6 +791,7 @@ def _get_tradier_options_chain(
         "count": int(len(normalized)),
         "calls_count": sum(1 for item in normalized if item.get("side") == "call"),
         "puts_count": sum(1 for item in normalized if item.get("side") == "put"),
+        "side_coverage": _option_side_coverage(normalized),
         "options": normalized,
     }
 
@@ -849,19 +902,25 @@ def _get_yahoo_options_chain(
 
     calls = _norm(calls_raw, "call") if option_type in {"call", "both"} else []
     puts = _norm(puts_raw, "put") if option_type in {"put", "both"} else []
-    combined = (calls + puts)[:limit]
+    underlying_price = _to_numeric(
+        quote.get("regularMarketPrice"),
+        float,
+        float("nan"),
+        field_name="quote.regularMarketPrice",
+    )
+    combined = _limit_option_contracts(
+        calls + puts,
+        option_type=option_type,
+        limit=limit,
+        underlying_price=underlying_price,
+    )
 
     return {
         "success": True,
         **_live_options_metadata("yahoo"),
         "symbol": symbol_norm,
         "expiration": chosen_expiry_ymd,
-        "underlying_price": _to_numeric(
-            quote.get("regularMarketPrice"),
-            float,
-            float("nan"),
-            field_name="quote.regularMarketPrice",
-        ),
+        "underlying_price": underlying_price,
         "currency": quote.get("currency"),
         "contract_size": quote.get("contractSize"),
         "expirations": sorted(available_map),
@@ -869,8 +928,9 @@ def _get_yahoo_options_chain(
         "min_open_interest": int(min_open_interest),
         "min_volume": int(min_volume),
         "count": int(len(combined)),
-        "calls_count": int(len(calls)),
-        "puts_count": int(len(puts)),
+        "calls_count": sum(1 for item in combined if item.get("side") == "call"),
+        "puts_count": sum(1 for item in combined if item.get("side") == "put"),
+        "side_coverage": _option_side_coverage(combined),
         "options": combined,
     }
 

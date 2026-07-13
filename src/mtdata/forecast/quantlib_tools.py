@@ -436,7 +436,28 @@ def calibrate_heston_quantlib_from_options(
         return {"error": "Need at least 5 contracts with valid implied volatility for Heston calibration."}
 
     rows.sort(key=lambda x: abs(float(x["strike"]) - spot_val))
-    rows = rows[: max(5, int(max_contracts))]
+    contract_limit = max(5, int(max_contracts))
+    if side == "both":
+        calls = [row for row in rows if row.get("side") == "call"]
+        puts = [row for row in rows if row.get("side") == "put"]
+        if not calls or not puts:
+            return {
+                "error": (
+                    "option_type=both requires valid implied-volatility contracts "
+                    "from both calls and puts."
+                ),
+                "side_coverage": "call_only" if calls else "put_only" if puts else "none",
+            }
+        rows = []
+        for index in range(max(len(calls), len(puts))):
+            if index < len(calls) and len(rows) < contract_limit:
+                rows.append(calls[index])
+            if index < len(puts) and len(rows) < contract_limit:
+                rows.append(puts[index])
+            if len(rows) >= contract_limit:
+                break
+    else:
+        rows = rows[:contract_limit]
     expiry_text = str(chain.get("expiration") or "")
     if not expiry_text:
         return {"error": "Options expiration date missing from chain output."}
@@ -526,6 +547,9 @@ def calibrate_heston_quantlib_from_options(
         "valuation_date": valuation_day.isoformat(),
         "days_to_expiry": int(days_to_expiry),
         "contracts_used": int(len(rows)),
+        "option_type": side,
+        "calls_used": sum(1 for row in rows if row.get("side") == "call"),
+        "puts_used": sum(1 for row in rows if row.get("side") == "put"),
         "spot": float(spot_val),
         "calibration_error_rmse": float(rmse) if np.isfinite(rmse) else None,
         "params": {
