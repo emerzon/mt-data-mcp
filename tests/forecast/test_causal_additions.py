@@ -102,3 +102,36 @@ def test_cointegration_johansen_reports_positive_rank(monkeypatch):
     assert result["method"] == "johansen"
     assert result["cointegration_rank"] >= 1
     assert result["cointegrating_vectors"]
+
+
+def test_cointegration_corrects_significance_across_tested_pairs(monkeypatch):
+    index = pd.date_range("2025-01-01", periods=120, freq="h")
+    series = {
+        symbol: pd.Series(np.linspace(100.0 + offset, 120.0 + offset, 120), index=index)
+        for offset, symbol in enumerate(("AAA", "BBB", "CCC"))
+    }
+    p_values = iter((0.02, 0.03, 0.9))
+
+    monkeypatch.setattr(causal, "_causal_connection_error", lambda: None)
+    monkeypatch.setattr(
+        causal,
+        "_fetch_series_for_window",
+        lambda symbol, *args, **kwargs: (series[symbol], None),
+    )
+    monkeypatch.setattr(
+        "statsmodels.tsa.stattools.coint",
+        lambda *args, **kwargs: (-4.0, next(p_values), [-3.9, -3.3, -3.0]),
+    )
+
+    result = _raw(causal.cointegration_test)(
+        symbols="AAA,BBB,CCC",
+        transform="level",
+        min_overlap=80,
+        significance=0.05,
+    )
+
+    assert result["success"] is True
+    assert result["summary"]["counts"]["cointegrated"] == 0
+    assert [item["p_value_raw"] for item in result["items"]] == [0.02, 0.03, 0.9]
+    assert [item["p_value"] for item in result["items"]] == [0.06, 0.06, 0.9]
+    assert all(item["p_value_correction"] == "holm_across_pairs" for item in result["items"])

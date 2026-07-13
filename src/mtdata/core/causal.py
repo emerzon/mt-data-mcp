@@ -1119,6 +1119,34 @@ def _evaluate_cointegration_pair(
     return best_row, failures
 
 
+def _apply_holm_pair_correction(
+    rows: List[Dict[str, Any]],
+    *,
+    significance: float,
+) -> None:
+    """Apply a family-wise Holm correction to pairwise test results in place."""
+    ordered = sorted(
+        enumerate(rows),
+        key=lambda item: (float(item[1]["p_value"]), item[0]),
+    )
+    family_size = len(ordered)
+    running_adjusted = 0.0
+    for rank, (_, row) in enumerate(ordered):
+        raw = float(row["p_value"])
+        adjusted = min(1.0, raw * float(family_size - rank))
+        running_adjusted = max(running_adjusted, adjusted)
+        row["p_value_raw"] = raw
+        row["p_value"] = float(running_adjusted)
+        row["p_value_correction"] = "holm_across_pairs"
+        row["significance_basis"] = "p_value_holm_adjusted"
+        row["significance_threshold"] = float(significance)
+        row["pair_tests_run"] = int(family_size)
+        row["cointegrated"] = bool(running_adjusted < significance)
+        row["relationship"] = (
+            "cointegrated" if running_adjusted < significance else "no_cointegration"
+        )
+
+
 def _build_cointegration_summary(
     rows: List[Dict[str, Any]],
     *,
@@ -3127,6 +3155,8 @@ def cointegration_test(  # noqa: C901
                         if len(pair_failures) < 10:
                             pair_failures.append(failure)
 
+        _apply_holm_pair_correction(rows, significance=float(significance))
+
         rows.sort(
             key=lambda item: (
                 float(item["p_value"]),
@@ -3149,6 +3179,8 @@ def cointegration_test(  # noqa: C901
                 "output_truncated": output_truncated,
                 "pairs_failed": int(len(pair_failures)),
                 "pairs_skipped_min_overlap": int(pairs_skipped_min_overlap),
+                "p_value_correction": "holm_across_pairs",
+                "pair_tests_run": int(len(rows)),
             }
         )
         if detail_mode == "full":
