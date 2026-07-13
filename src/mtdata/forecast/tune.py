@@ -333,7 +333,7 @@ def _eval_candidate(
     # Allow method gene inside candidate
     sel_method = str(candidate_params.get('method')) if candidate_params.get('method') else (str(method) if method else None)
     if not sel_method:
-        return (math.inf if mode == 'min' else -math.inf, {"error": "No method provided"})
+        return math.inf, {"error": "No method provided"}
     cand_only = {k: v for k, v in candidate_params.items() if k != 'method'}
     res = _forecast_backtest(
         symbol=symbol,
@@ -352,7 +352,7 @@ def _eval_candidate(
     # Pull method aggregate
     r = res.get('results', {}).get(sel_method) if isinstance(res, dict) else None
     if not isinstance(r, dict) or not r.get('success'):
-        return (math.inf if mode == 'min' else -math.inf, res)
+        return math.inf, res
     metrics = _extract_method_backtest_metrics(res, sel_method)
     score = _finite_metric(metrics, str(metric))
     if score is None:
@@ -856,6 +856,7 @@ def genetic_search_forecast_params(  # noqa: C901
     best_score = math.inf if mode == 'min' else -math.inf
     best_params: Dict[str, Any] = {}
     best_result: Optional[Dict[str, Any]] = None
+    successful_evaluations = 0
 
     for gen in range(max(1, int(generations))):
         scored: List[Tuple[float, Dict[str, Any]]] = []
@@ -883,7 +884,12 @@ def genetic_search_forecast_params(  # noqa: C901
             history.append(hist_entry)
             # Keep global best in true metric direction
             true_score = score if mode == 'min' else -score
-            if (mode == 'min' and true_score < best_score) or (mode != 'min' and true_score > best_score):
+            if math.isfinite(true_score):
+                successful_evaluations += 1
+            if math.isfinite(true_score) and (
+                (mode == 'min' and true_score < best_score)
+                or (mode != 'min' and true_score > best_score)
+            ):
                 best_score = true_score
                 best_params = dict(cand)
                 best_result = res if isinstance(res, dict) else None
@@ -921,6 +927,18 @@ def genetic_search_forecast_params(  # noqa: C901
                     child[k] = _mutate_value(child.get(k), spec or {}, rng)
             new_pop.append(child)
         pop = new_pop[: len(pop)]
+
+    if successful_evaluations == 0:
+        return {
+            "success": False,
+            "error": "No candidate produced a finite requested metric.",
+            "error_code": "no_successful_trials",
+            "metric": metric,
+            "mode": mode,
+            "population": int(population),
+            "generations": int(generations),
+            "history_count": len(history),
+        }
 
     payload: Dict[str, Any] = {
         "success": True,
@@ -1108,6 +1126,9 @@ def genetic_search_optimize_hints(  # noqa: C901
             trade_threshold=0.0,
         )
 
+        if not math.isfinite(float(score)):
+            return math.inf, res
+
         # Compute fitness
         if fitness_metric == 'composite':
             # Extract backtest metrics
@@ -1217,11 +1238,25 @@ def genetic_search_optimize_hints(  # noqa: C901
 
     # Extract top-N candidates
     pop.sort(key=lambda t: t[1])
+    finite_pop = [item for item in pop if math.isfinite(float(item[1]))]
+    if not finite_pop:
+        return {
+            'success': False,
+            'error': 'No candidate produced a finite requested metric.',
+            'error_code': 'no_successful_trials',
+            'hints': [],
+            'search_summary': {
+                'symbol': symbol,
+                'population': int(population),
+                'generations': int(generations),
+                'fitness_metric': fitness_metric,
+            },
+        }
     top_configs: List[Dict[str, Any]] = []
 
     seen_configs = set()
     duplicate_results_filtered = 0
-    for individual, fitness, backtest_res in pop:
+    for individual, fitness, backtest_res in finite_pop:
         if len(top_configs) >= int(top_n):
             break
         tf, method, params = _extract_params(individual, search_space)

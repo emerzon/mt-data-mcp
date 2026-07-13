@@ -341,6 +341,27 @@ def test_genetic_search_maximizes_higher_is_better_metric():
     assert result["search_summary"]["fitness_score_direction"] == "higher_is_better"
 
 
+def test_genetic_search_returns_no_hints_when_all_trials_fail():
+    with patch(
+        "mtdata.forecast.tune._eval_candidate",
+        return_value=(float("inf"), {"error": "backtest failed"}),
+    ):
+        result = genetic_search_optimize_hints(
+            symbol="EURUSD",
+            timeframes=["H1"],
+            methods=["naive"],
+            population=2,
+            generations=1,
+            top_n=1,
+            fitness_metric="sharpe_ratio",
+            seed=42,
+        )
+
+    assert result["success"] is False
+    assert result["error_code"] == "no_successful_trials"
+    assert result["hints"] == []
+
+
 @pytest.mark.skip(reason="Long-running integration test; run manually")
 class TestGeneticSearchOptimizeHints:
     """Integration test for genetic search (skipped by default)."""
