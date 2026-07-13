@@ -561,11 +561,15 @@ def _barrier_returns(
         direction = float(signal.iloc[idx]) if pd.notna(signal.iloc[idx]) else 0.0
         if direction == 0:
             continue
-        entry = float(df["close"].iloc[idx])
+        entry_idx = idx + 1
+        entry = float(df["open"].iloc[entry_idx])
+        if not math.isfinite(entry) or entry <= 0.0:
+            entry = float(df["close"].iloc[entry_idx])
         result = None
-        for step in range(1, horizon + 1):
-            high = float(df["high"].iloc[idx + step])
-            low = float(df["low"].iloc[idx + step])
+        for step in range(horizon):
+            outcome_idx = entry_idx + step
+            high = float(df["high"].iloc[outcome_idx])
+            low = float(df["low"].iloc[outcome_idx])
             favorable = (high / entry - 1.0) if direction > 0 else (1.0 - low / entry)
             adverse = (1.0 - low / entry) if direction > 0 else (high / entry - 1.0)
             adverse_hit = adverse >= sl
@@ -860,6 +864,9 @@ def validate_strategies(  # noqa: C901
             "forecast_signal_anchor_limit": _MAX_FORECAST_SIGNAL_ANCHORS,
             "same_bar_policy": request.barrier.same_bar_policy,
             "completed_candles_only": True,
+            "signal_timing": "completed_bar_close",
+            "execution_timing": "next_bar_open",
+            "barrier_window": "entry_bar_through_horizon",
         },
         "cost_model": {"source": spread_source, "spread_bps": spread_bps, "commission_bps_per_side": request.commission_bps, "slippage_bps_per_side": request.slippage_bps, "round_trip_bps": round_trip_bps, "complete": complete},
         "data_quality": {"bars": len(df), "cost_model_complete": complete},

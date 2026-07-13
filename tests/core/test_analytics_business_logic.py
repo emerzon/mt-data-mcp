@@ -7,6 +7,7 @@ import pandas as pd
 import pytest
 
 from mtdata.analytics.engines import (
+    _barrier_returns,
     _filtered_historical_returns,
     analyze_execution_quality,
     analyze_microstructure,
@@ -200,6 +201,7 @@ def test_strategy_validation_returns_walk_forward_oos_metrics() -> None:
     assert result["validation"]["outcome_horizon_bars"] == 5
     assert result["validation"]["extra_purge_bars"] == 0
     assert result["validation"]["protocol"] == "anchored_expanding_fixed_candidate_oos"
+    assert result["validation"]["execution_timing"] == "next_bar_open"
     assert result["rankings"][0]["id"] == "cross"
     assert result["rankings"][0]["trades"] > 0
     assert result["rankings"][0]["evaluation_status"] == "complete"
@@ -208,6 +210,29 @@ def test_strategy_validation_returns_walk_forward_oos_metrics() -> None:
     }
     for fold in result["rankings"][0]["folds"]:
         assert fold["test_end_bar"] + request.barrier.horizon <= fold["test_window_end_bar"]
+
+
+def test_strategy_barrier_entry_uses_next_bar_open_after_gap() -> None:
+    frame = pd.DataFrame(
+        {
+            "open": [100.0, 110.0, 110.0],
+            "high": [101.0, 111.0, 111.0],
+            "low": [99.0, 109.0, 109.0],
+            "close": [100.0, 110.0, 110.0],
+        }
+    )
+    signal = pd.Series([1.0, np.nan, np.nan])
+
+    indices, outcomes = _barrier_returns(
+        frame,
+        signal,
+        horizon=1,
+        tp_pct=5.0,
+        sl_pct=5.0,
+    )
+
+    assert indices.tolist() == [0]
+    assert outcomes.tolist() == pytest.approx([0.0])
 
 
 def test_forecast_strategy_folds_cover_computed_signal_window(monkeypatch) -> None:
