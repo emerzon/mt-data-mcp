@@ -223,7 +223,12 @@ export function useChartWorkspace() {
 
   const handleForecastResult = useCallback(
     (result: ForecastPayload) => {
-      const main = result.forecast_price ?? result.forecast_return ?? []
+      const main = result.forecast_price
+      if (!main?.length || main.some((value) => !Number.isFinite(value))) {
+        setForecastOverlays([])
+        setMetrics(null)
+        return
+      }
       let times: number[] = []
 
       if (result.forecast_epoch && result.forecast_epoch.length === main.length) {
@@ -253,7 +258,12 @@ export function useChartWorkspace() {
         },
       ]
 
-      if (result.lower_price && result.upper_price) {
+      if (
+        result.lower_price?.length === main.length &&
+        result.upper_price?.length === main.length &&
+        result.lower_price.every(Number.isFinite) &&
+        result.upper_price.every(Number.isFinite)
+      ) {
         overlays.push({
           name: 'lower',
           points: times.map((time, index) => ({ time, value: result.lower_price![index] })),
