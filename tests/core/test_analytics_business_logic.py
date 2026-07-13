@@ -229,6 +229,64 @@ def test_portfolio_risk_reconciles_component_expected_shortfall() -> None:
     assert result["stresses"]["perfect_positive_correlation_1sigma"][0]["horizon_bars"] == 1
 
 
+def test_portfolio_risk_fails_closed_when_symbol_history_is_missing() -> None:
+    gateway = FakeGateway()
+    gateway.positions = [
+        {"ticket": 1, "symbol": "EURUSD", "type": 0, "volume": 1.0, "price_current": 1.1},
+        {"ticket": 2, "symbol": "GBPUSD", "type": 1, "volume": 0.5, "price_current": 1.1},
+    ]
+    gateway.bar_rows["GBPUSD"] = _bars(50)
+
+    result = decompose_portfolio_risk(
+        PortfolioRiskDecomposeRequest(
+            lookback=300,
+            horizon_bars=[1],
+            confidence=[0.95],
+            simulations=500,
+        ),
+        gateway,
+    )
+
+    assert result["error_code"] == "portfolio_pricing_incomplete"
+    assert result["failures"] == [
+        {
+            "symbol": "GBPUSD",
+            "stage": "return_history",
+            "bars_available": 50,
+            "bars_required": 100,
+            "reason": "insufficient completed return history",
+        }
+    ]
+
+
+def test_portfolio_risk_discloses_history_omissions_in_partial_mode() -> None:
+    gateway = FakeGateway()
+    gateway.positions = [
+        {"ticket": 1, "symbol": "EURUSD", "type": 0, "volume": 1.0, "price_current": 1.1},
+        {"ticket": 2, "symbol": "GBPUSD", "type": 1, "volume": 0.5, "price_current": 1.1},
+    ]
+    gateway.bar_rows["GBPUSD"] = _bars(50)
+
+    result = decompose_portfolio_risk(
+        PortfolioRiskDecomposeRequest(
+            lookback=300,
+            horizon_bars=[1],
+            confidence=[0.95],
+            simulations=500,
+            allow_partial=True,
+        ),
+        gateway,
+    )
+
+    assert result["success"] is True
+    assert result["summary"]["symbols"] == 1
+    assert result["summary"]["symbols_requested"] == 2
+    assert result["data_quality"]["symbols_modeled"] == ["EURUSD"]
+    assert result["data_quality"]["symbols_omitted"] == ["GBPUSD"]
+    assert result["data_quality"]["history_failures"][0]["symbol"] == "GBPUSD"
+    assert any("allow_partial=true" in warning for warning in result["warnings"])
+
+
 def test_relative_strength_ranks_and_reports_breadth() -> None:
     gateway = FakeGateway()
     request = MarketRelativeStrengthRequest(

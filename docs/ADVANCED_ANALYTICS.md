@@ -64,7 +64,9 @@ mtdata-cli portfolio_risk_decompose --timeframe H1 --lookback 1000 \
 
 The default fails closed if a material position cannot be priced safely. Use
 `--allow-partial true` only when an explicitly partial portfolio result is
-acceptable.
+acceptable. Fail-closed coverage includes both live sensitivity pricing and
+the completed return history required by the scenario model. Partial results
+list every omitted symbol and the omission stage in `data_quality`.
 
 The perfect-positive-correlation stress applies a common one-sigma factor to
 horizon marginal volatilities. Opposing sensitivities therefore offset.

@@ -839,13 +839,32 @@ def decompose_portfolio_risk(request: PortfolioRiskDecomposeRequest, gateway: An
     if failures and not request.allow_partial:
         return {"error": "One or more material positions could not be priced safely.", "error_code": "portfolio_pricing_incomplete", "failures": failures}
     series = {}
+    history_failures: List[Dict[str, Any]] = []
     for symbol in sensitivities:
         bars = _rates(gateway, symbol, request.timeframe, request.lookback + max(request.horizon_bars) + 5)
         if len(bars) >= 100:
             values = pd.Series(np.log(bars["close"]).diff().to_numpy(), index=bars["time"].to_numpy(), name=symbol).dropna()
             series[symbol] = values
+        else:
+            history_failures.append({
+                "symbol": symbol,
+                "stage": "return_history",
+                "bars_available": int(len(bars)),
+                "bars_required": 100,
+                "reason": "insufficient completed return history",
+            })
+    if history_failures and not request.allow_partial:
+        return {
+            "error": "One or more material positions lacked sufficient return history.",
+            "error_code": "portfolio_pricing_incomplete",
+            "failures": history_failures,
+        }
     if not series:
-        return {"error": "No aligned return history was available.", "error_code": "insufficient_data"}
+        return {
+            "error": "No aligned return history was available.",
+            "error_code": "insufficient_data",
+            "failures": history_failures,
+        }
     returns = pd.concat(series.values(), axis=1, join="inner").dropna()
     if len(returns) < 100:
         return {"error": "At least 100 aligned returns are required.", "error_code": "insufficient_data", "aligned_rows": len(returns)}
@@ -943,15 +962,38 @@ def decompose_portfolio_risk(request: PortfolioRiskDecomposeRequest, gateway: An
         }.items()
         if value is not None
     }
+    requested_symbols = sorted(
+        {str(row.get("symbol") or "") for row in positions if row.get("symbol")}
+    )
+    modeled_symbols = [str(column) for column in standardized.columns]
+    omitted_symbols = sorted(set(requested_symbols) - set(modeled_symbols))
+    warnings_out: List[str] = []
+    if failures:
+        warnings_out.append(
+            "Some positions could not be priced and were omitted because allow_partial=true."
+        )
+    if history_failures:
+        warnings_out.append(
+            "Some priced symbols lacked sufficient return history and were omitted because allow_partial=true."
+        )
     return {
         "success": True,
         "method": request.method,
         **account_context,
-        "summary": {"positions": base_position_count, "positions_after_proposed": len(positions), "symbols": len(sensitivities), "aligned_rows": len(returns), "concentration_hhi": float(np.sum(weights**2))},
+        "summary": {"positions": base_position_count, "positions_after_proposed": len(positions), "symbols": len(modeled_symbols), "symbols_requested": len(requested_symbols), "aligned_rows": len(returns), "concentration_hhi": float(np.sum(weights**2))},
         "risk": risk_rows,
         "stresses": stresses,
         "proposed_trade": proposed_context,
-        "data_quality": {"pricing_failures": failures, "allow_partial": request.allow_partial, "aligned_coverage": float(len(returns) / max(len(item) for item in series.values()))},
+        "data_quality": {
+            "pricing_failures": failures,
+            "history_failures": history_failures,
+            "allow_partial": request.allow_partial,
+            "symbols_requested": requested_symbols,
+            "symbols_modeled": modeled_symbols,
+            "symbols_omitted": omitted_symbols,
+            "aligned_coverage": float(len(returns) / max(len(item) for item in series.values())),
+        },
+        "warnings": warnings_out,
         "units": {
             "var": "account_currency",
             "expected_shortfall": "account_currency",
