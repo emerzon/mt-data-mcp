@@ -276,7 +276,6 @@ def test_detect_classic_patterns_historical_scan_finds_older_prefix_pattern(
             scan_historical=True,
             scan_step_bars=10,
             scan_min_prefix_bars=120,
-            auto_complete_stale_forming=False,
         ),
     )
 
@@ -284,22 +283,6 @@ def test_detect_classic_patterns_historical_scan_finds_older_prefix_pattern(
     match = next(p for p in out_scan if p.name == "Rounding Bottom")
     assert match.status == "forming"
     assert match.end_index == 139
-
-    out_scan_completed = detect_classic_patterns(
-        df,
-        ClassicDetectorConfig(
-            max_consolidation_bars=5,
-            scan_historical=True,
-            scan_step_bars=10,
-            scan_min_prefix_bars=120,
-            auto_complete_stale_forming=True,
-        ),
-    )
-    assert (
-        next(p for p in out_scan_completed if p.name == "Rounding Bottom").status
-        == "completed"
-    )
-
 
 def test_detect_classic_patterns_historical_scan_reuses_global_pivots(monkeypatch):
     n = 220

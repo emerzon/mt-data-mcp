@@ -213,12 +213,6 @@ def _postprocess_classic_results(
     cfg: ClassicDetectorConfig,
     n: int,
 ) -> List[ClassicPatternResult]:
-    if bool(cfg.auto_complete_stale_forming):
-        recent_bars = max(1, int(getattr(cfg, "stale_completion_recent_bars", 3)))
-        for i, r in enumerate(results):
-            if r.status == "forming" and r.end_index < (n - recent_bars):
-                results[i] = replace(r, status="completed")
-
     # Apply the configured result recency bound to every lifecycle state.
     max_age = int(getattr(cfg, "max_pattern_age_bars", 500))
     if max_age > 0:

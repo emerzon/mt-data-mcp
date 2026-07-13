@@ -1015,12 +1015,6 @@ def run_patterns_detect(  # noqa: C901
         fractal_cfg = deps.fractal_cfg_cls()
         harmonic_cfg = deps.harmonic_cfg_cls()
 
-        # Enable auto-complete for stale forming patterns by default in "all" mode
-        # This prevents ancient patterns from showing as "forming" indefinitely
-        classic_cfg.auto_complete_stale_forming = True
-        classic_cfg.stale_completion_recent_bars = (
-            10  # More aggressive - patterns ending >10 bars ago = completed
-        )
         # Age/span limits are set per-timeframe in the loop below via
         # _timeframe_aware_age_limits(), unless the user provided overrides.
         fractal_cfg.max_age_bars = max(100, request.limit // 3)

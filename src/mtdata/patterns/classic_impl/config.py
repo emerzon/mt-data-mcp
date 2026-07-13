@@ -181,8 +181,6 @@ class ClassicDetectorConfig:
         2  # touches needed near the right edge to mark completed
     )
     completion_lookback_bars: int = 5  # lookback window for completion confirmation
-    auto_complete_stale_forming: bool = False
-    stale_completion_recent_bars: int = 10
     # Detection-window bounds for all returned patterns, including completed
     # structures. include_completed controls lifecycle visibility; it does not
     # bypass these recency and geometry-quality limits.
