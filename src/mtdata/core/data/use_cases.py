@@ -553,17 +553,6 @@ def _attach_candle_timestamp_metadata(payload: Dict[str, Any]) -> None:
             return
 
 
-def _normalize_denoise_columns(value: Any) -> List[str]:
-    if isinstance(value, str):
-        text = value.strip()
-        if text.lower() in {"ohlc", "ohlcv", "price"}:
-            return ["open", "high", "low", "close"]
-        return [part for part in text.replace(",", " ").split() if part]
-    if isinstance(value, (list, tuple, set)):
-        return [str(item).strip() for item in value if str(item).strip()]
-    return []
-
-
 def _attach_denoise_disclosure(payload: Dict[str, Any]) -> None:
     denoise_info = payload.get("denoise")
     applications = denoise_info.get("applications") if isinstance(denoise_info, dict) else None

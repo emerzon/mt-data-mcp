@@ -788,17 +788,6 @@ def _build_forecast_evaluation_context(
     )
 
 
-def _build_execution_contract_metadata(
-    execution_contract: ForecastExecutionContract,
-) -> Dict[str, Any]:
-    return {
-        "data_preparation": _contract_payload(execution_contract.data_preparation),
-        "model": _contract_payload(execution_contract.model),
-        "evaluation": _contract_payload(execution_contract.evaluation),
-        "input_mode": execution_contract.inferred_input_mode(),
-    }
-
-
 def _strategy_signal_label(value: float) -> str:
     if value > 0:
         return "long"

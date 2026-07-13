@@ -579,19 +579,6 @@ def _get_upcoming_holidays(market_ids: List[str], days_ahead: int = 14) -> List[
     return upcoming
 
 
-def _summarize_upcoming_holiday(entry: Any) -> Any:
-    if not isinstance(entry, dict):
-        return entry
-
-    out: Dict[str, Any] = {}
-    for key in ("date", "holiday", "impact", "days_away", "markets_affected"):
-        if key in entry and entry.get(key) is not None:
-            out[key] = entry.get(key)
-    if entry.get("impact") == "early_close" and entry.get("early_close_time") is not None:
-        out["early_close_time"] = entry.get("early_close_time")
-    return out
-
-
 def normalize_market_status_output(
     result: Dict[str, Any],
     *,

@@ -431,7 +431,7 @@ def _fetch_yahoo_options_payload(symbol: str, expiry_epoch: Optional[int] = None
     try:
         try:
             response.raise_for_status()
-        except requests.exceptions.HTTPError as http_err:
+        except requests.exceptions.HTTPError:
             # Sanitize 401 errors to avoid exposing API URLs to users
             if response.status_code == 401:
                 raise ValueError(

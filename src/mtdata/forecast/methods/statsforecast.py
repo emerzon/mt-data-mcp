@@ -6,7 +6,6 @@ import logging
 import warnings
 from typing import Any, Dict, List, Optional, Tuple
 
-import numpy as np
 import pandas as pd
 
 from ..common import build_ci_diagnostics as _build_ci_diagnostics

@@ -1227,26 +1227,6 @@ def _candle_volume_metadata(headers: List[str]) -> Dict[str, Any]:
     return meta
 
 
-def _rates_field_has_values(rates: Any, field: str) -> bool:
-    try:
-        values = [int(rate[field]) for rate in rates]
-    except Exception:
-        return False
-    return len(set(values)) > 1 or any(value != 0 for value in values)
-
-
-def _available_candle_volume_metadata(rates: Any) -> Dict[str, Any]:
-    meta: Dict[str, Any] = {}
-    if _rates_field_has_values(rates, "tick_volume"):
-        meta["volume_type"] = "tick_count"
-        meta["volume_note"] = (
-            "MT5 tick_volume is broker tick count for the bar, not exchange traded volume."
-        )
-    if _rates_field_has_values(rates, "real_volume"):
-        meta["real_volume_type"] = "traded_volume"
-    return meta
-
-
 def _candle_time_convention_metadata(timeframe: str) -> Dict[str, str]:
     tf = str(timeframe or "").strip().upper()
     if tf in {"D1", "W1", "MN1"}:
@@ -1302,17 +1282,6 @@ def _append_denoise_application(
         )
     except Exception:
         pass
-
-
-def _normalize_denoise_display_columns(value: Any) -> List[str]:
-    if isinstance(value, str):
-        text = value.strip()
-        if text.lower() in {"ohlc", "ohlcv", "price"}:
-            return ["open", "high", "low", "close"]
-        return [part for part in text.replace(",", " ").split() if part]
-    if isinstance(value, (list, tuple, set)):
-        return [str(item).strip() for item in value if str(item).strip()]
-    return []
 
 
 def _latest_indicator_values_missing(df: pd.DataFrame, columns: List[str]) -> bool:

@@ -59,7 +59,6 @@ class MT5NewsParser:
     
     HEADER_SIZE = 504
     INDEX_RECORD_DELTA = 0x118
-    INDEX_ENTRY_SIZE = 40
     MIN_TIMESTAMP = 1577836800  # 2020-01-01
     MAX_TIMESTAMP = 2051222400  # 2035-01-01
     LAYOUT_ID = "news_dat_header_504_index_0x118"

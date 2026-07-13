@@ -767,14 +767,6 @@ def _is_macro_sensitive_event(item: NewsItem) -> bool:
     return any(term in text for term in _MACRO_EVENT_TERMS)
 
 
-def _has_symbol_specific_evidence(item: NewsItem, context: InstrumentContext) -> bool:
-    direct_symbol = _safe_text(item.metadata.get("direct_symbol")).upper()
-    if direct_symbol == context.symbol:
-        return True
-
-    return _has_textual_context_evidence(item, context)
-
-
 def _has_textual_context_evidence(item: NewsItem, context: InstrumentContext) -> bool:
     snapshot_ticker = _safe_text(item.metadata.get("ticker")).upper()
     if snapshot_ticker:

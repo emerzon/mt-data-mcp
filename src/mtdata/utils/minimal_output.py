@@ -1155,35 +1155,6 @@ def _normalize_wait_event_payload(
     return _format_price_fields_with_digits(payload, digits=digits_i)
 
 
-def _compact_barrier_rows(
-    rows: Any,
-    *,
-    preferred_keys: List[str],
-) -> Optional[List[Dict[str, Any]]]:
-    if not isinstance(rows, list):
-        return None
-
-    dict_rows = [row for row in rows if isinstance(row, dict)]
-    if not dict_rows:
-        return []
-
-    active_keys = [
-        key
-        for key in preferred_keys
-        if any(key in row and not _is_empty_value(row.get(key)) for row in dict_rows)
-    ]
-    compacted: List[Dict[str, Any]] = []
-    for row in dict_rows:
-        compacted.append(
-            {
-                key: row.get(key)
-                for key in active_keys
-                if key in row and not _is_empty_value(row.get(key))
-            }
-        )
-    return compacted
-
-
 def _normalize_barrier_optimize_payload(
     payload: Dict[str, Any],
     *,

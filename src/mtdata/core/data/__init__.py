@@ -30,25 +30,6 @@ __all__ = ['data_fetch_candles', 'data_fetch_ticks', 'wait_event']
 
 logger = logging.getLogger(__name__)
 
-_COMPACT_WAIT_EVENT_SPEC_FIELDS = (
-    "type",
-    "symbol",
-    "timeframe",
-    "ticket",
-    "order_ticket",
-    "position_ticket",
-    "magic",
-    "side",
-    "direction",
-    "level",
-    "lower",
-    "upper",
-    "distance",
-    "price_source",
-    "threshold_mode",
-    "threshold_value",
-)
-
 _WAIT_EVENT_BOUNDARY_TYPES = {"candle_close"}
 _WAIT_EVENT_SPEC_HINT = (
     'Use event names like order_filled or JSON objects like {"type":"order_filled",'
@@ -287,40 +268,6 @@ def _dedupe_wait_event_watchers(watch_for: List[Dict[str, Any]]) -> List[Dict[st
             continue
         seen.add(key)
         out.append(dict(item))
-    return out
-
-
-def _compact_wait_event_spec(spec: Any) -> Dict[str, Any]:
-    if hasattr(spec, "model_dump"):
-        raw = spec.model_dump(exclude_none=True)
-    elif isinstance(spec, dict):
-        raw = dict(spec)
-    else:
-        raw = {"type": str(spec)}
-    return {
-        field_name: raw.get(field_name)
-        for field_name in _COMPACT_WAIT_EVENT_SPEC_FIELDS
-        if raw.get(field_name) is not None
-    }
-
-
-def _compact_wait_event_specs(specs: Any, *, inferred: bool) -> Dict[str, Any]:
-    source = list(specs or []) if isinstance(specs, list) else []
-    items = [_compact_wait_event_spec(item) for item in source]
-    event_types = sorted(
-        {
-            str(item.get("type"))
-            for item in items
-            if item.get("type") not in (None, "")
-        }
-    )
-    out: Dict[str, Any] = {
-        "inferred": bool(inferred),
-        "count": len(items),
-        "types": event_types,
-    }
-    if not inferred or len(items) <= 8:
-        out["items"] = items
     return out
 
 

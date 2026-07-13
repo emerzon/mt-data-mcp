@@ -24,13 +24,6 @@ _TREND_COMPACT_LEGEND: Dict[str, str] = {
     "bars_since_swing_low": "Bars since most recent swing low (within lookback window).",
     "data_quality": "Missing-input summary when close/high/low values were imputed for trend calculations.",
 }
-_TREND_REGIME_LABELS = {
-    0: "neutral",
-    1: "uptrend",
-    2: "downtrend",
-    3: "breakout_up",
-    4: "breakout_down",
-}
 
 
 def _get_raw_result(
@@ -320,28 +313,6 @@ def _compute_compact_trend(rows: List[Dict[str, Any]]) -> Optional[Dict[str, Any
                 'lower-confidence when gaps are present.'
             ),
         }
-    return out
-
-
-def _explain_compact_trend(compact: Dict[str, Any]) -> Dict[str, Any]:
-    if not isinstance(compact, dict):
-        return {}
-    out: Dict[str, Any] = {}
-    s = compact.get("slope_atr_scores")
-    r = compact.get("fit_r2_pcts")
-    if isinstance(s, list):
-        out["slope_atr_score_5_20_60"] = [int(v) for v in s[:3] if isinstance(v, (int, float))]
-    if isinstance(r, list):
-        out["fit_r2_pct_5_20_60"] = [int(v) for v in r[:3] if isinstance(v, (int, float))]
-    for key in ("volatility_bps", "squeeze_percentile", "bars_since_swing_high", "bars_since_swing_low"):
-        val = compact.get(key)
-        if isinstance(val, (int, float)):
-            out[key] = int(val)
-    g_val = compact.get("regime_code")
-    if isinstance(g_val, (int, float)):
-        g_i = int(g_val)
-        out["regime_code"] = g_i
-        out["regime_label"] = _TREND_REGIME_LABELS.get(g_i, "neutral")
     return out
 
 

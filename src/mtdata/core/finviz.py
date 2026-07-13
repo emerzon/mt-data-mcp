@@ -1993,14 +1993,6 @@ def _parse_finviz_calendar_time(value: Any) -> Optional[datetime]:
     return parsed
 
 
-def _finviz_calendar_utc_time(value: Any) -> Optional[str]:
-    parsed = _parse_finviz_calendar_time(value)
-    if parsed is None:
-        return None
-    utc_dt = parsed.astimezone(timezone.utc)
-    return utc_dt.replace(microsecond=0).isoformat().replace("+00:00", "Z")
-
-
 def _normalize_finviz_economic_calendar_time(item: Dict[str, Any]) -> Dict[str, Any]:
     normalized = dict(item)
     parsed = _parse_finviz_calendar_time(normalized.get("date"))

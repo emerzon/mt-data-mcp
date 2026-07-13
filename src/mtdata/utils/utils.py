@@ -14,7 +14,7 @@ from .formatting import (
     format_number,
 )
 from .formatting import optimal_decimals
-from .coercion import safe_float as _safe_float
+from .coercion import safe_float as _safe_float  # noqa: F401  # re-exported for callers
 
 
 def _positive_float_attr(obj: Any, *names: str) -> Optional[float]:

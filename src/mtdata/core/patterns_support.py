@@ -488,41 +488,6 @@ def _should_expose_directional_bias(
     return bool(confidence >= _DIRECTIONAL_BIAS_MIN_CONFIDENCE)
 
 
-def _pattern_signal_verdict(
-    signal_bias: Dict[str, Any],
-    strongest_pattern: Optional[Dict[str, Any]],
-) -> Optional[str]:
-    bullish = int(signal_bias.get("bullish_patterns") or 0)
-    bearish = int(signal_bias.get("bearish_patterns") or 0)
-    if bullish <= 0 and bearish <= 0:
-        return None
-    dominant = str(signal_bias.get("dominant_direction") or "neutral")
-    share = signal_bias.get("dominant_share")
-    strength = signal_bias.get("directional_strength")
-    conflict = bool(signal_bias.get("conflict"))
-    pieces = [
-        f"Pattern mix is {dominant} ({bullish} bullish vs {bearish} bearish"
-    ]
-    if share not in (None, ""):
-        pieces[0] += f"; dominant_share={share}"
-    pieces[0] += ")."
-    if strongest_pattern:
-        label = _pattern_label(strongest_pattern)
-        direction = strongest_pattern.get("direction")
-        confidence = strongest_pattern.get("confidence")
-        strongest_text = f"Strongest pattern is {label}"
-        if direction not in (None, ""):
-            strongest_text += f" ({direction})"
-        if confidence not in (None, ""):
-            strongest_text += f" confidence={confidence}"
-        pieces.append(strongest_text + ".")
-    if conflict:
-        pieces.append("Mixed bullish/bearish evidence; wait for confirmation or check a higher timeframe.")
-    elif strength not in (None, ""):
-        pieces.append(f"Directional strength={strength}.")
-    return " ".join(pieces)
-
-
 def _pattern_data_quality_summary(warnings_in: Any) -> Optional[Dict[str, Any]]:
     if not isinstance(warnings_in, list):
         return None

@@ -490,32 +490,6 @@ def discover_tools(
     return tools
 
 
-def _load_forecast_method_choices(debug: Callable[[str], None]) -> Optional[list[str]]:
-    try:
-        from mtdata.forecast.forecast_registry import ForecastRegistry
-
-        for mod_name in (
-            "mtdata.forecast.methods.classical",
-            "mtdata.forecast.methods.ets_arima",
-            "mtdata.forecast.methods.statsforecast",
-            "mtdata.forecast.methods.mlforecast",
-            "mtdata.forecast.methods.pretrained",
-            "mtdata.forecast.methods.neural",
-            "mtdata.forecast.methods.sktime",
-            "mtdata.forecast.methods.analog",
-            "mtdata.forecast.methods.monte_carlo",
-        ):
-            try:
-                __import__(mod_name)
-            except Exception as import_exc:
-                debug(f"Skipping method module import '{mod_name}': {import_exc}")
-
-        return ForecastRegistry.get_all_method_names()
-    except Exception as exc:
-        debug(f"Failed to dynamically load forecast methods for CLI: {exc}")
-        return None
-
-
 def resolve_param_kwargs(
     param: Dict[str, Any],
     param_docs: Optional[Dict[str, str]],

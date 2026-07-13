@@ -939,23 +939,6 @@ def _rule_confidence_from_eval(rule_eval: ElliottRuleEvaluation) -> float:
     )
 
 
-def _blend_confidence(
-    rule_score: float,
-    cls_score: float,
-    *,
-    classification_available: bool,
-    rule_weight: float,
-    cls_weight: float,
-) -> float:
-    if not classification_available:
-        return float(min(1.0, max(0.0, rule_score)))
-    rule_weight = max(0.0, float(rule_weight))
-    cls_weight = max(0.0, float(cls_weight))
-    total = float(max(1e-9, rule_weight + cls_weight))
-    blended = (rule_weight * float(rule_score) + cls_weight * float(cls_score)) / total
-    return float(min(1.0, max(0.0, blended)))
-
-
 def _apply_confirmation_confidence_adjustments(
     confidence: float,
     pivot_confirmations: Optional[List[bool]],
@@ -1273,17 +1256,6 @@ def _upsert_elliott_result(
     prior = results_by_key.get(key)
     if prior is None or float(result.confidence) > float(prior.confidence):
         results_by_key[key] = result
-
-
-def _pivot_signature_for_settings(
-    close: np.ndarray,
-    threshold_pct: float,
-    min_distance: int,
-) -> Tuple[int, ...]:
-    piv_idx, _ = _zigzag_pivots_indices(close, float(threshold_pct))
-    piv_idx = _enforce_min_distance_on_pivots(piv_idx, close, int(max(1, min_distance)))
-    piv_idx = _enforce_pivot_alternation(piv_idx, close)
-    return tuple(int(idx) for idx in piv_idx)
 
 
 def _interval_coverage_ratio(

@@ -83,26 +83,6 @@ def _build_cli_timezone_meta(result: Any) -> Dict[str, Any]:
     return build_runtime_timezone_meta(result)
 
 
-def _build_cli_timezone_meta_brief(result: Any) -> Dict[str, Any]:
-    full = _build_cli_timezone_meta(result)
-    out: Dict[str, Any] = {}
-    utc_meta = full.get("utc")
-    if isinstance(utc_meta, dict):
-        out["utc"] = {"tz": utc_meta.get("tz"), "now": utc_meta.get("now")}
-    server_meta = full.get("server")
-    if isinstance(server_meta, dict):
-        out["server"] = {
-            "source": server_meta.get("source"),
-            "tz": server_meta.get("tz"),
-            "offset_seconds": server_meta.get("offset_seconds"),
-            "now": server_meta.get("now"),
-        }
-    client_meta = full.get("client")
-    if isinstance(client_meta, dict):
-        out["client"] = {"tz": client_meta.get("tz"), "now": client_meta.get("now")}
-    return out
-
-
 def _prune_compact_runtime_meta(result: Any) -> Any:
     if not isinstance(result, dict):
         return result

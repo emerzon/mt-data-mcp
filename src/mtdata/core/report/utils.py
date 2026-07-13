@@ -819,16 +819,3 @@ def _compact_yaml(value: Any, indent: int = 0) -> str:
     return f"{prefix}{_compact_scalar(value)}"
 
 
-def _compact_table_value(value: Any) -> str:
-    if value is None:
-        text = 'null'
-    elif isinstance(value, bool):
-        text = format_number(value)
-    elif isinstance(value, (int, float)) and not isinstance(value, bool):
-        text = format_number(value)
-    else:
-        text = str(value)
-    text = text.replace('\r', ' ').replace('\n', ' ')
-    if any(ch in text for ch in (',', '"')):
-        text = '"' + text.replace('"', '""') + '"'
-    return text

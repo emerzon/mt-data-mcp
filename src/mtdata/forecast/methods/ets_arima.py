@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 import warnings
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 import numpy as np
 import pandas as pd
 
 from ..common import build_ci_diagnostics as _build_ci_diagnostics
-from ..interface import ForecastMethod, ForecastResult, TrainResult
+from ..interface import ForecastMethod, ForecastResult
 from ..forecast_registry import ForecastRegistry
 
 try:

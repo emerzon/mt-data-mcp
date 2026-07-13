@@ -109,7 +109,7 @@ def _news_compact_time_field(
     return "time_utc", _news_time_utc_text(published_at)
 
 
-def _strip_news_compact_item_fields(value: Any, *, bucket_name: Optional[str] = None) -> Any:
+def _strip_news_compact_item_fields(value: Any) -> Any:
     if not isinstance(value, dict):
         return value
 
@@ -191,7 +191,7 @@ def normalize_news_output(
             if not subvalue:
                 continue
             out[key] = [
-                _strip_news_compact_item_fields(item, bucket_name=key_text)
+                _strip_news_compact_item_fields(item)
                 for item in subvalue
             ]
             continue

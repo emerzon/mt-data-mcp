@@ -1659,17 +1659,6 @@ def _boundary_cutoff_utc(boundary: Dict[str, Any]) -> datetime:
     return datetime.fromtimestamp(float(boundary["boundary_at_epoch"]), tz=timezone.utc)
 
 
-def _evaluate_boundaries(
-    boundaries: List[Dict[str, Any]],
-    *,
-    observed_at_utc: datetime,
-) -> Optional[Dict[str, Any]]:
-    boundary = _first_crossed_boundary(boundaries, observed_at_utc=observed_at_utc)
-    if boundary is None:
-        return None
-    return _boundary_event_payload(boundary)
-
-
 def _next_poll_sleep_seconds(
     *,
     poll_interval_seconds: float,
