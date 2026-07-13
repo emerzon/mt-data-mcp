@@ -410,8 +410,7 @@ class TestFetchRatesWithWarmup(unittest.TestCase):
         self.assertIsNotNone(result)
 
     @patch(_RATES_FROM)
-    def test_include_incomplete_relaxes_closed_market_stale_policy(self, mock_from):
-        """Requesting a forming candle should not block closed-market history."""
+    def test_include_incomplete_does_not_relax_unverified_stale_policy(self, mock_from):
         stale_rates = _make_rates(5, base_ts=60 * 60 * 5, step=60 * 60)
         mock_from.return_value = stale_rates
         diagnostics = {}
@@ -425,28 +424,13 @@ class TestFetchRatesWithWarmup(unittest.TestCase):
                 include_incomplete=True,
                 retry=True, sanity_check=True, diagnostics=diagnostics,
             )
-        self.assertIsNone(err)
-        self.assertEqual(result, stale_rates)
-        self.assertEqual(mock_from.call_count, 1)
-        self.assertEqual(
-            diagnostics['freshness'],
-            {
-                'last_bar_epoch': float(stale_rates[-1]['time']),
-                'expected_end_epoch': float(12 * 60 * 60),
-                'freshness_cutoff_epoch': float((12 * 60 * 60) - (3 * 60 * 60)),
-                'data_freshness_seconds': float((12 * 60 * 60) - stale_rates[-1]['time']),
-                'data_freshness_anchor': 'wall_clock',
-                'data_freshness_metric': 'last_completed_bar_age_seconds',
-                'last_bar_within_policy_window': False,
-                'freshness_policy_relaxed': True,
-                'market_session_status': 'closed_or_idle',
-                'freshness_note': 'Market appears closed or idle; showing the latest completed bar.',
-            },
-        )
+        self.assertIsNone(result)
+        self.assertIn('allow_stale=true', err)
+        self.assertEqual(mock_from.call_count, 2)
+        self.assertNotIn('freshness_policy_relaxed', diagnostics['freshness'])
 
     @patch(_RATES_FROM)
-    def test_live_completed_bars_relax_stale_policy(self, mock_from):
-        """Live requests can return the latest completed bar when markets are idle."""
+    def test_live_completed_bars_require_verified_closed_session(self, mock_from):
         stale_rates = _make_rates(5, base_ts=60 * 60 * 5, step=60 * 60)
         mock_from.return_value = stale_rates
         diagnostics = {}
@@ -460,13 +444,10 @@ class TestFetchRatesWithWarmup(unittest.TestCase):
                 retry=True, sanity_check=True, diagnostics=diagnostics,
             )
 
-        self.assertIsNone(err)
-        self.assertEqual(result, stale_rates)
-        self.assertEqual(mock_from.call_count, 1)
-        self.assertEqual(
-            diagnostics['freshness']['freshness_policy_relaxed'],
-            True,
-        )
+        self.assertIsNone(result)
+        self.assertIn('allow_stale=true', err)
+        self.assertEqual(mock_from.call_count, 2)
+        self.assertNotIn('freshness_policy_relaxed', diagnostics['freshness'])
 
     @patch(_RATES_FROM)
     def test_weekend_completed_bars_report_closed_weekend(self, mock_from):

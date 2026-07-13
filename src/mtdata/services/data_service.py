@@ -557,23 +557,21 @@ def _relax_live_completed_bar_freshness(
         item="bar",
         data_age_seconds=freshness_meta.get("data_freshness_seconds"),
     )
+    if not closed_session or not bool(
+        closed_session.get("freshness_policy_relaxed")
+    ):
+        return False
     freshness_meta["freshness_policy_relaxed"] = True
-    if closed_session:
-        freshness_meta["market_session_status"] = closed_session.get(
-            "market_status"
-        )
-        freshness_meta["market_session_reason"] = closed_session.get(
-            "market_status_reason"
-        )
-        freshness_meta["market_session_source"] = closed_session.get(
-            "market_status_source"
-        )
-        freshness_meta["freshness_note"] = closed_session.get("note")
-    else:
-        freshness_meta["market_session_status"] = "closed_or_idle"
-        freshness_meta["freshness_note"] = (
-            "Market appears closed or idle; showing the latest completed bar."
-        )
+    freshness_meta["market_session_status"] = closed_session.get(
+        "market_status"
+    )
+    freshness_meta["market_session_reason"] = closed_session.get(
+        "market_status_reason"
+    )
+    freshness_meta["market_session_source"] = closed_session.get(
+        "market_status_source"
+    )
+    freshness_meta["freshness_note"] = closed_session.get("note")
     return True
 
 
