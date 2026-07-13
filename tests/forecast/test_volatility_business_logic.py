@@ -503,6 +503,48 @@ def test_forecast_volatility_yang_zhang_weights_overnight_variance(monkeypatch):
     assert out["volatility_per_bar"] == pytest.approx(math.sqrt(expected_sigma2))
 
 
+def test_parkinson_aggregates_the_requested_range_window(monkeypatch):
+    monkeypatch.setattr(vol, "TIMEFRAME_MAP", {"H1": 1})
+    monkeypatch.setattr(vol, "TIMEFRAME_SECONDS", {"H1": 3600})
+    monkeypatch.setattr(vol, "_ensure_symbol_ready", lambda _symbol: None)
+    monkeypatch.setattr(vol.mt5, "symbol_info", lambda _symbol: SimpleNamespace(visible=True))
+    monkeypatch.setattr(vol.mt5, "symbol_info_tick", lambda _symbol: SimpleNamespace(time=1_700_100_000))
+    monkeypatch.setattr(vol.mt5, "last_error", lambda: (0, "ok"))
+    monkeypatch.setattr(vol, "_is_last_bar_forming", lambda *_args, **_kwargs: False)
+
+    bars = []
+    for idx in range(20):
+        half_range = 2.0 if idx < 19 else 0.01
+        bars.append(
+            {
+                "time": float(1_700_000_000 + idx * 3600),
+                "open": 100.0,
+                "high": 100.0 + half_range,
+                "low": 100.0 - half_range,
+                "close": 100.0,
+                "tick_volume": 100,
+                "spread": 1,
+                "real_volume": 100,
+            }
+        )
+    monkeypatch.setattr(vol, "_mt5_copy_rates_from", lambda *args, **kwargs: bars)
+
+    out = vol.forecast_volatility(
+        symbol="EURUSD",
+        timeframe="H1",
+        method="parkinson",
+        params={"window": 20},
+    )
+
+    variance = vol._parkinson_sigma_sq(
+        np.asarray([bar["high"] for bar in bars]),
+        np.asarray([bar["low"] for bar in bars]),
+    )
+    assert out["success"] is True
+    assert out["volatility_per_bar"] == pytest.approx(math.sqrt(float(np.mean(variance))))
+    assert out["volatility_per_bar"] > math.sqrt(float(variance[-1])) * 10.0
+
+
 def test_forecast_volatility_ensemble_aggregates_component_methods(monkeypatch):
     monkeypatch.setattr(vol, "TIMEFRAME_MAP", {"H1": 1})
     monkeypatch.setattr(vol, "TIMEFRAME_SECONDS", {"H1": 3600})

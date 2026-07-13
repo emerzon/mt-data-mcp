@@ -1443,6 +1443,8 @@ def forecast_volatility(  # noqa: C901
 
         if method_l in {'parkinson','gk','rs','yang_zhang','rolling_std'}:
             window = int(p.get('window', 20))
+            if window < 1:
+                return {"error": "window must be at least 1 bar."}
             o = df['open'].astype(float).to_numpy(); h = df['high'].astype(float).to_numpy(); l = df['low'].astype(float).to_numpy(); c = df['close'].astype(float).to_numpy()
             if method_l == 'parkinson':
                 v = _parkinson_sigma_sq(h, l)
@@ -1474,7 +1476,19 @@ def forecast_volatility(  # noqa: C901
                     .var(ddof=0)
                     .to_numpy()
                 )
-            sigma2 = float(v[-1]) if np.isfinite(v[-1]) else float(np.nanmean(v[-window:]))
+            if method_l in {'parkinson', 'gk', 'rs'}:
+                range_tail = np.asarray(v[-window:], dtype=float)
+                finite_tail = range_tail[np.isfinite(range_tail)]
+                if finite_tail.size < window:
+                    return {
+                        "error": (
+                            f"{method_l} requires {window} finite range observations; "
+                            f"only {finite_tail.size} are available."
+                        )
+                    }
+                sigma2 = float(np.mean(finite_tail))
+            else:
+                sigma2 = float(v[-1]) if np.isfinite(v[-1]) else float(np.nanmean(v[-window:]))
             sbar = math.sqrt(max(0.0, sigma2))
             hsig = float(sbar * math.sqrt(max(1, int(horizon))))
             return _finalize_volatility_with_context(
