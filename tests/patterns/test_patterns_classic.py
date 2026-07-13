@@ -473,6 +473,65 @@ def test_detect_inverted_cup_handle_detects_bearish_variant():
     assert inverted.status == "completed"
 
 
+def test_forming_cup_reports_expected_but_not_observed_breakout_direction():
+    from src.mtdata.patterns.classic_impl.continuation import detect_cup_handle
+
+    n = 180
+    anchors = [(0, 100.0), (25, 100.0), (90, 82.0), (135, 100.0), (165, 96.0), (179, 99.0)]
+    close = np.full(n, 100.0, dtype=float)
+    for (a_i, a_v), (b_i, b_v) in zip(anchors, anchors[1:]):
+        close[a_i : b_i + 1] = np.linspace(a_v, b_v, b_i - a_i + 1)
+
+    out = detect_cup_handle(
+        close,
+        np.arange(n, dtype=float),
+        ClassicDetectorConfig(
+            cup_handle_max_handle_pullback_pct=6.0,
+            breakout_lookahead=20,
+            completion_lookback_bars=20,
+        ),
+    )
+
+    cup = next(pattern for pattern in out if pattern.name == "Cup and Handle")
+    assert cup.status == "forming"
+    assert cup.details["breakout_index"] is None
+    assert cup.details["breakout_direction"] is None
+    assert cup.details["breakout_expected"] == "up"
+
+
+def test_inverted_cup_metrics_ignore_prices_outside_detection_window():
+    from src.mtdata.patterns.classic_impl.continuation import detect_cup_handle
+
+    anchors = [(0, 100.0), (25, 100.0), (90, 118.0), (135, 100.0), (150, 102.0), (165, 105.0), (179, 99.0)]
+    close = np.full(180, 100.0, dtype=float)
+    for (a_i, a_v), (b_i, b_v) in zip(anchors, anchors[1:]):
+        close[a_i : b_i + 1] = np.linspace(a_v, b_v, b_i - a_i + 1)
+    cfg = ClassicDetectorConfig(
+        cup_handle_max_window_bars=180,
+        cup_handle_max_depth_pct=100.0,
+        cup_handle_max_handle_pullback_pct=30.0,
+        breakout_lookahead=40,
+        completion_lookback_bars=40,
+    )
+
+    base = detect_cup_handle(close, np.arange(180, dtype=float), cfg)
+    prefixed_close = np.concatenate((np.full(40, 1000.0), close))
+    prefixed = detect_cup_handle(
+        prefixed_close,
+        np.arange(len(prefixed_close), dtype=float),
+        cfg,
+    )
+
+    base_inverted = next(p for p in base if p.name == "Inverted Cup and Handle")
+    prefixed_inverted = next(p for p in prefixed if p.name == "Inverted Cup and Handle")
+    assert prefixed_inverted.details["rim_mismatch_pct"] == pytest.approx(
+        base_inverted.details["rim_mismatch_pct"]
+    )
+    assert prefixed_inverted.details["handle_pullback_pct"] == pytest.approx(
+        base_inverted.details["handle_pullback_pct"]
+    )
+
+
 def test_detect_triangles_skip_same_sign_converging_shapes(monkeypatch):
     from src.mtdata.patterns.classic_impl import shapes
 

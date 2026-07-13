@@ -179,23 +179,29 @@ def _detect_cup_handle_variant(
     if W < int(cfg.cup_handle_min_window_bars):
         return None
 
+    price_seg = c[-W:]
     if invert:
-        ceiling = float(np.nanmax(c)) if c.size else 0.0
-        work = (ceiling - c) + 1.0
+        ceiling = float(np.nanmax(price_seg)) if price_seg.size else 0.0
+        seg = (ceiling - price_seg) + 1.0
     else:
-        work = c
-    seg = work[-W:]
+        seg = price_seg
     i_min = int(np.argmin(seg))
     if i_min <= 5 or i_min >= (W - 5):
         return None
 
     i_max_left = int(np.argmax(seg[:i_min])) if i_min > 5 else 0
-    left = seg[i_max_left]
-    bottom = seg[i_min]
-    if left <= 0:
+    left = float(seg[i_max_left])
+    bottom = float(seg[i_min])
+    left_price = float(price_seg[i_max_left])
+    extreme_price = float(price_seg[i_min])
+    if left <= 0 or left_price <= 0:
         return None
 
-    depth_pct = (left - bottom) / left * 100.0 if left != 0 else 0.0
+    depth_pct = (
+        (extreme_price - left_price) / left_price * 100.0
+        if invert
+        else (left_price - extreme_price) / left_price * 100.0
+    )
     if not (float(cfg.cup_handle_min_depth_pct) <= depth_pct <= float(cfg.cup_handle_max_depth_pct)):
         return None
 
@@ -204,12 +210,13 @@ def _detect_cup_handle_variant(
     if handle_region_start <= i_min:
         return None
     i_max_right = int(np.argmax(seg[i_min:handle_region_start])) + i_min
-    right = seg[i_max_right]
-    if right <= 0:
+    right = float(seg[i_max_right])
+    right_price = float(price_seg[i_max_right])
+    if right <= 0 or right_price <= 0:
         return None
-    near_equal_rim = _level_close(left, right, cfg.same_level_tol_pct)
-    rim = float(max(left, right))
-    rim_mismatch_pct = abs(float(left) - float(right)) / max(1e-9, rim) * 100.0
+    near_equal_rim = _level_close(left_price, right_price, cfg.same_level_tol_pct)
+    rim = float(max(left_price, right_price))
+    rim_mismatch_pct = abs(left_price - right_price) / max(1e-9, rim) * 100.0
     max_rim_mismatch_pct = float(
         max(
             float(cfg.same_level_tol_pct),
@@ -223,12 +230,25 @@ def _detect_cup_handle_variant(
     if tail.size < 3:
         return None
 
-    handle_floor = float(np.min(tail[1:])) if tail.size > 1 else float(tail[-1])
-    handle_pullback = (rim - handle_floor) / max(1e-9, rim) * 100.0
+    price_tail = price_seg[handle_start:]
+    if invert:
+        handle_high = (
+            float(np.max(price_tail[1:]))
+            if price_tail.size > 1
+            else float(price_tail[-1])
+        )
+        handle_pullback = max(0.0, (handle_high - rim) / max(1e-9, rim) * 100.0)
+    else:
+        handle_floor = (
+            float(np.min(price_tail[1:]))
+            if price_tail.size > 1
+            else float(price_tail[-1])
+        )
+        handle_pullback = max(0.0, (rim - handle_floor) / max(1e-9, rim) * 100.0)
     if handle_pullback > float(cfg.cup_handle_max_handle_pullback_pct):
         return None
 
-    rim_symmetry = max(0.0, 1.0 - abs(left - right) / max(1e-9, rim))
+    rim_symmetry = max(0.0, 1.0 - abs(left_price - right_price) / max(1e-9, rim))
     depth_score = min(1.0, depth_pct / max(1e-9, float(cfg.cup_handle_max_depth_pct)))
     conf = min(
         1.0,
@@ -270,7 +290,8 @@ def _detect_cup_handle_variant(
         "handle_start_index": int(n - W + handle_start),
         "breakout_level": breakout_level,
         "breakout_index": int(break_i) if break_i is not None else None,
-        "breakout_direction": expected,
+        "breakout_direction": expected if break_i is not None else None,
+        "breakout_expected": expected,
         "bias": "bearish" if invert else "bullish",
         "cup_extreme_kind": "top" if invert else "bottom",
     }
