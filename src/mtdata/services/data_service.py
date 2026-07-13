@@ -53,7 +53,6 @@ from ..utils.market_metadata import (
     FRESHNESS_ANCHOR_WALL_CLOCK,
     FRESHNESS_METRIC_LAST_COMPLETED_BAR_AGE,
     FRESHNESS_METRIC_REQUESTED_RANGE_END_GAP,
-    TICK_VOLUME_SEMANTICS,
     build_tick_freshness_context,
 )
 
@@ -80,6 +79,7 @@ from ..utils.simplify import (
     _select_indices_for_timeseries,
     _simplify_dataframe_rows_ext,
 )
+from ..utils.tick_flags import is_mt5_trade_event
 from ..utils.time import (
     _format_datetime_minute_explicit,
     _format_time_explicit,
@@ -135,8 +135,8 @@ _TICK_ROW_UNITS = {
     "spread_pips": "pips",
     "spread_pct": "percentage_points (1.0 = 1%)",
     "tick_gap_ms": "milliseconds",
-    "tick_volume": "broker_tick_count",
-    "real_volume": "traded_volume",
+    "volume": "last_trade_volume",
+    "volume_real": "last_trade_volume_real",
 }
 def _format_mt5_last_error() -> str:
     try:
@@ -298,7 +298,7 @@ def _round_tick_price_payload(out: Dict[str, Any], digits: int) -> None:
             if key in last_quote:
                 last_quote[key] = _round_price_value(last_quote[key], digits)
     if isinstance(stats, dict):
-        for volume_key in ("tick_volume", "real_volume"):
+        for volume_key in ("volume", "volume_real"):
             volume_stats = stats.get(volume_key)
             if isinstance(volume_stats, dict):
                 for key in ("vwap_mid", "vwap_last"):
@@ -329,12 +329,6 @@ def _tick_spread_pct(spread: Any, mid: Any) -> Optional[float]:
     if spread_value is None or mid_value is None or mid_value <= 0.0:
         return None
     return round((spread_value / mid_value) * 100.0, 6)
-
-
-def _attach_tick_volume_semantics(payload: Dict[str, Any]) -> None:
-    units = payload.get("units")
-    if isinstance(units, dict) and units.get("tick_volume") == "broker_tick_count":
-        payload["volume_semantics"] = TICK_VOLUME_SEMANTICS
 
 
 def _describe_rate_fetch_error(symbol: str, *, info_before: Any = None) -> str:
@@ -2374,22 +2368,22 @@ def _tick_flag_definitions() -> tuple[tuple[int, str, str], ...]:
         (
             _mt5_tick_flag_value("TICK_FLAG_BID", 2),
             "bid",
-            "Bid price changed or is present in the tick.",
+            "Bid price changed in this snapshot.",
         ),
         (
             _mt5_tick_flag_value("TICK_FLAG_ASK", 4),
             "ask",
-            "Ask price changed or is present in the tick.",
+            "Ask price changed in this snapshot.",
         ),
         (
             _mt5_tick_flag_value("TICK_FLAG_LAST", 8),
             "last",
-            "Last traded price changed or is present in the tick.",
+            "Last traded price changed in this snapshot.",
         ),
         (
             _mt5_tick_flag_value("TICK_FLAG_VOLUME", 16),
-            "tick_volume",
-            "Tick volume changed or is present in the tick.",
+            "volume",
+            "Last-trade volume changed in this snapshot.",
         ),
         (
             _mt5_tick_flag_value("TICK_FLAG_BUY", 32),
@@ -2403,8 +2397,8 @@ def _tick_flag_definitions() -> tuple[tuple[int, str, str], ...]:
         ),
         (
             _mt5_tick_flag_value("TICK_FLAG_VOLUME_REAL", 1024),
-            "real_volume",
-            "Real volume changed or is present in the tick.",
+            "volume_real",
+            "Last-trade real volume changed in this snapshot.",
         ),
     )
 
@@ -2431,24 +2425,6 @@ def _observed_tick_flags_decoded(flags: List[int]) -> Dict[str, List[str]]:
         str(flag): _decode_tick_flags(flag)
         for flag in sorted(set(int(value) for value in flags if int(value) != 0))
     }
-
-
-def _tick_quote_presence_from_flags(flag_value: int) -> tuple[bool, bool]:
-    labels = set(_decode_tick_flags(flag_value))
-    return "bid" in labels, "ask" in labels
-
-
-def _one_sided_zero_spread_missing_side(bid: float, ask: float, flag_value: int) -> Optional[str]:
-    if not (math.isfinite(bid) and math.isfinite(ask)):
-        return None
-    if bid != ask:
-        return None
-    has_bid, has_ask = _tick_quote_presence_from_flags(flag_value)
-    if has_ask and not has_bid:
-        return "bid"
-    if has_bid and not has_ask:
-        return "ask"
-    return None
 
 
 def _finite_or_none(value: Any) -> Optional[float]:
@@ -2508,6 +2484,8 @@ def _compact_tick_summary(out: Dict[str, Any]) -> Dict[str, Any]:
         "end": out.get("end"),
         "duration_seconds": out.get("duration_seconds"),
         "tick_rate_per_second": out.get("tick_rate_per_second"),
+        "tick_count": out.get("tick_count", out.get("count")),
+        "trade_event_count": out.get("trade_event_count"),
         "timezone": out.get("timezone"),
         "stats": {"spread": compact_spread},
     }
@@ -2667,6 +2645,7 @@ def fetch_ticks(  # noqa: C901
         flags: List[int] = []
         volumes: List[float] = []
         volumes_real: List[float] = []
+        trade_events: List[bool] = []
         quote_types: List[str] = []
         for tick in ticks:
             _epochs.append(_tick_epoch_seconds(tick))
@@ -2684,12 +2663,12 @@ def fetch_ticks(  # noqa: C901
                 else last_value
             )
             flags.append(flag_value)
-            missing_side = _one_sided_zero_spread_missing_side(bid, ask, flag_value)
-            effective_bids.append(None if bid_value is None or missing_side == "bid" else bid)
-            effective_asks.append(None if ask_value is None or missing_side == "ask" else ask)
-            if missing_side == "bid" or (bid_value is None and ask_value is not None):
+            trade_events.append(is_mt5_trade_event(flag_value, mt5))
+            effective_bids.append(None if bid_value is None else bid)
+            effective_asks.append(None if ask_value is None else ask)
+            if bid_value is None and ask_value is not None:
                 quote_types.append("ask_only")
-            elif missing_side == "ask" or (ask_value is None and bid_value is not None):
+            elif ask_value is None and bid_value is not None:
                 quote_types.append("bid_only")
             elif bid_value is None and ask_value is None:
                 quote_types.append("no_quote")
@@ -2711,7 +2690,7 @@ def fetch_ticks(  # noqa: C901
         )
         has_flags = len(set(flags)) > 1 or any(v != 0 for v in flags)
         has_real_volume = any(math.isfinite(v) and v != 0.0 for v in volumes_real)
-        one_sided_zero_spread_count = sum(
+        incomplete_quote_count = sum(
             1
             for bid, ask in zip(effective_bids, effective_asks, strict=False)
             if bid is None or ask is None
@@ -2734,7 +2713,7 @@ def fetch_ticks(  # noqa: C901
             if points_per_pip is not None:
                 headers.append("spread_pips")
             headers.extend(["spread_pct", "tick_gap_ms"])
-        headers.extend(["last", "tick_volume", "real_volume", "flags", "flags_decoded"])
+        headers.extend(["last", "volume", "volume_real", "flags", "flags_decoded"])
 
         # Choose a consistent millisecond time format for tick rows.
         # Low-level tick fetch helpers already normalize MT5 times to UTC.
@@ -2798,9 +2777,10 @@ def fetch_ticks(  # noqa: C901
             df_ticks["spread_pct"] = (df_ticks["spread"] / df_ticks["mid"]) * 100.0
             df_ticks["tick_gap_ms"] = tick_gap_ms
         df_ticks["last"] = lasts
-        df_ticks["tick_volume"] = volumes
-        df_ticks["real_volume"] = volumes_real
+        df_ticks["volume"] = volumes
+        df_ticks["volume_real"] = volumes_real
         df_ticks["flags"] = flags
+        df_ticks["trade_event"] = trade_events
         if include_quote_type:
             df_ticks["quote_type"] = quote_types
         df_ticks["flags_decoded"] = [
@@ -2809,9 +2789,9 @@ def fetch_ticks(  # noqa: C901
         df_ticks["time"] = [_format_tick_time(e) for e in _epochs]
 
         def _add_tick_data_quality(payload: Dict[str, Any]) -> None:
-            if one_sided_zero_spread_count <= 0:
+            if incomplete_quote_count <= 0:
                 return
-            one_sided_ratio = one_sided_zero_spread_count / max(1, original_count)
+            incomplete_ratio = incomplete_quote_count / max(1, original_count)
             quote_type_counts = {
                 kind: quote_types.count(kind)
                 for kind in sorted(set(quote_types))
@@ -2819,25 +2799,25 @@ def fetch_ticks(  # noqa: C901
             complete_ticks = int(quote_type_counts.get("bid_ask", 0))
             incomplete_ticks = int(original_count - complete_ticks)
             payload["data_quality"] = {
-                "one_sided_zero_spread_ticks": int(one_sided_zero_spread_count),
+                "incomplete_quote_ticks": int(incomplete_quote_count),
                 "complete_ticks": complete_ticks,
                 "incomplete_ticks": incomplete_ticks,
                 "total_ticks": int(original_count),
-                "one_sided_zero_spread_ratio": round(one_sided_ratio, 4),
-                "spread_ticks_excluded": int(one_sided_zero_spread_count),
+                "incomplete_quote_ratio": round(incomplete_ratio, 4),
+                "spread_ticks_excluded": int(incomplete_quote_count),
                 "warning_ratio": _ONE_SIDED_TICK_WARNING_RATIO,
                 "quote_type_counts": quote_type_counts,
             }
-            if one_sided_ratio < _ONE_SIDED_TICK_WARNING_RATIO:
-                payload["data_quality"]["one_sided_zero_spread_status"] = "info"
+            if incomplete_ratio < _ONE_SIDED_TICK_WARNING_RATIO:
+                payload["data_quality"]["incomplete_quote_status"] = "info"
                 return
-            payload["data_quality"]["one_sided_zero_spread_status"] = "warning"
+            payload["data_quality"]["incomplete_quote_status"] = "warning"
             warnings_list = payload.get("warnings")
             if not isinstance(warnings_list, list):
                 warnings_list = []
             warning = (
-                "Some ticks had identical bid/ask with one-sided quote flags; "
-                "the missing side was set to null and excluded from spread stats."
+                "Some tick snapshots omitted a bid or ask value; incomplete quotes "
+                "were excluded from spread statistics."
             )
             if warning not in warnings_list:
                 warnings_list.append(warning)
@@ -2906,6 +2886,8 @@ def fetch_ticks(  # noqa: C901
                 "end": str(df_stats["time"].iloc[-1]),
                 "duration_seconds": duration_seconds,
                 "tick_rate_per_second": tick_rate_per_second,
+                "tick_count": int(len(df_stats)),
+                "trade_event_count": int(sum(trade_events)),
                 "timezone": _timezone_label(use_client_tz=_use_ctz, client_tz=client_tz),
                 "stats": {
                     "spread": {
@@ -3070,17 +3052,32 @@ def fetch_ticks(  # noqa: C901
             units = _tick_units_for_headers(headers)
             if units and detailed_stats:
                 out["units"] = units
-                _attach_tick_volume_semantics(out)
             if has_last and not small_summary_sample:
                 out["stats"]["last"] = _series_stats(df_stats["last"], total_count=len(df_stats))
 
-            volume_kind = "tick_volume"
-            vol_vals = pd.Series([1.0] * int(len(df_stats)), dtype=float)
-            if has_real_volume and len(volumes_real) == len(df_stats):
-                volume_kind = "real_volume"
-                vol_vals = pd.Series(volumes_real, dtype=float)
+            trade_event_mask = df_stats["trade_event"].astype(bool)
+            trade_event_count = int(trade_event_mask.sum())
+            out["tick_count"] = int(len(df_stats))
+            out["trade_event_count"] = trade_event_count
+            if detailed_stats:
+                out["stats"]["tick_count"] = {
+                    "kind": "tick_count",
+                    "sum": int(len(df_stats)),
+                    "per_second": tick_rate_per_second,
+                }
 
-            if volume_kind == "real_volume":
+            volume_kind: Optional[str] = None
+            vol_vals = pd.Series(index=df_stats.index, dtype=float)
+            real_trade_volume = df_stats["volume_real"].where(trade_event_mask)
+            snapshot_trade_volume = df_stats["volume"].where(trade_event_mask)
+            if bool((real_trade_volume.fillna(0.0) > 0.0).any()):
+                volume_kind = "volume_real"
+                vol_vals = real_trade_volume
+            elif bool((snapshot_trade_volume.fillna(0.0) > 0.0).any()):
+                volume_kind = "volume"
+                vol_vals = snapshot_trade_volume
+
+            if volume_kind is not None:
                 vol_vals_num = pd.to_numeric(vol_vals, errors="coerce").astype(float)
                 vol_sum = float(vol_vals_num.fillna(0.0).sum())
                 vol_nonzero_count = int((vol_vals_num.fillna(0.0) != 0.0).sum())
@@ -3090,8 +3087,8 @@ def fetch_ticks(  # noqa: C901
                     "per_second": (
                         float(vol_sum / duration_seconds) if duration_seconds > 0 else None
                     ),
-                    "per_tick": float(vol_sum / float(len(df_stats) or 1)),
-                    "nonzero_share": float(vol_nonzero_count) / float(len(df_stats) or 1),
+                    "per_trade_event": float(vol_sum / float(trade_event_count or 1)),
+                    "nonzero_share": float(vol_nonzero_count) / float(trade_event_count or 1),
                 }
                 try:
                     mean_v = float(vol_vals_num.mean())
@@ -3130,7 +3127,11 @@ def fetch_ticks(  # noqa: C901
                         corr_df = pd.DataFrame(
                             {"volume": vol_vals_num, "abs_mid_change": dmid}
                         ).dropna()
-                        if int(corr_df.shape[0]) >= 3:
+                        if (
+                            int(corr_df.shape[0]) >= 3
+                            and int(corr_df["volume"].nunique()) > 1
+                            and int(corr_df["abs_mid_change"].nunique()) > 1
+                        ):
                             vol_out["corr_abs_mid_change"] = float(
                                 corr_df["volume"].corr(corr_df["abs_mid_change"])
                             )
@@ -3150,18 +3151,11 @@ def fetch_ticks(  # noqa: C901
                         pass
 
                 if detailed_stats:
-                    vol_out["dist"] = _series_stats(vol_vals_num, total_count=len(df_stats))
+                    vol_out["dist"] = _series_stats(
+                        vol_vals_num, total_count=trade_event_count
+                    )
                 if not small_summary_sample:
                     out["stats"][volume_kind] = vol_out
-            else:
-                if detailed_stats:
-                    out["stats"][volume_kind] = {
-                        "kind": volume_kind,
-                        "per_second": tick_rate_per_second,
-                        "sum": int(len(df_stats)),
-                    }
-                elif not small_summary_sample:
-                    out["stats"][volume_kind] = {"kind": volume_kind}
 
             _add_tick_data_quality(out)
             _add_tick_last_quality(out)
@@ -3196,7 +3190,8 @@ def fetch_ticks(  # noqa: C901
             units = _tick_units_for_headers(headers)
             if units:
                 payload["units"] = units
-                _attach_tick_volume_semantics(payload)
+            payload["tick_count"] = int(original_count)
+            payload["trade_event_count"] = int(sum(trade_events))
             _add_tick_summary_fields(payload)
             if has_flags:
                 payload["flags_legend"] = _observed_tick_flags_decoded(flags)
@@ -3207,8 +3202,8 @@ def fetch_ticks(  # noqa: C901
                     c
                     for c in ["bid", "ask"]
                     + (["last"] if has_last else [])
-                    + (["tick_volume"] if has_volume else [])
-                    + (["real_volume"] if has_real_volume else [])
+                    + (["volume"] if has_volume else [])
+                    + (["volume_real"] if has_real_volume else [])
                 ]
                 payload["simplify"] = meta
             _add_tick_data_quality(payload)
@@ -3226,9 +3221,9 @@ def fetch_ticks(  # noqa: C901
                 if has_last:
                     cols.append('last')
                 if has_volume:
-                    cols.append('tick_volume')
+                    cols.append('volume')
                 if has_real_volume:
-                    cols.append('real_volume')
+                    cols.append('volume_real')
                 n_out = _choose_simplify_points(original_count, simplify_used)
                 per = max(3, int(round(n_out / max(1, len(cols)))))
                 idx_set: set = set([0, original_count - 1])
@@ -3238,8 +3233,8 @@ def fetch_ticks(  # noqa: C901
                     "bid": bids,
                     "ask": asks,
                     "last": lasts,
-                    "tick_volume": volumes,
-                    "real_volume": volumes_real,
+                    "volume": volumes,
+                    "volume_real": volumes_real,
                 }
                 series_by_col: Dict[str, List[float]] = {c: extracted_columns[c] for c in cols}
                 for c in cols:
@@ -3369,7 +3364,8 @@ def fetch_ticks(  # noqa: C901
         units = _tick_units_for_headers(headers)
         if units:
             payload["units"] = units
-            _attach_tick_volume_semantics(payload)
+        payload["tick_count"] = int(original_count)
+        payload["trade_event_count"] = int(sum(trade_events))
         _add_tick_summary_fields(payload)
         if has_flags:
             payload["flags_legend"] = _observed_tick_flags_decoded(flags)
@@ -3386,8 +3382,8 @@ def fetch_ticks(  # noqa: C901
                     c
                     for c in ["bid", "ask"]
                     + (["last"] if has_last else [])
-                    + (["tick_volume"] if has_volume else [])
-                    + (["real_volume"] if has_real_volume else [])
+                    + (["volume"] if has_volume else [])
+                    + (["volume_real"] if has_real_volume else [])
                 ],
             }
             try:

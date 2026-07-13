@@ -22,6 +22,7 @@ from ..core.analytics_requests import (
 from ..shared.constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
 from ..utils.barriers import normalize_same_bar_policy
 from ..utils.freshness import closed_session_context
+from ..utils.tick_flags import mt5_trade_event_mask
 from ..utils.time import format_epoch_utc
 
 
@@ -143,7 +144,19 @@ def _tick_frame(gateway: Any, symbol: str, start: datetime, end: datetime, max_t
     time_msc = _finite(df.get("time_msc", pd.Series(index=df.index, dtype=float)))
     epoch = _finite(df.get("time", pd.Series(index=df.index, dtype=float)))
     df["epoch"] = np.where(time_msc > 0, time_msc / 1000.0, epoch)
-    df = df[np.isfinite(df["epoch"])].sort_values("epoch", kind="stable").drop_duplicates(subset=["epoch", "bid", "ask", "last"], keep="last")
+    dedupe_columns = [
+        column
+        for column in ("epoch", "bid", "ask", "last", "volume", "volume_real", "flags")
+        if column in df.columns
+    ]
+    df = (
+        df[np.isfinite(df["epoch"])]
+        .sort_values("epoch", kind="stable")
+        .drop_duplicates(
+            subset=dedupe_columns,
+            keep="last",
+        )
+    )
     truncated = len(df) > int(max_ticks)
     if truncated:
         df = df.tail(int(max_ticks)).copy()
@@ -188,7 +201,9 @@ def analyze_microstructure(request: MarketMicrostructureRequest, gateway: Any) -
             }
         return {"error": "At least 20 usable ticks are required.", "error_code": "insufficient_data"}
     quote_mask = np.isfinite(df["mid"])
-    trade_mask = df["last"] > 0
+    flag_values = df["flags"].astype(np.int64)
+    trade_mask = (flag_values & mt5_trade_event_mask(gateway)) != 0
+    trade_mask &= df["last"] > 0
     real_mask = trade_mask & (df["volume_real"] > 0)
     trade_count = int(trade_mask.sum())
     real_share = float(real_mask.sum() / trade_count) if trade_count else 0.0

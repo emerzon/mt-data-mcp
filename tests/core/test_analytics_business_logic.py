@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from types import SimpleNamespace
 
 import numpy as np
@@ -9,6 +10,7 @@ import pytest
 from mtdata.analytics.engines import (
     _barrier_returns,
     _filtered_historical_returns,
+    _tick_frame,
     analyze_execution_quality,
     analyze_microstructure,
     decompose_portfolio_risk,
@@ -44,7 +46,7 @@ def _ticks(count: int = 200, *, start: int | None = None, real_volume: bool = Fa
                 "last": mid if real_volume else 0.0,
                 "volume": 1,
                 "volume_real": 2.0 if real_volume else 0.0,
-                "flags": 6,
+                "flags": 1054 if real_volume else 6,
             }
         )
     return rows
@@ -138,6 +140,62 @@ def test_microstructure_distinguishes_trade_volume_from_quote_proxy() -> None:
     assert "amihud_impact" not in result["summary"]
     assert result["estimator_scope"]["market_scope"] == "connected_broker_tick_feed"
     assert any("broker's tick feed" in warning for warning in result["warnings"])
+
+
+def test_microstructure_does_not_recount_last_trade_snapshots() -> None:
+    gateway = FakeGateway()
+    gateway.tick_rows = _ticks(real_volume=True)
+    for row in gateway.tick_rows:
+        row["last"] = 1.101
+        row["volume_real"] = 5.0
+        row["flags"] = 6
+    gateway.tick_rows[0]["flags"] = 1032
+
+    result = analyze_microstructure(
+        MarketMicrostructureRequest(symbol="EURUSD", minutes_back=60), gateway
+    )
+
+    assert result["success"] is True
+    assert result["summary"]["trade_count"] == 1
+    assert result["data_quality"]["trade_tick_coverage"] == pytest.approx(1 / 200)
+
+
+def test_tick_frame_keeps_distinct_same_timestamp_events() -> None:
+    gateway = FakeGateway()
+    epoch = _now() - 10
+    gateway.tick_rows = [
+        {
+            "time": epoch,
+            "time_msc": epoch * 1000,
+            "bid": 1.1,
+            "ask": 1.2,
+            "last": 1.15,
+            "volume": 5,
+            "volume_real": 5.0,
+            "flags": 1032,
+        },
+        {
+            "time": epoch,
+            "time_msc": epoch * 1000,
+            "bid": 1.1,
+            "ask": 1.2,
+            "last": 1.15,
+            "volume": 5,
+            "volume_real": 5.0,
+            "flags": 6,
+        },
+    ]
+
+    frame, truncated = _tick_frame(
+        gateway,
+        "EURUSD",
+        datetime.fromtimestamp(epoch - 1, tz=timezone.utc),
+        datetime.fromtimestamp(epoch + 1, tz=timezone.utc),
+        10,
+    )
+
+    assert truncated is False
+    assert len(frame) == 2
 
 
 def test_microstructure_reports_closed_session_for_short_tick_stream(monkeypatch) -> None:

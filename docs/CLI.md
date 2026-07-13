@@ -169,6 +169,11 @@ mtdata-cli data_fetch_ticks EURUSD --limit 20000 \
   --simplify rdp --simplify-params "points=2000"
 ```
 
+Tick rows preserve MT5 snapshot fields: `bid`, `ask`, `last`, `volume`,
+`volume_real`, and `flags`. The volume fields describe the current last trade,
+not a row-level tick count; use `flags` to identify trade-change events. Candle
+rows continue to use `tick_volume` for the broker's per-bar tick count.
+
 See [SIMPLIFICATION.md](SIMPLIFICATION.md) for algorithms and parameters.
 
 ### Method Parameters

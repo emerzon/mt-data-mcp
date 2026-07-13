@@ -8,24 +8,33 @@ Covers:
 """
 
 import unittest
-import pandas as pd
 from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
 
-from ._helpers import (
-    _UTC, _NOW_TS,
-    _mock_symbol_guard,
-    _make_rates, _make_ticks,
-    _DS, _GUARD, _RATES_FROM, _TICKS_RANGE,
-    _CACHED_INFO, _RESOLVE_CTZ,
-    _ESTIMATE_WARMUP, _MT5_CONFIG, _PARSE_START,
-)
+import pandas as pd
 
 from mtdata.services.data_service import (
     _build_rates_df,
     _trim_df_to_target,
     fetch_candles,
     fetch_ticks,
+)
+
+from ._helpers import (
+    _CACHED_INFO,
+    _DS,
+    _ESTIMATE_WARMUP,
+    _GUARD,
+    _MT5_CONFIG,
+    _NOW_TS,
+    _PARSE_START,
+    _RATES_FROM,
+    _RESOLVE_CTZ,
+    _TICKS_RANGE,
+    _UTC,
+    _make_rates,
+    _make_ticks,
+    _mock_symbol_guard,
 )
 
 
@@ -161,7 +170,7 @@ class TestEdgeCases(unittest.TestCase):
             t['volume_real'] = float(50 + i * 5)
         mock_ticks.return_value = ticks
         result = fetch_ticks('EURUSD', limit=20, format='stats')
-        vol = result['stats']['real_volume']
+        vol = result['stats']['volume_real']
         self.assertIn('cv', vol)
 
     @patch(_TICKS_RANGE)
@@ -174,7 +183,7 @@ class TestEdgeCases(unittest.TestCase):
             t['volume_real'] = float(100 + i * 10)
         mock_ticks.return_value = ticks
         result = fetch_ticks('EURUSD', limit=20, format='stats')
-        vol = result['stats']['real_volume']
+        vol = result['stats']['volume_real']
         self.assertIn('top10_share', vol)
 
     @patch(_TICKS_RANGE)
@@ -187,7 +196,7 @@ class TestEdgeCases(unittest.TestCase):
             t['volume_real'] = float(100 + i * 10)
         mock_ticks.return_value = ticks
         result = fetch_ticks('EURUSD', limit=20, format='stats')
-        vol = result['stats']['real_volume']
+        vol = result['stats']['volume_real']
         self.assertIn('half_ratio', vol)
 
     @patch(_TICKS_RANGE)
@@ -200,7 +209,7 @@ class TestEdgeCases(unittest.TestCase):
             t['volume_real'] = float(100 + i * 10)
         mock_ticks.return_value = ticks
         result = fetch_ticks('EURUSD', limit=20, format='stats')
-        vol = result['stats']['real_volume']
+        vol = result['stats']['volume_real']
         self.assertIn('vwap_mid', vol)
 
     @patch(_TICKS_RANGE)
@@ -213,7 +222,7 @@ class TestEdgeCases(unittest.TestCase):
             t['volume_real'] = float(100 + i * 10)
         mock_ticks.return_value = ticks
         result = fetch_ticks('EURUSD', limit=20, format='stats')
-        vol = result['stats']['real_volume']
+        vol = result['stats']['volume_real']
         self.assertIn('spike95_count', vol)
         self.assertIn('spike95_share', vol)
 
@@ -229,7 +238,7 @@ class TestEdgeCases(unittest.TestCase):
             t['ask'] = 1.1002 + i * 0.001
         mock_ticks.return_value = ticks
         result = fetch_ticks('EURUSD', limit=20, format='stats')
-        vol = result['stats']['real_volume']
+        vol = result['stats']['volume_real']
         self.assertIn('corr_abs_mid_change', vol)
 
 

@@ -28,7 +28,14 @@ logger = logging.getLogger(__name__)
 
 VolumeProfileSourceLiteral = Literal["auto", "ticks", "m1_bars"]
 VolumeProfilePriceSourceLiteral = Literal["mid", "last", "bid", "ask"]
-VolumeProfileVolumeSourceLiteral = Literal["auto", "real_volume", "tick_volume", "tick_count"]
+VolumeProfileVolumeSourceLiteral = Literal[
+    "auto",
+    "real_volume",
+    "tick_volume",
+    "volume_real",
+    "volume",
+    "tick_count",
+]
 
 _DEFAULT_MAX_TICK_WINDOW_DAYS = 7
 _DEFAULT_MAX_TICKS = 200_000

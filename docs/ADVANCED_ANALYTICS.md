@@ -22,6 +22,10 @@ The result identifies the feed as `quote_only`, `trade_ticks`, or
 enough non-zero real trade volume. Quote pressure is a proxy, not centralized
 FX order flow.
 
+MT5 tick rows are complete snapshots. The analyzer uses the `flags` bitmask to
+identify trade events, so a quote update that repeats the last price and volume
+is not counted as another trade.
+
 ## Execution quality
 
 `trade_execution_quality` joins MT5 deal history to order history and nearby

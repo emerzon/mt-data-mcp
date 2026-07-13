@@ -346,9 +346,10 @@ def test_run_wait_event_matches_volume_spike() -> None:
                 "time_msc": (base_epoch + idx * 30) * 1000,
                 "bid": 100.0 + idx * 0.01,
                 "ask": 100.01 + idx * 0.01,
-                "last": 100.005 + idx * 0.01,
-                "volume": 2.0 if idx < 17 else 40.0,
-            }
+                    "last": 100.005 + idx * 0.01,
+                    "volume": 2.0 if idx < 17 else 40.0,
+                    "flags": 24,
+                }
         )
     gateway = SequenceGateway(ticks_by_symbol={"EURUSD": ticks})
 
@@ -841,6 +842,20 @@ def test_wait_event_matches_touch_observed_after_start() -> None:
 
     assert result["status"] == "matched"
     assert result["matched_event"]["type"] == "price_touch_level"
+
+
+def test_snapshot_quote_updates_do_not_repeat_trade_volume() -> None:
+    from mtdata.core.data.wait_events import _volume_metric_for_ticks
+
+    ticks = [
+        {"volume": 8.0, "volume_real": 8.0, "flags": 1032},
+        {"volume": 8.0, "volume_real": 8.0, "flags": 6},
+        {"volume": 8.0, "volume_real": 8.0, "flags": 6},
+    ]
+
+    assert _volume_metric_for_ticks(ticks, source="volume") == 8.0
+    assert _volume_metric_for_ticks(ticks, source="volume_real") == 8.0
+    assert _volume_metric_for_ticks(ticks, source="tick_count") == 3.0
 
 def test_collect_new_account_history_rows_keeps_same_second_coarse_rows() -> None:
     started = datetime(2026, 3, 15, 12, 0, 0, 500000, tzinfo=timezone.utc)

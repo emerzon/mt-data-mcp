@@ -88,9 +88,9 @@ def test_compute_volume_profile_payload_uses_tick_rows(monkeypatch):
         "fetch_ticks",
         lambda **_: {
             "data": [
-                {"time": "2026-01-01 00:00:00.000", "bid": 1.0999, "ask": 1.1001, "mid": 1.1000, "tick_volume": 1, "real_volume": 0},
-                {"time": "2026-01-01 00:00:01.000", "bid": 1.1000, "ask": 1.1002, "mid": 1.1001, "tick_volume": 2, "real_volume": 0},
-                {"time": "2026-01-01 00:00:02.000", "bid": 1.1000, "ask": 1.1002, "mid": 1.1001, "tick_volume": 2, "real_volume": 0},
+                {"time": "2026-01-01 00:00:00.000", "bid": 1.0999, "ask": 1.1001, "mid": 1.1000, "volume": 1, "volume_real": 0, "flags": 24},
+                {"time": "2026-01-01 00:00:01.000", "bid": 1.1000, "ask": 1.1002, "mid": 1.1001, "volume": 2, "volume_real": 0, "flags": 24},
+                {"time": "2026-01-01 00:00:02.000", "bid": 1.1000, "ask": 1.1002, "mid": 1.1001, "volume": 2, "volume_real": 0, "flags": 6},
             ]
         },
     )
@@ -129,8 +129,8 @@ def test_compute_volume_profile_payload_auto_ticks_records_reason(monkeypatch):
         "fetch_ticks",
         lambda **_: {
             "data": [
-                {"time": "2026-01-01 00:00:00.000", "bid": 1.0999, "ask": 1.1001, "mid": 1.1000, "tick_volume": 1, "real_volume": 0},
-                {"time": "2026-01-01 00:00:01.000", "bid": 1.1000, "ask": 1.1002, "mid": 1.1001, "tick_volume": 2, "real_volume": 0},
+                {"time": "2026-01-01 00:00:00.000", "bid": 1.0999, "ask": 1.1001, "mid": 1.1000, "volume": 1, "volume_real": 0, "flags": 24},
+                {"time": "2026-01-01 00:00:01.000", "bid": 1.1000, "ask": 1.1002, "mid": 1.1001, "volume": 2, "volume_real": 0, "flags": 24},
             ]
         },
     )
@@ -168,8 +168,8 @@ def test_compute_volume_profile_payload_exposes_fetch_freshness_and_standard_uni
             "data_freshness_seconds": 12.5,
             "data_stale": False,
             "data": [
-                {"time": "2026-06-02 12:00:00.000", "bid": 1.0999, "ask": 1.1001, "mid": 1.1000, "tick_volume": 2, "real_volume": 0},
-                {"time": "2026-06-02 12:00:01.000", "bid": 1.1000, "ask": 1.1002, "mid": 1.1001, "tick_volume": 3, "real_volume": 0},
+                {"time": "2026-06-02 12:00:00.000", "bid": 1.0999, "ask": 1.1001, "mid": 1.1000, "volume": 2, "volume_real": 0, "flags": 24},
+                {"time": "2026-06-02 12:00:01.000", "bid": 1.1000, "ask": 1.1002, "mid": 1.1001, "volume": 3, "volume_real": 0, "flags": 24},
             ],
         },
     )
@@ -190,7 +190,7 @@ def test_compute_volume_profile_payload_exposes_fetch_freshness_and_standard_uni
         "end": "2026-06-02T12:00:01.000Z",
     }
     assert result["units"]["price"] == "absolute_price"
-    assert result["units"]["volume"] == "tick_volume"
+    assert result["units"]["volume"] == "volume"
 
 
 def test_compute_volume_profile_payload_rejects_limit_without_timeframe():

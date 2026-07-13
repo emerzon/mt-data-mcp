@@ -5,8 +5,17 @@ from dataclasses import dataclass
 from decimal import ROUND_FLOOR, Decimal, localcontext
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
+from .tick_flags import is_mt5_trade_event
+
 _PRICE_SOURCES = {"mid", "last", "bid", "ask"}
-_VOLUME_SOURCES = {"auto", "real_volume", "tick_volume", "tick_count"}
+_VOLUME_SOURCES = {
+    "auto",
+    "real_volume",
+    "tick_volume",
+    "volume_real",
+    "volume",
+    "tick_count",
+}
 
 
 @dataclass
@@ -34,7 +43,8 @@ def validate_volume_profile_config(cfg: VolumeProfileConfig) -> list[str]:
     volume_source = str(cfg.volume_source or "").strip().lower()
     if volume_source not in _VOLUME_SOURCES:
         errors.append(
-            "volume_source must be one of: auto, real_volume, tick_volume, tick_count; "
+            "volume_source must be one of: auto, real_volume, tick_volume, "
+            "volume_real, volume, tick_count; "
             f"got {cfg.volume_source!r}"
         )
     if cfg.bucket_size is not None and _finite_positive(cfg.bucket_size) is None:
@@ -280,20 +290,30 @@ def _extract_weights(
     def values_for(field: str) -> List[Optional[float]]:
         return [_finite_number(_row_value(rows[idx], field)) for idx in valid_indexes]
 
-    fields: List[Tuple[str, str]]
+    fields: List[Tuple[str, str, bool]]
     if requested_source == "real_volume":
-        fields = [("real_volume", "real_volume")]
+        fields = [("real_volume", "real_volume", False)]
     elif requested_source == "tick_volume":
-        fields = [("tick_volume", "tick_volume"), ("volume", "tick_volume")]
+        fields = [("tick_volume", "tick_volume", False)]
+    elif requested_source == "volume_real":
+        fields = [("volume_real", "volume_real", True)]
+    elif requested_source == "volume":
+        fields = [("volume", "volume", True)]
     else:
         fields = [
-            ("real_volume", "real_volume"),
-            ("tick_volume", "tick_volume"),
-            ("volume", "tick_volume"),
+            ("volume_real", "volume_real", True),
+            ("volume", "volume", True),
+            ("real_volume", "real_volume", False),
+            ("tick_volume", "tick_volume", False),
         ]
 
-    for field, kind in fields:
+    for field, kind, requires_trade_flag in fields:
         values = values_for(field)
+        if requires_trade_flag:
+            values = [
+                value if is_mt5_trade_event(_row_value(rows[idx], "flags")) else None
+                for idx, value in zip(valid_indexes, values, strict=True)
+            ]
         positive_values = [float(value) for value in values if value is not None and value > 0.0]
         if positive_values:
             dropped = sum(1 for value in values if value is None or value <= 0.0)
@@ -302,7 +322,7 @@ def _extract_weights(
                 for value in values
             ], kind, dropped
 
-    if requested_source in {"real_volume", "tick_volume"}:
+    if requested_source in {"real_volume", "tick_volume", "volume_real", "volume"}:
         return [0.0 for _ in valid_indexes], requested_source, len(valid_indexes)
     return [1.0 for _ in valid_indexes], "tick_count", 0
 

@@ -135,7 +135,7 @@ mtdata-cli volume_profile_levels EURUSD --timeframe H1 --limit 168 \
 | `limit` | — | Bars to include when deriving the window from `timeframe`. |
 | `source` | `auto` | `auto` uses bounded ticks for short windows and M1 bars for larger ones; force with `ticks` or `m1_bars`. |
 | `price_source` | `mid` | Price used per tick: `mid`, `last`, `bid`, or `ask`. `mid` is the safe FX default because tick `last` is often unavailable. |
-| `volume_source` | `auto` | `auto`, `real_volume`, `tick_volume`, or `tick_count`. |
+| `volume_source` | `auto` | `auto`, candle `real_volume`/`tick_volume`, tick-snapshot `volume_real`/`volume`, or `tick_count`. Snapshot volume is counted only on MT5 trade-change flags. |
 | `bucket_size` / `bucket_points` / `bucket_count` | — | Choose price-bucket granularity (absolute size, points, or a target bucket count). |
 | `max_buckets` | `120` | Upper bound on buckets. |
 | `value_area_pct` | `0.70` | Fraction of volume that defines the value area (70% is standard). |
@@ -161,7 +161,7 @@ mtdata-cli volume_profile_levels EURUSD --timeframe H1 --limit 168 \
 
 - Levels are descriptive analytics, not predictions or signals. Always confirm with
   price action and risk controls.
-- Volume profile on FX uses tick volume by default; treat `real_volume` as available
+- Volume profile on FX usually falls back to tick count; treat `real_volume` as available
   only when your broker provides it.
 - `auto` timeframe and `auto` source trade some precision for robustness; pin them
   explicitly for reproducible research.

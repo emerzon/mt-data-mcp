@@ -4,7 +4,7 @@ Covers:
   - Success paths: rows, full_rows, summary, stats formats
   - Tick field details: price rounding, spread calculation, millisecond times
   - Error paths: guard failure, no data, invalid format, date errors
-  - Volume stats: real_volume, tick_volume fallback, cv, vwap, etc.
+  - Snapshot volume fields, trade-event filtering, cv, vwap, etc.
   - Simplify for ticks: approximate and select modes
 """
 
@@ -14,16 +14,23 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 from zoneinfo import ZoneInfo
 
-from ._helpers import (
-    _UTC, _NOW_TS,
-    _mt5_mock,
-    _mock_symbol_guard, _mock_symbol_guard_error,
-    _make_ticks,
-    _DS, _GUARD, _TICKS_RANGE, _SIMPLIFY_EXT,
-    _CACHED_INFO, _RESOLVE_CTZ, _PARSE_START,
-)
-
 from mtdata.services.data_service import fetch_ticks
+
+from ._helpers import (
+    _CACHED_INFO,
+    _DS,
+    _GUARD,
+    _NOW_TS,
+    _PARSE_START,
+    _RESOLVE_CTZ,
+    _SIMPLIFY_EXT,
+    _TICKS_RANGE,
+    _UTC,
+    _make_ticks,
+    _mock_symbol_guard,
+    _mock_symbol_guard_error,
+    _mt5_mock,
+)
 
 
 class TestFetchTicks(unittest.TestCase):
@@ -48,7 +55,7 @@ class TestFetchTicks(unittest.TestCase):
         self.assertIn('last_quote', result)
         self.assertEqual(result["units"]["bid"], "absolute_price")
         self.assertEqual(result["units"]["ask"], "absolute_price")
-        self.assertEqual(result["units"]["tick_volume"], "broker_tick_count")
+        self.assertEqual(result["units"]["volume"], "last_trade_volume")
 
     @patch(_TICKS_RANGE)
     @patch(_CACHED_INFO, return_value=SimpleNamespace(digits=5, currency_profit="USD"))
@@ -314,19 +321,19 @@ class TestFetchTicks(unittest.TestCase):
 
         self.assertTrue(result.get('success'))
         row = result["data"][0]
-        for key in ("last", "tick_volume", "real_volume", "flags", "flags_decoded"):
+        for key in ("last", "volume", "volume_real", "flags", "flags_decoded"):
             self.assertIn(key, row)
         self.assertIsNone(row["last"])
-        self.assertEqual(row["tick_volume"], 0.0)
-        self.assertEqual(row["real_volume"], 0.0)
+        self.assertEqual(row["volume"], 0.0)
+        self.assertEqual(row["volume_real"], 0.0)
         self.assertEqual(row["flags"], 1028)
-        self.assertIn("real_volume", row["flags_decoded"])
+        self.assertIn("volume_real", row["flags_decoded"])
 
     @patch(_TICKS_RANGE)
     @patch(_CACHED_INFO, return_value=SimpleNamespace(digits=5))
     @patch(_RESOLVE_CTZ, return_value=None)
     @patch(_GUARD, _mock_symbol_guard)
-    def test_one_sided_zero_spread_ticks_mark_missing_side(self, mock_ctz, mock_info, mock_ticks):
+    def test_zero_spread_snapshots_preserve_both_quote_sides(self, mock_ctz, mock_info, mock_ticks):
         ticks = _make_ticks(3)
         ticks[0].update({"bid": 1.1000, "ask": 1.1000, "flags": 4})
         ticks[1].update({"bid": 1.1000, "ask": 1.1002, "flags": 6})
@@ -336,18 +343,15 @@ class TestFetchTicks(unittest.TestCase):
         result = fetch_ticks('EURUSD', limit=3, format='full_rows')
 
         self.assertTrue(result.get('success'))
-        self.assertIsNone(result['data'][0]['bid'])
+        self.assertEqual(result['data'][0]['bid'], 1.1)
         self.assertEqual(result['data'][0]['ask'], 1.1)
-        self.assertEqual(result['data'][0]['quote_type'], 'ask_only')
-        self.assertEqual(result['data'][1]['quote_type'], 'bid_ask')
         self.assertEqual(result['data'][1]['mid'], 1.1001)
         self.assertEqual(result['data'][1]['spread'], 0.0002)
         self.assertEqual(result['data'][2]['bid'], 1.1003)
-        self.assertIsNone(result['data'][2]['ask'])
-        self.assertEqual(result['data'][2]['quote_type'], 'bid_only')
-        self.assertEqual(result['data_quality']['one_sided_zero_spread_ticks'], 2)
-        self.assertEqual(result['data_quality']['spread_ticks_excluded'], 2)
-        self.assertAlmostEqual(result['stats']['spread']['mean'], 0.0002)
+        self.assertEqual(result['data'][2]['ask'], 1.1003)
+        self.assertNotIn('quote_type', result['data'][0])
+        self.assertNotIn('data_quality', result)
+        self.assertAlmostEqual(result['stats']['spread']['mean'], 0.0000666667)
 
     @patch(_TICKS_RANGE)
     @patch(_CACHED_INFO, return_value=MagicMock())
@@ -574,11 +578,11 @@ class TestFetchTicks(unittest.TestCase):
         mock_ticks.return_value = ticks
         result = fetch_ticks('EURUSD', limit=20, format='stats')
         self.assertTrue(result.get('success'))
-        vol = result['stats']['real_volume']
-        self.assertEqual(vol['kind'], 'real_volume')
+        vol = result['stats']['volume_real']
+        self.assertEqual(vol['kind'], 'volume_real')
         self.assertIn('sum', vol)
         self.assertIn('per_second', vol)
-        self.assertEqual(result["units"]["real_volume"], "traded_volume")
+        self.assertEqual(result["units"]["volume_real"], "last_trade_volume_real")
 
     @patch(_TICKS_RANGE)
     @patch(_CACHED_INFO, return_value=MagicMock())
@@ -590,34 +594,53 @@ class TestFetchTicks(unittest.TestCase):
             t['volume_real'] = float(100 + i * 10)
         mock_ticks.return_value = ticks
         result = fetch_ticks('EURUSD', limit=20, format='stats')
-        vol = result['stats']['real_volume']
+        vol = result['stats']['volume_real']
         self.assertIn('dist', vol)
 
     @patch(_TICKS_RANGE)
     @patch(_CACHED_INFO, return_value=MagicMock())
     @patch(_RESOLVE_CTZ, return_value=None)
     @patch(_GUARD, _mock_symbol_guard)
-    def test_summary_tick_volume_fallback(self, mock_ctz, mock_info, mock_ticks):
+    def test_stats_expose_tick_count_and_last_trade_volume(self, mock_ctz, mock_info, mock_ticks):
         ticks = _make_ticks(20)
         mock_ticks.return_value = ticks
         result = fetch_ticks('EURUSD', limit=20, format='stats')
-        vol = result['stats']['tick_volume']
-        self.assertEqual(vol['kind'], 'tick_volume')
-        self.assertEqual(result["volume_semantics"], "tick_volume_is_broker_tick_count_not_lots")
+        self.assertEqual(result['stats']['tick_count']['sum'], 20)
+        vol = result['stats']['volume']
+        self.assertEqual(vol['kind'], 'volume')
+        self.assertEqual(vol['sum'], 20.0)
 
     @patch(_TICKS_RANGE)
     @patch(_CACHED_INFO, return_value=MagicMock())
     @patch(_RESOLVE_CTZ, return_value=None)
     @patch(_GUARD, _mock_symbol_guard)
-    def test_detailed_tick_volume_stats(self, mock_ctz, mock_info, mock_ticks):
+    def test_detailed_last_trade_volume_stats(self, mock_ctz, mock_info, mock_ticks):
         ticks = _make_ticks(10)
         mock_ticks.return_value = ticks
         result = fetch_ticks('EURUSD', limit=10, format='stats')
-        vol = result['stats']['tick_volume']
-        self.assertEqual(vol['kind'], 'tick_volume')
+        vol = result['stats']['volume']
+        self.assertEqual(vol['kind'], 'volume')
         self.assertIn('sum', vol)
-        self.assertEqual(result["volume_semantics"], "tick_volume_is_broker_tick_count_not_lots")
-        self.assertEqual(result["units"]["tick_volume"], "broker_tick_count")
+        self.assertEqual(result["units"]["volume"], "last_trade_volume")
+
+    @patch(_TICKS_RANGE)
+    @patch(_CACHED_INFO, return_value=MagicMock())
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_GUARD, _mock_symbol_guard)
+    def test_stats_do_not_sum_repeated_snapshot_volume(
+        self, mock_ctz, mock_info, mock_ticks,
+    ):
+        ticks = _make_ticks(5)
+        for tick in ticks:
+            tick.update({"last": 1.101, "volume": 7.0, "flags": 6})
+        ticks[0]["flags"] = 24
+        mock_ticks.return_value = ticks
+
+        result = fetch_ticks('EURUSD', limit=5, format='stats')
+
+        self.assertEqual(result["tick_count"], 5)
+        self.assertEqual(result["trade_event_count"], 1)
+        self.assertEqual(result["stats"]["volume"]["sum"], 7.0)
 
     # ------------------------------------------------------------------ #
     # Simplify for ticks                                                  #

@@ -134,6 +134,23 @@ def test_compute_volume_profile_respects_explicit_volume_source():
     assert result["diagnostics"]["dropped_volume_rows"] == 2
 
 
+def test_compute_volume_profile_counts_snapshot_volume_only_on_trade_events():
+    rows = [
+        {"last": 1.0, "volume": 5.0, "volume_real": 0.0, "flags": 24},
+        {"last": 1.1, "volume": 5.0, "volume_real": 0.0, "flags": 6},
+        {"last": 1.2, "volume": 5.0, "volume_real": 0.0, "flags": 6},
+    ]
+
+    result = compute_volume_profile(
+        rows,
+        VolumeProfileConfig(price_source="last", volume_source="auto"),
+    )
+
+    assert result["success"] is True
+    assert result["volume_kind"] == "volume"
+    assert result["total_volume"] == 5.0
+
+
 def test_compute_volume_profile_caps_tiny_explicit_buckets():
     rows = [{"last": float(price), "tick_volume": 1} for price in range(100)]
 

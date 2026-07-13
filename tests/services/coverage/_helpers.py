@@ -99,7 +99,7 @@ def _make_ticks(n: int, *, base_ts: float = _NOW_TS, step: float = 1.0) -> list:
             'last': 1.1001 + i * 0.0001,
             'volume': 1.0,
             'time_msc': (base_ts - (n - 1 - i) * step) * 1000,
-            'flags': 0,
+            'flags': 30,
             'volume_real': 0.0,
         })
     return ticks

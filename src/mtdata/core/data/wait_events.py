@@ -10,6 +10,7 @@ from typing import Any, Callable, Dict, List, Optional
 from ...shared.constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
 from ...utils.market_metadata import build_tick_freshness_context
 from ...utils.mt5 import _normalize_times_in_struct, _to_server_query_dt
+from ...utils.tick_flags import is_mt5_trade_event
 from ...utils.time import format_epoch_utc
 from ..trading.time import _next_candle_wait_payload, _sleep_until_next_candle
 from .requests import (
@@ -3135,10 +3136,17 @@ def _resolve_market_volume_source(
 ) -> str:
     if preferred != "auto":
         return str(preferred)
-    has_real = any(_finite_number(tick.get("volume_real")) not in (None, 0.0) for tick in ticks)
+    trade_ticks = [tick for tick in ticks if is_mt5_trade_event(tick.get("flags"))]
+    has_real = any(
+        _finite_number(tick.get("volume_real")) not in (None, 0.0)
+        for tick in trade_ticks
+    )
     if has_real:
         return "volume_real"
-    has_volume = any(_finite_number(tick.get("volume")) not in (None, 0.0) for tick in ticks)
+    has_volume = any(
+        _finite_number(tick.get("volume")) not in (None, 0.0)
+        for tick in trade_ticks
+    )
     if has_volume:
         return "volume"
     if window_kind == "minutes":
@@ -3219,10 +3227,13 @@ def _volume_metric_for_ticks(ticks: List[Dict[str, Any]], *, source: str) -> Opt
         return None
     if source == "tick_count":
         return float(len(ticks))
+    trade_ticks = [tick for tick in ticks if is_mt5_trade_event(tick.get("flags"))]
+    if not trade_ticks:
+        return 0.0
     if source == "volume_real":
-        values = [_finite_number(tick.get("volume_real")) for tick in ticks]
+        values = [_finite_number(tick.get("volume_real")) for tick in trade_ticks]
     else:
-        values = [_finite_number(tick.get("volume")) for tick in ticks]
+        values = [_finite_number(tick.get("volume")) for tick in trade_ticks]
     clean = [float(value) for value in values if value is not None]
     if not clean:
         return None
