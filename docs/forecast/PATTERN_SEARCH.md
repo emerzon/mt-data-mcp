@@ -137,12 +137,17 @@ use `--include-completed true` to include broken levels as well.
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| `--mode` | `all` | Pattern type: all, candlestick, classic, harmonic, fractal, elliott |
-| `--limit` | 1000 | Bars to analyze |
+| `--mode` | `candlestick` | Pattern type: all, candlestick, classic, harmonic, fractal, elliott |
+| `--limit` | 150 | Bars to analyze |
 | `--robust-only` | false | Only return high-confidence candlestick patterns. Pass `true` to filter to the robust subset. |
 | `--whitelist` | — | Comma-separated list of specific patterns |
-| `--min-strength` | 0.90 | Minimum semantic candlestick conviction score (0.0-1.0) |
+| `--min-strength` | 0.70 | Minimum semantic candlestick conviction score (0.0-1.0) |
 | `--config` | — | Detector-specific overrides. Fractals support `left_bars`, `right_bars`, `breakout_basis`, `min_prominence_pct`, and `confidence_prominence_cap_pct`. Harmonics support `pattern_types`, `ratio_tolerance`, `min_confidence`, and pivot controls. |
+
+Pattern names listed in this guide describe detector coverage, not a promise
+that every pattern is returned at the default threshold. `robust_only=true`
+further restricts candlesticks to the robust subset; lower-strength and
+deprioritized formations such as many dojis may be absent by default.
 
 ### Filtering Patterns
 
