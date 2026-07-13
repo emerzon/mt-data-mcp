@@ -773,6 +773,60 @@ def test_ensemble_rejects_bocpd_change_point_votes() -> None:
     call_tool.assert_not_called()
 
 
+def test_ensemble_discloses_kurtosis_state_count_heuristic() -> None:
+    raw = _unwrap(regime_detect)
+    n = 40
+    history = pd.DataFrame(
+        {
+            "time": np.arange(float(n)),
+            "close": np.linspace(100.0, 120.0, n),
+        }
+    )
+    ref_len = n - 1
+
+    def fake_call_tool(_tool, **kwargs):
+        n_states = int(kwargs["params"]["n_states"])
+        return {
+            "success": True,
+            "method": "hmm",
+            "series": {
+                "state": [0] * ref_len,
+                "state_probabilities": [
+                    [1.0] + [0.0] * (n_states - 1) for _ in range(ref_len)
+                ],
+            },
+        }
+
+    with (
+        patch("mtdata.core.regime.api._fetch_history", return_value=history),
+        patch("mtdata.core.regime.api._resolve_denoise_base_col", return_value="close"),
+        patch("mtdata.core.regime.api._format_time_minimal", side_effect=lambda x: f"T{x}"),
+        patch("mtdata.core.regime.api._finite_raw_kurtosis", return_value=4.0),
+        patch(
+            "mtdata.core.regime.api.call_tool_sync_structured",
+            side_effect=fake_call_tool,
+        ),
+    ):
+        out = raw(
+            symbol="TEST",
+            timeframe="H1",
+            limit=n,
+            method="ensemble",
+            params={"methods": ["hmm"]},
+            detail="full",
+            include_series=True,
+            min_regime_bars=1,
+        )
+
+    assert out["params_used"]["n_states"] == 4
+    assert out["params_used"]["state_count_param"] == "return_kurtosis_heuristic"
+    assert out["params_used"]["state_count_heuristic"] == {
+        "method": "return_kurtosis_thresholds",
+        "returns_kurtosis": 4.0,
+    }
+    assert any("not statistical model selection" in warning for warning in out["warnings"])
+
+
 def test_ensemble_keeps_invalid_leading_submethod_rows_undefined() -> None:
     raw = _unwrap(regime_detect)
     n = 40

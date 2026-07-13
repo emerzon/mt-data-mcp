@@ -283,16 +283,20 @@ Use `n_states` as the canonical state-count parameter for HMM/GMM, MS-AR, cluste
 
 For `rule_based`, use `params.window_bars` to choose the analysis window. `lookback`, `min_regime_bars`, and `max_regimes` do not change rule-based output because it emits one current-window regime; non-default uses are reported in `warnings`.
 
-### Auto-detected state counts
+### Heuristic state counts
 
-Some methods infer `n_states` when it is not explicitly supplied:
+Some methods use a heuristic to choose `n_states` when it is not explicitly supplied:
 
 | Method | Auto-detection basis |
 |--------|----------------------|
 | `garch` | Realized-volatility percentile spread plus return kurtosis |
 | `ensemble` | Return-distribution kurtosis |
 
-These methods can choose different state counts on the same data because they optimize for different regime concepts: volatility tiers for GARCH and consensus return/volatility granularity for ensemble.
+These rules control output granularity; they are not AIC/BIC model selection and
+do not estimate the true number of market regimes. Set `n_states` explicitly and
+compare out-of-sample or backtest results when the state count affects a strategy.
+GARCH and ensemble can choose different counts on the same data because their
+heuristics use different inputs.
 
 The ensemble defaults to `hmm`, `clustering`, and `wavelet`. Ensemble voters
 must emit state IDs canonicalized by return, so supported overrides are

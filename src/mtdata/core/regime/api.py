@@ -998,11 +998,11 @@ def regime_detect(  # noqa: C901
           even when target='return'. Best for quick trend classification.
         - 'wavelet': Returns 'regime_params' with 'energy_profiles' showing frequency distribution.
           Best for detecting regimes at different time scales.
-        - 'ensemble': Consensus across multiple methods with AUTO-DETECTED n_states.
+        - 'ensemble': Consensus across multiple methods with heuristic n_states selection.
           Default voters are HMM, clustering, and wavelet. Only state methods
           whose IDs are canonicalized by return are accepted; change-point,
           rule-based, and GARCH volatility-tier methods cannot vote.
-          n_states determined by return distribution kurtosis:
+          When omitted, n_states is selected by return-distribution kurtosis:
             kurtosis > 6.0 → 6 states
             kurtosis > 4.5 → 5 states
             kurtosis > 3.5 → 4 states
@@ -3196,7 +3196,8 @@ def regime_detect(  # noqa: C901
 
             voting = str(p.get("voting", "soft")).strip().lower()
 
-            # Auto-detect optimal n_states if not explicitly provided
+            # Use the documented kurtosis heuristic when n_states is omitted.
+            # This controls output granularity; it is not statistical model selection.
             n_states_input = p.get("n_states")
             state_count_warnings: List[str] = []
             n_states_source = "n_states"
@@ -3216,7 +3217,16 @@ def regime_detect(  # noqa: C901
 
                 n_states_ens = n_states_auto
                 ens_auto_n_states = True
-                ens_auto_metrics = {"returns_kurtosis": round(returns_kurt, 2)}
+                n_states_source = "return_kurtosis_heuristic"
+                ens_auto_metrics = {
+                    "method": "return_kurtosis_thresholds",
+                    "returns_kurtosis": round(returns_kurt, 2),
+                }
+                state_count_warnings.append(
+                    "Ensemble n_states was selected by a return-kurtosis heuristic, "
+                    "not statistical model selection. Set params.n_states explicitly "
+                    "and validate it through backtesting when state count matters."
+                )
             else:
                 try:
                     n_states_ens = int(n_states_input)
@@ -3456,6 +3466,7 @@ def regime_detect(  # noqa: C901
                 },
             }
             if ens_auto_metrics:
+                payload["params_used"]["state_count_heuristic"] = ens_auto_metrics
                 payload["auto_detection"] = ens_auto_metrics
             if sub_errors:
                 payload["warnings"] = [f"Sub-method errors: {'; '.join(sub_errors)}"]
