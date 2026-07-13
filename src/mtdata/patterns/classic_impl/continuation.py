@@ -167,17 +167,16 @@ def detect_flags_pennants(
 
     return out
 
-def _detect_cup_handle_variant(
+def _detect_cup_handle_window(
     c: np.ndarray,
     t: np.ndarray,
     cfg: ClassicDetectorConfig,
     *,
     invert: bool,
+    window_bars: int,
 ) -> Optional[ClassicPatternResult]:
     n = c.size
-    W = min(int(cfg.cup_handle_max_window_bars), n)
-    if W < int(cfg.cup_handle_min_window_bars):
-        return None
+    W = int(window_bars)
 
     price_seg = c[-W:]
     if invert:
@@ -191,7 +190,6 @@ def _detect_cup_handle_variant(
 
     i_max_left = int(np.argmax(seg[:i_min])) if i_min > 5 else 0
     left = float(seg[i_max_left])
-    bottom = float(seg[i_min])
     left_price = float(price_seg[i_max_left])
     extreme_price = float(price_seg[i_min])
     if left <= 0 or left_price <= 0:
@@ -308,6 +306,45 @@ def _detect_cup_handle_variant(
         int(break_i if break_i is not None else (n - 1)),
         t,
         details,
+    )
+
+
+def _detect_cup_handle_variant(
+    c: np.ndarray,
+    t: np.ndarray,
+    cfg: ClassicDetectorConfig,
+    *,
+    invert: bool,
+) -> Optional[ClassicPatternResult]:
+    min_window = int(cfg.cup_handle_min_window_bars)
+    max_window = min(int(cfg.cup_handle_max_window_bars), int(c.size))
+    if max_window < min_window:
+        return None
+
+    candidates = [
+        candidate
+        for window_bars in range(min_window, max_window + 1)
+        if (
+            candidate := _detect_cup_handle_window(
+                c,
+                t,
+                cfg,
+                invert=invert,
+                window_bars=window_bars,
+            )
+        )
+        is not None
+    ]
+    if not candidates:
+        return None
+
+    return max(
+        candidates,
+        key=lambda candidate: (
+            candidate.status == "completed",
+            float(candidate.confidence),
+            int(candidate.start_index),
+        ),
     )
 
 

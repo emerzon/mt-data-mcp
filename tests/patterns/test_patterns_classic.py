@@ -532,6 +532,43 @@ def test_inverted_cup_metrics_ignore_prices_outside_detection_window():
     )
 
 
+def test_detect_cup_handle_scans_configured_window_range():
+    from src.mtdata.patterns.classic_impl.continuation import detect_cup_handle
+
+    anchors = [
+        (0, 100.0),
+        (50, 70.0),
+        (100, 100.0),
+        (150, 100.0),
+        (225, 90.0),
+        (260, 100.0),
+        (270, 98.0),
+        (285, 95.0),
+        (299, 101.0),
+    ]
+    close = np.full(300, 100.0, dtype=float)
+    for (a_i, a_v), (b_i, b_v) in zip(anchors, anchors[1:]):
+        close[a_i : b_i + 1] = np.linspace(a_v, b_v, b_i - a_i + 1)
+
+    out = detect_cup_handle(
+        close,
+        np.arange(close.size, dtype=float),
+        ClassicDetectorConfig(
+            cup_handle_min_window_bars=120,
+            cup_handle_max_window_bars=300,
+            cup_handle_max_depth_pct=20.0,
+            cup_handle_max_handle_pullback_pct=6.0,
+            breakout_lookahead=40,
+            completion_lookback_bars=40,
+        ),
+    )
+
+    cup = next(pattern for pattern in out if pattern.name == "Cup and Handle")
+    assert cup.status == "completed"
+    assert cup.start_index >= 150
+    assert cup.details["cup_extreme"] == pytest.approx(90.0)
+
+
 def test_detect_triangles_skip_same_sign_converging_shapes(monkeypatch):
     from src.mtdata.patterns.classic_impl import shapes
 
