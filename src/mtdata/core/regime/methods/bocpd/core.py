@@ -1,4 +1,5 @@
 """BOCPD (Bayesian Online Change Point Detection) core algorithm and calibration."""
+
 import hashlib
 import threading
 import time
@@ -8,7 +9,6 @@ import numpy as np
 
 from .....shared.constants import TIMEFRAME_SECONDS
 from .....shared.symbols import is_probably_crypto_symbol
-
 
 # ---------------------------------------------------------------------------
 # Empirical BOCPD calibration defaults
@@ -267,9 +267,8 @@ def _bocpd_reliability_score(
     calibration_age_bars: int,
     threshold_calibrated: bool,
 ) -> Dict[str, Any]:
-    """Estimate BOCPD reliability from margins, edge concentration, and calibration."""
-    cp = np.asarray(cp_prob, dtype=float)
-    cp = cp[np.isfinite(cp)]
+    """Estimate confidence in the accepted change-point/stability decision."""
+    cp = np.asarray(cp_prob, dtype=float).reshape(-1)
     n = int(cp.size)
     if n == 0:
         return {
@@ -286,38 +285,95 @@ def _bocpd_reliability_score(
     lb = int(max(1, min(int(lookback), n)))
     start = n - lb
     tail = cp[-lb:]
+    finite_tail = tail[np.isfinite(tail)]
     cps_recent = [int(i) for i in cp_indices if int(i) >= start]
     edge_zone = int(max(1, min_regime_bars))
     edge_count = int(sum(1 for i in cps_recent if int(i) >= (n - edge_zone)))
     edge_share = float(edge_count / max(1, len(cps_recent))) if cps_recent else 0.0
     density = float(len(cps_recent) / float(lb))
-    peak = float(np.nanmax(tail)) if tail.size else 0.0
-    margin = float(max(0.0, peak - float(threshold)))
+    peak = float(np.max(finite_tail)) if finite_tail.size else 0.0
+    threshold_value = float(threshold)
+    raw_margin = float(max(0.0, peak - threshold_value))
+    raw_candidates_count = int(
+        np.sum(np.asarray(finite_tail, dtype=float) >= threshold_value)
+    )
+    accepted_margins = [
+        float(cp[index] - threshold_value)
+        for index in cps_recent
+        if 0 <= index < n and np.isfinite(cp[index])
+    ]
+    accepted_margin = float(max([0.0, *accepted_margins]))
 
     target_fa = float(np.clip(expected_false_alarm_rate, 1e-4, 0.25))
-    margin_factor = float(np.clip(margin / 0.15, 0.0, 1.0))
-    edge_factor = float(np.clip(1.0 - edge_share, 0.0, 1.0))
-    density_penalty = float(np.clip(abs(density - target_fa) / max(target_fa, 1e-6), 0.0, 1.0))
     calibration_factor = 1.0 if bool(threshold_calibrated) else 0.6
-    score = float(
+    stability_clearance = float(
         np.clip(
-            0.45 * margin_factor
-            + 0.30 * edge_factor
-            + 0.15 * (1.0 - density_penalty)
-            + 0.10 * calibration_factor,
+            (threshold_value - peak) / max(abs(threshold_value), 0.15),
             0.0,
             1.0,
         )
     )
-    label = "high" if score >= 0.75 else ("medium" if score >= 0.45 else "low")
+    if cps_recent:
+        margin_factor = float(np.clip(accepted_margin / 0.15, 0.0, 1.0))
+        edge_factor = float(np.clip(1.0 - edge_share, 0.0, 1.0))
+        density_penalty = float(
+            np.clip(
+                abs(density - target_fa) / max(target_fa, 1e-6),
+                0.0,
+                1.0,
+            )
+        )
+        score = float(
+            np.clip(
+                0.45 * margin_factor
+                + 0.30 * edge_factor
+                + 0.15 * (1.0 - density_penalty)
+                + 0.10 * calibration_factor,
+                0.0,
+                1.0,
+            )
+        )
+        decision = "accepted_change_points"
+    else:
+        no_filtered_candidates = 1.0 if raw_candidates_count == 0 else 0.0
+        score = float(
+            np.clip(
+                0.65 * stability_clearance
+                + 0.20 * calibration_factor
+                + 0.15 * no_filtered_candidates,
+                0.0,
+                1.0,
+            )
+        )
+        decision = (
+            "stable"
+            if raw_candidates_count == 0
+            else "all_candidates_filtered"
+        )
+    label = (
+        "high"
+        if score >= 0.8
+        else "medium"
+        if score >= 0.6
+        else "low"
+        if score >= 0.4
+        else "very_low"
+    )
     return {
         "confidence": float(score),
         "reliability_label": label,
         "expected_false_alarm_rate": float(target_fa),
         "calibration_age_bars": int(max(0, calibration_age_bars)),
-        "threshold_margin": float(margin),
+        "threshold_margin": float(raw_margin),
+        "accepted_threshold_margin": float(accepted_margin),
+        "stability_clearance": float(stability_clearance),
         "recent_cp_density": float(density),
         "edge_cp_share": float(edge_share),
+        "raw_candidates_count": int(raw_candidates_count),
+        "filtered_candidates_count": int(
+            max(0, raw_candidates_count - len(cps_recent))
+        ),
+        "decision": decision,
         "threshold_calibrated": bool(threshold_calibrated),
     }
 

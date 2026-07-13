@@ -5,7 +5,7 @@ import math
 import time
 import warnings
 from collections import Counter
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional, Tuple
 
 import numpy as np
 
@@ -305,6 +305,7 @@ def _bocpd_under_segmentation_warnings(
     *,
     total_bars: int,
     change_point_count: int,
+    raw_change_point_count: Optional[int] = None,
     reliability: Any,
     peak_abs_return: float,
 ) -> List[str]:
@@ -323,6 +324,12 @@ def _bocpd_under_segmentation_warnings(
         return []
 
     warnings: List[str] = []
+    if int(raw_change_point_count or 0) > 0:
+        warnings.append(
+            "BOCPD candidates crossed the probability threshold, but robustness "
+            "filters rejected all of them; the reported stable segment is uncertain. "
+            "Review confirmation, cooldown, and edge-filter settings."
+        )
     confidence_value: Optional[float] = None
     if isinstance(reliability, dict):
         raw_conf = reliability.get("confidence")
@@ -1507,7 +1514,8 @@ def regime_detect(  # noqa: C901
                 payload,
                 _bocpd_under_segmentation_warnings(
                     total_bars=int(x.size),
-                    change_point_count=len(raw_cp_idx),
+                    change_point_count=len(cp_idx),
+                    raw_change_point_count=len(raw_cp_idx),
                     reliability=payload.get("reliability"),
                     peak_abs_return=_peak_abs_return(x),
                 ),

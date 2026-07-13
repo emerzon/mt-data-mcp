@@ -10,6 +10,8 @@ import pytest
 from mtdata.core.regime import api as regime_mod
 from mtdata.core.regime.api import _auto_calibrate_bocpd_params, regime_detect
 from mtdata.core.regime.methods.bocpd.core import (
+    _bocpd_reliability_score,
+    _filter_bocpd_change_points,
     _walkforward_quantile_threshold_calibration,
 )
 from mtdata.utils.mt5 import MT5ConnectionError
@@ -511,6 +513,42 @@ def test_bocpd_filters_last_bar_spike_with_strict_confirmation() -> None:
     cp_filter = params_used.get("cp_filter", {})
     assert int(cp_filter.get("confirm_bars", 0)) == 2
     assert int(cp_filter.get("filtered_count", 0)) >= 1
+    assert float(out.get("reliability", {}).get("confidence", 1.0)) < 0.55
+    assert any(
+        "filters rejected all" in warning for warning in out.get("warnings", [])
+    )
+
+
+def test_bocpd_reliability_distinguishes_stability_from_filtered_peak() -> None:
+    stable = np.full(200, 0.05, dtype=float)
+    filtered_peak = stable.copy()
+    filtered_peak[150] = 0.85
+    accepted, _ = _filter_bocpd_change_points(
+        filtered_peak,
+        0.5,
+        min_distance_bars=5,
+        min_regime_bars=5,
+        confirm_bars=3,
+        confirm_relaxed_mult=0.9,
+        edge_multiplier=1.08,
+    )
+
+    common = {
+        "threshold": 0.5,
+        "lookback": 100,
+        "min_regime_bars": 4,
+        "expected_false_alarm_rate": 0.02,
+        "calibration_age_bars": 200,
+        "threshold_calibrated": True,
+    }
+    stable_score = _bocpd_reliability_score(stable, [], **common)
+    filtered_score = _bocpd_reliability_score(filtered_peak, accepted, **common)
+
+    assert accepted == []
+    assert stable_score["confidence"] >= 0.8
+    assert stable_score["decision"] == "stable"
+    assert filtered_score["confidence"] < 0.55
+    assert filtered_score["decision"] == "all_candidates_filtered"
 
 
 def test_bocpd_walkforward_threshold_calibration_metadata_is_exposed() -> None:
