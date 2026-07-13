@@ -42,6 +42,12 @@ If you want remote access, set `WEBAPI_ALLOW_REMOTE=1`, use a non-loopback `WEBA
 - `Authorization: Bearer <token>`
 - `X-API-Key: <token>`
 
+The bundled Web UI has an **Auth** control in the chart toolbar. Enter the
+same token there after the page loads. The token is held only in the current
+tab's JavaScript memory, is attached as a Bearer token to API requests, and is
+cleared by a page reload or the control's **Clear** action. It is never embedded
+in the Vite build or written to browser storage.
+
 Credentialed CORS requests require explicit origins. `CORS_ORIGINS=*` is rejected.
 
 Security checklist for remote access:

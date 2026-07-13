@@ -162,6 +162,7 @@ Remove later with `nssm stop mtdata-sse` then `nssm remove mtdata-sse confirm`.
 
 - **Stay on loopback** (`127.0.0.1`) unless you truly need remote access. Non-loopback binds require `FASTMCP_ALLOW_REMOTE=1` / `WEBAPI_ALLOW_REMOTE=1` **and** an auth token.
 - **Always set a token** — `MCP_AUTH_TOKEN` (SSE/streamable-HTTP) and `WEBAPI_AUTH_TOKEN` (Web API). Clients then send `Authorization: Bearer <token>` or `X-API-Key: <token>`.
+- For the bundled Web UI, enter `WEBAPI_AUTH_TOKEN` through the toolbar's **Auth** control. The value remains in memory for that tab only and is not persisted.
 - **Pin CORS** — set `CORS_ORIGINS` to explicit origins. A wildcard `*` is rejected when credentials are enabled.
 - **Firewall** — if you expose a non-loopback port, restrict it to trusted source IPs.
 - **Demo first** — the service can execute live trades. Validate on a demo account before pointing it at anything real.

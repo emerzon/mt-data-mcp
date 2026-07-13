@@ -40,6 +40,7 @@ export default function App() {
           onToggleLast={workspace.toggleLast}
           onToggleLive={workspace.toggleLive}
           onTimezoneChange={workspace.setTimezoneMode}
+          onAuthChange={workspace.reload}
         />
 
         {/* Chart */}

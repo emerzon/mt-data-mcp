@@ -1,4 +1,5 @@
 import type { DenoiseSpecUI } from '../types'
+import { ApiAuthControl } from './ApiAuthControl'
 import { PivotIcon, RefreshIcon, SRIcon } from '../features/chart-workspace/toolbarIcons'
 import {
   DenoiseSelector,
@@ -35,6 +36,7 @@ type Props = {
   onToggleLive: () => void
   timezoneMode: 'utc' | 'local' | 'server'
   onTimezoneChange: (value: 'utc' | 'local' | 'server') => void
+  onAuthChange: () => void
 }
 
 export function ChartToolbar({
@@ -64,6 +66,7 @@ export function ChartToolbar({
   onToggleLive,
   timezoneMode,
   onTimezoneChange,
+  onAuthChange,
 }: Props) {
   return (
     <div className="absolute top-3 left-3 right-3 z-20 flex items-start gap-2">
@@ -97,6 +100,8 @@ export function ChartToolbar({
 
       <div className="flex items-center gap-2">
         <div className="flex items-center gap-1 bg-slate-900/95 backdrop-blur-sm rounded-lg border border-slate-800 p-1">
+          <ApiAuthControl onChange={onAuthChange} />
+          <div className="w-px h-5 bg-slate-700" />
           <button
             className={`toolbar-btn ${hasPivots ? 'text-amber-400' : ''}`}
             onClick={onTogglePivots}

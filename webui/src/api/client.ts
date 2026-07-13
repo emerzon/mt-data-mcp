@@ -28,6 +28,21 @@ const API_PREFIX = '/api/v1'
 
 export const api = axios.create({ baseURL })
 
+let apiToken = ''
+
+export function setApiToken(token: string): void {
+  apiToken = token.trim()
+}
+
+api.interceptors.request.use((config) => {
+  if (apiToken) {
+    config.headers.set('Authorization', `Bearer ${apiToken}`)
+  } else {
+    config.headers.delete('Authorization')
+  }
+  return config
+})
+
 function apiPath(path: string): string {
   return `${API_PREFIX}${path}`
 }
