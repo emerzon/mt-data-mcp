@@ -164,7 +164,10 @@ PARAM_HINTS = {
         "trading context, and 0.70+ for stricter high-conviction detections."
     ),
     "min_gap": "Minimum bars between detected patterns.",
-    "robust_only": "Only return high-confidence patterns when true.",
+    "robust_only": (
+        "Restrict candlestick detection to a curated subset of established "
+        "multi-bar pattern types; does not change min_strength."
+    ),
     "whitelist": "Comma-separated pattern names to include.",
     "universe": "Symbol scan universe: visible (fast default) or all (includes hidden tradable symbols and may be slower).",
     "series_time": "Series timestamp format (string or epoch).",

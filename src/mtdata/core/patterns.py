@@ -1341,7 +1341,8 @@ def patterns_detect(
         Minimum gap between patterns (in bars)
     
     robust_only : bool, optional (default=False)
-        Only return high-confidence patterns
+        Restrict candlestick detection to a curated subset of established
+        multi-bar pattern types. This does not change `min_strength`.
     
     whitelist : str, optional
         Candlestick mode only. Comma-separated list of specific candlestick
