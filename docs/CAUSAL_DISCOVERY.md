@@ -108,7 +108,7 @@ and both confidence levels.
 ### `causal_discover_signals`
 
 For each ordered pair of symbols `(cause → effect)`, the tool:
-1. Fetches and aligns overlapping close-price histories
+1. Aligns each pair on that pair's overlapping close-price history
 2. Applies a transform (by default `log_return`) to improve stationarity
 3. Optionally z-scores the series (`normalize=true`)
 4. Runs Granger causality tests for lags `1..max_lag`
@@ -131,7 +131,7 @@ proof that no predictive relationships exist.
 |----------|---------|-------------|
 | `symbols` | (required) | Comma-separated MT5 symbols. If you pass **one** symbol, mtdata expands to other visible symbols in the same MT5 group. |
 | `timeframe` | `H1` | Bar timeframe (`M15`, `H1`, etc.). |
-| `window_bars` | `500` | Maximum overlapping transformed samples analyzed. |
+| `window_bars` | `500` | Maximum overlapping transformed samples analyzed per pair. |
 | `limit` | all rows | Optional maximum number of ranked result rows returned. |
 | `offset` | `0` | Number of ranked result rows to skip before applying `limit`. |
 | `max_lag` | `5` | Maximum lag to test (≥ 1). |

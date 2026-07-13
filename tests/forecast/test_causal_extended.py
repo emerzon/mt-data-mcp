@@ -514,11 +514,20 @@ class TestCausalDiscoverSignals:
         assert pair_overlaps.get("GBPUSD-USDJPY") == 76
         assert detail.get("bottleneck_pair") in {"EURUSD-USDJPY", "GBPUSD-USDJPY"}
         assert int(detail.get("aligned_rows", 0)) == 76
+        assert stats["alignment_mode"] == "pairwise"
+        samples_by_pair = {
+            tuple(call.args[0].columns): len(call.args[0])
+            for call in mock_granger.call_args_list
+        }
+        assert samples_by_pair[("EURUSD", "GBPUSD")] == 99
+        assert samples_by_pair[("GBPUSD", "EURUSD")] == 99
+        assert samples_by_pair[("EURUSD", "USDJPY")] == 75
+        assert samples_by_pair[("USDJPY", "EURUSD")] == 75
 
     @patch("statsmodels.tsa.stattools.grangercausalitytests")
     @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})
     @patch("mtdata.core.causal._fetch_series")
-    def test_auto_prunes_symbol_with_no_overlap(self, mock_fetch, mock_granger):
+    def test_pairwise_alignment_skips_only_pairs_with_no_overlap(self, mock_fetch, mock_granger):
         idx_ab = pd.date_range("2024-01-01", periods=80, freq="h")
         idx_c = pd.date_range("2024-03-01", periods=80, freq="h")
         series_map = {
@@ -540,12 +549,11 @@ class TestCausalDiscoverSignals:
 
         assert result["success"] is True
         stats = result["meta"]["stats"]
-        assert stats["symbols_used"] == ["EURUSD", "GBPUSD"]
-        assert stats["pruned_symbols"] == ["USDJPY"]
-        assert stats["samples_aligned_raw_after_pruning"] == 80
-        assert "pair_overlaps_after_pruning" in stats
+        assert stats["symbols_used"] == ["EURUSD", "GBPUSD", "USDJPY"]
+        assert stats["pairs_tested"] == 2
+        assert stats["pairs_skipped"] == 4
         warnings_out = result.get("warnings", [])
-        assert any("Dropped USDJPY due to insufficient overlap" in warning for warning in warnings_out)
+        assert any("4 directed pairs were skipped" in warning for warning in warnings_out)
 
     @patch("mtdata.core.causal._expand_symbols_for_group", return_value=(["BTCUSD", "ETHUSD", "LTCUSD"], None, "Crypto"))
     @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})

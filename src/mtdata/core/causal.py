@@ -1405,102 +1405,6 @@ def _pair_overlap_symbols(
     return left, right
 
 
-def _select_prune_symbol(
-    symbols: List[str],
-    pair_overlaps: Dict[str, int],
-    *,
-    bottleneck_pair: str,
-    preserve_symbol: str | None = None,
-) -> str | None:
-    candidates = [
-        symbol
-        for symbol in _pair_overlap_symbols(bottleneck_pair, symbols)
-        if symbol in symbols
-    ]
-    if len(candidates) < 2:
-        return None
-    if preserve_symbol in candidates and len(candidates) > 1:
-        prunable = [symbol for symbol in candidates if symbol != preserve_symbol]
-        if prunable:
-            candidates = prunable
-    anchor = symbols[0] if symbols else None
-    totals: Dict[str, int] = {symbol: 0 for symbol in candidates}
-    for pair_key, overlap_rows in pair_overlaps.items():
-        pair_symbols = _pair_overlap_symbols(pair_key, symbols)
-        for symbol in candidates:
-            if symbol in pair_symbols:
-                totals[symbol] += int(overlap_rows)
-    candidates.sort(
-        key=lambda symbol: (
-            totals.get(symbol, 0),
-            1 if symbol == anchor else 0,
-            -symbols.index(symbol),
-        )
-    )
-    return candidates[0]
-
-
-def _prune_symbols_for_overlap(
-    series_map: Dict[str, pd.Series],
-    symbols: List[str],
-    *,
-    limit: int,
-    minimum_required: int,
-    preserve_symbol: str | None = None,
-) -> tuple[List[str], pd.DataFrame, Dict[str, Any] | None]:
-    active_symbols = [symbol for symbol in symbols if symbol in series_map]
-    frame = _build_overlap_frame(series_map, active_symbols, limit)
-    if len(active_symbols) < 3 or len(frame) >= minimum_required:
-        return active_symbols, frame, None
-
-    dropped_symbols: List[str] = []
-    iterations: List[Dict[str, Any]] = []
-    while len(active_symbols) > 2 and len(frame) < minimum_required:
-        pair_overlaps = _pair_overlap_counts(series_map, active_symbols)
-        if not pair_overlaps:
-            break
-        bottleneck_pair, bottleneck_rows = min(
-            pair_overlaps.items(), key=lambda kv: kv[1]
-        )
-        drop_symbol = _select_prune_symbol(
-            active_symbols,
-            pair_overlaps,
-            bottleneck_pair=str(bottleneck_pair),
-            preserve_symbol=preserve_symbol,
-        )
-        if not drop_symbol:
-            break
-        aligned_before = int(len(frame))
-        active_symbols = [symbol for symbol in active_symbols if symbol != drop_symbol]
-        frame = _build_overlap_frame(series_map, active_symbols, limit)
-        dropped_symbols.append(drop_symbol)
-        iterations.append(
-            {
-                "dropped_symbol": drop_symbol,
-                "bottleneck_pair": str(bottleneck_pair),
-                "bottleneck_rows": int(bottleneck_rows),
-                "aligned_rows_before": aligned_before,
-                "aligned_rows_after": int(len(frame)),
-                "remaining_symbols": list(active_symbols),
-            }
-        )
-
-    if not dropped_symbols:
-        return active_symbols, frame, None
-    return (
-        active_symbols,
-        frame,
-        {
-            "initial_symbols": list(symbols),
-            "dropped_symbols": dropped_symbols,
-            "kept_symbols": list(active_symbols),
-            "aligned_rows_after_pruning": int(len(frame)),
-            "minimum_required": int(minimum_required),
-            "iterations": iterations,
-        },
-    )
-
-
 def _build_alignment_detail(
     symbol_rows: Dict[str, int],
     pair_overlaps: Dict[str, int],
@@ -1539,30 +1443,6 @@ def _format_alignment_detail_summary(detail: Dict[str, Any]) -> str:
     return f"pair_overlaps: {pair_str}{suffix}"
 
 
-def _limit_constrained_alignment_message(
-    *,
-    aligned_rows: int,
-    minimum_required: int,
-    window_bars: int,
-    max_lag: int,
-    pair_overlaps: Dict[str, int],
-) -> Optional[str]:
-    if int(aligned_rows) >= int(minimum_required) or int(window_bars) >= int(minimum_required):
-        return None
-    if int(aligned_rows) > int(window_bars):
-        return None
-    if pair_overlaps and not all(
-        int(rows) >= int(minimum_required) for rows in pair_overlaps.values()
-    ):
-        return None
-    return (
-        f"Insufficient aligned observations ({int(aligned_rows)}) after applying "
-        f"window_bars={int(window_bars)}; minimum required is {int(minimum_required)}. "
-        f"Increase --window-bars to at least {int(minimum_required)} or reduce max_lag "
-        f"(currently {int(max_lag)})."
-    )
-
-
 @mcp.tool()
 def causal_discover_signals(  # noqa: C901
     symbols: Optional[str] = None,
@@ -1588,8 +1468,8 @@ def causal_discover_signals(  # noqa: C901
             exclusive with `symbols`.
         timeframe: MT5 timeframe key (e.g. "M15", "H1").
         limit: Optional maximum number of returned causal rows.
-        window_bars: Maximum overlapping transformed samples analysed after
-            applying any time window.
+        window_bars: Maximum overlapping transformed samples analysed per pair
+            after applying any time window.
         start: Optional UTC-compatible start date/time for the analysis window.
         end: Optional UTC-compatible end date/time; end-only anchors recent history.
         max_lag: Maximum lag order for tests (>=1).
@@ -1812,77 +1692,58 @@ def causal_discover_signals(  # noqa: C901
         if pair_overlaps:
             meta["pair_overlaps"] = pair_overlaps
 
-        frame = _build_overlap_frame(series_map, symbol_list, int(window_bars))
-        meta["symbols_used"] = (
-            list(frame.columns)
-            if isinstance(frame, pd.DataFrame)
-            else list(series_map.keys())
-        )
+        joint_frame = _build_overlap_frame(series_map, symbol_list, int(window_bars))
+        frame = _build_pairwise_frame(series_map, symbol_list)
+        meta["symbols_used"] = list(frame.columns)
+        meta["alignment_mode"] = "pairwise"
         min_required_samples = int(max_lag + 6)
         meta["minimum_samples_required"] = int(min_required_samples)
-        meta["samples_aligned_raw"] = int(len(frame))
+        # Retain joint overlap as a basket diagnostic only. Granger execution
+        # below uses each pair's own overlap and window.
+        meta["samples_aligned_raw"] = int(len(joint_frame))
         alignment_detail = _build_alignment_detail(
             symbol_rows=symbol_rows,
             pair_overlaps=pair_overlaps,
-            aligned_rows=int(len(frame)),
+            aligned_rows=int(len(joint_frame)),
             minimum_required=min_required_samples,
         )
         if alignment_detail is not None:
             meta["alignment_detail"] = alignment_detail
-        overlap_pruning = None
-        if frame.empty or len(frame) <= max_lag + 5:
-            limit_message = _limit_constrained_alignment_message(
-                aligned_rows=int(len(frame)),
-                minimum_required=min_required_samples,
-                window_bars=int(window_bars),
-                max_lag=int(max_lag),
-                pair_overlaps=pair_overlaps,
+        if int(window_bars) < min_required_samples:
+            details_out = []
+            if alignment_detail is not None:
+                align_summary = _format_alignment_detail_summary(alignment_detail)
+                if align_summary:
+                    details_out.append(align_summary)
+            return _causal_error(
+                f"Insufficient pairwise observations after applying window_bars={int(window_bars)}; "
+                f"minimum required is {min_required_samples}. Increase --window-bars to at least "
+                f"{min_required_samples} or reduce max_lag (currently {int(max_lag)}).",
+                code="insufficient_overlap",
+                meta=meta,
+                warnings=warnings_out,
+                details=details_out or None,
             )
-            if limit_message is None:
-                pruned_symbols, pruned_frame, overlap_pruning = _prune_symbols_for_overlap(
-                    series_map,
-                    symbol_list,
-                    limit=int(window_bars),
-                    minimum_required=min_required_samples,
-                    preserve_symbol=requested_anchor,
-                )
-            else:
-                pruned_symbols, pruned_frame = symbol_list, frame
-            if overlap_pruning is not None:
-                symbol_list = pruned_symbols
-                frame = pruned_frame
-                meta["overlap_pruning"] = overlap_pruning
-                meta["pruned_symbols"] = list(
-                    overlap_pruning.get("dropped_symbols") or []
-                )
-                meta["symbols_used"] = list(symbol_list)
-                meta["samples_aligned_raw_after_pruning"] = int(len(frame))
-                pair_overlaps_after = _pair_overlap_counts(series_map, symbol_list)
-                if pair_overlaps_after:
-                    meta["pair_overlaps_after_pruning"] = pair_overlaps_after
-                symbol_rows_after = {
-                    str(sym): int(symbol_rows.get(sym, 0))
-                    for sym in symbol_list
-                    if sym in symbol_rows
-                }
-                alignment_detail_after = _build_alignment_detail(
-                    symbol_rows=symbol_rows_after,
-                    pair_overlaps=pair_overlaps_after,
-                    aligned_rows=int(len(frame)),
-                    minimum_required=min_required_samples,
-                )
-                if alignment_detail_after is not None:
-                    meta["alignment_detail_after_pruning"] = alignment_detail_after
-                dropped_text = ", ".join(overlap_pruning.get("dropped_symbols") or [])
-                kept_text = ", ".join(symbol_list)
-                warnings_out.append(
-                    f"Dropped {dropped_text} due to insufficient overlap; continuing with {kept_text}."
-                )
-        if frame.empty or len(frame) <= max_lag + 5:
+        usable_pair_overlaps = {
+            pair: int(samples)
+            for pair, samples in pair_overlaps.items()
+            if int(samples) >= min_required_samples
+        }
+        if requested_anchor and not any(
+            requested_anchor in _pair_overlap_symbols(pair, symbol_list)
+            for pair in usable_pair_overlaps
+        ):
+            return _causal_error(
+                f"Requested symbol {requested_anchor} had no usable pairwise overlap in its auto-expanded group.",
+                code="insufficient_overlap",
+                meta=meta,
+                warnings=warnings_out,
+            )
+        if frame.empty or not usable_pair_overlaps:
             details_out = [
                 _format_overlap_details(
                     symbol_rows=symbol_rows,
-                    aligned_rows=int(len(frame)),
+                    aligned_rows=int(len(joint_frame)),
                     minimum_required=min_required_samples,
                 )
             ]
@@ -1890,53 +1751,17 @@ def causal_discover_signals(  # noqa: C901
                 align_summary = _format_alignment_detail_summary(alignment_detail)
                 if align_summary:
                     details_out.append(align_summary)
-            if overlap_pruning is not None:
-                dropped_text = ", ".join(overlap_pruning.get("dropped_symbols") or [])
-                kept_text = ", ".join(overlap_pruning.get("kept_symbols") or [])
-                details_out.append(
-                    "Auto-pruning dropped "
-                    f"{dropped_text}; kept {kept_text}; aligned after pruning: {int(len(frame))}."
-                )
-            limit_message = _limit_constrained_alignment_message(
-                aligned_rows=int(len(frame)),
-                minimum_required=min_required_samples,
-                window_bars=int(window_bars),
-                max_lag=int(max_lag),
-                pair_overlaps=pair_overlaps,
-            )
             return _causal_error(
-                limit_message
-                or "Insufficient overlapping data between symbols to run tests.",
+                "Insufficient pairwise overlapping data between symbols to run tests.",
                 code="insufficient_overlap",
                 meta=meta,
                 warnings=warnings_out,
                 details=details_out,
             )
 
-        frame = frame.dropna(how="any")
-        meta["samples_aligned_clean"] = int(len(frame))
-        if frame.empty or len(frame) <= max_lag + 5:
-            details_out = [
-                _format_overlap_details(
-                    symbol_rows=symbol_rows,
-                    aligned_rows=int(len(frame)),
-                    minimum_required=min_required_samples,
-                )
-            ]
-            if alignment_detail is not None:
-                align_summary = _format_alignment_detail_summary(alignment_detail)
-                if align_summary:
-                    details_out.append(align_summary)
-            return _causal_error(
-                "Insufficient clean samples after alignment.",
-                code="insufficient_samples",
-                meta=meta,
-                warnings=warnings_out,
-                details=details_out,
-            )
-
+        frame = frame.dropna(how="all")
         transformed = _transform_frame(frame, transform_value)
-        if transformed.empty or len(transformed) <= max_lag + 2:
+        if transformed.empty:
             return _causal_error(
                 "Transform produced insufficient samples for testing. Try using more history or a different transform.",
                 code="insufficient_samples",
@@ -1944,27 +1769,31 @@ def causal_discover_signals(  # noqa: C901
                 warnings=warnings_out,
             )
 
-        if normalize:
-            transformed = _standardize_frame(transformed)
-            transformed = transformed.dropna(how="any")
-            if transformed.empty or len(transformed) <= max_lag + 2:
-                return _causal_error(
-                    "Normalization resulted in insufficient samples.",
-                    code="insufficient_samples",
-                    meta=meta,
-                    warnings=warnings_out,
-                )
-
         rows: List[Dict[str, object]] = []
         pair_attempts = 0
         pair_success = 0
         pair_failures: List[Dict[str, Any]] = []
+        pair_skips: List[Dict[str, Any]] = []
         for effect in transformed.columns:
             for cause in transformed.columns:
                 if effect == cause:
                     continue
-                subset = transformed[[effect, cause]].dropna(how="any")
+                subset = (
+                    transformed[[effect, cause]]
+                    .dropna(how="any")
+                    .tail(int(window_bars))
+                )
+                if normalize and not subset.empty:
+                    subset = _standardize_frame(subset).dropna(how="any")
                 if len(subset) <= max_lag + 2:
+                    pair_skips.append(
+                        {
+                            "effect": effect,
+                            "cause": cause,
+                            "samples": int(len(subset)),
+                            "reason": "insufficient_pairwise_samples",
+                        }
+                    )
                     continue
                 pair_attempts += 1
                 try:
@@ -2022,6 +1851,17 @@ def causal_discover_signals(  # noqa: C901
                         "significant": bool(best_p < significance),
                     }
                 )
+        if requested_anchor and not any(
+            row.get("effect") == requested_anchor or row.get("cause") == requested_anchor
+            for row in rows
+        ):
+            return _causal_error(
+                f"Requested symbol {requested_anchor} had no usable pairwise overlap in its auto-expanded group.",
+                code="insufficient_overlap",
+                meta=meta,
+                warnings=warnings_out,
+                details=pair_skips or None,
+            )
         pair_correction_factor = max(1, len(rows))
         for row in rows:
             lag_adjusted = float(row["p_value"])
@@ -2037,14 +1877,17 @@ def causal_discover_signals(  # noqa: C901
         significant_rows = [
             row for row in rows_sorted if bool(row.get("significant"))
         ]
+        pair_sample_counts = [int(row["samples"]) for row in rows]
         meta.update(
             {
                 "group_hint": group_hint,
                 "symbols_used": list(transformed.columns),
-                "samples_aligned": int(len(transformed)),
+                "pairwise_samples_min": min(pair_sample_counts) if pair_sample_counts else 0,
+                "pairwise_samples_max": max(pair_sample_counts) if pair_sample_counts else 0,
                 "pairs_attempted": int(pair_attempts),
                 "pairs_tested": int(pair_success),
                 "pairs_failed": int(max(pair_attempts - pair_success, 0)),
+                "pairs_skipped": int(len(pair_skips)),
                 "p_value_correction": "bonferroni_across_lags_and_pairs",
                 "pair_correction_factor": pair_correction_factor,
             }
@@ -2053,6 +1896,11 @@ def causal_discover_signals(  # noqa: C901
             meta["pair_failures"] = pair_failures
             warnings_out.append(
                 f"{max(pair_attempts - pair_success, 0)} pairwise Granger tests failed; see meta['pair_failures']."
+            )
+        if pair_skips:
+            meta["pair_skips"] = pair_skips[:20]
+            warnings_out.append(
+                f"{len(pair_skips)} directed pairs were skipped for insufficient pairwise samples."
             )
         rows_for_output = (
             rows_sorted
