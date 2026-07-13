@@ -34,6 +34,23 @@ def _mapping(row: Any) -> Dict[str, Any]:
     return {name: getattr(row, name) for name in dir(row) if not name.startswith("_") and not callable(getattr(row, name, None))}
 
 
+def _filtered_historical_returns(
+    returns: pd.DataFrame,
+    *,
+    alpha: float,
+) -> tuple[pd.DataFrame, pd.Series]:
+    """Standardize each return by volatility known before that return."""
+    ewma_std = returns.ewm(alpha=alpha, adjust=False).std()
+    current_vol = ewma_std.iloc[-1].replace(0, np.nan)
+    conditional_vol = ewma_std.shift(1).replace(0, np.nan)
+    standardized = (
+        returns.div(conditional_vol)
+        .replace([np.inf, -np.inf], np.nan)
+        .dropna()
+    )
+    return standardized, current_vol
+
+
 def _frame(rows: Any) -> pd.DataFrame:
     if rows is None:
         return pd.DataFrame()
@@ -944,9 +961,11 @@ def decompose_portfolio_risk(request: PortfolioRiskDecomposeRequest, gateway: An
         return {"error": "At least 100 aligned returns are required.", "error_code": "insufficient_data", "aligned_rows": len(returns)}
     returns.columns = list(series)
     alpha = 1.0 - math.exp(math.log(0.5) / request.ewma_half_life)
-    ewma_vol = returns.ewm(alpha=alpha, adjust=False).std().iloc[-1].replace(0, np.nan)
-    current_vol = ewma_vol.copy()
-    standardized = returns.div(returns.ewm(alpha=alpha, adjust=False).std()).replace([np.inf, -np.inf], np.nan).dropna()
+    standardized, current_vol = _filtered_historical_returns(
+        returns,
+        alpha=alpha,
+    )
+    ewma_vol = current_vol.copy()
     if request.method == "historical":
         standardized = returns.copy()
         current_vol = pd.Series(1.0, index=returns.columns)

@@ -3,9 +3,11 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import numpy as np
+import pandas as pd
 import pytest
 
 from mtdata.analytics.engines import (
+    _filtered_historical_returns,
     analyze_execution_quality,
     analyze_microstructure,
     decompose_portfolio_risk,
@@ -273,6 +275,21 @@ def test_portfolio_risk_reconciles_component_expected_shortfall() -> None:
     assert component_total == pytest.approx(row["expected_shortfall"])
     assert "correlation_to_one_loss_proxy" not in result["stresses"]
     assert result["stresses"]["perfect_positive_correlation_1sigma"][0]["horizon_bars"] == 1
+
+
+def test_filtered_historical_shock_uses_pre_shock_volatility() -> None:
+    baseline = np.tile(np.array([-0.01, 0.01]), 60)
+    values = np.concatenate([baseline, np.array([0.20])])
+    returns = pd.DataFrame({"EURUSD": values})
+    alpha = 0.1
+
+    standardized, _ = _filtered_historical_returns(returns, alpha=alpha)
+    concurrent_vol = returns.ewm(alpha=alpha, adjust=False).std().iloc[-1, 0]
+
+    assert standardized.iloc[-1, 0] == pytest.approx(
+        values[-1] / returns.ewm(alpha=alpha, adjust=False).std().shift(1).iloc[-1, 0]
+    )
+    assert standardized.iloc[-1, 0] > values[-1] / concurrent_vol * 2.0
 
 
 def test_portfolio_risk_fails_closed_when_symbol_history_is_missing() -> None:
