@@ -42,6 +42,29 @@ def _mock_fetch_history(symbol: str, timeframe: str, limit: int, as_of=None) -> 
 
 
 @patch("mtdata.core.regime.api._fetch_history", side_effect=_mock_fetch_history)
+def test_clustering_reliability_uses_feature_space(_mocked_fetch) -> None:
+    result = regime_detect(
+        symbol="TEST",
+        timeframe="H1",
+        limit=800,
+        method="clustering",
+        params={"window_size": 20, "n_states": 2},
+        detail="full",
+        __cli_raw=True,
+    )
+
+    assert "error" not in result
+    reliability = result["reliability"]
+    assert reliability["source"] == "feature_cluster_separation"
+    assert reliability["feature_variance_ratio"] >= 0.375
+    assert reliability["confidence"] >= 0.75
+    assert reliability["reliability_label"] == "high"
+
+    volatilities = sorted(result["regime_params"]["volatility"])
+    assert volatilities[-1] >= volatilities[0] * 2.0
+
+
+@patch("mtdata.core.regime.api._fetch_history", side_effect=_mock_fetch_history)
 def main(_mocked_fetch) -> int:
     try:
         res = regime_detect(

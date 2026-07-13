@@ -270,6 +270,39 @@ def _common_reliability(
     return out
 
 
+def _feature_cluster_separation(
+    features: np.ndarray,
+    labels: np.ndarray,
+) -> float:
+    """Return the share of feature-space variance explained by cluster labels."""
+    feature_array = np.asarray(features, dtype=float)
+    label_array = np.asarray(labels, dtype=int).reshape(-1)
+    if (
+        feature_array.ndim != 2
+        or feature_array.shape[0] != label_array.size
+        or feature_array.shape[0] < 2
+    ):
+        return 0.0
+
+    finite_rows = np.isfinite(feature_array).all(axis=1)
+    feature_array = feature_array[finite_rows]
+    label_array = label_array[finite_rows]
+    if feature_array.shape[0] < 2 or np.unique(label_array).size < 2:
+        return 0.0
+
+    overall_center = np.mean(feature_array, axis=0)
+    total_ss = float(np.sum((feature_array - overall_center) ** 2))
+    if total_ss <= np.finfo(float).eps:
+        return 0.0
+
+    within_ss = 0.0
+    for label in np.unique(label_array):
+        cluster = feature_array[label_array == label]
+        cluster_center = np.mean(cluster, axis=0)
+        within_ss += float(np.sum((cluster - cluster_center) ** 2))
+    return float(np.clip(1.0 - (within_ss / total_ss), 0.0, 1.0))
+
+
 def _append_warnings(payload: Dict[str, Any], warnings_to_add: List[str]) -> None:
     if not warnings_to_add:
         return
@@ -2325,35 +2358,20 @@ def regime_detect(  # noqa: C901
                 if output == "summary":
                     return _finish(payload)
 
-            # Add reliability based on cluster separation
-            # Compute variance ratio: between-cluster variance / total variance
-            total_var = float(np.var(x)) if len(x) > 1 else 0.0
-            if total_var > 1e-9:
-                between_var = 0.0
-                overall_mean = float(np.mean(x))
-                for s in range(n_states_cluster):
-                    mask = full_states == s
-                    if mask.any():
-                        cluster_mean = float(np.mean(x[mask]))
-                        cluster_size = int(mask.sum())
-                        between_var += cluster_size * (cluster_mean - overall_mean) ** 2
-                between_var /= len(x)
-                variance_ratio = between_var / total_var
-                reliability_score = min(
-                    1.0, variance_ratio * 2
-                )  # Scale for interpretability
-            else:
-                variance_ratio = 0.0
-                reliability_score = 0.0
+            # Score the final labels in the feature space used to fit them.
+            feature_variance_ratio = _feature_cluster_separation(X_final, labels)
+            reliability_score = min(
+                1.0, feature_variance_ratio * 2
+            )  # Scale for interpretability
 
             payload["reliability"] = {
                 "confidence": round(reliability_score, 4),
-                "variance_ratio": round(variance_ratio, 4),
-                "source": "cluster_separation",
+                "feature_variance_ratio": round(feature_variance_ratio, 4),
+                "source": "feature_cluster_separation",
             }
             payload["reliability"] = _common_reliability(
                 payload["reliability"],
-                source="cluster_separation",
+                source="feature_cluster_separation",
             )
 
             return _finish(
