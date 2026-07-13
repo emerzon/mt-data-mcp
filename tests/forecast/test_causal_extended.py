@@ -760,6 +760,14 @@ class TestCausalDiscoverSignals:
         assert result["error_code"] == "invalid_detail"
         assert "detail must be one of" in result["error"]
 
+    @pytest.mark.parametrize("transform", ["log_returns", "returns", "bogus"])
+    def test_invalid_transform_is_rejected_before_execution(self, transform):
+        result = self._unwrapped()("A,B", transform=transform)
+
+        assert result["success"] is False
+        assert result["error_code"] == "invalid_transform"
+        assert "Valid options" in result["error"]
+
     @patch("statsmodels.tsa.stattools.grangercausalitytests")
     @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})
     @patch("mtdata.core.causal._fetch_series")

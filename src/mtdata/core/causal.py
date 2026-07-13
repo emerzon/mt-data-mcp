@@ -1625,6 +1625,14 @@ def causal_discover_signals(  # noqa: C901
             "normalize": bool(normalize),
             "detail": detail_mode,
         }
+        transform_value = _normalize_transform_name(transform)
+        if transform_value is None:
+            return _causal_error(
+                "Invalid transform. Valid options: log_return, pct, diff, level, log_level",
+                code="invalid_transform",
+                meta=meta,
+            )
+        meta["transform"] = transform_value
         connection_error = _causal_connection_error()
         if connection_error is not None:
             return _causal_error(
@@ -1927,7 +1935,7 @@ def causal_discover_signals(  # noqa: C901
                 details=details_out,
             )
 
-        transformed = _transform_frame(frame, transform)
+        transformed = _transform_frame(frame, transform_value)
         if transformed.empty or len(transformed) <= max_lag + 2:
             return _causal_error(
                 "Transform produced insufficient samples for testing. Try using more history or a different transform.",
@@ -2057,7 +2065,6 @@ def causal_discover_signals(  # noqa: C901
             output_offset,
         )
         meta["output_truncated"] = output_truncated
-        transform_value = _normalize_transform_name(transform) or str(transform).strip().lower()
         out: Dict[str, Any] = {
             "success": True,
             "result": "links_found" if significant_rows else "no_links_found",
