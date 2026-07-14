@@ -36,8 +36,7 @@ logger = logging.getLogger(__name__)
 def trade_place(request: TradePlaceRequest) -> dict:
     """Place a market or pending order.
 
-    Defaults to live execution. Set `dry_run=true` to preview without sending
-    an order.
+    Defaults to preview mode. Set `dry_run=false` explicitly to send an order.
     Required inputs: symbol, volume, order_type.
     - BUY/SELL: market orders; omit `price`.
     - BUY_LIMIT/BUY_STOP/SELL_LIMIT/SELL_STOP: pending (requires `price`).
@@ -80,8 +79,8 @@ def trade_place(request: TradePlaceRequest) -> dict:
 def trade_modify(request: TradeModifyRequest) -> dict:
     """Modify an open position or pending order by ticket.
 
-    Defaults to live execution. Set `dry_run=true` to preview without sending a
-    live modify request.
+    Defaults to preview mode. Set `dry_run=false` explicitly to send a live
+    modify request.
     Risk-increasing pending-order and position-protection changes can be
     blocked by configured trade guardrails, while close/reduce flows remain
     allowed.
@@ -110,7 +109,7 @@ def trade_close(request: TradeCloseRequest) -> dict:
     Any bulk close requires `close_all=true`.
     Set `volume` only to partially close a specific open position by ticket.
     `volume` is invalid without `ticket`.
-    Defaults to live execution. Set `dry_run=true` to preview without sending a
+    Defaults to preview mode. Set `dry_run=false` explicitly to send a live
     close/cancel request.
     """
     return run_logged_operation(

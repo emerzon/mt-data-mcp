@@ -28,7 +28,7 @@ Stuck on an acronym in output (BOCPD, Kelly, CVaR, …)? See the [glossary quick
 | `forecast_*`, `regime_detect`, `patterns_detect` | `trade_modify` |
 | `report_generate`, `trade_risk_analyze`, `trade_get_*` | `trade_close` |
 
-`trade_place`, `trade_modify`, and `trade_close` default to **live** (`dry_run=false`) unless you pass `--dry-run true`. Bulk closes still require `--close-all` and explicit confirmation. Booleans on the CLI are `true` / `false`.
+`trade_place`, `trade_modify`, and `trade_close` default to **preview mode** (`dry_run=true`). Set `--dry-run false` explicitly for a live request. Bulk closes still require `--close-all` and explicit confirmation. Booleans on the CLI are `true` / `false`.
 
 Full runbook: [TRADING_SAFETY.md](TRADING_SAFETY.md).
 
@@ -523,8 +523,8 @@ mtdata-cli trade_place BTCUSD --volume 0.01 --order-type BUY \
 For account-level safety, configure trade guardrails in [ENV_VARS.md](ENV_VARS.md#trade-guardrails) before moving from preview to live execution.
 
 ### Close or Modify Positions
-Use exact tickets whenever possible. Because `trade_close` defaults to live
-execution, pass `--dry-run true` explicitly when previewing a close:
+Use exact tickets whenever possible. `trade_close` defaults to preview mode;
+set `--dry-run false` explicitly only when you intend a live close:
 
 ```bash
 mtdata-cli trade_get_open --json

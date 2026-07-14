@@ -12,7 +12,7 @@ from ...output_contract import normalize_output_extras
 LIVE_TRADE_MUTATION_TOOLS = frozenset({"trade_place", "trade_modify", "trade_close"})
 LIVE_TRADE_MUTATION_WARNING = (
     "LIVE ORDER WARNING: this command can send real MT5 trade requests when "
-    "--dry-run false. Use --dry-run true to preview without sending an order."
+    "--dry-run false. Preview mode is the default."
 )
 
 

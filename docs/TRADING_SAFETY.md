@@ -2,7 +2,7 @@
 
 If you only skim one trading doc, make it this one. The `trade_*` tools send **real requests** to the MT5 account currently logged into the terminal. This runbook covers previewing orders, validation, account guardrails, and broker quirks for `trade_place`, `trade_modify`, and `trade_close`.
 
-> **These tools default to LIVE execution.** `dry_run` defaults to **`false`**. Without `--dry-run true`, the request goes to MT5. Use a **demo account** until you trust your setup — mtdata has no separate paper-trading mode.
+> **These tools default to preview mode.** `dry_run` defaults to **`true`**. A request reaches MT5 only when you explicitly set `--dry-run false`. Use a **demo account** until you trust your setup — mtdata has no separate paper-trading mode.
 
 **Dense terms:** [Dry-run](GLOSSARY.md#dry-run) · [Trade guardrails](GLOSSARY.md#trade-guardrails) · [Slippage](GLOSSARY.md#slippage) · [Lot size](GLOSSARY.md#lot-size) · [TP/SL](GLOSSARY.md#tpsl-take-profit--stop-loss)
 
@@ -62,7 +62,7 @@ Requires `symbol`, `volume`, and `order_type`.
 | `--magic` | `MTDATA_ORDER_MAGIC` | Strategy identifier stamped on the order |
 | `--comment` | — | Free-text order comment |
 | `--idempotency-key` | — | In-process dedupe (~5-min TTL; not persisted/shared) |
-| `--dry-run` | `false` | **Preview only when `true`** |
+| `--dry-run` | `true` | Set `false` explicitly for live execution |
 | `--detail` | `compact` | Use `full` for execution diagnostics |
 
 ```bash

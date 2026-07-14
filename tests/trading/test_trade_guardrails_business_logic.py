@@ -555,6 +555,7 @@ def test_run_trade_place_reduce_only_uses_open_positions(restore_trade_guardrail
                 volume=0.25,
                 order_type="SELL",
                 require_sl_tp=False,
+                dry_run=False,
             ),
             normalize_order_type_input=lambda value: ("SELL", None),
             normalize_pending_expiration=lambda value: (value, False),

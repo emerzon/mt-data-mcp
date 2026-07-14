@@ -197,6 +197,7 @@ def test_run_trade_place_logs_finish_event(caplog):
         volume=0.1,
         order_type="BUY",
         require_sl_tp=False,
+        dry_run=False,
     )
 
     with caplog.at_level("DEBUG", logger="mtdata.core.trading.use_cases"):
@@ -225,6 +226,7 @@ def test_run_trade_place_ignores_gtc_for_market_buy_sell_without_price():
         order_type="BUY",
         expiration="GTC",
         require_sl_tp=False,
+        dry_run=False,
     )
     place_market_order = MagicMock(return_value={"success": True, "path": "market"})
     place_pending_order = MagicMock(return_value={"success": True, "path": "pending"})
@@ -461,6 +463,7 @@ def test_run_trade_place_uses_candidate_tickets_when_position_ticket_is_missing(
         stop_loss=1.08,
         take_profit=1.12,
         auto_close_on_sl_tp_fail=False,
+        dry_run=False,
     )
 
     result = run_trade_place(
@@ -491,6 +494,7 @@ def test_run_trade_place_auto_close_uses_candidate_ticket_when_primary_is_missin
         stop_loss=1.08,
         take_profit=1.12,
         auto_close_on_sl_tp_fail=True,
+        dry_run=False,
     )
     close_calls = []
 
@@ -526,6 +530,7 @@ def test_run_trade_place_without_any_ticket_guides_to_trade_get_open():
         order_type="BUY",
         stop_loss=1.08,
         take_profit=1.12,
+        dry_run=False,
     )
 
     result = run_trade_place(

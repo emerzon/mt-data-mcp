@@ -1502,7 +1502,7 @@ def _print_extended_help(functions: Dict[str, ToolInfo], query: str) -> None:
                 "  Recovery: auto_close_on_sl_tp_fail defaults true; set --auto-close-on-sl-tp-fail false only if you will handle unprotected fills manually."
             )
             print(
-                "  Preview: set --dry-run true to preview routing without sending an order to MT5."
+                "  Preview: dry_run=true is the default; set --dry-run false explicitly to send an order to MT5."
             )
         print(f"  Example: {base_example}")
         if advanced_example and advanced_example != base_example:

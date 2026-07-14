@@ -977,7 +977,7 @@ class TestResolveParamKwargs:
 
     def test_trading_execution_flags_have_actionable_help(self):
         place_dry_run_kwargs, _ = _resolve_param_kwargs(
-            {"name": "dry_run", "type": bool, "required": False, "default": False},
+            {"name": "dry_run", "type": bool, "required": False, "default": True},
             None,
             cmd_name="trade_place",
         )
@@ -992,7 +992,7 @@ class TestResolveParamKwargs:
             cmd_name="trade_close",
         )
         close_dry_run_kwargs, _ = _resolve_param_kwargs(
-            {"name": "dry_run", "type": bool, "required": False, "default": False},
+            {"name": "dry_run", "type": bool, "required": False, "default": True},
             None,
             cmd_name="trade_close",
         )
@@ -1011,7 +1011,7 @@ class TestResolveParamKwargs:
         assert "require_sl_tp parameter" != require_sl_tp_kwargs["help"]
         assert "stop_loss and take_profit" in require_sl_tp_kwargs["help"]
         assert "Close all matching open positions" in close_all_kwargs["help"]
-        assert close_dry_run_kwargs["default"] is False
+        assert close_dry_run_kwargs["default"] is True
         assert "dedupe key" in modify_key_kwargs["help"]
 
     def test_report_generate_format_help_is_removed_output_help(self):

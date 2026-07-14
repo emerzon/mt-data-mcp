@@ -14,6 +14,7 @@ def test_run_trade_place_idempotency_does_not_sticky_cache_connection_errors():
         order_type="BUY",
         require_sl_tp=False,
         idempotency_key="k1",
+        dry_run=False,
     )
     place_market_order = MagicMock(
         side_effect=[
@@ -60,6 +61,7 @@ def test_run_trade_place_replays_duplicate_result_without_resending():
         order_type="BUY",
         require_sl_tp=False,
         idempotency_key="place-1",
+        dry_run=False,
     )
 
     first = run_trade_place(
@@ -102,6 +104,7 @@ def test_run_trade_place_rejects_idempotency_key_reuse_for_different_payload():
         order_type="BUY",
         require_sl_tp=False,
         idempotency_key="place-1",
+        dry_run=False,
     )
     second_request = TradePlaceRequest(
         symbol="EURUSD",
@@ -109,6 +112,7 @@ def test_run_trade_place_rejects_idempotency_key_reuse_for_different_payload():
         order_type="BUY",
         require_sl_tp=False,
         idempotency_key="place-1",
+        dry_run=False,
     )
 
     first = run_trade_place(
@@ -149,6 +153,7 @@ def test_run_trade_modify_replays_duplicate_result_without_resending():
         ticket=123,
         stop_loss=1.0,
         idempotency_key="modify-1",
+        dry_run=False,
     )
 
     first = run_trade_modify(
@@ -197,6 +202,7 @@ def test_run_trade_place_replays_inflight_duplicate_after_first_request_finishes
         order_type="BUY",
         require_sl_tp=False,
         idempotency_key="place-1",
+        dry_run=False,
     )
     results = [None, None]
 
@@ -252,6 +258,7 @@ def test_run_trade_place_rejects_inflight_key_reuse_for_different_payload():
         order_type="BUY",
         require_sl_tp=False,
         idempotency_key="place-1",
+        dry_run=False,
     )
     second_request = TradePlaceRequest(
         symbol="EURUSD",
@@ -259,6 +266,7 @@ def test_run_trade_place_rejects_inflight_key_reuse_for_different_payload():
         order_type="BUY",
         require_sl_tp=False,
         idempotency_key="place-1",
+        dry_run=False,
     )
     results = [None, None]
 

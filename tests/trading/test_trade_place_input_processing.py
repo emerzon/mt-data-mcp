@@ -52,9 +52,9 @@ def test_trading_order_requests_expose_canonical_detail_field() -> None:
 
 def test_execution_request_dry_run_defaults() -> None:
     # All trade tools execute by default; pass dry_run=true to preview.
-    assert TradePlaceRequest().dry_run is False
-    assert TradeModifyRequest(ticket=100).dry_run is False
-    assert TradeCloseRequest(ticket=100).dry_run is False
+    assert TradePlaceRequest().dry_run is True
+    assert TradeModifyRequest(ticket=100).dry_run is True
+    assert TradeCloseRequest(ticket=100).dry_run is True
 
 
 def test_normalize_order_type_rejects_mt5_integer() -> None:

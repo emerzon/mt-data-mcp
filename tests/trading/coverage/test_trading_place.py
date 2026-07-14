@@ -249,13 +249,25 @@ class TestTradePlace:
     @patch("mtdata.core.trading._place_market_order")
     def test_dispatches_to_market(self, mock_market):
         mock_market.return_value = {"retcode": 10009}
-        trade_place(symbol="EURUSD", volume=0.01, order_type="BUY", require_sl_tp=False)
+        trade_place(
+            symbol="EURUSD",
+            volume=0.01,
+            order_type="BUY",
+            require_sl_tp=False,
+            dry_run=False,
+        )
         mock_market.assert_called_once()
 
     @patch("mtdata.core.trading._place_pending_order")
     def test_dispatches_to_pending_explicit_type(self, mock_pending):
         mock_pending.return_value = {"success": True}
-        trade_place(symbol="EURUSD", volume=0.01, order_type="BUY_LIMIT", price=1.09)
+        trade_place(
+            symbol="EURUSD",
+            volume=0.01,
+            order_type="BUY_LIMIT",
+            price=1.09,
+            dry_run=False,
+        )
         mock_pending.assert_called_once()
 
     def test_rejects_market_order_with_price(self):
