@@ -659,15 +659,6 @@ def _symbol_ready_guard(
                 pass
 
 
-def _epoch_to_utc_iso(epoch_seconds: Optional[float]) -> Optional[str]:
-    try:
-        if epoch_seconds is None:
-            return None
-        return datetime.fromtimestamp(float(epoch_seconds), tz=timezone.utc).isoformat()
-    except Exception:
-        return None
-
-
 def inspect_mt5_time_alignment(
     symbol: str = "EURUSD",
     probe_timeframe: str = "M1",
@@ -688,6 +679,8 @@ def inspect_mt5_time_alignment(
     Legacy offset-related keyword arguments remain accepted so callers do not
     break, but broker offsets are not inferred or applied to UTC epochs.
     """
+    from .time import format_epoch_utc
+
     out: Dict[str, Any] = {
         "symbol": str(symbol),
         "probe_timeframe": str(probe_timeframe),
@@ -730,7 +723,7 @@ def inspect_mt5_time_alignment(
 
     now_utc_epoch = float(time.time())
     out["now_utc_epoch"] = now_utc_epoch
-    out["now_utc_time"] = _epoch_to_utc_iso(now_utc_epoch)
+    out["now_utc_time"] = format_epoch_utc(now_utc_epoch)
 
     raw_tick_epoch: Optional[float] = None
     try:
@@ -744,7 +737,7 @@ def inspect_mt5_time_alignment(
     if raw_tick_epoch and raw_tick_epoch > 0:
         tick_age_seconds = float(now_utc_epoch - raw_tick_epoch)
         out["raw_tick_epoch"] = raw_tick_epoch
-        out["raw_tick_time"] = _epoch_to_utc_iso(raw_tick_epoch)
+        out["raw_tick_time"] = format_epoch_utc(raw_tick_epoch)
         out["tick_age_seconds"] = tick_age_seconds
 
     current_bar_open_epoch: Optional[float] = None
@@ -779,14 +772,14 @@ def inspect_mt5_time_alignment(
     out.update(
         {
             "current_bar_open_utc_epoch": current_bar_open_epoch,
-            "current_bar_open_utc_time": _epoch_to_utc_iso(current_bar_open_epoch),
+            "current_bar_open_utc_time": format_epoch_utc(current_bar_open_epoch),
             "expected_current_bar_open_utc_epoch": expected_current_bar_open_epoch,
-            "expected_current_bar_open_utc_time": _epoch_to_utc_iso(expected_current_bar_open_epoch),
+            "expected_current_bar_open_utc_time": format_epoch_utc(expected_current_bar_open_epoch),
             "current_bar_delta_seconds": current_bar_delta_seconds,
             "last_closed_bar_open_utc_epoch": last_closed_bar_open_epoch,
-            "last_closed_bar_open_utc_time": _epoch_to_utc_iso(last_closed_bar_open_epoch),
+            "last_closed_bar_open_utc_time": format_epoch_utc(last_closed_bar_open_epoch),
             "expected_last_closed_bar_open_utc_epoch": expected_last_closed_bar_open_epoch,
-            "expected_last_closed_bar_open_utc_time": _epoch_to_utc_iso(expected_last_closed_bar_open_epoch),
+            "expected_last_closed_bar_open_utc_time": format_epoch_utc(expected_last_closed_bar_open_epoch),
             "last_closed_bar_delta_seconds": last_closed_bar_delta_seconds,
         }
     )
