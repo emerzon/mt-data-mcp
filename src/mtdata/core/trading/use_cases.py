@@ -1304,6 +1304,7 @@ def run_trade_place(  # noqa: C901
                     if "invalid_protection_levels" not in blockers:
                         blockers.append("invalid_protection_levels")
                 preview["validation_passed"] = False
+                preview["preview_ok"] = False
                 sl_tp_error = str(preview.get("sl_tp_error") or "").strip()
                 if sl_tp_error:
                     preview["preview_error"] = sl_tp_error
@@ -1324,6 +1325,7 @@ def run_trade_place(  # noqa: C901
                     if blocker not in blockers:
                         blockers.append(blocker)
                 preview["validation_passed"] = False
+                preview["preview_ok"] = False
                 preview["actionability"] = "preview_failed"
                 preview["no_action"] = True
                 preview["no_action_reason"] = "dry_run_preview_error"

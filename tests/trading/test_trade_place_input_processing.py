@@ -365,6 +365,7 @@ def test_trade_place_dry_run_preview_error_uses_standard_error_shape() -> None:
         )
 
     assert out.get("success") is False
+    assert out.get("preview_ok") is False
     assert out.get("error") == "Failed to get current price for BTCUSD"
     assert out.get("error_code") == "trade_preview_error"
     assert out.get("operation") == "trade_place"
@@ -397,6 +398,7 @@ def test_trade_place_dry_run_rejects_invalid_live_protection_preview() -> None:
         )
 
     assert out.get("success") is False
+    assert out.get("preview_ok") is False
     assert out.get("dry_run") is True
     assert out.get("no_action") is True
     assert out.get("error_code") == "invalid_protection_levels"
@@ -481,6 +483,7 @@ def test_trade_place_dry_run_rejects_bool_like_invalid_protection_preview() -> N
         )
 
     assert out.get("success") is False
+    assert out.get("preview_ok") is False
     assert out.get("dry_run") is True
     assert out.get("no_action") is True
     assert out.get("error_code") == "invalid_protection_levels"
