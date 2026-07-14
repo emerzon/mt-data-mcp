@@ -595,6 +595,14 @@ def volatility_term_structure(
                 {
                     "horizon_bars": int(horizon),
                     "current_volatility": round(current, 8),
+                    "per_bar_volatility": round(current / factor, 8),
+                    "stability": (
+                        "very_low"
+                        if horizon < 5
+                        else "low"
+                        if horizon < 10
+                        else "moderate"
+                    ),
                     "percentile_rank": round(percentile_rank, 2),
                     "cone": cone,
                     "samples": int(len(distribution)),
@@ -607,16 +615,19 @@ def volatility_term_structure(
             "symbol": symbol,
             "timeframe": timeframe,
             "annualized": bool(annualize),
+            "analysis_kind": "historical_realized_volatility_cones",
+            "comparable_to_options_iv": False,
             "unit": "annualized_decimal_volatility" if annualize else "per_bar_decimal_volatility",
             "unit_note": (
                 "Volatility values are decimal return fractions; 0.01 means 1%."
             ),
             "units": {
                 "current_volatility": "decimal_return_fraction",
+                "per_bar_volatility": "per_bar_decimal_return_fraction",
                 "cone": "decimal_return_fraction",
                 "percentile_rank": "percentage_points (0-100)",
             },
-            "cone_methodology": "percentiles of the historical distribution of rolling realized volatility at each horizon; percentile_rank shows where current vol sits in that distribution",
+            "cone_methodology": "percentiles of the historical distribution of rolling realized volatility at each horizon; percentile_rank shows where current vol sits in that distribution; short horizons are sampling-noisy and this is not an options implied-volatility term structure",
             "items": rows,
             "count": len(rows),
         }

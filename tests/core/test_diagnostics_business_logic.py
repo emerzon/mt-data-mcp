@@ -155,6 +155,10 @@ def test_volatility_term_structure_returns_requested_horizons(monkeypatch):
     assert result["success"] is True
     assert [row["horizon_bars"] for row in result["items"]] == [1, 5, 20]
     assert all("p50" in row["cone"] for row in result["items"])
+    assert result["items"][0]["stability"] == "very_low"
+    assert all("per_bar_volatility" in row for row in result["items"])
+    assert result["comparable_to_options_iv"] is False
+    assert result["analysis_kind"] == "historical_realized_volatility_cones"
     assert result["unit"] == "annualized_decimal_volatility"
     assert "0.01 means 1%" in result["unit_note"]
     assert result["units"]["current_volatility"] == "decimal_return_fraction"
