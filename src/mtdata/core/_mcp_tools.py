@@ -701,6 +701,8 @@ def _filter_output_fields(
                 out[key] = subvalue
                 matched = True
                 continue
+            if field == "units":
+                continue
             if preserve_meta and field in _FIELD_SELECTION_META_KEYS:
                 out[key] = subvalue
                 continue
@@ -742,25 +744,91 @@ def _filter_output_fields(
     return value, False
 
 
+def _filter_output_path(value: Any, path: tuple[str, ...]) -> tuple[Any, bool]:
+    if not path:
+        return value, True
+    if isinstance(value, dict):
+        key = path[0]
+        if key not in value:
+            return {}, False
+        filtered, matched = _filter_output_path(value[key], path[1:])
+        return ({key: filtered}, True) if matched else ({}, False)
+    if isinstance(value, list):
+        items = []
+        for item in value:
+            filtered, matched = _filter_output_path(item, path)
+            if matched:
+                items.append(filtered)
+        return items, bool(items)
+    if isinstance(value, tuple):
+        items = []
+        for item in value:
+            filtered, matched = _filter_output_path(item, path)
+            if matched:
+                items.append(filtered)
+        return tuple(items), bool(items)
+    return value, False
+
+
+def _merge_output_field_selection(left: Any, right: Any) -> Any:
+    if isinstance(left, dict) and isinstance(right, dict):
+        out = dict(left)
+        for key, value in right.items():
+            out[key] = (
+                _merge_output_field_selection(out[key], value)
+                if key in out
+                else value
+            )
+        return out
+    if isinstance(left, list) and isinstance(right, list) and len(left) == len(right):
+        return [
+            _merge_output_field_selection(a, b)
+            for a, b in zip(left, right)
+        ]
+    if isinstance(left, tuple) and isinstance(right, tuple) and len(left) == len(right):
+        return tuple(
+            _merge_output_field_selection(a, b)
+            for a, b in zip(left, right)
+        )
+    return right
+
+
 def _select_output_fields(value: Any, fields: Any) -> Any:
     requested = _normalize_output_fields(fields)
     if not requested or not isinstance(value, dict):
         return value
-    wanted = set(requested)
-    filtered, matched = _filter_output_fields(
-        value,
-        wanted,
-        preserve_meta=True,
-    )
-    if matched:
-        return filtered
+    selected = {
+        key: subvalue
+        for key, subvalue in value.items()
+        if key in _FIELD_SELECTION_META_KEYS
+    }
+    unresolved: list[str] = []
+    for requested_field in requested:
+        if "." in requested_field:
+            filtered, matched = _filter_output_path(
+                value,
+                tuple(part for part in requested_field.split(".") if part),
+            )
+        else:
+            filtered, matched = _filter_output_fields(
+                value,
+                {requested_field},
+                preserve_meta=False,
+            )
+        if not matched:
+            unresolved.append(requested_field)
+            continue
+        selected = _merge_output_field_selection(selected, filtered)
+    if not unresolved:
+        return selected
     if value.get("error"):
         return value
     return {
         "success": False,
         "error_code": "invalid_output_fields",
-        "error": "No requested output fields were present.",
+        "error": "One or more requested output fields were not present.",
         "requested_fields": list(requested),
+        "unresolved_fields": unresolved,
         "available_fields": sorted(str(key) for key in value),
     }
 
