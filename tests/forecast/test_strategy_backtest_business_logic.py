@@ -112,6 +112,10 @@ def test_strategy_backtest_compact_mode_excludes_trades(monkeypatch):
     assert out["summary"]["num_trades"] == 1
     assert out["summary"]["sample_status"] == "insufficient_trades"
     assert out["summary"]["minimum_trades"] == 30
+    assert out["is_signal"] is False
+    assert out["usage"] == "research_only"
+    assert out["usable_for_live_trading"] is False
+    assert out["last_signal"]["signal_status"] == "historical_observation_only"
     assert "metrics_reliability" not in out["summary"]
     assert "trades_observed" not in out["summary"]
     assert out["metrics"]["metrics_reliability"] == "low"

@@ -1131,6 +1131,9 @@ def strategy_backtest(  # noqa: C901
 
         result: Dict[str, Any] = {
             "success": True,
+            "is_signal": False,
+            "usage": "research_only",
+            "usable_for_live_trading": False,
             "symbol": symbol,
             "timeframe": timeframe,
             "strategy": strategy_value,
@@ -1156,6 +1159,7 @@ def strategy_backtest(  # noqa: C901
             },
             "metrics": metrics,
             "last_signal": {
+                "signal_status": "historical_observation_only",
                 "signal": _strategy_signal_label(last_signal_value),
                 "close": float(closes[last_idx]),
                 "fast_ma": float(diagnostics["fast_ma"].iloc[last_idx]) if diagnostics.get("fast_ma") is not None and np.isfinite(float(diagnostics["fast_ma"].iloc[last_idx])) else None,
