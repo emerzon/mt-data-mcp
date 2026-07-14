@@ -1058,6 +1058,12 @@ class TestRegimeDetectHMM:
         assert res["effective_n_states"] == 1
         assert res["reliability"]["confidence"] == 0.0
         assert res["reliability"]["reliability_label"] == "low"
+        assert res["current_regime"]["regime_confidence"] == 0.0
+        assert (
+            res["current_regime"]["label_quality"]
+            == "unidentifiable_state_collapse"
+        )
+        assert res["signal_status"] == "not_actionable"
         assert any("state collapse" in warning for warning in res["warnings"])
 
     @patch(_FMT, side_effect=_time_fmt_stub)

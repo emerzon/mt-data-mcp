@@ -894,6 +894,16 @@ def _apply_state_output_mode(
     return payload
 
 
+def _mark_collapsed_state_confidence(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Prevent a one-state posterior from masquerading as model certainty."""
+    current = payload.get("current_regime")
+    if isinstance(current, dict):
+        current["regime_confidence"] = 0.0
+        current["label_quality"] = "unidentifiable_state_collapse"
+    payload["signal_status"] = "not_actionable"
+    return payload
+
+
 # Timeframe-based default parameters for regime detection
 _TIMEFRAME_DEFAULTS: Dict[str, Dict[str, int]] = {
     # Intraday high-frequency
@@ -2252,15 +2262,16 @@ def regime_detect(  # noqa: C901
                 if output == "summary":
                     return _finish(payload)
 
-            return _finish(
-                _consolidate_payload(
-                    payload,
-                    method,
-                    output,
-                    include_series=include_series,
-                    max_regimes=max_regimes,
-                )
+            consolidated = _consolidate_payload(
+                payload,
+                method,
+                output,
+                include_series=include_series,
+                max_regimes=max_regimes,
             )
+            if effective_n_states < n_states:
+                consolidated = _mark_collapsed_state_confidence(consolidated)
+            return _finish(consolidated)
 
         elif method == "clustering":
             try:
