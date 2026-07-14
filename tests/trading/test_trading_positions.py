@@ -114,7 +114,7 @@ def test_normalize_trade_read_output_adds_volume_units():
         kind="open_positions",
     )
 
-    assert out["units"] == {"volume": "lots"}
+    assert out["units"] == {"volume": "broker_lot"}
 
 
 def test_normalize_trade_read_output_rounds_money_fields():

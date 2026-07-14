@@ -326,7 +326,7 @@ def test_trade_history_full_detail_uses_normalized_deal_items() -> None:
     ]
     assert out["request_echo"]["history_kind"] == "deals"
     assert out["request_echo"]["column_style"] == "snake_case"
-    assert out["units"] == {"volume": "lots"}
+    assert out["units"] == {"volume": "broker_lot"}
 
 
 def test_trade_history_full_detail_uses_top_level_timezone_only() -> None:
@@ -414,7 +414,10 @@ def test_trade_history_full_detail_uses_normalized_order_items() -> None:
         }
     ]
     assert "state_code" not in out["items"][0]["order_details"]
-    assert out["units"] == {"volume": "lots", "volume_initial": "lots"}
+    assert out["units"] == {
+        "volume": "broker_lot",
+        "volume_initial": "broker_lot",
+    }
 
 
 def test_trade_history_normalizes_price_and_millisecond_artifacts() -> None:

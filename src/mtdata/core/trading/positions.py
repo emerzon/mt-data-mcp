@@ -7,6 +7,7 @@ import math
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
+from ...shared.constants import BROKER_VOLUME_UNIT
 from ...utils.market_metadata import build_tick_freshness_context
 from ...utils.time import (
     _format_datetime_second_explicit,
@@ -125,14 +126,14 @@ def _attach_open_position_quote_context(
         }
 
 _TRADE_VOLUME_UNITS = {
-    "volume": "lots",
-    "volume_initial": "lots",
-    "volume_current": "lots",
-    "requested_volume": "lots",
-    "remaining_volume": "lots",
-    "Volume": "lots",
-    "Initial Volume": "lots",
-    "Current Volume": "lots",
+    "volume": BROKER_VOLUME_UNIT,
+    "volume_initial": BROKER_VOLUME_UNIT,
+    "volume_current": BROKER_VOLUME_UNIT,
+    "requested_volume": BROKER_VOLUME_UNIT,
+    "remaining_volume": BROKER_VOLUME_UNIT,
+    "Volume": BROKER_VOLUME_UNIT,
+    "Initial Volume": BROKER_VOLUME_UNIT,
+    "Current Volume": BROKER_VOLUME_UNIT,
 }
 
 

@@ -10,6 +10,9 @@ PRECISION_ABS_TOL = 1e-12
 PRECISION_MAX_LOSS_PCT = 1e-3
 PRECISION_MAX_DECIMALS = 10
 
+# MT5 order and position volume is expressed in broker-defined lots.
+BROKER_VOLUME_UNIT = "broker_lot"
+
 # Canonical minute-resolution UTC timestamp for machine-readable outputs.
 TIME_DISPLAY_FORMAT = "%Y-%m-%dT%H:%MZ"
 

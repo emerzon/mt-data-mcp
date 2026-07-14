@@ -4,6 +4,7 @@ import logging
 import math
 from typing import Any, Dict, Optional
 
+from ...shared.constants import BROKER_VOLUME_UNIT
 from .._mcp_instance import mcp
 from ..execution_logging import run_logged_operation
 from ..market_depth import market_ticker
@@ -427,7 +428,7 @@ def _compact_trade_session_context_payload(payload: Dict[str, Any]) -> Dict[str,
                 compact["open_positions"] = []
             compact["open_positions_count"] = int(open_positions.get("count") or 0)
             if compact["open_positions_count"] > 0:
-                volume_units["volume"] = "lots"
+                volume_units["volume"] = BROKER_VOLUME_UNIT
 
     pending_orders = payload.get("pending_orders")
     if isinstance(pending_orders, dict):
@@ -483,7 +484,7 @@ def _compact_trade_session_context_payload(payload: Dict[str, Any]) -> Dict[str,
                 compact["pending_orders"] = []
             compact["pending_orders_count"] = int(pending_orders.get("count") or 0)
             if compact["pending_orders_count"] > 0:
-                volume_units["volume"] = "lots"
+                volume_units["volume"] = BROKER_VOLUME_UNIT
 
     if volume_units:
         compact["units"] = volume_units

@@ -10,7 +10,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 from ...bootstrap.settings import trade_guardrails_config
-from ...shared.constants import TIMEFRAME_MAP
+from ...shared.constants import BROKER_VOLUME_UNIT, TIMEFRAME_MAP
 from ...shared.result import Err, Ok, Result, to_dict
 from ...shared.validators import invalid_timeframe_error
 from ...utils.barriers import normalize_trade_direction
@@ -3848,7 +3848,7 @@ def run_trade_risk_analyze(  # noqa: C901
                             "notional_value": 0.0,
                             "units": {
                                 "account_currency": currency,
-                                "volume": "lots",
+                                "volume": BROKER_VOLUME_UNIT,
                                 "risk_currency": "account_currency",
                                 "risk_pct": "percent_of_equity",
                                 "price": "symbol_price",
@@ -4091,7 +4091,7 @@ def run_trade_risk_analyze(  # noqa: C901
                         "notional_value": _round_optional_number(notional_value, 2),
                         "units": {
                             "account_currency": currency,
-                            "volume": "lots",
+                            "volume": BROKER_VOLUME_UNIT,
                             "risk_currency": "account_currency",
                             "risk_pct": "percent_of_equity",
                             "price": "symbol_price",
