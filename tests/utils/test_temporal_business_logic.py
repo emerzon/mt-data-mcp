@@ -21,9 +21,9 @@ def test_compact_temporal_stats_keep_group_key() -> None:
             "group": 8,
             "group_label": "08:00",
             "bars": 24,
-            "avg_return": 0.12,
+            "avg_return_pct": 0.12,
             "win_rate_pct": 55.0,
-            "volatility": 0.03,
+            "volatility_pct": 0.03,
         }
     )
 
@@ -49,8 +49,8 @@ def test_compact_temporal_payload_best_keeps_group_key() -> None:
             "groups_analyzed": 2,
             "groups_excluded": 0,
             "groups": [
-                {"group": 7, "group_label": "07:00", "bars": 24, "avg_return": 0.1},
-                {"group": 8, "group_label": "08:00", "bars": 24, "avg_return": 0.2},
+                {"group": 7, "group_label": "07:00", "bars": 24, "avg_return_pct": 0.1},
+                {"group": 8, "group_label": "08:00", "bars": 24, "avg_return_pct": 0.2},
             ],
         }
     )
