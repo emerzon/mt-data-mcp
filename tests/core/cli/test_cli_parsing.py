@@ -1209,6 +1209,8 @@ class TestResolveParamKwargs:
         assert "rsi_14" in kwargs["help"]
         assert "sma=20" in kwargs["help"]
         assert "rsi(length=14)" in kwargs["help"]
+        assert "On PowerShell" in kwargs["help"]
+        assert '--indicators "rsi(14)"' in kwargs["help"]
 
     def test_denoise_help_mentions_json_example(self):
         param = {
