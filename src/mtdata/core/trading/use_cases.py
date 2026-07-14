@@ -116,6 +116,7 @@ _TRADE_PLACE_PREVIEW_KEYS = (
     "broker_validation_not_performed",
     "require_sl_tp",
     "auto_close_on_sl_tp_fail",
+    "guardrails_enabled",
     "magic",
     "comment",
     "requested_price",
@@ -1189,6 +1190,7 @@ def run_trade_place(  # noqa: C901
             pending: bool,
             normalized_expiration: Any,
             expiration_provided: bool,
+            guardrail_preview: Dict[str, Any],
         ) -> Dict[str, Any]:
             preview_detail = _resolve_trade_place_preview_detail(request)
             validation_scope = "local_preview_plus_estimates"
@@ -1262,14 +1264,8 @@ def run_trade_place(  # noqa: C901
                 ],
                 "require_sl_tp": bool(request.require_sl_tp),
                 "auto_close_on_sl_tp_fail": bool(request.auto_close_on_sl_tp_fail),
-                "guardrails_preview": preview_trade_guardrails(
-                    trade_guardrails_config,
-                    symbol=symbol_norm,
-                    volume=float(request.volume),
-                    stop_loss=request.stop_loss,
-                    deviation=request.deviation,
-                    side=_guardrail_order_side(order_type),
-                ),
+                "guardrails_enabled": bool(guardrail_preview.get("enabled")),
+                "guardrails_preview": guardrail_preview,
             }
             if dry_run_missing_protection:
                 preview["dry_run_note"] = (
@@ -1590,6 +1586,7 @@ def run_trade_place(  # noqa: C901
                     pending=is_pending,
                     normalized_expiration=normalized_expiration,
                     expiration_provided=expiration_provided,
+                    guardrail_preview=guardrail_preview,
                 ),
                 order_type=order_type_norm,
                 pending=is_pending,

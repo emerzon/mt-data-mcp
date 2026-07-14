@@ -315,6 +315,7 @@ def test_trade_place_dry_run_preview_detail_omits_safety_lists() -> None:
     assert "warnings" not in out
     assert "validation_not_performed" not in out
     assert "guardrails_preview" not in out
+    assert out["guardrails_enabled"] is False
     assert out["validation_scope"] == "local_preview_plus_estimates"
     assert out["preview_ok"] is True
     assert out["validation_passed"] is True
@@ -344,6 +345,7 @@ def test_trade_place_dry_run_standard_detail_keeps_validation_context() -> None:
     assert "preview_scope_summary" in out
     assert "warnings" in out
     assert "guardrails_preview" in out
+    assert out["guardrails_enabled"] is False
     assert out["validation_scope"] == "local_preview_plus_estimates"
     assert "trade_gate_passed" not in out
     mock_market.assert_not_called()
