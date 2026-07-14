@@ -127,10 +127,10 @@ pip install chronos-forecasting torch  # For Chronos
 pip install statsforecast              # For StatsForecast models
 pip install arch                       # For GARCH
 pip install statsmodels                # For ARIMA/ETS + causal_discover_signals
-pip install umap-learn                 # For UMAP dimred (Web UI / analysis)
+pip install -e ".[dimred-ext]"         # For UMAP dimred (Web UI / analysis); or: pip install umap-learn
 pip install QuantLib                   # For barrier option pricing & Heston calibration
 pip install optuna                     # For Bayesian hyperparameter tuning
-pip install neuralforecast torch       # For neural models; may not resolve on Windows Python 3.14
+pip install neuralforecast torch       # For neural models; fails on Windows Python 3.14 (no ray win/cp314 wheel)
 pip install -e .[forecast-timesfm]     # From the repo root; installs the TimesFM Git-backed extra
 ```
 
@@ -356,7 +356,7 @@ pip install hnswlib==0.8.0
 
 If `hnswlib` fails, leave it out and use `search_engine=ckdtree` instead.
 
-`tsdownsample` is no longer part of this source-build helper. It is included in the full package-index install path and can also be installed directly with `pip install "tsdownsample>=0.1.5"`. If it is absent, mtdata falls back to the built-in Python simplification path.
+`tsdownsample` is no longer part of this source-build helper. It is included in the full package-index install path and can also be installed directly with `pip install "tsdownsample>=0.1.5.1"`. If it is absent, mtdata falls back to the built-in Python simplification path.
 
 ### QuantLib Import Error
 
@@ -395,7 +395,7 @@ pip install optuna
 ```bash
 pip install neuralforecast torch
 ```
-These models require PyTorch and a NeuralForecast dependency stack compatible with your Python version. On Windows Python 3.14, current releases may fail to resolve because some transitive dependencies do not publish compatible wheels.
+These models require PyTorch and a NeuralForecast dependency stack compatible with your Python version. On Windows Python 3.14, install fails because `ray` (required by NeuralForecast) does not publish Windows wheels for Python 3.14.
 
 ---
 
@@ -413,7 +413,7 @@ These models require PyTorch and a NeuralForecast dependency stack compatible wi
 | QuantLib import error | `pip install QuantLib` |
 | Finviz empty data | Check network / firewall (finvizfinance is pre-installed) |
 | Optuna not found | `pip install optuna` |
-| Neural models unavailable | Use `forecast_list_methods --json`; NeuralForecast is manual/nonstandard on Windows Python 3.14 |
+| Neural models unavailable | Use `forecast_list_methods --json`; NeuralForecast needs `ray` Windows cp314 wheels (not published yet) |
 
 ---
 

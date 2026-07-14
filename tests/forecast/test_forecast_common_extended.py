@@ -23,6 +23,17 @@ from mtdata.forecast.common import (
     pd_freq_from_timeframe,
 )
 
+# unittest.mock.patch.dict("sys.modules", ...) snapshots the *entire* mapping and
+# restores that snapshot on exit (it clears sys.modules first). nf_setup_and_predict
+# imports torch inside those contexts; if torch was not already resident, unpatch
+# removes it from sys.modules while C extensions stay loaded. Later real torch
+# imports then fail with "_has_torch_function already has a docstring", which
+# breaks sktime 1.0 (forecasting package eagerly imports torch-backed modules).
+try:
+    import torch as _torch  # noqa: F401
+except Exception:
+    _torch = None
+
 # ---------------------------------------------------------------------------
 # nf_setup_and_predict (lines 159-345) — heavily mocked
 # ---------------------------------------------------------------------------

@@ -70,7 +70,7 @@ pip install -r requirements.txt
 ```
 
 This path intentionally stays on package-index releases. Git-backed add-ons such as TimesFM, `stock-pattern`, and `ycnbc` stay opt-in so the default install does not depend on Git checkouts.
-NeuralForecast-based models are also kept out of this default path; current Windows Python 3.14 resolution can fail on transitive dependencies, so treat `nhits`, `tft`, `patchtst`, and `nbeatsx` as manual/nonstandard setup.
+NeuralForecast-based models are also kept out of this default path: on Windows Python 3.14, `neuralforecast` cannot resolve because its required `ray` dependency does not publish Windows wheels for 3.14 (Ray has cp314 wheels for Linux/macOS only). Treat `nhits`, `tft`, `patchtst`, and `nbeatsx` as manual/nonstandard setup.
 
 ### 4. Optional Dependencies
 
@@ -86,6 +86,8 @@ The base package is intentionally lean. Install extras as needed:
   `pip install -e .[forecast-timesfm]`
 - Web API:
   `pip install -e .[web]`
+- Dimensionality reduction (UMAP):
+  `pip install -e .[dimred-ext]`
 - Experimental pattern engines (Git-backed, requires manual install):
   `pip install -e .[patterns-ext]` (Note: stock-pattern requires manual copy to site-packages; see below)
 - News embeddings (semantic reranking):
@@ -101,18 +103,18 @@ Feature notes:
 
 - Causal discovery (`causal_discover_signals`) and classical ARIMA/ETS: `statsmodels`
 - Wavelet denoising: `PyWavelets`
-- Dimred UMAP (Web UI / analysis): `umap-learn`
+- Dimred UMAP (Web UI / analysis): `umap-learn` via `pip install -e .[dimred-ext]` (also included in `[all]`)
 - Foundation models:
   - Chronos (`chronos2`, `chronos_bolt`): `chronos-forecasting`, `torch`
   - TimesFM (`timesfm`): `timesfm`, `torch` (install with `pip install -e .[forecast-timesfm]`; Git-backed extra)
-  - GluonTS / Lag-Llama are not shipped in mtdata because they are unsupported on the project's Python 3.14 runtime
-- Forecasting libraries: `statsforecast`, `sktime`, `mlforecast` (plus `lightgbm` for GBMs)
+  - GluonTS / Lag-Llama are not shipped in mtdata (stack conflicts with the supported Python 3.14 scientific deps)
+- Forecasting libraries: `statsforecast` (1.x only on this runtime), `sktime`, `mlforecast` (plus `lightgbm` for GBMs)
 - Volatility (GARCH/ARCH): `arch`
-- Simplification accelerator: `tsdownsample` is included in the full package-index install path (`requirements.txt` / `[all]`) and remains optional for lean installs
+- Simplification accelerator: `tsdownsample` is included in the full package-index install path (`requirements.txt` / `[all]`; pin `>=0.1.5.1`) and remains optional for lean installs
 - Optional pattern-search accelerator omitted from the default Python 3.14 install: `hnswlib` (see the opt-in helper file `requirements-optional-src.txt` below)
 - Barrier option pricing & Heston calibration: `QuantLib`
 - Bayesian hyperparameter optimization: `optuna`
-- Neural network forecasters (`nhits`, `tft`, `patchtst`, `nbeatsx`): manual/nonstandard setup only; not included in `requirements.txt` or a package extra
+- Neural network forecasters (`nhits`, `tft`, `patchtst`, `nbeatsx`): manual/nonstandard setup only; not included in `requirements.txt` or a package extra (blocked on Windows 3.14 by missing `ray` wheels)
 
 ### 5. Optional Native Accelerator Source-Build Path
 
@@ -133,7 +135,7 @@ Notes:
 - `hnswlib` is a C++ extension build. On Windows, install Visual Studio Build Tools 2022 with the **Desktop development with C++** workload first.
 - If you only want this accelerator, install it directly instead of the helper file:
   - `pip install hnswlib==0.8.0`
-- If you want the LTTB simplification accelerator without the full `[all]` extra, install it directly with `pip install "tsdownsample>=0.1.5"`.
+- If you want the LTTB simplification accelerator without the full `[all]` extra, install it directly with `pip install "tsdownsample>=0.1.5.1"`.
 
 Tip: `mtdata-cli forecast_list_methods --json` shows `available` and `requires` per method.
 

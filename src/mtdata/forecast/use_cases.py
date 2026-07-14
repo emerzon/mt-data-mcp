@@ -1765,6 +1765,11 @@ def _compact_backtest_result(result: Dict[str, Any]) -> Dict[str, Any]:
 def _discover_sktime_forecasters() -> Dict[str, Tuple[str, str]]:
     """Return mapping of forecaster class name (lower) -> (class_name, dotted path)."""
     try:
+        # sktime 1.0+ forecasting package eagerly imports torch-backed aliases.
+        try:
+            import torch  # noqa: F401
+        except Exception:
+            pass
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore", category=DeprecationWarning)
             warnings.filterwarnings(

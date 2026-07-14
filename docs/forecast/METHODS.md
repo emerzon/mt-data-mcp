@@ -154,7 +154,7 @@ mtdata-cli forecast_generate EURUSD --library pretrained --method chronos2 --hor
 
 ## Neural (`neuralforecast`)
 
-Deep models via NeuralForecast. Not installed by `requirements.txt` or any extra today — install manually with `pip install neuralforecast torch`.
+Deep models via NeuralForecast. Not installed by `requirements.txt` or any extra today — install manually with `pip install neuralforecast torch` where the dependency stack resolves. On Windows Python 3.14 this currently fails because `ray` has no Windows cp314 wheels.
 
 | Method | Key params (default) | Notes |
 |--------|----------------------|-------|

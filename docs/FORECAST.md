@@ -48,7 +48,7 @@ mtdata-cli forecast_list_methods --json   # source of truth for *your* install
 Availability depends on extras you installed:
 
 - Supported foundation options on the Python 3.14 path include Chronos, Chronos-Bolt, and TimesFM (TimesFM via opt-in extra).
-- NeuralForecast methods (`nhits`, `tft`, `patchtst`, `nbeatsx`) need a manual `neuralforecast` + `torch` setup; they may not resolve cleanly on Python 3.14.
+- NeuralForecast methods (`nhits`, `tft`, `patchtst`, `nbeatsx`) need a manual `neuralforecast` + `torch` setup. On Windows Python 3.14 they do not resolve because `ray` (a NeuralForecast dependency) has no Windows cp314 wheels.
 - Always trust `forecast_list_methods --json` over static docs for what runs locally.
 
 Full per-method keys, defaults, and dependencies: [forecast/METHODS.md](forecast/METHODS.md).

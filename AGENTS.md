@@ -102,9 +102,16 @@ Request flow: `entry point → load_environment() → bootstrap_tools() → mcp.
 | forecast-foundation | Deep learning models | torch, chronos-forecasting, transformers, timesfm |
 | patterns-ext | External pattern lib | stock-pattern (git dep) |
 | web | Web UI backend | fastapi, uvicorn |
-| all | Everything | Union of all above |
+| dimred-ext | Optional UMAP | umap-learn |
+| all | Everything (package index) | Union of above + tsdownsample, sentence-transformers, umap-learn |
 
-**Excluded from 3.14**: gluonts/Lag-Llama, hnswlib, tsdownsample (wheel incompatibility).
+**Still out of the default 3.14 stack**:
+- `hnswlib` — no Windows/cp314 wheels; opt-in source build via `requirements-optional-src.txt`
+- `neuralforecast` — blocked on Windows 3.14 by missing `ray` wheels (Ray publishes cp314 for Linux/macOS only)
+- gluonts / Lag-Llama — dependency conflicts with the current scientific stack; not shipped
+- `statsforecast` 2.x / `ruptures` 1.1+ / `pandas` 3 — deferred (wheels / `requires_python` / major migration)
+- `scikit-learn` 1.8+ — blocked by sktime’s `scikit-learn<1.8` pin (through 1.0.x)
+- `numpy` 2.5+ — blocked by numba 0.66 / sktime (`numpy<2.5`)
 
 ## COMMANDS
 
@@ -129,7 +136,7 @@ cd webui && npm run build                 # Production frontend bundle
 ## NOTES
 
 - **Windows required**: MT5 only runs on Windows. macOS/Linux users connect remotely via MCP/Web API.
-- **Python 3.14 only**: Pinned in `pyproject.toml`. Some deps have version ceilings (numpy <2.4, pandas <3, scikit-learn <1.8).
+- **Python 3.14 only**: Pinned in `pyproject.toml`. Notable ceilings: `numpy<2.5`, `pandas<3`, `scikit-learn<1.8`, `transformers<6`, `statsforecast<2`, `ruptures<1.1`.
 - **Large files**: Core has the most complexity. Forecast methods and utils also heavy.
 - **No CI/CD**: No GitHub Actions, Makefile, Docker, or pre-commit hooks. All builds/tests are manual.
 - **CORS**: Web API has `allow_credentials=True` with permissive CORS in dev (see `web_api_runtime.py`).

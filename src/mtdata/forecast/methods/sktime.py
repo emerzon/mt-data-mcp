@@ -370,6 +370,14 @@ class GenericSktimeMethod(SktimeMethod):
         try:
             module_path, class_name = estimator_path.rsplit('.', 1)
             import importlib
+            # sktime 1.0+ forecasting package eagerly imports torch-backed
+            # aliases (e.g. cinn) when any sktime.forecasting.* module loads.
+            # Prefer a successful torch import first so that path is cheap/safe.
+            if module_path.startswith("sktime.forecasting"):
+                try:
+                    import torch  # noqa: F401
+                except Exception:
+                    pass
             with warnings.catch_warnings():
                 warnings.filterwarnings("ignore", category=DeprecationWarning)
                 warnings.filterwarnings(
