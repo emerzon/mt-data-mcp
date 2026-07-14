@@ -154,6 +154,18 @@ def test_market_snapshot_compact_defaults_to_lean_snapshot(monkeypatch):
                 "ask": 1.1003,
                 "mid": 1.1002,
                 "spread_points": 2.0,
+                "freshness_state": "live",
+                "data_age_seconds": 4.0,
+                "usable_for_live_trading": True,
+                "live_max_age_seconds": 30.0,
+            }
+        if name == "status":
+            return {
+                "success": True,
+                "status": "open",
+                "is_tradable": True,
+                "is_tradable_confidence": "heuristic",
+                "can_open_new_positions": True,
             }
         if name == "levels":
             return {
@@ -178,6 +190,16 @@ def test_market_snapshot_compact_defaults_to_lean_snapshot(monkeypatch):
         "ask": 1.1003,
         "mid": 1.1002,
         "spread_points": 2.0,
+        "freshness_state": "live",
+        "data_age_seconds": 4.0,
+        "execution": {
+            "usable_for_live_trading": True,
+            "live_max_age_seconds": 30.0,
+            "status": "open",
+            "is_tradable": True,
+            "is_tradable_confidence": "heuristic",
+            "can_open_new_positions": True,
+        },
         "nearest_support": 1.098,
         "nearest_resistance": 1.105,
         "pattern_count": 2,

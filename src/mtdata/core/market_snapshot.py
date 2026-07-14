@@ -14,11 +14,12 @@ from .tool_calling import call_tool_sync_structured
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_SECTIONS = ("quote", "levels", "patterns")
+_DEFAULT_SECTIONS = ("quote", "status", "levels", "patterns")
 _SNAPSHOT_PATTERN_LAST_N_BARS = 3
 _VALID_SECTIONS = frozenset(
     {
         "quote",
+        "status",
         "levels",
         "patterns",
         "regime",
@@ -82,6 +83,11 @@ def _compact_quote(quote: Any) -> Any:
         "spread_pips",
         "spread_pct",
         "freshness",
+        "freshness_state",
+        "data_age_seconds",
+        "usable_for_live_trading",
+        "live_max_age_seconds",
+        "market_status_reason",
         "time",
         "time_epoch",
         "data_stale",
@@ -435,6 +441,7 @@ def _pattern_bias(payload: Any) -> Optional[str]:
 
 def _snapshot_summary_payload(sections: Dict[str, Any]) -> Dict[str, Any]:
     quote = sections.get("quote")
+    status = sections.get("status")
     levels = sections.get("levels")
     patterns = sections.get("patterns")
     regime = sections.get("regime")
@@ -451,11 +458,35 @@ def _snapshot_summary_payload(sections: Dict[str, Any]) -> Dict[str, Any]:
             "spread_pips",
             "spread_pct",
             "freshness",
+            "freshness_state",
+            "data_age_seconds",
             "time",
         ):
             value = quote.get(key)
             if value is not None:
                 out[key] = value
+
+    execution: Dict[str, Any] = {}
+    if isinstance(quote, dict):
+        for key in (
+            "usable_for_live_trading",
+            "live_max_age_seconds",
+            "market_status_reason",
+        ):
+            if quote.get(key) is not None:
+                execution[key] = quote[key]
+    if isinstance(status, dict):
+        for key in (
+            "status",
+            "is_tradable",
+            "is_tradable_confidence",
+            "can_open_new_positions",
+            "reason",
+        ):
+            if status.get(key) is not None:
+                execution[key] = status[key]
+    if execution:
+        out["execution"] = execution
 
     reference_price = _coerce_float(out.get("mid"))
     if reference_price is None:
@@ -553,6 +584,15 @@ def _call_section(name: str, symbol: str, timeframe: str, horizon: int, detail: 
                 max_levels=4,
                 raw_tool_output=True,
             )
+        if name == "status":
+            from .market_status import market_status
+
+            return call_tool_sync_structured(
+                market_status,
+                symbol=symbol,
+                detail="compact",
+                raw_tool_output=True,
+            )
         if name == "patterns":
             from .patterns import patterns_detect
 
@@ -605,13 +645,14 @@ def market_snapshot(
 ) -> Dict[str, Any]:
     """Return a unified pre-trade market snapshot with selectable analysis sections.
 
-    Default sections are quote,levels,patterns; pass sections=quote for quote-only
-    or sections=all for quote,levels,patterns,regime,forecast.
+    Default sections are quote,status,levels,patterns; pass sections=quote for
+    quote-only or sections=all for quote,status,levels,patterns,regime,forecast.
 
     Fixed per-section recipe (intentionally not fully parameterized — call the
     dedicated tools for custom methods/lookbacks):
 
     - quote: ``market_ticker``; honors top-level ``detail``
+    - status: ``market_status`` symbol tradability, detail=compact
     - levels: support/resistance, detail=compact, lookback=200, max_levels=4
     - patterns: candlestick mode only, detail=summary, top_k=3, last_n_bars=3
     - regime (opt-in): HMM only, detail=summary
@@ -671,7 +712,7 @@ def market_snapshot(
             )
         if detail_mode == "full":
             payload["section_notes"] = {
-                "default": "quote,levels,patterns",
+                "default": "quote,status,levels,patterns",
                 "heavy_opt_in": "Add regime or forecast to sections when needed.",
             }
         return payload
