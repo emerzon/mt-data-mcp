@@ -860,7 +860,7 @@ class TestResolveParamKwargs:
             cmd_name="correlation_matrix",
         )
         min_regime_kwargs, _ = _resolve_param_kwargs(
-            {"name": "min_regime_bars", "type": int, "required": False, "default": -1},
+            {"name": "min_regime_bars", "type": int, "required": False, "default": None},
             None,
             cmd_name="regime_detect",
         )

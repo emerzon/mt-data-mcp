@@ -1049,9 +1049,9 @@ def regime_detect(  # noqa: C901
     denoise: Optional[DenoiseSpec] = None,
     threshold: Optional[float] = None,
     detail: DetailLiteral = "compact",
-    lookback: int = -1,  # -1 means use timeframe-based default
+    lookback: Optional[int] = None,
     include_series: bool = False,
-    min_regime_bars: int = -1,  # -1 means use timeframe-based default
+    min_regime_bars: Optional[int] = None,
     max_regimes: int = 10,  # Maximum regimes to show in compact mode
 ) -> Dict[str, Any]:
     """Detect regimes and/or change-points over a bounded history window.
@@ -1083,11 +1083,11 @@ def regime_detect(  # noqa: C901
         `cp_confirm_bars` (default `1`, live-oriented),
         `min_cp_distance_bars`, `cp_edge_multiplier`.
     - include_series: If True, include raw time series data (probs, states) in output. Default False.
-    - lookback: Number of recent bars to include in summary/compact detail. Default -1 uses timeframe-based defaults:
+    - lookback: Number of recent bars to include in summary/compact detail. Omit for timeframe-based defaults:
         M1: 3000, M5: 2000, M15: 1000, M30: 800, H1: 500, H2: 400, H4: 300, H6-H12: 200-150, D1: 200, W1: 100, MN1: 48
     - min_regime_bars: Confirm a new state only after it persists for this many
         consecutive bars. Confirmation is causal and never rewrites earlier labels.
-        Default -1 uses timeframe-based defaults: M1: 30, M5: 12, M15-M30: 6-8, H1-H4: 3-4, D1+: 2
+        Omit for timeframe-based defaults: M1: 30, M5: 12, M15-M30: 6-8, H1-H4: 3-4, D1+: 2
     - max_regimes: Maximum number of regime windows to show in compact mode (default 10).
         Most recent regimes are shown. Full mode shows all available windows.
     - extras:
@@ -1203,22 +1203,38 @@ def regime_detect(  # noqa: C901
 
     output = normalize_output_detail(detail)
     verbosity_output = normalize_output_verbosity_detail(detail)
+    try:
+        lookback = None if lookback is None else int(lookback)
+    except (TypeError, ValueError):
+        return _finish({"error": "lookback must be an integer >= 1 when provided."})
+    try:
+        min_regime_bars = (
+            None if min_regime_bars is None else int(min_regime_bars)
+        )
+    except (TypeError, ValueError):
+        return _finish({"error": "min_regime_bars must be an integer >= 1 when provided."})
+    if lookback is not None and lookback < 1:
+        return _finish({"error": "lookback must be >= 1 when provided."})
+    if min_regime_bars is not None and min_regime_bars < 1:
+        return _finish({"error": "min_regime_bars must be >= 1 when provided."})
     connection_error = _regime_connection_error()
     if connection_error is not None:
         return _finish(connection_error)
     try:
         p = dict(params or {})
-        requested_lookback = lookback
-        requested_min_regime_bars = min_regime_bars
+        requested_lookback = -1 if lookback is None else int(lookback)
+        requested_min_regime_bars = -1 if min_regime_bars is None else int(min_regime_bars)
 
         # Apply timeframe-based defaults if not explicitly provided
         tf_defaults = _get_timeframe_defaults(timeframe)
-        effective_lookback = lookback if lookback >= 0 else tf_defaults["lookback"]
+        effective_lookback = int(lookback) if lookback is not None else tf_defaults["lookback"]
         effective_min_regime_bars = (
-            min_regime_bars if min_regime_bars >= 0 else tf_defaults["min_regime_bars"]
+            int(min_regime_bars)
+            if min_regime_bars is not None
+            else tf_defaults["min_regime_bars"]
         )
         lookback_mapped_to_window = (
-            method == "rule_based" and requested_lookback >= 0 and "window_bars" not in p
+            method == "rule_based" and lookback is not None and "window_bars" not in p
         )
         if lookback_mapped_to_window:
             p["window_bars"] = int(effective_lookback)

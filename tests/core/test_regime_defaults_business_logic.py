@@ -369,10 +369,10 @@ def test_regime_detect_rejects_invalid_min_regime_bars() -> None:
 
 
 def test_regime_detect_default_min_regime_bars_is_dynamic() -> None:
-    """min_regime_bars defaults to -1 which triggers timeframe-based defaults."""
+    """Omitted min_regime_bars triggers timeframe-based defaults."""
     raw = _unwrap(regime_detect)
     default_val = inspect.signature(raw).parameters["min_regime_bars"].default
-    assert int(default_val) == -1  # -1 means "use timeframe-based default"
+    assert default_val is None
 
     # Verify that effective defaults are applied based on timeframe
     with (
