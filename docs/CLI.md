@@ -7,10 +7,12 @@ tool is one command:
 mtdata-cli <command> [options]
 ```
 
-Use it for scripts, exploration, and copy-paste workflows. Each invocation
-starts Python and discovers the full tool surface, so repeated interactive or
-agent calls should keep a process alive with `mtdata-stdio`,
-`mtdata-streamable-http`, or `mtdata-webapi`. The full tool surface is also
+Use it for scripts, exploration, and copy-paste workflows. Each one-shot
+invocation starts Python and discovers the full tool surface. For repeated
+local exploration, run `mtdata-cli shell` and enter ordinary command lines
+without the `mtdata-cli` prefix; imports remain warm until `exit` or `quit`.
+Repeated agent or application calls should keep a process alive with
+`mtdata-stdio`, `mtdata-streamable-http`, or `mtdata-webapi`. The full tool surface is also
 available over [MCP](GLOSSARY.md#mcp-model-context-protocol). The Web API
 exposes a focused subset with the same canonical payload semantics for
 operations shared across interfaces. Default text presentation is

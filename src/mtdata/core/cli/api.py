@@ -7,6 +7,7 @@ import argparse
 import difflib
 import json
 import os
+import shlex
 import sys
 import types
 import warnings
@@ -1829,6 +1830,39 @@ def main():
             traceback.print_exc()
         print(f"Error: {e}", file=sys.stderr)
         return 1
+
+
+def run_shell() -> int:
+    """Run repeated CLI commands while reusing the initialized Python process."""
+    print("mtdata-cli shell (type 'exit' or 'quit' to stop)")
+    original_argv = list(sys.argv)
+    try:
+        while True:
+            try:
+                line = input("mtdata> ")
+            except EOFError:
+                print("")
+                return 0
+            except KeyboardInterrupt:
+                print("")
+                continue
+            stripped = line.strip()
+            if not stripped:
+                continue
+            if stripped.lower() in {"exit", "quit"}:
+                return 0
+            try:
+                command_argv = shlex.split(stripped, posix=False)
+            except ValueError as exc:
+                print(f"Invalid command line: {exc}", file=sys.stderr)
+                continue
+            if command_argv and command_argv[0].lower() == "shell":
+                print("A shell session is already active.", file=sys.stderr)
+                continue
+            sys.argv = [original_argv[0], *command_argv]
+            main()
+    finally:
+        sys.argv = original_argv
 
 
 if __name__ == "__main__":
