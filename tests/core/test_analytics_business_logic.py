@@ -139,6 +139,9 @@ def test_microstructure_distinguishes_trade_volume_from_quote_proxy() -> None:
     assert "kyle_lambda" not in result["summary"]
     assert "amihud_impact" not in result["summary"]
     assert result["estimator_scope"]["market_scope"] == "connected_broker_tick_feed"
+    assert result["timezone"] == "UTC"
+    assert all("start" in item and "end" in item for item in result["liquidity_events"])
+    assert all("start_epoch" not in item for item in result["liquidity_events"])
     assert any("broker's tick feed" in warning for warning in result["warnings"])
 
 

@@ -220,9 +220,14 @@ def analyze_microstructure(request: MarketMicrostructureRequest, gateway: Any) -
     windows: List[Dict[str, Any]] = []
     for bucket_id, part in df.groupby(bucket):
         pq = part[np.isfinite(part["mid"])]
+        bucket_start_epoch = float(part["epoch"].iloc[0])
+        bucket_end_epoch = float(part["epoch"].iloc[-1])
         windows.append({
             "bucket": int(bucket_id),
-            "start_epoch": float(part["epoch"].iloc[0]),
+            "start": format_epoch_utc(bucket_start_epoch),
+            "end": format_epoch_utc(bucket_end_epoch),
+            "start_epoch": bucket_start_epoch,
+            "end_epoch": bucket_end_epoch,
             "ticks": int(len(part)),
             "ticks_per_second": float(len(part) / max(1.0, part["epoch"].iloc[-1] - part["epoch"].iloc[0])),
             "spread_median": float(pq["spread"].median()) if len(pq) else None,
@@ -269,7 +274,15 @@ def analyze_microstructure(request: MarketMicrostructureRequest, gateway: Any) -
                 summary["broker_tick_abs_return_per_real_volume"] = float(np.nanmean(np.abs(y) / np.maximum(np.abs(x), 1e-12)))
                 summary["volume_impact_observations"] = int(valid.sum())
     p95 = summary["spread"].get("p95")
-    events = [item for item in windows if p95 is not None and item.get("spread_p95") is not None and item["spread_p95"] >= p95][:10]
+    event_windows = [item for item in windows if p95 is not None and item.get("spread_p95") is not None and item["spread_p95"] >= p95][:10]
+    events = [
+        {
+            key: value
+            for key, value in item.items()
+            if key not in {"start_epoch", "end_epoch"}
+        }
+        for item in event_windows
+    ]
     warnings = []
     if tier != "trade_volume":
         warnings.append("Real trade volume is insufficient; volume-impact metrics were omitted.")
@@ -279,6 +292,7 @@ def analyze_microstructure(request: MarketMicrostructureRequest, gateway: Any) -
     return {
         "success": True,
         "symbol": request.symbol,
+        "timezone": "UTC",
         "summary": summary,
         "liquidity_events": events,
         **({"windows": windows} if request.detail == "full" else {}),
