@@ -239,7 +239,7 @@ def test_execution_quality_matches_order_and_computes_markout() -> None:
     start = _now() - 100
     gateway.tick_rows = _ticks(100, start=start)
     gateway.orders = [
-        {"ticket": 10, "price_open": 1.10005, "volume_initial": 1.0, "time_setup_msc": (start + 9) * 1000}
+        {"ticket": 10, "type": 0, "price_open": 1.10005, "volume_initial": 1.0, "time_setup_msc": (start + 9) * 1000}
     ]
     gateway.deals = [
         {"ticket": 20, "order": 10, "position_id": 30, "symbol": "EURUSD", "type": 0, "volume": 1.0, "price": 1.10008, "time": start + 10, "time_msc": (start + 10) * 1000}
@@ -250,7 +250,11 @@ def test_execution_quality_matches_order_and_computes_markout() -> None:
     )
     assert result["summary"]["fills"] == 1
     assert result["items"][0]["benchmark_source"] == "arrival_quote"
-    assert result["items"][0]["latency_ms"] == 1000.0
+    assert result["items"][0]["order_to_fill_ms"] == 1000.0
+    assert result["summary"]["market_order_latency_ms"]["mean"] == 1000.0
+    assert result["latency_definition"]["order_to_fill_ms"].endswith(
+        "including_pending_wait"
+    )
     assert result["items"][0]["markout_bps"]["5"] is not None
 
 

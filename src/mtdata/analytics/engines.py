@@ -406,6 +406,21 @@ def analyze_execution_quality(request: TradeExecutionQualityRequest, gateway: An
                 markouts[str(horizon)] = None
                 skipped["missing_markout"] += 1
         initial_volume = float(order.get("volume_initial") or volume)
+        order_type_value = order.get("type")
+        market_order_types = {
+            getattr(gateway, "ORDER_TYPE_BUY", 0),
+            getattr(gateway, "ORDER_TYPE_SELL", 1),
+        }
+        is_market_order = order_type_value in market_order_types
+        order_to_fill_ms = (
+            max(
+                0.0,
+                float(deal.get("time_msc") or fill_epoch * 1000.0)
+                - time_setup_msc,
+            )
+            if time_setup_msc
+            else None
+        )
         item = {
             "deal_ticket": deal.get("ticket"),
             "order_ticket": deal.get("order"),
@@ -418,14 +433,15 @@ def analyze_execution_quality(request: TradeExecutionQualityRequest, gateway: An
             "benchmark_source": benchmark_source,
             "slippage_bps": slippage_bps,
             "price_improved": slippage_bps < 0,
-            "latency_ms": max(0.0, float(deal.get("time_msc") or fill_epoch * 1000.0) - time_setup_msc) if time_setup_msc else None,
+            "order_to_fill_ms": order_to_fill_ms,
+            "is_market_order": is_market_order,
             "fill_ratio": min(1.0, volume / initial_volume) if initial_volume > 0 else None,
             "commission": float(deal.get("commission") or 0.0),
             "fee": float(deal.get("fee") or 0.0),
             "commission_fee_per_lot": (float(deal.get("commission") or 0.0) + float(deal.get("fee") or 0.0)) / volume,
             "markout_bps": markouts,
             "fill_epoch": fill_epoch,
-            "order_type": str(order.get("type") or "unknown"),
+            "order_type": str(order_type_value if order_type_value is not None else "unknown"),
             "hour_utc": datetime.fromtimestamp(fill_epoch, tz=timezone.utc).hour,
         }
         hour = int(item["hour_utc"])
@@ -448,7 +464,16 @@ def analyze_execution_quality(request: TradeExecutionQualityRequest, gateway: An
         "mean_slippage_ci_95": _bootstrap_mean_ci(slippages, 500),
         "price_improvement_rate": float(np.mean([item["price_improved"] for item in fills])) if fills else None,
         "partial_fill_rate": float(np.mean([(item.get("fill_ratio") or 1.0) < 0.999 for item in fills])) if fills else None,
-        "latency_ms": _percentiles(item["latency_ms"] for item in fills if item.get("latency_ms") is not None),
+        "market_order_latency_ms": _percentiles(
+            item["order_to_fill_ms"]
+            for item in fills
+            if item.get("is_market_order") and item.get("order_to_fill_ms") is not None
+        ),
+        "order_to_fill_ms": _percentiles(
+            item["order_to_fill_ms"]
+            for item in fills
+            if item.get("order_to_fill_ms") is not None
+        ),
         "commission_fee_per_lot": _percentiles(item["commission_fee_per_lot"] for item in fills),
     }
     for horizon in request.markout_seconds:
@@ -462,6 +487,8 @@ def analyze_execution_quality(request: TradeExecutionQualityRequest, gateway: An
                 labels = group_key if isinstance(group_key, tuple) else (group_key,)
                 row = {name: value for name, value in zip(keys, labels)}
                 row.update({"fills": len(items), "slippage_bps": _percentiles(items["slippage_bps"])})
+                if label == "by_order_type":
+                    row["order_to_fill_ms"] = _percentiles(items["order_to_fill_ms"])
                 breakdowns[label].append(row)
     return {
         "success": True,
@@ -470,7 +497,11 @@ def analyze_execution_quality(request: TradeExecutionQualityRequest, gateway: An
         **({"items": fills} if request.detail == "full" else {}),
         "sample_quality": {"status": "ok" if len(fills) >= request.min_sample else "insufficient", "minimum": request.min_sample, "observed": len(fills)},
         "data_quality": {"history_deals": len(deals), "history_orders": len(orders), "matched_fills": len(fills), "skipped": skipped},
-        "units": {"slippage_bps": "basis_points_positive_is_worse", "markout_bps": "basis_points_positive_is_favorable", "latency_ms": "milliseconds"},
+        "latency_definition": {
+            "market_order_latency_ms": "market_order_setup_to_fill_elapsed_time",
+            "order_to_fill_ms": "all_order_setup_to_fill_elapsed_time_including_pending_wait",
+        },
+        "units": {"slippage_bps": "basis_points_positive_is_worse", "markout_bps": "basis_points_positive_is_favorable", "market_order_latency_ms": "milliseconds", "order_to_fill_ms": "milliseconds"},
     }
 
 
