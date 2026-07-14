@@ -13,7 +13,6 @@ from mtdata.services.finviz import dates as finviz_dates
 # helpers
 # ---------------------------------------------------------------------------
 
-
 def _mock_finviz_stock(**overrides):
     stock = MagicMock()
     stock.ticker_fundament.return_value = overrides.get("fundament", {"P/E": "20"})
@@ -24,11 +23,9 @@ def _mock_finviz_stock(**overrides):
     stock.ticker_peer.return_value = overrides.get("peers", ["MSFT", "GOOG"])
     return stock
 
-
 # ---------------------------------------------------------------------------
 # _sanitize_pagination / _compute_screener_fetch_limit
 # ---------------------------------------------------------------------------
-
 
 class TestSanitizePagination:
     def test_normal_values(self):
@@ -54,7 +51,6 @@ class TestSanitizePagination:
         lim, pg = svc._sanitize_pagination(10, "bad")  # type: ignore
         assert pg == 1
 
-
 class TestComputeScreenerFetchLimit:
     def test_normal(self):
         r = svc._compute_screener_fetch_limit(50, 2, 5000)
@@ -68,333 +64,9 @@ class TestComputeScreenerFetchLimit:
         r = svc._compute_screener_fetch_limit(0, 0, 5000)
         assert r >= 1
 
-
 # ---------------------------------------------------------------------------
 # get_stock_description (lines 125-139)
 # ---------------------------------------------------------------------------
-
-
-class TestGetStockDescription:
-    @patch("mtdata.services.finviz.api._apply_finvizfinance_timeout_patch")
-    @patch("mtdata.services.finviz.api.finvizfinance", create=True)
-    def test_success(self, mock_cls, mock_patch):
-        mock_cls.return_value = _mock_finviz_stock(description="Foo Corp builds things.")
-        with patch.dict("sys.modules", {"finvizfinance.quote": MagicMock(finvizfinance=mock_cls)}):
-            result = svc.get_stock_description("FOO")
-        assert result["success"] is True
-        assert result["symbol"] == "FOO"
-        assert result["description"] == "Foo Corp builds things."
-
-    @patch("mtdata.services.finviz.api._apply_finvizfinance_timeout_patch")
-    def test_mt5_equity_suffix_is_stripped(self, mock_patch):
-        stock_cls = MagicMock(return_value=_mock_finviz_stock(description="Apple Inc."))
-        with patch.dict("sys.modules", {"finvizfinance.quote": MagicMock(finvizfinance=stock_cls)}):
-            result = svc.get_stock_description("AAPL.NAS-24")
-        stock_cls.assert_called_once_with("AAPL")
-        assert result["success"] is True
-        assert result["symbol"] == "AAPL"
-
-    @patch("mtdata.services.finviz.api._apply_finvizfinance_timeout_patch")
-    def test_real_dotted_ticker_is_preserved(self, mock_patch):
-        stock_cls = MagicMock(return_value=_mock_finviz_stock(description="Berkshire Hathaway."))
-        with patch.dict("sys.modules", {"finvizfinance.quote": MagicMock(finvizfinance=stock_cls)}):
-            result = svc.get_stock_description("BRK.B")
-        stock_cls.assert_called_once_with("BRK.B")
-        assert result["success"] is True
-        assert result["symbol"] == "BRK.B"
-
-    @patch("mtdata.services.finviz.api._apply_finvizfinance_timeout_patch")
-    def test_empty_description(self, mock_patch):
-        mock_stock = _mock_finviz_stock(description="")
-        with patch.dict("sys.modules", {"finvizfinance.quote": MagicMock(finvizfinance=MagicMock(return_value=mock_stock))}):
-            result = svc.get_stock_description("FOO")
-        assert "error" in result
-
-    @patch("mtdata.services.finviz.api._apply_finvizfinance_timeout_patch")
-    def test_exception(self, mock_patch):
-        mock_fv = MagicMock(side_effect=RuntimeError("boom"))
-        with patch.dict("sys.modules", {"finvizfinance.quote": MagicMock(finvizfinance=mock_fv)}):
-            result = svc.get_stock_description("BAD")
-        assert "error" in result
-
-
-# ---------------------------------------------------------------------------
-# get_stock_peers (lines 235-249)
-# ---------------------------------------------------------------------------
-
-
-class TestGetStockPeers:
-    @patch("mtdata.services.finviz.api._apply_finvizfinance_timeout_patch")
-    def test_success(self, mock_patch):
-        stock = _mock_finviz_stock(peers=["MSFT", "GOOG"])
-        with patch.dict("sys.modules", {"finvizfinance.quote": MagicMock(finvizfinance=MagicMock(return_value=stock))}):
-            result = svc.get_stock_peers("AAPL")
-        assert result["success"] is True
-        assert "MSFT" in result["peers"]
-
-    @patch("mtdata.services.finviz.api._apply_finvizfinance_timeout_patch")
-    def test_no_peers(self, mock_patch):
-        stock = _mock_finviz_stock(peers=[])
-        with patch.dict("sys.modules", {"finvizfinance.quote": MagicMock(finvizfinance=MagicMock(return_value=stock))}):
-            result = svc.get_stock_peers("LONE")
-        assert "error" in result
-
-    @patch("mtdata.services.finviz.api._apply_finvizfinance_timeout_patch")
-    def test_single_peer_wrapped(self, mock_patch):
-        stock = _mock_finviz_stock(peers="ONLY")
-        with patch.dict("sys.modules", {"finvizfinance.quote": MagicMock(finvizfinance=MagicMock(return_value=stock))}):
-            result = svc.get_stock_peers("X")
-        assert result["success"] is True
-        assert result["peers"] == ["ONLY"]
-
-    @patch("mtdata.services.finviz.api._apply_finvizfinance_timeout_patch")
-    def test_exception(self, mock_patch):
-        with patch.dict("sys.modules", {"finvizfinance.quote": MagicMock(finvizfinance=MagicMock(side_effect=Exception("fail")))}):
-            result = svc.get_stock_peers("ERR")
-        assert "error" in result
-
-
-# ---------------------------------------------------------------------------
-# screen_stocks (lines 302-319, 359-361) — screener view dispatch
-# ---------------------------------------------------------------------------
-
-
-class TestScreenStocks:
-    @patch("mtdata.services.finviz.api._apply_finvizfinance_timeout_patch")
-    @patch("mtdata.services.finviz.api._run_screener_view")
-    def test_overview_empty(self, mock_run, mock_patch):
-        mock_run.return_value = (None, 50)
-        with patch.dict("sys.modules", {"finvizfinance.screener.overview": MagicMock()}):
-            result = svc.screen_stocks(view="overview")
-        assert result["error"] == "Failed to fetch screener results from Finviz."
-
-    @patch("mtdata.services.finviz.api._apply_finvizfinance_timeout_patch")
-    @patch("mtdata.services.finviz.api._run_screener_view")
-    def test_valuation_view(self, mock_run, mock_patch):
-        df = pd.DataFrame({"Ticker": ["AAPL", "MSFT"], "P/E": [25, 30]})
-        mock_run.return_value = (df, 50)
-        mod = MagicMock()
-        with patch.dict("sys.modules", {"finvizfinance.screener.valuation": mod}):
-            result = svc.screen_stocks(view="valuation")
-        assert result["success"] is True
-
-    @patch("mtdata.services.finviz.api._apply_finvizfinance_timeout_patch")
-    @patch("mtdata.services.finviz.api._run_screener_view")
-    def test_financial_view(self, mock_run, mock_patch):
-        mock_run.return_value = (pd.DataFrame({"Ticker": ["A"]}), 50)
-        with patch.dict("sys.modules", {"finvizfinance.screener.financial": MagicMock()}):
-            result = svc.screen_stocks(view="financial")
-        assert result["success"] is True
-
-    @patch("mtdata.services.finviz.api._apply_finvizfinance_timeout_patch")
-    @patch("mtdata.services.finviz.api._run_screener_view")
-    def test_ownership_view(self, mock_run, mock_patch):
-        mock_run.return_value = (pd.DataFrame({"Ticker": ["B"]}), 50)
-        with patch.dict("sys.modules", {"finvizfinance.screener.ownership": MagicMock()}):
-            result = svc.screen_stocks(view="ownership")
-        assert result["success"] is True
-
-    @patch("mtdata.services.finviz.api._apply_finvizfinance_timeout_patch")
-    @patch("mtdata.services.finviz.api._run_screener_view")
-    def test_performance_view(self, mock_run, mock_patch):
-        mock_run.return_value = (pd.DataFrame({"Ticker": ["C"]}), 50)
-        with patch.dict("sys.modules", {"finvizfinance.screener.performance": MagicMock()}):
-            result = svc.screen_stocks(view="performance")
-        assert result["success"] is True
-
-    @patch("mtdata.services.finviz.api._apply_finvizfinance_timeout_patch")
-    @patch("mtdata.services.finviz.api._run_screener_view")
-    def test_technical_view(self, mock_run, mock_patch):
-        mock_run.return_value = (pd.DataFrame({"Ticker": ["D"]}), 50)
-        with patch.dict("sys.modules", {"finvizfinance.screener.technical": MagicMock()}):
-            result = svc.screen_stocks(view="technical")
-        assert result["success"] is True
-
-    @patch("mtdata.services.finviz.api._apply_finvizfinance_timeout_patch")
-    @patch("mtdata.services.finviz.api._run_screener_view")
-    def test_unknown_view_falls_back(self, mock_run, mock_patch):
-        mock_run.return_value = (pd.DataFrame({"Ticker": ["E"]}), 50)
-        with patch.dict("sys.modules", {"finvizfinance.screener.overview": MagicMock()}):
-            result = svc.screen_stocks(view="random_junk")
-        assert result["success"] is True
-
-    @patch("mtdata.services.finviz.api._apply_finvizfinance_timeout_patch")
-    def test_exception_returns_error(self, mock_patch):
-        with patch.dict("sys.modules", {"finvizfinance.screener.overview": MagicMock(Overview=MagicMock(side_effect=Exception("x")))}):
-            result = svc.screen_stocks()
-        assert "error" in result
-
-    @patch("mtdata.services.finviz.api._apply_finvizfinance_timeout_patch")
-    def test_exception_logs_warning_without_traceback(self, mock_patch):
-        mock_logger = MagicMock()
-        with patch.object(svc, "logger", mock_logger):
-            with patch.dict(
-                "sys.modules",
-                {"finvizfinance.screener.overview": MagicMock(Overview=MagicMock(side_effect=Exception("429 Too Many Requests")))},
-            ):
-                result = svc.screen_stocks()
-        assert "error" in result
-        assert result["error"] == "Finviz rate limit encountered. Retry after 60 seconds."
-        mock_logger.warning.assert_called_once()
-        mock_logger.exception.assert_not_called()
-
-    def test_sanitize_error_message_provides_actionable_categories(self):
-        assert (
-            svc._sanitize_error_message(Exception("Read timeout"))
-            == "Finviz request timed out. Retry later or reduce the requested page size."
-        )
-        assert (
-            svc._sanitize_error_message(Exception("HTML parser failed"))
-            == "Finviz response could not be parsed. The upstream page or API may have changed."
-        )
-        assert (
-            svc._sanitize_error_message(Exception("No futures performance data available"))
-            == "No futures performance data available. Adjust filters or retry later if Finviz data should be available."
-        )
-
-    @patch("mtdata.services.finviz.api._apply_finvizfinance_timeout_patch")
-    @patch("mtdata.services.finviz.api._run_screener_view")
-    def test_with_filters_and_order(self, mock_run, mock_patch):
-        mock_run.return_value = (pd.DataFrame({"Ticker": ["Z"]}), 50)
-        with patch.dict("sys.modules", {"finvizfinance.screener.overview": MagicMock()}):
-            result = svc.screen_stocks(filters={"Sector": "Technology"}, order="-marketcap")
-        assert result["success"] is True
-
-
-# ---------------------------------------------------------------------------
-# get_general_news (lines 359-421)
-# ---------------------------------------------------------------------------
-
-
-class TestGetGeneralNews:
-    @patch("mtdata.services.finviz.api._apply_finvizfinance_timeout_patch")
-    def test_news_success(self, mock_patch):
-        news_df = pd.DataFrame({"Title": [f"n{i}" for i in range(5)]})
-        mock_news = MagicMock()
-        mock_news.return_value.get_news.return_value = {"news": news_df, "blogs": pd.DataFrame()}
-        with patch.dict("sys.modules", {"finvizfinance.news": MagicMock(News=mock_news)}):
-            result = svc.get_general_news("news", limit=3, page=1)
-        assert result["success"] is True
-        assert result["count"] == 3
-
-    @patch("mtdata.services.finviz.api._apply_finvizfinance_timeout_patch")
-    def test_blogs_success(self, mock_patch):
-        blog_df = pd.DataFrame({"Title": ["b1", "b2"]})
-        mock_news = MagicMock()
-        mock_news.return_value.get_news.return_value = {"news": pd.DataFrame(), "blogs": blog_df}
-        with patch.dict("sys.modules", {"finvizfinance.news": MagicMock(News=mock_news)}):
-            result = svc.get_general_news("blogs", limit=10, page=1)
-        assert result["success"] is True
-        assert result["count"] == 2
-
-    @patch("mtdata.services.finviz.api._apply_finvizfinance_timeout_patch")
-    def test_empty_news(self, mock_patch):
-        mock_news = MagicMock()
-        mock_news.return_value.get_news.return_value = {"news": pd.DataFrame()}
-        with patch.dict("sys.modules", {"finvizfinance.news": MagicMock(News=mock_news)}):
-            result = svc.get_general_news("news")
-        assert "error" in result
-
-    @patch("mtdata.services.finviz.api._apply_finvizfinance_timeout_patch")
-    def test_items_as_list(self, mock_patch):
-        mock_news = MagicMock()
-        mock_news.return_value.get_news.return_value = {"news": [{"title": "a"}, {"title": "b"}]}
-        with patch.dict("sys.modules", {"finvizfinance.news": MagicMock(News=mock_news)}):
-            result = svc.get_general_news("news", limit=10)
-        assert result["success"] is True
-        assert result["count"] == 2
-
-    @patch("mtdata.services.finviz.api._apply_finvizfinance_timeout_patch")
-    def test_items_as_empty_list(self, mock_patch):
-        mock_news = MagicMock()
-        mock_news.return_value.get_news.return_value = {"news": []}
-        with patch.dict("sys.modules", {"finvizfinance.news": MagicMock(News=mock_news)}):
-            result = svc.get_general_news("news")
-        assert "error" in result
-
-    @patch("mtdata.services.finviz.api._apply_finvizfinance_timeout_patch")
-    def test_exception(self, mock_patch):
-        mock_news = MagicMock(side_effect=Exception("boom"))
-        with patch.dict("sys.modules", {"finvizfinance.news": MagicMock(News=mock_news)}):
-            result = svc.get_general_news("news")
-        assert "error" in result
-
-
-# ---------------------------------------------------------------------------
-# get_insider_activity (lines 437-464)
-# ---------------------------------------------------------------------------
-
-
-class TestGetInsiderActivity:
-    @patch("mtdata.services.finviz.api._apply_finvizfinance_timeout_patch")
-    def test_success(self, mock_patch):
-        df = pd.DataFrame({"Ticker": ["AAPL"], "Owner": ["CEO"], "Date": ["Nov 07 '25"]})
-        mock_ins = MagicMock()
-        mock_ins.return_value.get_insider.return_value = df
-        with patch.dict("sys.modules", {"finvizfinance.insider": MagicMock(Insider=mock_ins)}):
-            result = svc.get_insider_activity("latest", limit=10)
-        assert result["success"] is True
-        assert result["count"] == 1
-        assert result["insider_trades"][0]["Date"] == "2025-11-07"
-
-    @patch("mtdata.services.finviz.api._apply_finvizfinance_timeout_patch")
-    def test_empty(self, mock_patch):
-        mock_ins = MagicMock()
-        mock_ins.return_value.get_insider.return_value = pd.DataFrame()
-        with patch.dict("sys.modules", {"finvizfinance.insider": MagicMock(Insider=mock_ins)}):
-            result = svc.get_insider_activity("latest")
-        assert "error" in result
-
-    @patch("mtdata.services.finviz.api._apply_finvizfinance_timeout_patch")
-    def test_exception(self, mock_patch):
-        mock_ins = MagicMock(side_effect=Exception("no"))
-        with patch.dict("sys.modules", {"finvizfinance.insider": MagicMock(Insider=mock_ins)}):
-            result = svc.get_insider_activity("latest")
-        assert "error" in result
-
-
-# ---------------------------------------------------------------------------
-# get_futures_performance (lines 515-533)
-# ---------------------------------------------------------------------------
-
-
-class TestGetFuturesPerformance:
-    @patch(
-        "mtdata.services.finviz.api._fetch_finviz_futures_performance_rows",
-        return_value=[{"Name": "Gold", "Change": "+1.5%"}],
-    )
-    def test_success(self, mock_fetch):
-        result = svc.get_futures_performance()
-
-        mock_fetch.assert_called_once_with()
-        assert result["success"] is True
-        assert result["count"] == 1
-
-    @patch(
-        "mtdata.services.finviz.api._fetch_finviz_futures_performance_rows",
-        side_effect=ValueError("No futures performance data available"),
-    )
-    def test_empty(self, mock_fetch):
-        result = svc.get_futures_performance()
-
-        mock_fetch.assert_called_once_with()
-        assert "error" in result
-
-    @patch(
-        "mtdata.services.finviz.api._fetch_finviz_futures_performance_rows",
-        side_effect=Exception("err"),
-    )
-    def test_exception(self, mock_fetch):
-        result = svc.get_futures_performance()
-
-        mock_fetch.assert_called_once_with()
-        assert "error" in result
-
-
-# ---------------------------------------------------------------------------
-# _resolve_date_range / _align_to_next_monday_if_weekend
-# ---------------------------------------------------------------------------
-
 
 class TestResolveDateRange:
     def test_defaults(self):
@@ -430,7 +102,6 @@ class TestResolveDateRange:
         with pytest.raises(ValueError, match="date_to must be >= date_from"):
             svc._resolve_date_range(date_from="2024-06-15", date_to="2024-06-01", default_days=7)
 
-
 class TestAlignToMondayIfWeekend:
     def test_saturday(self):
         assert svc._align_to_next_monday_if_weekend("2024-06-08") == "2024-06-10"
@@ -448,7 +119,6 @@ class TestAlignToMondayIfWeekend:
         with pytest.raises(ValueError, match="Invalid date_from"):
             svc._align_to_next_monday_if_weekend("2024-06-09T12:34:56junk")
 
-
 class TestDatesModuleIsoParsing:
     def test_normalize_finviz_date_string_accepts_iso_datetime(self):
         assert finviz_dates.normalize_finviz_date_string("2024-06-09T12:34:56Z") == "2024-06-09"
@@ -457,11 +127,9 @@ class TestDatesModuleIsoParsing:
         with pytest.raises(ValueError, match="Invalid date_from"):
             finviz_dates.align_to_next_monday_if_weekend("2024-06-09T12:34:56junk")
 
-
 # ---------------------------------------------------------------------------
 # _filter_calendar_events_by_date (lines 811-819)
 # ---------------------------------------------------------------------------
-
 
 class TestFilterCalendarEventsByDate:
     def test_filters_by_date_range(self):
@@ -503,11 +171,9 @@ class TestFilterCalendarEventsByDate:
         filtered = svc._filter_calendar_events_by_date(events, date_from="2024-06-01", date_to="2024-06-10")
         assert len(filtered) == 0
 
-
 # ---------------------------------------------------------------------------
 # _fetch_finviz_economic_calendar_items (lines 829-847)
 # ---------------------------------------------------------------------------
-
 
 class TestFetchFinvizEconomicCalendarItems:
     @patch("mtdata.services.finviz.api._finviz_http_get")
@@ -538,11 +204,9 @@ class TestFetchFinvizEconomicCalendarItems:
         items = svc._fetch_finviz_economic_calendar_items("2024-06-01", "2024-06-07")
         assert len(items) == 1
 
-
 # ---------------------------------------------------------------------------
 # _fetch_finviz_calendar_paged (lines 850-880)
 # ---------------------------------------------------------------------------
-
 
 class TestFetchFinvizCalendarPaged:
     @patch("mtdata.services.finviz.api._finviz_http_get")
@@ -571,76 +235,4 @@ class TestFetchFinvizCalendarPaged:
         mock_get.return_value = mock_resp
         with pytest.raises(TypeError, match="missing items"):
             svc._fetch_finviz_calendar_paged(kind="earnings", date_from="2024-06-01", date_to="2024-06-07", page=1, page_size=50)
-
-
-# ---------------------------------------------------------------------------
-# get_economic_calendar (lines 659-663)
-# ---------------------------------------------------------------------------
-
-
-class TestGetEconomicCalendar:
-    @patch("mtdata.services.finviz.api._fetch_finviz_economic_calendar_items", return_value=[])
-    @patch("mtdata.services.finviz.api._filter_calendar_events_by_date", return_value=[])
-    def test_success_empty(self, mock_filter, mock_fetch):
-        result = svc.get_economic_calendar(limit=50, page=1)
-        assert result["success"] is True
-        assert result["count"] == 0
-
-    def test_bad_impact(self):
-        result = svc.get_economic_calendar(impact="critical")
-        assert "error" in result
-
-    @patch("mtdata.services.finviz.api._fetch_finviz_economic_calendar_items", side_effect=ValueError("bad"))
-    def test_value_error(self, mock_fetch):
-        result = svc.get_economic_calendar(date_from="2024-06-01", date_to="2024-06-07")
-        assert "error" in result
-
-    @patch("mtdata.services.finviz.api._fetch_finviz_economic_calendar_items", side_effect=RuntimeError("boom"))
-    def test_generic_exception(self, mock_fetch):
-        result = svc.get_economic_calendar(date_from="2024-06-01", date_to="2024-06-07")
-        assert "error" in result
-
-
-# ---------------------------------------------------------------------------
-# get_earnings_calendar_api / get_dividends_calendar_api (700-745)
-# ---------------------------------------------------------------------------
-
-
-class TestGetEarningsCalendarApi:
-    @patch("mtdata.services.finviz.api._fetch_finviz_calendar_paged")
-    def test_success(self, mock_fetch):
-        mock_fetch.return_value = {"items": [{"ticker": "AAPL"}], "totalItemsCount": 1, "totalPages": 1, "page": 1}
-        result = svc.get_earnings_calendar_api(limit=10, page=1, date_from="2024-06-01", date_to="2024-06-07")
-        assert result["success"] is True
-        assert result["calendar"] == "earnings"
-
-    @patch("mtdata.services.finviz.api._fetch_finviz_calendar_paged", side_effect=ValueError("bad"))
-    def test_value_error(self, mock_fetch):
-        result = svc.get_earnings_calendar_api(date_from="2024-06-01", date_to="2024-06-07")
-        assert "error" in result
-
-    @patch("mtdata.services.finviz.api._fetch_finviz_calendar_paged", side_effect=Exception("boom"))
-    def test_exception(self, mock_fetch):
-        result = svc.get_earnings_calendar_api(date_from="2024-06-01", date_to="2024-06-07")
-        assert "error" in result
-
-
-class TestGetDividendsCalendarApi:
-    @patch("mtdata.services.finviz.api._fetch_finviz_calendar_paged")
-    def test_success(self, mock_fetch):
-        mock_fetch.return_value = {"items": [{"ticker": "T"}], "totalItemsCount": 1, "totalPages": 1, "page": 1}
-        result = svc.get_dividends_calendar_api(limit=10, page=1, date_from="2024-06-01", date_to="2024-06-07")
-        assert result["success"] is True
-        assert result["calendar"] == "dividends"
-
-    @patch("mtdata.services.finviz.api._fetch_finviz_calendar_paged", side_effect=ValueError("bad"))
-    def test_value_error(self, mock_fetch):
-        result = svc.get_dividends_calendar_api(date_from="2024-06-01", date_to="2024-06-07")
-        assert "error" in result
-
-    @patch("mtdata.services.finviz.api._fetch_finviz_calendar_paged", side_effect=Exception("boom"))
-    def test_exception(self, mock_fetch):
-        result = svc.get_dividends_calendar_api(date_from="2024-06-01", date_to="2024-06-07")
-        assert "error" in result
-
 

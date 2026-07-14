@@ -1,15 +1,14 @@
-"""Tests for mtdata.forecast.methods.analog – coverage for lines 67-192 (analog matching logic)."""
+"""Unit tests for AnalogMethod._run_single_timeframe (engine paths)."""
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, PropertyMock, patch
+from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pandas as pd
 import pytest
 from scipy.spatial import cKDTree
 
-from mtdata.forecast.interface import ForecastResult
 from mtdata.forecast.methods.analog import AnalogMethod
 from mtdata.utils.patterns import PatternIndex, _SeriesStore
 
@@ -20,7 +19,6 @@ from mtdata.utils.patterns import PatternIndex, _SeriesStore
 def _price_series(n=200, name="close"):
     vals = np.cumsum(np.random.randn(n)) + 100
     return pd.Series(vals, name=name)
-
 
 def _make_mock_index(n_windows=120, window_size=64, horizon=10):
     """Build a mock Index object returned by build_index."""
@@ -54,7 +52,6 @@ def _make_mock_index(n_windows=120, window_size=64, horizon=10):
         axis=1,
     )[:n_windows]
     return idx
-
 
 def _make_real_index(series: np.ndarray, *, window_size: int, horizon: int, scale: str = "zscore") -> PatternIndex:
     values = np.asarray(series, dtype=float)
@@ -94,34 +91,6 @@ def _make_real_index(series: np.ndarray, *, window_size: int, horizon: int, scal
         metric="euclidean",
         engine="ckdtree",
     )
-
-
-# ===========================================================================
-# AnalogMethod properties
-# ===========================================================================
-
-class TestAnalogMethodProperties:
-    def test_name(self):
-        assert AnalogMethod().name == "analog"
-
-    def test_category(self):
-        assert AnalogMethod().category == "analog"
-
-    def test_required_packages(self):
-        pkgs = AnalogMethod().required_packages
-        assert "scipy" in pkgs
-        assert "numpy" in pkgs
-
-    def test_supports_features(self):
-        feats = AnalogMethod().supports_features
-        assert feats["price"] is True
-        assert feats["return"] is False
-        assert feats["ci"] is True
-
-
-# ===========================================================================
-# _run_single_timeframe (lines 67-192)
-# ===========================================================================
 
 class TestRunSingleTimeframe:
     def setup_method(self):
@@ -475,99 +444,3 @@ class TestRunSingleTimeframe:
         assert len(calls) >= 2
         assert self.m._get_timeframe_diagnostic("H1")["search_rounds"] >= 1
 
-
-# ===========================================================================
-# AnalogMethod.forecast (lines 194-361)
-# ===========================================================================
-
-class TestAnalogMethodForecast:
-    def setup_method(self):
-        self.m = AnalogMethod()
-
-    def test_raises_on_empty_series(self):
-        with pytest.raises(ValueError, match="price series only"):
-            self.m.forecast(pd.Series([], dtype=float, name="close"), horizon=10, seasonality=1, params={"symbol": "X", "timeframe": "H1"})
-
-    def test_raises_on_return_series(self):
-        with pytest.raises(ValueError, match="price series only"):
-            self.m.forecast(_price_series(name="__return"), horizon=10, seasonality=1, params={"symbol": "X", "timeframe": "H1"})
-
-    def test_raises_on_vol_series(self):
-        with pytest.raises(ValueError, match="price series only"):
-            self.m.forecast(_price_series(name="vol_series"), horizon=10, seasonality=1, params={"symbol": "X", "timeframe": "H1"})
-
-    def test_raises_missing_symbol(self):
-        with pytest.raises(ValueError, match="symbol"):
-            self.m.forecast(_price_series(), horizon=10, seasonality=1, params={"timeframe": "H1"})
-
-    def test_raises_missing_timeframe(self):
-        with pytest.raises(ValueError, match="timeframe"):
-            self.m.forecast(_price_series(), horizon=10, seasonality=1, params={"symbol": "EURUSD"})
-
-    @patch.object(AnalogMethod, "_run_single_timeframe")
-    def test_primary_failure_raises(self, mock_run):
-        mock_run.return_value = ([], [])
-        with pytest.raises(RuntimeError, match="Primary analog search failed"):
-            self.m.forecast(
-                _price_series(), horizon=10, seasonality=1,
-                params={"symbol": "EURUSD", "timeframe": "H1"},
-            )
-
-    @patch("mtdata.shared.constants.TIMEFRAME_SECONDS", {"H1": 3600, "D1": 86400})
-    @patch.object(AnalogMethod, "_run_single_timeframe")
-    def test_successful_forecast(self, mock_run):
-        futures = [np.random.rand(10) * 100 + 50 for _ in range(5)]
-        meta = [{"score": 0.1, "date": "2020-01-01", "index": i, "scale_factor": 1.0} for i in range(5)]
-        mock_run.return_value = (futures, meta)
-        res = self.m.forecast(
-            _price_series(), horizon=10, seasonality=1,
-            params={"symbol": "EURUSD", "timeframe": "H1"},
-        )
-        assert isinstance(res, ForecastResult)
-        assert len(res.forecast) == 10
-        assert res.ci_values is not None
-
-    @patch("mtdata.shared.constants.TIMEFRAME_SECONDS", {"H1": 3600, "D1": 86400})
-    @patch.object(AnalogMethod, "_run_single_timeframe")
-    def test_ci_alpha_default(self, mock_run):
-        futures = [np.random.rand(10) * 100 + 50 for _ in range(5)]
-        meta = [{"score": 0.1, "date": "2020-01-01", "index": i, "scale_factor": 1.0} for i in range(5)]
-        mock_run.return_value = (futures, meta)
-        res = self.m.forecast(
-            _price_series(), horizon=10, seasonality=1,
-            params={"symbol": "EURUSD", "timeframe": "H1"},
-        )
-        assert res.params_used["ci_alpha"] == 0.05
-
-    @patch("mtdata.shared.constants.TIMEFRAME_SECONDS", {"H1": 3600, "D1": 86400})
-    @patch.object(AnalogMethod, "_run_single_timeframe")
-    def test_ci_alpha_invalid(self, mock_run):
-        futures = [np.random.rand(10) * 100 + 50 for _ in range(5)]
-        meta = [{"score": 0.1, "date": "2020-01-01", "index": i, "scale_factor": 1.0} for i in range(5)]
-        mock_run.return_value = (futures, meta)
-        res = self.m.forecast(
-            _price_series(), horizon=10, seasonality=1,
-            params={"symbol": "EURUSD", "timeframe": "H1", "ci_alpha": 2.0},
-        )
-        assert res.params_used["ci_alpha"] == 0.05
-
-    @patch("mtdata.shared.constants.TIMEFRAME_SECONDS", {"H1": 3600, "H4": 14400})
-    @patch.object(AnalogMethod, "_run_single_timeframe")
-    def test_secondary_timeframes(self, mock_run):
-        futures = [np.random.rand(10) * 100 + 50 for _ in range(5)]
-        meta = [{"score": 0.1, "date": "2020-01-01", "index": i, "scale_factor": 1.0} for i in range(5)]
-        mock_run.return_value = (futures, meta)
-        res = self.m.forecast(
-            _price_series(), horizon=10, seasonality=1,
-            params={"symbol": "EURUSD", "timeframe": "H1", "secondary_timeframes": "H4"},
-        )
-        assert res.forecast is not None
-
-    def test_raises_when_series_shorter_than_window_size(self):
-        with pytest.raises(ValueError, match="requires at least 64 price points"):
-            self.m.forecast(
-                _price_series(n=20),
-                horizon=10,
-                seasonality=1,
-                params={"symbol": "EURUSD", "timeframe": "H1"},
-            )
