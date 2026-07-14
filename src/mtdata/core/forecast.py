@@ -439,7 +439,7 @@ def _run_forecast_payload_direct(operation: str, payload: Dict[str, Any]) -> Dic
             library=payload.get("library"),
             supports_ci=payload.get("supports_ci"),
             supports_training=payload.get("supports_training"),
-            profile=payload.get("profile", "quickstart"),
+            profile=payload.get("profile", "all"),
             show_unavailable=bool(payload.get("show_unavailable", False)),
         )
 
@@ -911,15 +911,15 @@ def forecast_list_methods(
     ] = None,
     supports_ci: Optional[bool] = None,
     supports_training: Optional[bool] = None,
-    profile: Literal["quickstart", "core", "all"] = "quickstart",
+    profile: Literal["quickstart", "core", "all"] = "all",
     show_unavailable: bool = False,
 ) -> Dict[str, Any]:
     """List forecast methods and availability.
 
     Compact output is the default. Standard adds descriptions, capability
     details, and related volatility methods; full adds parameter documentation.
-    The default quickstart profile returns a small native baseline set; use
-    profile='all' for the full catalog.
+    The default all profile returns the full available catalog; use
+    profile='quickstart' for a small native baseline set.
     """
     search_term_value = str(search_term or "").strip() or None
     return _run_forecast_operation(
@@ -1722,7 +1722,7 @@ def _forecast_list_methods_impl(  # noqa: C901
     library: Optional[str] = None,
     supports_ci: Optional[bool] = None,
     supports_training: Optional[bool] = None,
-    profile: str = "quickstart",
+    profile: str = "all",
     show_unavailable: bool = False,
 ) -> Dict[str, Any]:
     try:
@@ -1738,7 +1738,7 @@ def _forecast_list_methods_impl(  # noqa: C901
         search_value = str(search or "").strip().lower()
         category_filter_value = str(category or "").strip().lower()
         library_value = str(library or "").strip().lower()
-        profile_value = str(profile or "quickstart").strip().lower()
+        profile_value = str(profile or "all").strip().lower()
         if profile_value not in _FORECAST_METHOD_PROFILES:
             return {"error": "Invalid profile. Use all, quickstart, or core."}
         profile_methods = _FORECAST_METHOD_PROFILES[profile_value]

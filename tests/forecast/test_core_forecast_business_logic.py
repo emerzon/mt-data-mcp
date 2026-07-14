@@ -1580,7 +1580,7 @@ def test_forecast_list_library_models_and_list_methods(monkeypatch):
             ],
         },
     )
-    compact = _unwrap(cf.forecast_list_methods)()
+    compact = _unwrap(cf.forecast_list_methods)(profile="quickstart")
     assert "detail" not in compact
     assert compact["total"] == 2
     assert compact["available"] == 1
@@ -1610,7 +1610,7 @@ def test_forecast_list_library_models_and_list_methods(monkeypatch):
     assert "note" not in compact
     assert "volatility_methods" not in compact
 
-    standard = _unwrap(cf.forecast_list_methods)(detail="standard")
+    standard = _unwrap(cf.forecast_list_methods)(detail="standard", profile="quickstart")
     assert standard["detail"] == "standard"
     assert standard["methods"][0]["description"] == "Theta model."
     assert standard["methods"][0]["params_count"] == 1
