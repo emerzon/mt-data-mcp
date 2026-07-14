@@ -10,6 +10,8 @@ from __future__ import annotations
 import math
 from typing import Any, Dict, List, Optional, Tuple
 
+from ...utils.coercion import coerce_finite_float as _finite_float
+
 DEFAULT_KELLY_FRACTION_MULTIPLIER = 0.5
 DEFAULT_KELLY_MAX_RISK_PCT = 2.0
 
@@ -49,16 +51,6 @@ def _resolve_risk_tick_value(
     if math.isfinite(loss_tick_value) and loss_tick_value > 0:
         return loss_tick_value
     return float(tick_value)
-
-
-def _finite_float(value: Any) -> Optional[float]:
-    try:
-        value_f = float(value)
-    except Exception:
-        return None
-    if not math.isfinite(value_f):
-        return None
-    return value_f
 
 
 def compute_kelly_sizing_context(

@@ -19,6 +19,7 @@ from ..core.execution_logging import (
     log_operation_start,
 )
 from ..core.output_contract import attach_collection_contract
+from ..utils.coercion import coerce_finite_float as _finite_float
 from ..utils.coercion import is_explicit_false as _is_explicit_false
 from ..utils.freshness import format_age_seconds as _format_age_seconds
 from ..utils.freshness import format_freshness_label
@@ -286,14 +287,6 @@ def _canonicalize_volatility_output(payload: Dict[str, Any]) -> Dict[str, Any]:
             out[trader_key] = legacy_value
         out.pop(legacy_key, None)
     return out
-
-
-def _finite_float(value: Any) -> Optional[float]:
-    try:
-        out = float(value)
-    except Exception:
-        return None
-    return out if math.isfinite(out) else None
 
 
 def _forecast_price_digits(payload: Dict[str, Any]) -> Optional[int]:
