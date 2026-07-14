@@ -2173,6 +2173,9 @@ def regime_detect(  # noqa: C901
                     ),
                 },
             }
+            effective_n_states = int(len(mu))
+            payload["requested_n_states"] = int(n_states)
+            payload["effective_n_states"] = effective_n_states
             if method == "hmm":
                 payload["params_used"].update({
                     "converged": bool(hmm_fit.get("converged", False)),
@@ -2182,12 +2185,12 @@ def regime_detect(  # noqa: C901
                 payload["params_used"]["label_mapping"] = canon_meta["mapping"]
             _append_warnings(payload, state_count_warnings)
             _append_warnings(payload, _smoothing_warnings(method, smoothing_meta))
-            if method == "hmm" and len(mu) < n_states:
+            if effective_n_states < n_states:
                 _append_warnings(
                     payload,
                     [
-                        "HMM state collapse: requested "
-                        f"{int(n_states)} states but fitted {int(len(mu))}; "
+                        f"{method.upper()} state collapse: requested "
+                        f"{int(n_states)} states but fitted {effective_n_states}; "
                         "regime output uses the reduced-state model."
                     ],
                 )
@@ -2201,6 +2204,17 @@ def regime_detect(  # noqa: C901
                     else "gmm_component_responsibilities"
                 ),
             )
+            if effective_n_states < n_states:
+                payload["reliability"].update(
+                    {
+                        "confidence": 0.0,
+                        "reliability_label": "low",
+                        "confidence_note": (
+                            "Requested states collapsed during fitting; classification "
+                            "confidence is not identifiable from the reduced-state result."
+                        ),
+                    }
+                )
 
             if output in ("summary", "compact"):
                 n = _summary_window_size(lookback, len(state))

@@ -1050,6 +1050,9 @@ def _consolidate_payload(  # noqa: C901
             "method": payload.get("method"),
             "success": True,
         }
+        for state_count_key in ("requested_n_states", "effective_n_states"):
+            if state_count_key in payload:
+                new_payload[state_count_key] = payload[state_count_key]
 
         if method == "bocpd":
             if current_regime:

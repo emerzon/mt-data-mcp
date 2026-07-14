@@ -1054,6 +1054,11 @@ class TestRegimeDetectHMM:
         assert len(res["series"]["state_probabilities"][0]) == 1
         assert res["series"]["state_probabilities"][0] == [1.0]
         assert res["params_used"]["fitted_n_states"] == 1
+        assert res["requested_n_states"] == 3
+        assert res["effective_n_states"] == 1
+        assert res["reliability"]["confidence"] == 0.0
+        assert res["reliability"]["reliability_label"] == "low"
+        assert any("state collapse" in warning for warning in res["warnings"])
 
     @patch(_FMT, side_effect=_time_fmt_stub)
     @patch(_DENOISE, return_value="close")
