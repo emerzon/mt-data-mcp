@@ -66,6 +66,16 @@ def _strip_ansi(text: str) -> str:
     return _ANSI_ESCAPE_RE.sub("", text)
 
 
+def test_non_bar_commands_do_not_receive_global_timeframe() -> None:
+    from mtdata.core.cli import api as cli_api
+
+    assert {
+        "data_fetch_ticks",
+        "symbols_list",
+        "tools_list",
+    }.issubset(cli_api._TIMEFRAMELESS_GLOBAL_COMMANDS)
+
+
 def test_disabled_market_depth_parse_error_explains_gate(monkeypatch, capsys):
     from mtdata.core.cli import api as cli_api
 
