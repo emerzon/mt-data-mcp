@@ -54,7 +54,7 @@ def test_run_data_fetch_candles_passes_allow_stale_to_service():
     [
         (
             "Symbol 'EURUSD.bad' was not found or is not available in MT5.",
-            "data_fetch_candles_symbol_unavailable",
+            "symbol_not_found",
         ),
         (
             "start_datetime must be before end_datetime",

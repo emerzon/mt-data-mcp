@@ -815,7 +815,7 @@ def test_market_ticker_rewrites_invalid_symbol_selection_error() -> None:
 
     assert out["error"] == "Symbol 'FAKESYMBOL' was not found or is not available in MT5."
     assert out["success"] is False
-    assert out["error_code"] == "market_ticker_symbol_unavailable"
+    assert out["error_code"] == "symbol_not_found"
     assert out["operation"] == "market_ticker"
     assert out["request_id"]
     assert "symbols_list(search_term='FAKESYMBOL')" in out["remediation"]

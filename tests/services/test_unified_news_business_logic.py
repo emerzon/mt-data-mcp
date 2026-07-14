@@ -99,7 +99,7 @@ def test_fetch_unified_news_rejects_unknown_equity_symbol(monkeypatch) -> None:
     result = svc.fetch_unified_news("ZZZZZ")
 
     assert result["success"] is False
-    assert result["error_code"] == "news_symbol_unavailable"
+    assert result["error_code"] == "symbol_not_found"
     assert result["symbol"] == "ZZZZZ"
     assert result["remediation"]
 

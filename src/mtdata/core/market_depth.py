@@ -552,7 +552,7 @@ def market_ticker(  # noqa: C901
                 return _finalize(
                     _market_ticker_error(
                         _describe_symbol_select_error(resolved_symbol, mt5_gateway.last_error()),
-                        code="market_ticker_symbol_unavailable",
+                        code="symbol_not_found",
                         remediation=(
                             f"Verify the broker symbol name with symbols_list(search_term='{symbol}') "
                             "or symbols_top_markets, then retry with an available MT5 symbol."
@@ -565,7 +565,7 @@ def market_ticker(  # noqa: C901
                 return _finalize(
                     _market_ticker_error(
                         f"Symbol {resolved_symbol} not found",
-                        code="market_ticker_symbol_unavailable",
+                        code="symbol_not_found",
                         remediation=(
                             f"Verify the broker symbol name with symbols_list(search_term='{symbol}') "
                             "or symbols_describe."

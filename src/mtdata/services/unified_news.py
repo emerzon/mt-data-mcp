@@ -1725,7 +1725,7 @@ class NewsAggregator:
                 return {
                     "success": False,
                     "error": str(exc),
-                    "error_code": "news_symbol_unavailable",
+                    "error_code": "symbol_not_found",
                     "symbol": context.symbol if context is not None else symbol_norm,
                     "remediation": (
                         "Check the ticker spelling or use the broker's exact MT5 "

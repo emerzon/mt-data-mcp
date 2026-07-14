@@ -271,7 +271,7 @@ def _normalize_candle_query_error(
     remediation: Optional[str] = None
 
     if "not found" in normalized and "symbol" in normalized:
-        error_code = "data_fetch_candles_symbol_unavailable"
+        error_code = "symbol_not_found"
         remediation = (
             "Use the broker's exact MT5 symbol name; call market_ticker for symbol "
             "discovery when the broker uses suffixes or aliases."

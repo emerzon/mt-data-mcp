@@ -133,7 +133,7 @@ Failures return a **structured** payload (not just a string) so callers can reac
 {
   "success": false,
   "error": "Symbol NOTAREALPAIR not found.",
-  "error_code": "SYMBOL_NOT_FOUND",
+  "error_code": "symbol_not_found",
   "request_id": "b0f3…",
   "operation": "symbols_describe",
   "remediation": "Use symbols_list to browse available broker symbols.",
@@ -149,7 +149,7 @@ Failures return a **structured** payload (not just a string) so callers can reac
 |-------|:---:|---------|
 | `success` | ✅ | Always `false` on errors |
 | `error` | ✅ | Human-readable message |
-| `error_code` | ✅ | Stable machine-readable code (e.g. `SYMBOL_NOT_FOUND`, `MT5_CONNECTION`) |
+| `error_code` | ✅ | Stable lowercase machine-readable code (e.g. `symbol_not_found`, `mt5_connection_error`) |
 | `request_id` | ✅ | Correlation id for logs |
 | `operation` | | The tool that failed |
 | `remediation` | | Suggested fix |
