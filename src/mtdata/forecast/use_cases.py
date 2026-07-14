@@ -1741,6 +1741,8 @@ def _compact_backtest_result(result: Dict[str, Any]) -> Dict[str, Any]:
     compact_out.pop("request", None)
     compact_out.pop("resolved_request", None)
     compact_out.pop("detail", None)
+    if isinstance(compact_out.pop("units", None), dict):
+        compact_out["units_profile"] = "forecast_backtest_v1"
     if compact_out.get("slippage_bps") in (0, 0.0, None):
         compact_out.pop("slippage_bps", None)
     if compact_out.get("trade_threshold") in (0, 0.0, None):

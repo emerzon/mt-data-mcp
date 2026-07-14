@@ -919,8 +919,8 @@ def test_run_forecast_backtest_strips_per_anchor_details_in_compact_mode():
     assert "request" not in result
     assert "resolved_request" not in result
     assert "results" not in result
-    assert result["units"]["returns"] == "return_fraction"
-    assert result["units"]["forecast_error"] == "price"
+    assert "units" not in result
+    assert result["units_profile"] == "forecast_backtest_v1"
     assert result["ranked_methods"][0]["method"] == "theta"
     assert result["ranked_methods"][0]["details_count"] == 1
     assert "metrics" not in result["ranked_methods"][0]
