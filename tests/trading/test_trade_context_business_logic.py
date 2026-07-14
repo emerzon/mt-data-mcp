@@ -30,6 +30,10 @@ def test_trade_session_context_compacts_nested_sections_by_default() -> None:
         "price_currency": "USD",
         "spread": 0.0002,
         "spread_pips": 2.0,
+        "freshness_state": "live",
+        "usable_for_live_trading": True,
+        "usable_for_live_trading_basis": "quote_age_and_market_session",
+        "live_max_age_seconds": 30,
         "time": "2023-11-14 22:13",
         "timezone": "UTC",
     }
@@ -103,7 +107,9 @@ def test_trade_session_context_compacts_nested_sections_by_default() -> None:
     assert "pnl_basis" not in out["account"]
     assert "equity_balance_delta" not in out["account"]
     assert "login" not in out["account"]
-    assert "account_type" not in out["account"]
+    assert out["account"]["account_type"] == "demo"
+    assert out["account"]["is_demo"] is True
+    assert out["account"]["is_live"] is False
     assert "execution_ready" not in out["account"]
     assert out["quote"] == {
         "bid": 1.1,
@@ -112,6 +118,10 @@ def test_trade_session_context_compacts_nested_sections_by_default() -> None:
         "price_currency": "USD",
         "spread": 0.0002,
         "spread_pips": 2.0,
+        "freshness_state": "live",
+        "usable_for_live_trading": True,
+        "usable_for_live_trading_basis": "quote_age_and_market_session",
+        "live_max_age_seconds": 30,
         "time": "2023-11-14 22:13",
         "timezone": "UTC",
     }

@@ -164,6 +164,8 @@ def _build_trade_ready(
 
     if not isinstance(quote, dict) or quote.get("error") not in (None, ""):
         blockers.append("quote_unavailable")
+    elif quote.get("usable_for_live_trading") is False:
+        blockers.append("quote_not_live")
     elif bool(quote.get("data_stale")):
         blockers.append("quote_stale")
 
@@ -225,15 +227,24 @@ def _build_quote_quality(quote: Any) -> Dict[str, Any]:
         }
     age_seconds = quote.get("data_age_seconds")
     stale = bool(quote.get("data_stale"))
-    status = "stale" if stale else "reliable"
+    execution_usable = quote.get("usable_for_live_trading") is True
+    status = "stale" if stale else "live" if execution_usable else "recent"
     out: Dict[str, Any] = {
         "status": status,
-        "is_live": not stale,
+        "is_live": execution_usable,
         "data_stale": stale,
     }
     if age_seconds not in (None, ""):
         out["age_seconds"] = age_seconds
-    for key in ("freshness", "market_status", "timezone", "time"):
+    for key in (
+        "freshness",
+        "freshness_state",
+        "usable_for_live_trading",
+        "live_max_age_seconds",
+        "market_status",
+        "timezone",
+        "time",
+    ):
         value = quote.get(key)
         if value not in (None, ""):
             out[key] = value
@@ -306,6 +317,10 @@ def _compact_trade_session_context_payload(payload: Dict[str, Any]) -> Dict[str,
                     "margin_level",
                     "currency",
                     "leverage",
+                    "account_type",
+                    "is_demo",
+                    "is_live",
+                    "server",
                 )
                 if account.get(key) not in (None, "")
             }
@@ -341,6 +356,10 @@ def _compact_trade_session_context_payload(payload: Dict[str, Any]) -> Dict[str,
                     "data_age_seconds",
                     "data_age",
                     "data_stale",
+                    "freshness_state",
+                    "usable_for_live_trading",
+                    "usable_for_live_trading_basis",
+                    "live_max_age_seconds",
                     "stale_warning",
                     "warning",
                 )
