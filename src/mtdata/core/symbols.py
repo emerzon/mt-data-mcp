@@ -3507,6 +3507,17 @@ def market_scan(  # noqa: C901
                 compact_headers.append("rsi")
             if include_sma:
                 compact_headers.append("sma_distance_pct")
+            optional_compact_headers = {
+                "market_status",
+                "market_status_reason",
+                "freshness_policy_relaxed",
+            }
+            compact_headers = [
+                header
+                for header in compact_headers
+                if header not in optional_compact_headers
+                or any(row.get(header) is not None for row in limited_rows)
+            ]
             headers = compact_headers if detail_mode == "compact" else full_headers
             output_rows = (
                 _project_market_scan_rows(headers, limited_rows)

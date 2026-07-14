@@ -939,9 +939,6 @@ class TestMarketScan:
             "data_source",
             "time",
             "data_stale",
-            "market_status",
-            "market_status_reason",
-            "freshness_policy_relaxed",
             "freshness",
             "close",
             "price_change_pct",
@@ -950,6 +947,9 @@ class TestMarketScan:
             "spread_points",
             "spread_pips",
         }.issubset(row)
+        assert "market_status" not in row
+        assert "market_status_reason" not in row
+        assert "freshness_policy_relaxed" not in row
         assert row["time"].endswith("Z")
         assert row["spread_pips"] == 1.0
         assert mock_rates.call_args.args[2:] == (0, 3)
