@@ -1234,7 +1234,10 @@ def rank_relative_strength(request: MarketRelativeStrengthRequest, gateway: Any)
     for rank, (symbol, score) in enumerate(ranked.items(), start=1):
         row_by_symbol[symbol]["score"] = float(score)
         row_by_symbol[symbol]["rank"] = rank
-        row_by_symbol[symbol]["rank_percentile"] = float(1.0 - (rank - 1) / max(1, len(ranked) - 1))
+        if len(ranked) >= 10:
+            row_by_symbol[symbol]["rank_percentile"] = float(
+                1.0 - (rank - 1) / max(1, len(ranked) - 1)
+            )
         observed_ranks = [mapping[symbol] for mapping in offset_ranks.values() if symbol in mapping]
         row_by_symbol[symbol]["rank_stability"] = float(max(0.0, 1.0 - np.std(observed_ranks) / max(1.0, len(ranked) - 1)))
     ordered = [row_by_symbol[symbol] for symbol in ranked.index]
@@ -1249,11 +1252,21 @@ def rank_relative_strength(request: MarketRelativeStrengthRequest, gateway: Any)
     return {
         "success": True,
         "timeframe": request.timeframe,
+        "universe_size": len(ordered),
+        "rank_quality": (
+            "cross_sectional" if len(ordered) >= 10 else "illustrative_small_universe"
+        ),
+        "score_definition": {
+            "method": "weighted_robust_z_of_volatility_scaled_residual_momentum",
+            "horizons_bars": list(request.horizons),
+            "weights": list(request.weights),
+            "higher_is_stronger": True,
+        },
         "leaders": ordered[: request.limit],
         "laggards": list(reversed(ordered[-request.limit :])),
         "breadth": breadth,
         "factor": {"source": request.benchmark.upper() if request.benchmark else "equal_weight_universe"},
         "data_quality": {"selected_symbols": len(selected), "ranked_symbols": len(ordered), "skipped": skipped, "minimum_history_coverage": 0.90},
-        "units": {"raw_momentum": "log_return", "residual_momentum": "log_return", "score": "robust_z_composite", "tick_volume": "broker_tick_count"},
+        "units": {"raw_momentum": "log_return_fraction", "residual_momentum": "log_return_fraction", "volatility": "per_bar_log_return_stddev", "score": "robust_z_composite", "rank_stability": "fraction_0_to_1", "tick_volume": "broker_tick_count"},
         **({"all_rankings": ordered} if request.detail == "full" else {}),
     }

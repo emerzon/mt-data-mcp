@@ -450,3 +450,7 @@ def test_relative_strength_ranks_and_reports_breadth() -> None:
     assert len(result["leaders"]) == 3
     assert result["leaders"][0]["score"] >= result["leaders"][-1]["score"]
     assert set(result["breadth"]["positive_by_horizon"]) == {"5", "20"}
+    assert result["universe_size"] == 3
+    assert result["rank_quality"] == "illustrative_small_universe"
+    assert result["score_definition"]["weights"] == [0.4, 0.6]
+    assert all("rank_percentile" not in row for row in result["leaders"])
