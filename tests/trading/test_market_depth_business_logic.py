@@ -343,6 +343,7 @@ def test_market_ticker_returns_lightweight_spread_snapshot() -> None:
     assert out["pricing_basis_units"] == "broker_lot"
     assert out["freshness"].startswith("stale, tick ")
     assert out["time"] == "2023-11-14T22:13Z"
+    assert out["time_epoch"] == 1700000000.0
     assert "spread" not in out
     assert "spread" not in out["units"]
     assert "spread_points" not in out
@@ -498,7 +499,8 @@ def test_market_ticker_price_field_returns_simple_price() -> None:
     assert out["price"] == pytest.approx(1.17229)
     assert out["price_precision"] == 5
     assert out["price_currency"] == "USD"
-    assert out["time_display"] == "2023-11-14T22:13Z"
+    assert out["time"] == "2023-11-14T22:13Z"
+    assert out["time_epoch"] == 1700000000.0
     assert out["data_age_seconds"] >= 0
     assert out["stale_after_seconds"] == 300
     assert out["data_stale"] is True

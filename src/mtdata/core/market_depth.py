@@ -156,6 +156,7 @@ def _compact_market_ticker_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
         "pricing_basis",
         "pricing_basis_units",
         "time",
+        "time_epoch",
         "timezone",
     ):
         if key == "freshness":
@@ -678,7 +679,6 @@ def market_ticker(  # noqa: C901
                 "spread_pct": spread_pct,
                 "spread_cost_per_lot": spread_cost_per_lot,
                 "pricing_basis": pricing_basis,
-                "time": tick_time,
                 "units": {
                     "bid": "price",
                     "ask": "price",
@@ -708,10 +708,11 @@ def market_ticker(  # noqa: C901
             if spread_cost_per_lot is not None and spread_cost_currency:
                 out["spread_cost_currency"] = spread_cost_currency
             if tick_time is not None:
+                out["time_epoch"] = float(tick_time)
                 if _use_ctz:
-                    out["time_display"] = _format_time_explicit_local(float(tick_time))
+                    out["time"] = _format_time_explicit_local(float(tick_time))
                 else:
-                    out["time_display"] = _format_time_explicit(float(tick_time))
+                    out["time"] = _format_time_explicit(float(tick_time))
             age_seconds = None
             now_epoch = None
             if tick_time is not None:
@@ -803,7 +804,7 @@ def market_ticker(  # noqa: C901
                 }
                 for key in (
                     "time",
-                    "time_display",
+                    "time_epoch",
                     "timezone",
                     "data_age_seconds",
                     "data_age_anchor",
