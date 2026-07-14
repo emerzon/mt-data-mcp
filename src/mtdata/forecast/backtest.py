@@ -128,6 +128,14 @@ def _compact_strategy_backtest_result(result: Dict[str, Any]) -> Dict[str, Any]:
     out.pop("detail", None)
     out.pop("parameters", None)
     out.pop("warning", None)
+    last_signal = out.pop("last_signal", None)
+    if isinstance(last_signal, dict):
+        historical = dict(last_signal)
+        direction = historical.pop("signal", None)
+        if direction is not None:
+            historical["direction"] = direction
+        out["signal_status"] = "not_actionable"
+        out["last_historical_signal"] = historical
 
     summary = out.get("summary")
     if isinstance(summary, dict):
