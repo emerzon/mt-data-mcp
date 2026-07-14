@@ -523,7 +523,9 @@ def _evaluate_barrier_candidate(
         ) / sims_total
     )
     ev_gross = float(np.mean(payoffs.gross))
-    ev_val = float(np.mean(payoffs.net if context.has_trading_costs else payoffs.gross))
+    selected_payoffs = payoffs.net if context.has_trading_costs else payoffs.gross
+    ev_val = float(np.mean(selected_payoffs))
+    ev_resolved = float(np.mean(np.where(payoffs.active, selected_payoffs, 0.0)))
     edge = effective_prob_win - effective_prob_loss
     win_lo, win_hi = _binomial_wilson_95(effective_prob_win, int(sims_total))
     loss_lo, loss_hi = _binomial_wilson_95(effective_prob_loss, int(sims_total))
@@ -622,6 +624,9 @@ def _evaluate_barrier_candidate(
         "prob_no_hit_ci95": {"low": float(no_hit_lo), "high": float(no_hit_hi)},
         "prob_resolve": prob_resolve,
         "ev": ev_val,
+        "ev_including_timeout": ev_val,
+        "ev_resolved": ev_resolved,
+        "timeout_mtm_contribution": ev_unresolved_net,
         "ev_gross": ev_gross if context.has_trading_costs else None,
         "ev_net": ev_val if context.has_trading_costs else None,
         "ev_unresolved": ev_unresolved_net,
@@ -652,7 +657,11 @@ def _evaluate_barrier_candidate(
         result["profit_factor_note"] = profit_factor_note
     if effective_prob_win <= 0.0:
         result["zero_win_probability"] = True
-        result["warning"] = "prob_win is 0: no simulated paths reached TP within horizon."
+        result["ev_timeout_dominated"] = bool(ev_val > 0.0 and ev_unresolved_net > 0.0)
+        result["warning"] = (
+            "prob_win is 0: no simulated paths reached TP within horizon; "
+            "positive ev_including_timeout is timeout mark-to-market, not a resolved win."
+        )
     elif effective_prob_win < LOW_PRACTICAL_WIN_PROB_THRESHOLD:
         result["low_practical_win_probability"] = True
         result["warning"] = (
@@ -849,7 +858,11 @@ _BARRIER_CONCISE_CANDIDATE_KEYS = (
     "edge",
     "edge_vs_breakeven",
     "ev",
+    "ev_including_timeout",
+    "ev_resolved",
+    "timeout_mtm_contribution",
     "ev_unresolved",
+    "ev_timeout_dominated",
     "kelly",
     "profit_factor",
     "profit_factor_note",
@@ -895,6 +908,7 @@ def _minimal_barrier_diagnostics(
         "candidates_viable": len(viable_candidates or []),
         "candidates_returned": len(candidates or []),
         "best_ev": _safe_float(best_any.get("ev")) if best_any else None,
+        "best_ev_timeout_dominated": bool(best_any.get("ev_timeout_dominated")),
         "best_edge": _safe_float(best_any.get("edge")) if best_any else None,
     }
 

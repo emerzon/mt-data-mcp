@@ -126,11 +126,47 @@ class TestUnresolvedTerminalPnl(unittest.TestCase):
         )
         self.assertIsNotNone(result)
         self.assertIn("ev_unresolved", result)
+        self.assertEqual(result["ev_including_timeout"], result["ev"])
+        self.assertEqual(
+            result["ev"],
+            result["ev_resolved"] + result["timeout_mtm_contribution"],
+        )
         self.assertTrue(result["zero_win_probability"])
         self.assertEqual(
             result["warning"],
-            "prob_win is 0: no simulated paths reached TP within horizon.",
+            "prob_win is 0: no simulated paths reached TP within horizon; "
+            "positive ev_including_timeout is timeout mark-to-market, not a resolved win.",
         )
+
+    def test_positive_timeout_ev_is_marked_as_timeout_dominated(self):
+        from mtdata.forecast.barriers_optimization import (
+            _BarrierBridgeInputs,
+            _evaluate_barrier_candidate,
+        )
+
+        ctx = self._make_context(last_price=1.1000, pip_size=0.0001, dir_long=True)
+        bridge = _BarrierBridgeInputs(
+            enabled=False,
+            sigma=0.0,
+            log_paths=None,
+            uniform_tp=None,
+            uniform_sl=None,
+        )
+        paths = np.full((100, 10), 1.1010)
+        result, is_invalid = _evaluate_barrier_candidate(
+            50.0,
+            50.0,
+            paths,
+            context=ctx,
+            bridge_inputs=bridge,
+        )
+
+        self.assertFalse(is_invalid)
+        self.assertEqual(result["prob_win"], 0.0)
+        self.assertGreater(result["ev_including_timeout"], 0.0)
+        self.assertEqual(result["ev_resolved"], 0.0)
+        self.assertGreater(result["timeout_mtm_contribution"], 0.0)
+        self.assertTrue(result["ev_timeout_dominated"])
 
     def test_neutral_same_bar_ties_do_not_receive_timeout_mtm(self):
         from mtdata.forecast.barriers_optimization import (
