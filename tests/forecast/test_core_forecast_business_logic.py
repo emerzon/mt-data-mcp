@@ -2940,6 +2940,25 @@ def test_forecast_barrier_prob_detail_rounds_display_values():
     assert out["confidence"]["prob_tp_first_ci95"] == {"low": 0.5, "high": 0.6}
 
 
+def test_forecast_barrier_prob_marks_stale_reference_verdict_research_only():
+    out = forecast_use_cases._annotate_barrier_prob_context(
+        {
+            "prob_tp_first": 0.4,
+            "prob_sl_first": 0.6,
+            "usable_for_live_trading": False,
+            "execution_blockers": ["reference_quote_not_live"],
+        },
+        ForecastBarrierProbRequest(
+            symbol="EURUSD",
+            tp_ticks=200,
+            sl_ticks=150,
+        ),
+    )
+
+    assert out["signal_status"] == "not_actionable"
+    assert out["verdict"] == "Research only — SL-first probability bias"
+
+
 def test_forecast_barrier_optimize_uses_reference_price_context():
     def fake_optimize(**_kwargs):
         return {

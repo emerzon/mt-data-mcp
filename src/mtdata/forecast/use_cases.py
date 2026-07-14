@@ -1417,7 +1417,12 @@ def _annotate_barrier_prob_context(
         out.setdefault("units", units)
     verdict = _barrier_prob_verdict(out)
     if verdict:
-        out.setdefault("verdict", verdict)
+        if out.get("usable_for_live_trading") is False:
+            out.setdefault("verdict", f"Research only — {verdict}")
+        else:
+            out.setdefault("verdict", verdict)
+    if out.get("usable_for_live_trading") is False:
+        out.setdefault("signal_status", "not_actionable")
     return out
 
 
