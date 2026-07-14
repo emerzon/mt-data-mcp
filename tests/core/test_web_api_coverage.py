@@ -318,7 +318,8 @@ class TestGetInstruments:
             resp = _client.get("/api/instruments")
         res = resp.json()
         assert len(res["items"]) == 1
-        assert res["items"][0]["name"] == "EURUSD"
+        assert res["items"][0]["symbol"] == "EURUSD"
+        assert "name" not in res["items"][0]
 
     def test_search_filters(self):
         syms = [_make_symbol("EURUSD", "Euro"), _make_symbol("USDJPY", "Yen")]
@@ -329,7 +330,7 @@ class TestGetInstruments:
             resp = _client.get("/api/instruments", params={"search": "yen"})
         res = resp.json()
         assert len(res["items"]) == 1
-        assert res["items"][0]["name"] == "USDJPY"
+        assert res["items"][0]["symbol"] == "USDJPY"
 
     def test_limit(self):
         syms = [_make_symbol(f"SYM{i}", visible=True) for i in range(10)]
@@ -352,7 +353,7 @@ class TestGetInstruments:
             mock_mt5.symbols_get.return_value = [bad, good]
             resp = _client.get("/api/instruments")
         res = resp.json()
-        assert any(i["name"] == "OK" for i in res["items"])
+        assert any(i["symbol"] == "OK" for i in res["items"])
 
 
 # ===========================================================================
@@ -1732,7 +1733,7 @@ class TestInstrumentSearchEdgeCases:
             resp = _client.get("/api/instruments", params={"search": ""})
         res = resp.json()
         assert len(res["items"]) == 1
-        assert res["items"][0]["name"] == "EURUSD"
+        assert res["items"][0]["symbol"] == "EURUSD"
 
 
 class TestMethodsAvailabilityEdgeCases:

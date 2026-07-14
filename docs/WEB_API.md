@@ -88,6 +88,8 @@ Search for available trading symbols.
 - **Query Params:**
   - `search` (string, optional): Search query for symbol name/description.
   - `limit` (int, optional): Max results to return.
+- **Response:** Items use `symbol`, `group`, and `description`; pass `symbol`
+  directly to history, tick, and analysis routes.
 
 #### `GET /api/timeframes`
 Get supported timeframes.

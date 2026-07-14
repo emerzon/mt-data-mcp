@@ -5,7 +5,7 @@
 export type Timeframe = string
 
 export type Instrument = {
-  name: string
+  symbol: string
   group?: string
   description?: string
 }

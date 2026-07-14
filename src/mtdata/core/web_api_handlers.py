@@ -206,7 +206,7 @@ def get_instruments_response(
                 haystack = " ".join([name, desc, group]).lower()
                 if query not in haystack:
                     continue
-            items.append({"name": name, "group": group, "description": desc})
+            items.append({"symbol": name, "group": group, "description": desc})
         except Exception:
             continue
     if limit and limit > 0:

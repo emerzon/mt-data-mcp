@@ -74,7 +74,7 @@ function SymbolDropdown({
   const items = useMemo(() => {
     if (search) return searchResults ?? []
     const recent = loadJSON<string[]>('recent_symbols') || []
-    return recent.map((name) => ({ name, description: 'Recent' }))
+    return recent.map((symbol) => ({ symbol, description: 'Recent' }))
   }, [search, searchResults])
 
   return (
@@ -89,13 +89,13 @@ function SymbolDropdown({
       <div className="max-h-64 overflow-y-auto">
         {items.map((item) => (
           <button
-            key={item.name}
+            key={item.symbol}
             className={`w-full text-left px-3 py-2 text-sm hover:bg-slate-800 ${
-              item.name === value ? 'bg-slate-800 text-sky-400' : 'text-slate-300'
+              item.symbol === value ? 'bg-slate-800 text-sky-400' : 'text-slate-300'
             }`}
-            onClick={() => onSelect(item.name)}
+            onClick={() => onSelect(item.symbol)}
           >
-            <span className="font-medium">{item.name}</span>
+            <span className="font-medium">{item.symbol}</span>
             {item.description && <span className="ml-2 text-slate-500 text-xs">{item.description}</span>}
           </button>
         ))}
