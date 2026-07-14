@@ -254,6 +254,57 @@ def test_compute_volume_profile_payload_uses_explicit_max_ticks(monkeypatch):
     assert captured["limit"] == 5000
 
 
+def test_default_profile_window_is_bounded_to_24_hours(monkeypatch):
+    fixed_now = vp.datetime(2026, 7, 14, 16, 30)
+    monkeypatch.setattr(vp, "_utc_now_naive", lambda: fixed_now)
+
+    window = vp._resolve_profile_window(
+        start=None,
+        end=None,
+        timeframe=None,
+        limit=None,
+    )
+
+    assert window == {
+        "start": "2026-07-13 16:30:00",
+        "end": "2026-07-14 16:30:00",
+    }
+
+
+def test_tick_cap_is_disclosed_as_truncation(monkeypatch):
+    monkeypatch.setattr(
+        vp,
+        "create_mt5_gateway",
+        lambda **_: SimpleNamespace(ensure_connection=lambda: None),
+    )
+    monkeypatch.setattr(
+        vp,
+        "_symbol_ready_guard",
+        lambda symbol: _Guard(None, SimpleNamespace(point=0.0001, digits=5)),
+    )
+    monkeypatch.setattr(
+        vp,
+        "fetch_ticks",
+        lambda **_: {
+            "limit_reached": True,
+            "data": [
+                {"time": "2026-01-01T00:00:00Z", "bid": 1.0, "ask": 1.1},
+                {"time": "2026-01-01T00:00:01Z", "bid": 1.1, "ask": 1.2},
+            ],
+        },
+    )
+
+    result = vp.compute_volume_profile_payload(
+        symbol="EURUSD",
+        source="ticks",
+        bucket_size=0.1,
+        detail="compact",
+    )
+
+    assert result["truncated"] is True
+    assert result["truncation_reason"] == "max_ticks"
+
+
 def test_compute_volume_profile_payload_auto_falls_back_on_low_tick_mid_coverage(monkeypatch):
     monkeypatch.setattr(vp, "create_mt5_gateway", lambda **_: SimpleNamespace(ensure_connection=lambda: None))
     monkeypatch.setattr(

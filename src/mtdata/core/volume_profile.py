@@ -37,8 +37,8 @@ VolumeProfileVolumeSourceLiteral = Literal[
     "tick_count",
 ]
 
-_DEFAULT_MAX_TICK_WINDOW_DAYS = 7
-_DEFAULT_MAX_TICKS = 200_000
+_DEFAULT_MAX_TICK_WINDOW_DAYS = 1
+_DEFAULT_MAX_TICKS = 50_000
 _DEFAULT_MAX_M1_BARS = 20_000
 _DEFAULT_PROFILE_LIMIT = 200
 _MIN_TICK_PRICE_COVERAGE_RATIO = 0.5
@@ -82,7 +82,15 @@ def _resolve_profile_window(
     if start:
         return {"start": start, "end": end}
     if timeframe is None and limit is None:
-        return {"start": start, "end": end}
+        end_dt = _parse_start_datetime(end) if end else _utc_now_naive()
+        if end and end_dt is None:
+            return {"error": f"Could not parse end datetime {end!r}"}
+        assert end_dt is not None
+        start_dt = end_dt - timedelta(days=1)
+        return {
+            "start": start_dt.isoformat(sep=" ", timespec="seconds"),
+            "end": end if end else end_dt.isoformat(sep=" ", timespec="seconds"),
+        }
     if not timeframe:
         return {"error": "timeframe is required when limit is provided"}
     tf = str(timeframe).strip().upper()
@@ -192,6 +200,7 @@ def _fetch_tick_rows(
     if payload.get("error"):
         return payload
     rows = _table_rows(payload)
+    limit_reached = bool(payload.get("limit_reached")) or len(rows) >= int(max_ticks)
     return {
         "success": True,
         "source": "ticks",
@@ -200,6 +209,7 @@ def _fetch_tick_rows(
         "diagnostics": {
             "tick_rows": int(len(rows)),
             "requested_max_ticks": int(max_ticks),
+            "tick_limit_reached": limit_reached,
         },
     }
 
@@ -443,6 +453,8 @@ def _profile_detail_payload(profile: Dict[str, Any], detail: str) -> Dict[str, A
         "levels",
         "value_area",
         "diagnostics",
+        "truncated",
+        "truncation_reason",
         "warnings",
         "as_of",
         "timezone",
@@ -643,6 +655,9 @@ def compute_volume_profile_payload(
         **(selected.get("diagnostics") or {}),
         **(profile.get("diagnostics") or {}),
     }
+    if profile["diagnostics"].get("tick_limit_reached") is True:
+        profile["truncated"] = True
+        profile["truncation_reason"] = "max_ticks"
     fetch_payload = selected.get("fetch_payload")
     profile.update(_profile_freshness_meta(fetch_payload))
     profile["units"] = _profile_units(profile)
@@ -676,7 +691,8 @@ def volume_profile_levels(  # noqa: PLR0913
 ) -> Dict[str, Any]:
     """Compute volume-profile POC, VAH, and VAL from ticks or M1-bar approximation.
 
-    `source="auto"` uses bounded raw ticks for short windows and falls back to
+    With no window arguments, the profile covers the latest 24 hours and fetches
+    at most 50,000 ticks. `source="auto"` uses bounded raw ticks for short windows and falls back to
     M1-bar approximation for larger windows. `limit` is always a bar count and
     requires `timeframe`; use `max_ticks` to cap tick rows. When `timeframe` is
     provided without `limit`, the window defaults to 200 bars. `price_source="mid"`
