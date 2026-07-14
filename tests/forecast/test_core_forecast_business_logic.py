@@ -625,7 +625,7 @@ def test_forecast_generate_compact_flags_flat_theta_display(monkeypatch):
     assert "params_used" not in out
     assert out["path_flat"] is True
     assert out["path_range"] == 0.0
-    assert out["point_forecast_mode"] == "flat_anchor"
+    assert out["point_forecast_mode"] == "flat_model_path"
     assert out["forecast_status"] == "non_informative"
     assert out["signal_status"] == "not_actionable"
     assert "usable_for_live_trading" not in out
@@ -746,7 +746,7 @@ def test_forecast_generate_full_flags_flat_theta_display(monkeypatch):
 
     assert out["path_flat"] is True
     assert out["path_range"] == 0.0
-    assert out["point_forecast_mode"] == "flat_anchor"
+    assert out["point_forecast_mode"] == "flat_model_path"
     assert out["forecast_vs_last_price"]["direction"] == "neutral"
     assert out["forecast_vs_last_price"]["direction_basis"] == "flat_path"
     assert any("near-flat at displayed price precision" in item for item in out["warnings"])
@@ -2330,7 +2330,7 @@ def test_forecast_conformal_intervals_compact_marks_flat_point_forecast():
         {"time": "2026-06-02T20:00Z", "value": 1.23456, "lower": 1.23, "upper": 1.24},
         {"time": "2026-06-02T21:00Z", "value": 1.23456, "lower": 1.23, "upper": 1.24},
     ]
-    assert out["point_forecast_mode"] == "flat_anchor"
+    assert out["point_forecast_mode"] == "flat_model_path"
 
 
 def test_run_forecast_conformal_intervals_rewrites_interval_unavailable_guidance():

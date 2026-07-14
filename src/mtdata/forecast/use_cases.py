@@ -572,7 +572,7 @@ def _forecast_path_flatness(payload: Dict[str, Any]) -> Optional[Dict[str, Any]]
 
 
 def _forecast_point_mode(payload: Dict[str, Any]) -> Optional[str]:
-    return "flat_anchor" if _forecast_path_flatness(payload) else None
+    return "flat_model_path" if _forecast_path_flatness(payload) else None
 
 
 _FORECAST_FLAT_PATH_WARNING = (
@@ -602,7 +602,7 @@ def _annotate_forecast_generate_quality(payload: Dict[str, Any]) -> Dict[str, An
         out.setdefault("forecast_vs_last_price", price_context)
     if path_flatness:
         out.update(path_flatness)
-        out.setdefault("point_forecast_mode", "flat_anchor")
+        out.setdefault("point_forecast_mode", "flat_model_path")
         out["forecast_status"] = "non_informative"
         out["signal_status"] = "not_actionable"
         _append_forecast_warning(out, _FORECAST_FLAT_PATH_WARNING)
@@ -879,7 +879,7 @@ def _apply_forecast_generate_detail(
         compact["forecast_vs_last_price"] = price_context
     if path_flatness:
         compact.update(path_flatness)
-        compact.setdefault("point_forecast_mode", "flat_anchor")
+        compact.setdefault("point_forecast_mode", "flat_model_path")
     if str(compact.get("quantity") or "").strip().lower() == "volatility":
         for key in (
             "volatility_per_bar",
