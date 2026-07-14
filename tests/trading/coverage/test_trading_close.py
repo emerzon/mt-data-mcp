@@ -415,6 +415,17 @@ class TestTradeClose:
 
     @patch("mtdata.core.trading._cancel_pending")
     @patch("mtdata.core.trading._close_positions")
+    def test_global_close_dry_run_requires_explicit_scope(self, mock_close, mock_cancel):
+        out = trade_close(dry_run=True, __cli_raw=True)
+
+        assert out["success"] is False
+        assert out["error_code"] == "CLOSE_SCOPE_REQUIRED"
+        assert "close_all=true" in out["error"]
+        mock_close.assert_not_called()
+        mock_cancel.assert_not_called()
+
+    @patch("mtdata.core.trading._cancel_pending")
+    @patch("mtdata.core.trading._close_positions")
     def test_symbol_bulk_close_dry_run_previews_without_confirmation(self, mock_close, mock_cancel):
         out = _unwrap_mcp(trade_close(symbol="EURUSD", dry_run=True, __cli_raw=True))
         assert out["success"] is True

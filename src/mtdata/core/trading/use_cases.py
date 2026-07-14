@@ -2035,6 +2035,30 @@ def run_trade_close(  # noqa: C901
             scope="bulk_confirmation",
         )
 
+    if (
+        request.ticket is None
+        and request.symbol is None
+        and not request.close_all
+        and not request.profit_only
+        and not request.loss_only
+        and request.dry_run
+    ):
+        return _finish(
+            {
+                "error": (
+                    "Close preview requires an explicit scope: specify ticket=<ticket>, "
+                    "symbol=<symbol>, or close_all=true."
+                ),
+                "error_code": "CLOSE_SCOPE_REQUIRED",
+                "alternatives": [
+                    "Use ticket=<ticket_number> to preview a specific close",
+                    "Use symbol=<symbol> to preview positions for one symbol",
+                    "Pass close_all=true to preview all matching positions",
+                ],
+            },
+            scope="request",
+        )
+
     if request.ticket is None and not request.close_all and not request.dry_run:
         return _finish(
             {
