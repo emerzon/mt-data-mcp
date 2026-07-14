@@ -264,7 +264,7 @@ class ForecastModelContract(BaseModel):
     params: Optional[Dict[str, Any]] = None
     quantity: ForecastQuantity = "price"
     target_spec: Optional[Dict[str, Any]] = None
-    ci_alpha: Optional[float] = Field(0.05, ge=0.0, le=0.5)
+    ci_alpha: Optional[float] = Field(None, ge=0.0, le=0.5)
     model_id: Optional[str] = None
 
     @field_validator("method")
