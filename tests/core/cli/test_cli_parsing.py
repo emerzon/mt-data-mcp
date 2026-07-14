@@ -66,6 +66,22 @@ def _strip_ansi(text: str) -> str:
     return _ANSI_ESCAPE_RE.sub("", text)
 
 
+def test_disabled_market_depth_parse_error_explains_gate(monkeypatch, capsys):
+    from mtdata.core.cli import api as cli_api
+
+    monkeypatch.delenv("MTDATA_ENABLE_MARKET_DEPTH_FETCH", raising=False)
+    monkeypatch.setattr(sys, "argv", ["mtdata-cli", "market_depth_fetch", "--json"])
+    parser = cli_api._CLIArgumentParser(prog="mtdata-cli")
+
+    with pytest.raises(SystemExit, match="2"):
+        parser.error("invalid choice: 'market_depth_fetch'")
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["error_code"] == "feature_disabled"
+    assert payload["details"]["enable_env"] == "MTDATA_ENABLE_MARKET_DEPTH_FETCH"
+    assert "Level 2/DOM" in payload["error"]
+
+
 def test_dynamic_cli_help_has_no_placeholder_param_text():
     from mtdata.bootstrap.settings import load_environment
     from mtdata.core.cli import api as cli_api

@@ -539,13 +539,38 @@ class _CLIArgumentParser(argparse.ArgumentParser):
     """Emit parse failures in the selected CLI transport format."""
 
     def error(self, message: str) -> None:
+        market_depth_disabled = (
+            "market_depth_fetch" in str(message)
+            and str(os.getenv("MTDATA_ENABLE_MARKET_DEPTH_FETCH") or "")
+            .strip()
+            .lower()
+            not in {"1", "true", "yes", "on"}
+        )
+        if market_depth_disabled:
+            message = (
+                "market_depth_fetch is disabled; set "
+                "MTDATA_ENABLE_MARKET_DEPTH_FETCH=1 before starting the CLI. "
+                "The broker must also provide Level 2/DOM data."
+            )
         if _json_parse_errors_requested():
             payload = {
                 "success": False,
                 "error": str(message),
-                "error_code": "cli_invalid_arguments",
-                "remediation": f"Run '{self.prog} --help' to inspect valid arguments.",
+                "error_code": (
+                    "feature_disabled" if market_depth_disabled else "cli_invalid_arguments"
+                ),
+                "remediation": (
+                    "Set MTDATA_ENABLE_MARKET_DEPTH_FETCH=1 and restart the process."
+                    if market_depth_disabled
+                    else f"Run '{self.prog} --help' to inspect valid arguments."
+                ),
             }
+            if market_depth_disabled:
+                payload["details"] = {
+                    "feature": "market_depth_fetch",
+                    "enable_env": "MTDATA_ENABLE_MARKET_DEPTH_FETCH",
+                    "broker_prerequisite": "Level 2/DOM market data",
+                }
             _write_cli_text(json.dumps(payload, ensure_ascii=False, indent=2))
             self.exit(2)
         super().error(message)
