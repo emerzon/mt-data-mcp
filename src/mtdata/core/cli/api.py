@@ -104,6 +104,11 @@ class _CLIHelpFormatter(
 ):
     """Preserve command descriptions while showing effective defaults."""
 
+    def _format_args(self, action: argparse.Action, default_metavar: str) -> str:
+        if getattr(action, "_cli_logically_required", False):
+            return self._metavar_formatter(action, default_metavar)(1)[0]
+        return super()._format_args(action, default_metavar)
+
 def _is_typed_dict_type(value: Any) -> bool:
     try:
         if is_typeddict(value):

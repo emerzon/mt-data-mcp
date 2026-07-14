@@ -76,6 +76,27 @@ def test_non_bar_commands_do_not_receive_global_timeframe() -> None:
     }.issubset(cli_api._TIMEFRAMELESS_GLOBAL_COMMANDS)
 
 
+def test_required_symbol_is_not_bracketed_in_help() -> None:
+    from mtdata.core.cli import api as cli_api
+
+    def sample_tool(symbol: str) -> None:
+        """Sample tool."""
+
+    parser = cli_api._CLIArgumentParser(
+        prog="mtdata-cli sample_tool",
+        formatter_class=cli_api._CLIHelpFormatter,
+    )
+    cli_api.add_dynamic_arguments(
+        parser,
+        cli_api.get_function_info(sample_tool),
+        cmd_name="sample_tool",
+    )
+
+    help_text = parser.format_help()
+    assert "usage: mtdata-cli sample_tool [-h] symbol" in help_text
+    assert "Trading symbol (e.g. EURUSD). (required)" in help_text
+
+
 def test_disabled_market_depth_parse_error_explains_gate(monkeypatch, capsys):
     from mtdata.core.cli import api as cli_api
 

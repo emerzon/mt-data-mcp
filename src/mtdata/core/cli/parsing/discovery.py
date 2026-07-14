@@ -682,7 +682,9 @@ def add_dynamic_arguments(
             positional_kwargs = {k: v for k, v in kwargs.items() if k in ("help", "type", "choices", "metavar")}
             positional_kwargs["nargs"] = "?"
             positional_kwargs["default"] = argparse.SUPPRESS
-            parser.add_argument(param["name"], **positional_kwargs)
+            positional_kwargs["help"] = f"{positional_kwargs.get('help') or param['name']} (required)"
+            positional_action = parser.add_argument(param["name"], **positional_kwargs)
+            positional_action._cli_logically_required = True
             hidden_alias_kwargs = dict(kwargs)
             hidden_alias_kwargs["help"] = argparse.SUPPRESS
             if option_flags:
