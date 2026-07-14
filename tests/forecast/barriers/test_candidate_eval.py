@@ -29,6 +29,23 @@ class TestCandidateViability(unittest.TestCase):
         self.assertFalse(_candidate_is_viable(candidate))
 
 
+class TestSearchProfileValidation(unittest.TestCase):
+    def test_unknown_search_profile_is_rejected(self):
+        from mtdata.forecast.barriers_optimization import (
+            _resolve_barrier_search_profile_config,
+        )
+
+        with self.assertRaisesRegex(
+            ValueError,
+            "Invalid search_profile 'small'. Valid profiles: fast, medium, long.",
+        ):
+            _resolve_barrier_search_profile_config(
+                {},
+                search_profile="small",
+                fast_defaults=False,
+            )
+
+
 class TestUnresolvedTerminalPnl(unittest.TestCase):
     """Tests for unresolved-path terminal PnL contribution to barrier EV."""
 

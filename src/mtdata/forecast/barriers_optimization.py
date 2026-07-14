@@ -163,7 +163,11 @@ def _resolve_barrier_search_profile_config(
         params_dict.get("search_profile", search_profile)
     ).strip().lower()
     if search_profile_requested not in _BARRIER_SEARCH_PROFILE_DEFAULTS:
-        search_profile_requested = "medium"
+        valid_profiles = ", ".join(_BARRIER_SEARCH_PROFILE_DEFAULTS)
+        raise ValueError(
+            f"Invalid search_profile {search_profile_requested!r}. "
+            f"Valid profiles: {valid_profiles}."
+        )
     fast_defaults_requested = _coerce_barrier_bool_flag(
         params_dict.get("fast_defaults", fast_defaults),
         default=bool(fast_defaults),
