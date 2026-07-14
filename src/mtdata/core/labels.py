@@ -638,11 +638,13 @@ def labels_triple_barrier(
                     "neutral_rate": (
                         round(float(counts["neutral"] / n), 6) if n else None
                     ),
-                    "hit_rate": (
+                    "barrier_resolution_rate": (
                         round(float((counts["tp"] + counts["sl"]) / n), 6)
                         if n
                         else None
                     ),
+                    "tp_rate": round(float(counts["tp"] / n), 6) if n else None,
+                    "sl_rate": round(float(counts["sl"] / n), 6) if n else None,
                     "median_holding_bars": med_hold,
                     "sample_quality": sample_quality,
                 }

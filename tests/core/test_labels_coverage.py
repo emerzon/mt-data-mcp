@@ -342,8 +342,17 @@ class TestLabelsTripleBarrier:
         assert result["labeling_coverage"]["rows_after_labeling"] == 50
         assert result["summary"]["lookback"] == 50
         assert 0.0 <= result["summary"]["neutral_rate"] <= 1.0
-        assert 0.0 <= result["summary"]["hit_rate"] <= 1.0
-        assert result["summary"]["neutral_rate"] + result["summary"]["hit_rate"] == 1.0
+        assert 0.0 <= result["summary"]["barrier_resolution_rate"] <= 1.0
+        assert "hit_rate" not in result["summary"]
+        assert (
+            result["summary"]["neutral_rate"]
+            + result["summary"]["barrier_resolution_rate"]
+            == 1.0
+        )
+        assert (
+            result["summary"]["tp_rate"] + result["summary"]["sl_rate"]
+            == result["summary"]["barrier_resolution_rate"]
+        )
         assert result["history_bars_requested"] == 62
         assert result["history_bars_used"] == 62
         assert result["sample_limit"] == 20
