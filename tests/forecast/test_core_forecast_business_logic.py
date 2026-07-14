@@ -2498,20 +2498,13 @@ def test_forecast_barrier_methods_reject_legacy_aliases():
     )
 
 
-def test_forecast_barrier_prob_applies_default_pct_barriers_when_missing(monkeypatch):
-    monkeypatch.setattr(forecast_use_cases, "_symbol_price_currency", lambda _symbol: "USD")
-    called: dict[str, float] = {}
+def test_forecast_barrier_prob_requires_explicit_barriers(monkeypatch):
+    called = False
 
     def fake_barrier_hit(**kwargs):
-        called["tp_pct"] = kwargs["tp_pct"]
-        called["sl_pct"] = kwargs["sl_pct"]
-        return {
-            "success": True,
-            "symbol": "EURUSD",
-            "prob_tp_first": 0.5,
-            "prob_sl_first": 0.4,
-            "prob_no_hit": 0.1,
-        }
+        nonlocal called
+        called = True
+        return {"success": True}
 
     out = forecast_use_cases.run_forecast_barrier_prob(
         ForecastBarrierProbRequest(symbol="EURUSD"),
@@ -2521,26 +2514,10 @@ def test_forecast_barrier_prob_applies_default_pct_barriers_when_missing(monkeyp
         barrier_closed_form_impl=lambda **_kwargs: {"unused": True},
     )
 
-    assert out["success"] is True
-    assert out["price_currency"] == "USD"
-    assert called == {"tp_pct": 1.0, "sl_pct": 1.0}
-    assert out["warnings"] == [
-        "Default 1% symmetrical barriers applied; pass tp_pct/sl_pct, "
-        "tp_abs/sl_abs, or tp_ticks/sl_ticks to customize."
-    ]
-    assert out["tp_pct"] == 1.0
-    assert out["sl_pct"] == 1.0
-    assert out["barrier_unit"] == "percent"
-    assert out["barrier_mode"] == "pct"
-    assert out["probability_unit"] == "fraction"
-    assert out["probability_edge"] == 0.1
-    assert out["probability_edge_definition"] == "prob_tp_first - prob_sl_first"
-    assert "edge" not in out
-    assert out["units"]["horizon"] == "bars"
-    assert out["units"]["tp_pct"] == "percentage_points"
-    assert out["units"]["prob_tp_first"] == "probability_fraction"
-    assert out["units"]["probability_edge"] == "probability_difference"
-    assert out["verdict"] == "TP-first probability bias"
+    assert called is False
+    assert out["success"] is False
+    assert out["error_code"] == "barrier_parameters_missing"
+    assert "forecast_barrier_optimize" in out["remediation"]
 
 
 def test_forecast_barrier_prob_keeps_partial_barrier_inputs_strict():

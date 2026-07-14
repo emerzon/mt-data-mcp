@@ -1520,24 +1520,6 @@ def _request_has_barrier_inputs(request: ForecastBarrierProbRequest) -> bool:
     )
 
 
-def _append_default_barrier_warning(payload: Dict[str, Any]) -> Dict[str, Any]:
-    if not isinstance(payload, dict) or payload.get("error"):
-        return payload
-    warning = (
-        "Default 1% symmetrical barriers applied; pass tp_pct/sl_pct, "
-        "tp_abs/sl_abs, or tp_ticks/sl_ticks to customize."
-    )
-    warnings = payload.get("warnings")
-    if isinstance(warnings, list):
-        if warning not in warnings:
-            warnings.append(warning)
-    elif warnings in (None, "", [], {}):
-        payload["warnings"] = [warning]
-    else:
-        payload["warnings"] = [warnings, warning]
-    return payload
-
-
 def _closed_form_barrier_input_error(request: ForecastBarrierProbRequest) -> Optional[str]:
     supplied_tp_sl_fields = [
         field_name
@@ -2851,14 +2833,44 @@ def run_forecast_barrier_prob(
     try:
         if method_val in mc_methods:
             barrier_kwargs = build_barrier_kwargs(request.model_dump())
-            default_barriers_applied = False
-            if not _request_has_barrier_inputs(request):
-                barrier_kwargs = {
-                    **barrier_kwargs,
-                    "tp_pct": 1.0,
-                    "sl_pct": 1.0,
+            has_resolved_barriers = any(
+                barrier_kwargs.get(field_name) is not None
+                for field_name in (
+                    "tp_abs",
+                    "sl_abs",
+                    "tp_pct",
+                    "sl_pct",
+                    "tp_ticks",
+                    "sl_ticks",
+                )
+            )
+            if not has_resolved_barriers:
+                result = {
+                    "success": False,
+                    "error": (
+                        "Barrier probabilities require an explicit take-profit and "
+                        "stop-loss pair."
+                    ),
+                    "error_code": "barrier_parameters_missing",
+                    "operation": "forecast_barrier_prob",
+                    "remediation": (
+                        "Provide tp_pct/sl_pct, tp_abs/sl_abs, or tp_ticks/sl_ticks "
+                        "scaled to the symbol and forecast horizon. Use "
+                        "forecast_barrier_optimize for data-driven candidates."
+                    ),
+                    "related_tools": ["forecast_barrier_optimize", "labels_triple_barrier"],
                 }
-                default_barriers_applied = True
+                log_operation_finish(
+                    logger,
+                    operation="forecast_barrier_prob",
+                    started_at=started_at,
+                    success=False,
+                    symbol=request.symbol,
+                    timeframe=request.timeframe,
+                    method=method_val,
+                    direction=request.direction,
+                )
+                return result
             result = barrier_hit_probabilities_impl(
                 symbol=request.symbol,
                 timeframe=request.timeframe,
@@ -2870,11 +2882,6 @@ def run_forecast_barrier_prob(
                 params=request.params,
                 denoise=request.denoise,
             )
-            if default_barriers_applied:
-                result = _append_default_barrier_warning(result)
-                if isinstance(result, dict) and not result.get("error"):
-                    result.setdefault("tp_pct", 1.0)
-                    result.setdefault("sl_pct", 1.0)
             if isinstance(result, dict):
                 result = _annotate_price_currency(result, request.symbol)
             result = _apply_barrier_prob_detail(result, request)
