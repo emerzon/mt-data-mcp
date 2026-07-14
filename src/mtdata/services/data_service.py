@@ -1166,9 +1166,10 @@ def _append_denoise_application(
 
 
 def _latest_indicator_values_missing(df: pd.DataFrame, columns: List[str]) -> bool:
-    if not columns or len(df) <= 0:
+    required_columns = _indicator_columns_required_for_completeness(columns)
+    if not required_columns or len(df) <= 0:
         return False
-    for column in columns:
+    for column in required_columns:
         if column not in df.columns:
             return True
         value = df[column].iloc[-1]
@@ -1243,12 +1244,28 @@ def _apply_indicator_stage(
     return ti_cols
 
 
+def _indicator_columns_required_for_completeness(columns: List[str]) -> List[str]:
+    """Return indicator columns that must be populated on every output row.
+
+    pandas-ta-classic's Supertrend long and short bands are regime-specific:
+    ``SUPERTl`` is null in short regimes and ``SUPERTs`` is null in long regimes.
+    Those nulls express which band is inactive, rather than a warmup failure.
+    """
+    required: List[str] = []
+    for column in columns:
+        family = str(column or "").split("_", 1)[0].lower()
+        if family in {"supertl", "superts"}:
+            continue
+        required.append(column)
+    return required
+
+
 def _indicator_columns_with_missing_values(
     df: pd.DataFrame,
     ti_cols: List[str],
 ) -> List[str]:
     missing_cols: List[str] = []
-    for col in ti_cols:
+    for col in _indicator_columns_required_for_completeness(ti_cols):
         if col not in df.columns:
             continue
         try:
@@ -1263,7 +1280,8 @@ def _drop_incomplete_indicator_rows(
     df: pd.DataFrame,
     ti_cols: List[str],
 ) -> Tuple[pd.DataFrame, int, List[str]]:
-    existing_cols = [col for col in ti_cols if col in df.columns]
+    required_cols = _indicator_columns_required_for_completeness(ti_cols)
+    existing_cols = [col for col in required_cols if col in df.columns]
     if not existing_cols or len(df) == 0:
         return df, 0, []
 
@@ -1639,7 +1657,7 @@ def fetch_candles(  # noqa: C901
         # If TI requested, check for NaNs and retry once with increased warmup
         if ti_spec and ti_cols:
             try:
-                if df[ti_cols].isna().any().any():
+                if _indicator_columns_with_missing_values(df, ti_cols):
                     # Increase warmup and refetch once
                     warmup_bars_retry = max(int(warmup_bars * TI_NAN_WARMUP_FACTOR), warmup_bars + TI_NAN_WARMUP_MIN_ADD)
                     rates_retry, rates_retry_error = _fetch_rates_with_warmup(

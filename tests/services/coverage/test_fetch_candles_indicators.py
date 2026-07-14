@@ -346,6 +346,57 @@ class TestFetchCandlesIndicators(unittest.TestCase):
 
     @patch(_MT5_CONFIG)
     @patch(_APPLY_TI)
+    @patch(_RATES_FROM)
+    @patch(_CACHED_INFO, return_value=MagicMock())
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_ESTIMATE_WARMUP, return_value=7)
+    @patch(_GUARD, _mock_symbol_guard)
+    def test_supertrend_regime_bands_do_not_trigger_incomplete_indicator_error(
+        self,
+        mock_warmup,
+        mock_ctz,
+        mock_info,
+        mock_from,
+        mock_ti,
+        mock_cfg,
+    ):
+        mock_cfg.get_time_offset_seconds.return_value = 0
+        mock_from.return_value = _make_rates(30)
+
+        def add_supertrend_columns(df, spec):
+            self.assertEqual(spec, 'supertrend(7,3)')
+            row_count = len(df)
+            long_regime = [index % 2 == 0 for index in range(row_count)]
+            df['SUPERT_7_3.0'] = 1.1
+            df['SUPERTd_7_3.0'] = [1.0 if active else -1.0 for active in long_regime]
+            df['SUPERTl_7_3.0'] = [1.0 if active else float('nan') for active in long_regime]
+            df['SUPERTs_7_3.0'] = [float('nan') if active else 1.2 for active in long_regime]
+            return [
+                'SUPERT_7_3.0',
+                'SUPERTd_7_3.0',
+                'SUPERTl_7_3.0',
+                'SUPERTs_7_3.0',
+            ]
+
+        mock_ti.side_effect = add_supertrend_columns
+
+        result = fetch_candles('EURUSD', limit=5, indicators='supertrend(7,3)')
+
+        self.assertTrue(result.get('success'))
+        self.assertEqual(result['returned_count'], 4)
+        self.assertEqual(result['candle_counts']['excluded']['indicator_warmup'], 0)
+        self.assertEqual(mock_ti.call_count, 1)
+        self.assertEqual(
+            result['meta']['diagnostics']['query']['indicator_rows_dropped'],
+            0,
+        )
+        for row in result['data']:
+            long_missing = row['supertl_7_3'] != row['supertl_7_3']
+            short_missing = row['superts_7_3'] != row['superts_7_3']
+            self.assertNotEqual(long_missing, short_missing)
+
+    @patch(_MT5_CONFIG)
+    @patch(_APPLY_TI)
     @patch(f'{_DS}.FETCH_RETRY_DELAY', 0)
     @patch(f'{_DS}.FETCH_RETRY_ATTEMPTS', 1)
     @patch(_RATES_FROM)
