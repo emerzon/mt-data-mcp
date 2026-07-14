@@ -341,6 +341,9 @@ class TestLabelsTripleBarrier:
         assert result["success"] is True
         assert result["labeling_coverage"]["rows_after_labeling"] == 50
         assert result["summary"]["lookback"] == 50
+        assert 0.0 <= result["summary"]["neutral_rate"] <= 1.0
+        assert 0.0 <= result["summary"]["hit_rate"] <= 1.0
+        assert result["summary"]["neutral_rate"] + result["summary"]["hit_rate"] == 1.0
         assert result["history_bars_requested"] == 62
         assert result["history_bars_used"] == 62
         assert result["sample_limit"] == 20
@@ -469,7 +472,7 @@ class TestLabelsTripleBarrier:
         assert result["success"] is True
         assert "summary" in result
         assert "entries" not in result
-        assert "warnings" not in result
+        assert any("neutral timeouts" in warning for warning in result["warnings"])
 
     @patch(f"{_LABELS_MOD}._get_pip_size", return_value=0.0001)
     @patch(f"{_LABELS_MOD}._resolve_denoise_base_col", return_value="close")

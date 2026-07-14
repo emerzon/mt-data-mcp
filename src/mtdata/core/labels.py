@@ -635,9 +635,22 @@ def labels_triple_barrier(
                 summary = {
                     "lookback": int(n),
                     "counts": counts,
+                    "neutral_rate": (
+                        round(float(counts["neutral"] / n), 6) if n else None
+                    ),
+                    "hit_rate": (
+                        round(float((counts["tp"] + counts["sl"]) / n), 6)
+                        if n
+                        else None
+                    ),
                     "median_holding_bars": med_hold,
                     "sample_quality": sample_quality,
                 }
+                if n and counts["neutral"] / n >= 0.8:
+                    warnings_out.append(
+                        "At least 80% of summarized labels are neutral timeouts. "
+                        "Tighten the barriers or increase horizon to produce more hits."
+                    )
                 favorable_tail = max_favorable_moves_pct[-n:] if n > 0 else max_favorable_moves_pct
                 adverse_tail = max_adverse_moves_pct[-n:] if n > 0 else max_adverse_moves_pct
                 if favorable_tail or adverse_tail:
