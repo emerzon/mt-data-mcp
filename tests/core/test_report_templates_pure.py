@@ -907,7 +907,7 @@ class TestTemplateBasic:
     @patch(f"{_BASIC_MODULE}.pick_best_forecast_method", return_value=None)
     @patch(f"{_BASIC_MODULE}.summarize_barrier_grid")
     @patch(f"{_BASIC_MODULE}.attach_multi_timeframes")
-    def test_basic_backtest_spacing_is_clamped_to_horizon(
+    def test_basic_backtest_spacing_is_clamped_above_horizon(
         self, mock_mtf, mock_sum_bar, mock_pick, mock_tail,
         mock_now, mock_raw,
     ):
@@ -939,7 +939,7 @@ class TestTemplateBasic:
         _ = template_basic("EURUSD", 12, None, {})
 
         assert backtest_calls[0]["steps"] == 25
-        assert backtest_calls[0]["spacing"] == 12
+        assert backtest_calls[0]["spacing"] == 13
 
     @patch(f"{_BASIC_MODULE}._get_raw_result")
     @patch(f"{_BASIC_MODULE}.now_utc_iso", return_value="2024-01-15T00:00:00Z")

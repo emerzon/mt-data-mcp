@@ -694,8 +694,8 @@ def template_basic(  # noqa: C901
     steps = int(p.get('backtest_steps', 25))
     requested_spacing = int(p.get('backtest_spacing', 10))
     spacing = requested_spacing
-    if steps > 1 and spacing < int(horizon):
-        spacing = int(horizon)
+    if steps > 1 and spacing <= int(horizon):
+        spacing = int(horizon) + 1
     try:
         rmse_tol = float(p.get('backtest_rmse_tolerance', 0.05))
     except Exception:
