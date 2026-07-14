@@ -3039,6 +3039,11 @@ def run_trade_risk_analyze(  # noqa: C901
                             "symbol": pos.symbol,
                             "type": "BUY" if is_buy_position else "SELL",
                             "volume": volume,
+                            "volume_unit": "broker_lot",
+                            "contract_size": round(contract_size, 6),
+                            "lot_definition": (
+                                "1 broker lot equals contract_size contract units."
+                            ),
                             "entry": entry_price,
                             "sl": sl_price,
                             "tp": tp_price,
@@ -3197,6 +3202,11 @@ def run_trade_risk_analyze(  # noqa: C901
                                 "symbol": getattr(order, "symbol", None),
                                 "type": direction_label,
                                 "volume": volume,
+                                "volume_unit": "broker_lot",
+                                "contract_size": round(contract_size, 6),
+                                "lot_definition": (
+                                    "1 broker lot equals contract_size contract units."
+                                ),
                                 "entry": entry_price,
                                 "sl": sl_price,
                                 "tp": tp_price,
@@ -3252,6 +3262,13 @@ def run_trade_risk_analyze(  # noqa: C901
                 "equity": round(equity, 2),
                 "currency": currency,
             }
+            leverage = validation._safe_float_attr(account, "leverage", 0.0)
+            margin_used = validation._safe_float_attr(account, "margin", 0.0)
+            margin_free = validation._safe_float_attr(account, "margin_free", 0.0)
+            if leverage > 0:
+                account_payload["leverage"] = round(leverage, 2)
+            account_payload["margin_used"] = round(margin_used, 2)
+            account_payload["margin_free"] = round(margin_free, 2)
             account_login = getattr(account, "login", None)
             if account_login is not None:
                 account_payload = {"login": account_login, **account_payload}
@@ -3276,6 +3293,12 @@ def run_trade_risk_analyze(  # noqa: C901
                     ),
                     "notional_exposure": round(total_notional_exposure, 2),
                     "notional_exposure_pct": round(notional_exposure_pct, 2),
+                    "notional_to_equity": round(
+                        total_notional_exposure / equity, 4
+                    ) if equity > 0 else None,
+                    "account_leverage": round(leverage, 2) if leverage > 0 else None,
+                    "margin_used": round(margin_used, 2),
+                    "margin_free": round(margin_free, 2),
                     "open_position_notional_exposure": round(open_position_notional_exposure, 2),
                     "contingent_pending_notional_exposure": round(total_pending_notional_exposure, 2),
                     "notional_exposure_complete": (
@@ -3290,6 +3313,9 @@ def run_trade_risk_analyze(  # noqa: C901
                     "risk_currency": "account_currency",
                     "notional_value": "account_currency_linearized",
                     "notional_exposure": "account_currency_linearized",
+                    "notional_to_equity": "ratio",
+                    "volume": "broker_lot",
+                    "contract_size": "contract_units_per_lot",
                     "contract_price_product": "contract_size_times_price",
                 },
             }
@@ -3315,7 +3341,14 @@ def run_trade_risk_analyze(  # noqa: C901
                         else {}
                     ),
                 }
+                scoped_risk = result.pop("portfolio_risk")
+                result["scoped_risk"] = scoped_risk
+                result["risk_visibility"] = (
+                    "partial" if other_positions_count else "symbol_scope"
+                )
                 if other_positions_count:
+                    scoped_risk["overall_risk_status"] = "partial"
+                    scoped_risk["quantified_risk_level"] = "unknown"
                     result["scope_warning"] = (
                         f"No open {request.symbol} positions matched; "
                         f"{int(other_positions_count)} open position(s) exist on other symbols."
@@ -3326,6 +3359,7 @@ def run_trade_risk_analyze(  # noqa: C901
                         )
                     )
             else:
+                result["risk_visibility"] = "portfolio"
                 result["scope"] = {
                     "mode": "portfolio",
                     "matched_positions": len(position_risks),

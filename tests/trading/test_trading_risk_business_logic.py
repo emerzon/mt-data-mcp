@@ -438,7 +438,8 @@ def test_trade_risk_analyze_keeps_exposure_analysis_with_partial_sizing_params()
         )
 
     assert out["success"] is True
-    assert "portfolio_risk" in out
+    assert "scoped_risk" in out
+    assert "portfolio_risk" not in out
     sizing = out["position_sizing"]
     assert sizing["status"] == "parameters_missing"
     assert set(sizing["missing"]) == {"entry", "stop_loss"}
@@ -554,7 +555,10 @@ def test_trade_risk_analyze_reports_symbol_scope_when_other_positions_exist() ->
         out["scope_warning"]
         == "No open EURUSD positions matched; 2 open position(s) exist on other symbols."
     )
-    assert out["portfolio_risk"]["positions_count"] == 0
+    assert out["risk_visibility"] == "partial"
+    assert out["scoped_risk"]["positions_count"] == 0
+    assert out["scoped_risk"]["overall_risk_status"] == "partial"
+    assert out["scoped_risk"]["quantified_risk_level"] == "unknown"
 
 
 def test_trade_risk_analyze_blocks_min_volume_risk_overshoot_by_default() -> None:
@@ -1072,6 +1076,9 @@ def test_trade_risk_analyze_converts_notional_with_broker_tick_value() -> None:
     gateway.account_info.return_value = SimpleNamespace(
         equity=100_000.0,
         currency="USD",
+        leverage=500,
+        margin=250.0,
+        margin_free=99_750.0,
     )
     gateway.positions_get.return_value = [
         SimpleNamespace(
@@ -1101,7 +1108,12 @@ def test_trade_risk_analyze_converts_notional_with_broker_tick_value() -> None:
 
     assert out["positions"][0]["contract_price_product"] == 11_000_000.0
     assert out["positions"][0]["notional_value"] == 100_100.0
+    assert out["positions"][0]["contract_size"] == 100_000.0
+    assert out["positions"][0]["volume_unit"] == "broker_lot"
     assert out["portfolio_risk"]["notional_exposure"] == 100_100.0
+    assert out["portfolio_risk"]["notional_to_equity"] == 1.001
+    assert out["portfolio_risk"]["account_leverage"] == 500.0
+    assert out["portfolio_risk"]["margin_used"] == 250.0
     assert out["portfolio_risk"]["notional_exposure_complete"] is True
     assert out["units"]["notional_value"] == "account_currency_linearized"
 
