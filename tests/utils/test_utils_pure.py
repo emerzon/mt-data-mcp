@@ -13,8 +13,10 @@ from mtdata.utils.time import (
 )
 from mtdata.utils.utils import (
     coerce_scalar,
+    _format_numeric_rows_from_df,
     _normalize_limit,
     _normalize_ohlcv_arg,
+    _parse_start_datetime,
     _safe_float,
     _table_from_rows,
     _utc_epoch_seconds,
@@ -160,6 +162,10 @@ class TestTableFromRows:
         result = _table_from_rows(["a", "b", "c"], [[1]])
         assert result["data"][0] == {"a": 1, "b": None, "c": None}
 
+    def test_none_rows(self):
+        result = _table_from_rows(["a"], None)
+        assert result["count"] == 0
+
 
 class TestFormatTimeMinimal:
     def test_epoch_zero(self):
@@ -227,3 +233,64 @@ class TestUtcEpochSeconds:
         dt = datetime(2024, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
         result = _utc_epoch_seconds(dt)
         assert abs(result - 1704067200.0) < 1.0
+
+    def test_naive_epoch_is_exact_utc(self):
+        dt = datetime(2020, 1, 1, 0, 0, 0)
+        assert int(_utc_epoch_seconds(dt)) == 1577836800
+
+    def test_aware_epoch_is_exact_utc(self):
+        dt = datetime(2020, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
+        assert int(_utc_epoch_seconds(dt)) == 1577836800
+
+
+class TestParseStartDatetime:
+    def test_valid_date(self):
+        dt = _parse_start_datetime("2023-01-15")
+        assert dt is not None
+        assert dt.year == 2023
+        assert dt.month == 1
+
+    def test_empty_string(self):
+        assert _parse_start_datetime("") is None
+
+    def test_result_is_naive_utc(self):
+        dt = _parse_start_datetime("2023-06-01 12:00 UTC")
+        assert dt is not None
+        assert dt.tzinfo is None
+
+    def test_epoch_is_utc(self):
+        dt = _parse_start_datetime("2020-01-01 00:00:00")
+        assert dt is not None
+        assert dt.tzinfo is None
+        assert int(_utc_epoch_seconds(dt)) == 1577836800
+
+    def test_relative_weekdays(self):
+        today = datetime.now(timezone.utc).date()
+
+        next_monday = _parse_start_datetime("next monday")
+        last_friday = _parse_start_datetime("last Friday")
+
+        assert next_monday is not None
+        assert next_monday.weekday() == 0
+        assert next_monday.date() > today
+        assert last_friday is not None
+        assert last_friday.weekday() == 4
+        assert last_friday.date() < today
+
+
+class TestFormatNumericRowsFromDf:
+    def test_basic_formatting(self):
+        df = pd.DataFrame({"time": [0], "close": [1.23456789]})
+        rows = _format_numeric_rows_from_df(df, ["time", "close"])
+        assert len(rows) == 1
+        assert len(rows[0]) == 2
+
+    def test_with_none_values(self):
+        df = pd.DataFrame({"time": [0], "val": [None]})
+        rows = _format_numeric_rows_from_df(df, ["time", "val"])
+        assert rows[0][1] == "null"
+
+    def test_bool_formatting(self):
+        df = pd.DataFrame({"time": [0], "flag": [True]})
+        rows = _format_numeric_rows_from_df(df, ["time", "flag"])
+        assert rows[0][1] == "true"

@@ -184,6 +184,12 @@ class TestRdpSelectIndices:
         result = _rdp_select_indices(x, y, 0)
         assert result == list(range(10))
 
+    def test_preserves_spike(self):
+        x = [0.0, 1.0, 2.0, 3.0, 4.0]
+        y = [0.0, 0.0, 10.0, 0.0, 0.0]
+        result = _rdp_select_indices(x, y, epsilon=0.1)
+        assert 2 in result
+
 
 class TestMaxLineError:
     def test_straight(self):
@@ -209,6 +215,12 @@ class TestPlaSelectIndices:
 
     def test_short(self):
         assert _pla_select_indices([0.0, 1.0], [0.0, 1.0]) == [0, 1]
+
+    def test_with_max_error(self):
+        x = list(range(10))
+        y = [0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0]
+        result = _pla_select_indices(x, y, max_error=0.01)
+        assert len(result) >= 2
 
 
 class TestApcaSelectIndices:

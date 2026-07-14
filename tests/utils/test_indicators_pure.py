@@ -1,14 +1,14 @@
-"""Comprehensive tests for pure functions across multiple modules.
+"""Pure tests for indicators helpers, core wrappers, and shared schema.
 
 Covers:
   - mtdata.utils.indicators  (TA indicator helpers)
   - mtdata.core.indicators    (thin wrappers / delegates)
-  - mtdata.utils.utils        (utility pure functions)
   - mtdata.shared.schema      (schema validation/parsing)
+
+Utility helpers (utils.utils, formatting, parse_kv) live in dedicated test modules.
 """
 
 import logging
-from datetime import datetime, timezone
 from typing import Any, Dict, List, Literal, Optional, Union
 
 import numpy as np
@@ -37,7 +37,6 @@ from mtdata.shared.schema import (
     get_shared_enum_lists,
     shared_defs,
 )
-from mtdata.utils.formatting import format_float
 
 # ---------------------------------------------------------------------------
 # Module imports
@@ -52,19 +51,6 @@ from mtdata.utils.indicators import (
     clean_help_text,
     infer_defaults_from_doc,
     list_ta_indicators,
-)
-from mtdata.utils.time import _format_time_minimal
-from mtdata.utils.utils import (
-    _format_numeric_rows_from_df,
-    _normalize_limit,
-    _normalize_ohlcv_arg,
-    _parse_start_datetime,
-    _table_from_rows,
-    _utc_epoch_seconds,
-    align_finite,
-    coerce_scalar,
-    parse_kv_or_json,
-    to_float_np,
 )
 
 # ---------------------------------------------------------------------------
@@ -773,281 +759,7 @@ Values above 70 often indicate overbought conditions.
 
 
 # ===================================================================
-# 3. mtdata.utils.utils
-# ===================================================================
-class TestCoerceScalar:
-    def test_integer_string(self):
-        assert coerce_scalar("42") == 42
-
-    def test_negative_integer(self):
-        assert coerce_scalar("-7") == -7
-
-    def test_float_string(self):
-        assert coerce_scalar("3.14") == pytest.approx(3.14)
-
-    def test_non_numeric_string(self):
-        assert coerce_scalar("hello") == "hello"
-
-    def test_none(self):
-        assert coerce_scalar(None) is None
-
-    def test_empty_string(self):
-        assert coerce_scalar("") == ""
-
-    def test_whitespace(self):
-        assert coerce_scalar("  42  ") == 42
-
-
-class TestNormalizeOhlcvArg:
-    def test_none(self):
-        assert _normalize_ohlcv_arg(None) is None
-
-    def test_empty(self):
-        assert _normalize_ohlcv_arg("") is None
-
-    def test_all(self):
-        assert _normalize_ohlcv_arg("all") == {"O", "H", "L", "C", "V"}
-
-    def test_ohlcv(self):
-        assert _normalize_ohlcv_arg("ohlcv") == {"O", "H", "L", "C", "V"}
-
-    def test_ohlc(self):
-        assert _normalize_ohlcv_arg("ohlc") == {"O", "H", "L", "C"}
-
-    def test_price(self):
-        assert _normalize_ohlcv_arg("price") == {"C"}
-
-    def test_close(self):
-        assert _normalize_ohlcv_arg("close") == {"C"}
-
-    def test_compact_letters(self):
-        assert _normalize_ohlcv_arg("hl") == {"H", "L"}
-
-    def test_comma_separated_names(self):
-        result = _normalize_ohlcv_arg("open,high,volume")
-        assert result == {"O", "H", "V"}
-
-    def test_semicolon_separated(self):
-        result = _normalize_ohlcv_arg("open;close")
-        assert result == {"O", "C"}
-
-    def test_unrecognized_returns_none(self):
-        assert _normalize_ohlcv_arg("unknown_field") is None
-
-
-class TestNormalizeLimit:
-    def test_none(self):
-        assert _normalize_limit(None) is None
-
-    def test_positive_int(self):
-        assert _normalize_limit(10) == 10
-
-    def test_zero(self):
-        assert _normalize_limit(0) is None
-
-    def test_negative(self):
-        assert _normalize_limit(-5) is None
-
-    def test_string(self):
-        assert _normalize_limit("25") == 25
-
-    def test_float_string(self):
-        assert _normalize_limit("10.9") == 10
-
-    def test_empty_string(self):
-        assert _normalize_limit("") is None
-
-    def test_non_numeric_string(self):
-        assert _normalize_limit("abc") is None
-
-
-class TestTableFromRows:
-    def test_basic(self):
-        result = _table_from_rows(["a", "b"], [[1, 2], [3, 4]])
-        assert result["success"] is True
-        assert result["count"] == 2
-        assert result["data"][0] == {"a": 1, "b": 2}
-
-    def test_empty_rows(self):
-        result = _table_from_rows(["a"], [])
-        assert result["count"] == 0
-        assert result["data"] == []
-
-    def test_short_row_pads_none(self):
-        result = _table_from_rows(["a", "b", "c"], [[1]])
-        assert result["data"][0]["c"] is None
-
-    def test_none_rows(self):
-        result = _table_from_rows(["a"], None)
-        assert result["count"] == 0
-
-
-class TestFormatTimeMinimal:
-    def test_epoch_zero(self):
-        result = _format_time_minimal(0)
-        assert result == "1970-01-01T00:00Z"
-
-    def test_known_epoch(self):
-        # 2020-01-01 00:00 UTC = 1577836800
-        result = _format_time_minimal(1577836800)
-        assert result == "2020-01-01T00:00Z"
-
-class TestParseKvOrJson:
-    def test_none(self):
-        assert parse_kv_or_json(None) == {}
-
-    def test_dict_passthrough(self):
-        assert parse_kv_or_json({"a": 1}) == {"a": 1}
-
-    def test_empty_string(self):
-        assert parse_kv_or_json("") == {}
-
-    def test_json_object(self):
-        result = parse_kv_or_json('{"key": "val"}')
-        assert result == {"key": "val"}
-
-    def test_json_list_of_pairs(self):
-        result = parse_kv_or_json('[["k1","v1"],["k2","v2"]]')
-        assert result == {"k1": "v1", "k2": "v2"}
-
-    def test_kv_equals(self):
-        result = parse_kv_or_json("alpha=0.05 beta=0.1")
-        assert result["alpha"] == "0.05"
-        assert result["beta"] == "0.1"
-
-    def test_kv_colon(self):
-        result = parse_kv_or_json("alpha:0.05")
-        assert result["alpha"] == "0.05"
-
-    def test_windows_path_not_parsed(self):
-        result = parse_kv_or_json("C:\\Users\\foo")
-        assert "C" not in result or not result.get("C", "").startswith("\\")
-
-    def test_non_string_non_dict(self):
-        assert parse_kv_or_json(42) == {}
-
-    def test_malformed_json_braces_fallback(self):
-        result = parse_kv_or_json("{a=1, b=2}")
-        assert "a" in result or "b" in result
-
-
-class TestFormatFloat:
-    def test_basic(self):
-        assert format_float(3.14, 2) == "3.14"
-
-    def test_trailing_zeros_trimmed(self):
-        assert format_float(3.10, 2) == "3.1"
-
-    def test_integer_value(self):
-        assert format_float(5.0, 2) == "5"
-
-    def test_zero(self):
-        assert format_float(0.0, 4) == "0"
-
-
-class TestFormatNumericRowsFromDf:
-    def test_basic_formatting(self):
-        df = pd.DataFrame({"time": [0], "close": [1.23456789]})
-        rows = _format_numeric_rows_from_df(df, ["time", "close"])
-        assert len(rows) == 1
-        assert len(rows[0]) == 2
-
-    def test_with_none_values(self):
-        df = pd.DataFrame({"time": [0], "val": [None]})
-        rows = _format_numeric_rows_from_df(df, ["time", "val"])
-        assert rows[0][1] == "null"
-
-    def test_bool_formatting(self):
-        df = pd.DataFrame({"time": [0], "flag": [True]})
-        rows = _format_numeric_rows_from_df(df, ["time", "flag"])
-        assert rows[0][1] == "true"
-
-
-class TestToFloatNp:
-    def test_list_input(self):
-        arr = to_float_np([1, 2, 3])
-        assert isinstance(arr, np.ndarray)
-        np.testing.assert_array_equal(arr, [1.0, 2.0, 3.0])
-
-    def test_series_input(self):
-        s = pd.Series([1.5, 2.5])
-        arr = to_float_np(s)
-        np.testing.assert_array_almost_equal(arr, [1.5, 2.5])
-
-    def test_coerce_non_numeric(self):
-        arr = to_float_np(["1", "bad", "3"], coerce=True)
-        assert len(arr) == 3
-        assert np.isnan(arr[1])
-
-    def test_drop_na(self):
-        arr = to_float_np([1.0, np.nan, 3.0], drop_na=True)
-        np.testing.assert_array_equal(arr, [1.0, 3.0])
-
-    def test_finite_only(self):
-        arr = to_float_np([1.0, np.inf, 3.0], finite_only=True)
-        np.testing.assert_array_equal(arr, [1.0, 3.0])
-
-    def test_return_mask(self):
-        arr, mask = to_float_np([1.0, np.nan, 3.0], drop_na=True, return_mask=True)
-        assert len(arr) == 2
-        assert mask.sum() == 2
-
-    def test_return_mask_no_filter(self):
-        arr, mask = to_float_np([1.0, 2.0], return_mask=True)
-        assert len(arr) == 2
-        assert mask.all()
-
-    def test_empty_input(self):
-        arr = to_float_np([])
-        assert len(arr) == 0
-
-
-class TestAlignFinite:
-    def test_basic(self):
-        a, b = align_finite([1.0, np.nan, 3.0], [4.0, 5.0, 6.0])
-        np.testing.assert_array_equal(a, [1.0, 3.0])
-        np.testing.assert_array_equal(b, [4.0, 6.0])
-
-    def test_all_finite(self):
-        a, b = align_finite([1.0, 2.0], [3.0, 4.0])
-        assert len(a) == 2
-        assert len(b) == 2
-
-    def test_empty_call(self):
-        result = align_finite()
-        assert result == ()
-
-
-class TestParseStartDatetime:
-    def test_valid_date(self):
-        dt = _parse_start_datetime("2023-01-15")
-        assert dt is not None
-        assert dt.year == 2023
-        assert dt.month == 1
-
-    def test_empty_string(self):
-        assert _parse_start_datetime("") is None
-
-    def test_result_is_naive_utc(self):
-        dt = _parse_start_datetime("2023-06-01 12:00 UTC")
-        assert dt is not None
-        assert dt.tzinfo is None
-
-
-class TestUtcEpochSeconds:
-    def test_naive_as_utc(self):
-        dt = datetime(2020, 1, 1, 0, 0, 0)
-        epoch = _utc_epoch_seconds(dt)
-        assert epoch == pytest.approx(1577836800.0)
-
-    def test_aware_utc(self):
-        dt = datetime(2020, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
-        epoch = _utc_epoch_seconds(dt)
-        assert epoch == pytest.approx(1577836800.0)
-
-
-# ===================================================================
-# 4. mtdata.shared.schema
+# 3. mtdata.shared.schema
 # ===================================================================
 class TestSharedDefs:
     def test_returns_timeframe_spec(self):
