@@ -6,7 +6,9 @@ from typing import Any, Optional
 
 from ..shared.symbols import is_probably_crypto_symbol
 
-QUOTE_LIVE_SECONDS = 15
+# Keep market-data readiness aligned with the pre-trade validator so the same
+# quote age is not rejected by one public surface and accepted by another.
+QUOTE_LIVE_SECONDS = 30
 QUOTE_RECENT_SECONDS = 60
 QUOTE_STALE_SECONDS = 300
 MAX_STANDARD_WEEKEND_DATA_AGE_SECONDS = 3 * 24 * 60 * 60

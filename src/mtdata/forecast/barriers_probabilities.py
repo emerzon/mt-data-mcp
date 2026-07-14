@@ -121,7 +121,12 @@ def _history_freshness_context(
     )
     if closed_session:
         out.update(closed_session)
-    out["usable_for_live_trading"] = not bool(out.get("data_stale")) and not bool(closed_session)
+    history_policy_ok = not bool(out.get("data_stale")) and not bool(closed_session)
+    out["history_policy_ok"] = history_policy_ok
+    out["usable_for_live_trading"] = history_policy_ok
+    out["usable_for_live_trading_basis"] = (
+        "barrier_history_bar_policy_not_execution_quote"
+    )
     freshness = format_freshness_label(
         data_stale=out.get("data_stale"),
         market_status=(
@@ -654,6 +659,15 @@ def forecast_barrier_hit_probabilities(  # noqa: C901
                 out.get("model_data_usable_for_live")
                 and reference_context.get("reference_usable_for_live")
             )
+            out["usable_for_live_trading_basis"] = (
+                "model_history_and_reference_quote"
+            )
+            blockers = []
+            if not out.get("model_data_usable_for_live"):
+                blockers.append("model_history_outside_policy")
+            if not reference_context.get("reference_usable_for_live"):
+                blockers.append("reference_quote_not_live")
+            out["execution_blockers"] = blockers
             if (
                 reference_context.get("reference_price_stale") is True
                 or reference_context.get("market_status") == "closed"

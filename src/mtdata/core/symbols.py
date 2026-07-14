@@ -1565,7 +1565,9 @@ def _market_scan_freshness_fields(
         "stale_after_seconds": stale_after_seconds,
         "bar_age_hours": _market_scan_round(age_seconds / 3600.0, digits=3),
         "data_stale": data_stale,
+        "history_policy_ok": not data_stale and not bool(closed_session),
         "usable_for_live_trading": not data_stale and not bool(closed_session),
+        "usable_for_live_trading_basis": "ranking_bar_policy_not_execution_quote",
         "freshness": format_freshness_label(
             data_stale=data_stale,
             age_seconds=age_seconds,
@@ -1584,6 +1586,9 @@ def _market_scan_freshness_fields(
             age_seconds=age_seconds,
             item="bar",
         )
+    elif not data_stale:
+        age_text = format_age_seconds(age_seconds)
+        fields["freshness"] = f"current closed bar, {age_text} ago"
     if fields["data_stale"]:
         fields["stale_warning"] = (
             "Completed bar data may be stale; latest bar is "

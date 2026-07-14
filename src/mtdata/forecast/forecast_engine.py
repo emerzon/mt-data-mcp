@@ -1057,7 +1057,12 @@ def _last_price_freshness_fields(
     )
     if closed_session:
         out.update(closed_session)
-    out["usable_for_live_trading"] = not out["last_price_stale"] and not bool(closed_session)
+    history_policy_ok = not out["last_price_stale"] and not bool(closed_session)
+    out["history_policy_ok"] = history_policy_ok
+    out["usable_for_live_trading"] = history_policy_ok
+    out["usable_for_live_trading_basis"] = (
+        "forecast_anchor_bar_policy_not_execution_quote"
+    )
     if out["last_price_stale"]:
         out["stale_warning"] = (
             "Last forecast anchor is older than the bar freshness policy; "

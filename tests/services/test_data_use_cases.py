@@ -456,6 +456,10 @@ def test_run_data_fetch_candles_closed_market_keeps_absolute_staleness():
     assert result["query_type"] == "latest"
     assert result["data_stale"] is True
     assert result["usable_for_live_trading"] is False
+    assert result["history_policy_ok"] is False
+    assert result["usable_for_live_trading_basis"] == (
+        "history_bar_policy_not_execution_quote"
+    )
     assert result["data_age_seconds"] == 149668.6
     assert "data_age_anchor" not in result
     assert "data_age_metric" not in result

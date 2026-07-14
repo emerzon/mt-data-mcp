@@ -7,11 +7,11 @@ import math
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
+from ...utils.market_metadata import build_tick_freshness_context
 from ...utils.time import (
     _format_datetime_second_explicit,
     format_epoch_utc,
 )
-from ...utils.market_metadata import build_tick_freshness_context
 from ...utils.utils import (
     _normalize_limit,
     _parse_start_datetime,
@@ -47,6 +47,7 @@ def _attach_open_position_quote_context(
     )
     stale_count = 0
     enriched_count = 0
+    live_usable_count = 0
     for item in items:
         if not isinstance(item, dict):
             continue
@@ -88,11 +89,13 @@ def _attach_open_position_quote_context(
                 item[key] = freshness[key]
         enriched_count += 1
         stale_count += int(freshness.get("data_stale") is True)
+        live_usable_count += int(freshness.get("usable_for_live_trading") is True)
     if enriched_count:
         payload["quote_freshness_summary"] = {
             "positions_enriched": enriched_count,
             "stale_quotes": stale_count,
-            "live_usable_quotes": enriched_count - stale_count,
+            "live_usable_quotes": live_usable_count,
+            "recent_or_delayed_quotes": enriched_count - stale_count - live_usable_count,
         }
 
 _TRADE_VOLUME_UNITS = {

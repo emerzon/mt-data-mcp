@@ -1086,3 +1086,30 @@ def test_open_position_quote_context_discloses_basis_and_staleness() -> None:
     assert row["data_stale"] is True
     assert row["usable_for_live_trading"] is False
     assert payload["quote_freshness_summary"]["stale_quotes"] == 1
+
+
+def test_open_position_quote_summary_does_not_count_recent_quote_as_live() -> None:
+    now_epoch = datetime(2026, 7, 14, 20, tzinfo=timezone.utc).timestamp()
+    payload = {"items": [{"symbol": "EURUSD", "side": "BUY"}]}
+    gateway = SimpleNamespace(
+        symbol_info_tick=lambda symbol: SimpleNamespace(
+            time=now_epoch - 45,
+            time_msc=0,
+            bid=1.14139,
+            ask=1.14155,
+        )
+    )
+
+    core_trading_positions._attach_open_position_quote_context(
+        payload,
+        gateway,
+        now_epoch=now_epoch,
+    )
+
+    assert payload["items"][0]["usable_for_live_trading"] is False
+    assert payload["quote_freshness_summary"] == {
+        "positions_enriched": 1,
+        "stale_quotes": 0,
+        "live_usable_quotes": 0,
+        "recent_or_delayed_quotes": 1,
+    }

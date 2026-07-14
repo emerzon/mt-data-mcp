@@ -134,6 +134,7 @@ def build_tick_freshness_context(
         and not timestamp_in_future
     )
     out["usable_for_live_trading"] = execution_fresh and not bool(closed_session)
+    out["usable_for_live_trading_basis"] = "quote_age_and_market_session"
 
     freshness = format_freshness_label(
         data_stale=data_stale,

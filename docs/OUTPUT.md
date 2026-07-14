@@ -163,6 +163,22 @@ Prefer `error_code` over string-matching `error` when you need to branch on fail
 
 ---
 
+## Freshness and execution readiness
+
+`usable_for_live_trading` is accompanied by `usable_for_live_trading_basis`.
+Callers must evaluate the basis rather than treating every occurrence as a live
+quote gate:
+
+- `quote_age_and_market_session` is an execution-quote check. Its default age
+  threshold is 30 seconds, matching pre-trade validation.
+- Values ending in `not_execution_quote` describe whether historical bars are
+  within their timeframe policy. Use `history_policy_ok` for that decision and
+  obtain a current quote before execution.
+- Combined forecast outputs may require both model-history and reference-quote
+  readiness and expose `execution_blockers` when either input fails.
+
+---
+
 ## TOON vs JSON
 
 The canonical payload above is what you get with `--json`. Without `--json`, the CLI renders the same payload as compact **TOON** text and applies `--precision auto`. Format and precision are presentation-only and never change the underlying values. See [CLI.md](CLI.md#output-contract) for details, and set `MTDATA_OUTPUT_FORMAT=json` to default all output to JSON.

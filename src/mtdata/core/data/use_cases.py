@@ -61,7 +61,9 @@ _COMPACT_TICK_TOP_LEVEL_FIELDS = (
     "data_age_anchor",
     "data_age_metric",
     "data_stale",
+    "history_policy_ok",
     "usable_for_live_trading",
+    "usable_for_live_trading_basis",
     "live_max_age_seconds",
     "market_status",
     "market_status_reason",
@@ -522,7 +524,9 @@ def _compact_candles_payload(
         "freshness",
         "data_age_seconds",
         "data_stale",
+        "history_policy_ok",
         "usable_for_live_trading",
+        "usable_for_live_trading_basis",
         "freshness_policy_relaxed",
         "market_status",
         "market_status_reason",
@@ -676,7 +680,9 @@ def _standard_candles_payload(result: Dict[str, Any]) -> Dict[str, Any]:
         "query_type",
         "freshness",
         "data_stale",
+        "history_policy_ok",
         "usable_for_live_trading",
+        "usable_for_live_trading_basis",
         "data_age_seconds",
         "data_age_anchor",
         "data_age_metric",
@@ -706,7 +712,9 @@ def _attach_candle_machine_freshness(payload: Dict[str, Any]) -> None:
         "query_type",
         "data_age_seconds",
         "data_stale",
+        "history_policy_ok",
         "usable_for_live_trading",
+        "usable_for_live_trading_basis",
         "freshness_policy_relaxed",
         "query_end_gap_seconds",
         "query_end_gap",
@@ -929,7 +937,12 @@ def _public_candle_diagnostics(result: Dict[str, Any]) -> Dict[str, Any]:
                 within_policy is not None
                 and not bool(within_policy)
             )
-            public["usable_for_live_trading"] = not stale and not relaxed_policy
+            history_policy_ok = not stale and not relaxed_policy
+            public["history_policy_ok"] = history_policy_ok
+            public["usable_for_live_trading"] = history_policy_ok
+            public["usable_for_live_trading_basis"] = (
+                "history_bar_policy_not_execution_quote"
+            )
             public["data_stale"] = stale
             freshness_label = format_freshness_label(
                 data_stale=stale,
