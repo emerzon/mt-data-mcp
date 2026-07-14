@@ -475,7 +475,7 @@ class SimplifySpec(TypedDict, total=False):
     scale: float
     zero_char: str
     # Segment specifics
-    algo: Literal['zigzag','zz']  # type: ignore
+    algo: Literal['zigzag']  # type: ignore
     threshold_pct: float
     value_col: str
     # Symbolic specifics
@@ -605,7 +605,7 @@ def complex_defs() -> Dict[str, Any]:
                 "alphabet": {"type": "string"},
                 "scale": {"type": "number"},
                 "zero_char": {"type": "string"},
-                "algo": {"type": "string", "enum": ["zigzag","zz"]},
+                "algo": {"type": "string", "enum": ["zigzag"]},
                 "threshold_pct": {"type": "number"},
                 "value_col": {"type": "string"},
                 "paa": {"type": "integer"},

@@ -1113,6 +1113,11 @@ class TestComplexDefs:
         assert spec["type"] == "object"
         assert "name" in spec["properties"]
 
+    def test_simplify_algorithm_uses_canonical_name(self):
+        defs = complex_defs()
+
+        assert defs["SimplifySpec"]["properties"]["algo"]["enum"] == ["zigzag"]
+
 
 class TestEnsureDefs:
     def test_adds_defs_if_missing(self):
