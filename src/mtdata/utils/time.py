@@ -81,6 +81,22 @@ def _format_time_explicit_local(epoch_seconds: float) -> str:
         return _format_time_explicit(epoch_seconds)
 
 
+def _format_time_second_explicit(epoch_seconds: float) -> str:
+    """Format UTC epoch seconds at quote/event precision."""
+    dt = datetime.fromtimestamp(epoch_seconds, tz=timezone.utc)
+    return _format_datetime_second_explicit(dt)
+
+
+def _format_time_second_explicit_local(epoch_seconds: float) -> str:
+    """Format local/client epoch seconds at quote/event precision."""
+    try:
+        tz = _resolve_client_tz()
+        dt = datetime.fromtimestamp(epoch_seconds, tz=timezone.utc).astimezone(tz)
+        return _format_datetime_second_explicit(dt)
+    except Exception:
+        return _format_time_second_explicit(epoch_seconds)
+
+
 def _format_datetime_minute_explicit(dt: datetime) -> str:
     return _format_datetime_explicit(dt, timespec="minutes")
 

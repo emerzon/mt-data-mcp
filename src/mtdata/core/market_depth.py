@@ -25,8 +25,8 @@ from ..utils.mt5 import (
     resolve_broker_symbol_name,
 )
 from ..utils.time import (
-    _format_time_explicit,
-    _format_time_explicit_local,
+    _format_time_second_explicit,
+    _format_time_second_explicit_local,
     _resolve_client_tz,
     _use_client_tz,
 )
@@ -474,10 +474,10 @@ def _market_depth_fetch_impl(symbol: str, spread: bool = False, require_dom: boo
                     out["capabilities"]["spread_overlay_applied"] = True
             _use_ctz = _use_client_tz()
             if tick.time and _use_ctz:
-                out["data"]["time"] = _format_time_explicit_local(float(tick.time))
+                out["data"]["time"] = _format_time_second_explicit_local(float(tick.time))
                 out["data"]["time_epoch"] = int(float(tick.time))
             elif tick.time:
-                out["data"]["time"] = _format_time_explicit(float(tick.time))
+                out["data"]["time"] = _format_time_second_explicit(float(tick.time))
                 out["data"]["time_epoch"] = int(float(tick.time))
             out["timezone"] = display_timezone_label(
                 use_client_tz=_use_ctz,
@@ -714,9 +714,9 @@ def market_ticker(  # noqa: C901
             if tick_time is not None:
                 out["time_epoch"] = float(tick_time)
                 if _use_ctz:
-                    out["time"] = _format_time_explicit_local(float(tick_time))
+                    out["time"] = _format_time_second_explicit_local(float(tick_time))
                 else:
-                    out["time"] = _format_time_explicit(float(tick_time))
+                    out["time"] = _format_time_second_explicit(float(tick_time))
             age_seconds = None
             now_epoch = None
             if tick_time is not None:
