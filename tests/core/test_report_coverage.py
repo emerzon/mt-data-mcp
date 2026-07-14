@@ -857,7 +857,7 @@ class TestReportSummaryVolForecast:
         res = self._run_report(sec)
         assert any("sigma=" in s for s in res.get("summary", []))
 
-    def test_vol_return_sigma_fallback(self):
+    def test_vol_return_sigma_uses_canonical_field(self):
         sec = _make_full_sections()
         sec["volatility"] = {"volatility_horizon": 0.003}
         res = self._run_report(sec)
