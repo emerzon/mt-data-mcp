@@ -571,8 +571,7 @@ _TRADE_HISTORY_COMPACT_DEAL_FIELDS = (
     "order_ticket",
     "position_ticket",
     "symbol",
-    "type",
-    "action",
+    "deal_type",
     "deal_effect",
     "position_side",
     "volume",
@@ -593,7 +592,7 @@ _TRADE_HISTORY_COMPACT_ORDER_FIELDS = (
     "order_ticket",
     "position_ticket",
     "symbol",
-    "type",
+    "order_type",
     "state",
     "volume_initial",
     "volume_current",
@@ -712,14 +711,19 @@ def _compact_trade_history_row(
             compact["placed_time"] = compact["time_setup"]
         if "time_done" in compact:
             compact["done_time"] = compact["time_done"]
+        raw_order_type = _first_present(compact, "type_label", "type")
+        if raw_order_type is not None:
+            compact["order_type"] = raw_order_type
         fields = _TRADE_HISTORY_COMPACT_ORDER_FIELDS
     else:
         if "time" in compact:
             compact["fill_time"] = compact["time"]
         action = _trade_history_action(compact, history_kind=history_kind)
         if action is not None:
-            compact["action"] = action
             compact["deal_effect"] = action
+        raw_deal_type = _first_present(compact, "type_label", "type")
+        if raw_deal_type is not None:
+            compact["deal_type"] = raw_deal_type
         position_side = _trade_history_position_side(
             compact,
             action=action,

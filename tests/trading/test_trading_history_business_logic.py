@@ -276,8 +276,7 @@ def test_trade_history_compact_omits_parallel_normalized_rows() -> None:
         "fill_time": "2024-01-01 12:00:00",
         "ticket": 11,
         "symbol": "EURUSD",
-        "type": "Buy",
-        "action": "close",
+        "deal_type": "Buy",
         "deal_effect": "close",
         "position_side": "short",
         "volume": 0.5,
@@ -564,8 +563,9 @@ def test_trade_history_deals_decodes_enum_codes_to_labels() -> None:
         sys.modules["MetaTrader5"] = prev
 
     row = out["items"][0]
-    assert row["type"] == "Buy"
-    assert row["action"] == "open"
+    assert row["deal_type"] == "Buy"
+    assert "type" not in row
+    assert "action" not in row
     assert row["deal_effect"] == "open"
     assert row["position_side"] == "long"
     assert "entry" not in row
@@ -590,8 +590,9 @@ def test_trade_history_deals_reports_closed_position_side() -> None:
         sys.modules["MetaTrader5"] = prev
 
     row = out["items"][0]
-    assert row["type"] == "Sell"
-    assert row["action"] == "close"
+    assert row["deal_type"] == "Sell"
+    assert "type" not in row
+    assert "action" not in row
     assert row["deal_effect"] == "close"
     assert row["position_side"] == "long"
 
@@ -622,7 +623,7 @@ def test_trade_history_deals_extracts_exit_trigger_from_comment() -> None:
     row = out["items"][0]
     assert row["exit_trigger"] == "SL"
     assert row["exit_trigger_price"] == 64654.92
-    assert row["action"] == "close"
+    assert row["deal_effect"] == "close"
     assert "exit_trigger_source" not in row
 
 
