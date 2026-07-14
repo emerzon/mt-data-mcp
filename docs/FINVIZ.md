@@ -208,7 +208,7 @@ mtdata-cli finviz_filters_list --filter-name "Market Cap." --json
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| `--search` | (optional) | Case-insensitive substring match on filter display names |
+| `--search` | (optional) | Case-insensitive substring match; matched rows include accepted values/tokens |
 | `--filter-name` | (optional) | Show accepted values and tokens for a single filter |
 | `--limit` | 20 | Max filters per page |
 | `--offset` | 0 | Pagination offset |

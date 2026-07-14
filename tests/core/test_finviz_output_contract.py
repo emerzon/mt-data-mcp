@@ -51,6 +51,7 @@ def test_filters_list_defaults_to_index_and_supports_exact_lookup():
     ):
         index = _unwrap(finviz_filters_list)(limit=1)
         exact = _unwrap(finviz_filters_list)(filter_name="Exchange")
+        searched = _unwrap(finviz_filters_list)(search="exchange")
 
     assert index["count"] == 1
     assert index["total"] == 2
@@ -67,6 +68,10 @@ def test_filters_list_defaults_to_index_and_supports_exact_lookup():
                 {"value": "NYSE", "token": "exch_nyse"},
             ],
         }
+    ]
+    assert searched["items"][0]["values"] == [
+        {"value": "NASDAQ", "token": "exch_nasd"},
+        {"value": "NYSE", "token": "exch_nyse"},
     ]
 
 

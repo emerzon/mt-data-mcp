@@ -1184,7 +1184,7 @@ def finviz_filters_list(
             "prefix": prefix,
             "value_count": len(options),
         }
-        if detail_mode == "full" or filter_query:
+        if detail_mode == "full" or filter_query or query:
             row["values"] = options
         rows.append(row)
 
