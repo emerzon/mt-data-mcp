@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Simple global parameter definitions for mtdata functions.
 

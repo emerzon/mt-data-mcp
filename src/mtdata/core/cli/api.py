@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Dynamic CLI wrapper for testing MetaTrader5 MCP server functions
 Automatically discovers function parameters and creates CLI arguments
