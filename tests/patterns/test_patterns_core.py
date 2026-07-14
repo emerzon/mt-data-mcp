@@ -778,6 +778,44 @@ def test_build_pattern_response_compact_keeps_fractal_breakout_fields():
     assert "recent_patterns" not in compact
 
 
+def test_build_pattern_response_suppresses_stale_harmonic_current_bias():
+    df = pd.DataFrame({"time": list(range(150)), "close": [10.0] * 150})
+    patterns = [
+        {
+            "name": "Bearish ABCD",
+            "status": "completed",
+            "confidence": 0.64,
+            "end_index": 30,
+            "direction": "bearish",
+            "bias": "bearish",
+            "age_bars": 119,
+            "is_recent": False,
+            "signal_eligible": False,
+            "bias_scope": "historical_structure",
+        }
+    ]
+
+    compact = _build_pattern_response(
+        "EURUSD",
+        "H1",
+        150,
+        "harmonic",
+        patterns,
+        include_completed=False,
+        include_series=False,
+        series_time="string",
+        df=df,
+        detail="compact",
+    )
+
+    assert compact["pattern_status"] == "historical"
+    assert compact["review_recommended"] is False
+    assert "suggested_review" not in compact
+    assert "bias" not in compact
+    assert compact["top_patterns"][0]["age_bars"] == 119
+    assert compact["top_patterns"][0]["bias_scope"] == "historical_structure"
+
+
 def test_build_pattern_response_compact_hides_broken_fractal_rows_by_default():
     df = pd.DataFrame({"time": [1, 2, 3], "close": [10.0, 10.5, 9.8]})
     patterns = [

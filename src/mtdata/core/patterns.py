@@ -788,6 +788,8 @@ def _format_harmonic_patterns(
 ) -> List[Dict[str, Any]]:
     pats = _detect_harmonic_patterns(df, cfg)
     out_list: List[Dict[str, Any]] = []
+    n_bars = len(df)
+    recent_bars = max(3, min(20, round(n_bars * 0.05)))
     for p in pats:
         try:
             start_date, end_date = _format_pattern_dates(p.start_time, p.end_time)
@@ -831,6 +833,12 @@ def _format_harmonic_patterns(
                 },
                 "details": details,
             }
+            age_bars = max(0, n_bars - 1 - int(p.end_index))
+            is_recent = age_bars < recent_bars
+            row["age_bars"] = age_bars
+            row["is_recent"] = is_recent
+            row["signal_eligible"] = is_recent
+            row["bias_scope"] = "current" if is_recent else "historical_structure"
             if target_1 is not None:
                 row["target_price"] = float(target_1)
                 row["target_price_1"] = float(target_1)

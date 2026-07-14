@@ -602,7 +602,8 @@ def _compact_patterns_payload(
     except Exception:
         total_i = len(rows)
 
-    signal_bias = _summarize_pattern_bias(rows)
+    signal_rows = [row for row in rows if row.get("signal_eligible") is not False]
+    signal_bias = _summarize_pattern_bias(signal_rows)
     signal: Dict[str, Any] = {}
     if signal_bias:
         signal = _summarize_pattern_review(signal_bias) or {}
@@ -678,6 +679,9 @@ def _compact_patterns_payload(
             "confidence",
             "wave_count",
             "candidate_note",
+            "age_bars",
+            "is_recent",
+            "bias_scope",
         ):
             value = row.get(key)
             if key == "confidence":
@@ -765,6 +769,12 @@ def _compact_patterns_payload(
                         "visible patterns are neutral or lack directional bias; "
                         "aggregate confidence measures directional bias, not max single-pattern score"
                     )
+    elif rows and not signal_rows:
+        compact["review_recommended"] = False
+        compact["pattern_status"] = "historical"
+        compact["bias_suppressed_reason"] = (
+            "all visible patterns are completed historical structures outside the recent window"
+        )
     if signal_bias and _should_expose_directional_bias(signal_bias, signal):
         compact["bias"] = signal_bias.get("net_bias")
         compact["dominant_direction"] = signal_bias.get("dominant_direction")
