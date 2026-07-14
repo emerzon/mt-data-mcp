@@ -42,41 +42,37 @@ def _make_rows(n=30, base=100.0, step=0.1):
 # ===== _safe_float ==========================================================
 
 class TestSafeFloat:
-    def test_int(self):
-        assert _safe_float(42) == 42.0
+    @pytest.mark.parametrize(
+        ("value", "expected"),
+        [
+            (42, 42.0),
+            (3.14, 3.14),
+            ("2.71", 2.71),
+            (0, 0.0),
+            (-5.5, -5.5),
+            (True, 1.0),
+            (False, 0.0),
+            (1e300, 1e300),
+        ],
+    )
+    def test_coerces_numeric_values(self, value, expected):
+        assert _safe_float(value) == expected
 
-    def test_float(self):
-        assert _safe_float(3.14) == 3.14
-
-    def test_string_number(self):
-        assert _safe_float("2.71") == 2.71
-
-    def test_nan_returns_default(self):
-        assert _safe_float(float("nan")) is None
-
-    def test_nan_returns_custom_default(self):
-        assert _safe_float(float("nan"), default=0.0) == 0.0
-
-    def test_inf_returns_default(self):
-        assert _safe_float(float("inf")) is None
-
-    def test_neg_inf_returns_default(self):
-        assert _safe_float(float("-inf"), default=-1.0) == -1.0
-
-    def test_none_returns_default(self):
-        assert _safe_float(None) is None
-
-    def test_non_numeric_string(self):
-        assert _safe_float("abc") is None
-
-    def test_empty_string(self):
-        assert _safe_float("") is None
-
-    def test_zero(self):
-        assert _safe_float(0) == 0.0
-
-    def test_negative(self):
-        assert _safe_float(-5.5) == -5.5
+    @pytest.mark.parametrize(
+        ("value", "default", "expected"),
+        [
+            (float("nan"), None, None),
+            (float("nan"), 0.0, 0.0),
+            (float("inf"), None, None),
+            (float("-inf"), -1.0, -1.0),
+            (None, None, None),
+            ("abc", None, None),
+            ("", None, None),
+            ([1, 2], None, None),
+        ],
+    )
+    def test_rejects_or_defaults_uncoercible_values(self, value, default, expected):
+        assert _safe_float(value, default=default) == expected
 
 
 # ===== _ema =================================================================
@@ -1600,21 +1596,6 @@ class TestTemplateScalping:
 
 
 # ===== Edge cases and additional coverage ====================================
-
-class TestSafeFloatEdge:
-    def test_bool_true(self):
-        # bool is subclass of int: float(True) == 1.0
-        assert _safe_float(True) == 1.0
-
-    def test_bool_false(self):
-        assert _safe_float(False) == 0.0
-
-    def test_list_returns_default(self):
-        assert _safe_float([1, 2]) is None
-
-    def test_very_large_number(self):
-        assert _safe_float(1e300) == 1e300
-
 
 class TestEmaEdge:
     def test_two_values(self):

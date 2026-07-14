@@ -1,8 +1,7 @@
-"""Extended tests for forecast barrier shared helpers covering uncovered lines.
+"""Tests for forecast barrier shared helpers beyond utils.barriers pure suite.
 
-Targets: _auto_barrier_method, _brownian_bridge_hits,
-         _normalize_trade_direction, and barrier grid preset constants.
-         All pure logic – no MT5 calls.
+Covers: _auto_barrier_method, _brownian_bridge_hits, crypto symbol hints,
+and barrier grid preset constants. Pure logic – no MT5 calls.
 """
 
 import math
@@ -17,7 +16,6 @@ from mtdata.forecast.barriers_shared import (
     _brownian_bridge_hits,
 )
 from mtdata.shared.symbols import is_probably_crypto_symbol
-from mtdata.utils.barriers import normalize_trade_direction as _normalize_trade_direction
 
 
 # ---------------------------------------------------------------------------
@@ -50,65 +48,21 @@ def _regime_switch_prices(n: int, seed: int = 10) -> np.ndarray:
 # is_probably_crypto_symbol
 # ===================================================================
 class TestIsCryptoSymbol:
-    def test_btcusd(self):
-        assert is_probably_crypto_symbol("BTCUSD") is True
-
-    def test_ethusd(self):
-        assert is_probably_crypto_symbol("ETHUSD") is True
-
-    def test_eurusd(self):
-        assert is_probably_crypto_symbol("EURUSD") is False
-
-    def test_empty(self):
-        assert is_probably_crypto_symbol("") is False
-
-    def test_none(self):
-        assert is_probably_crypto_symbol(None) is False
-
-    def test_solusd_lower(self):
-        assert is_probably_crypto_symbol("solusd") is True
-
-    def test_xrp(self):
-        assert is_probably_crypto_symbol("XRPUSD") is True
-
-    def test_aapl(self):
-        assert is_probably_crypto_symbol("AAPL") is False
-
-
-# ===================================================================
-# _normalize_trade_direction
-# ===================================================================
-class TestNormalizeTradeDirection:
-    def test_long(self):
-        assert _normalize_trade_direction("long") == ("long", None)
-
-    def test_short(self):
-        assert _normalize_trade_direction("short") == ("short", None)
-
-    def test_buy(self):
-        assert _normalize_trade_direction("buy") == ("long", None)
-
-    def test_sell(self):
-        assert _normalize_trade_direction("sell") == ("short", None)
-
-    def test_up(self):
-        assert _normalize_trade_direction("up") == ("long", None)
-
-    def test_down(self):
-        assert _normalize_trade_direction("down") == ("short", None)
-
-    def test_invalid(self):
-        direction, err = _normalize_trade_direction("sideways")
-        assert direction is None
-        assert err is not None
-
-    def test_none(self):
-        direction, err = _normalize_trade_direction(None)
-        assert direction is None
-
-    def test_empty_string(self):
-        direction, err = _normalize_trade_direction("")
-        assert direction is None
+    @pytest.mark.parametrize(
+        ("symbol", "expected"),
+        [
+            ("BTCUSD", True),
+            ("ETHUSD", True),
+            ("solusd", True),
+            ("XRPUSD", True),
+            ("EURUSD", False),
+            ("AAPL", False),
+            ("", False),
+            (None, False),
+        ],
+    )
+    def test_crypto_symbol_matrix(self, symbol, expected):
+        assert is_probably_crypto_symbol(symbol) is expected
 
 
 # ===================================================================
@@ -272,24 +226,14 @@ class TestBrownianBridgeHits:
 # BARRIER_GRID_PRESETS
 # ===================================================================
 class TestBarrierGridPresets:
-    def test_scalp_exists(self):
-        assert "scalp" in BARRIER_GRID_PRESETS
-
-    def test_intraday_exists(self):
-        cfg = BARRIER_GRID_PRESETS["intraday"]
-        assert cfg["tp_min"] < cfg["tp_max"]
-
-    def test_swing_exists(self):
-        assert "swing" in BARRIER_GRID_PRESETS
-
-    def test_position_exists(self):
-        cfg = BARRIER_GRID_PRESETS["position"]
-        assert cfg["sl_steps"] > 0
-
-    def test_all_presets_have_required_keys(self):
+    def test_expected_presets_have_required_keys(self):
         required = {"tp_min", "tp_max", "tp_steps", "sl_min", "sl_max", "sl_steps"}
-        for name, cfg in BARRIER_GRID_PRESETS.items():
+        for name in ("scalp", "intraday", "swing", "position"):
+            assert name in BARRIER_GRID_PRESETS
+            cfg = BARRIER_GRID_PRESETS[name]
             assert required.issubset(cfg.keys()), f"Preset {name} missing keys"
+            assert cfg["tp_min"] < cfg["tp_max"]
+            assert cfg["sl_steps"] > 0
 
 
 # ===================================================================

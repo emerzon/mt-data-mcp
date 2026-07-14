@@ -166,12 +166,23 @@ class TestResolveBarrierPrices:
 
 
 class TestNormalizeTradeDirection:
-    def test_aliases(self):
-        assert normalize_trade_direction("buy") == ("long", None)
-        assert normalize_trade_direction("sell") == ("short", None)
+    @pytest.mark.parametrize(
+        ("raw", "expected"),
+        [
+            ("long", "long"),
+            ("short", "short"),
+            ("buy", "long"),
+            ("sell", "short"),
+            ("up", "long"),
+            ("down", "short"),
+        ],
+    )
+    def test_aliases(self, raw, expected):
+        assert normalize_trade_direction(raw) == (expected, None)
 
-    def test_invalid(self):
-        direction, err = normalize_trade_direction("sideways")
+    @pytest.mark.parametrize("raw", ["sideways", None, ""])
+    def test_invalid(self, raw):
+        direction, err = normalize_trade_direction(raw)
         assert direction is None
         assert err is not None
 
