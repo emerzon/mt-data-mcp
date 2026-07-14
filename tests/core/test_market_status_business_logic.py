@@ -532,6 +532,24 @@ def test_market_status_symbol_mode_uses_recent_candles_for_weekend_session(
     assert "reason" not in result
 
 
+def test_recent_sunday_reopen_is_not_classified_as_weekend_trading() -> None:
+    sunday_open = datetime(2026, 7, 12, 21, 0, tzinfo=timezone.utc)
+    gateway = SimpleNamespace(
+        TIMEFRAME_M1=1,
+        copy_rates_range=lambda *args: [{"time": sunday_open.timestamp()}],
+    )
+
+    result = market_status_mod._infer_symbol_schedule_from_recent_candles(
+        "EURUSD",
+        gateway,
+        now_utc=datetime(2026, 7, 14, 12, 0, tzinfo=timezone.utc),
+    )
+
+    assert result["trades_on_weekends"] is False
+    assert result["saturday_candles"] == 0
+    assert result["sunday_candles"] == 1
+
+
 def test_market_status_symbol_mode_marks_weekend_snapshot_freshness(monkeypatch) -> None:
     raw = _unwrap(market_status_mod.market_status)
     fixed_now = datetime(2026, 4, 25, 12, 0, tzinfo=timezone.utc)

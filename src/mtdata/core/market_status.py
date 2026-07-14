@@ -790,6 +790,8 @@ def _infer_symbol_schedule_from_recent_candles(
     slots: set[Tuple[int, int]] = set()
     active_weekdays: set[int] = set()
     weekend_candles = 0
+    saturday_candles = 0
+    sunday_candles = 0
     candle_count = 0
     for row in rates:
         epoch = _rate_epoch_seconds(row)
@@ -806,6 +808,10 @@ def _infer_symbol_schedule_from_recent_candles(
         active_weekdays.add(weekday)
         if weekday >= 5:
             weekend_candles += 1
+        if weekday == 5:
+            saturday_candles += 1
+        elif weekday == 6:
+            sunday_candles += 1
 
     if candle_count == 0:
         return {
@@ -836,8 +842,12 @@ def _infer_symbol_schedule_from_recent_candles(
         "active_weekdays": [_WEEKDAY_NAMES[weekday] for weekday in sorted(active_weekdays)],
         "active_hours_utc": active_hours_by_day,
         "active_hour_coverage": round(active_hour_coverage, 3),
-        "trades_on_weekends": weekend_candles > 0,
+        # Sunday evening bars are the normal FX weekly reopen. Saturday
+        # activity is the reliable discriminator for true weekend trading.
+        "trades_on_weekends": saturday_candles > 0,
         "weekend_candles": weekend_candles,
+        "saturday_candles": saturday_candles,
+        "sunday_candles": sunday_candles,
         "current_time_in_active_session": current_slot in slots,
         "inferred_24_7": inferred_24_7,
     }
