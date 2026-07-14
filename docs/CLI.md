@@ -1,12 +1,20 @@
 # CLI Guide
 
-The CLI is the fastest way to poke around mtdata. Every tool is one command:
+The CLI is the one-shot interface for scripts and occasional exploration. Every
+tool is one command:
 
 ```bash
 mtdata-cli <command> [options]
 ```
 
-Use it for scripts, exploration, and copy-paste workflows. The full tool surface is also available over [MCP](GLOSSARY.md#mcp-model-context-protocol). The Web API exposes a focused subset with the same canonical payload semantics for operations shared across interfaces. Default text presentation is [TOON](GLOSSARY.md#toon); use `--json` for machines.
+Use it for scripts, exploration, and copy-paste workflows. Each invocation
+starts Python and discovers the full tool surface, so repeated interactive or
+agent calls should keep a process alive with `mtdata-stdio`,
+`mtdata-streamable-http`, or `mtdata-webapi`. The full tool surface is also
+available over [MCP](GLOSSARY.md#mcp-model-context-protocol). The Web API
+exposes a focused subset with the same canonical payload semantics for
+operations shared across interfaces. Default text presentation is
+[TOON](GLOSSARY.md#toon); use `--json` for machines.
 
 Stuck on an acronym in output (BOCPD, Kelly, CVaR, …)? See the [glossary quick find](GLOSSARY.md#quick-find).
 
