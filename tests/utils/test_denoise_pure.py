@@ -653,7 +653,7 @@ class TestApplyDenoise:
             {
                 "method": "butterworth",
                 "columns": ["close"],
-                "params": {"cutoff": 0.6},
+                "params": {"cutoff": 1.0},
                 "keep_original": True,
             },
         )
@@ -835,9 +835,23 @@ class TestButterworthFilter:
 
     def test_invalid_cutoff_returns_input(self):
         pytest.importorskip("scipy.signal")
-        y = _butterworth_filter(NOISY_SIGNAL, cutoff=0.6, order=4, btype="low",
+        y = _butterworth_filter(NOISY_SIGNAL, cutoff=1.0, order=4, btype="low",
                                 causality="zero_phase", padlen=None)
         np.testing.assert_array_equal(y, NOISY_SIGNAL)
+
+    def test_cutoff_above_half_nyquist_is_supported(self):
+        pytest.importorskip("scipy.signal")
+        y = _butterworth_filter(NOISY_SIGNAL, cutoff=0.6, order=4, btype="low",
+                                causality="zero_phase", padlen=None)
+        _check_basic(y, N)
+        assert not np.array_equal(y, NOISY_SIGNAL)
+
+    def test_bandpass_above_half_nyquist_is_supported(self):
+        pytest.importorskip("scipy.signal")
+        y = _butterworth_filter(NOISY_SIGNAL, cutoff=[0.55, 0.8], order=2, btype="bandpass",
+                                causality="zero_phase", padlen=None)
+        _check_basic(y, N)
+        assert not np.array_equal(y, NOISY_SIGNAL)
 
     def test_invalid_bandpass_returns_input(self):
         pytest.importorskip("scipy.signal")

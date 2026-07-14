@@ -49,7 +49,7 @@ def _butterworth_filter(
     if isinstance(cutoff, (list, tuple)) and len(cutoff) == 2:
         lo = float(cutoff[0])
         hi = float(cutoff[1])
-        if not (0 < lo < hi < 0.5):
+        if not (0 < lo < hi < 1.0):
             return x
         Wn = [lo, hi]
         btype_val = btype or "bandpass"
@@ -58,7 +58,7 @@ def _butterworth_filter(
             cval = float(cutoff)
         except Exception:
             cval = 0.1
-        if not (0 < cval < 0.5):
+        if not (0 < cval < 1.0):
             return x
         Wn = cval
         btype_val = btype or "low"
