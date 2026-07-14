@@ -476,6 +476,8 @@ class TestCausalDiscoverSignals:
         assert result["truncated"] is True
         assert result["summary"]["counts"] == {
             "pairs_tested": 6,
+            "directed_tests": 6,
+            "undirected_pairs": 3,
             "significant_links": 6,
         }
         assert result["meta"]["request"]["limit"] == 2
@@ -804,8 +806,17 @@ class TestCausalDiscoverSignals:
         assert result["count"] == 0
         assert result["result"] == "no_links_found"
         assert result["pairs_tested"] == 2
+        assert result["pairs_tested_basis"] == "directed_granger_tests"
+        assert result["directed_tests"] == 2
+        assert result["undirected_pairs"] == 1
+        assert result["tested_directions"] == [
+            {"cause": "B", "effect": "A"},
+            {"cause": "A", "effect": "B"},
+        ]
         assert result["summary"]["counts"] == {
             "pairs_tested": 2,
+            "directed_tests": 2,
+            "undirected_pairs": 1,
             "significant_links": 0,
         }
         assert result["message"] == (

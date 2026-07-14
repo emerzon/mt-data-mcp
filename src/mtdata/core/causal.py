@@ -1800,6 +1800,7 @@ def causal_discover_signals(  # noqa: C901
         rows: List[Dict[str, object]] = []
         pair_attempts = 0
         pair_success = 0
+        tested_directions: List[Dict[str, str]] = []
         pair_failures: List[Dict[str, Any]] = []
         pair_skips: List[Dict[str, Any]] = []
         for effect in transformed.columns:
@@ -1845,6 +1846,9 @@ def causal_discover_signals(  # noqa: C901
                         )
                     continue
                 pair_success += 1
+                tested_directions.append(
+                    {"cause": str(cause), "effect": str(effect)}
+                )
                 best_lag = None
                 best_p_raw = None
                 tested_lags = 0
@@ -1906,6 +1910,12 @@ def causal_discover_signals(  # noqa: C901
             row for row in rows_sorted if bool(row.get("significant"))
         ]
         pair_sample_counts = [int(row["samples"]) for row in rows]
+        undirected_pairs_tested = len(
+            {
+                tuple(sorted((item["cause"], item["effect"])))
+                for item in tested_directions
+            }
+        )
         meta.update(
             {
                 "group_hint": group_hint,
@@ -1953,6 +1963,10 @@ def causal_discover_signals(  # noqa: C901
             "items": output_rows,
             "count": int(len(output_rows)),
             "pairs_tested": int(pair_success),
+            "pairs_tested_basis": "directed_granger_tests",
+            "directed_tests": int(pair_success),
+            "undirected_pairs": int(undirected_pairs_tested),
+            "tested_directions": tested_directions[:20],
             **pagination,
             "context": {
                 **_pairwise_analysis_context(rows_sorted, timeframe=timeframe),
@@ -1970,6 +1984,8 @@ def causal_discover_signals(  # noqa: C901
                 "significance_threshold": float(significance),
                 "counts": {
                     "pairs_tested": int(pair_success),
+                    "directed_tests": int(pair_success),
+                    "undirected_pairs": int(undirected_pairs_tested),
                     "significant_links": int(len(significant_rows)),
                 }
             },
