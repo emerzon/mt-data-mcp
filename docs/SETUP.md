@@ -23,7 +23,7 @@ You do not need every optional dependency on day one. Start lean, confirm candle
 
 1. Install the lean package: `pip install -e .`
 2. Confirm MT5 connectivity: `mtdata-cli symbols_list --limit 10`
-3. Set broker timezone before trusting timestamps or backtests
+3. Set `CLIENT_TZ=UTC` for deterministic timestamp presentation
 4. Stay **read-only** at first: symbols, candles, forecast, report
 5. Only then try `trade_*` — on a **demo** account, with `--dry-run true` when the command supports it
 
@@ -217,10 +217,11 @@ MT5_LOGIN=12345678
 MT5_PASSWORD=your_password
 MT5_SERVER=your_broker_server
 
-# Timezone Configuration (choose one server-time method)
-MT5_SERVER_TZ=Europe/Athens  # Timezone name
-# OR
-MT5_TIME_OFFSET_MINUTES=120  # If server is UTC+2
+# Deterministic timestamp presentation
+CLIENT_TZ=UTC
+
+# Optional broker session/calendar timezone
+MT5_SERVER_TZ=Europe/Athens
 
 # Optional trade guardrails
 MTDATA_TRADE_GUARDRAILS_ENABLED=1
@@ -233,9 +234,14 @@ For the full guardrail surface, including blocklists, wallet-risk limits, and pe
 
 ### Timezone Configuration
 
-MT5 server times vary by broker. Configure timezone for correct timestamp normalization.
+MT5 Python request datetimes and returned epochs are UTC. Broker timezone
+settings do not normalize or shift those absolute timestamps. Set `CLIENT_TZ`
+to control presentation, and retain the payload `timezone` field with saved data.
 
-Use one method at a time. `MT5_SERVER_TZ` is preferred because it handles DST; `MT5_TIME_OFFSET_MINUTES` is useful when you only know a fixed broker offset. If both are set and `MT5_TIME_OFFSET_MINUTES` is non-zero, the fixed offset wins and mtdata logs a warning because static offsets do not adjust for DST.
+`MT5_SERVER_TZ` and `MT5_TIME_OFFSET_MINUTES` are optional broker-session
+settings. Use one method when broker-local calendar boundaries matter.
+`MT5_SERVER_TZ` is preferred because it handles DST. If both are set and
+`MT5_TIME_OFFSET_MINUTES` is non-zero, the fixed session offset wins.
 
 **Option 1: Offset in minutes**
 ```ini
@@ -249,18 +255,8 @@ MT5_SERVER_TZ=Europe/Athens
 MT5_SERVER_TZ=America/New_York
 ```
 
-**How to determine your broker's timezone/offset (practical):**
-1. Prefer `MT5_SERVER_TZ` if you know the broker's IANA timezone name (handles DST automatically).
-2. If you don't know it, estimate an offset during active market hours (so ticks are current):
-   ```bash
-   python scripts/detect_mt5_time_offset.py --symbol EURUSD
-   ```
-   Then set `MT5_TIME_OFFSET_MINUTES` to the recommended value.
-
-Set `MT5_SERVER_TZ` or `MT5_TIME_OFFSET_MINUTES` explicitly before starting `mtdata-webapi`; the Web API no longer mutates process environment state at startup.
-
-What happens if it's wrong?
-- Candle timestamps may be shifted, which can affect **daily pivots**, **session filters**, and **backtests**.
+An incorrect broker-session setting can misclassify broker-local daily pivots or
+session filters, but it does not change candle, tick, order, or deal epochs.
 
 ---
 
@@ -444,9 +440,11 @@ npm run build   # Production build
 
 ### Timezone Issues
 
-1. Check server time in MT5: Tools → Options → Server
-2. Set `MT5_SERVER_TZ` in `.env` when you know the broker's IANA timezone, or `MT5_TIME_OFFSET_MINUTES` when you only know a fixed offset
+1. Check the payload's `timezone` field
+2. Set `CLIENT_TZ=UTC` for deterministic presentation
 3. Verify with: `mtdata-cli data_fetch_candles EURUSD --limit 1 --json`
+
+Configure `MT5_SERVER_TZ` only for broker-local session/calendar calculations.
 
 See [TROUBLESHOOTING.md](TROUBLESHOOTING.md) for more issues.
 

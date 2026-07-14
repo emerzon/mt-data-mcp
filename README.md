@@ -174,7 +174,7 @@ Create a `.env` in the project root (never commit credentials):
 MT5_LOGIN=12345678
 MT5_PASSWORD=your_password
 MT5_SERVER=your_broker_server
-MT5_SERVER_TZ=Europe/Athens   # or MT5_TIME_OFFSET_MINUTES=120
+MT5_SERVER_TZ=Europe/Athens   # optional broker session/calendar timezone
 
 # Optional trade guardrails
 MTDATA_TRADE_GUARDRAILS_ENABLED=1

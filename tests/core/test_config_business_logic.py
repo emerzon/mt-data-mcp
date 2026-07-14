@@ -56,7 +56,7 @@ def test_mt5_config_ignores_invalid_login_and_warns(monkeypatch, caplog):
     assert any("Invalid MT5_LOGIN" in record.message for record in caplog.records)
 
 
-def test_mt5_config_warns_once_when_timezone_info_missing(monkeypatch, caplog):
+def test_mt5_config_allows_timezone_info_to_be_missing(monkeypatch, caplog):
     monkeypatch.delenv("MT5_SERVER_TZ", raising=False)
     monkeypatch.delenv("MT5_TIME_OFFSET_MINUTES", raising=False)
     monkeypatch.setattr(cfg, "_WARNED_SERVER_TZ", False)
@@ -65,8 +65,10 @@ def test_mt5_config_warns_once_when_timezone_info_missing(monkeypatch, caplog):
         cfg.MT5Config()
         cfg.MT5Config()
 
-    warnings = [r.message for r in caplog.records if "MT5_SERVER_TZ or MT5_TIME_OFFSET_MINUTES not set" in r.message]
-    assert len(warnings) == 1
+    assert not any(
+        "MT5_SERVER_TZ or MT5_TIME_OFFSET_MINUTES not set" in record.message
+        for record in caplog.records
+    )
 
 
 def test_get_time_offset_seconds_prefers_explicit_minutes(monkeypatch):

@@ -730,7 +730,7 @@ def test_run_data_fetch_candles_standard_surfaces_mt5_time_alignment_warning():
                     "mt5_time_alignment": {
                         "status": "stale",
                         "reason": "market_data_stale",
-                        "warning": "MT5 broker-time sanity check could not confirm live alignment: market is closed",
+                        "warning": "MT5 UTC freshness check found stale data: market is closed",
                         "probe_timeframe": "M1",
                     },
                 },
@@ -741,7 +741,7 @@ def test_run_data_fetch_candles_standard_surfaces_mt5_time_alignment_warning():
     assert result["mt5_time_alignment"] == {
         "status": "stale",
         "reason": "market_data_stale",
-        "warning": "MT5 broker-time sanity check could not confirm live alignment: market is closed",
+        "warning": "MT5 UTC freshness check found stale data: market is closed",
         "probe_timeframe": "M1",
     }
 

@@ -1,125 +1,108 @@
 # Timestamps and timezones
 
-“My candles look shifted” almost always means **two clocks got mixed up**. mtdata may touch four of them. Configure broker time once in `.env`, keep the `timezone` field with saved results, and prefer `MT5_SERVER_TZ` when you know the IANA name (DST-aware).
-
-| Clock | Where it comes from |
-|-------|---------------------|
-| **Broker server time** | Wall-clock on every MT5 candle/tick (often UTC+2/+3; varies by broker) |
-| **UTC** | Internal basis mtdata normalizes to before shaping output |
-| **Client-local time** | Display timezone (your machine by default) |
-| **External provider time** | Finviz, news, options (often US market time) |
+MetaTrader5 Python requests use UTC datetimes and MT5 returns Unix epochs in
+UTC. mtdata preserves those absolute instants. Broker timezone settings affect
+session/calendar interpretation only; they never shift request bounds or data
+epochs. See MetaQuotes' [`copy_rates_from`](https://www.mql5.com/en/docs/python_metatrader5/mt5copyratesfrom_py)
+and [`copy_ticks_range`](https://www.mql5.com/en/docs/python_metatrader5/mt5copyticksrange_py)
+documentation for the upstream UTC contract.
 
 **Related:** [Setup](SETUP.md) · [Env vars](ENV_VARS.md) · [Output contract](OUTPUT.md)
 
 ---
 
-## How MT5 timestamps are normalized
+## MT5 timestamp contract
 
-MT5 returns timestamps as epoch seconds expressed in **broker server local wall-clock time**, not UTC. mtdata converts them in two stages:
-
-**Stage 1 — server time → UTC** (controlled by your `.env`):
-
-| Configuration | Behavior |
-|---------------|----------|
-| `MT5_TIME_OFFSET_MINUTES` set (non-zero) | Subtract the fixed offset. **Overrides** `MT5_SERVER_TZ`. |
-| `MT5_SERVER_TZ` set (IANA name) | DST-aware conversion from server time to UTC. **Preferred.** |
-| Neither set | ⚠️ Timestamps are left as **raw broker server epoch** — wall-clock values will be wrong. |
-
-> **Always configure one of these.** Without a server timezone or offset, mtdata cannot know the broker's UTC offset, so every displayed time (and any downstream local conversion) is off by the broker's offset.
-
-**Stage 2 — UTC → display timezone** (for the `time` values you see):
-
-1. If `CLIENT_TZ` / `MT5_CLIENT_TZ` is set, display in that timezone.
-2. Otherwise, display in the **auto-detected local machine timezone**.
-3. If detection is unavailable, fall back to **UTC**.
-
-Because of step 2, **default output is in your local machine timezone, not UTC.** Every payload includes a `timezone` field that states exactly which zone the displayed times are in, and internal processing retains the UTC epoch, so precision is never lost.
+The data path is:
 
 ```text
-MT5 server epoch ──(MT5_SERVER_TZ / MT5_TIME_OFFSET_MINUTES)──▶ UTC ──(CLIENT_TZ / local)──▶ displayed time
-                                                                      └── payload "timezone" labels this
+UTC request instant ──▶ MetaTrader5 ──▶ UTC epoch ──▶ client display timezone
+                                                    └── payload "timezone" labels this
 ```
+
+- Pass timezone-aware UTC datetimes to the MT5 Python API. mtdata converts
+  parsed request times to that form.
+- Treat returned `time`, `time_msc`, order, position, and deal epochs as UTC.
+- Do not add or subtract the broker's wall-clock offset from an epoch.
+- `CLIENT_TZ` / `MT5_CLIENT_TZ` controls presentation. If neither is set,
+  mtdata uses the local machine timezone when it can detect it, otherwise UTC.
+
+Every timestamped payload includes a `timezone` field for displayed values.
+Internal filtering and range comparisons stay on the UTC epoch axis.
 
 ---
 
-## Configuration
+## Broker session configuration
+
+Broker wall-clock configuration is optional and is used only where a market
+session, trading day, or calendar boundary needs broker context.
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `MT5_SERVER_TZ` | — | IANA timezone of the MT5 server (e.g. `Europe/Athens`). DST-aware. **Recommended.** |
-| `MT5_TIME_OFFSET_MINUTES` | `0` | Fixed server offset from UTC in minutes. Overrides `MT5_SERVER_TZ` when non-zero. |
-| `MT5_CLIENT_TZ` / `CLIENT_TZ` | auto-detect | Display timezone for output. `CLIENT_TZ` wins if both are set. |
-| `MTDATA_BROKER_TIME_CHECK` | `false` | Optionally verify the server clock against known market hours. |
+| `MT5_SERVER_TZ` | — | Broker IANA timezone, such as `Europe/Athens`; preferred for DST-aware session/calendar calculations. |
+| `MT5_TIME_OFFSET_MINUTES` | `0` | Fixed broker-session offset from UTC. A non-zero value overrides `MT5_SERVER_TZ`. |
+| `CLIENT_TZ` / `MT5_CLIENT_TZ` | auto-detect | Display timezone; `CLIENT_TZ` wins if both are set. |
+| `MTDATA_BROKER_TIME_CHECK` | `false` | Optionally check live MT5 tick/bar freshness and reject implausible future timestamps. |
 
-See [ENV_VARS.md § Timezone](ENV_VARS.md#timezone) for the full reference.
-
-### Make output deterministic
-
-Local-timezone defaults are convenient interactively but risky for stored/shared data (the same command yields different `time` strings on different machines). For reproducible pipelines, **pin the display timezone to UTC**:
+For deterministic stored output, pin the display timezone:
 
 ```ini
-MT5_SERVER_TZ=Europe/Athens   # normalize broker time correctly
-CLIENT_TZ=UTC                 # force UTC display everywhere
+CLIENT_TZ=UTC
 ```
 
-Then keep the `timezone` field alongside any saved results so the basis is unambiguous.
+Add `MT5_SERVER_TZ` only when broker-local session boundaries matter:
+
+```ini
+MT5_SERVER_TZ=Europe/Athens
+```
 
 ---
 
-## Timezone in output
+## Time metadata
 
-- **Candles / ticks** (`data_fetch_candles`, `data_fetch_ticks`): a `time` column plus a top-level `timezone` field (`"UTC"`, a client tz name like `America/New_York`, or `"local"`).
-- **`market_snapshot`**: three explicit timestamps —
-  - `as_of` — the latest quote time when available,
-  - `quote_as_of` — the normalized quote timestamp, stated explicitly,
-  - `assembled_at` — when the snapshot payload was built.
-- **Forecasts** (`forecast_generate`): forecast time fields are normalized consistently with the candle basis and labeled with the effective timezone.
-- **Time-normalization metadata**: request the `metadata` extra to see how timestamps were interpreted:
-  ```bash
-  mtdata-cli data_fetch_candles EURUSD --timeframe H1 --limit 5 --extras metadata --json
-  ```
-  The metadata includes a `time_basis` (`utc_normalized` / `raw_mt5_server_epoch`), a `time_normalization` mode (`dst_aware_server_timezone`, `static_utc_offset`, `live_auto_alignment`, or `unconfigured`), and a human-readable `timezone_note`.
-
----
-
-## External provider time
-
-External data sources do **not** use MT5 server time and are normalized separately:
-
-- **Finviz** — publish times and the economic/earnings calendar are normalized to sensible absolute times (US market context). Treat these as provider time, independent of your broker.
-- **News** (`news`) — relative time filters you pass are parsed against your **client** timezone; ranked items carry their own published timestamps.
-- **Options** — expirations and quotes follow the provider's convention (Yahoo/Tradier).
-
-When correlating external events with MT5 candles, compare in **UTC** to avoid cross-source drift.
-
----
-
-## Verifying the broker offset
-
-If candle times look shifted, verify the broker's offset:
+Request the `metadata` extra to inspect the contract:
 
 ```bash
-# Detect the server offset empirically
-python scripts/detect_mt5_time_offset.py --symbol EURUSD
+mtdata-cli data_fetch_candles EURUSD --timeframe H1 --limit 5 --extras metadata --json
 ```
 
-- Set `MTDATA_BROKER_TIME_CHECK=1` to enable a runtime sanity check that compares the server clock against known market hours (cached for `MTDATA_BROKER_TIME_CHECK_TTL_SECONDS`).
-- Then set `MT5_SERVER_TZ` (preferred) or `MT5_TIME_OFFSET_MINUTES` accordingly and re-run your query.
+MT5 payloads report `raw_time_basis=mt5_utc_epoch`, `time_basis=utc`, and
+`time_normalization=mt5_utc_native`. When broker session configuration exists,
+the metadata also identifies it without implying that epochs were shifted.
 
 ---
 
-## Pitfalls
+## External providers
 
-- **Unset server timezone** → times are raw broker epoch, so everything is off by the broker offset. Fix with `MT5_SERVER_TZ`.
-- **Assuming UTC output** → the default is *local machine time*. Check the `timezone` field, or set `CLIENT_TZ=UTC`.
-- **Comparing MT5 and provider times directly** → convert both to UTC first.
-- **Double-normalizing** → mtdata normalizes MT5 epochs to UTC exactly once at the data layer; don't re-apply an offset downstream.
+External sources do not use MT5 server time and are normalized separately:
+
+- Finviz publish times and calendars use their provider/US-market context.
+- News relative filters use the client timezone; results carry publication times.
+- Options expirations and quotes follow the selected provider's convention.
+
+Compare sources using UTC absolute instants, and retain the `timezone` or source
+metadata alongside saved results.
 
 ---
 
-## See Also
+## Troubleshooting
 
-- [ENV_VARS.md § Timezone](ENV_VARS.md#timezone) — All timezone variables
-- [ENV_VARS.md § Broker Time Verification](ENV_VARS.md#broker-time-verification) — The runtime clock check
-- [OUTPUT.md](OUTPUT.md) — Response envelope and the `metadata` extra
-- [TROUBLESHOOTING.md](TROUBLESHOOTING.md) — Timezone-related symptoms and fixes
+If candles appear shifted:
+
+1. Inspect the payload's `timezone`; presentation may be client-local.
+2. Set `CLIENT_TZ=UTC` and rerun the same absolute range.
+3. Confirm the input included an explicit offset or `Z` when it was intended as
+   an absolute instant.
+4. Enable `MTDATA_BROKER_TIME_CHECK=1` if you need live tick/bar freshness
+   diagnostics.
+
+Changing `MT5_SERVER_TZ` is not a timestamp correction. Applying a broker offset
+to an MT5 epoch double-shifts the data.
+
+---
+
+## See also
+
+- [ENV_VARS.md § Timezone](ENV_VARS.md#timezone)
+- [OUTPUT.md](OUTPUT.md)
+- [TROUBLESHOOTING.md](TROUBLESHOOTING.md)

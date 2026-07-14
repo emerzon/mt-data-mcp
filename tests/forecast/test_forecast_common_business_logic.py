@@ -203,7 +203,7 @@ def test_fetch_history_start_end_uses_range_without_lookback_trim(monkeypatch):
     assert out["time"].tolist() == [100.0, 200.0, 300.0]
 
 
-def test_fetch_history_applies_live_auto_shift(monkeypatch):
+def test_fetch_history_preserves_live_native_utc_epochs(monkeypatch):
     monkeypatch.setattr(fc, "TIMEFRAME_MAP", {"H1": 1})
     monkeypatch.setattr(fc, "_ensure_symbol_ready", lambda _symbol: None)
     monkeypatch.setattr(fc, "get_symbol_info_cached", lambda _symbol: SimpleNamespace(visible=True))
@@ -217,10 +217,8 @@ def test_fetch_history_applies_live_auto_shift(monkeypatch):
             {"time": 300.0, "open": 3.0},
         ],
     )
-    monkeypatch.setattr(fc, "_resolve_live_rate_auto_shift_seconds", lambda **kwargs: 7200)
-
     out = fc.fetch_history("EURUSD", "H1", need=3, as_of=None, drop_last_live=False)
-    assert out["time"].tolist() == [7300.0, 7400.0, 7500.0]
+    assert out["time"].tolist() == [100.0, 200.0, 300.0]
 
 
 def test_fetch_history_handles_invalid_as_of_and_empty_rates(monkeypatch):

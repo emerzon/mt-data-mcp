@@ -99,8 +99,6 @@ from ..utils.utils import (
 logger = logging.getLogger(__name__)
 
 
-_AUTO_TIME_ALIGNMENT_MIN_SHIFT_SECONDS = 1800
-_AUTO_TIME_ALIGNMENT_MAX_SHIFT_SECONDS = 18 * 3600
 _TICK_SUMMARY_MIN_ANALYTIC_TICKS = 20
 _ONE_SIDED_TICK_WARNING_RATIO = 0.50
 _DATE_FORMAT_HINT = (
@@ -587,14 +585,6 @@ def _fetch_rates_with_warmup(  # noqa: C901
     extra_bars = 0 if include_incomplete else 1
     if diagnostics is not None:
         diagnostics.pop("freshness", None)
-    auto_shift_seconds = _resolve_live_rate_auto_shift_seconds(
-        symbol=symbol,
-        timeframe=timeframe,
-        start_datetime=start_datetime,
-        end_datetime=end_datetime,
-    )
-    if diagnostics is not None and auto_shift_seconds:
-        diagnostics["auto_shift_seconds"] = int(auto_shift_seconds)
     if start_datetime and end_datetime:
         seconds_per_bar, timeframe_error = _resolve_fetch_timeframe_seconds(timeframe)
         if timeframe_error:
@@ -664,8 +654,6 @@ def _fetch_rates_with_warmup(  # noqa: C901
     for idx in range(attempts):
         rates = _fetch()
         if rates is not None and len(rates) > 0:
-            if auto_shift_seconds:
-                rates = _shift_rate_times(rates, auto_shift_seconds)
             last_t = rates[-1]["time"]
             freshness_cutoff = expected_end_ts - seconds_per_bar * (SANITY_BARS_TOLERANCE + extra_bars)
             freshness_meta = _build_candle_freshness_diagnostics(
@@ -757,105 +745,6 @@ def _resolve_fetch_timeframe_seconds(timeframe: TimeframeLiteral) -> tuple[Optio
     if not seconds_per_bar:
         return None, f"Unable to determine timeframe seconds for {timeframe}"
     return int(seconds_per_bar), None
-
-
-def _resolve_live_rate_auto_shift_seconds(
-    *,
-    symbol: str,
-    timeframe: TimeframeLiteral,
-    start_datetime: Optional[str],
-    end_datetime: Optional[str],
-) -> int:
-    if start_datetime or end_datetime:
-        return 0
-
-    try:
-        if mt5_config.get_server_tz() is not None:
-            return 0
-    except Exception:
-        pass
-
-    try:
-        configured_offset_seconds = int(mt5_config.get_time_offset_seconds())
-    except Exception:
-        configured_offset_seconds = 0
-    if configured_offset_seconds != 0:
-        return 0
-
-    try:
-        alignment = get_cached_mt5_time_alignment(
-            symbol=symbol,
-            probe_timeframe=timeframe,
-            ttl_seconds=int(getattr(mt5_config, "broker_time_check_ttl_seconds", 60) or 60),
-        )
-    except Exception:
-        return 0
-
-    if not isinstance(alignment, dict) or not bool(alignment.get("offset_inference_reliable")):
-        return 0
-
-    try:
-        inferred_offset_seconds = int(alignment.get("inferred_offset_seconds"))
-    except Exception:
-        return 0
-
-    if not (
-        _AUTO_TIME_ALIGNMENT_MIN_SHIFT_SECONDS
-        <= abs(inferred_offset_seconds)
-        <= _AUTO_TIME_ALIGNMENT_MAX_SHIFT_SECONDS
-    ):
-        return 0
-
-    return -inferred_offset_seconds
-
-
-def _shift_rate_times(rates: Any, shift_seconds: int) -> Any:
-    if rates is None or int(shift_seconds) == 0:
-        return rates
-
-    shift_value = int(shift_seconds)
-    try:
-        names = getattr(getattr(rates, "dtype", None), "names", None)
-    except Exception:
-        names = None
-
-    if names and "time" in names:
-        try:
-            shifted_rates = rates.copy()
-            shifted_rates["time"] = shifted_rates["time"] + shift_value
-        except Exception as exc:
-            raise ValueError(
-                f"Failed to apply the {shift_value}-second time offset correction; "
-                "rate timestamps cannot be safely treated as UTC."
-            ) from exc
-        return shifted_rates
-
-    if isinstance(rates, list):
-        if not any(isinstance(row, dict) and "time" in row for row in rates):
-            return rates
-        shifted_rows = []
-        shift_failures = 0
-        for row in rates:
-            if not isinstance(row, dict):
-                shifted_rows.append(row)
-                continue
-            if "time" not in row:
-                shifted_rows.append(row)
-                continue
-            shifted_row = dict(row)
-            try:
-                shifted_row["time"] = float(shifted_row["time"]) + shift_value
-            except Exception:
-                shift_failures += 1
-            shifted_rows.append(shifted_row)
-        if shift_failures:
-            raise ValueError(
-                f"Failed to apply the {shift_value}-second time offset correction "
-                f"to {shift_failures}/{len(rates)} rate rows; mixed timestamp "
-                "alignment is unsafe."
-            )
-        return shifted_rows
-    return rates
 
 
 def _collect_candle_time_alignment(
@@ -1672,9 +1561,7 @@ def fetch_candles(  # noqa: C901
                 diagnostics=rate_fetch_diagnostics,
             )
             freshness_diagnostics = rate_fetch_diagnostics.get("freshness")
-            time_normalization = describe_mt5_time_normalization(
-                auto_shift_seconds=int(rate_fetch_diagnostics.get("auto_shift_seconds") or 0)
-            )
+            time_normalization = describe_mt5_time_normalization()
             if rates_error:
                 error_payload: Dict[str, Any] = {"error": rates_error}
                 if isinstance(freshness_diagnostics, dict):
@@ -2500,8 +2387,7 @@ def _compact_tick_summary(out: Dict[str, Any]) -> Dict[str, Any]:
         "raw_time_basis",
         "time_normalization",
         "broker_server_tz",
-        "broker_utc_offset_seconds",
-        "auto_shift_seconds",
+        "session_utc_offset_seconds",
     ):
         if out.get(key) is not None:
             compact[key] = out.get(key)
@@ -2716,7 +2602,7 @@ def fetch_ticks(  # noqa: C901
         headers.extend(["last", "volume", "volume_real", "flags", "flags_decoded"])
 
         # Choose a consistent millisecond time format for tick rows.
-        # Low-level tick fetch helpers already normalize MT5 times to UTC.
+        # Low-level tick fetch helpers preserve MT5's native UTC epochs.
         client_tz = _resolve_client_tz()
         _use_ctz = client_tz is not None
 

@@ -1189,8 +1189,8 @@ def test_forecast_engine_surfaces_broker_time_misalignment_warning(monkeypatch):
         "get_cached_mt5_time_alignment",
         lambda symbol, probe_timeframe, ttl_seconds: {
             "status": "misaligned",
-            "reason": "timezone_mismatch",
-            "warning": "MT5 broker-time sanity check failed: inferred broker offset is 10800s but configuration resolves to 7200s",
+            "reason": "timestamp_in_future",
+            "warning": "MT5 UTC timestamp sanity check failed: latest tick is 3600s in the future",
         },
     )
 
@@ -1205,7 +1205,7 @@ def test_forecast_engine_surfaces_broker_time_misalignment_warning(monkeypatch):
     assert out["success"] is True
     assert out["diagnostics"]["broker_time_check"]["status"] == "misaligned"
     assert out["warnings"] == [
-        "MT5 broker-time sanity check failed: inferred broker offset is 10800s but configuration resolves to 7200s"
+        "MT5 UTC timestamp sanity check failed: latest tick is 3600s in the future"
     ]
 
 
@@ -1239,7 +1239,7 @@ def test_forecast_engine_keeps_stale_broker_time_check_diagnostic_only(monkeypat
         lambda symbol, probe_timeframe, ttl_seconds: {
             "status": "stale",
             "reason": "market_data_stale",
-            "warning": "MT5 broker-time sanity check could not confirm live alignment: market is closed",
+            "warning": "MT5 UTC freshness check found stale data: market is closed",
         },
     )
 

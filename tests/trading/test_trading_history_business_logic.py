@@ -1008,10 +1008,10 @@ def test_trade_history_queries_minutes_back_as_absolute_mt5_epoch_window() -> No
     )
 
     assert captured["from_dt"] == datetime(
-        2026, 3, 1, 13, 0, 0, tzinfo=timezone.utc
+        2026, 3, 1, 10, 0, 0, tzinfo=timezone.utc
     ).timestamp()
     assert captured["to_dt"] == datetime(
-        2026, 3, 1, 14, 0, 0, tzinfo=timezone.utc
+        2026, 3, 1, 11, 0, 0, tzinfo=timezone.utc
     ).timestamp()
     assert float(captured["to_dt"]) - float(captured["from_dt"]) == 60 * 60
     assert captured["symbol"] == "BTCUSD"

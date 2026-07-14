@@ -6,13 +6,9 @@ from typing import Any, Dict, List, Literal, Optional
 import numpy as np
 import pandas as pd
 
-from ..services.data_service import (
-    _is_last_bar_forming,
-    _resolve_live_rate_auto_shift_seconds,
-    _shift_rate_times,
-)
+from ..services.data_service import _is_last_bar_forming
 from ..shared.constants import SANITY_BARS_TOLERANCE, TIMEFRAME_MAP, TIMEFRAME_SECONDS
-from ..shared.schema import DetailLiteral, DenoiseSpec, TimeframeLiteral
+from ..shared.schema import DenoiseSpec, DetailLiteral, TimeframeLiteral
 from ..shared.symbols import is_probably_crypto_symbol, is_probably_forex_symbol
 from ..shared.validators import (
     invalid_timeframe_error,
@@ -782,16 +778,6 @@ def _fetch_mt5_rates_guarded(
         else:
             server_now_dt = datetime.now(timezone.utc)
         rates = _mt5_copy_rates_from(symbol, mt5_timeframe, server_now_dt, count)
-        timeframe_name = str(timeframe).upper().strip() if timeframe is not None else None
-        if timeframe_name:
-            auto_shift_seconds = _resolve_live_rate_auto_shift_seconds(
-                symbol=symbol,
-                timeframe=timeframe_name,
-                start_datetime=None,
-                end_datetime=None,
-            )
-            if auto_shift_seconds:
-                rates = _shift_rate_times(rates, auto_shift_seconds)
         return rates, None
     finally:
         if was_visible is False:

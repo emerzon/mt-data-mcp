@@ -205,26 +205,18 @@ mtdata-cli data_fetch_candles EURUSD --limit 100
 
 ### Timestamps Look Wrong
 
-**Cause:** Server timezone offset not configured.
+**Cause:** The payload may be displayed in the detected client-local timezone,
+or the request may not represent the absolute instant you intended.
 
-**Solution:** Set one timezone method in `.env`. Prefer an IANA timezone name because it handles DST:
+**Solution:** Pin presentation to UTC and check the payload's `timezone` field:
 ```ini
-MT5_SERVER_TZ=Europe/Athens
+CLIENT_TZ=UTC
 ```
 
-If you only know a fixed broker offset, use minutes from UTC instead:
-```ini
-MT5_TIME_OFFSET_MINUTES=120  # If server is UTC+2
-```
-
-Avoid setting both unless you intentionally want a non-zero `MT5_TIME_OFFSET_MINUTES` value to override `MT5_SERVER_TZ`.
-
-To estimate an offset quickly (run during active market hours so ticks are current):
-```bash
-python scripts/detect_mt5_time_offset.py --symbol EURUSD
-```
-
-Set `MT5_SERVER_TZ` or `MT5_TIME_OFFSET_MINUTES` explicitly before starting `mtdata-webapi`. The Web API no longer auto-detects broker offset or mutates environment variables at startup.
+MT5 API request datetimes and returned epochs already use UTC. Do not use
+`MT5_SERVER_TZ` or `MT5_TIME_OFFSET_MINUTES` to correct an epoch; those optional
+settings apply only to broker-local session/calendar calculations. See
+[TIMESTAMPS.md](TIMESTAMPS.md).
 
 ### Volume is Always Zero
 
@@ -416,7 +408,7 @@ These models require PyTorch and a NeuralForecast dependency stack compatible wi
 | Invalid timeframe | Use a supported MT5 interval listed in the Timeframe section above |
 | Method not available | Check `forecast_list_methods` and install deps |
 | Output hard to read | Add `--json` |
-| Wrong timestamps | Set `MT5_SERVER_TZ` in `.env`, or `MT5_TIME_OFFSET_MINUTES` if you only know a fixed offset |
+| Wrong timestamps | Check the payload `timezone`, set `CLIENT_TZ=UTC`, and verify that request inputs identify the intended absolute instant |
 | Command slow | Reduce `--limit`, use faster method |
 | QuantLib import error | `pip install QuantLib` |
 | Finviz empty data | Check network / firewall (finvizfinance is pre-installed) |

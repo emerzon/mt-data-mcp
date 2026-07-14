@@ -6,10 +6,6 @@ from zoneinfo import ZoneInfo
 import numpy as np
 import pandas as pd
 
-from ..services.data_service import (
-    _resolve_live_rate_auto_shift_seconds,
-    _shift_rate_times,
-)
 from ..shared.constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
 from ..shared.schema import DetailLiteral, TimeframeLiteral
 from ..shared.validators import (
@@ -833,17 +829,6 @@ def _fetch_rates(
         return None, invalid_timeframe_error(timeframe, TIMEFRAME_MAP)
     mt5_tf = TIMEFRAME_MAP[timeframe]
 
-    def _apply_live_time_alignment(rates: Any) -> Any:
-        shift_seconds = _resolve_live_rate_auto_shift_seconds(
-            symbol=symbol,
-            timeframe=timeframe,
-            start_datetime=start,
-            end_datetime=end,
-        )
-        if shift_seconds:
-            return _shift_rate_times(rates, shift_seconds)
-        return rates
-
     if start and end:
         start_dt = _parse_start_datetime(start)
         end_dt = _parse_start_datetime(end)
@@ -879,7 +864,7 @@ def _fetch_rates(
     else:
         to_dt = datetime.now(timezone.utc).replace(tzinfo=None)
     rates = _mt5_copy_rates_from(symbol, mt5_tf, to_dt, int(limit))
-    return _apply_live_time_alignment(rates), None
+    return rates, None
 
 
 @mcp.tool()

@@ -22,7 +22,6 @@ try:
 except Exception:
     tzlocal = None  # optional
 
-_WARNED_SERVER_TZ = False
 _WARNED_STATIC_OFFSET_OVERRIDE = False
 _ENV_LOADED = False
 _ENV_LOAD_LOCK = threading.Lock()
@@ -434,23 +433,6 @@ class MT5Config:
             )
             magic_value = 234000
         self.order_magic = int(magic_value)
-        if warn_if_timezone_missing:
-            self._warn_if_timezone_missing()
-
-    def _warn_if_timezone_missing(self) -> None:
-        """Warn once if MT5 server timezone/offset is not configured."""
-        global _WARNED_SERVER_TZ
-        if _WARNED_SERVER_TZ:
-            return
-        has_server_tz = bool(self.server_tz_name)
-        has_offset_env = os.getenv("MT5_TIME_OFFSET_MINUTES") is not None
-        if not has_server_tz and not has_offset_env:
-            _WARNED_SERVER_TZ = True
-            logging.getLogger(__name__).warning(
-                "MT5_SERVER_TZ or MT5_TIME_OFFSET_MINUTES not set; "
-                "server timestamps may be misaligned. Configure one of them."
-            )
-
     def get_login(self) -> Optional[int]:
         """Get login as integer if available"""
         return self._login_value
@@ -468,11 +450,11 @@ class MT5Config:
         return self.get_login() is not None and bool(self.password) and bool(self.server)
 
     def get_time_offset_seconds(self, at_time: Optional[datetime] = None) -> int:
-        """Return configured MT5 server time offset relative to UTC in seconds.
+        """Return the broker session/calendar offset relative to UTC in seconds.
 
         Positive value means MT5 server time is ahead of UTC (UTC+X).
-        All MT5 timestamps read from the terminal should be adjusted by subtracting this offset
-        to normalize into UTC epochs.
+        This offset must not be applied to MT5 API request bounds or returned
+        epochs, which already use UTC.
 
         When ``at_time`` is provided and ``MT5_SERVER_TZ`` is configured, resolve the
         offset for that specific instant so historical DST transitions are respected.
@@ -485,7 +467,7 @@ class MT5Config:
                 _WARNED_STATIC_OFFSET_OVERRIDE = True
                 _LOGGER.warning(
                     "MT5_TIME_OFFSET_MINUTES overrides MT5_SERVER_TZ; static offsets do not adjust for DST. "
-                    "Prefer MT5_SERVER_TZ alone for DST-aware conversion."
+                    "Prefer MT5_SERVER_TZ alone for DST-aware session/calendar calculations."
                 )
             return int(self.time_offset_minutes) * 60
             

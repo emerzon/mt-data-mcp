@@ -57,8 +57,6 @@ def test_fetch_candles_exposes_time_normalization_metadata() -> None:
         yield None, MagicMock(digits=5)
 
     def _fake_fetch(*args, diagnostics=None, **kwargs):
-        if diagnostics is not None:
-            diagnostics["auto_shift_seconds"] = 0
         return rates, None
 
     with patch("mtdata.services.data_service.get_symbol_info_cached", return_value=MagicMock(digits=5)), patch(
@@ -84,11 +82,11 @@ def test_fetch_candles_exposes_time_normalization_metadata() -> None:
             include_incomplete=True,
         )
 
-    assert result["time_basis"] == "utc_normalized"
-    assert result["raw_time_basis"] == "mt5_server_epoch"
-    assert result["time_normalization"] == "dst_aware_server_timezone"
+    assert result["time_basis"] == "utc"
+    assert result["raw_time_basis"] == "mt5_utc_epoch"
+    assert result["time_normalization"] == "mt5_utc_native"
     assert result["broker_server_tz"] == "Europe/Nicosia"
-    assert "broker server timezone Europe/Nicosia" in result["timezone_note"]
+    assert "request bounds and returned epochs use native UTC" in result["timezone_note"]
     assert (
         result["meta"]["diagnostics"]["time_normalization"]["broker_server_tz"]
         == "Europe/Nicosia"

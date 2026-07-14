@@ -14,7 +14,7 @@ Practical caveats that are easy to miss when you are new. Read this before deep 
 | Market depth | `market_depth_fetch` is disabled unless explicitly enabled and requires broker DOM data. | Set `MTDATA_ENABLE_MARKET_DEPTH_FETCH=1` only when your broker supports it. |
 | Options chains | Yahoo Finance options endpoints may reject unauthenticated requests. mtdata can retry Yahoo when Tradier is unavailable, but the fallback is still best-effort only. | Prefer Tradier via `MTDATA_OPTIONS_PROVIDER=tradier` and `MTDATA_OPTIONS_API_KEY`, then use `options_provider_status` to confirm the effective provider. Use `options_barrier_price` for local QuantLib pricing when live chains are unavailable. |
 | Forecast methods | Method availability depends on installed optional dependencies. Defaults can differ by method. | Check `forecast_list_methods --json`, see [forecast/METHODS.md](forecast/METHODS.md), and set important `--params` explicitly. |
-| Timestamps | MT5 broker server time, UTC, client-local time, and external provider time can differ. | Configure `MT5_SERVER_TZ` or `MT5_TIME_OFFSET_MINUTES` before analysis; see [TIMESTAMPS.md](TIMESTAMPS.md) and keep the `timezone` field with saved results. |
+| Timestamps | MT5 epochs are UTC, while presentation and external-provider conventions can differ. | Set `CLIENT_TZ=UTC` for deterministic presentation; see [TIMESTAMPS.md](TIMESTAMPS.md) and keep the `timezone` field with saved results. |
 
 ## Where the details live
 

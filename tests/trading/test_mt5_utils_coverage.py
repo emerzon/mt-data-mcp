@@ -1,7 +1,6 @@
 """Coverage tests for mtdata.utils.mt5 – targeting uncovered lines."""
 
 import sys
-import time
 import types
 from collections import namedtuple
 from datetime import datetime, timedelta, timezone
@@ -34,11 +33,8 @@ _mt5_mock.TIMEFRAME_H12 = 16396
 _mt5_mock.TIMEFRAME_D1 = 16408
 _mt5_mock.TIMEFRAME_W1 = 32769
 _mt5_mock.TIMEFRAME_MN1 = 49153
-sys.modules["MetaTrader5"] = _mt5_mock
 
-import mtdata.utils.mt5 as _mt5_mod
-
-_mt5_mod.mt5 = _mt5_mock
+import mtdata.utils.mt5 as _mt5_mod  # noqa: E402, I001
 
 from mtdata.utils.mt5 import (
     MT5Adapter,
@@ -58,18 +54,24 @@ from mtdata.utils.mt5 import (
     _rates_to_df,
     _symbol_ready_guard,
     _to_mt5_history_epoch_seconds,
-    _to_server_naive_dt,
     _to_server_query_dt,
     _to_utc_history_query_dt,
     clear_mt5_time_alignment_cache,
     clear_symbol_info_cache,
     ensure_mt5_connection_or_raise,
-    estimate_server_offset,
     get_cached_mt5_time_alignment,
     get_symbol_info_cached,
     inspect_mt5_time_alignment,
     resolve_broker_symbol_name,
 )
+
+
+@pytest.fixture(autouse=True)
+def _bind_mt5_mock(monkeypatch):
+    """Keep this module's MT5 double scoped to each test."""
+    monkeypatch.setitem(sys.modules, "MetaTrader5", _mt5_mock)
+    monkeypatch.setattr(_mt5_mod, "mt5", _mt5_mock)
+
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -175,22 +177,19 @@ class TestMt5Adapter:
             if original is not None:
                 sys.modules["MetaTrader5"] = original
 
-    def test_adapter_normalizes_symbol_tick_time(self):
+    def test_adapter_preserves_symbol_tick_time(self):
         Tick = namedtuple("Tick", ["time", "time_msc", "bid"])
         _mt5_mock.symbol_info_tick.return_value = Tick(time=7200, time_msc=7_200_000, bid=1.1)
 
-        with patch.dict(sys.modules, {"MetaTrader5": _mt5_mock}), patch(
-            "mtdata.utils.mt5._mt5_epoch_to_utc",
-            side_effect=lambda value: value - 3600,
-        ):
+        with patch.dict(sys.modules, {"MetaTrader5": _mt5_mock}):
             result = MT5Adapter().symbol_info_tick("EURUSD")
 
         assert hasattr(result, "_asdict")
-        assert result.time == 3600
-        assert result.time_msc == 3_600_000
+        assert result.time == 7200
+        assert result.time_msc == 7_200_000
         assert result.bid == 1.1
 
-    def test_adapter_normalizes_position_order_and_history_rows(self):
+    def test_adapter_preserves_position_order_and_history_rows(self):
         Position = namedtuple("Position", ["ticket", "time_update"])
         Order = namedtuple("Order", ["ticket", "time_setup", "time_expiration"])
         Deal = namedtuple("Deal", ["ticket", "time", "time_msc"])
@@ -198,20 +197,17 @@ class TestMt5Adapter:
         _mt5_mock.orders_get.return_value = [Order(2, 7200, 0)]
         _mt5_mock.history_deals_get.return_value = (Deal(3, 7200, 7_200_000),)
 
-        with patch.dict(sys.modules, {"MetaTrader5": _mt5_mock}), patch(
-            "mtdata.utils.mt5._mt5_epoch_to_utc",
-            side_effect=lambda value: value - 3600,
-        ):
+        with patch.dict(sys.modules, {"MetaTrader5": _mt5_mock}):
             adapter = MT5Adapter()
             positions = adapter.positions_get()
             orders = adapter.orders_get()
             deals = adapter.history_deals_get(datetime(2024, 1, 1), datetime(2024, 1, 2))
 
-        assert positions[0].time_update == 3600
-        assert orders[0].time_setup == 3600
+        assert positions[0].time_update == 7200
+        assert orders[0].time_setup == 7200
         assert orders[0].time_expiration == 0
-        assert deals[0].time == 3600
-        assert deals[0].time_msc == 3_600_000
+        assert deals[0].time == 7200
+        assert deals[0].time_msc == 7_200_000
 
 
 class TestNormalizeObjectTimes:
@@ -219,96 +215,32 @@ class TestNormalizeObjectTimes:
         Order = namedtuple("Order", ["ticket", "time_setup", "time_expiration"])
         order = Order(ticket=1, time_setup=7200, time_expiration=0)
 
-        with patch("mtdata.utils.mt5._mt5_epoch_to_utc", side_effect=lambda value: value - 3600):
-            result = _normalize_object_times(order)
+        result = _normalize_object_times(order)
 
         assert hasattr(result, "_asdict")
-        assert result.time_setup == 3600
+        assert result.time_setup == 7200
         assert result.time_expiration == 0
 
     def test_normalizes_list_rows(self):
         Position = namedtuple("Position", ["ticket", "time_update"])
         rows = [Position(ticket=1, time_update=7200)]
 
-        with patch("mtdata.utils.mt5._mt5_epoch_to_utc", side_effect=lambda value: value - 3600):
-            result = _normalize_object_time_rows(rows)
+        result = _normalize_object_time_rows(rows)
 
         assert isinstance(result, list)
-        assert result[0].time_update == 3600
+        assert result[0].time_update == 7200
 
 
 # ── _mt5_epoch_to_utc  (lines 40-59) ─────────────────────────────────────────
 
 class TestMt5EpochToUtc:
     @patch("mtdata.utils.mt5.mt5_config")
-    def test_no_tz_with_offset(self, cfg):
-        cfg.time_offset_minutes = 0
-        cfg.get_server_tz.return_value = None
-        cfg.get_time_offset_seconds.return_value = 7200
-        result = _mt5_epoch_to_utc(1000000.0)
-        assert result == 1000000.0 - 7200
-
-    @patch("mtdata.utils.mt5.mt5_config")
-    def test_static_offset_overrides_server_timezone(self, cfg):
+    def test_preserves_native_utc_epoch_despite_broker_timezone(self, cfg):
         cfg.time_offset_minutes = 120
         cfg.get_server_tz.return_value = MagicMock()
 
-        assert _mt5_epoch_to_utc(1000000.0) == 1000000.0 - 7200
+        assert _mt5_epoch_to_utc(1000000.0) == 1000000.0
         cfg.get_server_tz.assert_not_called()
-
-    @patch("mtdata.utils.mt5.mt5_config")
-    def test_with_tz_localize_success(self, cfg):
-        cfg.time_offset_minutes = 0
-        tz = MagicMock()
-        cfg.get_server_tz.return_value = tz
-        dt_local = MagicMock()
-        dt_local.astimezone.return_value.timestamp.return_value = 999.0
-        tz.localize.return_value = dt_local
-        assert _mt5_epoch_to_utc(100000.0) == 999.0
-
-    @patch("mtdata.utils.mt5.mt5_config")
-    def test_with_tz_localize_resolves_ambiguous_time(self, cfg, caplog):
-        cfg.time_offset_minutes = 0
-        tz = MagicMock()
-        cfg.get_server_tz.return_value = tz
-        dt_local = MagicMock()
-        dt_local.astimezone.return_value.timestamp.return_value = 888.0
-        tz.localize.side_effect = [_mt5_mod.AmbiguousTimeError("ambiguous"), dt_local]
-
-        result = _mt5_epoch_to_utc(100000.0)
-
-        assert result == 888.0
-        assert tz.localize.call_args_list[0].args[0] == datetime(1970, 1, 2, 3, 46, 40)
-        assert tz.localize.call_args_list[0].kwargs == {"is_dst": None}
-        assert tz.localize.call_args_list[1].args[0] == datetime(1970, 1, 2, 3, 46, 40)
-        assert tz.localize.call_args_list[1].kwargs == {"is_dst": False}
-        assert any("Ambiguous MT5 server-local time" in record.message for record in caplog.records)
-
-    @patch("mtdata.utils.mt5.mt5_config")
-    def test_with_tz_localize_shifts_nonexistent_time(self, cfg, caplog):
-        cfg.time_offset_minutes = 0
-        tz = MagicMock()
-        cfg.get_server_tz.return_value = tz
-        dt_local = MagicMock()
-        dt_local.astimezone.return_value.timestamp.return_value = 777.0
-        tz.localize.side_effect = [_mt5_mod.NonExistentTimeError("missing"), dt_local]
-
-        result = _mt5_epoch_to_utc(100000.0)
-
-        assert result == 777.0
-        assert tz.localize.call_args_list[0].args[0] == datetime(1970, 1, 2, 3, 46, 40)
-        assert tz.localize.call_args_list[0].kwargs == {"is_dst": None}
-        assert tz.localize.call_args_list[1].args[0] == datetime(1970, 1, 2, 4, 46, 40)
-        assert tz.localize.call_args_list[1].kwargs == {"is_dst": False}
-        assert any("Non-existent MT5 server-local time" in record.message for record in caplog.records)
-
-    @patch("mtdata.utils.mt5.mt5_config")
-    def test_exception_returns_raw(self, cfg, caplog):
-        cfg.time_offset_minutes = 0
-        cfg.get_server_tz.side_effect = Exception("boom")
-        result = _mt5_epoch_to_utc(42.0)
-        assert result == 42.0
-        assert any("Failed to convert MT5 epoch 42.0 to UTC" in record.message for record in caplog.records)
 
 
 # ── _rates_to_df  (lines 62-72) ──────────────────────────────────────────────
@@ -330,44 +262,6 @@ class TestRatesToDf:
         assert len(df) == 0
 
 
-# ── _to_server_naive_dt  (lines 75-85) ───────────────────────────────────────
-
-class TestToServerNaiveDt:
-    @patch("mtdata.utils.mt5.mt5_config")
-    def test_no_tz_returns_same(self, cfg):
-        cfg.get_server_tz.return_value = None
-        cfg.get_time_offset_seconds.return_value = 0
-        dt = datetime(2024, 1, 1)
-        assert _to_server_naive_dt(dt) == dt
-
-    @patch("mtdata.utils.mt5.mt5_config")
-    def test_static_offset_is_applied_when_timezone_is_unset(self, cfg):
-        cfg.get_server_tz.return_value = None
-        cfg.get_time_offset_seconds.return_value = 7200
-        dt = datetime(2024, 1, 1, 12, 0)
-
-        assert _to_server_naive_dt(dt) == datetime(2024, 1, 1, 14, 0)
-
-    @patch("mtdata.utils.mt5.mt5_config")
-    def test_with_tz(self, cfg):
-        tz = MagicMock()
-        aware_srv = MagicMock()
-        aware_srv.replace.return_value = datetime(2024, 1, 1, 3, 0)
-        tz.__class__ = type(tz)  # keep mock
-        # Simulate: aware_utc.astimezone(tz) -> aware_srv
-        with patch("mtdata.utils.mt5.datetime", wraps=datetime) as dt_cls:
-            cfg.get_server_tz.return_value = tz
-            result = _to_server_naive_dt(datetime(2024, 1, 1))
-        assert isinstance(result, datetime)
-
-    @patch("mtdata.utils.mt5.mt5_config")
-    def test_exception_returns_original(self, cfg, caplog):
-        cfg.get_server_tz.side_effect = Exception("fail")
-        dt = datetime(2024, 6, 15)
-        assert _to_server_naive_dt(dt) == dt
-        assert any("Failed to convert UTC datetime" in record.message for record in caplog.records)
-
-
 class TestToServerQueryDt:
     @patch("mtdata.utils.mt5.mt5_config")
     def test_unconfigured_query_dt_is_utc_aware_and_pc_independent(self, cfg):
@@ -382,14 +276,13 @@ class TestToServerQueryDt:
         ).timestamp()
 
     @patch("mtdata.utils.mt5.mt5_config")
-    def test_static_offset_query_dt_epoch_is_server_local(self, cfg):
+    def test_static_offset_query_dt_keeps_absolute_utc_instant(self, cfg):
         cfg.get_server_tz.return_value = None
         cfg.get_time_offset_seconds.return_value = 7200
         result = _to_server_query_dt(datetime(2026, 6, 4, 17, 0))
         assert result.tzinfo == timezone.utc
-        # Server-local epoch == utc_epoch + offset, independent of PC tz.
         assert result.timestamp() == datetime(
-            2026, 6, 4, 19, 0, tzinfo=timezone.utc
+            2026, 6, 4, 17, 0, tzinfo=timezone.utc
         ).timestamp()
 
 
@@ -410,7 +303,7 @@ class TestToUtcHistoryQueryDt:
 
 
 class TestToMt5HistoryEpochSeconds:
-    def test_static_offset_preserves_absolute_elapsed_window(self):
+    def test_static_offset_does_not_change_native_utc_epoch(self):
         cfg = types.SimpleNamespace(
             get_time_offset_seconds=lambda at_time=None: 3 * 60 * 60,
         )
@@ -421,10 +314,10 @@ class TestToMt5HistoryEpochSeconds:
         end_epoch = _to_mt5_history_epoch_seconds(end, config=cfg)
 
         assert start_epoch == datetime(
-            2026, 3, 1, 13, 0, tzinfo=timezone.utc
+            2026, 3, 1, 10, 0, tzinfo=timezone.utc
         ).timestamp()
         assert end_epoch == datetime(
-            2026, 3, 1, 14, 0, tzinfo=timezone.utc
+            2026, 3, 1, 11, 0, tzinfo=timezone.utc
         ).timestamp()
         assert end_epoch - start_epoch == 60 * 60
 
@@ -445,96 +338,20 @@ class TestNormalizeTimesInStruct:
         result = _normalize_times_in_struct(arr)
         assert result is not None
 
-    def test_with_time_field(self):
+    def test_with_time_field_is_identity(self):
         dt = np.dtype([("time", float), ("close", float)])
         arr = np.array([(1000.0, 1.1), (2000.0, 1.2)], dtype=dt)
-        with patch("mtdata.utils.mt5._mt5_epoch_to_utc", side_effect=lambda x: x + 1):
-            result = _normalize_times_in_struct(arr)
-        assert float(result[0]["time"]) == 1001.0
+        result = _normalize_times_in_struct(arr)
+        assert result is arr
+        assert float(result[0]["time"]) == 1000.0
 
-    def test_with_read_only_time_field_returns_normalized_copy(self):
+    def test_with_read_only_time_field_returns_same_array(self):
         dt = np.dtype([("time", int), ("close", float)])
         arr = np.array([(1000, 1.1), (2000, 1.2)], dtype=dt)
         arr.flags.writeable = False
-        with patch("mtdata.utils.mt5._mt5_epoch_to_utc", side_effect=lambda x: x - 10):
-            result = _normalize_times_in_struct(arr)
-        assert result is not arr
-        assert float(result[0]["time"]) == 990.0
+        result = _normalize_times_in_struct(arr)
+        assert result is arr
         assert float(arr[0]["time"]) == 1000.0
-
-    @patch("mtdata.utils.mt5.mt5_config")
-    def test_with_time_field_uses_static_offset_fast_path(self, cfg):
-        dt = np.dtype([("time", float), ("close", float)])
-        arr = np.array([(1000.0, 1.1), (2000.0, 1.2)], dtype=dt)
-        cfg.time_offset_minutes = 1
-        cfg.get_server_tz.return_value = MagicMock()
-        cfg.get_time_offset_seconds.return_value = 60
-        sentinel = MagicMock(side_effect=AssertionError("slow path should not run"))
-
-        with patch("mtdata.utils.mt5._mt5_epoch_to_utc", new=sentinel), patch(
-            "mtdata.utils.mt5._DEFAULT_MT5_EPOCH_TO_UTC",
-            new=sentinel,
-        ):
-            result = _normalize_times_in_struct(arr)
-
-        assert float(result[0]["time"]) == 940.0
-        assert float(result[1]["time"]) == 1940.0
-        cfg.get_server_tz.assert_not_called()
-        sentinel.assert_not_called()
-
-    @patch("mtdata.utils.mt5.mt5_config")
-    def test_static_offset_fast_path_leaves_zero_expiration_unchanged(self, cfg):
-        dt = np.dtype([("time_expiration", float), ("price", float)])
-        arr = np.array([(0.0, 1.1), (7200.0, 1.2)], dtype=dt)
-        cfg.get_server_tz.return_value = None
-        cfg.get_time_offset_seconds.return_value = 3600
-
-        result = _normalize_times_in_struct(arr)
-
-        assert float(result[0]["time_expiration"]) == 0.0
-        assert float(result[1]["time_expiration"]) == 3600.0
-
-    @patch("mtdata.utils.mt5.mt5_config")
-    def test_static_offset_fallback_leaves_zero_expiration_unchanged(self, cfg):
-        class _BoomingField:
-            def __init__(self, values):
-                self.values = np.asarray(values, dtype=float)
-
-            def __array__(self, dtype=None):
-                return np.asarray(self.values, dtype=dtype)
-
-            def __gt__(self, other):
-                return self.values > other
-
-            def __getitem__(self, item):
-                return self.values[item]
-
-            def __setitem__(self, key, value):
-                raise TypeError("vectorized write failed")
-
-            def __sub__(self, other):
-                return self.values - other
-
-        class _FakeStructured:
-            def __init__(self):
-                self.dtype = type("DType", (), {"names": ("time_expiration",)})()
-                self.flags = type("Flags", (), {"writeable": True})()
-                self._storage = {"time_expiration": np.array([0.0, 7200.0], dtype=float)}
-
-            def __getitem__(self, key):
-                return _BoomingField(self._storage[key])
-
-            def __setitem__(self, key, value):
-                self._storage[key] = np.asarray(value, dtype=float)
-
-        arr = _FakeStructured()
-        cfg.get_server_tz.return_value = None
-        cfg.get_time_offset_seconds.return_value = 3600
-
-        result = _normalize_times_in_struct(arr)
-
-        assert float(result._storage["time_expiration"][0]) == 0.0
-        assert float(result._storage["time_expiration"][1]) == 3600.0
 
     def test_exception_returns_input(self):
         obj = MagicMock()
@@ -544,43 +361,49 @@ class TestNormalizeTimesInStruct:
         result = _normalize_times_in_struct(obj)
         assert result is obj
 
-    def test_element_conversion_exception_logs_and_keeps_raw_time(self, caplog):
-        dt = np.dtype([("time", float), ("close", float)])
-        arr = np.array([(1000.0, 1.1), (2000.0, 1.2)], dtype=dt)
-
-        def _convert(value):
-            if value == 1000.0:
-                raise ValueError("bad element")
-            return value + 1.0
-
-        with patch("mtdata.utils.mt5._mt5_epoch_to_utc", side_effect=_convert):
-            result = _normalize_times_in_struct(arr)
-
-        assert float(result[0]["time"]) == 1000.0
-        assert float(result[1]["time"]) == 2001.0
-        assert any("Failed to normalize MT5 timestamp at index 0" in record.message for record in caplog.records)
 
 
 # ── MT5 copy wrappers  (lines 105-133) ───────────────────────────────────────
 
 class TestCopyWrappers:
+    @patch("mtdata.utils.mt5.mt5_config")
+    def test_range_preserves_absolute_utc_bounds_and_epochs(self, cfg):
+        cfg.server_tz_name = "Europe/Nicosia"
+        cfg.time_offset_minutes = 120
+        rows = np.array(
+            [(1_767_268_800.0, 1.1), (1_767_272_400.0, 1.2)],
+            dtype=[("time", float), ("close", float)],
+        )
+        _mt5_mock.copy_rates_range.reset_mock()
+        _mt5_mock.copy_rates_range.return_value = rows
+        start = datetime(2026, 1, 1, 10, 0, tzinfo=timezone.utc)
+        end = datetime(2026, 1, 1, 11, 0, tzinfo=timezone.utc)
+
+        result = _mt5_copy_rates_range("EURUSD", 1, start, end)
+
+        call = _mt5_mock.copy_rates_range.call_args
+        assert call.args[2] == start
+        assert call.args[3] == end
+        assert result is rows
+        np.testing.assert_array_equal(result["time"], rows["time"])
+
     def test_copy_rates_from(self):
         _mt5_mock.copy_rates_from.return_value = None
-        with patch("mtdata.utils.mt5._to_server_naive_dt", return_value=datetime(2024, 1, 1)):
+        with patch("mtdata.utils.mt5._to_server_query_dt", return_value=datetime(2024, 1, 1)):
             with patch("mtdata.utils.mt5._normalize_times_in_struct", return_value=None):
                 result = _mt5_copy_rates_from("EURUSD", 1, datetime(2024, 1, 1), 100)
         assert result is None
 
     def test_copy_rates_range(self):
         _mt5_mock.copy_rates_range.return_value = None
-        with patch("mtdata.utils.mt5._to_server_naive_dt", return_value=datetime(2024, 1, 1)):
+        with patch("mtdata.utils.mt5._to_server_query_dt", return_value=datetime(2024, 1, 1)):
             with patch("mtdata.utils.mt5._normalize_times_in_struct", return_value=None):
                 result = _mt5_copy_rates_range("EURUSD", 1, datetime(2024, 1, 1), datetime(2024, 1, 2))
         assert result is None
 
     def test_copy_ticks_from(self):
         _mt5_mock.copy_ticks_from.return_value = None
-        with patch("mtdata.utils.mt5._to_server_naive_dt", return_value=datetime(2024, 1, 1)):
+        with patch("mtdata.utils.mt5._to_server_query_dt", return_value=datetime(2024, 1, 1)):
             with patch("mtdata.utils.mt5._normalize_times_in_struct", return_value=None):
                 result = _mt5_copy_ticks_from("EURUSD", datetime(2024, 1, 1), 100, 0)
         assert result is None
@@ -593,7 +416,7 @@ class TestCopyWrappers:
 
     def test_copy_ticks_range(self):
         _mt5_mock.copy_ticks_range.return_value = None
-        with patch("mtdata.utils.mt5._to_server_naive_dt", return_value=datetime(2024, 1, 1)):
+        with patch("mtdata.utils.mt5._to_server_query_dt", return_value=datetime(2024, 1, 1)):
             with patch("mtdata.utils.mt5._normalize_times_in_struct", return_value=None):
                 result = _mt5_copy_ticks_range("EURUSD", datetime(2024, 1, 1), datetime(2024, 1, 2), 0)
         assert result is None
@@ -863,56 +686,6 @@ class TestResolveBrokerSymbolName:
         assert resolve_broker_symbol_name("brkb") == "brkb"
 
 
-# ── estimate_server_offset  (lines 267-307) ──────────────────────────────────
-
-class TestEstimateServerOffset:
-    @patch("mtdata.utils.mt5.ensure_mt5_connection_or_raise",
-           side_effect=MT5ConnectionError("no connection"))
-    def test_connection_fails(self, _mock_conn):
-        assert estimate_server_offset() == 0
-
-    @patch("mtdata.utils.mt5.time")
-    @patch("mtdata.utils.mt5.ensure_mt5_connection_or_raise")
-    def test_success(self, _mock_conn, mock_time):
-        _mt5_mock.symbol_select.return_value = True
-        now = 1700000000.0
-        mock_time.time.return_value = now
-        mock_time.sleep = MagicMock()
-        tick = MagicMock()
-        tick.time = now + 7200  # server is UTC+2
-        _mt5_mock.symbol_info_tick.return_value = tick
-        result = estimate_server_offset("EURUSD", samples=3)
-        assert result == 7200
-
-    @patch("mtdata.utils.mt5.time")
-    @patch("mtdata.utils.mt5.ensure_mt5_connection_or_raise")
-    def test_no_ticks(self, _mock_conn, mock_time):
-        _mt5_mock.symbol_select.return_value = True
-        mock_time.time.return_value = 1700000000.0
-        mock_time.sleep = MagicMock()
-        _mt5_mock.symbol_info_tick.return_value = None
-        assert estimate_server_offset("EURUSD", samples=2) == 0
-
-    @patch("mtdata.utils.mt5.time")
-    @patch("mtdata.utils.mt5.ensure_mt5_connection_or_raise")
-    def test_fallback_symbol(self, _mock_conn, mock_time):
-        # First symbol_select fails, then GBPUSD succeeds
-        _mt5_mock.symbol_select.side_effect = [False, True]
-        mock_time.time.return_value = 1700000000.0
-        mock_time.sleep = MagicMock()
-        tick = MagicMock()
-        tick.time = 1700000000.0
-        _mt5_mock.symbol_info_tick.return_value = tick
-        result = estimate_server_offset("EURUSD", samples=1)
-        assert isinstance(result, int)
-        _mt5_mock.symbol_select.side_effect = None
-
-    @patch("mtdata.utils.mt5.ensure_mt5_connection_or_raise",
-           side_effect=Exception("boom"))
-    def test_exception(self, _mock_conn):
-        assert estimate_server_offset() == 0
-
-
 class TestCachedMt5TimeAlignment:
     def setup_method(self):
         clear_mt5_time_alignment_cache()
@@ -956,19 +729,14 @@ class TestCachedMt5TimeAlignment:
 
 
 class TestInspectMt5TimeAlignment:
-    @patch("mtdata.utils.mt5.mt5_config")
-    def test_ok(self, cfg, monkeypatch):
+    def test_ok(self, monkeypatch):
         now = 1_700_000_045.0
         current_bar = float((int(now) // 60) * 60)
         last_closed_bar = current_bar - 60.0
-        cfg.get_server_tz.return_value = None
-        cfg.get_time_offset_seconds.return_value = 7200
-        cfg.server_tz_name = "Europe/Nicosia"
-
         monkeypatch.setattr(_mt5_mod, "ensure_mt5_connection_or_raise", lambda **kwargs: None)
         monkeypatch.setattr(_mt5_mod, "_ensure_symbol_ready", lambda symbol: None)
         monkeypatch.setattr(_mt5_mod.time, "time", lambda: now)
-        monkeypatch.setattr(_mt5_mod.mt5, "symbol_info_tick", lambda symbol: MagicMock(time=now + 7200.0))
+        monkeypatch.setattr(_mt5_mod.mt5, "symbol_info_tick", lambda symbol: MagicMock(time=now - 1.0))
         monkeypatch.setattr(
             _mt5_mod,
             "_mt5_copy_rates_from_pos",
@@ -983,24 +751,20 @@ class TestInspectMt5TimeAlignment:
 
         assert result["status"] == "ok"
         assert result["reason"] is None
-        assert result["configured_offset_seconds"] == 7200
-        assert result["inferred_offset_seconds"] == 7200
-        assert result["configured_server_tz"] == "Europe/Nicosia"
+        assert result["timestamp_contract"] == "mt5_utc_native"
+        assert result["tick_age_seconds"] == 1.0
+        assert "inferred_offset_seconds" not in result
         assert abs(result["current_bar_delta_seconds"]) < 1e-9
         assert abs(result["last_closed_bar_delta_seconds"]) < 1e-9
 
-    @patch("mtdata.utils.mt5.mt5_config")
-    def test_reports_misalignment(self, cfg, monkeypatch):
+    def test_reports_future_timestamp(self, monkeypatch):
         now = 1_700_000_045.0
         current_bar = float((int(now) // 60) * 60)
         last_closed_bar = current_bar - 60.0
-        cfg.get_server_tz.return_value = None
-        cfg.get_time_offset_seconds.return_value = 7200
-
         monkeypatch.setattr(_mt5_mod, "ensure_mt5_connection_or_raise", lambda **kwargs: None)
         monkeypatch.setattr(_mt5_mod, "_ensure_symbol_ready", lambda symbol: None)
         monkeypatch.setattr(_mt5_mod.time, "time", lambda: now)
-        monkeypatch.setattr(_mt5_mod.mt5, "symbol_info_tick", lambda symbol: MagicMock(time=now + 10800.0))
+        monkeypatch.setattr(_mt5_mod.mt5, "symbol_info_tick", lambda symbol: MagicMock(time=now + 3600.0))
         monkeypatch.setattr(
             _mt5_mod,
             "_mt5_copy_rates_from_pos",
@@ -1014,21 +778,16 @@ class TestInspectMt5TimeAlignment:
         result = inspect_mt5_time_alignment("EURUSD")
 
         assert result["status"] == "misaligned"
-        assert result["reason"] == "timezone_mismatch"
-        assert result["offset_mismatch_seconds"] == 3600
-        assert "inferred broker offset is 10800s" in result["warning"]
+        assert result["reason"] == "timestamp_in_future"
+        assert "latest tick is 3600s in the future" in result["warning"]
 
-    @patch("mtdata.utils.mt5.mt5_config")
-    def test_reports_stale_data(self, cfg, monkeypatch):
+    def test_reports_stale_data(self, monkeypatch):
         now = 1_700_000_045.0
         current_bar = float((int(now) // 60) * 60)
-        cfg.get_server_tz.return_value = None
-        cfg.get_time_offset_seconds.return_value = 7200
-
         monkeypatch.setattr(_mt5_mod, "ensure_mt5_connection_or_raise", lambda **kwargs: None)
         monkeypatch.setattr(_mt5_mod, "_ensure_symbol_ready", lambda symbol: None)
         monkeypatch.setattr(_mt5_mod.time, "time", lambda: now)
-        monkeypatch.setattr(_mt5_mod.mt5, "symbol_info_tick", lambda symbol: MagicMock(time=now + 7200.0))
+        monkeypatch.setattr(_mt5_mod.mt5, "symbol_info_tick", lambda symbol: MagicMock(time=now - 1.0))
         monkeypatch.setattr(
             _mt5_mod,
             "_mt5_copy_rates_from_pos",
@@ -1044,15 +803,10 @@ class TestInspectMt5TimeAlignment:
         assert result["status"] == "stale"
         assert result["reason"] == "market_data_stale"
         assert "lags expected current bar" in result["warning"]
-        assert result["offset_inference_reliable"] is True
 
-    @patch("mtdata.utils.mt5.mt5_config")
-    def test_closed_market_tick_is_not_treated_as_timezone_mismatch(self, cfg, monkeypatch):
+    def test_closed_market_tick_is_reported_as_stale(self, monkeypatch):
         now = 1_700_000_045.0
         current_bar = float((int(now) // 60) * 60)
-        cfg.get_server_tz.return_value = None
-        cfg.get_time_offset_seconds.return_value = 7200
-
         monkeypatch.setattr(_mt5_mod, "ensure_mt5_connection_or_raise", lambda **kwargs: None)
         monkeypatch.setattr(_mt5_mod, "_ensure_symbol_ready", lambda symbol: None)
         monkeypatch.setattr(_mt5_mod.time, "time", lambda: now)
@@ -1072,10 +826,8 @@ class TestInspectMt5TimeAlignment:
 
         assert result["status"] == "stale"
         assert result["reason"] == "market_data_stale"
-        assert result["offset_inference_reliable"] is False
-        assert result["inferred_offset_seconds"] == -147600
-        assert "not a plausible live broker offset" in result["warning"]
-        assert "timezone_mismatch" != result["reason"]
+        assert result["tick_age_seconds"] == 147600.0
+        assert "latest tick is 147600s old" in result["warning"]
 
     def test_connection_failure(self, monkeypatch):
         monkeypatch.setattr(

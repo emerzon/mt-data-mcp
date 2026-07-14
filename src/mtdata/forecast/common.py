@@ -10,13 +10,10 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 
-from ..services.data_service import (
-    _is_last_bar_forming,
-    _resolve_live_rate_auto_shift_seconds,
-    _shift_rate_times,
-)
+from ..services.data_service import _is_last_bar_forming
 from ..shared.constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
 from ..shared.symbols import is_probably_crypto_symbol, is_probably_forex_symbol
+from ..utils.freshness import is_standard_weekend_closure
 from ..utils.mt5 import (
     _ensure_symbol_ready,
     _mt5_copy_rates_from,
@@ -25,7 +22,6 @@ from ..utils.mt5 import (
     get_symbol_info_cached,
     mt5,
 )
-from ..utils.freshness import is_standard_weekend_closure
 from ..utils.utils import _parse_start_datetime, _utc_epoch_seconds
 
 _FORECAST_RESERVED_COLUMNS = {"unique_id", "ds", "y"}
@@ -1018,7 +1014,7 @@ def fetch_history(
     end: Optional[str] = None,
     drop_last_live: bool = True,
 ) -> pd.DataFrame:
-    """Fetch last `need` bars for symbol/timeframe, normalize times to UTC seconds.
+    """Fetch the last `need` bars with MT5's native UTC epoch seconds.
 
     - as_of: optional date/time string. If provided, fetch bars ending at that time. Else uses server time.
     - start/end: optional date/time range. If start is provided, returns the full range.
@@ -1060,14 +1056,6 @@ def fetch_history(
             # start_pos=0 includes the current forming bar
             fetch_count = int(need) + (1 if drop_last_live else 0)
             rates = _mt5_copy_rates_from_pos(symbol, mt5_tf, 0, max(fetch_count, 1))
-            auto_shift_seconds = _resolve_live_rate_auto_shift_seconds(
-                symbol=symbol,
-                timeframe=timeframe,
-                start_datetime=None,
-                end_datetime=None,
-            )
-            if auto_shift_seconds:
-                rates = _shift_rate_times(rates, auto_shift_seconds)
     finally:
         if was_visible is False:
             try:
@@ -1077,9 +1065,8 @@ def fetch_history(
     if rates is None or len(rates) < 1:
         raise RuntimeError(f"Failed to get rates for {symbol}: {mt5.last_error()}")
     df = pd.DataFrame(rates)
-    # Times are already normalized to UTC by _mt5_copy_rates_from_pos via _normalize_times_in_struct
-    # DO NOT normalize again.
-    
+    # MT5 rate epochs are already UTC.
+
     # Manual truncation if an upper bound was provided.
     if (as_of or end) and not df.empty and 'time' in df.columns:
         to_dt = _parse_start_datetime(as_of or end or "")

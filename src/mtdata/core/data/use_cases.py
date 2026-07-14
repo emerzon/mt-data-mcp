@@ -939,8 +939,9 @@ def _public_candle_diagnostics(result: Dict[str, Any]) -> Dict[str, Any]:
                     "reason",
                     "warning",
                     "probe_timeframe",
-                    "inferred_offset_seconds",
-                    "offset_mismatch_seconds",
+                    "timestamp_contract",
+                    "tick_age_seconds",
+                    "current_bar_delta_seconds",
                 )
                 if mt5_time_alignment.get(key) is not None
             }

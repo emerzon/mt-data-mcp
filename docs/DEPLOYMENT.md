@@ -42,7 +42,7 @@ Put configuration in the project `.env` (loaded on startup) or set real environm
 MT5_LOGIN=12345678
 MT5_PASSWORD=your_password
 MT5_SERVER=YourBroker-Demo
-MT5_SERVER_TZ=Europe/Athens        # or MT5_TIME_OFFSET_MINUTES=120
+MT5_SERVER_TZ=Europe/Athens        # optional broker session/calendar timezone
 
 # MCP server (SSE / streamable-HTTP)
 MCP_TRANSPORT=sse

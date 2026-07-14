@@ -2,7 +2,6 @@
 
 Covers:
   - Standalone helper function tests (build_candle_headers, freshness diagnostics, etc.)
-  - TestShiftRateTimes
   - TestFetchRatesWithWarmup
   - TestBuildRatesDf
   - TestTrimDfToTarget
@@ -10,16 +9,10 @@ Covers:
 
 import unittest
 from datetime import datetime, timezone
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pandas as pd
-
-from ._helpers import (
-    _UTC, _NOW_TS,
-    _make_rates, _make_rates_array,
-    _DS, _RATES_FROM, _RATES_RANGE, _PARSE_START,
-)
 
 from mtdata.services.data_service import (
     _build_candle_freshness_diagnostics,
@@ -28,10 +21,19 @@ from mtdata.services.data_service import (
     _build_rates_df,
     _compact_tick_summary,
     _fetch_rates_with_warmup,
-    _shift_rate_times,
     _trim_df_to_target,
 )
 
+from ._helpers import (
+    _DS,
+    _NOW_TS,
+    _PARSE_START,
+    _RATES_FROM,
+    _RATES_RANGE,
+    _UTC,
+    _make_rates,
+    _make_rates_array,
+)
 
 # ============================================================================
 # Standalone helper function tests
@@ -117,75 +119,6 @@ def test_compact_tick_summary_preserves_false_like_spread_availability() -> None
     result = _compact_tick_summary(payload)
 
     assert result["stats"]["spread"] == {"available": False}
-
-
-# ============================================================================
-# TestShiftRateTimes
-# ============================================================================
-
-class TestShiftRateTimes(unittest.TestCase):
-    def test_returns_shifted_list_copy_without_mutating_input(self):
-        rates = _make_rates(3)
-        original_times = [float(row['time']) for row in rates]
-
-        shifted = _shift_rate_times(rates, 3600)
-
-        self.assertIsInstance(shifted, list)
-        self.assertIsNot(shifted, rates)
-        self.assertIsNot(shifted[0], rates[0])
-        self.assertEqual([float(row['time']) for row in rates], original_times)
-        self.assertEqual(
-            [float(row['time']) for row in shifted],
-            [ts + 3600.0 for ts in original_times],
-        )
-
-    def test_returns_shifted_structured_array_copy_without_mutating_input(self):
-        rates = np.array(
-            [(1704067200.0, 1.1), (1704067260.0, 1.2)],
-            dtype=[('time', 'f8'), ('close', 'f8')],
-        )
-
-        shifted = _shift_rate_times(rates, 120)
-
-        self.assertIsNot(shifted, rates)
-        np.testing.assert_array_equal(rates['time'], np.array([1704067200.0, 1704067260.0]))
-        np.testing.assert_array_equal(
-            shifted['time'],
-            np.array([1704067320.0, 1704067380.0]),
-        )
-        np.testing.assert_array_equal(shifted['close'], rates['close'])
-
-    def test_list_without_time_keys_returns_original_input(self):
-        rates = [{'close': 1.1}, {'open': 1.2}, 'passthrough']
-
-        shifted = _shift_rate_times(rates, 60)
-
-        self.assertIs(shifted, rates)
-
-    def test_list_with_non_numeric_time_rejects_mixed_timestamp_alignment(self):
-        rates = [
-            {'time': 1704067200.0, 'close': 1.1},
-            {'time': 'not-a-number', 'close': 1.2},
-            {'time': 1704067320.0, 'close': 1.3},
-        ]
-        original = [row.copy() for row in rates]
-
-        with self.assertRaisesRegex(ValueError, "mixed timestamp alignment"):
-            _shift_rate_times(rates, 60)
-
-        self.assertEqual(rates, original)
-
-    def test_structured_array_with_non_numeric_time_raises(self):
-        rates = np.array(
-            [('1704067200.0', 1.1), ('not-a-number', 1.2)],
-            dtype=[('time', 'U32'), ('close', 'f8')],
-        )
-        original = rates.copy()
-
-        with self.assertRaisesRegex(ValueError, "cannot be safely treated as UTC"):
-            _shift_rate_times(rates, 60)
-
-        np.testing.assert_array_equal(rates, original)
 
 
 # ============================================================================

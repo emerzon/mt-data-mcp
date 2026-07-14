@@ -553,15 +553,8 @@ class TestStatsForGroup:
 # ===================================================================
 
 class TestFetchRates:
-    @patch(_P + "_shift_rate_times", side_effect=lambda rates, shift: ("shifted", rates, shift))
-    @patch(_P + "_resolve_live_rate_auto_shift_seconds", return_value=-10800)
     @patch(_P + "_mt5_copy_rates_from", return_value="rates")
-    def test_applies_live_auto_shift_to_open_ended_fetch(
-        self,
-        mock_rates_from,
-        mock_resolve_shift,
-        mock_shift,
-    ):
+    def test_preserves_native_utc_rates_for_open_ended_fetch(self, mock_rates_from):
         gateway = MagicMock()
         gateway.symbol_info_tick.return_value = MagicMock(time=1704067200)
 
@@ -575,14 +568,8 @@ class TestFetchRates:
         )
 
         assert error is None
-        assert rates == ("shifted", "rates", -10800)
-        mock_resolve_shift.assert_called_once_with(
-            symbol="EURUSD",
-            timeframe="H1",
-            start_datetime=None,
-            end_datetime=None,
-        )
-        mock_shift.assert_called_once_with("rates", -10800)
+        assert rates == "rates"
+        mock_rates_from.assert_called_once()
         mock_rates_from.assert_called_once()
 
 

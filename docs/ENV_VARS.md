@@ -30,15 +30,20 @@ MT5_TIMEOUT=30
 
 ## Timezone
 
-MT5 server clocks vary by broker. Configure one of the two methods below so mtdata can normalize timestamps to UTC correctly.
+MT5 API request datetimes and returned epochs are already UTC. The broker
+settings below are optional and affect only broker-local session/calendar
+calculations; they never shift request bounds or returned timestamps.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `MT5_SERVER_TZ` | — | IANA timezone of the MT5 server (e.g. `Europe/Athens`). Handles DST automatically. |
-| `MT5_TIME_OFFSET_MINUTES` | `0` | Fixed offset from UTC in minutes (e.g. `120` for UTC+2). When set to a non-zero value, this explicit offset overrides `MT5_SERVER_TZ`. |
+| `MT5_SERVER_TZ` | — | IANA timezone used for broker session/calendar boundaries (e.g. `Europe/Athens`). Handles DST automatically. |
+| `MT5_TIME_OFFSET_MINUTES` | `0` | Fixed broker-session offset from UTC in minutes. A non-zero value overrides `MT5_SERVER_TZ`. |
 | `MT5_CLIENT_TZ` / `CLIENT_TZ` | auto-detect | IANA timezone of the local machine. `CLIENT_TZ` takes precedence if both are set. |
 
-Prefer `MT5_SERVER_TZ` because it adjusts for DST. Use `MT5_TIME_OFFSET_MINUTES` only when you do not know the server's IANA name, and avoid setting both unless you intentionally want the fixed offset to win.
+Configure these only when a broker-local session or trading-day boundary matters.
+Prefer `MT5_SERVER_TZ` because it adjusts for DST. Use
+`MT5_TIME_OFFSET_MINUTES` only when you know a fixed session offset, and avoid
+setting both unless you intentionally want the fixed offset to win.
 
 ```ini
 # Option A — timezone name (recommended)
@@ -48,21 +53,15 @@ MT5_SERVER_TZ=Europe/Athens
 MT5_TIME_OFFSET_MINUTES=120
 ```
 
-To detect the offset automatically:
-
-```bash
-python scripts/detect_mt5_time_offset.py --symbol EURUSD
-```
-
 ---
 
 ## Broker Time Verification
 
-Optional runtime check that compares the MT5 server clock against known market hours.
+Optional runtime check for stale tick/bar data and implausible future UTC timestamps.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `MTDATA_BROKER_TIME_CHECK` | `false` | Enable broker time verification (`1`, `true`, `yes`, or `on`) |
+| `MTDATA_BROKER_TIME_CHECK` | `false` | Enable live MT5 UTC freshness verification (`1`, `true`, `yes`, or `on`) |
 | `MTDATA_BROKER_TIME_CHECK_TTL_SECONDS` | `60` | Cache TTL for the check result (seconds) |
 
 ---
