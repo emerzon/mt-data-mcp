@@ -594,6 +594,24 @@ class TestModifyPendingOrder:
         assert call_args["volume"] == pytest.approx(0.07)
 
     @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_modify_request_uses_live_pending_order_volume_fields(self):
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        order = _pending_order(symbol="EURUSD", type_=2, volume=0.5)
+        del order.volume
+        order.volume_current = 0.5
+        order.volume_initial = 0.5
+        mt5.orders_get.return_value = [order]
+        mt5.order_send.return_value = _order_result()
+        from mtdata.core.trading import _modify_pending_order
+
+        result = _modify_pending_order(ticket=100, price=1.095)
+
+        assert result.get("success") is True
+        request = mt5.order_send.call_args.args[0]
+        assert request["volume"] == pytest.approx(0.5)
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
     def test_normalizes_pending_modify_prices(self):
         mt5 = sys.modules["MetaTrader5"]
         self._setup_mt5(mt5)

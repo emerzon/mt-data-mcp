@@ -740,7 +740,7 @@ def _modify_pending_order(
                 "action": mt5.TRADE_ACTION_MODIFY,
                 "order": ticket_id,
                 "symbol": order.symbol,
-                "volume": validation._safe_float_attr(order, "volume"),
+                "volume": order_volume,
                 "type": order_type_value,
                 "price": float(normalized_price),
                 "sl": request_sl,
