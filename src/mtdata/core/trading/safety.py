@@ -412,6 +412,7 @@ def _estimate_order_risk_currency(
     entry_price: float,
     stop_loss: Optional[float],
     side: str,
+    allow_profit_stop: bool = False,
 ) -> tuple[Optional[float], Optional[str]]:
     normalized_stop_loss = _normalize_stop_loss_value(stop_loss)
     if normalized_stop_loss is None:
@@ -434,7 +435,11 @@ def _estimate_order_risk_currency(
         risk_ticks = (float(entry_price) - normalized_stop_loss) / tick_size
     else:
         risk_ticks = (normalized_stop_loss - float(entry_price)) / tick_size
-    if not math.isfinite(risk_ticks) or risk_ticks <= 0:
+    if not math.isfinite(risk_ticks):
+        return None, "stop_loss_wrong_side"
+    if risk_ticks <= 0:
+        if allow_profit_stop:
+            return 0.0, None
         return None, "stop_loss_wrong_side"
 
     risk_currency = abs(float(volume) * risk_ticks * risk_tick_value)
@@ -581,6 +586,7 @@ def _total_portfolio_risk_currency(
             entry_price=entry_price,
             stop_loss=stop_loss,
             side=side,
+            allow_profit_stop=True,
         )
         if risk_currency is None:
             issues.append(f"{symbol}: unable to quantify risk ({risk_error}).")
@@ -697,6 +703,7 @@ def _evaluate_wallet_risk_limits(
                 entry_price=pos_entry,
                 stop_loss=pos_sl,
                 side=pos_side,
+                allow_profit_stop=True,
             )
             if pos_risk is None or pos_volume <= 0:
                 continue

@@ -1038,6 +1038,35 @@ def test_trade_risk_analyze_uses_loss_tick_value_for_open_position_risk() -> Non
     assert out["portfolio_risk"]["total_risk_currency"] == 20.0
 
 
+def test_trade_risk_analyze_treats_locked_profit_stop_as_zero_risk() -> None:
+    mt5 = MagicMock()
+    mt5.account_info.return_value = SimpleNamespace(equity=1000.0, currency="USD")
+    mt5.positions_get.return_value = [
+        SimpleNamespace(
+            ticket=14,
+            symbol="EURUSD",
+            type=0,
+            volume=1.0,
+            price_open=100.0,
+            sl=110.0,
+            tp=120.0,
+        )
+    ]
+    mt5.symbol_info.return_value = _make_symbol_info(
+        trade_tick_value=1.0,
+        trade_tick_value_loss=2.0,
+    )
+
+    with _patched_mt5_module(mt5):
+        out = trade_risk_analyze(__cli_raw=True)
+
+    position = out["positions"][0]
+    assert position["risk_currency"] == 0.0
+    assert position["risk_pct"] == 0.0
+    assert position["risk_status"] == "defined"
+    assert out["portfolio_risk"]["total_risk_currency"] == 0.0
+
+
 def test_trade_risk_analyze_converts_notional_with_broker_tick_value() -> None:
     gateway = MagicMock()
     gateway.account_info.return_value = SimpleNamespace(

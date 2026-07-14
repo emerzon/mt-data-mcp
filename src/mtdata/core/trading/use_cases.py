@@ -2946,7 +2946,8 @@ def run_trade_risk_analyze(  # noqa: C901
                             if is_buy_position
                             else (sl_price - entry_price) / tick_size
                         )
-                        risk_currency = abs(risk_ticks * risk_tick_value * volume)
+                        risk_ticks = max(0.0, risk_ticks)
+                        risk_currency = risk_ticks * risk_tick_value * abs(volume)
                         risk_pct = (
                             (risk_currency / equity) * 100.0 if equity > 0 else 0.0
                         )
