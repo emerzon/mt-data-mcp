@@ -140,7 +140,22 @@ def _tick_frame(gateway: Any, symbol: str, start: datetime, end: datetime, max_t
     flags = getattr(gateway, "COPY_TICKS_ALL", 0)
     df = _frame(gateway.copy_ticks_range(symbol, start, end, flags))
     if df.empty:
-        return df, False
+        return pd.DataFrame(
+            {
+                column: pd.Series(dtype=float)
+                for column in (
+                    "epoch",
+                    "bid",
+                    "ask",
+                    "last",
+                    "volume",
+                    "volume_real",
+                    "flags",
+                    "mid",
+                    "spread",
+                )
+            }
+        ), False
     time_msc = _finite(df.get("time_msc", pd.Series(index=df.index, dtype=float)))
     epoch = _finite(df.get("time", pd.Series(index=df.index, dtype=float)))
     df["epoch"] = np.where(time_msc > 0, time_msc / 1000.0, epoch)

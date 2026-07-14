@@ -201,6 +201,18 @@ def test_tick_frame_keeps_distinct_same_timestamp_events() -> None:
     assert len(frame) == 2
 
 
+def test_tick_frame_empty_result_retains_analysis_schema() -> None:
+    gateway = FakeGateway()
+    gateway.tick_rows = []
+    now = datetime.now(timezone.utc)
+
+    frame, truncated = _tick_frame(gateway, "EURUSD", now, now, 10)
+
+    assert truncated is False
+    assert frame.empty
+    assert {"epoch", "bid", "ask", "mid", "spread"}.issubset(frame.columns)
+
+
 def test_microstructure_reports_closed_session_for_short_tick_stream(monkeypatch) -> None:
     gateway = FakeGateway()
     gateway.tick_rows = _ticks(3)
@@ -240,6 +252,35 @@ def test_execution_quality_matches_order_and_computes_markout() -> None:
     assert result["items"][0]["benchmark_source"] == "arrival_quote"
     assert result["items"][0]["latency_ms"] == 1000.0
     assert result["items"][0]["markout_bps"]["5"] is not None
+
+
+def test_execution_quality_handles_empty_tick_history() -> None:
+    gateway = FakeGateway()
+    gateway.tick_rows = []
+    fill_epoch = _now() - 10
+    gateway.orders = [{"ticket": 10, "price_open": 1.1, "volume_initial": 1.0}]
+    gateway.deals = [
+        {
+            "ticket": 20,
+            "order": 10,
+            "position_id": 30,
+            "symbol": "EURUSD",
+            "type": 0,
+            "volume": 1.0,
+            "price": 1.1001,
+            "time": fill_epoch,
+            "time_msc": fill_epoch * 1000,
+        }
+    ]
+
+    result = analyze_execution_quality(
+        TradeExecutionQualityRequest(minutes_back=60, markout_seconds=[1, 5]),
+        gateway,
+    )
+
+    assert result["success"] is True
+    assert result["summary"]["fills"] == 1
+    assert result["data_quality"]["skipped"]["missing_markout"] == 2
 
 
 def test_strategy_validation_returns_walk_forward_oos_metrics() -> None:
