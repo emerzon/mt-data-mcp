@@ -52,6 +52,26 @@ _TRADE_IDEMPOTENCY_STORE = IdempotencyStore()
 _TRADE_HISTORY_RANGE_HINT = (
     "Try narrowing the range with --minutes-back, --days, --start, or --end."
 )
+_SUPPORTED_ORDER_TYPES = (
+    "BUY",
+    "SELL",
+    "BUY_LIMIT",
+    "BUY_STOP",
+    "SELL_LIMIT",
+    "SELL_STOP",
+)
+
+
+def _invalid_order_type_payload(message: str) -> Dict[str, Any]:
+    return {
+        "error": message,
+        "error_code": "invalid_order_type",
+        "valid_values": {"order_type": list(_SUPPORTED_ORDER_TYPES)},
+        "remediation": "Choose a market side or an explicit pending-order type.",
+        "example": "mtdata-cli trade_place EURUSD --order-type BUY --volume 0.01",
+    }
+
+
 _TRADE_PLACE_PREVIEW_KEYS = (
     "success",
     "error",
@@ -1364,18 +1384,21 @@ def run_trade_place(  # noqa: C901
 
         order_type_norm, order_type_error = normalize_order_type_input(request.order_type)
         if order_type_error:
-            return _finish({"error": order_type_error}, order_type=order_type_norm)
+            return _finish(
+                _invalid_order_type_payload(order_type_error),
+                order_type=order_type_norm,
+            )
         explicit_pending_types = {"BUY_LIMIT", "BUY_STOP", "SELL_LIMIT", "SELL_STOP"}
         market_side_types = {"BUY", "SELL"}
         supported_order_types = explicit_pending_types.union(market_side_types)
         if order_type_norm not in supported_order_types:
             return _finish(
-                {
-                    "error": (
+                _invalid_order_type_payload(
+                    (
                         f"Unsupported order_type '{request.order_type}'. "
                         "Use BUY/SELL or BUY_LIMIT/BUY_STOP/SELL_LIMIT/SELL_STOP."
                     )
-                },
+                ),
                 order_type=order_type_norm,
             )
 

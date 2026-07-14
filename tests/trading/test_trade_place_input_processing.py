@@ -85,6 +85,9 @@ def test_trade_place_rejects_prefixed_order_type() -> None:
         out = trade_place(symbol="BTCUSD", volume=0.03, order_type="ORDER_TYPE_BUY_STOP", price=70650, __cli_raw=True)
 
     assert "Unsupported order_type" in out["error"]
+    assert out["error_code"] == "invalid_order_type"
+    assert "BUY_STOP" in out["valid_values"]["order_type"]
+    assert out["example"].startswith("mtdata-cli trade_place")
     mock_pending.assert_not_called()
 
 
