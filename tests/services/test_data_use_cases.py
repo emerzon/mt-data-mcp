@@ -379,8 +379,8 @@ def test_run_data_fetch_candles_compact_keeps_staleness_without_meta():
     assert "meta" not in result
     assert result["freshness"] == "fresh, bar 1m 0s ago"
     assert result["data_stale"] is False
-    assert result["data_age_anchor"] == "wall_clock"
-    assert result["data_age_metric"] == "last_completed_bar_age_seconds"
+    assert "data_age_anchor" not in result
+    assert "data_age_metric" not in result
     assert "freshness_basis" not in result
     assert "data_freshness_seconds" not in result
     assert result["data_age_seconds"] == 60.0
@@ -414,8 +414,8 @@ def test_run_data_fetch_candles_compact_flags_stale_latest_data():
     assert result["freshness"] == "stale, bar 1h 1m ago"
     assert result["query_type"] == "latest"
     assert result["data_stale"] is True
-    assert result["data_age_anchor"] == "wall_clock"
-    assert result["data_age_metric"] == "last_completed_bar_age_seconds"
+    assert "data_age_anchor" not in result
+    assert "data_age_metric" not in result
     assert "freshness_basis" not in result
     assert result["data_age_seconds"] == 3661.0
     assert "data_age" not in result
@@ -457,8 +457,8 @@ def test_run_data_fetch_candles_closed_market_keeps_absolute_staleness():
     assert result["data_stale"] is True
     assert result["usable_for_live_trading"] is False
     assert result["data_age_seconds"] == 149668.6
-    assert result["data_age_anchor"] == "wall_clock"
-    assert result["data_age_metric"] == "last_completed_bar_age_seconds"
+    assert "data_age_anchor" not in result
+    assert "data_age_metric" not in result
     assert result["freshness_policy_relaxed"] is True
     assert result["market_status"] == "closed_or_idle"
     assert result["note"] == (
@@ -607,8 +607,8 @@ def test_run_data_fetch_candles_compact_exposes_range_gap_metadata():
     assert "data_freshness_seconds" not in result
     assert "data_age_seconds" not in result
     assert result["query_end_gap_seconds"] == 0.0
-    assert result["query_end_gap_anchor"] == "query_expected_end"
-    assert result["query_end_gap_metric"] == "requested_range_end_gap_seconds"
+    assert "query_end_gap_anchor" not in result
+    assert "query_end_gap_metric" not in result
     assert result["query_end_gap"] == "0s"
 
 
@@ -1011,7 +1011,7 @@ def test_run_data_fetch_candles_compact_preserves_requested_rows():
     assert result["data"][0]["close"] == 0.0
     assert "data_truncated" not in result
     assert result["timestamp_format"] == "epoch_seconds"
-    assert "timestamp_format=iso" in result["timestamp_format_hint"]
+    assert "timestamp_format_hint" not in result
 
 
 def test_run_data_fetch_candles_standard_keeps_forming_booleans():

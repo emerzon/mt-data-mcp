@@ -490,6 +490,19 @@ def _compact_candles_payload(
         "volume_note",
         "bar_time_convention",
         "meta",
+        "raw_time_basis",
+        "time_basis",
+        "time_normalization",
+        "timestamp_mode",
+        "broker_server_tz",
+        "broker_utc_offset_seconds",
+        "timezone_note",
+        "volume_semantics",
+        "data_age_anchor",
+        "data_age_metric",
+        "query_end_gap_anchor",
+        "query_end_gap_metric",
+        "mt5_time_alignment",
     ):
         compact.pop(key, None)
     if not bool(compact.get("has_forming_candle")):
@@ -508,8 +521,6 @@ def _compact_candles_payload(
         "query_type",
         "freshness",
         "data_age_seconds",
-        "data_age_anchor",
-        "data_age_metric",
         "data_stale",
         "usable_for_live_trading",
         "freshness_policy_relaxed",
@@ -519,9 +530,6 @@ def _compact_candles_payload(
         "note",
         "query_end_gap_seconds",
         "query_end_gap",
-        "query_end_gap_anchor",
-        "query_end_gap_metric",
-        "mt5_time_alignment",
         "indicator_warmup_bars",
         "history_bars_fetched",
     ):
@@ -547,14 +555,11 @@ def _attach_candle_timestamp_metadata(payload: Dict[str, Any]) -> None:
             continue
         if isinstance(timestamp_value, (int, float)) and np.isfinite(float(timestamp_value)):
             payload["timestamp_format"] = "epoch_seconds"
-            payload["timestamp_format_hint"] = (
-                "time is Unix epoch seconds in UTC; request timestamp_format=iso "
-                "for UTC text timestamps."
-            )
+            payload.pop("timestamp_format_hint", None)
             return
         if isinstance(timestamp_value, str) and timestamp_value.strip():
             payload["timestamp_format"] = "iso_utc"
-            payload["timestamp_format_hint"] = "time is a UTC timestamp string."
+            payload.pop("timestamp_format_hint", None)
             return
 
 
@@ -686,16 +691,11 @@ def _attach_candle_machine_freshness(payload: Dict[str, Any]) -> None:
     for key in (
         "query_type",
         "data_age_seconds",
-        "data_age_anchor",
-        "data_age_metric",
         "data_stale",
         "usable_for_live_trading",
         "freshness_policy_relaxed",
         "query_end_gap_seconds",
         "query_end_gap",
-        "query_end_gap_anchor",
-        "query_end_gap_metric",
-        "mt5_time_alignment",
     ):
         if key in public_diagnostics:
             payload.setdefault(key, public_diagnostics[key])
