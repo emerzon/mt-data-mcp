@@ -2299,7 +2299,7 @@ def merge_support_resistance_results(  # noqa: C901
         "timeframe": str(timeframe),
         "mode": "auto",
         "source": "mt5_history",
-        "as_of": _format_time_iso_utc(
+        "structure_as_of": _format_time_iso_utc(
             _parse_output_time(max(end_values)) if end_values else None
         ),
         "timezone": "UTC",
@@ -2486,9 +2486,9 @@ def compact_support_resistance_payload(payload: Dict[str, Any]) -> Dict[str, Any
         "mode",
         "current_price",
         "current_price_source",
-        "reference_price_as_of",
+        "reference_quote_as_of",
         "source",
-        "as_of",
+        "structure_as_of",
         "timezone",
         "timeframes_analyzed",
     ):
@@ -2798,7 +2798,7 @@ def compute_support_resistance_levels(
         "timeframe": timeframe,
         "mode": "single",
         "source": "mt5_history",
-        "as_of": _format_time_iso_utc(window_end),
+        "structure_as_of": _format_time_iso_utc(window_end),
         "timezone": "UTC",
         "timeframes_analyzed": [str(timeframe)] if timeframe is not None else [],
         "limit": int(limit) if limit is not None else len(frame),

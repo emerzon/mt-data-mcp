@@ -93,7 +93,7 @@ def test_support_resistance_tool_returns_weighted_levels():
     assert result["timeframe"] == "H1"
     assert result["source"] == "mt5_history"
     assert result["timezone"] == "UTC"
-    assert result["as_of"].endswith("Z")
+    assert result["structure_as_of"].endswith("Z")
     assert result["level_counts"] == {"support": 1, "resistance": 1, "total": 2}
     assert len(result["supports"]) == 1
     assert len(result["resistances"]) == 1
@@ -134,7 +134,7 @@ def test_support_resistance_tool_uses_live_tick_as_level_reference():
 
     assert result["current_price"] == 111.1
     assert result["current_price_source"] == "live_tick_mid"
-    assert result["reference_price_as_of"] == "2023-11-16T02:00Z"
+    assert result["reference_quote_as_of"] == "2023-11-16T02:00Z"
 
 
 def test_support_resistance_tool_applies_near_price_distance_default():

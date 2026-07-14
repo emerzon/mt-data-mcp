@@ -837,7 +837,7 @@ def confluence_levels(  # noqa: C901
             )
             payload["reference_price_source"] = reference_price_source
             if reference_price_source == "live_tick":
-                payload["reference_price_as_of"] = (
+                payload["reference_quote_as_of"] = (
                     datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
                 )
             else:
@@ -968,7 +968,7 @@ def support_resistance_levels(
             digits_value = _symbol_price_digits(symbol_info)
             reference_price = None
             reference_price_source = None
-            reference_price_as_of = None
+            reference_quote_as_of = None
             if not start and not end:
                 tick = gateway.symbol_info_tick(symbol)
                 reference_price = _tick_reference_price(tick)
@@ -981,7 +981,7 @@ def support_resistance_levels(
                         tick_epoch = None
                     if tick_epoch is None:
                         tick_epoch = getattr(tick, "time", None)
-                    reference_price_as_of = _format_time_minimal(tick_epoch)
+                    reference_quote_as_of = _format_time_minimal(tick_epoch)
             result = compute_support_resistance_payload(
                 fetch_history_impl=_fetch_history,
                 symbol=symbol,
@@ -1000,8 +1000,8 @@ def support_resistance_levels(
                 reference_price=reference_price,
                 reference_price_source=reference_price_source,
             )
-            if reference_price_as_of is not None:
-                result["reference_price_as_of"] = reference_price_as_of
+            if reference_quote_as_of is not None:
+                result["reference_quote_as_of"] = reference_quote_as_of
             detail_value = str(detail).strip().lower()
             if normalize_output_extras(extras):
                 detail_value = "full"
