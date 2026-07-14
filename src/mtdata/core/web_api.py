@@ -24,7 +24,6 @@ from ..utils.denoise import get_denoise_methods_data as _get_denoise_methods
 from ..utils.denoise import normalize_denoise_spec as _norm_dn
 from ..utils.dimred import list_dimred_methods as _list_dimred_methods
 from ..utils.mt5 import (
-    _ensure_symbol_ready,
     ensure_mt5_connection_or_raise,
     mt5,
     mt5_connection,
@@ -42,6 +41,7 @@ from .forecast import (
 )
 from .forecast_tasks import forecast_models_list as _forecast_models_list_tool
 from .mt5_gateway import create_mt5_gateway, mt5_connection_error
+from .market_depth import market_ticker as _market_ticker_tool
 from .pivot import pivot_compute_points
 from .tool_calling import call_tool_sync_structured, unwrap_tool_callable
 from .web_api_handlers import (
@@ -427,8 +427,8 @@ def get_support_resistance(
 def get_tick(symbol: str = Query(...)) -> Dict[str, Any]:
     return _get_tick_response(
         symbol=symbol,
-        mt5=_web_api_gateway(),
-        ensure_symbol_ready=_ensure_symbol_ready,
+        market_ticker_tool=_market_ticker_tool,
+        call_tool_raw=_call_tool_raw,
     )
 
 

@@ -728,31 +728,45 @@ def get_support_resistance_response(
 def get_tick_response(
     *,
     symbol: str,
-    mt5: Any,
-    ensure_symbol_ready: Callable[[str], Any],
+    market_ticker_tool: Any,
+    call_tool_raw: Callable[[Any], Any],
 ) -> Dict[str, Any]:
-    _require_mt5_connection()
-    tick = mt5.symbol_info_tick(symbol)
-    if tick is None:
-        err = ensure_symbol_ready(symbol)
-        if err:
-            info = mt5.symbol_info(symbol)
-            if info is None:
-                raise _http_error(404, f"Unknown symbol {symbol}", code="unknown_symbol", operation="get_tick")
-            # Transient broker/session activation failure — align with other
-            # service-unavailable paths (503), not an internal 500.
-            raise _http_error(503, str(err), code="tick_symbol_ready_failed", operation="get_tick")
-        tick = mt5.symbol_info_tick(symbol)
-    if tick is None:
-        raise _http_error(404, f"No tick data for {symbol}", code="tick_data_missing", operation="get_tick")
-    return {
-        "symbol": symbol,
-        "time": float(tick.time),
-        "bid": float(tick.bid),
-        "ask": float(tick.ask),
-        "last": float(tick.last),
-        "volume": float(tick.volume),
-    }
+    tool = call_tool_raw(market_ticker_tool)
+    try:
+        result = resolve_sync_tool_result(tool(symbol=symbol, detail="compact"))
+    except Exception as exc:
+        raise _http_error(
+            500,
+            f"Tick lookup failed: {exc}",
+            code="tick_lookup_failed",
+            operation="get_tick",
+        ) from exc
+    if not isinstance(result, dict):
+        raise _http_error(
+            500,
+            "Unexpected tick payload",
+            code="tick_payload_invalid",
+            operation="get_tick",
+        )
+    if result.get("error"):
+        error_code = str(result.get("error_code") or "tick_data_missing")
+        if error_code == "symbol_not_found":
+            status_code = 404
+        elif error_code in {
+            "market_ticker_mt5_connection",
+            "market_ticker_tick_unavailable",
+            "market_ticker_quote_unavailable",
+        }:
+            status_code = 503
+        else:
+            status_code = 400
+        raise _http_error(
+            status_code,
+            result["error"],
+            code=error_code,
+            operation="get_tick",
+        )
+    return result
 
 
 def post_forecast_price_response(*, body: ForecastPriceBody, forecast_generate_use_case: Callable[..., Any]) -> Dict[str, Any]:

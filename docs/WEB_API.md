@@ -112,7 +112,9 @@ Fetch OHLCV candles for a symbol.
     configured). The legacy `used` timezone compatibility field is not emitted.
 
 #### `GET /api/tick`
-Get the latest real-time tick.
+Get the latest quote using the same compact schema as `market_ticker`, including
+mid/spread, ISO and epoch timestamps, freshness, and live-usability metadata.
+Unavailable FX `last` and volume values are omitted rather than represented as zero.
 
 - **Query Params:**
   - `symbol` (string, required).

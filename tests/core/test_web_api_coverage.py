@@ -1181,60 +1181,63 @@ class TestGetPivots:
 # ===========================================================================
 
 class TestGetTick:
-    def _mock_tick(self, time=100.0, bid=1.1, ask=1.2, last=1.15, volume=500.0):
-        return SimpleNamespace(time=time, bid=bid, ask=ask, last=last, volume=volume)
-
     def test_connection_failure(self):
-        with patch.object(web_api.mt5_connection, "_ensure_connection", return_value=False):
+        payload = {
+            "error": "MT5 unavailable",
+            "error_code": "market_ticker_mt5_connection",
+        }
+        with patch("mtdata.core.web_api._market_ticker_tool", new=lambda **_: payload):
             resp = _client.get("/api/tick", params={"symbol": "EURUSD"})
         assert resp.status_code == 503
 
     def test_success(self):
-        tick = self._mock_tick()
-        with patch.object(web_api.mt5_connection, "_ensure_connection", return_value=True), \
-             patch("mtdata.core.web_api.mt5") as mock_mt5:
-            mock_mt5.symbol_info_tick.return_value = tick
+        payload = {
+            "success": True,
+            "symbol": "EURUSD",
+            "type": "quote",
+            "bid": 1.1,
+            "ask": 1.2,
+            "mid": 1.15,
+            "spread_pips": 1000.0,
+            "time": "1970-01-01T00:01:40Z",
+            "time_epoch": 100.0,
+            "timezone": "UTC",
+            "freshness_state": "stale",
+            "data_age_seconds": 10.0,
+            "usable_for_live_trading": False,
+        }
+        with patch("mtdata.core.web_api._market_ticker_tool", new=lambda **_: payload):
             resp = _client.get("/api/tick", params={"symbol": "EURUSD"})
         res = resp.json()
+        assert res["success"] is True
         assert res["bid"] == 1.1
         assert res["ask"] == 1.2
+        assert res["mid"] == 1.15
         assert res["symbol"] == "EURUSD"
+        assert res["time"] == "1970-01-01T00:01:40Z"
+        assert res["time_epoch"] == 100.0
+        assert res["freshness_state"] == "stale"
+        assert res["usable_for_live_trading"] is False
 
-    def test_tick_none_retry_success(self):
-        tick = self._mock_tick()
-        with patch.object(web_api.mt5_connection, "_ensure_connection", return_value=True), \
-             patch("mtdata.core.web_api.mt5") as mock_mt5, \
-             patch("mtdata.core.web_api._ensure_symbol_ready", return_value=None):
-            mock_mt5.symbol_info_tick.side_effect = [None, tick]
-            resp = _client.get("/api/tick", params={"symbol": "EURUSD"})
-        assert resp.json()["bid"] == 1.1
-
-    def test_tick_none_symbol_unknown(self):
-        with patch.object(web_api.mt5_connection, "_ensure_connection", return_value=True), \
-             patch("mtdata.core.web_api.mt5") as mock_mt5, \
-             patch("mtdata.core.web_api._ensure_symbol_ready", return_value="some error"):
-            mock_mt5.symbol_info_tick.return_value = None
-            mock_mt5.symbol_info.return_value = None
+    def test_symbol_unknown(self):
+        payload = {"error": "Unknown symbol FAKE", "error_code": "symbol_not_found"}
+        with patch("mtdata.core.web_api._market_ticker_tool", new=lambda **_: payload):
             resp = _client.get("/api/tick", params={"symbol": "FAKE"})
         assert resp.status_code == 404
 
-    def test_tick_none_ensure_error_known_symbol(self):
-        info = SimpleNamespace(name="EURUSD")
-        with patch.object(web_api.mt5_connection, "_ensure_connection", return_value=True), \
-             patch("mtdata.core.web_api.mt5") as mock_mt5, \
-             patch("mtdata.core.web_api._ensure_symbol_ready", return_value="error"):
-            mock_mt5.symbol_info_tick.return_value = None
-            mock_mt5.symbol_info.return_value = info
+    def test_tick_unavailable(self):
+        payload = {
+            "error": "No tick data",
+            "error_code": "market_ticker_tick_unavailable",
+        }
+        with patch("mtdata.core.web_api._market_ticker_tool", new=lambda **_: payload):
             resp = _client.get("/api/tick", params={"symbol": "EURUSD"})
         assert resp.status_code == 503
 
-    def test_tick_none_after_retry(self):
-        with patch.object(web_api.mt5_connection, "_ensure_connection", return_value=True), \
-             patch("mtdata.core.web_api.mt5") as mock_mt5, \
-             patch("mtdata.core.web_api._ensure_symbol_ready", return_value=None):
-            mock_mt5.symbol_info_tick.return_value = None
+    def test_invalid_tick_payload(self):
+        with patch("mtdata.core.web_api._market_ticker_tool", new=lambda **_: "bad"):
             resp = _client.get("/api/tick", params={"symbol": "EURUSD"})
-        assert resp.status_code == 404
+        assert resp.status_code == 500
 
 
 # ===========================================================================
