@@ -638,6 +638,16 @@ def _forecast_generate_data_window(payload: Dict[str, Any]) -> Optional[Dict[str
         "last_bar_complete": True,
         "input_bar_policy": "closed_bars_only",
     }
+    diagnostics = payload.get("diagnostics")
+    if isinstance(diagnostics, dict):
+        for source_key, target_key in (
+            ("history_start_time", "history_start"),
+            ("history_end_time", "history_end"),
+            ("history_bars_used", "history_bars_used"),
+        ):
+            value = diagnostics.get(source_key)
+            if value not in (None, "", [], {}):
+                out[target_key] = value
     for source_key, target_key in (
         ("forecast_start_time", "forecast_start"),
         ("forecast_start_gap_bars", "forecast_start_gap_bars"),

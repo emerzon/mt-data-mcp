@@ -512,6 +512,7 @@ def test_forecast_generate_compact_omits_training_period(monkeypatch):
             "method": kwargs["method"],
             "horizon": kwargs["horizon"],
             "quantity": kwargs["quantity"],
+            "last_observation_time": "2026-01-10 00:00",
             "forecast_time": ["t1"],
             "forecast_price": [1.0],
             "diagnostics": {
@@ -544,6 +545,9 @@ def test_forecast_generate_compact_omits_training_period(monkeypatch):
     )
     assert "training_period" not in out
     assert "diagnostics" not in out
+    assert out["data_window"]["history_start"] == "2026-01-01 00:00"
+    assert out["data_window"]["history_end"] == "2026-01-10 00:00"
+    assert out["data_window"]["history_bars_used"] == 200
 
     standard = raw(
         request=ForecastGenerateRequest(
