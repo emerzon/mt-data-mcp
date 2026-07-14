@@ -79,6 +79,8 @@ class TestNormalizeDenoiseSec:
         assert out is not None
         assert out["method"] == "wavelet"
         assert out["params"]["wavelet"] == "db4"
+        assert out["causality"] == "zero_phase"
+        assert out["keep_original"] is True
 
     def test_string_sma(self):
         out = normalize_denoise_spec("sma")
@@ -563,6 +565,15 @@ class TestApplyDenoise:
         assert "close_dn" in added
         assert "close_dn" in df.columns
         assert len(df["close_dn"]) == N
+
+    def test_default_spec_preserves_canonical_close(self):
+        df = self._make_df()
+        original_close = df["close"].copy()
+
+        added = _apply_denoise(df, normalize_denoise_spec("ema"))
+
+        assert added == ["close_dn"]
+        pd.testing.assert_series_equal(df["close"], original_close)
 
     def test_ema_overwrite(self):
         df = self._make_df()

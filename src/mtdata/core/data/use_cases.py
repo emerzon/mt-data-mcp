@@ -571,6 +571,7 @@ def _attach_denoise_disclosure(payload: Dict[str, Any]) -> None:
 
     methods: List[str] = []
     overwritten: List[str] = []
+    causalities: List[str] = []
     for app in applications:
         if not isinstance(app, dict):
             continue
@@ -585,6 +586,9 @@ def _attach_denoise_disclosure(payload: Dict[str, Any]) -> None:
         method = str(app.get("method") or "").strip().lower()
         if method and method != "none" and method not in methods:
             methods.append(method)
+        causality = str(app.get("causality") or "").strip().lower()
+        if causality and causality not in causalities:
+            causalities.append(causality)
         if bool(app.get("keep_original")):
             continue
         for column in overwritten_for_app:
@@ -595,12 +599,22 @@ def _attach_denoise_disclosure(payload: Dict[str, Any]) -> None:
     if not methods and not overwritten:
         return
     payload["denoise_applied"] = True
+    payload["denoise_status"] = "applied"
     if methods:
         payload["denoise_method"] = methods[0] if len(methods) == 1 else methods
     if overwritten:
         payload["denoise_overwrote_columns"] = overwritten
         if "close" in overwritten and methods:
             payload["price_column"] = f"close ({methods[0]}-smoothed)"
+            payload["price_is_synthetic"] = True
+    if "zero_phase" in causalities:
+        payload["denoise_live_safe"] = False
+        payload["usable_for_live_trading"] = False
+        payload.setdefault("warnings", []).append(
+            "Zero-phase denoise uses future observations and is not usable for live trading."
+        )
+    elif causalities:
+        payload["denoise_live_safe"] = True
     payload.pop("denoise", None)
 
 

@@ -1207,7 +1207,7 @@ def _apply_pre_ti_denoise(
             normalized,
             default_when='pre_ti',
             default_causality='causal',
-            default_keep_original=False,
+            default_keep_original=True,
             added_columns=added_columns,
             overwritten_columns=overwritten_columns,
         )
@@ -2017,6 +2017,12 @@ def fetch_candles(  # noqa: C901
         # Attach denoise applications metadata if any
         if denoise_apps:
             payload['denoise'] = {'applications': denoise_apps}
+            payload['denoise_status'] = 'applied'
+        elif denoise:
+            payload['denoise_status'] = 'skipped'
+            payload['denoise_applied'] = False
+            if denoise_warnings:
+                payload['denoise_status_reason'] = denoise_warnings[0]
         if denoise_apps or ti_spec:
             denoise_stages = {
                 str(app.get("when") or "").lower()

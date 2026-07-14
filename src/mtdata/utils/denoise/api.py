@@ -69,7 +69,7 @@ _logger = logging.getLogger(__name__)
 _DENOISE_BASE_DEFAULTS = {
     "columns": ["close"],
     "causality": "causal",
-    "keep_original": False,
+    "keep_original": True,
     "suffix": "_dn",
 }
 _DENOISE_SPEC_KEYS = {
@@ -494,6 +494,9 @@ def normalize_denoise_spec(spec: Any, default_when: str = 'pre_ti') -> Optional[
             }
         )
         method = str(out.get('method') or 'none').strip().lower()
+        if "causality" not in spec:
+            supported = _supported_denoise_causality(method)
+            out["causality"] = "causal" if "causal" in supported else supported[0]
         params = deepcopy(_DENOISE_METHOD_DEFAULT_PARAMS.get(method, {}))
         params.update(top_level_params)
         supplied_params = out.get('params')
@@ -516,6 +519,8 @@ def normalize_denoise_spec(spec: Any, default_when: str = 'pre_ti') -> Optional[
     params = deepcopy(_DENOISE_METHOD_DEFAULT_PARAMS.get(method, {}))
     out = dict(base)
     out.update({"method": method, "params": params})
+    supported = _supported_denoise_causality(method)
+    out["causality"] = "causal" if "causal" in supported else supported[0]
     return out
 
 
@@ -572,6 +577,11 @@ def get_denoise_methods_data() -> Dict[str, Any]:
     for method_name in sorted(registry.keys()):
         available, requires = _denoise_availability(method_name)
         default_params = _DENOISE_METHOD_DEFAULT_PARAMS.get(method_name, {})
+        method_defaults = deepcopy(base_defaults)
+        supported_causality = _supported_denoise_causality(method_name)
+        method_defaults["causality"] = (
+            "causal" if "causal" in supported_causality else supported_causality[0]
+        )
         methods.append({
             "method": method_name,
             "available": bool(available),
@@ -584,7 +594,7 @@ def get_denoise_methods_data() -> Dict[str, Any]:
             "supports": {"causality": _supported_denoise_causality(method_name)},
             "supports_causal": "causal" in _supported_denoise_causality(method_name),
             "has_auto_params": any(_has_auto_param(value) for value in default_params.values()),
-            "defaults": base_defaults,
+            "defaults": method_defaults,
         })
 
     return {"success": True, "schema_version": 1, "methods": methods}
