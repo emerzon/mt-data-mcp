@@ -1344,6 +1344,10 @@ def market_status(
             "success": True,
             "mode": "equity_exchanges",
             "market_scope": "major_equity_exchanges",
+            "scope_note": (
+                "This no-symbol view covers major equity exchanges only; pass a "
+                "broker symbol for MT5 tradability and quote-freshness status."
+            ),
             "data_fetched_at": _format_utc_iso_z(now_utc),
             "timezone": "UTC",
             "day_of_week": now_utc.strftime("%A"),

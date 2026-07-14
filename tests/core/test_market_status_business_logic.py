@@ -38,6 +38,7 @@ def test_market_status_timezone_display_utc_converts_market_times(monkeypatch) -
     assert result["success"] is True
     assert result["mode"] == "equity_exchanges"
     assert result["market_scope"] == "major_equity_exchanges"
+    assert "pass a broker symbol" in result["scope_note"].lower()
     assert result["timezone"] == "UTC"
     assert {market["symbol"] for market in result["markets"]} == {"NYSE", "NASDAQ"}
     for market in result["markets"]:
