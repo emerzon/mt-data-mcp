@@ -88,17 +88,6 @@ def test_history_available_on_versioned_route() -> None:
         "has_forming_candle": False,
         "forming_candle_status": "none",
         "forming_candle_included": False,
-        "meta": {
-            "tool": "data_fetch_candles",
-            "runtime": {
-                "timezone": {
-                    "utc": {"tz": "UTC"},
-                    "server": {
-                        "source": "MT5_SERVER_TZ",
-                        "tz": "Europe/Nicosia",
-                        "offset_seconds": 7200,
-                    },
-                }
-            },
-        },
+        "timestamp_format": "iso",
+        "server_utc_offset_seconds": 7200,
     }
