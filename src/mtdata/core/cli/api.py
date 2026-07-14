@@ -5,7 +5,6 @@ Automatically discovers function parameters and creates CLI arguments
 
 import argparse
 import difflib
-import inspect
 import json
 import os
 import sys
@@ -549,80 +548,6 @@ class _CLIArgumentParser(argparse.ArgumentParser):
             _write_cli_text(json.dumps(payload, ensure_ascii=False, indent=2))
             self.exit(2)
         super().error(message)
-
-
-def _safe_argument_parser(*args: Any, **kwargs: Any) -> argparse.ArgumentParser:
-    original_kwargs = dict(kwargs)
-    try:
-        signature = inspect.signature(_CLIArgumentParser)
-        if not any(
-            param.kind == inspect.Parameter.VAR_KEYWORD
-            for param in signature.parameters.values()
-        ):
-            kwargs = {
-                key: value
-                for key, value in kwargs.items()
-                if key in signature.parameters
-            }
-    except Exception:
-        fallback = dict(original_kwargs)
-        fallback.pop("suggest_on_error", None)
-        fallback.pop("color", None)
-        kwargs = fallback
-    try:
-        return _CLIArgumentParser(*args, **kwargs)
-    except TypeError:
-        fallback = dict(kwargs)
-        fallback.pop("suggest_on_error", None)
-        fallback.pop("color", None)
-        if fallback == kwargs:
-            raise
-        return _CLIArgumentParser(*args, **fallback)
-
-
-def _safe_add_subparser(
-    subparsers: Any, name: str, **kwargs: Any
-) -> argparse.ArgumentParser:
-    original_kwargs = dict(kwargs)
-    try:
-        signature = inspect.signature(subparsers.add_parser)
-        if not any(
-            param.kind == inspect.Parameter.VAR_KEYWORD
-            for param in signature.parameters.values()
-        ):
-            kwargs = {
-                key: value
-                for key, value in kwargs.items()
-                if key in signature.parameters
-            }
-    except Exception:
-        fallback = dict(original_kwargs)
-        fallback.pop("suggest_on_error", None)
-        fallback.pop("color", None)
-        kwargs = fallback
-    try:
-        parser_class = getattr(subparsers, "_parser_class", argparse.ArgumentParser)
-        parser_signature = inspect.signature(parser_class)
-        if not any(
-            param.kind == inspect.Parameter.VAR_KEYWORD
-            for param in parser_signature.parameters.values()
-        ):
-            if "suggest_on_error" not in parser_signature.parameters:
-                kwargs.pop("suggest_on_error", None)
-            if "color" not in parser_signature.parameters:
-                kwargs.pop("color", None)
-    except Exception:
-        kwargs.pop("suggest_on_error", None)
-        kwargs.pop("color", None)
-    try:
-        return subparsers.add_parser(name, **kwargs)
-    except TypeError:
-        fallback = dict(kwargs)
-        fallback.pop("suggest_on_error", None)
-        fallback.pop("color", None)
-        if fallback == kwargs:
-            raise
-        return subparsers.add_parser(name, **fallback)
 
 
 def get_function_info(func):
@@ -1614,7 +1539,7 @@ def main():
 
     parser_prog = os.path.basename(str(sys.argv[0] or "")) or CLI_PROGRAM
 
-    parser = _safe_argument_parser(
+    parser = _CLIArgumentParser(
         prog=parser_prog,
         description=(
             "Dynamic CLI for MetaTrader5 MCP tools "
@@ -1664,8 +1589,7 @@ def main():
             continue
 
         # Create subparser
-        cmd_parser = _safe_add_subparser(
-            subparsers,
+        cmd_parser = subparsers.add_parser(
             cmd_name,
             help=(
                 (
@@ -1722,8 +1646,7 @@ def main():
         func = forecast_tool["func"]
         func_info = forecast_tool_info or get_function_info(func)
         meta = forecast_tool.get("meta") or {}
-        cmd_parser = _safe_add_subparser(
-            subparsers,
+        cmd_parser = subparsers.add_parser(
             cmd_name,
             help=(
                 (

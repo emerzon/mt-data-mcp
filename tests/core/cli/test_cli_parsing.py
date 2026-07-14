@@ -72,7 +72,7 @@ def test_dynamic_cli_help_has_no_placeholder_param_text():
 
     load_environment()
     functions = cli_api.discover_tools()
-    parser = cli_api._safe_argument_parser(prog="mtdata-cli")
+    parser = cli_api._CLIArgumentParser(prog="mtdata-cli")
     cli_api.add_global_args_to_parser(parser, exclude_params=["timeframe"])
     parser.add_argument(
         "--timeframe",
@@ -92,7 +92,7 @@ def test_dynamic_cli_help_has_no_placeholder_param_text():
             forecast_tool = (tool, func_info)
             continue
 
-        cmd_parser = cli_api._safe_add_subparser(subparsers, cmd_name)
+        cmd_parser = subparsers.add_parser(cmd_name)
         exclude_globals = [p["name"] for p in func_info["params"]]
         if cmd_name == "report_generate":
             exclude_globals.append("timeframe")
@@ -112,7 +112,7 @@ def test_dynamic_cli_help_has_no_placeholder_param_text():
         command_parsers[cmd_name] = cmd_parser
 
     if forecast_tool is not None:
-        cmd_parser = cli_api._safe_add_subparser(subparsers, "forecast_generate")
+        cmd_parser = subparsers.add_parser("forecast_generate")
         cli_api.add_global_args_to_parser(
             cmd_parser,
             exclude_params=["symbol", "timeframe"],
