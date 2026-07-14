@@ -974,7 +974,8 @@ class TestCreateCommandFunction:
         output = capsys.readouterr().out
         assert "Missing required argument(s): symbol, volume, order_type." in output
         assert "LIVE ORDER WARNING" in output
-        assert "--dry-run true" in output
+        assert "--dry-run false" in output
+        assert "Preview mode is the default" in output
         mock_fn.assert_not_called()
 
     def test_missing_required_literal_argument_shows_valid_values(self, capsys):
