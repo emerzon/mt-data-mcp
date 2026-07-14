@@ -2548,6 +2548,17 @@ def _wait_result_quote_payload(
                 now_epoch=observed_at_utc.timestamp(),
             )
         )
+    bid = _finite_number(payload.get("bid"))
+    ask = _finite_number(payload.get("ask"))
+    if bid is not None and ask is not None:
+        spread_valid = bool(ask > bid)
+        payload["spread_valid"] = spread_valid
+        payload["spread_quality"] = (
+            "two_sided" if spread_valid else "locked_or_one_sided"
+        )
+        payload["quote_usable"] = bool(
+            spread_valid and payload.get("usable_for_live_trading") is True
+        )
     precision = _symbol_price_precision_from_gateway(gateway, symbol=symbol)
     if precision is not None:
         payload["price_precision"] = precision

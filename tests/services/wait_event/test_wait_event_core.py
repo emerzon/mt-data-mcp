@@ -58,6 +58,36 @@ def test_wait_quote_payload_includes_quote_freshness() -> None:
     assert result["data_stale"] is True
     assert result["market_status"] == "closed"
     assert result["usable_for_live_trading"] is False
+    assert result["spread_valid"] is True
+    assert result["quote_usable"] is False
+
+
+def test_wait_quote_payload_marks_locked_quote_unusable() -> None:
+    observed = datetime(2026, 7, 14, 20, tzinfo=timezone.utc)
+    gateway = SequenceGateway(
+        ticks_by_symbol={
+            "EURUSD": [
+                {
+                    "time": observed.timestamp(),
+                    "time_msc": int(observed.timestamp() * 1000),
+                    "bid": 1.14269,
+                    "ask": 1.14269,
+                }
+            ]
+        }
+    )
+
+    result = wait_events_mod._wait_result_quote_payload(
+        request=WaitEventRequest(symbol="EURUSD", max_wait_seconds=2),
+        watch_for_payload=[],
+        market_state=None,
+        gateway=gateway,
+        observed_at_utc=observed,
+    )
+
+    assert result["spread_valid"] is False
+    assert result["spread_quality"] == "locked_or_one_sided"
+    assert result["quote_usable"] is False
 
 
 class OversleepClock(FakeClock):
