@@ -453,8 +453,8 @@ class MT5Config:
         """Return the broker session/calendar offset relative to UTC in seconds.
 
         Positive value means MT5 server time is ahead of UTC (UTC+X).
-        This offset must not be applied to MT5 API request bounds or returned
-        epochs, which already use UTC.
+        The MT5 adapter also uses this offset at its boundary only when it has
+        detected a terminal that exposes server-clock rather than UTC epochs.
 
         When ``at_time`` is provided and ``MT5_SERVER_TZ`` is configured, resolve the
         offset for that specific instant so historical DST transitions are respected.

@@ -1,8 +1,22 @@
 from __future__ import annotations
 
+import sys
+from collections import namedtuple
+from datetime import datetime, timezone
+from types import SimpleNamespace
+from zoneinfo import ZoneInfo
+
 import numpy as np
+import pytest
 
 import mtdata.utils.mt5 as mt5_mod
+
+
+@pytest.fixture(autouse=True)
+def _clear_timestamp_mode_cache() -> None:
+    mt5_mod.clear_mt5_timestamp_mode_cache()
+    yield
+    mt5_mod.clear_mt5_timestamp_mode_cache()
 
 
 def test_describe_mt5_time_normalization_reports_native_utc(monkeypatch) -> None:
@@ -53,3 +67,121 @@ def test_normalize_times_in_struct_preserves_native_utc_epochs(monkeypatch) -> N
 
     assert result is arr
     assert result.tolist() == arr.tolist()
+
+
+def test_adapter_aligns_server_clock_tick_history_to_utc(monkeypatch) -> None:
+    now = datetime(2026, 7, 14, 14, 45, tzinfo=timezone.utc)
+    now_epoch = now.timestamp()
+    Tick = namedtuple("Tick", ["time", "time_msc", "bid", "ask"])
+    raw_tick = Tick(
+        time=int(now_epoch + 3 * 60 * 60),
+        time_msc=int((now_epoch + 3 * 60 * 60) * 1000),
+        bid=397.4,
+        ask=397.5,
+    )
+    Deal = namedtuple("Deal", ["time", "ticket"])
+    raw_deal = Deal(time=int(now_epoch + 3 * 60 * 60), ticket=123)
+    rows = np.array(
+        [(now_epoch + 3 * 60 * 60, 397.4, 397.5)],
+        dtype=[("time", float), ("bid", float), ("ask", float)],
+    )
+    observed_bounds = {}
+
+    def copy_ticks_range(symbol, dt_from, dt_to, flags):
+        observed_bounds["from"] = dt_from
+        observed_bounds["to"] = dt_to
+        return rows
+
+    def history_deals_get(dt_from, dt_to, **kwargs):
+        observed_bounds["deals_from"] = dt_from
+        observed_bounds["deals_to"] = dt_to
+        return (raw_deal,)
+
+    module = SimpleNamespace(
+        symbol_info_tick=lambda symbol: raw_tick,
+        copy_ticks_range=copy_ticks_range,
+        history_deals_get=history_deals_get,
+    )
+    monkeypatch.setitem(sys.modules, "MetaTrader5", module)
+    monkeypatch.setattr(mt5_mod.time, "time", lambda: now_epoch)
+    monkeypatch.setattr(
+        mt5_mod.mt5_config,
+        "get_time_offset_seconds",
+        lambda at_time=None: 3 * 60 * 60,
+    )
+    monkeypatch.setattr(
+        mt5_mod.mt5_config,
+        "get_server_tz",
+        lambda: ZoneInfo("Europe/Nicosia"),
+    )
+    monkeypatch.setattr(mt5_mod.mt5_config, "time_offset_minutes", 0)
+
+    adapter = mt5_mod.MT5Adapter()
+    normalized_tick = adapter.symbol_info_tick("TSLA.NAS-24")
+    result = adapter.copy_ticks_range(
+        "TSLA.NAS-24",
+        now.replace(minute=35),
+        now,
+        0,
+    )
+    deals = adapter.history_deals_get(now_epoch - 60, now_epoch)
+
+    assert observed_bounds["from"] == now.replace(minute=35, hour=17)
+    assert observed_bounds["to"] == now.replace(hour=17)
+    assert float(normalized_tick.time) == now_epoch
+    assert float(normalized_tick.time_msc) == now_epoch * 1000
+    assert float(result[0]["time"]) == now_epoch
+    assert observed_bounds["deals_from"] == now_epoch - 60 + 3 * 60 * 60
+    assert observed_bounds["deals_to"] == now_epoch + 3 * 60 * 60
+    assert float(deals[0].time) == now_epoch
+    assert mt5_mod.get_mt5_timestamp_mode("TSLA.NAS-24") == "server_clock"
+
+
+def test_adapter_keeps_native_utc_terminal_unchanged(monkeypatch) -> None:
+    now = datetime(2026, 7, 14, 14, 45, tzinfo=timezone.utc)
+    now_epoch = now.timestamp()
+    Tick = namedtuple("Tick", ["time", "time_msc", "bid", "ask"])
+    raw_tick = Tick(
+        time=int(now_epoch),
+        time_msc=int(now_epoch * 1000),
+        bid=397.4,
+        ask=397.5,
+    )
+    rows = np.array(
+        [(now_epoch, 397.4, 397.5)],
+        dtype=[("time", float), ("bid", float), ("ask", float)],
+    )
+    observed_bounds = {}
+
+    def copy_ticks_range(symbol, dt_from, dt_to, flags):
+        observed_bounds["to"] = dt_to
+        return rows
+
+    module = SimpleNamespace(
+        symbol_info_tick=lambda symbol: raw_tick,
+        copy_ticks_range=copy_ticks_range,
+    )
+    monkeypatch.setitem(sys.modules, "MetaTrader5", module)
+    monkeypatch.setattr(mt5_mod.time, "time", lambda: now_epoch)
+    monkeypatch.setattr(
+        mt5_mod.mt5_config,
+        "get_time_offset_seconds",
+        lambda at_time=None: 3 * 60 * 60,
+    )
+    monkeypatch.setattr(
+        mt5_mod.mt5_config,
+        "get_server_tz",
+        lambda: ZoneInfo("Europe/Nicosia"),
+    )
+    monkeypatch.setattr(mt5_mod.mt5_config, "time_offset_minutes", 0)
+
+    result = mt5_mod.MT5Adapter().copy_ticks_range(
+        "TSLA.NAS-24",
+        now.replace(minute=35),
+        now,
+        0,
+    )
+
+    assert observed_bounds["to"] == now
+    assert result is rows
+    assert mt5_mod.get_mt5_timestamp_mode("TSLA.NAS-24") == "native_utc"

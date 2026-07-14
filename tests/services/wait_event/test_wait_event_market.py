@@ -324,6 +324,7 @@ def test_run_wait_event_matches_adaptive_price_change() -> None:
             ],
             poll_interval_seconds=0.5,
             max_wait_seconds=5.0,
+            accept_preexisting=True,
         ),
         gateway=gateway,
         sleep_impl=clock.sleep,
@@ -331,9 +332,115 @@ def test_run_wait_event_matches_adaptive_price_change() -> None:
         now_utc_impl=clock.now_utc,
     )
 
-    assert result["status"] == "matched"
+    assert result["status"] == "already_satisfied"
     assert result["matched_event"]["type"] == "price_change"
     assert result["matched_event"]["observed"]["ratio"] > 4.0
+
+
+def test_price_change_does_not_replay_preexisting_match_when_rearmed() -> None:
+    clock = FakeClock(datetime(2026, 3, 15, 12, 0, 0, tzinfo=timezone.utc))
+    base_epoch = int(clock.now_utc().timestamp()) - 26
+    ticks = []
+    mid = 100.0
+    for idx in range(26):
+        mid += 0.01 if idx < 25 else 3.0
+        ticks.append(
+            {
+                "time": base_epoch + idx,
+                "time_msc": (base_epoch + idx) * 1000,
+                "bid": mid - 0.0005,
+                "ask": mid + 0.0005,
+                "last": mid,
+                "volume": 1.0,
+            }
+        )
+    request = WaitEventRequest(
+        watch_for=[
+            {
+                "type": "price_change",
+                "symbol": "EURUSD",
+                "window": {"kind": "ticks", "value": 5},
+                "baseline_window": {"kind": "ticks", "value": 20},
+                "threshold_mode": "ratio_to_baseline",
+                "threshold_value": 4.0,
+            }
+        ],
+        poll_interval_seconds=0.5,
+        max_wait_seconds=0.0,
+        accept_preexisting=False,
+    )
+    gateway = SequenceGateway(ticks_by_symbol={"EURUSD": ticks})
+
+    first = run_wait_event(
+        request,
+        gateway=gateway,
+        sleep_impl=clock.sleep,
+        monotonic_impl=clock.monotonic,
+        now_utc_impl=clock.now_utc,
+    )
+    second = run_wait_event(
+        request,
+        gateway=gateway,
+        sleep_impl=clock.sleep,
+        monotonic_impl=clock.monotonic,
+        now_utc_impl=clock.now_utc,
+    )
+
+    assert first["status"] == "timeout"
+    assert first["matched"] is False
+    assert second["status"] == "timeout"
+    assert second["matched"] is False
+
+
+def test_wait_event_fails_closed_when_history_quote_diverges() -> None:
+    clock = FakeClock(datetime(2026, 3, 15, 12, 0, 0, tzinfo=timezone.utc))
+    base_epoch = int(clock.now_utc().timestamp()) - 2
+    ticks = [
+        {
+            "time": base_epoch + idx,
+            "time_msc": (base_epoch + idx) * 1000,
+            "bid": 100.0,
+            "ask": 100.1,
+            "last": 100.05,
+            "volume": 1.0,
+        }
+        for idx in range(3)
+    ]
+
+    class DivergentGateway(SequenceGateway):
+        def symbol_info_tick(self, symbol):
+            return SimpleNamespace(
+                time=int(clock.now_utc().timestamp()),
+                bid=103.0,
+                ask=103.1,
+            )
+
+        def symbol_info(self, symbol):
+            return SimpleNamespace(point=0.01, trade_tick_size=0.01)
+
+    result = run_wait_event(
+        WaitEventRequest(
+            watch_for=[
+                {
+                    "type": "price_change",
+                    "symbol": "EURUSD",
+                    "window": {"kind": "ticks", "value": 1},
+                    "baseline_window": {"kind": "ticks", "value": 2},
+                    "threshold_mode": "fixed_pct",
+                    "threshold_value": 10.0,
+                }
+            ],
+            poll_interval_seconds=0.5,
+            max_wait_seconds=0.0,
+        ),
+        gateway=DivergentGateway(ticks_by_symbol={"EURUSD": ticks}),
+        sleep_impl=clock.sleep,
+        monotonic_impl=clock.monotonic,
+        now_utc_impl=clock.now_utc,
+    )
+
+    assert result["error_code"] == "WAIT_EVENT_QUOTE_DIVERGENCE"
+    assert result["diagnostics"]["difference"] == pytest.approx(3.0)
 
 def test_run_wait_event_matches_volume_spike() -> None:
     clock = FakeClock(datetime(2026, 3, 15, 12, 0, 0, tzinfo=timezone.utc))
@@ -368,6 +475,7 @@ def test_run_wait_event_matches_volume_spike() -> None:
             ],
             poll_interval_seconds=0.5,
             max_wait_seconds=5.0,
+            accept_preexisting=True,
         ),
         gateway=gateway,
         sleep_impl=clock.sleep,
@@ -375,7 +483,7 @@ def test_run_wait_event_matches_volume_spike() -> None:
         now_utc_impl=clock.now_utc,
     )
 
-    assert result["status"] == "matched"
+    assert result["status"] == "already_satisfied"
     assert result["matched_event"]["type"] == "volume_spike"
     assert result["matched_event"]["observed"]["ratio"] > 4.0
 
@@ -422,6 +530,7 @@ def test_run_wait_event_matches_tick_count_spike() -> None:
             ],
             poll_interval_seconds=0.5,
             max_wait_seconds=5.0,
+            accept_preexisting=True,
         ),
         gateway=gateway,
         sleep_impl=clock.sleep,
@@ -429,7 +538,7 @@ def test_run_wait_event_matches_tick_count_spike() -> None:
         now_utc_impl=clock.now_utc,
     )
 
-    assert result["status"] == "matched"
+    assert result["status"] == "already_satisfied"
     assert result["matched_event"]["type"] == "tick_count_spike"
     assert result["matched_event"]["observed"]["volume_source"] == "tick_count"
     assert result["matched_event"]["observed"]["ratio"] > 2.0
@@ -466,6 +575,7 @@ def test_run_wait_event_matches_spread_spike() -> None:
             ],
             poll_interval_seconds=0.5,
             max_wait_seconds=5.0,
+            accept_preexisting=True,
         ),
         gateway=gateway,
         sleep_impl=clock.sleep,
@@ -473,7 +583,7 @@ def test_run_wait_event_matches_spread_spike() -> None:
         now_utc_impl=clock.now_utc,
     )
 
-    assert result["status"] == "matched"
+    assert result["status"] == "already_satisfied"
     assert result["matched_event"]["type"] == "spread_spike"
     assert result["matched_event"]["observed"]["ratio"] > 4.0
 
@@ -516,6 +626,7 @@ def test_run_wait_event_matches_tick_count_drought() -> None:
             ],
             poll_interval_seconds=0.5,
             max_wait_seconds=5.0,
+            accept_preexisting=True,
         ),
         gateway=gateway,
         sleep_impl=clock.sleep,
@@ -523,7 +634,7 @@ def test_run_wait_event_matches_tick_count_drought() -> None:
         now_utc_impl=clock.now_utc,
     )
 
-    assert result["status"] == "matched"
+    assert result["status"] == "already_satisfied"
     assert result["matched_event"]["type"] == "tick_count_drought"
     assert result["matched_event"]["observed"]["ratio"] <= 0.5
 
@@ -591,6 +702,7 @@ def test_run_wait_event_matches_range_expansion() -> None:
             ],
             poll_interval_seconds=0.5,
             max_wait_seconds=5.0,
+            accept_preexisting=True,
         ),
         gateway=gateway,
         sleep_impl=clock.sleep,
@@ -598,7 +710,7 @@ def test_run_wait_event_matches_range_expansion() -> None:
         now_utc_impl=clock.now_utc,
     )
 
-    assert result["status"] == "matched"
+    assert result["status"] == "already_satisfied"
     assert result["matched_event"]["type"] == "range_expansion"
     assert result["matched_event"]["observed"]["ratio"] > 5.0
 

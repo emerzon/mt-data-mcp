@@ -17,6 +17,7 @@ FRESHNESS_ANCHOR_WALL_CLOCK = "wall_clock"
 FRESHNESS_METRIC_LAST_COMPLETED_BAR_AGE = "last_completed_bar_age_seconds"
 FRESHNESS_METRIC_LAST_TICK_AGE = "last_tick_age_seconds"
 FRESHNESS_METRIC_REQUESTED_RANGE_END_GAP = "requested_range_end_gap_seconds"
+TICK_FUTURE_TOLERANCE_SECONDS = 5.0
 
 
 def attach_candle_volume_semantics(payload: Dict[str, Any]) -> None:
@@ -71,7 +72,10 @@ def build_tick_freshness_context(
     if not math.isfinite(current_epoch) or not math.isfinite(latest_tick_epoch):
         return {}
 
-    age_seconds = max(0.0, current_epoch - latest_tick_epoch)
+    signed_age_seconds = current_epoch - latest_tick_epoch
+    age_seconds = max(0.0, signed_age_seconds)
+    future_skew_seconds = max(0.0, -signed_age_seconds)
+    timestamp_in_future = future_skew_seconds > TICK_FUTURE_TOLERANCE_SECONDS
     try:
         threshold = max(0.0, float(stale_after_seconds))
     except Exception:
@@ -83,7 +87,7 @@ def build_tick_freshness_context(
         item=item,
         data_age_seconds=age_seconds,
     )
-    data_stale = age_seconds > threshold
+    data_stale = age_seconds > threshold or timestamp_in_future
 
     rounded_age = age_rounder(age_seconds) if age_rounder is not None else round(age_seconds, 3)
     stale_after: int | float
@@ -99,6 +103,13 @@ def build_tick_freshness_context(
         "stale_after_seconds": stale_after,
         "data_stale": data_stale,
     }
+    if timestamp_in_future:
+        out["timestamp_in_future"] = True
+        out["timestamp_skew_seconds"] = round(future_skew_seconds, 3)
+        out["timestamp_warning"] = (
+            "Latest tick timestamp is ahead of the wall clock; the quote is not "
+            "safe for live decisions until MT5 time alignment is corrected."
+        )
     if closed_session:
         out.update(closed_session)
     out["freshness_basis"] = f"absolute_{stale_after}s"

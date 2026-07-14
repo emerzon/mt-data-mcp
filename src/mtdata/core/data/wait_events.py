@@ -63,6 +63,14 @@ _MARKET_EVENT_TYPES = {
     "pending_near_fill",
     "stop_threat",
 }
+_MARKET_METRIC_EVENT_TYPES = {
+    "price_change",
+    "volume_spike",
+    "tick_count_spike",
+    "spread_spike",
+    "tick_count_drought",
+    "range_expansion",
+}
 
 
 def _wait_event_connection_error(gateway: Any) -> Optional[Dict[str, Any]]:
@@ -142,6 +150,12 @@ def run_wait_event_loop(
     )
     if isinstance(market_state, dict) and "error" in market_state:
         return market_state
+    if not request.accept_preexisting:
+        _prime_market_metric_latches(
+            watch_for=watch_for,
+            market_state=market_state,
+            gateway=gateway,
+        )
     if request.accept_preexisting:
         preexisting_match = _find_preexisting_match(
             watch_for=watch_for,
@@ -940,6 +954,14 @@ def _collect_snapshot(
         )
         if isinstance(refreshed, dict) and "error" in refreshed:
             return refreshed
+        alignment_error = _market_quote_alignment_error(
+            gateway=gateway,
+            market_state=refreshed,
+            market_specs=market_specs,
+            observed_at_utc=observed_at_utc,
+        )
+        if alignment_error is not None:
+            return alignment_error
         market_data: Dict[str, Any] = {}
         for symbol in _market_symbols(market_specs):
             state = refreshed.get(symbol) or {}
@@ -1697,53 +1719,79 @@ def _evaluate_market_event(
     event_start_utc: Optional[datetime] = None,
 ) -> Optional[Dict[str, Any]]:
     event_type = str(spec.get("type") or "")
+    match: Optional[Dict[str, Any]] = None
     if event_type == "price_change":
-        return _evaluate_price_change(spec, market_data)
-    if event_type in {"volume_spike", "tick_count_spike"}:
-        return _evaluate_volume_spike(spec, market_data)
-    if event_type == "spread_spike":
-        return _evaluate_spread_spike(spec, market_data)
-    if event_type == "tick_count_drought":
-        return _evaluate_tick_count_drought(spec, market_data)
-    if event_type == "range_expansion":
-        return _evaluate_range_expansion(spec, market_data)
-    if event_type == "price_touch_level":
-        return _evaluate_price_touch_level(
+        match = _evaluate_price_change(spec, market_data)
+    elif event_type in {"volume_spike", "tick_count_spike"}:
+        match = _evaluate_volume_spike(spec, market_data)
+    elif event_type == "spread_spike":
+        match = _evaluate_spread_spike(spec, market_data)
+    elif event_type == "tick_count_drought":
+        match = _evaluate_tick_count_drought(spec, market_data)
+    elif event_type == "range_expansion":
+        match = _evaluate_range_expansion(spec, market_data)
+    elif event_type == "price_touch_level":
+        match = _evaluate_price_touch_level(
             spec,
             market_data,
             event_start_utc=event_start_utc,
         )
-    if event_type == "price_break_level":
-        return _evaluate_price_break_level(
+    elif event_type == "price_break_level":
+        match = _evaluate_price_break_level(
             spec,
             market_data,
             event_start_utc=event_start_utc,
         )
-    if event_type == "price_enter_zone":
-        return _evaluate_price_enter_zone(
+    elif event_type == "price_enter_zone":
+        match = _evaluate_price_enter_zone(
             spec,
             market_data,
             event_start_utc=event_start_utc,
         )
-    if event_type == "pending_near_fill":
+    elif event_type == "pending_near_fill":
         if live_state_cutoff_utc is not None:
             return None
-        return _evaluate_pending_near_fill(
+        match = _evaluate_pending_near_fill(
             spec,
             snapshot.get("orders", []),
             market_data,
             gateway=gateway,
         )
-    if event_type == "stop_threat":
+    elif event_type == "stop_threat":
         if live_state_cutoff_utc is not None:
             return None
-        return _evaluate_stop_threat(
+        match = _evaluate_stop_threat(
             spec,
             snapshot.get("positions", []),
             market_data,
             gateway=gateway,
         )
-    return None
+    if event_type in _MARKET_METRIC_EVENT_TYPES and event_start_utc is not None:
+        if bool(spec.get("_preexisting_match_latched")):
+            if match is None:
+                spec["_preexisting_match_latched"] = False
+            return None
+    return match
+
+
+def _prime_market_metric_latches(
+    *,
+    watch_for: List[Dict[str, Any]],
+    market_state: Dict[str, Any],
+    gateway: Any,
+) -> None:
+    """Suppress already-satisfied rolling metrics until they clear once."""
+    for spec in watch_for:
+        event_type = str(spec.get("type") or "")
+        if event_type not in _MARKET_METRIC_EVENT_TYPES:
+            continue
+        match = _evaluate_market_event(
+            spec,
+            (market_state or {}).get(spec.get("symbol")),
+            snapshot={"baseline": {}},
+            gateway=gateway,
+        )
+        spec["_preexisting_match_latched"] = match is not None
 
 
 def _evaluate_price_change(spec: Dict[str, Any], market_data: Any) -> Optional[Dict[str, Any]]:
@@ -2546,6 +2594,88 @@ def _latest_quote_row_from_gateway(gateway: Any, *, symbol: str) -> Any:
         return gateway.symbol_info_tick(symbol)
     except Exception:
         return None
+
+
+def _quote_mid_from_row(row: Any) -> Optional[float]:
+    bid = _finite_number(_row_value(row, "bid"))
+    ask = _finite_number(_row_value(row, "ask"))
+    if bid is not None and ask is not None:
+        return (bid + ask) / 2.0
+    return bid if bid is not None else ask
+
+
+def _quote_alignment_tolerance(
+    *,
+    history_row: Any,
+    live_row: Any,
+    symbol_info: Any,
+) -> float:
+    candidates: List[float] = []
+    for row in (history_row, live_row):
+        bid = _finite_number(_row_value(row, "bid"))
+        ask = _finite_number(_row_value(row, "ask"))
+        if bid is not None and ask is not None and ask >= bid:
+            candidates.append((ask - bid) * 12.0)
+    for attr, multiplier in (("trade_tick_size", 10.0), ("point", 20.0)):
+        try:
+            value = float(getattr(symbol_info, attr, 0.0) or 0.0)
+        except Exception:
+            value = 0.0
+        if math.isfinite(value) and value > 0.0:
+            candidates.append(value * multiplier)
+    return max(candidates or [1e-8])
+
+
+def _market_quote_alignment_error(
+    *,
+    gateway: Any,
+    market_state: Dict[str, Any],
+    market_specs: List[Dict[str, Any]],
+    observed_at_utc: datetime,
+) -> Optional[Dict[str, Any]]:
+    """Fail closed when history ticks diverge from the executable quote."""
+    for symbol in _market_symbols(market_specs):
+        history_row = _latest_quote_row_from_market_state(
+            market_state,
+            symbol=symbol,
+        )
+        live_row = _latest_quote_row_from_gateway(gateway, symbol=symbol)
+        history_mid = _quote_mid_from_row(history_row)
+        live_mid = _quote_mid_from_row(live_row)
+        if history_mid is None or live_mid is None:
+            continue
+        try:
+            symbol_info = gateway.symbol_info(symbol)
+        except Exception:
+            symbol_info = None
+        tolerance = _quote_alignment_tolerance(
+            history_row=history_row,
+            live_row=live_row,
+            symbol_info=symbol_info,
+        )
+        difference = abs(history_mid - live_mid)
+        if difference <= tolerance:
+            continue
+        history_epoch = _finite_number(_row_value(history_row, "epoch"))
+        live_epoch = _finite_number(_row_value(live_row, "time"))
+        return {
+            "error": (
+                f"Wait-event tick history for {symbol} diverges from the executable "
+                f"quote by {difference:g}, above the {tolerance:g} alignment tolerance."
+            ),
+            "error_code": "WAIT_EVENT_QUOTE_DIVERGENCE",
+            "diagnostics": {
+                "symbol": symbol,
+                "history_mid": history_mid,
+                "live_mid": live_mid,
+                "difference": difference,
+                "tolerance": tolerance,
+                "history_tick_epoch": history_epoch,
+                "live_tick_epoch": live_epoch,
+                "observed_at_utc": observed_at_utc.isoformat(),
+            },
+        }
+    return None
 
 
 def _quote_payload_from_row(row: Any) -> Dict[str, Any]:

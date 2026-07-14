@@ -1579,7 +1579,7 @@ def fetch_candles(  # noqa: C901
                 diagnostics=rate_fetch_diagnostics,
             )
             freshness_diagnostics = rate_fetch_diagnostics.get("freshness")
-            time_normalization = describe_mt5_time_normalization()
+            time_normalization = describe_mt5_time_normalization(symbol=symbol)
             if rates_error:
                 error_payload: Dict[str, Any] = {"error": rates_error}
                 if isinstance(freshness_diagnostics, dict):
@@ -2474,7 +2474,7 @@ def fetch_ticks(  # noqa: C901
                 if price_point is not None
                 else None
             )
-            time_normalization = describe_mt5_time_normalization()
+            time_normalization = describe_mt5_time_normalization(symbol=symbol)
 
             # Normalized params only. This is an output shape selector, not the
             # shared compact/full detail enum.
@@ -2620,7 +2620,7 @@ def fetch_ticks(  # noqa: C901
         headers.extend(["last", "volume", "volume_real", "flags", "flags_decoded"])
 
         # Choose a consistent millisecond time format for tick rows.
-        # Low-level tick fetch helpers preserve MT5's native UTC epochs.
+        # Low-level tick fetch helpers have already normalized epochs to UTC.
         client_tz = _resolve_client_tz()
         _use_ctz = client_tz is not None
 

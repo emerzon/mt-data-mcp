@@ -19,6 +19,7 @@ from ..utils.market_metadata import (
 )
 from ..utils.mt5 import (
     MT5ConnectionError,
+    describe_mt5_time_normalization,
     ensure_mt5_connection_or_raise,
     mt5,
     resolve_broker_symbol_name,
@@ -78,6 +79,15 @@ def _market_ticker_freshness_label(payload: Dict[str, Any]) -> Optional[str]:
         age_seconds=payload.get("data_age_seconds"),
         age_text=payload.get("data_age"),
         item="tick",
+    )
+
+
+def _market_ticker_stale_warning(payload: Dict[str, Any], tick_time: Any) -> str:
+    if payload.get("timestamp_in_future"):
+        return str(payload.get("timestamp_warning"))
+    return (
+        "Tick data may be stale; last tick time is "
+        f"{payload.get('time_display') or tick_time}."
     )
 
 
@@ -512,7 +522,7 @@ else:
 
 
 @mcp.tool()
-def market_ticker(
+def market_ticker(  # noqa: C901
     symbol: str,
     detail: DetailLiteral = "compact",
     price_field: Optional[Literal["bid", "ask", "mid", "last", "spread"]] = None,
@@ -525,7 +535,7 @@ def market_ticker(
     """
     detail_mode = normalize_output_verbosity_detail(detail, default="compact")
 
-    def _run() -> Dict[str, Any]:
+    def _run() -> Dict[str, Any]:  # noqa: C901
         def _finalize(payload: Dict[str, Any]) -> Dict[str, Any]:
             return ensure_common_meta(payload, tool_name="market_ticker")
 
@@ -680,6 +690,10 @@ def market_ticker(
                     "spread_cost_per_lot": "currency_per_lot_estimate",
                 },
             }
+            time_normalization = describe_mt5_time_normalization(
+                symbol=resolved_symbol
+            )
+            out.update(time_normalization)
             if contract_size is not None:
                 out["contract_size"] = _round_market_ticker_value(contract_size, digits=6)
                 out["lot_definition"] = "1 broker lot equals contract_size contract units."
@@ -727,16 +741,15 @@ def market_ticker(
                 if age_display is not None:
                     out["data_age"] = age_display
                 if out["data_stale"]:
-                    out["warning"] = (
-                        "Tick data may be stale; last tick time is "
-                        f"{out.get('time_display') or tick_time}."
-                    )
+                    out["warning"] = _market_ticker_stale_warning(out, tick_time)
             diagnostics = {
                 "source": "mt5.symbol_info_tick",
                 "cache_used": False,
                 "data_freshness_seconds": _market_ticker_age_seconds(age_seconds),
                 "data_freshness_anchor": FRESHNESS_ANCHOR_WALL_CLOCK,
                 "data_freshness_metric": FRESHNESS_METRIC_LAST_TICK_AGE,
+                "timestamp_mode": time_normalization.get("timestamp_mode"),
+                "time_normalization": time_normalization.get("time_normalization"),
                 "query_latency_ms": round((time.perf_counter() - started) * 1000.0, 3),
             }
             meta = out.get("meta")
