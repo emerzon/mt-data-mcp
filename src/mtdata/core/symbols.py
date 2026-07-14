@@ -209,8 +209,6 @@ _SYMBOL_DESCRIBE_COMPACT_DIRECT_FIELDS: tuple[str, ...] = (
     "trade_contract_size",
     "trade_tick_size",
     "trade_tick_value",
-    "margin_initial",
-    "margin_maintenance",
     "trade_stops_level",
     "trade_freeze_level",
     "volume_min",
@@ -685,6 +683,20 @@ def _compact_symbol_describe_payload(symbol_data: Dict[str, Any]) -> Dict[str, A
     compact: Dict[str, Any] = {}
     for field in _SYMBOL_DESCRIBE_COMPACT_DIRECT_FIELDS:
         _copy_symbol_describe_field(compact, symbol_data, field)
+
+    raw_margin_fields = {
+        "margin_initial": "broker_margin_initial_raw",
+        "margin_maintenance": "broker_margin_maintenance_raw",
+    }
+    for source, target in raw_margin_fields.items():
+        if source in symbol_data:
+            compact[target] = symbol_data[source]
+    if any(target in compact for target in raw_margin_fields.values()):
+        compact["margin_fields_note"] = (
+            "Raw broker symbol template values, not cash required for an order. "
+            "Actual margin depends on account leverage and instrument rules; use "
+            "trade_place dry-run for an order-specific margin estimate."
+        )
 
     _apply_symbol_currency_diagnostics(compact)
 

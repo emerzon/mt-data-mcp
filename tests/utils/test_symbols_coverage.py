@@ -1098,8 +1098,11 @@ class TestSymbolsDescribe:
         assert sd["trade_contract_size"] == 100000.0
         assert sd["trade_tick_size"] == 0.00001
         assert sd["trade_tick_value"] == 1.0
-        assert sd["margin_initial"] == 1000.0
-        assert sd["margin_maintenance"] == 500.0
+        assert "margin_initial" not in sd
+        assert "margin_maintenance" not in sd
+        assert sd["broker_margin_initial_raw"] == 1000.0
+        assert sd["broker_margin_maintenance_raw"] == 500.0
+        assert "trade_place dry-run" in sd["margin_fields_note"]
         assert sd["volume_min"] == 0.01
         assert sd["volume_max"] == 100.0
         assert sd["volume_step"] == 0.01
