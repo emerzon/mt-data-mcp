@@ -603,6 +603,9 @@ def _annotate_forecast_generate_quality(payload: Dict[str, Any]) -> Dict[str, An
     if path_flatness:
         out.update(path_flatness)
         out.setdefault("point_forecast_mode", "flat_anchor")
+        out["forecast_status"] = "non_informative"
+        out["signal_status"] = "not_actionable"
+        out["usable_for_live_trading"] = False
         _append_forecast_warning(out, _FORECAST_FLAT_PATH_WARNING)
     return out
 
