@@ -285,7 +285,8 @@ def _model_store_state_payload(
     if detail == "full":
         payload.update(
             {
-                "model_stored": file_count > 0,
+                "model_stored": status == "present",
+                "artifact_state": status,
                 "model_store_path": info.get("model_dir"),
                 "model_store_file_count": file_count,
             }

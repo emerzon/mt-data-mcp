@@ -116,6 +116,27 @@ class TestForecastTaskStatus:
         assert "model_store_path" not in result
         assert "result" not in result
 
+    def test_expired_model_is_not_reported_as_stored(self, monkeypatch):
+        from src.mtdata.core import forecast_tasks
+
+        handle = SimpleNamespace(model_id="m/expired")
+        store = SimpleNamespace(
+            describe_model=lambda _handle: {
+                "file_count": 2,
+                "expired": True,
+                "model_dir": "expired/path",
+                "ttl_seconds": 604800,
+            }
+        )
+        monkeypatch.setattr(forecast_tasks, "_get_model_store", lambda: store)
+
+        result = forecast_tasks._model_store_state_payload(handle, detail="full")
+
+        assert result["model_store_status"] == "expired"
+        assert result["artifact_state"] == "expired"
+        assert result["model_stored"] is False
+        assert result["model_store_path"] == "expired/path"
+
     def test_full_detail_includes_result_metadata(self):
         from src.mtdata.core.forecast_tasks import forecast_task_status
 
