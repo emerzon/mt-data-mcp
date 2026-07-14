@@ -105,13 +105,14 @@ Fetch OHLCV candles for a symbol.
   - `ohlcv` (string): Column selector (default "ohlc").
   - `include_spread` (bool): Append the historical candle `spread` field without changing the default row shape.
   - `include_incomplete` (bool): Include the latest forming candle.
-  - `timestamp_format` (`epoch` | `iso`): Timestamp encoding for returned rows. Default `epoch`; use `iso` to match the data tool's default.
+  - `timestamp_format` (`epoch` | `iso`): Timestamp encoding for returned rows. Default `iso`; explicit epoch responses identify the unit as `unix_seconds_utc`.
+  - `extras` (`metadata`, optional): Include full diagnostics and runtime metadata. Compact responses omit the diagnostic `meta` tree.
   - `denoise_method` (string, optional): Apply denoising (e.g., "ema").
   - `denoise_params` (string, optional): JSON or "k=v" params for denoising.
 - **Response Notes:**
-  - Both `/api/history` and `/api/v1/history` include modern runtime timezone
-    metadata under `meta.runtime.timezone` (`utc`, `server`, and `client` when
-    configured). The legacy `used` timezone compatibility field is not emitted.
+  - Compact responses expose `server_utc_offset_seconds` when available.
+    `extras=metadata` includes the full runtime timezone tree under
+    `meta.runtime.timezone`. The legacy `used` compatibility field is not emitted.
 
 #### `GET /api/tick`
 Get the latest quote using the same compact schema as `market_ticker`, including

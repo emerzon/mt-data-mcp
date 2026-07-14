@@ -735,15 +735,9 @@ class TestGetHistory:
         assert "last_candle_open" not in res
         assert "count" not in res
         assert "candles" not in res
-        assert res["meta"]["tool"] == "data_fetch_candles"
-        assert res["meta"]["runtime"]["timezone"] == {
-            "utc": {"tz": "UTC"},
-            "server": {
-                "source": "MT5_SERVER_TZ",
-                "tz": "Europe/Nicosia",
-                "offset_seconds": 0,
-            },
-        }
+        assert "meta" not in res
+        assert res["timestamp_format"] == "iso"
+        assert res["server_utc_offset_seconds"] == 0
 
     def test_v1_history_uses_modern_runtime_timezone_meta(self):
         payload = {"data": [{"time": 1.0, "close": 1.1}], "has_forming_candle": False}
@@ -755,7 +749,10 @@ class TestGetHistory:
             mock_cfg.get_server_tz.return_value = ZoneInfo("Europe/Nicosia")
             mock_cfg.get_client_tz.return_value = None
             mock_cfg.get_time_offset_seconds.return_value = 0
-            resp = _client.get("/api/v1/history", params={"symbol": "EURUSD"})
+            resp = _client.get(
+                "/api/v1/history",
+                params={"symbol": "EURUSD", "extras": "metadata"},
+            )
         res = resp.json()
         assert res["data"] == [{"time": 1.0, "close": 1.1}]
         assert "last_candle_open" not in res

@@ -7,10 +7,10 @@ from unittest.mock import MagicMock, patch
 from mtdata.core import web_api
 
 
-def test_history_timestamp_format_defaults_to_epoch() -> None:
+def test_history_timestamp_format_defaults_to_iso() -> None:
     parameter = inspect.signature(web_api.get_history).parameters["timestamp_format"]
 
-    assert parameter.default.default == "epoch"
+    assert parameter.default == "iso"
 
 
 def test_history_uses_start_end_ohlcv_and_preserves_canonical_forming_candle() -> None:
@@ -51,7 +51,7 @@ def test_history_uses_start_end_ohlcv_and_preserves_canonical_forming_candle() -
     assert kwargs["end"] == "2025-01-01 03:00"
     assert kwargs["ohlcv"] == "close"
     assert kwargs["include_incomplete"] is False
-    assert kwargs["time_as_epoch"] is True
+    assert kwargs["time_as_epoch"] is False
     assert all(isinstance(row["time"], (int, float)) for row in res["data"])
 
 
@@ -105,3 +105,24 @@ def test_history_accepts_iso_timestamp_format() -> None:
     assert res["data"][0]["time"] == "2025-01-01T00:00:00Z"
     kwargs = mock_fetch.call_args.kwargs
     assert kwargs["time_as_epoch"] is False
+
+
+def test_history_labels_explicit_epoch_timestamps_as_utc_seconds() -> None:
+    payload = {
+        "success": True,
+        "data": [{"time": 1735689600.0, "close": 1.1}],
+    }
+    with patch.object(web_api.mt5_connection, "_ensure_connection", return_value=True), patch(
+        "mtdata.core.web_api._fetch_candles_impl",
+        return_value=payload,
+    ) as mock_fetch:
+        res = web_api.get_history(
+            symbol="EURUSD",
+            timeframe="H1",
+            limit=1,
+            timestamp_format="epoch",
+        )
+
+    assert res["timestamp_format"] == "epoch"
+    assert res["timestamp_unit"] == "unix_seconds_utc"
+    assert mock_fetch.call_args.kwargs["time_as_epoch"] is True

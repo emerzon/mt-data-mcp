@@ -408,6 +408,7 @@ def get_history_response(  # noqa: C901
     allow_stale: bool,
     indicators: Optional[str],
     timestamp_format: str,
+    extras: Any,
     denoise_method: Optional[str],
     denoise_params: Optional[str],
     fetch_candles_impl: Callable[..., Any],
@@ -565,11 +566,25 @@ def get_history_response(  # noqa: C901
     if result.get("error"):
         raise _http_error(400, str(result["error"]), code="history_tool_error", operation="get_history")
 
-    return ensure_common_meta(
+    payload = ensure_common_meta(
         result,
         tool_name="data_fetch_candles",
         mt5_config=mt5_config,
     )
+    timestamp_mode = str(timestamp_format).strip().lower()
+    payload["timestamp_format"] = timestamp_mode
+    if timestamp_mode == "epoch":
+        payload["timestamp_unit"] = "unix_seconds_utc"
+    if _shape_detail_from_extras(extras) == "compact":
+        meta = payload.get("meta")
+        if isinstance(meta, dict):
+            runtime = meta.get("runtime")
+            timezone_meta = runtime.get("timezone") if isinstance(runtime, dict) else None
+            server_meta = timezone_meta.get("server") if isinstance(timezone_meta, dict) else None
+            if isinstance(server_meta, dict) and server_meta.get("offset_seconds") is not None:
+                payload["server_utc_offset_seconds"] = server_meta["offset_seconds"]
+        payload.pop("meta", None)
+    return payload
 
 
 def get_pivots_response(

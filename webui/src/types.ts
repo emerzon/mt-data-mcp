@@ -48,6 +48,7 @@ export type HistoryResponse = {
   forming_candle_included?: boolean
   forming_candle_skipped?: boolean
   incomplete_candles_skipped?: number
+  server_utc_offset_seconds?: number
   meta?: {
     runtime?: {
       timezone?: RuntimeTimezoneMeta

@@ -348,10 +348,8 @@ def get_history(
         None,
         description="Indicator specification forwarded to data_fetch_candles.",
     ),
-    timestamp_format: Literal["epoch", "iso"] = Query(
-        "epoch",
-        description="Timestamp encoding for returned candle rows.",
-    ),
+    timestamp_format: Literal["epoch", "iso"] = "iso",
+    extras: Optional[str] = None,
     denoise_method: Optional[str] = Query(None, description="Denoise method name; if set, returns extra *_dn columns."),
     denoise_params: Optional[str] = Query(None, description="JSON or k=v list of denoise params."),
 ) -> Dict[str, Any]:
@@ -367,6 +365,7 @@ def get_history(
         allow_stale=allow_stale,
         indicators=indicators,
         timestamp_format=timestamp_format,
+        extras=extras,
         denoise_method=denoise_method,
         denoise_params=denoise_params,
         fetch_candles_impl=_fetch_candles_impl,
