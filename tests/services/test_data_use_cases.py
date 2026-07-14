@@ -1282,11 +1282,8 @@ def test_run_data_fetch_ticks_compact_prunes_row_diagnostics():
             {
                 "time": "2026-05-29 20:56",
                 "bid": 1.1659,
-                "ask": 1.16596,
-                "spread": 0.00006,
-                "mid": 1.16593,
-                "spread_points": 6.0,
-                "spread_pct": 0.005146,
+                "ask": None,
+                "spread": None,
                 "volume": 3.0,
                 "volume_real": 1.25,
                 "flags": 1026,

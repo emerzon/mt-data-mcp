@@ -1229,6 +1229,11 @@ def _compact_tick_row(
                 "bid_only_update" if bid_updated else "ask_only_update"
             )
             compact["spread_valid"] = False
+            compact["ask" if bid_updated else "bid"] = None
+            compact["spread"] = None
+            for field in ("mid", "mid_inferred", "spread_points", "spread_pct"):
+                compact.pop(field, None)
+            numeric_spread = None
         elif bid_updated and ask_updated:
             compact["quote_update_type"] = "bid_ask_update"
             compact["spread_valid"] = True
