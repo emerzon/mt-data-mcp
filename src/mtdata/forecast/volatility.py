@@ -443,13 +443,13 @@ def _ewma_param_explanations(lambda_source: str) -> Dict[str, str]:
 
 
 def _annualize_horizon_sigma(
-    horizon_sigma_return: float,
+    horizon_volatility: float,
     bars_per_year: float,
     horizon: int,
 ) -> float:
     """Express the horizon-scaled sigma on the annualized return scale."""
     horizon_bars = max(1, int(horizon))
-    return float(horizon_sigma_return * math.sqrt(bars_per_year / horizon_bars))
+    return float(horizon_volatility * math.sqrt(bars_per_year / horizon_bars))
 
 
 def _volatility_annualization_context(symbol: str, timeframe: str) -> tuple[float, str]:
@@ -611,23 +611,12 @@ def _finalize_volatility_output(
     *,
     detail: str = "full",
 ) -> Dict[str, Any]:
-    """Add trader-friendly volatility aliases and explanatory metadata."""
+    """Add explanatory metadata to canonical volatility output."""
     if not isinstance(payload, dict) or not payload.get("success"):
         return payload
 
     out = dict(payload)
     detail_mode = str(detail or "compact").strip().lower()
-    # One-way migration for residual legacy keys; emit trader keys only.
-    for legacy_key, trader_key in (
-        ("sigma_bar_return", "volatility_per_bar"),
-        ("sigma_annual_return", "volatility_annualized"),
-        ("horizon_sigma_return", "volatility_horizon"),
-        ("horizon_sigma_annual", "volatility_horizon_annualized"),
-    ):
-        legacy_value = out.get(legacy_key)
-        if out.get(trader_key) is None and legacy_value is not None:
-            out[trader_key] = legacy_value
-        out.pop(legacy_key, None)
     out.setdefault("volatility_unit", "return_fraction")
     out.setdefault("volatility_measure", "standard_deviation_of_returns")
     out.setdefault(
@@ -995,19 +984,19 @@ def forecast_volatility(  # noqa: C901
                 return float(np.mean(values))
 
             bpy = annualization_bars_per_year
-            sigma_bar_return = _aggregate_metric('volatility_per_bar')
-            horizon_sigma_return = _aggregate_metric('volatility_horizon')
+            volatility_per_bar = _aggregate_metric('volatility_per_bar')
+            volatility_horizon = _aggregate_metric('volatility_horizon')
             out: Dict[str, Any] = {
                 "success": True,
                 "symbol": symbol,
                 "timeframe": timeframe,
                 "method": "ensemble",
                 "horizon": int(horizon),
-                "volatility_per_bar": sigma_bar_return,
-                "volatility_annualized": float(sigma_bar_return * math.sqrt(bpy)),
-                "volatility_horizon": horizon_sigma_return,
+                "volatility_per_bar": volatility_per_bar,
+                "volatility_annualized": float(volatility_per_bar * math.sqrt(bpy)),
+                "volatility_horizon": volatility_horizon,
                 "volatility_horizon_annualized": _annualize_horizon_sigma(
-                    horizon_sigma_return,
+                    volatility_horizon,
                     bpy,
                     int(horizon),
                 ),

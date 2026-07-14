@@ -134,7 +134,7 @@ class TestNaNJsonCompat:
         """Test that forecast_volatility response sanitizes NaN values."""
         forecast_result = {
             "success": True,
-            "horizon_sigma_return": float("nan"),
+            "volatility_horizon": float("nan"),
             "confidence_interval_lower": float("inf"),
             "confidence_interval_upper": float("-inf"),
         }
@@ -147,7 +147,7 @@ class TestNaNJsonCompat:
         )
 
         parsed = _rendered(result)
-        assert parsed["horizon_sigma_return"] is None
+        assert parsed["volatility_horizon"] is None
         assert parsed["confidence_interval_lower"] is None
         assert parsed["confidence_interval_upper"] is None
 

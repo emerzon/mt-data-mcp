@@ -29,14 +29,14 @@ success: true
   timeframe: H1
   method: ewma
   horizon: 12
-  sigma_bar_return: 0.00062     # Per-bar volatility (as return)
-  sigma_annual_return: 0.058    # Annualized volatility
-  horizon_sigma_return: 0.002145  # Expected volatility over horizon
+  volatility_per_bar: 0.00062     # Per-bar volatility (as return)
+  volatility_annualized: 0.058    # Annualized volatility
+  volatility_horizon: 0.002145  # Expected volatility over horizon
 ```
 
 **Interpretation:**
-- `sigma_bar_return: 0.00062` → Expect ~0.06% moves per hour (1 standard deviation)
-- `horizon_sigma_return: 0.002145` → Over 12 hours, expect ~0.21% total range (1 σ)
+- `volatility_per_bar: 0.00062` → Expect ~0.06% moves per hour (1 standard deviation)
+- `volatility_horizon: 0.002145` → Over 12 hours, expect ~0.21% total range (1 σ)
 - For EURUSD at 1.1750, 0.21% ≈ 25 pips
 
 **Rule of thumb:** Set stop-loss at 1.5-2x horizon volatility to avoid getting stopped by noise.
@@ -153,7 +153,7 @@ Use volatility to set stops that won't be hit by normal noise:
 ```bash
 # Get hourly volatility
 mtdata-cli forecast_volatility_estimate EURUSD --timeframe H1 --horizon 1 --method ewma
-# Output: sigma_bar_return: 0.00062 (0.062%)
+# Output: volatility_per_bar: 0.00062 (0.062%)
 
 # For EURUSD at 1.1750:
 # 1σ = 1.1750 × 0.00062 = 0.00073 (7.3 pips)

@@ -66,7 +66,7 @@ mtdata-cli forecast_volatility_estimate EURUSD --timeframe H1 --horizon 12 \
   --method har_rv --params "rv_timeframe=M5,days=150,window_w=5,window_m=22" --json
 ```
 
-- Extract `sigma_bar_return` (per‑bar σ) and `horizon_sigma_return` (k‑bar σ).
+- Extract `volatility_per_bar` (per-bar sigma) and `volatility_horizon` (k-bar sigma).
 - Risk budget: set per‑trade risk ≤ min(0.7× daily VaR, fixed cap). Use σ to set realistic TP/SL and lot size.
 
 ---

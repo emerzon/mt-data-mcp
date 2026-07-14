@@ -997,7 +997,6 @@ def run_report_generate(  # noqa: C901
                     hs = (
                         vol.get("volatility_horizon")
                         or vol.get("horizon_sigma_price")
-                        or vol.get("horizon_sigma_return")
                     )
                     vol_method = vol.get("method")
                     if hs is None:

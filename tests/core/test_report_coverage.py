@@ -859,7 +859,7 @@ class TestReportSummaryVolForecast:
 
     def test_vol_return_sigma_fallback(self):
         sec = _make_full_sections()
-        sec["volatility"] = {"horizon_sigma_return": 0.003}
+        sec["volatility"] = {"volatility_horizon": 0.003}
         res = self._run_report(sec)
         assert any("sigma=" in s for s in res.get("summary", []))
 

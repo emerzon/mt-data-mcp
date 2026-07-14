@@ -1608,7 +1608,7 @@ def forecast_backtest(  # noqa: C901
                         else float('nan')
                     )
                     pred_sigma = float(
-                        r.get('volatility_horizon', r.get('horizon_sigma_return', float('nan')))
+                        r.get('volatility_horizon', float('nan'))
                     )
                     mae = float(abs(pred_sigma - realized_sigma)) if np.isfinite(pred_sigma) and np.isfinite(realized_sigma) else float('nan')
                     rmse = mae

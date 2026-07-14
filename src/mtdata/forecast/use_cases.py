@@ -70,14 +70,6 @@ _VOLATILITY_PROXY_METHODS = {"arima", "sarima", "ets", "theta"}
 _PRETRAINED_FORECAST_METHODS = ("chronos2", "chronos_bolt", "timesfm")
 _DEFAULT_VOLATILITY_PROXY = "squared_return"
 _FORECAST_DIRECTION_NEUTRAL_THRESHOLD_PCT = 0.01
-_VOLATILITY_LEGACY_ALIASES = (
-    ("sigma_bar_return", "volatility_per_bar"),
-    ("sigma_annual_return", "volatility_annualized"),
-    ("horizon_sigma_return", "volatility_horizon"),
-    ("horizon_sigma_annual", "volatility_horizon_annualized"),
-)
-
-
 def _format_forecast_time_utc(value: Any) -> Any:
     if value in (None, ""):
         return value
@@ -273,19 +265,6 @@ def _forecast_compact_ci(payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     summary = _forecast_interval_summary(payload)
     if summary:
         out["summary"] = summary
-    return out
-
-
-def _canonicalize_volatility_output(payload: Dict[str, Any]) -> Dict[str, Any]:
-    if not isinstance(payload, dict):
-        return payload
-    out = dict(payload)
-    for legacy_key, trader_key in _VOLATILITY_LEGACY_ALIASES:
-        legacy_value = out.get(legacy_key)
-        trader_value = out.get(trader_key)
-        if trader_value is None and legacy_value is not None:
-            out[trader_key] = legacy_value
-        out.pop(legacy_key, None)
     return out
 
 
@@ -791,7 +770,6 @@ def _apply_forecast_generate_detail(
     payload = _round_forecast_generate_payload(payload)
     payload = _normalize_forecast_time_fields(payload)
     if str(payload.get("quantity") or request.quantity or "").strip().lower() == "volatility":
-        payload = _canonicalize_volatility_output(payload)
         payload = _round_forecast_volatility_payload(payload)
     payload = _annotate_forecast_generate_quality(payload)
     training_period = _forecast_training_period(payload)
@@ -3195,7 +3173,7 @@ def run_forecast_volatility_estimate(
         method=request.method,
         horizon=request.horizon,
     )
-    return _canonicalize_volatility_output(result)
+    return result
 
 
 def run_forecast_optimize_hints(

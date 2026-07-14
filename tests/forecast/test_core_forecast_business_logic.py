@@ -404,9 +404,6 @@ def test_forecast_generate_compact_volatility_uses_summary_row(monkeypatch):
             "volatility_per_bar": 0.012345,
             "volatility_annualized": 0.194444,
             "volatility_horizon": 0.021234,
-            "sigma_bar_return": 0.012345,
-            "sigma_annual_return": 0.194444,
-            "horizon_sigma_return": 0.021234,
             "forecast_time": ["t1", "t2", "t3"],
         },
     )
@@ -423,9 +420,6 @@ def test_forecast_generate_compact_volatility_uses_summary_row(monkeypatch):
 
     assert out["volatility_per_bar"] == pytest.approx(0.012345)
     assert out["volatility_horizon"] == pytest.approx(0.021234)
-    assert "sigma_bar_return" not in out
-    assert "sigma_annual_return" not in out
-    assert "horizon_sigma_return" not in out
     assert out["forecast_summary_mode"] == "scalar_volatility_estimate"
     assert "no distinct per-step path is implied" in out["quantity_note"]
     assert "forecast_time" not in out
@@ -1109,7 +1103,7 @@ def test_run_forecast_generate_routes_date_range_to_impl(monkeypatch):
         return {
             "success": True,
             "forecast_price": [1.0, 1.1],
-            "sigma_bar_return": 0.01,
+            "volatility_per_bar": 0.01,
             "quantity": "volatility",
         }
 
@@ -1126,7 +1120,6 @@ def test_run_forecast_generate_routes_date_range_to_impl(monkeypatch):
 
     assert result["success"] is True
     assert result["volatility_per_bar"] == pytest.approx(0.01)
-    assert "sigma_bar_return" not in result
     assert captured["start"] == "2023-01-01"
     assert captured["end"] == "2023-03-31"
 

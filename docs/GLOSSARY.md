@@ -309,7 +309,7 @@ mtdata-cli forecast_volatility_estimate EURUSD --timeframe H1 \
   --horizon 12 --method ewma --params "lambda_=0.94"
 ```
 
-**Interpretation:** If output is `sigma_bar_return: 0.0006`, expect hourly returns to have ~0.06% standard deviation.
+**Interpretation:** If output is `volatility_per_bar: 0.0006`, expect hourly returns to have ~0.06% standard deviation.
 
 **In mtdata:** `forecast_volatility_estimate --method ewma`. See [forecast/VOLATILITY.md](forecast/VOLATILITY.md).
 
