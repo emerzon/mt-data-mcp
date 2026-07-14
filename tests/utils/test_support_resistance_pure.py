@@ -336,6 +336,33 @@ def test_compute_support_resistance_returns_ranked_levels_around_current_price()
     assert resistance["strength_score_normalized"] == 1.0
 
 
+def test_compute_support_resistance_measures_levels_from_external_reference_price():
+    result = compute_support_resistance_levels(
+        _clustered_levels_frame(),
+        symbol="EURUSD",
+        timeframe="H1",
+        limit=200,
+        tolerance_pct=0.005,
+        min_touches=2,
+        max_levels=3,
+        reaction_bars=4,
+        reference_price=111.1,
+        reference_price_source="live_tick_mid",
+    )
+
+    assert result["current_price"] == 111.1
+    assert result["current_price_source"] == "live_tick_mid"
+    assert result["reference_price_structure"] == 105.0
+    assert result["supports"]
+    assert result["resistances"] == []
+    nearest = result["supports"][0]
+    assert nearest["type"] == "support"
+    assert nearest["distance_pct"] == pytest.approx(
+        abs(nearest["value"] - 111.1) / 111.1 * 100.0,
+        abs=1e-6,
+    )
+
+
 def test_build_zone_overlap_detects_intersecting_nearest_support_and_resistance_zones():
     overlap = _build_zone_overlap(
         support_level={

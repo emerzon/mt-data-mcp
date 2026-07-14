@@ -2341,7 +2341,12 @@ def merge_support_resistance_results(  # noqa: C901
         "baseline_atr_pct": None if merge_baseline_atr_pct is None else float(merge_baseline_atr_pct),
         "decay_half_life_bars": None if decay_half_life_bars is None else int(decay_half_life_bars),
         "current_price": None if current_price is None else float(round(current_price, 6)),
-        "current_price_source": "last_completed_bar_close",
+        "current_price_source": str(
+            results[0].get("current_price_source") or "last_completed_bar_close"
+        ),
+        "reference_price_structure": results[0].get(
+            "reference_price_structure"
+        ),
         "window": {
             "start": min(start_values) if start_values else None,
             "end": max(end_values) if end_values else None,
@@ -2481,6 +2486,7 @@ def compact_support_resistance_payload(payload: Dict[str, Any]) -> Dict[str, Any
         "mode",
         "current_price",
         "current_price_source",
+        "reference_price_as_of",
         "source",
         "as_of",
         "timezone",
@@ -2657,6 +2663,8 @@ def compute_support_resistance_levels(
     decay_half_life_bars: Optional[int] = None,
     max_distance_pct: Optional[float] = None,
     volume_weighting: str = "off",
+    reference_price: Optional[float] = None,
+    reference_price_source: Optional[str] = None,
 ) -> Dict[str, Any]:
     if frame is None or getattr(frame, "empty", True):
         raise ValueError("No history available")
@@ -2689,7 +2697,13 @@ def compute_support_resistance_levels(
         frame,
         volume_weighting=volume_weighting_mode,
     )
-    current_price = _last_finite(closes)
+    structure_price = _last_finite(closes)
+    current_price = _as_finite_float(reference_price)
+    if current_price is None or current_price <= 0:
+        current_price = structure_price
+        resolved_price_source = "last_completed_bar_close"
+    else:
+        resolved_price_source = str(reference_price_source or "external_reference")
     atr, adx = _compute_atr_and_adx(highs, lows, closes, period=adx_period_value)
     adaptive_settings = _resolve_adaptive_settings(
         closes,
@@ -2806,7 +2820,10 @@ def compute_support_resistance_levels(
         "baseline_atr_pct": adaptive_settings["baseline_atr_pct"],
         "decay_half_life_bars": int(half_life_value),
         "current_price": None if current_price is None else float(round(current_price, 6)),
-        "current_price_source": "last_completed_bar_close",
+        "current_price_source": resolved_price_source,
+        "reference_price_structure": (
+            None if structure_price is None else float(round(structure_price, 6))
+        ),
         "window": {
             "start": _format_time(window_start),
             "end": _format_time(window_end),

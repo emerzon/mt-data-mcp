@@ -193,6 +193,8 @@ def compute_support_resistance_payload(
     volume_weighting: str,
     start: Optional[str] = None,
     end: Optional[str] = None,
+    reference_price: Optional[float] = None,
+    reference_price_source: Optional[str] = None,
 ) -> Dict[str, Any]:
     requested_timeframe, timeframes = _resolve_support_resistance_timeframes(timeframe)
     multi_timeframe = len(timeframes) > 1
@@ -229,6 +231,8 @@ def compute_support_resistance_payload(
                 decay_half_life_bars=None if decay_half_life_bars is None else int(decay_half_life_bars),
                 max_distance_pct=None if max_distance_pct is None else float(max_distance_pct),
                 volume_weighting=str(volume_weighting),
+                reference_price=reference_price,
+                reference_price_source=reference_price_source,
             )
             if (result.get("levels") or []) or not multi_timeframe:
                 results.append(result)
@@ -962,6 +966,22 @@ def support_resistance_levels(
             gateway.ensure_connection()
             symbol_info = gateway.symbol_info(symbol)
             digits_value = _symbol_price_digits(symbol_info)
+            reference_price = None
+            reference_price_source = None
+            reference_price_as_of = None
+            if not start and not end:
+                tick = gateway.symbol_info_tick(symbol)
+                reference_price = _tick_reference_price(tick)
+                if reference_price is not None:
+                    reference_price_source = "live_tick_mid"
+                    tick_epoch = getattr(tick, "time_msc", None)
+                    try:
+                        tick_epoch = float(tick_epoch) / 1000.0 if tick_epoch else None
+                    except (TypeError, ValueError):
+                        tick_epoch = None
+                    if tick_epoch is None:
+                        tick_epoch = getattr(tick, "time", None)
+                    reference_price_as_of = _format_time_minimal(tick_epoch)
             result = compute_support_resistance_payload(
                 fetch_history_impl=_fetch_history,
                 symbol=symbol,
@@ -977,7 +997,11 @@ def support_resistance_levels(
                 reaction_bars=int(reaction_bars),
                 adx_period=int(adx_period),
                 decay_half_life_bars=None if decay_half_life_bars is None else int(decay_half_life_bars),
+                reference_price=reference_price,
+                reference_price_source=reference_price_source,
             )
+            if reference_price_as_of is not None:
+                result["reference_price_as_of"] = reference_price_as_of
             detail_value = str(detail).strip().lower()
             if normalize_output_extras(extras):
                 detail_value = "full"

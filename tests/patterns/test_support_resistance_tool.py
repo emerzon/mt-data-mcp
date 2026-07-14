@@ -35,13 +35,14 @@ def _get_support_resistance_fn():
     return raw
 
 
-def _gateway(digits: int = 5):
+def _gateway(digits: int = 5, tick=None):
     return type(
         "Gateway",
         (),
         {
             "ensure_connection": lambda self: None,
             "symbol_info": lambda self, _symbol: SimpleNamespace(digits=digits),
+            "symbol_info_tick": lambda self, _symbol: tick,
         },
     )()
 
@@ -105,6 +106,35 @@ def test_support_resistance_tool_returns_weighted_levels():
     assert "levels" not in result
     assert "nearest" not in result
     assert "method" not in result
+
+
+def test_support_resistance_tool_uses_live_tick_as_level_reference():
+    fn = _get_support_resistance_fn()
+    tick = SimpleNamespace(
+        bid=111.0,
+        ask=111.2,
+        last=111.1,
+        time=1_700_100_000,
+        time_msc=1_700_100_000_000,
+    )
+    gateway = _gateway(tick=tick)
+
+    with patch("mtdata.core.pivot.create_mt5_gateway", return_value=gateway), \
+         patch("mtdata.core.pivot._fetch_history", return_value=_frame()):
+        result = fn(
+            "EURUSD",
+            timeframe="H1",
+            lookback=200,
+            tolerance_pct=0.005,
+            min_touches=1,
+            max_levels=3,
+            max_distance_pct=None,
+            reaction_bars=4,
+        )
+
+    assert result["current_price"] == 111.1
+    assert result["current_price_source"] == "live_tick_mid"
+    assert result["reference_price_as_of"] == "2023-11-16T02:00Z"
 
 
 def test_support_resistance_tool_applies_near_price_distance_default():
