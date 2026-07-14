@@ -66,7 +66,12 @@ from .base import get_filter, list_filters
 _logger = logging.getLogger(__name__)
 
 # Default parameters for each method
-_DENOISE_BASE_DEFAULTS = {"columns": ["close"], "keep_original": False, "suffix": "_dn"}
+_DENOISE_BASE_DEFAULTS = {
+    "columns": ["close"],
+    "causality": "causal",
+    "keep_original": False,
+    "suffix": "_dn",
+}
 _DENOISE_SPEC_KEYS = {
     "method",
     "params",
@@ -363,7 +368,7 @@ def _apply_denoise(
             parts = [p.strip() for p in cols.replace(',', ' ').split() if p.strip()]
             cols = parts if parts else ['close']
     when = str(spec.get('when') or default_when)
-    causality = str(spec.get('causality') or ('causal' if when == 'pre_ti' else 'zero_phase'))
+    causality = str(spec.get('causality') or 'causal')
     keep_original = bool(spec.get('keep_original')) if 'keep_original' in spec else (when != 'pre_ti')
     suffix = str(spec.get('suffix') or '_dn')
     try:

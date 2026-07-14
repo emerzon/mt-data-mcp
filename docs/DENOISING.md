@@ -199,6 +199,7 @@ Split into components and reconstruct smoother parts.
 |-----------|-------------|---------|
 | `columns` | Which columns to denoise | `close` |
 | `when` | `pre_ti` or `post_ti` | `pre_ti` |
+| `causality` | `causal` or explicitly opted-in `zero_phase` | `causal` |
 | `keep_original` | Keep original column (adds `_dn` suffix) | `false` |
 | `alpha` | Smoothing factor (EMA) | 0.1 |
 | `window` | Window size (filters) | 5 |
@@ -212,10 +213,13 @@ Split into components and reconstruct smoother parts.
 **Causal filters** (use only past data):
 - `ema`, `sma`, `kalman`, `lms`, `rls`
 
-**Non-causal filters** (use past and future):
-- `lowpass_fft`, `butterworth`, `hp`, `wavelet` (default mode)
+**Non-causal-only filters** (use past and future):
+- `lowpass_fft`, `hp`, `wavelet`
 
-**Recommendation:** Use causal filters for backtesting and live trading.
+All denoising stages default to causal operation. Non-causal filters and the
+zero-phase mode of filters such as Butterworth require an explicit
+`causality=zero_phase` opt-in. Use that mode only for retrospective analysis,
+not backtesting or live trading.
 
 ---
 

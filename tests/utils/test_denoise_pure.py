@@ -204,6 +204,14 @@ class TestNormalizeDenoiseSec:
     def test_default_when(self):
         out = normalize_denoise_spec("ema", default_when="post_ti")
         assert out["when"] == "post_ti"
+        assert out["causality"] == "causal"
+
+    def test_zero_phase_requires_explicit_opt_in(self):
+        out = normalize_denoise_spec(
+            {"method": "ema", "when": "post_ti", "causality": "zero_phase"}
+        )
+
+        assert out["causality"] == "zero_phase"
 
     def test_dict_preserves_suffix(self):
         out = normalize_denoise_spec({"method": "sma", "suffix": "_smooth"})

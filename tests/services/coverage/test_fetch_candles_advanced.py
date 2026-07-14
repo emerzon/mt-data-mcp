@@ -127,6 +127,10 @@ class TestFetchCandlesAdvanced(unittest.TestCase):
         self.assertTrue(result.get('success'))
         if result.get('denoise'):
             self.assertTrue(result['denoise']['applications'])
+            self.assertEqual(
+                result['denoise']['applications'][0]['causality'],
+                'causal',
+            )
 
     @patch(_MT5_CONFIG)
     @patch(f'{_DS}._normalize_denoise_spec')

@@ -1305,7 +1305,7 @@ def _apply_post_ti_denoise(
             denoise_apps,
             normalized,
             default_when='post_ti',
-            default_causality='zero_phase',
+            default_causality='causal',
             default_keep_original=True,
             added_columns=added_columns,
             overwritten_columns=overwritten_columns,
