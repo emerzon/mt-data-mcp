@@ -2780,15 +2780,14 @@ def run_trade_history(  # noqa: C901
                     return {"error": "page requires a positive limit."}
                 offset_value = int((page_value - 1) * int(limit_value))
             if (limit_value or offset_value) and "__sort_utc" in df.columns:
-                df = df.sort_values("__sort_utc")
+                df = df.sort_values(
+                    "__sort_utc",
+                    ascending=str(request.order).lower() == "asc",
+                )
             if offset_value:
-                end_idx = max(0, len(df) - offset_value)
-                df = df.iloc[:end_idx]
+                df = df.iloc[offset_value:]
             if limit_value and len(df) > limit_value:
-                if "__sort_utc" in df.columns:
-                    df = df.tail(limit_value)
-                else:
-                    df = df.tail(limit_value)
+                df = df.head(limit_value)
             if "__sort_utc" in df.columns:
                 df = df.drop(columns=["__sort_utc"])
 

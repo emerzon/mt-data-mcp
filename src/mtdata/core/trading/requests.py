@@ -245,6 +245,10 @@ class TradeHistoryRequest(_SideNormalizedRequest):
     limit: Optional[int] = 100
     offset: int = 0
     page: Optional[int] = None
+    order: Literal["desc", "asc"] = Field(
+        default="desc",
+        description="History time order. desc returns newest activity first.",
+    )
 
 
 class TradeJournalAnalyzeRequest(_SideNormalizedRequest):

@@ -115,15 +115,24 @@ def test_trade_history_supports_offset_pagination() -> None:
 
     with patch("mtdata.core.trading.account._use_client_tz", lambda: False):
         out = trade_history(history_kind="deals", limit=2, offset=1, __cli_raw=True)
-    if prev is not None:
-        sys.modules["MetaTrader5"] = prev
 
     assert out["success"] is True
-    assert [item["ticket"] for item in out["items"]] == [2, 3]
+    assert [item["ticket"] for item in out["items"]] == [3, 2]
     assert out["total_count"] == 4
     assert out["offset"] == 1
     assert out["limit"] == 2
     assert out["has_more"] is True
+
+    with patch("mtdata.core.trading.account._use_client_tz", lambda: False):
+        ascending = trade_history(
+            history_kind="deals",
+            limit=2,
+            order="asc",
+            __cli_raw=True,
+        )
+    if prev is not None:
+        sys.modules["MetaTrader5"] = prev
+    assert [item["ticket"] for item in ascending["items"]] == [1, 2]
 
 
 def test_trade_history_rounds_money_fields_for_display() -> None:
