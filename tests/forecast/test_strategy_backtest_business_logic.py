@@ -115,6 +115,14 @@ def test_strategy_backtest_compact_mode_excludes_trades(monkeypatch):
     assert out["is_signal"] is False
     assert out["usage"] == "research_only"
     assert out["usable_for_live_trading"] is False
+    assert out["price_basis"] == "mt5_bid_ohlc"
+    assert out["cost_model"] == {
+        "type": "fixed_slippage",
+        "slippage_bps_per_side": 1.0,
+        "round_trip_slippage_bps": 2.0,
+        "spread_modeled_separately": False,
+    }
+    assert StrategyBacktestRequest(symbol="EURUSD").slippage_bps == 1.0
     assert out["signal_status"] == "not_actionable"
     assert "last_signal" not in out
     assert out["last_historical_signal"]["signal_status"] == "historical_observation_only"

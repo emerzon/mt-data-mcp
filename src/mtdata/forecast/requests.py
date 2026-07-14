@@ -147,7 +147,7 @@ class StrategyBacktestRequest(BaseModel):
     oversold: float = Field(30.0, gt=0.0, lt=100.0)
     overbought: float = Field(70.0, gt=0.0, lt=100.0)
     max_hold_bars: Optional[int] = Field(None, ge=1)
-    slippage_bps: float = 0.0
+    slippage_bps: float = 1.0
 
     @model_validator(mode="after")
     def _validate_strategy_thresholds(self) -> "StrategyBacktestRequest":

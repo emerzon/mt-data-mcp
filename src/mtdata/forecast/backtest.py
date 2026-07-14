@@ -914,7 +914,7 @@ def strategy_backtest(  # noqa: C901
     oversold: float = 30.0,
     overbought: float = 70.0,
     max_hold_bars: Optional[int] = None,
-    slippage_bps: float = 0.0,
+    slippage_bps: float = 1.0,
 ) -> Dict[str, Any]:
     try:
         request_payload = {
@@ -1147,6 +1147,13 @@ def strategy_backtest(  # noqa: C901
             "strategy": strategy_value,
             "detail": detail_mode,
             "position_mode": position_mode_value,
+            "price_basis": "mt5_bid_ohlc",
+            "cost_model": {
+                "type": "fixed_slippage",
+                "slippage_bps_per_side": float(slippage_bps),
+                "round_trip_slippage_bps": float(slippage_bps) * 2.0,
+                "spread_modeled_separately": False,
+            },
             "units": _backtest_units(),
             "parameters": _params,
             "summary": {
