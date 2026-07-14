@@ -48,6 +48,7 @@ _COMPACT_TICK_TOP_LEVEL_FIELDS = (
     "count",
     "tick_count",
     "trade_event_count",
+    "quote_update_count",
     "data",
     "timezone",
     "price_precision",
@@ -1198,6 +1199,17 @@ def _compact_tick_row(
     decoded = row.get("flags_decoded")
     if isinstance(decoded, list) and decoded:
         compact["flags_decoded"] = list(decoded)
+        quote_flags = {str(value).strip().lower() for value in decoded}
+        bid_updated = "bid" in quote_flags
+        ask_updated = "ask" in quote_flags
+        if bid_updated != ask_updated:
+            compact["quote_update_type"] = (
+                "bid_only_update" if bid_updated else "ask_only_update"
+            )
+            compact["spread_valid"] = False
+        elif bid_updated and ask_updated:
+            compact["quote_update_type"] = "bid_ask_update"
+            compact["spread_valid"] = True
     return compact, numeric_spread
 
 
