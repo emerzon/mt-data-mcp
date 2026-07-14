@@ -300,6 +300,17 @@ def _normalize_idempotency_key(value: Any) -> Optional[str]:
     return key or None
 
 
+def _annotate_idempotency_scope(
+    result: Dict[str, Any],
+    key: Optional[str],
+) -> Dict[str, Any]:
+    if key is not None:
+        result.setdefault("idempotency_key", key)
+        result.setdefault("idempotency_scope", "process_memory")
+        result.setdefault("idempotency_durable", False)
+    return result
+
+
 def _build_trade_request_signature(request: Any) -> Optional[str]:
     if request is None:
         return None
@@ -1139,6 +1150,7 @@ def run_trade_place(  # noqa: C901
             operation="trade_place",
             default_error_code="trade_place_error",
         )
+        result = _annotate_idempotency_scope(result, idempotency_key)
         if not idempotency_consumed:
             if _record_or_release_idempotency(
                 idempotency_store,
@@ -1791,6 +1803,7 @@ def run_trade_modify(
         pending: Optional[bool] = None,
     ) -> Dict[str, Any]:
         nonlocal idempotency_consumed
+        result = _annotate_idempotency_scope(result, idempotency_key)
         if not idempotency_consumed:
             if _record_or_release_idempotency(
                 idempotency_store,
