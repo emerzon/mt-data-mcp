@@ -83,6 +83,12 @@ def test_market_scan_error_uses_standard_error_envelope():
     assert "symbols_top_markets" in result["related_tools"]
 
 
+def test_high_volume_preset_ranks_without_unrelated_price_filter() -> None:
+    from mtdata.core.symbols import _MARKET_SCAN_PRESETS
+
+    assert _MARKET_SCAN_PRESETS["high_volume"] == {"rank_by": "tick_volume"}
+
+
 def test_market_scan_freshness_summary_counts_bool_like_stale_flags():
     from mtdata.core.symbols import _market_scan_freshness_summary
 

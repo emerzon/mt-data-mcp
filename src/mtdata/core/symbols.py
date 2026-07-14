@@ -3068,7 +3068,7 @@ def symbols_top_markets(  # noqa: C901
 _MARKET_SCAN_PRESETS: Dict[str, Dict[str, Any]] = {
     "oversold": {"rsi_below": 30.0, "min_tick_volume": 1000, "rank_by": "rsi"},
     "overbought": {"rsi_above": 70.0, "min_tick_volume": 1000, "rank_by": "rsi"},
-    "high_volume": {"min_price_change_pct": 1.0, "rank_by": "tick_volume"},
+    "high_volume": {"rank_by": "tick_volume"},
     "tight_spread": {"max_spread_pct": 0.01, "min_tick_volume": 500, "rank_by": "spread_pct"},
     "gap_up": {"min_price_change_pct": 2.0, "rank_by": "price_change_pct"},
     "gap_down": {"max_price_change_pct": -2.0, "rank_by": "price_change_pct"},
@@ -3601,6 +3601,14 @@ def market_scan(  # noqa: C901
                 },
                 "meta": _market_scan_contract_meta(request=request, stats=stats),
             }
+            if preset_value:
+                out["preset"] = preset_value
+                out["preset_filters"] = {
+                    key: value
+                    for key, value in dict(preset_config or {}).items()
+                    if key != "rank_by"
+                }
+                out["preset_rank_by"] = rank_by_value
             if detail_mode == "full":
                 out["returned_count"] = int(table_payload["row_count"])
                 out["summary"]["counts"]["matched_symbols"] = int(
