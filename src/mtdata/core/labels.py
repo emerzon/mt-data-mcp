@@ -431,6 +431,7 @@ def labels_triple_barrier(
                         "Missing barriers. Provide either tp_pct and sl_pct, "
                         "tp_abs and sl_abs, or tp_ticks and sl_ticks."
                     ),
+                    "error_code": "barrier_parameters_missing",
                     "remediation": (
                         "Choose explicit TP/SL barriers scaled to the symbol's volatility. "
                         "Run forecast_volatility_estimate to read the per-bar sigma, then set "

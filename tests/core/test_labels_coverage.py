@@ -206,6 +206,7 @@ class TestLabelsTripleBarrier:
             "Missing barriers. Provide either tp_pct and sl_pct, "
             "tp_abs and sl_abs, or tp_ticks and sl_ticks."
         )
+        assert result["error_code"] == "barrier_parameters_missing"
         assert "forecast_barrier_optimize" in result["remediation"]
 
     def test_rejects_multiple_tp_unit_families(self):
