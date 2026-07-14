@@ -334,7 +334,7 @@ def test_market_ticker_returns_lightweight_spread_snapshot() -> None:
     assert out["ask"] == 201.0
     assert out["spread_pct"] == 0.498753
     assert out["units"]["spread_pct"] == "percentage_points (1.0 = 1%)"
-    assert out["market_state"] == "unknown"
+    assert "market_state" not in out
     assert out["contract_size"] == 1.0
     assert out["units"]["contract_size"] == "contract_units_per_lot"
     assert out["units"]["lot"] == "broker_lot"
@@ -418,7 +418,7 @@ def test_market_ticker_compact_detail_omits_verbose_fields() -> None:
     assert out["ask"] == 201.0
     assert out["spread_pct"] == 0.498753
     assert out["units"]["spread_pct"] == "percentage_points (1.0 = 1%)"
-    assert out["market_state"] == "unknown"
+    assert "market_state" not in out
     assert out["contract_size"] == 1.0
     assert out["freshness"].startswith("stale, tick ")
     assert "spread_display" not in out
@@ -466,7 +466,7 @@ def test_market_ticker_none_detail_uses_compact_output() -> None:
 
     assert out["success"] is True
     assert out["spread_pct"] == 0.498753
-    assert out["market_state"] == "unknown"
+    assert "market_state" not in out
     assert out["contract_size"] == 1.0
     assert "spread" not in out
     assert "diagnostics" not in out

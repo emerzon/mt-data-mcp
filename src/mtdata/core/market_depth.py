@@ -172,9 +172,6 @@ def _compact_market_ticker_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
         if value is not None:
             out[key] = value
     market_state = out.pop("market_status", None)
-    if market_state is None:
-        # Tick recency proves quote availability, not exchange/session state.
-        market_state = "unknown"
     if market_state is not None:
         out["market_state"] = market_state
     if primary_spread_key is not None:
