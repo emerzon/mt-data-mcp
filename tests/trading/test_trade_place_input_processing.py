@@ -396,6 +396,58 @@ def test_trade_place_dry_run_rejects_invalid_live_protection_preview() -> None:
     mock_market.assert_not_called()
 
 
+def test_trade_place_dry_run_rejects_identical_protection_before_mt5() -> None:
+    with patch("mtdata.core.trading._place_market_order") as mock_market, patch(
+        "mtdata.core.trading.build_trade_place_dry_run_preview"
+    ) as mock_preview:
+        out = trade_place(
+            symbol="EURUSD",
+            volume=0.01,
+            order_type="BUY",
+            stop_loss=1.0,
+            take_profit=1.0,
+            dry_run=True,
+            detail="standard",
+            __cli_raw=True,
+        )
+
+    assert out["success"] is False
+    assert out["error_code"] == "invalid_protection_levels"
+    assert out["error"] == "stop_loss and take_profit must be different prices."
+    assert out["validation"]["local_requirements_passed"] is False
+    assert out["validation"]["live_submission_eligible"] is False
+    assert "invalid_protection_levels" in out["validation"]["blockers"]
+    mock_preview.assert_not_called()
+    mock_market.assert_not_called()
+
+
+def test_trade_place_dry_run_preserves_mt5_connection_error() -> None:
+    with patch("mtdata.core.trading._place_market_order") as mock_market, patch(
+        "mtdata.core.trading.build_trade_place_dry_run_preview",
+        return_value={
+            "preview_error": "Failed to connect to MetaTrader5.",
+            "preview_error_code": "mt5_connection_error",
+        },
+    ):
+        out = trade_place(
+            symbol="EURUSD",
+            volume=0.01,
+            order_type="BUY",
+            stop_loss=1.08,
+            take_profit=1.12,
+            dry_run=True,
+            detail="standard",
+            __cli_raw=True,
+        )
+
+    assert out["success"] is False
+    assert out["error_code"] == "mt5_connection_error"
+    assert out["validation"]["local_requirements_passed"] is True
+    assert out["validation"]["live_submission_eligible"] is False
+    assert "mt5_connection_error" in out["validation"]["blockers"]
+    mock_market.assert_not_called()
+
+
 def test_trade_place_dry_run_rejects_bool_like_invalid_protection_preview() -> None:
     class BoolLikeFalse:
         def __bool__(self) -> bool:

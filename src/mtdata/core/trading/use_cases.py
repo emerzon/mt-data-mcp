@@ -1141,6 +1141,7 @@ def run_trade_place(  # noqa: C901
 
     try:
         dry_run_missing_protection: List[str] = []
+        dry_run_protection_error: Optional[Dict[str, Any]] = None
 
         def _dry_run_preview(
             *,
@@ -1162,6 +1163,8 @@ def run_trade_place(  # noqa: C901
                 f"missing_{field_name}"
                 for field_name in dry_run_missing_protection
             ]
+            if dry_run_protection_error is not None:
+                local_blockers.append("invalid_protection_levels")
             preview: Dict[str, Any] = {
                 "success": True,
                 "dry_run": True,
@@ -1202,7 +1205,15 @@ def run_trade_place(  # noqa: C901
                     broker_validation_not_performed
                 ),
                 "warnings": [
-                    "Dry run only. Routing and local safety checks passed; MT5/broker validation was not executed.",
+                    (
+                        "Dry run only. Local safety requirements failed; no order "
+                        "was sent and MT5/broker validation was not executed."
+                        if local_blockers
+                        else (
+                            "Dry run only. Routing and local safety checks passed; "
+                            "MT5/broker validation was not executed."
+                        )
+                    ),
                     (
                         "Not validated in dry run: broker acceptance/enforcement, margin "
                         "reservation, fillability, and broker-side SL/TP attachment."
@@ -1226,7 +1237,19 @@ def run_trade_place(  # noqa: C901
                     "require_sl_tp=false."
                 )
                 preview["actionability"] = "blocked_by_local_requirements"
-            if callable(build_dry_run_preview):
+            if dry_run_protection_error is not None:
+                preview.update(
+                    {
+                        "sl_tp_valid": False,
+                        "sl_tp_error": dry_run_protection_error.get("error"),
+                        "preview_error": dry_run_protection_error.get("error"),
+                        "error_code": dry_run_protection_error.get(
+                            "error_code",
+                            "invalid_protection_levels",
+                        ),
+                    }
+                )
+            elif callable(build_dry_run_preview):
                 preview.update(
                     build_dry_run_preview(
                         symbol=symbol_norm,
@@ -1244,6 +1267,14 @@ def run_trade_place(  # noqa: C901
             except Exception:
                 sl_tp_invalid = False
             if sl_tp_invalid:
+                validation_payload = preview.get("validation")
+                if isinstance(validation_payload, dict):
+                    validation_payload["local_requirements_passed"] = False
+                    validation_payload["live_submission_eligible"] = False
+                    blockers = validation_payload.setdefault("blockers", [])
+                    if "invalid_protection_levels" not in blockers:
+                        blockers.append("invalid_protection_levels")
+                preview["validation_passed"] = False
                 sl_tp_error = str(preview.get("sl_tp_error") or "").strip()
                 if sl_tp_error:
                     preview["preview_error"] = sl_tp_error
@@ -1252,7 +1283,18 @@ def run_trade_place(  # noqa: C901
             if preview_error:
                 preview["success"] = False
                 preview["error"] = preview_error
-                preview.setdefault("error_code", "trade_preview_error")
+                preview.setdefault(
+                    "error_code",
+                    preview.get("preview_error_code") or "trade_preview_error",
+                )
+                validation_payload = preview.get("validation")
+                if isinstance(validation_payload, dict):
+                    validation_payload["live_submission_eligible"] = False
+                    blockers = validation_payload.setdefault("blockers", [])
+                    blocker = str(preview.get("error_code") or "preview_error")
+                    if blocker not in blockers:
+                        blockers.append(blocker)
+                preview["validation_passed"] = False
                 preview["actionability"] = "preview_failed"
                 preview["no_action"] = True
                 preview["no_action_reason"] = "dry_run_preview_error"
@@ -1384,6 +1426,21 @@ def run_trade_place(  # noqa: C901
             order_type_norm in explicit_pending_types
             or (expiration_provided and not ignore_market_gtc_expiration)
         )
+        basic_protection_error = validation._validate_basic_protection_levels(
+            side=order_type_norm,
+            stop_loss=request.stop_loss,
+            take_profit=request.take_profit,
+            entry_price=request.price if is_pending else None,
+        )
+        if basic_protection_error is not None:
+            if bool(request.dry_run):
+                dry_run_protection_error = basic_protection_error
+            else:
+                return _finish(
+                    basic_protection_error,
+                    order_type=order_type_norm,
+                    pending=is_pending,
+                )
         if bool(request.require_sl_tp) and not is_pending:
             missing_protection: List[str] = []
             if request.stop_loss in (None, 0):

@@ -875,7 +875,13 @@ def build_trade_place_dry_run_preview(
     mt5 = create_trading_gateway(gateway=gateway)
     connection_error = trading_connection_error(mt5)
     if connection_error is not None:
-        return {"preview_error": connection_error.get("error")}
+        return {
+            "preview_error": connection_error.get("error"),
+            "preview_error_code": connection_error.get(
+                "error_code",
+                "mt5_connection_error",
+            ),
+        }
 
     symbol_info = mt5.symbol_info(symbol)
     if symbol_info is None:

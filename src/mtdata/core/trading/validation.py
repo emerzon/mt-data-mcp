@@ -831,6 +831,86 @@ def _validate_live_protection_levels(
     return None
 
 
+def _validate_basic_protection_levels(
+    *,
+    side: str,
+    stop_loss: Optional[float],
+    take_profit: Optional[float],
+    entry_price: Optional[float] = None,
+) -> Optional[Dict[str, Any]]:
+    """Validate protection geometry that does not require broker metadata."""
+    normalized: Dict[str, Optional[float]] = {}
+    for name, raw_value in (("stop_loss", stop_loss), ("take_profit", take_profit)):
+        if raw_value in (None, 0):
+            normalized[name] = None
+            continue
+        try:
+            value = float(raw_value)
+        except (TypeError, ValueError, OverflowError):
+            return {
+                "error": f"{name} must be a finite positive price.",
+                "error_code": "invalid_protection_levels",
+            }
+        if not math.isfinite(value) or value <= 0.0:
+            return {
+                "error": f"{name} must be a finite positive price.",
+                "error_code": "invalid_protection_levels",
+            }
+        normalized[name] = value
+
+    sl = normalized["stop_loss"]
+    tp = normalized["take_profit"]
+    if sl is not None and tp is not None and math.isclose(sl, tp, rel_tol=1e-12):
+        return {
+            "error": "stop_loss and take_profit must be different prices.",
+            "error_code": "invalid_protection_levels",
+            "stop_loss": sl,
+            "take_profit": tp,
+        }
+
+    if entry_price in (None, 0):
+        return None
+    try:
+        entry = float(entry_price)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    if not math.isfinite(entry) or entry <= 0.0:
+        return None
+
+    side_norm = str(side or "").strip().upper()
+    if side_norm.startswith("BUY"):
+        if sl is not None and sl >= entry:
+            return {
+                "error": "stop_loss must be below entry for BUY orders.",
+                "error_code": "invalid_protection_levels",
+                "entry_price": entry,
+                "stop_loss": sl,
+            }
+        if tp is not None and tp <= entry:
+            return {
+                "error": "take_profit must be above entry for BUY orders.",
+                "error_code": "invalid_protection_levels",
+                "entry_price": entry,
+                "take_profit": tp,
+            }
+    elif side_norm.startswith("SELL"):
+        if sl is not None and sl <= entry:
+            return {
+                "error": "stop_loss must be above entry for SELL orders.",
+                "error_code": "invalid_protection_levels",
+                "entry_price": entry,
+                "stop_loss": sl,
+            }
+        if tp is not None and tp >= entry:
+            return {
+                "error": "take_profit must be below entry for SELL orders.",
+                "error_code": "invalid_protection_levels",
+                "entry_price": entry,
+                "take_profit": tp,
+            }
+    return None
+
+
 def _prevalidate_trade_place_market_input(
     symbol: str,
     volume: Any,
