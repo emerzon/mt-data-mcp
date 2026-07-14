@@ -65,6 +65,15 @@ def suggest_forecast_methods(method: Any, valid_methods: List[str], limit: int =
         for candidate in valid_methods
         if str(candidate).strip()
     ]
+    if not any(token in normalized_needle for token in ("nan", "null")):
+        candidates = [
+            candidate
+            for candidate in candidates
+            if not any(
+                token in _normalize_method_text(candidate)
+                for token in ("nanmodel", "nullmodel")
+            )
+        ]
     if family:
         same_family = [
             candidate
@@ -95,7 +104,7 @@ def suggest_forecast_methods(method: Any, valid_methods: List[str], limit: int =
         normalized_needle,
         list(normalized_to_name),
         n=limit,
-        cutoff=0.6,
+        cutoff=0.72,
     )
     for normalized in fuzzy:
         name = normalized_to_name.get(normalized, normalized)
