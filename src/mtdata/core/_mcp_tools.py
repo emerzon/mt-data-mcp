@@ -43,9 +43,12 @@ _NO_TIMEOUT_TOOLS = frozenset(
         "forecast_optimize_hints",
         "forecast_tune_genetic",
         "forecast_tune_optuna",
-        # A thread running an MT5 mutation cannot be cancelled safely by
-        # asyncio.wait_for. Keep the transport attached until the broker call
-        # returns so callers never receive a false timeout while it continues.
+        "forecast_backtest_run",
+        "forecast_barrier_optimize",
+        "report_generate",
+        # Work dispatched to a thread cannot be stopped by asyncio.wait_for.
+        # Keep the transport attached to long analysis and broker mutations so
+        # callers never receive a false timeout while work continues.
         "trade_place",
         "trade_modify",
         "trade_close",

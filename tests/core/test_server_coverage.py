@@ -1089,6 +1089,15 @@ class TestRecordingToolDecorator:
             tools._NO_TIMEOUT_TOOLS
         )
 
+    def test_long_analysis_tools_are_not_given_cancellable_thread_timeouts(self):
+        import mtdata.core._mcp_tools as tools
+
+        assert {
+            "forecast_backtest_run",
+            "forecast_barrier_optimize",
+            "report_generate",
+        }.issubset(tools._NO_TIMEOUT_TOOLS)
+
     def test_skips_variadic_args_in_exposed_signature(self):
         import mtdata.core._mcp_tools as tools
 
