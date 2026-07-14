@@ -382,6 +382,15 @@ def _pattern_bias(payload: Any) -> Optional[str]:
     if not isinstance(payload, dict):
         return None
 
+    status = str(payload.get("pattern_status") or "").strip().lower()
+    if payload.get("conflict") or status == "conflicting" or status.startswith(
+        "conflicting_"
+    ):
+        return None
+    confidence = _coerce_float(payload.get("pattern_confidence"))
+    if confidence is None or confidence < 0.5:
+        return None
+
     for key in ("pattern_bias", "bias", "direction"):
         value = payload.get(key)
         if isinstance(value, str) and value.strip():

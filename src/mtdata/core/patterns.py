@@ -1266,7 +1266,7 @@ def _attach_pattern_usage_notice(result: Dict[str, Any]) -> None:
     if compact_shape:
         result.setdefault(
             "confidence_basis",
-            "confidence/pattern_confidence are heuristic pattern scores (0-1), not historical win rates",
+            "match_score is per-pattern heuristic fit; pattern_confidence is aggregate directional strength. Neither is a historical win rate.",
         )
         return
     result.setdefault(

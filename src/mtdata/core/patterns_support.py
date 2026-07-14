@@ -630,7 +630,9 @@ def _compact_patterns_payload(
             if key == "confidence":
                 value = _round_confidence(value)
             if value not in (None, ""):
-                strongest_compact[key] = value
+                strongest_compact[
+                    "match_score" if key == "confidence" else key
+                ] = value
         time_value = _first_present(
             strongest_row,
             "time",
@@ -681,7 +683,7 @@ def _compact_patterns_payload(
             if key == "confidence":
                 value = _round_confidence(value)
             if value not in (None, ""):
-                item[key] = value
+                item["match_score" if key == "confidence" else key] = value
         time_value = (
             row.get("time")
             or row.get("end_date")
@@ -749,14 +751,16 @@ def _compact_patterns_payload(
             and top_patterns
         ):
             visible_confidences = [
-                _safe_float(item.get("confidence"))
+                _safe_float(item.get("match_score"))
                 for item in top_patterns
-                if _safe_float(item.get("confidence")) is not None
+                if _safe_float(item.get("match_score")) is not None
             ]
             if visible_confidences:
                 max_visible_confidence = max(float(value) for value in visible_confidences)
                 if max_visible_confidence >= 0.5:
-                    compact["max_pattern_confidence"] = _round_confidence(max_visible_confidence)
+                    compact["max_pattern_match_score"] = _round_confidence(
+                        max_visible_confidence
+                    )
                     compact["bias_suppressed_reason"] = (
                         "visible patterns are neutral or lack directional bias; "
                         "aggregate confidence measures directional bias, not max single-pattern score"

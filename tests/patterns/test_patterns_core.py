@@ -603,8 +603,8 @@ def test_build_pattern_response_compact_detail_returns_summary():
 
     assert compact["n_patterns"] == 2
     assert compact["top_patterns"] == [
-        {"name": "B", "status": "forming", "confidence": 0.7},
-        {"name": "A", "status": "forming", "confidence": 0.5},
+        {"name": "B", "status": "forming", "match_score": 0.7},
+        {"name": "A", "status": "forming", "match_score": 0.5},
     ]
     assert "recent_patterns" not in compact
     assert "summary" not in compact
@@ -638,7 +638,7 @@ def test_build_pattern_response_compact_explains_neutral_high_score_patterns():
 
     assert compact["pattern_status"] == "neutral"
     assert compact["pattern_confidence"] == 0.0
-    assert compact["max_pattern_confidence"] == 0.95
+    assert compact["max_pattern_match_score"] == 0.95
     assert "aggregate confidence measures directional bias" in compact["bias_suppressed_reason"]
 
 
@@ -681,7 +681,7 @@ def test_build_pattern_response_compact_keeps_actionable_fields():
             "name": "Double Bottom",
             "direction": "bullish",
             "status": "forming",
-            "confidence": 0.85,
+            "match_score": 0.85,
             "time": "2026-03-02 00:00",
             "price": 12.0,
         }
@@ -731,7 +731,7 @@ def test_build_pattern_response_compact_keeps_elliott_candidate_context():
         {
             "name": "Elliott impulse-like candidate",
             "status": "forming",
-            "confidence": 0.1,
+            "match_score": 0.1,
             "wave_count": 6,
             "candidate_note": candidate_note,
             "validation_status": "fallback_candidate",

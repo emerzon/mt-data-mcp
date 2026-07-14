@@ -136,10 +136,6 @@ def test_market_snapshot_summary_detail_returns_lean_snapshot(monkeypatch):
         "spread_pips": 2.0,
         "nearest_support": 1.098,
         "nearest_resistance": 1.105,
-        "pattern_bias": "bullish",
-        "pattern_is_signal": False,
-        "pattern_usage": "information_only",
-        "pattern_window_bars": 3,
         "pattern_count": 2,
     }
     assert "quote" not in result
@@ -184,10 +180,6 @@ def test_market_snapshot_compact_defaults_to_lean_snapshot(monkeypatch):
         "spread_points": 2.0,
         "nearest_support": 1.098,
         "nearest_resistance": 1.105,
-        "pattern_bias": "bullish",
-        "pattern_is_signal": False,
-        "pattern_usage": "information_only",
-        "pattern_window_bars": 3,
         "pattern_count": 2,
     }
     assert "quote" not in result
@@ -345,7 +337,7 @@ def test_market_snapshot_qualifies_uncertain_pattern_bias(monkeypatch):
     result = _raw_market_snapshot(symbol="EURUSD", detail="compact")
 
     snapshot = result["snapshot"]
-    assert snapshot["pattern_bias"] == "bearish"
+    assert "pattern_bias" not in snapshot
     assert snapshot["pattern_status"] == "uncertain"
     assert snapshot["pattern_confidence"] == 0.225
     assert snapshot["pattern_conflict"] == "both_bullish_and_bearish_patterns_present"
