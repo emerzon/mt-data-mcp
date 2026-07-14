@@ -37,7 +37,8 @@ def test_barrier_history_freshness_keeps_absolute_weekend_staleness():
     )
 
     assert result["data_stale"] is True
-    assert result["usable_for_live_trading"] is False
+    assert result["history_policy_ok"] is False
+    assert "usable_for_live_trading" not in result
     assert result["market_status_reason"] == "weekend"
     assert result["freshness"].startswith("closed weekend, data ")
 

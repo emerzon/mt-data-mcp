@@ -123,10 +123,6 @@ def _history_freshness_context(
         out.update(closed_session)
     history_policy_ok = not bool(out.get("data_stale")) and not bool(closed_session)
     out["history_policy_ok"] = history_policy_ok
-    out["usable_for_live_trading"] = history_policy_ok
-    out["usable_for_live_trading_basis"] = (
-        "barrier_history_bar_policy_not_execution_quote"
-    )
     freshness = format_freshness_label(
         data_stale=out.get("data_stale"),
         market_status=(
@@ -650,7 +646,7 @@ def forecast_barrier_hit_probabilities(  # noqa: C901
         }
         out.update(freshness_context)
         out["model_data_usable_for_live"] = bool(
-            freshness_context.get("usable_for_live_trading")
+            freshness_context.get("history_policy_ok")
         )
         if str(last_price_source or "").startswith("live_tick"):
             reference_context = _live_reference_time_context(symbol, timeframe)

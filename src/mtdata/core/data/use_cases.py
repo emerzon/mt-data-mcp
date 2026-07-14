@@ -613,7 +613,6 @@ def _attach_denoise_disclosure(payload: Dict[str, Any]) -> None:
             payload["price_is_synthetic"] = True
     if "zero_phase" in causalities:
         payload["denoise_live_safe"] = False
-        payload["usable_for_live_trading"] = False
         payload.setdefault("warnings", []).append(
             "Zero-phase denoise uses future observations and is not usable for live trading."
         )
@@ -939,10 +938,6 @@ def _public_candle_diagnostics(result: Dict[str, Any]) -> Dict[str, Any]:
             )
             history_policy_ok = not stale and not relaxed_policy
             public["history_policy_ok"] = history_policy_ok
-            public["usable_for_live_trading"] = history_policy_ok
-            public["usable_for_live_trading_basis"] = (
-                "history_bar_policy_not_execution_quote"
-            )
             public["data_stale"] = stale
             freshness_label = format_freshness_label(
                 data_stale=stale,

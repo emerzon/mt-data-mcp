@@ -165,15 +165,15 @@ Prefer `error_code` over string-matching `error` when you need to branch on fail
 
 ## Freshness and execution readiness
 
-`usable_for_live_trading` is accompanied by `usable_for_live_trading_basis`.
-Callers must evaluate the basis rather than treating every occurrence as a live
-quote gate:
+`usable_for_live_trading` is reserved for execution-oriented quote and session
+outputs and is accompanied by `usable_for_live_trading_basis`:
 
 - `quote_age_and_market_session` is an execution-quote check. Its default age
   threshold is 30 seconds, matching pre-trade validation.
-- Values ending in `not_execution_quote` describe whether historical bars are
-  within their timeframe policy. Use `history_policy_ok` for that decision and
-  obtain a current quote before execution.
+- Historical bars, forecasts, volatility estimates, and research backtests do
+  not publish this execution-sounding boolean. Use `history_policy_ok`,
+  `signal_status`, and `usage` for their respective contracts, then obtain a
+  current quote before execution.
 - Combined forecast outputs may require both model-history and reference-quote
   readiness and expose `execution_blockers` when either input fails.
 

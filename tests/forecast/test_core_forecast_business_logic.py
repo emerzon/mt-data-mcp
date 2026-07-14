@@ -628,7 +628,7 @@ def test_forecast_generate_compact_flags_flat_theta_display(monkeypatch):
     assert out["point_forecast_mode"] == "flat_anchor"
     assert out["forecast_status"] == "non_informative"
     assert out["signal_status"] == "not_actionable"
-    assert out["usable_for_live_trading"] is False
+    assert "usable_for_live_trading" not in out
     assert out["forecast_vs_last_price"]["direction"] == "neutral"
     assert out["forecast_vs_last_price"]["direction_basis"] == "flat_path"
     assert out["forecast_vs_last_price"]["direction_suppressed_reason"] == "flat_path"
@@ -659,7 +659,7 @@ def test_forecast_generate_compact_flags_one_tick_flat_path(monkeypatch):
     assert out["path_range"] == 0.00001
     assert out["forecast_status"] == "non_informative"
     assert out["signal_status"] == "not_actionable"
-    assert out["usable_for_live_trading"] is False
+    assert "usable_for_live_trading" not in out
     assert out["forecast_vs_last_price"]["direction"] == "neutral"
     assert out["forecast_vs_last_price"]["direction_basis"] == "flat_path"
     assert out["forecast_vs_last_price"]["direction_suppressed_reason"] == "flat_path"

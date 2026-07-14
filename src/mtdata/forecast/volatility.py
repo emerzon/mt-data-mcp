@@ -552,10 +552,6 @@ def _volatility_input_context(
         out.update(closed_session)
     history_policy_ok = not bool(out.get("data_stale")) and not bool(closed_session)
     out["history_policy_ok"] = history_policy_ok
-    out["usable_for_live_trading"] = history_policy_ok
-    out["usable_for_live_trading_basis"] = (
-        "volatility_history_bar_policy_not_execution_quote"
-    )
     freshness = format_freshness_label(
         data_stale=out.get("data_stale"),
         market_status=(

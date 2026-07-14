@@ -1141,7 +1141,6 @@ def strategy_backtest(  # noqa: C901
             "success": True,
             "is_signal": False,
             "usage": "research_only",
-            "usable_for_live_trading": False,
             "symbol": symbol,
             "timeframe": timeframe,
             "strategy": strategy_value,
