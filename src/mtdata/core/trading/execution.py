@@ -683,11 +683,28 @@ def _modify_pending_order(
             if pending_level_error is not None:
                 return pending_level_error
 
-            order_volume = (
-                validation._safe_float_attr(order, "volume_current")
-                or validation._safe_float_attr(order, "volume_initial")
-                or validation._safe_float_attr(order, "volume")
+            current_volume = validation._safe_float_attr(
+                order, "volume_current", None
             )
+            order_volume = (
+                current_volume
+                if current_volume is not None
+                else validation._safe_float_attr(order, "volume_initial", None)
+            )
+            if order_volume is None:
+                order_volume = validation._safe_float_attr(order, "volume", None)
+            if (
+                order_volume is None
+                or not math.isfinite(order_volume)
+                or order_volume <= 0.0
+            ):
+                return {
+                    "error": (
+                        f"Pending order {ticket_id} has no positive remaining volume; "
+                        "refusing to modify it."
+                    ),
+                    "error_code": "invalid_pending_order_volume",
+                }
             existing_entry_price = validation._safe_float_attr(order, "price_open")
             candidate_stop_loss = None if request_sl == 0.0 else float(request_sl)
             current_stop_loss = existing_sl

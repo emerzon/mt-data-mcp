@@ -612,6 +612,22 @@ class TestModifyPendingOrder:
         assert request["volume"] == pytest.approx(0.5)
 
     @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_modify_rejects_pending_order_without_positive_remaining_volume(self):
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        order = _pending_order(volume=0.5)
+        order.volume_current = 0.0
+        order.volume_initial = 0.5
+        mt5.orders_get.return_value = [order]
+        from mtdata.core.trading import _modify_pending_order
+
+        result = _modify_pending_order(ticket=100, price=1.095)
+
+        assert result["error_code"] == "invalid_pending_order_volume"
+        assert "no positive remaining volume" in result["error"]
+        mt5.order_send.assert_not_called()
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
     def test_normalizes_pending_modify_prices(self):
         mt5 = sys.modules["MetaTrader5"]
         self._setup_mt5(mt5)
