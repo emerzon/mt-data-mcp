@@ -78,6 +78,32 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
         "to its MT5 group. Optional with --group."
     ),
     ("options_barrier_price", "option_type"): "Option side: call or put.",
+    ("options_barrier_price", "barrier"): (
+        "Option knock-in/knock-out barrier price level, in the same units as spot "
+        "and strike. This is a numeric parametric pricer; it does not fetch a symbol quote."
+    ),
+    ("strategy_validate", "candidates"): (
+        "JSON strategy candidate list. Example: "
+        "'[{\"id\":\"cross\",\"type\":\"builtin_strategy\","
+        "\"strategy\":\"ema_cross\"}]'. Candidate types are builtin_strategy "
+        "and forecast_threshold."
+    ),
+    ("strategy_validate", "barrier"): (
+        "JSON triple-barrier labeling config with horizon, tp_pct, sl_pct, and "
+        "same_bar_policy; tp_pct/sl_pct are percentage points (0.5 means 0.5%)."
+    ),
+    ("forecast_barrier_prob", "tp_pct"): (
+        "Take-profit distance in percentage points; 0.1 means 0.1%, not 10%."
+    ),
+    ("forecast_barrier_prob", "sl_pct"): (
+        "Stop-loss distance in percentage points; 0.1 means 0.1%, not 10%."
+    ),
+    ("labels_triple_barrier", "tp_pct"): (
+        "Take-profit distance in percentage points; 0.1 means 0.1%, not 10%."
+    ),
+    ("labels_triple_barrier", "sl_pct"): (
+        "Stop-loss distance in percentage points; 0.1 means 0.1%, not 10%."
+    ),
     ("options_chain", "symbol"): (
         "Underlying symbol for listed options, e.g. AAPL or SPX."
     ),

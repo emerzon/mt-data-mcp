@@ -573,6 +573,36 @@ class TestAddDynamicArguments:
         )
         assert "--require-dom" in require_dom_action.option_strings
 
+    @pytest.mark.parametrize(
+        ("command", "parameter", "expected"),
+        [
+            ("options_barrier_price", "barrier", "knock-in/knock-out"),
+            ("strategy_validate", "candidates", "builtin_strategy"),
+            ("strategy_validate", "barrier", "triple-barrier"),
+            ("forecast_barrier_prob", "tp_pct", "0.1 means 0.1%"),
+            ("labels_triple_barrier", "sl_pct", "0.1 means 0.1%"),
+        ],
+    )
+    def test_specialized_barrier_help_is_domain_specific(
+        self, command, parameter, expected
+    ):
+        parser = argparse.ArgumentParser()
+        func_info = {
+            "params": [
+                {
+                    "name": parameter,
+                    "type": str,
+                    "required": False,
+                    "default": None,
+                }
+            ]
+        }
+
+        add_dynamic_arguments(parser, func_info, cmd_name=command)
+
+        action = next(action for action in parser._actions if action.dest == parameter)
+        assert expected in action.help
+
     def test_wait_event_exposes_symbol_without_instrument_alias(self):
         parser = argparse.ArgumentParser()
         func_info = {
