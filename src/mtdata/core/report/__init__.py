@@ -76,10 +76,12 @@ def report_generate(
 ) -> Union[str, Dict[str, Any]]:
     """Generate a consolidated, information-dense analysis report.
 
-    - template: 'basic' (context, pivot, EWMA vol, backtest->best forecast, MC barrier grid, patterns)
+    - template: 'basic' (context, pivot, EWMA vol, backtest->best forecast, MC barrier grid, patterns),
                 'minimal' (fast path: context + direct forecast; skips pivot/backtest/barrier optimization/patterns),
                 'advanced' (adds regimes, HAR-RV, conformal),
-                or style-specific ('scalping' | 'intraday' | 'swing' | 'position').
+                'scalping' (specialized short-horizon barrier logic), or a basic-pipeline preset:
+                'intraday' | 'swing' | 'position' (different timeframe, lookback, backtest, and barrier defaults;
+                the same section contract as basic).
     - params: optional dict for template/sub-tool overrides:
               timeframe, methods, context_limit/context_tail, backtest_steps/backtest_spacing,
               barrier_method/search_profile/grid_style/TP-SL grid keys, patterns_limit,

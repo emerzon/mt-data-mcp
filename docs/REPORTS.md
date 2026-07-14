@@ -25,15 +25,20 @@ changes its final presentation.
 
 ## Choose a template
 
-| Template | Intended use |
-|----------|--------------|
-| `minimal` | Fast context and direct forecast path |
-| `basic` | Balanced general-purpose report (default) |
-| `advanced` | Adds regime, HAR-RV, and conformal analysis |
-| `scalping` | Short-horizon M5 setup |
-| `intraday` | H1 setup |
-| `swing` | H4/D1 setup |
-| `position` | D1/W1 setup |
+| Template | Design and intended use |
+|----------|-------------------------|
+| `minimal` | Distinct fast path: context and direct forecast only |
+| `basic` | Shared general-purpose analysis pipeline (default) |
+| `advanced` | Extends `basic` with regime, HAR-RV, and conformal sections |
+| `scalping` | Specialized short-horizon M5 path with tick-aware barrier logic |
+| `intraday` | `basic` preset with H1-oriented defaults |
+| `swing` | `basic` preset with H4/D1-oriented defaults |
+| `position` | `basic` preset with D1/W1-oriented defaults |
+
+`intraday`, `swing`, and `position` select different default timeframes,
+lookbacks, backtest sampling, barrier ranges, and multi-timeframe inputs. They
+do not define different analytics or section schemas: each runs the `basic`
+pipeline with its preset parameters.
 
 `minimal` is the quick path. The other templates may perform several MT5
 fetches and invoke pivots, patterns, backtests, barriers, or regime checks.
@@ -47,7 +52,7 @@ than computation.
 # Fast overview
 mtdata-cli report_generate EURUSD --template minimal --timeframe H1
 
-# Style-specific report with an explicit forecast horizon
+# Basic-pipeline style preset with an explicit forecast horizon
 mtdata-cli report_generate EURUSD --template swing --timeframe H4 --horizon 12
 
 # Keep only selected computed sections
