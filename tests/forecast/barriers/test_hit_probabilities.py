@@ -42,6 +42,24 @@ def test_barrier_history_freshness_keeps_absolute_weekend_staleness():
     assert result["freshness"].startswith("closed weekend, data ")
 
 
+def test_barrier_history_age_uses_completed_bar_end():
+    bar_open = datetime(2026, 7, 14, 15, tzinfo=timezone.utc).timestamp()
+    now = datetime(2026, 7, 14, 16, 25, tzinfo=timezone.utc).timestamp()
+    frame = pd.DataFrame({"time": [bar_open]})
+
+    result = _history_freshness_context(
+        frame,
+        "H1",
+        symbol="EURUSD",
+        now_epoch=now,
+    )
+
+    assert result["history_last_bar_open_epoch"] == bar_open
+    assert result["data_as_of_epoch"] == bar_open + 3600
+    assert result["data_freshness_seconds"] == 25 * 60
+    assert result["data_stale"] is False
+
+
 def test_barrier_optimize_rejects_removed_profile_alias():
     result = forecast_barrier_optimize(
         symbol="EURUSD",

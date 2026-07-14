@@ -4,7 +4,7 @@ from typing import Any, Dict, List, Literal, Optional
 
 import numpy as np
 
-from ..shared.constants import SANITY_BARS_TOLERANCE, TIMEFRAME_SECONDS
+from ..shared.constants import TIMEFRAME_SECONDS
 from ..shared.schema import DenoiseSpec, TimeframeLiteral
 from ..shared.validators import unsupported_timeframe_seconds_error
 from ..utils.barriers import (
@@ -27,6 +27,7 @@ from ..utils.freshness import (
     format_age_seconds,
     format_freshness_label,
 )
+from ..utils.market_metadata import build_tick_freshness_context
 from ..utils.time import (
     _format_time_minimal,
     _format_time_minimal_local,
@@ -93,21 +94,23 @@ def _history_freshness_context(
 
     if now_epoch is None:
         now_epoch = datetime.now(timezone.utc).timestamp()
-    age_seconds = max(0, int(round(now_epoch - last_epoch)))
-    stale_after = int(
-        max(1, int(TIMEFRAME_SECONDS.get(timeframe, 0) or 0))
-        * max(1, int(SANITY_BARS_TOLERANCE))
-    )
+    timeframe_seconds = max(1, int(TIMEFRAME_SECONDS.get(timeframe, 0) or 0))
+    completed_bar_end = last_epoch + timeframe_seconds
+    age_seconds = max(0, int(round(now_epoch - completed_bar_end)))
+    stale_after = timeframe_seconds
     data_stale = age_seconds > stale_after if stale_after > 0 else None
     age_text = format_age_seconds(age_seconds)
     out.update(
         {
-            "data_as_of": _format_barrier_epoch(last_epoch),
-            "data_as_of_epoch": float(last_epoch),
+            "history_last_bar_open": _format_barrier_epoch(last_epoch),
+            "history_last_bar_open_epoch": float(last_epoch),
+            "data_as_of": _format_barrier_epoch(completed_bar_end),
+            "data_as_of_epoch": float(completed_bar_end),
             "data_freshness_seconds": age_seconds,
             "data_stale": data_stale,
             "stale_after_seconds": stale_after,
-            "freshness_basis": "bar_policy",
+            "freshness_basis": "last_completed_bar_end",
+            "input_bar_policy": "closed_bars_only",
         }
     )
     closed_session = closed_session_context(
@@ -165,27 +168,32 @@ def _live_reference_time_context(
 
     if now_epoch is None:
         now_epoch = datetime.now(timezone.utc).timestamp()
-    age_seconds = max(0, int(round(now_epoch - epoch)))
-    stale_after = int(
-        max(1, int(TIMEFRAME_SECONDS.get(timeframe, 0) or 0))
-        * max(1, int(SANITY_BARS_TOLERANCE))
+    freshness = build_tick_freshness_context(
+        symbol,
+        tick_epoch=epoch,
+        now_epoch=now_epoch,
+        item="reference price",
+        age_rounder=lambda value: max(0, int(round(value))),
     )
+    age_seconds = freshness.get("data_age_seconds")
     out = {
         "reference_price_time": _format_barrier_epoch(epoch),
         "reference_price_time_epoch": float(epoch),
         "reference_price_age_seconds": age_seconds,
         "reference_price_age": format_age_seconds(age_seconds),
-        "reference_price_stale": age_seconds > stale_after if stale_after > 0 else None,
+        "reference_price_stale": freshness.get("data_stale"),
+        "reference_freshness_state": freshness.get("freshness_state"),
+        "reference_live_max_age_seconds": freshness.get("live_max_age_seconds"),
+        "reference_usable_for_live": freshness.get("usable_for_live_trading"),
     }
-    closed_session = closed_session_context(
-        symbol,
-        now_epoch=now_epoch,
-        item="reference price",
-        data_age_seconds=age_seconds,
-    )
-    if closed_session:
-        out.update(closed_session)
-    out["reference_usable_for_live"] = not bool(out.get("reference_price_stale")) and not bool(closed_session)
+    for key in (
+        "market_status",
+        "market_status_reason",
+        "market_status_source",
+        "freshness_policy_relaxed",
+    ):
+        if freshness.get(key) is not None:
+            out[key] = freshness[key]
     return out
 
 
@@ -636,9 +644,16 @@ def forecast_barrier_hit_probabilities(  # noqa: C901
             "time_to_sl_bars": sl_stats,
         }
         out.update(freshness_context)
+        out["model_data_usable_for_live"] = bool(
+            freshness_context.get("usable_for_live_trading")
+        )
         if str(last_price_source or "").startswith("live_tick"):
             reference_context = _live_reference_time_context(symbol, timeframe)
             out.update(reference_context)
+            out["usable_for_live_trading"] = bool(
+                out.get("model_data_usable_for_live")
+                and reference_context.get("reference_usable_for_live")
+            )
             if (
                 reference_context.get("reference_price_stale") is True
                 or reference_context.get("market_status") == "closed"
@@ -649,6 +664,16 @@ def forecast_barrier_hit_probabilities(  # noqa: C901
         elif freshness_context.get("data_as_of"):
             out["reference_price_time"] = freshness_context.get("data_as_of")
             out["reference_price_time_epoch"] = freshness_context.get("data_as_of_epoch")
+        out["conditioning_note"] = (
+            "Probabilities use closed bars through "
+            f"{out.get('data_as_of')}; barriers are measured from "
+            f"{out.get('last_price_source')}."
+        )
+        if not out.get("usable_for_live_trading"):
+            warnings_out.append(
+                "Barrier output is not execution-ready because the model history "
+                "or reference quote is outside its live freshness policy."
+            )
         if price_precision is not None:
             out["price_precision"] = int(price_precision)
         if method_requested != method_key:
