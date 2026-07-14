@@ -128,6 +128,12 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
         "Sort direction for ranked rows: auto, asc/ascending, or desc/descending. "
         "Auto keeps tight spreads and oversold RSI ascending; most other ranks descending."
     ),
+    ("outliers_detect", "score_fields"): (
+        "Comma-separated candle features to score: return, volume, and/or range."
+    ),
+    ("outliers_detect", "threshold"): (
+        "Positive robust-deviation cutoff; 3.5 is a common MAD threshold."
+    ),
     ("labels_triple_barrier", "detail"): (
         "Detail level: compact (small outcome sample), standard (recent lookback rows), "
         "summary, or full."

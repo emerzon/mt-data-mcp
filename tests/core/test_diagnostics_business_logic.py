@@ -131,7 +131,7 @@ def test_outliers_detect_flags_price_and_volume_spike(monkeypatch):
 
     result = _raw(diagnostics.outliers_detect)(
         symbol="TEST",
-        fields="return,volume",
+        score_fields="return,volume",
         detail="full",
     )
 

@@ -34,7 +34,7 @@ The dominant period is exploratory evidence, not proof of a stable calendar effe
 
 ```bash
 mtdata-cli outliers_detect EURUSD --timeframe H1 --lookback 500 \
-  --fields return,volume,range --method mad --threshold 3.5 --json
+  --score-fields return,volume,range --method mad --threshold 3.5 --json
 ```
 
 Use `--detail full` to include field-level scores and OHLC values for each flagged bar.

@@ -416,7 +416,7 @@ def outliers_detect(
     symbol: str,
     timeframe: TimeframeLiteral = "H1",
     lookback: int = 500,
-    fields: str = "return,volume,range",
+    score_fields: str = "return,volume,range",
     method: Literal["mad", "iqr", "zscore"] = "mad",
     threshold: float = 3.5,
     limit: int = 50,
@@ -427,10 +427,19 @@ def outliers_detect(
     def _run() -> Dict[str, Any]:
         if int(lookback) < 20 or int(limit) < 1 or float(threshold) <= 0:
             return {"error": "lookback >= 20, limit >= 1, and threshold > 0 are required."}
-        requested = [part.strip().lower() for part in str(fields or "").split(",") if part.strip()]
+        requested = [
+            part.strip().lower()
+            for part in str(score_fields or "").split(",")
+            if part.strip()
+        ]
         requested = list(dict.fromkeys(requested))
         if not requested or any(field not in {"return", "volume", "range"} for field in requested):
-            return {"error": "fields must contain one or more of: return, volume, range."}
+            return {
+                "error": (
+                    "score_fields must contain one or more of: "
+                    "return, volume, range."
+                )
+            }
         gateway = create_mt5_gateway(adapter=mt5, ensure_connection_impl=ensure_mt5_connection_or_raise)
         gateway.ensure_connection()
         frame, fetch_error = _fetch_diagnostic_bars(symbol, timeframe, int(lookback))
