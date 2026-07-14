@@ -30,12 +30,20 @@ A dry run routes and validates the request **without sending it to MT5**. The `t
   "no_action": true,
   "would_send_order": false,
   "dry_run_simulated": true,
-  "validation_scope": "request_routing_only",
+  "preview_ok": true,
+  "validation_passed": true,
+  "validation_scope": "local_preview_plus_estimates",
   "preview_checks_performed": [ /* routing, local safety/level checks, margin estimate */ ],
   "broker_validation_not_performed": [ /* broker acceptance/enforcement, margin reservation, fillability, SL/TP attachment */ ],
   "guardrails_preview": { /* which guardrails would apply */ }
 }
 ```
+
+`success` means the preview operation completed. Gate any subsequent live send
+on `preview_ok` (and the equivalent nested `validation.live_submission_eligible`),
+which is `false` when local requirements such as required SL/TP are missing.
+Compact output always retains these gate fields and the broker-validation
+limitations; `guardrails_preview` remains a standard/full-detail section.
 
 **What a dry run *does* check:** required fields, order-type validity, market-vs-pending routing, and a guardrails preview.
 

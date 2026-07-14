@@ -808,6 +808,9 @@ def _normalize_trade_payload(
     if "retcode_name" not in out:
         _maybe_add_trade_key(out, "retcode", payload.get("retcode"))
     _maybe_add_trade_key(out, "dry_run", payload.get("dry_run"))
+    _maybe_add_trade_key(out, "dry_run_simulated", payload.get("dry_run_simulated"))
+    _maybe_add_trade_key(out, "preview_ok", payload.get("preview_ok"))
+    _maybe_add_trade_key(out, "validation_passed", payload.get("validation_passed"))
     _maybe_add_trade_key(out, "trade_gate_passed", payload.get("trade_gate_passed"))
     _maybe_add_trade_key(out, "actionability", payload.get("actionability"))
     _maybe_add_trade_key(out, "symbol", payload.get("symbol"))
@@ -857,6 +860,11 @@ def _normalize_trade_payload(
     _maybe_add_trade_key(out, "protection_status", payload.get("protection_status"))
     _maybe_add_trade_key(out, "protection_error", protection_error)
     _maybe_add_trade_key(out, "validation_scope", payload.get("validation_scope"))
+    _maybe_add_trade_key(
+        out,
+        "broker_validation_not_performed",
+        payload.get("broker_validation_not_performed"),
+    )
     _maybe_add_trade_key(
         out, "preview_scope_summary", payload.get("preview_scope_summary")
     )

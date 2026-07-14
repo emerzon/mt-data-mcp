@@ -234,11 +234,14 @@ def test_trade_place_dry_run_market_preview_skips_order_send() -> None:
     assert out.get("would_send_order") is False
     assert out.get("pending") is False
     assert out.get("action") == "place_market_order"
-    assert "actionability" not in out
+    assert out["actionability"] == "preview_only"
     assert "preview_scope_summary" not in out
     assert "validation_not_performed" not in out
     assert "warnings" not in out
-    assert "validation_scope" not in out
+    assert out["validation_scope"] == "local_preview_plus_estimates"
+    assert out["validation_passed"] is True
+    assert out["preview_ok"] is True
+    assert "broker_acceptance" in out["broker_validation_not_performed"]
     assert "trade_gate_passed" not in out
     assert out.get("message") == "Dry run only. No order was sent to MT5."
     assert out.get("bid") == 64999.0
@@ -274,6 +277,8 @@ def test_trade_place_dry_run_market_preview_allows_missing_sl_tp() -> None:
         "broker_validation_performed": False,
     }
     assert out.get("would_send_order") is False
+    assert out["preview_ok"] is False
+    assert out["validation_passed"] is False
     assert out.get("action") == "place_market_order"
     assert "requested_sl" not in out
     assert "requested_tp" not in out
@@ -302,12 +307,14 @@ def test_trade_place_dry_run_preview_detail_omits_safety_lists() -> None:
     assert out.get("success") is True
     assert out.get("dry_run") is True
     assert out.get("would_send_order") is False
-    assert "actionability" not in out
+    assert out["actionability"] == "preview_only"
     assert "preview_scope_summary" not in out
     assert "warnings" not in out
     assert "validation_not_performed" not in out
     assert "guardrails_preview" not in out
-    assert "validation_scope" not in out
+    assert out["validation_scope"] == "local_preview_plus_estimates"
+    assert out["preview_ok"] is True
+    assert out["validation_passed"] is True
     assert "trade_gate_passed" not in out
     mock_market.assert_not_called()
 
@@ -334,7 +341,7 @@ def test_trade_place_dry_run_standard_detail_keeps_validation_context() -> None:
     assert "preview_scope_summary" in out
     assert "warnings" in out
     assert "guardrails_preview" in out
-    assert "validation_scope" not in out
+    assert out["validation_scope"] == "local_preview_plus_estimates"
     assert "trade_gate_passed" not in out
     mock_market.assert_not_called()
 
@@ -498,7 +505,9 @@ def test_trade_place_dry_run_pending_preview_skips_order_send() -> None:
     assert out.get("no_action") is True
     assert out.get("pending") is True
     assert out.get("action") == "place_pending_order"
-    assert "actionability" not in out
+    assert out["actionability"] == "preview_only"
+    assert out["preview_ok"] is True
+    assert out["validation_passed"] is True
     assert "preview_scope_summary" not in out
     assert "warnings" not in out
     assert "trade_gate_passed" not in out

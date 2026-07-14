@@ -7,6 +7,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Dict, List, Optional, TypedDict, Union
 
 from ...bootstrap.settings import mt5_config, trade_guardrails_config
+from ...shared.market_units import forex_points_per_pip
 from . import comments, common, time, validation
 from .gateway import MT5TradingGateway, create_trading_gateway, trading_connection_error
 from .positions import _resolve_open_position
@@ -919,6 +920,14 @@ def build_trade_place_dry_run_preview(
     if point > 0:
         spread_price = ask - bid
         out["spread_points"] = round(spread_price / point, 2)
+        points_per_pip = forex_points_per_pip(
+            symbol,
+            path=str(getattr(symbol_info, "path", "") or ""),
+            point=point,
+            digits=digits,
+        )
+        if points_per_pip:
+            out["spread_pips"] = round(out["spread_points"] / points_per_pip, 2)
         midpoint = (ask + bid) / 2.0
         if midpoint:
             out["spread_pct"] = round((spread_price / midpoint) * 100.0, 6)

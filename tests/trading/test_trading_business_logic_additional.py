@@ -386,7 +386,7 @@ def test_build_trade_place_dry_run_preview_uses_live_quote_and_margin():
         volume_min=0.01,
         volume_max=100.0,
         volume_step=0.01,
-        point=0.0001,
+        point=0.00001,
         digits=5,
         trade_stops_level=10,
         trade_freeze_level=0,
@@ -408,7 +408,8 @@ def test_build_trade_place_dry_run_preview_uses_live_quote_and_margin():
     assert result["bid"] == 1.0999
     assert result["ask"] == 1.1001
     assert result["estimated_fill_price"] == 1.1001
-    assert result["spread_points"] == 2.0
+    assert result["spread_points"] == 20.0
+    assert result["spread_pips"] == 2.0
     assert result["sl_distance_pct"] > 0
     assert result["tp_distance_pct"] > 0
     assert result["sl_tp_valid"] is True
