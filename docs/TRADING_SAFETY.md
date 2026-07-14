@@ -106,7 +106,7 @@ Modifies an existing order/position by ticket.
 | `--expiration` | — | New pending-order expiry |
 | `--comment` | — | Updated comment |
 | `--idempotency-key` | — | In-process dedupe |
-| `--dry-run` | `false` | **Preview only when `true`** |
+| `--dry-run` | `true` | Preview by default; set `false` explicitly for a live modification |
 
 ```bash
 mtdata-cli trade_get_open --json
@@ -132,7 +132,7 @@ Closes one position, a filtered set, or all — with an extra confirmation for b
 | `--profit-only` / `--loss-only` | `false` | Only close winners / losers |
 | `--close-priority` | — | `loss_first`, `profit_first`, or `largest_first` |
 | `--deviation` | `20` | Max slippage in points |
-| `--dry-run` | `false` | **Preview only when `true`** |
+| `--dry-run` | `true` | Preview by default; set `false` explicitly for a live close |
 
 ```bash
 # Preview a partial close of one ticket

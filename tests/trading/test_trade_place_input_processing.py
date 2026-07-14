@@ -51,7 +51,7 @@ def test_trading_order_requests_expose_canonical_detail_field() -> None:
 
 
 def test_execution_request_dry_run_defaults() -> None:
-    # All trade tools execute by default; pass dry_run=true to preview.
+    # All trade mutators preview by default; pass dry_run=false to execute live.
     assert TradePlaceRequest().dry_run is True
     assert TradeModifyRequest(ticket=100).dry_run is True
     assert TradeCloseRequest(ticket=100).dry_run is True
