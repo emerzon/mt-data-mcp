@@ -6,13 +6,13 @@ from typing import Optional
 import numpy as np
 
 
-def dtw_distance_fallback(
+def dtw_distance(
     a: np.ndarray,
     b: np.ndarray,
     *,
     sakoe_chiba_radius: Optional[int] = None,
 ) -> float:
-    """Compute a simple 1D DTW distance without optional third-party backends."""
+    """Compute the canonical one-dimensional DTW distance."""
     x = np.asarray(a, dtype=float).reshape(-1)
     y = np.asarray(b, dtype=float).reshape(-1)
 

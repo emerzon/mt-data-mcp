@@ -18,7 +18,7 @@ except Exception:
 # Dimensionality reduction abstraction
 # Reuse existing MT5 helpers and denoise utilities
 from ..shared.constants import TIMEFRAME_MAP
-from .dtw import dtw_distance_fallback
+from .dtw import dtw_distance
 from .denoise import (
     _denoise_series as _apply_denoise_series,
 )
@@ -371,7 +371,7 @@ class PatternIndex:
                         else:
                             score = float(ts_dtw(a, w))
                     except Exception:
-                        score = dtw_distance_fallback(
+                        score = dtw_distance(
                             a,
                             w,
                             sakoe_chiba_radius=int(band) if band else None,
@@ -382,7 +382,7 @@ class PatternIndex:
                         gamma = float(soft_dtw_gamma) if (soft_dtw_gamma is not None and soft_dtw_gamma > 0) else 1.0
                         score = float(ts_soft_dtw(a.reshape(1, -1), w.reshape(1, -1), gamma=gamma))
                     except Exception:
-                        score = dtw_distance_fallback(
+                        score = dtw_distance(
                             a,
                             w,
                             sakoe_chiba_radius=int(band) if band else None,
