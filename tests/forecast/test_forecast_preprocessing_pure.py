@@ -172,5 +172,7 @@ class TestApplyPreprocessing:
 
     def test_with_denoise_does_not_crash(self):
         df = _make_ohlcv_df(50)
+        original_close = df["close"].copy()
         col = apply_preprocessing(df, "price", "price", {"method": "ema"})
-        assert col == "close"
+        assert col == "close_dn"
+        assert df["close"].equals(original_close)
