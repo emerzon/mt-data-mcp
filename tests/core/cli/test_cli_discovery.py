@@ -949,6 +949,11 @@ class TestCreateCommandFunction:
         output = capsys.readouterr().out
         assert "Missing required argument(s): symbol." in output
         assert "Use symbols_list to browse available broker symbols." in output
+        assert "success" in output
+        assert "false" in output.lower()
+        assert "cli_missing_required" in output
+        assert "operation" in output
+        assert "request_id" in output
         mock_fn.assert_not_called()
 
     def test_trade_place_missing_required_warns_about_live_orders(self, capsys):

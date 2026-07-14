@@ -7,6 +7,7 @@ from pydantic import ValidationError
 from ...data.requests import (
     _normalize_indicator_specs as _shared_normalize_indicator_specs,
 )
+from ...error_envelope import build_error_payload
 from ...output_contract import normalize_output_extras
 
 LIVE_TRADE_MUTATION_TOOLS = frozenset({"trade_place", "trade_modify", "trade_close"})
@@ -216,8 +217,21 @@ def create_command_function(  # noqa: C901
             or callable(getattr(value, "parse_obj", None))
         )
 
-    def _build_cli_error(message: str) -> Dict[str, Any]:
-        return {"error": str(message).strip() or "Invalid command input."}
+    def _build_cli_error(
+        message: str,
+        *,
+        code: str = "cli_invalid_arguments",
+        remediation: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        return build_error_payload(
+            str(message).strip() or "Invalid command input.",
+            code=code,
+            operation=cmd_name,
+            remediation=(
+                remediation
+                or f"Run 'mtdata-cli {cmd_name} --help' for accepted arguments."
+            ),
+        )
 
     def _literal_choices_for_param(param: Optional[Dict[str, Any]]) -> Optional[List[str]]:
         if not isinstance(param, dict):
@@ -457,7 +471,14 @@ def create_command_function(  # noqa: C901
             if cmd_name in LIVE_TRADE_MUTATION_TOOLS:
                 message += f" {LIVE_TRADE_MUTATION_WARNING}"
             render_cli_result(
-                _build_cli_error(message),
+                _build_cli_error(
+                    message,
+                    code="cli_missing_required",
+                    remediation=(
+                        f"Provide: {missing_text}. Run "
+                        f"'mtdata-cli {cmd_name} --help' for examples."
+                    ),
+                ),
                 args=args,
                 cmd_name=cmd_name,
             )
