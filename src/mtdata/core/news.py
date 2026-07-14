@@ -84,6 +84,13 @@ def _news_time_utc_text(value: datetime) -> str:
     return published_at.strftime("%Y-%m-%d %H:%M UTC")
 
 
+def _news_iso_utc(value: Any) -> Any:
+    published_at = _news_datetime_utc(value)
+    if published_at is None:
+        return value
+    return published_at.isoformat().replace("+00:00", "Z")
+
+
 def _news_data_fetched_at() -> str:
     return (
         datetime.now(timezone.utc)
@@ -150,7 +157,7 @@ def _strip_news_compact_item_fields(
         out["kind"] = kind
     published_at = value.get("published_at")
     if published_at not in (None, ""):
-        out["published_at"] = published_at
+        out["published_at"] = _news_iso_utc(published_at)
     if time_field_name and time_field_value:
         out[time_field_name] = time_field_value
     if include_relevance and value.get("relevance_score") is not None:
@@ -195,7 +202,21 @@ def normalize_news_output(
 
     detail_mode = normalize_output_verbosity_detail(detail)
     if detail_mode == "full":
-        return dict(result)
+        out = dict(result)
+        for bucket in _NEWS_BUCKET_KEYS:
+            rows = out.get(bucket)
+            if not isinstance(rows, list):
+                continue
+            out[bucket] = [
+                {
+                    **item,
+                    "published_at": _news_iso_utc(item.get("published_at")),
+                }
+                if isinstance(item, dict) and item.get("published_at") not in (None, "")
+                else item
+                for item in rows
+            ]
+        return out
 
     out: Dict[str, Any] = {}
     for key, subvalue in result.items():
