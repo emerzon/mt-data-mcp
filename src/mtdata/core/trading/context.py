@@ -147,10 +147,20 @@ def _build_trade_ready(
 ) -> Dict[str, Any]:
     blockers: list[str] = []
     margin_free = None
+    margin_level = None
+    margin_utilization_pct = None
     if not isinstance(account, dict) or account.get("error") not in (None, ""):
         blockers.append("account_unavailable")
     else:
         margin_free = account.get("margin_free")
+        margin_level = account.get("margin_level")
+        try:
+            margin = float(account.get("margin"))
+            equity = float(account.get("equity"))
+            if math.isfinite(margin) and math.isfinite(equity) and equity > 0:
+                margin_utilization_pct = round((margin / equity) * 100.0, 2)
+        except Exception:
+            margin_utilization_pct = None
         if account.get("execution_ready") is False:
             blockers.append("account_execution_not_ready")
         execution_blockers = account.get("execution_blockers")
@@ -183,11 +193,17 @@ def _build_trade_ready(
     except Exception:
         margin_sufficient = None
     result = {
-        "can_trade": not deduped_blockers,
+        "execution_preconditions_met": not deduped_blockers,
         "any_blockers": bool(deduped_blockers),
         "blockers": deduped_blockers,
         "margin_sufficient_for_min_lot": margin_sufficient,
+        "readiness_scope": "connectivity_account_quote_and_symbol_not_portfolio_risk_approval",
+        "portfolio_risk_assessed": False,
     }
+    if margin_level not in (None, ""):
+        result["margin_level"] = margin_level
+    if margin_utilization_pct is not None:
+        result["margin_utilization_pct"] = margin_utilization_pct
     if can_open_new_positions is not None:
         result["can_open_new_positions"] = can_open_new_positions
     return result

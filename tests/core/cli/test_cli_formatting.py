@@ -878,7 +878,10 @@ class TestFormatResultForCli:
                     "market_status": "probably_open",
                     "is_tradable": True,
                     "can_open_new_positions": True,
-                    "trade_ready": {"can_trade": False, "blockers": ["quote_not_live"]},
+                    "trade_ready": {
+                        "execution_preconditions_met": False,
+                        "blockers": ["quote_not_live"],
+                    },
                     "account": {
                         "margin_free": 125.0,
                         "currency": "USD",
@@ -899,7 +902,7 @@ class TestFormatResultForCli:
             )
         )
 
-        assert payload["trade_ready"]["can_trade"] is False
+        assert payload["trade_ready"]["execution_preconditions_met"] is False
         assert payload["is_tradable"] is True
         assert payload["account"] == {
             "margin_free": 125.0,

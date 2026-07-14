@@ -1,6 +1,6 @@
 from unittest.mock import patch
 
-from mtdata.core.trading.context import trade_session_context
+from mtdata.core.trading.context import _build_trade_ready, trade_session_context
 from mtdata.core.trading.requests import TradeSessionContextRequest
 
 
@@ -17,6 +17,26 @@ def _raw_trade_session_context(
             include_account=include_account,
         )
     )
+
+
+def test_trade_ready_does_not_claim_portfolio_risk_approval() -> None:
+    readiness = _build_trade_ready(
+        {
+            "execution_ready": True,
+            "equity": 384.28,
+            "margin": 318.97,
+            "margin_free": 65.31,
+            "margin_level": 120.48,
+        },
+        {"usable_for_live_trading": True, "data_stale": False},
+        {"can_open_new_positions": True},
+    )
+
+    assert readiness["execution_preconditions_met"] is True
+    assert readiness["portfolio_risk_assessed"] is False
+    assert readiness["margin_level"] == 120.48
+    assert readiness["margin_utilization_pct"] == 83.0
+    assert "not_portfolio_risk_approval" in readiness["readiness_scope"]
 
 
 def test_trade_session_context_compacts_nested_sections_by_default() -> None:
@@ -202,7 +222,7 @@ def test_trade_session_context_surfaces_closed_market_tradability() -> None:
     assert out["market_status_reason"] == "weekend"
     assert out["is_tradable"] is False
     assert out["can_open_new_positions"] is False
-    assert out["trade_ready"]["can_trade"] is False
+    assert out["trade_ready"]["execution_preconditions_met"] is False
     assert "market_not_open_for_new_positions" in out["trade_ready"]["blockers"]
 
 
