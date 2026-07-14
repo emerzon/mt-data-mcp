@@ -6,6 +6,8 @@ from typing import Any, Optional
 
 from ..shared.symbols import is_probably_crypto_symbol
 
+QUOTE_LIVE_SECONDS = 15
+QUOTE_RECENT_SECONDS = 60
 QUOTE_STALE_SECONDS = 300
 MAX_STANDARD_WEEKEND_DATA_AGE_SECONDS = 3 * 24 * 60 * 60
 

@@ -2768,7 +2768,6 @@ def fetch_ticks(  # noqa: C901
                 item="tick",
                 age_rounder=lambda value: round(value, 3),
             )
-            freshness_context.pop("freshness_state", None)
             payload.update(freshness_context)
 
         def _compact_summary_from_ticks() -> Dict[str, Any]:

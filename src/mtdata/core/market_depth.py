@@ -149,6 +149,10 @@ def _compact_market_ticker_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
         "mid",
         "market_status",
         "freshness",
+        "freshness_state",
+        "data_age_seconds",
+        "usable_for_live_trading",
+        "live_max_age_seconds",
         "stale_after_seconds",
         "market_status_reason",
         "contract_size",
@@ -731,13 +735,7 @@ def market_ticker(  # noqa: C901
                     age_rounder=_market_ticker_age_seconds,
                 )
                 rounded_age_seconds = freshness_context.get("data_age_seconds")
-                out.update(
-                    {
-                        key: value
-                        for key, value in freshness_context.items()
-                        if key != "freshness_state"
-                    }
-                )
+                out.update(freshness_context)
                 age_display = _market_ticker_age_display(rounded_age_seconds)
                 if age_display is not None:
                     out["data_age"] = age_display

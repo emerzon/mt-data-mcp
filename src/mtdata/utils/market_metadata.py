@@ -4,8 +4,11 @@ import math
 from typing import Any, Callable, Dict
 
 from .freshness import (
+    QUOTE_LIVE_SECONDS,
+    QUOTE_RECENT_SECONDS,
     QUOTE_STALE_SECONDS,
     closed_session_context,
+    format_age_seconds,
     format_freshness_label,
 )
 
@@ -43,6 +46,7 @@ def tick_freshness_state(
     market_status: Any = None,
     market_status_reason: Any = None,
     freshness_policy_relaxed: Any = None,
+    age_seconds: Any = None,
 ) -> str:
     if normalize_policy_relaxed(freshness_policy_relaxed):
         status = str(market_status or "closed_or_idle").strip().lower()
@@ -52,7 +56,17 @@ def tick_freshness_state(
             parts.append(reason.replace(" ", "_"))
         parts.append("snapshot")
         return "_".join(part for part in parts if part)
-    return "stale" if bool(data_stale) else "fresh"
+    if bool(data_stale):
+        return "stale"
+    try:
+        age = max(0.0, float(age_seconds))
+    except (TypeError, ValueError):
+        return "unknown"
+    if age <= float(QUOTE_LIVE_SECONDS):
+        return "live"
+    if age <= float(QUOTE_RECENT_SECONDS):
+        return "recent"
+    return "delayed"
 
 
 def build_tick_freshness_context(
@@ -102,6 +116,7 @@ def build_tick_freshness_context(
         "data_age_metric": FRESHNESS_METRIC_LAST_TICK_AGE,
         "stale_after_seconds": stale_after,
         "data_stale": data_stale,
+        "live_max_age_seconds": QUOTE_LIVE_SECONDS,
     }
     if timestamp_in_future:
         out["timestamp_in_future"] = True
@@ -113,7 +128,12 @@ def build_tick_freshness_context(
     if closed_session:
         out.update(closed_session)
     out["freshness_basis"] = f"absolute_{stale_after}s"
-    out["usable_for_live_trading"] = not data_stale and not bool(closed_session)
+    execution_fresh = (
+        age_seconds <= float(QUOTE_LIVE_SECONDS)
+        and not data_stale
+        and not timestamp_in_future
+    )
+    out["usable_for_live_trading"] = execution_fresh and not bool(closed_session)
 
     freshness = format_freshness_label(
         data_stale=data_stale,
@@ -129,5 +149,12 @@ def build_tick_freshness_context(
         market_status=out.get("market_status"),
         market_status_reason=out.get("market_status_reason"),
         freshness_policy_relaxed=out.get("freshness_policy_relaxed"),
+        age_seconds=age_seconds,
     )
+    if not closed_session and out["freshness_state"] in {"recent", "delayed"}:
+        age_text = format_age_seconds(age_seconds)
+        item_label = str(item or "tick").strip() or "tick"
+        out["freshness"] = (
+            f"{out['freshness_state']}, {item_label} {age_text} ago"
+        )
     return out

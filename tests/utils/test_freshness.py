@@ -93,6 +93,31 @@ def test_future_tick_is_not_accepted_as_fresh() -> None:
     assert result["timestamp_skew_seconds"] == 10_800.0
 
 
+def test_recent_tick_is_visible_but_not_execution_fresh() -> None:
+    result = build_tick_freshness_context(
+        "EURUSD",
+        tick_epoch=970.0,
+        now_epoch=1_000.0,
+    )
+
+    assert result["data_stale"] is False
+    assert result["freshness_state"] == "recent"
+    assert result["freshness"] == "recent, tick 30s ago"
+    assert result["live_max_age_seconds"] == 15
+    assert result["usable_for_live_trading"] is False
+
+
+def test_live_tick_is_usable_for_execution() -> None:
+    result = build_tick_freshness_context(
+        "EURUSD",
+        tick_epoch=995.0,
+        now_epoch=1_000.0,
+    )
+
+    assert result["freshness_state"] == "live"
+    assert result["usable_for_live_trading"] is True
+
+
 class _FalseLike:
     def __bool__(self):
         return False

@@ -351,7 +351,9 @@ def test_market_ticker_returns_lightweight_spread_snapshot() -> None:
     assert "spread_pips" not in out["units"]
     assert "spread_pct_display" not in out
     assert "data_stale" not in out
-    assert "data_age_seconds" not in out
+    assert out["data_age_seconds"] > out["stale_after_seconds"]
+    assert out["freshness_state"] == "stale"
+    assert out["usable_for_live_trading"] is False
     assert "data_age_hours" not in out
     assert "warning" not in out
     assert "last" not in out
