@@ -924,7 +924,7 @@ def _check_symbol_market_status(
         open_state = "weekend_closed"
         can_open = False
         reason = "weekend"
-    elif can_open is True and tick_freshness == "fresh":
+    elif can_open is True and tick_freshness in {"live", "recent"}:
         open_state = "probably_open"
     elif can_open is True and recent_schedule_allows_now and tick_available:
         # Recent M1 candles show this hour is an active session (e.g. weekend-trading
@@ -1342,7 +1342,8 @@ def market_status(
 
         payload = {
             "success": True,
-            "mode": "global",
+            "mode": "equity_exchanges",
+            "market_scope": "major_equity_exchanges",
             "data_fetched_at": _format_utc_iso_z(now_utc),
             "timezone": "UTC",
             "day_of_week": now_utc.strftime("%A"),
