@@ -760,7 +760,7 @@ def _brownian_bridge_hits(
 def _get_live_reference_price(symbol: str, direction: str) -> Tuple[Optional[float], Optional[str]]:
     """Best-effort live tick reference price; returns (price, source) or (None, None)."""
     try:
-        import MetaTrader5 as _mt5  # type: ignore
+        from ..utils.mt5 import mt5 as _mt5
     except Exception:
         return None, None
 

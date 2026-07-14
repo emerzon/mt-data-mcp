@@ -98,7 +98,10 @@ class MT5Adapter:
 
     def symbol_info(self, symbol):
         with _mt5_lock:
-            return self._module().symbol_info(symbol)
+            module = self._module()
+            raw_info = module.symbol_info(symbol)
+            mode = _timestamp_mode_for_symbol(module, symbol)
+            return _normalize_object_times(raw_info, mode=mode)
 
     def symbol_select(self, symbol, visible=True):
         with _mt5_lock:
@@ -116,16 +119,28 @@ class MT5Adapter:
 
     def positions_get(self, **kwargs):
         with _mt5_lock:
+            module = self._module()
+            rows = module.positions_get(**kwargs)
             return _normalize_object_time_rows(
-                self._module().positions_get(**kwargs),
-                mode=_cached_timestamp_mode(),
+                rows,
+                mode=_timestamp_mode_for_object_rows(
+                    module,
+                    rows,
+                    symbol=kwargs.get("symbol"),
+                ),
             )
 
     def orders_get(self, **kwargs):
         with _mt5_lock:
+            module = self._module()
+            rows = module.orders_get(**kwargs)
             return _normalize_object_time_rows(
-                self._module().orders_get(**kwargs),
-                mode=_cached_timestamp_mode(),
+                rows,
+                mode=_timestamp_mode_for_object_rows(
+                    module,
+                    rows,
+                    symbol=kwargs.get("symbol"),
+                ),
             )
 
     def history_orders_get(self, dt_from, dt_to, **kwargs):
@@ -406,6 +421,24 @@ def _timestamp_mode_for_symbol(module: Any, symbol: str) -> str:
     except Exception:
         tick = None
     return _timestamp_mode_from_tick(tick, symbol=symbol)
+
+
+def _timestamp_mode_for_object_rows(
+    module: Any,
+    rows: Any,
+    *,
+    symbol: Optional[str] = None,
+) -> str:
+    """Detect the terminal clock before normalizing position/order rows."""
+    probe_symbol = str(symbol or "").strip()
+    if not probe_symbol and rows:
+        try:
+            probe_symbol = str(getattr(rows[0], "symbol", "") or "").strip()
+        except Exception:
+            probe_symbol = ""
+    if probe_symbol:
+        return _timestamp_mode_for_symbol(module, probe_symbol)
+    return _cached_timestamp_mode()
 
 
 def get_mt5_timestamp_mode(symbol: Optional[str] = None) -> str:

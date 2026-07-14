@@ -185,3 +185,54 @@ def test_adapter_keeps_native_utc_terminal_unchanged(monkeypatch) -> None:
     assert observed_bounds["to"] == now
     assert result is rows
     assert mt5_mod.get_mt5_timestamp_mode("TSLA.NAS-24") == "native_utc"
+
+
+def test_adapter_detects_clock_before_normalizing_positions_and_symbol_info(monkeypatch) -> None:
+    now = datetime(2026, 7, 14, 15, 45, tzinfo=timezone.utc)
+    now_epoch = now.timestamp()
+    Tick = namedtuple("Tick", ["time", "time_msc", "bid", "ask"])
+    Position = namedtuple("Position", ["time", "time_msc", "symbol", "ticket"])
+    SymbolInfo = namedtuple("SymbolInfo", ["time", "name", "digits"])
+    raw_tick = Tick(
+        time=int(now_epoch + 3 * 60 * 60),
+        time_msc=int((now_epoch + 3 * 60 * 60) * 1000),
+        bid=397.4,
+        ask=397.5,
+    )
+    raw_position = Position(
+        time=int(now_epoch - 30 * 60 + 3 * 60 * 60),
+        time_msc=int((now_epoch - 30 * 60 + 3 * 60 * 60) * 1000),
+        symbol="TSLA.NAS-24",
+        ticket=123,
+    )
+    raw_info = SymbolInfo(
+        time=int(now_epoch + 3 * 60 * 60),
+        name="TSLA.NAS-24",
+        digits=2,
+    )
+    module = SimpleNamespace(
+        symbol_info_tick=lambda symbol: raw_tick,
+        symbol_info=lambda symbol: raw_info,
+        positions_get=lambda **kwargs: (raw_position,),
+    )
+    monkeypatch.setitem(sys.modules, "MetaTrader5", module)
+    monkeypatch.setattr(mt5_mod.time, "time", lambda: now_epoch)
+    monkeypatch.setattr(
+        mt5_mod.mt5_config,
+        "get_time_offset_seconds",
+        lambda at_time=None: 3 * 60 * 60,
+    )
+    monkeypatch.setattr(
+        mt5_mod.mt5_config,
+        "get_server_tz",
+        lambda: ZoneInfo("Europe/Nicosia"),
+    )
+    monkeypatch.setattr(mt5_mod.mt5_config, "time_offset_minutes", 0)
+
+    adapter = mt5_mod.MT5Adapter()
+    positions = adapter.positions_get()
+    info = adapter.symbol_info("TSLA.NAS-24")
+
+    assert float(positions[0].time) == now_epoch - 30 * 60
+    assert float(positions[0].time_msc) == (now_epoch - 30 * 60) * 1000
+    assert float(info.time) == now_epoch

@@ -147,7 +147,7 @@ def _live_reference_time_context(
     now_epoch: Optional[float] = None,
 ) -> Dict[str, Any]:
     try:
-        import MetaTrader5 as _mt5  # type: ignore
+        from ..utils.mt5 import mt5 as _mt5
     except Exception:
         return {}
     try:
