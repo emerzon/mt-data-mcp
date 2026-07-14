@@ -174,7 +174,9 @@ def test_extract_candlestick_rows_prefers_non_deprioritized_hits():
 
 
 def test_extract_candlestick_rows_includes_metrics_when_enabled():
-    df_tail = pd.DataFrame({"time": ["T0", "T1"], "close": [100.0, 101.5]})
+    df_tail = pd.DataFrame(
+        {"time": ["T0", "T1"], "close": [100.0, 101.50000000000001]}
+    )
     temp_tail = pd.DataFrame({"cdl_engulfing": [0.0, 100.0]})
 
     rows = _extract_candlestick_rows(

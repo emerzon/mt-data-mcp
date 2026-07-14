@@ -569,7 +569,7 @@ def _extract_candlestick_rows(
                 else:
                     raw_signal = float(value)
                 price = (
-                    float(close_vals[i])
+                    _round_value(close_vals[i])
                     if close_vals is not None and np.isfinite(close_vals[i])
                     else None
                 )

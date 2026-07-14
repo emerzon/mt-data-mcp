@@ -748,8 +748,8 @@ def _format_fractal_patterns(
                 "end_date": end_date,
                 "direction": str(p.direction),
                 "bias": bias,
-                "price": float(p.price),
-                "level_price": float(p.price),
+                "price": _round_value(p.price),
+                "level_price": _round_value(p.price),
                 "details": details,
             }
             if current_close is not None:
