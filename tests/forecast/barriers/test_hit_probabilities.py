@@ -88,6 +88,25 @@ class TestBarrierHitProbabilities(_BarrierTestBase):
         self.assertEqual(result["intra_bar_hit_detection"], "simulated_bar_close")
         self.assertTrue(any("intra-bar touches" in item for item in result["warnings"]))
 
+    def test_default_method_counts_intrabar_touches(self):
+        result = forecast_barrier_hit_probabilities(
+            symbol="EURUSD",
+            timeframe="H1",
+            horizon=5,
+            direction="long",
+            tp_pct=0.5,
+            sl_pct=0.5,
+            params={"n_sims": 100},
+        )
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["method"], "mc_gbm_bb")
+        self.assertEqual(result["intra_bar_hit_detection"], "brownian_bridge")
+        self.assertTrue(result["bridge_correction"])
+        self.assertFalse(
+            any("intra-bar touches" in item for item in result.get("warnings", []))
+        )
+
     def test_forecast_barrier_hit_probabilities_default_seed_is_deterministic(self):
         dates = pd.date_range(start='2023-01-01', periods=500, freq='h')
         prices = np.linspace(1.0, 1.05, 500)

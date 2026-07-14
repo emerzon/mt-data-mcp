@@ -1176,7 +1176,7 @@ def forecast_barrier_prob(
     horizon : int, optional (default=12)
         Number of bars to forecast ahead
     
-    method : str, optional (default="hmm_mc")
+    method : str, optional (default="mc_gbm_bb")
         Calculation method:
         - "hmm_mc": Hidden Markov Model Monte Carlo
         - "mc_gbm": Geometric Brownian Motion Monte Carlo
@@ -1238,7 +1238,7 @@ def forecast_barrier_prob(
     # Check probability of hitting TP vs SL (Monte Carlo)
     forecast_barrier_prob(
         symbol="EURUSD",
-        method="hmm_mc",
+        method="mc_gbm_bb",
         direction="long",
         tp_abs=1.1100,
         sl_abs=1.0950

@@ -17,12 +17,15 @@ mtdata simulates many price paths (or uses richer models), scores TP/SL pairs, a
 Percent barriers are expressed in percent (e.g., `--tp-pct 0.40` means **0.40%**, not 40%):
 ```bash
 mtdata-cli forecast_barrier_prob EURUSD --timeframe H1 --horizon 12 \
-  --method mc_gbm --direction long --tp-pct 0.40 --sl-pct 0.60 --json
+  --direction long --tp-pct 0.40 --sl-pct 0.60 --json
 ```
 
 Look for `prob_tp_first`, `prob_sl_first`, `prob_no_hit`, and `edge` in the output.
 
-**Defaults**: `--method hmm_mc`, `--horizon 12`, `--direction long`.
+**Defaults**: `--method mc_gbm_bb`, `--horizon 12`, `--direction long`. The
+default uses a Brownian-bridge correction so touches between simulated bar
+closes count. Methods that evaluate only simulated closes report
+`intra_bar_hit_detection: simulated_bar_close` and emit an undercount warning.
 
 ### 2) Search for “good” TP/SL levels
 

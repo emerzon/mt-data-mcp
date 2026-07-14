@@ -241,7 +241,7 @@ def forecast_barrier_hit_probabilities(  # noqa: C901
     symbol: str,
     timeframe: TimeframeLiteral = "H1",
     horizon: int = 12,
-    method: Literal['mc_gbm','mc_gbm_bb','hmm_mc','garch','bootstrap','heston','jump_diffusion','auto'] = 'hmm_mc',
+    method: Literal['mc_gbm','mc_gbm_bb','hmm_mc','garch','bootstrap','heston','jump_diffusion','auto'] = 'mc_gbm_bb',
     direction: Literal['long','short'] = 'long',
     same_bar_policy: Literal['sl_first','tp_first','neutral'] = 'sl_first',
     tp_abs: Optional[float] = None,
@@ -261,6 +261,9 @@ def forecast_barrier_hit_probabilities(  # noqa: C901
       Use exactly one unit family per request; mixed units are rejected.
     - In discrete time, TP and SL can be hit in the same bar. Resolution is
       controlled explicitly by `same_bar_policy`.
+    - The default GBM Brownian-bridge method accounts for barrier touches
+      between simulated bar closes. Other path methods disclose close-only
+      hit detection in their output.
     """
     try:
         if timeframe not in TIMEFRAME_SECONDS:

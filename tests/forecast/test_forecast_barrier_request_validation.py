@@ -38,6 +38,12 @@ def test_forecast_barrier_prob_request_allows_single_shared_unit_family():
     assert request.sl_pct == 0.25
 
 
+def test_forecast_barrier_prob_request_defaults_to_touch_aware_method():
+    request = ForecastBarrierProbRequest(symbol="EURUSD")
+
+    assert request.method == "mc_gbm_bb"
+
+
 def test_forecast_barrier_prob_request_uses_tick_fields_as_canonical_names():
     request = ForecastBarrierProbRequest(symbol="EURUSD", tp_ticks=12.0, sl_ticks=9.0)
 

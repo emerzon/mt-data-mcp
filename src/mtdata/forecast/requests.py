@@ -251,7 +251,7 @@ class ForecastBarrierProbRequest(BaseModel):
     symbol: str
     timeframe: TimeframeLiteral = "H1"
     horizon: int = Field(12, ge=1, le=MAX_FORECAST_HORIZON)
-    method: str = "hmm_mc"
+    method: str = "mc_gbm_bb"
     direction: str = "long"
     same_bar_policy: Literal["sl_first", "tp_first", "neutral"] = "sl_first"
     tp_abs: Optional[float] = Field(None, description="Take-profit absolute price. Do not combine with percent or tick barriers.")
