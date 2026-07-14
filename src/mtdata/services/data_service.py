@@ -2014,6 +2014,16 @@ def fetch_candles(  # noqa: C901
         if simplify_meta is not None:
             payload["simplified"] = True
             payload["simplify"] = _public_simplify_meta(simplify_meta) or {"applied": True}
+            simplify_method = str(simplify_meta.get("method") or "").strip().lower()
+            simplify_reduced_rows = int(original_rows) > int(len(df))
+            if simplify_reduced_rows and simplify_method in {"lttb", "rdp", "pla", "apca"}:
+                payload["series_type"] = "downsampled_visualization"
+                payload["equal_interval"] = False
+                payload["analysis_compatible"] = False
+                payload.setdefault("warnings", []).append(
+                    "Simplified candle rows are visualization samples with irregular time gaps; "
+                    "do not use them as equal-interval OHLC input for indicators or forecasts."
+                )
         # Attach denoise applications metadata if any
         if denoise_apps:
             payload['denoise'] = {'applications': denoise_apps}

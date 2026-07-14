@@ -69,6 +69,10 @@ class TestFetchCandlesAdvanced(unittest.TestCase):
         result = fetch_candles('EURUSD', limit=10, simplify={'mode': 'select', 'points': 3})
         self.assertTrue(result.get('success'))
         self.assertTrue(result.get('simplified'))
+        self.assertEqual(result['series_type'], 'downsampled_visualization')
+        self.assertFalse(result['equal_interval'])
+        self.assertFalse(result['analysis_compatible'])
+        self.assertIn('irregular time gaps', result['warnings'][0])
 
     @patch(_MT5_CONFIG)
     @patch(_SIMPLIFY_EXT)
