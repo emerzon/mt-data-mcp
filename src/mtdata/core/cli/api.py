@@ -30,7 +30,7 @@ from typing import (
 from pydantic import BaseModel
 
 from ...bootstrap.settings import load_environment
-from ...bootstrap.tools import bootstrap_tools
+from ...bootstrap.tools import bootstrap_tools, cli_tool_module_names
 from ...forecast.requests import ForecastGenerateRequest
 from .._mcp_instance import mcp
 from .._mcp_tools import _get_pydantic_model_fields, _select_output_fields
@@ -623,7 +623,7 @@ def _is_literal_origin(origin: Any) -> bool:
     }
 
 
-def discover_tools():
+def discover_tools(module_names: Optional[Tuple[str, ...]] = None):
     """Discover MCP tools from the shared bootstrap registry.
 
     Priority:
@@ -633,7 +633,7 @@ def discover_tools():
     """
     _DISCOVERY_ERRORS.clear()
     return _discover_tools_impl(
-        bootstrap_tools=bootstrap_tools,
+        bootstrap_tools=lambda: bootstrap_tools(module_names),
         get_registered_tools=get_registered_tools,
         mcp=mcp,
         get_mcp_registry=get_mcp_registry,
@@ -1561,9 +1561,16 @@ def main():
         return 0
 
     load_environment()
-    # Discover functions to expose dynamically
+    # Discover only the requested command family for one-shot execution. Root
+    # help, search, tools_list, and unknown commands retain full discovery.
     _DISCOVERY_ERRORS.clear()
-    functions = discover_tools()
+    raw_command = raw_argv[0] if raw_argv and not raw_argv[0].startswith("-") else ""
+    selective_modules = cli_tool_module_names(raw_command)
+    functions = (
+        discover_tools(selective_modules)
+        if selective_modules is not None
+        else discover_tools()
+    )
     if not functions:
         print("No tools discovered from server module.", file=sys.stderr)
         if _DISCOVERY_ERRORS:
