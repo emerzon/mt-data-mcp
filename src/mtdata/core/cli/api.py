@@ -1158,6 +1158,19 @@ def _command_help_category(command: str) -> str:
     return "OTHER TOOLS"
 
 
+_CLI_DESCRIPTION = (
+    "Dynamic CLI for MetaTrader5 MCP tools "
+    "(TOON by default; set MTDATA_OUTPUT_FORMAT=json for JSON). "
+    "One-shot commands initialize the full tool runtime; for repeated local calls "
+    "use `mtdata-cli shell`, and for agents use a long-lived stdio or HTTP server."
+)
+
+
+def _sort_subparser_help_choices(subparsers: argparse._SubParsersAction) -> None:
+    """Keep custom command parsers in the alphabetical help listing."""
+    subparsers._choices_actions.sort(key=lambda action: action.dest)
+
+
 def _build_epilog(functions: Dict[str, ToolInfo]) -> str:
     lines = []
     lines.append("Commands and Arguments by Category:")
@@ -1570,10 +1583,7 @@ def main():
 
     parser = _CLIArgumentParser(
         prog=parser_prog,
-        description=(
-            "Dynamic CLI for MetaTrader5 MCP tools "
-            "(TOON by default; set MTDATA_OUTPUT_FORMAT=json for JSON)"
-        ),
+        description=_CLI_DESCRIPTION,
         formatter_class=_CLIHelpFormatter,
         epilog=_build_epilog(functions),
         allow_abbrev=False,
@@ -1831,6 +1841,10 @@ def main():
             return 1 if _result_has_tool_error(out) else 0
 
         cmd_parser.set_defaults(func=_forecast_generate_cmd)
+
+        # forecast_generate uses a custom parser, but belongs in the same
+        # alphabetical top-level command list as dynamically generated tools.
+        _sort_subparser_help_choices(subparsers)
 
     # Parse arguments
     args = parser.parse_args(argv)

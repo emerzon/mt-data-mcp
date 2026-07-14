@@ -1,6 +1,33 @@
 from __future__ import annotations
 
-from mtdata.core.cli.api import _build_epilog, get_function_info
+import argparse
+
+from mtdata.core.cli.api import (
+    _CLI_DESCRIPTION,
+    _build_epilog,
+    _sort_subparser_help_choices,
+    get_function_info,
+)
+
+
+def test_cli_description_promotes_warm_workflows() -> None:
+    assert "One-shot commands initialize the full tool runtime" in _CLI_DESCRIPTION
+    assert "mtdata-cli shell" in _CLI_DESCRIPTION
+    assert "long-lived stdio or HTTP server" in _CLI_DESCRIPTION
+
+
+def test_custom_subparser_help_choices_are_sorted() -> None:
+    parser = argparse.ArgumentParser()
+    subparsers = parser.add_subparsers()
+    subparsers.add_parser("forecast_volatility_estimate", help="Volatility")
+    subparsers.add_parser("forecast_generate", help="Forecast")
+
+    _sort_subparser_help_choices(subparsers)
+
+    assert [action.dest for action in subparsers._choices_actions] == [
+        "forecast_generate",
+        "forecast_volatility_estimate",
+    ]
 
 
 def test_build_epilog_formats_required_args_like_runtime_parser() -> None:
