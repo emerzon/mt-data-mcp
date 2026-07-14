@@ -2143,6 +2143,14 @@ def fetch_candles(  # noqa: C901
                 and spread_zero_count / float(spread_value_count) >= 0.75
             )
             if not has_spread_values or spread_all_zero or spread_mostly_zero:
+                data_rows = _remove_unavailable_spread_from_candle_rows(
+                    data_rows,
+                    spread_idx=spread_idx,
+                )
+                payload["data"] = data_rows
+                payload["spread_historical_available"] = False
+                payload.pop("spread_unit", None)
+                payload.pop("spread_note", None)
                 if spread_mostly_zero and not spread_all_zero:
                     payload.setdefault("warnings", []).append(
                         "include_spread native candle spread is zero for most bars; "
@@ -2170,22 +2178,17 @@ def fetch_candles(  # noqa: C901
                                 est_mean = float(live_spread)
                                 estimate_source = "live_ticker_crosscheck"
                                 payload["spread_accuracy"] = "tick_stats_replaced_by_live"
-                        data_rows = _apply_estimated_spread_to_candle_rows(
-                            data_rows,
-                            spread_idx=spread_idx,
-                            estimated_spread=est_mean,
-                            source=estimate_source,
-                        )
-                        payload["data"] = data_rows
                         payload.setdefault("warnings", []).append(
                             "include_spread requested but per-bar spread unavailable; a single "
-                            f"estimated spread from {estimate_source} ({est_mean:g}) was applied "
-                            "uniformly to every row (not per-bar historical spread)."
+                            f"reference spread from {estimate_source} ({est_mean:g}) is returned "
+                            "at payload level and is not per-bar historical spread."
                         )
-                        payload["spread_unit"] = "price"
-                        payload["spread_estimated"] = True
-                        payload["spread_source"] = estimate_source
-                        payload["spread_estimate_basis"] = "uniform_single_estimate_not_per_bar_historical"
+                        payload["spread_reference"] = {
+                            "value": est_mean,
+                            "unit": "price",
+                            "source": estimate_source,
+                            "basis": "single_reference_not_per_bar_historical",
+                        }
                         payload.setdefault("meta", {}).setdefault("diagnostics", {}).setdefault("spread_estimate", {})["estimated_mean"] = est_mean
                         payload["meta"]["diagnostics"]["spread_estimate"]["source"] = estimate_source
                         payload["meta"]["diagnostics"]["spread_estimate"]["unit"] = "price"
@@ -2194,20 +2197,17 @@ def fetch_candles(  # noqa: C901
                         # Fallback to live ticker
                         if live_spread is not None:
                             est_mean = float(live_spread)
-                            data_rows = _apply_estimated_spread_to_candle_rows(
-                                data_rows,
-                                spread_idx=spread_idx,
-                                estimated_spread=est_mean,
-                                source="live_ticker",
-                            )
-                            payload["data"] = data_rows
                             payload.setdefault("warnings", []).append(
                                 "include_spread requested but spread unavailable; "
-                                f"estimated spread from current live ticker ({est_mean:g}) applied."
+                                f"current live ticker spread ({est_mean:g}) is returned at payload "
+                                "level and is not per-bar historical spread."
                             )
-                            payload["spread_unit"] = "price"
-                            payload["spread_estimated"] = True
-                            payload["spread_source"] = "live_ticker"
+                            payload["spread_reference"] = {
+                                "value": est_mean,
+                                "unit": "price",
+                                "source": "live_ticker",
+                                "basis": "single_reference_not_per_bar_historical",
+                            }
                             payload.setdefault("meta", {}).setdefault("diagnostics", {}).setdefault("spread_estimate", {})["estimated_mean"] = est_mean
                             payload["meta"]["diagnostics"]["spread_estimate"]["source"] = "live_ticker"
                             payload["meta"]["diagnostics"]["spread_estimate"]["unit"] = "price"
@@ -2246,23 +2246,19 @@ def _live_tick_spread(symbol: str) -> Optional[float]:
     return spread if spread > 0.0 else None
 
 
-def _apply_estimated_spread_to_candle_rows(
+def _remove_unavailable_spread_from_candle_rows(
     data_rows: list[Any],
     *,
     spread_idx: int | None,
-    estimated_spread: float,
-    source: str,
 ) -> list[Any]:
     for i, row in enumerate(data_rows):
         if isinstance(row, dict):
-            row["spread"] = estimated_spread
-            row["spread_source"] = source
+            row.pop("spread", None)
+            row.pop("spread_source", None)
         else:
             row_list = list(row)
-            if spread_idx is not None:
-                if spread_idx >= len(row_list):
-                    row_list += [None] * (spread_idx - len(row_list) + 1)
-                row_list[spread_idx] = estimated_spread
+            if spread_idx is not None and spread_idx < len(row_list):
+                row_list[spread_idx] = None
             data_rows[i] = row_list
     return data_rows
 

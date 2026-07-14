@@ -209,7 +209,7 @@ class TestFetchCandlesCore(unittest.TestCase):
     @patch(_RESOLVE_CTZ, return_value=None)
     @patch(_ESTIMATE_WARMUP, return_value=0)
     @patch(_GUARD, _mock_symbol_guard)
-    def test_estimated_spread_marks_row_and_payload_source(
+    def test_estimated_spread_is_payload_reference_not_historical_row_data(
         self,
         mock_warmup,
         mock_ctz,
@@ -232,11 +232,17 @@ class TestFetchCandlesCore(unittest.TestCase):
 
         self.assertTrue(result.get('success'))
         row = result['data'][0]
-        self.assertEqual(row['spread'], 0.00009)
-        self.assertEqual(row['spread_source'], 'tick_stats')
-        self.assertTrue(result['spread_estimated'])
-        self.assertEqual(result['spread_source'], 'tick_stats')
-        self.assertEqual(result['spread_unit'], 'price')
+        self.assertNotIn('spread', row)
+        self.assertFalse(result['spread_historical_available'])
+        self.assertEqual(
+            result['spread_reference'],
+            {
+                'value': 0.00009,
+                'unit': 'price',
+                'source': 'tick_stats',
+                'basis': 'single_reference_not_per_bar_historical',
+            },
+        )
 
     @patch(_MT5_CONFIG)
     @patch(_RATES_FROM)
