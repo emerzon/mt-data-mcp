@@ -1665,6 +1665,8 @@ def main():
         # Add global parameters to each subparser, excluding any that conflict with function params
         existing_param_names = [p["name"] for p in func_info["params"]]
         exclude_globals = list(existing_param_names)
+        if "timeframe" not in existing_param_names:
+            exclude_globals.append("timeframe")
         if cmd_name == "report_generate":
             exclude_globals.append("timeframe")
         # Finviz tools don't use MT5 timeframe
