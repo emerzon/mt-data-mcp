@@ -663,8 +663,6 @@ def inspect_mt5_time_alignment(
     symbol: str = "EURUSD",
     probe_timeframe: str = "M1",
     *,
-    tick_offset_bucket_seconds: int = 900,
-    max_plausible_offset_seconds: int = 18 * 3600,
     max_future_seconds: int = 90,
     max_tick_age_seconds: int = 180,
     stale_bar_tolerance: int = 3,
@@ -676,8 +674,7 @@ def inspect_mt5_time_alignment(
     - fetch the latest bars for ``probe_timeframe`` and verify the bar open
       is not in the future relative to UTC and is not implausibly stale
 
-    Legacy offset-related keyword arguments remain accepted so callers do not
-    break, but broker offsets are not inferred or applied to UTC epochs.
+    Broker offsets are not inferred or applied to UTC epochs.
     """
     from .time import format_epoch_utc
 
@@ -826,8 +823,6 @@ def _cached_mt5_time_alignment(
     symbol: str,
     probe_timeframe: str,
     ttl_bucket: int,
-    tick_offset_bucket_seconds: int,
-    max_plausible_offset_seconds: int,
     max_future_seconds: int,
     max_tick_age_seconds: int,
     stale_bar_tolerance: int,
@@ -835,8 +830,6 @@ def _cached_mt5_time_alignment(
     return inspect_mt5_time_alignment(
         symbol=symbol,
         probe_timeframe=probe_timeframe,
-        tick_offset_bucket_seconds=tick_offset_bucket_seconds,
-        max_plausible_offset_seconds=max_plausible_offset_seconds,
         max_future_seconds=max_future_seconds,
         max_tick_age_seconds=max_tick_age_seconds,
         stale_bar_tolerance=stale_bar_tolerance,
@@ -853,8 +846,6 @@ def get_cached_mt5_time_alignment(
     probe_timeframe: str = "M1",
     *,
     ttl_seconds: int = 60,
-    tick_offset_bucket_seconds: int = 900,
-    max_plausible_offset_seconds: int = 18 * 3600,
     max_future_seconds: int = 90,
     max_tick_age_seconds: int = 180,
     stale_bar_tolerance: int = 3,
@@ -868,8 +859,6 @@ def get_cached_mt5_time_alignment(
         return inspect_mt5_time_alignment(
             symbol=symbol,
             probe_timeframe=probe_timeframe,
-            tick_offset_bucket_seconds=tick_offset_bucket_seconds,
-            max_plausible_offset_seconds=max_plausible_offset_seconds,
             max_future_seconds=max_future_seconds,
             max_tick_age_seconds=max_tick_age_seconds,
             stale_bar_tolerance=stale_bar_tolerance,
@@ -879,8 +868,6 @@ def get_cached_mt5_time_alignment(
         str(symbol),
         str(probe_timeframe),
         bucket,
-        int(tick_offset_bucket_seconds),
-        int(max_plausible_offset_seconds),
         int(max_future_seconds),
         int(max_tick_age_seconds),
         int(stale_bar_tolerance),
