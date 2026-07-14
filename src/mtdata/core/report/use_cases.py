@@ -672,7 +672,8 @@ def _build_overall_report_assessment(report: Dict[str, Any]) -> Dict[str, Any]:
     assessment: Dict[str, Any] = {
         "is_trade_signal": False,
         "recommended_action": recommended_action,
-        "confidence": confidence,
+        "assembly_confidence": confidence,
+        "assembly_confidence_basis": "report_section_health",
         "summary": summary_text,
         "section_health": {
             "ok": ok,
@@ -708,7 +709,8 @@ def _build_report_executive_summary(
         "template": template,
         "is_trade_signal": bool(assessment.get("is_trade_signal", False)),
         "recommended_action": assessment.get("recommended_action"),
-        "confidence": assessment.get("confidence"),
+        "assembly_confidence": assessment.get("assembly_confidence"),
+        "assembly_confidence_basis": assessment.get("assembly_confidence_basis"),
         "completeness": report.get("completeness"),
     }
     section_health = assessment.get("section_health")

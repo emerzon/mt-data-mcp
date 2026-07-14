@@ -1296,3 +1296,20 @@ def test_prioritize_report_payload_orders_as_of_near_top():
     rep = {'sections': {}, 'as_of': 'T', 'success': True, 'timezone': 'UTC'}
     keys = list(_prioritize_report_payload(rep).keys())
     assert keys.index('as_of') < keys.index('sections')
+
+
+def test_report_assessment_names_section_health_confidence_explicitly():
+    from mtdata.core.report.use_cases import _build_overall_report_assessment
+
+    assessment = _build_overall_report_assessment(
+        {
+            "sections_status": {
+                "summary": {"total": 3, "ok": 3, "partial": 0, "error": 0}
+            }
+        }
+    )
+
+    assert assessment["assembly_confidence"] == "high"
+    assert assessment["assembly_confidence_basis"] == "report_section_health"
+    assert "confidence" not in assessment
+    assert assessment["is_trade_signal"] is False
