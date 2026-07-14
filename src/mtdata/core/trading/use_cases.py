@@ -3024,6 +3024,7 @@ def run_trade_risk_analyze(  # noqa: C901
                     risk_pct = None
                     reward_currency = None
                     rr_ratio = None
+                    reward_status = "undefined"
                     risk_status = "undefined"
                     position_type = validation._safe_int_attr(
                         pos, "type", position_type_sell
@@ -3050,9 +3051,15 @@ def run_trade_risk_analyze(  # noqa: C901
                                 if is_buy_position
                                 else (entry_price - tp_price) / tick_size
                             )
-                            reward_currency = abs(reward_ticks * tick_value * volume)
-                            if risk_currency > 0:
-                                rr_ratio = reward_currency / risk_currency
+                            if reward_ticks > 0:
+                                reward_currency = (
+                                    reward_ticks * tick_value * abs(volume)
+                                )
+                                reward_status = "defined"
+                                if risk_currency > 0:
+                                    rr_ratio = reward_currency / risk_currency
+                            else:
+                                reward_status = "invalid"
                     elif sl_price:
                         risk_status = "undefined"
                         risk_calculation_failures.append(
@@ -3095,6 +3102,7 @@ def run_trade_risk_analyze(  # noqa: C901
                             "reward_currency": _round_optional_number(
                                 reward_currency, 2
                             ),
+                            "reward_status": reward_status,
                             "rr_ratio": _round_optional_number(rr_ratio, 2),
                         }
                     )
@@ -3196,6 +3204,7 @@ def run_trade_risk_analyze(  # noqa: C901
                         risk_pct = None
                         reward_currency = None
                         rr_ratio = None
+                        reward_status = "undefined"
                         risk_status = "undefined"
                         if entry_price > 0 and sl_price and tick_size > 0 and tick_value_valid and direction_label != "UNKNOWN":
                             risk_ticks = (
@@ -3213,9 +3222,15 @@ def run_trade_risk_analyze(  # noqa: C901
                                     if is_buy_order
                                     else (entry_price - tp_price) / tick_size
                                 )
-                                reward_currency = abs(reward_ticks * tick_value * volume)
-                                if risk_currency > 0:
-                                    rr_ratio = reward_currency / risk_currency
+                                if reward_ticks > 0:
+                                    reward_currency = (
+                                        reward_ticks * tick_value * abs(volume)
+                                    )
+                                    reward_status = "defined"
+                                    if risk_currency > 0:
+                                        rr_ratio = reward_currency / risk_currency
+                                else:
+                                    reward_status = "invalid"
                         elif sl_price:
                             risk_calculation_failures.append(
                                 {
@@ -3254,6 +3269,7 @@ def run_trade_risk_analyze(  # noqa: C901
                                     contract_price_product, 2
                                 ),
                                 "reward_currency": _round_optional_number(reward_currency, 2),
+                                "reward_status": reward_status,
                                 "rr_ratio": _round_optional_number(rr_ratio, 2),
                             }
                         )

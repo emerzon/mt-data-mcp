@@ -497,8 +497,9 @@ def test_trade_risk_analyze_preserves_zero_position_risk_metrics() -> None:
     assert by_ticket[1]["reward_currency"] == 10.0
     assert by_ticket[1]["rr_ratio"] is None
     assert by_ticket[2]["risk_currency"] == 10.0
-    assert by_ticket[2]["reward_currency"] == 0.0
-    assert by_ticket[2]["rr_ratio"] == 0.0
+    assert by_ticket[2]["reward_currency"] is None
+    assert by_ticket[2]["reward_status"] == "invalid"
+    assert by_ticket[2]["rr_ratio"] is None
 
 
 def test_trade_risk_analyze_reports_symbol_scope_when_other_positions_exist() -> None:
@@ -1069,6 +1070,34 @@ def test_trade_risk_analyze_treats_locked_profit_stop_as_zero_risk() -> None:
     assert position["risk_pct"] == 0.0
     assert position["risk_status"] == "defined"
     assert out["portfolio_risk"]["total_risk_currency"] == 0.0
+
+
+def test_trade_risk_analyze_does_not_report_wrong_side_tp_as_reward() -> None:
+    mt5 = MagicMock()
+    mt5.account_info.return_value = SimpleNamespace(equity=1000.0, currency="USD")
+    mt5.positions_get.return_value = [
+        SimpleNamespace(
+            ticket=15,
+            symbol="EURUSD",
+            type=0,
+            volume=1.0,
+            price_open=100.0,
+            sl=90.0,
+            tp=95.0,
+        )
+    ]
+    mt5.symbol_info.return_value = _make_symbol_info(
+        trade_tick_value=1.0,
+        trade_tick_value_loss=2.0,
+    )
+
+    with _patched_mt5_module(mt5):
+        out = trade_risk_analyze(__cli_raw=True)
+
+    position = out["positions"][0]
+    assert position["reward_currency"] is None
+    assert position["reward_status"] == "invalid"
+    assert position["rr_ratio"] is None
 
 
 def test_trade_risk_analyze_converts_notional_with_broker_tick_value() -> None:
