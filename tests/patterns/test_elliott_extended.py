@@ -742,37 +742,38 @@ class TestDetectElliottWaves:
         df = _make_df(np.array([100.0, 110.0]))
         assert detect_elliott_waves(df) == []
 
-    def test_autotune_default_thresholds(self):
-        """Lines 692-703: autotune with default grids."""
+    def test_threshold_scan_default_distances(self):
         close = _trending_close(200, seed=5)
         df = _make_df(close)
-        cfg = ElliottWaveConfig(autotune=True, min_distance=3, min_confidence=0.0)
-        results = detect_elliott_waves(df, cfg)
-        assert isinstance(results, list)
-
-    def test_autotune_custom_thresholds(self):
-        """Lines 693-696: custom tune_thresholds."""
-        close = _trending_close(200, seed=6)
-        df = _make_df(close)
         cfg = ElliottWaveConfig(
-            autotune=True, tune_thresholds=[0.5, 1.0],
-            tune_min_distance=[2, 4], min_confidence=0.0,
+            scan_thresholds_pct=[0.2, 0.3, 0.5, 0.75, 1.0],
+            min_distance=3,
+            min_confidence=0.0,
         )
         results = detect_elliott_waves(df, cfg)
         assert isinstance(results, list)
 
-    def test_no_autotune(self):
-        """Lines 729-733: non-autotune path."""
-        close = _trending_close(200, seed=7)
+    def test_threshold_scan_custom_thresholds(self):
+        close = _trending_close(200, seed=6)
         df = _make_df(close)
-        cfg = ElliottWaveConfig(autotune=False, min_prominence_pct=1.0, min_distance=3)
+        cfg = ElliottWaveConfig(
+            scan_thresholds_pct=[0.5, 1.0],
+            scan_min_distances=[2, 4], min_confidence=0.0,
+        )
         results = detect_elliott_waves(df, cfg)
         assert isinstance(results, list)
 
-    def test_no_autotune_with_swing_threshold(self):
+    def test_single_threshold_path(self):
+        close = _trending_close(200, seed=7)
+        df = _make_df(close)
+        cfg = ElliottWaveConfig(min_prominence_pct=1.0, min_distance=3)
+        results = detect_elliott_waves(df, cfg)
+        assert isinstance(results, list)
+
+    def test_single_explicit_swing_threshold(self):
         close = _trending_close(200, seed=8)
         df = _make_df(close)
-        cfg = ElliottWaveConfig(autotune=False, swing_threshold_pct=0.5, min_distance=3)
+        cfg = ElliottWaveConfig(swing_threshold_pct=0.5, min_distance=3)
         results = detect_elliott_waves(df, cfg)
         assert isinstance(results, list)
 
@@ -780,14 +781,24 @@ class TestDetectElliottWaves:
         """Line 754-756."""
         close = _trending_close(200, seed=9)
         df = _make_df(close)
-        cfg = ElliottWaveConfig(autotune=True, min_distance=2, min_confidence=0.0, top_k=2)
+        cfg = ElliottWaveConfig(
+            scan_thresholds_pct=[0.2, 0.3, 0.5, 0.75, 1.0],
+            min_distance=2,
+            min_confidence=0.0,
+            top_k=2,
+        )
         results = detect_elliott_waves(df, cfg)
         assert len(results) <= 2
 
     def test_correction_only(self):
         close = _trending_close(200, seed=11)
         df = _make_df(close)
-        cfg = ElliottWaveConfig(autotune=True, min_distance=2, pattern_types=["correction"], min_confidence=0.0)
+        cfg = ElliottWaveConfig(
+            scan_thresholds_pct=[0.2, 0.3, 0.5, 0.75, 1.0],
+            min_distance=2,
+            pattern_types=["correction"],
+            min_confidence=0.0,
+        )
         results = detect_elliott_waves(df, cfg)
         assert all(r.wave_type in ("Correction", "Candidate") for r in results)
 
@@ -796,8 +807,8 @@ class TestDetectElliottWaves:
         close = _trending_close(200, seed=12)
         df = _make_df(close)
         cfg = ElliottWaveConfig(
-            autotune=True, tune_thresholds=[0.3, 0.5, 0.7],
-            tune_min_distance=[2, 3], min_confidence=0.0,
+            scan_thresholds_pct=[0.3, 0.5, 0.7],
+            scan_min_distances=[2, 3], min_confidence=0.0,
         )
         results = detect_elliott_waves(df, cfg)
         keys = [(r.wave_type, tuple(r.wave_sequence)) for r in results]
@@ -813,18 +824,18 @@ class TestDetectElliottWaves:
         ])
         df = _make_df(close)
         cfg = ElliottWaveConfig(
-            autotune=True, min_distance=2, min_confidence=0.0,
+            scan_thresholds_pct=[0.2, 0.3, 0.5, 0.75, 1.0],
+            min_distance=2, min_confidence=0.0,
             include_fallback_candidate=True, recent_bars=3,
         )
         results = detect_elliott_waves(df, cfg)
         assert isinstance(results, list)
 
-    def test_autotune_duplicate_sequence_keeps_highest_confidence(self, monkeypatch):
+    def test_threshold_scan_duplicate_sequence_keeps_highest_confidence(self, monkeypatch):
         df = _make_df(np.linspace(100.0, 120.0, 80))
         cfg = ElliottWaveConfig(
-            autotune=True,
-            tune_thresholds=[0.2, 0.5],
-            tune_min_distance=[1],
+            scan_thresholds_pct=[0.2, 0.5],
+            scan_min_distances=[1],
             include_fallback_candidate=False,
             min_confidence=0.0,
             top_k=10,
@@ -859,12 +870,11 @@ class TestDetectElliottWaves:
         assert results[0].wave_type == "Correction"
         assert results[0].confidence == pytest.approx(0.5)
 
-    def test_autotune_skips_repeated_pivot_signatures(self, monkeypatch):
+    def test_threshold_scan_skips_repeated_pivot_signatures(self, monkeypatch):
         df = _make_df(np.linspace(100.0, 120.0, 80))
         cfg = ElliottWaveConfig(
-            autotune=True,
-            tune_thresholds=[0.2, 0.5],
-            tune_min_distance=[1],
+            scan_thresholds_pct=[0.2, 0.5],
+            scan_min_distances=[1],
             include_fallback_candidate=False,
             min_confidence=0.0,
             top_k=10,
@@ -900,17 +910,16 @@ class TestDetectElliottWaves:
         assert len(call_log) == 1
         assert len(results) == 1
 
-    def test_autotune_stops_after_repeated_similar_scenarios(self, monkeypatch):
+    def test_threshold_scan_stops_after_repeated_similar_scenarios(self, monkeypatch):
         df = _make_df(np.linspace(100.0, 120.0, 120))
         cfg = ElliottWaveConfig(
-            autotune=True,
-            tune_thresholds=[0.2, 0.3, 0.4, 0.5],
-            tune_min_distance=[1],
+            scan_thresholds_pct=[0.2, 0.3, 0.4, 0.5],
+            scan_min_distances=[1],
             include_fallback_candidate=False,
             min_confidence=0.0,
-            autotune_skip_repeated_pivots=False,
-            autotune_early_stop_repeats=2,
-            autotune_scenario_overlap_ratio=0.95,
+            scan_skip_repeated_pivots=False,
+            scan_early_stop_repeats=2,
+            scan_scenario_overlap_ratio=0.95,
         )
         call_log = []
 
@@ -945,12 +954,11 @@ class TestDetectElliottWaves:
         assert results
         assert all(result.wave_type == "Correction" for result in results)
 
-    def test_autotune_filters_correction_overlap_with_impulse(self, monkeypatch):
+    def test_threshold_scan_filters_correction_overlap_with_impulse(self, monkeypatch):
         df = _make_df(np.linspace(100.0, 120.0, 80))
         cfg = ElliottWaveConfig(
-            autotune=True,
-            tune_thresholds=[0.2, 0.5],
-            tune_min_distance=[1],
+            scan_thresholds_pct=[0.2, 0.5],
+            scan_min_distances=[1],
             include_fallback_candidate=False,
             min_confidence=0.0,
             top_k=10,
@@ -1004,7 +1012,6 @@ class TestDetectElliottWaves:
             close,
             t,
             ElliottWaveConfig(
-                autotune=False,
                 min_distance=1,
                 wave_min_len=1,
                 min_impulse_bars=1,
@@ -1042,7 +1049,6 @@ class TestDetectElliottWaves:
             close,
             t,
             ElliottWaveConfig(
-                autotune=False,
                 min_distance=1,
                 wave_min_len=1,
                 min_impulse_bars=1,
@@ -1097,7 +1103,6 @@ class TestDetectElliottWaves:
             close,
             t,
             ElliottWaveConfig(
-                autotune=False,
                 min_distance=1,
                 wave_min_len=1,
                 min_impulse_bars=1,
@@ -1137,7 +1142,6 @@ class TestDetectElliottWaves:
             close,
             t,
             ElliottWaveConfig(
-                autotune=False,
                 min_distance=1,
                 wave_min_len=1,
                 min_impulse_bars=1,
@@ -1200,7 +1204,6 @@ class TestDetectElliottWaves:
             close,
             t,
             ElliottWaveConfig(
-                autotune=False,
                 min_distance=1,
                 wave_min_len=1,
                 min_impulse_bars=1,

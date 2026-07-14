@@ -131,7 +131,7 @@ def test_dedupe_retains_disjoint_patterns_with_nearby_end_bars() -> None:
     assert len(_dedupe_similar_waves([first, second], proximity_bars=24)) == 2
 
 
-def test_explicit_swing_threshold_overrides_legacy_multiscan(monkeypatch) -> None:
+def test_explicit_swing_threshold_uses_single_scale(monkeypatch) -> None:
     calls: list[tuple[float, int]] = []
 
     def fake_analyze(self, threshold_pct, min_distance):
@@ -141,7 +141,6 @@ def test_explicit_swing_threshold_overrides_legacy_multiscan(monkeypatch) -> Non
     monkeypatch.setattr(elliott.ElliottWaveAnalyzer, "analyze_once", fake_analyze)
     monkeypatch.setattr(elliott.ElliottWaveAnalyzer, "build_fallback", lambda *args: None)
     config = ElliottWaveConfig(
-        autotune=True,
         swing_threshold_pct=0.8,
         include_fallback_candidate=False,
         pattern_types=["correction"],

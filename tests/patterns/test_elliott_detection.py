@@ -29,7 +29,6 @@ def test_impulse_rule_compares_actionary_waves_by_percentage():
 def test_detect_elliott_waves_returns_candidate_for_fallback():
     df = pd.DataFrame({"close": np.linspace(100.0, 150.0, 120)})
     cfg = ElliottWaveConfig(
-        autotune=False,
         swing_threshold_pct=0.5,
         min_distance=5,
         include_fallback_candidate=True,
@@ -63,7 +62,6 @@ def test_wave_min_len_filters_short_leg_sequences():
     df = pd.DataFrame({"close": close})
 
     loose_cfg = ElliottWaveConfig(
-        autotune=False,
         swing_threshold_pct=2.0,
         min_distance=1,
         wave_min_len=1,
@@ -72,7 +70,6 @@ def test_wave_min_len_filters_short_leg_sequences():
         top_k=10,
     )
     strict_cfg = ElliottWaveConfig(
-        autotune=False,
         swing_threshold_pct=2.0,
         min_distance=1,
         wave_min_len=6,
@@ -97,7 +94,6 @@ def test_detect_abc_correction_when_enabled():
     df = pd.DataFrame({"close": close})
 
     cfg = ElliottWaveConfig(
-        autotune=False,
         swing_threshold_pct=2.0,
         min_distance=2,
         wave_min_len=2,
@@ -121,7 +117,6 @@ def test_pattern_type_filter_impulse_only_excludes_correction():
     df = pd.DataFrame({"close": close})
 
     cfg = ElliottWaveConfig(
-        autotune=False,
         swing_threshold_pct=2.0,
         min_distance=2,
         wave_min_len=2,

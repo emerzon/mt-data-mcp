@@ -30,7 +30,7 @@ class ElliottWaveConfig:
     scales and may conservatively smooth the close-based pivot signal.
     """
 
-    # Pivot detection controls (used by analysis and autotune)
+    # Pivot detection controls (used by analysis and threshold scans)
     min_prominence_pct: float = 0.5
     min_distance: int = 5
     scale_mode: str = "auto"  # "auto" derives request-scoped market scales
@@ -80,13 +80,10 @@ class ElliottWaveConfig:
     min_impulse_bars: int = 30
     min_correction_bars: int = 20
 
-    # Autotuning controls
-    autotune: bool = False  # deprecated v1 alias for a multi-scale scan
-    tune_thresholds: Optional[List[float]] = None
-    tune_min_distance: Optional[List[int]] = None
-    autotune_skip_repeated_pivots: bool = True
-    autotune_early_stop_repeats: int = 3
-    autotune_scenario_overlap_ratio: float = 0.9
+    # Multi-scale scan controls
+    scan_skip_repeated_pivots: bool = True
+    scan_early_stop_repeats: int = 3
+    scan_scenario_overlap_ratio: float = 0.9
     scan_timeframes: List[str] = field(default_factory=lambda: ["H1", "H4", "D1"])
     max_scan_timeframes: int = 3
 
@@ -217,14 +214,14 @@ def _validate_config(config: ElliottWaveConfig) -> None:
     thresholds: List[Any] = [config.min_prominence_pct]
     if config.swing_threshold_pct is not None:
         thresholds.append(config.swing_threshold_pct)
-    for values in (config.scan_thresholds_pct, config.tune_thresholds):
+    for values in (config.scan_thresholds_pct,):
         if values is not None:
             if not isinstance(values, (list, tuple)):
                 raise ValueError("Elliott threshold scans must be lists")
             thresholds.extend(values)
     if not all(np.isfinite(float(v)) and float(v) > 0.0 for v in thresholds):
         raise ValueError("all Elliott swing thresholds must be finite and > 0")
-    for values in (config.scan_min_distances, config.tune_min_distance):
+    for values in (config.scan_min_distances,):
         if values is not None:
             if not isinstance(values, (list, tuple)):
                 raise ValueError("Elliott distance scans must be lists")
@@ -2439,11 +2436,7 @@ def detect_elliott_waves(  # noqa: C901 - orchestration kept explicit for scan a
             raise ValueError("OHLC pivot geometry requires finite high >= low on every bar")
 
     explicit_scan = isinstance(config.scan_thresholds_pct, list) and bool(config.scan_thresholds_pct)
-    explicit_scale = bool(
-        explicit_scan
-        or config.swing_threshold_pct is not None
-        or bool(getattr(config, "autotune", False))
-    )
+    explicit_scale = bool(explicit_scan or config.swing_threshold_pct is not None)
     adaptive_scan_pairs: Optional[List[Tuple[float, int]]] = None
     pivot_signal = c
     if str(config.scale_mode).strip().lower() == "auto" and not explicit_scale:
@@ -2489,29 +2482,6 @@ def detect_elliott_waves(  # noqa: C901 - orchestration kept explicit for scan a
                 [int(value) for value in config.scan_min_distances]
                 if isinstance(config.scan_min_distances, list)
                 and config.scan_min_distances
-                else [int(value) for value in config.tune_min_distance]
-                if isinstance(config.tune_min_distance, list)
-                and config.tune_min_distance
-                else sorted(
-                    {
-                        max(1, int(config.min_distance) - 2),
-                        int(config.min_distance),
-                        int(config.min_distance) + 2,
-                        int(config.min_distance) + 4,
-                    }
-                )
-            )
-        elif bool(getattr(config, "autotune", False)):
-            diagnostic_thresholds = (
-                [float(value) for value in config.tune_thresholds]
-                if isinstance(config.tune_thresholds, list)
-                and config.tune_thresholds
-                else [0.2, 0.3, 0.5, 0.75, 1.0]
-            )
-            diagnostic_distances = (
-                [int(value) for value in config.tune_min_distance]
-                if isinstance(config.tune_min_distance, list)
-                and config.tune_min_distance
                 else sorted(
                     {
                         max(1, int(config.min_distance) - 2),
@@ -2559,9 +2529,7 @@ def detect_elliott_waves(  # noqa: C901 - orchestration kept explicit for scan a
     results_by_key: Dict[Tuple[str, Tuple[int, ...]], ElliottWaveResult] = {}
     fallback_result: Optional[ElliottWaveResult] = None
 
-    use_multi_scan = explicit_scan or (
-        config.swing_threshold_pct is None and bool(getattr(config, "autotune", False))
-    )
+    use_multi_scan = explicit_scan
     if adaptive_scan_pairs is not None:
         for threshold, distance in adaptive_scan_pairs:
             scenarios = analyzer.analyze_once(float(threshold), int(distance))
@@ -2570,35 +2538,23 @@ def detect_elliott_waves(  # noqa: C901 - orchestration kept explicit for scan a
                     results_by_key, analyzer.build_result(scenario)
                 )
     elif use_multi_scan:
-        thr_list = (
-            config.scan_thresholds_pct
-            if explicit_scan
-            else config.tune_thresholds
-            if isinstance(config.tune_thresholds, list)
-            and len(config.tune_thresholds) > 0
-            else [0.2, 0.3, 0.5, 0.75, 1.0]
-        )
+        thr_list = config.scan_thresholds_pct or []
         md_base = int(max(1, config.min_distance))
         md_list = (
             config.scan_min_distances
             if isinstance(config.scan_min_distances, list)
             and len(config.scan_min_distances) > 0
-            else config.tune_min_distance
-            if isinstance(config.tune_min_distance, list)
-            and len(config.tune_min_distance) > 0
             else sorted({max(1, md_base - 2), md_base, md_base + 2, md_base + 4})
         )
 
         seen_pivot_signatures: set[Tuple[int, ...]] = set()
         prior_scenario_signature: Tuple[Tuple[str, bool, int, int, int], ...] = tuple()
         repeated_scenario_runs = 0
-        stop_after_repeats = max(
-            0, int(getattr(config, "autotune_early_stop_repeats", 3))
-        )
+        stop_after_repeats = max(0, int(config.scan_early_stop_repeats))
         scenario_overlap_ratio = float(
-            max(0.0, min(1.0, getattr(config, "autotune_scenario_overlap_ratio", 0.9)))
+            max(0.0, min(1.0, config.scan_scenario_overlap_ratio))
         )
-        stop_autotune = False
+        stop_scan = False
         for thr_val in thr_list:
             try:
                 thr_f = float(thr_val)
@@ -2609,7 +2565,7 @@ def detect_elliott_waves(  # noqa: C901 - orchestration kept explicit for scan a
                     md_i = int(md)
                 except Exception:
                     continue
-                if bool(getattr(config, "autotune_skip_repeated_pivots", True)):
+                if bool(config.scan_skip_repeated_pivots):
                     signature = analyzer.pivot_signature(thr_f, md_i)
                     if len(signature) > 1 and signature in seen_pivot_signatures:
                         continue
@@ -2635,9 +2591,9 @@ def detect_elliott_waves(  # noqa: C901 - orchestration kept explicit for scan a
                     stop_after_repeats > 0
                     and repeated_scenario_runs >= stop_after_repeats
                 ):
-                    stop_autotune = True
+                    stop_scan = True
                     break
-            if stop_autotune:
+            if stop_scan:
                 break
     else:
         thr = float(
