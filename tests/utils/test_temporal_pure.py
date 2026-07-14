@@ -486,9 +486,9 @@ class TestStatsForGroup:
         df = self._make_df([1.0, -0.5, 0.3, 0.2, -0.1])
         out = _stats_for_group(df, None)
         assert out["bars"] == 5
-        assert out["returns"] == 5
-        assert out["avg_return"] == pytest.approx(0.18, abs=0.01)
-        assert out["volatility"] is not None
+        assert out["return_observations"] == 5
+        assert out["avg_return_pct"] == pytest.approx(0.18, abs=0.01)
+        assert out["volatility_pct"] is not None
         assert out["win_rate"] == pytest.approx(3 / 5)
 
     def test_win_rate_is_rounded(self):
@@ -500,9 +500,9 @@ class TestStatsForGroup:
         df = self._make_df([])
         out = _stats_for_group(df, None)
         assert out["bars"] == 0
-        assert out["returns"] == 0
-        assert out["avg_return"] is None
-        assert out["volatility"] is None
+        assert out["return_observations"] == 0
+        assert out["avg_return_pct"] is None
+        assert out["volatility_pct"] is None
         assert out["win_rate"] is None
 
     def test_all_positive(self):
@@ -534,18 +534,18 @@ class TestStatsForGroup:
     def test_nan_returns_filtered(self):
         df = self._make_df([1.0, float("nan"), 2.0])
         out = _stats_for_group(df, None)
-        assert out["returns"] == 2
-        assert out["avg_return"] == pytest.approx(1.5)
+        assert out["return_observations"] == 2
+        assert out["avg_return_pct"] == pytest.approx(1.5)
 
-    def test_median_return(self):
+    def test_median_return_pct(self):
         df = self._make_df([1.0, 2.0, 10.0])
         out = _stats_for_group(df, None)
-        assert out["median_return"] == pytest.approx(2.0)
+        assert out["median_return_pct"] == pytest.approx(2.0)
 
-    def test_avg_abs_return(self):
+    def test_avg_abs_return_pct(self):
         df = self._make_df([1.0, -3.0])
         out = _stats_for_group(df, None)
-        assert out["avg_abs_return"] == pytest.approx(2.0)
+        assert out["avg_abs_return_pct"] == pytest.approx(2.0)
 
 
 # ===================================================================
@@ -630,10 +630,12 @@ class TestTemporalAnalyze:
         assert "best" in r
         assert "group" in r["best"]
         assert r["units"] == {
-            "returns": "percentage_points (1.0 = 1%)",
+            "avg_return_pct": "percentage_points (1.0 = 1%)",
+            "median_return_pct": "percentage_points (1.0 = 1%)",
+            "avg_abs_return_pct": "percentage_points (1.0 = 1%)",
             "win_rate_pct": "percentage_points (1.0 = 1%)",
             "avg_range_pct": "percentage_points (1.0 = 1%)",
-            "volatility": "percentage_point_return_stddev_per_bar",
+            "volatility_pct": "percentage_point_return_stddev_per_bar",
         }
 
     @_apply_analyze_patches
@@ -669,7 +671,7 @@ class TestTemporalAnalyze:
         assert "best" in r
         assert "group_count" in r
         assert set(r["overall"]).issubset(
-            {"bars", "avg_return", "win_rate_pct", "volatility"}
+            {"bars", "avg_return_pct", "win_rate_pct", "volatility_pct"}
         )
 
     @_apply_analyze_patches
@@ -902,13 +904,13 @@ class TestTemporalAnalyze:
                 {
                     "dimension": "dow",
                     "breakdown": [
-                        {"group_label": "Mon", "avg_return": 0.001, "win_rate": 0.55, "win_rate_pct": 55.0},
+                        {"group_label": "Mon", "avg_return_pct": 0.001, "win_rate": 0.55, "win_rate_pct": 55.0},
                     ],
                 },
                 {
                     "dimension": "hour",
                     "breakdown": [
-                        {"group_label": "08:00", "avg_return": 0.003, "win_rate": 0.60, "win_rate_pct": 60.0},
+                        {"group_label": "08:00", "avg_return_pct": 0.003, "win_rate": 0.60, "win_rate_pct": 60.0},
                     ],
                 },
             ],
@@ -1018,15 +1020,15 @@ class TestTemporalAnalyze:
         r = self._call(mock_fetch, return_mode="log")
         assert r.get("success") is True
         assert r["return_mode"] == "log"
-        assert r["units"]["returns"] == "percentage_points (1.0 = 1%)"
+        assert r["units"]["avg_return_pct"] == "percentage_points (1.0 = 1%)"
 
     @_apply_analyze_patches
     def test_return_mode_pct(self, mock_fetch, *_):
         r = self._call(mock_fetch, return_mode="pct")
         assert r.get("success") is True
         assert r["return_mode"] == "pct"
-        assert r["units"]["returns"] == "percentage_points (1.0 = 1%)"
-        assert r["units"]["volatility"] == "percentage_point_return_stddev_per_bar"
+        assert r["units"]["avg_return_pct"] == "percentage_points (1.0 = 1%)"
+        assert r["units"]["volatility_pct"] == "percentage_point_return_stddev_per_bar"
 
     @_apply_analyze_patches
     def test_volume_source_tick(self, mock_fetch, *_):
@@ -1048,8 +1050,8 @@ class TestTemporalAnalyze:
         r = self._call(mock_fetch)
         overall = r["overall"]
         assert "bars" in overall
-        assert "avg_return" in overall
-        assert "volatility" in overall
+        assert "avg_return_pct" in overall
+        assert "volatility_pct" in overall
         assert "win_rate" in overall
 
     @_apply_analyze_patches

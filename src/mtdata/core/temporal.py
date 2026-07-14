@@ -386,12 +386,12 @@ def _stats_for_group(df: pd.DataFrame, volume_col: Optional[str]) -> Dict[str, A
     ret = pd.to_numeric(df.get("__return"), errors="coerce")
     ret = ret[pd.notna(ret)]
     n = int(ret.shape[0])
-    out["returns"] = n
+    out["return_observations"] = n
     if n > 0:
-        out["avg_return"] = _rounded_temporal_float(ret.mean())
-        out["median_return"] = _rounded_temporal_float(ret.median())
-        out["volatility"] = _rounded_temporal_float(ret.std(ddof=0))
-        out["avg_abs_return"] = _rounded_temporal_float(ret.abs().mean())
+        out["avg_return_pct"] = _rounded_temporal_float(ret.mean())
+        out["median_return_pct"] = _rounded_temporal_float(ret.median())
+        out["volatility_pct"] = _rounded_temporal_float(ret.std(ddof=0))
+        out["avg_abs_return_pct"] = _rounded_temporal_float(ret.abs().mean())
         win_rate = _safe_float(round((ret > 0).sum() / float(n), 4))
         out["win_rate"] = win_rate
         out["win_rate_pct"] = (
@@ -400,10 +400,10 @@ def _stats_for_group(df: pd.DataFrame, volume_col: Optional[str]) -> Dict[str, A
             else None
         )
     else:
-        out["avg_return"] = None
-        out["median_return"] = None
-        out["volatility"] = None
-        out["avg_abs_return"] = None
+        out["avg_return_pct"] = None
+        out["median_return_pct"] = None
+        out["volatility_pct"] = None
+        out["avg_abs_return_pct"] = None
         out["win_rate"] = None
         out["win_rate_pct"] = None
 
@@ -434,10 +434,10 @@ def _compact_temporal_stats(
     keys = (
         "group_label",
         "bars",
-        "avg_return",
-        "median_return",
+        "avg_return_pct",
+        "median_return_pct",
         "win_rate_pct",
-        "volatility",
+        "volatility_pct",
     )
     if include_group and row.get("group") is not None:
         keys = ("group", *keys)
@@ -446,7 +446,7 @@ def _compact_temporal_stats(
 
 def _standard_temporal_stats(row: Dict[str, Any]) -> Dict[str, Any]:
     out = _compact_temporal_stats(row, include_group=True)
-    for key in ("returns", "avg_abs_return", "avg_range_pct", "avg_volume"):
+    for key in ("return_observations", "avg_abs_return_pct", "avg_range_pct", "avg_volume"):
         value = row.get(key)
         if value is not None:
             out[key] = value
@@ -524,9 +524,9 @@ def _flatten_temporal_dimension_groups(
             (
                 row
                 for row in formatted_rows
-                if row.get("avg_return") is not None
+                if row.get("avg_return_pct") is not None
             ),
-            key=lambda row: float(row.get("avg_return") or 0.0),
+            key=lambda row: float(row.get("avg_return_pct") or 0.0),
             default=None,
         )
         if best:
@@ -649,7 +649,7 @@ def _compact_temporal_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
             compact_groups, best_rows, pagination = _flatten_temporal_dimension_groups(
                 groups,
                 formatter=_compact_temporal_stats,
-                best_keys=("group", "group_label", "avg_return", "win_rate", "win_rate_pct"),
+                best_keys=("group", "group_label", "avg_return_pct", "win_rate", "win_rate_pct"),
             )
             out["groups"] = compact_groups
             if best_rows:
@@ -667,15 +667,15 @@ def _compact_temporal_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
             (
                 row
                 for row in compact_groups
-                if row.get("avg_return") is not None
+                if row.get("avg_return_pct") is not None
             ),
-            key=lambda row: float(row.get("avg_return") or 0.0),
+            key=lambda row: float(row.get("avg_return_pct") or 0.0),
             default=None,
         )
         if best:
             out["best"] = {
                 key: best[key]
-                for key in ("group", "group_label", "avg_return", "win_rate", "win_rate_pct")
+                for key in ("group", "group_label", "avg_return_pct", "win_rate", "win_rate_pct")
                 if key in best
             }
     elif isinstance(payload.get("overall"), dict):
@@ -741,7 +741,7 @@ def _summary_temporal_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     if isinstance(overall, dict):
         out["overall"] = {
             key: overall.get(key)
-            for key in ("bars", "avg_return", "win_rate_pct", "volatility")
+            for key in ("bars", "avg_return_pct", "win_rate_pct", "volatility_pct")
             if overall.get(key) is not None
         }
     for key in (
@@ -766,7 +766,7 @@ def _standard_temporal_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
             standard_groups, best_rows, pagination = _flatten_temporal_dimension_groups(
                 groups,
                 formatter=_standard_temporal_stats,
-                best_keys=("group_label", "avg_return", "win_rate", "win_rate_pct"),
+                best_keys=("group_label", "avg_return_pct", "win_rate", "win_rate_pct"),
             )
             out["groups"] = standard_groups
             if best_rows:
@@ -784,15 +784,15 @@ def _standard_temporal_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
                 (
                     row
                     for row in standard_groups
-                    if row.get("avg_return") is not None
+                    if row.get("avg_return_pct") is not None
                 ),
-                key=lambda row: float(row.get("avg_return") or 0.0),
+                key=lambda row: float(row.get("avg_return_pct") or 0.0),
                 default=None,
             )
         if best:
             out["best"] = {
                 key: best[key]
-                for key in ("group_label", "avg_return", "win_rate", "win_rate_pct")
+                for key in ("group_label", "avg_return_pct", "win_rate", "win_rate_pct")
                 if key in best
             }
     overall = payload.get("overall")
@@ -1388,11 +1388,13 @@ def temporal_analyze(  # noqa: C901
                 "group_by": group_norm,
                 "return_mode": return_mode,
                 "units": {
-                    "returns": _PERCENTAGE_POINTS_UNIT,
+                    "avg_return_pct": _PERCENTAGE_POINTS_UNIT,
+                    "median_return_pct": _PERCENTAGE_POINTS_UNIT,
+                    "avg_abs_return_pct": _PERCENTAGE_POINTS_UNIT,
                     "win_rate": "fraction",
                     "win_rate_pct": _PERCENTAGE_POINTS_UNIT,
                     "avg_range_pct": _PERCENTAGE_POINTS_UNIT,
-                    "volatility": "percentage_point_return_stddev_per_bar",
+                    "volatility_pct": "percentage_point_return_stddev_per_bar",
                 },
                 "timezone": tz_name,
                 "lookback": effective_lookback,
