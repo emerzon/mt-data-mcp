@@ -484,6 +484,25 @@ def create_command_function(  # noqa: C901
             )
             return 1
 
+        if (
+            cmd_name in {"trade_place", "trade_modify"}
+            and kwargs.get("idempotency_key") not in (None, "")
+        ):
+            render_cli_result(
+                _build_cli_error(
+                    "idempotency_key is not supported by one-shot CLI commands "
+                    "because the in-memory replay cache ends with the process.",
+                    code="cli_process_local_idempotency_unsupported",
+                    remediation=(
+                        "Use the MCP HTTP/SSE server or Web API when retries need "
+                        "a shared idempotency cache, or omit idempotency_key."
+                    ),
+                ),
+                args=args,
+                cmd_name=cmd_name,
+            )
+            return 1
+
         request_model = func_info.get("request_model")
         request_param_name = func_info.get("request_param_name")
         if request_model is not None and request_param_name:

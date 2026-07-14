@@ -983,6 +983,36 @@ class TestCreateCommandFunction:
         assert "Preview mode is the default" in output
         mock_fn.assert_not_called()
 
+    def test_trade_place_rejects_process_local_idempotency_key(self, capsys):
+        mock_fn = MagicMock(return_value={"success": True})
+        func_info = {
+            "func": mock_fn,
+            "params": [
+                {"name": "symbol", "type": str, "required": True, "default": None},
+                {
+                    "name": "idempotency_key",
+                    "type": Optional[str],
+                    "required": False,
+                    "default": None,
+                },
+            ],
+        }
+        cmd_fn = create_command_function(func_info, cmd_name="trade_place")
+        args = argparse.Namespace(
+            symbol="EURUSD",
+            idempotency_key="retry-1",
+            json=True,
+            verbose=False,
+        )
+
+        status = cmd_fn(args)
+
+        assert status == 1
+        output = capsys.readouterr().out
+        assert "cli_process_local_idempotency_unsupported" in output
+        assert "HTTP/SSE" in output
+        mock_fn.assert_not_called()
+
     def test_missing_required_literal_argument_shows_valid_values(self, capsys):
         mock_fn = MagicMock(return_value={"ok": True})
         func_info = {

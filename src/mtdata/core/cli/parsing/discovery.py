@@ -198,7 +198,12 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
         "Preview the modification without sending it to the broker."
     ),
     ("trade_modify", "idempotency_key"): (
-        "Optional in-process dedupe key; replays the prior matching modify result."
+        "Process-local dedupe key for long-lived transports. One-shot CLI "
+        "commands reject this option because their replay cache cannot persist."
+    ),
+    ("trade_place", "idempotency_key"): (
+        "Process-local dedupe key for long-lived transports. One-shot CLI "
+        "commands reject this option because their replay cache cannot persist."
     ),
     ("trade_place", "dry_run"): (
         "Preview the order without sending it to the broker."
