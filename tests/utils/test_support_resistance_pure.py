@@ -822,6 +822,8 @@ def test_episode_counting_keeps_raw_touches_secondary_to_distinct_tests():
 
     support = next(level for level in result["supports"] if level["dominant_source"] == "support")
     assert result["qualification_basis"] == "episodes"
+    assert result["score_basis"]["scale"] == "unbounded_nonnegative"
+    assert "strength_score_normalized" in result["score_basis"]["comparison"]
     assert support["touches"] > support["episodes"]
     assert support["episodes"] == 2
     assert support["source_episodes"]["support"] == 2

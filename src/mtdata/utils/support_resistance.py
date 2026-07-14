@@ -2327,6 +2327,17 @@ def merge_support_resistance_results(  # noqa: C901
         "effective_tolerance_pct": float(merge_tolerance_value),
         "min_touches": int(max(1, int(min_touches))),
         "qualification_basis": "episodes",
+        "score_basis": {
+            "scale": "unbounded_nonnegative",
+            "definition": (
+                "base reaction, recency, and volume strength minus breakout "
+                "penalties plus role-reversal and multi-timeframe bonuses"
+            ),
+            "comparison": (
+                "rank within this response; use strength_score_normalized for "
+                "a relative 0-to-1 scale"
+            ),
+        },
         "max_levels": int(max_levels_value),
         "max_distance_pct": None if max_distance_value is None else float(max_distance_value),
         "volume_weighting": volume_weighting_mode,
@@ -2807,6 +2818,17 @@ def compute_support_resistance_levels(
         "effective_tolerance_pct": float(effective_tolerance_value),
         "min_touches": int(min_touches_value),
         "qualification_basis": "episodes",
+        "score_basis": {
+            "scale": "unbounded_nonnegative",
+            "definition": (
+                "base reaction, recency, and volume strength minus breakout "
+                "penalties plus role-reversal and multi-timeframe bonuses"
+            ),
+            "comparison": (
+                "rank within this response; use strength_score_normalized for "
+                "a relative 0-to-1 scale"
+            ),
+        },
         "max_levels": int(max_levels_value),
         "max_distance_pct": None if max_distance_value is None else float(max_distance_value),
         "volume_weighting": volume_weighting_mode,
