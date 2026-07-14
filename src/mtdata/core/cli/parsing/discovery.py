@@ -116,8 +116,8 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
     ("forecast_tune_optuna", "search_space"): "Optuna search space (JSON or k=v).",
     ("indicators_list", "detail"): "Output detail: compact table or full rows with aliases and descriptions.",
     ("market_snapshot", "sections"): (
-        "Analysis modules to include: quote, levels, patterns, regime, forecast, "
-        "or all. Defaults to quote,levels,patterns."
+        "Analysis modules to include: quote, status, levels, patterns, regime, "
+        "forecast, or all. Defaults to quote,status,levels,patterns."
     ),
     ("market_snapshot", "detail"): (
         "Field verbosity inside selected sections; full does not add sections. "
