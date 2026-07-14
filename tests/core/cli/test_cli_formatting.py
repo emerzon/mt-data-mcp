@@ -869,6 +869,66 @@ class TestFormatResultForCli:
         assert "  ask: 1.164" not in result.splitlines()
         assert "price_precision" not in result
 
+    def test_trade_session_context_compact_preserves_execution_gates(self):
+        payload = json.loads(
+            _format_result_for_cli(
+                {
+                    "success": True,
+                    "symbol": "EURUSD",
+                    "market_status": "probably_open",
+                    "is_tradable": True,
+                    "can_open_new_positions": True,
+                    "trade_ready": {"can_trade": False, "blockers": ["quote_not_live"]},
+                    "account": {
+                        "margin_free": 125.0,
+                        "currency": "USD",
+                        "is_live": True,
+                    },
+                    "quote": {
+                        "bid": 1.1,
+                        "ask": 1.1002,
+                        "mid": 1.1001,
+                        "freshness_state": "recent",
+                        "usable_for_live_trading": False,
+                        "live_max_age_seconds": 30,
+                    },
+                },
+                fmt="json",
+                verbose=False,
+                cmd_name="trade_session_context",
+            )
+        )
+
+        assert payload["trade_ready"]["can_trade"] is False
+        assert payload["is_tradable"] is True
+        assert payload["account"] == {
+            "margin_free": 125.0,
+            "currency": "USD",
+            "is_live": True,
+        }
+        assert payload["quote"]["mid"] == 1.1001
+        assert payload["quote"]["freshness_state"] == "recent"
+        assert payload["quote"]["usable_for_live_trading"] is False
+
+    def test_trade_session_context_compact_preserves_error_envelope(self):
+        payload = json.loads(
+            _format_result_for_cli(
+                {
+                    "success": False,
+                    "error": "Missing required argument(s): symbol.",
+                    "error_code": "cli_missing_required",
+                    "operation": "trade_session_context",
+                    "remediation": "Provide: symbol.",
+                },
+                fmt="json",
+                verbose=False,
+                cmd_name="trade_session_context",
+            )
+        )
+
+        assert payload["error_code"] == "cli_missing_required"
+        assert payload["remediation"] == "Provide: symbol."
+
     def test_trade_session_context_compact_keeps_false_like_execution_ready(self):
         class FalseLike:
             def __bool__(self):

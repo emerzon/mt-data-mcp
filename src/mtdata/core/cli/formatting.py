@@ -251,6 +251,8 @@ def _normalize_trade_session_context_cli_payload(
         return result
 
     out = dict(result)
+    if out.get("success") is False or not _is_empty_value(out.get("error")):
+        return out
     quote_in = out.get("quote")
     if isinstance(quote_in, dict):
         quote_norm = _normalize_market_ticker_cli_payload(
@@ -266,6 +268,7 @@ def _normalize_trade_session_context_cli_payload(
                 for key in (
                     "bid",
                     "ask",
+                    "mid",
                     "last",
                     "spread",
                     "spread_points",
@@ -278,6 +281,11 @@ def _normalize_trade_session_context_cli_payload(
                     "data_age_seconds",
                     "data_age",
                     "data_stale",
+                    "freshness_state",
+                    "usable_for_live_trading",
+                    "live_max_age_seconds",
+                    "market_state",
+                    "market_status_reason",
                     "stale_warning",
                     "warning",
                 )
@@ -310,6 +318,12 @@ def _normalize_trade_session_context_cli_payload(
         "portfolio_positions_count",
         "other_positions_count",
         "partial_failure",
+        "trade_ready",
+        "quote_quality",
+        "market_status",
+        "market_status_reason",
+        "is_tradable",
+        "can_open_new_positions",
     ):
         value = out.get(key)
         if not _is_empty_value(value):
@@ -322,7 +336,19 @@ def _normalize_trade_session_context_cli_payload(
         else:
             account_out = {
                 key: account_in.get(key)
-                for key in ("balance", "equity", "profit", "margin_level")
+                for key in (
+                    "balance",
+                    "equity",
+                    "profit",
+                    "margin",
+                    "margin_free",
+                    "margin_level",
+                    "currency",
+                    "account_type",
+                    "is_demo",
+                    "is_live",
+                    "trade_allowed",
+                )
                 if key in account_in and not _is_empty_value(account_in.get(key))
             }
             execution_ready = account_in.get("execution_ready")
@@ -367,6 +393,7 @@ def _normalize_trade_session_context_cli_payload(
                         "current_price",
                         "Current Price",
                     ),
+                    ("price_current_basis", "price_current_basis"),
                     ("sl", "sl", "SL"),
                     ("tp", "tp", "TP"),
                     ("profit", "profit", "Profit"),
