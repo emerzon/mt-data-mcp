@@ -1,4 +1,6 @@
 """Tests for utils/regime.py — BOCPD and Student-t helpers."""
+import warnings
+
 import numpy as np
 import pytest
 
@@ -117,3 +119,14 @@ class TestBocpdGaussian:
         assert result["cp_prob"].shape == (5,)
         assert np.all(np.isfinite(result["cp_prob"]))
         assert np.all(np.isfinite(result["run_length_map"]))
+
+    def test_extreme_outlier_resets_and_recovers_without_warnings(self):
+        x = np.array([1.0, 1.1, 0.9, 1e300, 1.0, 1.2])
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", RuntimeWarning)
+            result = bocpd_gaussian(x)
+
+        assert np.all(np.isfinite(result["cp_prob"]))
+        assert np.all(np.isfinite(result["run_length_map"]))
+        assert result["cp_prob"][3] == pytest.approx(1.0)

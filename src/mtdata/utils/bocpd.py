@@ -43,7 +43,9 @@ def _student_t_logpdf(x: np.ndarray, mu: np.ndarray, lam: np.ndarray, alpha: np.
     s2 = np.nan_to_num(s2, nan=max_float, posinf=max_float, neginf=1e-12)
     scale = np.sqrt(np.clip(s2, 1e-12, max_float))
     dof = np.clip(nu, 1e-12, None)
-    return np.asarray(_student_t.logpdf(x, df=dof, loc=mu, scale=scale), dtype=float)
+    with np.errstate(divide="ignore", invalid="ignore", over="ignore"):
+        logpdf = _student_t.logpdf(x, df=dof, loc=mu, scale=scale)
+    return np.asarray(logpdf, dtype=float)
 
 
 def bocpd_gaussian(
@@ -120,9 +122,16 @@ def bocpd_gaussian(
 
         # Normalize to avoid under/overflow
         m = np.max(new_log_r)
-        new_log_r = new_log_r - m
-        log_norm = np.logaddexp.reduce(new_log_r)
-        log_r = new_log_r - log_norm
+        if not np.isfinite(m):
+            # The observation is outside the representable predictive range
+            # for every run. Treat it as a certain changepoint and recover on
+            # the next observation instead of propagating NaNs indefinitely.
+            log_r.fill(-np.inf)
+            log_r[0] = 0.0
+        else:
+            new_log_r = new_log_r - m
+            log_norm = np.logaddexp.reduce(new_log_r)
+            log_r = new_log_r - log_norm
         # cp probability is P(r=0 | x_1:t)
         probs = np.exp(log_r)
         cp_prob[t] = float(probs[0])
@@ -137,10 +146,25 @@ def bocpd_gaussian(
         beta_new = np.empty_like(beta)
 
         # r=0 (changepoint): reset to prior updated with xt as first point
+        max_float = np.finfo(float).max
         kappa_new[0] = kappa0 + 1.0
-        mu_new[0] = (kappa0 * mu0 + xt) / kappa_new[0]
+        mu_new[0] = mu0 * (kappa0 / kappa_new[0]) + xt / kappa_new[0]
         alpha_new[0] = alpha0 + 0.5
-        beta_new[0] = beta0 + 0.5 * (kappa0 * (xt - mu0) ** 2) / kappa_new[0]
+        with np.errstate(invalid="ignore", over="ignore"):
+            prior_delta = xt - mu0
+            prior_beta = (
+                beta0
+                + 0.5
+                * (kappa0 / kappa_new[0])
+                * prior_delta
+                * prior_delta
+            )
+        beta_new[0] = np.nan_to_num(
+            prior_beta,
+            nan=max_float,
+            posinf=max_float,
+            neginf=1e-12,
+        )
 
         # r>0: grow previous segments
         mu_prev = mu[:-1]
@@ -148,9 +172,25 @@ def bocpd_gaussian(
         alpha_prev = alpha[:-1]
         beta_prev = beta[:-1]
         kappa_new[1:] = kappa_prev + 1.0
-        mu_new[1:] = (kappa_prev * mu_prev + xt) / kappa_new[1:]
+        mu_new[1:] = (
+            mu_prev * (kappa_prev / kappa_new[1:]) + xt / kappa_new[1:]
+        )
         alpha_new[1:] = alpha_prev + 0.5
-        beta_new[1:] = beta_prev + 0.5 * (kappa_prev * (xt - mu_prev) ** 2) / kappa_new[1:]
+        with np.errstate(invalid="ignore", over="ignore"):
+            delta = xt - mu_prev
+            grown_beta = (
+                beta_prev
+                + 0.5
+                * (kappa_prev / kappa_new[1:])
+                * delta
+                * delta
+            )
+        beta_new[1:] = np.nan_to_num(
+            grown_beta,
+            nan=max_float,
+            posinf=max_float,
+            neginf=1e-12,
+        )
 
         mu, kappa, alpha, beta = mu_new, kappa_new, alpha_new, beta_new
 
