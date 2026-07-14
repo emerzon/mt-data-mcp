@@ -284,12 +284,9 @@ class TestResolveChronosDeviceMap:
 # ===========================================================================
 
 class TestPretrainedMethodBase:
-    def test_category(self):
+    def test_metadata(self):
         m = ChronosBoltMethod()
         assert m.category == "pretrained"
-
-    def test_supports_features(self):
-        m = ChronosBoltMethod()
         feats = m.supports_features
         assert feats["price"] is True
         assert feats["ci"] is True
@@ -304,10 +301,8 @@ class TestChronosBoltMethod:
     def setup_method(self):
         self.method = ChronosBoltMethod()
 
-    def test_name(self):
+    def test_name_and_packages(self):
         assert self.method.name == "chronos_bolt"
-
-    def test_required_packages(self):
         assert "chronos" in self.method.required_packages
         assert "torch" in self.method.required_packages
 
@@ -663,10 +658,8 @@ class TestTimesFMMethod:
     def setup_method(self):
         self.method = TimesFMMethod()
 
-    def test_name(self):
+    def test_name_and_packages(self):
         assert self.method.name == "timesfm"
-
-    def test_required_packages(self):
         assert "timesfm" in self.method.required_packages
 
     def test_forecast_basic(self):

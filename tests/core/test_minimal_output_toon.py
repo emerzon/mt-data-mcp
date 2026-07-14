@@ -1,6 +1,8 @@
 """Tests for src/mtdata/utils/minimal_output.py — TOON formatting helpers."""
 import math
 
+import pytest
+
 from mtdata.utils.minimal_output import (
     _encode_tabular,
     _format_complex_value,
@@ -20,11 +22,9 @@ from mtdata.utils.minimal_output_toon import (
 
 
 class TestStringifyScalar:
-    def test_bool_true(self):
-        assert _stringify_scalar(True) == "true"
-
-    def test_bool_false(self):
-        assert _stringify_scalar(False) == "false"
+    @pytest.mark.parametrize(("value", "expected"), [(True, "true"), (False, "false")])
+    def test_bools(self, value, expected):
+        assert _stringify_scalar(value) == expected
 
 
 class TestStringifyCell:
@@ -35,50 +35,50 @@ class TestStringifyCell:
 
 
 class TestIndentText:
-    def test_single_line(self):
-        assert _indent_text("hello") == "  hello"
-
-    def test_multi_line(self):
-        result = _indent_text("a\nb")
-        lines = result.split("\n")
-        assert lines[0] == "  a"
-        assert lines[1] == "  b"
-
-    def test_custom_indent(self):
-        assert _indent_text("x", indent=">>") == ">>x"
+    @pytest.mark.parametrize(
+        ("text", "indent", "expected"),
+        [
+            ("hello", "  ", "  hello"),
+            ("a\nb", "  ", "  a\n  b"),
+            ("x", ">>", ">>x"),
+        ],
+    )
+    def test_indent_variants(self, text, indent, expected):
+        assert _indent_text(text, indent=indent) == expected
 
 
 class TestQuoteIfNeeded:
-    def test_simple_string(self):
-        assert _quote_if_needed("hello") == "hello"
-
-    def test_string_with_comma(self):
-        result = _quote_if_needed("a,b")
-        assert result.startswith('"')
-        assert result.endswith('"')
-
-    def test_string_with_leading_space(self):
-        result = _quote_if_needed(" hello")
-        assert result.startswith('"')
-
-    def test_string_with_colon(self):
-        result = _quote_if_needed("a:b")
-        assert result.startswith('"')
+    @pytest.mark.parametrize(
+        ("value", "must_quote"),
+        [
+            ("hello", False),
+            ("a,b", True),
+            (" hello", True),
+            ("a:b", True),
+        ],
+    )
+    def test_quotes_special_strings(self, value, must_quote):
+        result = _quote_if_needed(value)
+        if must_quote:
+            assert result.startswith('"') and result.endswith('"')
+        else:
+            assert result == value
 
     def test_none_returns_empty(self):
         assert _quote_if_needed(None) == ""
 
 
 class TestQuoteKey:
-    def test_simple_key(self):
-        assert _quote_key("name") == "name"
-
-    def test_none_key(self):
-        assert _quote_key(None) == ""
-
-    def test_key_with_special_chars(self):
-        result = _quote_key("a,b")
-        assert '"' in result
+    @pytest.mark.parametrize(
+        ("value", "check"),
+        [
+            ("name", lambda r: r == "name"),
+            (None, lambda r: r == ""),
+            ("a,b", lambda r: '"' in r),
+        ],
+    )
+    def test_quote_key_variants(self, value, check):
+        assert check(_quote_key(value))
 
 
 class TestHeadersFromDicts:
@@ -87,11 +87,9 @@ class TestHeadersFromDicts:
         headers = _headers_from_dicts(items)
         assert headers == ["a", "b", "c"]
 
-    def test_empty_list(self):
-        assert _headers_from_dicts([]) == []
-
-    def test_non_dict_returns_empty(self):
-        assert _headers_from_dicts([1, 2, 3]) == []
+    @pytest.mark.parametrize("items", [[], [1, 2, 3]])
+    def test_empty_or_non_dict_returns_empty(self, items):
+        assert _headers_from_dicts(items) == []
 
 
 class TestColumnDecimals:
@@ -133,48 +131,37 @@ class TestEncodeTabular:
 
 
 class TestStringifyForToon:
-    def test_none(self):
-        assert _stringify_for_toon(None) == "null"
-
-    def test_bool(self):
-        assert _stringify_for_toon(True) == "true"
-
-    def test_int(self):
-        assert _stringify_for_toon(42) == "42"
-
-    def test_float(self):
-        result = _stringify_for_toon(3.14)
-        assert "3.14" in result
-
-    def test_inf(self):
-        result = _stringify_for_toon(float('inf'))
-        assert "inf" in result.lower()
-
-    def test_string(self):
-        assert _stringify_for_toon("hello") == "hello"
-
-    def test_string_with_comma_quoted(self):
-        result = _stringify_for_toon("a,b")
-        assert '"' in result
+    @pytest.mark.parametrize(
+        ("value", "predicate"),
+        [
+            (None, lambda r: r == "null"),
+            (True, lambda r: r == "true"),
+            (42, lambda r: r == "42"),
+            (3.14, lambda r: "3.14" in r),
+            (float("inf"), lambda r: "inf" in r.lower()),
+            ("hello", lambda r: r == "hello"),
+            ("a,b", lambda r: '"' in r),
+        ],
+    )
+    def test_scalar_matrix(self, value, predicate):
+        assert predicate(_stringify_for_toon(value))
 
 
 class TestStringifyForToonValue:
-    def test_none(self):
-        assert _stringify_for_toon_value(None, None, ",") == "null"
-
-    def test_bool(self):
-        assert _stringify_for_toon_value(True, None, ",") == "true"
-
-    def test_number_with_decimals(self):
-        result = _stringify_for_toon_value(1.23456, 2, ",")
-        assert result == "1.23"
-
-    def test_number_no_decimals(self):
-        result = _stringify_for_toon_value(42, None, ",")
-        assert result == "42"
+    @pytest.mark.parametrize(
+        ("value", "decimals", "expected"),
+        [
+            (None, None, "null"),
+            (True, None, "true"),
+            (1.23456, 2, "1.23"),
+            (42, None, "42"),
+        ],
+    )
+    def test_scalar_matrix(self, value, decimals, expected):
+        assert _stringify_for_toon_value(value, decimals, ",") == expected
 
     def test_inf(self):
-        result = _stringify_for_toon_value(float('inf'), None, ",")
+        result = _stringify_for_toon_value(float("inf"), None, ",")
         assert "inf" in result.lower()
 
     def test_dict_uses_compact_key_value_text_instead_of_repr(self):

@@ -91,51 +91,28 @@ class TestParseTableTail:
         result = parse_table_tail(rows, tail=100)
         assert len(result) == 1
 
-    def test_coerces_int_string(self):
-        result = parse_table_tail([{"k": "42"}])
-        assert result[0]["k"] == 42
+    @pytest.mark.parametrize(
+        ("raw", "check"),
+        [
+            ("42", lambda v: v == 42),
+            ("3.14", lambda v: isinstance(v, float) and abs(v - 3.14) < 1e-9),
+            ("1e3", lambda v: v == 1000.0),
+            ("nan", lambda v: isinstance(v, float) and math.isnan(v)),
+            ("inf", lambda v: v == float("inf")),
+            ("-7", lambda v: v == -7),
+            (True, lambda v: v is True),
+            (None, lambda v: v is None),
+            ("", lambda v: v == ""),
+            ("hello", lambda v: v == "hello"),
+        ],
+    )
+    def test_value_coercion_matrix(self, raw, check):
+        result = parse_table_tail([{"k": raw}])
+        assert check(result[0]["k"])
 
-    def test_coerces_float_string(self):
-        result = parse_table_tail([{"k": "3.14"}])
-        assert isinstance(result[0]["k"], float)
-
-    def test_coerces_scientific(self):
-        result = parse_table_tail([{"k": "1e3"}])
-        assert result[0]["k"] == 1000.0
-
-    def test_coerces_nan(self):
-        result = parse_table_tail([{"k": "nan"}])
-        assert math.isnan(result[0]["k"])
-
-    def test_coerces_inf(self):
-        result = parse_table_tail([{"k": "inf"}])
-        assert result[0]["k"] == float("inf")
-
-    def test_coerces_negative_int(self):
-        result = parse_table_tail([{"k": "-7"}])
-        assert result[0]["k"] == -7
-
-    def test_preserves_bool(self):
-        result = parse_table_tail([{"k": True}])
-        assert result[0]["k"] is True
-
-    def test_preserves_none(self):
-        result = parse_table_tail([{"k": None}])
-        assert result[0]["k"] is None
-
-    def test_empty_string_unchanged(self):
-        result = parse_table_tail([{"k": ""}])
-        assert result[0]["k"] == ""
-
-    def test_non_numeric_string(self):
-        result = parse_table_tail([{"k": "hello"}])
-        assert result[0]["k"] == "hello"
-
-    def test_non_list_returns_empty(self):
-        assert parse_table_tail("not a list") == []
-
-    def test_none_input(self):
-        assert parse_table_tail(None) == []
+    @pytest.mark.parametrize("payload", ["not a list", None])
+    def test_non_list_or_none_returns_empty(self, payload):
+        assert parse_table_tail(payload) == []
 
     def test_skips_non_dict_rows(self):
         # tail=1 default, so only last dict row is returned
@@ -629,41 +606,38 @@ class TestFormatNumber:
     def test_uses_shared_utils_formatter(self):
         assert format_number is util_format_number
 
-    def test_none(self):
-        assert format_number(None) == "null"
-
-    def test_bool_true(self):
-        assert format_number(True) == "true"
-
-    def test_bool_false(self):
-        assert format_number(False) == "false"
-
-    def test_int(self):
-        assert format_number(42) == "42"
+    @pytest.mark.parametrize(
+        ("value", "expected"),
+        [
+            (None, "null"),
+            (True, "true"),
+            (False, "false"),
+            (42, "42"),
+            ("hello", "hello"),
+        ],
+    )
+    def test_scalar_matrix(self, value, expected):
+        assert format_number(value) == expected
 
     def test_float(self):
-        result = format_number(3.14)
-        assert "3.14" in result
-
-    def test_string_passthrough(self):
-        assert format_number("hello") == "hello"
+        assert "3.14" in format_number(3.14)
 
 
 # ---------------------------------------------------------------------------
 # 18. _format_signed
 # ---------------------------------------------------------------------------
 class TestFormatSigned:
-    def test_positive(self):
-        assert _format_signed(1.5) == "+1.5"
-
-    def test_negative(self):
-        assert _format_signed(-0.5) == "-0.5"
-
-    def test_zero(self):
-        assert _format_signed(0.0) == "+0.0"
-
-    def test_none(self):
-        assert _format_signed(None) == "n/a"
+    @pytest.mark.parametrize(
+        ("value", "expected"),
+        [
+            (1.5, "+1.5"),
+            (-0.5, "-0.5"),
+            (0.0, "+0.0"),
+            (None, "n/a"),
+        ],
+    )
+    def test_signed_matrix(self, value, expected):
+        assert _format_signed(value) == expected
 
 
 # ---------------------------------------------------------------------------
@@ -675,17 +649,9 @@ class TestFormatDecimal:
         assert result is not None
         assert "1.23" in result
 
-    def test_none_input(self):
-        assert _format_decimal(None) is None
-
-    def test_non_numeric(self):
-        assert _format_decimal("abc") is None
-
-    def test_inf(self):
-        assert _format_decimal(float("inf")) is None
-
-    def test_nan(self):
-        assert _format_decimal(float("nan")) is None
+    @pytest.mark.parametrize("value", [None, "abc", float("inf"), float("nan")])
+    def test_invalid_inputs_return_none(self, value):
+        assert _format_decimal(value) is None
 
     def test_zero_decimals(self):
         result = _format_decimal(3.7, 0)
@@ -696,58 +662,44 @@ class TestFormatDecimal:
 # 20. _format_probability
 # ---------------------------------------------------------------------------
 class TestFormatProbability:
-    def test_half(self):
-        assert _format_probability(0.5) == "50.0%"
-
-    def test_one(self):
-        assert _format_probability(1.0) == "100.0%"
-
-    def test_zero(self):
-        assert _format_probability(0.0) == "0.0%"
-
-    def test_none(self):
-        assert _format_probability(None) == "n/a"
-
-    def test_non_numeric(self):
-        assert _format_probability("bad") == "n/a"
-
-    def test_inf(self):
-        assert _format_probability(float("inf")) == "n/a"
+    @pytest.mark.parametrize(
+        ("value", "expected"),
+        [
+            (0.5, "50.0%"),
+            (1.0, "100.0%"),
+            (0.0, "0.0%"),
+            (None, "n/a"),
+            ("bad", "n/a"),
+            (float("inf"), "n/a"),
+        ],
+    )
+    def test_probability_matrix(self, value, expected):
+        assert _format_probability(value) == expected
 
 
 # ---------------------------------------------------------------------------
 # 21. _as_float
 # ---------------------------------------------------------------------------
 class TestAsFloat:
-    def test_int(self):
-        assert _as_float(42) == 42.0
-
-    def test_float(self):
-        assert _as_float(3.14) == 3.14
-
-    def test_string_number(self):
-        assert _as_float("2.5") == 2.5
-
-    def test_none(self):
-        assert _as_float(None) is None
-
-    def test_non_numeric_string(self):
-        assert _as_float("abc") is None
-
-    def test_inf(self):
-        assert _as_float(float("inf")) is None
-
-    def test_neg_inf(self):
-        assert _as_float(float("-inf")) is None
+    @pytest.mark.parametrize(
+        ("value", "expected"),
+        [
+            (42, 42.0),
+            (3.14, 3.14),
+            ("2.5", 2.5),
+            (None, None),
+            ("abc", None),
+            (float("inf"), None),
+            (float("-inf"), None),
+            (True, 1.0),
+            (False, 0.0),
+        ],
+    )
+    def test_as_float_matrix(self, value, expected):
+        assert _as_float(value) == expected
 
     def test_nan(self):
         assert _as_float(float("nan")) is None
-
-    def test_bool_true(self):
-        assert _as_float(True) == 1.0
-
-    def test_bool_false(self):
-        assert _as_float(False) == 0.0
 
 
 class TestAttachMultiTimeframes:

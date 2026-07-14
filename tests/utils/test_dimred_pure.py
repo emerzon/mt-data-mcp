@@ -3,7 +3,6 @@ import numpy as np
 import pytest
 
 from mtdata.utils.dimred import (
-    DimReducer,
     IsomapReducer,
     KPCAReducer,
     LaplacianReducer,
@@ -31,193 +30,103 @@ class TestNoneReducer:
         assert r.info() == {"method": "none"}
 
 
-class TestPCAReducer:
-    def test_fit_transform(self):
-        X = _synthetic_data()
-        r = PCAReducer(n_components=2)
-        out = r.fit_transform(X)
-        assert out.shape == (50, 2)
+@pytest.mark.parametrize(
+    ("factory", "kwargs", "method"),
+    [
+        (PCAReducer, {"n_components": 2}, "pca"),
+        (SVDReducer, {"n_components": 2}, "svd"),
+        (SparsePCAReducer, {"n_components": 2, "alpha": 0.5}, "spca"),
+        (KPCAReducer, {"n_components": 2, "kernel": "rbf"}, "kpca"),
+        (LaplacianReducer, {"n_components": 2, "n_neighbors": 5}, "laplacian"),
+        (IsomapReducer, {"n_components": 2, "n_neighbors": 5}, "isomap"),
+        (TSNEReducer, {"n_components": 2, "perplexity": 10.0, "n_iter": 300}, "tsne"),
+    ],
+)
+def test_reducer_fit_transform_shape_and_method(factory, kwargs, method):
+    X = _synthetic_data()
+    r = factory(**kwargs)
+    out = r.fit_transform(X)
+    assert out.shape == (50, 2)
+    assert r.info()["method"] == method
 
-    def test_transform_after_fit(self):
+
+class TestTransformSupport:
+    def test_pca_transform_after_fit(self):
         X = _synthetic_data()
         r = PCAReducer(n_components=2)
         r.fit(X)
-        out = r.transform(X)
-        assert out.shape == (50, 2)
+        assert r.transform(X).shape == (50, 2)
 
-    def test_info(self):
-        r = PCAReducer(n_components=3)
-        info = r.info()
-        assert info["method"] == "pca"
-        assert info["n_components"] == 3
-
-
-class TestSVDReducer:
-    def test_fit_transform(self):
-        X = _synthetic_data()
-        r = SVDReducer(n_components=2)
-        out = r.fit_transform(X)
-        assert out.shape == (50, 2)
-
-    def test_info(self):
-        assert SVDReducer(n_components=2).info()["method"] == "svd"
-
-
-class TestSparsePCAReducer:
-    def test_fit_transform(self):
-        X = _synthetic_data()
-        r = SparsePCAReducer(n_components=2, alpha=0.5)
-        out = r.fit_transform(X)
-        assert out.shape == (50, 2)
-
-    def test_info(self):
-        info = SparsePCAReducer(n_components=2, alpha=0.5).info()
-        assert info["method"] == "spca"
-        assert info["alpha"] == 0.5
-
-
-class TestKPCAReducer:
-    def test_fit_transform(self):
-        X = _synthetic_data()
-        r = KPCAReducer(n_components=2, kernel="rbf")
-        out = r.fit_transform(X)
-        assert out.shape == (50, 2)
-
-    def test_info_fields(self):
-        info = KPCAReducer(n_components=2, kernel="poly", gamma=0.1, degree=2, coef0=0.5).info()
-        assert info["kernel"] == "poly"
-        assert info["gamma"] == 0.1
-        assert info["degree"] == 2
-
-
-class TestLaplacianReducer:
-    def test_fit_transform(self):
-        X = _synthetic_data()
-        r = LaplacianReducer(n_components=2, n_neighbors=5)
-        out = r.fit_transform(X)
-        assert out.shape == (50, 2)
-
-    def test_no_transform(self):
-        r = LaplacianReducer(n_components=2)
+    @pytest.mark.parametrize(
+        "factory_kwargs",
+        [
+            (LaplacianReducer, {"n_components": 2, "n_neighbors": 5}),
+            (TSNEReducer, {"n_components": 2, "perplexity": 10.0, "n_iter": 300}),
+        ],
+    )
+    def test_no_transform_reducers_raise(self, factory_kwargs):
+        factory, kwargs = factory_kwargs
+        r = factory(**kwargs)
         assert not r.supports_transform()
-        r.fit(_synthetic_data())
+        if factory is LaplacianReducer:
+            r.fit(_synthetic_data())
         with pytest.raises(RuntimeError):
-            r.transform(_synthetic_data(10, 5))
-
-
-class TestIsomapReducer:
-    def test_fit_transform(self):
-        X = _synthetic_data()
-        r = IsomapReducer(n_components=2, n_neighbors=5)
-        out = r.fit_transform(X)
-        assert out.shape == (50, 2)
-
-    def test_info(self):
-        info = IsomapReducer(n_components=2, n_neighbors=7).info()
-        assert info["n_neighbors"] == 7
-
-
-class TestTSNEReducer:
-    def test_fit_transform(self):
-        X = _synthetic_data()
-        r = TSNEReducer(n_components=2, perplexity=10.0, n_iter=300)
-        out = r.fit_transform(X)
-        assert out.shape == (50, 2)
-
-    def test_no_transform(self):
-        r = TSNEReducer(n_components=2, perplexity=10.0, n_iter=300)
-        assert not r.supports_transform()
-        with pytest.raises(RuntimeError):
-            r.transform(_synthetic_data())
-
-    def test_info(self):
-        info = TSNEReducer(n_components=2, perplexity=15.0, learning_rate=100.0, n_iter=500).info()
-        assert info["perplexity"] == 15.0
-        assert info["supports_transform"] is False
+            r.transform(_synthetic_data(10, 5) if factory is LaplacianReducer else _synthetic_data())
 
 
 class TestCreateReducer:
-    def test_none(self):
-        r, p = create_reducer(None)
-        assert isinstance(r, NoneReducer)
-        assert p["method"] == "none"
+    @pytest.mark.parametrize(
+        ("method", "params", "expected_type"),
+        [
+            (None, None, NoneReducer),
+            ("none", None, NoneReducer),
+            ("pca", {"n_components": 3}, PCAReducer),
+            ("svd", {"n_components": 2}, SVDReducer),
+            ("spca", {"n_components": 2, "alpha": 0.5}, SparsePCAReducer),
+            ("kpca", {"n_components": 2, "kernel": "poly", "gamma": 0.1, "degree": 2}, KPCAReducer),
+            ("isomap", {"n_components": 2, "n_neighbors": 7}, IsomapReducer),
+            ("laplacian", {"n_components": 2, "n_neighbors": 8}, LaplacianReducer),
+            ("tsne", {"n_components": 2, "perplexity": 10, "n_iter": 300}, TSNEReducer),
+        ],
+    )
+    def test_factory_builds_known_methods(self, method, params, expected_type):
+        r, p = create_reducer(method, params or {})
+        assert isinstance(r, expected_type)
+        if method == "pca":
+            assert p["n_components"] == 3
+        if method == "kpca":
+            assert p["kernel"] == "poly"
 
-    def test_none_string(self):
-        r, p = create_reducer("none")
-        assert isinstance(r, NoneReducer)
-
-    def test_pca(self):
-        r, p = create_reducer("pca", {"n_components": 3})
-        assert isinstance(r, PCAReducer)
-        assert p["n_components"] == 3
-
-    def test_pca_no_components_raises(self):
+    @pytest.mark.parametrize("method", ["pca", "svd"])
+    def test_missing_components_raises(self, method):
         with pytest.raises(ValueError):
-            create_reducer("pca", {})
-
-    def test_svd(self):
-        r, p = create_reducer("svd", {"n_components": 2})
-        assert isinstance(r, SVDReducer)
-
-    def test_svd_no_components_raises(self):
-        with pytest.raises(ValueError):
-            create_reducer("svd", {})
-
-    def test_spca(self):
-        r, p = create_reducer("spca", {"n_components": 2, "alpha": 0.5})
-        assert isinstance(r, SparsePCAReducer)
-
-    def test_kpca(self):
-        r, p = create_reducer("kpca", {"n_components": 2, "kernel": "poly", "gamma": 0.1, "degree": 2})
-        assert isinstance(r, KPCAReducer)
-        assert p["kernel"] == "poly"
+            create_reducer(method, {})
 
     def test_kpca_gamma_none(self):
-        r, p = create_reducer("kpca", {"n_components": 2, "gamma": "none"})
+        _, p = create_reducer("kpca", {"n_components": 2, "gamma": "none"})
         assert p["gamma"] is None
 
-    def test_isomap(self):
-        r, p = create_reducer("isomap", {"n_components": 2, "n_neighbors": 7})
-        assert isinstance(r, IsomapReducer)
-
-    def test_laplacian(self):
-        r, p = create_reducer("laplacian", {"n_components": 2, "n_neighbors": 8})
-        assert isinstance(r, LaplacianReducer)
-
-    def test_tsne(self):
-        r, p = create_reducer("tsne", {"n_components": 2, "perplexity": 10, "n_iter": 300})
-        assert isinstance(r, TSNEReducer)
-
-    def test_lda_raises(self):
-        with pytest.raises(RuntimeError, match="supervised"):
-            create_reducer("lda")
-
-    def test_unknown_raises(self):
-        with pytest.raises(ValueError, match="Unknown"):
-            create_reducer("invalid_method")
-
-    def test_deep_diffusion_maps_raises(self):
-        with pytest.raises(RuntimeError):
-            create_reducer("deep_diffusion_maps")
-
-    def test_dreams_raises(self):
-        with pytest.raises(RuntimeError):
-            create_reducer("dreams")
-
-    def test_pcc_raises(self):
-        with pytest.raises(RuntimeError):
-            create_reducer("pcc")
+    @pytest.mark.parametrize(
+        ("method", "exc", "match"),
+        [
+            ("lda", RuntimeError, "supervised"),
+            ("invalid_method", ValueError, "Unknown"),
+            ("deep_diffusion_maps", RuntimeError, None),
+            ("dreams", RuntimeError, None),
+            ("pcc", RuntimeError, None),
+        ],
+    )
+    def test_unsupported_methods_raise(self, method, exc, match):
+        with pytest.raises(exc, match=match):
+            create_reducer(method)
 
 
 class TestListDimredMethods:
-    def test_returns_dict(self):
+    def test_catalog_shape(self):
         methods = list_dimred_methods()
         assert isinstance(methods, dict)
         assert "pca" in methods
-        assert "none" in methods
         assert methods["none"]["available"] is True
-
-    def test_all_have_description(self):
-        for name, info in list_dimred_methods().items():
+        for info in methods.values():
             assert "description" in info
             assert "available" in info

@@ -138,48 +138,9 @@ class TestUMAPReducerInit:
             assert info["min_dist"] == 0.2
 
 
-# ===== TSNEReducer (lines 280-314) =========================================
+# ===== TSNEReducer missing-dependency path (happy path covered in pure) =====
 
 class TestTSNEReducerExtended:
-    """Cover all TSNEReducer methods without hitting deprecated param issue."""
-
-    def test_supports_transform_false(self):
-        """Line 293-294."""
-        mock_tsne_cls = MagicMock()
-        with patch("mtdata.utils.dimred._SKTSNE", mock_tsne_cls):
-            from mtdata.utils.dimred import TSNEReducer
-            r = TSNEReducer(n_components=2, perplexity=10.0, n_iter=300)
-            assert r.supports_transform() is False
-
-    def test_fit_returns_self(self):
-        """Lines 296-298."""
-        mock_tsne_cls = MagicMock()
-        with patch("mtdata.utils.dimred._SKTSNE", mock_tsne_cls):
-            from mtdata.utils.dimred import TSNEReducer
-            r = TSNEReducer(n_components=2)
-            assert r.fit(_data()) is r
-
-    def test_transform_raises(self):
-        """Lines 300-301."""
-        mock_tsne_cls = MagicMock()
-        with patch("mtdata.utils.dimred._SKTSNE", mock_tsne_cls):
-            from mtdata.utils.dimred import TSNEReducer
-            r = TSNEReducer(n_components=2)
-            with pytest.raises(RuntimeError, match="does not support"):
-                r.transform(_data())
-
-    def test_fit_transform_delegates(self):
-        """Lines 303-304."""
-        mock_tsne_cls = MagicMock()
-        mock_model = MagicMock()
-        mock_model.fit_transform.return_value = np.zeros((60, 2))
-        mock_tsne_cls.return_value = mock_model
-        with patch("mtdata.utils.dimred._SKTSNE", mock_tsne_cls):
-            from mtdata.utils.dimred import TSNEReducer
-            r = TSNEReducer(n_components=2)
-            out = r.fit_transform(_data())
-            assert out.shape == (60, 2)
-
     def test_info_fields(self):
         """Lines 306-314."""
         mock_tsne_cls = MagicMock()

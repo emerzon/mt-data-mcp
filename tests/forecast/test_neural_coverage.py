@@ -76,50 +76,33 @@ def _make_series(n: int = 100):
 # ── forecast_neural  (lines 31-87) ──────────────────────────────────────────
 
 class TestForecastNeural:
+    @pytest.mark.parametrize(
+        ("method", "fh", "n", "check_params"),
+        [
+            ("nhits", 12, 100, True),
+            ("nbeatsx", 8, 50, False),
+            ("tft", 6, 50, False),
+            ("patchtst", 6, 50, False),
+        ],
+    )
     @patch("mtdata.forecast.methods.neural._nf_setup_and_predict")
     @patch("mtdata.forecast.methods.neural._edge_pad_to_length", side_effect=lambda v, l: v[:l] if len(v) >= l else np.pad(v, (0, l - len(v)), mode="edge"))
-    def test_nhits_basic(self, pad_mock, predict_mock):
-        predict_mock.return_value = _make_Yf(12)
-        Y_df = pd.DataFrame({"unique_id": ["ts"] * 100, "ds": list(range(100)), "y": np.linspace(100, 110, 100)})
+    def test_supported_methods_return_horizon_values(self, pad_mock, predict_mock, method, fh, n, check_params):
+        predict_mock.return_value = _make_Yf(fh)
+        Y_df = pd.DataFrame({"unique_id": ["ts"] * n, "ds": list(range(n)), "y": np.linspace(100, 110, n)})
         vals, params_used = forecast_neural(
-            method="nhits", series=np.linspace(100, 110, 100),
-            fh=12, timeframe="H1", n=100, m=24, params={}, Y_df=Y_df,
+            method=method,
+            series=np.linspace(100, 110, n),
+            fh=fh,
+            timeframe="H1",
+            n=n,
+            m=24 if method == "nhits" else 12,
+            params={},
+            Y_df=Y_df,
         )
-        assert len(vals) == 12
-        assert "max_epochs" in params_used
-
-    @patch("mtdata.forecast.methods.neural._nf_setup_and_predict")
-    @patch("mtdata.forecast.methods.neural._edge_pad_to_length", side_effect=lambda v, l: v[:l] if len(v) >= l else np.pad(v, (0, l - len(v)), mode="edge"))
-    def test_nbeatsx(self, pad_mock, predict_mock):
-        predict_mock.return_value = _make_Yf(8)
-        Y_df = pd.DataFrame({"unique_id": ["ts"] * 50, "ds": list(range(50)), "y": np.linspace(100, 110, 50)})
-        vals, _ = forecast_neural(
-            method="nbeatsx", series=np.linspace(100, 110, 50),
-            fh=8, timeframe="H1", n=50, m=12, params={}, Y_df=Y_df,
-        )
-        assert len(vals) == 8
-
-    @patch("mtdata.forecast.methods.neural._nf_setup_and_predict")
-    @patch("mtdata.forecast.methods.neural._edge_pad_to_length", side_effect=lambda v, l: v[:l] if len(v) >= l else np.pad(v, (0, l - len(v)), mode="edge"))
-    def test_tft(self, pad_mock, predict_mock):
-        predict_mock.return_value = _make_Yf(6)
-        Y_df = pd.DataFrame({"unique_id": ["ts"] * 50, "ds": list(range(50)), "y": np.linspace(100, 110, 50)})
-        vals, _ = forecast_neural(
-            method="tft", series=np.linspace(100, 110, 50),
-            fh=6, timeframe="H1", n=50, m=12, params={}, Y_df=Y_df,
-        )
-        assert len(vals) == 6
-
-    @patch("mtdata.forecast.methods.neural._nf_setup_and_predict")
-    @patch("mtdata.forecast.methods.neural._edge_pad_to_length", side_effect=lambda v, l: v[:l] if len(v) >= l else np.pad(v, (0, l - len(v)), mode="edge"))
-    def test_patchtst(self, pad_mock, predict_mock):
-        predict_mock.return_value = _make_Yf(6)
-        Y_df = pd.DataFrame({"unique_id": ["ts"] * 50, "ds": list(range(50)), "y": np.linspace(100, 110, 50)})
-        vals, _ = forecast_neural(
-            method="patchtst", series=np.linspace(100, 110, 50),
-            fh=6, timeframe="H1", n=50, m=12, params={}, Y_df=Y_df,
-        )
-        assert len(vals) == 6
+        assert len(vals) == fh
+        if check_params:
+            assert "max_epochs" in params_used
 
     def test_unknown_method(self):
         Y_df = pd.DataFrame({"unique_id": ["ts"], "ds": [0], "y": [100.0]})
@@ -233,23 +216,20 @@ class TestForecastNeural:
 # ── NeuralForecastMethod and subclasses  (lines 90-177) ─────────────────────
 
 class TestNeuralForecastMethodProperties:
-    def test_nhits_name(self):
-        m = NHITSMethod()
-        assert m.name == "nhits"
+    @pytest.mark.parametrize(
+        ("cls", "name"),
+        [
+            (NHITSMethod, "nhits"),
+            (NBEATSXMethod, "nbeatsx"),
+            (TFTMethod, "tft"),
+            (PatchTSTMethod, "patchtst"),
+        ],
+    )
+    def test_method_names(self, cls, name):
+        m = cls()
+        assert m.name == name
         assert m.category == "neural"
         assert "neuralforecast" in m.required_packages
-
-    def test_nbeatsx_name(self):
-        m = NBEATSXMethod()
-        assert m.name == "nbeatsx"
-
-    def test_tft_name(self):
-        m = TFTMethod()
-        assert m.name == "tft"
-
-    def test_patchtst_name(self):
-        m = PatchTSTMethod()
-        assert m.name == "patchtst"
 
     def test_supports_features(self):
         m = NHITSMethod()

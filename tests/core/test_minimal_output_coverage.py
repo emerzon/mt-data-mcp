@@ -26,72 +26,56 @@ from mtdata.utils.minimal_output_toon import (
 
 
 class TestIsScalarValue:
-    def test_string(self):
-        assert _is_scalar_value("hello")
-
-    def test_int(self):
-        assert _is_scalar_value(42)
-
-    def test_float(self):
-        assert _is_scalar_value(3.14)
-
-    def test_bool(self):
-        assert _is_scalar_value(True)
-
-    def test_none(self):
-        assert _is_scalar_value(None)
-
-    def test_list_not_scalar(self):
-        assert not _is_scalar_value([1, 2])
-
-    def test_dict_not_scalar(self):
-        assert not _is_scalar_value({"a": 1})
+    @pytest.mark.parametrize(
+        ("value", "expected"),
+        [
+            ("hello", True),
+            (42, True),
+            (3.14, True),
+            (True, True),
+            (None, True),
+            ([1, 2], False),
+            ({"a": 1}, False),
+        ],
+    )
+    def test_scalar_classification(self, value, expected):
+        assert _is_scalar_value(value) is expected
 
 
 class TestIsEmptyValue:
-    def test_none(self):
-        assert _is_empty_value(None)
-
-    def test_empty_string(self):
-        assert _is_empty_value("")
-        assert _is_empty_value("  ")
-
-    def test_nonempty_string(self):
-        assert not _is_empty_value("hello")
-
-    def test_empty_list(self):
-        assert _is_empty_value([])
-        assert _is_empty_value([None, None])
-
-    def test_nonempty_list(self):
-        assert not _is_empty_value([1])
-
-    def test_empty_dict(self):
-        assert _is_empty_value({})
-        assert _is_empty_value({"a": None})
-
-    def test_nonempty_dict(self):
-        assert not _is_empty_value({"a": 1})
-
-    def test_number_not_empty(self):
-        assert not _is_empty_value(0)
-        assert not _is_empty_value(0.0)
+    @pytest.mark.parametrize(
+        ("value", "expected"),
+        [
+            (None, True),
+            ("", True),
+            ("  ", True),
+            ("hello", False),
+            ([], True),
+            ([None, None], True),
+            ([1], False),
+            ({}, True),
+            ({"a": None}, True),
+            ({"a": 1}, False),
+            (0, False),
+            (0.0, False),
+        ],
+    )
+    def test_empty_classification(self, value, expected):
+        assert _is_empty_value(value) is expected
 
 
 class TestStringifyScalar:
-    def test_none(self):
-        assert _stringify_scalar(None) == "null"
-
-    def test_int(self):
-        result = _stringify_scalar(42)
-        assert "42" in result
-
-    def test_float(self):
-        result = _stringify_scalar(3.14)
-        assert "3.14" in result
-
-    def test_string(self):
-        assert _stringify_scalar("hello") == "hello"
+    @pytest.mark.parametrize(
+        ("value", "expected_fragment"),
+        [
+            (None, "null"),
+            (42, "42"),
+            (3.14, "3.14"),
+            ("hello", "hello"),
+        ],
+    )
+    def test_stringifies_common_scalars(self, value, expected_fragment):
+        assert expected_fragment in _stringify_scalar(value)
 
 
 class TestStringifyCell:

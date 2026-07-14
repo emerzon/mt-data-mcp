@@ -130,14 +130,11 @@ def _series(n=100, freq=None, name="y"):
 # ===========================================================================
 
 class TestSktimeMethodProperties:
-    def test_category(self):
-        assert GenericSktimeMethod().category == "sktime"
-
-    def test_required_packages(self):
-        assert "sktime" in GenericSktimeMethod().required_packages
-
-    def test_supports_features(self):
-        feats = GenericSktimeMethod().supports_features
+    def test_metadata(self):
+        m = GenericSktimeMethod()
+        assert m.category == "sktime"
+        assert "sktime" in m.required_packages
+        feats = m.supports_features
         assert feats["price"] is True
         assert feats["ci"] is True
 
@@ -362,63 +359,22 @@ class TestSktimeMethodForecast:
 
 
 # ===========================================================================
-# SktThetaMethod (lines 230-241)
+# Concrete sktime method adapters
 # ===========================================================================
 
-class TestSktThetaMethod:
-    def test_name(self):
-        assert SktThetaMethod().name == "skt_theta"
-
-    def test_get_estimator_default(self):
-        m = SktThetaMethod()
+class TestSktimeConcreteMethods:
+    @pytest.mark.parametrize(
+        ("cls", "name", "fake_est", "seasonality"),
+        [
+            (SktThetaMethod, "skt_theta", _FakeThetaForecaster, 12),
+            (SktNaiveMethod, "skt_naive", _FakeNaiveForecaster, 1),
+            (SktAutoETSMethod, "skt_autoets", _FakeAutoETS, 12),
+        ],
+    )
+    def test_name_estimator_and_forecast(self, cls, name, fake_est, seasonality):
+        m = cls()
+        assert m.name == name
         est = m._get_estimator(12, {})
-        assert isinstance(est, _FakeThetaForecaster)
-
-    def test_forecast(self):
-        m = SktThetaMethod()
-        res = m.forecast(_series(), horizon=5, seasonality=12, params={})
-        assert res.forecast is not None
-
-
-# ===========================================================================
-# SktNaiveMethod (lines 244-256)
-# ===========================================================================
-
-class TestSktNaiveMethod:
-    def test_name(self):
-        assert SktNaiveMethod().name == "skt_naive"
-
-    def test_get_estimator_default(self):
-        m = SktNaiveMethod()
-        est = m._get_estimator(12, {})
-        assert isinstance(est, _FakeNaiveForecaster)
-
-    def test_default_strategy(self):
-        m = SktNaiveMethod()
-        est = m._get_estimator(12, {})
-        # strategy="last" is default but may not be passed if not in sig
-        assert est is not None
-
-    def test_forecast(self):
-        m = SktNaiveMethod()
-        res = m.forecast(_series(), horizon=5, seasonality=1, params={})
-        assert res.forecast is not None
-
-
-# ===========================================================================
-# SktAutoETSMethod (lines 259-270)
-# ===========================================================================
-
-class TestSktAutoETSMethod:
-    def test_name(self):
-        assert SktAutoETSMethod().name == "skt_autoets"
-
-    def test_get_estimator_default(self):
-        m = SktAutoETSMethod()
-        est = m._get_estimator(12, {})
-        assert isinstance(est, _FakeAutoETS)
-
-    def test_forecast(self):
-        m = SktAutoETSMethod()
-        res = m.forecast(_series(), horizon=5, seasonality=12, params={})
+        assert isinstance(est, fake_est)
+        res = m.forecast(_series(), horizon=5, seasonality=seasonality, params={})
         assert res.forecast is not None
