@@ -3313,14 +3313,15 @@ def fetch_ticks(  # noqa: C901
                 values.extend([quote_update_types[i], spread_valid_flags[i]])
                 bid_value = effective_bids[i]
                 ask_value = effective_asks[i]
+                spread_valid = spread_valid_flags[i]
                 mid = (
                     (bid_value + ask_value) / 2.0
-                    if bid_value is not None and ask_value is not None
+                    if spread_valid and bid_value is not None and ask_value is not None
                     else None
                 )
                 spread = (
                     ask_value - bid_value
-                    if bid_value is not None and ask_value is not None
+                    if spread_valid and bid_value is not None and ask_value is not None
                     else None
                 )
                 spread_points = _tick_spread_points(spread, price_point)

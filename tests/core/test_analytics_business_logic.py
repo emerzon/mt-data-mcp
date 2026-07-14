@@ -234,6 +234,26 @@ def test_microstructure_reports_closed_session_for_short_tick_stream(monkeypatch
     assert "reopen" in result["remediation"]
 
 
+def test_tick_frame_nulls_derived_quotes_for_one_sided_updates() -> None:
+    gateway = FakeGateway()
+    gateway.tick_rows = [
+        {"time": 1, "bid": 1.1, "ask": 1.1, "flags": 2},
+        {"time": 2, "bid": 1.1, "ask": 1.1002, "flags": 6},
+    ]
+
+    frame, _ = _tick_frame(
+        gateway,
+        "EURUSD",
+        datetime.fromtimestamp(0, tz=timezone.utc),
+        datetime.fromtimestamp(3, tz=timezone.utc),
+        100,
+    )
+
+    assert np.isnan(frame.iloc[0]["mid"])
+    assert np.isnan(frame.iloc[0]["spread"])
+    assert frame.iloc[1]["spread"] == pytest.approx(0.0002)
+
+
 def test_execution_quality_matches_order_and_computes_markout() -> None:
     gateway = FakeGateway()
     start = _now() - 100

@@ -179,7 +179,19 @@ def _tick_frame(gateway: Any, symbol: str, start: datetime, end: datetime, max_t
         if column not in df:
             df[column] = 0.0
         df[column] = _finite(df[column]).fillna(0.0)
-    df["mid"] = np.where((df["bid"] > 0) & (df["ask"] >= df["bid"]), (df["bid"] + df["ask"]) / 2.0, np.nan)
+    quote_flag_mask = (
+        getattr(gateway, "TICK_FLAG_BID", 2)
+        | getattr(gateway, "TICK_FLAG_ASK", 4)
+    )
+    observed_quote_flags = (df["flags"].astype(np.int64) & quote_flag_mask) != 0
+    complete_quote_update = (
+        (df["flags"].astype(np.int64) & quote_flag_mask) == quote_flag_mask
+    )
+    valid_quote = (df["bid"] > 0) & (df["ask"] >= df["bid"])
+    if bool(observed_quote_flags.any()):
+        valid_quote &= complete_quote_update
+    df["spread_valid"] = valid_quote
+    df["mid"] = np.where(valid_quote, (df["bid"] + df["ask"]) / 2.0, np.nan)
     df["spread"] = np.where(np.isfinite(df["mid"]), df["ask"] - df["bid"], np.nan)
     return df.reset_index(drop=True), truncated
 
@@ -316,6 +328,7 @@ def analyze_microstructure(request: MarketMicrostructureRequest, gateway: Any) -
             "quote_coverage": float(quote_mask.mean()),
             "trade_tick_coverage": float(trade_mask.mean()),
             "real_volume_trade_coverage": real_share,
+            "invalid_partial_quote_ticks": int((~df["spread_valid"]).sum()),
             "truncated": truncated,
             "requested_start": start.isoformat(),
             "requested_end": end.isoformat(),
