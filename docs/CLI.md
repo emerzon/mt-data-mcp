@@ -224,7 +224,7 @@ mtdata-cli data_fetch_candles EURUSD --start "2025-12-01" --end "2025-12-31"
 | `market_ticker` | Get current bid/ask/spread snapshot |
 | `market_snapshot` | Unified pre-trade snapshot (quote, levels, patterns; optional regime/forecast sections) |
 | `market_status` | Get market trading hours and session status |
-| `wait_event` | Stream real-time market events |
+| `wait_event` | **Blocking:** wait up to 15 seconds by default for a market event; set an explicit longer timeout on persistent transports |
 
 ### Forecasting
 | Command | Description |

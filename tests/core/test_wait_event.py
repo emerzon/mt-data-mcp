@@ -15,7 +15,7 @@ def test_wait_event_request_defaults_watch_for_to_inferred_set() -> None:
 
     assert request.watch_for is None
     assert request.end_on == []
-    assert request.max_wait_seconds == 86400.0
+    assert request.max_wait_seconds == 15.0
 
 
 def test_wait_event_request_rejects_non_positive_poll_interval() -> None:

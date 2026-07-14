@@ -605,13 +605,13 @@ def wait_event(
     timeframe: TimeframeLiteral = "M1",
     wait_next_bar: bool = False,
     watch_tick_count_spike: bool = True,
-    max_wait_seconds: Optional[float] = 300.0,
+    max_wait_seconds: Optional[float] = 15.0,
     poll_interval_seconds: Optional[float] = None,
     watch_for: Optional[List[Dict[str, Any]]] = None,
     end_on: Optional[List[Dict[str, Any]]] = None,
     detail: DetailLiteral = "compact",
 ) -> Dict[str, Any]:
-    """Wait for watch events on a symbol until the next timeframe boundary.
+    """BLOCKING: Wait for watch events until a match, boundary, or timeout.
 
     Defaults to M1 for faster event polling; set `timeframe="H1"` for hourly
     candle/event boundaries.
@@ -631,9 +631,9 @@ def wait_event(
     its default watcher set. For boundary-only waits, pass `watch_for=[]` and
     rely on `timeframe` or explicit `end_on` candle-close events.
 
-    `max_wait_seconds` defaults to 300 seconds on the public tool surface so
-    CLI calls have an explicit timebox. Set it to null to use no timeout, or
-    raise it for longer candle-boundary waits.
+    `max_wait_seconds` defaults to 15 seconds on the public tool surface so
+    interactive and agent calls have a short timebox. Set it to null to use no
+    timeout, or raise it explicitly for longer long-lived transport waits.
     Set `poll_interval_seconds` to tune polling cadence; omit it to use the
     engine default.
 

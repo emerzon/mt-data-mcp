@@ -815,7 +815,7 @@ class WaitEventRequest(BaseModel):
     side: Optional[Literal["buy", "sell"]] = None
     buffer_seconds: float = 1.0
     poll_interval_seconds: float = 0.5
-    max_wait_seconds: Optional[float] = 86400.0
+    max_wait_seconds: Optional[float] = 15.0
     accept_preexisting: bool = False
 
     @field_validator("order_ticket")
