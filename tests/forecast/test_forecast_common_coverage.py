@@ -10,7 +10,6 @@ import pandas as pd
 import pytest
 
 from mtdata.forecast.backtest import (
-    _bars_per_year,
     _compute_performance_metrics,
 )
 
@@ -21,6 +20,7 @@ from mtdata.forecast.common import (
     _create_training_dataframes,
     _extract_forecast_values,
     _normalize_weights,
+    bars_per_year as _bars_per_year,
     build_ci_diagnostics,
     default_seasonality,
     edge_pad_to_length,

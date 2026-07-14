@@ -127,6 +127,11 @@ Consequently, `win_rate`, Sharpe, drawdown, and return metrics describe this
 specific take-profit-only heuristic. They are not directly comparable to a
 hold-to-horizon or dual-barrier strategy.
 
+Annualized metrics use the median number of bars in complete observed sessions
+for session-limited instruments. Full metric output includes `bars_per_year`
+and `annualization_basis`; a basis ending in `assumed_24h` identifies the
+timestamp-free generic fallback.
+
 | Parameter | Default | Description |
 |-----------|---------|-------------|
 | `--slippage-bps` | 0.0 | Transaction cost in basis points (1 bp = 0.01%) |

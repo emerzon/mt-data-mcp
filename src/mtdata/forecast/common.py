@@ -383,6 +383,41 @@ def bars_per_year(
         return float("nan")
 
 
+def annualization_context(
+    timeframe: str,
+    symbol: Optional[str] = None,
+    *,
+    observed_times: Any = None,
+    observed_timeframe: Optional[str] = None,
+) -> Tuple[float, str]:
+    """Return bars per year and an explicit annualization basis."""
+    tf = str(timeframe or "").strip().upper()
+    if is_probably_crypto_symbol(symbol):
+        return bars_per_year(tf, symbol), "365_calendar_days_24h_crypto"
+    if is_probably_forex_symbol(symbol):
+        return bars_per_year(tf, symbol), "260_fx_weekdays_24h"
+
+    target_seconds = TIMEFRAME_SECONDS.get(tf)
+    if target_seconds and float(target_seconds) >= 86400.0:
+        return bars_per_year(tf, symbol), "252_trading_days_calendar"
+
+    observed_per_session = observed_bars_per_session(observed_times)
+    if observed_per_session is not None:
+        source_tf = str(observed_timeframe or tf).strip().upper()
+        source_seconds = TIMEFRAME_SECONDS.get(source_tf)
+        if source_seconds and target_seconds:
+            target_bars_per_session = (
+                observed_per_session * float(source_seconds) / float(target_seconds)
+            )
+            if math.isfinite(target_bars_per_session) and target_bars_per_session > 0:
+                return (
+                    float(252.0 * target_bars_per_session),
+                    "252_trading_days_observed_session",
+                )
+
+    return bars_per_year(tf, symbol), "252_trading_days_assumed_24h"
+
+
 def quantity_to_target(quantity: str) -> str:
     """Map a forecast quantity to the corresponding price/return target mode."""
     return "return" if str(quantity).strip().lower() == "return" else "price"

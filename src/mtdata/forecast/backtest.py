@@ -11,7 +11,7 @@ from ..shared.validators import invalid_timeframe_error
 from ..utils.denoise import normalize_denoise_spec as _normalize_denoise_spec
 from ..utils.time import _format_time_minimal
 from .common import (
-    bars_per_year as _bars_per_year,
+    annualization_context as _annualization_context,
 )
 from .common import (
     fetch_history as _fetch_history,
@@ -348,19 +348,25 @@ def _compute_performance_metrics(
     slippage_bps: float,
     trade_spacing_bars: Optional[int] = None,
     symbol: Optional[str] = None,
+    observed_times: Any = None,
 ) -> Dict[str, Any]:
     """Compute portfolio-level performance statistics from per-trade returns."""
 
+    annualization_bars, annualization_basis = _annualization_context(
+        timeframe,
+        symbol,
+        observed_times=observed_times,
+    )
+
     def _empty_metrics() -> Dict[str, Any]:
-        bars_per_year = _bars_per_year(timeframe, symbol)
         cadence = (
             max(1, int(trade_spacing_bars))
             if trade_spacing_bars is not None
             else max(1, int(horizon))
         )
         trades_per_year = (
-            float(bars_per_year / cadence)
-            if math.isfinite(bars_per_year)
+            float(annualization_bars / cadence)
+            if math.isfinite(annualization_bars)
             else float("nan")
         )
         return {
@@ -382,6 +388,8 @@ def _compute_performance_metrics(
             "calmar_ratio": None,
             "annual_return": None,
             "trades_per_year": trades_per_year,
+            "bars_per_year": annualization_bars,
+            "annualization_basis": annualization_basis,
             "trades_observed": 0,
             "winning_trades": 0,
             "losing_trades": 0,
@@ -407,9 +415,8 @@ def _compute_performance_metrics(
 
     metrics: Dict[str, Any] = {}
 
-    bars_per_year = _bars_per_year(timeframe, symbol)
     cadence = max(1, int(trade_spacing_bars)) if trade_spacing_bars is not None else max(1, int(horizon))
-    trades_per_year = float(bars_per_year / cadence) if math.isfinite(bars_per_year) else float('nan')
+    trades_per_year = float(annualization_bars / cadence) if math.isfinite(annualization_bars) else float('nan')
 
     avg_return = float(np.mean(arr))
     winning_trades = int(np.sum(arr > 0.0))
@@ -509,6 +516,8 @@ def _compute_performance_metrics(
         "calmar_ratio": _finite_or_none(calmar),
         "annual_return": _finite_or_none(annual_return),
         "trades_per_year": trades_per_year,
+        "bars_per_year": annualization_bars,
+        "annualization_basis": annualization_basis,
         "trades_observed": int(arr.size),
         "winning_trades": winning_trades,
         "losing_trades": losing_trades,
@@ -1072,6 +1081,7 @@ def strategy_backtest(  # noqa: C901
             float(slippage_bps),
             trade_spacing_bars=trade_spacing,
             symbol=symbol,
+            observed_times=times,
         ) if trade_returns else {}
         if detail_mode == "compact" and metrics:
             metrics = _compact_metrics_payload(metrics)
@@ -1830,6 +1840,7 @@ def forecast_backtest(  # noqa: C901
                         trade_returns, timeframe, int(horizon), float(slippage_bps),
                         trade_spacing_bars=_spacing,
                         symbol=symbol,
+                        observed_times=times,
                     ) if trade_returns else {}
                     if metrics:
                         if detail_mode == "compact":

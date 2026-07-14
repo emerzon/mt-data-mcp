@@ -210,6 +210,27 @@ class TestReturnModeFallbackRemoved:
 
 
 class TestAnnualizationCadence:
+    def test_metrics_use_observed_session_density(self):
+        observed_times = [
+            (day + pd.Timedelta(hours=14 + offset)).timestamp()
+            for day in pd.bdate_range("2025-01-02", periods=40, tz="UTC")
+            for offset in range(7)
+        ]
+        returns = list(np.random.default_rng(42).normal(0.001, 0.01, 50))
+
+        metrics = _compute_performance_metrics(
+            returns,
+            "H1",
+            12,
+            0.0,
+            symbol="AAPL",
+            observed_times=observed_times,
+        )
+
+        assert metrics["bars_per_year"] == 1764.0
+        assert metrics["trades_per_year"] == pytest.approx(1764.0 / 12.0)
+        assert metrics["annualization_basis"] == "252_trading_days_observed_session"
+
     def test_metrics_with_trade_spacing_differs_from_horizon(self):
         """When trade_spacing_bars != horizon, trades_per_year changes."""
         rets = list(np.random.default_rng(42).normal(0.001, 0.01, 50))

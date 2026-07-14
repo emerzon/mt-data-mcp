@@ -34,6 +34,11 @@ success: true
   volatility_horizon: 0.002145  # Expected volatility over horizon
 ```
 
+For session-limited instruments, intraday annualization uses the median bar
+count from complete observed sessions. The response reports `bars_per_year`
+and `annualization_basis`; `252_trading_days_assumed_24h` means there were not
+enough timestamps to infer a session and the generic 24-hour fallback was used.
+
 **Interpretation:**
 - `volatility_per_bar: 0.00062` → Expect ~0.06% moves per hour (1 standard deviation)
 - `volatility_horizon: 0.002145` → Over 12 hours, expect ~0.21% total range (1 σ)

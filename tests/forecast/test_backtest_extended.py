@@ -21,11 +21,11 @@ _mt5_mock.TIMEFRAME_W1 = 32769; _mt5_mock.TIMEFRAME_MN1 = 49153
 sys.modules["MetaTrader5"] = _mt5_mock
 
 from mtdata.forecast.backtest import (
-    _bars_per_year,
     _compute_performance_metrics,
     _get_forecast_methods_data_safe,
     forecast_backtest,
 )
+from mtdata.forecast.common import bars_per_year as _bars_per_year
 from mtdata.utils.time import _format_time_minimal
 
 # ── Helper to build a fake df ────────────────────────────────────────────────

@@ -16,7 +16,6 @@ import pandas as pd
 import pytest
 
 from mtdata.forecast.volatility import (
-    _bars_per_year,
     _garman_klass_sigma_sq,
     _kernel_weight,
     _parkinson_sigma_sq,
@@ -25,6 +24,7 @@ from mtdata.forecast.volatility import (
     forecast_volatility,
     get_volatility_methods_data,
 )
+from mtdata.forecast.common import bars_per_year as _bars_per_year
 
 MOD = "mtdata.forecast.volatility"
 

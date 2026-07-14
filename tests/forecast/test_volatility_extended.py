@@ -23,10 +23,10 @@ import pytest
 
 import mtdata.forecast.volatility as vol_mod
 from mtdata.forecast.volatility import (
-    _bars_per_year,
     _kernel_weight,
     forecast_volatility,
 )
+from mtdata.forecast.common import bars_per_year as _bars_per_year
 
 MOD = "mtdata.forecast.volatility"
 

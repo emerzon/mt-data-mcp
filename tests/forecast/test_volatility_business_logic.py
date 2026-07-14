@@ -9,6 +9,7 @@ import pandas as pd
 import pytest
 
 from mtdata.forecast import volatility as vol
+from mtdata.forecast.common import bars_per_year
 from mtdata.forecast.requests import ForecastVolatilityEstimateRequest
 from mtdata.forecast.use_cases import run_forecast_volatility_estimate
 
@@ -35,6 +36,18 @@ def _rates(n: int = 360, start: int = 1_700_000_000, step: int = 3600):
     return out
 
 
+def _session_rates(days: int = 40, bars_per_day: int = 7):
+    timestamps = [
+        (day + pd.Timedelta(hours=14 + offset)).timestamp()
+        for day in pd.bdate_range("2025-01-02", periods=days, tz="UTC")
+        for offset in range(bars_per_day)
+    ]
+    rates = _rates(len(timestamps))
+    for row, timestamp in zip(rates, timestamps):
+        row["time"] = timestamp
+    return rates
+
+
 def test_volatility_metadata_and_helper_functions(monkeypatch):
     monkeypatch.setattr(vol, "_ARCH_AVAILABLE", False)
     methods = vol.get_volatility_methods_data()["methods"]
@@ -45,8 +58,8 @@ def test_volatility_metadata_and_helper_functions(monkeypatch):
     assert "arch" in by_name["garch"]["requires"]
     assert by_name["theta"]["available"] is True
 
-    assert vol._bars_per_year("H1") == 6048.0
-    assert math.isnan(vol._bars_per_year("BAD"))
+    assert bars_per_year("H1") == 6048.0
+    assert math.isnan(bars_per_year("BAD"))
     assert vol._volatility_annualization_context("EURUSD", "H1") == (
         6240.0,
         "260_fx_weekdays_24h",
@@ -54,6 +67,16 @@ def test_volatility_metadata_and_helper_functions(monkeypatch):
     assert vol._volatility_annualization_context("BTCUSD", "H1") == (
         8760.0,
         "365_calendar_days_24h_crypto",
+    )
+    session_times = [row["time"] for row in _session_rates()]
+    assert vol._volatility_annualization_context(
+        "AAPL",
+        "H1",
+        observed_times=session_times,
+    ) == (1764.0, "252_trading_days_observed_session")
+    assert vol._volatility_annualization_context("AAPL", "H1") == (
+        6048.0,
+        "252_trading_days_assumed_24h",
     )
 
     assert vol._kernel_weight("bartlett", 1, 4) > 0
@@ -206,7 +229,7 @@ def test_forecast_volatility_general_theta_and_proxy_errors(monkeypatch):
     assert out["proxy"] == "squared_return"
     assert out["volatility_horizon"] > 0
     assert "volatility_horizon" in out["volatility_interpretation"]
-    expected_bpy = vol._bars_per_year("H1", "EURUSD")
+    expected_bpy = bars_per_year("H1", "EURUSD")
     assert out["volatility_annualized"] == pytest.approx(
         out["volatility_per_bar"] * math.sqrt(expected_bpy)
     )
@@ -254,7 +277,7 @@ def test_forecast_volatility_direct_methods_and_short_data(monkeypatch):
     assert "decay_factor" not in out["params_used"]
     assert "params_explained" in out
     assert "lambda_" in out["params_explained"]
-    expected_bpy = vol._bars_per_year("H1", "EURUSD")
+    expected_bpy = bars_per_year("H1", "EURUSD")
     assert out["volatility_annualized"] == pytest.approx(
         out["volatility_per_bar"] * math.sqrt(expected_bpy)
     )
@@ -293,6 +316,30 @@ def test_forecast_volatility_direct_methods_and_short_data(monkeypatch):
     assert out["success"] is True
     assert out["params_used"]["kernel"] == "bartlett"
     assert out["volatility_horizon"] == out["volatility_per_bar"]
+
+
+def test_forecast_volatility_uses_observed_session_density(monkeypatch):
+    rates = _session_rates()
+    monkeypatch.setattr(vol, "_ensure_symbol_ready", lambda _symbol: None)
+    monkeypatch.setattr(vol, "_mt5_copy_rates_from", lambda *args, **kwargs: rates)
+    monkeypatch.setattr(vol.mt5, "symbol_info", lambda _symbol: SimpleNamespace(visible=True))
+    monkeypatch.setattr(vol.mt5, "symbol_info_tick", lambda _symbol: SimpleNamespace(time=rates[-1]["time"]))
+    monkeypatch.setattr(vol.mt5, "last_error", lambda: (0, "ok"))
+    monkeypatch.setattr(vol, "_is_last_bar_forming", lambda *_args, **_kwargs: False)
+
+    out = vol.forecast_volatility(
+        symbol="AAPL",
+        timeframe="H1",
+        method="ewma",
+        params={"lookback": 200},
+    )
+
+    assert out["success"] is True
+    assert out["bars_per_year"] == 1764.0
+    assert out["annualization_basis"] == "252_trading_days_observed_session"
+    assert out["volatility_annualized"] == pytest.approx(
+        out["volatility_per_bar"] * math.sqrt(1764.0)
+    )
     assert "horizon=1" in out["volatility_interpretation"]["horizon_note"]
 
     out = vol.forecast_volatility(
@@ -569,7 +616,7 @@ def test_forecast_volatility_ensemble_aggregates_component_methods(monkeypatch):
     assert ensemble["volatility_horizon"] == pytest.approx(
         (float(ewma["volatility_horizon"]) + float(rolling_std["volatility_horizon"])) / 2.0
     )
-    expected_bpy = vol._bars_per_year("H1", "EURUSD")
+    expected_bpy = bars_per_year("H1", "EURUSD")
     assert ensemble["volatility_annualized"] == pytest.approx(
         ensemble["volatility_per_bar"] * math.sqrt(expected_bpy)
     )
