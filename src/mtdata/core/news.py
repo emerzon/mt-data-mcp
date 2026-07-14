@@ -109,7 +109,11 @@ def _news_compact_time_field(
     return "time_utc", _news_time_utc_text(published_at)
 
 
-def _strip_news_compact_item_fields(value: Any) -> Any:
+def _strip_news_compact_item_fields(
+    value: Any,
+    *,
+    include_relevance: bool = False,
+) -> Any:
     if not isinstance(value, dict):
         return value
 
@@ -149,6 +153,19 @@ def _strip_news_compact_item_fields(value: Any) -> Any:
         out["published_at"] = published_at
     if time_field_name and time_field_value:
         out[time_field_name] = time_field_value
+    if include_relevance and value.get("relevance_score") is not None:
+        out["relevance_score"] = value["relevance_score"]
+        metadata = value.get("metadata")
+        matched_terms = metadata.get("matched_terms") if isinstance(metadata, dict) else None
+        if isinstance(matched_terms, list) and matched_terms:
+            out["match_reason"] = {
+                "basis": "matched_terms",
+                "terms": [str(term) for term in matched_terms],
+            }
+        elif str(value.get("kind") or "").strip().lower() == "direct_symbol":
+            out["match_reason"] = {"basis": "direct_symbol_provider"}
+        else:
+            out["match_reason"] = {"basis": "symbol_relevance_gate"}
     for key, subvalue in value.items():
         key_text = str(key)
         if key_text in {
@@ -191,7 +208,10 @@ def normalize_news_output(
             if not subvalue:
                 continue
             out[key] = [
-                _strip_news_compact_item_fields(item)
+                _strip_news_compact_item_fields(
+                    item,
+                    include_relevance=key_text == "related_news",
+                )
                 for item in subvalue
             ]
             continue

@@ -441,6 +441,32 @@ def test_news_output_uses_relative_time_for_future_events() -> None:
     assert item["published_at"] == published_at.isoformat()
     assert item["source"] == "Finviz Economic Calendar"
     assert item["kind"] == "economic_event"
+    assert item["relevance_score"] == 9.1
+    assert item["match_reason"] == {"basis": "symbol_relevance_gate"}
+
+
+def test_news_compact_related_items_explain_term_matches() -> None:
+    payload = {
+        "success": True,
+        "symbol": "EURUSD",
+        "related_news": [
+            {
+                "title": "ECB outlook shifts",
+                "source": "Reuters",
+                "kind": "headline",
+                "relevance_score": 2.4,
+                "metadata": {"matched_terms": ["EUR", "ECB"]},
+            }
+        ],
+    }
+
+    result = _prepare_news_output(payload, detail="compact")
+
+    assert result["related_news"][0]["relevance_score"] == 2.4
+    assert result["related_news"][0]["match_reason"] == {
+        "basis": "matched_terms",
+        "terms": ["EUR", "ECB"],
+    }
 
 
 def test_news_output_compaction_is_idempotent() -> None:
