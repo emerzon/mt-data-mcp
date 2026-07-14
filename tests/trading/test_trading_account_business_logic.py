@@ -1113,3 +1113,40 @@ def test_open_position_quote_summary_does_not_count_recent_quote_as_live() -> No
         "live_usable_quotes": 0,
         "recent_or_delayed_quotes": 1,
     }
+
+
+def test_open_position_quote_context_discloses_contract_notional() -> None:
+    payload = {
+        "items": [
+            {
+                "symbol": "EURUSD",
+                "side": "BUY",
+                "volume": 0.1,
+                "price_current": 1.1,
+            }
+        ]
+    }
+    gateway = SimpleNamespace(
+        symbol_info_tick=lambda symbol: SimpleNamespace(
+            time=1_000.0,
+            time_msc=0,
+            bid=1.1,
+            ask=1.1002,
+        ),
+        symbol_info=lambda symbol: SimpleNamespace(
+            trade_contract_size=100_000.0,
+            currency_profit="USD",
+        ),
+    )
+
+    core_trading_positions._attach_open_position_quote_context(
+        payload,
+        gateway,
+        now_epoch=1_005.0,
+    )
+
+    row = payload["items"][0]
+    assert row["contract_size"] == 100_000.0
+    assert row["contract_units"] == 10_000.0
+    assert row["notional_estimate"] == 11_000.0
+    assert row["notional_currency"] == "USD"

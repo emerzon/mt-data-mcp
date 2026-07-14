@@ -77,6 +77,32 @@ def _attach_open_position_quote_context(
         side = str(item.get("side") or "").strip().upper()
         item["price_current_basis"] = "ask" if side == "SELL" else "bid" if side == "BUY" else "broker_mark"
         item["quote_time"] = format_epoch_utc(tick_epoch)
+        symbol_info_fn = getattr(gateway, "symbol_info", None)
+        if callable(symbol_info_fn):
+            try:
+                symbol_info = symbol_info_fn(symbol)
+            except Exception:
+                symbol_info = None
+            contract_size = getattr(symbol_info, "trade_contract_size", None)
+            try:
+                contract_size_value = float(contract_size)
+                volume_value = float(item.get("volume"))
+                mark_value = float(item.get("price_current"))
+            except (TypeError, ValueError):
+                contract_size_value = volume_value = mark_value = 0.0
+            if contract_size_value > 0.0 and volume_value > 0.0:
+                item["contract_size"] = contract_size_value
+                item["contract_units"] = round(volume_value * contract_size_value, 6)
+                if mark_value > 0.0:
+                    item["notional_estimate"] = round(
+                        volume_value * contract_size_value * mark_value,
+                        2,
+                    )
+                    notional_currency = str(
+                        getattr(symbol_info, "currency_profit", "") or ""
+                    ).strip()
+                    if notional_currency:
+                        item["notional_currency"] = notional_currency
         for key in (
             "data_age_seconds",
             "data_stale",
