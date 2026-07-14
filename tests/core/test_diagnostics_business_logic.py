@@ -92,6 +92,8 @@ def test_seasonality_detect_finds_known_period(monkeypatch):
     assert result["dominant_period_bars"] == 12
     assert result["signal_quality"] in {"moderate", "strong"}
     assert "signal_quality" in result["items"][0]
+    assert result["items"][0]["period_duration"] == "12 hours"
+    assert result["items"][0]["period_duration_seconds"] == 43_200
 
 
 def test_seasonality_detect_does_not_inflate_noise_spectral_score(monkeypatch):

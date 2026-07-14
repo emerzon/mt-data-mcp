@@ -85,6 +85,36 @@ def _seasonality_signal_quality(score: float, acf: float, spectral_strength: flo
     return "strong"
 
 
+def _seasonality_period_context(period_bars: int, timeframe: str) -> Dict[str, Any]:
+    seconds_per_bar = int(TIMEFRAME_SECONDS.get(str(timeframe).upper(), 0) or 0)
+    duration_seconds = max(0, int(period_bars) * seconds_per_bar)
+    if duration_seconds <= 0:
+        return {}
+    if duration_seconds % 86_400 == 0:
+        duration = f"{duration_seconds // 86_400:g} days"
+    elif duration_seconds >= 86_400:
+        duration = f"{duration_seconds / 86_400:.2f} days"
+    elif duration_seconds % 3_600 == 0:
+        duration = f"{duration_seconds // 3_600:g} hours"
+    elif duration_seconds >= 3_600:
+        duration = f"{duration_seconds / 3_600:.2f} hours"
+    else:
+        duration = f"{duration_seconds / 60:g} minutes"
+    aliases = {
+        86_400: "calendar_day",
+        604_800: "calendar_week",
+        2_592_000: "30_day_month",
+    }
+    nearest = min(aliases, key=lambda value: abs(value - duration_seconds))
+    out: Dict[str, Any] = {
+        "period_duration": duration,
+        "period_duration_seconds": duration_seconds,
+    }
+    if abs(nearest - duration_seconds) / nearest <= 0.05:
+        out["calendar_alias"] = aliases[nearest]
+    return out
+
+
 def _critical_values(values: Any) -> Dict[str, float]:
     if not isinstance(values, dict):
         return {}
@@ -325,6 +355,7 @@ def seasonality_detect(
             spectral_rounded = round(spectral_strength, 6)
             row: Dict[str, Any] = {
                 "period_bars": int(period),
+                **_seasonality_period_context(int(period), timeframe),
                 "score": score_rounded,
                 "acf": acf_rounded,
                 "spectral_strength": spectral_rounded,
