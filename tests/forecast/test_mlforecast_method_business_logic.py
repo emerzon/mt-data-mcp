@@ -46,8 +46,8 @@ def test_mlforecast_forecast_with_default_lags_exog_and_internal_param_filter(mo
         def __init__(self, models, freq, lags):
             calls["init"] = {"models": models, "freq": freq, "lags": lags}
 
-        def fit(self, Y_df, X_df=None):
-            calls["fit"] = {"Y_df": Y_df, "X_df": X_df}
+        def fit(self, df, static_features=None, **kwargs):
+            calls["fit"] = {"df": df, "static_features": static_features, "kwargs": kwargs}
 
         def predict(self, h, X_df=None):
             calls["predict"] = {"h": h, "X_df": X_df}
@@ -93,7 +93,9 @@ def test_mlforecast_forecast_with_default_lags_exog_and_internal_param_filter(mo
     assert out.params_used == {"custom": 7, "lags": [1, 2, 3, 4, 5]}
     assert calls["init"]["freq"] == 1
     assert calls["init"]["lags"] == [1, 2, 3, 4, 5]
-    assert calls["fit"]["X_df"] is X_df
+    # MLForecast 1.x: historical exog are merged into the train frame
+    assert list(calls["fit"]["df"].columns) == ["unique_id", "ds", "y", "x1"]
+    assert calls["fit"]["static_features"] == []
     assert calls["predict"] == {"h": 3, "X_df": Xf_df}
 
 
@@ -104,8 +106,9 @@ def test_mlforecast_forecast_without_exog_uses_simple_fit_and_predict(monkeypatc
         def __init__(self, models, freq, lags):
             calls["lags"] = lags
 
-        def fit(self, Y_df, X_df=None):
-            calls["fit_x"] = X_df
+        def fit(self, df, static_features=None, **kwargs):
+            calls["fit_df"] = df
+            calls["static_features"] = static_features
 
         def predict(self, h, X_df=None):
             calls["predict_x"] = X_df
@@ -132,7 +135,8 @@ def test_mlforecast_forecast_without_exog_uses_simple_fit_and_predict(monkeypatc
     assert np.allclose(out.forecast, [9.0])
     assert out.params_used == {"lags": [2, 4]}
     assert calls["lags"] == [2, 4]
-    assert calls["fit_x"] is None
+    assert list(calls["fit_df"].columns) == ["y"]
+    assert calls["static_features"] is None
     assert calls["predict_x"] is None
 
 
@@ -160,7 +164,7 @@ def test_mlforecast_forecast_wraps_runtime_errors(monkeypatch):
         def __init__(self, models, freq, lags):
             pass
 
-        def fit(self, Y_df, X_df=None):
+        def fit(self, df, static_features=None, **kwargs):
             raise ValueError("fit exploded")
 
     fake_ml_mod = ModuleType("mlforecast")
@@ -181,7 +185,7 @@ def test_mlforecast_forecast_requires_unique_id_rows(monkeypatch):
         def __init__(self, models, freq, lags):
             pass
 
-        def fit(self, Y_df, X_df=None):
+        def fit(self, df, static_features=None, **kwargs):
             return None
 
         def predict(self, h, X_df=None):

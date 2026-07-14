@@ -42,6 +42,32 @@ def _import_model_module(module_path: str):
             raise
         return module
 
+
+def _mlforecast_train_frame(Y_df: pd.DataFrame, X_df: Optional[pd.DataFrame]) -> pd.DataFrame:
+    """Merge historical exogenous features into the train frame for MLForecast 1.x.
+
+    MLForecast 1.x no longer accepts ``X_df=`` on ``fit``; historical covariates
+    must be columns on the training DataFrame. Empty ``static_features`` marks
+    non-id/time/target columns as dynamic (required again on ``predict`` via
+    ``X_df``).
+    """
+    if X_df is None:
+        return Y_df
+    join_cols = [c for c in ("unique_id", "ds") if c in Y_df.columns and c in X_df.columns]
+    if not join_cols:
+        return Y_df
+    return Y_df.merge(X_df, on=join_cols, how="left")
+
+
+def _mlforecast_fit(mlf: Any, Y_df: pd.DataFrame, X_df: Optional[pd.DataFrame]) -> Any:
+    """Fit MLForecast with optional historical exogenous features."""
+    train_df = _mlforecast_train_frame(Y_df, X_df)
+    if X_df is not None:
+        # Dynamic covariates: do not treat feature columns as static.
+        return mlf.fit(train_df, static_features=[])
+    return mlf.fit(train_df)
+
+
 class MLForecastMethod(ForecastMethod):
     """Base class for MLForecast methods."""
     
@@ -121,10 +147,7 @@ class MLForecastMethod(ForecastMethod):
             cancel_token.raise_if_cancelled()
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
-            if X_df is not None:
-                mlf.fit(Y_df, X_df=X_df)
-            else:
-                mlf.fit(Y_df)
+            _mlforecast_fit(mlf, Y_df, X_df)
 
         artifact_bytes = self.serialize_artifact(mlf)
         reporter.stage(3, "Training complete", force=True)
@@ -220,11 +243,8 @@ class MLForecastMethod(ForecastMethod):
                         f"{'absent' if X_df is None else 'present'} but future exog "
                         f"{'absent' if Xf_df is None else 'present'}"
                     )
-                if X_df is not None:
-                    mlf.fit(Y_df, X_df=X_df)
-                else:
-                    mlf.fit(Y_df)
-            
+                _mlforecast_fit(mlf, Y_df, X_df)
+
             if Xf_df is not None:
                 Yf = mlf.predict(h=int(horizon), X_df=Xf_df)
             else:
