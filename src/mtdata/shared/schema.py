@@ -334,7 +334,6 @@ AutoTimeframeLiteral = Union[TimeframeLiteral, Literal["auto"]]
 CANONICAL_OUTPUT_SHAPE_DETAILS = ("compact", "standard", "summary", "full")
 CANONICAL_OUTPUT_DETAIL_ALIASES = types.MappingProxyType({})
 DetailLiteral = Literal["compact", "standard", "summary", "full"]
-SummaryCompactFullDetailLiteral = Literal["full", "summary", "compact"]
 
 # ---- Technical Indicators (dynamic discovery and application) ----
 def _load_indicator_doc_choices(
