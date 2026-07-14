@@ -600,16 +600,15 @@ def optuna_search_forecast_params(  # noqa: C901
     optuna.logging.set_verbosity(optuna.logging.WARNING)
 
     history: List[Dict[str, Any]] = []
-    trial_results: Dict[int, Dict[str, Any]] = {}
-    trial_candidates: Dict[int, Dict[str, Any]] = {}
     lock = threading.Lock()
 
     best_score = math.inf if mode_val == 'min' else -math.inf
     best_params: Dict[str, Any] = {}
     best_result: Optional[Dict[str, Any]] = None
+    successful_evaluations = 0
 
     def _objective(trial: Any) -> float:
-        nonlocal best_score, best_params, best_result
+        nonlocal best_score, best_params, best_result, successful_evaluations
         cand: Dict[str, Any] = {}
 
         sel_method = None
@@ -659,11 +658,9 @@ def optuna_search_forecast_params(  # noqa: C901
             if isinstance(res, dict) and res.get('_sel_method'):
                 hist_row['method'] = res.get('_sel_method')
             history.append(hist_row)
-            if isinstance(res, dict):
-                trial_results[int(trial.number)] = res
-            trial_candidates[int(trial.number)] = dict(cand)
 
             if finite_score is not None:
+                successful_evaluations += 1
                 better = (
                     (mode_val == 'min' and finite_score < best_score)
                     or (mode_val != 'min' and finite_score > best_score)
@@ -686,15 +683,17 @@ def optuna_search_forecast_params(  # noqa: C901
     n_trials_val = max(1, int(n_trials))
     study.optimize(_objective, n_trials=n_trials_val, timeout=timeout_val, n_jobs=n_jobs_val)
 
-    if not best_params and len(study.trials) > 0:
-        try:
-            bt = study.best_trial
-            best_params = dict(trial_candidates.get(int(bt.number), bt.params))
-            best_score = float(bt.value)
-            br = trial_results.get(int(bt.number))
-            best_result = br if isinstance(br, dict) else None
-        except Exception:
-            pass
+    if successful_evaluations == 0:
+        return {
+            "success": False,
+            "error": "No candidate produced a finite requested metric.",
+            "error_code": "no_successful_trials",
+            "metric": metric,
+            "mode": mode_val,
+            "optimizer": "optuna",
+            "n_trials": int(n_trials_val),
+            "history_count": len(history),
+        }
 
     payload: Dict[str, Any] = {
         "success": True,

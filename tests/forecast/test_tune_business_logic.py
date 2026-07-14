@@ -257,6 +257,30 @@ def test_genetic_search_fails_when_all_trials_fail(monkeypatch):
     assert out["error_code"] == "no_successful_trials"
 
 
+def test_optuna_search_fails_when_all_trials_fail(monkeypatch):
+    pytest.importorskip("optuna")
+    monkeypatch.setattr(
+        tune,
+        "_eval_candidate",
+        lambda **kwargs: (float("inf"), {"error": "backtest failed"}),
+    )
+
+    out = tune.optuna_search_forecast_params(
+        symbol="EURUSD",
+        timeframe="H1",
+        method="theta",
+        search_space={"x": {"type": "float", "min": 0.0, "max": 1.0}},
+        mode="max",
+        n_trials=2,
+        sampler="random",
+        pruner="none",
+    )
+
+    assert out["success"] is False
+    assert out["error_code"] == "no_successful_trials"
+    assert out["history_count"] == 2
+
+
 def test_optuna_search_method_scoped_and_flat_spaces(monkeypatch):
     pytest.importorskip("optuna")
 
