@@ -206,16 +206,18 @@ mtdata-cli data_fetch_candles EURUSD --limit 100
 ### Timestamps Look Wrong
 
 **Cause:** The payload may be displayed in the detected client-local timezone,
-or the request may not represent the absolute instant you intended.
+the request may not represent the intended instant, or a broker server-clock
+terminal may lack the correct broker timezone configuration.
 
 **Solution:** Pin presentation to UTC and check the payload's `timezone` field:
 ```ini
 CLIENT_TZ=UTC
 ```
 
-MT5 API request datetimes and returned epochs already use UTC. Do not use
-`MT5_SERVER_TZ` or `MT5_TIME_OFFSET_MINUTES` to correct an epoch; those optional
-settings apply only to broker-local session/calendar calculations. See
+Request the `metadata` extra and inspect `timestamp_mode`. Native terminals use
+UTC epochs directly. If `server_clock` is detected, configure `MT5_SERVER_TZ`
+(preferred) or `MT5_TIME_OFFSET_MINUTES`; mtdata then normalizes at the adapter
+boundary. Never manually shift an already-normalized payload. See
 [TIMESTAMPS.md](TIMESTAMPS.md).
 
 ### Volume is Always Zero

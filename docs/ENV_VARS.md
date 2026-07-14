@@ -30,17 +30,19 @@ MT5_TIMEOUT=30
 
 ## Timezone
 
-MT5 API request datetimes and returned epochs are already UTC. The broker
-settings below are optional and affect only broker-local session/calendar
-calculations; they never shift request bounds or returned timestamps.
+MT5 documents UTC request datetimes and returned epochs. mtdata also supports
+broker terminals that expose server-clock epochs: it detects that mode from a
+fresh tick and uses the broker setting below to normalize request bounds and
+results at the adapter boundary. Public payload timestamps remain UTC.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `MT5_SERVER_TZ` | — | IANA timezone used for broker session/calendar boundaries (e.g. `Europe/Athens`). Handles DST automatically. |
-| `MT5_TIME_OFFSET_MINUTES` | `0` | Fixed broker-session offset from UTC in minutes. A non-zero value overrides `MT5_SERVER_TZ`. |
+| `MT5_SERVER_TZ` | — | IANA timezone used for broker session/calendar boundaries and detected server-clock conversion (e.g. `Europe/Athens`). Handles DST automatically. |
+| `MT5_TIME_OFFSET_MINUTES` | `0` | Fixed broker offset from UTC in minutes. A non-zero value overrides `MT5_SERVER_TZ`. |
 | `MT5_CLIENT_TZ` / `CLIENT_TZ` | auto-detect | IANA timezone of the local machine. `CLIENT_TZ` takes precedence if both are set. |
 
-Configure these only when a broker-local session or trading-day boundary matters.
+Configure these when broker-local boundaries matter or when the terminal uses
+broker server-clock epochs. Timestamp-mode detection is automatic.
 Prefer `MT5_SERVER_TZ` because it adjusts for DST. Use
 `MT5_TIME_OFFSET_MINUTES` only when you know a fixed session offset, and avoid
 setting both unless you intentionally want the fixed offset to win.

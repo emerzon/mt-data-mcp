@@ -236,12 +236,14 @@ For the full guardrail surface, including blocklists, wallet-risk limits, and pe
 
 ### Timezone Configuration
 
-MT5 Python request datetimes and returned epochs are UTC. Broker timezone
-settings do not normalize or shift those absolute timestamps. Set `CLIENT_TZ`
-to control presentation, and retain the payload `timezone` field with saved data.
+MT5 documents UTC request datetimes and returned epochs. Most terminals follow
+that contract; mtdata also detects terminals that expose broker server-clock
+epochs and normalizes them at the adapter boundary. Set `CLIENT_TZ` to control
+presentation, and retain the payload time metadata with saved data.
 
-`MT5_SERVER_TZ` and `MT5_TIME_OFFSET_MINUTES` are optional broker-session
-settings. Use one method when broker-local calendar boundaries matter.
+`MT5_SERVER_TZ` and `MT5_TIME_OFFSET_MINUTES` provide broker-clock context. Use
+one when broker-local calendar boundaries matter or when the terminal exposes
+server-clock epochs.
 `MT5_SERVER_TZ` is preferred because it handles DST. If both are set and
 `MT5_TIME_OFFSET_MINUTES` is non-zero, the fixed session offset wins.
 
@@ -257,8 +259,9 @@ MT5_SERVER_TZ=Europe/Athens
 MT5_SERVER_TZ=America/New_York
 ```
 
-An incorrect broker-session setting can misclassify broker-local daily pivots or
-session filters, but it does not change candle, tick, order, or deal epochs.
+An incorrect setting can misclassify broker-local boundaries. On a terminal
+detected as `server_clock`, it can also mis-normalize candle, tick, order, or deal
+epochs; inspect `timestamp_mode` in metadata when diagnosing a clock offset.
 
 ---
 
@@ -446,7 +449,8 @@ npm run build   # Production build
 2. Set `CLIENT_TZ=UTC` for deterministic presentation
 3. Verify with: `mtdata-cli data_fetch_candles EURUSD --limit 1 --json`
 
-Configure `MT5_SERVER_TZ` only for broker-local session/calendar calculations.
+Configure `MT5_SERVER_TZ` for broker-local calculations and for terminals that
+are detected as exposing server-clock epochs.
 
 See [TROUBLESHOOTING.md](TROUBLESHOOTING.md) for more issues.
 
