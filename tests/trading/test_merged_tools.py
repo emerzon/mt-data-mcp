@@ -299,22 +299,21 @@ class TestMergedTools(unittest.TestCase):
     def test_forecast_barrier_prob(self):
         with patch('src.mtdata.forecast.barriers_probabilities.forecast_barrier_hit_probabilities') as mock_mc:
             mock_mc.return_value = {"success": True}
-            res = barrier_prob(symbol="EURUSD", method="hmm_mc", __cli_raw=True)
+            res = barrier_prob(
+                symbol="EURUSD",
+                method="hmm_mc",
+                tp_pct=0.5,
+                sl_pct=0.3,
+                __cli_raw=True,
+            )
             self.assertTrue(res.get("success"))
             self.assertEqual(res.get("detail"), "compact")
             self.assertEqual(res.get("symbol"), "EURUSD")
             self.assertEqual(res.get("timeframe"), "H1")
             self.assertEqual(res.get("direction"), "long")
             self.assertEqual(res.get("horizon"), 12)
-            self.assertEqual(
-                res.get("warnings"),
-                [
-                    "Default 1% symmetrical barriers applied; pass tp_pct/sl_pct, "
-                    "tp_abs/sl_abs, or tp_ticks/sl_ticks to customize."
-                ],
-            )
-            self.assertEqual(res.get("tp_pct"), 1.0)
-            self.assertEqual(res.get("sl_pct"), 1.0)
+            self.assertEqual(res.get("tp_pct"), 0.5)
+            self.assertEqual(res.get("sl_pct"), 0.3)
             self.assertEqual(res.get("barrier_unit"), "percent")
             self.assertEqual(res.get("probability_unit"), "fraction")
             # Product uses probability_edge_definition (edge_definition is legacy).
@@ -322,8 +321,8 @@ class TestMergedTools(unittest.TestCase):
                 res.get("probability_edge_definition"),
                 "prob_tp_first - prob_sl_first",
             )
-            self.assertEqual(mock_mc.call_args.kwargs.get("tp_pct"), 1.0)
-            self.assertEqual(mock_mc.call_args.kwargs.get("sl_pct"), 1.0)
+            self.assertEqual(mock_mc.call_args.kwargs.get("tp_pct"), 0.5)
+            self.assertEqual(mock_mc.call_args.kwargs.get("sl_pct"), 0.3)
             
         with patch('src.mtdata.forecast.barriers_probabilities.forecast_barrier_closed_form') as mock_cf:
             mock_cf.return_value = {"success": True}
@@ -339,7 +338,14 @@ class TestMergedTools(unittest.TestCase):
     def test_forecast_barrier_prob_direction_normalization(self):
         with patch('src.mtdata.forecast.barriers_probabilities.forecast_barrier_hit_probabilities') as mock_mc:
             mock_mc.return_value = {"success": True}
-            barrier_prob(symbol="EURUSD", method="hmm_mc", direction="LONG", __cli_raw=True)
+            barrier_prob(
+                symbol="EURUSD",
+                method="hmm_mc",
+                direction="LONG",
+                tp_pct=0.5,
+                sl_pct=0.3,
+                __cli_raw=True,
+            )
             self.assertEqual(mock_mc.call_args.kwargs.get("direction"), "long")
 
         with patch('src.mtdata.forecast.barriers_probabilities.forecast_barrier_closed_form') as mock_cf:
