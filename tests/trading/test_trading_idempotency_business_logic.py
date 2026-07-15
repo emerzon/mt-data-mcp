@@ -1,7 +1,7 @@
 import threading
 from unittest.mock import MagicMock
 
-from mtdata.core.trading.idempotency import IdempotencyStore
+from mtdata.core.trading.idempotency import IdempotencyStore, SQLiteIdempotencyStore
 from mtdata.core.trading.requests import TradeModifyRequest, TradePlaceRequest
 from mtdata.core.trading.use_cases import run_trade_modify, run_trade_place
 
@@ -96,6 +96,45 @@ def test_run_trade_place_replays_duplicate_result_without_resending():
     }
     assert second["duplicate"] is True
     assert second["success"] is True
+    assert second["original_outcome"] == first
+    place_market_order.assert_called_once()
+
+
+def test_run_trade_place_replays_result_after_store_restart(tmp_path):
+    database = tmp_path / "idempotency.sqlite3"
+    place_market_order = MagicMock(return_value={"success": True, "order_id": 7})
+    request = TradePlaceRequest(
+        symbol="EURUSD",
+        volume=0.1,
+        order_type="BUY",
+        require_sl_tp=False,
+        idempotency_key="place-restart-1",
+        dry_run=False,
+    )
+    kwargs = {
+        "normalize_order_type_input": lambda value: ("BUY", None),
+        "normalize_pending_expiration": lambda value: (value, False),
+        "prevalidate_trade_place_market_input": lambda symbol, volume: None,
+        "place_market_order": place_market_order,
+        "place_pending_order": MagicMock(),
+        "close_positions": lambda **values: {"closed_count": 1},
+        "safe_int_ticket": lambda value: value,
+    }
+
+    first = run_trade_place(
+        request,
+        idempotency_store=SQLiteIdempotencyStore(database),
+        **kwargs,
+    )
+    second = run_trade_place(
+        request,
+        idempotency_store=SQLiteIdempotencyStore(database),
+        **kwargs,
+    )
+
+    assert first["idempotency_scope"] == "sqlite"
+    assert first["idempotency_durable"] is True
+    assert second["duplicate"] is True
     assert second["original_outcome"] == first
     place_market_order.assert_called_once()
 

@@ -44,8 +44,8 @@ from mtdata.core.cli.api import (
     _apply_schema_overrides,
     _extract_function_from_tool_obj,
     _extract_metadata_from_tool_obj,
-    _is_typed_dict_type,
     _is_literal_origin,
+    _is_typed_dict_type,
     _is_union_origin,
     _type_name,
     _unwrap_optional_type,
@@ -53,7 +53,6 @@ from mtdata.core.cli.api import (
     discover_tools,
     get_function_info,
 )
-
 
 # ========================================================================
 # get_function_info
@@ -983,7 +982,7 @@ class TestCreateCommandFunction:
         assert "Preview mode is the default" in output
         mock_fn.assert_not_called()
 
-    def test_trade_place_rejects_process_local_idempotency_key(self, capsys):
+    def test_trade_place_accepts_durable_idempotency_key(self, capsys):
         mock_fn = MagicMock(return_value={"success": True})
         func_info = {
             "func": mock_fn,
@@ -1007,11 +1006,11 @@ class TestCreateCommandFunction:
 
         status = cmd_fn(args)
 
-        assert status == 1
-        output = capsys.readouterr().out
-        assert "cli_process_local_idempotency_unsupported" in output
-        assert "HTTP/SSE" in output
-        mock_fn.assert_not_called()
+        assert status == 0
+        capsys.readouterr()
+        mock_fn.assert_called_once_with(
+            symbol="EURUSD", idempotency_key="retry-1", __cli_raw=True
+        )
 
     def test_missing_required_literal_argument_shows_valid_values(self, capsys):
         mock_fn = MagicMock(return_value={"ok": True})

@@ -69,9 +69,14 @@ Requires `symbol`, `volume`, and `order_type`.
 | `--expiration` | — | Pending-order expiry (`dateparser`, UTC epoch seconds, or `GTC`) |
 | `--magic` | `MTDATA_ORDER_MAGIC` | Strategy identifier stamped on the order |
 | `--comment` | — | Free-text order comment |
-| `--idempotency-key` | — | In-process dedupe (~5-min TTL; not persisted/shared) |
+| `--idempotency-key` | — | Durable dedupe shared across processes/restarts (24-hour default retention) |
 | `--dry-run` | `true` | Set `false` explicitly for live execution |
 | `--detail` | `compact` | Use `full` for execution diagnostics |
+
+Idempotency outcomes are stored in `MTDATA_TRADE_IDEMPOTENCY_DB`. If a process
+stops after reserving a key but before recording the broker outcome, retries for
+that key fail closed. Reconcile the order or modification in MT5 before removing
+the unresolved database row; never clear it merely to make a retry proceed.
 
 ```bash
 # Preview a market buy with protective levels
@@ -105,7 +110,7 @@ Modifies an existing order/position by ticket.
 | `--take-profit` / `--tp` | — | New take-profit |
 | `--expiration` | — | New pending-order expiry |
 | `--comment` | — | Updated comment |
-| `--idempotency-key` | — | In-process dedupe |
+| `--idempotency-key` | — | Durable dedupe shared across processes/restarts |
 | `--dry-run` | `true` | Preview by default; set `false` explicitly for a live modification |
 
 ```bash

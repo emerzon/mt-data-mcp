@@ -31,7 +31,11 @@ from ..execution_logging import (
 )
 from ..output_contract import resolve_output_contract
 from . import validation
-from .idempotency import IdempotencyStore
+from .idempotency import (
+    IdempotencyStore,
+    SQLiteIdempotencyStore,
+    create_default_idempotency_store,
+)
 from .requests import (
     TradeCloseRequest,
     TradeGetOpenRequest,
@@ -48,7 +52,8 @@ from .sizing import _resolve_risk_tick_value, compute_kelly_sizing_context
 
 logger = logging.getLogger(__name__)
 _DEFAULT_TRADE_HISTORY_LOOKBACK_DAYS = 7
-_TRADE_IDEMPOTENCY_STORE = IdempotencyStore()
+TradeIdempotencyStore = IdempotencyStore | SQLiteIdempotencyStore
+_TRADE_IDEMPOTENCY_STORE = create_default_idempotency_store()
 _TRADE_HISTORY_RANGE_HINT = (
     "Try narrowing the range with --minutes-back, --days, --start, or --end."
 )
@@ -304,11 +309,12 @@ def _normalize_idempotency_key(value: Any) -> Optional[str]:
 def _annotate_idempotency_scope(
     result: Dict[str, Any],
     key: Optional[str],
+    store: Optional[TradeIdempotencyStore],
 ) -> Dict[str, Any]:
     if key is not None:
         result.setdefault("idempotency_key", key)
-        result.setdefault("idempotency_scope", "process_memory")
-        result.setdefault("idempotency_durable", False)
+        result.setdefault("idempotency_scope", getattr(store, "scope", "unknown"))
+        result.setdefault("idempotency_durable", bool(getattr(store, "durable", False)))
     return result
 
 
@@ -380,7 +386,7 @@ def _should_persist_idempotency_outcome(result: Any) -> bool:
 
 
 def _record_or_release_idempotency(
-    store: Optional[IdempotencyStore],
+    store: Optional[TradeIdempotencyStore],
     key: Optional[str],
     result: Any,
     *,
@@ -402,7 +408,7 @@ def _record_or_release_idempotency(
 
 def _begin_trade_idempotency(
     *,
-    idempotency_store: Optional[IdempotencyStore],
+    idempotency_store: Optional[TradeIdempotencyStore],
     key: Optional[str],
     request_signature: Optional[str],
 ) -> tuple[Optional[Dict[str, Any]], bool]:
@@ -427,6 +433,16 @@ def _begin_trade_idempotency(
             ),
             "idempotency_key": key,
             "idempotency_conflict": True,
+        }, False
+    if duplicate.get("in_progress"):
+        return {
+            "error": (
+                "An earlier request with this idempotency key is still unresolved. "
+                "The retry was suppressed to avoid a duplicate live trade."
+            ),
+            "error_code": "idempotency_request_in_progress",
+            "idempotency_key": key,
+            "idempotency_in_progress": True,
         }, False
     original_outcome = duplicate.get("original_outcome")
     if not isinstance(original_outcome, dict):
@@ -1120,7 +1136,7 @@ def run_trade_place(  # noqa: C901
     close_positions: Any,
     safe_int_ticket: Any,
     build_dry_run_preview: Any = None,
-    idempotency_store: Optional[IdempotencyStore] = _TRADE_IDEMPOTENCY_STORE,
+    idempotency_store: Optional[TradeIdempotencyStore] = _TRADE_IDEMPOTENCY_STORE,
 ) -> Dict[str, Any]:
     started_at = time.perf_counter()
     missing: List[str] = []
@@ -1151,7 +1167,7 @@ def run_trade_place(  # noqa: C901
             operation="trade_place",
             default_error_code="trade_place_error",
         )
-        result = _annotate_idempotency_scope(result, idempotency_key)
+        result = _annotate_idempotency_scope(result, idempotency_key, idempotency_store)
         if not idempotency_consumed:
             if _record_or_release_idempotency(
                 idempotency_store,
@@ -1777,7 +1793,7 @@ def run_trade_modify(
     normalize_pending_expiration: Any,
     modify_pending_order: Any,
     modify_position: Any,
-    idempotency_store: Optional[IdempotencyStore] = _TRADE_IDEMPOTENCY_STORE,
+    idempotency_store: Optional[TradeIdempotencyStore] = _TRADE_IDEMPOTENCY_STORE,
 ) -> Dict[str, Any]:
     started_at = time.perf_counter()
     idempotency_key = _normalize_idempotency_key(getattr(request, "idempotency_key", None))
@@ -1800,7 +1816,7 @@ def run_trade_modify(
         pending: Optional[bool] = None,
     ) -> Dict[str, Any]:
         nonlocal idempotency_consumed
-        result = _annotate_idempotency_scope(result, idempotency_key)
+        result = _annotate_idempotency_scope(result, idempotency_key, idempotency_store)
         if not idempotency_consumed:
             if _record_or_release_idempotency(
                 idempotency_store,

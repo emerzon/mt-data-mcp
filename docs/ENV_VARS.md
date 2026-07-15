@@ -193,6 +193,8 @@ Concurrency caps and on-disk cache used by `forecast_train` / `forecast_task_*` 
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `MTDATA_ORDER_MAGIC` | `234000` | Magic number stamped on all orders placed by mtdata. Change this to distinguish mtdata orders from orders placed by other EAs or scripts on the same account. |
+| `MTDATA_TRADE_IDEMPOTENCY_DB` | `~/.mtdata/trade_idempotency.sqlite3` | SQLite database shared by CLI and server processes for durable `trade_place` and `trade_modify` retry suppression. All workers that can reach the same MT5 account should use the same path. |
+| `MTDATA_TRADE_IDEMPOTENCY_TTL_SECONDS` | `86400` | Retention for completed idempotency outcomes. In-progress records are not automatically expired because the broker outcome may be ambiguous after a crash. |
 
 ---
 
@@ -329,6 +331,8 @@ A starter template with all sections. Uncomment and fill in what you need.
 
 # ── Trading ────────────────────────────────────────────
 # MTDATA_ORDER_MAGIC=234000
+# MTDATA_TRADE_IDEMPOTENCY_DB=~/.mtdata/trade_idempotency.sqlite3
+# MTDATA_TRADE_IDEMPOTENCY_TTL_SECONDS=86400
 
 # ── CLI / Debug ────────────────────────────────────────
 # MTDATA_CLI_DEBUG=0

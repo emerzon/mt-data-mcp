@@ -111,10 +111,10 @@ class TradePlaceRequest(BaseModel):
     idempotency_key: Optional[str] = Field(
         default=None,
         description=(
-            "Optional in-process dedupe key with an in-memory ~5-minute TTL. "
+            "Optional durable dedupe key with a configurable 24-hour TTL. "
             "Reusing the same key with the same payload replays the prior "
-            "result instead of sending another order. It is not broker-side "
-            "idempotency and does not survive restarts."
+            "result instead of sending another order. The SQLite store is shared "
+            "across processes and restarts; this is not broker-side idempotency."
         ),
     )
 
@@ -149,10 +149,10 @@ class TradeModifyRequest(BaseModel):
     idempotency_key: Optional[str] = Field(
         default=None,
         description=(
-            "Optional in-process dedupe key with an in-memory ~5-minute TTL. "
+            "Optional durable dedupe key with a configurable 24-hour TTL. "
             "Reusing the same key with the same payload replays the prior "
-            "result instead of sending another modify request. It is not "
-            "broker-side idempotency and does not survive restarts."
+            "result instead of sending another modify request. The SQLite store "
+            "is shared across processes and restarts; this is not broker-side idempotency."
         ),
     )
 
