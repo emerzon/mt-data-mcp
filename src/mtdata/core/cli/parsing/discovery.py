@@ -57,6 +57,11 @@ _COMMAND_PARAM_CHOICE_OVERRIDES: Dict[tuple[str, str], list[str]] = {
     ("forecast_barrier_optimize", "search_profile"): ["fast", "medium", "long"],
 }
 
+_COMMAND_REQUIRED_OPTIONS: set[tuple[str, str]] = {
+    ("trade_place", "volume"),
+    ("trade_place", "order_type"),
+}
+
 
 _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
     ("data_fetch_candles", "indicators"): "Technical indicators. On PowerShell, quote parenthesized specs such as --indicators \"rsi(14)\", or use shell-safe rsi_14 / sma=20 syntax. JSON arrays like '[{\"name\":\"rsi\",\"params\":[14]}]' and named params like rsi(length=14) also work. Use params syntax, not sma,20.",
@@ -672,6 +677,10 @@ def add_dynamic_arguments(
             cmd_name=cmd_name,
             param_names=param_names,
         )
+        if (str(cmd_name or ""), str(param["name"])) in _COMMAND_REQUIRED_OPTIONS:
+            kwargs["required"] = True
+            kwargs["default"] = argparse.SUPPRESS
+            kwargs["help"] = f"{kwargs.get('help') or param['name']} (required)"
 
         is_optional_bool = param.get("type") is bool and not param.get("required", False)
         allow_optional_first_positional = (
@@ -756,6 +765,7 @@ def add_dynamic_arguments(
                 if hidden_option_flags:
                     hidden_kwargs = dict(kwargs)
                     hidden_kwargs["help"] = argparse.SUPPRESS
+                    hidden_kwargs["required"] = False
                     parser.add_argument(*hidden_option_flags, **hidden_kwargs)
         if str(param["name"]) == "minutes_back" and str(cmd_name or "").startswith("trade_"):
             parser.add_argument(

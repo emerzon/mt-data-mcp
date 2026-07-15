@@ -289,6 +289,27 @@ class TestAddDynamicArguments:
         args = parser.parse_args(["EURUSD", "--count", "20"])
         assert args.count == 20
 
+    def test_trade_place_marks_volume_and_order_type_required(self):
+        parser = argparse.ArgumentParser()
+        func_info = {
+            "params": [
+                {"name": "symbol", "type": str, "required": False, "default": None},
+                {"name": "volume", "type": float, "required": False, "default": None},
+                {"name": "order_type", "type": str, "required": False, "default": None},
+            ]
+        }
+        add_dynamic_arguments(parser, func_info, cmd_name="trade_place")
+
+        with pytest.raises(SystemExit):
+            parser.parse_args(["EURUSD"])
+        args = parser.parse_args(
+            ["EURUSD", "--volume", "0.01", "--order-type", "BUY"]
+        )
+        assert args.volume == 0.01
+        assert args.order_type == "BUY"
+        help_text = parser.format_help()
+        assert "volume" in help_text and "(required)" in help_text
+
     def test_bool_param(self):
         parser = argparse.ArgumentParser()
         func_info = {
@@ -711,7 +732,19 @@ class TestAddDynamicArguments:
 
     def test_trading_order_commands_expose_canonical_detail(self):
         for cmd_name, model_type, argv in (
-            ("trade_place", TradePlaceRequest, ["--detail", "summary"]),
+            (
+                "trade_place",
+                TradePlaceRequest,
+                [
+                    "EURUSD",
+                    "--volume",
+                    "0.01",
+                    "--order-type",
+                    "BUY",
+                    "--detail",
+                    "summary",
+                ],
+            ),
             ("trade_modify", TradeModifyRequest, ["123", "--detail", "summary"]),
             ("trade_close", TradeCloseRequest, ["--detail", "summary"]),
         ):
