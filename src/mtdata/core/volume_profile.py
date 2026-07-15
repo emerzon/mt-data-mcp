@@ -455,6 +455,8 @@ def _profile_detail_payload(profile: Dict[str, Any], detail: str) -> Dict[str, A
         "diagnostics",
         "truncated",
         "truncation_reason",
+        "data_quality",
+        "coverage_note",
         "warnings",
         "as_of",
         "timezone",
@@ -658,6 +660,16 @@ def compute_volume_profile_payload(
     if profile["diagnostics"].get("tick_limit_reached") is True:
         profile["truncated"] = True
         profile["truncation_reason"] = "max_ticks"
+        tick_rows = int(profile["diagnostics"].get("tick_rows") or 0)
+        max_ticks_value = int(profile["diagnostics"].get("requested_max_ticks") or tick_rows)
+        profile["data_quality"] = {
+            "status": "partial",
+            "reason": "max_ticks",
+        }
+        profile["coverage_note"] = (
+            f"Profile uses only the latest {tick_rows} ticks because max_ticks="
+            f"{max_ticks_value} was reached; it does not represent the full requested window."
+        )
     fetch_payload = selected.get("fetch_payload")
     profile.update(_profile_freshness_meta(fetch_payload))
     profile["units"] = _profile_units(profile)

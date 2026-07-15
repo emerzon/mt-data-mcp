@@ -303,6 +303,8 @@ def test_tick_cap_is_disclosed_as_truncation(monkeypatch):
 
     assert result["truncated"] is True
     assert result["truncation_reason"] == "max_ticks"
+    assert result["data_quality"] == {"status": "partial", "reason": "max_ticks"}
+    assert "does not represent the full requested window" in result["coverage_note"]
 
 
 def test_compute_volume_profile_payload_auto_falls_back_on_low_tick_mid_coverage(monkeypatch):
