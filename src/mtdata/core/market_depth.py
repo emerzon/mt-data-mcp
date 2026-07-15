@@ -220,6 +220,8 @@ def _format_mt5_error_text(error: Any) -> str:
 def _describe_symbol_select_error(symbol: str, error: Any) -> str:
     text = str(_format_mt5_error_text(error or "")).strip()
     lowered = text.lower()
+    if lowered in {"success", "1: success"}:
+        return f"Symbol '{symbol}' was not found or is not available in MT5."
     if any(marker in lowered for marker in ("call failed", "unknown symbol", "not found", "invalid symbol")):
         return f"Symbol '{symbol}' was not found or is not available in MT5."
     if text:
