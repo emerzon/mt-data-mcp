@@ -2172,6 +2172,8 @@ def run_strategy_backtest(
             oversold=request.oversold,
             overbought=request.overbought,
             max_hold_bars=request.max_hold_bars,
+            cost_model=request.cost_model,
+            spread_bps=request.spread_bps,
             slippage_bps=request.slippage_bps,
         )
     except Exception as exc:

@@ -10,6 +10,7 @@ from ..shared.schema import DetailLiteral, DenoiseSpec, TimeframeLiteral
 from ..shared.validators import invalid_timeframe_error
 from ..utils.denoise import normalize_denoise_spec as _normalize_denoise_spec
 from ..utils.time import _format_time_minimal
+from ..utils.mt5 import mt5
 from .common import (
     annualization_context as _annualization_context,
 )
@@ -879,12 +880,13 @@ def _build_strategy_trade(
     entry_price: float,
     exit_price: float,
     slippage_bps: float,
+    spread_bps: float,
 ) -> Dict[str, Any]:
     gross_return = float(direction) * ((float(exit_price) - float(entry_price)) / float(entry_price))
     if gross_return <= -0.999:
         gross_return = -0.999
     slip = float(abs(slippage_bps) or 0.0) / 10000.0
-    net_return = gross_return - (2.0 * slip)
+    net_return = gross_return - (float(abs(spread_bps) or 0.0) / 10000.0) - (2.0 * slip)
     if net_return <= -0.999:
         net_return = -0.999
     return {
@@ -914,6 +916,8 @@ def strategy_backtest(  # noqa: C901
     oversold: float = 30.0,
     overbought: float = 70.0,
     max_hold_bars: Optional[int] = None,
+    cost_model: Literal["mt5_observed", "fixed"] = "mt5_observed",
+    spread_bps: Optional[float] = None,
     slippage_bps: float = 1.0,
 ) -> Dict[str, Any]:
     try:
@@ -932,6 +936,8 @@ def strategy_backtest(  # noqa: C901
             "oversold": oversold,
             "overbought": overbought,
             "max_hold_bars": max_hold_bars,
+            "cost_model": cost_model,
+            "spread_bps": spread_bps,
             "slippage_bps": slippage_bps,
         }
         strategy_value = str(strategy or "sma_cross").strip().lower()
@@ -949,6 +955,22 @@ def strategy_backtest(  # noqa: C901
             return {"error": "fast_period must be less than slow_period"}
         if float(oversold) >= float(overbought):
             return {"error": "oversold must be less than overbought"}
+        cost_model_value = str(cost_model or "mt5_observed").strip().lower()
+        if cost_model_value not in {"mt5_observed", "fixed"}:
+            return {"error": "cost_model must be 'mt5_observed' or 'fixed'"}
+        resolved_spread_bps = float(spread_bps or 0.0)
+        spread_source = "explicit" if spread_bps is not None else "unavailable"
+        if spread_bps is None and cost_model_value == "mt5_observed":
+            try:
+                tick = mt5.symbol_info_tick(symbol)
+                bid = float(getattr(tick, "bid", 0.0) or 0.0)
+                ask = float(getattr(tick, "ask", 0.0) or 0.0)
+                mid = (bid + ask) / 2.0
+                if ask > bid > 0.0 and mid > 0.0:
+                    resolved_spread_bps = (ask - bid) / mid * 10000.0
+                    spread_source = "mt5_current_quote"
+            except Exception:
+                pass
 
         if strategy_value in {"sma_cross", "ema_cross"}:
             warmup_bars = max(int(slow_period), 5)
@@ -1037,6 +1059,7 @@ def strategy_backtest(  # noqa: C901
                     entry_price=float(entry_price),
                     exit_price=float(action_price),
                     slippage_bps=float(slippage_bps),
+                    spread_bps=resolved_spread_bps,
                 )
             )
             current_direction = 0
@@ -1065,6 +1088,7 @@ def strategy_backtest(  # noqa: C901
                     entry_price=float(entry_price),
                     exit_price=float(final_exit_price),
                     slippage_bps=float(slippage_bps),
+                    spread_bps=resolved_spread_bps,
                 )
             )
 
@@ -1127,6 +1151,8 @@ def strategy_backtest(  # noqa: C901
         _params: Dict[str, Any] = {
             "lookback": int(lookback),
             "slippage_bps": float(slippage_bps),
+            "cost_model": cost_model_value,
+            "spread_bps": resolved_spread_bps,
             **_strategy_params,
         }
         if start is not None:
@@ -1148,10 +1174,12 @@ def strategy_backtest(  # noqa: C901
             "position_mode": position_mode_value,
             "price_basis": "mt5_bid_ohlc",
             "cost_model": {
-                "type": "fixed_slippage",
+                "type": cost_model_value,
+                "spread_bps_round_trip": resolved_spread_bps,
+                "spread_source": spread_source,
                 "slippage_bps_per_side": float(slippage_bps),
-                "round_trip_slippage_bps": float(slippage_bps) * 2.0,
-                "spread_modeled_separately": False,
+                "round_trip_cost_bps": resolved_spread_bps + float(slippage_bps) * 2.0,
+                "complete": spread_source != "unavailable",
             },
             "units": _backtest_units(),
             "parameters": _params,
