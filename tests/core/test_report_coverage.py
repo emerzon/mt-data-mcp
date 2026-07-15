@@ -290,14 +290,11 @@ def test_compact_report_payload_omits_duplicate_assessment_blocks():
         template="basic",
     )
 
-    assert out["overall_assessment"]["partial_sections"] == ["barriers"]
-    assert out["overall_assessment"]["section_health"] == {
-        "ok": 7,
-        "partial": 1,
-        "error": 0,
-    }
+    assert out["assessment"]["partial_sections"] == ["barriers"]
+    assert "section_health" not in out["assessment"]
     assert out["summary_structured"]["template_focus"] == {"profile": "balanced"}
     assert "executive_summary" not in out
+    assert "overall_assessment" not in out
     assert "sections_with_issues" not in out
     assert out["sections_status"] == {
         "summary": {"ok": 7, "partial": 1, "error": 0, "total": 8},
@@ -309,6 +306,42 @@ def test_compact_report_payload_omits_duplicate_assessment_blocks():
             }
         },
     }
+
+
+def test_compact_report_payload_uses_one_named_assessment_when_healthy():
+    from mtdata.core.report.use_cases import _compact_report_payload
+
+    out = _compact_report_payload(
+        {
+            "success": True,
+            "overall_assessment": {
+                "is_trade_signal": False,
+                "recommended_action": "review_key_levels_and_risk",
+                "assembly_confidence": "high",
+                "assembly_confidence_basis": "report_section_health",
+                "section_health": {"ok": 4, "partial": 0, "error": 0, "total": 4},
+            },
+            "executive_summary": {
+                "is_trade_signal": False,
+                "recommended_action": "review_key_levels_and_risk",
+                "assembly_confidence": "high",
+                "section_health": {"ok": 4, "partial": 0, "error": 0, "total": 4},
+            },
+            "sections_status": {"summary": {"ok": 4, "partial": 0, "error": 0}},
+            "summary_structured": {"market": {"close": 1.1}},
+        },
+        symbol="EURUSD",
+        template="basic",
+    )
+
+    assert out["assessment"] == {
+        "is_trade_signal": False,
+        "recommended_action": "review_key_levels_and_risk",
+        "section_completeness": "high",
+        "section_health": {"ok": 4, "partial": 0, "error": 0},
+    }
+    assert "overall_assessment" not in out
+    assert "executive_summary" not in out
 
 
 def test_compact_report_payload_elevates_barrier_conflicts():
@@ -962,6 +995,11 @@ class TestReportSummaryBarriers:
         assert structured["ev_edge_conflict"] is True
         assert structured["conflict_reason"] == "ev and edge_vs_breakeven have opposite signs"
         assert "Expected value and break-even edge disagree" in structured["trading_note"]
+        metric_basis = res["summary_structured"]["barriers"]["metric_basis"]
+        assert metric_basis["ev"]["definition"].startswith("mean simulated barrier payoff")
+        assert metric_basis["probability_edge"] == (
+            "take_profit_first_probability minus stop_loss_first_probability"
+        )
 
     def test_no_barriers_section(self):
         sec = _make_full_sections()

@@ -375,6 +375,12 @@ def _compact_report_assessment(value: Any) -> Any:
     if not isinstance(value, dict):
         return value
     out = dict(value)
+    assembly_confidence = out.pop("assembly_confidence", None)
+    if assembly_confidence not in (None, ""):
+        out["section_completeness"] = assembly_confidence
+    # Compact assessment is exclusively about report assembly, so the fixed
+    # basis adds no decision value once the field is named explicitly.
+    out.pop("assembly_confidence_basis", None)
     section_health = out.get("section_health")
     if isinstance(section_health, dict):
         section_health = dict(section_health)
@@ -419,7 +425,7 @@ def _compact_sections_status(value: Any) -> Any:
     return out
 
 
-def _compact_report_payload(
+def _compact_report_payload(  # noqa: C901
     report: Dict[str, Any],
     *,
     symbol: str,
@@ -469,14 +475,28 @@ def _compact_report_payload(
         compact["completeness"] = completeness
     assessment = report.get("overall_assessment")
     if assessment not in (None, "", [], {}):
-        compact["overall_assessment"] = _compact_report_assessment(assessment)
+        compact["assessment"] = _compact_report_assessment(assessment)
     sections_status = _compact_sections_status(report.get("sections_status"))
     if sections_status not in (None, "", [], {}):
         compact["sections_status"] = sections_status
-    elif report.get("executive_summary") not in (None, "", [], {}):
-        compact["executive_summary"] = _compact_report_assessment(
-            report.get("executive_summary")
-        )
+        if isinstance(compact.get("assessment"), dict):
+            compact["assessment"].pop("section_health", None)
+    elif "assessment" not in compact:
+        executive_summary = report.get("executive_summary")
+        if isinstance(executive_summary, dict):
+            compact["assessment"] = _compact_report_assessment(
+                {
+                    key: executive_summary[key]
+                    for key in (
+                        "is_trade_signal",
+                        "recommended_action",
+                        "assembly_confidence",
+                        "assembly_confidence_basis",
+                        "section_health",
+                    )
+                    if key in executive_summary
+                }
+            )
     for key in ("section_controls",):
         value = report.get(key)
         if value not in (None, "", [], {}):
@@ -1162,6 +1182,27 @@ def run_report_generate(  # noqa: C901
             try:
                 bar = rep.get("sections", {}).get("barriers", {})
                 barriers_summary: Dict[str, Any] = {}
+
+                def _barrier_metric_basis(best_row: Dict[str, Any]) -> Dict[str, Any]:
+                    return {
+                        "tp_pct": "percentage_points",
+                        "sl_pct": "percentage_points",
+                        "ev": {
+                            "unit": str(best_row.get("distance_unit") or "price"),
+                            "definition": (
+                                "mean simulated barrier payoff including timeout "
+                                "mark-to-market, net of supplied costs"
+                            ),
+                        },
+                        "probability_edge": (
+                            "take_profit_first_probability minus "
+                            "stop_loss_first_probability"
+                        ),
+                        "edge_vs_breakeven": (
+                            "resolved win probability minus break-even win probability"
+                        ),
+                    }
+
                 if isinstance(bar, dict) and any(k in bar for k in ("long", "short")):
                     for dname in ("long", "short"):
                         sub = bar.get(dname)
@@ -1223,6 +1264,9 @@ def run_report_generate(  # noqa: C901
                             summ.append("barrier best " + " ".join(details))
                         if barrier_entry:
                             barriers_summary[dname] = barrier_entry
+                            barriers_summary.setdefault(
+                                "metric_basis", _barrier_metric_basis(best)
+                            )
                 else:
                     best = bar.get("best") if isinstance(bar, dict) else None
                     direction = bar.get("direction") if isinstance(bar, dict) else None
@@ -1283,6 +1327,9 @@ def run_report_generate(  # noqa: C901
                             summ.append("barrier best " + " ".join(details))
                         if barrier_entry:
                             barriers_summary["best"] = barrier_entry
+                            barriers_summary.setdefault(
+                                "metric_basis", _barrier_metric_basis(best)
+                            )
                 if barriers_summary:
                     summary_structured["barriers"] = barriers_summary
             except Exception:
