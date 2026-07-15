@@ -820,6 +820,24 @@ class TestClosePositions:
         assert result["requested_volume"] == 0.05
         assert result["position_volume_before"] == 0.10
         assert result["position_volume_remaining_estimate"] == 0.05
+        assert result["filled_volume"] == 0.05
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_partial_fill_uses_broker_volume_for_remaining_estimate(self):
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        mt5.positions_get.return_value = [_position(ticket=42, volume=0.10)]
+        mt5.symbol_info.return_value = SimpleNamespace(volume_min=0.01, volume_step=0.01)
+        mt5.symbol_info_tick.return_value = _tick()
+        mt5.order_send.return_value = _order_result(retcode=10010, volume=0.03)
+        from mtdata.core.trading import _close_positions
+
+        result = _close_positions(ticket=42, volume=0.05)
+
+        assert result["requested_volume"] == 0.05
+        assert result["filled_volume"] == 0.03
+        assert result["position_volume_remaining_estimate"] == pytest.approx(0.07)
+        assert result["partial_fill"] is True
 
     @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
     def test_partial_close_rejects_volume_greater_than_position(self):

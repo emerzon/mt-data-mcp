@@ -1148,6 +1148,33 @@ def _execute_single_close(
         except Exception:
             pnl_price_delta = None
 
+    filled_volume = validation._safe_float_attr(result, "volume", default=None)
+    post_fill_remaining_estimate = remaining_volume_estimate
+    if (
+        position_volume_before is not None
+        and filled_volume is not None
+        and filled_volume >= 0.0
+    ):
+        post_fill_remaining_estimate = max(
+            0.0,
+            float(position_volume_before) - float(filled_volume),
+        )
+    effective_requested_volume = (
+        requested_volume if requested_volume is not None else position_volume_before
+    )
+    partial_fill_retcode = validation._safe_int_attr(
+        mt5,
+        "TRADE_RETCODE_DONE_PARTIAL",
+        10010,
+    )
+    is_partial_fill = validation._safe_int_attr(result, "retcode", -1) == partial_fill_retcode
+    if (
+        filled_volume is not None
+        and effective_requested_volume is not None
+        and filled_volume + 1e-12 < float(effective_requested_volume)
+    ):
+        is_partial_fill = True
+
     res_dict: Dict[str, Any] = {
         "ticket": position.ticket,
         "retcode": result.retcode,
@@ -1155,6 +1182,7 @@ def _execute_single_close(
         "deal": result.deal,
         "order": result.order,
         "volume": result.volume,
+        "filled_volume": filled_volume,
         "price": result.price,
         "comment": result.comment,
         "open_price": open_price,
@@ -1162,11 +1190,13 @@ def _execute_single_close(
         "pnl": realized_pnl,
         "pnl_price_delta": pnl_price_delta,
         "duration_seconds": duration_seconds,
-        "requested_volume": requested_volume if requested_volume is not None else position_volume_before,
+        "requested_volume": effective_requested_volume,
         "position_volume_before": position_volume_before,
-        "position_volume_remaining_estimate": remaining_volume_estimate,
+        "position_volume_remaining_estimate": post_fill_remaining_estimate,
         "attempts": attempts,
     }
+    if is_partial_fill:
+        res_dict["partial_fill"] = True
     if isinstance(close_comment_fallback, dict):
         res_dict["comment_fallback"] = close_comment_fallback
         if close_comment_fallback.get("used"):
