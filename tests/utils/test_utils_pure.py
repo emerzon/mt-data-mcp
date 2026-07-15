@@ -11,13 +11,13 @@ from mtdata.utils.time import (
     _format_time_explicit,
     _format_time_minimal,
 )
+from mtdata.utils.coercion import safe_float as _safe_float
 from mtdata.utils.utils import (
     coerce_scalar,
     _format_numeric_rows_from_df,
     _normalize_limit,
     _normalize_ohlcv_arg,
     _parse_start_datetime,
-    _safe_float,
     _table_from_rows,
     _utc_epoch_seconds,
     align_finite,

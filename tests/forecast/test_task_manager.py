@@ -127,15 +127,15 @@ class TestTaskManagerBasic(_TaskManagerTestCase):
         self.assertEqual(final.status, "failed")
         self.assertIn("training boom", final.error)
 
-    def test_canonical_hash_dedups_even_when_legacy_hash_arg_differs(self):
+    def test_canonical_hash_dedups_identical_submissions(self):
         fake = _FakeMethod(delay=0.2)
         with patch("mtdata.forecast.task_manager.ForecastRegistry") as mock_reg:
             mock_reg.get.return_value = fake
             mock_reg.get_method_info.return_value = {"training_category": "fast", "supports_training": True}
 
             series = _make_series()
-            tid1, new1 = self.tm.submit("fake", series, 5, 1, {"lr": 0.01}, "EURUSD_H1", "legacy-a")
-            tid2, new2 = self.tm.submit("fake", series, 5, 1, {"lr": 0.01}, "EURUSD_H1", "legacy-b")
+            tid1, new1 = self.tm.submit("fake", series, 5, 1, {"lr": 0.01}, "EURUSD_H1")
+            tid2, new2 = self.tm.submit("fake", series, 5, 1, {"lr": 0.01}, "EURUSD_H1")
 
         self.assertTrue(new1)
         self.assertFalse(new2)

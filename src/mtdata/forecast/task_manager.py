@@ -733,7 +733,6 @@ class TaskManager:
         seasonality: int,
         params: dict,
         data_scope: str,
-        params_hash: Optional[str] = None,
         *,
         exog: Optional[np.ndarray] = None,
         timeframe: str = "",
@@ -742,11 +741,6 @@ class TaskManager:
         if self._shutdown:
             raise RuntimeError("TaskManager is shut down")
         info = ForecastRegistry.get_method_info(method_name)
-        # Always recompute the fingerprint from the submitted training inputs so
-        # caller-provided legacy hash strings cannot split the dedup key. Callers
-        # must put quantity (and any other store-key fields) into ``params`` so
-        # this hash matches the model-store lookup key.
-        del params_hash  # accepted for API compatibility; not used for identity
         params_for_hash = dict(params or {})
         canonical_hash = self._compute_params_hash(
             method_name,

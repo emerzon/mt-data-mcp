@@ -15,6 +15,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from mtdata.core.report import _report_error_payload
+from mtdata.utils.coercion import safe_float as _safe_float
 from mtdata.core.report_templates.basic import (
     _bars_since_latest_pivot,
     _compute_compact_trend,
@@ -23,7 +24,6 @@ from mtdata.core.report_templates.basic import (
     _get_raw_result,
     _linreg_slope_r2,
     _percentile_rank,
-    _safe_float,
     _wilder_rma,
 )
 

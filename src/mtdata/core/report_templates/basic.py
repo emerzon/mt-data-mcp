@@ -2,7 +2,7 @@ from math import isfinite
 from typing import Any, Dict, List, Optional
 
 from ...shared.schema import DenoiseSpec
-from ...utils.utils import _safe_float
+from ...utils.coercion import safe_float as _safe_float
 from ..report.utils import (
     attach_candle_freshness_diagnostics,
     attach_multi_timeframes,

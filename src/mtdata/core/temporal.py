@@ -22,6 +22,7 @@ from ..utils.mt5 import (
     get_symbol_info_cached,
     mt5,
 )
+from ..utils.coercion import safe_float as _safe_float
 from ..utils.time import (
     _format_time_minimal,
     _format_time_minimal_local,
@@ -29,7 +30,6 @@ from ..utils.time import (
 )
 from ..utils.utils import (
     _parse_start_datetime,
-    _safe_float,
 )
 from ._mcp_instance import mcp
 from .execution_logging import run_logged_operation

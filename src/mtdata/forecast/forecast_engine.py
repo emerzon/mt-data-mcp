@@ -24,7 +24,7 @@ from ..utils.denoise import (
 from ..utils.denoise import (
     normalize_denoise_spec as _normalize_denoise_spec,
 )
-from ..utils.freshness import closed_session_context
+from ..utils.freshness import closed_session_context, format_age_seconds
 from ..utils.mt5 import get_cached_mt5_time_alignment, get_symbol_info_cached
 from ..utils.time import (
     _format_time_minimal,
@@ -813,7 +813,6 @@ def _submit_async_training(
         seasonality=seasonality,
         params=params,
         data_scope=data_scope,
-        params_hash=params_hash,
         exog=exog,
         timeframe=timeframe,
     )
@@ -1003,23 +1002,6 @@ def _forecast_timezone_label(*, use_client_tz: bool, client_tz: Any) -> str:
     )
 
 
-def _format_age_seconds(seconds: Any) -> Optional[str]:
-    try:
-        value = max(0, int(round(float(seconds))))
-    except Exception:
-        return None
-    days, remainder = divmod(value, 86400)
-    hours, remainder = divmod(remainder, 3600)
-    minutes, secs = divmod(remainder, 60)
-    if days:
-        return f"{days}d {hours}h"
-    if hours:
-        return f"{hours}h {minutes}m"
-    if minutes:
-        return f"{minutes}m {secs}s"
-    return f"{secs}s"
-
-
 def _last_price_freshness_fields(
     *,
     last_epoch: float,
@@ -1046,7 +1028,7 @@ def _last_price_freshness_fields(
         "freshness_basis": "bar_policy",
         "stale_after_seconds": stale_after,
     }
-    age_text = _format_age_seconds(rounded_age)
+    age_text = format_age_seconds(rounded_age)
     if age_text:
         out["last_price_age"] = age_text
     closed_session = closed_session_context(
