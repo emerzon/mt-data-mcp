@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 
 from ..utils.utils import to_float_np
+from .common import interval_overlap_ratio
 from .classic_impl.config import (
     ClassicDetectorConfig,
     ClassicPatternResult,
@@ -117,19 +118,12 @@ def _detect_classic_patterns_once(
 
 
 def _pattern_overlap_ratio(a: ClassicPatternResult, b: ClassicPatternResult) -> float:
-    lo = max(int(a.start_index), int(b.start_index))
-    hi = min(int(a.end_index), int(b.end_index))
-    if hi < lo:
-        return 0.0
-    inter = hi - lo + 1
-    union = (
-        max(int(a.end_index), int(b.end_index))
-        - min(int(a.start_index), int(b.start_index))
-        + 1
+    return interval_overlap_ratio(
+        int(a.start_index),
+        int(a.end_index),
+        int(b.start_index),
+        int(b.end_index),
     )
-    if union <= 0:
-        return 0.0
-    return float(inter) / float(union)
 
 
 def _prefer_pattern_candidate(
