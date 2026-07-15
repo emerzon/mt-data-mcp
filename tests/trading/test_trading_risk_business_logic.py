@@ -352,7 +352,11 @@ def test_trade_risk_analyze_marks_position_sizing_incomplete_without_required_in
         "entry",
         "stop_loss",
     ]
-    assert "Portfolio risk analysis completed" in out["position_sizing"]["message"]
+    assert out["book_state"] == "flat"
+    assert out["book_state_scope"] == "symbol"
+    assert "No open positions or pending orders" in out["message"]
+    assert "scoped_risk" not in out
+    assert "Risk analysis completed" in out["position_sizing"]["message"]
     assert "--desired-risk-pct" in out["position_sizing"]["message"]
     assert "desired_risk_pct" not in out["position_sizing"]["message"]
     # Compact missing-inputs payload keeps a short note, not the full required_for_sizing list.

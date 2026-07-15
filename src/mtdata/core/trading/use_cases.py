@@ -37,7 +37,6 @@ from .idempotency import (
     SQLiteIdempotencyStore,
     create_default_idempotency_store,
 )
-from .sizing import _floor_volume_steps
 from .requests import (
     TradeCloseRequest,
     TradeGetOpenRequest,
@@ -54,7 +53,11 @@ from .safety import (
     evaluate_trade_guardrails,
     preview_trade_guardrails,
 )
-from .sizing import _resolve_risk_tick_value, compute_kelly_sizing_context
+from .sizing import (
+    _floor_volume_steps,
+    _resolve_risk_tick_value,
+    compute_kelly_sizing_context,
+)
 
 logger = logging.getLogger(__name__)
 _DEFAULT_TRADE_HISTORY_LOOKBACK_DAYS = 7
@@ -763,6 +766,59 @@ def _compact_trade_risk_position_sizing(
     return compact
 
 
+def _compact_unconfigured_flat_trade_risk_payload(
+    result: Dict[str, Any],
+) -> Optional[Dict[str, Any]]:
+    """Return a direct next-step response for a flat book with no sizing request."""
+    position_sizing = result.get("position_sizing")
+    if not isinstance(position_sizing, dict):
+        return None
+    if position_sizing.get("status") != "parameters_missing":
+        return None
+    if position_sizing.get("provided"):
+        return None
+    required = position_sizing.get("required_for_sizing")
+    missing = position_sizing.get("missing")
+    if not isinstance(required, list) or not isinstance(missing, list):
+        return None
+    if set(required) != set(missing):
+        return None
+
+    scope = result.get("scope")
+    if not isinstance(scope, dict):
+        return None
+    scope_mode = str(scope.get("mode") or "")
+    if scope_mode == "symbol" and scope.get("other_positions") != 0:
+        return None
+    if scope_mode not in {"symbol", "portfolio"}:
+        return None
+
+    risk = result.get("scoped_risk") or result.get("portfolio_risk")
+    if not isinstance(risk, dict):
+        return None
+    if int(risk.get("positions_count") or 0) != 0:
+        return None
+    if int(risk.get("pending_orders_count") or 0) != 0:
+        return None
+    if not isinstance(result.get("positions"), list) or result.get("positions"):
+        return None
+    if not isinstance(result.get("pending_orders"), list) or result.get("pending_orders"):
+        return None
+    if result.get("risk_calculation_failures") or result.get("scope_warning"):
+        return None
+
+    return {
+        key: result[key]
+        for key in ("success", "account", "scope", "risk_visibility")
+        if key in result
+    } | {
+        "book_state": "flat",
+        "book_state_scope": scope_mode,
+        "message": "No open positions or pending orders in the analyzed scope.",
+        "position_sizing": _compact_trade_risk_position_sizing(position_sizing),
+    }
+
+
 def _shape_trade_risk_analyze_payload(
     result: Dict[str, Any],
     *,
@@ -772,6 +828,9 @@ def _shape_trade_risk_analyze_payload(
         return result
     if str(detail).strip().lower() != "compact":
         return result
+    flat_unconfigured = _compact_unconfigured_flat_trade_risk_payload(result)
+    if flat_unconfigured is not None:
+        return flat_unconfigured
     shaped = dict(result)
     position_sizing = shaped.get("position_sizing")
     if isinstance(position_sizing, dict):
@@ -3596,7 +3655,7 @@ def run_trade_risk_analyze(  # noqa: C901
                         if value is not None
                     ]
                     _missing_msg = (
-                        "Portfolio risk analysis completed. Position sizing is "
+                        "Risk analysis completed. Position sizing is "
                         "available when you provide "
                         + _human_join(
                             [
