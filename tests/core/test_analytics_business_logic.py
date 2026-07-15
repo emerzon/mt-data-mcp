@@ -512,7 +512,11 @@ def test_relative_strength_ranks_and_reports_breadth() -> None:
     )
     result = rank_relative_strength(request, gateway)
     assert result["success"] is True
-    assert len(result["leaders"]) == 3
+    assert len(result["leaders"]) == 2
+    assert len(result["laggards"]) == 1
+    assert {
+        row["symbol"] for row in result["leaders"]
+    }.isdisjoint(row["symbol"] for row in result["laggards"])
     assert result["leaders"][0]["score"] >= result["leaders"][-1]["score"]
     assert set(result["breadth"]["positive_by_horizon"]) == {"5", "20"}
     assert result["universe_size"] == 3

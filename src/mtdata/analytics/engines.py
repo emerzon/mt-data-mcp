@@ -1308,6 +1308,8 @@ def rank_relative_strength(request: MarketRelativeStrengthRequest, gateway: Any)
         "above_sma20": float(np.mean([row["above_sma20"] for row in ordered])) if ordered else None,
         "above_sma50": float(np.mean([row["above_sma50"] for row in ordered])) if ordered else None,
     }
+    leader_count = min(request.limit, (len(ordered) + 1) // 2)
+    laggard_count = min(request.limit, len(ordered) - leader_count)
     return {
         "success": True,
         "timeframe": request.timeframe,
@@ -1321,8 +1323,10 @@ def rank_relative_strength(request: MarketRelativeStrengthRequest, gateway: Any)
             "weights": list(request.weights),
             "higher_is_stronger": True,
         },
-        "leaders": ordered[: request.limit],
-        "laggards": list(reversed(ordered[-request.limit :])),
+        "leaders": ordered[:leader_count],
+        "laggards": (
+            list(reversed(ordered[-laggard_count:])) if laggard_count else []
+        ),
         "breadth": breadth,
         "factor": {"source": request.benchmark.upper() if request.benchmark else "equal_weight_universe"},
         "data_quality": {"selected_symbols": len(selected), "ranked_symbols": len(ordered), "skipped": skipped, "minimum_history_coverage": 0.90},
