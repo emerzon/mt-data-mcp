@@ -11,7 +11,9 @@ from .client import (
     get_finviz_page_limit_max,
     get_finviz_screener_max_rows,
 )
+from .dates import normalize_finviz_dates_in_rows
 from .symbols import looks_like_non_equity_symbol
+from .utils import apply_finvizfinance_timeout_patch
 
 logger = logging.getLogger(__name__)
 
@@ -180,40 +182,6 @@ def _screener_pagination_metadata(
     )
 
 
-def _normalize_finviz_date_string(value: Any) -> Any:
-    """Normalize Finviz short dates like `Nov 07 '25` to ISO 8601."""
-    if not isinstance(value, str):
-        return value
-    text = value.strip()
-    if not text:
-        return value
-    text = text.replace("’", "'")
-    for fmt in ("%b %d '%y", "%b %d %Y"):
-        try:
-            return datetime.datetime.strptime(text, fmt).date().isoformat()
-        except Exception:
-            continue
-    try:
-        return _parse_iso_date_input(text, field_name="date").isoformat()
-    except ValueError:
-        pass
-    return value
-
-
-def _normalize_finviz_dates_in_rows(rows: List[Dict[str, Any]], *keys: str) -> List[Dict[str, Any]]:
-    out: List[Dict[str, Any]] = []
-    wanted = set(keys)
-    for row in rows:
-        if not isinstance(row, dict):
-            continue
-        row_out = dict(row)
-        for key in wanted:
-            if key in row_out:
-                row_out[key] = _normalize_finviz_date_string(row_out.get(key))
-        out.append(row_out)
-    return out
-
-
 def _strip_string_fields_in_rows(rows: List[Dict[str, Any]], *keys: str) -> List[Dict[str, Any]]:
     out: List[Dict[str, Any]] = []
     wanted = set(keys)
@@ -288,26 +256,6 @@ def _finviz_http_get(url: str, *, headers: Dict[str, str], params: Dict[str, Any
         params=params,
         timeout=_FINVIZ_HTTP_TIMEOUT,
     )
-
-
-def _apply_finvizfinance_timeout_patch() -> None:
-    """Patch finvizfinance's internal bare requests.get call to include timeout."""
-    try:
-        import finvizfinance.quote as _fv_quote
-    except Exception:
-        return
-
-    if bool(getattr(_fv_quote, "_mtdata_timeout_patched", False)):
-        return
-
-    _orig_get = _fv_quote.requests.get
-
-    def _patched_get(*args: Any, **kwargs: Any) -> Any:
-        kwargs.setdefault("timeout", _FINVIZ_HTTP_TIMEOUT)
-        return _orig_get(*args, **kwargs)
-
-    _fv_quote.requests.get = _patched_get
-    _fv_quote._mtdata_timeout_patched = True
 
 
 def _to_float_or_none(value: Any) -> Optional[float]:
@@ -398,7 +346,7 @@ def _load_finviz_attr(module_name: str, attr_name: str) -> Any:
 
 
 def _get_finviz_stock_quote(symbol: str) -> tuple[str, Any]:
-    _apply_finvizfinance_timeout_patch()
+    apply_finvizfinance_timeout_patch()
     finvizfinance = _load_finviz_attr("finvizfinance.quote", "finvizfinance")
     symbol_norm = _normalize_finviz_equity_symbol(symbol)
     return symbol_norm, finvizfinance(symbol_norm)
@@ -419,7 +367,7 @@ def _fetch_finviz_market_performance_rows(
     class_name: str,
     empty_error: str,
 ) -> List[Dict[str, Any]]:
-    _apply_finvizfinance_timeout_patch()
+    apply_finvizfinance_timeout_patch()
     market_cls = _load_finviz_attr(module_name, class_name)
     market_client = market_cls()
     df = market_client.performance()
@@ -561,7 +509,7 @@ def get_stock_insider_trades(symbol: str, limit: int = 20, page: int = 1) -> Dic
             limit=limit,
             page=page,
         )
-        trades_list = _normalize_finviz_dates_in_rows(trades_list, "Date")
+        trades_list = normalize_finviz_dates_in_rows(trades_list, "Date")
         return {
             "success": True,
             "symbol": symbol_norm,
@@ -661,7 +609,7 @@ def screen_stocks(
         Screener results with stock list
     """
     try:
-        _apply_finvizfinance_timeout_patch()
+        apply_finvizfinance_timeout_patch()
         view_lower = view.lower().strip()
         screener = _build_finviz_screener(view_lower)
         
@@ -730,7 +678,7 @@ def get_general_news(news_type: str = "news", limit: int = 20, page: int = 1) ->
         Page number (default 1)
     """
     try:
-        _apply_finvizfinance_timeout_patch()
+        apply_finvizfinance_timeout_patch()
         from finvizfinance.news import News
 
         fnews = News()
@@ -783,7 +731,7 @@ def get_insider_activity(option: str = "latest", limit: int = 50, page: int = 1)
         Page number (default 1)
     """
     try:
-        _apply_finvizfinance_timeout_patch()
+        apply_finvizfinance_timeout_patch()
         from finvizfinance.insider import Insider
 
         finsider = Insider(option=option)
@@ -797,7 +745,7 @@ def get_insider_activity(option: str = "latest", limit: int = 50, page: int = 1)
             limit=limit,
             page=page,
         )
-        items_list = _normalize_finviz_dates_in_rows(items_list, "Date")
+        items_list = normalize_finviz_dates_in_rows(items_list, "Date")
         return {
             "success": True,
             "option": option,
@@ -911,7 +859,7 @@ def get_earnings_calendar(
     "This Month".
     """
     try:
-        _apply_finvizfinance_timeout_patch()
+        apply_finvizfinance_timeout_patch()
         from finvizfinance.screener.financial import Financial
 
         allowed_periods = {"This Week", "Next Week", "Previous Week", "This Month"}
@@ -1285,5 +1233,6 @@ def _clean_calendar_item(item: Dict[str, Any]) -> Dict[str, Any]:
     cleaned = dict(item)
     cleaned.pop("boxoverData", None)
     return cleaned
+
 
 
