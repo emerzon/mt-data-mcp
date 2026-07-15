@@ -159,6 +159,27 @@ def test_market_scan_bar_freshness_uses_timeframe_window():
     assert result["freshness"] == "stale, bar 1d 2h ago"
 
 
+def test_market_scan_labels_recent_bars_as_completed_not_current():
+    from mtdata.core.symbols import _market_scan_freshness_fields
+
+    with patch("mtdata.core.symbols.time.time", return_value=1_700_000_000.0):
+        result = _market_scan_freshness_fields(
+            1_700_000_000.0 - (60 * 60),
+            timeframe="H1",
+        )
+
+    assert result["data_stale"] is False
+    assert result["freshness"] == "latest completed bar, 1h ago"
+
+
+def test_market_scan_default_limit_is_concise():
+    from inspect import signature
+
+    from mtdata.core.symbols import market_scan
+
+    assert signature(_unwrap(market_scan)).parameters["limit"].default == 10
+
+
 @patch("mtdata.core.symbols.time.time", return_value=10_000.0)
 @patch("mtdata.core.symbols._mt5_copy_rates_from_pos")
 def test_market_scan_completed_rates_keeps_latest_closed_bar(mock_rates, mock_time):

@@ -1598,7 +1598,7 @@ def _market_scan_freshness_fields(
         )
     elif not data_stale:
         age_text = format_age_seconds(age_seconds)
-        fields["freshness"] = f"current closed bar, {age_text} ago"
+        fields["freshness"] = f"latest completed bar, {age_text} ago"
     if fields["data_stale"]:
         fields["stale_warning"] = (
             "Completed bar data may be stale; latest bar is "
@@ -3107,7 +3107,7 @@ def market_scan(  # noqa: C901
     symbols: Optional[str] = None,
     group: Optional[str] = None,
     preset: Optional[str] = None,
-    limit: Optional[int] = 50,
+    limit: Optional[int] = 10,
     offset: int = 0,
     universe: Literal["visible", "all"] = "visible",  # type: ignore
     timeframe: TimeframeLiteral = "H1",
@@ -3361,7 +3361,7 @@ def market_scan(  # noqa: C901
                     request=request,
                 )
 
-            limit_value = _normalize_limit(limit) or 50
+            limit_value = _normalize_limit(limit) or 10
             request["limit"] = limit_value
             try:
                 offset_value = int(offset or 0)
