@@ -37,6 +37,7 @@ from .idempotency import (
     SQLiteIdempotencyStore,
     create_default_idempotency_store,
 )
+from .sizing import _floor_volume_steps
 from .requests import (
     TradeCloseRequest,
     TradeGetOpenRequest,
@@ -907,26 +908,6 @@ def _extract_trade_risk_kelly_inputs(
         if value is None
     ]
     return inputs, missing, source
-
-
-def _floor_volume_steps(raw_volume: float, volume_step: float) -> int:
-    if volume_step <= 0 or not math.isfinite(raw_volume):
-        return 0
-    step_ratio = raw_volume / volume_step
-    step_count = math.floor(step_ratio)
-    if step_count < 0:
-        return 0
-
-    next_step_count = step_count + 1
-    next_volume = float(next_step_count) * float(volume_step)
-    if next_volume >= raw_volume:
-        snap_tolerance = max(
-            math.ulp(float(raw_volume)) * 256.0,
-            math.ulp(next_volume) * 256.0,
-        )
-        if next_volume - float(raw_volume) <= snap_tolerance:
-            return next_step_count
-    return step_count
 
 
 def _normalize_var_cvar_method(method: Any) -> tuple[Optional[str], Optional[str]]:

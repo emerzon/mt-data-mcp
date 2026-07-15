@@ -10,6 +10,7 @@ from ..output_contract import apply_output_verbosity
 from ..output_serialization import json_default as _json_default
 from ..output_serialization import sanitize_json as _sanitize_json
 from ..runtime_metadata import build_runtime_timezone_meta
+from ..trading.context import _compact_trade_session_items as _shared_compact_trade_session_items
 
 CLI_FORMAT_TOON = "toon"
 CLI_FORMAT_JSON = "json"
@@ -215,25 +216,11 @@ def _compact_trade_session_items(
     *,
     field_map: tuple[tuple[str, ...], ...],
 ) -> Optional[list[Dict[str, Any]]]:
-    if not isinstance(section, dict):
-        return None
-    items = section.get("items")
-    if not isinstance(items, list) or not items:
-        return None
-
-    rows: list[Dict[str, Any]] = []
-    for item in items:
-        if not isinstance(item, dict):
-            continue
-        compact: Dict[str, Any] = {}
-        for out_key, *input_keys in field_map:
-            for input_key in input_keys:
-                if input_key in item and not _is_empty_value(item.get(input_key)):
-                    compact[out_key] = item.get(input_key)
-                    break
-        if compact:
-            rows.append(compact)
-    return rows or None
+    return _shared_compact_trade_session_items(
+        section,
+        field_map=field_map,
+        is_empty=_is_empty_value,
+    )
 
 
 def _normalize_trade_session_context_cli_payload(

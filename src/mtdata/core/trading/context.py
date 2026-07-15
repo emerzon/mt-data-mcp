@@ -273,11 +273,23 @@ def _build_quote_quality(quote: Any) -> Dict[str, Any]:
     return out
 
 
+def _is_empty_trade_session_value(value: Any) -> bool:
+    return value is None or (isinstance(value, str) and not value.strip())
+
+
 def _compact_trade_session_items(
     section: Any,
     *,
     field_map: tuple[tuple[str, ...], ...],
+    is_empty=None,
 ) -> Optional[list[Dict[str, Any]]]:
+    """Project trade-session list sections onto a compact field map.
+
+    ``is_empty`` defaults to rejecting ``None`` and blank strings. CLI callers
+    may pass a stricter emptiness check.
+    """
+    if is_empty is None:
+        is_empty = _is_empty_trade_session_value
     if not isinstance(section, dict):
         return None
     items = section.get("items")
@@ -291,7 +303,7 @@ def _compact_trade_session_items(
         compact: Dict[str, Any] = {}
         for out_key, *input_keys in field_map:
             for input_key in input_keys:
-                if input_key in item and item.get(input_key) not in (None, ""):
+                if input_key in item and not is_empty(item.get(input_key)):
                     compact[out_key] = item.get(input_key)
                     break
         if compact:

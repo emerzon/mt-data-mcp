@@ -10,6 +10,36 @@ from ..shared.constants import TIMEFRAME_SECONDS
 from ..shared.symbols import is_probably_crypto_symbol, is_probably_forex_symbol
 
 
+def compute_atr_sma(
+    high: np.ndarray,
+    low: np.ndarray,
+    close: np.ndarray,
+    period: int,
+) -> np.ndarray:
+    """SMA of true range over ``period`` (min_periods = max(2, period//2))."""
+    h = np.asarray(high, dtype=float)
+    l = np.asarray(low, dtype=float)
+    c = np.asarray(close, dtype=float)
+    n = min(h.size, l.size, c.size)
+    if n <= 0:
+        return np.asarray([], dtype=float)
+    h = h[:n]
+    l = l[:n]
+    c = c[:n]
+    prev_c = np.concatenate(([c[0]], c[:-1]))
+    tr = np.maximum(h - l, np.maximum(np.abs(h - prev_c), np.abs(l - prev_c)))
+    win = max(2, int(period))
+    try:
+        return (
+            pd.Series(tr)
+            .rolling(win, min_periods=max(2, win // 2))
+            .mean()
+            .to_numpy(dtype=float)
+        )
+    except (TypeError, ValueError):
+        return tr.astype(float)
+
+
 def fallback_local_extrema(
     src: np.ndarray,
     min_dist: int,

@@ -8,8 +8,9 @@ import pandas as pd
 from scipy.signal import find_peaks
 
 from ...utils.dtw import dtw_distance
+from ...utils.patterns import _get_ts_dtw
 from ...utils.utils import to_float_np
-from ..common import PatternResultBase, fallback_local_extrema
+from ..common import PatternResultBase, compute_atr_sma, fallback_local_extrema
 from .config import ClassicDetectorConfig, ClassicPatternResult
 
 
@@ -23,13 +24,6 @@ def _level_close(a: float, b: float, tol_pct: float) -> bool:
 def _get_ransac_regressor_cls():
     from sklearn.linear_model import RANSACRegressor  # type: ignore
     return RANSACRegressor
-
-
-@lru_cache(maxsize=1)
-def _get_ts_dtw():
-    from tslearn.metrics import dtw as _ts_dtw  # type: ignore
-
-    return _ts_dtw
 
 
 def _stable_r2(ss_res: float, ss_tot: float) -> float:
@@ -187,23 +181,7 @@ def _template_hs_variants(L: int, inverse: bool = False) -> Tuple[np.ndarray, ..
 
 
 def _compute_atr(high: np.ndarray, low: np.ndarray, close: np.ndarray, period: int) -> np.ndarray:
-    h = np.asarray(high, dtype=float)
-    l = np.asarray(low, dtype=float)
-    c = np.asarray(close, dtype=float)
-    n = min(h.size, l.size, c.size)
-    if n <= 0:
-        return np.asarray([], dtype=float)
-    h = h[:n]
-    l = l[:n]
-    c = c[:n]
-    prev_c = np.concatenate(([c[0]], c[:-1]))
-    tr = np.maximum(h - l, np.maximum(np.abs(h - prev_c), np.abs(l - prev_c)))
-    win = max(2, int(period))
-    try:
-        atr = pd.Series(tr).rolling(win, min_periods=max(2, win // 2)).mean().to_numpy(dtype=float)
-    except (TypeError, ValueError):
-        atr = tr.astype(float)
-    return atr
+    return compute_atr_sma(high, low, close, period)
 
 
 def _pivot_thresholds(
