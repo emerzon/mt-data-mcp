@@ -1191,8 +1191,8 @@ def run_report_generate(  # noqa: C901
                             barrier_entry["ev"] = ev_out
                         if edge is not None:
                             edge_out = _round_report_barrier_metric("edge", edge)
-                            details.append(f"edge={format_number(edge_out)}")
-                            barrier_entry["edge"] = edge_out
+                            details.append(f"probability_edge={format_number(edge_out)}")
+                            barrier_entry["probability_edge"] = edge_out
                         if edge_vs_breakeven is not None:
                             edge_be_out = _round_report_barrier_metric(
                                 "edge_vs_breakeven",
@@ -1251,8 +1251,8 @@ def run_report_generate(  # noqa: C901
                             barrier_entry["ev"] = ev_out
                         if edge is not None:
                             edge_out = _round_report_barrier_metric("edge", edge)
-                            details.append(f"edge={format_number(edge_out)}")
-                            barrier_entry["edge"] = edge_out
+                            details.append(f"probability_edge={format_number(edge_out)}")
+                            barrier_entry["probability_edge"] = edge_out
                         if edge_vs_breakeven is not None:
                             edge_be_out = _round_report_barrier_metric(
                                 "edge_vs_breakeven",

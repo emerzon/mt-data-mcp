@@ -957,7 +957,7 @@ class TestReportSummaryBarriers:
         assert "ev_edge_conflict_reason=" in long_line
         structured = res["summary_structured"]["barriers"]["long"]
         assert structured["ev"] == 0.03
-        assert structured["edge"] == -0.1
+        assert structured["probability_edge"] == -0.1
         assert structured["edge_vs_breakeven"] == -0.2
         assert structured["ev_edge_conflict"] is True
         assert structured["conflict_reason"] == "ev and edge_vs_breakeven have opposite signs"
