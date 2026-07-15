@@ -54,6 +54,7 @@ _COMMAND_PARAM_CHOICE_OVERRIDES: Dict[tuple[str, str], list[str]] = {
         "fractal",
         "elliott",
     ],
+    ("forecast_barrier_optimize", "search_profile"): ["fast", "medium", "long"],
 }
 
 

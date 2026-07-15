@@ -108,6 +108,24 @@ class TestBarrierOptimizeGuardrails(_BarrierTestBase):
         self.assertIn("error", result)
         self.assertIn("Invalid mode", result["error"])
 
+    def test_forecast_barrier_optimize_rejects_invalid_search_profile_cleanly(self):
+        result = forecast_barrier_optimize(
+            symbol="EURUSD",
+            timeframe="H1",
+            horizon=4,
+            method="mc_gbm",
+            direction="long",
+            search_profile="quick",
+        )
+
+        self.assertFalse(result["success"])
+        self.assertEqual(result["error_code"], "invalid_argument")
+        self.assertEqual(
+            result["valid_values"]["search_profile"],
+            ["fast", "medium", "long"],
+        )
+        self.assertNotIn("traceback_summary", result)
+
     def test_forecast_barrier_optimize_rejects_invalid_top_k(self):
         result = forecast_barrier_optimize(
             symbol="EURUSD",

@@ -1134,11 +1134,20 @@ def forecast_barrier_optimize(  # noqa: C901
         if output_mode not in {'full', 'summary'}:
             output_mode = 'summary'
 
-        search_profile_val, profile_cfg = _resolve_barrier_search_profile_config(
-            params_dict,
-            search_profile=search_profile,
-            fast_defaults=fast_defaults,
-        )
+        try:
+            search_profile_val, profile_cfg = _resolve_barrier_search_profile_config(
+                params_dict,
+                search_profile=search_profile,
+                fast_defaults=fast_defaults,
+            )
+        except ValueError as exc:
+            return {
+                "success": False,
+                "error": str(exc),
+                "error_code": "invalid_argument",
+                "valid_values": {"search_profile": ["fast", "medium", "long"]},
+                "remediation": "Set search_profile to fast, medium, or long.",
+            }
 
         viable_only_val = _coerce_barrier_bool_flag(
             params_dict.get('viable_only', viable_only),
