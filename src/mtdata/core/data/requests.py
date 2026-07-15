@@ -430,7 +430,13 @@ class DataFetchCandlesRequest(_DetailNormalizedRequest):
         ),
     )
     include_incomplete: bool = False
-    allow_stale: bool = False
+    allow_stale: bool = Field(
+        False,
+        description=(
+            "Allow stale closed bars for unbounded latest-N queries. Bounded start/end "
+            "ranges are historical and do not run the live-feed freshness check."
+        ),
+    )
     explain_indicators: bool = Field(
         False,
         description=(

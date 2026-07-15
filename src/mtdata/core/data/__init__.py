@@ -458,7 +458,7 @@ def data_fetch_candles(
     - Data denoising and smoothing
     - Data simplification for large datasets
     - Defaults to closed candles only; set include_incomplete=true to keep the latest forming candle
-    - Set allow_stale=true to return the latest available closed bars even when freshness checks would normally fail
+    - Set allow_stale=true to return the latest available closed bars even when freshness checks would normally fail; bounded historical ranges do not use the live-feed freshness gate
     - Includes metadata for forming-candle handling (for example has_forming_candle and incomplete_candles_skipped)
     
     Parameters:
@@ -512,7 +512,10 @@ def data_fetch_candles(
         Keep the latest forming candle instead of trimming it. Defaults to false.
 
     allow_stale : bool, optional
-        Return the latest available closed bars even if they fall outside the normal freshness window. Defaults to false.
+        Return the latest available closed bars even if they fall outside the normal
+        freshness window. This only affects unbounded latest-N queries; requests with
+        start or end bounds are historical and bypass live-feed freshness checks.
+        Defaults to false.
 
     explain_indicators : bool, optional
         When true, add compact latest-value interpretation notes for common
