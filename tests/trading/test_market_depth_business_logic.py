@@ -812,6 +812,13 @@ def test_market_ticker_rewrites_invalid_symbol_selection_error() -> None:
     with patch("mtdata.core.market_depth.mt5") as mt5:
         mt5.symbol_select.return_value = False
         mt5.last_error.return_value = (-1, "Terminal: Call failed")
+        mt5.symbols_get.return_value = [
+            SimpleNamespace(
+                name="FAKESYMBOL.NAS",
+                description="Fake Symbol CFD",
+                path="Stocks\\NASDAQ",
+            )
+        ]
 
         out = _raw_market_ticker("FAKESYMBOL")
 
@@ -822,6 +829,13 @@ def test_market_ticker_rewrites_invalid_symbol_selection_error() -> None:
     assert out["request_id"]
     assert "symbols_list(search_term='FAKESYMBOL')" in out["remediation"]
     assert "symbols_search" not in out["remediation"]
+    assert out["details"]["did_you_mean"] == [
+        {
+            "symbol": "FAKESYMBOL.NAS",
+            "description": "Fake Symbol CFD",
+            "group": "Stocks\\NASDAQ",
+        }
+    ]
 
 
 def test_market_ticker_rejects_empty_quote_snapshot() -> None:

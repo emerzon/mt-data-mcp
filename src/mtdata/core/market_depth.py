@@ -232,15 +232,56 @@ def _market_ticker_error(
     *,
     code: str,
     remediation: Optional[str] = None,
+    details: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     payload = build_error_payload(
         message,
         code=code,
         operation="market_ticker",
+        details=details,
     )
     if remediation:
         payload["remediation"] = remediation
     return payload
+
+
+def _market_ticker_symbol_suggestions(
+    mt5_gateway: Any,
+    query: str,
+    *,
+    limit: int = 5,
+) -> list[Dict[str, str]]:
+    query_upper = str(query or "").strip().upper()
+    if not query_upper:
+        return []
+    try:
+        symbols = list(mt5_gateway.symbols_get() or [])
+    except Exception:
+        return []
+    matches: list[Any] = []
+    for info in symbols:
+        name = str(getattr(info, "name", "") or "")
+        description = str(getattr(info, "description", "") or "")
+        path = str(getattr(info, "path", "") or "")
+        if query_upper in f"{name} {description} {path}".upper():
+            matches.append(info)
+    matches.sort(
+        key=lambda info: (
+            not str(getattr(info, "name", "") or "").upper().startswith(query_upper),
+            str(getattr(info, "name", "") or "").casefold(),
+        )
+    )
+    suggestions: list[Dict[str, str]] = []
+    for info in matches[: max(1, int(limit))]:
+        suggestion = {"symbol": str(getattr(info, "name", "") or "")}
+        description = str(getattr(info, "description", "") or "").strip()
+        path = str(getattr(info, "path", "") or "").strip()
+        if description:
+            suggestion["description"] = description
+        if path:
+            suggestion["group"] = path
+        suggestions.append(suggestion)
+    return suggestions
 
 
 def _market_depth_disabled_payload() -> Dict[str, Any]:
@@ -548,6 +589,7 @@ def market_ticker(  # noqa: C901
             resolved_symbol = resolve_broker_symbol_name(symbol)
             started = time.perf_counter()
             if not mt5_gateway.symbol_select(resolved_symbol, True):
+                suggestions = _market_ticker_symbol_suggestions(mt5_gateway, symbol)
                 return _finalize(
                     _market_ticker_error(
                         _describe_symbol_select_error(resolved_symbol, mt5_gateway.last_error()),
@@ -556,11 +598,13 @@ def market_ticker(  # noqa: C901
                             f"Verify the broker symbol name with symbols_list(search_term='{symbol}') "
                             "or symbols_top_markets, then retry with an available MT5 symbol."
                         ),
+                        details={"symbol": symbol, "did_you_mean": suggestions},
                     )
                 )
 
             symbol_info = mt5_gateway.symbol_info(resolved_symbol)
             if symbol_info is None:
+                suggestions = _market_ticker_symbol_suggestions(mt5_gateway, symbol)
                 return _finalize(
                     _market_ticker_error(
                         f"Symbol {resolved_symbol} not found",
@@ -569,6 +613,7 @@ def market_ticker(  # noqa: C901
                             f"Verify the broker symbol name with symbols_list(search_term='{symbol}') "
                             "or symbols_describe."
                         ),
+                        details={"symbol": symbol, "did_you_mean": suggestions},
                     )
                 )
 
