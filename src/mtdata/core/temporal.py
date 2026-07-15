@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 
 from ..shared.constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
+from ..shared.symbols import is_probably_forex_symbol
 from ..shared.schema import DetailLiteral, TimeframeLiteral
 from ..shared.validators import (
     invalid_timeframe_error,
@@ -92,6 +93,18 @@ _SESSION_DEFINITION = {
         "new_york_close": "16:00",
     },
 }
+_FX_SESSION_DEFINITION = {
+    **_SESSION_DEFINITION,
+    "calendar": "fx",
+    "market_local_hours": {
+        "tokyo_open": "09:00",
+        "london_open": "08:00",
+        "london_close": "17:00",
+        "new_york_open": "08:00",
+        "new_york_close": "17:00",
+    },
+}
+_SESSION_DEFINITION["calendar"] = "equity"
 _TOKYO_TZ = ZoneInfo("Asia/Tokyo")
 _LONDON_TZ = ZoneInfo("Europe/London")
 _NEW_YORK_TZ = ZoneInfo("America/New_York")
@@ -177,7 +190,12 @@ def _session_boundary(
     ).astimezone(analysis_tz)
 
 
-def _session_boundaries_for_day(day: date, analysis_tz: Any) -> Dict[str, datetime]:
+def _session_boundaries_for_day(
+    day: date,
+    analysis_tz: Any,
+    session_calendar: str = "equity",
+) -> Dict[str, datetime]:
+    fx = session_calendar == "fx"
     return {
         "asia_open": _session_boundary(
             day,
@@ -196,21 +214,21 @@ def _session_boundaries_for_day(day: date, analysis_tz: Any) -> Dict[str, dateti
         "ny_open": _session_boundary(
             day,
             market_tz=_NEW_YORK_TZ,
-            hour=9,
-            minute=30,
+            hour=8 if fx else 9,
+            minute=0 if fx else 30,
             analysis_tz=analysis_tz,
         ),
         "london_close": _session_boundary(
             day,
             market_tz=_LONDON_TZ,
-            hour=16,
+            hour=17 if fx else 16,
             minute=0,
             analysis_tz=analysis_tz,
         ),
         "ny_close": _session_boundary(
             day,
             market_tz=_NEW_YORK_TZ,
-            hour=16,
+            hour=17 if fx else 16,
             minute=0,
             analysis_tz=analysis_tz,
         ),
@@ -222,6 +240,7 @@ def _market_session_label(
     *,
     analysis_tz: Any = timezone.utc,
     boundary_cache: Optional[Dict[date, Dict[str, datetime]]] = None,
+    session_calendar: str = "equity",
 ) -> str:
     if not isinstance(value, datetime):
         return "unknown"
@@ -239,7 +258,11 @@ def _market_session_label(
     ):
         boundaries = cache.get(day)
         if boundaries is None:
-            boundaries = _session_boundaries_for_day(day, analysis_tz or timezone.utc)
+            boundaries = _session_boundaries_for_day(
+                day,
+                analysis_tz or timezone.utc,
+                session_calendar,
+            )
             cache[day] = boundaries
         if boundaries["asia_open"] <= dt_analysis < boundaries["london_open"]:
             return "asia"
@@ -252,8 +275,9 @@ def _market_session_label(
     return "off_session"
 
 
-def _session_definition_for_clock(clock_name: str) -> Dict[str, Any]:
-    out = dict(_SESSION_DEFINITION)
+def _session_definition_for_clock(clock_name: str, session_calendar: str = "equity") -> Dict[str, Any]:
+    source = _FX_SESSION_DEFINITION if session_calendar == "fx" else _SESSION_DEFINITION
+    out = dict(source)
     out["clock"] = clock_name or "UTC"
     return out
 
@@ -875,6 +899,7 @@ def temporal_analyze(  # noqa: C901
     start: Optional[str] = None,
     end: Optional[str] = None,
     group_by: Literal["dow", "hour", "month", "session", "all"] = "dow",
+    session_calendar: Literal["auto", "fx", "equity"] = "auto",
     day_of_week: Optional[str] = None,
     month: Optional[str] = None,
     time_range: Optional[str] = None,
@@ -914,6 +939,7 @@ def temporal_analyze(  # noqa: C901
             "symbol": symbol,
             "timeframe": timeframe,
             "group_by": group_by,
+            "session_calendar": session_calendar,
             "return_mode": return_mode,
             "lookback": lookback,
             "start": start,
@@ -939,6 +965,18 @@ def temporal_analyze(  # noqa: C901
                     context=context,
                 )
             context["group_by"] = group_norm
+            session_calendar_value = str(session_calendar or "auto").strip().lower()
+            if session_calendar_value not in {"auto", "fx", "equity"}:
+                return _error_response(
+                    "Invalid session_calendar. Use: auto, fx, equity.",
+                    stage="validate",
+                    context=context,
+                )
+            resolved_session_calendar = (
+                "fx"
+                if session_calendar_value == "auto" and is_probably_forex_symbol(symbol)
+                else "equity" if session_calendar_value == "auto" else session_calendar_value
+            )
             lookback_defaulted = lookback is None
             try:
                 effective_lookback = (
@@ -1122,6 +1160,7 @@ def temporal_analyze(  # noqa: C901
                     value,
                     analysis_tz=analysis_tz,
                     boundary_cache=session_boundary_cache,
+                    session_calendar=resolved_session_calendar,
                 )
             )
 
@@ -1418,7 +1457,14 @@ def temporal_analyze(  # noqa: C901
             if min_bars_value is not None:
                 payload["min_bars_applied"] = int(min_bars_value or 0)
             if group_norm in {"session", "all"}:
-                payload["session_definition"] = _session_definition_for_clock(tz_name)
+                payload["session_calendar"] = resolved_session_calendar
+                payload["session_calendar_source"] = (
+                    "symbol_inference" if session_calendar_value == "auto" else "request"
+                )
+                payload["session_definition"] = _session_definition_for_clock(
+                    tz_name,
+                    resolved_session_calendar,
+                )
             if min_bars_value is not None:
                 filters["min_bars"] = {
                     "value": int(min_bars_value or 0),

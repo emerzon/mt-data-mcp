@@ -15,6 +15,7 @@ from mtdata.core.temporal import (
     _error_response,
     _fetch_rates,
     _normalize_group_by,
+    _market_session_label,
     _parse_month,
     _parse_time_range,
     _parse_time_token,
@@ -207,6 +208,14 @@ def test_temporal_analyze_signature_exposes_limit_offset():
     params = inspect.signature(_raw_temporal_analyze).parameters
     assert params["limit"].default is None
     assert params["offset"].default == 0
+
+
+def test_fx_session_calendar_uses_eight_am_new_york_open():
+    from datetime import datetime, timezone
+
+    value = datetime(2024, 1, 15, 13, 30, tzinfo=timezone.utc)
+    assert _market_session_label(value, session_calendar="fx") == "london_ny_overlap"
+    assert _market_session_label(value, session_calendar="equity") == "london"
 
 
 def test_default_temporal_lookback_scales_by_timeframe_and_group():
