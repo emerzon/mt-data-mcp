@@ -254,7 +254,7 @@ def test_trade_place_dry_run_market_preview_skips_order_send() -> None:
     mock_market.assert_not_called()
 
 
-def test_trade_place_dry_run_market_preview_allows_missing_sl_tp() -> None:
+def test_trade_place_dry_run_market_preview_rejects_missing_sl_tp() -> None:
     with patch("mtdata.core.trading._place_market_order") as mock_market, patch(
         "mtdata.core.trading.build_trade_place_dry_run_preview",
         return_value={"bid": 64999.0, "ask": 65001.0, "estimated_fill_price": 65001.0},
@@ -267,7 +267,10 @@ def test_trade_place_dry_run_market_preview_allows_missing_sl_tp() -> None:
             __cli_raw=True,
         )
 
-    assert out.get("success") is True
+    assert out.get("success") is False
+    assert out.get("error_code") == "trade_preview_validation_failed"
+    assert "missing_stop_loss, missing_take_profit" in out.get("error", "")
+    assert out.get("no_action_reason") == "dry_run_validation_failed"
     assert out.get("dry_run") is True
     assert out.get("require_sl_tp") is True
     assert "live submission with require_sl_tp=true would be rejected" in out.get(

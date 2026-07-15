@@ -1333,6 +1333,13 @@ def run_trade_place(  # noqa: C901
                 if sl_tp_error:
                     preview["preview_error"] = sl_tp_error
                     preview.setdefault("error_code", "invalid_protection_levels")
+            if local_blockers and not preview.get("preview_error"):
+                preview["success"] = False
+                preview["error_code"] = "trade_preview_validation_failed"
+                preview["error"] = (
+                    "Dry-run validation failed: " + ", ".join(local_blockers) + "."
+                )
+                preview["no_action_reason"] = "dry_run_validation_failed"
             preview_error = str(preview.get("preview_error") or "").strip()
             if preview_error:
                 preview["success"] = False
