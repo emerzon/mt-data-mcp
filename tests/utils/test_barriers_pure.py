@@ -6,9 +6,18 @@ from mtdata.utils.barriers import (
     build_barrier_kwargs,
     build_barrier_kwargs_from,
     normalize_trade_direction,
+    normalize_trade_direction_alias,
     resolve_barrier_prices,
     resolve_same_bar_probabilities,
 )
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [("buy", "long"), ("DOWN", "short"), ("sideways", "sideways"), (None, None)],
+)
+def test_normalize_trade_direction_alias_preserves_unknown_values(value, expected):
+    assert normalize_trade_direction_alias(value) == expected
 
 
 @pytest.mark.parametrize(

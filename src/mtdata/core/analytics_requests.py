@@ -7,7 +7,13 @@ from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-from ..shared.schema import DetailLiteral, TimeframeLiteral
+from ..shared.schema import (
+    DetailLiteral,
+    TimeframeLiteral,
+    normalize_optional_symbol,
+    normalize_required_symbol,
+    validate_complete_time_window,
+)
 
 
 class MarketMicrostructureRequest(BaseModel):
@@ -22,15 +28,11 @@ class MarketMicrostructureRequest(BaseModel):
     @field_validator("symbol")
     @classmethod
     def _symbol(cls, value: str) -> str:
-        value = str(value or "").strip().upper()
-        if not value:
-            raise ValueError("symbol is required")
-        return value
+        return normalize_required_symbol(value)
 
     @model_validator(mode="after")
     def _window(self) -> "MarketMicrostructureRequest":
-        if bool(self.start) != bool(self.end):
-            raise ValueError("start and end must be supplied together")
+        validate_complete_time_window(self.start, self.end)
         return self
 
 
@@ -51,7 +53,7 @@ class TradeExecutionQualityRequest(BaseModel):
     @field_validator("symbol")
     @classmethod
     def _optional_symbol(cls, value: Optional[str]) -> Optional[str]:
-        return str(value).strip().upper() if value else None
+        return normalize_optional_symbol(value)
 
     @field_validator("markout_seconds")
     @classmethod
@@ -63,8 +65,7 @@ class TradeExecutionQualityRequest(BaseModel):
 
     @model_validator(mode="after")
     def _window(self) -> "TradeExecutionQualityRequest":
-        if bool(self.start) != bool(self.end):
-            raise ValueError("start and end must be supplied together")
+        validate_complete_time_window(self.start, self.end)
         return self
 
 
@@ -119,15 +120,11 @@ class StrategyValidateRequest(BaseModel):
     @field_validator("symbol")
     @classmethod
     def _symbol(cls, value: str) -> str:
-        value = str(value or "").strip().upper()
-        if not value:
-            raise ValueError("symbol is required")
-        return value
+        return normalize_required_symbol(value)
 
     @model_validator(mode="after")
     def _window(self) -> "StrategyValidateRequest":
-        if bool(self.start) != bool(self.end):
-            raise ValueError("start and end must be supplied together")
+        validate_complete_time_window(self.start, self.end)
         return self
 
 

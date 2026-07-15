@@ -36,17 +36,32 @@ class _IdempotencyEntry:
             self.ready_event.set()
 
 
-def _entry_duplicate_payload(entry: _IdempotencyEntry) -> Dict[str, Any]:
+def _build_duplicate_payload(
+    key: str,
+    request_signature: Optional[str],
+    *,
+    in_progress: bool,
+    original_outcome: Any = None,
+) -> Dict[str, Any]:
     payload: Dict[str, Any] = {
         "duplicate": True,
-        "idempotency_key": entry.key,
-        "request_signature": entry.request_signature,
+        "idempotency_key": key,
+        "request_signature": request_signature,
     }
-    if entry.ready_event.is_set():
-        payload["original_outcome"] = entry.outcome
-    else:
+    if in_progress:
         payload["in_progress"] = True
+    else:
+        payload["original_outcome"] = original_outcome
     return payload
+
+
+def _entry_duplicate_payload(entry: _IdempotencyEntry) -> Dict[str, Any]:
+    return _build_duplicate_payload(
+        entry.key,
+        entry.request_signature,
+        in_progress=not entry.ready_event.is_set(),
+        original_outcome=entry.outcome,
+    )
 
 
 class IdempotencyStore:
@@ -257,16 +272,13 @@ class SQLiteIdempotencyStore:
 
     @staticmethod
     def _duplicate_payload(row: sqlite3.Row) -> Dict[str, Any]:
-        payload: Dict[str, Any] = {
-            "duplicate": True,
-            "idempotency_key": row["key"],
-            "request_signature": row["request_signature"],
-        }
-        if row["status"] == "complete":
-            payload["original_outcome"] = json.loads(row["outcome_json"])
-        else:
-            payload["in_progress"] = True
-        return payload
+        complete = row["status"] == "complete"
+        return _build_duplicate_payload(
+            row["key"],
+            row["request_signature"],
+            in_progress=not complete,
+            original_outcome=json.loads(row["outcome_json"]) if complete else None,
+        )
 
     def check(self, key: Optional[str]) -> Optional[Dict[str, Any]]:
         if key is None:

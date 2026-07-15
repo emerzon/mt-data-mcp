@@ -29,6 +29,44 @@ from .parameter_contracts import PARAMETER_HELP
 _logger = logging.getLogger(__name__)
 
 
+def normalize_required_symbol(value: Any, *, error_message: str = "symbol is required") -> str:
+    """Normalize a required symbol while allowing callers to preserve wording."""
+    normalized = str(value or "").strip().upper()
+    if not normalized:
+        raise ValueError(error_message)
+    return normalized
+
+
+def normalize_optional_symbol(value: Any) -> Optional[str]:
+    """Normalize an optional symbol to uppercase, preserving missing values."""
+    if not value:
+        return None
+    return str(value).strip().upper()
+
+
+def validate_complete_time_window(
+    start: Any,
+    end: Any,
+    *,
+    error_message: str = "start and end must be supplied together",
+) -> None:
+    """Require start and end to be supplied together."""
+    if bool(start) != bool(end):
+        raise ValueError(error_message)
+
+
+def validate_as_of_time_window(
+    as_of: Any,
+    start: Any,
+    end: Any,
+    *,
+    error_message: str = "as_of cannot be combined with start/end",
+) -> None:
+    """Reject an as-of anchor combined with an explicit start/end range."""
+    if as_of and (start or end):
+        raise ValueError(error_message)
+
+
 def reject_removed_field(values: Any, *, field_name: str, replacement: str) -> Any:
     if isinstance(values, dict) and field_name in values:
         raise ValueError(f"{field_name} was removed; use {replacement}")

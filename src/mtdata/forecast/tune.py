@@ -260,6 +260,7 @@ def default_search_space(method: Optional[str] = None, methods: Optional[List[st
 
 
 Metric = str
+_SEARCH_SPACE_SHARED_KEY = "_shared"
 
 
 def _is_flat_search_space(sp: Dict[str, Any]) -> bool:
@@ -267,6 +268,27 @@ def _is_flat_search_space(sp: Dict[str, Any]) -> bool:
         isinstance(v, dict) and ('type' in v or 'min' in v or 'max' in v or 'choices' in v)
         for v in sp.values()
     )
+
+
+def _resolve_method_search_space(
+    raw: Dict[str, Any],
+    *,
+    method_scoped: bool,
+    method_name: Optional[str],
+) -> Dict[str, Any]:
+    """Return the effective parameter space for one forecast method."""
+    if not method_scoped:
+        space = dict(raw)
+        space.pop("method", None)
+        return space
+
+    resolved: Dict[str, Any] = {}
+    shared = raw.get(_SEARCH_SPACE_SHARED_KEY)
+    if isinstance(shared, dict):
+        resolved.update(shared)
+    if method_name and isinstance(raw.get(method_name), dict):
+        resolved.update(raw[method_name])
+    return resolved
 
 
 def _suggest_optuna_param(trial: Any, name: str, space: Dict[str, Any]) -> Any:
@@ -517,23 +539,9 @@ def optuna_search_forecast_params(  # noqa: C901
 
     raw = dict(search_space or {})
     method_scoped = not _is_flat_search_space(raw)
-    shared_key = '_shared'
     method_names_from_space: List[str] = []
     if method_scoped:
-        method_names_from_space = [k for k in raw.keys() if k != shared_key]
-
-    def _spaces_for(mname: Optional[str]) -> Dict[str, Any]:
-        if not method_scoped:
-            sp = dict(raw)
-            sp.pop('method', None)
-            return sp
-        out: Dict[str, Any] = {}
-        shared = raw.get(shared_key) if isinstance(raw.get(shared_key), dict) else {}
-        if isinstance(shared, dict):
-            out.update(shared)
-        if mname and isinstance(raw.get(mname), dict):
-            out.update(raw.get(mname))
-        return out
+        method_names_from_space = [k for k in raw.keys() if k != _SEARCH_SPACE_SHARED_KEY]
 
     method_choices: List[str] = []
     if isinstance(methods, (list, tuple)) and methods:
@@ -626,7 +634,11 @@ def optuna_search_forecast_params(  # noqa: C901
             if sel_method is not None:
                 cand['method'] = sel_method
 
-        pspaces = _spaces_for(str(sel_method) if sel_method else None)
+        pspaces = _resolve_method_search_space(
+            raw,
+            method_scoped=method_scoped,
+            method_name=str(sel_method) if sel_method else None,
+        )
         for k, spec in pspaces.items():
             cand[k] = _suggest_optuna_param(trial, k, spec or {})
 
@@ -793,30 +805,10 @@ def genetic_search_forecast_params(  # noqa: C901
     raw = dict(search_space or {})
 
     # Detect method-scoped search space vs flat
-    def _is_flat(sp: Dict[str, Any]) -> bool:
-        return any(isinstance(v, dict) and ('type' in v or 'min' in v or 'max' in v or 'choices' in v) for v in sp.values())
-
-    method_scoped = not _is_flat(raw)
-    shared_key = '_shared'
+    method_scoped = not _is_flat_search_space(raw)
     method_names_from_space: List[str] = []
     if method_scoped:
-        method_names_from_space = [k for k in raw.keys() if k != shared_key]
-
-    # Helper to get param spaces for a given method
-    def _spaces_for(mname: Optional[str]) -> Dict[str, Any]:
-        if not method_scoped:
-            # Flat space; drop method gene if present
-            sp = dict(raw)
-            sp.pop('method', None)
-            return sp
-        # Merge shared + method-specific
-        out: Dict[str, Any] = {}
-        shared = raw.get(shared_key) if isinstance(raw.get(shared_key), dict) else {}
-        if isinstance(shared, dict):
-            out.update(shared)
-        if mname and isinstance(raw.get(mname), dict):
-            out.update(raw.get(mname))
-        return out
+        method_names_from_space = [k for k in raw.keys() if k != _SEARCH_SPACE_SHARED_KEY]
 
     # Build method choices if searching over methods
     method_choices: List[str] = []
@@ -846,7 +838,11 @@ def genetic_search_forecast_params(  # noqa: C901
         else:
             sel_method = method  # fixed
         # Sample params for selected method
-        pspaces = _spaces_for(str(sel_method) if sel_method else None)
+        pspaces = _resolve_method_search_space(
+            raw,
+            method_scoped=method_scoped,
+            method_name=str(sel_method) if sel_method else None,
+        )
         for k, spec in pspaces.items():
             cand[k] = _sample_param(spec or {}, rng)
         pop.append(cand)
@@ -918,7 +914,11 @@ def genetic_search_forecast_params(  # noqa: C901
                 if child_method is not None:
                     child['method'] = child_method
             # Crossover parameters relevant to chosen method
-            pspaces = _spaces_for(str(child_method) if child_method else None)
+            pspaces = _resolve_method_search_space(
+                raw,
+                method_scoped=method_scoped,
+                method_name=str(child_method) if child_method else None,
+            )
             child.update(_crossover_for_method(a, b, pspaces, rng) if rng.random() < crossover_rate else {})
             # Mutation for parameters of chosen method
             for k, spec in pspaces.items():

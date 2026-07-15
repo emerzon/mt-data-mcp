@@ -6,7 +6,7 @@ from typing import Any, Dict, Literal, Optional, Union
 from pydantic import AliasChoices, BaseModel, Field, field_validator
 
 from ...shared.schema import DetailLiteral, TimeframeLiteral
-from ...utils.barriers import normalize_trade_direction
+from ...utils.barriers import normalize_trade_direction_alias
 from . import validation
 from .time import ExpirationValue
 from .validation import OrderTypeInput
@@ -21,15 +21,6 @@ def _normalize_trade_side_alias(value: Optional[str]) -> Optional[str]:
     if value is None:
         return None
     normalized, error = validation._normalize_trade_side_filter(value)
-    if error is None and normalized is not None:
-        return normalized
-    return value
-
-
-def _normalize_trade_direction_alias(value: Optional[str]) -> Optional[str]:
-    if value is None:
-        return None
-    normalized, error = normalize_trade_direction(value)
     if error is None and normalized is not None:
         return normalized
     return value
@@ -405,7 +396,7 @@ class TradeRiskAnalyzeRequest(BaseModel):
     @field_validator("direction", mode="before")
     @classmethod
     def _normalize_direction(cls, value: Optional[str]) -> Optional[str]:
-        return _normalize_trade_direction_alias(value)
+        return normalize_trade_direction_alias(value)
 
 
 class TradeVarCvarRequest(BaseModel):

@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from ipaddress import ip_address
 from typing import Any, Literal, Optional
 
+from .env import get_bool_env
+
 TransportLiteral = Literal["stdio", "sse", "streamable-http"]
 
 
@@ -25,11 +27,7 @@ def _get_csv_env(name: str, default: tuple[str, ...]) -> tuple[str, ...]:
     return parts or default
 
 
-def _get_bool_env(name: str, default: bool = False) -> bool:
-    raw = os.getenv(name)
-    if raw is None:
-        return bool(default)
-    return str(raw).strip().lower() in {"1", "true", "yes", "on"}
+_get_bool_env = get_bool_env
 
 
 def _normalize_transport(value: Optional[str], *, default: TransportLiteral = "sse") -> TransportLiteral:

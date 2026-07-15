@@ -7,6 +7,8 @@ import warnings
 from datetime import datetime, timezone
 from typing import Optional
 
+from .env import get_bool_env
+
 try:
     import pytz  # type: ignore
 except Exception:
@@ -108,11 +110,7 @@ def _suppress_noisy_third_party_logs() -> None:
 _suppress_noisy_third_party_logs()
 
 
-def _env_bool(name: str, default: bool = False) -> bool:
-    raw = os.getenv(name)
-    if raw is None:
-        return bool(default)
-    return str(raw).strip().lower() in {"1", "true", "yes", "on"}
+_env_bool = get_bool_env
 
 
 def _env_int(name: str, default: int) -> int:

@@ -10,24 +10,16 @@ from ..shared.schema import (
     ForecastLibraryLiteral,
     TimeframeLiteral,
     reject_removed_field,
+    validate_as_of_time_window,
 )
 from ..utils.barriers import (
-    normalize_trade_direction,
+    normalize_trade_direction_alias,
     validate_barrier_unit_family_exclusivity,
 )
 
 MAX_FORECAST_HORIZON = 500
 MAX_BACKTEST_STEPS = 200
 MAX_BACKTEST_SPACING = 10_000
-
-
-def _normalize_trade_direction_alias(value: Optional[str]) -> Optional[str]:
-    if value is None:
-        return None
-    normalized, error = normalize_trade_direction(value)
-    if error is None and normalized is not None:
-        return normalized
-    return value
 
 
 class ForecastGenerateRequest(BaseModel):
@@ -82,8 +74,7 @@ class ForecastGenerateRequest(BaseModel):
 
     @model_validator(mode="after")
     def _validate_time_window(self) -> "ForecastGenerateRequest":
-        if self.as_of and (self.start or self.end):
-            raise ValueError("as_of cannot be combined with start/end")
+        validate_as_of_time_window(self.as_of, self.start, self.end)
         return self
 
 
@@ -282,7 +273,7 @@ class ForecastBarrierProbRequest(BaseModel):
     @field_validator("direction", mode="before")
     @classmethod
     def _normalize_direction(cls, value: Optional[str]) -> Optional[str]:
-        return _normalize_trade_direction_alias(value)
+        return normalize_trade_direction_alias(value)
 
 
 class ForecastOptimizeHintsRequest(BaseModel):
@@ -350,7 +341,7 @@ class ForecastBarrierOptimizeRequest(BaseModel):
     @field_validator("direction", mode="before")
     @classmethod
     def _normalize_direction(cls, value: Optional[str]) -> Optional[str]:
-        return _normalize_trade_direction_alias(value)
+        return normalize_trade_direction_alias(value)
 
 
 class ForecastVolatilityEstimateRequest(BaseModel):
@@ -368,6 +359,5 @@ class ForecastVolatilityEstimateRequest(BaseModel):
 
     @model_validator(mode="after")
     def _validate_time_window(self) -> "ForecastVolatilityEstimateRequest":
-        if self.as_of and (self.start or self.end):
-            raise ValueError("as_of cannot be combined with start/end")
+        validate_as_of_time_window(self.as_of, self.start, self.end)
         return self

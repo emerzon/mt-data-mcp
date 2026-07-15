@@ -86,6 +86,16 @@ def normalize_trade_direction(direction: Any) -> Tuple[Optional[Literal["long", 
     return None, "Invalid direction. Use long/short (or up/down, buy/sell)."
 
 
+def normalize_trade_direction_alias(value: Optional[str]) -> Optional[str]:
+    """Normalize known direction aliases while preserving unknown input for validation."""
+    if value is None:
+        return None
+    normalized, error = normalize_trade_direction(value)
+    if error is None and normalized is not None:
+        return normalized
+    return value
+
+
 def barrier_prices_are_valid(
     *,
     price: Any,

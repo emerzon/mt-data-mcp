@@ -14,11 +14,12 @@ from pydantic import (
 )
 
 from ...shared.schema import (
-    DetailLiteral,
     DenoiseSpec,
+    DetailLiteral,
     IndicatorSpec,
     SimplifySpec,
     TimeframeLiteral,
+    normalize_required_symbol,
     reject_removed_field,
 )
 from ...utils.coercion import coerce_finite_float
@@ -295,6 +296,22 @@ def _validate_non_negative(value: Optional[float], name: str) -> Optional[float]
     return value_f
 
 
+def _validate_required_non_negative(value: float, name: str) -> float:
+    validated = _validate_non_negative(value, name)
+    if validated is None:
+        raise ValueError(f"{name} must be greater than or equal to 0.")
+    return validated
+
+
+def _validate_non_negative_default_zero(value: float, name: str) -> float:
+    validated = _validate_non_negative(value, name)
+    return 0.0 if validated is None else float(validated)
+
+
+def _validate_positive_threshold(value: float) -> float:
+    return _validate_positive_float(value, "threshold_value")
+
+
 def _validate_positive_float(value: float, name: str) -> float:
     value_f = coerce_finite_float(value)
     if value_f is None:
@@ -448,9 +465,10 @@ class DataFetchCandlesRequest(_DetailNormalizedRequest):
     @field_validator("symbol")
     @classmethod
     def _validate_symbol(cls, value: str) -> str:
-        if not value or not str(value).strip():
-            raise ValueError("Symbol is required and cannot be empty")
-        return str(value).strip().upper()
+        return normalize_required_symbol(
+            value,
+            error_message="Symbol is required and cannot be empty",
+        )
 
     @field_validator("limit")
     @classmethod
@@ -485,9 +503,10 @@ class DataFetchTicksRequest(_DetailNormalizedRequest):
     @field_validator("symbol")
     @classmethod
     def _validate_symbol(cls, value: str) -> str:
-        if not value or not str(value).strip():
-            raise ValueError("Symbol is required and cannot be empty")
-        return str(value).strip().upper()
+        return normalize_required_symbol(
+            value,
+            error_message="Symbol is required and cannot be empty",
+        )
 
     @model_validator(mode="before")
     @classmethod
@@ -514,10 +533,7 @@ class WaitCandleRequest(BaseModel):
     @field_validator("buffer_seconds")
     @classmethod
     def _validate_buffer_seconds(cls, value: float) -> float:
-        validated = _validate_non_negative(value, "buffer_seconds")
-        if validated is None:
-            raise ValueError("buffer_seconds must be greater than or equal to 0.")
-        return validated
+        return _validate_required_non_negative(value, "buffer_seconds")
 
     @field_validator("max_wait_seconds")
     @classmethod
@@ -607,7 +623,7 @@ class PriceChangeEventSpec(BaseModel):
     @field_validator("threshold_value")
     @classmethod
     def _validate_threshold_value(cls, value: float) -> float:
-        return _validate_positive_float(value, "threshold_value")
+        return _validate_positive_threshold(value)
 
 
 class VolumeSpikeEventSpec(BaseModel):
@@ -624,7 +640,7 @@ class VolumeSpikeEventSpec(BaseModel):
     @field_validator("threshold_value")
     @classmethod
     def _validate_threshold_value(cls, value: float) -> float:
-        return _validate_positive_float(value, "threshold_value")
+        return _validate_positive_threshold(value)
 
 
 class TickCountSpikeEventSpec(BaseModel):
@@ -640,7 +656,7 @@ class TickCountSpikeEventSpec(BaseModel):
     @field_validator("threshold_value")
     @classmethod
     def _validate_threshold_value(cls, value: float) -> float:
-        return _validate_positive_float(value, "threshold_value")
+        return _validate_positive_threshold(value)
 
 
 class SpreadSpikeEventSpec(BaseModel):
@@ -656,7 +672,7 @@ class SpreadSpikeEventSpec(BaseModel):
     @field_validator("threshold_value")
     @classmethod
     def _validate_threshold_value(cls, value: float) -> float:
-        return _validate_positive_float(value, "threshold_value")
+        return _validate_positive_threshold(value)
 
 
 class TickCountDroughtEventSpec(BaseModel):
@@ -672,7 +688,7 @@ class TickCountDroughtEventSpec(BaseModel):
     @field_validator("threshold_value")
     @classmethod
     def _validate_threshold_value(cls, value: float) -> float:
-        return _validate_positive_float(value, "threshold_value")
+        return _validate_positive_threshold(value)
 
 
 class RangeExpansionEventSpec(BaseModel):
@@ -689,7 +705,7 @@ class RangeExpansionEventSpec(BaseModel):
     @field_validator("threshold_value")
     @classmethod
     def _validate_threshold_value(cls, value: float) -> float:
-        return _validate_positive_float(value, "threshold_value")
+        return _validate_positive_threshold(value)
 
 
 class PriceTouchLevelEventSpec(BaseModel):
@@ -703,8 +719,7 @@ class PriceTouchLevelEventSpec(BaseModel):
     @field_validator("tolerance")
     @classmethod
     def _validate_tolerance(cls, value: float) -> float:
-        validated = _validate_non_negative(value, "tolerance")
-        return 0.0 if validated is None else float(validated)
+        return _validate_non_negative_default_zero(value, "tolerance")
 
 
 class PriceBreakLevelEventSpec(BaseModel):
@@ -719,8 +734,7 @@ class PriceBreakLevelEventSpec(BaseModel):
     @field_validator("tolerance")
     @classmethod
     def _validate_tolerance(cls, value: float) -> float:
-        validated = _validate_non_negative(value, "tolerance")
-        return 0.0 if validated is None else float(validated)
+        return _validate_non_negative_default_zero(value, "tolerance")
 
     @field_validator("confirm_ticks")
     @classmethod
@@ -753,8 +767,7 @@ class PendingNearFillEventSpec(_WaitAccountEventBase):
     @field_validator("distance")
     @classmethod
     def _validate_distance(cls, value: float) -> float:
-        validated = _validate_non_negative(value, "distance")
-        return 0.0 if validated is None else float(validated)
+        return _validate_non_negative_default_zero(value, "distance")
 
 
 class StopThreatEventSpec(_WaitAccountEventBase):
@@ -765,8 +778,7 @@ class StopThreatEventSpec(_WaitAccountEventBase):
     @field_validator("distance")
     @classmethod
     def _validate_distance(cls, value: float) -> float:
-        validated = _validate_non_negative(value, "distance")
-        return 0.0 if validated is None else float(validated)
+        return _validate_non_negative_default_zero(value, "distance")
 
 
 WaitWatchEventSpec = Annotated[
@@ -837,10 +849,7 @@ class WaitEventRequest(BaseModel):
     @field_validator("buffer_seconds")
     @classmethod
     def _validate_buffer_seconds(cls, value: float) -> float:
-        validated = _validate_non_negative(value, "buffer_seconds")
-        if validated is None:
-            raise ValueError("buffer_seconds must be greater than or equal to 0.")
-        return validated
+        return _validate_required_non_negative(value, "buffer_seconds")
 
     @field_validator("poll_interval_seconds")
     @classmethod
