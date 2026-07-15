@@ -39,8 +39,8 @@ def test_library_capabilities_use_standardized_schema_for_dynamic_models(monkeyp
     stats_caps = caps.get_library_capabilities("statsforecast")
     assert stats_caps[0]["execution"]["library"] == "statsforecast"
     assert stats_caps[0]["selector"]["key"] == "model_name"
-    assert stats_caps[0]["supports"]["ci"] is False
-    assert "runtime-dependent" in stats_caps[0]["notes"]
+    assert stats_caps[0]["supports"]["ci"] is True
+    assert "unavailable at runtime" in stats_caps[0]["notes"]
 
     sktime_caps = caps.get_library_capabilities(
         "sktime",
@@ -50,8 +50,8 @@ def test_library_capabilities_use_standardized_schema_for_dynamic_models(monkeyp
     )
     assert sktime_caps[0]["execution"]["method"] == "sktime"
     assert sktime_caps[0]["selector"]["value"] == "sktime.forecasting.theta.ThetaForecaster"
-    assert sktime_caps[0]["supports"]["ci"] is False
-    assert "estimator-dependent" in sktime_caps[0]["notes"]
+    assert sktime_caps[0]["supports"]["ci"] is True
+    assert "unavailable at runtime" in sktime_caps[0]["notes"]
 
 
 def test_pretrained_capabilities_include_registry_backed_read_surface_metadata():

@@ -278,14 +278,14 @@ def _statsforecast_capabilities() -> List[Dict[str, Any]]:
             category="statsforecast",
             description=_get_statsforecast_model_description(attr),
             available=True,
-            supports={"price": True, "return": True, "volatility": True, "ci": False},
+            supports={"price": True, "return": True, "volatility": True, "ci": True},
             selector_key="model_name",
             selector_value=attr,
             selector_mode="class_name",
             source="library_discovery",
             notes=(
-                "Confidence intervals are runtime-dependent for discovered "
-                "StatsForecast classes and are not advertised without a curated contract."
+                "Confidence intervals are requested through the StatsForecast adapter; "
+                "individual models may report them unavailable at runtime."
             ),
         )
         capabilities.append(descriptor.to_record())
@@ -321,15 +321,15 @@ def _sktime_capabilities(
             category="sktime",
             description=f"sktime forecaster {class_name}.",
             available=True,
-            supports={"price": True, "return": True, "volatility": True, "ci": False},
+            supports={"price": True, "return": True, "volatility": True, "ci": True},
             aliases=(class_name,),
             selector_key="estimator",
             selector_value=dotted_path,
             selector_mode="dotted_path",
             source="library_discovery",
             notes=(
-                "Prediction intervals are estimator-dependent and are not advertised "
-                "for dynamically discovered sktime classes."
+                "Prediction intervals are requested through the sktime adapter; "
+                "individual estimators may report them unavailable at runtime."
             ),
         )
         capabilities.append(descriptor.to_record())
