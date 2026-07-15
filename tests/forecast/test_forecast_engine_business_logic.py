@@ -653,12 +653,12 @@ def test_forecast_engine_applies_denoise_to_prefetched_raw_history(monkeypatch):
     monkeypatch.setattr(fe, "ForecastRegistry", FakeRegistry)
     monkeypatch.setattr(fe, "get_symbol_info_cached", lambda symbol: None)
 
-    def fake_apply_denoise(df, spec, default_when=None):
+    def fakeapply_denoise(df, spec, default_when=None):
         df["close_dn"] = df["close"] * 10.0
         return ["close_dn"]
 
     monkeypatch.setattr(fe, "_normalize_denoise_spec", lambda spec, default_when=None: {"method": "ema", "columns": ["close"]})
-    monkeypatch.setattr(fe, "_apply_denoise", fake_apply_denoise)
+    monkeypatch.setattr(fe, "apply_denoise", fakeapply_denoise)
 
     df = _df(20)
     out = fe.forecast_engine(
@@ -1510,3 +1510,4 @@ def test_forecast_engine_ensemble_paths(monkeypatch):
         prefetched_df=_df(20),
     )
     assert out["error"] == "Ensemble failed: no component forecasts"
+

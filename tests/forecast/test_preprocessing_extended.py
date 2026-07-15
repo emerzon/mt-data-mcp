@@ -623,7 +623,7 @@ class TestApplyPreprocessing:
         """Lines 612-622: denoise applied and _dn column returned."""
         df = _make_df(20)
         with patch("mtdata.forecast.forecast_preprocessing._normalize_denoise_spec", return_value={"method": "ema"}), \
-             patch("mtdata.forecast.forecast_preprocessing._apply_denoise", return_value=["close_dn"]):
+             patch("mtdata.forecast.forecast_preprocessing.apply_denoise", return_value=["close_dn"]):
             col = apply_preprocessing(df, "price", "close", {"method": "ema"})
         assert col == "close_dn"
 
@@ -638,7 +638,7 @@ class TestApplyPreprocessing:
         """Lines 619-620: apply raises."""
         df = _make_df(20)
         with patch("mtdata.forecast.forecast_preprocessing._normalize_denoise_spec", return_value={"m": "x"}), \
-             patch("mtdata.forecast.forecast_preprocessing._apply_denoise", side_effect=RuntimeError):
+             patch("mtdata.forecast.forecast_preprocessing.apply_denoise", side_effect=RuntimeError):
             col = apply_preprocessing(df, "price", "close", {"method": "ema"})
         assert col == "close"
 
@@ -646,6 +646,7 @@ class TestApplyPreprocessing:
         """Line 621: _dn column not in added list."""
         df = _make_df(20)
         with patch("mtdata.forecast.forecast_preprocessing._normalize_denoise_spec", return_value={"m": "x"}), \
-             patch("mtdata.forecast.forecast_preprocessing._apply_denoise", return_value=["other_dn"]):
+             patch("mtdata.forecast.forecast_preprocessing.apply_denoise", return_value=["other_dn"]):
             col = apply_preprocessing(df, "price", "close", {"method": "ema"})
         assert col == "close"
+

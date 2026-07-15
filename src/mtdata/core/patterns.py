@@ -31,7 +31,7 @@ from ..patterns.harmonic import (
 from ..shared.constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
 from ..shared.validators import invalid_timeframe_error
 from ..utils.coercion import UNPARSED_BOOL, parse_bool_like
-from ..utils.denoise import _apply_denoise as _apply_denoise_util
+from ..utils.denoise import apply_denoise as apply_denoise_util
 from ..utils.denoise import normalize_denoise_spec as _normalize_denoise_spec
 from ..utils.mt5 import (
     _mt5_copy_rates_from,
@@ -212,7 +212,7 @@ def _fetch_pattern_data(
         try:
             dn = _normalize_denoise_spec(denoise, default_when='pre_ti')
             if dn:
-                _apply_denoise_util(df, dn, default_when='pre_ti')
+                apply_denoise_util(df, dn, default_when='pre_ti')
         except Exception as exc:
             warning = f"Denoise failed for pattern detection on {symbol} {timeframe}; raw prices were used."
             logger.warning(warning, exc_info=True)
@@ -1474,3 +1474,4 @@ def patterns_detect(
         detail=request.detail,
         func=_run,
     )
+

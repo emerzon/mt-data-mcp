@@ -1521,8 +1521,8 @@ def forecast_barrier_optimize(  # noqa: C901
         base_col = 'close'
         if denoise:
             try:
-                from ..utils.denoise import _apply_denoise as _apply_denoise_util
-                added = _apply_denoise_util(df, denoise, default_when='pre_ti')
+                from ..utils.denoise import apply_denoise as apply_denoise_util
+                added = apply_denoise_util(df, denoise, default_when='pre_ti')
                 if f"{base_col}_dn" in added:
                     base_col = f"{base_col}_dn"
             except Exception as ex:
@@ -3726,3 +3726,4 @@ def forecast_barrier_optimize(  # noqa: C901
             "error_type": type(e).__name__,
             "traceback_summary": traceback.format_exc()[-500:],
         }
+

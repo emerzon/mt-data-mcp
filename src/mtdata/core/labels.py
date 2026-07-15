@@ -25,7 +25,7 @@ from ..utils.barriers import (
 from ..utils.barriers import (
     resolve_barrier_prices as _resolve_barrier_prices,
 )
-from ..utils.denoise import _resolve_denoise_base_col
+from ..utils.denoise import resolve_denoise_base_col
 from ..utils.mt5 import MT5ConnectionError, ensure_mt5_connection_or_raise
 from ..utils.time import _format_time_minimal
 from ._mcp_instance import mcp
@@ -383,7 +383,7 @@ def labels_triple_barrier(
             history_bars_used = int(len(df))
             if len(df) < horizon_bars + 2:
                 return {"error": "Insufficient history for labeling"}
-            base_col = _resolve_denoise_base_col(
+            base_col = resolve_denoise_base_col(
                 df, denoise, base_col="close", default_when="pre_ti"
             )
             closes = df[base_col].astype(float).to_numpy()
@@ -841,3 +841,4 @@ def labels_triple_barrier(
         detail=detail,
         func=_run,
     )
+

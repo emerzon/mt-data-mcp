@@ -9,7 +9,7 @@ from typing import Any, Callable, Dict, List, Sequence, Tuple
 import numpy as np
 import pandas as pd
 
-from ..utils.denoise import _denoise_series
+from ..utils.denoise import denoise_series
 
 PivotBuilder = Callable[[np.ndarray, float, int], Sequence[int]]
 
@@ -94,7 +94,7 @@ def _apply_candidate_spec(close: np.ndarray, spec: Dict[str, Any]) -> np.ndarray
     if method == "none":
         return np.asarray(close, dtype=float).copy()
     log_close = pd.Series(np.log(np.asarray(close, dtype=float)))
-    filtered = _denoise_series(
+    filtered = denoise_series(
         log_close,
         method=method,
         params=dict(spec.get("params") or {}),
@@ -408,3 +408,4 @@ def resolve_elliott_adaptation(
 
 
 __all__ = ["ElliottAdaptation", "resolve_elliott_adaptation"]
+

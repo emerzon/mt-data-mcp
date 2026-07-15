@@ -275,7 +275,7 @@ class TestBarrierHitProbabilities(_BarrierTestBase):
         self._set_flat_history(1.0, bars=200)
         paths = self._sample_paths()
         with patch(f'{_BARRIER_PROB_ROOT}._simulate_gbm_mc') as mock_sim, \
-             patch("mtdata.utils.denoise._apply_denoise", side_effect=RuntimeError("bad denoise")):
+             patch("mtdata.utils.denoise.apply_denoise", side_effect=RuntimeError("bad denoise")):
             mock_sim.return_value = {"price_paths": paths}
             result = forecast_barrier_hit_probabilities(
                 symbol="EURUSD",
@@ -384,3 +384,4 @@ class TestBarrierHitProbabilities(_BarrierTestBase):
 
 if __name__ == '__main__':
     unittest.main()
+

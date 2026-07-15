@@ -438,7 +438,7 @@ def _get_regime_detect():
 
 
 _FETCH = "mtdata.core.regime.api._fetch_history"
-_DENOISE = "mtdata.core.regime.api._resolve_denoise_base_col"
+_DENOISE = "mtdata.core.regime.api.resolve_denoise_base_col"
 _FMT = "mtdata.core.regime.api._format_time_minimal"
 
 
@@ -1459,3 +1459,4 @@ class TestRegimeDetectEdgeCases:
         fn = _get_regime_detect()
         res = fn("EURUSD", limit=12, method="bocpd", target="return")
         assert res["error"] == "Insufficient finite observations after filter"
+

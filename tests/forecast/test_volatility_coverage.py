@@ -922,7 +922,7 @@ class TestForecastVolatilityAsOf:
 class TestForecastVolatilityDenoise:
     def test_denoise_spec_passed(self):
         with _mock_vol_env():
-            with patch(f"{MOD}._apply_denoise") as mock_dn, \
+            with patch(f"{MOD}.apply_denoise") as mock_dn, \
                  patch(f"{MOD}._normalize_denoise_spec",
                        return_value={"method": "wavelet",
                                      "columns": ["close"]}):
@@ -1390,9 +1390,9 @@ class TestGeneralMethodErrors:
             assert "error" in r and "proxy" in r["error"].lower()
 
     def test_denoise_applied(self):
-        """Line 430: _apply_denoise called for general methods."""
+        """Line 430: apply_denoise called for general methods."""
         with _mock_env():
-            with patch(f"{MOD}._apply_denoise") as mock_dn:
+            with patch(f"{MOD}.apply_denoise") as mock_dn:
                 r = forecast_volatility("EURUSD", "H1", 5, method="theta",
                                         proxy="squared_return",
                                         denoise={"method": "wavelet"})
@@ -1680,7 +1680,7 @@ class TestHarRvSecondSection:
         """A denoise spec is applied during the HAR-RV second section."""
         intraday = _make_rates_ext(15000, bar_secs=300, seed=99)
         with _mock_env(rates_side_effect=[intraday]):
-            with patch(f"{MOD}._apply_denoise"):
+            with patch(f"{MOD}.apply_denoise"):
                 r = forecast_volatility("EURUSD", "H1", 5, method="har_rv",
                                         denoise={"method": "wavelet"})
                 assert isinstance(r, dict)
@@ -1689,7 +1689,7 @@ class TestHarRvSecondSection:
         """A denoise error in the HAR-RV second section is silently ignored."""
         intraday = _make_rates_ext(15000, bar_secs=300, seed=99)
         with _mock_env(rates_side_effect=[intraday]):
-            with patch(f"{MOD}._apply_denoise", side_effect=RuntimeError("x")):
+            with patch(f"{MOD}.apply_denoise", side_effect=RuntimeError("x")):
                 r = forecast_volatility("EURUSD", "H1", 5, method="har_rv",
                                         denoise={"method": "wavelet"})
                 # Should succeed even if denoise fails
@@ -1868,7 +1868,7 @@ class TestSecondSectionDenoiseDetails:
     def test_denoise_spec_columns_default_for_har_rv(self):
         """Lines 1004-1008: columns default to OHLC for non-ewma, non-garch."""
         with _mock_env(rates_side_effect=self._make_side_effect()):
-            with patch(f"{MOD}._apply_denoise") as mock_dn:
+            with patch(f"{MOD}.apply_denoise") as mock_dn:
                 r = forecast_volatility("EURUSD", "H1", 5, method="har_rv",
                                         denoise={"method": "sma"})
                 if mock_dn.called:
@@ -1879,7 +1879,7 @@ class TestSecondSectionDenoiseDetails:
     def test_denoise_with_explicit_columns(self):
         """Lines 1003-1004: user-provided columns kept as-is."""
         with _mock_env(rates_side_effect=self._make_side_effect()):
-            with patch(f"{MOD}._apply_denoise"):
+            with patch(f"{MOD}.apply_denoise"):
                 r = forecast_volatility("EURUSD", "H1", 5, method="har_rv",
                                         denoise={"method": "sma",
                                                   "columns": ["close"]})
@@ -1976,3 +1976,4 @@ class TestScatteredBranches:
                 for key in ("symbol", "timeframe", "method", "horizon",
                             "volatility_per_bar", "volatility_annualized"):
                     assert key in r, f"Missing key {key}"
+

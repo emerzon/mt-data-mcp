@@ -13,7 +13,7 @@ from ..shared.validators import (
     invalid_timeframe_error,
     unsupported_timeframe_seconds_error,
 )
-from ..utils.denoise import _apply_denoise
+from ..utils.denoise import apply_denoise
 from ..utils.denoise import normalize_denoise_spec as _normalize_denoise_spec
 from ..utils.freshness import (
     closed_session_context,
@@ -1062,7 +1062,7 @@ def forecast_volatility(  # noqa: C901
                 observed_times=df.get("time"),
             )
             if denoise:
-                _apply_denoise(df, denoise, default_when='pre_ti')
+                apply_denoise(df, denoise, default_when='pre_ti')
             r = _log_returns_from_prices(df['close'].astype(float).to_numpy())
             r = r[np.isfinite(r)]
             if r.size < 10:
@@ -1274,7 +1274,7 @@ def forecast_volatility(  # noqa: C901
                 )
                 if dn_spec_used:
                     try:
-                        _apply_denoise(dfrv, dn_spec_used, default_when='pre_ti')
+                        apply_denoise(dfrv, dn_spec_used, default_when='pre_ti')
                     except Exception:
                         pass
                 bpy, _ = _volatility_annualization_context(
@@ -1394,7 +1394,7 @@ def forecast_volatility(  # noqa: C901
             if dn_spec_used:
                 if method_l in {'parkinson','gk','rs','yang_zhang'} and not dn_spec_used.get('columns'):
                     dn_spec_used['columns'] = ['open','high','low','close']
-                _apply_denoise(df, dn_spec_used, default_when='pre_ti')
+                apply_denoise(df, dn_spec_used, default_when='pre_ti')
 
         # Compute returns and helpers
         r = _log_returns_from_prices(df['close'].astype(float).to_numpy())
@@ -1595,3 +1595,4 @@ def forecast_volatility(  # noqa: C901
         return {"error": f"Unsupported direct volatility method: {method_l}"}
     except Exception as e:
         return {"error": f"Error computing volatility forecast: {str(e)}"}
+

@@ -215,7 +215,7 @@ def _append_denoise_warning(df: pd.DataFrame, message: str) -> None:
     _logger.warning("%s", warning_text)
 
 
-def _consume_denoise_warnings(df: pd.DataFrame) -> List[str]:
+def consume_denoise_warnings(df: pd.DataFrame) -> List[str]:
     warnings_out = df.attrs.get("denoise_warnings")
     if not isinstance(warnings_out, list):
         return []
@@ -304,7 +304,7 @@ def _run_denoise_handler(
     return result
 
 
-def _denoise_series(
+def denoise_series(
     s: pd.Series,
     method: str = 'none',
     params: Optional[Dict[str, Any]] = None,
@@ -324,7 +324,7 @@ def _denoise_series(
     return _run_denoise_handler(s, handler, params, causality)
 
 
-def _apply_denoise(
+def apply_denoise(
     df: pd.DataFrame,
     spec: Optional[Dict[str, Any]],
     default_when: str = 'post_ti',
@@ -442,7 +442,7 @@ def _apply_denoise(
     return added_cols
 
 
-def _resolve_denoise_base_col(
+def resolve_denoise_base_col(
     df: pd.DataFrame,
     denoise: Optional[Dict[str, Any]],
     *,
@@ -453,7 +453,7 @@ def _resolve_denoise_base_col(
     if not denoise:
         return base_col
     try:
-        added = _apply_denoise(df, denoise, default_when=default_when)
+        added = apply_denoise(df, denoise, default_when=default_when)
         if f"{base_col}_dn" in added:
             return f"{base_col}_dn"
     except Exception as ex:
@@ -609,11 +609,12 @@ def denoise_list_methods() -> Dict[str, Any]:
 
 
 __all__ = [
-    "_denoise_series",
-    "_apply_denoise",
-    "_consume_denoise_warnings",
-    "_resolve_denoise_base_col",
+    "denoise_series",
+    "apply_denoise",
+    "consume_denoise_warnings",
+    "resolve_denoise_base_col",
     "normalize_denoise_spec",
     "get_denoise_methods_data",
     "denoise_list_methods",
 ]
+

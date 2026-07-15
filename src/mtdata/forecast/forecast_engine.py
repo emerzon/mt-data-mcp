@@ -18,8 +18,8 @@ from ..shared.validators import (
     unsupported_timeframe_seconds_error,
 )
 from ..utils.denoise import (
-    _apply_denoise,
-    _consume_denoise_warnings,
+    apply_denoise,
+    consume_denoise_warnings,
 )
 from ..utils.denoise import (
     normalize_denoise_spec as _normalize_denoise_spec,
@@ -299,7 +299,7 @@ def _resolve_history_context(
                 normalized = _normalize_denoise_spec(denoise, default_when='pre_ti')
             except Exception:
                 normalized = None
-            added = _apply_denoise(df, normalized, default_when='pre_ti') if normalized else []
+            added = apply_denoise(df, normalized, default_when='pre_ti') if normalized else []
             dn_spec_used = normalized
             if len(added) > 0 and base_col == 'close' and f"{base_col}_dn" in added:
                 base_col = f"{base_col}_dn"
@@ -321,7 +321,7 @@ def _resolve_history_context(
             normalized = _normalize_denoise_spec(denoise, default_when='pre_ti')
         except Exception:
             normalized = None
-        added = _apply_denoise(df, normalized, default_when='pre_ti') if normalized else []
+        added = apply_denoise(df, normalized, default_when='pre_ti') if normalized else []
         dn_spec_used = normalized
         if len(added) > 0 and f"{base_col}_dn" in added:
             base_col = f"{base_col}_dn"
@@ -1347,7 +1347,7 @@ def forecast_engine(  # noqa: C901
             return {"error": str(ex)}
         if p.get("seasonality") is None and "time" in df.columns:
             seasonality = default_seasonality(timeframe, df["time"])
-        denoise_warnings = _consume_denoise_warnings(df)
+        denoise_warnings = consume_denoise_warnings(df)
 
         # Prepare target series, honoring target_spec if provided
         try:
@@ -1590,3 +1590,4 @@ def forecast_engine(  # noqa: C901
 
     except Exception as e:
         return {"error": f"Forecast engine failed: {str(e)}"}
+

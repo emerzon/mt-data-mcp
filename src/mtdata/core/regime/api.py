@@ -12,7 +12,7 @@ import numpy as np
 from ...forecast.common import fetch_history as _fetch_history
 from ...forecast.common import log_returns_from_prices as _log_returns_from_prices
 from ...shared.schema import DenoiseSpec, DetailLiteral, TimeframeLiteral
-from ...utils.denoise import _resolve_denoise_base_col
+from ...utils.denoise import resolve_denoise_base_col
 from ...utils.mt5 import MT5ConnectionError, ensure_mt5_connection_or_raise
 from ...utils.regime_heuristics import infer_market_regime
 from ...utils.time import _format_time_minimal
@@ -1349,7 +1349,7 @@ def regime_detect(  # noqa: C901
                 )
         if len(df) < 10:
             return _finish({"error": "Insufficient history"})
-        base_col = _resolve_denoise_base_col(
+        base_col = resolve_denoise_base_col(
             df, denoise, base_col="close", default_when="pre_ti"
         )
         y = df[base_col].astype(float).to_numpy()
@@ -3946,3 +3946,4 @@ def regime_detect(  # noqa: C901
 
     except Exception as e:
         return _finish({"error": f"Error detecting regimes: {str(e)}"})
+

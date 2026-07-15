@@ -20,7 +20,7 @@ except Exception:
 from ..shared.constants import TIMEFRAME_MAP
 from .dtw import dtw_distance
 from .denoise import (
-    _denoise_series as _apply_denoise_series,
+    denoise_series as apply_denoise_series,
 )
 from .denoise import (
     get_denoise_methods_data as _get_denoise_methods_data,
@@ -552,7 +552,7 @@ def _prepare_series(
                 or ("causal" if str(normalized_denoise.get("when") or "pre_ti") == "pre_ti" else "zero_phase")
             )
             try:
-                data[series_col] = _apply_denoise_series(
+                data[series_col] = apply_denoise_series(
                     data[series_col],
                     method=method_name,
                     params=params,
@@ -791,3 +791,5 @@ def _apply_metric_vector(x: np.ndarray, metric: str) -> np.ndarray:
             return np.zeros_like(v, dtype=np.float32)
         return (v / n).astype(np.float32)
     return v
+
+

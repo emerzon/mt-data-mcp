@@ -217,7 +217,7 @@ class TestFetchPatternData:
         assert int(df["time"].iloc[-1]) == int(mock_rates.return_value[-2].time)
 
     @patch("mtdata.core.patterns.mt5")
-    @patch("mtdata.core.patterns._apply_denoise_util", side_effect=RuntimeError("boom"))
+    @patch("mtdata.core.patterns.apply_denoise_util", side_effect=RuntimeError("boom"))
     @patch("mtdata.core.patterns._mt5_copy_rates_from")
     def test_denoise_failure_is_exposed_as_warning(self, mock_rates, _mock_denoise, mock_mt5):
         mock_mt5.symbol_info.return_value = MagicMock(visible=True)
@@ -1456,3 +1456,4 @@ class TestRelevanceScoring:
         # D1: 1 bearish → net bearish
         d1 = result["by_timeframe"]["D1"]
         assert d1["net"] == "bearish"
+

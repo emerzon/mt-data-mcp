@@ -33,10 +33,10 @@ from ..shared.market_units import forex_points_per_pip
 from ..shared.schema import DenoiseSpec, IndicatorSpec, SimplifySpec, TimeframeLiteral
 from ..shared.validators import invalid_timeframe_error
 from ..utils.denoise import (
-    _apply_denoise as _apply_denoise_util,
+    apply_denoise as apply_denoise_util,
 )
 from ..utils.denoise import (
-    _consume_denoise_warnings,
+    consume_denoise_warnings,
 )
 from ..utils.denoise import (
     normalize_denoise_spec as _normalize_denoise_spec,
@@ -1194,7 +1194,7 @@ def _apply_pre_ti_denoise(
     normalized = _normalize_denoise_spec(denoise, default_when='pre_ti')
     added_columns: List[str] = []
     if normalized and str(normalized.get('when', 'pre_ti')).lower() == 'pre_ti':
-        added_columns = _apply_denoise_util(df, normalized, default_when='pre_ti')
+        added_columns = apply_denoise_util(df, normalized, default_when='pre_ti')
         last_application = df.attrs.get("denoise_last_application")
         overwritten_columns = (
             list(last_application.get("overwrote_columns") or [])
@@ -1239,7 +1239,7 @@ def _apply_indicator_stage(
             dn_ti['columns'] = list(ti_cols)
             dn_ti.setdefault('when', 'post_ti')
             dn_ti.setdefault('keep_original', False)
-            _apply_denoise_util(df, dn_ti, default_when='post_ti')
+            apply_denoise_util(df, dn_ti, default_when='post_ti')
 
     return ti_cols
 
@@ -1311,7 +1311,7 @@ def _apply_post_ti_denoise(
     normalized = _normalize_denoise_spec(denoise, default_when='post_ti')
     added_columns: List[str] = []
     if normalized and str(normalized.get('when', 'post_ti')).lower() == 'post_ti':
-        added_columns = _apply_denoise_util(df, normalized, default_when='post_ti')
+        added_columns = apply_denoise_util(df, normalized, default_when='post_ti')
         last_application = df.attrs.get("denoise_last_application")
         overwritten_columns = (
             list(last_application.get("overwrote_columns") or [])
@@ -1343,7 +1343,7 @@ def _rebuild_candle_indicator_window(
     if denoise:
         normalized = _normalize_denoise_spec(denoise, default_when='pre_ti')
         if normalized and str(normalized.get('when', 'pre_ti')).lower() == 'pre_ti':
-            _apply_denoise_util(df, normalized, default_when='pre_ti')
+            apply_denoise_util(df, normalized, default_when='pre_ti')
     ti_cols = _apply_indicator_stage(df, headers, ti_spec, denoise)
     return df, ti_cols
 
@@ -1641,9 +1641,9 @@ def fetch_candles(  # noqa: C901
         denoise_warnings: List[str] = []
         ti_warnings: List[str] = []
         _apply_pre_ti_denoise(df, headers, denoise, denoise_apps)
-        denoise_warnings.extend(_consume_denoise_warnings(df))
+        denoise_warnings.extend(consume_denoise_warnings(df))
         ti_cols = _apply_indicator_stage(df, headers, ti_spec, denoise)
-        denoise_warnings.extend(_consume_denoise_warnings(df))
+        denoise_warnings.extend(consume_denoise_warnings(df))
 
         # Filter out warmup region to return the intended target window only
         df = _trim_df_to_target(df, start_datetime, end_datetime, candles, copy_rows=True)
@@ -1693,7 +1693,7 @@ def fetch_candles(  # noqa: C901
                             ti_spec=ti_spec,
                             headers=headers,
                         )
-                        denoise_warnings.extend(_consume_denoise_warnings(df))
+                        denoise_warnings.extend(consume_denoise_warnings(df))
                         try:
                             rows_before_quality = int(len(df))
                             df, retry_ohlcv_warnings = validate_and_clean_ohlcv_frame(df, epoch_col="__epoch")
@@ -1765,7 +1765,7 @@ def fetch_candles(  # noqa: C901
 
         # Optional post-TI denoising (adds new columns by default)
         _apply_post_ti_denoise(df, headers, denoise, denoise_apps)
-        denoise_warnings.extend(_consume_denoise_warnings(df))
+        denoise_warnings.extend(consume_denoise_warnings(df))
 
         # Ensure headers are unique and exist in df
         headers = [h for h in headers if h in df.columns]
@@ -3403,3 +3403,4 @@ def fetch_ticks(  # noqa: C901
         return _json_safe_payload(payload)
     except Exception as e:
         return {"error": f"Error getting ticks: {str(e)}"}
+
