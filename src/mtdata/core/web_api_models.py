@@ -14,8 +14,14 @@ from ..forecast.requests import (
     ForecastGenerateRequest,
     ForecastVolatilityEstimateRequest,
 )
-from ..shared.schema import ForecastLibraryLiteral, reject_removed_field
+from ..shared.schema import DetailLiteral, ForecastLibraryLiteral, reject_removed_field
 from .output_contract import output_extras_shape_detail
+
+
+def _request_detail(detail: DetailLiteral, extras: Optional[list[str] | str]) -> DetailLiteral:
+    if extras is not None:
+        return output_extras_shape_detail(extras)  # type: ignore[return-value]
+    return detail
 
 
 class ForecastPriceBody(BaseModel):
@@ -37,15 +43,12 @@ class ForecastPriceBody(BaseModel):
     dimred_params: Optional[Dict[str, Any]] = None
     target_spec: Optional[Dict[str, Any]] = None
     extras: Optional[list[str] | str] = Field(None)
+    detail: DetailLiteral = Field("compact")
 
     @model_validator(mode="before")
     @classmethod
     def _reject_removed_fields(cls, values: Any) -> Any:
-        return reject_removed_field(
-            reject_removed_field(values, field_name="target", replacement="quantity"),
-            field_name="detail",
-            replacement="extras",
-        )
+        return reject_removed_field(values, field_name="target", replacement="quantity")
 
     def to_domain_request(self) -> ForecastGenerateRequest:
         return ForecastGenerateRequest(
@@ -66,7 +69,7 @@ class ForecastPriceBody(BaseModel):
             dimred_method=self.dimred_method,
             dimred_params=self.dimred_params,
             target_spec=self.target_spec,
-            detail=output_extras_shape_detail(self.extras),
+            detail=_request_detail(self.detail, self.extras),
         )
 
 
@@ -81,6 +84,8 @@ class ForecastVolBody(BaseModel):
     start: Optional[str] = None
     end: Optional[str] = None
     denoise: Optional[Dict[str, Any]] = None
+    extras: Optional[list[str] | str] = Field(None)
+    detail: DetailLiteral = Field("compact")
 
     def to_domain_request(self) -> ForecastVolatilityEstimateRequest:
         return ForecastVolatilityEstimateRequest(
@@ -94,6 +99,7 @@ class ForecastVolBody(BaseModel):
             start=self.start,
             end=self.end,
             denoise=self.denoise,
+            detail=_request_detail(self.detail, self.extras),
         )
 
 
@@ -114,15 +120,12 @@ class BacktestBody(BaseModel):
     slippage_bps: float = 0.0
     trade_threshold: float = Field(0.0, ge=0.0)
     extras: Optional[list[str] | str] = Field(None)
+    detail: DetailLiteral = Field("compact")
 
     @model_validator(mode="before")
     @classmethod
     def _reject_removed_fields(cls, values: Any) -> Any:
-        return reject_removed_field(
-            reject_removed_field(values, field_name="target", replacement="quantity"),
-            field_name="detail",
-            replacement="extras",
-        )
+        return reject_removed_field(values, field_name="target", replacement="quantity")
 
     def to_domain_request(self) -> ForecastBacktestRequest:
         return ForecastBacktestRequest(
@@ -141,5 +144,5 @@ class BacktestBody(BaseModel):
             dimred_params=self.dimred_params,
             slippage_bps=self.slippage_bps,
             trade_threshold=self.trade_threshold,
-            detail=output_extras_shape_detail(self.extras),
+            detail=_request_detail(self.detail, self.extras),
         )

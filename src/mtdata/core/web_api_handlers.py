@@ -15,7 +15,7 @@ from ..utils.mt5 import MT5ConnectionError
 from ..utils.support_resistance import compact_support_resistance_payload
 from .error_envelope import build_error_payload
 from .mt5_gateway import create_mt5_gateway
-from .output_contract import ensure_common_meta, output_extras_shape_detail
+from .output_contract import apply_output_verbosity, ensure_common_meta, output_extras_shape_detail
 from .pivot import compute_support_resistance_payload
 from .tool_calling import resolve_sync_tool_result
 from .web_api_models import BacktestBody, ForecastPriceBody, ForecastVolBody
@@ -29,6 +29,10 @@ def _shape_detail_from_extras(extras: Any) -> str:
         return output_extras_shape_detail(extras)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+def _shape_detail(detail: str, extras: Any) -> str:
+    return _shape_detail_from_extras(extras) if extras is not None else detail
 
 
 def _http_error(
@@ -408,6 +412,7 @@ def get_history_response(  # noqa: C901
     allow_stale: bool,
     indicators: Optional[str],
     timestamp_format: str,
+    detail: str,
     extras: Any,
     denoise_method: Optional[str],
     denoise_params: Optional[str],
@@ -575,7 +580,8 @@ def get_history_response(  # noqa: C901
     payload["timestamp_format"] = timestamp_mode
     if timestamp_mode == "epoch":
         payload["timestamp_unit"] = "unix_seconds_utc"
-    if _shape_detail_from_extras(extras) == "compact":
+    shape_detail = _shape_detail(detail, extras)
+    if shape_detail != "full":
         meta = payload.get("meta")
         if isinstance(meta, dict):
             runtime = meta.get("runtime")
@@ -583,8 +589,12 @@ def get_history_response(  # noqa: C901
             server_meta = timezone_meta.get("server") if isinstance(timezone_meta, dict) else None
             if isinstance(server_meta, dict) and server_meta.get("offset_seconds") is not None:
                 payload["server_utc_offset_seconds"] = server_meta["offset_seconds"]
-        payload.pop("meta", None)
-    return payload
+    return apply_output_verbosity(
+        payload,
+        detail=shape_detail,
+        tool_name="data_fetch_candles",
+        mt5_config=mt5_config,
+    )
 
 
 def get_pivots_response(
@@ -592,6 +602,7 @@ def get_pivots_response(
     symbol: str,
     timeframe: str,
     method: str,
+    detail: str,
     pivot_tool: Any,
     call_tool_raw: Callable[[Any], Any],
 ) -> Dict[str, Any]:
@@ -603,7 +614,7 @@ def get_pivots_response(
                 symbol=symbol,
                 timeframe=timeframe,
                 method=method_key,
-                detail="compact",
+                detail=detail,
             )
         )
     except TypeError:
@@ -612,7 +623,7 @@ def get_pivots_response(
                 symbol=symbol,
                 timeframe=timeframe,
                 method=method_key,
-                detail="compact",
+                detail=detail,
             )
         )
     except Exception as exc:
@@ -676,13 +687,15 @@ def get_pivots_response(
             code="pivot_levels_missing",
             operation="get_pivots",
         )
-    return {
+    payload = dict(result)
+    payload.update({
         "levels": levels,
         "period": result.get("period"),
         "symbol": result.get("symbol", symbol),
         "timeframe": result.get("timeframe", timeframe),
         "method": method_key,
-    }
+    })
+    return apply_output_verbosity(payload, detail=detail, tool_name="pivot_compute_points")
 
 
 def get_support_resistance_response(
@@ -698,6 +711,7 @@ def get_support_resistance_response(
     reaction_bars: int,
     adx_period: int,
     decay_half_life_bars: Optional[int],
+    detail: str,
     extras: Any,
     fetch_history_impl: Callable[..., Any],
 ) -> Dict[str, Any]:
@@ -735,20 +749,25 @@ def get_support_resistance_response(
             code="support_resistance_levels_missing",
             operation="get_support_resistance",
         )
-    if _shape_detail_from_extras(extras) == "compact":
-        return compact_support_resistance_payload(result)
-    return result
+    shape_detail = _shape_detail(detail, extras)
+    payload = compact_support_resistance_payload(result) if shape_detail == "compact" else result
+    return apply_output_verbosity(
+        payload,
+        detail=shape_detail,
+        tool_name="support_resistance_levels",
+    )
 
 
 def get_tick_response(
     *,
     symbol: str,
+    detail: str,
     market_ticker_tool: Any,
     call_tool_raw: Callable[[Any], Any],
 ) -> Dict[str, Any]:
     tool = call_tool_raw(market_ticker_tool)
     try:
-        result = resolve_sync_tool_result(tool(symbol=symbol, detail="compact"))
+        result = resolve_sync_tool_result(tool(symbol=symbol, detail=detail))
     except Exception as exc:
         raise _http_error(
             500,
@@ -781,7 +800,7 @@ def get_tick_response(
             code=error_code,
             operation="get_tick",
         )
-    return result
+    return apply_output_verbosity(result, detail=detail, tool_name="market_ticker")
 
 
 def post_forecast_price_response(*, body: ForecastPriceBody, forecast_generate_use_case: Callable[..., Any]) -> Dict[str, Any]:

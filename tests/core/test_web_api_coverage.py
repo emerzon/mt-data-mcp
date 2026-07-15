@@ -153,6 +153,15 @@ class TestPydanticModels:
         assert body.quantity == "return"
         assert body.dimred_method == "pca"
 
+    def test_forecast_bodies_accept_detail(self):
+        assert ForecastPriceBody(symbol="EURUSD", detail="summary").to_domain_request().detail == "summary"
+        assert ForecastVolBody(symbol="EURUSD", detail="standard").to_domain_request().detail == "standard"
+        assert BacktestBody(symbol="EURUSD", detail="full").to_domain_request().detail == "full"
+
+    def test_extras_still_request_full_detail(self):
+        body = ForecastPriceBody(symbol="EURUSD", detail="summary", extras="metadata")
+        assert body.to_domain_request().detail == "full"
+
     def test_forecast_price_body_rejects_removed_target(self):
         with pytest.raises(ValidationError):
             ForecastPriceBody(symbol="GBPUSD", target="return")
@@ -1103,6 +1112,24 @@ class TestGetPivots:
             detail="compact",
         )
 
+    def test_full_detail_is_forwarded_and_preserves_metadata(self):
+        payload = {
+            "levels": {"PP": 1.1},
+            "symbol": "EURUSD",
+            "timeframe": "D1",
+            "period": {"start": "2025-01-01", "end": "2025-01-02"},
+            "diagnostics": {"source": "test"},
+        }
+        raw_tool = MagicMock(return_value=payload)
+        with patch("mtdata.core.web_api._call_tool_raw", return_value=raw_tool):
+            resp = _client.get("/api/pivots", params={"symbol": "EURUSD", "detail": "full"})
+
+        assert resp.status_code == 200
+        assert resp.json()["diagnostics"] == {"source": "test"}
+        raw_tool.assert_called_once_with(
+            symbol="EURUSD", timeframe="H1", method="classic", detail="full"
+        )
+
     def test_string_result_parsed(self):
         raw_str = json.dumps(self._pivot_result())
         # Inject json module into web_api namespace for the json.loads call
@@ -1216,6 +1243,14 @@ class TestGetTick:
         assert res["time_epoch"] == 100.0
         assert res["freshness_state"] == "stale"
         assert res["usable_for_live_trading"] is False
+
+    def test_detail_is_forwarded_and_shared_compaction_applies(self):
+        tool = MagicMock(return_value={"success": True, "symbol": "EURUSD", "diagnostics": {"x": 1}})
+        with patch("mtdata.core.web_api._market_ticker_tool", new=tool):
+            resp = _client.get("/api/tick", params={"symbol": "EURUSD", "detail": "compact"})
+        assert resp.status_code == 200
+        assert "diagnostics" not in resp.json()
+        tool.assert_called_once_with(symbol="EURUSD", detail="compact")
 
     def test_symbol_unknown(self):
         payload = {"error": "Unknown symbol FAKE", "error_code": "symbol_not_found"}
