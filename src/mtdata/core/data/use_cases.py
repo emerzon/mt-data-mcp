@@ -247,6 +247,11 @@ def _run_data_fetch_candles_impl(
         elif detail_mode == "standard":
             result = _standard_candles_payload(result)
         _attach_candle_machine_freshness(result)
+        _attach_forming_candle_update_freshness(
+            result,
+            request=request,
+            gateway=gateway,
+        )
     if isinstance(result, dict) and isinstance(result.get("data"), list):
         out = attach_collection_contract(
             result,
@@ -259,6 +264,53 @@ def _run_data_fetch_candles_impl(
             out.pop("canonical_source", None)
         return out
     return result
+
+
+def _attach_forming_candle_update_freshness(
+    payload: Dict[str, Any],
+    *,
+    request: DataFetchCandlesRequest,
+    gateway: Any,
+) -> None:
+    if not request.include_incomplete or payload.get("error"):
+        return
+    data_window = payload.get("data_window")
+    if not isinstance(data_window, dict) or data_window.get("latest_bar_complete") is not False:
+        return
+    try:
+        tick = gateway.symbol_info_tick(request.symbol)
+    except Exception:
+        return
+    tick_msc = getattr(tick, "time_msc", None) if tick is not None else None
+    tick_seconds = getattr(tick, "time", None) if tick is not None else None
+    try:
+        tick_epoch = float(tick_msc) / 1000.0 if tick_msc else float(tick_seconds)
+    except (TypeError, ValueError):
+        return
+    if not np.isfinite(tick_epoch) or tick_epoch <= 0:
+        return
+    update_age = max(0.0, float(time.time()) - tick_epoch)
+    bar_open_age = payload.get("data_age_seconds")
+    try:
+        bar_open_age_value = max(0.0, float(bar_open_age))
+    except (TypeError, ValueError):
+        bar_open_age_value = None
+    if bar_open_age_value is not None:
+        payload["bar_open_age_seconds"] = round(bar_open_age_value, 3)
+        data_window["latest_bar_open_age_seconds"] = round(bar_open_age_value, 3)
+    payload["last_update_age_seconds"] = round(update_age, 3)
+    payload["data_age_seconds"] = round(update_age, 3)
+    payload["data_age_anchor"] = FRESHNESS_ANCHOR_WALL_CLOCK
+    payload["data_age_metric"] = FRESHNESS_METRIC_LAST_TICK_AGE
+    data_window["latest_bar_update_age_seconds"] = round(update_age, 3)
+    update_text = _format_age_seconds(update_age)
+    if bar_open_age_value is not None:
+        payload["freshness"] = (
+            f"forming bar open {_format_age_seconds(bar_open_age_value)} ago; "
+            f"last update {update_text} ago"
+        )
+    else:
+        payload["freshness"] = f"forming bar; last update {update_text} ago"
 
 
 def _normalize_candle_query_error(

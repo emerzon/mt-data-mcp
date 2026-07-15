@@ -468,6 +468,46 @@ def test_run_data_fetch_candles_closed_market_keeps_absolute_staleness():
     assert "stale_warning" not in result
 
 
+def test_run_data_fetch_candles_forming_bar_uses_last_tick_freshness(monkeypatch):
+    monkeypatch.setattr("mtdata.core.data.use_cases.time.time", lambda: 1_700_000_100.0)
+    request = DataFetchCandlesRequest(
+        symbol="EURUSD",
+        timeframe="H1",
+        include_incomplete=True,
+    )
+    gateway = SimpleNamespace(
+        ensure_connection=lambda: None,
+        symbol_info_tick=lambda _symbol: SimpleNamespace(time=1_700_000_095),
+    )
+
+    result = run_data_fetch_candles(
+        request,
+        gateway=gateway,
+        fetch_candles_impl=lambda **_kwargs: {
+            "success": True,
+            "data": [{"time": "2026-01-01T12:00:00Z", "close": 1.2}],
+            "data_window": {
+                "latest_bar_complete": False,
+                "latest_bar_age_seconds": 900.0,
+            },
+            "meta": {
+                "diagnostics": {
+                    "freshness": {
+                        "data_freshness_seconds": 900.0,
+                        "last_bar_within_policy_window": True,
+                    }
+                }
+            },
+        },
+    )
+
+    assert result["bar_open_age_seconds"] == 900.0
+    assert result["last_update_age_seconds"] == 5.0
+    assert result["data_age_seconds"] == 5.0
+    assert result["data_age_metric"] == "last_tick_age_seconds"
+    assert result["freshness"] == "forming bar open 15m 0s ago; last update 5s ago"
+
+
 def test_run_data_fetch_candles_range_applies_limit_cap():
     rows = [{"time": f"t{i}", "close": i} for i in range(5)]
     request = DataFetchCandlesRequest(
