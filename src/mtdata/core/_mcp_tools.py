@@ -36,24 +36,6 @@ from .output_contract import (
 
 _ORIG_TOOL_DECORATOR: Any = None
 _REGISTRY_UNSET = object()
-_TOOL_TIMEOUT_SECONDS = 120
-_NO_TIMEOUT_TOOLS = frozenset(
-    {
-        "wait_event",
-        "forecast_optimize_hints",
-        "forecast_tune_genetic",
-        "forecast_tune_optuna",
-        "forecast_backtest_run",
-        "forecast_barrier_optimize",
-        "report_generate",
-        # Work dispatched to a thread cannot be stopped by asyncio.wait_for.
-        # Keep the transport attached to long analysis and broker mutations so
-        # callers never receive a false timeout while work continues.
-        "trade_place",
-        "trade_modify",
-        "trade_close",
-    }
-)
 _PUBLIC_OUTPUT_PARAMS = PUBLIC_OUTPUT_PARAMS
 _MARKET_DEPTH_FETCH_ENV = "MTDATA_ENABLE_MARKET_DEPTH_FETCH"
 logger = logging.getLogger(__name__)
@@ -1033,25 +1015,12 @@ def _recording_tool_decorator(*dargs, **dkwargs):  # type: ignore[override]  # n
 
         # Register an async wrapper with FastMCP so sync tool execution does not
         # block the event loop while the underlying work runs in a worker thread.
-        # A generous timeout prevents indefinite hangs when the underlying MT5
-        # COM bridge deadlocks under concurrent access.
+        # Keep the transport attached until completion: Python cannot safely
+        # cancel a running worker thread, so returning a timeout would falsely
+        # imply that broker or analysis work had stopped.
         @_wraps(func)
         async def _async_wrapped(*a, **kw):
-            _tool_name = getattr(func, "__name__", "tool")
-            if _tool_name in _NO_TIMEOUT_TOOLS:
-                return await asyncio.to_thread(_wrapped, *a, **kw)
-            try:
-                return await asyncio.wait_for(
-                    asyncio.to_thread(_wrapped, *a, **kw),
-                    timeout=_TOOL_TIMEOUT_SECONDS,
-                )
-            except asyncio.TimeoutError:
-                return build_error_payload(
-                    f"{_tool_name} timed out after {_TOOL_TIMEOUT_SECONDS}s",
-                    code="tool_timeout",
-                    operation=_tool_name,
-                    details={"tool": _tool_name, "timeout_seconds": _TOOL_TIMEOUT_SECONDS},
-                )
+            return await asyncio.to_thread(_wrapped, *a, **kw)
 
         try:
             _async_wrapped.__annotations__ = getattr(_wrapped, "__annotations__", {})

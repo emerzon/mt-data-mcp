@@ -962,8 +962,9 @@ class TestRecordingToolDecorator:
         finally:
             tools._ORIG_TOOL_DECORATOR = original
 
-    def test_async_wrapped_timeout_returns_structured_error_payload(self):
+    def test_async_wrapped_keeps_transport_attached_until_worker_finishes(self):
         import asyncio
+        import threading
 
         import mtdata.core._mcp_tools as tools
 
@@ -972,78 +973,23 @@ class TestRecordingToolDecorator:
             tools._ORIG_TOOL_DECORATOR = lambda *a, **k: (lambda fn: fn)
             dec = tools._recording_tool_decorator()
 
+            caller_thread = threading.get_ident()
+
             def slow_tool():
-                return {"success": True}
+                return {"success": True, "thread": threading.get_ident()}
 
             wrapped = dec(slow_tool)
             async_wrapped = wrapped._mcp_async_wrapper
 
-            async def _raise_timeout(coro, timeout):
-                if hasattr(coro, "close"):
-                    coro.close()
-                raise asyncio.TimeoutError
+            result = asyncio.run(async_wrapped(__cli_raw=True))
 
-            with patch("mtdata.core._mcp_tools.asyncio.wait_for", side_effect=_raise_timeout):
-                result = asyncio.run(async_wrapped())
-
-            assert result["success"] is False
-            assert result["error_code"] == "tool_timeout"
-            assert result["operation"] == "slow_tool"
-            assert result["details"]["timeout_seconds"] == 120
-            assert "reduce history/window" in result["remediation"].lower()
+            assert result["success"] is True
+            assert result["thread"] != caller_thread
+            assert not hasattr(tools, "_TOOL_TIMEOUT_SECONDS")
         finally:
             tools._ORIG_TOOL_DECORATOR = original
 
-    def test_async_wrapped_market_scan_timeout_has_actionable_guidance(self):
-        import asyncio
-
-        import mtdata.core._mcp_tools as tools
-
-        original = tools._ORIG_TOOL_DECORATOR
-        previous = tools._TOOL_METADATA_REGISTRY.get("market_scan")
-        previous_function = (
-            None if previous is None else getattr(previous, "function", tools._REGISTRY_UNSET)
-        )
-        previous_tool_object = (
-            None if previous is None else getattr(previous, "tool_object", tools._REGISTRY_UNSET)
-        )
-        try:
-            tools._ORIG_TOOL_DECORATOR = lambda *a, **k: (lambda fn: fn)
-            dec = tools._recording_tool_decorator()
-
-            def market_scan():
-                return {"success": True}
-
-            wrapped = dec(market_scan)
-            async_wrapped = wrapped._mcp_async_wrapper
-
-            async def _raise_timeout(coro, timeout):
-                if hasattr(coro, "close"):
-                    coro.close()
-                raise asyncio.TimeoutError
-
-            with patch("mtdata.core._mcp_tools.asyncio.wait_for", side_effect=_raise_timeout):
-                result = asyncio.run(async_wrapped())
-
-            assert result["success"] is False
-            assert result["error_code"] == "tool_timeout"
-            assert result["operation"] == "market_scan"
-            assert "symbols or group" in result["remediation"]
-            assert result["related_tools"] == ["symbols_top_markets", "symbols_list"]
-        finally:
-            tools._ORIG_TOOL_DECORATOR = original
-            # The decorator registers under the function name; restore the real
-            # market_scan tool so later catalog/schema tests are not polluted.
-            if previous is None:
-                tools.unregister_tool("market_scan")
-            else:
-                tools._upsert_tool_registration(
-                    "market_scan",
-                    function=previous_function,
-                    tool_object=previous_tool_object,
-                )
-
-    def test_async_wrapped_skips_transport_timeout_for_forecast_tuning_tools(self):
+    def test_async_wrapped_uses_same_worker_path_for_long_analysis_tools(self):
         import asyncio
 
         import mtdata.core._mcp_tools as tools
@@ -1066,11 +1012,9 @@ class TestRecordingToolDecorator:
             wrapped = dec(forecast_optimize_hints)
             async_wrapped = wrapped._mcp_async_wrapper
 
-            with patch("mtdata.core._mcp_tools.asyncio.wait_for") as wait_for:
-                result = asyncio.run(async_wrapped(__cli_raw=True))
+            result = asyncio.run(async_wrapped(__cli_raw=True))
 
             assert result == {"success": True}
-            wait_for.assert_not_called()
         finally:
             tools._ORIG_TOOL_DECORATOR = original
             if previous is None:
@@ -1081,22 +1025,6 @@ class TestRecordingToolDecorator:
                     function=previous_function,
                     tool_object=previous_tool_object,
                 )
-
-    def test_live_trade_mutations_are_not_given_cancellable_thread_timeouts(self):
-        import mtdata.core._mcp_tools as tools
-
-        assert {"trade_place", "trade_modify", "trade_close"}.issubset(
-            tools._NO_TIMEOUT_TOOLS
-        )
-
-    def test_long_analysis_tools_are_not_given_cancellable_thread_timeouts(self):
-        import mtdata.core._mcp_tools as tools
-
-        assert {
-            "forecast_backtest_run",
-            "forecast_barrier_optimize",
-            "report_generate",
-        }.issubset(tools._NO_TIMEOUT_TOOLS)
 
     def test_skips_variadic_args_in_exposed_signature(self):
         import mtdata.core._mcp_tools as tools
