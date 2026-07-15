@@ -240,6 +240,12 @@ def analyze_microstructure(request: MarketMicrostructureRequest, gateway: Any) -
     q["mid_return"] = np.log(q["mid"]).diff()
     q["bid_revision"] = np.sign(q["bid"].diff())
     q["ask_revision"] = np.sign(q["ask"].diff())
+    try:
+        symbol_info = gateway.symbol_info(request.symbol)
+    except Exception:
+        symbol_info = None
+    point = float(getattr(symbol_info, "point", 0.0) or 0.0)
+    digits = int(getattr(symbol_info, "digits", 0) or 0)
     revision_pressure = float(np.nanmean((q["bid_revision"] + q["ask_revision"]) / 2.0)) if len(q) > 1 else 0.0
     start_epoch = float(df["epoch"].iloc[0])
     duration = max(0.001, float(df["epoch"].iloc[-1] - start_epoch))
@@ -272,6 +278,10 @@ def analyze_microstructure(request: MarketMicrostructureRequest, gateway: Any) -
         "mid_realized_volatility": float(np.sqrt(np.nansum(np.square(q["mid_return"])))) if len(q) > 1 else None,
         "broker_quote_revision_imbalance": revision_pressure,
     }
+    if point > 0:
+        summary["spread_points"] = _percentiles(q["spread"] / point)
+        if digits in {3, 5}:
+            summary["spread_pips"] = _percentiles(q["spread"] / (point * 10.0))
     applicability = {
         "quote_metrics": bool(len(q) >= 20),
         "trade_direction_metrics": tier in {"trade_ticks", "trade_volume"},
@@ -343,7 +353,9 @@ def analyze_microstructure(request: MarketMicrostructureRequest, gateway: Any) -
             "volume_unit": "broker_reported_real_volume" if tier == "trade_volume" else None,
         },
         "units": {
-            "spread": "price",
+            "spread": "absolute_price",
+            "spread_points": "broker_points",
+            "spread_pips": "fx_pips_when_digits_are_3_or_5",
             "quote_gap_seconds": "seconds",
             "broker_quote_revision_imbalance": "signed_fraction",
             "broker_tick_signed_volume_impact_slope": "log_return_per_broker_real_volume",

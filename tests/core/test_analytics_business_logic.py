@@ -118,6 +118,9 @@ class FakeGateway:
     def symbol_info_tick(self, symbol):
         return SimpleNamespace(bid=1.0999, ask=1.1001)
 
+    def symbol_info(self, symbol):
+        return SimpleNamespace(point=0.00001, digits=5)
+
     def order_calc_profit(self, action, symbol, volume, opened, closed):
         sign = 1.0 if action == self.ORDER_TYPE_BUY else -1.0
         return sign * (closed - opened) * 100_000 * volume
@@ -140,6 +143,9 @@ def test_microstructure_distinguishes_trade_volume_from_quote_proxy() -> None:
     assert "amihud_impact" not in result["summary"]
     assert result["estimator_scope"]["market_scope"] == "connected_broker_tick_feed"
     assert result["timezone"] == "UTC"
+    assert result["summary"]["spread_points"]["median"] == pytest.approx(10.0)
+    assert result["summary"]["spread_pips"]["median"] == pytest.approx(1.0)
+    assert result["units"]["spread_points"] == "broker_points"
     assert all("start" in item and "end" in item for item in result["liquidity_events"])
     assert all("start_epoch" not in item for item in result["liquidity_events"])
     assert any("broker's tick feed" in warning for warning in result["warnings"])
