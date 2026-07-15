@@ -481,7 +481,20 @@ def get_stock_fundamentals(symbol: str) -> Dict[str, Any]:
         }
     except Exception as e:
         logger.exception(f"Error fetching fundamentals for {symbol}")
-        return {"error": _sanitize_error_message(e, symbol=symbol)}
+        message = _sanitize_error_message(e, symbol=symbol)
+        error_code, retryable = _finviz_error_kind(message)
+        remediation = (
+            "Retry after the provider recovers."
+            if retryable
+            else "Check the equity ticker and provider compatibility before retrying."
+        )
+        return {
+            "error": message,
+            "error_code": error_code,
+            "retryable": retryable,
+            "remediation": remediation,
+            "symbol": _normalize_finviz_equity_symbol(symbol),
+        }
 
 
 def get_stock_description(symbol: str) -> Dict[str, Any]:

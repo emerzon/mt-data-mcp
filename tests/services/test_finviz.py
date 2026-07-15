@@ -48,6 +48,10 @@ class TestFinvizService:
         result = get_stock_fundamentals("INVALID")
         
         assert "error" in result
+        assert result["error_code"] == "finviz_unavailable"
+        assert result["retryable"] is True
+        assert result["remediation"] == "Retry after the provider recovers."
+        assert result["symbol"] == "INVALID"
 
     @patch('finvizfinance.quote.finvizfinance')
     def test_get_stock_news_success(self, mock_finviz):
