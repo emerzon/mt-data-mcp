@@ -10,6 +10,7 @@ from unittest.mock import MagicMock, PropertyMock, patch
 
 import numpy as np
 import pytest
+from zoneinfo import ZoneInfo
 
 from mtdata.utils.pivot_points import compute_pivot_method_levels
 
@@ -83,6 +84,20 @@ def test_confluence_volume_profile_window_matches_sr_timeframe() -> None:
 
 class _FakeClientTz:
     zone = "America/New_York"
+
+
+def test_daily_period_identifies_broker_trading_day():
+    fn = _get_pivot_fn()
+    rates = [_make_rate(time_=1_700_000_000.0), _make_rate(time_=1_700_086_400.0)]
+    with patch(_TF_MAP_PATCH, {"D1": 1}), patch(_TF_SECS_PATCH, {"D1": 86400}), \
+         patch(_COPY_RATES, return_value=rates), patch(_MT5) as mock_mt5, \
+         patch("mtdata.core.pivot.mt5_config.get_server_tz", return_value=ZoneInfo("Europe/Nicosia")), \
+         _mock_symbol_guard(info=_make_symbol_info()):
+        mock_mt5.symbol_info_tick.return_value = _make_tick(time_val=1_700_172_801.0)
+        result = fn("EURUSD", timeframe="D1")
+
+    assert result["period"]["broker_trading_day"] == "2023-11-16"
+    assert result["period"]["broker_timezone"] == "Europe/Nicosia"
 
 
 class TestPivotInvalidInputs:

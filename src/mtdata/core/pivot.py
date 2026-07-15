@@ -4,6 +4,7 @@ import math
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Literal, Optional
 
+from ..bootstrap.settings import mt5_config
 from ..forecast.common import fetch_history as _fetch_history
 from ..shared.constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
 from ..shared.schema import (
@@ -570,6 +571,18 @@ def pivot_compute_points(  # noqa: C901
                 },
                 "levels": levels_table,
             }
+            if str(timeframe).upper() == "D1":
+                broker_tz = mt5_config.get_server_tz()
+                if broker_tz is not None:
+                    payload["period"]["broker_trading_day"] = datetime.fromtimestamp(
+                        period_start,
+                        tz=broker_tz,
+                    ).date().isoformat()
+                    payload["period"]["broker_timezone"] = (
+                        getattr(broker_tz, "zone", None)
+                        or getattr(broker_tz, "key", None)
+                        or str(broker_tz)
+                    )
             if period_note:
                 payload["period_note"] = period_note
             payload["timezone"] = timezone_label
