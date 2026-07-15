@@ -8,8 +8,9 @@ import sqlite3
 import threading
 import time
 import uuid
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Iterator, Optional
 
 _DEFAULT_TTL_SECONDS = 86_400.0  # 24 hours
 _DEFAULT_DATABASE_PATH = Path.home() / ".mtdata" / "trade_idempotency.sqlite3"
@@ -208,11 +209,19 @@ class SQLiteIdempotencyStore:
         self._path.parent.mkdir(parents=True, exist_ok=True)
         self._initialize()
 
-    def _connect(self) -> sqlite3.Connection:
+    @contextmanager
+    def _connect(self) -> Iterator[sqlite3.Connection]:
         connection = sqlite3.connect(self._path, timeout=10.0)
         connection.row_factory = sqlite3.Row
         connection.execute("PRAGMA busy_timeout = 10000")
-        return connection
+        try:
+            yield connection
+            connection.commit()
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            connection.close()
 
     def _initialize(self) -> None:
         with self._connect() as connection:

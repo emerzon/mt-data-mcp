@@ -172,7 +172,7 @@ def _is_user_facing_report_warning(warning_obj: Any) -> bool:
     category = getattr(warning_obj, "category", None)
     if isinstance(category, type) and issubclass(
         category,
-        (DeprecationWarning, PendingDeprecationWarning, ImportWarning),
+        (DeprecationWarning, PendingDeprecationWarning, ImportWarning, ResourceWarning),
     ):
         return False
     try:
