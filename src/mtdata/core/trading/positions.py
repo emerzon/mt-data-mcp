@@ -601,9 +601,10 @@ _TRADE_HISTORY_COMPACT_DEAL_FIELDS = (
     "order_ticket",
     "position_ticket",
     "symbol",
-    "deal_type",
+    "fill_side",
     "deal_effect",
     "position_side",
+    "position_action",
     "volume",
     "price",
     "profit",
@@ -753,7 +754,7 @@ def _compact_trade_history_row(
             compact["deal_effect"] = action
         raw_deal_type = _first_present(compact, "type_label", "type")
         if raw_deal_type is not None:
-            compact["deal_type"] = raw_deal_type
+            compact["fill_side"] = raw_deal_type
         position_side = _trade_history_position_side(
             compact,
             action=action,
@@ -761,6 +762,8 @@ def _compact_trade_history_row(
         )
         if position_side is not None:
             compact["position_side"] = position_side
+        if action is not None and position_side is not None:
+            compact["position_action"] = f"{action}_{position_side}"
         if compact.get("comment_may_be_truncated") is True:
             compact["comment_truncated"] = True
         fields = _TRADE_HISTORY_COMPACT_DEAL_FIELDS

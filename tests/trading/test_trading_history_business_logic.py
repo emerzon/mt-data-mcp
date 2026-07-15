@@ -276,9 +276,10 @@ def test_trade_history_compact_omits_parallel_normalized_rows() -> None:
         "fill_time": "2024-01-01 12:00:00",
         "ticket": 11,
         "symbol": "EURUSD",
-        "deal_type": "Buy",
+        "fill_side": "Buy",
         "deal_effect": "close",
         "position_side": "short",
+        "position_action": "close_short",
         "volume": 0.5,
         "price": 1.2345,
         "profit": -1.0,
@@ -566,11 +567,12 @@ def test_trade_history_deals_decodes_enum_codes_to_labels() -> None:
         sys.modules["MetaTrader5"] = prev
 
     row = out["items"][0]
-    assert row["deal_type"] == "Buy"
+    assert row["fill_side"] == "Buy"
     assert "type" not in row
     assert "action" not in row
     assert row["deal_effect"] == "open"
     assert row["position_side"] == "long"
+    assert row["position_action"] == "open_long"
     assert "entry" not in row
     assert "reason" not in row
     assert "type_code" not in row
@@ -593,11 +595,12 @@ def test_trade_history_deals_reports_closed_position_side() -> None:
         sys.modules["MetaTrader5"] = prev
 
     row = out["items"][0]
-    assert row["deal_type"] == "Sell"
+    assert row["fill_side"] == "Sell"
     assert "type" not in row
     assert "action" not in row
     assert row["deal_effect"] == "close"
     assert row["position_side"] == "long"
+    assert row["position_action"] == "close_long"
 
 
 def test_trade_history_deals_extracts_exit_trigger_from_comment() -> None:
