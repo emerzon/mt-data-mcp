@@ -1166,7 +1166,7 @@ def _command_help_category(command: str) -> str:
 _CLI_DESCRIPTION = (
     "Dynamic CLI for MetaTrader5 MCP tools "
     "(TOON by default; set MTDATA_OUTPUT_FORMAT=json for JSON). "
-    "One-shot commands initialize the full tool runtime; for repeated local calls "
+    "One-shot commands initialize the requested tool family; for repeated local calls "
     "use `mtdata-cli shell`, and for agents use a long-lived stdio or HTTP server."
 )
 
@@ -1625,6 +1625,18 @@ def main():
     subparsers = parser.add_subparsers(
         dest="command", help="Available commands", metavar="<command>"
     )
+
+    shell_parser = subparsers.add_parser(
+        "shell",
+        help="Run repeated CLI commands in one warm Python process",
+        description=(
+            "Run an interactive mtdata-cli session. Enter ordinary command lines "
+            "without the mtdata-cli prefix; use exit or quit to stop."
+        ),
+        formatter_class=_CLIHelpFormatter,
+        allow_abbrev=False,
+    )
+    shell_parser.set_defaults(func=lambda _args: run_shell())
 
     # Dynamically create subparsers for each function, except forecast_generate
     forecast_tool = None
