@@ -375,6 +375,14 @@ def create_command_function(  # noqa: C901
             param_name = param["name"]
             arg_value = getattr(args, param_name, param["default"])
 
+            if (
+                param_name == "symbols"
+                and cmd_name in {"correlation_matrix", "cointegration_test", "cross_correlation"}
+                and isinstance(arg_value, (list, tuple))
+            ):
+                symbols = [str(value).strip() for value in arg_value if str(value).strip()]
+                arg_value = ",".join(symbols) or None
+
             if param.get("type") is bool and isinstance(arg_value, str):
                 if arg_value.lower() == "true":
                     arg_value = True

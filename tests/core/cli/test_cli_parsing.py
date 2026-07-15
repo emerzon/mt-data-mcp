@@ -1025,8 +1025,44 @@ class TestResolveParamKwargs:
             cmd_name=cmd_name,
         )
 
-        assert "Comma-separated MT5 symbols" in kwargs["help"]
+        expected_prefix = (
+            "Comma-separated MT5 symbols"
+            if cmd_name == "causal_discover_signals"
+            else "Comma- or space-separated MT5 symbols"
+        )
+        assert expected_prefix in kwargs["help"]
         assert "Optional with --group" in kwargs["help"]
+
+    @pytest.mark.parametrize(
+        ("cmd_name", "required"),
+        [
+            ("correlation_matrix", False),
+            ("cointegration_test", False),
+            ("cross_correlation", True),
+        ],
+    )
+    def test_pairwise_symbol_positionals_accept_space_separated_values(
+        self,
+        cmd_name,
+        required,
+    ):
+        parser = argparse.ArgumentParser()
+        add_dynamic_arguments(
+            parser,
+            {
+                "params": [
+                    {
+                        "name": "symbols",
+                        "type": str,
+                        "required": required,
+                        "default": None,
+                    }
+                ]
+            },
+            cmd_name=cmd_name,
+        )
+
+        assert parser.parse_args(["EURUSD", "GBPUSD"]).symbols == ["EURUSD", "GBPUSD"]
 
     def test_labels_triple_barrier_limit_and_lookback_help_distinguish_roles(self):
         limit_kwargs, _ = _resolve_param_kwargs(

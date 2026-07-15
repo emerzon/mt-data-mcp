@@ -213,7 +213,7 @@ class TestMain:
             },
         }
 
-        with patch("sys.argv", ["cli.py", "correlation_matrix", "EURUSD,GBPUSD"]):
+        with patch("sys.argv", ["cli.py", "correlation_matrix", "EURUSD", "GBPUSD"]):
             result = main()
 
         assert result == 0
@@ -313,7 +313,7 @@ class TestMain:
             },
         }
 
-        with patch("sys.argv", ["cli.py", "cointegration_test", "EURUSD,GBPUSD"]):
+        with patch("sys.argv", ["cli.py", "cointegration_test", "EURUSD", "GBPUSD"]):
             result = main()
 
         assert result == 0
