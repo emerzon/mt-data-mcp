@@ -590,7 +590,6 @@ _TRADE_HISTORY_ORDER_TOP_LEVEL_FIELDS = (
 )
 _TRADE_HISTORY_COMPACT_DEAL_FIELDS = (
     "fill_time",
-    "ticket",
     "deal_ticket",
     "order_ticket",
     "position_ticket",
@@ -613,7 +612,6 @@ _TRADE_HISTORY_COMPACT_DEAL_FIELDS = (
 _TRADE_HISTORY_COMPACT_ORDER_FIELDS = (
     "placed_time",
     "done_time",
-    "ticket",
     "order_ticket",
     "position_ticket",
     "symbol",
@@ -732,6 +730,17 @@ def _compact_trade_history_row(
 ) -> Dict[str, Any]:
     compact = _round_trade_money_fields(row)
     if history_kind == "orders":
+        order_ticket = _first_present(compact, "order_ticket", "ticket", "order")
+        if order_ticket is not None:
+            compact["order_ticket"] = order_ticket
+        position_ticket = _first_present(
+            compact,
+            "position_ticket",
+            "position_id",
+            "position_by_id",
+        )
+        if position_ticket is not None:
+            compact["position_ticket"] = position_ticket
         if "time_setup" in compact:
             compact["placed_time"] = compact["time_setup"]
         if "time_done" in compact:
@@ -739,8 +748,25 @@ def _compact_trade_history_row(
         raw_order_type = _first_present(compact, "type_label", "type")
         if raw_order_type is not None:
             compact["order_type"] = raw_order_type
+        state = _first_present(compact, "state_label", "state")
+        if state is not None:
+            compact["state"] = state
         fields = _TRADE_HISTORY_COMPACT_ORDER_FIELDS
     else:
+        deal_ticket = _first_present(compact, "deal_ticket", "ticket", "deal")
+        if deal_ticket is not None:
+            compact["deal_ticket"] = deal_ticket
+        order_ticket = _first_present(compact, "order_ticket", "order")
+        if order_ticket is not None:
+            compact["order_ticket"] = order_ticket
+        position_ticket = _first_present(
+            compact,
+            "position_ticket",
+            "position_id",
+            "position_by_id",
+        )
+        if position_ticket is not None:
+            compact["position_ticket"] = position_ticket
         if "time" in compact:
             compact["fill_time"] = compact["time"]
         action = _trade_history_action(compact, history_kind=history_kind)
@@ -768,6 +794,58 @@ def _compact_trade_history_row(
         and compact[key] is not None
         and not (isinstance(compact[key], str) and not compact[key].strip())
     }
+
+
+def _full_trade_history_row(
+    row: Dict[str, Any],
+    *,
+    history_kind: Optional[str],
+) -> Dict[str, Any]:
+    """Keep compact field names stable and nest remaining MT5 attributes."""
+    rounded = _round_trade_money_fields(row)
+    full = _compact_trade_history_row(rounded, history_kind=history_kind)
+    if history_kind == "orders":
+        for raw_key, canonical_key in (
+            ("time_setup_msc", "placed_time_msc"),
+            ("time_done_msc", "done_time_msc"),
+        ):
+            if rounded.get(raw_key) is not None:
+                full[canonical_key] = rounded[raw_key]
+        consumed = {
+            "ticket", "order_ticket", "order", "position_ticket", "position_id",
+            "position_by_id", "time_setup", "time_done", "time_setup_msc",
+            "time_done_msc", "type", "type_label", "state", "state_label",
+            "volume", "volume_initial", "volume_current", "price", "price_open",
+            "price_current", "sl", "tp", "symbol", "comment",
+        }
+    else:
+        if rounded.get("time_msc") is not None:
+            full["fill_time_msc"] = rounded["time_msc"]
+        if rounded.get("exit_trigger_source") is not None:
+            full["exit_trigger_source"] = rounded["exit_trigger_source"]
+        consumed = {
+            "ticket", "deal_ticket", "deal", "order", "order_ticket",
+            "position_ticket", "position_id", "position_by_id", "time", "time_msc",
+            "type", "type_label", "symbol", "volume", "price", "profit",
+            "commission", "swap", "fee", "comment", "exit_trigger",
+            "exit_trigger_price",
+        }
+    raw = {
+        key: value
+        for key, value in rounded.items()
+        if key not in consumed
+        and key not in _TRADE_HISTORY_ROW_METADATA_FIELDS
+        and key not in {
+            "comment_visible_length",
+            "comment_max_length",
+            "comment_may_be_truncated",
+        }
+        and value is not None
+        and not (isinstance(value, str) and not value.strip())
+    }
+    if raw:
+        full["raw"] = raw
+    return full
 
 
 def _public_trade_history_details(row: Dict[str, Any]) -> Dict[str, Any]:
@@ -981,10 +1059,8 @@ def normalize_trade_history_output(
     history_kind = getattr(request, "history_kind", None)
     include_request_metadata = _include_trade_read_request_metadata(request)
     if out.get("success") is True:
-        detail_value = str(getattr(request, "detail", "compact") or "compact").lower()
-        if detail_value != "compact":
-            period_context = _trade_history_period_context(request)
-            out = _insert_trade_history_period_context(out, period_context)
+        period_context = _trade_history_period_context(request)
+        out = _insert_trade_history_period_context(out, period_context)
     timezone_label = "UTC"
     if out.get("success") is True and isinstance(out.get("items"), list):
         out.setdefault("row_key", "items")
@@ -994,11 +1070,12 @@ def normalize_trade_history_output(
                 timezone_label = str(item["timezone"])
                 break
         if include_request_metadata:
-            out["items"] = _normalize_trade_history_items(
-                raw_items,
-                history_kind=history_kind,
-            )
-            out["item_schema"] = "normalized_trade_history.v2"
+            out["items"] = [
+                _full_trade_history_row(item, history_kind=history_kind)
+                for item in raw_items
+                if isinstance(item, dict)
+            ]
+            out["item_schema"] = "trade_history.v3"
         else:
             out["items"] = _style_trade_history_items(
                 [

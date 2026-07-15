@@ -866,11 +866,10 @@ def trade_history(request: TradeHistoryRequest) -> Dict[str, Any]:
     Rows expose three distinct identifiers: `deal_ticket` (the unique executed
     fill), `order_ticket` (the order that produced the fill), and
     `position_ticket` (the position opened/closed; matches `trade_get_open.ticket`).
-    Compact deals use `fill_time`; compact orders use `placed_time` and
-    `done_time`. Full/detail rows retain native MT5 time fields.
-    Use `detail="compact"` (default) for rows plus minimal envelope metadata.
-    Use `detail="standard"` or `detail="full"` to include period context, and
-    `detail="full"` to retain request echo fields.
+    Deals use `fill_time` and `fill_side`; orders use `placed_time` and
+    `done_time` at every detail level. Full rows add native MT5 attributes
+    under `raw` without renaming canonical fields. Every response includes the
+    effective period context. Use `detail="full"` for request echo fields.
     """
     return run_logged_operation(
         logger,
