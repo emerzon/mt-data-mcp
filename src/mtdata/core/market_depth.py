@@ -130,14 +130,6 @@ def _market_depth_level_field(level: Any, *names: str) -> Any:
 
 def _compact_market_ticker_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     out: Dict[str, Any] = {}
-    primary_spread_key = next(
-        (
-            key
-            for key in ("spread_pips", "spread_pct", "spread_points", "spread")
-            if payload.get(key) is not None
-        ),
-        None,
-    )
     for key in (
         "success",
         "symbol",
@@ -155,10 +147,6 @@ def _compact_market_ticker_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
         "live_max_age_seconds",
         "stale_after_seconds",
         "market_status_reason",
-        "contract_size",
-        "lot_definition",
-        "pricing_basis",
-        "pricing_basis_units",
         "time",
         "time_epoch",
         "timezone",
@@ -174,26 +162,9 @@ def _compact_market_ticker_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     market_state = out.pop("market_status", None)
     if market_state is not None:
         out["market_state"] = market_state
-    if primary_spread_key is not None:
-        out[primary_spread_key] = payload.get(primary_spread_key)
-    units = payload.get("units")
-    if isinstance(units, dict):
-        filtered_units = {
-            key: units.get(key)
-            for key in (
-                "bid",
-                "ask",
-                "mid",
-                primary_spread_key,
-                "contract_size",
-                "lot",
-            )
-            if key and units.get(key) is not None
-        }
-        if filtered_units:
-            out["units"] = filtered_units
-    elif units is not None:
-        out["units"] = units
+    for key in ("spread", "spread_points", "spread_pips", "spread_pct"):
+        if payload.get(key) is not None:
+            out[key] = payload[key]
     return out
 
 
