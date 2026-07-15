@@ -78,22 +78,41 @@ def strip_string_fields_in_rows(
 def resolve_date_range(
     *, date_from: Optional[str], date_to: Optional[str], default_days: int = 7
 ) -> tuple[str, str]:
-    """Resolve date range with defaults."""
-    today = datetime.date.today()
+    """Resolve an ISO date range for Finviz API calls.
+
+    Defaults: ``date_from`` to today when omitted; ``date_to`` to
+    ``date_from + default_days`` when omitted. Requires ``date_from`` when
+    ``date_to`` is provided, and enforces ``date_to >= date_from``.
+    """
+    if date_to and not date_from:
+        raise ValueError("date_from is required when date_to is provided")
+
     if date_from:
-        from_str = parse_iso_date_input(date_from, field_name="date_from").isoformat()
+        df = parse_iso_date_input(date_from, field_name="date_from")
+        from_str = df.isoformat()
     else:
-        from_date = today - datetime.timedelta(days=default_days)
-        from_str = from_date.isoformat()
+        df = datetime.date.today()
+        from_str = df.isoformat()
+
     if date_to:
-        to_str = parse_iso_date_input(date_to, field_name="date_to").isoformat()
+        dt = parse_iso_date_input(date_to, field_name="date_to")
+        to_str = dt.isoformat()
     else:
-        to_str = today.isoformat()
+        dt = df + datetime.timedelta(days=int(default_days))
+        to_str = dt.isoformat()
+
+    if dt < df:
+        raise ValueError("date_to must be >= date_from")
+
     return from_str, to_str
 
 
 def align_to_next_monday_if_weekend(date_from: str) -> str:
-    """Align date to next Monday if it falls on weekend."""
+    """Align date to next Monday if it falls on weekend.
+
+    Finviz economic calendar API appears to anchor by week; weekend anchors
+    often return the prior week.
+    """
     d = parse_iso_date_input(date_from, field_name="date_from")
     # If Saturday (5) or Sunday (6), move to next Monday
     if d.weekday() == 5:  # Saturday

@@ -11,9 +11,22 @@ from .client import (
     get_finviz_page_limit_max,
     get_finviz_screener_max_rows,
 )
-from .dates import normalize_finviz_dates_in_rows
+from .dates import (
+    align_to_next_monday_if_weekend,
+    normalize_finviz_dates_in_rows,
+    resolve_date_range,
+)
 from .symbols import looks_like_non_equity_symbol
-from .utils import apply_finvizfinance_timeout_patch
+from .utils import (
+    apply_finvizfinance_timeout_patch,
+    crypto_day_week_identical,
+    crypto_price_display,
+)
+
+# Private aliases keep existing tests/call sites patchable.
+_resolve_date_range = resolve_date_range
+_align_to_next_monday_if_weekend = align_to_next_monday_if_weekend
+_apply_finvizfinance_timeout_patch = apply_finvizfinance_timeout_patch
 
 logger = logging.getLogger(__name__)
 
@@ -258,51 +271,8 @@ def _finviz_http_get(url: str, *, headers: Dict[str, str], params: Dict[str, Any
     )
 
 
-def _to_float_or_none(value: Any) -> Optional[float]:
-    if value is None or isinstance(value, bool):
-        return None
-    if isinstance(value, (int, float)):
-        try:
-            out = float(value)
-            return out if out == out else None
-        except Exception:
-            return None
-    text = str(value).strip().replace(",", "")
-    if not text:
-        return None
-    if text.endswith("%"):
-        text = text[:-1].strip()
-    try:
-        out = float(text)
-        return out if out == out else None
-    except Exception:
-        return None
-
-
-def _values_equivalent(lhs: Any, rhs: Any) -> bool:
-    left_num = _to_float_or_none(lhs)
-    right_num = _to_float_or_none(rhs)
-    if left_num is not None and right_num is not None:
-        scale = max(1.0, abs(left_num), abs(right_num))
-        return abs(left_num - right_num) <= (1e-9 * scale)
-    return lhs == rhs
-
-
-def _crypto_day_week_identical(rows: List[Dict[str, Any]]) -> bool:
-    matched = 0
-    for row in rows:
-        if not isinstance(row, dict):
-            continue
-        if "Perf Day" not in row or "Perf Week" not in row:
-            continue
-        matched += 1
-        if not _values_equivalent(row.get("Perf Day"), row.get("Perf Week")):
-            return False
-    return matched > 0
-
-
 def _drop_duplicate_day_week_performance(rows: List[Dict[str, Any]]) -> bool:
-    if not _crypto_day_week_identical(rows):
+    if not crypto_day_week_identical(rows):
         return False
     for row in rows:
         if not isinstance(row, dict):
@@ -310,24 +280,6 @@ def _drop_duplicate_day_week_performance(rows: List[Dict[str, Any]]) -> bool:
         row.pop("Perf Week", None)
         row.pop("Perf WTD", None)
     return True
-
-
-def _crypto_price_display(value: Any) -> Optional[str]:
-    num = _to_float_or_none(value)
-    if num is None:
-        return None
-    abs_num = abs(num)
-    if abs_num >= 1.0:
-        decimals = 2
-    elif abs_num >= 0.01:
-        decimals = 4
-    elif abs_num >= 0.0001:
-        decimals = 6
-    elif abs_num > 0.0 and abs_num < 0.00000001:
-        return f"{num:.8g}"
-    else:
-        decimals = 8
-    return f"{num:.{decimals}f}"
 
 
 _FINVIZ_SCREENER_VIEWS = {
@@ -346,7 +298,7 @@ def _load_finviz_attr(module_name: str, attr_name: str) -> Any:
 
 
 def _get_finviz_stock_quote(symbol: str) -> tuple[str, Any]:
-    apply_finvizfinance_timeout_patch()
+    _apply_finvizfinance_timeout_patch()
     finvizfinance = _load_finviz_attr("finvizfinance.quote", "finvizfinance")
     symbol_norm = _normalize_finviz_equity_symbol(symbol)
     return symbol_norm, finvizfinance(symbol_norm)
@@ -367,7 +319,7 @@ def _fetch_finviz_market_performance_rows(
     class_name: str,
     empty_error: str,
 ) -> List[Dict[str, Any]]:
-    apply_finvizfinance_timeout_patch()
+    _apply_finvizfinance_timeout_patch()
     market_cls = _load_finviz_attr(module_name, class_name)
     market_client = market_cls()
     df = market_client.performance()
@@ -609,7 +561,7 @@ def screen_stocks(
         Screener results with stock list
     """
     try:
-        apply_finvizfinance_timeout_patch()
+        _apply_finvizfinance_timeout_patch()
         view_lower = view.lower().strip()
         screener = _build_finviz_screener(view_lower)
         
@@ -678,7 +630,7 @@ def get_general_news(news_type: str = "news", limit: int = 20, page: int = 1) ->
         Page number (default 1)
     """
     try:
-        apply_finvizfinance_timeout_patch()
+        _apply_finvizfinance_timeout_patch()
         from finvizfinance.news import News
 
         fnews = News()
@@ -731,7 +683,7 @@ def get_insider_activity(option: str = "latest", limit: int = 50, page: int = 1)
         Page number (default 1)
     """
     try:
-        apply_finvizfinance_timeout_patch()
+        _apply_finvizfinance_timeout_patch()
         from finvizfinance.insider import Insider
 
         finsider = Insider(option=option)
@@ -807,7 +759,7 @@ def get_crypto_performance() -> Dict[str, Any]:
         for row in items_list:
             if not isinstance(row, dict) or "Price" not in row:
                 continue
-            price_display = _crypto_price_display(row.get("Price"))
+            price_display = crypto_price_display(row.get("Price"))
             if price_display is not None:
                 row["Price"] = price_display
         if _drop_duplicate_day_week_performance(items_list):
@@ -859,7 +811,7 @@ def get_earnings_calendar(
     "This Month".
     """
     try:
-        apply_finvizfinance_timeout_patch()
+        _apply_finvizfinance_timeout_patch()
         from finvizfinance.screener.financial import Financial
 
         allowed_periods = {"This Week", "Next Week", "Previous Week", "This Month"}
@@ -933,13 +885,13 @@ def get_economic_calendar(
         # Finviz migrated the calendar UI to client-side rendering; the legacy
         # finvizfinance HTML table parser often returns no rows. Prefer the JSON API.
         default_days = 7
-        date_from, date_to = _resolve_date_range(
+        date_from, date_to = resolve_date_range(
             date_from=date_from,
             date_to=date_to,
             default_days=default_days,
         )
 
-        api_date_from = _align_to_next_monday_if_weekend(date_from)
+        api_date_from = align_to_next_monday_if_weekend(date_from)
         events = _fetch_finviz_economic_calendar_items(date_from=api_date_from, date_to=date_to)
         events = _filter_calendar_events_by_date(events, date_from=date_from, date_to=date_to)
 
@@ -992,7 +944,7 @@ def get_earnings_calendar_api(
     try:
         safe_limit, safe_page = _sanitize_pagination(limit, page)
         default_days = 7 if (date_from is not None and date_to is None) else 30
-        date_from, date_to = _resolve_date_range(date_from=date_from, date_to=date_to, default_days=default_days)
+        date_from, date_to = resolve_date_range(date_from=date_from, date_to=date_to, default_days=default_days)
         payload = _fetch_finviz_calendar_paged(
             kind="earnings",
             date_from=date_from,
@@ -1033,7 +985,7 @@ def get_dividends_calendar_api(
     try:
         safe_limit, safe_page = _sanitize_pagination(limit, page)
         default_days = 7 if (date_from is not None and date_to is None) else 30
-        date_from, date_to = _resolve_date_range(date_from=date_from, date_to=date_to, default_days=default_days)
+        date_from, date_to = resolve_date_range(date_from=date_from, date_to=date_to, default_days=default_days)
         payload = _fetch_finviz_calendar_paged(
             kind="dividends",
             date_from=date_from,
@@ -1062,57 +1014,6 @@ def get_dividends_calendar_api(
     except Exception as e:
         logger.exception("Error fetching dividends calendar (API)")
         return {"error": _sanitize_error_message(e)}
-
-
-def _parse_iso_date_input(value: str, *, field_name: str) -> datetime.date:
-    text = str(value).strip()
-    if not text:
-        raise ValueError(f"Invalid {field_name} '{value}'. Expected YYYY-MM-DD or ISO datetime")
-    normalized = text[:-1] + "+00:00" if text.endswith(("Z", "z")) else text
-    try:
-        return datetime.date.fromisoformat(normalized)
-    except ValueError:
-        pass
-    try:
-        return datetime.datetime.fromisoformat(normalized).date()
-    except ValueError as e:
-        raise ValueError(f"Invalid {field_name} '{value}'. Expected YYYY-MM-DD or ISO datetime") from e
-
-
-def _resolve_date_range(*, date_from: Optional[str], date_to: Optional[str], default_days: int) -> tuple[str, str]:
-    """Resolve an ISO date range for Finviz API calls."""
-    if date_to and not date_from:
-        raise ValueError("date_from is required when date_to is provided")
-
-    if date_from:
-        df = _parse_iso_date_input(date_from, field_name="date_from")
-        date_from = df.isoformat()
-    else:
-        df = datetime.date.today()
-        date_from = df.isoformat()
-
-    if date_to:
-        dt = _parse_iso_date_input(date_to, field_name="date_to")
-        date_to = dt.isoformat()
-    else:
-        dt = df + datetime.timedelta(days=int(default_days))
-        date_to = dt.isoformat()
-
-    if dt < df:
-        raise ValueError("date_to must be >= date_from")
-
-    return date_from, date_to
-
-
-def _align_to_next_monday_if_weekend(date_from: str) -> str:
-    """Finviz economic calendar API appears to anchor by week; weekend anchors often return the prior week."""
-    df = _parse_iso_date_input(date_from, field_name="date_from")
-    wd = df.weekday()  # Monday=0 ... Sunday=6
-    if wd == 5:  # Saturday
-        df = df + datetime.timedelta(days=2)
-    elif wd == 6:  # Sunday
-        df = df + datetime.timedelta(days=1)
-    return df.isoformat()
 
 
 def _filter_calendar_events_by_date(
