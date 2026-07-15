@@ -583,7 +583,8 @@ def test_rule_based_explains_ranging_direction_bias() -> None:
 
     regime = out["regime"]
     assert regime["state"] == "ranging"
-    assert regime["direction"] == "bearish"
+    assert "direction" not in regime
+    assert regime["window_bias"] == "bearish"
     assert regime["direction_basis"] == "net_window_move"
     assert "window bias, not a trend classification" in regime["interpretation"]
     assert regime["trend_strength"] >= out["params_used"]["trend_strength_threshold"]
@@ -612,7 +613,7 @@ def test_rule_based_compact_explains_direction_bias() -> None:
     assert out["signal_status"] == "not_actionable"
     assert current_regime["bars"] == 60
     assert current_regime["label"] == "ranging"
-    assert current_regime["direction"] == "bearish"
+    assert "direction" not in current_regime
     assert current_regime["window_bias"] == "bearish"
     assert current_regime["direction_role"] == "window_bias_not_trend"
     assert "headline" not in current_regime
@@ -653,7 +654,8 @@ def test_rule_based_summary_explains_direction_bias() -> None:
 
     summary = out["summary"]
     assert summary["label"] == "ranging"
-    assert summary["direction"] == "bearish"
+    assert "direction" not in summary
+    assert summary["window_bias"] == "bearish"
     assert summary["direction_basis"] == "net_window_move"
     assert "window bias, not a trend classification" in summary["interpretation"]
 

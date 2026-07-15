@@ -2900,7 +2900,6 @@ def regime_detect(  # noqa: C901
                 }
             regime_info = {
                 "state": regime_state,
-                "direction": direction,
                 "state_label_native": regime_state,
                 "state_label_canonical": regime_state,
                 "direction_basis": "net_window_move",
@@ -2911,6 +2910,10 @@ def regime_detect(  # noqa: C901
                 "window_move_pct": window_move_pct,
                 "signal_source": "price",
             }
+            if regime_state == "trending":
+                regime_info["direction"] = direction
+            else:
+                regime_info["window_bias"] = direction
             if state_note:
                 regime_info["note"] = state_note
             confidence = 0.0
@@ -2957,12 +2960,13 @@ def regime_detect(  # noqa: C901
                 "regime_confidence": regime_confidence,
                 "since": regime_since,
                 "bars": int(window_bars),
-                "direction": direction,
                 "state_label_native": regime_state,
                 "state_label_canonical": regime_state,
                 "headline": f"regime={regime_state}; window_bias={direction}",
             }
-            if regime_state != "trending":
+            if regime_state == "trending":
+                current_regime["direction"] = direction
+            else:
                 current_regime["window_bias"] = direction
             regime_payload = dict(regime_info)
 
@@ -2990,13 +2994,21 @@ def regime_detect(  # noqa: C901
                         "regime": int(regime_id),
                         "label": regime_state,
                         "regime_confidence": regime_confidence,
-                        "direction": direction,
+                        **(
+                            {"direction": direction}
+                            if regime_state == "trending"
+                            else {"window_bias": direction}
+                        ),
                     }
                 ],
                 "regime_info": {
                     int(regime_id): {
                         "label": regime_state,
-                        "direction": direction,
+                        **(
+                            {"direction": direction}
+                            if regime_state == "trending"
+                            else {"window_bias": direction}
+                        ),
                         "trend_strength": trend_strength_out,
                         "efficiency_ratio": efficiency_ratio_out,
                         "window_move_pct": window_move_pct,
@@ -3019,8 +3031,11 @@ def regime_detect(  # noqa: C901
                     "lookback": int(window_bars),
                     "last_state": int(regime_id),
                     "label": regime_state,
-                    "direction": direction,
-                    "window_bias": direction if regime_state != "trending" else None,
+                    **(
+                        {"direction": direction}
+                        if regime_state == "trending"
+                        else {"window_bias": direction}
+                    ),
                     "headline": f"regime={regime_state}; window_bias={direction}",
                     "regime_confidence": regime_confidence,
                 }
