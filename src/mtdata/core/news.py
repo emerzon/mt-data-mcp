@@ -58,6 +58,7 @@ _NEWS_COMPACT_ITEM_DROP_KEYS = frozenset(
         "category",
     }
 )
+_NEWS_COMPACT_SYMBOL_BUCKET_LIMIT = 5
 
 
 def _news_datetime_utc(value: Any) -> Optional[datetime]:
@@ -403,8 +404,8 @@ def news(
         Maximum items to return. With `symbol`, this caps `related_news` only
         and omits general buckets; without `symbol`, it caps across all buckets.
     limit_per_bucket : int, optional
-        Maximum number of items to return per news bucket. Use this only when
-        you explicitly want a per-bucket cap.
+        Maximum number of items to return per news bucket. Compact symbol news
+        defaults to five items per bucket; pass this value to override it.
     offset : int, optional
         Number of ranked bucket-order items to skip before applying limit.
 
@@ -446,6 +447,18 @@ def news(
         return {"error": "offset must be a non-negative integer."}
     if offset_value < 0:
         return {"error": "offset must be >= 0."}
+    default_compact_symbol_bucket_limit = (
+        symbol not in (None, "")
+        and detail_mode == "compact"
+        and limit_value is None
+        and limit_per_bucket_value is None
+        and offset_value == 0
+    )
+    effective_limit_per_bucket = (
+        _NEWS_COMPACT_SYMBOL_BUCKET_LIMIT
+        if default_compact_symbol_bucket_limit
+        else limit_per_bucket_value
+    )
 
     def _run() -> Dict[str, Any]:
         raw = fetch_unified_news(symbol=symbol)
@@ -457,10 +470,12 @@ def news(
                 detail=detail_mode,
             ),
             limit=limit_value,
-            limit_per_bucket=limit_per_bucket_value,
+            limit_per_bucket=effective_limit_per_bucket,
             offset=offset_value,
             symbol_mode=symbol not in (None, ""),
         )
+        if default_compact_symbol_bucket_limit:
+            out["compact_bucket_limit"] = _NEWS_COMPACT_SYMBOL_BUCKET_LIMIT
         out = _attach_news_row_keys(out)
         out.setdefault("data_fetched_at", _news_data_fetched_at())
         if detail_mode == "full":
@@ -475,6 +490,6 @@ def news(
         detail=detail_mode,
         limit=limit_value,
         offset=offset_value,
-        limit_per_bucket=limit_per_bucket_value,
+        limit_per_bucket=effective_limit_per_bucket,
         func=_run,
     )

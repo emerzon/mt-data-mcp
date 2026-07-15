@@ -135,6 +135,32 @@ def test_news_tool_symbol_limit_caps_related_bucket_only(monkeypatch) -> None:
     assert limited["has_more"] is True
 
 
+def test_compact_symbol_news_caps_each_bucket_by_default(monkeypatch) -> None:
+    raw = _unwrap(news)
+    payload = {
+        "success": True,
+        "symbol": "EURUSD",
+        "general_news": [{"title": f"g{i}"} for i in range(6)],
+        "related_news": [],
+        "impact_news": [{"title": f"i{i}"} for i in range(6)],
+        "upcoming_events": [{"title": f"u{i}"} for i in range(6)],
+        "recent_events": [{"title": f"e{i}"} for i in range(6)],
+        "symbol_news_note": "No EURUSD-specific related news passed relevance gates.",
+    }
+    monkeypatch.setattr("mtdata.core.news.fetch_unified_news", lambda symbol=None: payload)
+
+    compact = raw(symbol="EURUSD")
+    full = raw(symbol="EURUSD", detail="full")
+
+    for key in ("general_news", "impact_news", "upcoming_events", "recent_events"):
+        assert len(compact[key]) == 5
+        assert len(full[key]) == 6
+    assert compact["compact_bucket_limit"] == 5
+    assert compact["truncated"] is True
+    assert compact["symbol_news_note"] == payload["symbol_news_note"]
+    assert "compact_bucket_limit" not in full
+
+
 def test_news_tool_fx_symbol_limit_does_not_fill_from_general_buckets(monkeypatch) -> None:
     raw = _unwrap(news)
 
