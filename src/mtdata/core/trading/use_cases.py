@@ -47,7 +47,11 @@ from .requests import (
     TradeStressTestRequest,
     TradeVarCvarRequest,
 )
-from .safety import evaluate_trade_guardrails, preview_trade_guardrails
+from .safety import (
+    assess_margin_stress,
+    evaluate_trade_guardrails,
+    preview_trade_guardrails,
+)
 from .sizing import _resolve_risk_tick_value, compute_kelly_sizing_context
 
 logger = logging.getLogger(__name__)
@@ -3004,6 +3008,7 @@ def run_trade_risk_analyze(  # noqa: C901
                 return {"error": "Failed to get account info"}
 
             equity = validation._safe_float_attr(account, "equity", 0.0)
+            margin_stress = assess_margin_stress(account)
             currency = getattr(account, "currency", None)
             positions = (
                 gateway.positions_get(symbol=request.symbol)
@@ -3370,12 +3375,21 @@ def run_trade_risk_analyze(  # noqa: C901
                 (total_notional_exposure / equity) * 100.0 if equity > 0 else 0.0
             )
 
-            if total_risk_pct > 10:
-                quantified_risk_level = "high"
-            elif total_risk_pct > 5:
-                quantified_risk_level = "moderate"
-            else:
-                quantified_risk_level = "low"
+            stop_risk_level = "high" if total_risk_pct > 10 else "moderate" if total_risk_pct > 5 else "low"
+            margin_risk_level = (
+                "high" if margin_stress["status"] == "critical"
+                else "moderate" if margin_stress["status"] == "stressed"
+                else "low" if margin_stress["status"] == "healthy" else "unknown"
+            )
+            notional_risk_level = (
+                "high" if notional_exposure_pct >= 400.0
+                else "moderate" if notional_exposure_pct >= 200.0 else "low"
+            )
+            risk_rank = {"unknown": -1, "low": 0, "moderate": 1, "high": 2}
+            quantified_risk_level = max(
+                (stop_risk_level, margin_risk_level, notional_risk_level),
+                key=lambda value: risk_rank[value],
+            )
 
             if positions_without_sl > 0 or pending_orders_without_sl > 0:
                 overall_risk_status = "unlimited"
@@ -3405,6 +3419,10 @@ def run_trade_risk_analyze(  # noqa: C901
                 "portfolio_risk": {
                     "overall_risk_status": overall_risk_status,
                     "quantified_risk_level": quantified_risk_level,
+                    "stop_risk_level": stop_risk_level,
+                    "margin_risk_level": margin_risk_level,
+                    "notional_risk_level": notional_risk_level,
+                    "margin_stress": margin_stress,
                     "total_risk_currency": round(total_risk_currency, 2),
                     "total_risk_pct": round(total_risk_pct, 2),
                     "open_position_risk_currency": round(open_position_risk_currency, 2),
@@ -3445,6 +3463,7 @@ def run_trade_risk_analyze(  # noqa: C901
                     "contract_price_product": "contract_size_times_price",
                 },
             }
+            portfolio_sizing_blocked = False
             if request.symbol:
                 other_positions_count = None
                 if portfolio_positions_total is not None:
@@ -3473,6 +3492,7 @@ def run_trade_risk_analyze(  # noqa: C901
                     "partial" if other_positions_count else "symbol_scope"
                 )
                 if other_positions_count:
+                    portfolio_sizing_blocked = True
                     scoped_risk["overall_risk_status"] = "partial"
                     scoped_risk["quantified_risk_level"] = "unknown"
                     result["scope_warning"] = (
@@ -3685,6 +3705,29 @@ def run_trade_risk_analyze(  # noqa: C901
                     )
                 )
             )
+            if sizing_ready and (
+                portfolio_sizing_blocked
+                or margin_stress["status"] == "critical"
+            ):
+                block_reason = (
+                    "Symbol scope hides open positions on other symbols."
+                    if portfolio_sizing_blocked
+                    else "Account margin stress is critical."
+                )
+                result["position_sizing_error"] = _build_position_sizing_error(
+                    code="portfolio_safety_block",
+                    reason=block_reason,
+                    remediation=(
+                        "Review the full portfolio and reduce margin pressure "
+                        "before sizing a new trade."
+                    ),
+                    details={
+                        "risk_visibility": result.get("risk_visibility"),
+                        "margin_stress": margin_stress,
+                    },
+                )
+                result.pop("position_sizing", None)
+                sizing_ready = False
             if sizing_ready:
                 if not request.symbol:
                     return {"error": "symbol is required for position sizing"}

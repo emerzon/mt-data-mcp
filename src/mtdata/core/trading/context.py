@@ -17,6 +17,7 @@ from .requests import (
     TradeGetPendingRequest,
     TradeSessionContextRequest,
 )
+from .safety import assess_margin_stress
 
 logger = logging.getLogger(__name__)
 
@@ -153,6 +154,7 @@ def _build_trade_ready(
     if not isinstance(account, dict) or account.get("error") not in (None, ""):
         blockers.append("account_unavailable")
     else:
+        margin_stress = assess_margin_stress(account)
         margin_free = account.get("margin_free")
         margin_level = account.get("margin_level")
         try:
@@ -172,6 +174,8 @@ def _build_trade_ready(
                 blockers.append("no_free_margin")
         except Exception:
             pass
+        if margin_stress["status"] == "critical":
+            blockers.append("critical_margin_stress")
 
     if not isinstance(quote, dict) or quote.get("error") not in (None, ""):
         blockers.append("quote_unavailable")
@@ -201,6 +205,8 @@ def _build_trade_ready(
         "readiness_scope": "connectivity_account_quote_and_symbol_not_portfolio_risk_approval",
         "portfolio_risk_assessed": False,
     }
+    if isinstance(account, dict) and account.get("error") in (None, ""):
+        result["margin_stress"] = assess_margin_stress(account)
     if margin_level not in (None, ""):
         result["margin_level"] = margin_level
     if margin_utilization_pct is not None:

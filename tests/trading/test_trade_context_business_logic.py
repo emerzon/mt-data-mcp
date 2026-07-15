@@ -39,6 +39,24 @@ def test_trade_ready_does_not_claim_portfolio_risk_approval() -> None:
     assert "not_portfolio_risk_approval" in readiness["readiness_scope"]
 
 
+def test_trade_ready_blocks_critical_margin_stress() -> None:
+    readiness = _build_trade_ready(
+        {
+            "execution_ready": True,
+            "equity": 384.44,
+            "margin": 348.96,
+            "margin_free": 35.48,
+            "margin_level": 110.17,
+        },
+        {"usable_for_live_trading": True, "data_stale": False},
+        {"can_open_new_positions": True},
+    )
+
+    assert readiness["execution_preconditions_met"] is False
+    assert "critical_margin_stress" in readiness["blockers"]
+    assert readiness["margin_stress"]["status"] == "critical"
+
+
 def test_trade_session_context_compacts_nested_sections_by_default() -> None:
     timezone_meta = {"used": {"tz": "UTC"}}
     ticker_compact = {

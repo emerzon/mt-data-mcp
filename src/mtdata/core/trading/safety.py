@@ -80,6 +80,58 @@ def _normalize_symbol(value: Any) -> str:
     return str(value or "").strip().upper()
 
 
+def assess_margin_stress(account: Any) -> Dict[str, Any]:
+    """Classify account margin pressure using conservative broker-agnostic bands."""
+    getter = account.get if isinstance(account, dict) else lambda key, default=None: getattr(account, key, default)
+
+    def _number(key: str) -> Optional[float]:
+        try:
+            value = float(getter(key, None))
+        except (TypeError, ValueError):
+            return None
+        return value if math.isfinite(value) else None
+
+    equity = _number("equity")
+    margin = _number("margin")
+    margin_free = _number("margin_free")
+    margin_level = _number("margin_level")
+    utilization = (margin / equity * 100.0) if equity and equity > 0 and margin is not None else None
+    free_ratio = (margin_free / equity * 100.0) if equity and equity > 0 and margin_free is not None else None
+
+    reasons: List[str] = []
+    if margin is not None and margin <= 0:
+        status = "healthy"
+    elif (
+        (margin_level is not None and 0 < margin_level <= 120.0)
+        or (utilization is not None and utilization >= 90.0)
+        or (free_ratio is not None and free_ratio <= 10.0)
+    ):
+        status = "critical"
+        if margin_level is not None and 0 < margin_level <= 120.0:
+            reasons.append("margin_level_at_or_below_120_pct")
+        if utilization is not None and utilization >= 90.0:
+            reasons.append("margin_utilization_at_or_above_90_pct")
+        if free_ratio is not None and free_ratio <= 10.0:
+            reasons.append("free_margin_at_or_below_10_pct_of_equity")
+    elif (
+        (margin_level is not None and 0 < margin_level <= 150.0)
+        or (utilization is not None and utilization >= 75.0)
+        or (free_ratio is not None and free_ratio <= 25.0)
+    ):
+        status = "stressed"
+    elif any(value is not None for value in (margin_level, utilization, free_ratio)):
+        status = "healthy"
+    else:
+        status = "unknown"
+    return {
+        "status": status,
+        "margin_level_pct": round(margin_level, 2) if margin_level is not None else None,
+        "margin_utilization_pct": round(utilization, 2) if utilization is not None else None,
+        "free_margin_pct_of_equity": round(free_ratio, 2) if free_ratio is not None else None,
+        "reasons": reasons,
+    }
+
+
 def _normalize_side(value: Any) -> Optional[str]:
     text = str(value or "").strip().upper()
     if not text:

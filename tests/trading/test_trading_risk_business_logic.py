@@ -84,6 +84,35 @@ def test_floor_volume_steps_rejects_invalid_inputs() -> None:
     assert _floor_volume_steps(float("nan"), 0.1) == 0
 
 
+def test_trade_risk_analyze_blocks_sizing_and_escalates_critical_margin() -> None:
+    mt5 = MagicMock()
+    mt5.account_info.return_value = SimpleNamespace(
+        equity=384.44,
+        currency="USD",
+        margin=348.96,
+        margin_free=35.48,
+        margin_level=110.17,
+        leverage=500,
+    )
+    mt5.positions_get.return_value = []
+    mt5.orders_get.return_value = []
+    mt5.symbol_info.return_value = _make_symbol_info()
+
+    with _patched_mt5_module(mt5):
+        out = trade_risk_analyze(
+            symbol="EURUSD",
+            detail="full",
+            desired_risk_pct=1.0,
+            entry=100.0,
+            stop_loss=90.0,
+        )
+
+    assert out["scoped_risk"]["margin_risk_level"] == "high"
+    assert out["scoped_risk"]["margin_stress"]["status"] == "critical"
+    assert out["position_sizing_error"]["code"] == "portfolio_safety_block"
+    assert "position_sizing" not in out
+
+
 def test_trade_risk_analyze_does_not_round_up_substep_boundary_volume() -> None:
     mt5 = MagicMock()
     mt5.account_info.return_value = SimpleNamespace(equity=1000.0, currency="USD")
@@ -543,7 +572,13 @@ def test_trade_risk_analyze_reports_symbol_scope_when_other_positions_exist() ->
     mt5.symbol_info.return_value = _make_symbol_info()
 
     with _patched_mt5_module(mt5):
-        out = trade_risk_analyze(symbol="EURUSD")
+        out = trade_risk_analyze(
+            symbol="EURUSD",
+            detail="full",
+            desired_risk_pct=1.0,
+            entry=100.0,
+            stop_loss=90.0,
+        )
 
     assert out["scope"] == {
         "mode": "symbol",
@@ -560,6 +595,8 @@ def test_trade_risk_analyze_reports_symbol_scope_when_other_positions_exist() ->
     assert out["scoped_risk"]["positions_count"] == 0
     assert out["scoped_risk"]["overall_risk_status"] == "partial"
     assert out["scoped_risk"]["quantified_risk_level"] == "unknown"
+    assert out["position_sizing_error"]["code"] == "portfolio_safety_block"
+    assert "position_sizing" not in out
 
 
 def test_trade_risk_analyze_blocks_min_volume_risk_overshoot_by_default() -> None:
