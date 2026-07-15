@@ -1645,6 +1645,7 @@ def forecast_backtest(  # noqa: C901
                         "success": np.isfinite(pred_sigma) and np.isfinite(realized_sigma),
                         "mae": mae,
                         "rmse": rmse,
+                        "_absolute_error_sum": float(abs(pred_sigma - realized_sigma)),
                         "_squared_error_sum": float((pred_sigma - realized_sigma) ** 2),
                         "_error_count": 1,
                         "forecast_sigma": pred_sigma,
@@ -1784,6 +1785,9 @@ def forecast_backtest(  # noqa: C901
                         "success": True,
                         "mae": mae,
                         "rmse": rmse,
+                        "_absolute_error_sum": float(
+                            np.sum(np.abs(fcv[:m] - act[:m]))
+                        ),
                         "_squared_error_sum": float(
                             np.sum((fcv[:m] - act[:m]) ** 2)
                         ),
@@ -1814,13 +1818,18 @@ def forecast_backtest(  # noqa: C901
             # Aggregate
             ok = [x for x in per_anchor if x.get('success')]
             if ok:
+                absolute_error_sum = float(
+                    sum(float(x.get('_absolute_error_sum', 0.0)) for x in ok)
+                )
                 squared_error_sum = float(
                     sum(float(x.get('_squared_error_sum', 0.0)) for x in ok)
                 )
                 error_count = int(sum(int(x.get('_error_count', 0)) for x in ok))
                 agg = {
                     "success": True,
-                    "avg_mae": float(np.mean([x['mae'] for x in ok])),
+                    "avg_mae": float(
+                        absolute_error_sum / error_count
+                    ) if error_count > 0 else float('nan'),
                     "avg_rmse": float(
                         math.sqrt(squared_error_sum / error_count)
                     ) if error_count > 0 else float('nan'),
@@ -1829,6 +1838,7 @@ def forecast_backtest(  # noqa: C901
                     "details": per_anchor,
                 }
                 for detail_row in per_anchor:
+                    detail_row.pop('_absolute_error_sum', None)
                     detail_row.pop('_squared_error_sum', None)
                     detail_row.pop('_error_count', None)
                 if quantity != 'volatility':

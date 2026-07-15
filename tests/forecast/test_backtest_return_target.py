@@ -111,6 +111,35 @@ def test_backtest_aggregates_volatility_rmse_from_squared_errors() -> None:
     assert aggregate["avg_rmse"] == np.sqrt(13.0)
 
 
+def test_backtest_pools_mae_and_rmse_over_the_same_forecast_points() -> None:
+    times = np.arange(1700000000, 1700000000 + 70 * 3600, 3600, dtype=float)
+    close = np.linspace(100.0, 120.0, 70, dtype=float)
+    df = pd.DataFrame({"time": times, "close": close})
+    anchor_indices = [60, 64]
+    anchors = [_format_time_minimal(float(times[idx])) for idx in anchor_indices]
+    first_actual = close[61:64]
+    second_actual = close[65:68]
+
+    with patch("mtdata.forecast.backtest._fetch_history", return_value=df), patch(
+        "mtdata.forecast.backtest.forecast",
+        side_effect=[
+            {"forecast_price": [float(value + 1.0) for value in first_actual]},
+            {"forecast_price": [float(second_actual[0] + 5.0)]},
+        ],
+    ):
+        result = forecast_backtest(
+            symbol="EURUSD",
+            timeframe="H1",
+            horizon=3,
+            methods=["naive"],
+            anchors=anchors,
+        )
+
+    aggregate = result["results"]["naive"]
+    assert aggregate["avg_mae"] == 2.0
+    assert aggregate["avg_rmse"] == np.sqrt(7.0)
+
+
 def test_backtest_return_target_converts_log_returns_to_simple_trade_returns() -> None:
     times = np.arange(1700000000, 1700000000 + 80 * 3600, 3600, dtype=float)
     close = np.linspace(100.0, 140.0, 80, dtype=float)
