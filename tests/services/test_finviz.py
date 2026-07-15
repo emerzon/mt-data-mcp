@@ -51,7 +51,42 @@ class TestFinvizService:
         assert result["error_code"] == "finviz_unavailable"
         assert result["retryable"] is True
         assert result["remediation"] == "Retry after the provider recovers."
+        assert result["provider"] == "finviz"
+        assert result["endpoint"] == "fundamentals"
+        assert result["stage"] == "ticker_fundament"
         assert result["symbol"] == "INVALID"
+
+    @patch('finvizfinance.quote.finvizfinance')
+    def test_get_stock_fundamentals_classifies_provider_block(self, mock_finviz):
+        from mtdata.services.finviz import get_stock_fundamentals
+
+        mock_finviz.side_effect = Exception("403 Forbidden")
+
+        result = get_stock_fundamentals("AAPL")
+
+        assert result["error_code"] == "finviz_provider_blocked"
+        assert result["retryable"] is True
+        assert result["endpoint"] == "fundamentals"
+
+    @patch('finvizfinance.quote.finvizfinance')
+    def test_get_stock_fundamentals_reports_empty_data_consistently(self, mock_finviz):
+        from mtdata.services.finviz import get_stock_fundamentals
+
+        mock_finviz.return_value.ticker_fundament.return_value = None
+
+        result = get_stock_fundamentals("AAPL")
+
+        assert result == {
+            "success": False,
+            "error": "No fundamental data found for AAPL.",
+            "error_code": "finviz_no_data",
+            "retryable": False,
+            "remediation": "Check the equity ticker and provider compatibility before retrying.",
+            "provider": "finviz",
+            "endpoint": "fundamentals",
+            "stage": "ticker_fundament",
+            "symbol": "AAPL",
+        }
 
     @patch('finvizfinance.quote.finvizfinance')
     def test_get_stock_news_success(self, mock_finviz):

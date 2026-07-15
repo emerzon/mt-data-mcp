@@ -119,6 +119,10 @@ def _sanitize_error_message(exc: Exception, *, symbol: str | None = None) -> str
 def _finviz_error_kind(message: str) -> tuple[str, bool]:
     """Map a sanitized Finviz error message to a (error_code, retryable) pair."""
     low = message.lower()
+    if "access denied" in low or "blocking automated access" in low:
+        return "finviz_provider_blocked", True
+    if "rate limit" in low:
+        return "finviz_rate_limited", True
     if "unauthorized" in low:
         return "finviz_unauthorized", False
     if "service error" in low or "server error" in low:
@@ -372,7 +376,17 @@ def get_stock_fundamentals(symbol: str) -> Dict[str, Any]:
         symbol_norm, stock = _get_finviz_stock_quote(symbol)
         fundament = stock.ticker_fundament()
         if fundament is None:
-            return {"error": f"No fundamental data found for {symbol}"}
+            return {
+                "success": False,
+                "error": f"No fundamental data found for {symbol_norm}.",
+                "error_code": "finviz_no_data",
+                "retryable": False,
+                "remediation": "Check the equity ticker and provider compatibility before retrying.",
+                "provider": "finviz",
+                "endpoint": "fundamentals",
+                "stage": "ticker_fundament",
+                "symbol": symbol_norm,
+            }
         fundament = _sanitize_finviz_row(fundament)
         return {
             "success": True,
@@ -389,10 +403,14 @@ def get_stock_fundamentals(symbol: str) -> Dict[str, Any]:
             else "Check the equity ticker and provider compatibility before retrying."
         )
         return {
+            "success": False,
             "error": message,
             "error_code": error_code,
             "retryable": retryable,
             "remediation": remediation,
+            "provider": "finviz",
+            "endpoint": "fundamentals",
+            "stage": "ticker_fundament",
             "symbol": _normalize_finviz_equity_symbol(symbol),
         }
 
