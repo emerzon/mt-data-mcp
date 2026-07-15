@@ -22,6 +22,7 @@ from typing import (
     runtime_checkable,
 )
 
+from ..shared.symbols import FIAT_CURRENCY_CODES as _CURRENCY_CODES
 from ..utils.mt5 import get_symbol_info_cached
 from .finviz import (
     get_crypto_performance,
@@ -46,7 +47,6 @@ _MAX_SNAPSHOT_ROWS = 8
 _MIN_ECONOMIC_CANDIDATES = 24
 _MIN_SNAPSHOT_RELEVANCE = 1.0
 _YCNBC_GENERAL_CACHE_TTL_SECONDS = 180.0
-_CURRENCY_CODES = {"USD", "EUR", "GBP", "JPY", "AUD", "CAD", "CHF", "NZD"}
 _CURRENCY_TERMS = {
     "USD": ["usd", "dollar", "us dollar", "fed", "fomc", "treasury", "cpi", "pce", "payrolls", "nfp"],
     "EUR": ["eur", "euro", "ecb", "lagarde", "eurozone"],

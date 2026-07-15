@@ -12,7 +12,11 @@ import pandas as pd
 
 from ..services.data_service import _is_last_bar_forming
 from ..shared.constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
-from ..shared.symbols import is_probably_crypto_symbol, is_probably_forex_symbol
+from ..shared.symbols import (
+    FOREX_CURRENCY_CODES,
+    is_probably_crypto_symbol,
+    is_probably_forex_symbol,
+)
 from ..utils.freshness import is_standard_weekend_closure
 from ..utils.mt5 import (
     _ensure_symbol_ready,
@@ -31,24 +35,6 @@ _FORECAST_AUXILIARY_COLUMN_RE = re.compile(
     re.IGNORECASE,
 )
 _NF_ENV_LOCK = threading.RLock()
-
-_FOREX_CURRENCY_CODES = frozenset(
-    {
-        "AUD",
-        "CAD",
-        "CHF",
-        "CNH",
-        "EUR",
-        "GBP",
-        "JPY",
-        "NOK",
-        "NZD",
-        "SEK",
-        "SGD",
-        "USD",
-        "ZAR",
-    }
-)
 
 
 def edge_pad_to_length(values: np.ndarray, length: int) -> np.ndarray:
@@ -433,14 +419,8 @@ def is_standard_weekend_closed_epoch(epoch: Any) -> bool:
 
 def uses_standard_weekend_projection(symbol: Optional[str], tf_secs: int) -> bool:
     """Return whether intraday forecasts should skip the standard FX weekend."""
-    text = "".join(ch for ch in str(symbol or "").upper() if ch.isalpha())
-    if len(text) < 6:
-        return False
-    base = text[:3]
-    quote = text[3:6]
     return (
-        base in _FOREX_CURRENCY_CODES
-        and quote in _FOREX_CURRENCY_CODES
+        is_probably_forex_symbol(symbol, currency_codes=FOREX_CURRENCY_CODES)
         and int(tf_secs) < TIMEFRAME_SECONDS.get("D1", 86400)
     )
 
@@ -502,7 +482,7 @@ def pd_freq_from_timeframe(tf: str) -> str:
     }
     return mapping.get(t, 'D')
 
-
+
 # ------------------------------------------------------------------
 # Composable NeuralForecast building blocks (used by train/predict)
 # ------------------------------------------------------------------

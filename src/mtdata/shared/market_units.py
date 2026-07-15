@@ -2,26 +2,7 @@
 
 from typing import Optional
 
-_FOREX_CURRENCY_CODES = frozenset(
-    {
-        "AUD",
-        "CAD",
-        "CHF",
-        "CNH",
-        "CNY",
-        "EUR",
-        "GBP",
-        "HKD",
-        "JPY",
-        "MXN",
-        "NOK",
-        "NZD",
-        "SEK",
-        "SGD",
-        "USD",
-        "ZAR",
-    }
-)
+from .symbols import FOREX_CURRENCY_CODES
 
 
 def forex_points_per_pip(
@@ -36,8 +17,8 @@ def forex_points_per_pip(
     pair_prefix = name_letters[:6]
     is_currency_pair = (
         len(pair_prefix) == 6
-        and pair_prefix[:3] in _FOREX_CURRENCY_CODES
-        and pair_prefix[3:] in _FOREX_CURRENCY_CODES
+        and pair_prefix[:3] in FOREX_CURRENCY_CODES
+        and pair_prefix[3:] in FOREX_CURRENCY_CODES
     )
     path_folded = str(path or "").casefold()
     if (

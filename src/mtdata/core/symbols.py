@@ -13,6 +13,7 @@ from ..shared.constants import (
 )
 from ..shared.market_units import forex_points_per_pip
 from ..shared.schema import DetailLiteral, TimeframeLiteral
+from ..shared.symbols import FIAT_CURRENCY_CODES as _FOREX_CURRENCY_CODES
 from ..shared.validators import invalid_timeframe_error
 from ..utils.freshness import (
     QUOTE_STALE_SECONDS,
@@ -63,16 +64,6 @@ from .output_contract import (
 logger = logging.getLogger(__name__)
 _MARKET_SCAN_STALE_BAR_SECONDS = 7 * 24 * 60 * 60
 _MARKET_SCAN_STALE_QUOTE_SECONDS = QUOTE_STALE_SECONDS
-_FOREX_CURRENCY_CODES = {
-    "AUD",
-    "CAD",
-    "CHF",
-    "EUR",
-    "GBP",
-    "JPY",
-    "NZD",
-    "USD",
-}
 _FOREX_SEARCH_PAIR_PRIORITY = {
     pair: idx
     for idx, pair in enumerate(

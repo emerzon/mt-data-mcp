@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 
 from ..shared.constants import TIMEFRAME_SECONDS
-from ..shared.symbols import FIAT_CURRENCY_CODES, is_probably_crypto_symbol
+from ..shared.symbols import is_probably_crypto_symbol, is_probably_forex_symbol
 
 
 def fallback_local_extrema(
@@ -121,15 +121,6 @@ def interval_overlap_ratio(a_start: int, a_end: int, b_start: int, b_end: int) -
     return float(inter) / float(union)
 
 
-def _is_probably_forex_symbol(symbol: Any) -> bool:
-    text = "".join(ch for ch in str(symbol or "").upper().strip() if ch.isalnum())
-    if len(text) < 6:
-        return False
-    base = text[:3]
-    quote = text[3:6]
-    return base in FIAT_CURRENCY_CODES and quote in FIAT_CURRENCY_CODES
-
-
 def _crosses_weekend(start_epoch: float, end_epoch: float) -> bool:
     try:
         start_dt = datetime.fromtimestamp(float(start_epoch), tz=timezone.utc)
@@ -188,7 +179,7 @@ def data_quality_warnings(
                 if gaps.size > 0 and float(np.nanmax(gaps)) > threshold:
                     expected_weekend_gaps = 0
                     unexpected_gaps = 0
-                    is_fx = _is_probably_forex_symbol(symbol)
+                    is_fx = is_probably_forex_symbol(symbol)
                     is_crypto = is_probably_crypto_symbol(symbol)
                     for idx, gap in enumerate(gaps):
                         if not np.isfinite(gap) or float(gap) <= threshold:
