@@ -1309,63 +1309,22 @@ def _apply_barrier_prob_detail(
         "prob_sl_first",
         "prob_no_hit",
         "probability_edge",
+        "n_sims",
+        "as_of",
+        "data_as_of",
+        "usable_for_live_trading",
+        "verdict",
+        "status",
+        "status_reason",
+        "barrier_unit",
+        "tp_pct",
+        "sl_pct",
+        "tp_ticks",
+        "sl_ticks",
     ):
         _set_if_present(compact, key, payload.get(key))
-    confidence: Dict[str, Any] = {}
-    for key in (
-        "prob_tp_first_ci95",
-        "prob_sl_first_ci95",
-        "prob_no_hit_ci95",
-        "prob_tp_first_se",
-        "prob_sl_first_se",
-        "prob_no_hit_se",
-    ):
-        value = payload.get(key)
-        if value not in (None, "", [], {}):
-            confidence[key] = value
-    if confidence:
-        compact["confidence"] = confidence
-    timing: Dict[str, Any] = {}
-    for source_key, target_key in (
-        ("time_to_tp_bars", "tp"),
-        ("time_to_sl_bars", "sl"),
-    ):
-        value = payload.get(source_key)
-        if isinstance(value, dict) and any(val not in (None, "") for val in value.values()):
-            timing[target_key] = {
-                key: value.get(key)
-                for key in ("mean", "median")
-                if value.get(key) not in (None, "")
-            }
-    if timing:
-        compact["timing_bars"] = timing
     if payload.get("warnings") not in (None, "", [], {}):
         compact["warnings"] = payload.get("warnings")
-    for key, value in payload.items():
-        if key in compact:
-            continue
-        if key in {
-            "prob_tp_first_ci95",
-            "prob_tp_first_se",
-            "prob_sl_first_ci95",
-            "prob_sl_first_se",
-            "prob_no_hit_ci95",
-            "prob_same_bar",
-            "prob_same_bar_se",
-            "prob_no_hit_se",
-            "prob_same_bar_ci95",
-            "last_price",
-            "last_price_close",
-            "last_price_source",
-            "tp_hit_prob_by_t",
-            "sl_hit_prob_by_t",
-            "time_to_tp_bars",
-            "time_to_sl_bars",
-            "sim_meta",
-            "model_summary",
-        }:
-            continue
-        compact[key] = value
     if set(compact) == {"success", "detail"}:
         return dict(payload)
     return compact

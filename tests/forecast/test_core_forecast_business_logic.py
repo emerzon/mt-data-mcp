@@ -2810,7 +2810,7 @@ def test_forecast_barrier_prob_standard_hides_curves_only(monkeypatch):
     assert "prob_tp_first_ci95" in out
 
 
-def test_forecast_barrier_prob_compact_nests_confidence_intervals_once():
+def test_forecast_barrier_prob_compact_omits_confidence_diagnostics():
     payload = {
         "success": True,
         "symbol": "EURUSD",
@@ -2832,16 +2832,9 @@ def test_forecast_barrier_prob_compact_nests_confidence_intervals_once():
         ForecastBarrierProbRequest(symbol="EURUSD", detail="compact"),
     )
 
-    assert out["confidence"] == {
-        "prob_tp_first_ci95": {"low": 0.5, "high": 0.6},
-        "prob_sl_first_ci95": {"low": 0.25, "high": 0.35},
-        "prob_no_hit_ci95": {"low": 0.1, "high": 0.2},
-        "prob_tp_first_se": 0.0111,
-        "prob_sl_first_se": 0.0102,
-        "prob_no_hit_se": 0.008,
-    }
     assert out["n_sims"] == 2000
-    assert out["seed"] == 42
+    assert "seed" not in out
+    assert "confidence" not in out
     assert "prob_tp_first_ci95" not in out
     assert "prob_sl_first_ci95" not in out
     assert "prob_no_hit_ci95" not in out
