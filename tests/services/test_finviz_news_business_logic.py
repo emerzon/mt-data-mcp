@@ -29,7 +29,7 @@ def test_get_stock_news_returns_clean_message_for_404_like_errors() -> None:
         def __init__(self, *_args, **_kwargs):
             raise RuntimeError("404 Client Error: Not Found for url: https://finviz.com/quote.ashx?t=BTCUSD")
 
-        with patch("mtdata.services.finviz.api.apply_finvizfinance_timeout_patch", lambda: None), patch.dict(
+    with patch("mtdata.services.finviz.api.apply_finvizfinance_timeout_patch", lambda: None), patch.dict(
         "sys.modules",
         {"finvizfinance.quote": type("Q", (), {"finvizfinance": Boom})},
     ):
