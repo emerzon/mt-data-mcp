@@ -620,11 +620,13 @@ def test_forecast_generate_compact_flags_flat_theta_display(monkeypatch):
     out = raw(request=ForecastGenerateRequest(symbol="EURUSD", timeframe="H1", method="theta", horizon=3))
 
     assert "forecast_price" not in out
-    assert out["forecast"] == [
-        {"time": "t1", "value": 1.16836},
-        {"time": "t2", "value": 1.16836},
-        {"time": "t3", "value": 1.16836},
-    ]
+    assert "forecast" not in out
+    assert out["forecast_summary"] == {
+        "steps": 3,
+        "first": {"time": "t1", "value": 1.16836},
+        "last": {"time": "t3", "value": 1.16836},
+        "path_omitted": "non_informative_flat_path",
+    }
     assert "theta_signal" not in out
     assert "params_used" not in out
     assert out["path_flat"] is True
@@ -632,6 +634,8 @@ def test_forecast_generate_compact_flags_flat_theta_display(monkeypatch):
     assert out["point_forecast_mode"] == "flat_model_path"
     assert out["forecast_status"] == "non_informative"
     assert out["signal_status"] == "not_actionable"
+    assert out["suggested_methods"] == ["drift", "analog", "fourier_ols"]
+    assert out["suggested_uncertainty_tool"] == "forecast_conformal_intervals"
     assert "usable_for_live_trading" not in out
     assert out["forecast_vs_last_price"]["direction"] == "neutral"
     assert out["forecast_vs_last_price"]["direction_basis"] == "flat_path"
@@ -1664,6 +1668,7 @@ def test_forecast_list_library_models_and_list_methods(monkeypatch):
         },
     )
     compact_repeated_description = _unwrap(cf.forecast_list_methods)()
+    assert compact_repeated_description["profile"] == "quickstart"
     assert "description" not in compact_repeated_description["methods"][0]
 
     monkeypatch.setattr(

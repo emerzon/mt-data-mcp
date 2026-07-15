@@ -815,6 +815,12 @@ def _apply_forecast_generate_detail(
         "horizon": payload.get("horizon"),
         "quantity": payload.get("quantity"),
     }
+    is_non_informative = payload.get("path_flat") is True
+    if is_non_informative:
+        compact["forecast_status"] = "non_informative"
+        compact["signal_status"] = "not_actionable"
+        compact["suggested_methods"] = ["drift", "analog", "fourier_ols"]
+        compact["suggested_uncertainty_tool"] = "forecast_conformal_intervals"
     ci_unavailable = str(payload.get("ci_status") or "").strip().lower() == "unavailable"
     ci_compact = _forecast_compact_ci(payload)
     if ci_compact:
@@ -888,7 +894,14 @@ def _apply_forecast_generate_detail(
                 compact[key] = value
     forecast_rows = _forecast_generate_compact_rows(payload)
     ci_has_intervals = isinstance(ci_compact, dict) and bool(ci_compact.get("intervals"))
-    if forecast_rows and not ci_has_intervals:
+    if is_non_informative and forecast_rows:
+        compact["forecast_summary"] = {
+            "steps": len(forecast_rows),
+            "first": forecast_rows[0],
+            "last": forecast_rows[-1],
+            "path_omitted": "non_informative_flat_path",
+        }
+    elif forecast_rows and not ci_has_intervals:
         compact["forecast"] = forecast_rows
     elif volatility_rows:
         compact["forecast"] = volatility_rows
