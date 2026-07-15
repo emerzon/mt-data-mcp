@@ -26,6 +26,8 @@ from ..utils.mt5 import (
     _symbol_ready_guard,
     ensure_mt5_connection_or_raise,
     mt5,
+    symbol_price_digits,
+    symbol_price_digits_optional,
 )
 from ..utils.pivot_points import compute_pivot_method_levels, compute_pivot_methods
 from ..utils.support_resistance import (
@@ -71,13 +73,7 @@ _LEVEL_PRICE_FIELD_NAMES = frozenset(
 
 
 def _symbol_price_digits(info: Any) -> Optional[int]:
-    try:
-        digits = int(info.digits)
-    except Exception:
-        return None
-    if digits < 0 or digits > 15:
-        return None
-    return digits
+    return symbol_price_digits_optional(info)
 
 
 def _round_level_price(value: Any, *, digits: int) -> Any:
@@ -353,7 +349,7 @@ def pivot_compute_points(  # noqa: C901
             period_start = float(src["time"]) if _has_field(src, "time") else float("nan")
             period_end = period_start + float(tf_secs)
 
-            digits = int(getattr(_info_before, "digits", 0) or 0) if _info_before is not None else 0
+            digits = symbol_price_digits(_info_before) if _info_before is not None else 0
 
             def _round(v: float) -> float:
                 try:
@@ -747,7 +743,7 @@ def confluence_levels(  # noqa: C901
             if any(math.isnan(value) for value in (high, low, close)):
                 return {"error": "Pivot calculation requires high, low, and close prices"}
 
-            digits = int(getattr(info_before, "digits", 0) or 0) if info_before is not None else 0
+            digits = symbol_price_digits(info_before) if info_before is not None else 0
             price_increment = _positive_float_attr(info_before, "trade_tick_size", "point")
             if price_increment is None and digits >= 0:
                 price_increment = 10.0 ** (-int(digits))

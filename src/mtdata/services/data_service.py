@@ -70,6 +70,11 @@ from ..utils.mt5 import (
     get_symbol_info_cached,
     mt5,
     resolve_broker_symbol_name,
+    symbol_candle_price_basis as _symbol_candle_price_basis,
+    symbol_path as _symbol_path,
+    symbol_price_currency as _symbol_price_currency,
+    symbol_price_digits as _symbol_price_digits,
+    symbol_price_point as _symbol_price_point,
 )
 from ..utils.ohlcv import validate_and_clean_ohlcv_frame
 
@@ -146,73 +151,6 @@ def _format_mt5_last_error() -> str:
         code, message = err
         return f"({code}, {message!r})"
     return str(err)
-
-
-def _symbol_price_digits(*infos: Any) -> int:
-    for info in infos:
-        try:
-            digits_raw = getattr(info, "digits", None)
-        except Exception:
-            digits_raw = None
-        if isinstance(digits_raw, (int, float)):
-            return max(0, int(digits_raw))
-    return 0
-
-
-def _symbol_price_currency(*infos: Any) -> Optional[str]:
-    for info in infos:
-        for attr in ("currency_profit", "currency_margin"):
-            try:
-                value = getattr(info, attr, None)
-            except Exception:
-                value = None
-            if isinstance(value, str) and value.strip():
-                return value.strip()
-    return None
-
-
-def _symbol_candle_price_basis(*infos: Any) -> str:
-    for info in infos:
-        try:
-            chart_mode = getattr(info, "chart_mode", None)
-        except Exception:
-            chart_mode = None
-        if isinstance(chart_mode, str):
-            normalized = chart_mode.strip().lower()
-            if "bid" in normalized:
-                return "bid"
-            if "last" in normalized:
-                return "last_trade"
-        if isinstance(chart_mode, (int, float)) and not isinstance(chart_mode, bool):
-            if int(chart_mode) == 0:
-                return "bid"
-            if int(chart_mode) == 1:
-                return "last_trade"
-    return "broker_chart_price"
-
-
-def _symbol_price_point(*infos: Any) -> Optional[float]:
-    for info in infos:
-        try:
-            point_raw = getattr(info, "point", None)
-        except Exception:
-            point_raw = None
-        if isinstance(point_raw, (int, float)):
-            point = float(point_raw)
-            if math.isfinite(point) and point > 0.0:
-                return point
-    return None
-
-
-def _symbol_path(*infos: Any) -> str:
-    for info in infos:
-        try:
-            path = getattr(info, "path", None)
-        except Exception:
-            path = None
-        if isinstance(path, str) and path.strip():
-            return path.strip()
-    return ""
 
 
 def _round_price_value(value: Any, digits: int) -> Any:

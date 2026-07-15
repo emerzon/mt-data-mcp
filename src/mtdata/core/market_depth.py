@@ -24,6 +24,9 @@ from ..utils.mt5 import (
     ensure_mt5_connection_or_raise,
     mt5,
     resolve_broker_symbol_name,
+    symbol_price_currency,
+    symbol_price_digits,
+    symbol_price_point,
 )
 from ..utils.time import (
     _format_time_second_explicit,
@@ -316,15 +319,11 @@ def _market_depth_fetch_impl(symbol: str, spread: bool = False, require_dom: boo
             if symbol_info is None:
                 return {"error": f"Symbol {symbol} not found"}
 
-            digits = max(0, int(getattr(symbol_info, "digits", 0) or 0))
-            point = float(getattr(symbol_info, "point", 0.0) or 0.0)
+            digits = symbol_price_digits(symbol_info)
+            point = symbol_price_point(symbol_info) or 0.0
             tick_size = float(getattr(symbol_info, "trade_tick_size", 0.0) or 0.0)
             tick_value = float(getattr(symbol_info, "trade_tick_value", 0.0) or 0.0)
-            price_currency = str(
-                getattr(symbol_info, "currency_profit", None)
-                or getattr(symbol_info, "currency_margin", None)
-                or ""
-            ).strip() or None
+            price_currency = symbol_price_currency(symbol_info)
 
             def _compute_spread_metrics(bid: Any, ask: Any) -> Dict[str, Any] | None:
                 try:
@@ -626,15 +625,11 @@ def market_ticker(  # noqa: C901
                     )
                 )
 
-            digits = max(0, int(getattr(symbol_info, "digits", 0) or 0))
-            point = float(getattr(symbol_info, "point", 0.0) or 0.0)
+            digits = symbol_price_digits(symbol_info)
+            point = symbol_price_point(symbol_info) or 0.0
             tick_size = float(getattr(symbol_info, "trade_tick_size", 0.0) or 0.0)
             tick_value = float(getattr(symbol_info, "trade_tick_value", 0.0) or 0.0)
-            spread_cost_currency = str(
-                getattr(symbol_info, "currency_profit", None)
-                or getattr(symbol_info, "currency_margin", None)
-                or ""
-            ).strip() or None
+            spread_cost_currency = symbol_price_currency(symbol_info)
             price_currency = spread_cost_currency
             contract_size = _positive_market_ticker_float(
                 getattr(symbol_info, "trade_contract_size", None)

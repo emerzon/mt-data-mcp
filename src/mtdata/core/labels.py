@@ -27,7 +27,11 @@ from ..utils.barriers import (
 )
 from ..utils.coercion import coerce_finite_float, round_finite
 from ..utils.denoise import resolve_denoise_base_col
-from ..utils.mt5 import MT5ConnectionError, ensure_mt5_connection_or_raise
+from ..utils.mt5 import (
+    MT5ConnectionError,
+    ensure_mt5_connection_or_raise,
+    symbol_price_digits,
+)
 from ..utils.time import _format_time_minimal
 from ._mcp_instance import mcp
 from .execution_logging import run_logged_operation
@@ -324,7 +328,7 @@ def labels_triple_barrier(
             )
             mt5_gateway.ensure_connection()
             symbol_info = mt5_gateway.symbol_info(symbol)
-            price_digits = max(0, int(getattr(symbol_info, "digits", 0) or 0)) if symbol_info else 0
+            price_digits = symbol_price_digits(symbol_info) if symbol_info else 0
             trade_tick_size = None
             if symbol_info is not None:
                 try:

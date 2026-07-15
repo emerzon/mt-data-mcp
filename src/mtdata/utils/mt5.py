@@ -301,6 +301,101 @@ def clear_symbol_info_cache() -> None:
     _cached_symbol_info.cache_clear()
 
 
+def symbol_price_digits(*infos: Any, default: int = 0) -> int:
+    """Return the first valid MT5 ``digits`` value from symbol info objects."""
+    for info in infos:
+        try:
+            digits_raw = getattr(info, "digits", None)
+        except Exception:
+            digits_raw = None
+        if isinstance(digits_raw, (int, float)) and not isinstance(digits_raw, bool):
+            return max(0, int(digits_raw))
+    return int(default)
+
+
+def symbol_price_digits_optional(info: Any, *, max_digits: int = 15) -> Optional[int]:
+    """Return digits when in a plausible broker range, else None."""
+    try:
+        digits = int(info.digits)
+    except Exception:
+        return None
+    if digits < 0 or digits > int(max_digits):
+        return None
+    return digits
+
+
+def symbol_price_currency(*infos: Any) -> Optional[str]:
+    """Return profit/margin currency from the first symbol info that has one."""
+    for info in infos:
+        for attr in ("currency_profit", "currency_margin"):
+            try:
+                value = getattr(info, attr, None)
+            except Exception:
+                value = None
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+    return None
+
+
+def symbol_price_currency_for(symbol: Any) -> Optional[str]:
+    """Look up price currency via cached symbol info for a symbol name."""
+    symbol_text = str(symbol or "").strip()
+    if not symbol_text:
+        return None
+    try:
+        info = get_symbol_info_cached(symbol_text)
+    except Exception:
+        return None
+    return symbol_price_currency(info)
+
+
+def symbol_price_point(*infos: Any) -> Optional[float]:
+    """Return the first positive finite MT5 ``point`` value."""
+    for info in infos:
+        try:
+            point_raw = getattr(info, "point", None)
+        except Exception:
+            point_raw = None
+        if isinstance(point_raw, (int, float)) and not isinstance(point_raw, bool):
+            point = float(point_raw)
+            if math.isfinite(point) and point > 0.0:
+                return point
+    return None
+
+
+def symbol_path(*infos: Any) -> str:
+    """Return the first non-empty MT5 symbol path string."""
+    for info in infos:
+        try:
+            path = getattr(info, "path", None)
+        except Exception:
+            path = None
+        if isinstance(path, str) and path.strip():
+            return path.strip()
+    return ""
+
+
+def symbol_candle_price_basis(*infos: Any) -> str:
+    """Infer candle price basis from MT5 chart mode when available."""
+    for info in infos:
+        try:
+            chart_mode = getattr(info, "chart_mode", None)
+        except Exception:
+            chart_mode = None
+        if isinstance(chart_mode, str):
+            normalized = chart_mode.strip().lower()
+            if "bid" in normalized:
+                return "bid"
+            if "last" in normalized:
+                return "last_trade"
+        if isinstance(chart_mode, (int, float)) and not isinstance(chart_mode, bool):
+            if int(chart_mode) == 0:
+                return "bid"
+            if int(chart_mode) == 1:
+                return "last_trade"
+    return "broker_chart_price"
+
+
 def clear_mt5_timestamp_mode_cache() -> None:
     """Forget auto-detected MT5 timestamp modes after reconnect/config changes."""
     global _mt5_terminal_timestamp_mode

@@ -139,23 +139,9 @@ def _requested_detail_label(value: Any, *, default: str = "compact") -> str:
 
 
 def _symbol_price_currency(symbol: Any) -> Optional[str]:
-    symbol_text = str(symbol or "").strip()
-    if not symbol_text:
-        return None
-    try:
-        from ..utils.mt5 import get_symbol_info_cached
+    from ..utils.mt5 import symbol_price_currency_for
 
-        info = get_symbol_info_cached(symbol_text)
-    except Exception:
-        return None
-    for attr in ("currency_profit", "currency_margin"):
-        try:
-            value = getattr(info, attr, None)
-        except Exception:
-            value = None
-        if isinstance(value, str) and value.strip():
-            return value.strip()
-    return None
+    return symbol_price_currency_for(symbol)
 
 
 def _annotate_price_currency(payload: Dict[str, Any], symbol: Any) -> Dict[str, Any]:
