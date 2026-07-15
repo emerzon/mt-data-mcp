@@ -3579,11 +3579,19 @@ def market_scan(  # noqa: C901
                 include_stale_symbols=detail_mode == "full",
             )
             stale_rows = int(freshness_summary.get("stale_rows") or 0)
-            message = (
-                f"{int(total_matches)} symbol(s) matched the requested market scan filters."
-                if total_matches > 0
-                else "No symbols matched the requested market scan filters."
-            )
+            returned_count = int(table_payload["row_count"])
+            if total_matches > returned_count:
+                message = (
+                    f"Showing {returned_count} of {int(total_matches)} symbols matching "
+                    "the requested market scan filters."
+                )
+            elif total_matches > 0:
+                message = (
+                    f"Returned all {returned_count} symbol(s) matching the requested "
+                    "market scan filters."
+                )
+            else:
+                message = "No symbols matched the requested market scan filters."
             if stale_rows:
                 message = (
                     f"{message} Returned rows: "

@@ -1039,6 +1039,9 @@ class TestMarketScan:
         assert "returned_count" not in result
         assert result["total_count"] == 3
         assert result["has_more"] is True
+        assert result["message"].startswith(
+            "Showing 1 of 3 symbols matching the requested market scan filters."
+        )
         assert result["meta"]["request"]["offset"] == 1
 
     @patch("mtdata.core.symbols._extract_group_path_util", side_effect=lambda s: s.path)
