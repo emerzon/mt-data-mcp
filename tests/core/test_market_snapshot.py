@@ -185,6 +185,9 @@ def test_market_snapshot_compact_defaults_to_lean_snapshot(monkeypatch):
 
     result = _raw_market_snapshot(symbol="EURUSD", detail="compact")
 
+    assert "sections" not in result
+    assert result["sections_requested"] == ["quote", "status", "levels", "patterns"]
+    assert result["sections_summarized"] == ["quote", "status", "levels", "patterns"]
     assert result["snapshot"] == {
         "bid": 1.1001,
         "ask": 1.1003,
@@ -323,6 +326,7 @@ def test_market_snapshot_standard_strips_nested_request_echoes(monkeypatch):
     result = _raw_market_snapshot(symbol="EURUSD", detail="standard")
 
     assert result["symbol"] == "EURUSD"
+    assert result["sections_embedded"] == ["quote", "status", "levels", "patterns"]
     assert "summary" not in result
     assert result["levels"] == {
         "success": True,

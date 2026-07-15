@@ -39,7 +39,7 @@ Successful tool responses are JSON objects that carry a `success` flag plus the 
 | `full` | Everything `compact` returns **plus** runtime metadata and verbose-only sections. |
 
 Notes:
-- `detail` changes verbosity **within** the sections a tool already returns; it does **not** add new analysis. (For example, `market_snapshot` uses a separate `sections` parameter to choose analysis modules — `detail` only controls verbosity inside them.)
+- `detail` changes verbosity **within** the sections a tool already returns; it does **not** add new analysis. (For example, `market_snapshot` uses a separate `sections` parameter to choose analysis modules. Its compact/summary envelope reports `sections_summarized`, while standard/full reports `sections_embedded`.)
 - Not every tool distinguishes all four levels; unsupported values resolve to the nearest supported shape (`compact` or `full`).
 - Requesting any [extras](#richer-sections-extras) automatically shapes the response as `full`.
 

@@ -658,8 +658,9 @@ def market_snapshot(
     - regime (opt-in): HMM only, detail=summary
     - forecast (opt-in): Theta only, detail=compact; ``horizon`` applies here only
 
-    Top-level ``detail`` mainly shapes the assembled snapshot envelope
-    (summary vs embedded sections). Sub-tools use the fixed recipe above so the
+    Top-level ``detail`` mainly shapes the assembled snapshot envelope: compact
+    and summary return section summaries, while standard and full embed the
+    selected section payloads. Sub-tools use the fixed recipe above so the
     snapshot stays fast and comparable. Call dedicated regime/forecast/pattern
     tools for custom methods and parameters.
 
@@ -689,12 +690,13 @@ def market_snapshot(
             "timeframe": timeframe,
             "as_of": quote_as_of or assembled_at,
             "assembled_at": assembled_at,
-            "sections": list(selected),
+            "sections_requested": list(selected),
             **{key: value for key, value in health.items() if key != "success"},
         }
         if quote_as_of is not None:
             payload["quote_as_of"] = quote_as_of
         if detail_mode in {"summary", "compact"}:
+            payload["sections_summarized"] = list(selected)
             summary_payload = _snapshot_summary_payload(section_payloads)
             if summary_payload:
                 payload["snapshot"] = summary_payload
@@ -704,6 +706,7 @@ def market_snapshot(
                 health.get("failed_sections"),
             )
         else:
+            payload["sections_embedded"] = list(selected)
             payload.update(
                 {
                     name: _embedded_section_payload(name, section_payload)
