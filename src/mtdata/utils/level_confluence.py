@@ -549,6 +549,11 @@ def build_level_confluence_payload(
         },
         "levels": top_clusters,
     }
+    side_counts = {
+        role: sum(1 for cluster in top_clusters if cluster.get("role") == role)
+        for role in ("above", "below", "at")
+    }
+    out["level_coverage"] = side_counts
     if detail_value == "compact":
         out["count"] = len(top_clusters)
     else:
@@ -566,6 +571,12 @@ def build_level_confluence_payload(
         out["level_scan_note"] = (
             "No confluence clusters qualified inside the scan filters. "
             "Try wider tolerance_pct/tolerance_points, wider max_distance_pct, or min_source_families=1."
+        )
+    elif side_counts["above"] == 0 or side_counts["below"] == 0:
+        missing_side = "above" if side_counts["above"] == 0 else "below"
+        out["coverage_note"] = (
+            f"No confluence levels {missing_side} the reference price qualified "
+            "inside the current scan filters."
         )
     if detail_value == "full":
         out["candidates"] = [_compact_source(record) for record in records]

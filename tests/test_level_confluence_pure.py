@@ -93,6 +93,8 @@ def test_confluence_compact_omits_verbose_source_narration():
     assert "units" not in payload
     assert "max_distance_pct" not in payload
     assert "min_source_families" not in payload
+    assert payload["level_coverage"] == {"above": 1, "below": 0, "at": 0}
+    assert "No confluence levels below" in payload["coverage_note"]
 
 
 def test_confluence_standard_keeps_units_and_filter_context():
