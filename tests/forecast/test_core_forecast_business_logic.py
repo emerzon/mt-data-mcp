@@ -2930,7 +2930,8 @@ def test_forecast_barrier_prob_detail_rounds_display_values():
     assert out["probability_unit"] == "fraction"
     assert out["probability_edge_definition"] == "prob_tp_first - prob_sl_first"
     assert "edge" not in out
-    assert out["confidence"]["prob_tp_first_ci95"] == {"low": 0.5, "high": 0.6}
+    assert "confidence" not in out
+    assert "prob_tp_first_ci95" not in out
 
 
 def test_forecast_barrier_prob_marks_stale_reference_verdict_research_only():
