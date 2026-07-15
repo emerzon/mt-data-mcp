@@ -154,9 +154,9 @@ def test_trade_account_info_compact_detail_includes_account_fields_without_diagn
     assert out["balance"] == 10000.0
     assert out["source"] == "mt5_account_snapshot"
     assert out["timezone"] == "UTC"
-    assert out["as_of_source"] == "client_utc_clock"
-    assert out["as_of"].endswith("Z")
-    assert out["retrieved_at"] == out["as_of"]
+    assert out["retrieved_at"].endswith("Z")
+    assert "as_of" not in out
+    assert "as_of_source" not in out
     assert out["profit"] == 50.0
     assert "floating_pnl" not in out
     assert "pnl_basis" not in out
@@ -210,8 +210,9 @@ def test_trade_account_info_includes_terminal_server_clock_when_available() -> N
     ):
         out = raw(detail="compact")
 
-    assert out["as_of"] == "2026-01-01T12:00:00Z"
-    assert out["as_of_source"] == "client_utc_clock"
+    assert out["retrieved_at"] == "2026-01-01T12:00:00Z"
+    assert "as_of" not in out
+    assert "as_of_source" not in out
     assert out["server_time"] == "2026-01-01T11:59:58Z"
     assert out["server_time_source"] == "mt5_terminal_info.server_time"
     assert out["clock_skew_seconds"] == 2.0

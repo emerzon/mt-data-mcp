@@ -41,9 +41,7 @@ logger = logging.getLogger(__name__)
 _TRADE_ACCOUNT_COMPACT_KEYS = (
     "success",
     "source",
-    "as_of",
     "retrieved_at",
-    "as_of_source",
     "timezone",
     "broker_server_tz",
     "server_time",
@@ -694,7 +692,7 @@ def _trade_account_clock_fields(
     *,
     retrieved_at_epoch: float,
 ) -> Dict[str, Any]:
-    fields: Dict[str, Any] = {"as_of_source": "client_utc_clock"}
+    fields: Dict[str, Any] = {}
     broker_tz = str(getattr(mt5_config, "server_tz_name", "") or "").strip()
     if broker_tz:
         fields["broker_server_tz"] = broker_tz
@@ -803,7 +801,6 @@ def trade_account_info(
         payload = {
             "success": True,
             "source": "mt5_account_snapshot",
-            "as_of": retrieved_at,
             "retrieved_at": retrieved_at,
             "timezone": "UTC",
             **_trade_account_clock_fields(
