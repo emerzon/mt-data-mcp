@@ -40,6 +40,7 @@ from ..utils.symbol import (
 )
 from ..utils.symbol import (
     _normalize_group_path_query,
+    match_symbol_infos,
 )
 from ..utils.time import (
     _format_time_explicit,
@@ -779,21 +780,17 @@ def _find_symbol_suggestions(
         symbols = list(mt5_gateway.symbols_get() or [])
     except Exception:
         return []
-    matches = []
-    for symbol_info in symbols:
-        name = str(getattr(symbol_info, "name", "") or "")
-        description = str(getattr(symbol_info, "description", "") or "")
-        group = str(_extract_group_path_util(symbol_info) or "")
-        searchable = f"{name} {description} {group}".upper()
-        if query_upper in searchable:
-            matches.append(symbol_info)
-    matches.sort(
-        key=lambda info: (
+    matches = match_symbol_infos(
+        symbols,
+        text,
+        limit=limit,
+        group_of=_extract_group_path_util,
+        sort_key=lambda info: (
             not str(getattr(info, "name", "") or "").upper().startswith(query_upper),
             *_case_insensitive_sort_key(getattr(info, "name", "")),
-        )
+        ),
     )
-    return [_symbol_suggestion_from_info(symbol) for symbol in matches[: max(1, int(limit))]]
+    return [_symbol_suggestion_from_info(symbol) for symbol in matches]
 
 
 @mcp.tool()

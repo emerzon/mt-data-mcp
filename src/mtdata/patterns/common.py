@@ -1,7 +1,8 @@
 import math
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from typing import Any, List, Optional, Tuple
+import logging
+from typing import Any, List, Literal, Optional, Tuple
 
 import numpy as np
 import pandas as pd
@@ -9,6 +10,7 @@ from scipy.signal import find_peaks
 
 from ..shared.constants import TIMEFRAME_SECONDS
 from ..shared.symbols import is_probably_crypto_symbol, is_probably_forex_symbol
+from ..utils.utils import to_float_np
 
 
 def compute_atr_sma(
@@ -192,6 +194,64 @@ def detect_pivots(
         if int(troughs.size) < min_troughs:
             troughs = fallback_local_extrema(src_lo, min_dist, order, prefer_high=False)
     return peaks.astype(int), troughs.astype(int)
+
+
+def prepare_ohlc_pattern_inputs(
+    df: pd.DataFrame,
+    *,
+    max_bars: int,
+    min_input_bars: int,
+    log_label: str = "Pattern detection",
+    log_extra: str = "",
+    time_mode: Literal["empty", "arange"] = "arange",
+) -> Optional[Tuple[pd.DataFrame, np.ndarray, np.ndarray, np.ndarray, np.ndarray, int]]:
+    """Slice history and extract close/high/low/time arrays for pattern detectors."""
+    if not isinstance(df, pd.DataFrame) or "close" not in df.columns:
+        return None
+    if len(df) > int(max_bars):
+        df = df.iloc[-int(max_bars) :].copy()
+
+    close = to_float_np(df["close"])
+    used_close_for_high = "high" not in df.columns
+    used_close_for_low = "low" not in df.columns
+    high = to_float_np(df["high"]) if not used_close_for_high else close
+    low = to_float_np(df["low"]) if not used_close_for_low else close
+    if high.size != close.size:
+        used_close_for_high = True
+        high = close
+    if low.size != close.size:
+        used_close_for_low = True
+        low = close
+    if used_close_for_high or used_close_for_low:
+        logging.getLogger(__name__).warning(
+            "%s falling back to close for missing/mismatched "
+            "high/low columns (high_fallback=%s, low_fallback=%s)%s",
+            log_label,
+            used_close_for_high,
+            used_close_for_low,
+            log_extra,
+        )
+
+    n = int(close.size)
+    if n < int(min_input_bars):
+        return None
+
+    if "time" in df.columns:
+        try:
+            times = to_float_np(df["time"])
+        except (TypeError, ValueError):
+            times = np.asarray([], dtype=float)
+        if times.size != n or not np.isfinite(times).any():
+            if time_mode == "arange":
+                times = np.arange(n, dtype=float)
+            else:
+                times = np.asarray([], dtype=float)
+    elif time_mode == "arange":
+        times = np.arange(n, dtype=float)
+    else:
+        times = np.asarray([], dtype=float)
+
+    return df, times, close, high, low, n
 
 
 @dataclass

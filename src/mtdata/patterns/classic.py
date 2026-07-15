@@ -6,8 +6,7 @@ from typing import Any, Dict, List, Optional
 import numpy as np
 import pandas as pd
 
-from ..utils.utils import to_float_np
-from .common import interval_overlap_ratio
+from .common import interval_overlap_ratio, prepare_ohlc_pattern_inputs
 from .classic_impl.config import (
     ClassicDetectorConfig,
     ClassicPatternResult,
@@ -28,7 +27,6 @@ from .classic_impl.shapes import (
 )
 from .classic_impl.trend import detect_channels, detect_trend_lines
 from .classic_impl.utils import (
-    _build_time_array,
     _calibrate_confidence,
     _detect_pivots_close,
 )
@@ -44,38 +42,14 @@ def _prepare_classic_inputs(
     df: pd.DataFrame,
     cfg: ClassicDetectorConfig,
 ) -> Optional[tuple[pd.DataFrame, np.ndarray, np.ndarray, np.ndarray, np.ndarray, int]]:
-    if not isinstance(df, pd.DataFrame) or "close" not in df.columns:
-        return None
-    if len(df) > cfg.max_bars:
-        df = df.iloc[-cfg.max_bars :].copy()
-
-    t = _build_time_array(df)
-    c = to_float_np(df["close"])
-    used_close_for_high = "high" not in df.columns
-    used_close_for_low = "low" not in df.columns
-    h = to_float_np(df["high"]) if not used_close_for_high else c
-    l = to_float_np(df["low"]) if not used_close_for_low else c
-    if h.size != c.size:
-        used_close_for_high = True
-        h = c
-    if l.size != c.size:
-        used_close_for_low = True
-        l = c
-    if used_close_for_high or used_close_for_low:
-        import logging
-
-        logging.getLogger(__name__).warning(
-            "Classic pattern detection falling back to close for missing/mismatched "
-            "high/low columns (high_fallback=%s, low_fallback=%s); pivot geometry "
-            "will be less reliable than true OHLC.",
-            used_close_for_high,
-            used_close_for_low,
-        )
-    n = c.size
-    min_input_bars = max(20, int(getattr(cfg, "min_input_bars", 100)))
-    if n < min_input_bars:
-        return None
-    return df, t, c, h, l, n
+    return prepare_ohlc_pattern_inputs(
+        df,
+        max_bars=int(cfg.max_bars),
+        min_input_bars=max(20, int(getattr(cfg, "min_input_bars", 100))),
+        log_label="Classic pattern detection",
+        log_extra="; pivot geometry will be less reliable than true OHLC.",
+        time_mode="empty",
+    )
 
 
 def _detect_classic_patterns_once(

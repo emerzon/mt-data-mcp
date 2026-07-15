@@ -6,12 +6,12 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 
-from ..utils.utils import to_float_np
 from .common import (
     PatternResultBase,
     compute_atr_sma,
     compute_pivot_thresholds,
     detect_pivots,
+    prepare_ohlc_pattern_inputs,
 )
 
 _DEFAULT_PATTERN_TYPES = (
@@ -301,41 +301,13 @@ def _prepare_inputs(
     df: pd.DataFrame,
     cfg: HarmonicDetectorConfig,
 ) -> Optional[Tuple[pd.DataFrame, np.ndarray, np.ndarray, np.ndarray, np.ndarray, int]]:
-    if not isinstance(df, pd.DataFrame) or "close" not in df.columns:
-        return None
-    if len(df) > int(cfg.max_bars):
-        df = df.iloc[-int(cfg.max_bars) :].copy()
-
-    close = to_float_np(df["close"])
-    used_close_for_high = "high" not in df.columns
-    used_close_for_low = "low" not in df.columns
-    high = to_float_np(df["high"]) if not used_close_for_high else close
-    low = to_float_np(df["low"]) if not used_close_for_low else close
-    if high.size != close.size:
-        used_close_for_high = True
-        high = close
-    if low.size != close.size:
-        used_close_for_low = True
-        low = close
-    if used_close_for_high or used_close_for_low:
-        import logging
-
-        logging.getLogger(__name__).warning(
-            "Harmonic pattern detection falling back to close for missing/mismatched "
-            "high/low columns (high_fallback=%s, low_fallback=%s).",
-            used_close_for_high,
-            used_close_for_low,
-        )
-    n = int(close.size)
-    if n < max(10, int(cfg.min_input_bars)):
-        return None
-    if "time" in df.columns:
-        times = to_float_np(df["time"])
-        if times.size != n:
-            times = np.arange(n, dtype=float)
-    else:
-        times = np.arange(n, dtype=float)
-    return df, times, close, high, low, n
+    return prepare_ohlc_pattern_inputs(
+        df,
+        max_bars=int(cfg.max_bars),
+        min_input_bars=max(10, int(cfg.min_input_bars)),
+        log_label="Harmonic pattern detection",
+        time_mode="arange",
+    )
 
 
 def _build_swing_points(

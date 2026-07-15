@@ -28,6 +28,7 @@ from ..utils.mt5 import (
     symbol_price_digits,
     symbol_price_point,
 )
+from ..utils.symbol import match_symbol_infos
 from ..utils.time import (
     _format_time_second_explicit,
     _format_time_second_explicit_local,
@@ -250,28 +251,16 @@ def _market_ticker_symbol_suggestions(
     *,
     limit: int = 5,
 ) -> list[Dict[str, str]]:
-    query_upper = str(query or "").strip().upper()
-    if not query_upper:
+    text = str(query or "").strip()
+    if not text:
         return []
     try:
         symbols = list(mt5_gateway.symbols_get() or [])
     except Exception:
         return []
-    matches: list[Any] = []
-    for info in symbols:
-        name = str(getattr(info, "name", "") or "")
-        description = str(getattr(info, "description", "") or "")
-        path = str(getattr(info, "path", "") or "")
-        if query_upper in f"{name} {description} {path}".upper():
-            matches.append(info)
-    matches.sort(
-        key=lambda info: (
-            not str(getattr(info, "name", "") or "").upper().startswith(query_upper),
-            str(getattr(info, "name", "") or "").casefold(),
-        )
-    )
+    matches = match_symbol_infos(symbols, text, limit=limit)
     suggestions: list[Dict[str, str]] = []
-    for info in matches[: max(1, int(limit))]:
+    for info in matches:
         suggestion = {"symbol": str(getattr(info, "name", "") or "")}
         description = str(getattr(info, "description", "") or "").strip()
         path = str(getattr(info, "path", "") or "").strip()

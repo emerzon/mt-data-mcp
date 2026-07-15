@@ -1,4 +1,5 @@
 import re
+from typing import Any, Callable, Optional, Sequence
 
 
 def _normalize_symbol_token(value: str) -> str:
@@ -42,3 +43,38 @@ def _extract_group_path(sym) -> str:
         parts = parts[:-1]
     group = '\\'.join(parts).strip('\\')
     return group or 'Unknown'
+
+
+def match_symbol_infos(
+    symbols: Sequence[Any],
+    query: str,
+    *,
+    limit: int = 5,
+    group_of: Optional[Callable[[Any], str]] = None,
+    sort_key: Optional[Callable[[Any], Any]] = None,
+) -> list[Any]:
+    """Return symbol infos whose name/description/group contain ``query``."""
+    text = str(query or "").strip()
+    if not text:
+        return []
+    query_upper = text.upper()
+    matches: list[Any] = []
+    for info in symbols:
+        name = str(getattr(info, "name", "") or "")
+        description = str(getattr(info, "description", "") or "")
+        if group_of is not None:
+            group = str(group_of(info) or "")
+        else:
+            group = str(getattr(info, "path", "") or "")
+        if query_upper in f"{name} {description} {group}".upper():
+            matches.append(info)
+    if sort_key is None:
+        matches.sort(
+            key=lambda info: (
+                not str(getattr(info, "name", "") or "").upper().startswith(query_upper),
+                str(getattr(info, "name", "") or "").casefold(),
+            )
+        )
+    else:
+        matches.sort(key=sort_key)
+    return list(matches[: max(1, int(limit))])
