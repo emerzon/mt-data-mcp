@@ -567,3 +567,18 @@ def test_performance_metrics_include_sortino_and_profit_factor():
     assert m['profit_factor'] > 0
     # Sortino uses downside deviation, so it should differ from Sharpe
     assert m['sharpe_ratio'] is not None
+
+
+def test_performance_metrics_sortino_uses_full_sample_downside_deviation():
+    from mtdata.forecast.backtest import _compute_performance_metrics
+
+    returns = [-0.01, -0.02, 0.05, 0.03] * 15
+    metrics = _compute_performance_metrics(returns, "H1", 1, 0.0)
+    downside_deviation = float(np.sqrt(np.mean(np.minimum(returns, 0.0) ** 2)))
+    expected = (
+        float(np.mean(returns))
+        / downside_deviation
+        * float(np.sqrt(metrics["trades_per_year"]))
+    )
+
+    assert metrics["sortino_ratio"] == pytest.approx(expected)

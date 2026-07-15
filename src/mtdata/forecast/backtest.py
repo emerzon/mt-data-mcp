@@ -466,7 +466,7 @@ def _compute_performance_metrics(
     drawdowns = equity / np.where(peak == 0.0, 1.0, peak) - 1.0
     max_drawdown = float(abs(np.min(drawdowns))) if drawdowns.size > 0 else float('nan')
 
-    downside = arr[arr < 0.0]
+    downside = np.minimum(arr, 0.0)
     downside_dev = float(np.sqrt(np.mean(downside ** 2))) if downside.size > 0 else 0.0
     sortino = float('nan')
     if enough_trades and downside_dev > 1e-12 and math.isfinite(trades_per_year) and trades_per_year > 0:
