@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import math
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Literal, Optional
 
 from ...bootstrap.settings import mt5_config
@@ -16,7 +16,6 @@ from ...utils.mt5 import (
 )
 from ...utils.mt5_enums import decode_mt5_enum_label
 from ...utils.time import (
-    _format_datetime_second_explicit,
     _format_time_minimal,
     _format_time_minimal_local,
     _use_client_tz,
@@ -310,54 +309,16 @@ def _trade_journal_trade_snapshot(row: Dict[str, Any]) -> Dict[str, Any]:
 def _trade_journal_period_context(
     request: TradeJournalAnalyzeRequest,
 ) -> Dict[str, Any]:
-    def _format_period_dt(value: Any) -> Optional[str]:
-        if value is None:
-            return None
-        if value.tzinfo is None:
-            value = value.replace(tzinfo=timezone.utc)
-        else:
-            value = value.astimezone(timezone.utc)
-        return _format_datetime_second_explicit(value)
+    from .common import resolve_trade_period_context
 
-    to_dt = _parse_start_datetime(request.end) if request.end else None
-    if to_dt is None:
-        to_dt = datetime.now(timezone.utc).replace(tzinfo=None)
-
-    minutes_back_value, minutes_back_error = validation._normalize_minutes_back(
-        request.minutes_back
+    return resolve_trade_period_context(
+        start=request.start,
+        end=request.end,
+        minutes_back=request.minutes_back,
+        default_lookback_days=_DEFAULT_TRADE_HISTORY_LOOKBACK_DAYS,
+        include_timezone_alias=True,
+        default_lookback_style="note",
     )
-    if minutes_back_error:
-        minutes_back_value = None
-
-    if minutes_back_value is not None:
-        from_dt = to_dt - timedelta(minutes=minutes_back_value)
-    elif request.start:
-        from_dt = _parse_start_datetime(request.start)
-    else:
-        minutes_back_value = int(_DEFAULT_TRADE_HISTORY_LOOKBACK_DAYS * 24 * 60)
-        from_dt = to_dt - timedelta(minutes=minutes_back_value)
-
-    out: Dict[str, Any] = {
-        "period_start": _format_period_dt(from_dt),
-        "period_end": _format_period_dt(to_dt),
-        "period_timezone": "UTC",
-        "timezone": "UTC",
-    }
-    if minutes_back_value is not None:
-        out["minutes_back_effective"] = int(minutes_back_value)
-        if request.minutes_back is not None:
-            out["period_source"] = "minutes_back"
-            out["minutes_back_requested"] = int(minutes_back_value)
-        else:
-            out["period_source"] = "default_lookback"
-            out["note"] = (
-                f"Period limited to default {int(minutes_back_value)}-minute "
-                f"({_DEFAULT_TRADE_HISTORY_LOOKBACK_DAYS}-day) lookback. "
-                "Set minutes_back or start/end to change."
-            )
-    elif request.start or request.end:
-        out["period_source"] = "explicit_range"
-    return out
 
 
 def _run_trade_journal_request(request: TradeJournalAnalyzeRequest) -> Dict[str, Any]:

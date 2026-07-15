@@ -2,9 +2,76 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict, List, Literal, Optional
 
+from ...utils.time import _format_datetime_second_explicit
+from ...utils.utils import _parse_start_datetime
 from . import validation
+
+
+def resolve_trade_period_context(
+    *,
+    start: Any = None,
+    end: Any = None,
+    minutes_back: Any = None,
+    default_lookback_days: int,
+    include_timezone_alias: bool = False,
+    default_lookback_style: Literal["note", "defaults_applied"] = "note",
+) -> Dict[str, Any]:
+    """Resolve start/end/minutes_back into a shared trade history period payload."""
+
+    def _format_period_dt(value: Any) -> Optional[str]:
+        if value is None:
+            return None
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+        else:
+            value = value.astimezone(timezone.utc)
+        return _format_datetime_second_explicit(value)
+
+    to_dt = _parse_start_datetime(end) if end else None
+    if to_dt is None:
+        to_dt = datetime.now(timezone.utc).replace(tzinfo=None)
+
+    minutes_back_value, minutes_back_error = validation._normalize_minutes_back(
+        minutes_back
+    )
+    if minutes_back_error:
+        minutes_back_value = None
+
+    if minutes_back_value is not None:
+        from_dt = to_dt - timedelta(minutes=minutes_back_value)
+    elif start:
+        from_dt = _parse_start_datetime(start)
+    else:
+        minutes_back_value = int(default_lookback_days * 24 * 60)
+        from_dt = to_dt - timedelta(minutes=minutes_back_value)
+
+    out: Dict[str, Any] = {
+        "period_start": _format_period_dt(from_dt),
+        "period_end": _format_period_dt(to_dt),
+        "period_timezone": "UTC",
+    }
+    if include_timezone_alias:
+        out["timezone"] = "UTC"
+    if minutes_back_value is not None:
+        out["minutes_back_effective"] = int(minutes_back_value)
+        if minutes_back is not None:
+            out["period_source"] = "minutes_back"
+            out["minutes_back_requested"] = int(minutes_back_value)
+        else:
+            out["period_source"] = "default_lookback"
+            if default_lookback_style == "defaults_applied":
+                out["defaults_applied"] = {"lookback_minutes": int(minutes_back_value)}
+            out["note"] = (
+                f"Period limited to default {int(minutes_back_value)}-minute "
+                f"({default_lookback_days}-day) lookback. "
+                "Set minutes_back or start/end to change."
+            )
+    elif start or end:
+        out["period_source"] = "explicit_range"
+    return out
 
 
 def _trade_mode_text(mt5: Any, account_info: Any) -> Optional[str]:

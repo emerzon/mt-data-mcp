@@ -6,6 +6,7 @@ import pandas as pd
 import pytest
 
 import mtdata.patterns.classic_impl.utils as utils_mod
+import mtdata.patterns.common as patterns_common
 from mtdata.patterns.classic_impl.config import ClassicDetectorConfig
 from mtdata.patterns.classic_impl.utils import (
     _build_time_array,
@@ -277,7 +278,11 @@ class TestDetectPivotsClose:
             pivot_use_atr_adaptive_distance=False,
         )
 
-        monkeypatch.setattr(utils_mod, "find_peaks", lambda *_args, **_kwargs: (_ for _ in ()).throw(TypeError("boom")))
+        monkeypatch.setattr(
+            patterns_common,
+            "find_peaks",
+            lambda *_args, **_kwargs: (_ for _ in ()).throw(TypeError("boom")),
+        )
 
         with pytest.raises(TypeError, match="boom"):
             _detect_pivots_close(x, cfg)
@@ -293,7 +298,11 @@ class TestDetectPivotsClose:
             pivot_fallback_order=2,
         )
 
-        monkeypatch.setattr(utils_mod, "find_peaks", lambda *_args, **_kwargs: (np.array([], dtype=int), {}))
+        monkeypatch.setattr(
+            patterns_common,
+            "find_peaks",
+            lambda *_args, **_kwargs: (np.array([], dtype=int), {}),
+        )
 
         peaks, troughs = _detect_pivots_close(x, cfg)
 

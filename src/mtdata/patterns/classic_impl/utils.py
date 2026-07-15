@@ -5,12 +5,16 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
-from scipy.signal import find_peaks
 
 from ...utils.dtw import dtw_distance
 from ...utils.patterns import _get_ts_dtw
 from ...utils.utils import to_float_np
-from ..common import PatternResultBase, compute_atr_sma, fallback_local_extrema
+from ..common import (
+    PatternResultBase,
+    compute_atr_sma,
+    compute_pivot_thresholds,
+    detect_pivots,
+)
 from .config import ClassicDetectorConfig, ClassicPatternResult
 
 
@@ -190,24 +194,7 @@ def _pivot_thresholds(
     low: np.ndarray,
     cfg: ClassicDetectorConfig,
 ) -> Tuple[float, int]:
-    x = np.asarray(close, dtype=float)
-    base = float(np.median(x)) if np.isfinite(np.median(x)) and np.median(x) > 1e-9 else float(np.mean(x))
-    prom_abs = abs(base) * (cfg.min_prominence_pct / 100.0)
-    min_dist = max(2, int(cfg.min_distance))
-
-    if bool(cfg.pivot_use_atr_adaptive_prominence) or bool(cfg.pivot_use_atr_adaptive_distance):
-        atr = _compute_atr(high, low, x, int(cfg.pivot_atr_period))
-        finite = atr[np.isfinite(atr)]
-        if finite.size > 0:
-            atr_med = float(np.median(finite))
-            if bool(cfg.pivot_use_atr_adaptive_prominence):
-                prom_abs = max(prom_abs, float(cfg.pivot_atr_prominence_mult) * atr_med)
-            if bool(cfg.pivot_use_atr_adaptive_distance) and base > 1e-12:
-                atr_pct = abs(atr_med / base) * 100.0
-                scale = 1.0 + max(0.0, float(cfg.pivot_atr_distance_mult)) * atr_pct
-                scale = min(float(max(1.0, cfg.pivot_max_distance_scale)), max(1.0, scale))
-                min_dist = max(2, int(round(float(cfg.min_distance) * scale)))
-    return float(max(1e-12, prom_abs)), int(min_dist)
+    return compute_pivot_thresholds(close, high, low, cfg)
 
 
 def _detect_pivots_close(
@@ -217,39 +204,7 @@ def _detect_pivots_close(
     low: Optional[np.ndarray] = None,
 ) -> Tuple[np.ndarray, np.ndarray]:
     """Return arrays of peak and trough indices using close or optional high/low arrays."""
-    x = np.asarray(close, dtype=float)
-    if x.size < max(5, int(cfg.min_distance) * 3):
-        return np.array([], dtype=int), np.array([], dtype=int)
-
-    hi = np.asarray(high, dtype=float) if high is not None else x
-    lo = np.asarray(low, dtype=float) if low is not None else x
-    if hi.size != x.size:
-        hi = x
-    if lo.size != x.size:
-        lo = x
-    if not np.isfinite(hi).all():
-        hi = x
-    if not np.isfinite(lo).all():
-        lo = x
-
-    prom_abs, min_dist = _pivot_thresholds(x, hi, lo, cfg)
-    src_hi = hi if bool(cfg.pivot_use_hl) else x
-    src_lo = lo if bool(cfg.pivot_use_hl) else x
-    try:
-        peaks, _ = find_peaks(src_hi, prominence=prom_abs, distance=min_dist)
-        troughs, _ = find_peaks(-src_lo, prominence=prom_abs, distance=min_dist)
-    except ValueError:
-        return np.array([], dtype=int), np.array([], dtype=int)
-    if bool(getattr(cfg, "pivot_enable_fallback", True)):
-        need_peak_fallback = int(peaks.size) < int(max(0, getattr(cfg, "pivot_fallback_min_peaks", 2)))
-        need_trough_fallback = int(troughs.size) < int(max(0, getattr(cfg, "pivot_fallback_min_troughs", 2)))
-        if need_peak_fallback or need_trough_fallback:
-            order = max(2, int(getattr(cfg, "pivot_fallback_order", 2)))
-            if need_peak_fallback:
-                peaks = fallback_local_extrema(src_hi, min_dist, order, prefer_high=True)
-            if need_trough_fallback:
-                troughs = fallback_local_extrema(src_lo, min_dist, order, prefer_high=False)
-    return peaks.astype(int), troughs.astype(int)
+    return detect_pivots(close, cfg, high=high, low=low)
 
 
 def _last_touch_indexes(bound_y: np.ndarray, idxs: np.ndarray, y: np.ndarray, tol: float) -> List[int]:
