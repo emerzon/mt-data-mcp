@@ -74,28 +74,6 @@ def _default_error_guidance(
     operation_text = str(operation or "").strip().lower()
     if code_text in _ERROR_GUIDANCE:
         return dict(_ERROR_GUIDANCE[code_text])
-    if code_text == "tool_timeout":
-        if operation_text == "market_scan":
-            return {
-                "remediation": (
-                    "Reduce lookback, pass symbols or group to narrow the scan, "
-                    "or use symbols_top_markets for a faster tick-based overview."
-                ),
-                "related_tools": ["symbols_top_markets", "symbols_list"],
-            }
-        if operation_text in {"correlation_matrix", "cointegration_test"}:
-            return {
-                "remediation": (
-                    "Reduce window_bars or pass symbols or group to narrow the "
-                    "multi-symbol data fetch."
-                ),
-            }
-        return {
-            "remediation": (
-                "Narrow the request scope or reduce history/window parameters, "
-                "then retry."
-            )
-        }
     if code_text.endswith("_connection_error"):
         return dict(_ERROR_GUIDANCE["mt5_connection_error"])
     if operation_text.startswith("forecast_") or code_text.startswith("forecast_"):
