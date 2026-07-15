@@ -78,6 +78,30 @@ class TestSymbolsListNoSearch:
 
     @patch(_NORM_LIMIT, return_value=25)
     @patch(_TABLE, side_effect=lambda h, r: {"headers": h, "data": r})
+    @patch(f"{_MT5}.symbols_get")
+    def test_default_overview_prioritizes_major_fx_pairs(self, mock_get, mock_tbl, mock_lim):
+        mock_get.return_value = [
+            _make_symbol("1928.TSE", path="Stock CFD's\\JAPAN"),
+            _make_symbol("XAUUSD", path="Commodities\\Metals"),
+            _make_symbol("GBPUSD", path="Forex\\Majors"),
+            _make_symbol("EURUSD", path="Forex\\Majors"),
+            _make_symbol("EURAUD", path="Forex\\Minors"),
+        ]
+
+        with patch(_GROUP_PATH, side_effect=lambda s: s.path):
+            res = _get_symbols_list()(search_term=None, limit=25)
+
+        assert [row[0] for row in res["data"]] == [
+            "EURUSD",
+            "GBPUSD",
+            "EURAUD",
+            "XAUUSD",
+            "1928.TSE",
+        ]
+        assert res["sort"] == "market_overview"
+
+    @patch(_NORM_LIMIT, return_value=25)
+    @patch(_TABLE, side_effect=lambda h, r: {"headers": h, "data": r})
     @patch(_GROUP_PATH, return_value="Forex\\Majors")
     @patch(f"{_MT5}.symbols_get")
     def test_standard_detail_includes_descriptions(self, mock_get, mock_gp, mock_tbl, mock_lim):
@@ -134,7 +158,7 @@ class TestSymbolsListNoSearch:
 
         res = fn(search_term=None, limit=2, offset=1)
 
-        assert [row[0] for row in res["data"]] == ["EURUSD", "GBPUSD"]
+        assert [row[0] for row in res["data"]] == ["GBPUSD", "USDJPY"]
         assert res["total_count"] == 4
         assert res["offset"] == 1
         assert res["limit"] == 2

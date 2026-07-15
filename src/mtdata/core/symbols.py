@@ -86,6 +86,15 @@ _FOREX_SEARCH_PAIR_PRIORITY = {
         )
     )
 }
+_SYMBOL_DEFAULT_CATEGORY_PRIORITY = {
+    "indices": 2,
+    "commodities": 3,
+    "crypto": 4,
+    "stocks": 5,
+    "etfs": 6,
+    "bonds": 7,
+    "other": 8,
+}
 
 
 def _case_insensitive_sort_key(value: Any) -> tuple[str, str]:
@@ -452,6 +461,19 @@ def _symbol_search_forex_rank(symbol: Any, search_term: str) -> int:
     if not pair or query not in (pair[:3], pair[3:]):
         return 100
     return _FOREX_SEARCH_PAIR_PRIORITY.get(pair, 50)
+
+
+def _symbol_default_list_sort_key(symbol: Any) -> tuple[int, int, str, str]:
+    """Rank a no-filter symbol overview without fetching live market data."""
+    pair = _symbol_forex_pair(symbol)
+    if pair in _FOREX_SEARCH_PAIR_PRIORITY:
+        return 0, _FOREX_SEARCH_PAIR_PRIORITY[pair], *_case_insensitive_sort_key(
+            getattr(symbol, "name", "")
+        )
+    if pair:
+        return 1, 0, *_case_insensitive_sort_key(getattr(symbol, "name", ""))
+    category_rank = _SYMBOL_DEFAULT_CATEGORY_PRIORITY.get(_symbol_category(symbol), 9)
+    return category_rank, 0, *_case_insensitive_sort_key(getattr(symbol, "name", ""))
 
 
 def _symbol_top_match(row: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
@@ -843,8 +865,10 @@ def symbols_list(  # noqa: C901
     description and group matches.
 
     Without a search term, universe="visible" lists Market Watch symbols and
-    universe="all" lists the broker catalog. Searches use the broker catalog.
-    Use group, currency, and category to filter the resulting symbol set.
+    universe="all" lists the broker catalog. The unfiltered overview ranks FX
+    majors, other FX pairs, then broad asset categories before symbol name.
+    Searches use the broker catalog. Use group, currency, and category to
+    filter the resulting symbol set.
     """
     raw_search_term = str(search_term or "").strip() or None
     normalized_search_term = _normalize_symbol_search_term(search_term)
@@ -926,9 +950,7 @@ def symbols_list(  # noqa: C901
             else:
                 matched_symbols = sorted(
                     matched_symbols,
-                    key=lambda symbol: _case_insensitive_sort_key(
-                        getattr(symbol, "name", "")
-                    ),
+                    key=_symbol_default_list_sort_key,
                 )
             only_visible = effective_universe == "visible"
             symbol_list = []
@@ -1055,6 +1077,8 @@ def symbols_list(  # noqa: C901
                             f"({visible_count} of {broker_symbol_count}); "
                             "use universe=all or search_term for the broker catalog."
                         )
+                if not normalized_search_term:
+                    out["sort"] = "market_overview"
                 if offset_value or has_more:
                     out["total_count"] = total_count
                     out["offset"] = offset_value
@@ -1116,6 +1140,8 @@ def symbols_list(  # noqa: C901
                         f"({visible_count} of {broker_symbol_count}); "
                         "use universe=all or search_term for the broker catalog."
                     )
+            if not normalized_search_term:
+                result["sort"] = "market_overview"
             if offset_value or has_more:
                 result["total_count"] = total_count
                 result["offset"] = offset_value
