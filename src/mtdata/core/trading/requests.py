@@ -98,14 +98,16 @@ class TradePlaceRequest(BaseModel):
         default=True,
         description=(
             "Require both stop_loss and take_profit for market orders and fail "
-            "if protection cannot be attached."
+            "if protection cannot be attached. Market orders using this guarantee "
+            "must keep auto_close_on_sl_tp_fail enabled."
         ),
     )
     auto_close_on_sl_tp_fail: bool = Field(
         default=True,
         description=(
             "If a filled market order cannot attach TP/SL, immediately try to "
-            "close the unprotected position."
+            "close the unprotected position. Set false only when require_sl_tp is "
+            "also false; contradictory market-order safety settings are rejected."
         ),
     )
     idempotency_key: Optional[str] = Field(

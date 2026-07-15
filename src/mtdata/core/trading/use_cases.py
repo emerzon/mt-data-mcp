@@ -1484,6 +1484,29 @@ def run_trade_place(  # noqa: C901
             order_type_norm in explicit_pending_types
             or (expiration_provided and not ignore_market_gtc_expiration)
         )
+        if (
+            not is_pending
+            and bool(request.require_sl_tp)
+            and not bool(request.auto_close_on_sl_tp_fail)
+        ):
+            return _finish(
+                {
+                    "error": (
+                        "Conflicting safety settings: require_sl_tp=true cannot be "
+                        "combined with auto_close_on_sl_tp_fail=false for a market order."
+                    ),
+                    "error_code": "conflicting_sl_tp_safety_settings",
+                    "require_sl_tp": True,
+                    "auto_close_on_sl_tp_fail": False,
+                    "hint": (
+                        "Keep auto_close_on_sl_tp_fail=true to ensure an unprotected "
+                        "fill is closed, or set require_sl_tp=false to manage a failed "
+                        "protection attachment yourself."
+                    ),
+                },
+                order_type=order_type_norm,
+                pending=False,
+            )
         basic_protection_error = validation._validate_basic_protection_levels(
             side=order_type_norm,
             stop_loss=request.stop_loss,
@@ -1672,11 +1695,7 @@ def run_trade_place(  # noqa: C901
                         warnings_out.append(critical)
                     if warnings_out:
                         result["warnings"] = warnings_out
-                    # require_sl_tp implies auto-close on protection failure so
-                    # the flag is not a false sense of safety post-fill.
-                    should_auto_close = bool(request.auto_close_on_sl_tp_fail) or bool(
-                        request.require_sl_tp
-                    )
+                    should_auto_close = bool(request.auto_close_on_sl_tp_fail)
                     if should_auto_close:
                         close_ticket = safe_int_ticket(pos_ticket)
                         if close_ticket is None:

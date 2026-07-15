@@ -47,6 +47,8 @@ def trade_place(request: TradePlaceRequest) -> dict:
       Defaults to True for safer automation behavior.
     - auto_close_on_sl_tp_fail: retained for defensive handling of legacy injected
       order helpers that report a filled market order without TP/SL protection.
+      Market orders reject auto_close_on_sl_tp_fail=false when require_sl_tp=true,
+      because those settings cannot both be guaranteed after a fill.
     - Environment guardrails can block orders before MT5 submission based on
       configured symbol policies, volume caps, or wallet/account risk limits.
     - idempotency_key: optional durable dedupe key with a configurable 24-hour
