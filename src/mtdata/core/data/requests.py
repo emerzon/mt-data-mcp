@@ -385,8 +385,8 @@ class DataFetchCandlesRequest(_DetailNormalizedRequest):
         description=(
             "Number of most-recent completed bars to return (default "
             f"{DATA_FETCH_CANDLES_DEFAULT_LIMIT}, kept small for compact output). "
-            "The limit also caps start/end range queries; raise it to return more "
-            "bars from the requested range. "
+            "For start/end range queries, an omitted limit uses a 100,000-bar "
+            "safety cap; set limit explicitly to request a smaller range page. "
             "Requested indicators automatically fetch extra warmup bars, so the "
             "returned window has valid indicator values without raising the limit."
         ),

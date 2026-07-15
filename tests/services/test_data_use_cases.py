@@ -507,6 +507,36 @@ def test_run_data_fetch_candles_range_applies_limit_cap():
     assert result["query_type"] == "historical"
 
 
+def test_run_data_fetch_candles_range_does_not_use_latest_default_limit():
+    rows = [{"time": f"t{i}", "close": i} for i in range(25)]
+    observed = {}
+    request = DataFetchCandlesRequest(
+        symbol="EURUSD",
+        timeframe="H1",
+        start="2026-01-01",
+        end="2026-01-02",
+    )
+
+    def _fetch(**kwargs):
+        observed.update(kwargs)
+        return {
+            "success": True,
+            "data": rows,
+            "meta": {"diagnostics": {"query": {"mode": "range"}}},
+        }
+
+    result = run_data_fetch_candles(
+        request,
+        gateway=SimpleNamespace(ensure_connection=lambda: None),
+        fetch_candles_impl=_fetch,
+    )
+
+    assert observed["limit"] == 100_000
+    assert result["data"] == rows
+    assert result["count"] == 25
+    assert "truncated" not in result
+
+
 def test_run_data_fetch_candles_normalizes_count_metadata():
     request = DataFetchCandlesRequest(
         symbol="EURUSD",

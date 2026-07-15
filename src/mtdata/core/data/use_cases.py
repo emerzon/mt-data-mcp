@@ -75,6 +75,7 @@ _COMPACT_TICK_TOP_LEVEL_FIELDS = (
 )
 
 _ANALYSIS_CANDLE_DEFAULT_LIMIT = 100
+_RANGE_CANDLE_DEFAULT_LIMIT = 100_000
 
 
 def _ensure_gateway_connection(gateway: Any) -> Dict[str, Any] | None:
@@ -329,6 +330,8 @@ def _effective_candle_limit(request: DataFetchCandlesRequest) -> int:
         limit = DATA_FETCH_CANDLES_DEFAULT_LIMIT
     fields_set = getattr(request, "model_fields_set", set())
     limit_explicit = "limit" in fields_set
+    if (request.start or request.end) and not limit_explicit:
+        return _RANGE_CANDLE_DEFAULT_LIMIT
     has_indicators = request.indicators not in (None, "", [], {})
     if has_indicators and not limit_explicit:
         return max(limit, _ANALYSIS_CANDLE_DEFAULT_LIMIT)
