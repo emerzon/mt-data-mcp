@@ -359,7 +359,29 @@ def _symbol_category(symbol: Any) -> str:
         return "crypto"
     if any(token in text for token in ("index", "indices", "nasdaq", "dow", "dax")):
         return "indices"
-    if any(token in text for token in ("gold", "silver", "oil", "xau", "xag", "brent")):
+    if any(
+        token in text
+        for token in (
+            "commodity",
+            "commodities",
+            "metal",
+            "metals",
+            "energy",
+            "energies",
+            "gold",
+            "silver",
+            "oil",
+            "brent",
+            "copper",
+            "platinum",
+            "palladium",
+            "xau",
+            "xag",
+            "xpt",
+            "xpd",
+            "xcu",
+        )
+    ):
         return "commodities"
     return "other"
 

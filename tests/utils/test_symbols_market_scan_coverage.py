@@ -309,6 +309,24 @@ def test_symbol_category_prefers_stock_group_over_crypto_substrings():
     assert _symbol_category(crypto) == "crypto"
 
 
+def test_symbol_category_recognizes_metal_group_and_codes():
+    from mtdata.core.symbols import _symbol_category
+
+    platinum = _make_symbol(
+        "XPTUSD",
+        path="Commodities\\Metals",
+        description="Platinum spot",
+    )
+    copper = _make_symbol(
+        "XCUUSD",
+        path="Markets\\Spot",
+        description="Copper spot",
+    )
+
+    assert _symbol_category(platinum) == "commodities"
+    assert _symbol_category(copper) == "commodities"
+
+
 @contextmanager
 def _ready_guard_ok(symbol: str, info_before=None):
     yield None, info_before
