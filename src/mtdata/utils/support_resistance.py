@@ -10,9 +10,9 @@ import numpy as np
 import pandas as pd
 
 from ..shared.constants import (
-    TIME_DISPLAY_FORMAT,
     TIMEFRAME_SECONDS as _TIMEFRAME_SECONDS,
 )
+from .time import _format_time_minimal, format_epoch_utc
 
 _METHOD_NAME = "weighted_retests"
 _DEFAULT_REACTION_BARS = 6
@@ -77,28 +77,27 @@ def _format_time(timestamp: Optional[float]) -> Optional[str]:
     if isinstance(timestamp, str):
         cleaned = timestamp.strip()
         return cleaned or None
-    if timestamp is None or not math.isfinite(float(timestamp)):
+    if timestamp is None:
         return None
     try:
-        return datetime.fromtimestamp(float(timestamp), tz=timezone.utc).strftime(
-            TIME_DISPLAY_FORMAT
-        )
+        epoch = float(timestamp)
+        if not math.isfinite(epoch):
+            return None
+        return _format_time_minimal(epoch)
     except Exception:
         return None
 
 
 def _format_time_iso_utc(timestamp: Optional[float]) -> Optional[str]:
-    if timestamp is None or not math.isfinite(float(timestamp)):
+    if timestamp is None:
         return None
     try:
-        return (
-            datetime.fromtimestamp(float(timestamp), tz=timezone.utc)
-            .replace(microsecond=0)
-            .isoformat()
-            .replace("+00:00", "Z")
-        )
+        epoch = float(timestamp)
+        if not math.isfinite(epoch):
+            return None
     except Exception:
         return None
+    return format_epoch_utc(epoch)
 
 
 def _parse_output_time(value: Any) -> Optional[float]:
