@@ -21,6 +21,23 @@ _DOC_SECTION_RE = re.compile(r"^([A-Za-z][A-Za-z0-9 _/\-]{1,48})\s*:\s*$")
 _DOC_PARAM_RE = re.compile(r"^[\-\*\u2022]?\s*([A-Za-z_][A-Za-z0-9_]*)\s*(?:\([^)]*\))?\s*:\s*(.+)$")
 _DOC_SIG_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*\s*\(.*\)\s*(?:->\s*.+)?$")
 _TRADING_STYLES = {"intraday", "swing", "position"}
+_DEFAULT_INDICATOR_ORDER = (
+    "rsi",
+    "macd",
+    "atr",
+    "ema",
+    "sma",
+    "bbands",
+    "adx",
+    "stoch",
+    "vwap",
+    "obv",
+    "ichimoku",
+    "cci",
+)
+_DEFAULT_INDICATOR_RANK = {
+    name: index for index, name in enumerate(_DEFAULT_INDICATOR_ORDER)
+}
 _CATEGORY_TRADING_CONTEXT: Dict[str, Dict[str, Any]] = {
     "momentum": {
         "common_use": "momentum, reversal, and divergence checks",
@@ -307,6 +324,15 @@ def _matches_trading_style(item: Dict[str, Any], style: str) -> bool:
     return normalized in {str(x).strip().lower() for x in context.get("trading_styles", [])}
 
 
+def _default_indicator_sort_key(item: Dict[str, Any]) -> tuple[int, int, str, str]:
+    """Put broadly used indicators ahead of the alphabetical catalog."""
+    name = str(item.get("name") or "").strip().lower()
+    rank = _DEFAULT_INDICATOR_RANK.get(name)
+    if rank is not None:
+        return 0, rank, "", name
+    return 1, len(_DEFAULT_INDICATOR_ORDER), str(item.get("category") or ""), name
+
+
 def _indicator_preferred_spec(name: str, params: List[Dict[str, Any]], context: Dict[str, Any]) -> str:
     lname = str(name or "").strip().lower()
     typical = str(context.get("typical_parameters") or "")
@@ -463,7 +489,7 @@ def _normalize_indicator_list_limit(limit: Any) -> tuple[Optional[int], Optional
 
 
 @mcp.tool()
-def indicators_list(
+def indicators_list(  # noqa: C901
     search_term: Optional[str] = None,
     category: Optional[CategoryLiteral] = None,
     trading_style: Optional[Literal["intraday", "swing", "position"]] = None,
@@ -475,7 +501,7 @@ def indicators_list(
 
     Parameters: search_term?, category?, trading_style?, limit?, offset?, detail?
     """
-    def _run() -> Dict[str, Any]:
+    def _run() -> Dict[str, Any]:  # noqa: C901
         try:
             detail_mode = normalize_output_detail(detail, default="compact")
             detailed = detail_mode == "full"
@@ -498,7 +524,9 @@ def indicators_list(
                 return {"error": f"Invalid trading_style: {trading_style}. Use intraday, swing, or position."}
             if style_q:
                 items = [it for it in items if _matches_trading_style(it, style_q)]
-            if not search_active:
+            if not search_active and category is None and not style_q:
+                items.sort(key=_default_indicator_sort_key)
+            elif not search_active:
                 items.sort(key=lambda x: (x.get('category') or '', x.get('name') or ''))
             total_matches = len(items)
             limit_value, limit_error = _normalize_indicator_list_limit(limit)

@@ -34,3 +34,24 @@ def test_indicators_list_full_uses_cleaned_summary(monkeypatch):
     assert row["summary"] == "Relative Strength Index (RSI)"
     assert "Python Library Documentation" not in row["summary"]
     assert "Python Library Documentation" not in row["description"]
+
+
+def test_indicators_list_default_prioritizes_common_indicators(monkeypatch):
+    monkeypatch.setattr(
+        core_indicators,
+        "_list_ta_indicators",
+        lambda detailed=False: [
+            {"name": "cdl_doji", "category": "candles", "description": "", "params": []},
+            {"name": "ema", "category": "overlap", "description": "", "params": []},
+            {"name": "rsi", "category": "momentum", "description": "", "params": []},
+            {"name": "zscore", "category": "statistics", "description": "", "params": []},
+        ],
+    )
+
+    raw = _unwrap(core_indicators.indicators_list)
+
+    default = raw()
+    filtered = raw(category="candles")
+
+    assert [row["name"] for row in default["data"]] == ["rsi", "ema", "cdl_doji", "zscore"]
+    assert [row["name"] for row in filtered["data"]] == ["cdl_doji"]
