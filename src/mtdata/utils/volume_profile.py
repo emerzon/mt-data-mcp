@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from decimal import ROUND_FLOOR, Decimal, localcontext
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
+from .coercion import round_finite
 from .tick_flags import is_mt5_trade_event
 
 _PRICE_SOURCES = {"mid", "last", "bid", "ask"}
@@ -551,12 +552,10 @@ def _build_level_rows(
 
 
 def _round_price(value: Any, digits: Optional[int]) -> Any:
-    numeric = _finite_number(value)
-    if numeric is None:
-        return value
     if digits is None:
-        return float(numeric)
-    return round(float(numeric), max(0, int(digits)))
+        numeric = _finite_number(value)
+        return float(numeric) if numeric is not None else value
+    return round_finite(value, digits, on_invalid="passthrough")
 
 
 def _resolve_tolerance_price(

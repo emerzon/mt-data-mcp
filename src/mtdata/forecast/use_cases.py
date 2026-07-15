@@ -21,6 +21,7 @@ from ..core.execution_logging import (
 from ..core.output_contract import attach_collection_contract
 from ..utils.coercion import coerce_finite_float as _finite_float
 from ..utils.coercion import is_explicit_false as _is_explicit_false
+from ..utils.coercion import round_finite
 from ..utils.freshness import format_age_seconds as _format_age_seconds
 from ..utils.freshness import format_freshness_label
 from .backtest import execute_forecast_backtest as _forecast_backtest_impl
@@ -280,10 +281,8 @@ def _forecast_price_digits(payload: Dict[str, Any]) -> Optional[int]:
 
 
 def _round_forecast_number(value: Any, *, digits: int) -> Any:
-    numeric = _finite_float(value)
-    if numeric is None:
-        return value
-    return float(round(numeric, max(0, int(digits))))
+    rounded = round_finite(value, digits, on_invalid="passthrough")
+    return float(rounded) if isinstance(rounded, (int, float)) and not isinstance(rounded, bool) else rounded
 
 
 def _round_forecast_list(values: Any, *, digits: int) -> Any:

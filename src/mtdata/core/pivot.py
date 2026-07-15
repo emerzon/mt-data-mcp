@@ -18,6 +18,7 @@ from ..shared.validators import (
     invalid_timeframe_error,
     unsupported_timeframe_seconds_error,
 )
+from ..utils.coercion import round_finite
 from ..utils.level_confluence import build_level_confluence_payload
 from ..utils.mt5 import (
     MT5ConnectionError,
@@ -80,15 +81,7 @@ def _symbol_price_digits(info: Any) -> Optional[int]:
 
 
 def _round_level_price(value: Any, *, digits: int) -> Any:
-    if isinstance(value, bool):
-        return value
-    try:
-        number = float(value)
-    except Exception:
-        return value
-    if not math.isfinite(number):
-        return value
-    return round(number, max(0, int(digits)))
+    return round_finite(value, digits, on_invalid="passthrough")
 
 
 def _round_level_payload_prices(value: Any, *, digits: Optional[int], key: Optional[str] = None) -> Any:

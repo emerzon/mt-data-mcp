@@ -5,6 +5,7 @@ import math
 from typing import Any, Dict, Optional
 
 from ...shared.constants import BROKER_VOLUME_UNIT
+from ...utils.coercion import round_finite
 from .._mcp_instance import mcp
 from ..execution_logging import run_logged_operation
 from ..market_depth import market_ticker
@@ -94,13 +95,8 @@ def _price_precision_from_quote(quote: Any) -> int:
 
 
 def _round_trade_session_price(value: Any, *, digits: int) -> Any:
-    try:
-        numeric = float(value)
-    except Exception:
-        return value
-    if not math.isfinite(numeric):
-        return value
-    return float(round(numeric, max(0, int(digits))))
+    rounded = round_finite(value, digits, on_invalid="passthrough")
+    return float(rounded) if isinstance(rounded, (int, float)) and not isinstance(rounded, bool) else rounded
 
 
 def _round_trade_session_prices(value: Any, *, digits: int, key: Optional[str] = None) -> Any:

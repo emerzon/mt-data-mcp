@@ -7,6 +7,7 @@ from typing import Any, Dict, Literal, Optional
 
 from ..shared.market_units import forex_points_per_pip
 from ..shared.schema import DetailLiteral
+from ..utils.coercion import round_finite
 from ..utils.freshness import (
     QUOTE_STALE_SECONDS,
     format_age_seconds,
@@ -49,12 +50,7 @@ _MARKET_DEPTH_BOOK_UNITS = {
 }
 _MARKET_DEPTH_TICK_UNITS = {"volume": "mt5_tick_volume"}
 def _round_market_ticker_value(value: Any, *, digits: int) -> Any:
-    if value is None:
-        return None
-    try:
-        return round(float(value), max(0, int(digits)))
-    except Exception:
-        return value
+    return round_finite(value, digits, on_invalid="passthrough")
 
 
 def _market_ticker_age_seconds(value: Any) -> Optional[float]:

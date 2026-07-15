@@ -14,6 +14,7 @@ from ...shared.constants import BROKER_VOLUME_UNIT, TIMEFRAME_MAP
 from ...shared.result import Err, Ok, Result, to_dict
 from ...shared.validators import invalid_timeframe_error
 from ...utils.barriers import normalize_trade_direction
+from ...utils.coercion import round_finite
 from ...utils.mt5 import (
     MT5ConnectionError,
     _ensure_symbol_ready,
@@ -185,15 +186,7 @@ def _human_join(items: List[str]) -> str:
 
 
 def _round_optional_number(value: Any, digits: int) -> Optional[float]:
-    if value is None:
-        return None
-    try:
-        number = float(value)
-    except Exception:
-        return None
-    if not math.isfinite(number):
-        return None
-    return round(number, int(digits))
+    return round_finite(value, digits, on_invalid="none")
 
 
 def _coerce_warning_list(value: Any) -> List[str]:

@@ -32,6 +32,7 @@ from ..shared.constants import (
 from ..shared.market_units import forex_points_per_pip
 from ..shared.schema import DenoiseSpec, IndicatorSpec, SimplifySpec, TimeframeLiteral
 from ..shared.validators import invalid_timeframe_error
+from ..utils.coercion import round_finite
 from ..utils.denoise import (
     apply_denoise as apply_denoise_util,
 )
@@ -215,14 +216,9 @@ def _symbol_path(*infos: Any) -> str:
 
 
 def _round_price_value(value: Any, digits: int) -> Any:
-    if digits <= 0 or value is None or isinstance(value, bool):
+    if digits <= 0:
         return value
-    if not isinstance(value, (int, float)):
-        return value
-    numeric = float(value)
-    if not math.isfinite(numeric):
-        return value
-    return round(numeric, digits)
+    return round_finite(value, digits, on_invalid="passthrough")
 
 
 def _round_row_price_columns(

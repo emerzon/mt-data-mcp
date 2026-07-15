@@ -25,6 +25,7 @@ from ..utils.barriers import (
 from ..utils.barriers import (
     resolve_barrier_prices as _resolve_barrier_prices,
 )
+from ..utils.coercion import coerce_finite_float, round_finite
 from ..utils.denoise import resolve_denoise_base_col
 from ..utils.mt5 import MT5ConnectionError, ensure_mt5_connection_or_raise
 from ..utils.time import _format_time_minimal
@@ -61,15 +62,9 @@ def _neutral_barrier_pct_range(max_move_pct: Any) -> Optional[List[float]]:
 
 
 def _round_label_price(value: Any, *, digits: int) -> Optional[float]:
-    try:
-        numeric = float(value)
-    except Exception:
-        return None
-    if not math.isfinite(numeric):
-        return None
     if int(digits) <= 0:
-        return numeric
-    return round(numeric, max(0, int(digits)))
+        return coerce_finite_float(value)
+    return round_finite(value, digits, on_invalid="none")
 
 
 def _triple_barrier_sample_row(

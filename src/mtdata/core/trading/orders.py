@@ -8,6 +8,7 @@ from typing import Any, Callable, Dict, List, Optional, TypedDict, Union
 
 from ...bootstrap.settings import mt5_config, trade_guardrails_config
 from ...shared.market_units import forex_points_per_pip
+from ...utils.coercion import round_finite
 from . import comments, common, time, validation
 from .gateway import MT5TradingGateway, create_trading_gateway, trading_connection_error
 from .positions import _resolve_open_position
@@ -797,9 +798,7 @@ def _attach_comment_response_metadata(
 
 
 def _round_preview_price(value: Optional[float], *, digits: int) -> Optional[float]:
-    if value is None or not math.isfinite(value):
-        return None
-    return round(float(value), max(0, int(digits)))
+    return round_finite(value, digits, on_invalid="none")
 
 
 def _order_type_constant(mt5: Any, order_type: str) -> Optional[int]:

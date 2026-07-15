@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import math
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 
 UNPARSED_BOOL = object()
@@ -48,6 +48,26 @@ def safe_float(value: Any, default: Optional[float] = None) -> Optional[float]:
     """Best-effort finite float coercion with an optional fallback."""
     out = coerce_finite_float(value)
     return default if out is None else out
+
+
+def round_finite(
+    value: Any,
+    digits: int,
+    *,
+    on_invalid: Literal["none", "passthrough"] = "none",
+) -> Any:
+    """Round a finite numeric value to ``digits`` decimal places.
+
+    Rejects ``bool`` (so ``True``/``False`` are not treated as 1/0). Non-finite
+    or unparseable inputs yield ``None`` when ``on_invalid="none"``, otherwise
+    the original ``value``. ``digits`` is clamped to ``>= 0``.
+    """
+    if value is None or isinstance(value, bool):
+        return None if on_invalid == "none" else value
+    number = coerce_finite_float(value)
+    if number is None:
+        return None if on_invalid == "none" else value
+    return round(number, max(0, int(digits)))
 
 
 def is_explicit_false(value: Any) -> bool:

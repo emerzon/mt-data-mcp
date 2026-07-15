@@ -6,13 +6,14 @@ import math
 from typing import Any, Dict, Iterable, Optional
 
 from ..shared.schema import _PIVOT_METHODS
+from .coercion import round_finite
 
 
 def _round_price(value: float, digits: int) -> float:
-    try:
-        return round(float(value), digits) if digits >= 0 else float(value)
-    except Exception:
+    if digits < 0:
         return float(value)
+    rounded = round_finite(value, digits, on_invalid="passthrough")
+    return float(rounded) if isinstance(rounded, (int, float)) and not isinstance(rounded, bool) else float(value)
 
 
 def compute_pivot_method_levels(

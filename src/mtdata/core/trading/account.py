@@ -8,6 +8,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Literal, Optional
 
 from ...bootstrap.settings import mt5_config
+from ...utils.coercion import round_finite
 from ...utils.mt5 import (
     MT5ConnectionError,
     ensure_mt5_connection_or_raise,
@@ -112,10 +113,7 @@ def _safe_trade_journal_float(value: Any) -> Optional[float]:
 
 
 def _round_trade_journal_value(value: Any, *, digits: int) -> Optional[float]:
-    numeric = _safe_trade_journal_float(value)
-    if numeric is None:
-        return None
-    return float(round(numeric, max(0, int(digits))))
+    return round_finite(value, digits, on_invalid="none")
 
 
 def _is_exit_deal_row(row: Dict[str, Any]) -> bool:

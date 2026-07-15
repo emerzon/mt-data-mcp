@@ -6,22 +6,17 @@ import math
 from typing import Any, Dict, Iterable, List, Optional
 
 from .coercion import coerce_finite_float as _as_float
+from .coercion import round_finite
 
 _DEFAULT_TOLERANCE_PCT = 0.0015
 
 
 def _round_price(value: Any) -> Optional[float]:
-    number = _as_float(value)
-    if number is None:
-        return None
-    return float(round(number, 8))
+    return round_finite(value, 8, on_invalid="none")
 
 
 def _round_metric(value: Any) -> Optional[float]:
-    number = _as_float(value)
-    if number is None:
-        return None
-    return float(round(number, 4))
+    return round_finite(value, 4, on_invalid="none")
 
 
 def _role_for_price(price: float, reference_price: float) -> str:

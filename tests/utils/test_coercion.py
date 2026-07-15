@@ -1,4 +1,9 @@
-from mtdata.utils.coercion import UNPARSED_BOOL, is_explicit_false, parse_bool_like
+from mtdata.utils.coercion import (
+    UNPARSED_BOOL,
+    is_explicit_false,
+    parse_bool_like,
+    round_finite,
+)
 
 
 def test_parse_bool_like_accepts_canonical_boolean_values():
@@ -24,3 +29,13 @@ def test_is_explicit_false_distinguishes_missing_from_falsey_values():
     assert is_explicit_false([]) is True
     assert is_explicit_false(True) is False
     assert is_explicit_false(1) is False
+
+
+def test_round_finite_rounds_and_rejects_invalid_values():
+    assert round_finite(1.23456, 2) == 1.23
+    assert round_finite("1.239", 2) == 1.24
+    assert round_finite(None, 2) is None
+    assert round_finite(True, 2) is None
+    assert round_finite(float("nan"), 2) is None
+    assert round_finite("x", 2, on_invalid="passthrough") == "x"
+    assert round_finite(1.23456, -3) == 1.0

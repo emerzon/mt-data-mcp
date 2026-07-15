@@ -3,6 +3,7 @@ import os
 from typing import Any, Callable, Dict, Optional
 
 from ...shared.output_precision import resolve_output_precision
+from ...utils.coercion import round_finite
 from ...utils.minimal_output import _is_empty_value
 from ...utils.minimal_output import format_result_minimal as _shared_minimal
 from ..output_contract import apply_output_verbosity
@@ -122,12 +123,7 @@ def _prune_compact_runtime_meta(result: Any) -> Any:
 
 
 def _round_cli_float(value: Any, *, digits: int) -> Any:
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
-        return value
-    try:
-        return round(float(value), int(digits))
-    except Exception:
-        return value
+    return round_finite(value, digits, on_invalid="passthrough")
 
 
 def _price_precision_from_cli_quote(quote: Any) -> Optional[int]:
