@@ -278,6 +278,9 @@ def test_execution_quality_matches_order_and_computes_markout() -> None:
     assert result["items"][0]["benchmark_source"] == "arrival_quote"
     assert result["items"][0]["order_to_fill_ms"] == 1000.0
     assert result["summary"]["market_order_latency_ms"]["mean"] == 1000.0
+    assert result["summary"]["market_order_fills"] == 1
+    assert result["summary"]["non_market_order_fills"] == 0
+    assert result["summary"]["non_market_order_latency_ms"]["mean"] is None
     assert result["latency_definition"]["order_to_fill_ms"].endswith(
         "including_pending_wait"
     )

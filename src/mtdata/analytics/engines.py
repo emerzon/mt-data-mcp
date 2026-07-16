@@ -482,17 +482,26 @@ def analyze_execution_quality(request: TradeExecutionQualityRequest, gateway: An
         if len(fills) >= request.limit:
             break
     slippages = [float(item["slippage_bps"]) for item in fills]
+    market_order_fills = [item for item in fills if item.get("is_market_order")]
+    non_market_order_fills = [item for item in fills if not item.get("is_market_order")]
     summary = {
         "fills": len(fills),
         "orders": len({item["order_ticket"] for item in fills}),
+        "market_order_fills": len(market_order_fills),
+        "non_market_order_fills": len(non_market_order_fills),
         "slippage_bps": _percentiles(slippages),
         "mean_slippage_ci_95": _bootstrap_mean_ci(slippages, 500),
         "price_improvement_rate": float(np.mean([item["price_improved"] for item in fills])) if fills else None,
         "partial_fill_rate": float(np.mean([(item.get("fill_ratio") or 1.0) < 0.999 for item in fills])) if fills else None,
         "market_order_latency_ms": _percentiles(
             item["order_to_fill_ms"]
-            for item in fills
-            if item.get("is_market_order") and item.get("order_to_fill_ms") is not None
+            for item in market_order_fills
+            if item.get("order_to_fill_ms") is not None
+        ),
+        "non_market_order_latency_ms": _percentiles(
+            item["order_to_fill_ms"]
+            for item in non_market_order_fills
+            if item.get("order_to_fill_ms") is not None
         ),
         "order_to_fill_ms": _percentiles(
             item["order_to_fill_ms"]
@@ -524,9 +533,10 @@ def analyze_execution_quality(request: TradeExecutionQualityRequest, gateway: An
         "data_quality": {"history_deals": len(deals), "history_orders": len(orders), "matched_fills": len(fills), "skipped": skipped},
         "latency_definition": {
             "market_order_latency_ms": "market_order_setup_to_fill_elapsed_time",
+            "non_market_order_latency_ms": "non_market_order_setup_to_fill_elapsed_time_including_pending_wait",
             "order_to_fill_ms": "all_order_setup_to_fill_elapsed_time_including_pending_wait",
         },
-        "units": {"slippage_bps": "basis_points_positive_is_worse", "markout_bps": "basis_points_positive_is_favorable", "market_order_latency_ms": "milliseconds", "order_to_fill_ms": "milliseconds"},
+        "units": {"slippage_bps": "basis_points_positive_is_worse", "markout_bps": "basis_points_positive_is_favorable", "market_order_latency_ms": "milliseconds", "non_market_order_latency_ms": "milliseconds", "order_to_fill_ms": "milliseconds"},
     }
 
 
