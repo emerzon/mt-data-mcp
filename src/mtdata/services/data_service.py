@@ -2353,6 +2353,7 @@ def _compact_tick_summary(out: Dict[str, Any]) -> Dict[str, Any]:
         "time_normalization",
         "broker_server_tz",
         "session_utc_offset_seconds",
+        "spread_statistics_basis",
     ):
         if out.get(key) is not None:
             compact[key] = out.get(key)
@@ -2564,9 +2565,13 @@ def fetch_ticks(  # noqa: C901
         has_quote_update_flags = any(flag & quote_update_mask for flag in flags)
         quote_update_types: List[str] = []
         spread_valid_flags: List[bool] = []
+        bid_changed_flags: List[bool] = []
+        ask_changed_flags: List[bool] = []
         for flag, quote_type in zip(flags, quote_types, strict=False):
             bid_updated = bool(flag & bid_update_flag)
             ask_updated = bool(flag & ask_update_flag)
+            bid_changed_flags.append(bid_updated)
+            ask_changed_flags.append(ask_updated)
             if bid_updated and ask_updated:
                 update_type = "bid_ask_update"
             elif bid_updated:
@@ -2612,7 +2617,16 @@ def fetch_ticks(  # noqa: C901
         if include_quote_type:
             headers.append("quote_type")
         if full_rows:
-            headers.extend(["quote_update_type", "spread_valid"])
+            headers.extend(
+                [
+                    "quote_update_type",
+                    "bid_changed",
+                    "ask_changed",
+                    "spread_valid",
+                    "spread_basis",
+                    "spread_sample_eligible",
+                ]
+            )
             headers.extend(["mid", "spread"])
             if price_point is not None:
                 headers.append("spread_points")
@@ -2687,7 +2701,17 @@ def fetch_ticks(  # noqa: C901
         df_ticks["volume_real"] = volumes_real
         df_ticks["flags"] = flags
         df_ticks["trade_event"] = trade_events
-        df_ticks["spread_valid"] = spread_valid_flags
+        df_ticks["spread_valid"] = [
+            bid is not None and ask is not None and ask >= bid
+            for bid, ask in zip(effective_bids, effective_asks, strict=False)
+        ]
+        df_ticks["spread_sample_eligible"] = spread_valid_flags
+        df_ticks["spread_basis"] = [
+            "quote_snapshot" if valid else "unavailable"
+            for valid in df_ticks["spread_valid"].tolist()
+        ]
+        df_ticks["bid_changed"] = bid_changed_flags
+        df_ticks["ask_changed"] = ask_changed_flags
         df_ticks["quote_update_type"] = quote_update_types
         if include_quote_type:
             df_ticks["quote_type"] = quote_types
@@ -2719,6 +2743,7 @@ def fetch_ticks(  # noqa: C901
                 "spread_ticks_excluded": int(incomplete_quote_count),
                 "one_sided_updates": int(one_sided_update_count),
                 "valid_spread_ticks": int(sum(spread_valid_flags)),
+                "spread_sample_basis": "coherent_bid_ask_updates",
                 "zero_spread_ticks": int(zero_spread_count),
                 "warning_ratio": _ONE_SIDED_TICK_WARNING_RATIO,
                 "quote_type_counts": quote_type_counts,
@@ -2755,6 +2780,7 @@ def fetch_ticks(  # noqa: C901
             payload["warnings"] = warnings_list
 
         def _add_tick_context_fields(payload: Dict[str, Any]) -> None:
+            payload["spread_statistics_basis"] = "coherent_bid_ask_updates"
             last_quote = payload.get("last_quote")
             if isinstance(last_quote, dict) and price_point is not None:
                 spread_value = _finite_or_none(last_quote.get("spread"))
@@ -2785,6 +2811,23 @@ def fetch_ticks(  # noqa: C901
             )
             payload.update(freshness_context)
 
+        def _last_snapshot_quote(frame: pd.DataFrame) -> Dict[str, Any]:
+            bid = _finite_or_none(frame["bid"].iloc[-1])
+            ask = _finite_or_none(frame["ask"].iloc[-1])
+            spread_valid = bool(
+                bid is not None and ask is not None and float(ask) >= float(bid)
+            )
+            spread = float(ask) - float(bid) if spread_valid else None
+            mid = (float(bid) + float(ask)) / 2.0 if spread_valid else None
+            return {
+                "bid": bid,
+                "ask": ask,
+                "mid": mid,
+                "spread": spread,
+                "spread_valid": spread_valid,
+                "spread_basis": "quote_snapshot" if spread_valid else "unavailable",
+            }
+
         def _compact_summary_from_ticks() -> Dict[str, Any]:
             df_stats = df_ticks.copy()
             df_stats["mid"] = (df_stats["bid"] + df_stats["ask"]) / 2.0
@@ -2796,7 +2839,7 @@ def fetch_ticks(  # noqa: C901
                 float(len(df_stats) / duration_seconds) if duration_seconds > 0 else None
             )
             spread = pd.to_numeric(
-                df_stats["spread"].where(df_stats["spread_valid"]),
+                df_stats["spread"].where(df_stats["spread_sample_eligible"]),
                 errors="coerce",
             ).dropna()
             out: Dict[str, Any] = {
@@ -2820,12 +2863,7 @@ def fetch_ticks(  # noqa: C901
                         "mean": float(spread.mean()),
                     }
                 },
-                "last_quote": {
-                    "bid": float(df_stats["bid"].iloc[-1]),
-                    "ask": float(df_stats["ask"].iloc[-1]),
-                    "mid": float(df_stats["mid"].iloc[-1]),
-                    "spread": float(df_stats["spread"].iloc[-1]),
-                },
+                "last_quote": _last_snapshot_quote(df_stats),
             }
             if price_digits > 0:
                 out["price_precision"] = int(price_digits)
@@ -2908,7 +2946,7 @@ def fetch_ticks(  # noqa: C901
             df_stats = df_ticks.copy()
             df_stats["mid"] = (df_stats["bid"] + df_stats["ask"]) / 2.0
             df_stats["spread"] = (df_stats["ask"] - df_stats["bid"]).where(
-                df_stats["spread_valid"]
+                df_stats["spread_sample_eligible"]
             )
 
             start_epoch = float(df_stats["__epoch"].iloc[0])
@@ -2937,12 +2975,7 @@ def fetch_ticks(  # noqa: C901
                     "spread": _series_stats(df_stats["spread"], total_count=len(df_stats)),
                 },
             }
-            out["last_quote"] = {
-                "bid": float(df_stats["bid"].iloc[-1]),
-                "ask": float(df_stats["ask"].iloc[-1]),
-                "mid": float(df_stats["mid"].iloc[-1]),
-                "spread": float(df_stats["spread"].iloc[-1]),
-            }
+            out["last_quote"] = _last_snapshot_quote(df_stats)
             if duration_seconds <= 0:
                 out["tick_rate_note"] = "< 1s window"
             small_summary_sample = (
@@ -3244,18 +3277,31 @@ def fetch_ticks(  # noqa: C901
             if include_quote_type:
                 values.append(quote_types[i])
             if full_rows:
-                values.extend([quote_update_types[i], spread_valid_flags[i]])
                 bid_value = effective_bids[i]
                 ask_value = effective_asks[i]
-                spread_valid = spread_valid_flags[i]
+                snapshot_spread_valid = bool(
+                    bid_value is not None
+                    and ask_value is not None
+                    and ask_value >= bid_value
+                )
+                values.extend(
+                    [
+                        quote_update_types[i],
+                        bid_changed_flags[i],
+                        ask_changed_flags[i],
+                        snapshot_spread_valid,
+                        "quote_snapshot" if snapshot_spread_valid else "unavailable",
+                        spread_valid_flags[i],
+                    ]
+                )
                 mid = (
                     (bid_value + ask_value) / 2.0
-                    if spread_valid and bid_value is not None and ask_value is not None
+                    if snapshot_spread_valid
                     else None
                 )
                 spread = (
                     ask_value - bid_value
-                    if spread_valid and bid_value is not None and ask_value is not None
+                    if snapshot_spread_valid
                     else None
                 )
                 spread_points = _tick_spread_points(spread, price_point)

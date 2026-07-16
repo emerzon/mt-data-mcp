@@ -50,11 +50,13 @@ _COMPACT_TICK_TOP_LEVEL_FIELDS = (
     "trade_event_count",
     "quote_update_count",
     "data",
+    "last_quote",
     "timezone",
     "price_precision",
     "price_point",
     "price_currency",
     "units",
+    "spread_statistics_basis",
     "freshness",
     "freshness_state",
     "data_age_seconds",
@@ -1273,24 +1275,33 @@ def _compact_tick_row(
         if volume is not None and volume != 0.0:
             compact[field] = volume
     decoded = row.get("flags_decoded")
+    sample_eligible: Optional[bool] = None
     if isinstance(decoded, list) and decoded:
         quote_flags = {str(value).strip().lower() for value in decoded}
         bid_updated = "bid" in quote_flags
         ask_updated = "ask" in quote_flags
+        compact["bid_changed"] = bid_updated
+        compact["ask_changed"] = ask_updated
+        sample_eligible = bid_updated and ask_updated
         if bid_updated != ask_updated:
             compact["quote_update_type"] = (
                 "bid_only_update" if bid_updated else "ask_only_update"
             )
-            compact["spread_valid"] = False
-            compact["ask" if bid_updated else "bid"] = None
-            compact["spread"] = None
-            for field in ("mid", "mid_inferred", "spread_points", "spread_pct"):
-                compact.pop(field, None)
-            numeric_spread = None
         elif bid_updated and ask_updated:
             compact["quote_update_type"] = "bid_ask_update"
-            compact["spread_valid"] = True
-    return compact, numeric_spread
+    if row.get("spread_sample_eligible") is not None:
+        sample_eligible = bool(row.get("spread_sample_eligible"))
+    if sample_eligible is not None:
+        compact["spread_sample_eligible"] = sample_eligible
+    compact["spread_valid"] = bool(
+        bid is not None
+        and ask is not None
+        and numeric_spread is not None
+        and numeric_spread >= 0.0
+    )
+    if compact["spread_valid"]:
+        compact["spread_basis"] = "quote_snapshot"
+    return compact, numeric_spread if compact["spread_valid"] else None
 
 
 def _tick_price_point(payload: Dict[str, Any]) -> Optional[float]:
