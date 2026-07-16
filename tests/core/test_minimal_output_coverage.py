@@ -1426,6 +1426,7 @@ class TestFormatResultMinimal:
         payload = {
             "success": True,
             "dry_run": True,
+            "preview_ok": True,
             "no_action": True,
             "trade_gate_passed": False,
             "actionability": "preview_only",
@@ -1449,19 +1450,17 @@ class TestFormatResultMinimal:
         }
         result = format_result_minimal(payload, verbose=False, tool_name="trade_place")
         assert "dry_run: true" in result
-        assert "trade_gate_passed: false" in result
-        assert "actionability: preview_only" in result
+        assert "trade_gate_passed" not in result
         assert "symbol: BTCUSD" in result
         assert "order_type: BUY_LIMIT" in result
         assert "pending: true" in result
         assert "action: place_pending_order" in result
         assert "price: 64500" in result
         assert "validation_scope: request_routing_only" in result
-        assert "preview_scope_summary: Routing and local request checks only." in result
         assert "message: Dry run only. No order was sent to MT5." in result
-        assert "actionability_reason: Dry run did not execute MT5 or broker-side validation. Use this preview for request routing only." in result
-        assert "warnings[1]:" in result
-        assert "MT5/broker validation was not executed" in result
+        assert "preview_scope_summary" not in result
+        assert "actionability_reason" not in result
+        assert "warnings" not in result
 
 
 class TestFormatComplexValue:

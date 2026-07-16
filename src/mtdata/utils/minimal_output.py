@@ -803,16 +803,27 @@ def _normalize_trade_payload(
     if _is_empty_value(resolved_ticket):
         resolved_ticket = payload.get("ticket")
     order_value = payload.get("order")
+    is_successful_dry_run_preview = (
+        payload.get("dry_run") is True
+        and payload.get("success") is True
+        and payload.get("preview_ok") is True
+    )
 
     _maybe_add_trade_key(out, "retcode_name", payload.get("retcode_name"))
     if "retcode_name" not in out:
         _maybe_add_trade_key(out, "retcode", payload.get("retcode"))
     _maybe_add_trade_key(out, "dry_run", payload.get("dry_run"))
-    _maybe_add_trade_key(out, "dry_run_simulated", payload.get("dry_run_simulated"))
+    if not is_successful_dry_run_preview:
+        _maybe_add_trade_key(out, "dry_run_simulated", payload.get("dry_run_simulated"))
     _maybe_add_trade_key(out, "preview_ok", payload.get("preview_ok"))
-    _maybe_add_trade_key(out, "validation_passed", payload.get("validation_passed"))
-    _maybe_add_trade_key(out, "trade_gate_passed", payload.get("trade_gate_passed"))
-    _maybe_add_trade_key(out, "actionability", payload.get("actionability"))
+    if not is_successful_dry_run_preview:
+        _maybe_add_trade_key(out, "validation_passed", payload.get("validation_passed"))
+        _maybe_add_trade_key(out, "trade_gate_passed", payload.get("trade_gate_passed"))
+    if not (
+        is_successful_dry_run_preview
+        and payload.get("actionability") == "preview_only"
+    ):
+        _maybe_add_trade_key(out, "actionability", payload.get("actionability"))
     _maybe_add_trade_key(out, "symbol", payload.get("symbol"))
     _maybe_add_trade_key(out, "order_type", payload.get("order_type"))
     _maybe_add_trade_key(out, "pending", payload.get("pending"))
@@ -860,14 +871,15 @@ def _normalize_trade_payload(
     _maybe_add_trade_key(out, "protection_status", payload.get("protection_status"))
     _maybe_add_trade_key(out, "protection_error", protection_error)
     _maybe_add_trade_key(out, "validation_scope", payload.get("validation_scope"))
-    _maybe_add_trade_key(
-        out,
-        "broker_validation_not_performed",
-        payload.get("broker_validation_not_performed"),
-    )
-    _maybe_add_trade_key(
-        out, "preview_scope_summary", payload.get("preview_scope_summary")
-    )
+    if not is_successful_dry_run_preview:
+        _maybe_add_trade_key(
+            out,
+            "broker_validation_not_performed",
+            payload.get("broker_validation_not_performed"),
+        )
+        _maybe_add_trade_key(
+            out, "preview_scope_summary", payload.get("preview_scope_summary")
+        )
     _maybe_add_trade_key(out, "require_sl_tp", payload.get("require_sl_tp"))
     _maybe_add_trade_key(
         out, "auto_close_on_sl_tp_fail", payload.get("auto_close_on_sl_tp_fail")
@@ -876,13 +888,19 @@ def _normalize_trade_payload(
     _maybe_add_trade_key(
         out, "remaining_volume", payload.get("position_volume_remaining_estimate")
     )
-    _maybe_add_trade_key(out, "no_action", payload.get("no_action"))
+    if not is_successful_dry_run_preview:
+        _maybe_add_trade_key(out, "no_action", payload.get("no_action"))
     _maybe_add_trade_key(out, "message", payload.get("message"))
-    _maybe_add_trade_key(
-        out, "actionability_reason", payload.get("actionability_reason")
-    )
+    if not is_successful_dry_run_preview:
+        _maybe_add_trade_key(
+            out, "actionability_reason", payload.get("actionability_reason")
+        )
 
-    warnings_out = _compact_trade_warnings(payload.get("warnings"), verbose=verbose)
+    warnings_out = (
+        []
+        if is_successful_dry_run_preview
+        else _compact_trade_warnings(payload.get("warnings"), verbose=verbose)
+    )
     if warnings_out:
         out["warnings"] = warnings_out
 

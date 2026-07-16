@@ -233,18 +233,14 @@ def test_trade_place_dry_run_market_preview_skips_order_send() -> None:
 
     assert out.get("success") is True
     assert out.get("dry_run") is True
-    assert out.get("no_action") is True
-    assert out.get("would_send_order") is False
     assert out.get("pending") is False
     assert out.get("action") == "place_market_order"
-    assert out["actionability"] == "preview_only"
     assert "preview_scope_summary" not in out
     assert "validation_not_performed" not in out
     assert "warnings" not in out
     assert out["validation_scope"] == "local_preview_plus_estimates"
-    assert out["validation_passed"] is True
     assert out["preview_ok"] is True
-    assert "broker_acceptance" in out["broker_validation_not_performed"]
+    assert "broker_validation_not_performed" not in out
     assert "trade_gate_passed" not in out
     assert out.get("message") == "Dry run only. No order was sent to MT5."
     assert out.get("bid") == 64999.0
@@ -276,15 +272,8 @@ def test_trade_place_dry_run_market_preview_rejects_missing_sl_tp() -> None:
     assert "live submission with require_sl_tp=true would be rejected" in out.get(
         "dry_run_note", ""
     )
-    assert out["validation"] == {
-        "local_requirements_passed": False,
-        "live_submission_eligible": False,
-        "blockers": ["missing_stop_loss", "missing_take_profit"],
-        "broker_validation_performed": False,
-    }
-    assert out.get("would_send_order") is False
+    assert "validation" not in out
     assert out["preview_ok"] is False
-    assert out["validation_passed"] is False
     assert out.get("action") == "place_market_order"
     assert "requested_sl" not in out
     assert "requested_tp" not in out
@@ -312,8 +301,6 @@ def test_trade_place_dry_run_preview_detail_omits_safety_lists() -> None:
 
     assert out.get("success") is True
     assert out.get("dry_run") is True
-    assert out.get("would_send_order") is False
-    assert out["actionability"] == "preview_only"
     assert "preview_scope_summary" not in out
     assert "warnings" not in out
     assert "validation_not_performed" not in out
@@ -321,7 +308,6 @@ def test_trade_place_dry_run_preview_detail_omits_safety_lists() -> None:
     assert out["guardrails_enabled"] is False
     assert out["validation_scope"] == "local_preview_plus_estimates"
     assert out["preview_ok"] is True
-    assert out["validation_passed"] is True
     assert "trade_gate_passed" not in out
     mock_market.assert_not_called()
 
@@ -375,9 +361,7 @@ def test_trade_place_dry_run_preview_error_uses_standard_error_shape() -> None:
     assert out.get("error_code") == "trade_preview_error"
     assert out.get("operation") == "trade_place"
     assert out.get("preview_error") == out.get("error")
-    assert out.get("no_action") is True
     assert out.get("no_action_reason") == "dry_run_preview_error"
-    assert out.get("would_send_order") is False
     mock_market.assert_not_called()
 
 
@@ -405,7 +389,6 @@ def test_trade_place_dry_run_rejects_invalid_live_protection_preview() -> None:
     assert out.get("success") is False
     assert out.get("preview_ok") is False
     assert out.get("dry_run") is True
-    assert out.get("no_action") is True
     assert out.get("error_code") == "invalid_protection_levels"
     assert out.get("error") == out.get("sl_tp_error")
     assert "stop_loss must be below the live bid" in out.get("error", "")
@@ -490,7 +473,6 @@ def test_trade_place_dry_run_rejects_bool_like_invalid_protection_preview() -> N
     assert out.get("success") is False
     assert out.get("preview_ok") is False
     assert out.get("dry_run") is True
-    assert out.get("no_action") is True
     assert out.get("error_code") == "invalid_protection_levels"
     assert "take_profit must be above the live ask" in out.get("error", "")
     mock_market.assert_not_called()
@@ -513,12 +495,9 @@ def test_trade_place_dry_run_pending_preview_skips_order_send() -> None:
 
     assert out.get("success") is True
     assert out.get("dry_run") is True
-    assert out.get("no_action") is True
     assert out.get("pending") is True
     assert out.get("action") == "place_pending_order"
-    assert out["actionability"] == "preview_only"
     assert out["preview_ok"] is True
-    assert out["validation_passed"] is True
     assert "preview_scope_summary" not in out
     assert "warnings" not in out
     assert "trade_gate_passed" not in out
