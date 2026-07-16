@@ -22,6 +22,7 @@ from mtdata.core.trading.requests import (
     TradeGetOpenRequest,
     TradeHistoryRequest,
     TradeRiskAnalyzeRequest,
+    TradeStressTestRequest,
 )
 from mtdata.forecast.requests import ForecastGenerateRequest
 
@@ -897,6 +898,28 @@ class TestCreateCommandFunction:
         status = cmd_fn(args)
         assert status == 1
         assert "limit must be greater than 0." in capsys.readouterr().out
+        mock_fn.assert_not_called()
+
+    def test_trade_stress_test_invalid_shocks_has_json_remediation(self, capsys):
+        mock_fn = MagicMock(return_value={"ok": True})
+        func_info = {
+            "func": mock_fn,
+            "request_model": TradeStressTestRequest,
+            "request_param_name": "request",
+            "params": [
+                {
+                    "name": "shocks",
+                    "type": Dict[str, float],
+                    "required": True,
+                    "default": None,
+                },
+            ],
+        }
+        cmd_fn = create_command_function(func_info, cmd_name="trade_stress_test")
+        args = argparse.Namespace(shocks="-1,-2", json=False, verbose=False)
+
+        assert cmd_fn(args) == 1
+        assert "shocks must be a JSON object mapping symbols" in capsys.readouterr().out
         mock_fn.assert_not_called()
 
     def test_invalid_simplify_method_returns_descriptive_validation_error(self, capsys):

@@ -316,6 +316,11 @@ def create_command_function(  # noqa: C901
                     "\"threshold_value\":0.1,\"threshold_mode\":\"fixed_pct\"}]' "
                     "--end-on '[{\"type\":\"candle_close\",\"timeframe\":\"M1\"}]'."
                 )
+            if cmd_name == "trade_stress_test" and loc.split(".", 1)[0] == "shocks":
+                return (
+                    "shocks must be a JSON object mapping symbols to percentage shocks. "
+                    "Examples: '{\"*\":-2}' or '{\"EURUSD\":-1,\"XAUUSD\":-3}'."
+                )
             if "indicators" in loc and "params" in loc and any(
                 marker in msg.lower() for marker in ("list", "dict", "dictionary", "mapping", "valid")
             ):

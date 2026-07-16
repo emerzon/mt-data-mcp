@@ -1250,6 +1250,19 @@ class TestResolveParamKwargs:
         kwargs, _ = _resolve_param_kwargs(param, None, cmd_name="finviz_news")
         assert kwargs["help"] == "Max news items to return on this page."
 
+    def test_trade_stress_test_shocks_help_has_json_examples(self):
+        param = {
+            "name": "shocks",
+            "type": Dict[str, float],
+            "required": True,
+            "default": None,
+        }
+        kwargs, _ = _resolve_param_kwargs(param, None, cmd_name="trade_stress_test")
+        assert kwargs["help"] == (
+            "JSON object mapping symbols to percentage shocks. Examples: "
+            "'{\"*\":-2}' or '{\"EURUSD\":-1,\"XAUUSD\":-3}'."
+        )
+
     def test_finviz_calendar_start_help_is_command_specific(self):
         param = {
             "name": "start",

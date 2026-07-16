@@ -250,6 +250,10 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
     ("trade_place", "detail"): (
         "Dry-run preview detail: compact for key checks, full for execution diagnostics."
     ),
+    ("trade_stress_test", "shocks"): (
+        "JSON object mapping symbols to percentage shocks. Examples: "
+        "'{\"*\":-2}' or '{\"EURUSD\":-1,\"XAUUSD\":-3}'."
+    ),
     ("trade_place", "require_sl_tp"): (
         "Require both stop_loss and take_profit for market orders."
     ),
