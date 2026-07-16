@@ -114,6 +114,12 @@ def _round_trade_journal_value(value: Any, *, digits: int) -> Optional[float]:
 
 
 def _is_exit_deal_row(row: Dict[str, Any]) -> bool:
+    deal_effect = str(row.get("deal_effect") or "").strip().lower()
+    if deal_effect in {"close", "close_by", "reverse"}:
+        return True
+    position_action = str(row.get("position_action") or "").strip().lower()
+    if position_action.startswith(("close_", "close_by_", "reverse_")):
+        return True
     entry_text = str(row.get("entry") or "").strip().lower()
     if entry_text and "out" in entry_text:
         return True
@@ -290,9 +296,11 @@ def _trade_journal_breakdowns(
 
 def _trade_journal_trade_snapshot(row: Dict[str, Any]) -> Dict[str, Any]:
     return {
-        "ticket": row.get("ticket"),
+        "deal_ticket": row.get("deal_ticket", row.get("ticket")),
+        "order_ticket": row.get("order_ticket"),
+        "position_ticket": row.get("position_ticket"),
         "symbol": row.get("symbol"),
-        "time": row.get("time"),
+        "fill_time": row.get("fill_time", row.get("time")),
         "side": row.get("side"),
         "exit_trigger": row.get("exit_trigger"),
         "net_pnl": row.get("net_pnl"),
@@ -519,7 +527,7 @@ def _run_trade_journal_request(request: TradeJournalAnalyzeRequest) -> Dict[str,
         payload["items"] = [
             _trade_journal_trade_snapshot(row) for row in analyzed_rows
         ]
-        payload["item_schema"] = "trade_journal_analyzed_exit.v1"
+        payload["item_schema"] = "trade_journal_analyzed_exit.v2"
         payload["best_trades"] = [
             _trade_journal_trade_snapshot(row)
             for row in ranked_best[: min(5, len(ranked_best))]

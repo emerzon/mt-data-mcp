@@ -1245,12 +1245,63 @@ def test_trade_journal_analyze_summarizes_realized_exit_deals() -> None:
     assert out["summary"]["sample_notice"]["code"] == "low_sample_unreliable_metrics"
     assert "avg_pnl" not in out["summary"]
     assert out["breakdowns"]["by_symbol"][0]["symbol"] == "EURUSD"
-    assert out["item_schema"] == "trade_journal_analyzed_exit.v1"
-    assert [item["ticket"] for item in out["items"]] == [2, 3]
+    assert out["item_schema"] == "trade_journal_analyzed_exit.v2"
+    assert [item["deal_ticket"] for item in out["items"]] == [2, 3]
+    assert out["items"][0]["fill_time"] == "2026-01-01 12:00"
     assert out["items"][0]["net_pnl"] == 23.5
-    assert out["best_trades"][0]["ticket"] == 2
+    assert out["best_trades"][0]["deal_ticket"] == 2
     assert out["best_trades"][0]["profit"] == 25.0
-    assert out["worst_trades"][0]["ticket"] == 3
+    assert out["worst_trades"][0]["deal_ticket"] == 3
+
+
+def test_trade_journal_includes_canonical_manual_close_deals() -> None:
+    history_rows = [
+        {
+            "fill_time": "2026-07-16T20:26:44Z",
+            "deal_ticket": 101,
+            "order_ticket": 201,
+            "position_ticket": 301,
+            "symbol": "TSLA.NAS-24",
+            "deal_effect": "close",
+            "position_action": "close_long",
+            "position_side": "long",
+            "profit": 0.92,
+            "commission": -0.02,
+            "volume": 0.2,
+            "comment": "MCP close",
+        }
+    ]
+
+    with patch(
+        "mtdata.core.trading.account._run_trade_history_request",
+        return_value={
+            "success": True,
+            "count": 1,
+            "items": history_rows,
+        },
+    ):
+        out = trade_journal_analyze(detail="full", __cli_raw=True)
+
+    assert out["summary"]["closed_deals"] == 1
+    assert out["summary"]["net_pnl"] == 0.9
+    assert out["meta"]["exit_deals"] == 1
+    assert out["items"] == [
+        {
+            "deal_ticket": 101,
+            "order_ticket": 201,
+            "position_ticket": 301,
+            "symbol": "TSLA.NAS-24",
+            "fill_time": "2026-07-16T20:26:44Z",
+            "side": "long",
+            "exit_trigger": "Unspecified",
+            "net_pnl": 0.9,
+            "profit": 0.92,
+            "commission": -0.02,
+            "swap": None,
+            "fee": None,
+            "volume": 0.2,
+        }
+    ]
 
 
 def test_trade_journal_analyze_compact_returns_summary_only() -> None:
@@ -1494,16 +1545,22 @@ def test_trade_journal_analyze_filters_best_worst_by_pnl_sign() -> None:
     # Verify best_trades only contains winners (positive P&L)
     assert len(out["best_trades"]) == 2
     for trade in out["best_trades"]:
-        assert trade["net_pnl"] > 0, f"best_trades should only contain wins, but found ticket {trade['ticket']} with net_pnl {trade['net_pnl']}"
+        assert trade["net_pnl"] > 0, (
+            "best_trades should only contain wins, but found deal "
+            f"{trade['deal_ticket']} with net_pnl {trade['net_pnl']}"
+        )
 
     # Verify worst_trades only contains losers (negative P&L)
     assert len(out["worst_trades"]) == 1
     for trade in out["worst_trades"]:
-        assert trade["net_pnl"] < 0, f"worst_trades should only contain losses, but found ticket {trade['ticket']} with net_pnl {trade['net_pnl']}"
+        assert trade["net_pnl"] < 0, (
+            "worst_trades should only contain losses, but found deal "
+            f"{trade['deal_ticket']} with net_pnl {trade['net_pnl']}"
+        )
 
     # Verify specific tickets in correct lists
-    best_tickets = {trade["ticket"] for trade in out["best_trades"]}
-    worst_tickets = {trade["ticket"] for trade in out["worst_trades"]}
+    best_tickets = {trade["deal_ticket"] for trade in out["best_trades"]}
+    worst_tickets = {trade["deal_ticket"] for trade in out["worst_trades"]}
     
     assert 1 in best_tickets  # EURUSD +0.82
     assert 2 in best_tickets  # USDJPY +0.04
