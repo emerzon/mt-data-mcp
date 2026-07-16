@@ -1286,6 +1286,7 @@ def test_run_data_fetch_ticks_compact_prunes_row_diagnostics():
             "success": True,
             "symbol": "EURUSD",
             "count": 2,
+            "tick_count": 2,
             "data": [
                 {
                     "time": "2026-05-29 20:56",
@@ -1356,8 +1357,6 @@ def test_run_data_fetch_ticks_compact_prunes_row_diagnostics():
                 "spread": None,
                 "volume": 3.0,
                 "volume_real": 1.25,
-                "flags": 1026,
-                "flags_decoded": ["bid", "volume_real"],
                 "quote_update_type": "bid_only_update",
                 "spread_valid": False,
             },
@@ -1370,8 +1369,6 @@ def test_run_data_fetch_ticks_compact_prunes_row_diagnostics():
                 "spread_points": 8.0,
                 "spread_pct": 0.006861,
                 "volume": 4.0,
-                "flags": 1030,
-                "flags_decoded": ["bid", "ask", "volume_real"],
                 "quote_update_type": "bid_ask_update",
                 "spread_valid": True,
             },

@@ -1138,6 +1138,8 @@ def _compact_tick_rows_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
             compact_rows.append(compact_row)
         compact["data"] = compact_rows
         compact["count"] = len(compact["data"])
+        if compact.get("tick_count") == compact["count"]:
+            compact.pop("tick_count", None)
         units = compact.get("units")
         present_fields = {
             key
@@ -1270,12 +1272,8 @@ def _compact_tick_row(
         volume = _tick_row_price(row.get(field))
         if volume is not None and volume != 0.0:
             compact[field] = volume
-    flags = _as_nonnegative_int(row.get("flags"))
-    if flags is not None:
-        compact["flags"] = flags
     decoded = row.get("flags_decoded")
     if isinstance(decoded, list) and decoded:
-        compact["flags_decoded"] = list(decoded)
         quote_flags = {str(value).strip().lower() for value in decoded}
         bid_updated = "bid" in quote_flags
         ask_updated = "ask" in quote_flags
