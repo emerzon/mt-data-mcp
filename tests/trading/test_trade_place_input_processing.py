@@ -57,6 +57,22 @@ def test_execution_request_dry_run_defaults() -> None:
     assert TradeCloseRequest(ticket=100).dry_run is True
 
 
+@pytest.mark.parametrize(
+    "request_factory",
+    [
+        lambda: TradePlaceRequest(deviation=-1),
+        lambda: TradeCloseRequest(ticket=100, deviation=-1),
+        lambda: TradeCloseRequest(ticket=100, volume=0),
+        lambda: TradeCloseRequest(ticket=100, volume=-0.1),
+        lambda: TradeModifyRequest(ticket="abc"),
+        lambda: TradeModifyRequest(ticket=0),
+    ],
+)
+def test_trade_requests_reject_invalid_execution_numerics(request_factory) -> None:
+    with pytest.raises(ValidationError):
+        request_factory()
+
+
 def test_normalize_order_type_rejects_mt5_integer() -> None:
     normalized, error = _normalize_order_type_input(2)
     assert normalized is None

@@ -6,6 +6,9 @@ from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+import pytest
+from pydantic import ValidationError
+
 from mtdata.core.trading import trade_history as _trade_history_tool
 from mtdata.core.trading.account import trade_journal_analyze as _trade_journal_tool
 from mtdata.core.trading.positions import normalize_trade_history_output
@@ -518,13 +521,24 @@ def test_trade_history_filters_deals_by_side_alias() -> None:
 def test_trade_history_request_normalizes_buy_sell_aliases() -> None:
     assert TradeHistoryRequest(side="buy").side == "BUY"
     assert TradeHistoryRequest(side="sell").side == "SELL"
-    assert TradeHistoryRequest(side="weird").side == "weird"
+    with pytest.raises(ValidationError, match="side must be BUY or SELL"):
+        TradeHistoryRequest(side="weird")
     assert TradeHistoryRequest(side="long").side == "BUY"
     assert TradeHistoryRequest(side="short").side == "SELL"
     assert TradeHistoryRequest().detail == "compact"
     assert TradeJournalAnalyzeRequest().detail == "compact"
     assert TradeGetOpenRequest().detail == "compact"
     assert TradeGetPendingRequest().detail == "compact"
+
+
+@pytest.mark.parametrize(
+    "request_type",
+    [TradeHistoryRequest, TradeGetOpenRequest, TradeGetPendingRequest],
+)
+@pytest.mark.parametrize("limit", [0, -1, 1.5])
+def test_trade_query_requests_reject_invalid_limits(request_type, limit) -> None:
+    with pytest.raises(ValidationError):
+        request_type(limit=limit)
 
 
 def test_trade_history_filters_orders_by_side_prefix() -> None:
@@ -895,11 +909,8 @@ def test_trade_history_rejects_start_with_minutes_back() -> None:
 
 
 def test_trade_history_rejects_invalid_side_filter() -> None:
-    out = trade_history(history_kind="deals", side="flat", detail="full", __cli_raw=True)
-
-    assert out["success"] is False
-    assert out["error"] == "side must be BUY or SELL."
-    assert out["request_echo"]["side"] == "flat"
+    with pytest.raises(ValidationError, match="side must be BUY or SELL"):
+        TradeHistoryRequest(history_kind="deals", side="flat", detail="full")
 
 
 def test_trade_history_compact_hides_comment_limit_metadata() -> None:
@@ -1601,5 +1612,6 @@ def test_trade_journal_analyze_forwards_side_filter() -> None:
     assert out["summary"]["closed_deals"] == 0
 
 
-def test_trade_journal_request_preserves_invalid_side_for_tool_level_error() -> None:
-    assert TradeJournalAnalyzeRequest(side="sideways").side == "sideways"
+def test_trade_journal_request_rejects_invalid_side() -> None:
+    with pytest.raises(ValidationError, match="side must be BUY or SELL"):
+        TradeJournalAnalyzeRequest(side="sideways")

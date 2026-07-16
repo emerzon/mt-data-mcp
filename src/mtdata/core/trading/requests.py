@@ -23,7 +23,21 @@ def _normalize_trade_side_alias(value: Optional[str]) -> Optional[str]:
     normalized, error = validation._normalize_trade_side_filter(value)
     if error is None and normalized is not None:
         return normalized
-    return value
+    if error is not None:
+        raise ValueError(error)
+    return None
+
+
+def _normalize_positive_ticket(value: Union[int, str]) -> int:
+    if isinstance(value, bool):
+        raise ValueError("ticket must be a positive integer")
+    text = str(value).strip()
+    if not text.isdigit():
+        raise ValueError("ticket must be a positive integer")
+    ticket = int(text)
+    if ticket <= 0:
+        raise ValueError("ticket must be a positive integer")
+    return ticket
 
 
 class _SideNormalizedRequest(BaseModel):
@@ -68,6 +82,7 @@ class TradePlaceRequest(BaseModel):
     )
     deviation: int = Field(
         default=20,
+        ge=0,
         description="Maximum allowed execution slippage in points.",
     )
     dry_run: bool = Field(
@@ -116,6 +131,11 @@ class TradeModifyRequest(BaseModel):
     model_config = {"populate_by_name": True}
 
     ticket: Union[int, str]
+
+    @field_validator("ticket", mode="before")
+    @classmethod
+    def _validate_ticket(cls, value: Union[int, str]) -> int:
+        return _normalize_positive_ticket(value)
     detail: DetailLiteral = Field(
         default="compact",
         description="Response detail level for modify previews and result payloads.",
@@ -164,6 +184,7 @@ class TradeCloseRequest(BaseModel):
     magic: Optional[int] = Field(default=None, description=MAGIC_NUMBER_DESCRIPTION)
     volume: Optional[float] = Field(
         default=None,
+        gt=0.0,
         description="Partial close volume in lots. Requires ticket.",
     )
     dry_run: bool = Field(
@@ -199,7 +220,7 @@ class TradeCloseRequest(BaseModel):
         ),
     )
     comment: Optional[str] = None
-    deviation: int = 20
+    deviation: int = Field(default=20, ge=0)
 
 
 class TradeHistoryRequest(_SideNormalizedRequest):
@@ -235,7 +256,7 @@ class TradeHistoryRequest(_SideNormalizedRequest):
             "when start, end, and minutes_back are omitted."
         ),
     )
-    limit: Optional[int] = 100
+    limit: Optional[int] = Field(default=100, ge=1)
     offset: int = 0
     page: Optional[int] = None
     order: Literal["desc", "asc"] = Field(
@@ -479,7 +500,7 @@ class TradeGetOpenRequest(_SideNormalizedRequest):
             "loss_first, profit_first, or largest_first."
         ),
     )
-    limit: Optional[int] = 50
+    limit: Optional[int] = Field(default=50, ge=1)
     detail: DetailLiteral = Field(
         default="compact",
         description=(
@@ -506,7 +527,7 @@ class TradeGetPendingRequest(_SideNormalizedRequest):
         ),
     )
     magic: Optional[int] = Field(default=None, description=MAGIC_NUMBER_DESCRIPTION)
-    limit: Optional[int] = 50
+    limit: Optional[int] = Field(default=50, ge=1)
     detail: DetailLiteral = Field(
         default="compact",
         description=(
@@ -521,7 +542,21 @@ class TradeGetPendingRequest(_SideNormalizedRequest):
         if value is None:
             return None
         text = str(value).strip().upper()
-        return text or None
+        if not text:
+            return None
+        allowed = {
+            "BUY_LIMIT",
+            "SELL_LIMIT",
+            "BUY_STOP",
+            "SELL_STOP",
+            "BUY_STOP_LIMIT",
+            "SELL_STOP_LIMIT",
+        }
+        if text not in allowed:
+            raise ValueError(
+                "order_type must be one of: " + ", ".join(sorted(allowed))
+            )
+        return text
 
 
 class TradeSessionContextRequest(BaseModel):

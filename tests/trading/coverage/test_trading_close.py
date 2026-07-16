@@ -55,13 +55,14 @@ from mtdata.core.trading import (
 from mtdata.core.trading.execution import (
     _deal_history_sort_key,
     _execute_single_close,
+    _resolve_close_dry_run_target,
     _resolve_closed_deal_from_history,
     _sort_close_positions,
 )
+from mtdata.core.trading.gateway import MT5TradingGateway
 from mtdata.core.trading.requests import (
     TradeCloseRequest,
 )
-
 
 # ===================================================================
 # Helpers
@@ -247,6 +248,31 @@ def test_resolve_closed_deal_from_history_tiebreaks_missing_timestamps_by_ticket
 # ===================================================================
 
 class TestTradeClose:
+
+    def test_dry_run_partial_close_rejects_volume_above_position(self):
+        adapter = MagicMock()
+        adapter.positions_get.return_value = [
+            _position(ticket=123, symbol="EURUSD", volume=0.1)
+        ]
+        adapter.symbol_info.return_value = SimpleNamespace(
+            volume_min=0.01,
+            volume_max=100.0,
+            volume_step=0.01,
+        )
+        gateway = MT5TradingGateway(
+            adapter=adapter,
+            ensure_connection_impl=lambda: None,
+        )
+
+        out = _resolve_close_dry_run_target(
+            ticket=123,
+            volume=0.2,
+            gateway=gateway,
+        )
+
+        assert out["error"] == "volume must be <= open position volume (0.1)"
+        assert out["requested_volume"] == 0.2
+        assert out["position_volume"] == 0.1
 
     @patch("mtdata.core.trading._cancel_pending")
     @patch("mtdata.core.trading._close_positions")
