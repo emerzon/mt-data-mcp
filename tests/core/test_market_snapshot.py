@@ -137,6 +137,11 @@ def test_market_snapshot_summary_detail_returns_lean_snapshot(monkeypatch):
         "nearest_support": 1.098,
         "nearest_resistance": 1.105,
         "pattern_count": 2,
+        "pattern_window_bars": 3,
+        "pattern_scan_note": (
+            "Candlestick triggers are limited to the latest 3 bars; "
+            "use patterns_detect for a wider historical scan."
+        ),
     }
     assert "quote" not in result
     assert "levels" not in result
@@ -206,6 +211,11 @@ def test_market_snapshot_compact_defaults_to_lean_snapshot(monkeypatch):
         "nearest_support": 1.098,
         "nearest_resistance": 1.105,
         "pattern_count": 2,
+        "pattern_window_bars": 3,
+        "pattern_scan_note": (
+            "Candlestick triggers are limited to the latest 3 bars; "
+            "use patterns_detect for a wider historical scan."
+        ),
     }
     assert "quote" not in result
     assert "levels" not in result
@@ -371,6 +381,25 @@ def test_market_snapshot_qualifies_uncertain_pattern_bias(monkeypatch):
     assert snapshot["pattern_is_signal"] is False
     assert snapshot["pattern_usage"] == "information_only"
     assert snapshot["pattern_window_bars"] == 3
+    assert snapshot["pattern_scan_note"] == (
+        "Candlestick triggers are limited to the latest 3 bars; "
+        "use patterns_detect for a wider historical scan."
+    )
+
+
+def test_market_snapshot_discloses_pattern_window_when_no_patterns(monkeypatch):
+    def fake_call_section(name, symbol, timeframe, horizon, detail):
+        if name == "patterns":
+            return {"success": True, "n_patterns": 0, "last_n_bars": 3}
+        return {"success": True, "symbol": symbol, "mid": 1.1}
+
+    monkeypatch.setattr(snapshot_mod, "_call_section", fake_call_section)
+
+    result = _raw_market_snapshot(symbol="EURUSD", detail="compact")
+
+    assert result["snapshot"]["pattern_count"] == 0
+    assert result["snapshot"]["pattern_window_bars"] == 3
+    assert "latest 3 bars" in result["snapshot"]["pattern_scan_note"]
 
 
 def test_snapshot_patterns_section_requests_recent_candlestick_triggers(monkeypatch):

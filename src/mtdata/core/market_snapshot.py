@@ -524,8 +524,16 @@ def _snapshot_summary_payload(sections: Dict[str, Any]) -> Dict[str, Any]:
         if usage not in (None, ""):
             out["pattern_usage"] = usage
         applied_window = patterns.get("applied_last_n_bars")
+        if applied_window is None:
+            applied_window = patterns.get("last_n_bars")
+        if applied_window is None and patterns.get("success") is True:
+            applied_window = _SNAPSHOT_PATTERN_LAST_N_BARS
         if applied_window is not None:
             out["pattern_window_bars"] = applied_window
+            out["pattern_scan_note"] = (
+                f"Candlestick triggers are limited to the latest {applied_window} bars; "
+                "use patterns_detect for a wider historical scan."
+            )
     if isinstance(regime, dict):
         compact_regime = {
             key: regime[key]
