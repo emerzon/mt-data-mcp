@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Optional
 
 from ...bootstrap.settings import trade_guardrails_config
 from ...shared.constants import BROKER_VOLUME_UNIT, TIMEFRAME_MAP
+from ...shared.market_units import price_delta_ticks
 from ...shared.result import Err, Ok, Result, to_dict
 from ...shared.validators import invalid_timeframe_error
 from ...utils.barriers import normalize_trade_direction
@@ -681,7 +682,9 @@ def _build_trade_evaluation(
         tick_value_loss=tick_value_loss,
     )
     if math.isfinite(tick_size) and tick_size > 0:
-        sl_distance_ticks = sl_distance / tick_size
+        sl_distance_ticks = abs(
+            price_delta_ticks(float(entry), float(stop_loss), tick_size) or 0
+        )
         out["tick_size"] = tick_size
         out["sl_distance_ticks"] = round(sl_distance_ticks, 4)
         if math.isfinite(risk_tick_value) and risk_tick_value > 0:
@@ -3151,11 +3154,11 @@ def run_trade_risk_analyze(  # noqa: C901
 
                     if sl_price and tick_size > 0 and tick_value_valid:
                         risk_ticks = (
-                            (entry_price - sl_price) / tick_size
+                            price_delta_ticks(entry_price, sl_price, tick_size)
                             if is_buy_position
-                            else (sl_price - entry_price) / tick_size
+                            else price_delta_ticks(sl_price, entry_price, tick_size)
                         )
-                        risk_ticks = max(0.0, risk_ticks)
+                        risk_ticks = max(0, risk_ticks or 0)
                         risk_currency = risk_ticks * risk_tick_value * abs(volume)
                         risk_pct = (
                             (risk_currency / equity) * 100.0 if equity > 0 else 0.0
@@ -3165,11 +3168,11 @@ def run_trade_risk_analyze(  # noqa: C901
 
                         if tp_price:
                             reward_ticks = (
-                                (tp_price - entry_price) / tick_size
+                                price_delta_ticks(tp_price, entry_price, tick_size)
                                 if is_buy_position
-                                else (entry_price - tp_price) / tick_size
+                                else price_delta_ticks(entry_price, tp_price, tick_size)
                             )
-                            if reward_ticks > 0:
+                            if reward_ticks is not None and reward_ticks > 0:
                                 reward_currency = (
                                     reward_ticks * tick_value * abs(volume)
                                 )
@@ -3326,21 +3329,21 @@ def run_trade_risk_analyze(  # noqa: C901
                         risk_status = "undefined"
                         if entry_price > 0 and sl_price and tick_size > 0 and tick_value_valid and direction_label != "UNKNOWN":
                             risk_ticks = (
-                                (entry_price - sl_price) / tick_size
+                                price_delta_ticks(entry_price, sl_price, tick_size)
                                 if is_buy_order
-                                else (sl_price - entry_price) / tick_size
+                                else price_delta_ticks(sl_price, entry_price, tick_size)
                             )
-                            risk_currency = abs(risk_ticks * risk_tick_value * volume)
+                            risk_currency = abs((risk_ticks or 0) * risk_tick_value * volume)
                             risk_pct = (risk_currency / equity) * 100.0 if equity > 0 else 0.0
                             total_pending_risk_currency += risk_currency
                             risk_status = "defined"
                             if tp_price:
                                 reward_ticks = (
-                                    (tp_price - entry_price) / tick_size
+                                    price_delta_ticks(tp_price, entry_price, tick_size)
                                     if is_buy_order
-                                    else (entry_price - tp_price) / tick_size
+                                    else price_delta_ticks(entry_price, tp_price, tick_size)
                                 )
-                                if reward_ticks > 0:
+                                if reward_ticks is not None and reward_ticks > 0:
                                     reward_currency = (
                                         reward_ticks * tick_value * abs(volume)
                                     )
@@ -3883,14 +3886,18 @@ def run_trade_risk_analyze(  # noqa: C901
                     return result
 
                 if direction_norm == "long":
-                    sl_distance_ticks = (
-                        request.entry - request.stop_loss
-                    ) / tick_size
+                    sl_distance_ticks = price_delta_ticks(
+                        request.entry,
+                        request.stop_loss,
+                        tick_size,
+                    )
                 else:
-                    sl_distance_ticks = (
-                        request.stop_loss - request.entry
-                    ) / tick_size
-                if sl_distance_ticks > 0:
+                    sl_distance_ticks = price_delta_ticks(
+                        request.stop_loss,
+                        request.entry,
+                        tick_size,
+                    )
+                if sl_distance_ticks is not None and sl_distance_ticks > 0:
                     kelly_context = None
                     if sizing_method == "kelly":
                         effective_risk_pct_raw, kelly_context = (
@@ -4104,15 +4111,19 @@ def run_trade_risk_analyze(  # noqa: C901
                     reward_currency = None
                     if request.take_profit is not None and not strict_risk_blocked:
                         if direction_norm == "long":
-                            tp_distance_ticks = (
-                                request.take_profit - request.entry
-                            ) / tick_size
+                            tp_distance_ticks = price_delta_ticks(
+                                request.take_profit,
+                                request.entry,
+                                tick_size,
+                            )
                         else:
-                            tp_distance_ticks = (
-                                request.entry - request.take_profit
-                            ) / tick_size
+                            tp_distance_ticks = price_delta_ticks(
+                                request.entry,
+                                request.take_profit,
+                                tick_size,
+                            )
                         reward_currency = (
-                            tp_distance_ticks * tick_value * suggested_volume
+                            (tp_distance_ticks or 0) * tick_value * suggested_volume
                         )
                         if actual_risk > 0:
                             rr_ratio = reward_currency / actual_risk

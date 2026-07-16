@@ -7,10 +7,10 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from typing import Any, Dict
 from unittest.mock import MagicMock, PropertyMock, patch
+from zoneinfo import ZoneInfo
 
 import numpy as np
 import pytest
-from zoneinfo import ZoneInfo
 
 from mtdata.utils.pivot_points import compute_pivot_method_levels
 
@@ -206,6 +206,21 @@ def test_demark_rejects_nonfinite_open_price() -> None:
             low_price=1.0,
             close_price=1.5,
         )
+
+
+@pytest.mark.parametrize("field", ["high_price", "low_price", "close_price"])
+@pytest.mark.parametrize("invalid_value", [math.nan, math.inf, -math.inf])
+def test_fibonacci_pivot_rejects_nonfinite_required_prices(field, invalid_value) -> None:
+    prices = {
+        "open_price": 1.25,
+        "high_price": 2.0,
+        "low_price": 1.0,
+        "close_price": 1.5,
+    }
+    prices[field] = invalid_value
+
+    with pytest.raises(ValueError, match="high, low, and close"):
+        compute_pivot_method_levels("fibonacci", **prices)
 
 
 class TestPivotSymbolGuardError:

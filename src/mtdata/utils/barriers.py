@@ -1,6 +1,7 @@
 import math
 from typing import Any, Dict, Literal, Optional, Tuple
 
+from ..shared.market_units import snap_to_increment
 from .coercion import coerce_finite_float
 from .mt5 import get_symbol_info_cached
 
@@ -119,7 +120,7 @@ def barrier_prices_are_valid(
     return bool(tp_val < ref_price < sl_val)
 
 
-def get_pip_size(symbol: str, symbol_info: Optional[Any] = None) -> Optional[float]:
+def get_tick_size(symbol: str, symbol_info: Optional[Any] = None) -> Optional[float]:
     """Return the tick size for a symbol based on MT5 symbol info."""
     try:
         info = symbol_info or get_symbol_info_cached(symbol)
@@ -140,7 +141,12 @@ def get_pip_size(symbol: str, symbol_info: Optional[Any] = None) -> Optional[flo
         return None
 
 
-def resolve_barrier_prices(
+def get_pip_size(symbol: str, symbol_info: Optional[Any] = None) -> Optional[float]:
+    """Compatibility alias for :func:`get_tick_size`; this is not an FX pip size."""
+    return get_tick_size(symbol, symbol_info=symbol_info)
+
+
+def resolve_barrier_prices(  # noqa: C901
     *,
     price: float,
     direction: Literal["long", "short"] = "long",
@@ -154,6 +160,8 @@ def resolve_barrier_prices(
     adjust_inverted: bool = False,
 ) -> Tuple[Optional[float], Optional[float]]:
     """Resolve TP/SL barrier prices from absolute, percentage, or tick offsets.
+
+    ``pip_size`` is the legacy parameter name for the executable tick increment.
 
     By default, barriers that end up on the wrong side of ``price`` for the
     given direction return ``(None, None)`` so callers can reject invalid
@@ -210,6 +218,13 @@ def resolve_barrier_prices(
     if not math.isfinite(tp_price) or not math.isfinite(sl_price):
         return None, None
 
+    tick_increment = coerce_finite_float(pip_size)
+    if tick_increment is not None and tick_increment > 0.0:
+        tp_price = snap_to_increment(tp_price, tick_increment)
+        sl_price = snap_to_increment(sl_price, tick_increment)
+        if tp_price is None or sl_price is None:
+            return None, None
+
     if adjust_inverted:
         step: float
         try:
@@ -234,6 +249,12 @@ def resolve_barrier_prices(
                 tp_price = price_val - step
             if sl_price <= price_val:
                 sl_price = price_val + step
+
+        if tick_increment is not None and tick_increment > 0.0:
+            tp_price = snap_to_increment(tp_price, tick_increment)
+            sl_price = snap_to_increment(sl_price, tick_increment)
+            if tp_price is None or sl_price is None:
+                return None, None
 
     if not math.isfinite(tp_price) or not math.isfinite(sl_price):
         return None, None

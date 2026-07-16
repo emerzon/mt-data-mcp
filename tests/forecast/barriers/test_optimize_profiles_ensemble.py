@@ -8,9 +8,10 @@ from unittest.mock import patch
 import numpy as np
 import pandas as pd
 
-from ._helpers import _BarrierTestBase, _BARRIER_PROB_ROOT, _BARRIER_OPT_ROOT
 from mtdata.forecast.barriers_optimization import forecast_barrier_optimize
 from mtdata.forecast.barriers_probabilities import forecast_barrier_hit_probabilities
+
+from ._helpers import _BARRIER_OPT_ROOT, _BARRIER_PROB_ROOT, _BarrierTestBase
 
 
 class TestBarrierOptimizeProfilesEnsemble(_BarrierTestBase):
@@ -341,8 +342,8 @@ class TestBarrierOptimizeProfilesEnsemble(_BarrierTestBase):
         self.assertEqual(result["last_price_source"], "live_tick_bid")
         best = result.get("best")
         self.assertIsInstance(best, dict)
-        self.assertAlmostEqual(best["tp_price"], 1.2345 * 0.995, places=8)
-        self.assertAlmostEqual(best["sl_price"], 1.2345 * 1.005, places=8)
+        self.assertEqual(best["tp_price"], 1.2283)
+        self.assertEqual(best["sl_price"], 1.2407)
 
     def test_forecast_barrier_optimize_reanchors_paths_to_live_reference_price(self):
         self._set_flat_history(1.0, bars=200)

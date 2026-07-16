@@ -1083,12 +1083,14 @@ def _build_fibonacci_level(
     kind: str,
     projection: Optional[str] = None,
 ) -> Dict[str, Any]:
-    level_value = float(value)
+    raw_level_value = float(value)
+    rounded_level_value = _round_output_price(raw_level_value)
+    level_value = rounded_level_value if rounded_level_value is not None else raw_level_value
     out: Dict[str, Any] = {
         "label": _format_ratio_label(float(ratio)),
         "ratio": float(ratio),
         "kind": str(kind),
-        "value": _round_output_price(level_value) if _round_output_price(level_value) is not None else level_value,
+        "value": level_value,
     }
     if projection:
         out["projection"] = str(projection)
@@ -1316,8 +1318,11 @@ def _compute_fibonacci_payload(
         try:
             start_value = float(start["value"])
             end_value = float(end["value"])
+            start_index = int(start["index"])
             end_index = int(end["index"])
         except Exception:
+            continue
+        if end_index <= start_index:
             continue
         if not all(math.isfinite(value) for value in (start_value, end_value)):
             continue
@@ -1326,7 +1331,6 @@ def _compute_fibonacci_payload(
         range_value = high_value - low_value
         if not math.isfinite(range_value) or range_value <= 0.0:
             continue
-        start_index = int(start["index"])
         start_epoch = epochs[start_index] if 0 <= start_index < len(epochs) else None
         contains_current = bool(
             current_price is not None

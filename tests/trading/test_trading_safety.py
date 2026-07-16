@@ -1,11 +1,31 @@
 """Tests for trading safety rails policy."""
 
+from types import SimpleNamespace
+
 import pytest
 
 from src.mtdata.core.trading.safety import (
     TradeSafetyPolicy,
+    _estimate_order_risk_currency,
     _evaluate_safety_policy,
 )
+
+
+def test_order_risk_uses_integer_tick_distance() -> None:
+    risk, error = _estimate_order_risk_currency(
+        symbol_info=SimpleNamespace(
+            trade_tick_size=0.00001,
+            trade_tick_value=1.0,
+            trade_tick_value_loss=1.0,
+        ),
+        volume=0.3,
+        entry_price=1.1,
+        stop_loss=1.095,
+        side="BUY",
+    )
+
+    assert error is None
+    assert risk == 150.0
 
 
 # ---------------------------------------------------------------------------

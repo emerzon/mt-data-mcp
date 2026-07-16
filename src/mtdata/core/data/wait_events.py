@@ -8,6 +8,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Dict, List, Optional
 
 from ...shared.constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
+from ...shared.market_units import snap_to_increment
 from ...utils.market_metadata import build_tick_freshness_context
 from ...utils.mt5 import _normalize_times_in_struct, _to_server_query_dt
 from ...utils.tick_flags import is_mt5_trade_event
@@ -1058,6 +1059,7 @@ def _update_order_filled_snapshot_state(
         "last_row_by_order_ticket",
         {},
     )
+    volume_step_by_symbol: Dict[str, Optional[float]] = {}
     _remember_order_fill_targets(
         target_volume_by_order_ticket,
         snapshot.get("baseline", {}).get("orders", []),
@@ -1078,8 +1080,14 @@ def _update_order_filled_snapshot_state(
         fill_volume = _order_fill_volume(row)
         if fill_volume is None:
             continue
-        filled_volume_by_order_ticket[order_ticket] = (
-            float(filled_volume_by_order_ticket.get(order_ticket) or 0.0) + fill_volume
+        filled_volume_by_order_ticket[order_ticket] = _accumulate_filled_volume(
+            filled_volume_by_order_ticket.get(order_ticket),
+            fill_volume,
+            volume_step=_deal_volume_step(
+                row,
+                gateway=gateway,
+                cache=volume_step_by_symbol,
+            ),
         )
     _remember_order_fill_targets(
         target_volume_by_order_ticket,
@@ -1096,6 +1104,50 @@ def _update_order_filled_snapshot_state(
         "target_volume_by_order_ticket": target_volume_by_order_ticket,
         "last_row_by_order_ticket": last_row_by_order_ticket,
     }
+
+
+def _accumulate_filled_volume(
+    current_volume: Any,
+    fill_volume: float,
+    *,
+    volume_step: Optional[float],
+) -> float:
+    current = _finite_number(current_volume) or 0.0
+    total = math.fsum((current, float(fill_volume)))
+    if volume_step is not None and volume_step > 0.0:
+        snapped = snap_to_increment(total, volume_step)
+        if snapped is not None:
+            return snapped
+    return total
+
+
+def _deal_volume_step(
+    row: Any,
+    *,
+    gateway: Any,
+    cache: Dict[str, Optional[float]],
+) -> Optional[float]:
+    symbol_value = _row_value(row, "symbol")
+    if symbol_value is None:
+        return None
+    symbol = str(symbol_value).strip()
+    if not symbol:
+        return None
+    if symbol in cache:
+        return cache[symbol]
+
+    step: Optional[float] = None
+    symbol_info = getattr(gateway, "symbol_info", None)
+    if callable(symbol_info):
+        try:
+            info = symbol_info(symbol)
+        except Exception:
+            info = None
+        candidate = _finite_number(_row_value(info, "volume_step"))
+        if candidate is not None and candidate > 0.0:
+            step = candidate
+    cache[symbol] = step
+    return step
 
 
 def _remember_order_fill_targets(

@@ -3,7 +3,8 @@ from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from ...shared.constants import TIME_DISPLAY_FORMAT
-from ...utils.barriers import get_pip_size as _get_pip_size
+from ...shared.market_units import forex_pip_size
+from ...utils.barriers import get_tick_size as _get_pip_size
 from ...utils.mt5 import get_symbol_info_cached
 from ..tool_calling import call_tool_sync_structured
 from .shared import (
@@ -370,18 +371,16 @@ def market_snapshot(symbol: str, timezone: str = 'UTC') -> Dict[str, Any]:
                 point_size = None
             if point_size is not None and point_size <= 0:
                 point_size = None
-        pip_size = None
-        if point_size is not None:
-            pip_size = point_size * 10.0 if digits in (3, 5) else point_size
-        elif tick_size is not None and tick_size > 0:
-            pip_size = tick_size
-            if math.isclose(tick_size, 0.00001, rel_tol=0.0, abs_tol=1e-12) or math.isclose(
-                tick_size,
-                0.001,
-                rel_tol=0.0,
-                abs_tol=1e-12,
-            ):
-                pip_size = tick_size * 10.0
+        pip_size = (
+            forex_pip_size(
+                symbol,
+                path=str(getattr(info, "path", "") or ""),
+                point=point_size,
+                digits=digits,
+            )
+            if point_size is not None and digits is not None
+            else None
+        )
         spread_ticks = None
         if tick_size and spread is not None:
             try:

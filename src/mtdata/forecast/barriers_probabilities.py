@@ -10,9 +10,7 @@ from ..shared.validators import unsupported_timeframe_seconds_error
 from ..utils.barriers import (
     barrier_prices_are_valid as _barrier_prices_are_valid,
 )
-from ..utils.barriers import (
-    get_pip_size as _get_pip_size,
-)
+from ..utils.barriers import get_tick_size as _get_pip_size
 from ..utils.barriers import (
     normalize_same_bar_policy,
     normalize_trade_direction,

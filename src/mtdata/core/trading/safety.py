@@ -7,6 +7,7 @@ from typing import Any, Callable, Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
+from ...shared.market_units import price_delta_ticks
 from . import validation
 from .sizing import _resolve_risk_tick_value
 
@@ -484,10 +485,10 @@ def _estimate_order_risk_currency(
 
     normalized_side = _normalize_side(side)
     if normalized_side == "BUY":
-        risk_ticks = (float(entry_price) - normalized_stop_loss) / tick_size
+        risk_ticks = price_delta_ticks(float(entry_price), normalized_stop_loss, tick_size)
     else:
-        risk_ticks = (normalized_stop_loss - float(entry_price)) / tick_size
-    if not math.isfinite(risk_ticks):
+        risk_ticks = price_delta_ticks(normalized_stop_loss, float(entry_price), tick_size)
+    if risk_ticks is None:
         return None, "stop_loss_wrong_side"
     if risk_ticks <= 0:
         if allow_profit_stop:

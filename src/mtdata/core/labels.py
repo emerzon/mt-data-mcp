@@ -12,9 +12,7 @@ from ..utils.barriers import (
 from ..utils.barriers import (
     build_barrier_kwargs_from as _build_barrier_kwargs_from,
 )
-from ..utils.barriers import (
-    get_pip_size as _get_pip_size,
-)
+from ..utils.barriers import get_tick_size as _get_pip_size
 from ..utils.barriers import (
     normalize_same_bar_policy,
     validate_barrier_unit_family_exclusivity,

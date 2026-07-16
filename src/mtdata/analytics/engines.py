@@ -20,6 +20,7 @@ from ..core.analytics_requests import (
     TradeExecutionQualityRequest,
 )
 from ..shared.constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
+from ..shared.market_units import forex_points_per_pip
 from ..utils.barriers import normalize_same_bar_policy
 from ..utils.freshness import closed_session_context
 from ..utils.tick_flags import mt5_trade_event_mask
@@ -246,6 +247,12 @@ def analyze_microstructure(request: MarketMicrostructureRequest, gateway: Any) -
         symbol_info = None
     point = float(getattr(symbol_info, "point", 0.0) or 0.0)
     digits = int(getattr(symbol_info, "digits", 0) or 0)
+    points_per_pip = forex_points_per_pip(
+        request.symbol,
+        path=str(getattr(symbol_info, "path", "") or ""),
+        point=point,
+        digits=digits,
+    )
     revision_pressure = float(np.nanmean((q["bid_revision"] + q["ask_revision"]) / 2.0)) if len(q) > 1 else 0.0
     start_epoch = float(df["epoch"].iloc[0])
     duration = max(0.001, float(df["epoch"].iloc[-1] - start_epoch))
@@ -280,8 +287,10 @@ def analyze_microstructure(request: MarketMicrostructureRequest, gateway: Any) -
     }
     if point > 0:
         summary["spread_points"] = _percentiles(q["spread"] / point)
-        if digits in {3, 5}:
-            summary["spread_pips"] = _percentiles(q["spread"] / (point * 10.0))
+        if points_per_pip:
+            summary["spread_pips"] = _percentiles(
+                q["spread"] / (point * points_per_pip)
+            )
     applicability = {
         "quote_metrics": bool(len(q) >= 20),
         "trade_direction_metrics": tier in {"trade_ticks", "trade_volume"},
@@ -394,7 +403,7 @@ def analyze_microstructure(request: MarketMicrostructureRequest, gateway: Any) -
         "units": {
             "spread": "absolute_price",
             "spread_points": "broker_points",
-            "spread_pips": "fx_pips_when_digits_are_3_or_5",
+            "spread_pips": "fx_pips_when_symbol_is_identifiable_as_forex",
             "quote_gap_seconds": "seconds",
             "broker_quote_revision_imbalance": "signed_fraction",
             "broker_tick_signed_volume_impact_slope": "log_return_per_broker_real_volume",

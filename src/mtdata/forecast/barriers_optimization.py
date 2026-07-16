@@ -6,13 +6,13 @@ from typing import Any, Dict, List, Literal, Optional, Set, Tuple
 import numpy as np
 
 from ..shared.constants import TIMEFRAME_SECONDS
+from ..shared.market_units import forex_pip_size
 from ..shared.schema import DenoiseSpec, TimeframeLiteral
-from ..utils.barriers import (
-    get_pip_size as _get_pip_size,
-)
+from ..utils.barriers import get_tick_size as _get_pip_size
 from ..utils.barriers import (
     normalize_same_bar_policy,
     normalize_trade_direction,
+    resolve_barrier_prices,
     resolve_same_bar_probabilities,
 )
 from ..utils.coercion import UNPARSED_BOOL, parse_bool_like
@@ -315,20 +315,19 @@ def _candidate_barrier_prices(
     *,
     context: _BarrierEvaluationContext,
 ) -> Tuple[float, float]:
+    barrier_kwargs: Dict[str, float]
     if context.mode_val == "pct":
-        if context.dir_long:
-            tp_price = context.last_price * (1.0 + tp_unit / 100.0)
-            sl_price = context.last_price * (1.0 - sl_unit / 100.0)
-        else:
-            tp_price = context.last_price * (1.0 - tp_unit / 100.0)
-            sl_price = context.last_price * (1.0 + sl_unit / 100.0)
+        barrier_kwargs = {"tp_pct": tp_unit, "sl_pct": sl_unit}
     else:
-        if context.dir_long:
-            tp_price = context.last_price + tp_unit * context.pip_size
-            sl_price = context.last_price - sl_unit * context.pip_size
-        else:
-            tp_price = context.last_price - tp_unit * context.pip_size
-            sl_price = context.last_price + sl_unit * context.pip_size
+        barrier_kwargs = {"tp_ticks": tp_unit, "sl_ticks": sl_unit}
+    tp_price, sl_price = resolve_barrier_prices(
+        price=context.last_price,
+        direction="long" if context.dir_long else "short",
+        pip_size=context.pip_size,
+        **barrier_kwargs,
+    )
+    if tp_price is None or sl_price is None:
+        return float("nan"), float("nan")
     return float(tp_price), float(sl_price)
 
 
@@ -835,11 +834,19 @@ _BARRIER_CONCISE_DROP_KEYS = frozenset(
 )
 
 
-def _cost_pip_size(tick_size: Optional[float], digits: Optional[int]) -> Optional[float]:
+def _cost_pip_size(
+    symbol: str,
+    tick_size: Optional[float],
+    digits: Optional[int],
+) -> Optional[float]:
     """Return the conventional pip size used by spread/slippage inputs."""
-    if tick_size is None or tick_size <= 0:
+    if tick_size is None or tick_size <= 0 or digits is None:
         return None
-    return float(tick_size) * 10.0 if digits in {3, 5} else float(tick_size)
+    return forex_pip_size(
+        symbol,
+        point=float(tick_size),
+        digits=int(digits),
+    )
 
 _BARRIER_CONCISE_CANDIDATE_KEYS = (
     "tp",
@@ -1568,7 +1575,16 @@ def forecast_barrier_optimize(  # noqa: C901
         slippage_pips_val = _cost_param_float('slippage_pips')
         slippage_bps_val = _cost_param_float('slippage_bps')
         slippage_pct_val = _cost_param_float('slippage_pct') + slippage_bps_val / 100.0
-        cost_pip_size = _cost_pip_size(pip_size, price_precision)
+        cost_pip_size = _cost_pip_size(symbol, pip_size, price_precision)
+        if (
+            spread_pips_val > 0.0 or slippage_pips_val > 0.0
+        ) and cost_pip_size is None:
+            return {
+                "error": (
+                    "Pip-denominated trading costs require an identifiable FX symbol; "
+                    "use spread_bps/slippage_bps or percentage costs for this instrument."
+                )
+            }
 
         if mode_val == 'pct':
             # pips → pct points:  pips * pip_size / price * 100

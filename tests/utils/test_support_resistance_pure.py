@@ -5,10 +5,13 @@ import pandas as pd
 import pytest
 
 from mtdata.utils.support_resistance import (
+    _build_fibonacci_level,
     _build_zone_overlap,
     _collect_support_resistance_warnings,
+    _compute_fibonacci_payload,
     _drop_zero_score_when_stronger_exist,
     _format_time,
+    _nearest_fibonacci_levels,
     _resolve_adaptive_settings,
     compact_support_resistance_payload,
     compute_support_resistance_levels,
@@ -20,6 +23,36 @@ from mtdata.utils.support_resistance import (
 
 def test_format_time_uses_rfc3339_utc():
     assert _format_time(0.0) == "1970-01-01T00:00Z"
+
+
+def test_fibonacci_rejects_zero_duration_same_candle_swing():
+    payload = _compute_fibonacci_payload(
+        highs=np.asarray([5.0, 6.0, 7.0, 20.0, 8.0, 9.0]),
+        lows=np.asarray([4.0, 3.0, 5.0, 0.0, 6.0, 7.0]),
+        atr=np.ones(6),
+        epochs=[float(index) for index in range(6)],
+        current_price=10.0,
+        timeframe="H1",
+    )
+
+    assert payload is None
+
+
+def test_fibonacci_nearest_side_uses_rounded_canonical_level_value():
+    level = _build_fibonacci_level(
+        ratio=0.5,
+        value=1.0000004,
+        current_price=1.0,
+        kind="retracement",
+    )
+
+    nearest = _nearest_fibonacci_levels([level], current_price=1.0)
+
+    assert level["value"] == 1.0
+    assert level["type"] == "support"
+    assert level["distance"] == 0.0
+    assert nearest["support"]["type"] == "support"
+    assert "resistance" not in nearest
 
 
 def test_collect_warnings_flags_zero_support_levels():

@@ -31,7 +31,7 @@ def compute_pivot_method_levels(
     low = float(low_price)
     close = float(close_price)
     open_ = float(open_price)
-    if any(math.isnan(v) for v in (high, low, close)):
+    if any(not math.isfinite(v) for v in (high, low, close)):
         raise ValueError("Pivot calculation requires high, low, and close prices")
     if name == "demark" and not math.isfinite(open_):
         raise ValueError("DeMark pivot calculation requires a finite open price")

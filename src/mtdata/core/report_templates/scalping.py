@@ -1,8 +1,8 @@
 from typing import Any, Dict, Optional
 
-from ...utils.barriers import get_pip_size as _get_pip_size
-from ..report.utils import market_snapshot, merge_params
 from ...shared.schema import DenoiseSpec
+from ...utils.barriers import get_tick_size as _get_pip_size
+from ..report.utils import market_snapshot, merge_params
 from .common import build_report_with_market
 
 

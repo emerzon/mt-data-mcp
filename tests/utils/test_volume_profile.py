@@ -1,8 +1,16 @@
 from mtdata.utils.volume_profile import (
     VolumeProfileConfig,
+    _bucket_prices,
     annotate_level_confluence,
     compute_volume_profile,
 )
+
+
+def test_bucket_edges_use_same_decimal_grid_as_bucket_index() -> None:
+    buckets = _bucket_prices([0.11, 0.21], [1.0, 1.0], 0.01)
+
+    assert buckets[10]["low"] == 0.21
+    assert buckets[10]["high"] == 0.22
 
 
 def test_compute_volume_profile_uses_mid_and_tick_count_fallback():

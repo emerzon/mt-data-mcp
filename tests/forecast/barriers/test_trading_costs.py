@@ -9,8 +9,9 @@ from unittest.mock import patch
 import numpy as np
 import pandas as pd
 
-from ._helpers import _BarrierTestBase, _BARRIER_OPT_ROOT
 from mtdata.forecast.barriers_optimization import forecast_barrier_optimize
+
+from ._helpers import _BARRIER_OPT_ROOT, _BarrierTestBase
 
 
 class TestBarrierTradingCosts(_BarrierTestBase):
@@ -89,6 +90,25 @@ class TestBarrierTradingCosts(_BarrierTestBase):
         tc = result["trading_costs"]
         self.assertGreater(tc["cost_per_trade"], 0.0)
         self.assertAlmostEqual(tc["spread_pips"], 2.0)
+
+    def test_optimize_rejects_pip_costs_for_non_forex_symbol(self):
+        result = forecast_barrier_optimize(
+            symbol="US30",
+            timeframe="H1",
+            horizon=10,
+            method="mc_gbm",
+            direction="long",
+            mode="pct",
+            tp_min=0.5,
+            tp_max=0.5,
+            tp_steps=1,
+            sl_min=0.5,
+            sl_max=0.5,
+            sl_steps=1,
+            params={"spread_pips": 2.0},
+        )
+
+        self.assertIn("identifiable FX symbol", result.get("error", ""))
 
     def test_spread_pips_use_conventional_five_digit_forex_size(self):
         dates = pd.date_range(start="2023-01-01", periods=500, freq="h")

@@ -101,7 +101,7 @@ class TestLabelsTripleBarrier:
         assert len(result) == 9
         assert result == ([], [], [], [], [], [], [], [], 0)
 
-    @patch(f"{_LABELS_MOD}._get_pip_size", return_value=0.0001)
+    @patch(f"{_LABELS_MOD}._get_pip_size", return_value=0.00001)
     @patch(f"{_LABELS_MOD}.resolve_denoise_base_col", return_value="close")
     @patch(f"{_LABELS_MOD}._fetch_history")
     def test_compact_rows_keep_barrier_prices_structured(self, mock_hist, mock_den, mock_pip):

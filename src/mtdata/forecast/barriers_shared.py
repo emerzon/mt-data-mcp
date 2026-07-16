@@ -13,9 +13,6 @@ from ..utils.barriers import (
     barrier_prices_are_valid as _barrier_prices_are_valid,
 )
 from ..utils.barriers import (
-    get_pip_size as _get_pip_size,
-)
-from ..utils.barriers import (
     normalize_trade_direction,
 )
 from ..utils.barriers import (

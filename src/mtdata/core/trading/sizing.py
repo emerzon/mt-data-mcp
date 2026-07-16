@@ -10,6 +10,7 @@ from __future__ import annotations
 import math
 from typing import Any, Dict, List, Optional, Tuple
 
+from ...shared.market_units import price_delta_ticks
 from ...utils.coercion import coerce_finite_float as _finite_float
 
 DEFAULT_KELLY_FRACTION_MULTIPLIER = 0.5
@@ -192,14 +193,14 @@ def compute_risk_based_volume(  # noqa: C901
         return None, {"error": "; ".join(errors)}
 
     if direction.lower() == "long":
-        sl_distance_ticks = (entry_price - stop_loss_price) / tick_size
+        sl_distance_ticks = price_delta_ticks(entry_price, stop_loss_price, tick_size)
     else:
-        sl_distance_ticks = (stop_loss_price - entry_price) / tick_size
+        sl_distance_ticks = price_delta_ticks(stop_loss_price, entry_price, tick_size)
 
-    if sl_distance_ticks <= 0:
+    if sl_distance_ticks is None or sl_distance_ticks <= 0:
         return None, {
             "error": "Stop-loss distance must be positive (wrong side of entry?).",
-            "sl_distance_ticks": round(sl_distance_ticks, 4),
+            "sl_distance_ticks": sl_distance_ticks,
         }
 
     kelly_context: Optional[Dict[str, Any]] = None

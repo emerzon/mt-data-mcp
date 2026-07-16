@@ -343,7 +343,7 @@ def pivot_compute_points(  # noqa: C901
             L = float(src["low"]) if _has_field(src, "low") else float("nan")
             C = float(src["close"]) if _has_field(src, "close") else float("nan")
             O = float(src["open"]) if _has_field(src, "open") else C
-            if any(math.isnan(v) for v in (H, L, C)):
+            if any(not math.isfinite(v) for v in (H, L, C)):
                 return {"error": "Pivot calculation requires high, low, and close prices"}
 
             period_start = float(src["time"]) if _has_field(src, "time") else float("nan")
@@ -740,7 +740,7 @@ def confluence_levels(  # noqa: C901
             low = float(source_bar["low"]) if _has_field(source_bar, "low") else float("nan")
             close = float(source_bar["close"]) if _has_field(source_bar, "close") else float("nan")
             open_ = float(source_bar["open"]) if _has_field(source_bar, "open") else close
-            if any(math.isnan(value) for value in (high, low, close)):
+            if any(not math.isfinite(value) for value in (high, low, close)):
                 return {"error": "Pivot calculation requires high, low, and close prices"}
 
             digits = symbol_price_digits(info_before) if info_before is not None else 0

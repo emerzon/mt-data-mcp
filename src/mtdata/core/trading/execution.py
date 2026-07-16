@@ -342,6 +342,7 @@ def _modify_position(
             if price_inputs_error is not None:
                 return {"error": price_inputs_error}
             point = float(price_inputs["point"])
+            price_increment = float(price_inputs["price_increment"])
             digits = int(price_inputs["digits"])
             requested_sl = price_inputs["stop_loss"]
             requested_tp = price_inputs["take_profit"]
@@ -351,12 +352,12 @@ def _modify_position(
             # Normalize SL/TP values
             existing_sl = validation._normalize_price_for_symbol(
                 getattr(position, "sl", None),
-                point=point,
+                point=price_increment,
                 digits=digits,
             )
             existing_tp = validation._normalize_price_for_symbol(
                 getattr(position, "tp", None),
-                point=point,
+                point=price_increment,
                 digits=digits,
             )
             norm_sl = (
@@ -491,12 +492,12 @@ def _modify_position(
                         refreshed_position = None
                 refreshed_sl = validation._normalize_price_for_symbol(
                     getattr(refreshed_position, "sl", None) if refreshed_position is not None else getattr(position, "sl", None),
-                    point=point,
+                    point=price_increment,
                     digits=digits,
                 )
                 refreshed_tp = validation._normalize_price_for_symbol(
                     getattr(refreshed_position, "tp", None) if refreshed_position is not None else getattr(position, "tp", None),
-                    point=point,
+                    point=price_increment,
                     digits=digits,
                 )
                 final_sl = _normalize_protection_level(refreshed_sl, tol=price_tol)
@@ -633,7 +634,7 @@ def _modify_pending_order(
             )
             if price_inputs_error is not None:
                 return {"error": price_inputs_error}
-            point = float(price_inputs["point"])
+            price_increment = float(price_inputs["price_increment"])
             digits = int(price_inputs["digits"])
             normalized_price = float(price_inputs["price"])
             requested_sl = price_inputs["stop_loss"]
@@ -643,12 +644,12 @@ def _modify_pending_order(
 
             existing_sl = validation._normalize_price_for_symbol(
                 getattr(order, "sl", None),
-                point=point,
+                point=price_increment,
                 digits=digits,
             )
             existing_tp = validation._normalize_price_for_symbol(
                 getattr(order, "tp", None),
-                point=point,
+                point=price_increment,
                 digits=digits,
             )
             request_sl = (

@@ -5,9 +5,15 @@ from __future__ import annotations
 import math
 from typing import Any, Dict, Literal, Optional, Tuple, Union
 
+from ...shared.market_units import (
+    forex_points_per_pip,
+    quote_points_per_pip,
+    snap_to_increment,
+)
 from ...utils.coercion import coerce_finite_float
 from ...utils.utils import coerce_scalar
 from .gateway import MT5TradingGateway, create_trading_gateway, trading_connection_error
+from .sizing import _floor_volume_steps
 
 MarketOrderTypeLiteral = Literal["BUY", "SELL"]
 OrderTypeLiteral = Literal[
@@ -121,7 +127,7 @@ def _validate_volume(volume: Union[int, float], symbol_info: Any) -> Tuple[Optio
         normalized = float(f"{normalized:.10f}")
         tol = step * 1e-6
         if abs(normalized - vol) > tol:
-            aligned_down = math.floor(vol / step) * step
+            aligned_down = _floor_volume_steps(vol, step) * step
             aligned_down = float(f"{aligned_down:.10f}")
             if aligned_down > 0.0:
                 return None, f"volume must align to step {step}. Try {aligned_down}"
@@ -151,6 +157,7 @@ def _resolve_slippage_to_deviation(
     *,
     deviation: Optional[Union[int, float]] = None,
     slippage_pips: Optional[float] = None,
+    symbol: Optional[str] = None,
     symbol_info: Any = None,
 ) -> Tuple[Optional[int], Optional[Dict[str, Any]], Optional[str]]:
     """Convert user-facing slippage inputs to MT5 deviation (points).
@@ -183,8 +190,6 @@ def _resolve_slippage_to_deviation(
             "Cannot convert slippage_pips: symbol point value unavailable."
         )
 
-    # 1 pip = 10 points for 5-digit brokers (point=0.00001),
-    # 1 pip = 1 point for 4-digit (point=0.0001), etc.
     digits = 0
     if symbol_info is not None:
         try:
@@ -192,10 +197,22 @@ def _resolve_slippage_to_deviation(
         except (TypeError, ValueError):
             digits = 0
 
-    if digits >= 4:
-        points_per_pip = int(10 ** max(digits - 4, 0))
-    else:
-        points_per_pip = int(10 ** max(digits - 2, 0))
+    symbol_name = str(symbol or getattr(symbol_info, "name", "") or "")
+    symbol_path = str(getattr(symbol_info, "path", "") or "")
+    points_per_pip = forex_points_per_pip(
+        symbol_name,
+        path=symbol_path,
+        point=point,
+        digits=digits,
+    )
+    if points_per_pip is None and not symbol_name and not symbol_path:
+        # Preserve compatibility for callers that only provide quote metadata.
+        points_per_pip = quote_points_per_pip(point=point, digits=digits)
+    if points_per_pip is None:
+        return None, None, (
+            "Cannot convert slippage_pips for a non-FX or unidentified symbol; "
+            "provide deviation in broker points instead."
+        )
 
     dev = max(0, int(round(pips * points_per_pip)))
     meta = {
@@ -384,10 +401,10 @@ def _normalize_price_for_symbol(
     if not math.isfinite(numeric) or numeric == 0.0:
         return None
     if point > 0:
-        numeric = round(numeric / point) * point
+        numeric = snap_to_increment(numeric, point, digits=digits)
     else:
-        numeric = round(numeric, digits)
-    if not math.isfinite(numeric) or numeric == 0.0:
+        numeric = float(f"{numeric:.{max(0, min(15, int(digits)))}f}")
+    if numeric is None or not math.isfinite(numeric) or numeric == 0.0:
         return None
     return float(numeric)
 
@@ -423,9 +440,12 @@ def _symbol_price_context(symbol_info: Any) -> Dict[str, Any]:
         point = float(getattr(symbol_info, "point", 0.0) or 0.0)
     except Exception:
         point = 0.0
+    tick_size = _safe_float_attr(symbol_info, "trade_tick_size", 0.0)
+    price_increment = tick_size if tick_size > 0.0 else point
     digits = _safe_int_attr(symbol_info, "digits", 5)
     return {
         "point": point,
+        "price_increment": price_increment,
         "digits": digits,
     }
 
@@ -440,19 +460,23 @@ def _normalize_trade_price_inputs(
     take_profit: Optional[Union[int, float]] = None,
 ) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
     context = _symbol_price_context(symbol_info)
-    point = float(context["point"])
+    price_increment = float(context["price_increment"])
     digits = int(context["digits"])
 
     normalized_price = None
     if price is not None or require_price:
-        normalized_price = _normalize_price_for_symbol(price, point=point, digits=digits)
+        normalized_price = _normalize_price_for_symbol(
+            price,
+            point=price_increment,
+            digits=digits,
+        )
         if normalized_price is None:
             return None, f"{price_field_name} must be a non-zero finite number after symbol normalization."
 
     requested_sl, explicit_remove_sl, sl_error = _normalize_requested_protection_price(
         stop_loss,
         field_name="stop_loss",
-        point=point,
+        point=price_increment,
         digits=digits,
     )
     if sl_error is not None:
@@ -460,7 +484,7 @@ def _normalize_trade_price_inputs(
     requested_tp, explicit_remove_tp, tp_error = _normalize_requested_protection_price(
         take_profit,
         field_name="take_profit",
-        point=point,
+        point=price_increment,
         digits=digits,
     )
     if tp_error is not None:

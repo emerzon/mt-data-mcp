@@ -113,7 +113,7 @@ def test_trade_risk_analyze_blocks_sizing_and_escalates_critical_margin() -> Non
     assert "position_sizing" not in out
 
 
-def test_trade_risk_analyze_does_not_round_up_substep_boundary_volume() -> None:
+def test_trade_risk_analyze_removes_stop_distance_tick_residue() -> None:
     mt5 = MagicMock()
     mt5.account_info.return_value = SimpleNamespace(equity=1000.0, currency="USD")
     mt5.positions_get.return_value = []
@@ -129,11 +129,11 @@ def test_trade_risk_analyze_does_not_round_up_substep_boundary_volume() -> None:
         )
 
     sizing = out["position_sizing"]
-    assert sizing["suggested_volume"] == 0.2
+    assert out["trade_evaluation"]["sl_distance_ticks"] == 10
+    assert sizing["suggested_volume"] == 0.3
     assert sizing["volume_rounding"] == "rounded_down_to_step"
     assert sizing["risk_over_target"] is False
-    assert sizing["suggested_volume"] < sizing["raw_volume"]
-    assert any("rounded down" in note.lower() for note in sizing["sizing_notes"])
+    assert sizing["suggested_volume"] == sizing["raw_volume"]
 
 
 def test_trade_risk_analyze_rounds_down_to_step_to_avoid_overshoot() -> None:

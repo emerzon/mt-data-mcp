@@ -361,18 +361,26 @@ def _bucket_prices(
     weights: Sequence[float],
     bucket_size: float,
 ) -> Dict[int, Dict[str, float]]:
-    anchor = math.floor(min(prices) / bucket_size) * bucket_size
+    with localcontext() as ctx:
+        ctx.prec = 28
+        size_decimal = Decimal(str(bucket_size))
+        anchor_decimal = (
+            Decimal(str(min(prices))) / size_decimal
+        ).to_integral_value(rounding=ROUND_FLOOR) * size_decimal
+    anchor = float(anchor_decimal)
     buckets: Dict[int, Dict[str, float]] = {}
     for price, weight in zip(prices, weights):
         if weight <= 0.0:
             continue
         index = _bucket_index(price, anchor, bucket_size)
+        low_decimal = anchor_decimal + (Decimal(index) * size_decimal)
+        high_decimal = low_decimal + size_decimal
         bucket = buckets.setdefault(
             index,
             {
                 "index": float(index),
-                "low": anchor + (index * bucket_size),
-                "high": anchor + ((index + 1) * bucket_size),
+                "low": float(low_decimal),
+                "high": float(high_decimal),
                 "volume": 0.0,
                 "ticks": 0.0,
             },

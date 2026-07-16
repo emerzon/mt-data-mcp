@@ -6,7 +6,6 @@ import pytest
 
 from src.mtdata.core.trading.validation import _resolve_slippage_to_deviation
 
-
 # ---------------------------------------------------------------------------
 # Default fallback
 # ---------------------------------------------------------------------------
@@ -90,6 +89,37 @@ def test_pips_6digit_broker():
     assert err is None
     assert dev == 200
     assert meta["points_per_pip"] == 100
+
+
+def test_pips_use_shared_forex_symbol_classification():
+    sym = SimpleNamespace(
+        name="EURUSD.a",
+        path="Forex\\Majors",
+        point=0.00001,
+        digits=5,
+    )
+
+    dev, meta, err = _resolve_slippage_to_deviation(
+        slippage_pips=1.5,
+        symbol_info=sym,
+    )
+
+    assert err is None
+    assert dev == 15
+    assert meta["points_per_pip"] == 10
+
+
+def test_pips_reject_identified_non_forex_symbol():
+    sym = SimpleNamespace(name="US30", path="Indices", point=0.1, digits=1)
+
+    dev, meta, err = _resolve_slippage_to_deviation(
+        slippage_pips=2.0,
+        symbol_info=sym,
+    )
+
+    assert dev is None
+    assert meta is None
+    assert "non-FX" in err
 
 
 def test_pips_zero_rejects():

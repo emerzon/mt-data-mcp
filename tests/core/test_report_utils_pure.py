@@ -556,7 +556,7 @@ class TestMarketSnapshot:
 
     @patch("mtdata.core.report.utils.get_symbol_info_cached", return_value=SimpleNamespace(point=0.1, digits=1))
     @patch("mtdata.core.report.utils._get_pip_size", return_value=0.5)
-    def test_spread_pips_prefers_point_units_when_tick_size_is_coarser(self, mock_pip, mock_symbol_info):
+    def test_spread_pips_are_omitted_for_non_forex_symbols(self, mock_pip, mock_symbol_info):
         with patch(
             "mtdata.core.market_depth.market_depth_fetch",
             new=lambda *args, **kwargs: {
@@ -569,8 +569,8 @@ class TestMarketSnapshot:
 
         assert snap["spread_ticks"] == pytest.approx(2.0)
         assert snap["spread_points"] == pytest.approx(10.0)
-        assert snap["spread_pips"] == pytest.approx(10.0)
-        assert snap["pip_size"] == pytest.approx(0.1)
+        assert snap["spread_pips"] is None
+        assert snap["pip_size"] is None
 
 
 # ---------------------------------------------------------------------------

@@ -13,6 +13,16 @@ from mtdata.core.data.requests import WaitEventRequest
 from mtdata.core.data.use_cases import _wait_event_needs_gateway, run_wait_event
 
 
+def test_filled_volume_accumulation_requantizes_to_symbol_step() -> None:
+    accumulated = wait_events_mod._accumulate_filled_volume(
+        0.1,
+        0.2,
+        volume_step=0.01,
+    )
+
+    assert accumulated == 0.3
+
+
 class FakeClock:
     def __init__(self, start: datetime) -> None:
         self.current = start
