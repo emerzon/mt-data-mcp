@@ -330,6 +330,26 @@ def test_symbol_category_prefers_stock_group_over_crypto_substrings():
     assert _symbol_category(crypto) == "crypto"
 
 
+def test_symbol_category_recognizes_exotic_forex_pairs_and_groups():
+    from types import SimpleNamespace
+
+    from mtdata.core.symbols import _symbol_category
+
+    gbpsgd = SimpleNamespace(
+        name="GBPSGD",
+        path="Forex\\Exotics",
+        description="Great Britain Pound vs Singapore Dollar",
+    )
+    usddkk = SimpleNamespace(
+        name="USDDKK",
+        path="Forex\\Exotics",
+        description="US Dollar vs Danish Krone",
+    )
+
+    assert _symbol_category(gbpsgd) == "forex"
+    assert _symbol_category(usddkk) == "forex"
+
+
 def test_symbol_category_recognizes_metal_group_and_codes():
     from mtdata.core.symbols import _symbol_category
 

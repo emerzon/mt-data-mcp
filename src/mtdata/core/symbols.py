@@ -13,7 +13,7 @@ from ..shared.constants import (
 )
 from ..shared.market_units import forex_points_per_pip
 from ..shared.schema import DetailLiteral, TimeframeLiteral
-from ..shared.symbols import FIAT_CURRENCY_CODES as _FOREX_CURRENCY_CODES
+from ..shared.symbols import FOREX_CURRENCY_CODES as _FOREX_CURRENCY_CODES
 from ..shared.validators import invalid_timeframe_error
 from ..utils.freshness import (
     QUOTE_STALE_SECONDS,
@@ -356,7 +356,7 @@ def _symbol_category(symbol: Any) -> str:
     text = f"{name} {path} {description}".casefold()
     pair_prefix = _symbol_forex_pair(symbol)
 
-    if pair_prefix:
+    if pair_prefix or "forex" in path.casefold():
         return "forex"
     if any(token in text for token in ("bond", "treasury", "bund", "gilt")):
         return "bonds"
