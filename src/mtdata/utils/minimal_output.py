@@ -1566,6 +1566,14 @@ def _normalize_regime_all_payload(
     if comparison_out:
         out["comparison"] = comparison_out
 
+    runtime_in = payload.get("runtime")
+    if isinstance(runtime_in, dict) and runtime_in.get("partial_results") is True:
+        runtime_out: Dict[str, Any] = {"partial_results": True}
+        failed_methods = runtime_in.get("failed_methods")
+        if isinstance(failed_methods, list) and failed_methods:
+            runtime_out["failed_methods"] = failed_methods
+        out["runtime"] = runtime_out
+
     if detail_value != "full" and ("results" in payload or "params_used" in payload):
         if detail_value == "summary":
             out["show_all_hint"] = (

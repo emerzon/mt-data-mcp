@@ -1517,6 +1517,11 @@ class TestFormatResultForCli:
                 "params_used": {
                     "methods_attempted": ["bocpd", "ensemble", "wavelet"],
                 },
+                "runtime": {
+                    "partial_results": True,
+                    "failed_methods": ["wavelet"],
+                    "method_errors": {"wavelet": "dependency unavailable"},
+                },
             },
             fmt="toon",
             verbose=False,
@@ -1527,8 +1532,11 @@ class TestFormatResultForCli:
         assert "current_regimes[2]" in result
         assert "agreement:" in result
         assert "methods_failed[1]: wavelet" in result
-        assert "results" not in result
-        assert "params_used" not in result
+        assert "runtime:\n  partial_results: true" in result
+        assert "failed_methods[1]: wavelet" in result
+        assert "dependency unavailable" not in result
+        assert "\nresults:" not in result
+        assert "\nparams_used:" not in result
         assert "show_all_hint" in result
 
     def test_toon_format_shows_regime_all_results_in_full_detail(self):

@@ -55,6 +55,9 @@ from .smoothing import (
 logger = logging.getLogger(__name__)
 
 _PELT_DIRECTION_T_STAT_THRESHOLD = 1.96
+_ENSEMBLE_STATE_METHODS = frozenset(
+    {"hmm", "gmm", "ms_ar", "clustering", "wavelet"}
+)
 
 
 def _pelt_return_direction(
@@ -3367,7 +3370,6 @@ def regime_detect(  # noqa: C901
         elif method == "ensemble":
             # Consensus regime detection: run multiple fast methods and
             # aggregate their state_probabilities via soft or hard voting.
-            state_methods = {"hmm", "gmm", "ms_ar", "clustering", "wavelet"}
             default_sub = ["hmm", "clustering", "wavelet"]
             sub_methods_raw = p.get("methods", default_sub)
             if isinstance(sub_methods_raw, str):
@@ -3376,7 +3378,7 @@ def regime_detect(  # noqa: C901
             unsupported_methods: List[str] = []
             for candidate in sub_methods_raw:
                 normalized = _normalize_regime_method_name(candidate)
-                if normalized not in state_methods:
+                if normalized not in _ENSEMBLE_STATE_METHODS:
                     if normalized not in unsupported_methods:
                         unsupported_methods.append(normalized)
                     continue
@@ -3765,6 +3767,7 @@ def regime_detect(  # noqa: C901
                 "bocpd",
                 "pelt",
                 "hmm",
+                "gmm",
                 "ms_ar",
                 "clustering",
                 "garch",
@@ -3859,9 +3862,11 @@ def regime_detect(  # noqa: C901
             try:
                 ensemble_started_at = time.perf_counter()
                 ens_params = dict(p)
-                ens_params["methods"] = list(
-                    results_by_method.keys()
-                )  # Use methods that succeeded
+                ens_params["methods"] = [
+                    method_name
+                    for method_name in results_by_method
+                    if method_name in _ENSEMBLE_STATE_METHODS
+                ]
                 ensemble_result = call_tool_sync_structured(
                     regime_detect,
                     symbol=symbol,
@@ -3911,21 +3916,27 @@ def regime_detect(  # noqa: C901
                     3,
                 )
 
-            comparison = _build_all_method_comparison(results_by_method)
-            comparison["methods_failed"] = [e.split(":")[0] for e in all_errors]
-            individual_methods_succeeded = [
+            attempted_components = [*all_methods, "ensemble"]
+            succeeded_components = [
                 method_name
-                for method_name in all_methods
+                for method_name in attempted_components
                 if method_name in results_by_method
             ]
+            failed_components = [
+                method_name
+                for method_name in attempted_components
+                if method_name in method_errors
+            ]
+            comparison = _build_all_method_comparison(results_by_method)
+            comparison["methods_failed"] = failed_components
             ensemble_aggregated = "ensemble" in results_by_method
 
             summary_payload: Optional[Dict[str, Any]] = None
             if detail_value in {"summary", "compact"}:
                 summary_payload = {
-                    "methods_attempted": int(len(all_methods)),
-                    "methods_succeeded": int(len(individual_methods_succeeded)),
-                    "methods_failed": int(len(all_errors)),
+                    "methods_attempted": int(len(attempted_components)),
+                    "methods_succeeded": int(len(succeeded_components)),
+                    "methods_failed": int(len(failed_components)),
                 }
                 if ensemble_aggregated:
                     summary_payload["ensemble_aggregated"] = True
@@ -3941,9 +3952,9 @@ def regime_detect(  # noqa: C901
                     compact_comparison["agreement"] = comparison.get("agreement")
                 comparison = compact_comparison
             runtime_payload: Dict[str, Any] = {
-                "completed_methods": list(individual_methods_succeeded),
-                "failed_methods": list(method_errors.keys()),
-                "partial_results": bool(method_errors),
+                "completed_methods": list(succeeded_components),
+                "failed_methods": list(failed_components),
+                "partial_results": bool(failed_components),
             }
             if ensemble_aggregated:
                 runtime_payload["ensemble_aggregated"] = True
@@ -3970,9 +3981,9 @@ def regime_detect(  # noqa: C901
             }
             if detail_value == "full":
                 payload["params_used"] = {
-                    "methods_attempted": all_methods,
-                    "methods_succeeded": list(individual_methods_succeeded),
-                    "methods_failed": [e.split(":")[0] for e in all_errors],
+                    "methods_attempted": attempted_components,
+                    "methods_succeeded": list(succeeded_components),
+                    "methods_failed": list(failed_components),
                 }
                 if ensemble_aggregated:
                     payload["params_used"]["ensemble_aggregated"] = True
@@ -3980,8 +3991,12 @@ def regime_detect(  # noqa: C901
                 payload["summary"] = summary_payload
             if detail_value == "full":
                 payload["results"] = results_by_method
-            if all_errors:
-                payload["warnings"] = [f"Method errors: {'; '.join(all_errors)}"]
+            if failed_components:
+                error_summary = "; ".join(
+                    f"{method_name}: {method_errors[method_name]}"
+                    for method_name in failed_components
+                )
+                payload["warnings"] = [f"Method errors: {error_summary}"]
 
             return _finish(payload)
 

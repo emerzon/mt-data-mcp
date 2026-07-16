@@ -169,12 +169,15 @@ def test_regime_detect_all_respects_full_and_summary_detail(monkeypatch) -> None
     )
 
     subcall_details: list[tuple[str, str, bool]] = []
+    ensemble_voters: list[str] = []
 
     def fake_recursive(*args, **kwargs):
         method_name = str(kwargs.get("method") or "")
         detail_name = str(kwargs.get("detail") or "")
         include_series = bool(kwargs.get("include_series"))
         subcall_details.append((method_name, detail_name, include_series))
+        if method_name == "ensemble":
+            ensemble_voters.extend(kwargs["params"]["methods"])
         result = {
             "success": True,
             "symbol": kwargs.get("symbol"),
@@ -198,6 +201,7 @@ def test_regime_detect_all_respects_full_and_summary_detail(monkeypatch) -> None
     assert subcall_details
     assert all(detail == "full" for _, detail, _ in subcall_details)
     assert all(include_series is True for _, _, include_series in subcall_details)
+    assert ensemble_voters == ["hmm", "gmm", "ms_ar", "clustering", "wavelet"]
 
     subcall_details.clear()
     summary = real("EURUSD", method="all", detail="summary", include_series=True)
@@ -207,7 +211,7 @@ def test_regime_detect_all_respects_full_and_summary_detail(monkeypatch) -> None
     assert "params_used" not in summary
     assert summary["summary"]["methods_succeeded"] == summary["summary"]["methods_attempted"]
     assert summary["summary"]["ensemble_aggregated"] is True
-    assert "ensemble" not in summary["runtime"]["completed_methods"]
+    assert "ensemble" in summary["runtime"]["completed_methods"]
     assert summary["runtime"]["ensemble_aggregated"] is True
     assert summary["summary"]["agreement"] == {"basis": "test"}
     comparison = summary.get("comparison", {})
