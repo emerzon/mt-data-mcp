@@ -7,7 +7,8 @@ import mtdata.core.market_snapshot as snapshot_mod
 
 
 def _raw_market_snapshot(**kwargs):
-    return snapshot_mod.market_snapshot.__wrapped__(**kwargs)
+    with patch.object(snapshot_mod, "_preflight_snapshot_symbol", return_value=None):
+        return snapshot_mod.market_snapshot.__wrapped__(**kwargs)
 
 
 def test_market_snapshot_help_discloses_builtin_section_methods():
@@ -78,6 +79,49 @@ def test_market_snapshot_marks_invalid_symbol_failure(monkeypatch):
     assert result["failed_sections"] == ["quote", "levels"]
     assert "NOTREAL" in result["error"]
     assert result["summary"] == "NOTREAL snapshot; failed=quote,levels."
+
+
+def test_market_snapshot_rejects_invalid_symbol_before_sections(monkeypatch):
+    preflight_error = {
+        "success": False,
+        "error": "Symbol 'NOTREAL' not found in MT5 terminal.",
+        "error_code": "symbol_not_found",
+        "request_id": "test-request",
+        "operation": "market_snapshot",
+        "remediation": "Use symbols_list.",
+    }
+    section_call = MagicMock(side_effect=AssertionError("sections must not run"))
+    monkeypatch.setattr(
+        snapshot_mod,
+        "_preflight_snapshot_symbol",
+        lambda symbol: preflight_error,
+    )
+    monkeypatch.setattr(snapshot_mod, "_call_section", section_call)
+
+    result = snapshot_mod.market_snapshot.__wrapped__(symbol="NOTREAL")
+
+    assert result["success"] is False
+    assert result["error_code"] == "symbol_not_found"
+    assert result["sections_not_run"] == ["quote", "status", "levels", "patterns"]
+    assert result["section_status"] == {
+        "quote": "not_run",
+        "status": "not_run",
+        "levels": "not_run",
+        "patterns": "not_run",
+    }
+    section_call.assert_not_called()
+
+
+def test_snapshot_symbol_preflight_classifies_missing_symbol() -> None:
+    gateway = MagicMock()
+    gateway.symbol_info.return_value = None
+
+    result = snapshot_mod._preflight_snapshot_symbol("NOTREAL", gateway=gateway)
+
+    assert result is not None
+    assert result["error_code"] == "symbol_not_found"
+    assert result["details"]["symbol"] == "NOTREAL"
+    assert result["related_tools"] == ["symbols_list"]
 
 
 def test_market_snapshot_marks_partial_section_failure(monkeypatch):

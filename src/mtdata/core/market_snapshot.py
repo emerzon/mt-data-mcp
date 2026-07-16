@@ -9,7 +9,9 @@ from typing import Any, Dict, Optional
 
 from ..shared.schema import DetailLiteral, TimeframeLiteral
 from ._mcp_instance import mcp
+from .error_envelope import build_error_payload
 from .execution_logging import run_logged_operation
+from .mt5_gateway import create_mt5_gateway
 from .tool_calling import call_tool_sync_structured
 
 logger = logging.getLogger(__name__)
@@ -51,6 +53,38 @@ def _parse_snapshot_sections(value: Optional[str]) -> tuple[str, ...]:
 
 def _section_error(exc: Exception) -> Dict[str, Any]:
     return {"error": str(exc)}
+
+
+def _preflight_snapshot_symbol(
+    symbol: str,
+    *,
+    gateway: Any = None,
+) -> Optional[Dict[str, Any]]:
+    symbol_name = str(symbol or "").strip()
+    try:
+        mt5_gateway = gateway or create_mt5_gateway()
+        mt5_gateway.ensure_connection()
+        symbol_info = mt5_gateway.symbol_info(symbol_name)
+    except Exception as exc:
+        return build_error_payload(
+            str(exc),
+            code="mt5_connection_error",
+            operation="market_snapshot",
+        )
+    if symbol_info is not None:
+        return None
+    return build_error_payload(
+        f"Symbol '{symbol_name}' not found in MT5 terminal.",
+        code="symbol_not_found",
+        operation="market_snapshot",
+        details={
+            "symbol": symbol_name,
+            "search_hint": (
+                f"Use symbols_list(search_term='{symbol_name}') to browse matching "
+                "broker symbols."
+            ),
+        },
+    )
 
 
 def _compact_quote(quote: Any) -> Any:
@@ -680,6 +714,16 @@ def market_snapshot(
     def _run() -> Dict[str, Any]:
         selected = _parse_snapshot_sections(sections)
         detail_mode = str(detail or "compact").strip().lower()
+        preflight_error = _preflight_snapshot_symbol(symbol)
+        if preflight_error is not None:
+            return {
+                **preflight_error,
+                "symbol": symbol,
+                "timeframe": timeframe,
+                "sections_requested": list(selected),
+                "sections_not_run": list(selected),
+                "section_status": {name: "not_run" for name in selected},
+            }
         section_payloads = {
             name: _call_section(name, symbol, str(timeframe), int(horizon), detail_mode)
             for name in selected
