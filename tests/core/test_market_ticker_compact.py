@@ -6,6 +6,7 @@ def test_compact_ticker_keeps_absolute_spread_for_non_forex_quotes() -> None:
         {
             "success": True,
             "symbol": "XAUUSD",
+            "point": 0.01,
             "bid": 4061.0,
             "ask": 4061.15,
             "spread": 0.15,
@@ -21,6 +22,7 @@ def test_compact_ticker_keeps_absolute_spread_for_non_forex_quotes() -> None:
     assert result["spread"] == 0.15
     assert result["spread_points"] == 15.0
     assert result["spread_pct"] == 0.003694
+    assert result["point"] == 0.01
     assert "spread_pips" not in result
     assert "contract_size" not in result
     assert "lot_definition" not in result

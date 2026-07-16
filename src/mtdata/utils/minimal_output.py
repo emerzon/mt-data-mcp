@@ -981,6 +981,7 @@ def _normalize_market_ticker_payload(
         "field",
         "price",
         "price_precision",
+        "point",
         "price_currency",
         "bid",
         "ask",
@@ -1031,6 +1032,8 @@ def _normalize_market_ticker_payload(
         ]
         if primary_spread_key is not None:
             compact_keys.append(primary_spread_key)
+        if primary_spread_key == "spread_points":
+            compact_keys.append("point")
         selected_keys = tuple(compact_keys)
     for key in selected_keys:
         value = _freshness_label() if key == "freshness" else payload.get(key)

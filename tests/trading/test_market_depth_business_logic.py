@@ -333,22 +333,19 @@ def test_market_ticker_returns_lightweight_spread_snapshot() -> None:
     assert out["bid"] == 200.0
     assert out["ask"] == 201.0
     assert out["spread_pct"] == 0.498753
-    assert out["units"]["spread_pct"] == "percentage_points (1.0 = 1%)"
+    assert out["point"] == 0.01
     assert "market_state" not in out
-    assert out["contract_size"] == 1.0
-    assert out["units"]["contract_size"] == "contract_units_per_lot"
-    assert out["units"]["lot"] == "broker_lot"
-    assert out["lot_definition"] == "1 broker lot equals contract_size contract units."
-    assert out["pricing_basis"] == "per_1_lot_estimate"
-    assert out["pricing_basis_units"] == "broker_lot"
+    assert "units" not in out
+    assert "contract_size" not in out
+    assert "lot_definition" not in out
+    assert "pricing_basis" not in out
+    assert "pricing_basis_units" not in out
     assert out["freshness"].startswith("stale, tick ")
     assert out["time"] == "2023-11-14T22:13:20Z"
     assert out["time_epoch"] == 1700000000.0
-    assert "spread" not in out
-    assert "spread" not in out["units"]
-    assert "spread_points" not in out
+    assert out["spread"] == 1.0
+    assert out["spread_points"] == 100.0
     assert "spread_pips" not in out
-    assert "spread_pips" not in out["units"]
     assert "spread_pct_display" not in out
     assert "data_stale" not in out
     assert out["data_age_seconds"] > out["stale_after_seconds"]
@@ -417,13 +414,13 @@ def test_market_ticker_compact_detail_omits_verbose_fields() -> None:
     assert out["bid"] == 200.0
     assert out["ask"] == 201.0
     assert out["spread_pct"] == 0.498753
-    assert out["units"]["spread_pct"] == "percentage_points (1.0 = 1%)"
     assert "market_state" not in out
-    assert out["contract_size"] == 1.0
+    assert "units" not in out
+    assert "contract_size" not in out
     assert out["freshness"].startswith("stale, tick ")
     assert "spread_display" not in out
-    assert "spread" not in out
-    assert "spread_points" not in out
+    assert out["spread"] == 1.0
+    assert out["spread_points"] == 100.0
     assert "spread_pips" not in out
     assert "spread_pct_display" not in out
     assert "last" not in out
@@ -467,8 +464,8 @@ def test_market_ticker_none_detail_uses_compact_output() -> None:
     assert out["success"] is True
     assert out["spread_pct"] == 0.498753
     assert "market_state" not in out
-    assert out["contract_size"] == 1.0
-    assert "spread" not in out
+    assert "contract_size" not in out
+    assert out["spread"] == 1.0
     assert "diagnostics" not in out
     assert "spread_cost_per_lot" not in out
 
@@ -714,12 +711,12 @@ def test_market_ticker_rounds_tick_precision_noise() -> None:
     assert out["bid"] == 1.17581
     assert out["ask"] == 1.1759
     assert out["spread_pips"] == 0.9
-    assert out["units"]["spread_pips"] == "pips"
-    assert "spread" not in out
-    assert "spread_points" not in out
+    assert "units" not in out
+    assert out["spread"] == 0.00009
+    assert out["spread_points"] == 9.0
     assert "last" not in out
     assert "spread_display" not in out
-    assert "spread_pct" not in out
+    assert out["spread_pct"] > 0
 
 
 def test_market_depth_returns_connection_error_payload() -> None:
