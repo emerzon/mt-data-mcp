@@ -15,7 +15,7 @@ class PatternsDetectRequest(BaseModel):
     timeframe: Optional[TimeframeLiteral] = None
     mode: PatternModeLiteral = "candlestick"
     detail: PatternsDetailLiteral = "compact"
-    limit: int = 150
+    limit: int = Field(150, ge=1)
 
     @field_validator("mode", mode="before")
     @classmethod
@@ -42,7 +42,7 @@ class PatternsDetectRequest(BaseModel):
     min_gap: int = 3
     robust_only: bool = False
     whitelist: Optional[str] = None
-    top_k: int = 3
+    top_k: int = Field(3, ge=1)
     last_n_bars: Optional[int] = None
     denoise: Optional[DenoiseSpec] = None
     config: Optional[Dict[str, Any]] = None
@@ -63,4 +63,9 @@ class PatternsDetectRequest(BaseModel):
     def _resolve_include_confirmed(self) -> "PatternsDetectRequest":
         if self.include_confirmed is not None:
             self.include_completed = bool(self.include_confirmed)
+        if self.mode == "all" and self.limit < 150:
+            raise ValueError(
+                "mode='all' requires limit >= 150; use a single pattern mode "
+                "for smaller analysis windows"
+            )
         return self

@@ -966,7 +966,12 @@ class TestPatternsDetectAllMode:
             },
         ]
 
-        result = _call_patterns_detect(symbol="EURUSD", mode="all", timeframe="H1")
+        result = _call_patterns_detect(
+            symbol="EURUSD",
+            mode="all",
+            timeframe="H1",
+            top_k=1,
+        )
 
         assert [row["name"] for row in result["fractal"]["patterns"]] == ["Active Fractal"]
         assert "latest_breakouts" not in result["fractal"]
@@ -1277,12 +1282,22 @@ class TestPatternsDetectAllMode:
             "end_index": 190,
         }]
 
-        result = _call_patterns_detect(symbol="EURUSD", mode="all", timeframe="H1")
+        result = _call_patterns_detect(
+            symbol="EURUSD",
+            mode="all",
+            timeframe="H1",
+            top_k=1,
+        )
         assert "highlights" in result
         highlights = result["highlights"]
         assert isinstance(highlights, list)
         assert len(highlights) > 0
-        assert len(highlights) <= 5
+        assert len(highlights) == 1
+        assert result["result_limit"]["requested_top_k"] == 1
+        assert all(
+            len(result[section]["patterns"]) <= 1
+            for section in ("classic", "harmonic", "elliott", "fractal")
+        )
         # Each highlight has section, name, confidence
         for h in highlights:
             assert "section" in h

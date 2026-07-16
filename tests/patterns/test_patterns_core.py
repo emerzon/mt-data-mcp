@@ -1445,12 +1445,17 @@ def test_patterns_detect_all_mode_uses_shared_fetch_floor(monkeypatch):
         mode="all",
         detail="full",
         timeframe="H1",
-        limit=50,
+        limit=150,
         __cli_raw=True,
     )
 
     assert res["success"] is True
     assert captured_fetch_floors == [150]
+
+
+def test_patterns_detect_all_mode_rejects_insufficient_history() -> None:
+    with pytest.raises(ValueError, match="requires limit >= 150"):
+        PatternsDetectRequest(symbol="EURUSD", mode="all", limit=1)
 
 
 def test_patterns_detect_rejects_hidden_precise_engine(monkeypatch):

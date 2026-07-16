@@ -54,7 +54,7 @@ def _timeframe_aware_age_limits(
 # Maximum data window for "all" mode fetches (in seconds).
 # 1 year of data is more than enough for pattern detection on any TF.
 _ALL_MODE_MAX_FETCH_SECONDS = 365 * 86400
-_ALL_MODE_FETCH_FLOOR = 200  # never fetch fewer than 200 bars
+_ALL_MODE_FETCH_FLOOR = 200
 
 
 def _all_mode_fetch_limit(timeframe: str, user_limit: int) -> int:
@@ -80,7 +80,7 @@ def _all_mode_fetch_limit(timeframe: str, user_limit: int) -> int:
     else:
         fetch_floor = _ALL_MODE_FETCH_FLOOR
     
-    return max(fetch_floor, min(user_limit, max_bars))
+    return min(user_limit, max(fetch_floor, min(user_limit, max_bars)))
 
 _CLASSIC_CONFIG_EXTRA_KEYS = {
     "ensemble_weights",
@@ -1098,7 +1098,7 @@ def run_patterns_detect(  # noqa: C901
                 3, min(20, round(int(request.limit) * 0.05))
             )
 
-        effective_top_k = max(request.top_k, 3)
+        effective_top_k = request.top_k
 
         for tf in timeframes:
             # Scale fetch limit so higher TFs don't pull decades of data
@@ -1313,12 +1313,20 @@ def run_patterns_detect(  # noqa: C901
             resp["errors"] = section_errors
 
         # Merged cross-section highlights for quick trader read
-        resp["highlights"] = _build_highlights(resp, limit=5)
+        resp["highlights"] = _build_highlights(resp, limit=request.top_k)
+        resp["result_limit"] = {
+            "requested_top_k": request.top_k,
+            "scope": "global_highlights_and_compact_section_rows",
+        }
 
         if detail_value == "summary":
             return _highlights_all_mode_payload(resp)
         if detail_value in ("compact", "standard"):
-            return _compact_all_mode_payload(resp)
+            return _compact_all_mode_payload(
+                resp,
+                preview_limit=request.top_k,
+                include_diagnostics=detail_value == "standard",
+            )
         return _dedupe_repeated_regime_context(resp)
 
     return {

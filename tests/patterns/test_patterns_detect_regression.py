@@ -155,6 +155,11 @@ class TestAllModeFetchLimit(TestCase):
         assert limit <= 400, f"D1 fetch limit={limit}"
         assert limit >= 200, f"D1 fetch limit={limit}"
 
+    def test_fetch_limit_never_exceeds_small_user_bound(self):
+        from mtdata.core.patterns_use_cases import _all_mode_fetch_limit
+
+        assert _all_mode_fetch_limit("D1", 150) == 150
+
 
 class TestBarAgeRecencyWithDataLength(TestCase):
     """_bar_age_recency should use per-row _data_length when available."""

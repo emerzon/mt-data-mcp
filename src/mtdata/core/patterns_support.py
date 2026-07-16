@@ -1266,7 +1266,12 @@ def _trim_section_rows(
     return trimmed
 
 
-def _compact_all_mode_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
+def _compact_all_mode_payload(
+    payload: Dict[str, Any],
+    *,
+    preview_limit: int = 3,
+    include_diagnostics: bool = False,
+) -> Dict[str, Any]:
     """Compact the all-mode response for trader-focused quick analysis.
     
     Emphasizes highlights while keeping backward-compatible section structure.
@@ -1284,6 +1289,7 @@ def _compact_all_mode_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
         "symbol": payload.get("symbol"),
         "mode": "all",
         "timeframes": payload.get("timeframes"),
+        "result_limit": payload.get("result_limit"),
     }
 
     # Top-level highlights — the trader's quick-read (most important)
@@ -1295,7 +1301,10 @@ def _compact_all_mode_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     candle_section = payload.get("candlestick", {})
     candle_patterns = candle_section.get("patterns", [])
     if candle_patterns:
-        candle_summary = _summarize_candlestick_by_tf(candle_patterns)
+        candle_summary = _summarize_candlestick_by_tf(
+            candle_patterns,
+            top_n=preview_limit,
+        )
         candle_summary.pop("n_patterns", None)
         compact["candlestick"] = candle_summary
     else:
@@ -1310,8 +1319,11 @@ def _compact_all_mode_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     ):
         section = payload.get(section_name, {})
         rows = section.get("patterns", [])
-        # Trim to top 3 patterns by relevance/confidence
-        trimmed = _trim_section_rows(rows, keys, limit=3) if rows else []
+        trimmed = (
+            _trim_section_rows(rows, keys, limit=preview_limit)
+            if rows
+            else []
+        )
         result: Dict[str, Any] = {
             "patterns": trimmed,
         }
@@ -1322,7 +1334,7 @@ def _compact_all_mode_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
             value = section.get(key)
             if value not in (None, "", [], {}):
                 result[key] = value
-        if section_name == "elliott":
+        if section_name == "elliott" and include_diagnostics:
             adaptations = section.get("adaptation_by_timeframe")
             if isinstance(adaptations, dict) and adaptations:
                 result["adaptation_by_timeframe"] = {
