@@ -448,14 +448,13 @@ def test_portfolio_risk_marks_empty_position_book() -> None:
         gateway,
     )
 
-    assert result == {
-        "success": True,
-        "empty": True,
-        "positions": 0,
-        "message": "No open positions.",
-        "summary": {"positions": 0},
-        "risk": [],
-    }
+    assert result["success"] is True
+    assert result["empty"] is True
+    assert result["positions"] == 0
+    assert result["risk"] == []
+    assert result["timeframe"] == "H1"
+    assert result["holding_periods"] == ["1 H1 bar", "5 H1 bars"]
+    assert result["model_context"]["random_seed"] == 42
 
 
 def test_portfolio_risk_reconciles_component_expected_shortfall() -> None:
@@ -477,6 +476,24 @@ def test_portfolio_risk_reconciles_component_expected_shortfall() -> None:
     assert component_total == pytest.approx(row["expected_shortfall"])
     assert "correlation_to_one_loss_proxy" not in result["stresses"]
     assert result["stresses"]["perfect_positive_correlation_1sigma"][0]["horizon_bars"] == 1
+    assert result["timeframe"] == "H1"
+    assert result["holding_periods"] == ["1 H1 bar"]
+    assert row["holding_period"] == "1 H1 bar"
+    assert result["model_context"] == {
+        "timeframe": "H1",
+        "horizon_bars": [1],
+        "holding_periods": ["1 H1 bar"],
+        "lookback_requested": 300,
+        "confidence_levels": [0.95],
+        "simulations": 500,
+        "ewma_half_life": 60.0,
+        "random_seed": 42,
+        "completion_policy": "fail_closed",
+        "aligned_returns": result["summary"]["aligned_rows"],
+        "data_start": result["model_context"]["data_start"],
+        "data_end": result["model_context"]["data_end"],
+        "as_of": result["model_context"]["data_end"],
+    }
 
 
 def test_filtered_historical_shock_uses_pre_shock_volatility() -> None:

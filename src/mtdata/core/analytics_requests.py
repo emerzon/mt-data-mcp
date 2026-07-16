@@ -142,6 +142,7 @@ class PortfolioRiskDecomposeRequest(BaseModel):
     method: Literal["filtered_historical", "historical"] = "filtered_historical"
     ewma_half_life: float = Field(60.0, gt=1.0)
     simulations: int = Field(5_000, ge=500, le=50_000)
+    seed: int = Field(42, ge=0, le=4_294_967_295)
     proposed_trade: Optional[ProposedTrade] = None
     allow_partial: bool = False
     detail: DetailLiteral = "compact"

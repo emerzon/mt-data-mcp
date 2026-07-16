@@ -1059,6 +1059,21 @@ def _position_sensitivity(gateway: Any, row: Dict[str, Any]) -> Tuple[Optional[f
 
 
 def decompose_portfolio_risk(request: PortfolioRiskDecomposeRequest, gateway: Any) -> Dict[str, Any]:
+    holding_periods = [
+        f"{horizon} {request.timeframe} bar{'s' if horizon != 1 else ''}"
+        for horizon in request.horizon_bars
+    ]
+    model_context: Dict[str, Any] = {
+        "timeframe": request.timeframe,
+        "horizon_bars": list(request.horizon_bars),
+        "holding_periods": holding_periods,
+        "lookback_requested": request.lookback,
+        "confidence_levels": list(request.confidence),
+        "simulations": request.simulations,
+        "ewma_half_life": request.ewma_half_life,
+        "random_seed": request.seed,
+        "completion_policy": "allow_partial" if request.allow_partial else "fail_closed",
+    }
     account = None
     try:
         account_info = getattr(gateway, "account_info", None)
@@ -1086,6 +1101,9 @@ def decompose_portfolio_risk(request: PortfolioRiskDecomposeRequest, gateway: An
             "message": "No open positions.",
             "summary": {"positions": 0},
             "risk": [],
+            "timeframe": request.timeframe,
+            "holding_periods": holding_periods,
+            "model_context": model_context,
         }
     sensitivities: Dict[str, float] = {}
     proposed_sensitivity: Optional[Tuple[str, float]] = None
@@ -1141,7 +1159,7 @@ def decompose_portfolio_risk(request: PortfolioRiskDecomposeRequest, gateway: An
     if request.method == "historical":
         standardized = returns.copy()
         current_vol = pd.Series(1.0, index=returns.columns)
-    rng = np.random.default_rng(42)
+    rng = np.random.default_rng(request.seed)
     risk_rows = []
     scenario_details: Dict[int, np.ndarray] = {}
     sensitivity_vec = np.asarray([sensitivities[column] for column in standardized.columns], dtype=float)
@@ -1169,6 +1187,10 @@ def decompose_portfolio_risk(request: PortfolioRiskDecomposeRequest, gateway: An
             after_es = float(max(0.0, -np.mean(pnl[tail]))) if np.any(tail) else None
             risk_rows.append({
                 "horizon_bars": horizon,
+                "holding_period": (
+                    f"{horizon} {request.timeframe} "
+                    f"bar{'s' if horizon != 1 else ''}"
+                ),
                 "confidence": confidence,
                 "var": float(max(0.0, -cutoff)),
                 "expected_shortfall": after_es,
@@ -1241,9 +1263,22 @@ def decompose_portfolio_risk(request: PortfolioRiskDecomposeRequest, gateway: An
         warnings_out.append(
             "Some priced symbols lacked sufficient return history and were omitted because allow_partial=true."
         )
+    data_start = format_epoch_utc(float(returns.index[0]))
+    data_end = format_epoch_utc(float(returns.index[-1]))
+    model_context.update(
+        {
+            "aligned_returns": len(returns),
+            "data_start": data_start,
+            "data_end": data_end,
+            "as_of": data_end,
+        }
+    )
     return {
         "success": True,
         "method": request.method,
+        "timeframe": request.timeframe,
+        "holding_periods": holding_periods,
+        "model_context": model_context,
         **account_context,
         "summary": {"positions": base_position_count, "positions_after_proposed": len(positions), "symbols": len(modeled_symbols), "symbols_requested": len(requested_symbols), "aligned_rows": len(returns), "concentration_hhi": float(np.sum(weights**2))},
         "risk": risk_rows,
