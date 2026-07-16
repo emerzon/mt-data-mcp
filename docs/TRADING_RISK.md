@@ -40,6 +40,12 @@ mtdata-cli trade_risk_analyze --symbol EURUSD --direction long \
 | `stop_loss` | — | Proposed stop (alias `sl`). Required to compute risk-based volume. |
 | `take_profit` | — | Optional target (alias `tp`) for reward/risk context. |
 
+New-trade sizing uses an incremental candidate-risk policy: `desired_risk_pct`
+limits the proposed trade's stop risk as a percentage of account equity, and
+account-wide margin stress remains a hard safety gate. Existing positions on other
+symbols do not prevent sizing, but the returned `sizing_risk_policy` states that the
+suggestion is not an aggregate portfolio stop-risk cap.
+
 ### Kelly sizing
 
 Set `sizing_method=kelly` and supply edge statistics:

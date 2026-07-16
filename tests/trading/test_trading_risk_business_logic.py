@@ -639,8 +639,22 @@ def test_trade_risk_analyze_reports_symbol_scope_when_other_positions_exist() ->
     assert out["scoped_risk"]["positions_count"] == 0
     assert out["scoped_risk"]["overall_risk_status"] == "partial"
     assert out["scoped_risk"]["quantified_risk_level"] == "unknown"
-    assert out["position_sizing_error"]["code"] == "portfolio_safety_block"
-    assert "position_sizing" not in out
+    assert out["position_sizing"]["suggested_volume"] == 1.0
+    assert out["position_sizing"]["risk_compliance"] == "within_requested_risk"
+    assert out["sizing_risk_policy"] == {
+        "mode": "incremental_candidate_risk",
+        "risk_target_basis": "percent_of_account_equity",
+        "candidate_symbol": "EURUSD",
+        "account_margin_context_included": True,
+        "existing_portfolio_stop_risk_included": False,
+        "portfolio_positions": 2,
+        "other_positions": 2,
+        "note": (
+            "Suggested volume limits this candidate trade's stop risk; it does not "
+            "cap aggregate portfolio stop risk."
+        ),
+    }
+    assert "incremental candidate sizing" in out["position_sizing"]["sizing_notes"][-1]
 
 
 def test_trade_risk_analyze_blocks_min_volume_risk_overshoot_by_default() -> None:

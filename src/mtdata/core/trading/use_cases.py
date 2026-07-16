@@ -3535,9 +3535,8 @@ def run_trade_risk_analyze(  # noqa: C901
                     "contract_price_product": "contract_size_times_price",
                 },
             }
-            portfolio_sizing_blocked = False
+            other_positions_count: Optional[int] = None
             if request.symbol:
-                other_positions_count = None
                 if portfolio_positions_total is not None:
                     other_positions_count = max(
                         0,
@@ -3564,7 +3563,6 @@ def run_trade_risk_analyze(  # noqa: C901
                     "partial" if other_positions_count else "symbol_scope"
                 )
                 if other_positions_count:
-                    portfolio_sizing_blocked = True
                     scoped_risk["overall_risk_status"] = "partial"
                     scoped_risk["quantified_risk_level"] = "unknown"
                     result["scope_warning"] = (
@@ -3576,6 +3574,21 @@ def run_trade_risk_analyze(  # noqa: C901
                             f"{int(other_positions_count)} open position(s) exist on other symbols."
                         )
                     )
+                result["sizing_risk_policy"] = {
+                    "mode": "incremental_candidate_risk",
+                    "risk_target_basis": "percent_of_account_equity",
+                    "candidate_symbol": str(request.symbol),
+                    "account_margin_context_included": True,
+                    "existing_portfolio_stop_risk_included": not bool(
+                        other_positions_count
+                    ),
+                    "portfolio_positions": int(portfolio_positions_total or 0),
+                    "other_positions": int(other_positions_count or 0),
+                    "note": (
+                        "Suggested volume limits this candidate trade's stop risk; "
+                        "it does not cap aggregate portfolio stop risk."
+                    ),
+                }
             else:
                 result["risk_visibility"] = "portfolio"
                 result["scope"] = {
@@ -3784,15 +3797,8 @@ def run_trade_risk_analyze(  # noqa: C901
                     )
                 )
             )
-            if sizing_ready and (
-                portfolio_sizing_blocked
-                or margin_stress["status"] == "critical"
-            ):
-                block_reason = (
-                    "Symbol scope hides open positions on other symbols."
-                    if portfolio_sizing_blocked
-                    else "Account margin stress is critical."
-                )
+            if sizing_ready and margin_stress["status"] == "critical":
+                block_reason = "Account margin stress is critical."
                 result["position_sizing_error"] = _build_position_sizing_error(
                     code="portfolio_safety_block",
                     reason=block_reason,
@@ -3801,7 +3807,6 @@ def run_trade_risk_analyze(  # noqa: C901
                         "before sizing a new trade."
                     ),
                     details={
-                        "risk_visibility": result.get("risk_visibility"),
                         "margin_stress": margin_stress,
                     },
                 )
@@ -4303,6 +4308,11 @@ def run_trade_risk_analyze(  # noqa: C901
                         **({"margin_impact": margin_impact} if margin_impact else {}),
                         "sizing_notes": sizing_notes,
                     }
+                    if other_positions_count:
+                        result["position_sizing"]["sizing_notes"].append(
+                            "Other-symbol positions are present; this is incremental "
+                            "candidate sizing, not an aggregate portfolio risk cap."
+                        )
                     if strict_risk_blocked:
                         result["position_sizing"].update(
                             {
