@@ -49,7 +49,10 @@ from .common import (
 from .ensemble_dispatch import (
     build_dispatch_error as _build_ensemble_dispatch_error,
 )
-from .forecast_validation import format_invalid_method_error
+from .forecast_validation import (
+    attach_denoise_causality_disclosure,
+    format_invalid_method_error,
+)
 from .interface import ForecastCallContext
 
 if TYPE_CHECKING:
@@ -1575,6 +1578,7 @@ def forecast_engine(  # noqa: C901
                     symbol=symbol,
                 )
             )
+        attach_denoise_causality_disclosure(result, dn_spec_used)
         if method_l == 'ensemble' and metadata:
             generic_metadata_keys = {"params_used", "diagnostics", "model_info", "warnings"}
             ensemble_metadata = {

@@ -23,6 +23,37 @@ class ForecastValidationError(Exception):
     pass
 
 
+_ZERO_PHASE_DENOISE_WARNING = (
+    "Zero-phase denoise uses future observations and is not usable for live trading."
+)
+
+
+def attach_denoise_causality_disclosure(
+    payload: Dict[str, Any],
+    denoise_spec: Any,
+) -> None:
+    if not isinstance(denoise_spec, dict):
+        return
+    method = str(denoise_spec.get("method") or "").strip().lower()
+    if not method or method == "none":
+        return
+    causality = str(denoise_spec.get("causality") or "causal").strip().lower()
+    payload["denoise_causality"] = causality
+    payload["denoise_live_safe"] = causality != "zero_phase"
+    if causality != "zero_phase":
+        return
+
+    payload["denoise_usage"] = "research_only"
+    payload["history_policy_ok"] = False
+    payload["history_policy_reason"] = "zero_phase_denoise_uses_future_observations"
+    warnings = payload.get("warnings")
+    if not isinstance(warnings, list):
+        warnings = []
+    if _ZERO_PHASE_DENOISE_WARNING not in warnings:
+        warnings.append(_ZERO_PHASE_DENOISE_WARNING)
+    payload["warnings"] = warnings
+
+
 def _normalize_method_text(value: Any) -> str:
     return str(value or "").strip().lower().replace("-", "_").replace(" ", "_")
 

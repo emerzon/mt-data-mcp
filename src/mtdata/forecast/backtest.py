@@ -39,6 +39,7 @@ from .contracts import (
 )
 from .exceptions import ForecastError, raise_if_error_result
 from .forecast import forecast
+from .forecast_validation import attach_denoise_causality_disclosure
 from .gpu_runtime import cleanup_forecast_gpu_runtime, forecast_methods_may_use_gpu
 from .volatility import forecast_volatility
 
@@ -1972,6 +1973,7 @@ def forecast_backtest(  # noqa: C901
             "detail": detail_mode,
             "results": results,
         }
+        attach_denoise_causality_disclosure(result_payload, _dn_used)
         return result_payload
     except Exception as e:
         return {"error": f"Error in forecast_backtest: {str(e)}"}

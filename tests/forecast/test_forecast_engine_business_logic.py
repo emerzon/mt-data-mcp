@@ -657,7 +657,15 @@ def test_forecast_engine_applies_denoise_to_prefetched_raw_history(monkeypatch):
         df["close_dn"] = df["close"] * 10.0
         return ["close_dn"]
 
-    monkeypatch.setattr(fe, "_normalize_denoise_spec", lambda spec, default_when=None: {"method": "ema", "columns": ["close"]})
+    monkeypatch.setattr(
+        fe,
+        "_normalize_denoise_spec",
+        lambda spec, default_when=None: {
+            "method": "ema",
+            "columns": ["close"],
+            "causality": "zero_phase",
+        },
+    )
     monkeypatch.setattr(fe, "apply_denoise", fakeapply_denoise)
 
     df = _df(20)
@@ -673,6 +681,14 @@ def test_forecast_engine_applies_denoise_to_prefetched_raw_history(monkeypatch):
     assert out["success"] is True
     assert out["base_col"] == "close_dn"
     assert out["denoise_applied"] is True
+    assert out["denoise_causality"] == "zero_phase"
+    assert out["denoise_live_safe"] is False
+    assert out["denoise_usage"] == "research_only"
+    assert out["history_policy_ok"] is False
+    assert out["history_policy_reason"] == (
+        "zero_phase_denoise_uses_future_observations"
+    )
+    assert any("uses future observations" in warning for warning in out["warnings"])
     assert captured["series_name"] == "close_dn"
     assert captured["last_value"] == float(df["close"].iloc[-1] * 10.0)
 
