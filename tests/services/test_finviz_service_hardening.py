@@ -2,6 +2,7 @@ import sys
 import types
 
 import pandas as pd
+from bs4 import BeautifulSoup
 
 from mtdata.services.finviz import api as svc
 from mtdata.services.finviz import client as finviz_client
@@ -130,6 +131,50 @@ def test_screener_pagination_distinguishes_complete_and_prefix_results():
         "total_lower_bound": 51,
         "truncated": True,
     }
+
+
+def test_screener_view_uses_canonical_ticker_cell_metadata():
+    soup = BeautifulSoup(
+        """
+        <table class="screener_table">
+          <tr><th>No.</th><th>Ticker</th><th>Company</th></tr>
+          <tr>
+            <td>1</td>
+            <td data-boxover-ticker="AAL">
+              <a class="company-ticker"><span>AAL</span></a>
+              <a class="tab-link">AAL</a>
+            </td>
+            <td>American Airlines Group Inc</td>
+          </tr>
+        </table>
+        """,
+        "html.parser",
+    )
+    rows = soup.find("table").find_all("tr")
+
+    class FakeScreener:
+        def _get_table(self, source_rows, frame, num_col_index, table_header, limit=-1):
+            del source_rows, frame, num_col_index, table_header, limit
+            return pd.DataFrame(
+                {
+                    "Ticker": ["AALAAL"],
+                    "Company": ["American Airlines Group Inc"],
+                }
+            )
+
+        def screener_view(self, **kwargs):
+            return self._get_table(rows, None, [], ["Ticker", "Company"], kwargs["limit"])
+
+    result, fetch_limit = finviz_pagination.run_screener_view(
+        FakeScreener(),
+        limit=1,
+        page=1,
+        screener_max_rows=10,
+        page_limit_max=10,
+    )
+
+    assert fetch_limit == 2
+    assert result.loc[0, "Ticker"] == "AAL"
 
 
 def test_screen_stocks_uses_bounded_screener_view(monkeypatch):

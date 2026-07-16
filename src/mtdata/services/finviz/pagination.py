@@ -1,5 +1,6 @@
 """Pagination utilities for Finviz service."""
 import math
+from types import MethodType
 from typing import Any, Dict, List, Optional, Tuple
 
 from .client import get_finviz_page_limit_max, get_finviz_screener_max_rows
@@ -162,13 +163,53 @@ def run_screener_view(
         max_rows=max_rows,
         page_limit_max=page_limit_max,
     )
-    return screener.screener_view(
-        order=order,
-        limit=fetch_limit,
-        verbose=0,
-        sleep_sec=0,
-        ascend=ascend,
-    ), fetch_limit
+    original_get_table = getattr(screener, "_get_table", None)
+
+    def _canonical_ticker_get_table(
+        instance: Any,
+        rows: Any,
+        frame: Any,
+        num_col_index: Any,
+        table_header: Any,
+        limit: int = -1,
+    ) -> Any:
+        selected_rows = list(rows[1:])
+        if limit != -1:
+            selected_rows = selected_rows[:limit]
+        result = original_get_table(
+            rows, frame, num_col_index, table_header, limit
+        )
+        if result is None or "Ticker" not in getattr(result, "columns", []):
+            return result
+        start_index = max(0, len(result) - len(selected_rows))
+        ticker_column = list(result.columns).index("Ticker")
+        for offset, row in enumerate(selected_rows):
+            cells = row.find_all("td")
+            if len(cells) < 2:
+                continue
+            ticker_cell = cells[1]
+            ticker = ticker_cell.get("data-boxover-ticker")
+            if not ticker:
+                ticker_link = ticker_cell.find("a", class_="company-ticker")
+                ticker = ticker_link.get_text(strip=True) if ticker_link else None
+            if ticker:
+                result.iloc[start_index + offset, ticker_column] = str(ticker).strip()
+        return result
+
+    if callable(original_get_table):
+        screener._get_table = MethodType(_canonical_ticker_get_table, screener)
+    try:
+        result = screener.screener_view(
+            order=order,
+            limit=fetch_limit,
+            verbose=0,
+            sleep_sec=0,
+            ascend=ascend,
+        )
+    finally:
+        if callable(original_get_table):
+            screener._get_table = original_get_table
+    return result, fetch_limit
 
 
 __all__ = [
