@@ -326,6 +326,56 @@ def analyze_microstructure(request: MarketMicrostructureRequest, gateway: Any) -
     warnings.append(
         "Metrics describe the connected broker's tick feed and do not establish centralized market-wide order flow or liquidity."
     )
+    data_quality = {
+        "feed_tier": tier,
+        "quote_coverage": float(quote_mask.mean()),
+        "trade_tick_coverage": float(trade_mask.mean()),
+        "real_volume_trade_coverage": real_share,
+        "invalid_partial_quote_ticks": int((~df["spread_valid"]).sum()),
+        "truncated": truncated,
+        "requested_start": start.isoformat(),
+        "requested_end": end.isoformat(),
+        "observed_start_epoch": float(df["epoch"].iloc[0]),
+        "observed_end_epoch": float(df["epoch"].iloc[-1]),
+    }
+    if request.detail in {"compact", "summary"}:
+        spread_key = (
+            "spread_pips"
+            if "spread_pips" in summary
+            else "spread_points"
+            if "spread_points" in summary
+            else "spread"
+        )
+        spread_unit = {
+            "spread_pips": "fx_pips",
+            "spread_points": "broker_points",
+            "spread": "absolute_price",
+        }[spread_key]
+        spread_stats = summary[spread_key]
+        return {
+            "success": True,
+            "symbol": request.symbol,
+            "summary": {
+                "feed_tier": tier,
+                "ticks": int(len(df)),
+                "duration_seconds": duration,
+                "ticks_per_second": float(len(df) / duration),
+                "spread": {
+                    "median": spread_stats.get("median"),
+                    "p95": spread_stats.get("p95"),
+                    "unit": spread_unit,
+                },
+            },
+            "data_quality": {
+                key: data_quality[key]
+                for key in (
+                    "quote_coverage",
+                    "invalid_partial_quote_ticks",
+                    "truncated",
+                )
+            },
+            "warnings": warnings,
+        }
     return {
         "success": True,
         "symbol": request.symbol,
@@ -333,18 +383,7 @@ def analyze_microstructure(request: MarketMicrostructureRequest, gateway: Any) -
         "summary": summary,
         "liquidity_events": events,
         **({"windows": windows} if request.detail == "full" else {}),
-        "data_quality": {
-            "feed_tier": tier,
-            "quote_coverage": float(quote_mask.mean()),
-            "trade_tick_coverage": float(trade_mask.mean()),
-            "real_volume_trade_coverage": real_share,
-            "invalid_partial_quote_ticks": int((~df["spread_valid"]).sum()),
-            "truncated": truncated,
-            "requested_start": start.isoformat(),
-            "requested_end": end.isoformat(),
-            "observed_start_epoch": float(df["epoch"].iloc[0]),
-            "observed_end_epoch": float(df["epoch"].iloc[-1]),
-        },
+        "data_quality": data_quality,
         "method_applicability": applicability,
         "estimator_scope": {
             "market_scope": "connected_broker_tick_feed",

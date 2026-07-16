@@ -133,7 +133,8 @@ def test_microstructure_distinguishes_trade_volume_from_quote_proxy() -> None:
     gateway = FakeGateway()
     gateway.tick_rows = _ticks(real_volume=True)
     result = analyze_microstructure(
-        MarketMicrostructureRequest(symbol="EURUSD", minutes_back=60), gateway
+        MarketMicrostructureRequest(symbol="EURUSD", minutes_back=60, detail="standard"),
+        gateway,
     )
     assert result["success"] is True
     assert result["summary"]["feed_tier"] == "trade_volume"
@@ -148,6 +149,27 @@ def test_microstructure_distinguishes_trade_volume_from_quote_proxy() -> None:
     assert result["units"]["spread_points"] == "broker_points"
     assert all("start" in item and "end" in item for item in result["liquidity_events"])
     assert all("start_epoch" not in item for item in result["liquidity_events"])
+
+
+def test_microstructure_compact_output_omits_research_events() -> None:
+    gateway = FakeGateway()
+    gateway.tick_rows = _ticks(real_volume=True)
+
+    result = analyze_microstructure(
+        MarketMicrostructureRequest(symbol="EURUSD", minutes_back=60),
+        gateway,
+    )
+
+    assert result["summary"]["feed_tier"] == "trade_volume"
+    assert result["summary"]["spread"]["unit"] == "fx_pips"
+    assert result["summary"]["spread"]["median"] == pytest.approx(1.0)
+    assert "liquidity_events" not in result
+    assert "method_applicability" not in result
+    assert set(result["data_quality"]) == {
+        "quote_coverage",
+        "invalid_partial_quote_ticks",
+        "truncated",
+    }
     assert any("broker's tick feed" in warning for warning in result["warnings"])
 
 
@@ -161,7 +183,8 @@ def test_microstructure_does_not_recount_last_trade_snapshots() -> None:
     gateway.tick_rows[0]["flags"] = 1032
 
     result = analyze_microstructure(
-        MarketMicrostructureRequest(symbol="EURUSD", minutes_back=60), gateway
+        MarketMicrostructureRequest(symbol="EURUSD", minutes_back=60, detail="standard"),
+        gateway,
     )
 
     assert result["success"] is True
