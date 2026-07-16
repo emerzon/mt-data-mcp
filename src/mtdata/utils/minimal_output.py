@@ -1709,7 +1709,7 @@ def _normalize_library_models_payload(
     *,
     verbose: bool,
     tool_name: str,
-) -> Optional[Dict[str, Any]]:
+) -> Optional[Dict[str, Any]]:  # noqa: C901
     if tool_name != "forecast_list_library_models" or verbose:
         return None
 
@@ -1720,6 +1720,44 @@ def _normalize_library_models_payload(
     library = payload.get("library")
     if not _is_empty_value(library):
         out["library"] = library
+
+    for key in ("total", "total_filtered", "available"):
+        if key in payload and not _is_empty_value(payload.get(key)):
+            out[key] = payload.get(key)
+
+    libraries = payload.get("libraries")
+    if isinstance(libraries, list):
+        compact_libraries: List[Dict[str, Any]] = []
+        for section in libraries:
+            if not isinstance(section, dict):
+                continue
+            models = section.get("models")
+            model_names: List[Any] = []
+            if isinstance(models, list):
+                for model in models:
+                    if isinstance(model, dict):
+                        model_name = model.get("display_name") or model.get("method")
+                    else:
+                        model_name = model
+                    if not _is_empty_value(model_name):
+                        model_names.append(model_name)
+            compact_section = {
+                key: value
+                for key, value in {
+                    "library": section.get("library"),
+                    "total_filtered": section.get("total_filtered"),
+                    "available": section.get("available"),
+                    "models_shown": len(model_names),
+                    "has_more": section.get("has_more"),
+                    "models": model_names,
+                    "error": section.get("error"),
+                }.items()
+                if not _is_empty_value(value)
+            }
+            if compact_section:
+                compact_libraries.append(compact_section)
+        if compact_libraries:
+            out["libraries"] = compact_libraries
 
     capabilities = payload.get("capabilities")
     compact_rows: List[Dict[str, Any]] = []
