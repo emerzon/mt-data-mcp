@@ -269,6 +269,9 @@ def _apply_options_detail(
                 "strike",
                 "barrier",
                 "maturity_days",
+                "valuation_date",
+                "maturity_date",
+                "time_to_maturity_years",
                 "price",
                 "delta",
                 "greeks_status",
@@ -455,6 +458,7 @@ def options_barrier_price(
     dividend_yield: float = 0.0,
     volatility: float = 0.2,
     rebate: float = 0.0,
+    valuation_date: Optional[str] = None,
     calendar: str = "UnitedStates.NYSE",
     maturity_basis: Literal["calendar_days", "business_days"] = "calendar_days",  # type: ignore
     detail: DetailLiteral = "compact",  # type: ignore
@@ -474,6 +478,7 @@ def options_barrier_price(
             dividend_yield=float(dividend_yield),
             volatility=float(volatility),
             rebate=float(rebate),
+            valuation_date=valuation_date,
             calendar=calendar,
             maturity_basis=maturity_basis,
         )
@@ -507,6 +512,7 @@ def options_barrier_price(
         option_type=option_type,
         barrier_type=barrier_type,
         maturity_days=maturity_days,
+        valuation_date=valuation_date,
         calendar=calendar,
         maturity_basis=maturity_basis,
         detail=detail,

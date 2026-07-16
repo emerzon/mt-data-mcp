@@ -76,6 +76,14 @@ def _quantlib_date(ql: Any, day: _dt.date) -> Any:
     return ql.Date(int(day.day), int(day.month), int(day.year))
 
 
+def _python_date_from_quantlib(value: Any) -> _dt.date:
+    return _dt.date(
+        int(value.year()),
+        int(value.month()),
+        int(value.dayOfMonth()),
+    )
+
+
 def _advance_maturity_date(
     *,
     ql: Any,
@@ -122,6 +130,7 @@ def price_barrier_option_quantlib(
     dividend_yield: float = 0.0,
     volatility: float = 0.2,
     rebate: float = 0.0,
+    valuation_date: Optional[str] = None,
     calendar: str = _DEFAULT_QUANTLIB_CALENDAR,
     maturity_basis: str = _DEFAULT_MATURITY_BASIS,
 ) -> Dict[str, Any]:
@@ -154,6 +163,20 @@ def price_barrier_option_quantlib(
     except ValueError as ex:
         return {"error": str(ex)}
     calendar_name = _normalize_quantlib_calendar_name(calendar)
+    if valuation_date is None:
+        valuation_day = _dt.datetime.now(_dt.timezone.utc).date()
+    else:
+        try:
+            valuation_day = _dt.datetime.strptime(
+                str(valuation_date).strip(),
+                "%Y-%m-%d",
+            ).date()
+        except (TypeError, ValueError):
+            return {
+                "error": (
+                    f"Invalid valuation_date: {valuation_date}. Use YYYY-MM-DD."
+                )
+            }
 
     geometry_error = _barrier_option_geometry_error(
         barrier_type=barrier_type_norm,
@@ -177,6 +200,7 @@ def price_barrier_option_quantlib(
                 rebate=rebate_val,
                 calendar=calendar_name,
                 maturity_basis=maturity_basis_norm,
+                valuation_date=valuation_day.isoformat(),
             ),
         }
 
@@ -198,7 +222,7 @@ def price_barrier_option_quantlib(
         "down_out": ql.Barrier.DownOut,
     }
 
-    ql_today = ql.Date.todaysDate()
+    ql_today = _quantlib_date(ql, valuation_day)
     ql.Settings.instance().evaluationDate = ql_today
     day_count = ql.Actual365Fixed()
     maturity = _advance_maturity_date(
@@ -208,6 +232,8 @@ def price_barrier_option_quantlib(
         maturity_days=maturity_val,
         maturity_basis=maturity_basis_norm,
     )
+    maturity_day = _python_date_from_quantlib(maturity)
+    time_to_maturity_years = float((maturity - ql_today) / 365.0)
 
     payoff = ql.PlainVanillaPayoff(opt_map[option_type_norm], float(strike_val))
     exercise = ql.EuropeanExercise(maturity)
@@ -296,6 +322,9 @@ def price_barrier_option_quantlib(
     return {
         "success": True,
         "price": float(npv),
+        "valuation_date": valuation_day.isoformat(),
+        "maturity_date": maturity_day.isoformat(),
+        "time_to_maturity_years": time_to_maturity_years,
         "delta": float(delta) if delta is not None and math.isfinite(delta) else None,
         "gamma": float(gamma) if gamma is not None and math.isfinite(gamma) else None,
         "vega": float(vega) if vega is not None and math.isfinite(vega) else None,
@@ -321,6 +350,7 @@ def price_barrier_option_quantlib(
             rebate=rebate_val,
             calendar=calendar_name,
             maturity_basis=maturity_basis_norm,
+            valuation_date=valuation_day.isoformat(),
         ),
     }
 
@@ -352,6 +382,7 @@ def _barrier_option_params(
     rebate: float,
     calendar: str,
     maturity_basis: str,
+    valuation_date: Optional[str] = None,
 ) -> Dict[str, Any]:
     return {
         "spot": float(spot),
@@ -366,6 +397,7 @@ def _barrier_option_params(
         "rebate": float(rebate),
         "calendar": str(calendar),
         "maturity_basis": str(maturity_basis),
+        **({"valuation_date": valuation_date} if valuation_date else {}),
     }
 
 

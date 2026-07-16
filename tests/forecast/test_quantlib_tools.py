@@ -42,6 +42,15 @@ def _make_fake_quantlib():  # noqa: C901
         def __sub__(self, other):
             return int(self.ordinal - other.ordinal)
 
+        def year(self):
+            return _dt.date.fromordinal(self.ordinal).year
+
+        def month(self):
+            return _dt.date.fromordinal(self.ordinal).month
+
+        def dayOfMonth(self):
+            return _dt.date.fromordinal(self.ordinal).day
+
     class _UnitedStates:
         NYSE = "NYSE"
 
@@ -286,6 +295,7 @@ def test_price_barrier_option_quantlib_exposes_calendar_overrides(monkeypatch):
         barrier_type="up_out",
         calendar="NullCalendar",
         maturity_basis="business_days",
+        valuation_date="2026-07-03",
     )
 
     assert out["success"] is True
@@ -293,6 +303,10 @@ def test_price_barrier_option_quantlib_exposes_calendar_overrides(monkeypatch):
     assert out["pricing_assumptions"]["maturity_basis"] == "business_days"
     assert out["params_used"]["calendar"] == "NullCalendar"
     assert out["params_used"]["maturity_basis"] == "business_days"
+    assert out["valuation_date"] == "2026-07-03"
+    assert out["maturity_date"] == "2026-08-02"
+    assert out["time_to_maturity_years"] == 30 / 365
+    assert out["params_used"]["valuation_date"] == "2026-07-03"
 
 
 def test_price_barrier_option_quantlib_validates_touched_down_barrier():

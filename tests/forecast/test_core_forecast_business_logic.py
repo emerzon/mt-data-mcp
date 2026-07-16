@@ -3093,9 +3093,11 @@ def test_options_and_quantlib_tool_routing(monkeypatch):
         dividend_yield=0.01,
         volatility=0.25,
         rebate=0.0,
+        valuation_date="2026-07-03",
     )
     assert out["kind"] == "price"
     assert out["spot"] == 100.0
+    assert out["valuation_date"] == "2026-07-03"
 
     out = raw_cal(
         symbol="AAPL",
@@ -3321,6 +3323,9 @@ def test_options_tools_support_compact_and_full_detail(monkeypatch):
             "delta": 0.4,
             "gamma": 0.01,
             "vega": 0.2,
+            "valuation_date": kwargs.get("valuation_date") or "2026-07-03",
+            "maturity_date": "2026-08-02",
+            "time_to_maturity_years": 30 / 365,
             "params_used": {
                 "spot": kwargs["spot"],
                 "strike": kwargs["strike"],
@@ -3360,10 +3365,20 @@ def test_options_tools_support_compact_and_full_detail(monkeypatch):
     assert "implied_volatility" not in compact_chain["options"][0]
     assert raw_chain("AAPL", detail="full")["options"][0]["implied_volatility"] == 0.2
 
-    compact_price = raw_price(100, 105, 120, 30, detail="compact")
+    compact_price = raw_price(
+        100,
+        105,
+        120,
+        30,
+        valuation_date="2026-07-03",
+        detail="compact",
+    )
     assert compact_price["price"] == 1.23
     assert compact_price["delta"] == 0.4
     assert compact_price["detail"] == "compact"
+    assert compact_price["valuation_date"] == "2026-07-03"
+    assert compact_price["maturity_date"] == "2026-08-02"
+    assert compact_price["time_to_maturity_years"] == 30 / 365
     assert compact_price["units"] == {
         "price": "premium_per_underlying_unit",
         "delta": "premium_change_per_underlying_price_unit",
