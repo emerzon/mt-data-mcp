@@ -135,7 +135,8 @@ def _invoke_cli_tool_function(
     for record in warning_records:
         category = getattr(record, "category", Warning)
         if isinstance(category, type) and issubclass(
-            category, (DeprecationWarning, PendingDeprecationWarning)
+            category,
+            (DeprecationWarning, PendingDeprecationWarning, ImportWarning),
         ):
             continue
         if isinstance(category, type) and issubclass(category, ResourceWarning):
