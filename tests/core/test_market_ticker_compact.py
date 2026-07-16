@@ -26,3 +26,19 @@ def test_compact_ticker_keeps_absolute_spread_for_non_forex_quotes() -> None:
     assert "lot_definition" not in result
     assert "pricing_basis" not in result
     assert "units" not in result
+
+
+def test_compact_ticker_preserves_delayed_freshness_label() -> None:
+    result = _compact_market_ticker_payload(
+        {
+            "success": True,
+            "symbol": "EURUSD",
+            "freshness": "delayed, tick 1m 3s ago",
+            "freshness_state": "delayed",
+            "data_age_seconds": 63.0,
+            "usable_for_live_trading": False,
+        }
+    )
+
+    assert result["freshness"] == "delayed, tick 1m 3s ago"
+    assert result["freshness_state"] == "delayed"

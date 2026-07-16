@@ -11,7 +11,6 @@ from ..utils.coercion import round_finite
 from ..utils.freshness import (
     QUOTE_STALE_SECONDS,
     format_age_seconds,
-    format_freshness_label,
 )
 from ..utils.market_metadata import (
     FRESHNESS_ANCHOR_WALL_CLOCK,
@@ -69,17 +68,6 @@ def _market_ticker_age_seconds(value: Any) -> Optional[float]:
 
 def _market_ticker_age_display(seconds: Any) -> Optional[str]:
     return format_age_seconds(seconds)
-
-
-def _market_ticker_freshness_label(payload: Dict[str, Any]) -> Optional[str]:
-    return format_freshness_label(
-        data_stale=payload.get("data_stale"),
-        market_status=payload.get("market_status"),
-        market_status_reason=payload.get("market_status_reason"),
-        age_seconds=payload.get("data_age_seconds"),
-        age_text=payload.get("data_age"),
-        item="tick",
-    )
 
 
 def _market_ticker_stale_warning(payload: Dict[str, Any], tick_time: Any) -> str:
@@ -152,7 +140,10 @@ def _compact_market_ticker_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
         "timezone",
     ):
         if key == "freshness":
-            value = _market_ticker_freshness_label(payload)
+            # The full quote builder classifies live/recent/delayed/stale using
+            # execution thresholds.  Keep that label rather than reducing it to
+            # a binary fresh/stale view in compact output.
+            value = payload.get(key)
         elif key == "time":
             value = payload.get("time_display") or payload.get("time")
         else:
