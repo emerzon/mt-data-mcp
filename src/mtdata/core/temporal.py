@@ -646,6 +646,7 @@ def _base_temporal_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
             "groups_analyzed",
             "groups_excluded",
             "min_bars_applied",
+            "overall_basis",
             *_PAGINATION_KEYS,
         )
         if key in payload
@@ -1443,6 +1444,11 @@ def temporal_analyze(  # noqa: C901
                 "end": end_str,
                 "filters": filters,
                 "overall": overall,
+                "overall_basis": (
+                    "full_filtered_sample_before_per_dimension_group_exclusions"
+                    if group_norm == "all"
+                    else "sample_after_group_exclusions"
+                ),
                 "volume_source": volume_col,
             }
             if lookback_defaulted:
@@ -1480,10 +1486,17 @@ def temporal_analyze(  # noqa: C901
                 payload.update(sample_context)
             if excluded_groups:
                 payload["excluded_groups"] = excluded_groups
-                payload["warnings"] = [
-                    "Sparse temporal groups below min_bars were excluded from "
-                    "grouped results and overall summary."
-                ]
+                if group_norm == "all":
+                    payload["warnings"] = [
+                        "Sparse temporal groups below min_bars were excluded from "
+                        "their grouped breakdowns only; overall statistics use the "
+                        "full filtered sample."
+                    ]
+                else:
+                    payload["warnings"] = [
+                        "Sparse temporal groups below min_bars were excluded from "
+                        "grouped results and overall statistics."
+                    ]
             if grouped_dimensions:
                 payload["groups"] = grouped_dimensions
             elif groups_out:

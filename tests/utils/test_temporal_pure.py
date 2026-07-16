@@ -889,6 +889,12 @@ class TestTemporalAnalyze:
             row["dimension"] == "dow" and row["group_label"] == "Sun"
             for row in r["excluded_groups"]
         )
+        assert (
+            r["overall_basis"]
+            == "full_filtered_sample_before_per_dimension_group_exclusions"
+        )
+        assert r["overall"]["bars"] == r["bars"]
+        assert "grouped breakdowns only" in r["warnings"][0]
 
     @_apply_analyze_patches
     def test_group_by_all_auto_filters_only_sparse_dow_groups(self, mock_fetch, *_):
