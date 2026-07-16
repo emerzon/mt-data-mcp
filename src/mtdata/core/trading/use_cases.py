@@ -723,9 +723,14 @@ _COMPACT_POSITION_SIZING_FIELDS = (
     "status",
     "sizing_method",
     "suggested_volume",
+    "requested_risk_currency",
+    "requested_risk_pct",
     "risk_currency",
     "risk_pct",
+    "risk_shortfall_currency",
+    "risk_shortfall_pct",
     "risk_compliance",
+    "volume_rounding",
     "min_viable_volume",
     "min_viable_risk_currency",
     "min_viable_risk_pct",
@@ -4162,6 +4167,12 @@ def run_trade_risk_analyze(  # noqa: C901
                             else "within_requested_risk"
                         )
                     )
+                    shortfall_pct = max(
+                        0.0, effective_risk_pct - float(actual_risk_pct)
+                    )
+                    shortfall_currency = max(
+                        0.0, float(risk_amount) - float(actual_risk)
+                    )
                     result["position_sizing"] = {
                         "symbol": request.symbol,
                         "direction": direction_norm,
@@ -4196,6 +4207,8 @@ def run_trade_risk_analyze(  # noqa: C901
                         "risk_compliance": risk_compliance,
                         "risk_overshoot_pct": round(overshoot_pct, 2),
                         "risk_overshoot_currency": round(overshoot_currency, 2),
+                        "risk_shortfall_pct": round(shortfall_pct, 2),
+                        "risk_shortfall_currency": round(shortfall_currency, 2),
                         "risk_over_target_reason": overshoot_reason,
                         "raw_volume": round(raw_volume, 8),
                         "volume_step": volume_step,
