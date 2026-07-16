@@ -207,10 +207,11 @@ def _run_data_fetch_candles_impl(
             spread_all_zero = True
             for bar in data:
                 if isinstance(bar, dict):
-                    if "spread" in bar and bar.get("spread") is not None:
+                    spread_value = bar.get("spread_points", bar.get("spread"))
+                    if spread_value is not None:
                         has_spread_values = True
                         try:
-                            if float(bar.get("spread", 0)) != 0.0:
+                            if float(spread_value) != 0.0:
                                 spread_all_zero = False
                                 break
                         except Exception:
@@ -222,7 +223,9 @@ def _run_data_fetch_candles_impl(
             if not has_spread_values:
                 # No spread values present at all
                 result.setdefault("warnings", []).append(
-                    "include_spread requested but returned bars do not contain 'spread' values; spread unavailable at this timeframe or source."
+                    "include_spread requested but returned bars do not contain "
+                    "spread or spread_points values; spread unavailable at this "
+                    "timeframe or source."
                 )
                 result["spread_unavailable"] = True
             elif spread_all_zero:
@@ -694,7 +697,7 @@ def _slim_projected_candles_payload(payload: Dict[str, Any]) -> None:
     if not projected_fields or "real_volume" not in projected_fields:
         for key in ("real_volume_type", "real_volume_unit"):
             payload.pop(key, None)
-    if "spread" not in projected_fields:
+    if projected_fields.isdisjoint({"spread", "spread_points"}):
         payload.pop("spread_estimate", None)
         payload.pop("spread_unavailable", None)
     _filter_candle_units_to_projected_fields(payload, projected_fields)
@@ -793,7 +796,17 @@ def _summary_candles_payload(result: Dict[str, Any]) -> Dict[str, Any]:
         if isinstance(latest, dict):
             summary["latest_candle"] = {
                 key: latest[key]
-                for key in ("time", "open", "high", "low", "close", "tick_volume", "real_volume")
+                for key in (
+                    "time",
+                    "open",
+                    "high",
+                    "low",
+                    "close",
+                    "tick_volume",
+                    "real_volume",
+                    "spread",
+                    "spread_points",
+                )
                 if key in latest
             }
         statistics = _candle_summary_statistics(rows)

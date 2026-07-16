@@ -183,7 +183,10 @@ class TestFetchCandlesCore(unittest.TestCase):
 
     @patch(_MT5_CONFIG)
     @patch(_RATES_FROM)
-    @patch(_CACHED_INFO, return_value=MagicMock())
+    @patch(
+        _CACHED_INFO,
+        return_value=SimpleNamespace(digits=5, point=0.00001),
+    )
     @patch(_RESOLVE_CTZ, return_value=None)
     @patch(_ESTIMATE_WARMUP, return_value=0)
     @patch(_GUARD, _mock_symbol_guard)
@@ -200,7 +203,12 @@ class TestFetchCandlesCore(unittest.TestCase):
         result = fetch_candles('EURUSD', limit=5, ohlcv='C', include_spread=True)
         self.assertTrue(result.get('success'))
         row_keys = list(result['data'][0].keys())
-        self.assertEqual(row_keys, ['time', 'close', 'spread'])
+        self.assertEqual(row_keys, ['time', 'close', 'spread', 'spread_points'])
+        self.assertEqual(result['data'][0]['spread'], 0.00001)
+        self.assertEqual(result['data'][0]['spread_points'], 1)
+        self.assertEqual(result['units']['spread'], 'absolute_price')
+        self.assertEqual(result['units']['spread_points'], 'broker_points')
+        self.assertEqual(result['spread_source'], 'mt5_candle')
 
     @patch(f'{_DS}.fetch_ticks')
     @patch(_MT5_CONFIG)
@@ -234,6 +242,8 @@ class TestFetchCandlesCore(unittest.TestCase):
         row = result['data'][0]
         self.assertNotIn('spread', row)
         self.assertFalse(result['spread_historical_available'])
+        self.assertNotIn('spread', result.get('units', {}))
+        self.assertNotIn('spread_points', result.get('units', {}))
         self.assertEqual(
             result['spread_reference'],
             {
