@@ -367,6 +367,16 @@ def labels_triple_barrier(
                 barrier_values = validate_barrier_unit_family_exclusivity(barrier_values)
             except ValueError as exc:
                 return {"error": str(exc)}
+            for field_name in ("tp_pct", "sl_pct", "tp_ticks", "sl_ticks"):
+                field_value = barrier_values.get(field_name)
+                if field_value is None:
+                    continue
+                try:
+                    numeric_value = float(field_value)
+                except (TypeError, ValueError):
+                    return {"error": f"{field_name} must be a finite number greater than 0."}
+                if not math.isfinite(numeric_value) or numeric_value <= 0.0:
+                    return {"error": f"{field_name} must be a finite number greater than 0."}
             horizon_bars = int(horizon)
             if horizon_bars <= 0:
                 return {"error": "horizon must be greater than 0."}
@@ -544,6 +554,32 @@ def labels_triple_barrier(
                 "direction": direction_value,
                 "horizon": horizon_bars,
                 "same_bar_policy": same_bar_policy_value,
+                "labeling_spec": {
+                    "direction": direction_value,
+                    "label_on": str(label_on),
+                    "entry_price_source": str(base_col),
+                    "same_bar_policy": same_bar_policy_value,
+                    "horizon_bars": horizon_bars,
+                    "barrier_unit": next(
+                        (
+                            unit
+                            for unit, fields in (
+                                ("absolute_price", ("tp_abs", "sl_abs")),
+                                ("percent", ("tp_pct", "sl_pct")),
+                                ("ticks", ("tp_ticks", "sl_ticks")),
+                            )
+                            if any(barrier_values.get(field) is not None for field in fields)
+                        ),
+                        None,
+                    ),
+                    "requested_barriers": {
+                        key: value
+                        for key, value in barrier_values.items()
+                        if value is not None
+                    },
+                    "trade_tick_size": trade_tick_size,
+                    "price_precision": int(price_digits) if price_digits > 0 else None,
+                },
                 "rows_before_labeling": rows_before_labeling,
                 "rows_after_labeling": rows_after_labeling,
                 "horizon_trimmed": horizon_trimmed,

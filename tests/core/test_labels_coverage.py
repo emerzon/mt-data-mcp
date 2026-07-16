@@ -80,6 +80,34 @@ class TestLabelsTripleBarrier:
         assert len(result["data"]) > 0
         assert "labels" not in result
         assert "same_bar" not in result
+        assert result["labeling_spec"]["label_on"] == "high_low"
+        assert result["labeling_spec"]["barrier_unit"] == "percent"
+        assert result["labeling_spec"]["requested_barriers"] == {
+            "tp_pct": 0.5,
+            "sl_pct": 0.5,
+        }
+
+    @pytest.mark.parametrize(
+        ("field", "value"),
+        [
+            ("tp_pct", 0.0),
+            ("tp_pct", -0.2),
+            ("sl_pct", -0.2),
+            ("tp_ticks", -20.0),
+            ("sl_ticks", 0.0),
+        ],
+    )
+    def test_distance_barriers_must_be_positive(self, field, value):
+        kwargs = {field: value}
+        paired_field = "sl_pct" if field == "tp_pct" else "tp_pct"
+        if field.endswith("ticks"):
+            paired_field = "sl_ticks" if field == "tp_ticks" else "tp_ticks"
+        kwargs[paired_field] = 20.0 if field.endswith("ticks") else 0.2
+
+        result = _get_raw_fn()("EURUSD", horizon=3, **kwargs)
+
+        assert field in result["error"]
+        assert "greater than 0" in result["error"]
 
     def test_triple_barrier_helper_short_history_keeps_return_arity(self):
         from mtdata.core.labels import _build_triple_barrier_outputs
