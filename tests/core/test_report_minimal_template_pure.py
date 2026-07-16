@@ -29,11 +29,19 @@ def test_template_minimal_builds_fast_path_without_basic_template() -> None:
         if func_name == "forecast_generate":
             assert kwargs["method"] == "arima"
             return {
-                "forecast_price": [1.1070, 1.1080, 1.1090],
-                "lower_price": [1.1040, 1.1050, 1.1060],
-                "upper_price": [1.1100, 1.1110, 1.1120],
-                "trend": "up",
-                "ci_alpha": 0.05,
+                "forecast": [
+                    {"time": "2026-03-29T11:00Z", "value": 1.1070},
+                    {"time": "2026-03-29T12:00Z", "value": 1.1080},
+                    {"time": "2026-03-29T13:00Z", "value": 1.1090},
+                ],
+                "last_observation_time": "2026-03-29T10:00Z",
+                "forecast_vs_last_price": {
+                    "direction": "bullish",
+                    "horizon_delta_pct": 0.36,
+                },
+                "ci_status": "unavailable",
+                "forecast_mode": "point_only",
+                "data_window": {"history_bars_used": 200},
                 "timezone": "UTC",
             }
         raise AssertionError(f"Unexpected tool call: {func_name}")
@@ -53,6 +61,11 @@ def test_template_minimal_builds_fast_path_without_basic_template() -> None:
     assert list(report["sections"].keys()) == ["context", "forecast"]
     assert report["sections"]["forecast"]["method"] == "arima"
     assert report["sections"]["forecast"]["timezone"] == "UTC"
+    assert report["sections"]["forecast"]["forecast"][-1]["value"] == 1.1090
+    assert report["sections"]["forecast"]["last_observation_time"] == "2026-03-29T10:00Z"
+    assert report["sections"]["forecast"]["forecast_vs_last_price"]["direction"] == "bullish"
+    assert report["sections"]["forecast"]["ci_status"] == "unavailable"
+    assert "error" not in report["sections"]["forecast"]
     assert report["sections"]["forecast"]["selection_mode"] == "direct"
     assert "skips backtest ranking" in report["sections"]["forecast"]["selection_note"]
     assert report["sections"]["context"]["timezone"] == "UTC"

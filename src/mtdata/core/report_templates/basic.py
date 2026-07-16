@@ -6,6 +6,8 @@ from ...utils.coercion import safe_float as _safe_float
 from ..report.utils import (
     attach_candle_freshness_diagnostics,
     attach_multi_timeframes,
+    adapt_forecast_payload_for_report,
+    extract_report_forecast_values,
     now_utc_iso,
     parse_table_tail,
     pick_best_forecast_method,
@@ -341,21 +343,8 @@ def _compute_compact_trend(rows: List[Dict[str, Any]]) -> Optional[Dict[str, Any
 
 
 def _extract_forecast_values(payload: Dict[str, Any]) -> Optional[List[float]]:
-    if not isinstance(payload, dict):
-        return None
-    for key in ('forecast_price', 'forecast_return', 'forecast_series', 'forecast'):
-        vals = payload.get(key)
-        if isinstance(vals, list) and vals:
-            parsed: List[float] = []
-            for value in vals:
-                try:
-                    parsed.append(float(value))
-                except Exception:
-                    parsed = []
-                    break
-            if parsed:
-                return parsed
-    return None
+    values = extract_report_forecast_values(payload)
+    return values or None
 
 
 def _is_degenerate_forecast_payload(payload: Dict[str, Any]) -> bool:
@@ -845,17 +834,7 @@ def template_basic(  # noqa: C901
         else:
             report['sections']['forecast'] = {
                 'method': selected_method,
-                'forecast_price': selected_forecast.get('forecast_price'),
-                'lower_price': selected_forecast.get('lower_price'),
-                'upper_price': selected_forecast.get('upper_price'),
-                'trend': selected_forecast.get('trend'),
-                'ci_alpha': selected_forecast.get('ci_alpha'),
-                'timezone': selected_forecast.get('timezone'),
-                'last_observation_epoch': selected_forecast.get('last_observation_epoch'),
-                'forecast_start_epoch': selected_forecast.get('forecast_start_epoch'),
-                'forecast_anchor': selected_forecast.get('forecast_anchor'),
-                'forecast_start_gap_bars': selected_forecast.get('forecast_start_gap_bars'),
-                'forecast_step_seconds': selected_forecast.get('forecast_step_seconds'),
+                **adapt_forecast_payload_for_report(selected_forecast),
             }
             if selected_method != best_name:
                 report['sections']['forecast']['fallback_from'] = best_name

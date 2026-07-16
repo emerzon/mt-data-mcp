@@ -25,6 +25,109 @@ def now_utc_iso() -> str:
     return datetime.now(timezone.utc).strftime(TIME_DISPLAY_FORMAT)
 
 
+_REPORT_FORECAST_FIELDS = (
+    "forecast",
+    "forecast_summary",
+    "forecast_price",
+    "forecast_return",
+    "forecast_series",
+    "lower_price",
+    "upper_price",
+    "trend",
+    "forecast_vs_last_price",
+    "uncertainty",
+    "ci_status",
+    "ci_alpha",
+    "forecast_mode",
+    "quantity",
+    "quantity_note",
+    "timezone",
+    "last_observation_time",
+    "last_observation_epoch",
+    "forecast_start_time",
+    "forecast_start_epoch",
+    "forecast_anchor",
+    "forecast_start_gap_bars",
+    "forecast_step_seconds",
+    "data_window",
+    "freshness",
+    "last_price",
+    "path_flat",
+    "path_range",
+    "volatility_per_bar",
+    "volatility_annualized",
+    "volatility_horizon",
+    "volatility_horizon_annualized",
+    "volatility_unit",
+    "warnings",
+)
+
+
+def extract_report_forecast_values(payload: Any) -> List[float]:
+    """Extract finite forecast values from legacy or canonical forecast payloads."""
+    if not isinstance(payload, dict):
+        return []
+
+    values: List[float] = []
+
+    def _append(value: Any) -> None:
+        if isinstance(value, list):
+            for item in value:
+                _append(item)
+            return
+        if isinstance(value, dict):
+            for key in (
+                "value",
+                "forecast_price",
+                "forecast_return",
+                "volatility",
+                "volatility_per_bar",
+            ):
+                if key in value:
+                    _append(value.get(key))
+                    return
+            return
+        try:
+            numeric = float(value)
+        except (TypeError, ValueError):
+            return
+        if math.isfinite(numeric):
+            values.append(numeric)
+
+    for key in (
+        "forecast_price",
+        "forecast_return",
+        "forecast_series",
+        "forecast",
+        "volatility_per_bar",
+        "volatility_annualized",
+        "volatility_horizon",
+        "volatility_horizon_annualized",
+    ):
+        if key in payload:
+            _append(payload.get(key))
+        if values:
+            return values
+
+    summary = payload.get("forecast_summary")
+    if isinstance(summary, dict):
+        _append(summary.get("first"))
+        _append(summary.get("last"))
+    return values
+
+
+def adapt_forecast_payload_for_report(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Keep canonical forecast decisions and timing while dropping engine noise."""
+    out = {
+        key: payload.get(key)
+        for key in _REPORT_FORECAST_FIELDS
+        if payload.get(key) not in (None, "", [], {})
+    }
+    if not extract_report_forecast_values(payload):
+        out["error"] = "Forecast result did not contain any finite forecast values."
+    return out
+
+
 def parse_table_tail(data: Any, tail: int = 1) -> List[Dict[str, Any]]:
     """Return the last N rows from a tabular payload (list[dict] or {data|bars: ...})."""
     try:

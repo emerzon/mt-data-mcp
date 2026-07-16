@@ -515,6 +515,7 @@ def _make_full_sections():
         },
         "forecast": {
             "method": "EMA",
+            "forecast": [{"time": "2026-01-01T01:00Z", "value": 1.103}],
         },
         "barriers": {
             "long": {
@@ -1253,6 +1254,26 @@ class TestReportWarnings:
         assert res["sections_status"]["sections"]["forecast"] == "error"
         assert res["completeness"] == "failed"
         assert res["success"] is False
+
+    def test_forecast_section_without_finite_values_is_not_healthy(self):
+        from mtdata.core.report.use_cases import _build_sections_status
+
+        status = _build_sections_status(
+            {
+                "forecast": {
+                    "method": "theta",
+                    "forecast": [{"time": "2026-01-01T01:00Z", "value": None}],
+                }
+            }
+        )
+
+        assert status["sections"]["forecast"] == "error"
+        assert status["details"]["forecast"]["errors"] == [
+            {
+                "path": "forecast",
+                "message": "Forecast section contains no finite forecast values.",
+            }
+        ]
 
 
 # ---------------------------------------------------------------------------

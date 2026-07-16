@@ -2,7 +2,12 @@ from __future__ import annotations
 
 from typing import Any, Dict, Iterable, Optional
 
-from ..report.utils import now_utc_iso, parse_table_tail, resolve_report_context_indicators
+from ..report.utils import (
+    adapt_forecast_payload_for_report,
+    now_utc_iso,
+    parse_table_tail,
+    resolve_report_context_indicators,
+)
 from ...shared.schema import DenoiseSpec
 from .basic import _TREND_COMPACT_LEGEND, _compute_compact_trend, _get_raw_result
 
@@ -145,24 +150,12 @@ def template_minimal(
         }
         return report
 
-    report["sections"]["forecast"] = {
+    forecast_section = {
         "method": forecast_method,
         "library": forecast_library,
         "selection_mode": "direct",
         "selection_note": "Minimal template skips backtest ranking and barrier optimization.",
-        "forecast_price": fc.get("forecast_price"),
-        "forecast_return": fc.get("forecast_return"),
-        "forecast_series": fc.get("forecast_series"),
-        "lower_price": fc.get("lower_price"),
-        "upper_price": fc.get("upper_price"),
-        "trend": fc.get("trend"),
-        "ci_alpha": fc.get("ci_alpha"),
-        "quantity": fc.get("quantity"),
-        "timezone": fc.get("timezone"),
-        "last_observation_epoch": fc.get("last_observation_epoch"),
-        "forecast_start_epoch": fc.get("forecast_start_epoch"),
-        "forecast_anchor": fc.get("forecast_anchor"),
-        "forecast_start_gap_bars": fc.get("forecast_start_gap_bars"),
-        "forecast_step_seconds": fc.get("forecast_step_seconds"),
     }
+    forecast_section.update(adapt_forecast_payload_for_report(fc))
+    report["sections"]["forecast"] = forecast_section
     return report

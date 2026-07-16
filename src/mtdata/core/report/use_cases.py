@@ -10,6 +10,7 @@ from typing import Any, Dict, List, Optional
 from ..execution_logging import log_operation_exception, run_logged_operation
 from ..output_contract import normalize_output_detail
 from .requests import ReportGenerateRequest
+from .utils import extract_report_forecast_values
 
 logger = logging.getLogger(__name__)
 
@@ -205,6 +206,15 @@ def _build_sections_status(sections: Dict[str, Any]) -> Dict[str, Any]:
         has_error = _has_payload_error(payload)
         has_content = _has_payload_content(payload)
         errors = _collect_payload_errors(payload)
+        if str(name) == "forecast" and not extract_report_forecast_values(payload):
+            has_error = True
+            has_content = False
+            missing_error = {
+                "path": "forecast",
+                "message": "Forecast section contains no finite forecast values.",
+            }
+            if missing_error not in errors:
+                errors.append(missing_error)
         if has_error and has_content:
             status = "partial"
         elif has_error:
