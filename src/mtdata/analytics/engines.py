@@ -431,7 +431,8 @@ def analyze_execution_quality(request: TradeExecutionQualityRequest, gateway: An
     order_by_ticket = {int(row.get("ticket") or 0): row for row in orders if row.get("ticket")}
     fills = []
     skipped = {"non_trade": 0, "filter": 0, "unbenchmarked": 0, "missing_markout": 0}
-    for deal in sorted(deals, key=lambda row: (float(row.get("time_msc") or 0), int(row.get("ticket") or 0))):
+    eligible_deals = []
+    for deal in deals:
         side = _deal_side(deal, gateway)
         volume = float(deal.get("volume") or 0.0)
         symbol = str(deal.get("symbol") or "").strip()
@@ -444,6 +445,22 @@ def analyze_execution_quality(request: TradeExecutionQualityRequest, gateway: An
         if request.magic is not None and int(deal.get("magic") or 0) != int(request.magic):
             skipped["filter"] += 1
             continue
+        eligible_deals.append(deal)
+
+    eligible_deals.sort(
+        key=lambda row: (
+            float(row.get("time_msc") or 0),
+            int(row.get("ticket") or 0),
+        ),
+        reverse=True,
+    )
+    benchmark_sources = {"arrival_quote": 0, "order_price": 0, "order_price_fallback": 0}
+    processed_candidates = 0
+    for deal in eligible_deals:
+        processed_candidates += 1
+        side = _deal_side(deal, gateway)
+        volume = float(deal.get("volume") or 0.0)
+        symbol = str(deal.get("symbol") or "").strip()
         order = order_by_ticket.get(int(deal.get("order") or 0), {})
         fill_epoch = float(deal.get("time_msc") or 0) / 1000.0 or float(deal.get("time") or 0)
         qstart = datetime.fromtimestamp(fill_epoch - request.quote_window_seconds, tz=timezone.utc)
@@ -456,15 +473,24 @@ def analyze_execution_quality(request: TradeExecutionQualityRequest, gateway: An
             latest = before.iloc[-1]
             arrival = float(latest["ask"] if side == "buy" else latest["bid"])
             benchmark_source = "arrival_quote"
-        if not arrival or arrival <= 0:
+        if request.benchmark == "order_price":
             candidate = float(order.get("price_open") or order.get("price_current") or 0.0)
             if candidate > 0:
                 arrival = candidate
                 benchmark_source = "order_price"
+        elif (
+            (not arrival or arrival <= 0)
+            and request.benchmark_fallback == "order_price"
+        ):
+            candidate = float(order.get("price_open") or order.get("price_current") or 0.0)
+            if candidate > 0:
+                arrival = candidate
+                benchmark_source = "order_price_fallback"
         fill_price = float(deal.get("price") or 0.0)
         if not arrival or fill_price <= 0:
             skipped["unbenchmarked"] += 1
             continue
+        benchmark_sources[str(benchmark_source)] += 1
         sign = 1.0 if side == "buy" else -1.0
         slippage_bps = sign * (fill_price - arrival) / arrival * 10_000.0
         time_setup_msc = float(order.get("time_setup_msc") or 0.0)
@@ -529,6 +555,12 @@ def analyze_execution_quality(request: TradeExecutionQualityRequest, gateway: An
         fills.append(item)
         if len(fills) >= request.limit:
             break
+    fills.sort(
+        key=lambda item: (
+            float(item.get("fill_epoch") or 0),
+            int(item.get("deal_ticket") or 0),
+        )
+    )
     slippages = [float(item["slippage_bps"]) for item in fills]
     market_order_fills = [item for item in fills if item.get("is_market_order")]
     non_market_order_fills = [item for item in fills if not item.get("is_market_order")]
@@ -572,19 +604,55 @@ def analyze_execution_quality(request: TradeExecutionQualityRequest, gateway: An
                 if label == "by_order_type":
                     row["order_to_fill_ms"] = _percentiles(items["order_to_fill_ms"])
                 breakdowns[label].append(row)
+    sample_start = format_epoch_utc(fills[0]["fill_epoch"]) if fills else None
+    sample_end = format_epoch_utc(fills[-1]["fill_epoch"]) if fills else None
+    benchmark_attempts = len(fills) + skipped["unbenchmarked"]
+    fallback_count = benchmark_sources["order_price_fallback"]
+    warnings = []
+    if fallback_count:
+        warnings.append(
+            f"{fallback_count} fill(s) used order price because no arrival quote was available."
+        )
     return {
         "success": True,
         "summary": summary,
         "breakdowns": breakdowns,
         **({"items": fills} if request.detail == "full" else {}),
         "sample_quality": {"status": "ok" if len(fills) >= request.min_sample else "insufficient", "minimum": request.min_sample, "observed": len(fills)},
-        "data_quality": {"history_deals": len(deals), "history_orders": len(orders), "matched_fills": len(fills), "skipped": skipped},
+        "data_quality": {
+            "history_deals": len(deals),
+            "history_orders": len(orders),
+            "eligible_trade_deals": len(eligible_deals),
+            "processed_candidates": processed_candidates,
+            "matched_fills": len(fills),
+            "skipped": skipped,
+            "benchmark": {
+                "requested": request.benchmark,
+                "fallback_policy": request.benchmark_fallback,
+                "source_counts": benchmark_sources,
+                "fallback_count": fallback_count,
+                "arrival_quote_coverage": (
+                    benchmark_sources["arrival_quote"] / benchmark_attempts
+                    if benchmark_attempts
+                    else None
+                ),
+            },
+        },
+        "sample": {
+            "selection_order": "latest_first",
+            "display_order": "chronological",
+            "total_eligible": len(eligible_deals),
+            "sample_start": sample_start,
+            "sample_end": sample_end,
+            "truncated": processed_candidates < len(eligible_deals),
+        },
         "latency_definition": {
             "market_order_latency_ms": "market_order_setup_to_fill_elapsed_time",
             "non_market_order_latency_ms": "non_market_order_setup_to_fill_elapsed_time_including_pending_wait",
             "order_to_fill_ms": "all_order_setup_to_fill_elapsed_time_including_pending_wait",
         },
         "units": {"slippage_bps": "basis_points_positive_is_worse", "markout_bps": "basis_points_positive_is_favorable", "market_order_latency_ms": "milliseconds", "non_market_order_latency_ms": "milliseconds", "order_to_fill_ms": "milliseconds"},
+        "warnings": warnings,
     }
 
 

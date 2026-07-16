@@ -45,6 +45,7 @@ class TradeExecutionQualityRequest(BaseModel):
     magic: Optional[int] = None
     limit: int = Field(200, ge=1, le=1_000)
     benchmark: Literal["arrival_quote", "order_price"] = "arrival_quote"
+    benchmark_fallback: Literal["skip", "order_price"] = "skip"
     quote_window_seconds: int = Field(5, ge=1, le=60)
     markout_seconds: List[int] = Field(default_factory=lambda: [1, 5, 30])
     min_sample: int = Field(30, ge=1)

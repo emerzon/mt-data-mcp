@@ -335,8 +335,71 @@ def test_execution_quality_handles_empty_tick_history() -> None:
     )
 
     assert result["success"] is True
-    assert result["summary"]["fills"] == 1
-    assert result["data_quality"]["skipped"]["missing_markout"] == 2
+    assert result["summary"]["fills"] == 0
+    assert result["data_quality"]["skipped"]["unbenchmarked"] == 1
+    assert result["data_quality"]["benchmark"]["fallback_count"] == 0
+    assert result["data_quality"]["benchmark"]["arrival_quote_coverage"] == 0.0
+
+    fallback_result = analyze_execution_quality(
+        TradeExecutionQualityRequest(
+            minutes_back=60,
+            markout_seconds=[1],
+            benchmark_fallback="order_price",
+            detail="full",
+        ),
+        gateway,
+    )
+    assert fallback_result["summary"]["fills"] == 1
+    assert fallback_result["items"][0]["benchmark_source"] == "order_price_fallback"
+    assert fallback_result["data_quality"]["benchmark"]["fallback_count"] == 1
+    assert "used order price" in fallback_result["warnings"][0]
+
+
+def test_execution_quality_limit_selects_latest_eligible_fill() -> None:
+    gateway = FakeGateway()
+    start = _now() - 100
+    gateway.tick_rows = []
+    gateway.orders = [
+        {"ticket": 10, "type": 0, "price_open": 1.1, "volume_initial": 1.0},
+        {"ticket": 11, "type": 0, "price_open": 1.2, "volume_initial": 1.0},
+    ]
+    gateway.deals = [
+        {
+            "ticket": 20,
+            "order": 10,
+            "symbol": "EURUSD",
+            "type": 0,
+            "volume": 1.0,
+            "price": 1.1001,
+            "time_msc": start * 1000,
+        },
+        {
+            "ticket": 21,
+            "order": 11,
+            "symbol": "EURUSD",
+            "type": 0,
+            "volume": 1.0,
+            "price": 1.2001,
+            "time_msc": (start + 50) * 1000,
+        },
+    ]
+
+    result = analyze_execution_quality(
+        TradeExecutionQualityRequest(
+            minutes_back=60,
+            limit=1,
+            min_sample=1,
+            benchmark="order_price",
+            markout_seconds=[1],
+            detail="full",
+        ),
+        gateway,
+    )
+
+    assert [item["deal_ticket"] for item in result["items"]] == [21]
+    assert result["sample"]["selection_order"] == "latest_first"
+    assert result["sample"]["total_eligible"] == 2
+    assert result["sample"]["truncated"] is True
 
 
 def test_strategy_validation_returns_walk_forward_oos_metrics() -> None:
