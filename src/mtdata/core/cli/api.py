@@ -507,7 +507,7 @@ def _write_cli_text(text: str, *, stream: Any = None) -> None:
             pass
 
 
-def _render_cli_result(result: Any, *, args: Any, cmd_name: str) -> None:
+def _render_cli_result(result: Any, *, args: Any, cmd_name: str) -> Any:
     verbose = resolve_output_contract(args).verbose
     result = _attach_cli_meta(result, cmd_name=cmd_name, verbose=verbose)
     result = _select_output_fields(result, getattr(args, "fields", None))
@@ -520,10 +520,13 @@ def _render_cli_result(result: Any, *, args: Any, cmd_name: str) -> None:
     )
     if output:
         _write_cli_text(output)
+    return result
 
 
 def _result_has_tool_error(result: Any) -> bool:
     if isinstance(result, dict):
+        if result.get("success") is False:
+            return True
         if bool(result.get("no_action", False)) and result.get("success") is not True:
             return True
         err = result.get("error")
@@ -533,6 +536,11 @@ def _result_has_tool_error(result: Any) -> bool:
     if isinstance(result, str):
         return result.strip().lower().startswith("error:")
     return False
+
+
+def _render_cli_result_status(result: Any, *, args: Any, cmd_name: str) -> int:
+    rendered_result = _render_cli_result(result, args=args, cmd_name=cmd_name)
+    return int(_result_has_tool_error(rendered_result))
 
 
 def _json_parse_errors_requested() -> bool:
@@ -580,6 +588,13 @@ class _CLIArgumentParser(argparse.ArgumentParser):
             _write_cli_text(json.dumps(payload, ensure_ascii=False, indent=2))
             self.exit(2)
         super().error(message)
+
+
+def _resolve_cli_output_contract_or_error(parser: argparse.ArgumentParser, args: Any):
+    try:
+        return resolve_output_contract(args)
+    except (TypeError, ValueError) as exc:
+        parser.error(str(exc))
 
 
 def get_function_info(func):
@@ -1864,8 +1879,11 @@ def main():
                     "__cli_raw": True,
                 },
             )
-            _render_cli_result(out, args=args, cmd_name="forecast_generate")
-            return 1 if _result_has_tool_error(out) else 0
+            return _render_cli_result_status(
+                out,
+                args=args,
+                cmd_name="forecast_generate",
+            )
 
         cmd_parser.set_defaults(func=_forecast_generate_cmd)
 
@@ -1882,7 +1900,8 @@ def main():
         parser.print_help()
         return 1
 
-    _configure_cli_logging(verbose=resolve_output_contract(args).verbose)
+    output_contract = _resolve_cli_output_contract_or_error(parser, args)
+    _configure_cli_logging(verbose=output_contract.verbose)
 
     try:
         status = args.func(args)

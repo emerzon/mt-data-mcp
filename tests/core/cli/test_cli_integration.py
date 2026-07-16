@@ -1234,7 +1234,9 @@ class TestForecastGenerateIntegration:
 
     @patch("mtdata.core.cli.api.discover_tools")
     def test_forecast_generate_forwards_shared_output_controls(self, mock_discover):
-        mock_fn = MagicMock(return_value={"success": True, "forecast": [1.0]})
+        mock_fn = MagicMock(
+            return_value={"success": True, "forecast": [1.0], "method": "theta"}
+        )
         mock_fn.__module__ = "mtdata.core.server"
         mock_fn.__name__ = "forecast_generate"
         mock_fn.__doc__ = "Generate forecasts."
@@ -1260,9 +1262,9 @@ class TestForecastGenerateIntegration:
             result = main()
 
         assert result == 0
-        call = mock_fn.call_args.kwargs
-        assert call["extras"] == "metadata"
-        assert call["fields"] == "forecast,method"
+        call_kwargs = mock_fn.call_args.kwargs
+        assert call_kwargs["extras"] == "metadata"
+        assert call_kwargs["fields"] == "forecast,method"
 
     @patch("mtdata.core.cli.api.discover_tools")
     def test_forecast_generate_accepts_symbol_flag_alias(self, mock_discover):
@@ -1542,6 +1544,52 @@ class TestForecastGenerateIntegration:
 
 
 class TestEdgeCases:
+
+    @patch("mtdata.core.cli.api.discover_tools")
+    def test_invalid_extras_preserves_json_argument_error_contract(
+        self, mock_discover, capsys
+    ):
+        def sample_tool():
+            return {"success": True, "value": 1}
+
+        mock_discover.return_value = {
+            "sample_tool": {
+                "func": sample_tool,
+                "meta": {"description": "Sample tool"},
+            }
+        }
+
+        with patch(
+            "sys.argv",
+            ["cli.py", "sample_tool", "--extras", "nonsense", "--json"],
+        ), pytest.raises(SystemExit, match="2"):
+            main()
+
+        payload = json.loads(capsys.readouterr().out)
+        assert payload["success"] is False
+        assert payload["error_code"] == "cli_invalid_arguments"
+        assert "extras" in payload["error"]
+
+    @patch("mtdata.core.cli.api.discover_tools")
+    def test_invalid_output_fields_exit_nonzero(self, mock_discover):
+        def sample_tool():
+            return {"success": True, "value": 1}
+
+        mock_discover.return_value = {
+            "sample_tool": {
+                "func": sample_tool,
+                "meta": {"description": "Sample tool"},
+            }
+        }
+
+        with patch(
+            "sys.argv",
+            ["cli.py", "sample_tool", "--fields", "missing", "--json"],
+        ):
+            status = main()
+
+        assert status == 1
+        assert mock_discover.called
 
     @patch("mtdata.core.cli.api.discover_tools")
     def test_json_mode_formats_argparse_failures_as_json(self, mock_discover, capsys):

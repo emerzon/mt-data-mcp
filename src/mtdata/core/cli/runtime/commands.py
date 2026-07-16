@@ -201,7 +201,7 @@ def create_command_function(  # noqa: C901
     func_info: Dict[str, Any],
     *,
     cmd_name: str,
-    render_cli_result: Callable[..., None],
+    render_cli_result: Callable[..., Any],
     result_has_tool_error: Callable[[Any], bool],
     normalize_cli_list_value: Callable[[Any], Any],
     parse_kv_string: Callable[[str], Optional[Dict[str, Any]]],
@@ -526,7 +526,7 @@ def create_command_function(  # noqa: C901
             )
         else:
             result = func_info["func"](**kwargs)
-        render_cli_result(result, args=args, cmd_name=cmd_name)
-        return 1 if result_has_tool_error(result) else 0
+        rendered_result = render_cli_result(result, args=args, cmd_name=cmd_name)
+        return 1 if result_has_tool_error(rendered_result) else 0
 
     return command_func
