@@ -554,6 +554,37 @@ def build_level_confluence_payload(
         for role in ("above", "below", "at")
     }
     out["level_coverage"] = side_counts
+    volume_profile_contributed = any(
+        "volume_profile" in set(cluster.get("source_families") or [])
+        for cluster in top_clusters
+    )
+    if volume_profile_contributed and isinstance(volume_profile_payload, dict):
+        diagnostics = volume_profile_payload.get("diagnostics")
+        fallback_reason = (
+            diagnostics.get("auto_fallback_reason")
+            if isinstance(diagnostics, dict)
+            else None
+        )
+        volume_profile_quality = {
+            key: value
+            for key, value in {
+                "source": volume_profile_payload.get("profile_source")
+                or volume_profile_payload.get("source"),
+                "volume_kind": volume_profile_payload.get("volume_kind"),
+                "is_synthetic": volume_profile_payload.get("is_synthetic"),
+                "accuracy": volume_profile_payload.get("volume_profile_accuracy"),
+                "volume_source_quality": volume_profile_payload.get(
+                    "volume_source_quality"
+                ),
+                "fallback_reason": fallback_reason,
+                "warnings": volume_profile_payload.get("warnings"),
+            }.items()
+            if value not in (None, "", [], {})
+        }
+        if volume_profile_quality:
+            out["source_quality"] = {
+                "volume_profile": volume_profile_quality,
+            }
     if detail_value == "compact":
         out["count"] = len(top_clusters)
     else:
