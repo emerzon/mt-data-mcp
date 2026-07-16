@@ -413,6 +413,25 @@ def test_forecast_strategy_folds_cover_computed_signal_window(monkeypatch) -> No
     assert result["validation"]["forecast_signal_anchor_limit"] == 200
 
 
+def test_portfolio_risk_marks_empty_position_book() -> None:
+    gateway = FakeGateway()
+    gateway.positions = []
+
+    result = decompose_portfolio_risk(
+        PortfolioRiskDecomposeRequest(),
+        gateway,
+    )
+
+    assert result == {
+        "success": True,
+        "empty": True,
+        "positions": 0,
+        "message": "No open positions.",
+        "summary": {"positions": 0},
+        "risk": [],
+    }
+
+
 def test_portfolio_risk_reconciles_component_expected_shortfall() -> None:
     gateway = FakeGateway()
     gateway.account_info = lambda: SimpleNamespace(currency="USD", equity=25000.0)

@@ -1021,7 +1021,14 @@ def decompose_portfolio_risk(request: PortfolioRiskDecomposeRequest, gateway: An
             "proposed": True,
         })
     if not positions:
-        return {"success": True, "message": "No open positions.", "summary": {"positions": 0}, "risk": []}
+        return {
+            "success": True,
+            "empty": True,
+            "positions": 0,
+            "message": "No open positions.",
+            "summary": {"positions": 0},
+            "risk": [],
+        }
     sensitivities: Dict[str, float] = {}
     proposed_sensitivity: Optional[Tuple[str, float]] = None
     failures = []
