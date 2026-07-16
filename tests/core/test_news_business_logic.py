@@ -288,6 +288,10 @@ def test_news_tool_compact_and_full_detail_contract(monkeypatch) -> None:
             "relative_time": "9 days ago",
         }
     ]
+    assert compact["providers_used"] == ["finviz"]
+    assert compact["delivery"] == "aggregated_web_feed"
+    assert compact["is_realtime"] is False
+    assert compact["freshness_warning"]["providers"] == ["finviz"]
 
     assert full["instrument"] == {"symbol": "EURUSD"}
     assert full["matching"] == {"embeddings": {"enabled": True}}
@@ -354,6 +358,10 @@ def test_news_output_hides_debug_fields_when_not_verbose() -> None:
     assert "related_count" not in result
     assert "market_context_count" not in result
     assert "impact_count" not in result
+    assert result["providers_used"] == ["finviz"]
+    assert result["delivery"] == "aggregated_web_feed"
+    assert result["is_realtime"] is False
+    assert result["freshness_warning"]["code"] == "non_realtime_news_provider"
     assert result["general_news"] == [
         {
             "title": "Fed preview",
@@ -367,6 +375,26 @@ def test_news_output_hides_debug_fields_when_not_verbose() -> None:
     assert "related_news" not in result
     assert "market_context" not in result
     assert "category" not in result["general_news"][0]
+
+
+def test_news_compact_keeps_item_provider_when_feeds_are_merged() -> None:
+    payload = {
+        "success": True,
+        "general_news": [
+            {"title": "Fed preview", "provider": "finviz", "source": "Reuters"},
+            {"title": "ECB preview", "provider": "mt5", "source": "Broker News"},
+        ],
+    }
+
+    result = _prepare_news_output(payload, detail="compact")
+
+    assert result["providers_used"] == ["finviz", "mt5"]
+    assert result["delivery"] == "mixed_provider_feeds"
+    assert result["is_realtime"] is False
+    assert [item["provider"] for item in result["general_news"]] == [
+        "finviz",
+        "mt5",
+    ]
 
 
 def test_news_output_keeps_debug_fields_when_verbose() -> None:

@@ -59,6 +59,27 @@ _NEWS_COMPACT_ITEM_DROP_KEYS = frozenset(
     }
 )
 _NEWS_COMPACT_SYMBOL_BUCKET_LIMIT = 5
+_NEWS_PROVIDER_DELIVERY = {
+    "finviz": {
+        "delivery": "aggregated_web_feed",
+        "is_realtime": False,
+        "freshness_note": (
+            "Finviz aggregates third-party headlines and does not guarantee "
+            "real-time delivery."
+        ),
+    },
+    "ycnbc": {
+        "delivery": "aggregated_web_feed",
+        "is_realtime": False,
+        "freshness_note": (
+            "CNBC web headlines are collected through an aggregated web feed "
+            "and are not guaranteed real-time."
+        ),
+    },
+    "mt5": {
+        "delivery": "broker_terminal_feed",
+    },
+}
 
 
 def _news_datetime_utc(value: Any) -> Optional[datetime]:
@@ -121,6 +142,7 @@ def _strip_news_compact_item_fields(
     value: Any,
     *,
     include_relevance: bool = False,
+    include_provider: bool = False,
 ) -> Any:
     if not isinstance(value, dict):
         return value
@@ -153,6 +175,9 @@ def _strip_news_compact_item_fields(
     source = value.get("source")
     if source not in (None, ""):
         out["source"] = source
+    provider = value.get("provider")
+    if include_provider and provider not in (None, ""):
+        out["provider"] = provider
     kind = value.get("kind")
     if kind not in (None, ""):
         out["kind"] = kind
@@ -179,6 +204,7 @@ def _strip_news_compact_item_fields(
         if key_text in {
             "title",
             "source",
+            "provider",
             "kind",
             "published_at",
             "relative_time",
@@ -190,6 +216,46 @@ def _strip_news_compact_item_fields(
         if key_text == "summary" and subvalue is None:
             continue
         out[key] = subvalue
+    return out
+
+
+def _news_compact_provenance(result: Dict[str, Any]) -> Dict[str, Any]:
+    providers = sorted(
+        {
+            str(item.get("provider") or "").strip().lower()
+            for bucket in _NEWS_BUCKET_KEYS
+            for item in (result.get(bucket) or [])
+            if isinstance(item, dict) and str(item.get("provider") or "").strip()
+        }
+    )
+    if not providers:
+        return {}
+
+    provider_details = {
+        provider: dict(_NEWS_PROVIDER_DELIVERY[provider])
+        for provider in providers
+        if provider in _NEWS_PROVIDER_DELIVERY
+    }
+    non_realtime = sorted(
+        provider
+        for provider, details in provider_details.items()
+        if details.get("is_realtime") is False
+    )
+    out: Dict[str, Any] = {"providers_used": providers}
+    if len(providers) == 1 and providers[0] in provider_details:
+        out["delivery"] = provider_details[providers[0]].get("delivery")
+    elif len(providers) > 1:
+        out["delivery"] = "mixed_provider_feeds"
+    if non_realtime:
+        out["is_realtime"] = False
+        out["freshness_warning"] = {
+            "code": "non_realtime_news_provider",
+            "providers": non_realtime,
+            "message": (
+                "At least one selected provider uses an aggregated feed and does "
+                "not guarantee real-time delivery."
+            ),
+        }
     return out
 
 
@@ -220,6 +286,8 @@ def normalize_news_output(
         return out
 
     out: Dict[str, Any] = {}
+    provenance = _news_compact_provenance(result)
+    include_item_provider = len(provenance.get("providers_used", [])) > 1
     for key, subvalue in result.items():
         key_text = str(key)
         if key_text in _NEWS_COMPACT_TOP_LEVEL_KEYS:
@@ -233,11 +301,13 @@ def normalize_news_output(
                 _strip_news_compact_item_fields(
                     item,
                     include_relevance=key_text == "related_news",
+                    include_provider=include_item_provider,
                 )
                 for item in subvalue
             ]
             continue
         out[key] = subvalue
+    out.update(provenance)
     return out
 
 
