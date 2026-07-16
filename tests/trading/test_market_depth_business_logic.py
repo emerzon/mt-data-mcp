@@ -352,7 +352,7 @@ def test_market_ticker_returns_lightweight_spread_snapshot() -> None:
     assert out["freshness_state"] == "stale"
     assert out["usable_for_live_trading"] is False
     assert "data_age_hours" not in out
-    assert "warning" not in out
+    assert out["warning"].startswith("Tick data may be stale")
     assert "last" not in out
     assert "tick_volume" not in out
     assert "spread_cost_per_lot" not in out
@@ -431,7 +431,7 @@ def test_market_ticker_compact_detail_omits_verbose_fields() -> None:
     assert out["stale_after_seconds"] == 300
     assert "freshness_basis" not in out
     assert "data_age" not in out
-    assert "warning" not in out
+    assert out["warning"].startswith("Tick data may be stale")
     assert "spread_cost_per_lot" not in out
     assert "spread_cost_currency" not in out
     assert "diagnostics" not in out
@@ -504,9 +504,89 @@ def test_market_ticker_price_field_returns_simple_price() -> None:
     assert out["stale_after_seconds"] == 300
     assert out["data_stale"] is True
     assert out["freshness_basis"] == "absolute_300s"
+    assert out["freshness_state"] == "stale"
+    assert out["freshness_reason"] == "stale_age"
+    assert out["usable_for_live_trading"] is False
+    assert out["live_max_age_seconds"] == 30
     assert "bid" not in out
     assert "spread_pips" not in out
     assert out["meta"]["tool"] == "market_ticker"
+
+
+def test_market_ticker_refreshes_stale_symbol_tick_from_live_stream() -> None:
+    now = 1_700_000_100.0
+    cached_tick = SimpleNamespace(
+        bid=3976.34,
+        ask=3976.84,
+        last=3976.5,
+        volume=1,
+        time=now + 3600.0,
+    )
+    stream_tick = {
+        "bid": 3981.46,
+        "ask": 3981.57,
+        "last": 3981.5,
+        "volume": 2,
+        "time": now - 1.0,
+        "time_msc": (now - 1.0) * 1000.0,
+    }
+    with patch("mtdata.core.market_depth.mt5") as mt5, patch(
+        "mtdata.core.market_depth.time.time", return_value=now
+    ), patch("mtdata.core.market_depth._use_client_tz", return_value=False):
+        mt5.COPY_TICKS_ALL = 0
+        mt5.symbol_select.return_value = True
+        mt5.symbol_info.return_value = SimpleNamespace(
+            digits=2,
+            point=0.01,
+            trade_tick_size=0.01,
+            trade_tick_value=1.0,
+            currency_profit="USD",
+        )
+        mt5.symbol_info_tick.return_value = cached_tick
+        mt5.copy_ticks_range.return_value = [stream_tick]
+
+        out = _raw_market_ticker("XAUUSD", detail="compact")
+
+    assert out["bid"] == 3981.46
+    assert out["ask"] == 3981.57
+    assert out["time_epoch"] == now - 1.0
+    assert out["usable_for_live_trading"] is True
+    assert out["quote_source"] == "mt5.copy_ticks_range"
+    assert out["quote_source_state"] == "refreshed_from_tick_stream"
+    assert out["quote_refresh_attempted"] is True
+
+
+def test_market_ticker_compact_explains_unrefreshable_future_tick() -> None:
+    now = 1_700_000_100.0
+    future_tick = SimpleNamespace(
+        bid=1.1,
+        ask=1.1002,
+        last=1.1001,
+        volume=1,
+        time=now + 10.0,
+    )
+    with patch("mtdata.core.market_depth.mt5") as mt5, patch(
+        "mtdata.core.market_depth.time.time", return_value=now
+    ), patch("mtdata.core.market_depth._use_client_tz", return_value=False):
+        mt5.COPY_TICKS_ALL = 0
+        mt5.symbol_select.return_value = True
+        mt5.symbol_info.return_value = SimpleNamespace(
+            digits=5,
+            point=0.00001,
+            trade_tick_size=0.00001,
+            trade_tick_value=1.0,
+        )
+        mt5.symbol_info_tick.return_value = future_tick
+        mt5.copy_ticks_range.return_value = []
+
+        out = _raw_market_ticker("EURUSD", detail="compact")
+
+    assert out["freshness"] == "stale, tick 0s ago"
+    assert out["freshness_reason"] == "future_timestamp"
+    assert out["timestamp_in_future"] is True
+    assert out["timestamp_skew_seconds"] == 10.0
+    assert "MT5 time alignment" in out["timestamp_warning"]
+    assert out["quote_source_state"] == "unverified_stale"
 
 
 def test_market_ticker_reports_weekend_relaxed_freshness_basis() -> None:

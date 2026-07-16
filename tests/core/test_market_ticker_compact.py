@@ -44,3 +44,27 @@ def test_compact_ticker_preserves_delayed_freshness_label() -> None:
 
     assert result["freshness"] == "delayed, tick 1m 3s ago"
     assert result["freshness_state"] == "delayed"
+
+
+def test_compact_ticker_preserves_future_timestamp_cause() -> None:
+    result = _compact_market_ticker_payload(
+        {
+            "success": True,
+            "symbol": "GBPSGD",
+            "freshness": "stale, tick 0s ago",
+            "freshness_state": "stale",
+            "freshness_reason": "future_timestamp",
+            "data_age_seconds": 0.0,
+            "usable_for_live_trading": False,
+            "timestamp_in_future": True,
+            "timestamp_skew_seconds": 6.913,
+            "timestamp_warning": "Correct MT5 clock alignment before trading.",
+            "warning": "Correct MT5 clock alignment before trading.",
+        }
+    )
+
+    assert result["freshness_reason"] == "future_timestamp"
+    assert result["timestamp_in_future"] is True
+    assert result["timestamp_skew_seconds"] == 6.913
+    assert result["timestamp_warning"] == "Correct MT5 clock alignment before trading."
+    assert "warning" not in result

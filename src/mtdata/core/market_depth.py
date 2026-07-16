@@ -3,6 +3,7 @@ import logging
 import math
 import os
 import time
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Literal, Optional
 
 from ..shared.market_units import forex_points_per_pip
@@ -131,10 +132,19 @@ def _compact_market_ticker_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
         "market_status",
         "freshness",
         "freshness_state",
+        "freshness_reason",
         "data_age_seconds",
         "usable_for_live_trading",
+        "usable_for_live_trading_basis",
         "live_max_age_seconds",
         "stale_after_seconds",
+        "timestamp_in_future",
+        "timestamp_skew_seconds",
+        "timestamp_warning",
+        "warning",
+        "quote_source",
+        "quote_source_state",
+        "quote_refresh_attempted",
         "market_status_reason",
         "time",
         "time_epoch",
@@ -157,7 +167,119 @@ def _compact_market_ticker_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     for key in ("spread", "spread_points", "spread_pips", "spread_pct"):
         if payload.get(key) is not None:
             out[key] = payload[key]
+    if out.get("warning") == out.get("timestamp_warning"):
+        out.pop("warning", None)
     return out
+
+
+def _market_ticker_tick_value(tick: Any, field: str) -> Any:
+    if isinstance(tick, dict):
+        return tick.get(field)
+    try:
+        return tick[field]
+    except Exception:
+        return getattr(tick, field, None)
+
+
+def _market_ticker_tick_epoch(tick: Any) -> Optional[float]:
+    time_msc = _market_ticker_tick_value(tick, "time_msc")
+    try:
+        epoch = float(time_msc) / 1000.0
+        if math.isfinite(epoch) and epoch > 0.0:
+            return epoch
+    except (TypeError, ValueError):
+        pass
+    try:
+        epoch = float(_market_ticker_tick_value(tick, "time"))
+    except (TypeError, ValueError):
+        return None
+    return epoch if math.isfinite(epoch) and epoch > 0.0 else None
+
+
+def _market_ticker_stream_tick(
+    gateway: Any,
+    symbol: str,
+    *,
+    now_epoch: float,
+) -> Any:
+    try:
+        rows = gateway.copy_ticks_range(
+            symbol,
+            datetime.fromtimestamp(now_epoch, tz=timezone.utc) - timedelta(minutes=15),
+            datetime.fromtimestamp(now_epoch, tz=timezone.utc) + timedelta(seconds=5),
+            gateway.COPY_TICKS_ALL,
+        )
+    except Exception:
+        return None
+    if rows is None:
+        return None
+    try:
+        candidates = list(rows)
+    except (TypeError, ValueError):
+        return None
+    candidates = [row for row in candidates if _market_ticker_tick_epoch(row) is not None]
+    if not candidates:
+        return None
+    return max(candidates, key=lambda row: float(_market_ticker_tick_epoch(row) or 0.0))
+
+
+def _market_ticker_refresh_tick(
+    gateway: Any,
+    symbol: str,
+    tick: Any,
+    *,
+    now_epoch: float,
+) -> tuple[Any, Dict[str, Any]]:
+    tick_epoch = _market_ticker_tick_epoch(tick)
+    if tick_epoch is None:
+        return tick, {"quote_source": "mt5.symbol_info_tick"}
+    source_freshness = build_tick_freshness_context(
+        symbol,
+        tick_epoch=tick_epoch,
+        now_epoch=now_epoch,
+        item="tick",
+        stale_after_seconds=_MARKET_TICKER_STALE_SECONDS,
+        age_rounder=_market_ticker_age_seconds,
+    )
+    if (
+        source_freshness.get("usable_for_live_trading") is not False
+        or source_freshness.get("freshness_policy_relaxed")
+        or source_freshness.get("market_status") == "closed"
+    ):
+        return tick, {
+            "quote_source": "mt5.symbol_info_tick",
+            "quote_source_state": "current",
+        }
+
+    stream_tick = _market_ticker_stream_tick(gateway, symbol, now_epoch=now_epoch)
+    metadata: Dict[str, Any] = {
+        "quote_source": "mt5.symbol_info_tick",
+        "quote_source_state": "unverified_stale",
+        "quote_refresh_attempted": True,
+    }
+    if stream_tick is None:
+        return tick, metadata
+    stream_epoch = _market_ticker_tick_epoch(stream_tick)
+    stream_freshness = build_tick_freshness_context(
+        symbol,
+        tick_epoch=stream_epoch,
+        now_epoch=now_epoch,
+        item="tick",
+        stale_after_seconds=_MARKET_TICKER_STALE_SECONDS,
+        age_rounder=_market_ticker_age_seconds,
+    )
+    if stream_freshness.get("usable_for_live_trading") is not True:
+        metadata["stream_tick_time_epoch"] = stream_epoch
+        return tick, metadata
+    metadata.update(
+        {
+            "quote_source": "mt5.copy_ticks_range",
+            "quote_source_state": "refreshed_from_tick_stream",
+            "symbol_info_tick_time_epoch": tick_epoch,
+            "stream_tick_time_epoch": stream_epoch,
+        }
+    )
+    return stream_tick, metadata
 
 
 def _positive_market_ticker_float(value: Any) -> Optional[float]:
@@ -579,6 +701,14 @@ def market_ticker(  # noqa: C901
                     )
                 )
 
+            quote_now_epoch = float(time.time())
+            tick, quote_source_metadata = _market_ticker_refresh_tick(
+                mt5_gateway,
+                resolved_symbol,
+                tick,
+                now_epoch=quote_now_epoch,
+            )
+
             digits = symbol_price_digits(symbol_info)
             point = symbol_price_point(symbol_info) or 0.0
             tick_size = float(getattr(symbol_info, "trade_tick_size", 0.0) or 0.0)
@@ -589,10 +719,13 @@ def market_ticker(  # noqa: C901
                 getattr(symbol_info, "trade_contract_size", None)
             )
 
-            bid = float(tick.bid) if tick.bid else None
-            ask = float(tick.ask) if tick.ask else None
-            last = float(tick.last) if tick.last else None
-            tick_time = int(float(tick.time)) if tick.time else None
+            bid_raw = _market_ticker_tick_value(tick, "bid")
+            ask_raw = _market_ticker_tick_value(tick, "ask")
+            last_raw = _market_ticker_tick_value(tick, "last")
+            bid = float(bid_raw) if bid_raw else None
+            ask = float(ask_raw) if ask_raw else None
+            last = float(last_raw) if last_raw else None
+            tick_time = _market_ticker_tick_epoch(tick)
             if bid is None and ask is None and last is None and tick_time is None:
                 return _finalize(
                     _market_ticker_error(
@@ -607,7 +740,7 @@ def market_ticker(  # noqa: C901
                         ),
                     )
                 )
-            tick_volume = getattr(tick, "volume", None)
+            tick_volume = _market_ticker_tick_value(tick, "volume")
             if tick_volume is not None:
                 try:
                     tick_volume = int(tick_volume)
@@ -681,6 +814,7 @@ def market_ticker(  # noqa: C901
                     "spread_cost_per_lot": "currency_per_lot_estimate",
                 },
             }
+            out.update(quote_source_metadata)
             time_normalization = describe_mt5_time_normalization(
                 symbol=resolved_symbol
             )
@@ -708,7 +842,7 @@ def market_ticker(  # noqa: C901
             now_epoch = None
             if tick_time is not None:
                 try:
-                    now_epoch = float(time.time())
+                    now_epoch = quote_now_epoch
                     age_seconds = max(0.0, now_epoch - float(tick_time))
                 except Exception:
                     age_seconds = None
@@ -729,7 +863,7 @@ def market_ticker(  # noqa: C901
                 if out["data_stale"]:
                     out["warning"] = _market_ticker_stale_warning(out, tick_time)
             diagnostics = {
-                "source": "mt5.symbol_info_tick",
+                "source": out.get("quote_source", "mt5.symbol_info_tick"),
                 "cache_used": False,
                 "data_freshness_seconds": _market_ticker_age_seconds(age_seconds),
                 "data_freshness_anchor": FRESHNESS_ANCHOR_WALL_CLOCK,
@@ -798,12 +932,24 @@ def market_ticker(  # noqa: C901
                     "stale_after_seconds",
                     "data_stale",
                     "freshness_basis",
+                    "freshness",
+                    "freshness_state",
+                    "freshness_reason",
+                    "usable_for_live_trading",
+                    "usable_for_live_trading_basis",
+                    "live_max_age_seconds",
+                    "timestamp_in_future",
+                    "timestamp_skew_seconds",
+                    "timestamp_warning",
                     "market_status",
                     "market_status_reason",
                     "market_status_source",
                     "freshness_policy_relaxed",
                     "note",
                     "warning",
+                    "quote_source",
+                    "quote_source_state",
+                    "quote_refresh_attempted",
                 ):
                     if out.get(key) is not None:
                         simple[key] = out.get(key)
