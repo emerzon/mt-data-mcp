@@ -52,7 +52,7 @@ forecast[12]{time,value}:
 ### Uncertainty
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| `--ci-alpha` | 0.05 | Confidence interval alpha (0.05 = 95% CI) |
+| `--ci-alpha` | not requested | Request a confidence interval (0.05 = 95% CI) |
 
 ### Pipeline
 | Parameter | Description |
@@ -303,7 +303,7 @@ mtdata-cli forecast_generate EURUSD --timeframe H1 --horizon 12 \
 | List methods | `mtdata-cli forecast_list_methods` |
 | List library models | `mtdata-cli forecast_list_library_models native` |
 | Basic forecast | `mtdata-cli forecast_generate EURUSD --method theta --horizon 12` |
-| With CI | `mtdata-cli forecast_generate EURUSD --method theta --ci-alpha 0.1` |
+| With CI | `mtdata-cli forecast_generate EURUSD --method analog --ci-alpha 0.1` |
 | Foundation method | `mtdata-cli forecast_generate EURUSD --library pretrained --method chronos2` |
 | JSON output | `mtdata-cli forecast_generate EURUSD --method theta --json` |
 
