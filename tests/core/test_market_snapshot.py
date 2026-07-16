@@ -351,6 +351,54 @@ def test_market_snapshot_exposes_quote_and_assembly_timestamps(monkeypatch):
     assert result["assembled_at"] == "2026-06-15T19:34:08Z"
 
 
+def test_market_snapshot_fetches_quote_after_analytical_sections(monkeypatch):
+    calls = []
+
+    def fake_call_section(name, symbol, timeframe, horizon, detail):
+        calls.append(name)
+        if name == "quote":
+            return {"success": True, "symbol": symbol, "mid": 1.1}
+        return {"success": True}
+
+    monkeypatch.setattr(snapshot_mod, "_call_section", fake_call_section)
+
+    _raw_market_snapshot(symbol="EURUSD", sections="quote,status,levels")
+
+    assert calls == ["status", "levels", "quote"]
+
+
+def test_market_snapshot_revalidates_quote_at_assembly_time() -> None:
+    sections = {
+        "quote": {
+            "success": True,
+            "time_epoch": 1_700_000_000.0,
+            "data_age_seconds": 29.0,
+            "live_max_age_seconds": 30.0,
+            "usable_for_live_trading": True,
+        }
+    }
+
+    warning = snapshot_mod._revalidate_snapshot_quote(
+        sections,
+        symbol="BTCUSD",
+        assembled_at_epoch=1_700_000_031.0,
+    )
+
+    quote = sections["quote"]
+    assert quote["data_age_seconds"] == 31.0
+    assert quote["usable_for_live_trading"] is False
+    assert quote["freshness_reason"] == "quote_age_exceeds_live_threshold"
+    assert warning == {
+        "code": "quote_expired_during_snapshot_assembly",
+        "message": (
+            "The quote crossed its live-readiness threshold while the snapshot "
+            "was being assembled."
+        ),
+        "quote_age_seconds": 31.0,
+        "live_max_age_seconds": 30,
+    }
+
+
 def test_market_snapshot_standard_strips_nested_request_echoes(monkeypatch):
     def fake_call_section(name, symbol, timeframe, horizon, detail):
         if name == "levels":

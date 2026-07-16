@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 from ..shared.schema import DetailLiteral, TimeframeLiteral
+from ..utils.market_metadata import build_tick_freshness_context
 from ._mcp_instance import mcp
 from .error_envelope import build_error_payload
 from .execution_logging import run_logged_operation
@@ -118,8 +119,10 @@ def _compact_quote(quote: Any) -> Any:
         "spread_pct",
         "freshness",
         "freshness_state",
+        "freshness_reason",
         "data_age_seconds",
         "usable_for_live_trading",
+        "usable_for_live_trading_basis",
         "live_max_age_seconds",
         "market_status_reason",
         "time",
@@ -127,6 +130,42 @@ def _compact_quote(quote: Any) -> Any:
         "data_stale",
     )
     return {key: normalized_quote[key] for key in keys if key in normalized_quote}
+
+
+def _revalidate_snapshot_quote(
+    sections: Dict[str, Any],
+    *,
+    symbol: str,
+    assembled_at_epoch: float,
+) -> Optional[Dict[str, Any]]:
+    quote = sections.get("quote")
+    if not isinstance(quote, dict) or _section_failed(quote):
+        return None
+    quote_epoch = _coerce_float(quote.get("time_epoch"))
+    if quote_epoch is None:
+        return None
+
+    was_usable = quote.get("usable_for_live_trading") is True
+    freshness = build_tick_freshness_context(
+        symbol,
+        tick_epoch=quote_epoch,
+        now_epoch=assembled_at_epoch,
+    )
+    quote.update(freshness)
+    if not was_usable or quote.get("usable_for_live_trading") is True:
+        return None
+
+    warning = {
+        "code": "quote_expired_during_snapshot_assembly",
+        "message": (
+            "The quote crossed its live-readiness threshold while the snapshot "
+            "was being assembled."
+        ),
+        "quote_age_seconds": quote.get("data_age_seconds"),
+        "live_max_age_seconds": quote.get("live_max_age_seconds"),
+    }
+    quote["snapshot_warning"] = warning
+    return warning
 
 
 def _utc_iso_text(epoch_seconds: float) -> str:
@@ -505,6 +544,7 @@ def _snapshot_summary_payload(sections: Dict[str, Any]) -> Dict[str, Any]:
         for key in (
             "usable_for_live_trading",
             "live_max_age_seconds",
+            "freshness_reason",
             "market_status_reason",
         ):
             if quote.get(key) is not None:
@@ -708,7 +748,9 @@ def market_snapshot(
 
     Timestamp semantics: `as_of` tracks the latest quote time when available,
     `quote_as_of` duplicates that normalized quote timestamp explicitly, and
-    `assembled_at` records when this snapshot payload was built.
+    `assembled_at` records when this snapshot payload was built. The quote runs
+    after analytical sections and its freshness is revalidated at `assembled_at`,
+    so live-readiness describes the delivered snapshot rather than an early step.
     """
 
     def _run() -> Dict[str, Any]:
@@ -724,16 +766,25 @@ def market_snapshot(
                 "sections_not_run": list(selected),
                 "section_status": {name: "not_run" for name in selected},
             }
+        run_order = tuple(name for name in selected if name != "quote")
+        if "quote" in selected:
+            run_order += ("quote",)
         section_payloads = {
             name: _call_section(name, symbol, str(timeframe), int(horizon), detail_mode)
-            for name in selected
+            for name in run_order
         }
         health = _snapshot_health(symbol, selected, section_payloads)
+        assembled_at_dt = datetime.now(timezone.utc)
         assembled_at = (
-            datetime.now(timezone.utc)
+            assembled_at_dt
             .replace(microsecond=0)
             .isoformat()
             .replace("+00:00", "Z")
+        )
+        quote_warning = _revalidate_snapshot_quote(
+            section_payloads,
+            symbol=symbol,
+            assembled_at_epoch=assembled_at_dt.timestamp(),
         )
         quote_as_of = _snapshot_quote_as_of(section_payloads)
         payload: Dict[str, Any] = {
@@ -747,6 +798,8 @@ def market_snapshot(
         }
         if quote_as_of is not None:
             payload["quote_as_of"] = quote_as_of
+        if quote_warning is not None:
+            payload["warnings"] = [quote_warning]
         if detail_mode in {"summary", "compact"}:
             payload["sections_summarized"] = list(selected)
             summary_payload = _snapshot_summary_payload(section_payloads)
