@@ -1093,7 +1093,9 @@ def regime_detect(  # noqa: C901
         `cp_confirm_bars` (default `1`, live-oriented),
         `min_cp_distance_bars`, `cp_edge_multiplier`.
     - include_series: If True, include raw time series data (probs, states) in output. Default False.
-    - lookback: Number of recent bars to include in summary/compact detail. Omit for timeframe-based defaults:
+    - lookback: Number of recent observations to analyze when `limit` is omitted,
+      and the summary window when `limit` is provided. Extra history may be fetched
+      for feature warmup but is excluded from model fitting. Omit for timeframe-based defaults:
         M1: 3000, M5: 2000, M15: 1000, M30: 800, H1: 500, H2: 400, H4: 300, H6-H12: 200-150, D1: 200, W1: 100, MN1: 48
     - min_regime_bars: Confirm a new state only after it persists for this many
         consecutive bars. Confirmation is causal and never rewrites earlier labels.
@@ -1374,6 +1376,30 @@ def regime_detect(  # noqa: C901
 
         if x.size < 2:
             return _finish({"error": "Insufficient finite observations after filter"})
+
+        if method == "rule_based":
+            analysis_limit = int(rule_based_config["window_bars"])
+            bars_analyzed = min(analysis_limit, int(price_series.size))
+            warmup_bars = max(0, int(len(df)) - bars_analyzed)
+        else:
+            analysis_limit = int(limit) if limit is not None else int(lookback)
+            observations_available = int(x.size)
+            if observations_available > analysis_limit:
+                x = x[-analysis_limit:]
+                t = t[-analysis_limit:]
+            calibration_returns = calibration_returns[-analysis_limit:]
+            bars_analyzed = int(x.size)
+            price_bars_used = bars_analyzed + (1 if target == "return" else 0)
+            warmup_bars = max(0, int(len(df)) - price_bars_used)
+
+        analysis_window_meta.update(
+            {
+                "bars_fetched": int(fetched_range_bars),
+                "warmup_bars": int(warmup_bars),
+                "bars_analyzed": int(bars_analyzed),
+                "analysis_limit": int(analysis_limit),
+            }
+        )
 
         # format times
         t_fmt = [_format_time_minimal(tt) for tt in t]

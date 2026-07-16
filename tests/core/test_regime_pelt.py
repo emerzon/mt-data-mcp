@@ -76,3 +76,40 @@ def test_pelt_detects_structural_break(monkeypatch):
     assert len(result["regimes"]) >= 2
     assert result["params_used"]["penalty_source"] == "bic_like_auto"
     assert all(row["direction_significant"] for row in result["regimes"])
+
+
+def test_pelt_lookback_bounds_analyzed_window(monkeypatch):
+    returns = np.linspace(-0.002, 0.002, 69)
+    close = 100.0 * np.exp(np.r_[0.0, np.cumsum(returns)])
+    frame = pd.DataFrame(
+        {
+            "time": np.arange(1_700_000_000, 1_700_000_000 + len(close) * 3600, 3600),
+            "open": close,
+            "high": close,
+            "low": close,
+            "close": close,
+            "tick_volume": 100,
+            "real_volume": 0,
+        }
+    )
+    monkeypatch.setattr(regime, "_regime_connection_error", lambda: None)
+    monkeypatch.setattr(regime, "_fetch_history", lambda *args, **kwargs: frame)
+
+    result = _raw_regime_detect()(
+        symbol="TEST",
+        timeframe="H1",
+        method="pelt",
+        target="return",
+        lookback=50,
+        params={"penalty": "auto", "min_size": 5},
+        detail="full",
+    )
+
+    assert result["success"] is True
+    assert sum(segment["bars"] for segment in result["regimes"]) == 50
+    assert result["analysis_window"] == {
+        "bars_fetched": 70,
+        "warmup_bars": 19,
+        "bars_analyzed": 50,
+        "analysis_limit": 50,
+    }

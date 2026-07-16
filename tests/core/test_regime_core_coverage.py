@@ -471,12 +471,46 @@ class TestRegimeDetectBOCPD:
         assert "current_regime" in res
         assert "transition_summary" in res
         assert res["analysis_window"]["range_bars_fetched"] == 80
-        assert res["analysis_window"]["bars_analyzed"] == 50
+        assert res["analysis_window"]["bars_analyzed"] == 49
         assert res["analysis_window"]["truncated"] is True
         assert any(
             "event=finish operation=regime_detect success=True" in record.message
             for record in caplog.records
         )
+
+    @patch(_FMT, side_effect=_time_fmt_stub)
+    @patch(_DENOISE, return_value="close")
+    @patch(_FETCH)
+    def test_bocpd_lookback_bounds_model_input(
+        self, mock_fetch, mock_denoise, mock_fmt
+    ):
+        mock_fetch.return_value = _make_df(70)
+        observed: dict[str, int] = {}
+
+        def _fake_bocpd(values, **_kwargs):
+            observed["bars"] = len(values)
+            return {"cp_prob": np.zeros(len(values))}
+
+        with patch("mtdata.utils.bocpd.bocpd_gaussian", side_effect=_fake_bocpd):
+            fn = _get_regime_detect()
+            res = fn(
+                "EURUSD",
+                timeframe="H1",
+                method="bocpd",
+                target="return",
+                lookback=50,
+                detail="full",
+            )
+
+        assert res.get("success") is True
+        assert observed["bars"] == 50
+        assert res["current_regime"]["bars"] == 50
+        assert res["analysis_window"] == {
+            "bars_fetched": 70,
+            "warmup_bars": 19,
+            "bars_analyzed": 50,
+            "analysis_limit": 50,
+        }
 
     @patch(_FMT, side_effect=_time_fmt_stub)
     @patch(_DENOISE, return_value="close")
