@@ -1273,3 +1273,61 @@ def test_run_wait_event_returns_connection_error_when_gateway_disconnects_mid_lo
 
     assert "error" in result
     assert "lost connection" in result["error"]
+
+
+def test_run_wait_event_rejects_unknown_symbol_before_polling() -> None:
+    class UnknownSymbolGateway(SequenceGateway):
+        def symbol_info(self, symbol):
+            return None
+
+        def symbol_select(self, symbol, visible=True):
+            return False
+
+        def copy_ticks_range(self, symbol, dt_from, dt_to, flags):
+            raise AssertionError("invalid symbols must fail before tick polling")
+
+    started = datetime(2026, 3, 15, 12, 0, 0, tzinfo=timezone.utc)
+    clock = FakeClock(started)
+    result = run_wait_event(
+        WaitEventRequest(
+            symbol="NOTAREAL",
+            max_wait_seconds=0.2,
+            poll_interval_seconds=0.1,
+        ),
+        gateway=UnknownSymbolGateway(),
+        sleep_impl=clock.sleep,
+        monotonic_impl=clock.monotonic,
+        now_utc_impl=clock.now_utc,
+    )
+
+    assert result["success"] is False
+    assert result["status"] == "error"
+    assert result["error_code"] == "symbol_not_found"
+    assert result["symbol"] == "NOTAREAL"
+
+
+def test_run_wait_event_distinguishes_unselectable_known_symbol() -> None:
+    class UnavailableSymbolGateway(SequenceGateway):
+        def symbol_info(self, symbol):
+            return SimpleNamespace(name=symbol)
+
+        def symbol_select(self, symbol, visible=True):
+            return False
+
+    started = datetime(2026, 3, 15, 12, 0, 0, tzinfo=timezone.utc)
+    clock = FakeClock(started)
+    result = run_wait_event(
+        WaitEventRequest(
+            symbol="EURUSD",
+            max_wait_seconds=0.2,
+            poll_interval_seconds=0.1,
+        ),
+        gateway=UnavailableSymbolGateway(),
+        sleep_impl=clock.sleep,
+        monotonic_impl=clock.monotonic,
+        now_utc_impl=clock.now_utc,
+    )
+
+    assert result["success"] is False
+    assert result["error_code"] == "wait_event_symbol_unavailable"
+    assert result["symbol"] == "EURUSD"

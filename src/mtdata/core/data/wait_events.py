@@ -113,6 +113,18 @@ def run_wait_event_loop(
     )
     poll_interval_seconds = float(request.poll_interval_seconds)
 
+    connection_error = _wait_event_connection_error(gateway)
+    if connection_error is not None:
+        return connection_error
+    symbol_error = _wait_event_symbol_preflight(
+        gateway,
+        request=request,
+        watch_for=watch_for,
+        boundaries=boundaries,
+    )
+    if symbol_error is not None:
+        return symbol_error
+
     if not watch_for and len(boundaries) == 1 and boundaries[0]["type"] == "candle_close":
         return _run_candle_boundary_only(
             request=request,
@@ -121,9 +133,6 @@ def run_wait_event_loop(
             sleep_impl=sleep_impl,
             now_utc=started_at_utc,
         )
-    connection_error = _wait_event_connection_error(gateway)
-    if connection_error is not None:
-        return connection_error
 
     history_state = _build_account_history_state(
         gateway=gateway,
@@ -2424,9 +2433,19 @@ def _fetch_market_ticks_range(
     try:
         if hasattr(gateway, "symbol_select"):
             try:
-                gateway.symbol_select(symbol, True)
-            except Exception:
-                pass
+                selected = gateway.symbol_select(symbol, True)
+            except Exception as exc:
+                return _wait_event_symbol_error(
+                    symbol,
+                    code="wait_event_symbol_unavailable",
+                    message=f"Could not select symbol {symbol} while waiting: {exc}",
+                )
+            if selected is False:
+                return _wait_event_symbol_error(
+                    symbol,
+                    code="wait_event_symbol_unavailable",
+                    message=f"MT5 could not select symbol {symbol} while waiting.",
+                )
         flags = getattr(gateway, "COPY_TICKS_ALL", 0)
         rows = gateway.copy_ticks_range(
             symbol,
@@ -2437,6 +2456,86 @@ def _fetch_market_ticks_range(
     except Exception as exc:
         return {"error": f"Failed to fetch tick data for {symbol}: {exc}"}
     return _normalize_tick_rows(rows)
+
+
+def _wait_event_symbol_error(
+    symbol: str,
+    *,
+    code: str,
+    message: str,
+) -> Dict[str, Any]:
+    return {
+        "success": False,
+        "status": "error",
+        "error": message,
+        "error_code": code,
+        "symbol": str(symbol).upper(),
+        "remediation": "Verify the broker symbol name and that it is available in Market Watch.",
+    }
+
+
+def _wait_event_symbol_preflight(
+    gateway: Any,
+    *,
+    request: WaitEventRequest,
+    watch_for: List[Dict[str, Any]],
+    boundaries: List[Dict[str, Any]],
+) -> Optional[Dict[str, Any]]:
+    symbols = {
+        str(symbol).upper().strip()
+        for symbol in [
+            request.symbol,
+            *(item.get("symbol") for item in watch_for),
+            *(item.get("symbol") for item in boundaries),
+        ]
+        if str(symbol or "").strip()
+    }
+    for symbol in sorted(symbols):
+        info_before = None
+        if hasattr(gateway, "symbol_info"):
+            try:
+                info_before = gateway.symbol_info(symbol)
+            except Exception as exc:
+                return _wait_event_symbol_error(
+                    symbol,
+                    code="wait_event_symbol_lookup_failed",
+                    message=f"Could not resolve symbol {symbol}: {exc}",
+                )
+
+        selected = True
+        if hasattr(gateway, "symbol_select"):
+            try:
+                selected = gateway.symbol_select(symbol, True)
+            except Exception as exc:
+                return _wait_event_symbol_error(
+                    symbol,
+                    code="wait_event_symbol_unavailable",
+                    message=f"Could not select symbol {symbol}: {exc}",
+                )
+
+        info_after = info_before
+        if info_after is None and hasattr(gateway, "symbol_info"):
+            try:
+                info_after = gateway.symbol_info(symbol)
+            except Exception as exc:
+                return _wait_event_symbol_error(
+                    symbol,
+                    code="wait_event_symbol_lookup_failed",
+                    message=f"Could not resolve symbol {symbol}: {exc}",
+                )
+            if info_after is None:
+                return _wait_event_symbol_error(
+                    symbol,
+                    code="symbol_not_found",
+                    message=f"Symbol {symbol} was not found by MT5.",
+                )
+        if selected is False:
+            return _wait_event_symbol_error(
+                symbol,
+                code="wait_event_symbol_unavailable",
+                message=f"MT5 found symbol {symbol} but could not select it for monitoring.",
+            )
+    return None
 
 
 def _build_wait_result(
