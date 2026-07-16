@@ -99,6 +99,29 @@ class TestSnapshot(unittest.TestCase):
 
 
 class TestTaskManagerBasic(_TaskManagerTestCase):
+    def test_startup_expires_old_terminal_jobs_before_recovery(self):
+        self.tm.shutdown(wait=True)
+        old_completed = JobRecord(
+            task_id="old-completed",
+            method="fake",
+            data_scope="EURUSD_H1",
+            params_hash="old",
+            status="completed",
+            completed_at=time.time() - 7200.0,
+            created_at=time.time() - 7300.0,
+        )
+        self._job_store.upsert(old_completed)
+
+        self.tm = TaskManager(
+            max_workers=2,
+            heavy_limit=1,
+            store=self._store,
+            job_store=self._job_store,
+        )
+
+        self.assertIsNone(self._job_store.get("old-completed"))
+        self.assertNotIn("old-completed", [task.task_id for task in self.tm.list_tasks()])
+
     def test_submit_and_complete(self):
         fake = _FakeMethod(delay=0.01)
         with patch("mtdata.forecast.task_manager.ForecastRegistry") as mock_reg:

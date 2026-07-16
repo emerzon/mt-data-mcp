@@ -743,10 +743,13 @@ def forecast_task_list(
     method: Optional[str] = None,
     data_scope: Optional[str] = None,
     detail: DetailLevel = "compact",
+    limit: int = 50,
+    offset: int = 0,
 ) -> Dict[str, Any]:
     """List active and recent forecast training tasks.
 
     Optionally filter by status, method, data_scope, or recent creation window.
+    Results are ordered newest first and paged with ``limit``/``offset``.
     Use ``extras='metadata'`` for expanded progress and result payloads.
     """
     def _execute() -> Dict[str, Any]:
@@ -757,9 +760,21 @@ def forecast_task_list(
                 code="forecast_task_list_invalid_since",
                 operation="forecast_task_list",
             )
+        if int(limit) < 1 or int(limit) > 500:
+            return build_error_payload(
+                "limit must be between 1 and 500.",
+                code="forecast_task_list_invalid_limit",
+                operation="forecast_task_list",
+            )
+        if int(offset) < 0:
+            return build_error_payload(
+                "offset must be >= 0.",
+                code="forecast_task_list_invalid_offset",
+                operation="forecast_task_list",
+            )
         tm = _get_task_manager()
         runtime = tm.runtime_snapshot()
-        tasks = [
+        matching_tasks = [
             task
             for task in tm.list_tasks(status=status_filter)
             if _task_matches_filters(
@@ -769,6 +784,8 @@ def forecast_task_list(
                 since_minutes=since_minutes,
             )
         ]
+        total_count = len(matching_tasks)
+        tasks = matching_tasks[int(offset) : int(offset) + int(limit)]
         items = [
             _task_list_item_payload(task, detail=detail_mode, runtime=runtime)
             for task in tasks
@@ -781,6 +798,10 @@ def forecast_task_list(
             "success": True,
             "detail": detail_mode,
             "count": len(items),
+            "total_count": int(total_count),
+            "limit": int(limit),
+            "offset": int(offset),
+            "has_more": bool(int(offset) + len(items) < total_count),
             "summary": summary,
             "tasks": items,
         }
@@ -826,6 +847,8 @@ def forecast_task_list(
         method=method,
         data_scope=data_scope,
         detail=detail,
+        limit=limit,
+        offset=offset,
     )
 
 

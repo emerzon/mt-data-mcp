@@ -398,6 +398,9 @@ class TaskManager:
         self._sweeper_stop = threading.Event()
         self._sweeper = threading.Thread(target=self._sweeper_loop, name="forecast-task-sweeper", daemon=True)
 
+        # One-shot CLI processes usually exit before the periodic sweeper's first
+        # pass, so expire old terminal rows synchronously before restoring state.
+        self._job_store.cleanup_completed(_TASK_TTL_DEFAULT)
         self._recover_persisted_tasks()
         self._sweeper.start()
         _LIVE_TASK_MANAGERS.add(self)

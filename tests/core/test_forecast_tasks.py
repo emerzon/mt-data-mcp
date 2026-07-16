@@ -291,6 +291,10 @@ class TestForecastTaskList:
 
         assert result["success"] is True
         assert result["count"] == 2
+        assert result["total_count"] == 2
+        assert result["limit"] == 50
+        assert result["offset"] == 0
+        assert result["has_more"] is False
         assert result["summary"] == {"running": 1, "completed": 1}
         assert "filters" not in result
         assert "status_counts" not in result["runtime"]["queue"]
@@ -301,6 +305,43 @@ class TestForecastTaskList:
         assert result["tasks"][0]["pid"] == 4321
         assert result["tasks"][1]["model_id"] == "nhits/EURUSD_H1/x"
         assert result["tasks"][1]["elapsed_seconds"] == 59.0
+
+    def test_pages_filtered_tasks(self):
+        from src.mtdata.core.forecast_tasks import forecast_task_list
+
+        mock_tm = MagicMock()
+        mock_tm.list_tasks.return_value = [
+            _make_task("t1", status="completed"),
+            _make_task("t2", status="completed"),
+            _make_task("t3", status="completed"),
+        ]
+        mock_tm.runtime_snapshot.return_value = {}
+
+        with patch(_PATCH_TM, return_value=mock_tm):
+            result = _unwrap(forecast_task_list)(limit=1, offset=1)
+
+        assert result["count"] == 1
+        assert result["total_count"] == 3
+        assert result["limit"] == 1
+        assert result["offset"] == 1
+        assert result["has_more"] is True
+        assert [task["task_id"] for task in result["tasks"]] == ["t2"]
+
+    @pytest.mark.parametrize(
+        ("kwargs", "error_code"),
+        [
+            ({"limit": 0}, "forecast_task_list_invalid_limit"),
+            ({"limit": 501}, "forecast_task_list_invalid_limit"),
+            ({"offset": -1}, "forecast_task_list_invalid_offset"),
+        ],
+    )
+    def test_rejects_invalid_pagination(self, kwargs, error_code):
+        from src.mtdata.core.forecast_tasks import forecast_task_list
+
+        result = _unwrap(forecast_task_list)(**kwargs)
+
+        assert result["success"] is False
+        assert result["error_code"] == error_code
 
 
 class TestForecastModels:
