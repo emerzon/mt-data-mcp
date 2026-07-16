@@ -33,7 +33,11 @@ _REPORT_TEMPLATE_HELP = (
 
 class ReportGenerateRequest(BaseModel):
     symbol: str
-    horizon: Optional[int] = None
+    horizon: Optional[int] = Field(
+        None,
+        ge=1,
+        description="Forecast/report horizon in bars; must be at least 1 when supplied.",
+    )
     template: ReportTemplateLiteral = Field("basic", description=_REPORT_TEMPLATE_HELP)
     timeframe: Optional[TimeframeLiteral] = None
     start: Optional[str] = None
@@ -75,4 +79,13 @@ class ReportGenerateRequest(BaseModel):
         if isinstance(values, dict) and isinstance(values.get("template"), str):
             values = dict(values)
             values["template"] = values["template"].strip().lower()
+        if isinstance(values, dict) and isinstance(values.get("params"), dict):
+            params_horizon = values["params"].get("horizon")
+            if params_horizon is not None:
+                try:
+                    valid_horizon = int(params_horizon) >= 1
+                except (TypeError, ValueError):
+                    valid_horizon = False
+                if not valid_horizon:
+                    raise ValueError("params.horizon must be an integer greater than or equal to 1")
         return values

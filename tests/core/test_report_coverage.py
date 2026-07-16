@@ -1351,3 +1351,18 @@ def test_report_assessment_names_section_health_confidence_explicitly():
     assert assessment["assembly_confidence_basis"] == "report_section_health"
     assert "confidence" not in assessment
     assert assessment["is_trade_signal"] is False
+
+
+@pytest.mark.parametrize("horizon", [0, -1])
+def test_report_request_rejects_nonpositive_horizon(horizon):
+    from mtdata.core.report.requests import ReportGenerateRequest
+
+    with pytest.raises(ValidationError, match="greater than or equal to 1"):
+        ReportGenerateRequest(symbol="EURUSD", horizon=horizon)
+
+
+def test_report_request_rejects_nonpositive_params_horizon():
+    from mtdata.core.report.requests import ReportGenerateRequest
+
+    with pytest.raises(ValidationError, match="params.horizon"):
+        ReportGenerateRequest(symbol="EURUSD", params={"horizon": 0})
