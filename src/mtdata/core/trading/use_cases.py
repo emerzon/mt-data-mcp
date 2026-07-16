@@ -33,6 +33,7 @@ from ..execution_logging import (
 )
 from ..output_contract import resolve_output_contract
 from . import validation
+from .common import build_trade_quote_context
 from .idempotency import (
     IdempotencyStore,
     SQLiteIdempotencyStore,
@@ -131,6 +132,7 @@ _TRADE_PLACE_PREVIEW_KEYS = (
     "requested_tp",
     "expiration",
     "expiration_normalized",
+    "quote_context",
 )
 
 
@@ -531,13 +533,17 @@ def _resolve_live_trade_risk_entry(
     gateway: Any,
     symbol: str,
     direction: Any,
-) -> tuple[float | None, str | None]:
+) -> tuple[float | None, str | None, Dict[str, Any]]:
     try:
         tick = gateway.symbol_info_tick(symbol)
     except Exception:
-        return None, None
+        return None, None, {}
     if tick is None:
-        return None, None
+        return None, None, {}
+
+    quote_context = build_trade_quote_context(symbol, tick)
+    if quote_context.get("usable_for_live_trading") is not True:
+        return None, None, quote_context
 
     bid = _positive_trade_price(getattr(tick, "bid", None))
     ask = _positive_trade_price(getattr(tick, "ask", None))
@@ -549,22 +555,22 @@ def _resolve_live_trade_risk_entry(
 
     if direction_norm == "long":
         if ask is not None:
-            return ask, "live_tick_ask"
+            return ask, "live_tick_ask", quote_context
         if bid is not None:
-            return bid, "live_tick_bid_fallback"
+            return bid, "live_tick_bid_fallback", quote_context
     elif direction_norm == "short":
         if bid is not None:
-            return bid, "live_tick_bid"
+            return bid, "live_tick_bid", quote_context
         if ask is not None:
-            return ask, "live_tick_ask_fallback"
+            return ask, "live_tick_ask_fallback", quote_context
 
     if bid is not None and ask is not None:
-        return (bid + ask) / 2.0, "live_tick_mid"
+        return (bid + ask) / 2.0, "live_tick_mid", quote_context
     if bid is not None:
-        return bid, "live_tick_bid_only"
+        return bid, "live_tick_bid_only", quote_context
     if ask is not None:
-        return ask, "live_tick_ask_only"
-    return None, None
+        return ask, "live_tick_ask_only", quote_context
+    return None, None, quote_context
 
 
 def _validate_trade_risk_levels(
@@ -1358,6 +1364,32 @@ def run_trade_place(  # noqa: C901
                         take_profit=request.take_profit,
                     )
                 )
+            quote_context = preview.get("quote_context")
+            if (
+                isinstance(quote_context, dict)
+                and quote_context.get("usable_for_live_trading") is not True
+            ):
+                validation_payload = preview.get("validation")
+                if isinstance(validation_payload, dict):
+                    validation_payload["live_submission_eligible"] = False
+                    blockers = validation_payload.setdefault("blockers", [])
+                    if "quote_not_live_ready" not in blockers:
+                        blockers.append("quote_not_live_ready")
+                preview["validation_passed"] = False
+                preview["preview_ok"] = False
+                preview["actionability"] = "blocked_by_quote_freshness"
+                preview["actionability_reason"] = (
+                    "Quote freshness is not verified as live; refresh the quote "
+                    "before using this preview for submission."
+                )
+                quote_warning = str(
+                    quote_context.get("timestamp_warning")
+                    or quote_context.get("warning")
+                    or "Quote is not usable for live trading."
+                )
+                warnings_out = preview.setdefault("warnings", [])
+                if quote_warning not in warnings_out:
+                    warnings_out.append(quote_warning)
             sl_tp_valid = preview.get("sl_tp_valid")
             try:
                 sl_tp_invalid = sl_tp_valid is not None and not bool(sl_tp_valid)
@@ -3568,16 +3600,23 @@ def run_trade_risk_analyze(  # noqa: C901
             )
 
             entry_source = None
+            live_quote_context: Dict[str, Any] = {}
             if (
                 request.entry is None
                 and request.symbol
                 and request.stop_loss is not None
             ):
-                live_entry, live_entry_source = _resolve_live_trade_risk_entry(
+                (
+                    live_entry,
+                    live_entry_source,
+                    live_quote_context,
+                ) = _resolve_live_trade_risk_entry(
                     gateway=gateway,
                     symbol=request.symbol,
                     direction=request.direction,
                 )
+                if live_quote_context:
+                    result["quote_context"] = live_quote_context
                 if live_entry is not None:
                     request.entry = float(live_entry)
                     entry_source = live_entry_source or "live_tick"
@@ -3850,13 +3889,20 @@ def run_trade_risk_analyze(  # noqa: C901
                     return result
 
                 if entry_was_omitted:
-                    directional_entry, directional_source = (
+                    (
+                        directional_entry,
+                        directional_source,
+                        directional_quote_context,
+                    ) = (
                         _resolve_live_trade_risk_entry(
                             gateway=gateway,
                             symbol=request.symbol,
                             direction=direction_norm,
                         )
                     )
+                    if directional_quote_context:
+                        live_quote_context = directional_quote_context
+                        result["quote_context"] = directional_quote_context
                     if directional_entry is not None:
                         request.entry = float(directional_entry)
                         entry_source = directional_source or "live_tick"

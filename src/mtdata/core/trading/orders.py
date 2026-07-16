@@ -912,6 +912,7 @@ def build_trade_place_dry_run_preview(
         "bid": _round_preview_price(bid, digits=digits),
         "ask": _round_preview_price(ask, digits=digits),
         "estimated_fill_price": _round_preview_price(entry_price, digits=digits),
+        "quote_context": common.build_trade_quote_context(symbol, tick),
     }
     if pending:
         out["entry_price"] = _round_preview_price(entry_price, digits=digits)

@@ -5,9 +5,75 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Literal, Optional
 
+from ...utils.market_metadata import build_tick_freshness_context
+from ...utils.time import format_epoch_utc
 from ...utils.time import _format_datetime_second_explicit
 from ...utils.utils import _parse_start_datetime
 from . import validation
+
+
+def build_trade_quote_context(
+    symbol: str,
+    tick: Any,
+    *,
+    now_epoch: Optional[float] = None,
+) -> Dict[str, Any]:
+    """Build trust metadata for a quote used by a pre-trade calculation."""
+    tick_epoch = getattr(tick, "time_msc", None)
+    try:
+        tick_epoch = float(tick_epoch) / 1000.0 if tick_epoch else None
+    except (TypeError, ValueError):
+        tick_epoch = None
+    if tick_epoch is None:
+        tick_epoch = getattr(tick, "time", None)
+    try:
+        epoch_value = float(tick_epoch)
+    except (TypeError, ValueError):
+        epoch_value = None
+    if epoch_value is None or epoch_value <= 0.0:
+        return {
+            "quote_source": "mt5.symbol_info_tick",
+            "quote_timezone": "UTC",
+            "freshness_state": "unknown",
+            "freshness_reason": "timestamp_unavailable",
+            "usable_for_live_trading": False,
+            "warning": "Quote timestamp is unavailable; live readiness cannot be verified.",
+        }
+
+    current_epoch = (
+        float(now_epoch)
+        if now_epoch is not None
+        else datetime.now(timezone.utc).timestamp()
+    )
+    freshness = build_tick_freshness_context(
+        symbol,
+        tick_epoch=epoch_value,
+        now_epoch=current_epoch,
+    )
+    out: Dict[str, Any] = {
+        "quote_source": "mt5.symbol_info_tick",
+        "quote_time": format_epoch_utc(epoch_value),
+        "quote_time_epoch": epoch_value,
+        "quote_timezone": "UTC",
+    }
+    for key in (
+        "data_age_seconds",
+        "freshness",
+        "freshness_state",
+        "freshness_reason",
+        "data_stale",
+        "live_max_age_seconds",
+        "usable_for_live_trading",
+        "usable_for_live_trading_basis",
+        "market_status",
+        "market_status_reason",
+        "timestamp_in_future",
+        "timestamp_skew_seconds",
+        "timestamp_warning",
+    ):
+        if freshness.get(key) is not None:
+            out[key] = freshness[key]
+    return out
 
 
 def resolve_trade_period_context(

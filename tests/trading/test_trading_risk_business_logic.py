@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import sys
+import time
 from contextlib import contextmanager
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
@@ -429,7 +430,7 @@ def test_trade_risk_analyze_resolves_missing_entry_from_live_tick() -> None:
     mt5.account_info.return_value = SimpleNamespace(equity=1000.0, currency="USD")
     mt5.positions_get.return_value = []
     mt5.symbol_info.return_value = _make_symbol_info()
-    mt5.symbol_info_tick.return_value = SimpleNamespace(bid=99.8, ask=100.2)
+    mt5.symbol_info_tick.return_value = SimpleNamespace(bid=99.8, ask=100.2, time=time.time())
 
     with _patched_mt5_module(mt5):
         out = trade_risk_analyze(
@@ -446,6 +447,9 @@ def test_trade_risk_analyze_resolves_missing_entry_from_live_tick() -> None:
     assert out["position_sizing"]["risk_compliance"] == "within_requested_risk"
     assert out["trade_evaluation"]["entry"] == 100.2
     assert out["trade_evaluation"]["entry_source"] == "live_tick_ask"
+    assert out["quote_context"]["usable_for_live_trading"] is True
+    assert out["quote_context"]["freshness_state"] == "live"
+    assert out["quote_context"]["quote_timezone"] == "UTC"
 
 
 def test_trade_risk_analyze_reanchors_omitted_entry_after_direction_inference() -> None:
@@ -453,7 +457,7 @@ def test_trade_risk_analyze_reanchors_omitted_entry_after_direction_inference() 
     mt5.account_info.return_value = SimpleNamespace(equity=1000.0, currency="USD")
     mt5.positions_get.return_value = []
     mt5.symbol_info.return_value = _make_symbol_info()
-    mt5.symbol_info_tick.return_value = SimpleNamespace(bid=99.8, ask=100.2)
+    mt5.symbol_info_tick.return_value = SimpleNamespace(bid=99.8, ask=100.2, time=time.time())
 
     with _patched_mt5_module(mt5):
         out = trade_risk_analyze(
@@ -467,6 +471,32 @@ def test_trade_risk_analyze_reanchors_omitted_entry_after_direction_inference() 
     assert out["position_sizing"]["entry"] == 100.2
     assert out["position_sizing"]["entry_source"] == "live_tick_ask"
     assert out["trade_evaluation"]["entry"] == 100.2
+
+
+def test_trade_risk_analyze_does_not_size_from_stale_live_tick() -> None:
+    mt5 = MagicMock()
+    mt5.account_info.return_value = SimpleNamespace(equity=1000.0, currency="USD")
+    mt5.positions_get.return_value = []
+    mt5.symbol_info.return_value = _make_symbol_info()
+    mt5.symbol_info_tick.return_value = SimpleNamespace(
+        bid=99.8,
+        ask=100.2,
+        time=1.0,
+    )
+
+    with _patched_mt5_module(mt5):
+        out = trade_risk_analyze(
+            symbol="EURUSD",
+            direction="long",
+            desired_risk_pct=1.0,
+            stop_loss=95.0,
+        )
+
+    assert out["quote_context"]["usable_for_live_trading"] is False
+    assert out["quote_context"]["freshness_state"] == "stale"
+    assert out["position_sizing"]["status"] == "parameters_missing"
+    assert "entry" in out["position_sizing"]["missing"]
+    assert "trade_evaluation" not in out
 
 
 def test_trade_risk_analyze_keeps_exposure_analysis_with_partial_sizing_params() -> None:
