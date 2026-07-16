@@ -65,7 +65,7 @@ def test_strategy_backtest_sma_cross_generates_long_trade(monkeypatch):
     )
 
 
-def test_strategy_backtest_deducts_observed_spread(monkeypatch):
+def test_strategy_backtest_discloses_current_spread_proxy(monkeypatch):
     history = _history_from_closes([1.0, 1.0, 1.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0])
     monkeypatch.setattr(forecast_backtest, "_fetch_history", lambda *args, **kwargs: history)
     monkeypatch.setattr(
@@ -74,7 +74,7 @@ def test_strategy_backtest_deducts_observed_spread(monkeypatch):
         lambda _symbol: type("Tick", (), {"bid": 0.9995, "ask": 1.0005})(),
     )
 
-    observed = forecast_backtest.strategy_backtest(
+    proxied = forecast_backtest.strategy_backtest(
         symbol="EURUSD", lookback=8, fast_period=2, slow_period=3, detail="full"
     )
     fixed = forecast_backtest.strategy_backtest(
@@ -82,8 +82,11 @@ def test_strategy_backtest_deducts_observed_spread(monkeypatch):
         cost_model="fixed", spread_bps=0.0,
     )
 
-    assert observed["cost_model"]["spread_bps_round_trip"] == pytest.approx(10.0)
-    assert observed["summary"]["net_return"] < fixed["summary"]["net_return"]
+    assert proxied["cost_model"]["type"] == "current_spread_proxy"
+    assert proxied["cost_model"]["spread_bps_round_trip"] == pytest.approx(10.0)
+    assert proxied["cost_model"]["complete"] is False
+    assert "not historical observed spreads" in proxied["warnings"][0]
+    assert proxied["summary"]["net_return"] < fixed["summary"]["net_return"]
 
 
 def test_strategy_backtest_includes_first_valid_warmup_signal(monkeypatch):
@@ -138,13 +141,14 @@ def test_strategy_backtest_compact_mode_excludes_trades(monkeypatch):
     assert "usable_for_live_trading" not in out
     assert out["price_basis"] == "mt5_bid_ohlc"
     assert out["cost_model"] == {
-        "type": "mt5_observed",
+        "type": "current_spread_proxy",
         "spread_bps_round_trip": 0.0,
         "spread_source": "unavailable",
         "slippage_bps_per_side": 1.0,
         "round_trip_cost_bps": 2.0,
         "complete": False,
     }
+    assert "not historical observed spreads" in out["warnings"][0]
     assert StrategyBacktestRequest(symbol="EURUSD").slippage_bps == 1.0
     assert out["signal_status"] == "not_actionable"
     assert "last_signal" not in out

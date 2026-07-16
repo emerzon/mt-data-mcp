@@ -916,7 +916,7 @@ def strategy_backtest(  # noqa: C901
     oversold: float = 30.0,
     overbought: float = 70.0,
     max_hold_bars: Optional[int] = None,
-    cost_model: Literal["mt5_observed", "fixed"] = "mt5_observed",
+    cost_model: Literal["current_spread_proxy", "fixed"] = "current_spread_proxy",
     spread_bps: Optional[float] = None,
     slippage_bps: float = 1.0,
 ) -> Dict[str, Any]:
@@ -955,12 +955,14 @@ def strategy_backtest(  # noqa: C901
             return {"error": "fast_period must be less than slow_period"}
         if float(oversold) >= float(overbought):
             return {"error": "oversold must be less than overbought"}
-        cost_model_value = str(cost_model or "mt5_observed").strip().lower()
-        if cost_model_value not in {"mt5_observed", "fixed"}:
-            return {"error": "cost_model must be 'mt5_observed' or 'fixed'"}
+        cost_model_value = str(cost_model or "current_spread_proxy").strip().lower()
+        if cost_model_value not in {"current_spread_proxy", "fixed"}:
+            return {
+                "error": "cost_model must be 'current_spread_proxy' or 'fixed'"
+            }
         resolved_spread_bps = float(spread_bps or 0.0)
         spread_source = "explicit" if spread_bps is not None else "unavailable"
-        if spread_bps is None and cost_model_value == "mt5_observed":
+        if spread_bps is None and cost_model_value == "current_spread_proxy":
             try:
                 tick = mt5.symbol_info_tick(symbol)
                 bid = float(getattr(tick, "bid", 0.0) or 0.0)
@@ -1179,7 +1181,9 @@ def strategy_backtest(  # noqa: C901
                 "spread_source": spread_source,
                 "slippage_bps_per_side": float(slippage_bps),
                 "round_trip_cost_bps": resolved_spread_bps + float(slippage_bps) * 2.0,
-                "complete": spread_source != "unavailable",
+                "complete": (
+                    cost_model_value == "fixed" and spread_source == "explicit"
+                ),
             },
             "units": _backtest_units(),
             "parameters": _params,
@@ -1210,6 +1214,11 @@ def strategy_backtest(  # noqa: C901
                 "time": _format_time_minimal(float(times[last_idx])),
             },
         }
+        if cost_model_value == "current_spread_proxy":
+            result["warnings"] = [
+                "Transaction costs use one current MT5 quote as a fixed proxy "
+                "for every historical trade; they are not historical observed spreads."
+            ]
         sample_notice = metrics.get("sample_notice") if isinstance(metrics, dict) else None
         if isinstance(sample_notice, dict):
             trades_observed = sample_notice.get("trades_observed")

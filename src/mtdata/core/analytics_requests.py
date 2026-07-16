@@ -108,7 +108,7 @@ class StrategyValidateRequest(BaseModel):
     barrier: BarrierSpec = Field(default_factory=BarrierSpec)
     purge_bars: Optional[int] = Field(None, ge=0)
     embargo_bars: Optional[int] = Field(None, ge=0)
-    cost_model: Literal["mt5_observed", "fixed"] = "mt5_observed"
+    cost_model: Literal["current_spread_proxy", "fixed"] = "current_spread_proxy"
     spread_bps: Optional[float] = Field(None, ge=0.0)
     commission_bps: float = Field(0.0, ge=0.0)
     slippage_bps: float = Field(0.0, ge=0.0)
