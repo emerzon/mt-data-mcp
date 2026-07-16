@@ -1411,6 +1411,70 @@ def test_run_data_fetch_ticks_compact_prunes_row_diagnostics():
     }
 
 
+@pytest.mark.parametrize(
+    ("error", "start", "end", "error_code"),
+    [
+        (
+            "start must be before or equal to end.",
+            "2026-07-16T12:00:00Z",
+            "2026-07-15T12:00:00Z",
+            "data_fetch_ticks_invalid_date_range",
+        ),
+        (
+            "Could not parse start date 'garbage'.",
+            "garbage",
+            "2026-07-16T12:00:00Z",
+            "data_fetch_ticks_invalid_date",
+        ),
+        (
+            "No tick data available",
+            "2099-01-01T00:00:00Z",
+            "2099-01-01T01:00:00Z",
+            "data_fetch_ticks_future_date_range",
+        ),
+        (
+            "No tick data available",
+            "2026-07-11T12:00:00Z",
+            "2026-07-11T13:00:00Z",
+            "data_fetch_ticks_no_data",
+        ),
+    ],
+)
+def test_run_data_fetch_ticks_classifies_query_errors(
+    error: str,
+    start: str,
+    end: str,
+    error_code: str,
+) -> None:
+    result = run_data_fetch_ticks(
+        DataFetchTicksRequest(symbol="EURUSD", start=start, end=end),
+        gateway=SimpleNamespace(ensure_connection=lambda: None),
+        fetch_ticks_impl=lambda **_kwargs: {"error": error},
+    )
+
+    assert result["success"] is False
+    assert result["error_code"] == error_code
+    assert result["details"] == {
+        "symbol": "EURUSD",
+        "timezone": "UTC",
+        "start": start,
+        "end": end,
+    }
+
+
+def test_run_data_fetch_ticks_classifies_unknown_symbol() -> None:
+    result = run_data_fetch_ticks(
+        DataFetchTicksRequest(symbol="NOTAREAL"),
+        gateway=SimpleNamespace(ensure_connection=lambda: None),
+        fetch_ticks_impl=lambda **_kwargs: {
+            "error": "Symbol NOTAREAL not found in Market Watch"
+        },
+    )
+
+    assert result["error_code"] == "symbol_not_found"
+    assert result["related_tools"] == ["symbols_list"]
+
+
 def test_run_data_fetch_ticks_compact_summarizes_quality_without_verbose_warnings():
     result = run_data_fetch_ticks(
         DataFetchTicksRequest(symbol="EURUSD", limit=5, detail="compact"),

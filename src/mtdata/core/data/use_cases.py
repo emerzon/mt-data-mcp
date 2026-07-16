@@ -1085,11 +1085,85 @@ def _run_data_fetch_ticks_impl(
         time_as_epoch=str(request.timestamp_format).strip().lower() != "iso",
         format=_TICK_DETAIL_FORMATS.get(request.detail, "summary"),
     )
+    result = _normalize_tick_query_error(result, request=request)
     if str(request.detail or "compact").strip().lower() == "compact":
         result = _compact_tick_rows_payload(result)
     _attach_tick_freshness_contract(result)
     _attach_tick_pagination(result, requested_limit=request.limit)
     return result
+
+
+def _normalize_tick_query_error(
+    result: Any,
+    *,
+    request: DataFetchTicksRequest,
+) -> Any:
+    if not isinstance(result, dict) or not result.get("error"):
+        return result
+    if result.get("error_code"):
+        return result
+
+    message = str(result["error"])
+    normalized = message.lower()
+    error_code = "data_fetch_ticks_provider_failure"
+    remediation = "Check the MT5 connection and broker data feed, then retry."
+
+    if (
+        ("not found" in normalized and "symbol" in normalized)
+        or "failed to select symbol" in normalized
+        or "unknown symbol" in normalized
+    ):
+        error_code = "symbol_not_found"
+        remediation = (
+            "Use symbols_list to find the broker's exact symbol name, including "
+            "any suffix or alias."
+        )
+    elif "could not parse" in normalized and "date" in normalized:
+        error_code = "data_fetch_ticks_invalid_date"
+        remediation = "Use an ISO-8601 timestamp such as 2026-07-16T12:00:00Z."
+    elif "start must be before or equal to end" in normalized:
+        error_code = "data_fetch_ticks_invalid_date_range"
+        remediation = "Set start to a timestamp earlier than or equal to end."
+    elif "no tick data" in normalized:
+        if _tick_request_is_future_only(request):
+            error_code = "data_fetch_ticks_future_date_range"
+            remediation = "Use a start and end timestamp at or before the current time."
+        else:
+            error_code = "data_fetch_ticks_no_data"
+            remediation = (
+                "Check the requested market session and symbol history; an empty "
+                "historical interval is not a provider failure."
+            )
+
+    details: Dict[str, Any] = {
+        "symbol": request.symbol,
+        "timezone": "UTC",
+    }
+    if request.start is not None:
+        details["start"] = str(request.start)
+    if request.end is not None:
+        details["end"] = str(request.end)
+    return build_error_payload(
+        message,
+        code=error_code,
+        operation="data_fetch_ticks",
+        details=details,
+        remediation=remediation,
+        related_tools=["symbols_list"] if error_code == "symbol_not_found" else None,
+    )
+
+
+def _tick_request_is_future_only(request: DataFetchTicksRequest) -> bool:
+    value = request.start or request.end
+    if value in (None, ""):
+        return False
+    try:
+        parsed = datetime.fromisoformat(str(value).strip().replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(timezone.utc) > datetime.now(timezone.utc)
+    except (TypeError, ValueError):
+        return False
 
 
 def _attach_tick_pagination(payload: Any, *, requested_limit: int) -> None:
