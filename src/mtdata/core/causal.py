@@ -167,6 +167,7 @@ _CAUSAL_DISCOVER_REQUEST_KEYS = frozenset(
         "end",
         "max_lag",
         "significance",
+        "include_incomplete",
         "transform",
         "normalize",
         "detail",
@@ -188,6 +189,7 @@ _CORRELATION_REQUEST_KEYS = frozenset(
         "method",
         "transform",
         "min_overlap",
+        "include_incomplete",
         "detail",
     }
 )
@@ -210,6 +212,7 @@ _COINTEGRATION_REQUEST_KEYS = frozenset(
         "k_ar_diff",
         "significance",
         "min_overlap",
+        "include_incomplete",
         "detail",
     }
 )
@@ -226,6 +229,7 @@ _CROSS_CORRELATION_REQUEST_KEYS = frozenset(
         "transform",
         "min_overlap",
         "bootstrap_samples",
+        "include_incomplete",
         "detail",
     }
 )
@@ -392,8 +396,10 @@ def _fetch_series(
     *,
     start: Optional[str] = None,
     end: Optional[str] = None,
+    timeframe_key: Optional[str] = None,
+    include_incomplete: bool = False,
 ) -> Tuple[pd.Series, str | None]:
-    """Fetch recent close prices for a symbol."""
+    """Fetch close prices, excluding the current forming bar by default."""
     err = _ensure_symbol_ready(symbol)
     if err:
         return pd.Series(dtype=float), err
@@ -405,10 +411,14 @@ def _fetch_series(
         if start_dt is not None:
             data = _mt5_copy_rates_range(symbol, timeframe, start_dt, end_dt)
         elif end_dt is not None:
-            data = _mt5_copy_rates_from(symbol, timeframe, end_dt, count)
+            data = _mt5_copy_rates_from(
+                symbol, timeframe, end_dt, count + (0 if include_incomplete else 1)
+            )
         else:
             utc_now = datetime.now(timezone.utc)
-            data = _mt5_copy_rates_from(symbol, timeframe, utc_now, count)
+            data = _mt5_copy_rates_from(
+                symbol, timeframe, utc_now, count + (0 if include_incomplete else 1)
+            )
         if data is None or len(data) == 0:
             time.sleep(pause)
             continue
@@ -420,6 +430,26 @@ def _fetch_series(
             time.sleep(pause)
             continue
         df = df.sort_values("time")
+        timeframe_name = str(timeframe_key or "").strip().upper()
+        if not timeframe_name:
+            timeframe_name = next(
+                (name for name, value in TIMEFRAME_MAP.items() if value == timeframe),
+                "",
+            )
+        bar_seconds = int(TIMEFRAME_SECONDS.get(timeframe_name, 0) or 0)
+        forming_trimmed = False
+        last_is_forming = False
+        if bar_seconds > 0 and not df.empty:
+            last_open_epoch = float(df.iloc[-1]["time"])
+            now_epoch = datetime.now(timezone.utc).timestamp()
+            last_is_forming = last_open_epoch + bar_seconds > now_epoch
+            if not include_incomplete and last_is_forming:
+                df = df.iloc[:-1]
+                forming_trimmed = True
+                last_is_forming = False
+        if df.empty:
+            time.sleep(pause)
+            continue
         if start_dt is None and len(df) > count:
             df = df.tail(count)
         series = pd.Series(
@@ -427,6 +457,10 @@ def _fetch_series(
             index=pd.to_datetime(df["time"], unit="s"),
         )
         series = series[~series.index.duplicated(keep="last")]
+        series.attrs["include_incomplete"] = bool(include_incomplete)
+        series.attrs["forming_candle_skipped"] = bool(forming_trimmed)
+        series.attrs["forming_candle_included"] = bool(last_is_forming)
+        series.attrs["latest_bar_complete"] = not bool(last_is_forming)
         return series, None
     return pd.Series(dtype=float), f"Failed to fetch data for {symbol}" + (
         f" after {retries} retries" if retries > 1 else ""
@@ -440,10 +474,50 @@ def _fetch_series_for_window(
     *,
     start: Optional[str] = None,
     end: Optional[str] = None,
+    timeframe_key: Optional[str] = None,
+    include_incomplete: bool = False,
 ) -> Tuple[pd.Series, str | None]:
     if start or end:
-        return _fetch_series(symbol, timeframe, count, start=start, end=end)
-    return _fetch_series(symbol, timeframe, count)
+        return _fetch_series(
+            symbol,
+            timeframe,
+            count,
+            start=start,
+            end=end,
+            timeframe_key=timeframe_key,
+            include_incomplete=include_incomplete,
+        )
+    return _fetch_series(
+        symbol,
+        timeframe,
+        count,
+        timeframe_key=timeframe_key,
+        include_incomplete=include_incomplete,
+    )
+
+
+def _bar_completion_context(
+    series_map: Dict[str, pd.Series], *, include_incomplete: bool
+) -> Dict[str, Any]:
+    forming_included = any(
+        bool(series.attrs.get("forming_candle_included"))
+        for series in series_map.values()
+    )
+    forming_skipped = any(
+        bool(series.attrs.get("forming_candle_skipped"))
+        for series in series_map.values()
+    )
+    if forming_included:
+        status = "included"
+    elif forming_skipped:
+        status = "skipped"
+    else:
+        status = "none"
+    return {
+        "include_incomplete": bool(include_incomplete),
+        "latest_bar_complete": not forming_included,
+        "forming_candle_status": status,
+    }
 
 
 def _transform_frame(frame: pd.DataFrame, transform: str) -> pd.DataFrame:
@@ -1483,6 +1557,7 @@ def causal_discover_signals(  # noqa: C901
     end: Optional[str] = None,
     max_lag: int = 5,
     significance: float = 0.05,
+    include_incomplete: bool = False,
     transform: str = "log_return",
     normalize: bool = True,
     detail: DetailLiteral = "compact",
@@ -1503,6 +1578,8 @@ def causal_discover_signals(  # noqa: C901
         max_lag: Maximum lag order for tests (>=1).
         significance: Family-wise alpha level for reporting causal links after
             Bonferroni correction across tested lags and directed pairs.
+        include_incomplete: Include the current forming candle. Defaults to false
+            so statistical tests use completed bars only.
         transform: Preprocessing transform: "log_return", "pct", "diff", "level", or "log_level".
         normalize: Z-score columns before testing to stabilise scale.
         detail: "compact" returns significant links plus top pair summaries; "full"
@@ -1529,6 +1606,7 @@ def causal_discover_signals(  # noqa: C901
             "end": end,
             "max_lag": int(max_lag),
             "significance": float(significance),
+            "include_incomplete": bool(include_incomplete),
             "transform": str(transform),
             "normalize": bool(normalize),
             "detail": detail_mode,
@@ -1541,6 +1619,14 @@ def causal_discover_signals(  # noqa: C901
                 meta=meta,
             )
         meta["transform"] = transform_value
+        if not math.isfinite(float(significance)) or not (
+            0.0 < float(significance) < 1.0
+        ):
+            return _causal_error(
+                "significance must be a finite fraction strictly between 0 and 1 (for example, 0.05 for 5%).",
+                code="invalid_input",
+                meta=meta,
+            )
         connection_error = _causal_connection_error()
         if connection_error is not None:
             return _causal_error(
@@ -1667,6 +1753,8 @@ def causal_discover_signals(  # noqa: C901
                 fetch_count,
                 start=start,
                 end=end,
+                timeframe_key=str(timeframe),
+                include_incomplete=bool(include_incomplete),
             )
             if err:
                 errors.append(err)
@@ -1803,6 +1891,7 @@ def causal_discover_signals(  # noqa: C901
         tested_directions: List[Dict[str, str]] = []
         pair_failures: List[Dict[str, Any]] = []
         pair_skips: List[Dict[str, Any]] = []
+        maximum_allowable_lags: List[int] = []
         for effect in transformed.columns:
             for cause in transformed.columns:
                 if effect == cause:
@@ -1825,6 +1914,27 @@ def causal_discover_signals(  # noqa: C901
                     )
                     continue
                 pair_attempts += 1
+                maximum_allowable_lag = max(
+                    0, int((len(subset) - 1) / 3) - 1
+                )
+                maximum_allowable_lags.append(maximum_allowable_lag)
+                if int(max_lag) > maximum_allowable_lag:
+                    if len(pair_failures) < 10:
+                        pair_failures.append(
+                            {
+                                "effect": effect,
+                                "cause": cause,
+                                "samples": int(len(subset)),
+                                "requested_max_lag": int(max_lag),
+                                "maximum_allowable_lag": maximum_allowable_lag,
+                                "error": (
+                                    "Insufficient observations for requested max_lag; "
+                                    f"maximum allowable lag is {maximum_allowable_lag}."
+                                ),
+                                "error_type": "InsufficientObservations",
+                            }
+                        )
+                    continue
                 try:
                     with warnings.catch_warnings(), contextlib.redirect_stdout(io.StringIO()):
                         warnings.simplefilter("ignore", category=FutureWarning)
@@ -1928,17 +2038,28 @@ def causal_discover_signals(  # noqa: C901
                 "pairs_skipped": int(len(pair_skips)),
                 "p_value_correction": "bonferroni_across_lags_and_pairs",
                 "pair_correction_factor": pair_correction_factor,
+                "maximum_allowable_lag": min(maximum_allowable_lags)
+                if maximum_allowable_lags
+                else 0,
             }
         )
         if pair_failures:
             meta["pair_failures"] = pair_failures
             warnings_out.append(
-                f"{max(pair_attempts - pair_success, 0)} pairwise Granger tests failed; see meta['pair_failures']."
+                f"{max(pair_attempts - pair_success, 0)} pairwise Granger tests failed."
             )
         if pair_skips:
             meta["pair_skips"] = pair_skips[:20]
             warnings_out.append(
                 f"{len(pair_skips)} directed pairs were skipped for insufficient pairwise samples."
+            )
+        if pair_success == 0:
+            return _causal_error(
+                "No Granger tests completed. Reduce max_lag or increase window_bars.",
+                code="no_tests_completed",
+                meta=meta,
+                warnings=warnings_out,
+                details=pair_failures or pair_skips or None,
             )
         rows_for_output = (
             rows_sorted
@@ -1977,6 +2098,9 @@ def causal_discover_signals(  # noqa: C901
                 "transform": transform_value,
                 "max_lag": int(max_lag),
                 "significance": float(significance),
+                **_bar_completion_context(
+                    series_map, include_incomplete=bool(include_incomplete)
+                ),
             },
             "summary": {
                 "significance": float(significance),
@@ -2061,6 +2185,7 @@ def correlation_matrix(  # noqa: C901
     method: str = "pearson",
     transform: str = "log_return",
     min_overlap: int = 30,
+    include_incomplete: bool = False,
     detail: DetailLiteral = "compact",
 ) -> Dict[str, Any]:
     """Calculate pairwise symbol correlations from MT5 price history.
@@ -2086,6 +2211,7 @@ def correlation_matrix(  # noqa: C901
         method: Correlation method: "pearson" or "spearman".
         transform: Preprocessing transform: "log_return", "pct", "diff", "level", or "log_level".
         min_overlap: Minimum overlapping transformed samples required per pair.
+        include_incomplete: Include the current forming candle. Defaults to false.
         detail: "compact" keeps canonical pair rows and counts; "standard" adds
             highlight indexes; "full" also includes the derived matrix view.
     """
@@ -2103,6 +2229,7 @@ def correlation_matrix(  # noqa: C901
             "method": str(method),
             "transform": str(transform),
             "min_overlap": int(min_overlap),
+            "include_incomplete": bool(include_incomplete),
             "detail": str(detail or "compact"),
         }
         connection_error = _causal_connection_error()
@@ -2260,6 +2387,8 @@ def correlation_matrix(  # noqa: C901
                 fetch_count,
                 start=start,
                 end=end,
+                timeframe_key=str(timeframe),
+                include_incomplete=bool(include_incomplete),
             )
             if err:
                 errors.append(err)
@@ -2405,6 +2534,9 @@ def correlation_matrix(  # noqa: C901
             "end": end,
             "transform": transform_value,
             "min_overlap": int(min_overlap),
+            **_bar_completion_context(
+                series_map, include_incomplete=bool(include_incomplete)
+            ),
         }
         alignment_context, alignment_warning = _pairwise_period_alignment(
             rows,
@@ -2459,6 +2591,7 @@ def correlation_matrix(  # noqa: C901
         method=method,
         transform=transform,
         min_overlap=min_overlap,
+        include_incomplete=include_incomplete,
         detail=detail,
         func=_run,
     )
@@ -2476,6 +2609,7 @@ def cross_correlation(  # noqa: C901
     transform: str = "log_return",
     min_overlap: int = 50,
     bootstrap_samples: int = 300,
+    include_incomplete: bool = False,
     detail: DetailLiteral = "compact",
 ) -> Dict[str, Any]:
     """Measure lead-lag correlation for an explicit pair of MT5 symbols.
@@ -2498,6 +2632,7 @@ def cross_correlation(  # noqa: C901
             "transform": transform,
             "min_overlap": int(min_overlap),
             "bootstrap_samples": int(bootstrap_samples),
+            "include_incomplete": bool(include_incomplete),
             "detail": detail,
         }
         connection_error = _causal_connection_error()
@@ -2564,6 +2699,8 @@ def cross_correlation(  # noqa: C901
                 fetch_count,
                 start=start,
                 end=end,
+                timeframe_key=str(timeframe),
+                include_incomplete=bool(include_incomplete),
             )
             if fetch_error:
                 errors.append(fetch_error)
@@ -2652,6 +2789,9 @@ def cross_correlation(  # noqa: C901
                 "ci_familywise_confidence": familywise_confidence,
                 "ci_per_lag_confidence": round(per_lag_confidence, 8),
                 "significance_correction": "bonferroni_across_lags",
+                **_bar_completion_context(
+                    series_map, include_incomplete=bool(include_incomplete)
+                ),
             },
             "meta": _causal_contract_meta(meta),
         }
@@ -2667,6 +2807,7 @@ def cross_correlation(  # noqa: C901
         timeframe=timeframe,
         window_bars=window_bars,
         max_lag=max_lag,
+        include_incomplete=include_incomplete,
         method=method,
         transform=transform,
         func=_run,
@@ -2689,6 +2830,7 @@ def cointegration_test(  # noqa: C901
     k_ar_diff: int = 1,
     significance: float = 0.05,
     min_overlap: int = 80,
+    include_incomplete: bool = False,
     detail: DetailLiteral = "compact",
 ) -> Dict[str, Any]:
     """Run Engle-Granger pair tests or a multivariate Johansen rank test.
@@ -2721,6 +2863,7 @@ def cointegration_test(  # noqa: C901
             value tables contain only those three levels.
         min_overlap: Minimum overlapping transformed samples required per pair;
             values above window_bars are capped to window_bars with a warning.
+        include_incomplete: Include the current forming candle. Defaults to false.
         detail: "compact" keeps pair results concise; "full" adds overlap/window
             diagnostics and legends.
     """
@@ -2744,6 +2887,7 @@ def cointegration_test(  # noqa: C901
             "k_ar_diff": int(k_ar_diff),
             "significance": float(significance),
             "min_overlap": min_overlap_value,
+            "include_incomplete": bool(include_incomplete),
             "detail": str(detail or "compact"),
         }
         connection_error = _causal_connection_error()
@@ -2946,6 +3090,8 @@ def cointegration_test(  # noqa: C901
                 fetch_count,
                 start=start,
                 end=end,
+                timeframe_key=str(timeframe),
+                include_incomplete=bool(include_incomplete),
             )
             if err:
                 errors.append(err)
@@ -3275,6 +3421,9 @@ def cointegration_test(  # noqa: C901
                 "transform": transform_value,
                 "trend": trend_value,
                 "min_overlap": min_overlap_value,
+                **_bar_completion_context(
+                    series_map, include_incomplete=bool(include_incomplete)
+                ),
             },
             "meta": _causal_contract_meta(
                 meta,
@@ -3325,6 +3474,7 @@ def cointegration_test(  # noqa: C901
         trend=trend,
         k_ar_diff=k_ar_diff,
         significance=significance,
+        include_incomplete=include_incomplete,
         min_overlap=min_overlap,
         detail=detail,
         func=_run,
