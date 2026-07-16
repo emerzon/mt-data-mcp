@@ -348,7 +348,14 @@ class ForecastVolatilityEstimateRequest(BaseModel):
     symbol: str
     timeframe: TimeframeLiteral = "H1"
     horizon: int = Field(12, ge=1, le=MAX_FORECAST_HORIZON)
-    method: str = "ewma"
+    method: str = Field(
+        "ewma",
+        description=(
+            "Volatility estimator (for example ewma, rolling_std, har_rv, "
+            "garch, arima, theta, or ensemble). Use forecast_list_methods "
+            "with detail=standard and search_term to inspect the full namespace."
+        ),
+    )
     proxy: Optional[str] = None
     params: Optional[Dict[str, Any]] = None
     as_of: Optional[str] = None

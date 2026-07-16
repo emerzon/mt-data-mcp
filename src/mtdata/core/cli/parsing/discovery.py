@@ -83,6 +83,11 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
     ("finviz_calendar", "start"): "Start date (YYYY-MM-DD).",
     ("finviz_calendar", "end"): "End date (YYYY-MM-DD).",
     ("forecast_barrier_optimize", "method"): "Barrier simulation method: mc_gbm, mc_gbm_bb, hmm_mc, garch, bootstrap, heston, jump_diffusion, or auto.",
+    ("forecast_volatility_estimate", "method"): (
+        "Volatility estimator, such as ewma, rolling_std, har_rv, garch, "
+        "arima, theta, or ensemble. Run forecast_list_methods with "
+        "--detail standard --search-term NAME to browse the full namespace."
+    ),
     ("causal_discover_signals", "symbols"): (
         "Comma-separated MT5 symbols (e.g. EURUSD,GBPUSD); one symbol auto-expands "
         "to its MT5 group. Optional with --group."

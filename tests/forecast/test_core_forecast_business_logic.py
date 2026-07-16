@@ -1624,6 +1624,18 @@ def test_forecast_list_library_models_and_list_methods(monkeypatch):
     assert standard["methods"][0]["params_count"] == 1
     assert "volatility_methods" in standard
 
+    volatility_filtered = _unwrap(cf.forecast_list_methods)(
+        detail="full",
+        profile="all",
+        search_term="ewma",
+        show_unavailable=True,
+    )
+    assert volatility_filtered["volatility_methods"]["total_filtered"] == 1
+    assert [
+        row["method"]
+        for row in volatility_filtered["volatility_methods"]["methods"]
+    ] == ["ewma"]
+
     compact_all = _unwrap(cf.forecast_list_methods)(show_unavailable=True, profile="all")
     unavailable_method = next(row for row in compact_all["methods"] if row["available"] is False)
     assert unavailable_method["unavailable_reason"] == "Requires: mlforecast, sklearn"

@@ -1664,6 +1664,7 @@ def _forecast_volatility_methods_section(
     *,
     detail: str,
     show_unavailable: bool,
+    search: Optional[str] = None,
 ) -> Dict[str, Any]:
     note = (
         "Dedicated volatility estimators for forecast_volatility_estimate; "
@@ -1685,16 +1686,31 @@ def _forecast_volatility_methods_section(
             "error": "Volatility method metadata is unavailable.",
         }
 
-    selected = [
+    search_value = str(search or "").strip().lower()
+    available_methods = [
         item
         for item in methods
         if isinstance(item, dict) and (show_unavailable or bool(item.get("available")))
+    ]
+    selected = [
+        item
+        for item in available_methods
+        if not search_value
+        or search_value
+        in " ".join(
+            (
+                str(item.get("method") or ""),
+                str(item.get("description") or ""),
+                " ".join(str(alias) for alias in item.get("aliases", []) or []),
+            )
+        ).lower()
     ]
     if detail == "full":
         return {
             "tool": "forecast_volatility_estimate",
             "note": note,
             "total": len(methods),
+            "total_filtered": len(selected),
             "methods_shown": len(selected),
             "methods": selected,
         }
@@ -1707,6 +1723,7 @@ def _forecast_volatility_methods_section(
         "tool": "forecast_volatility_estimate",
         "note": note,
         "total": len(methods),
+        "total_filtered": len(method_names),
         "methods_shown": len(method_names),
         "methods": method_names,
     }
@@ -1859,6 +1876,7 @@ def _forecast_list_methods_impl(  # noqa: C901
             volatility_methods = _forecast_volatility_methods_section(
                 detail=detail_value,
                 show_unavailable=bool(show_unavailable),
+                search=search_value,
             )
 
         if detail_value == "full":
