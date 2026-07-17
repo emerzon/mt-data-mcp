@@ -1354,6 +1354,34 @@ class TestForecastGenerateIntegration:
         assert parsed["text"] == "text forecast"
 
     @patch("mtdata.core.cli.api.discover_tools")
+    def test_forecast_generate_invalid_horizon_returns_json_error(self, mock_discover, capsys):
+        mock_fn = MagicMock(return_value={"forecast": [1.0]})
+        mock_fn.__module__ = "mtdata.core.server"
+        mock_fn.__name__ = "forecast_generate"
+        mock_fn.__doc__ = "Generate forecasts."
+        mock_discover.return_value = {
+            "forecast_generate": {
+                "func": mock_fn,
+                "meta": {"description": "Generate forecasts"},
+            },
+        }
+
+        with patch(
+            "sys.argv",
+            ["cli.py", "--json", "forecast_generate", "EURUSD", "--horizon", "0"],
+        ):
+            result = main()
+
+        assert result == 1
+        mock_fn.assert_not_called()
+        payload = json.loads(capsys.readouterr().out)
+        assert payload["success"] is False
+        assert payload["error_code"] == "cli_invalid_arguments"
+        assert payload["operation"] == "forecast_generate"
+        assert payload["error"] == "horizon must be between 1 and 500."
+        assert "ForecastGenerateRequest" not in payload["error"]
+
+    @patch("mtdata.core.cli.api.discover_tools")
     def test_forecast_generate_tool_error_returns_nonzero(self, mock_discover, capsys):
         mock_fn = MagicMock(return_value={"error": "forecast failed"})
         mock_fn.__module__ = "mtdata.core.server"

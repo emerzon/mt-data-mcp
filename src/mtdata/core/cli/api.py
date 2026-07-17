@@ -27,7 +27,7 @@ from typing import (
     is_typeddict,
 )
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 from ...bootstrap.settings import load_environment
 from ...bootstrap.tools import bootstrap_tools, cli_tool_module_names
@@ -35,6 +35,7 @@ from ...forecast.requests import ForecastGenerateRequest
 from .._mcp_instance import mcp
 from .._mcp_tools import _get_pydantic_model_fields, _select_output_fields
 from .._mcp_tools import get_tool_registry as get_registered_tools
+from ..error_envelope import build_error_payload
 from ..output_contract import resolve_output_contract
 from .formatting import (
     _attach_cli_meta,
@@ -84,6 +85,7 @@ from .runtime.commands import (
 from .runtime.commands import (
     create_command_function as _create_command_function_impl,
 )
+from .runtime.commands import friendly_validation_error
 from .runtime.commands import (
     merge_dict as _merge_dict_impl,
 )
@@ -1832,29 +1834,45 @@ def main():
             dimred_params = _merge_dict(dimred_params, overrides.get("dimred"))
             target_spec = _merge_dict(target_spec, overrides.get("target"))
 
-            request = ForecastGenerateRequest(
-                symbol=symbol,
-                timeframe=args.timeframe,
-                library=args.library,
-                method=args.method,
-                horizon=int(args.horizon),
-                lookback=args.lookback,
-                as_of=args.as_of,
-                start=args.start,
-                end=args.end,
-                params=params,
-                ci_alpha=args.ci_alpha,
-                quantity=args.quantity,
-                proxy=args.proxy,
-                denoise=cast(Any, denoise or None),
-                features=features or None,
-                dimred_method=args.dimred_method,
-                dimred_params=dimred_params or None,
-                target_spec=target_spec or None,
-                async_mode=bool(args.async_mode),
-                model_id=args.model_id,
-                detail=resolve_output_contract(args).detail,
-            )
+            try:
+                request = ForecastGenerateRequest(
+                    symbol=symbol,
+                    timeframe=args.timeframe,
+                    library=args.library,
+                    method=args.method,
+                    horizon=int(args.horizon),
+                    lookback=args.lookback,
+                    as_of=args.as_of,
+                    start=args.start,
+                    end=args.end,
+                    params=params,
+                    ci_alpha=args.ci_alpha,
+                    quantity=args.quantity,
+                    proxy=args.proxy,
+                    denoise=cast(Any, denoise or None),
+                    features=features or None,
+                    dimred_method=args.dimred_method,
+                    dimred_params=dimred_params or None,
+                    target_spec=target_spec or None,
+                    async_mode=bool(args.async_mode),
+                    model_id=args.model_id,
+                    detail=resolve_output_contract(args).detail,
+                )
+            except ValidationError as exc:
+                out = build_error_payload(
+                    friendly_validation_error(exc, cmd_name="forecast_generate"),
+                    code="cli_invalid_arguments",
+                    operation="forecast_generate",
+                    remediation=(
+                        "Set horizon between 1 and 500 and run "
+                        "'mtdata-cli forecast_generate --help' for accepted arguments."
+                    ),
+                )
+                return _render_cli_result_status(
+                    out,
+                    args=args,
+                    cmd_name="forecast_generate",
+                )
 
             if getattr(args, "print_config", False):
                 config_output = _format_result_for_cli(
