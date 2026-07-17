@@ -303,6 +303,9 @@ def test_tick_cap_is_disclosed_as_truncation(monkeypatch):
 
     assert result["truncated"] is True
     assert result["truncation_reason"] == "max_ticks"
+    assert result["volume_profile_accuracy"] == "tick_truncated"
+    assert result["volume_source_quality"] == "partial_raw_ticks"
+    assert "retained sample" in result["source_note"]
     assert result["data_quality"] == {"status": "partial", "reason": "max_ticks"}
     assert "does not represent the full requested window" in result["coverage_note"]
 

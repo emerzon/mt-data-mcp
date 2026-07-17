@@ -661,6 +661,12 @@ def compute_volume_profile_payload(
     if profile["diagnostics"].get("tick_limit_reached") is True:
         profile["truncated"] = True
         profile["truncation_reason"] = "max_ticks"
+        profile["volume_profile_accuracy"] = "tick_truncated"
+        profile["volume_source_quality"] = "partial_raw_ticks"
+        profile["source_note"] = (
+            "Prices and volumes come from raw ticks, but max_ticks truncated the "
+            "requested window; POC and value-area levels describe only the retained sample."
+        )
         tick_rows = int(profile["diagnostics"].get("tick_rows") or 0)
         max_ticks_value = int(profile["diagnostics"].get("requested_max_ticks") or tick_rows)
         profile["data_quality"] = {
