@@ -39,6 +39,9 @@ class TestNormalizeCandlestickName:
     def test_empty_string(self):
         assert _normalize_candlestick_name("") == ""
 
+    def test_strips_numeric_detector_parameters(self):
+        assert _normalize_candlestick_name("CDL_DOJI_10_0.1") == "doji"
+
 
 class TestParseMinStrength:
     def test_valid(self):
@@ -193,6 +196,25 @@ class TestExtractCandlestickRows:
         )
         bearish = [r for r in rows if "Bearish" in str(r[1])]
         assert len(bearish) > 0
+
+    def test_display_label_omits_numeric_detector_parameters(self):
+        df_tail = pd.DataFrame({"time": ["T0", "T1"]})
+        temp_tail = pd.DataFrame({"CDL_DOJI_10_0.1": [0.0, 100.0]})
+
+        rows = _extract_candlestick_rows(
+            df_tail,
+            temp_tail,
+            ["CDL_DOJI_10_0.1"],
+            threshold=0.5,
+            robust_only=False,
+            robust_set=set(),
+            whitelist_set=None,
+            min_gap=0,
+            top_k=1,
+            deprioritize={"doji"},
+        )
+
+        assert rows == [["T1", "Bullish DOJI"]]
 
     def test_include_metrics_adds_span_context(self):
         df_tail = pd.DataFrame({

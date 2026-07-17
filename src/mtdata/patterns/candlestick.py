@@ -206,7 +206,7 @@ _CANDLESTICK_REDUNDANCY_SUPPRESSORS = {
 
 
 def _normalize_candlestick_name(pattern_name: str) -> str:
-    nm = str(pattern_name).strip()
+    nm = _candlestick_display_name(pattern_name)
     while nm:
         parts = nm.replace("_", " ").replace("-", " ").split()
         if len(parts) > 1 and parts[0].lower() in {"bullish", "bearish", "neutral"}:
@@ -220,6 +220,18 @@ def _normalize_candlestick_name(pattern_name: str) -> str:
             continue
         break
     return "".join(ch for ch in nm.lower() if ch.isalnum())
+
+
+def _candlestick_display_name(pattern_name: str) -> str:
+    """Return a detector name without pandas-ta's encoded numeric parameters."""
+    parts = str(pattern_name).strip().replace("_", " ").replace("-", " ").split()
+    while len(parts) > 1:
+        try:
+            float(parts[-1])
+        except (TypeError, ValueError):
+            break
+        parts.pop()
+    return " ".join(parts)
 
 
 def _candlestick_detector_label(pattern_name: str) -> str:
@@ -555,7 +567,7 @@ def _extract_candlestick_rows(
         for col_idx in chosen_idx.tolist():
             name = str(base_names[col_idx])
             value = float(values[i, col_idx])
-            label_core = name.replace("_", " ").strip().upper()
+            label_core = _candlestick_display_name(name).strip().upper()
             dir_title = "Bullish" if value > 0 else "Bearish"
             if include_metrics:
                 span_bars = int(span_values[col_idx])
