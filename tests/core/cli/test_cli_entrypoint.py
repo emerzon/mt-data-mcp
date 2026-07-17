@@ -30,6 +30,29 @@ def test_shell_reuses_process_and_runs_entered_commands(monkeypatch):
     assert observed == [[api.sys.argv[0], "symbols_list", "--limit", "2", "--json"]]
 
 
+def test_shell_continues_after_argparse_system_exit(monkeypatch):
+    from mtdata.core.cli import api
+
+    commands = iter(["market_ticker EURUSD", "bad --flag", "market_ticker GBPUSD", "quit"])
+    observed = []
+
+    def _main():
+        observed.append(list(api.sys.argv))
+        if api.sys.argv[1] == "bad":
+            raise SystemExit(2)
+        return 0
+
+    monkeypatch.setattr("builtins.input", lambda _prompt: next(commands))
+    monkeypatch.setattr(api, "main", _main)
+
+    assert api.run_shell() == 0
+    assert [argv[1:] for argv in observed] == [
+        ["market_ticker", "EURUSD"],
+        ["bad", "--flag"],
+        ["market_ticker", "GBPUSD"],
+    ]
+
+
 def test_shell_is_registered_and_has_help(monkeypatch, capsys):
     from mtdata.core.cli import api
 

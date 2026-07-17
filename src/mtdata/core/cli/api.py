@@ -1948,7 +1948,12 @@ def run_shell() -> int:
                 print("A shell session is already active.", file=sys.stderr)
                 continue
             sys.argv = [original_argv[0], *command_argv]
-            main()
+            try:
+                main()
+            except SystemExit:
+                # argparse has already rendered its error or help text. Keep the
+                # warmed shell alive for the next command.
+                continue
     finally:
         sys.argv = original_argv
 
