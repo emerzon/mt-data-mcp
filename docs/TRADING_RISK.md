@@ -36,7 +36,7 @@ mtdata-cli trade_risk_analyze --symbol EURUSD --direction long \
 | `strict_risk` | `true` | Return `suggested_volume=0.0` if the broker minimum lot would exceed `desired_risk_pct`. |
 | `include_pending` | `true` | Include contingent stop-loss risk from pending orders in portfolio totals. |
 | `direction` | — | `long`/`short` (aliases accepted) for the proposed trade. |
-| `entry` | — | Proposed entry price. With `symbol`+`stop_loss` but no entry, it is resolved from the live tick (ask for long, bid for short, mid otherwise). |
+| `entry` | — | Proposed entry price. With `symbol`+`stop_loss` but no entry, it is resolved from the latest tick (ask for long, bid for short, mid otherwise). A closed/stale quote is labeled `last_available_tick_*` and `sizing_reference_only`; refresh it before submission. |
 | `stop_loss` | — | Proposed stop (alias `sl`). Required to compute risk-based volume. |
 | `take_profit` | — | Optional target (alias `tp`) for reward/risk context. |
 

@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 from types import SimpleNamespace
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from mtdata.core.trading.comments import (
     _comment_sanitization_info,
@@ -432,7 +432,10 @@ def test_run_trade_place_dry_run_blocks_untrusted_quote_preview():
     )
 
     assert result["preview_ok"] is False
+    assert result["success"] is True
     assert result["validation_passed"] is False
+    assert result["blockers"] == ["quote_not_live_ready"]
+    assert result["no_action_reason"] == "dry_run_validation_blocked"
     assert result["quote_context"]["usable_for_live_trading"] is False
 
 
@@ -454,23 +457,26 @@ def test_build_trade_place_dry_run_preview_uses_live_quote_and_margin():
         trade_stops_level=10,
         trade_freeze_level=0,
     )
+    fixed_now = datetime(2026, 7, 15, 12, 0, tzinfo=timezone.utc)
     gateway.symbol_info_tick.return_value = SimpleNamespace(
         bid=1.0999,
         ask=1.1001,
-        time=datetime.now(timezone.utc).timestamp(),
+        time=fixed_now.timestamp(),
     )
     gateway.account_info.return_value = SimpleNamespace(margin_free=1000.0)
 
-    result = build_trade_place_dry_run_preview(
-        symbol="EURUSD",
-        volume=0.1,
-        order_type="BUY",
-        pending=False,
-        price=None,
-        stop_loss=1.08,
-        take_profit=1.12,
-        gateway=gateway,
-    )
+    with patch("mtdata.core.trading.common.datetime", wraps=datetime) as mock_datetime:
+        mock_datetime.now.return_value = fixed_now
+        result = build_trade_place_dry_run_preview(
+            symbol="EURUSD",
+            volume=0.1,
+            order_type="BUY",
+            pending=False,
+            price=None,
+            stop_loss=1.08,
+            take_profit=1.12,
+            gateway=gateway,
+        )
 
     assert result["bid"] == 1.0999
     assert result["ask"] == 1.1001

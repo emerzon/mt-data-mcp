@@ -42,6 +42,8 @@ A dry run routes and validates the request **without sending it to MT5**. The `t
 `success` means the preview operation completed. Gate any subsequent live send
 on `preview_ok` (and the equivalent nested `validation.live_submission_eligible`),
 which is `false` when local requirements such as required SL/TP are missing.
+Closed-market and stale-quote previews also complete successfully, but retain
+`quote_not_live_ready` in `blockers` and keep `preview_ok=false`.
 Compact output always retains these gate fields and the broker-validation
 limitations; `guardrails_preview` remains a standard/full-detail section.
 

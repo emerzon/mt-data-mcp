@@ -117,6 +117,9 @@ _TRADE_PLACE_PREVIEW_KEYS = (
     "min_distance_points",
     "sl_tp_valid",
     "sl_tp_error",
+    "validation_error",
+    "validation_code",
+    "blockers",
     "preview_error",
     "message",
     "dry_run_note",
@@ -542,8 +545,14 @@ def _resolve_live_trade_risk_entry(
         return None, None, {}
 
     quote_context = build_trade_quote_context(symbol, tick)
-    if quote_context.get("usable_for_live_trading") is not True:
-        return None, None, quote_context
+    live_quote = quote_context.get("usable_for_live_trading") is True
+    source_prefix = "live_tick" if live_quote else "last_available_tick"
+    if not live_quote:
+        quote_context["sizing_reference_only"] = True
+        quote_context["sizing_warning"] = (
+            "Position sizing uses the last available non-live quote as a reference; "
+            "refresh the entry before submitting an order."
+        )
 
     bid = _positive_trade_price(getattr(tick, "bid", None))
     ask = _positive_trade_price(getattr(tick, "ask", None))
@@ -555,21 +564,21 @@ def _resolve_live_trade_risk_entry(
 
     if direction_norm == "long":
         if ask is not None:
-            return ask, "live_tick_ask", quote_context
+            return ask, f"{source_prefix}_ask", quote_context
         if bid is not None:
-            return bid, "live_tick_bid_fallback", quote_context
+            return bid, f"{source_prefix}_bid_fallback", quote_context
     elif direction_norm == "short":
         if bid is not None:
-            return bid, "live_tick_bid", quote_context
+            return bid, f"{source_prefix}_bid", quote_context
         if ask is not None:
-            return ask, "live_tick_ask_fallback", quote_context
+            return ask, f"{source_prefix}_ask_fallback", quote_context
 
     if bid is not None and ask is not None:
-        return (bid + ask) / 2.0, "live_tick_mid", quote_context
+        return (bid + ask) / 2.0, f"{source_prefix}_mid", quote_context
     if bid is not None:
-        return bid, "live_tick_bid_only", quote_context
+        return bid, f"{source_prefix}_bid_only", quote_context
     if ask is not None:
-        return ask, "live_tick_ask_only", quote_context
+        return ask, f"{source_prefix}_ask_only", quote_context
     return None, None, quote_context
 
 
@@ -1345,8 +1354,8 @@ def run_trade_place(  # noqa: C901
                     {
                         "sl_tp_valid": False,
                         "sl_tp_error": dry_run_protection_error.get("error"),
-                        "preview_error": dry_run_protection_error.get("error"),
-                        "error_code": dry_run_protection_error.get(
+                        "validation_error": dry_run_protection_error.get("error"),
+                        "validation_code": dry_run_protection_error.get(
                             "error_code",
                             "invalid_protection_levels",
                         ),
@@ -1407,15 +1416,17 @@ def run_trade_place(  # noqa: C901
                 preview["preview_ok"] = False
                 sl_tp_error = str(preview.get("sl_tp_error") or "").strip()
                 if sl_tp_error:
-                    preview["preview_error"] = sl_tp_error
-                    preview.setdefault("error_code", "invalid_protection_levels")
-            if local_blockers and not preview.get("preview_error"):
-                preview["success"] = False
-                preview["error_code"] = "trade_preview_validation_failed"
-                preview["error"] = (
-                    "Dry-run validation failed: " + ", ".join(local_blockers) + "."
-                )
-                preview["no_action_reason"] = "dry_run_validation_failed"
+                    preview["validation_error"] = sl_tp_error
+                    preview.setdefault("validation_code", "invalid_protection_levels")
+            validation_payload = preview.get("validation")
+            validation_blockers = (
+                list(validation_payload.get("blockers") or [])
+                if isinstance(validation_payload, dict)
+                else list(local_blockers)
+            )
+            if validation_blockers:
+                preview["blockers"] = validation_blockers
+                preview["no_action_reason"] = "dry_run_validation_blocked"
             preview_error = str(preview.get("preview_error") or "").strip()
             if preview_error:
                 preview["success"] = False

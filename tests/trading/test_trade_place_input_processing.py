@@ -279,10 +279,11 @@ def test_trade_place_dry_run_market_preview_rejects_missing_sl_tp() -> None:
             __cli_raw=True,
         )
 
-    assert out.get("success") is False
-    assert out.get("error_code") == "trade_preview_validation_failed"
-    assert "missing_stop_loss, missing_take_profit" in out.get("error", "")
-    assert out.get("no_action_reason") == "dry_run_validation_failed"
+    assert out.get("success") is True
+    assert "error_code" not in out
+    assert "error" not in out
+    assert out.get("blockers") == ["missing_stop_loss", "missing_take_profit"]
+    assert out.get("no_action_reason") == "dry_run_validation_blocked"
     assert out.get("dry_run") is True
     assert out.get("require_sl_tp") is True
     assert "live submission with require_sl_tp=true would be rejected" in out.get(
@@ -402,13 +403,14 @@ def test_trade_place_dry_run_rejects_invalid_live_protection_preview() -> None:
             __cli_raw=True,
         )
 
-    assert out.get("success") is False
+    assert out.get("success") is True
     assert out.get("preview_ok") is False
     assert out.get("dry_run") is True
-    assert out.get("error_code") == "invalid_protection_levels"
-    assert out.get("error") == out.get("sl_tp_error")
-    assert "stop_loss must be below the live bid" in out.get("error", "")
-    assert out.get("no_action_reason") == "dry_run_preview_error"
+    assert out.get("validation_code") == "invalid_protection_levels"
+    assert out.get("validation_error") == out.get("sl_tp_error")
+    assert "stop_loss must be below the live bid" in out.get("validation_error", "")
+    assert out.get("no_action_reason") == "dry_run_validation_blocked"
+    assert out.get("blockers") == ["invalid_protection_levels"]
     mock_market.assert_not_called()
 
 
@@ -427,12 +429,13 @@ def test_trade_place_dry_run_rejects_identical_protection_before_mt5() -> None:
             __cli_raw=True,
         )
 
-    assert out["success"] is False
-    assert out["error_code"] == "invalid_protection_levels"
-    assert out["error"] == "stop_loss and take_profit must be different prices."
+    assert out["success"] is True
+    assert out["validation_code"] == "invalid_protection_levels"
+    assert out["validation_error"] == "stop_loss and take_profit must be different prices."
     assert out["validation"]["local_requirements_passed"] is False
     assert out["validation"]["live_submission_eligible"] is False
     assert "invalid_protection_levels" in out["validation"]["blockers"]
+    assert out["no_action_reason"] == "dry_run_validation_blocked"
     mock_preview.assert_not_called()
     mock_market.assert_not_called()
 
@@ -486,11 +489,14 @@ def test_trade_place_dry_run_rejects_bool_like_invalid_protection_preview() -> N
             __cli_raw=True,
         )
 
-    assert out.get("success") is False
+    assert out.get("success") is True
     assert out.get("preview_ok") is False
     assert out.get("dry_run") is True
-    assert out.get("error_code") == "invalid_protection_levels"
-    assert "take_profit must be above the live ask" in out.get("error", "")
+    assert out.get("validation_code") == "invalid_protection_levels"
+    assert "take_profit must be above the live ask" in out.get(
+        "validation_error", ""
+    )
+    assert out.get("blockers") == ["invalid_protection_levels"]
     mock_market.assert_not_called()
 
 

@@ -434,7 +434,7 @@ def test_trade_risk_analyze_resolves_missing_entry_from_live_tick() -> None:
 
     with _patched_mt5_module(mt5):
         out = trade_risk_analyze(
-            symbol="EURUSD",
+            symbol="BTCUSD",
             direction="long",
             desired_risk_pct=1.0,
             stop_loss=95.0,
@@ -461,7 +461,7 @@ def test_trade_risk_analyze_reanchors_omitted_entry_after_direction_inference() 
 
     with _patched_mt5_module(mt5):
         out = trade_risk_analyze(
-            symbol="EURUSD",
+            symbol="BTCUSD",
             desired_risk_pct=1.0,
             stop_loss=95.0,
             take_profit=112.5,
@@ -473,7 +473,7 @@ def test_trade_risk_analyze_reanchors_omitted_entry_after_direction_inference() 
     assert out["trade_evaluation"]["entry"] == 100.2
 
 
-def test_trade_risk_analyze_does_not_size_from_stale_live_tick() -> None:
+def test_trade_risk_analyze_sizes_from_stale_tick_as_reference_only() -> None:
     mt5 = MagicMock()
     mt5.account_info.return_value = SimpleNamespace(equity=1000.0, currency="USD")
     mt5.positions_get.return_value = []
@@ -486,7 +486,7 @@ def test_trade_risk_analyze_does_not_size_from_stale_live_tick() -> None:
 
     with _patched_mt5_module(mt5):
         out = trade_risk_analyze(
-            symbol="EURUSD",
+            symbol="BTCUSD",
             direction="long",
             desired_risk_pct=1.0,
             stop_loss=95.0,
@@ -494,9 +494,11 @@ def test_trade_risk_analyze_does_not_size_from_stale_live_tick() -> None:
 
     assert out["quote_context"]["usable_for_live_trading"] is False
     assert out["quote_context"]["freshness_state"] == "stale"
-    assert out["position_sizing"]["status"] == "parameters_missing"
-    assert "entry" in out["position_sizing"]["missing"]
-    assert "trade_evaluation" not in out
+    assert out["quote_context"]["sizing_reference_only"] is True
+    assert "last available non-live quote" in out["quote_context"]["sizing_warning"]
+    assert out["position_sizing"]["entry"] == 100.2
+    assert out["position_sizing"]["entry_source"] == "last_available_tick_ask"
+    assert out["trade_evaluation"]["entry_source"] == "last_available_tick_ask"
 
 
 def test_trade_risk_analyze_keeps_exposure_analysis_with_partial_sizing_params() -> None:
