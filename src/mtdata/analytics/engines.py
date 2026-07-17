@@ -568,7 +568,7 @@ def analyze_execution_quality(request: TradeExecutionQualityRequest, gateway: An
             getattr(gateway, "ORDER_TYPE_SELL", 1),
         }
         is_market_order = order_type_value in market_order_types
-        order_to_fill_ms = (
+        order_to_fill_duration_ms = (
             max(
                 0.0,
                 float(deal.get("time_msc") or fill_epoch * 1000.0)
@@ -589,7 +589,10 @@ def analyze_execution_quality(request: TradeExecutionQualityRequest, gateway: An
             "benchmark_source": benchmark_source,
             "slippage_bps": slippage_bps,
             "price_improved": slippage_bps < 0,
-            "order_to_fill_ms": order_to_fill_ms,
+            "order_to_fill_duration_ms": order_to_fill_duration_ms,
+            "fill_timing_basis": (
+                "market_fill_latency" if is_market_order else "pending_time_to_fill"
+            ),
             "is_market_order": is_market_order,
             "fill_ratio": min(1.0, volume / initial_volume) if initial_volume > 0 else None,
             "commission": float(deal.get("commission") or 0.0),
@@ -635,20 +638,20 @@ def analyze_execution_quality(request: TradeExecutionQualityRequest, gateway: An
         "partial_fill_rate": _round_execution_stat(
             np.mean([(item.get("fill_ratio") or 1.0) < 0.999 for item in fills])
         ) if fills else None,
-        "market_order_latency_ms": _execution_percentiles(
-            item["order_to_fill_ms"]
+        "market_fill_latency_ms": _execution_percentiles(
+            item["order_to_fill_duration_ms"]
             for item in market_order_fills
-            if item.get("order_to_fill_ms") is not None
+            if item.get("order_to_fill_duration_ms") is not None
         ),
-        "non_market_order_latency_ms": _execution_percentiles(
-            item["order_to_fill_ms"]
+        "pending_time_to_fill_ms": _execution_percentiles(
+            item["order_to_fill_duration_ms"]
             for item in non_market_order_fills
-            if item.get("order_to_fill_ms") is not None
+            if item.get("order_to_fill_duration_ms") is not None
         ),
-        "order_to_fill_ms": _execution_percentiles(
-            item["order_to_fill_ms"]
+        "order_to_fill_duration_ms": _execution_percentiles(
+            item["order_to_fill_duration_ms"]
             for item in fills
-            if item.get("order_to_fill_ms") is not None
+            if item.get("order_to_fill_duration_ms") is not None
         ),
         "commission_fee_per_lot": _execution_percentiles(item["commission_fee_per_lot"] for item in fills),
     }
@@ -670,7 +673,9 @@ def analyze_execution_quality(request: TradeExecutionQualityRequest, gateway: An
                     ]
                     if len(codes) == 1:
                         row["order_type_code"] = codes[0]
-                    row["order_to_fill_ms"] = _execution_percentiles(items["order_to_fill_ms"])
+                    row["order_to_fill_duration_ms"] = _execution_percentiles(
+                        items["order_to_fill_duration_ms"]
+                    )
                 breakdowns[label].append(row)
     sample_start = format_epoch_utc(fills[0]["fill_epoch"]) if fills else None
     sample_end = format_epoch_utc(fills[-1]["fill_epoch"]) if fills else None
@@ -680,6 +685,11 @@ def analyze_execution_quality(request: TradeExecutionQualityRequest, gateway: An
     if fallback_count:
         warnings.append(
             f"{fallback_count} fill(s) used order price because no arrival quote was available."
+        )
+    if non_market_order_fills:
+        warnings.append(
+            "pending_time_to_fill_ms measures intentional limit/stop order wait, not "
+            "broker execution latency; order_to_fill_duration_ms is a mixed duration."
         )
     return {
         "success": True,
@@ -715,17 +725,17 @@ def analyze_execution_quality(request: TradeExecutionQualityRequest, gateway: An
             "sample_end": sample_end,
             "truncated": processed_candidates < len(eligible_deals),
         },
-        "latency_definition": {
-            "market_order_latency_ms": "market_order_setup_to_fill_elapsed_time",
-            "non_market_order_latency_ms": "non_market_order_setup_to_fill_elapsed_time_including_pending_wait",
-            "order_to_fill_ms": "all_order_setup_to_fill_elapsed_time_including_pending_wait",
+        "timing_definition": {
+            "market_fill_latency_ms": "market_order_setup_to_fill_elapsed_time",
+            "pending_time_to_fill_ms": "pending_order_setup_to_fill_wait_duration_not_execution_latency",
+            "order_to_fill_duration_ms": "all_order_setup_to_fill_mixed_duration_not_execution_latency",
         },
         "units": {
             "slippage_bps": "basis_points_positive_is_worse",
             "markout_bps": "basis_points_positive_is_favorable",
-            "market_order_latency_ms": "milliseconds",
-            "non_market_order_latency_ms": "milliseconds",
-            "order_to_fill_ms": "milliseconds",
+            "market_fill_latency_ms": "milliseconds",
+            "pending_time_to_fill_ms": "milliseconds",
+            "order_to_fill_duration_ms": "milliseconds",
             "commission": "account_currency",
             "fee": "account_currency",
             "commission_fee_per_lot": "account_currency_per_broker_lot",

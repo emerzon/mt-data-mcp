@@ -305,19 +305,78 @@ def test_execution_quality_matches_order_and_computes_markout() -> None:
         "account_currency_per_broker_lot"
     )
     assert result["items"][0]["benchmark_source"] == "arrival_quote"
-    assert result["items"][0]["order_to_fill_ms"] == 1000.0
-    assert result["summary"]["market_order_latency_ms"]["mean"] == 1000.0
+    assert result["items"][0]["order_to_fill_duration_ms"] == 1000.0
+    assert result["items"][0]["fill_timing_basis"] == "market_fill_latency"
+    assert result["summary"]["market_fill_latency_ms"]["mean"] == 1000.0
     assert result["summary"]["market_order_fills"] == 1
     assert result["summary"]["non_market_order_fills"] == 0
-    assert result["summary"]["non_market_order_latency_ms"]["mean"] is None
-    assert result["latency_definition"]["order_to_fill_ms"].endswith(
-        "including_pending_wait"
+    assert result["summary"]["pending_time_to_fill_ms"]["mean"] is None
+    assert result["timing_definition"]["order_to_fill_duration_ms"].endswith(
+        "not_execution_latency"
     )
     assert result["items"][0]["markout_bps"]["5"] is not None
     assert result["items"][0]["order_type"] == "BUY"
     assert result["items"][0]["order_type_code"] == 0
     assert result["breakdowns"]["by_order_type"][0]["order_type"] == "BUY"
     assert result["breakdowns"]["by_order_type"][0]["order_type_code"] == 0
+
+
+def test_execution_quality_separates_pending_wait_from_market_latency() -> None:
+    gateway = FakeGateway()
+    start = _now() - 100
+    gateway.tick_rows = _ticks(100, start=start)
+    gateway.orders = [
+        {
+            "ticket": 10,
+            "type": 0,
+            "price_open": 1.10005,
+            "volume_initial": 1.0,
+            "time_setup_msc": (start + 9) * 1000,
+        },
+        {
+            "ticket": 11,
+            "type": 2,
+            "price_open": 1.10005,
+            "volume_initial": 1.0,
+            "time_setup_msc": start * 1000,
+        },
+    ]
+    gateway.deals = [
+        {
+            "ticket": 20,
+            "order": 10,
+            "symbol": "EURUSD",
+            "type": 0,
+            "volume": 1.0,
+            "price": 1.10008,
+            "time_msc": (start + 10) * 1000,
+        },
+        {
+            "ticket": 21,
+            "order": 11,
+            "symbol": "EURUSD",
+            "type": 0,
+            "volume": 1.0,
+            "price": 1.10008,
+            "time_msc": (start + 10) * 1000,
+        },
+    ]
+
+    result = analyze_execution_quality(
+        TradeExecutionQualityRequest(
+            minutes_back=60,
+            benchmark="order_price",
+            markout_seconds=[1],
+            detail="full",
+        ),
+        gateway,
+    )
+
+    assert result["summary"]["market_fill_latency_ms"]["mean"] == 1000.0
+    assert result["summary"]["pending_time_to_fill_ms"]["mean"] == 10000.0
+    assert result["summary"]["order_to_fill_duration_ms"]["mean"] == 5500.0
+    assert result["items"][1]["fill_timing_basis"] == "pending_time_to_fill"
+    assert any("not broker execution latency" in item for item in result["warnings"])
 
 
 def test_execution_quality_statistics_remove_binary_float_tails() -> None:
