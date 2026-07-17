@@ -832,6 +832,34 @@ def _callable_exposes_kwarg(func: Any, name: str) -> bool:
     return any(param.name == name for param in _request_model_signature_fields(func))
 
 
+def _update_supplied_request_model_field(
+    func: Any,
+    kwargs: Dict[str, Any],
+    name: str,
+    value: Any,
+) -> bool:
+    """Update a flattened field when the caller supplied its request model."""
+    try:
+        sig = get_runtime_signature(func)
+    except Exception:
+        return False
+    for param_name, param in sig.parameters.items():
+        if param_name not in kwargs:
+            continue
+        base_ann, _ = _unwrap_optional_annotation(param.annotation)
+        model_fields, _ = _get_pydantic_model_fields(base_ann)
+        if name not in model_fields:
+            continue
+        request = kwargs[param_name]
+        if isinstance(request, BaseModel):
+            kwargs[param_name] = request.model_copy(update={name: value})
+            return True
+        if isinstance(request, dict):
+            kwargs[param_name] = {**request, name: value}
+            return True
+    return False
+
+
 def _recording_tool_decorator(*dargs, **dkwargs):  # type: ignore[override]  # noqa: C901
     if _ORIG_TOOL_DECORATOR is None:
         def _noop(func):
@@ -888,9 +916,15 @@ def _recording_tool_decorator(*dargs, **dkwargs):  # type: ignore[override]  # n
                 if normalized_extras and _callable_exposes_kwarg(func, "extras"):
                     # Preserve tool-local section semantics (for example an
                     # extras request that intentionally removes a row cap).
-                    kw["extras"] = normalized_extras
+                    if not _update_supplied_request_model_field(
+                        func, kw, "extras", normalized_extras
+                    ):
+                        kw["extras"] = normalized_extras
                 if normalized_extras and "detail" not in kw and _callable_exposes_kwarg(func, "detail"):
-                    kw["detail"] = "full"
+                    if not _update_supplied_request_model_field(
+                        func, kw, "detail", "full"
+                    ):
+                        kw["detail"] = "full"
                 _coerce_kwargs_for_callable(func, kw)
                 contract_state = resolve_output_contract(
                     kw,

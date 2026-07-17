@@ -10,6 +10,7 @@ from typing import Optional, Union
 from unittest.mock import MagicMock, PropertyMock, patch
 
 import pytest
+from pydantic import BaseModel
 
 # ---------------------------------------------------------------------------
 # Helpers under test are importable without triggering full server bootstrap
@@ -917,6 +918,39 @@ class TestRecordingToolDecorator:
             result = wrapped(json=True, extras="metadata,diagnostics")
 
             assert result["received_extras"] == ("metadata", "diagnostics")
+        finally:
+            tools._ORIG_TOOL_DECORATOR = original
+
+    def test_wrapped_function_injects_extras_into_supplied_request_model(self):
+        import mtdata.core._mcp_tools as tools
+
+        class SampleRequest(BaseModel):
+            symbol: str
+            detail: str = "compact"
+            extras: tuple[str, ...] | None = None
+
+        original = tools._ORIG_TOOL_DECORATOR
+        try:
+            tools._ORIG_TOOL_DECORATOR = lambda *a, **k: (lambda fn: fn)
+            dec = tools._recording_tool_decorator()
+
+            def request_tool(request: SampleRequest):
+                return {
+                    "detail_seen": request.detail,
+                    "extras_seen": request.extras,
+                }
+
+            wrapped = dec(request_tool)
+            result = wrapped(
+                request=SampleRequest(symbol="EURUSD"),
+                extras="metadata,diagnostics",
+                __cli_raw=True,
+            )
+
+            assert result == {
+                "detail_seen": "full",
+                "extras_seen": ("metadata", "diagnostics"),
+            }
         finally:
             tools._ORIG_TOOL_DECORATOR = original
 
