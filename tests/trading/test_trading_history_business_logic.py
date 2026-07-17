@@ -146,6 +146,27 @@ def test_trade_history_supports_offset_pagination() -> None:
     assert [item["deal_ticket"] for item in ascending["items"]] == [1, 2]
 
 
+def test_trade_history_labels_account_currency_money_fields() -> None:
+    out = normalize_trade_history_output(
+        [
+            {
+                "ticket": 1,
+                "symbol": "EURUSD",
+                "profit": 12.5,
+                "commission": -0.25,
+                "swap": -0.1,
+                "fee": -0.05,
+            }
+        ],
+        request=TradeHistoryRequest(history_kind="deals"),
+        account_currency="USD",
+    )
+
+    assert out["currency"] == "USD"
+    for field in ("profit", "commission", "swap", "fee"):
+        assert out["units"][field] == "account_currency"
+
+
 def test_trade_history_rounds_money_fields_for_display() -> None:
     out = normalize_trade_history_output(
         [
@@ -1244,6 +1265,7 @@ def test_trade_journal_analyze_summarizes_realized_exit_deals() -> None:
         "mtdata.core.trading.account._run_trade_history_request",
         return_value={
             "success": True,
+            "currency": "USD",
             "count": len(history_rows),
             "items": history_rows,
         },
@@ -1256,6 +1278,9 @@ def test_trade_journal_analyze_summarizes_realized_exit_deals() -> None:
         )
 
     assert out["success"] is True
+    assert out["currency"] == "USD"
+    assert out["units"]["net_pnl"] == "account_currency"
+    assert out["units"]["commission"] == "account_currency"
     assert out["period_start"] == "2026-01-01T00:00:00Z"
     assert out["period_end"] == "2026-01-03T00:00:00Z"
     assert out["period_timezone"] == "UTC"

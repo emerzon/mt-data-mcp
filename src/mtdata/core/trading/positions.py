@@ -129,6 +129,12 @@ _TRADE_VOLUME_UNITS = {
     "Initial Volume": BROKER_VOLUME_UNIT,
     "Current Volume": BROKER_VOLUME_UNIT,
 }
+_TRADE_MONEY_FIELDS = {
+    "profit",
+    "commission",
+    "swap",
+    "fee",
+}
 
 
 def _utc_epoch_identity(value: Any) -> float:
@@ -317,6 +323,13 @@ def _attach_trade_volume_units(out: Dict[str, Any]) -> None:
         for key, unit in _TRADE_VOLUME_UNITS.items()
         if key in seen_fields
     }
+    units.update(
+        {
+            key: "account_currency"
+            for key in _TRADE_MONEY_FIELDS
+            if key in seen_fields
+        }
+    )
     if units:
         out["units"] = units
 
@@ -330,6 +343,8 @@ def _gateway_account_currency(gateway: Any) -> Optional[str]:
     except Exception:
         return None
     currency = str(getattr(account, "currency", "") or "").strip()
+    if currency.startswith("<") or len(currency) > 16:
+        return None
     return currency or None
 
 
@@ -1053,9 +1068,15 @@ def normalize_trade_history_output(
     rows: Any,
     *,
     request: Any,
+    account_currency: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Normalize trade history into the standard trade read envelope."""
-    out = _normalize_trade_read_output(rows, request=request, kind="trade_history")
+    out = _normalize_trade_read_output(
+        rows,
+        request=request,
+        kind="trade_history",
+        account_currency=account_currency,
+    )
     history_kind = getattr(request, "history_kind", None)
     include_request_metadata = _include_trade_read_request_metadata(request)
     if out.get("success") is True:

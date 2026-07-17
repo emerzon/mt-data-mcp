@@ -33,7 +33,7 @@ from ..output_contract import (
 )
 from . import comments, validation
 from .gateway import create_trading_gateway
-from .positions import normalize_trade_history_output
+from .positions import _gateway_account_currency, normalize_trade_history_output
 from .requests import TradeHistoryRequest, TradeJournalAnalyzeRequest
 from .use_cases import _DEFAULT_TRADE_HISTORY_LOOKBACK_DAYS, run_trade_history
 
@@ -70,6 +70,19 @@ _TRADE_ACCOUNT_COMPACT_KEYS = (
 _TRADE_JOURNAL_UNITS: Dict[str, str] = {
     "win_rate": "fraction",
     "win_rate_pct": "percentage_points",
+    "net_pnl": "account_currency",
+    "gross_profit": "account_currency",
+    "gross_loss": "account_currency",
+    "expectancy": "account_currency_per_closed_deal",
+    "avg_win": "account_currency_per_winning_deal",
+    "avg_loss": "account_currency_per_losing_deal",
+    "best_trade": "account_currency",
+    "worst_trade": "account_currency",
+    "profit": "account_currency",
+    "commission": "account_currency",
+    "swap": "account_currency",
+    "fee": "account_currency",
+    "volume": "broker_lot",
 }
 
 
@@ -78,13 +91,14 @@ def _utc_epoch_identity(value: Any) -> float:
 
 
 def _run_trade_history_request(request: TradeHistoryRequest) -> Any:
+    gateway = create_trading_gateway(
+        include_trade_preflight=True,
+        adapter=mt5_adapter,
+        ensure_connection_impl=ensure_mt5_connection_or_raise,
+    )
     result = run_trade_history(
         request,
-        gateway=create_trading_gateway(
-            include_trade_preflight=True,
-            adapter=mt5_adapter,
-            ensure_connection_impl=ensure_mt5_connection_or_raise,
-        ),
+        gateway=gateway,
         use_client_tz=_use_client_tz,
         format_time_minimal=_format_time_minimal,
         format_time_minimal_local=_format_time_minimal_local,
@@ -98,7 +112,11 @@ def _run_trade_history_request(request: TradeHistoryRequest) -> Any:
         decode_mt5_enum_label=decode_mt5_enum_label,
         mt5_config=mt5_config,
     )
-    return normalize_trade_history_output(result, request=request)
+    return normalize_trade_history_output(
+        result,
+        request=request,
+        account_currency=_gateway_account_currency(gateway),
+    )
 
 
 def _safe_trade_journal_float(value: Any) -> Optional[float]:
@@ -197,7 +215,13 @@ def _trade_journal_metrics(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
     return metrics
 
 
-def _attach_trade_journal_units(payload: Dict[str, Any]) -> Dict[str, Any]:
+def _attach_trade_journal_units(
+    payload: Dict[str, Any],
+    *,
+    currency: Optional[str] = None,
+) -> Dict[str, Any]:
+    if currency:
+        payload["currency"] = currency
     payload["units"] = dict(_TRADE_JOURNAL_UNITS)
     return payload
 
@@ -352,6 +376,7 @@ def _run_trade_journal_request(request: TradeJournalAnalyzeRequest) -> Dict[str,
         return {"error": "Unexpected trade_history response shape."}
     if history_result.get("error"):
         return history_result
+    currency = str(history_result.get("currency") or "").strip() or None
 
     raw_rows = history_result.get("items")
     if not isinstance(raw_rows, list):
@@ -399,7 +424,7 @@ def _run_trade_journal_request(request: TradeJournalAnalyzeRequest) -> Dict[str,
         }
         if breakdowns:
             payload["breakdowns"] = breakdowns
-        return _attach_trade_journal_units(payload)
+        return _attach_trade_journal_units(payload, currency=currency)
 
     rows = [row for row in raw_rows if isinstance(row, dict)]
     analyzed_rows: List[Dict[str, Any]] = []
@@ -470,7 +495,7 @@ def _run_trade_journal_request(request: TradeJournalAnalyzeRequest) -> Dict[str,
         }
         if breakdowns:
             payload["breakdowns"] = breakdowns
-        return _attach_trade_journal_units(payload)
+        return _attach_trade_journal_units(payload, currency=currency)
 
     sample_quality = _trade_journal_sample_quality(len(analyzed_rows), minimum=minimum_sample)
     if request.check_only:
@@ -538,7 +563,7 @@ def _run_trade_journal_request(request: TradeJournalAnalyzeRequest) -> Dict[str,
             _trade_journal_trade_snapshot(row)
             for row in ranked_worst[: min(5, len(ranked_worst))]
         ]
-    return _attach_trade_journal_units(payload)
+    return _attach_trade_journal_units(payload, currency=currency)
 
 
 def _trade_journal_sample_quality(exit_deals: int, *, minimum: int = 30) -> Dict[str, Any]:

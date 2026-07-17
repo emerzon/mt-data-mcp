@@ -472,6 +472,15 @@ def _order_type_label(value: Any, gateway: Any) -> str:
 
 def analyze_execution_quality(request: TradeExecutionQualityRequest, gateway: Any) -> Dict[str, Any]:
     start, end = _window(request.start, request.end, request.minutes_back)
+    account_currency = None
+    account_info = getattr(gateway, "account_info", None)
+    if callable(account_info):
+        try:
+            account_currency = str(
+                getattr(account_info(), "currency", "") or ""
+            ).strip() or None
+        except Exception:
+            account_currency = None
     kwargs = {"group": f"*{request.symbol}*"} if request.symbol else {}
     deals = [_mapping(row) for row in (gateway.history_deals_get(start, end, **kwargs) or [])]
     orders = [_mapping(row) for row in (gateway.history_orders_get(start, end, **kwargs) or [])]
@@ -674,6 +683,7 @@ def analyze_execution_quality(request: TradeExecutionQualityRequest, gateway: An
         )
     return {
         "success": True,
+        **({"currency": account_currency} if account_currency else {}),
         "summary": summary,
         "breakdowns": breakdowns,
         **({"items": fills} if request.detail == "full" else {}),
@@ -710,7 +720,17 @@ def analyze_execution_quality(request: TradeExecutionQualityRequest, gateway: An
             "non_market_order_latency_ms": "non_market_order_setup_to_fill_elapsed_time_including_pending_wait",
             "order_to_fill_ms": "all_order_setup_to_fill_elapsed_time_including_pending_wait",
         },
-        "units": {"slippage_bps": "basis_points_positive_is_worse", "markout_bps": "basis_points_positive_is_favorable", "market_order_latency_ms": "milliseconds", "non_market_order_latency_ms": "milliseconds", "order_to_fill_ms": "milliseconds"},
+        "units": {
+            "slippage_bps": "basis_points_positive_is_worse",
+            "markout_bps": "basis_points_positive_is_favorable",
+            "market_order_latency_ms": "milliseconds",
+            "non_market_order_latency_ms": "milliseconds",
+            "order_to_fill_ms": "milliseconds",
+            "commission": "account_currency",
+            "fee": "account_currency",
+            "commission_fee_per_lot": "account_currency_per_broker_lot",
+            "execution_shortfall_currency_estimate": "account_currency",
+        },
         "warnings": warnings,
     }
 

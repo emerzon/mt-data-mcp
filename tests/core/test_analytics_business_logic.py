@@ -286,19 +286,24 @@ def test_tick_frame_nulls_derived_quotes_for_one_sided_updates() -> None:
 
 def test_execution_quality_matches_order_and_computes_markout() -> None:
     gateway = FakeGateway()
+    gateway.account_info = lambda: SimpleNamespace(currency="USD")
     start = _now() - 100
     gateway.tick_rows = _ticks(100, start=start)
     gateway.orders = [
         {"ticket": 10, "type": 0, "price_open": 1.10005, "volume_initial": 1.0, "time_setup_msc": (start + 9) * 1000}
     ]
     gateway.deals = [
-        {"ticket": 20, "order": 10, "position_id": 30, "symbol": "EURUSD", "type": 0, "volume": 1.0, "price": 1.10008, "time": start + 10, "time_msc": (start + 10) * 1000}
+        {"ticket": 20, "order": 10, "position_id": 30, "symbol": "EURUSD", "type": 0, "volume": 1.0, "price": 1.10008, "time": start + 10, "time_msc": (start + 10) * 1000, "commission": -0.25, "fee": -0.05}
     ]
     result = analyze_execution_quality(
         TradeExecutionQualityRequest(minutes_back=60, markout_seconds=[1, 5], detail="full"),
         gateway,
     )
     assert result["summary"]["fills"] == 1
+    assert result["currency"] == "USD"
+    assert result["units"]["commission_fee_per_lot"] == (
+        "account_currency_per_broker_lot"
+    )
     assert result["items"][0]["benchmark_source"] == "arrival_quote"
     assert result["items"][0]["order_to_fill_ms"] == 1000.0
     assert result["summary"]["market_order_latency_ms"]["mean"] == 1000.0
