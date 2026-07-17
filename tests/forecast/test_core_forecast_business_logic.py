@@ -2879,7 +2879,7 @@ def test_forecast_barrier_prob_compact_omits_confidence_diagnostics():
         "symbol": "EURUSD",
         "n_sims": 2000,
         "seed": 42,
-        "seed_source": "request",
+        "seed_source": "derived_from_request",
         "prob_tp_first": 0.55,
         "prob_sl_first": 0.30,
         "prob_no_hit": 0.15,
@@ -2898,7 +2898,7 @@ def test_forecast_barrier_prob_compact_omits_confidence_diagnostics():
 
     assert out["n_sims"] == 2000
     assert out["seed"] == 42
-    assert out["seed_source"] == "request"
+    assert out["seed_source"] == "derived_from_request"
     assert "confidence" not in out
     assert "prob_tp_first_ci95" not in out
     assert "prob_sl_first_ci95" not in out

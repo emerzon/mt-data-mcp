@@ -626,7 +626,7 @@ def forecast_barrier_hit_probabilities(  # noqa: C901
             "sl_price": float(sl_price),
             "n_sims": int(S),
             "seed": int(request_seed_base),
-            "seed_source": "params" if seed_provided else "request",
+            "seed_source": "params" if seed_provided else "derived_from_request",
             **resolved_probabilities,
             "prob_tp_first_se": _binomial_se(prob_tp_first, int(S)),
             "prob_sl_first_se": _binomial_se(prob_sl_first, int(S)),

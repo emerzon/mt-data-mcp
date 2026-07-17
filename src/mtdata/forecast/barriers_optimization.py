@@ -3109,7 +3109,7 @@ def forecast_barrier_optimize(  # noqa: C901
                 "n_seeds": int(n_seeds),
                 "paths_evaluated": int(S),
                 "seed": int(request_seed_base),
-                "seed_source": "params" if seed_provided else "request",
+                "seed_source": "params" if seed_provided else "derived_from_request",
                 "n_trials": int(optuna_trials_val) if optimizer_val == 'optuna' else None,
                 "tp_steps": int(tp_steps_val),
                 "sl_steps": int(sl_steps_val),

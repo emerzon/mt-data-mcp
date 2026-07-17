@@ -147,7 +147,7 @@ class TestBarrierHitProbabilities(_BarrierTestBase):
 
         self.assertTrue(first["success"])
         self.assertEqual(first["seed"], second["seed"])
-        self.assertEqual(first["seed_source"], "request")
+        self.assertEqual(first["seed_source"], "derived_from_request")
         self.assertEqual(first["n_sims"], 50)
         self.assertEqual(first["prob_tp_first"], second["prob_tp_first"])
         self.assertEqual(first["prob_sl_first"], second["prob_sl_first"])
@@ -176,6 +176,7 @@ class TestBarrierHitProbabilities(_BarrierTestBase):
 
         self.assertTrue(result["success"])
         self.assertEqual(result["seed"], 5)
+        self.assertEqual(result["seed_source"], "params")
         self.assertEqual(seen_seeds, [5])
 
     def test_forecast_barrier_hit_probabilities_accepts_tick_aliases(self):
