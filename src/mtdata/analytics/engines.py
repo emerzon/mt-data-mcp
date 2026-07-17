@@ -1200,6 +1200,8 @@ def decompose_portfolio_risk(request: PortfolioRiskDecomposeRequest, gateway: An
         "ewma_half_life": request.ewma_half_life,
         "random_seed": request.seed,
         "completion_policy": "allow_partial" if request.allow_partial else "fail_closed",
+        "valuation_time": format_epoch_utc(datetime.now(timezone.utc).timestamp()),
+        "valuation_basis": "live_position_marks_with_completed_bar_return_history",
     }
     account = None
     try:
@@ -1397,7 +1399,6 @@ def decompose_portfolio_risk(request: PortfolioRiskDecomposeRequest, gateway: An
             "aligned_returns": len(returns),
             "data_start": data_start,
             "data_end": data_end,
-            "as_of": data_end,
         }
     )
     return {

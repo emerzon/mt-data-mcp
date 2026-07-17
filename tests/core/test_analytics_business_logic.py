@@ -567,11 +567,16 @@ def test_portfolio_risk_reconciles_component_expected_shortfall() -> None:
         "ewma_half_life": 60.0,
         "random_seed": 42,
         "completion_policy": "fail_closed",
+        "valuation_time": result["model_context"]["valuation_time"],
+        "valuation_basis": "live_position_marks_with_completed_bar_return_history",
         "aligned_returns": result["summary"]["aligned_rows"],
         "data_start": result["model_context"]["data_start"],
         "data_end": result["model_context"]["data_end"],
-        "as_of": result["model_context"]["data_end"],
     }
+    assert datetime.fromisoformat(
+        result["model_context"]["valuation_time"].replace("Z", "+00:00")
+    ).tzinfo == timezone.utc
+    assert "as_of" not in result["model_context"]
 
 
 def test_filtered_historical_shock_uses_pre_shock_volatility() -> None:
