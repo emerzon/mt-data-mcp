@@ -115,6 +115,29 @@ class TestSymbolsListNoSearch:
 
     @patch(_NORM_LIMIT, return_value=25)
     @patch(_TABLE, side_effect=lambda h, r: {"headers": h, "data": r})
+    @patch(_GROUP_PATH, return_value="Stock CFD's\\Nasdaq")
+    @patch(f"{_MT5}.symbols_get")
+    def test_descriptions_replace_invalid_unicode_surrogates(
+        self,
+        mock_get,
+        mock_gp,
+        mock_tbl,
+        mock_lim,
+    ):
+        mock_get.return_value = [
+            _make_symbol(
+                "CRSH.US",
+                description="YieldMax\u00b4\udc90\u00a2 Short TSLA ETF CFD",
+            )
+        ]
+
+        res = _get_symbols_list()(search_term=None, limit=25, detail="standard")
+
+        assert res["data"][0][2] == "YieldMax\u00b4\ufffd\u00a2 Short TSLA ETF CFD"
+        res["data"][0][2].encode("utf-8")
+
+    @patch(_NORM_LIMIT, return_value=25)
+    @patch(_TABLE, side_effect=lambda h, r: {"headers": h, "data": r})
     @patch(_GROUP_PATH, return_value="Forex\\Majors")
     @patch(f"{_MT5}.symbols_get")
     def test_compact_detail_includes_static_identification_fields(
@@ -723,6 +746,21 @@ class TestSymbolsDescribe:
         res = fn("X")
         assert res["symbol"] == "X"
         assert "description" not in res["details"]
+
+    @patch(f"{_MT5}.symbol_info")
+    def test_describe_replaces_invalid_unicode_surrogates(self, mock_info):
+        info = MagicMock()
+        info.__dir__ = lambda self: ["name", "description"]
+        info.name = "CRSH.US"
+        info.description = "YieldMax\u00b4\udc90\u00a2 Short TSLA ETF CFD"
+        mock_info.return_value = info
+
+        res = _get_symbols_describe()("CRSH.US", detail="full")
+
+        assert res["details"]["description"] == (
+            "YieldMax\u00b4\ufffd\u00a2 Short TSLA ETF CFD"
+        )
+        res["details"]["description"].encode("utf-8")
 
     @patch(f"{_MT5}.symbol_info")
     def test_keeps_zero_numeric(self, mock_info):

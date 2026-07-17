@@ -64,6 +64,13 @@ from .output_contract import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _clean_broker_text(value: Any) -> Any:
+    """Replace invalid Unicode surrogate code points in broker metadata."""
+    if not isinstance(value, str):
+        return value
+    return re.sub(r"[\ud800-\udfff]", "\ufffd", value)
 _MARKET_SCAN_STALE_BAR_SECONDS = 7 * 24 * 60 * 60
 _MARKET_SCAN_STALE_QUOTE_SECONDS = QUOTE_STALE_SECONDS
 _FOREX_SEARCH_PAIR_PRIORITY = {
@@ -782,11 +789,11 @@ def _symbol_suggestion_from_info(symbol_info: Any) -> Dict[str, Any]:
     group = _extract_group_path_util(symbol_info)
     description = getattr(symbol_info, "description", None)
     suggestion: Dict[str, Any] = {
-        "symbol": getattr(symbol_info, "name", None),
-        "group": group,
+        "symbol": _clean_broker_text(getattr(symbol_info, "name", None)),
+        "group": _clean_broker_text(group),
     }
     if description not in (None, ""):
-        suggestion["description"] = description
+        suggestion["description"] = _clean_broker_text(description)
     session_type = _symbol_session_type(
         name=getattr(symbol_info, "name", None),
         group=group,
@@ -808,7 +815,7 @@ def _symbol_list_optional_attr(symbol_info: Any, attr: str) -> Any:
         return None
     if isinstance(value, str) and not value.strip():
         return None
-    return value
+    return _clean_broker_text(value)
 
 
 def _find_symbol_suggestions(
@@ -966,9 +973,9 @@ def symbols_list(  # noqa: C901
                 if category_filter and symbol_category != category_filter:
                     continue
                 row = {
-                    "symbol": symbol.name,
-                    "group": _extract_group_path_util(symbol),
-                    "description": symbol.description,
+                    "symbol": _clean_broker_text(symbol.name),
+                    "group": _clean_broker_text(_extract_group_path_util(symbol)),
+                    "description": _clean_broker_text(symbol.description),
                     "in_marketwatch": bool(getattr(symbol, "visible", False)),
                     "session_type": _symbol_session_type(
                         name=symbol.name,
@@ -1391,6 +1398,8 @@ def symbols_describe(
                     continue
                 if isinstance(value, str) and value == "":
                     continue
+                if isinstance(value, str):
+                    value = _clean_broker_text(value)
                 if attr == "time":
                     try:
                         from ..utils.mt5 import _mt5_epoch_to_utc
@@ -1534,10 +1543,10 @@ def _market_scan_is_tradable(symbol: Any) -> bool:
 
 def _market_scan_base_row(symbol: Any) -> Dict[str, Any]:
     return {
-        "symbol": getattr(symbol, "name", None),
-        "group": _extract_group_path_util(symbol),
+        "symbol": _clean_broker_text(getattr(symbol, "name", None)),
+        "group": _clean_broker_text(_extract_group_path_util(symbol)),
         "asset_class": _symbol_category(symbol),
-        "description": getattr(symbol, "description", None),
+        "description": _clean_broker_text(getattr(symbol, "description", None)),
     }
 
 
