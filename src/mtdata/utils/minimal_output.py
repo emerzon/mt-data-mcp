@@ -1299,6 +1299,8 @@ def _normalize_barrier_prob_payload(
         "edge_score",
         "expected_value",
         "units",
+        "seed",
+        "seed_source",
         "verdict",
         "method",
         "warning",

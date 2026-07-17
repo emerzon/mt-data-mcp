@@ -1208,6 +1208,8 @@ class TestFormatResultMinimal:
             "prob_sl_first": 0.48,
             "probability_edge": 0.04,
             "probability_edge_definition": "prob_tp_first - prob_sl_first",
+            "seed": 42,
+            "seed_source": "request",
             "confidence": {
                 "prob_tp_first_ci95": {"low": 0.48, "high": 0.56},
             },
@@ -1223,6 +1225,8 @@ class TestFormatResultMinimal:
         assert "prob_sl_first: 0.48" in compact
         assert "confidence" not in compact
         assert "ci95" not in compact
+        assert "seed: 42" in compact
+        assert "seed_source: request" in compact
 
     def test_compact_barrier_optimize_output_keeps_best_only(self):
         payload = {

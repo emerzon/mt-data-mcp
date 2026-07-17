@@ -1317,6 +1317,8 @@ def _apply_barrier_prob_detail(
         "probability_unit",
         "probability_edge_definition",
         "n_sims",
+        "seed",
+        "seed_source",
         "as_of",
         "data_as_of",
         "usable_for_live_trading",
