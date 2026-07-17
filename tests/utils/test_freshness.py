@@ -86,11 +86,13 @@ def test_future_tick_is_not_accepted_as_fresh() -> None:
         stale_after_seconds=300,
     )
 
-    assert result["data_age_seconds"] == 0.0
+    assert result["data_age_seconds"] is None
     assert result["data_stale"] is True
     assert result["usable_for_live_trading"] is False
     assert result["timestamp_in_future"] is True
     assert result["timestamp_skew_seconds"] == 10_800.0
+    assert result["freshness_state"] == "clock_skew"
+    assert result["freshness"] == "clock skew, tick timestamp 3h 0m ahead of wall clock"
 
 
 def test_quote_at_shared_execution_threshold_is_live() -> None:

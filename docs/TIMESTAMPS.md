@@ -28,6 +28,11 @@ UTC request instant ──▶ MT5 adapter ──▶ terminal clock axis ──�
 - When a fresh tick is close to the configured broker offset rather than wall
   UTC, the adapter converts request bounds to the server-clock axis and
   returned `time`/`time_msc` values back to UTC exactly once.
+- During a closed market, a configured positive broker offset is also applied
+  when the raw tick is implausibly ahead of wall UTC but offset normalization
+  places the last tick within the preceding four days. This keeps weekend
+  snapshots deterministic without treating an ordinary Friday close as a
+  future quote.
 - Callers must not apply another broker offset to normalized payloads.
 - `CLIENT_TZ` / `MT5_CLIENT_TZ` controls presentation. If neither is set,
   mtdata uses the local machine timezone when it can detect it, otherwise UTC.

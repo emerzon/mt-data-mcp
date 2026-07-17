@@ -99,11 +99,17 @@ def build_tick_freshness_context(
         symbol,
         now_epoch=current_epoch,
         item=item,
-        data_age_seconds=age_seconds,
+        data_age_seconds=None if timestamp_in_future else age_seconds,
     )
     data_stale = age_seconds > threshold or timestamp_in_future
 
-    rounded_age = age_rounder(age_seconds) if age_rounder is not None else round(age_seconds, 3)
+    rounded_age = None
+    if not timestamp_in_future:
+        rounded_age = (
+            age_rounder(age_seconds)
+            if age_rounder is not None
+            else round(age_seconds, 3)
+        )
     stale_after: int | float
     if float(threshold).is_integer():
         stale_after = int(threshold)
@@ -146,21 +152,32 @@ def build_tick_freshness_context(
     else:
         out["freshness_reason"] = "live_quote"
 
-    freshness = format_freshness_label(
-        data_stale=data_stale,
-        market_status=out.get("market_status"),
-        market_status_reason=out.get("market_status_reason"),
-        age_seconds=age_seconds,
-        item=item,
-    )
+    freshness = None
+    if timestamp_in_future:
+        freshness = (
+            f"clock skew, {item} timestamp {format_age_seconds(future_skew_seconds)} "
+            "ahead of wall clock"
+        )
+    else:
+        freshness = format_freshness_label(
+            data_stale=data_stale,
+            market_status=out.get("market_status"),
+            market_status_reason=out.get("market_status_reason"),
+            age_seconds=age_seconds,
+            item=item,
+        )
     if freshness:
         out["freshness"] = freshness
-    out["freshness_state"] = tick_freshness_state(
-        data_stale=data_stale,
-        market_status=out.get("market_status"),
-        market_status_reason=out.get("market_status_reason"),
-        freshness_policy_relaxed=out.get("freshness_policy_relaxed"),
-        age_seconds=age_seconds,
+    out["freshness_state"] = (
+        "clock_skew"
+        if timestamp_in_future
+        else tick_freshness_state(
+            data_stale=data_stale,
+            market_status=out.get("market_status"),
+            market_status_reason=out.get("market_status_reason"),
+            freshness_policy_relaxed=out.get("freshness_policy_relaxed"),
+            age_seconds=age_seconds,
+        )
     )
     if not closed_session and out["freshness_state"] in {"recent", "delayed"}:
         age_text = format_age_seconds(age_seconds)

@@ -226,7 +226,7 @@ def test_market_status_blocks_tradability_when_tick_timestamp_is_unsafe(monkeypa
     assert result["trade_mode_allows_opening"] is True
     assert result["can_open_new_positions"] is False
     assert result["is_tradable"] is False
-    assert result["tick_freshness"] == "stale"
+    assert result["tick_freshness"] == "clock_skew"
     assert result["freshness_reason"] == "future_timestamp"
     assert result["timestamp_in_future"] is True
 

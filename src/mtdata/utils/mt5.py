@@ -27,6 +27,7 @@ _MT5_TIMESTAMP_MODE_NATIVE = "native_utc"
 _MT5_TIMESTAMP_MODE_SERVER = "server_clock"
 _MT5_TIMESTAMP_MODE_TTL_SECONDS = 60.0
 _MT5_TIMESTAMP_MODE_FRESH_TOLERANCE_SECONDS = 15 * 60.0
+_MT5_TIMESTAMP_MODE_CLOSED_MARKET_MAX_AGE_SECONDS = 4 * 24 * 60 * 60.0
 _mt5_timestamp_mode_cache: Dict[str, Tuple[str, float, int]] = {}
 _mt5_terminal_timestamp_mode: Optional[Tuple[str, float, int]] = None
 
@@ -507,6 +508,17 @@ def _timestamp_mode_from_tick(
         return _cache_timestamp_mode(
             symbol,
             _MT5_TIMESTAMP_MODE_NATIVE,
+            offset_seconds=offset_seconds,
+        )
+    normalized_tick_epoch = float(tick_epoch) - float(offset_seconds)
+    if (
+        float(tick_epoch) > observed_now + tolerance
+        and normalized_tick_epoch <= observed_now + tolerance
+        and server_distance <= _MT5_TIMESTAMP_MODE_CLOSED_MARKET_MAX_AGE_SECONDS
+    ):
+        return _cache_timestamp_mode(
+            symbol,
+            _MT5_TIMESTAMP_MODE_SERVER,
             offset_seconds=offset_seconds,
         )
     return _valid_cached_timestamp_mode(symbol) or _MT5_TIMESTAMP_MODE_NATIVE
