@@ -451,6 +451,25 @@ def _deal_side(row: Dict[str, Any], gateway: Any) -> Optional[str]:
     return None
 
 
+def _order_type_label(value: Any, gateway: Any) -> str:
+    order_types = (
+        ("ORDER_TYPE_BUY", 0),
+        ("ORDER_TYPE_SELL", 1),
+        ("ORDER_TYPE_BUY_LIMIT", 2),
+        ("ORDER_TYPE_SELL_LIMIT", 3),
+        ("ORDER_TYPE_BUY_STOP", 4),
+        ("ORDER_TYPE_SELL_STOP", 5),
+        ("ORDER_TYPE_BUY_STOP_LIMIT", 6),
+        ("ORDER_TYPE_SELL_STOP_LIMIT", 7),
+        ("ORDER_TYPE_CLOSE_BY", 8),
+    )
+    for name, fallback in order_types:
+        code = getattr(gateway, name, fallback)
+        if value == code or str(value) == str(code):
+            return name.removeprefix("ORDER_TYPE_")
+    return "UNKNOWN"
+
+
 def analyze_execution_quality(request: TradeExecutionQualityRequest, gateway: Any) -> Dict[str, Any]:
     start, end = _window(request.start, request.end, request.minutes_back)
     kwargs = {"group": f"*{request.symbol}*"} if request.symbol else {}
@@ -534,6 +553,7 @@ def analyze_execution_quality(request: TradeExecutionQualityRequest, gateway: An
                 skipped["missing_markout"] += 1
         initial_volume = float(order.get("volume_initial") or volume)
         order_type_value = order.get("type")
+        order_type_label = _order_type_label(order_type_value, gateway)
         market_order_types = {
             getattr(gateway, "ORDER_TYPE_BUY", 0),
             getattr(gateway, "ORDER_TYPE_SELL", 1),
@@ -568,7 +588,8 @@ def analyze_execution_quality(request: TradeExecutionQualityRequest, gateway: An
             "commission_fee_per_lot": (float(deal.get("commission") or 0.0) + float(deal.get("fee") or 0.0)) / volume,
             "markout_bps": markouts,
             "fill_epoch": fill_epoch,
-            "order_type": str(order_type_value if order_type_value is not None else "unknown"),
+            "order_type": order_type_label,
+            "order_type_code": order_type_value,
             "hour_utc": datetime.fromtimestamp(fill_epoch, tz=timezone.utc).hour,
         }
         hour = int(item["hour_utc"])
@@ -634,6 +655,12 @@ def analyze_execution_quality(request: TradeExecutionQualityRequest, gateway: An
                 row = {name: value for name, value in zip(keys, labels)}
                 row.update({"fills": len(items), "slippage_bps": _execution_percentiles(items["slippage_bps"])})
                 if label == "by_order_type":
+                    codes = [
+                        value
+                        for value in items["order_type_code"].dropna().unique().tolist()
+                    ]
+                    if len(codes) == 1:
+                        row["order_type_code"] = codes[0]
                     row["order_to_fill_ms"] = _execution_percentiles(items["order_to_fill_ms"])
                 breakdowns[label].append(row)
     sample_start = format_epoch_utc(fills[0]["fill_epoch"]) if fills else None

@@ -309,6 +309,10 @@ def test_execution_quality_matches_order_and_computes_markout() -> None:
         "including_pending_wait"
     )
     assert result["items"][0]["markout_bps"]["5"] is not None
+    assert result["items"][0]["order_type"] == "BUY"
+    assert result["items"][0]["order_type_code"] == 0
+    assert result["breakdowns"]["by_order_type"][0]["order_type"] == "BUY"
+    assert result["breakdowns"]["by_order_type"][0]["order_type_code"] == 0
 
 
 def test_execution_quality_statistics_remove_binary_float_tails() -> None:
