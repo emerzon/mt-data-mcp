@@ -1192,6 +1192,53 @@ class TestForecastGenerateIntegration:
         assert call_kwargs["__cli_raw"] is True
 
     @patch("mtdata.core.cli.api.discover_tools")
+    def test_forecast_generate_missing_symbol_is_usage_error(
+        self, mock_discover, capsys
+    ):
+        mock_discover.return_value = {
+            "forecast_generate": {
+                "func": MagicMock(),
+                "meta": {"description": "Generate forecasts"},
+            },
+        }
+        with (
+            patch("sys.argv", ["cli.py", "forecast_generate", "--json"]),
+            pytest.raises(SystemExit) as exc_info,
+        ):
+            main()
+
+        assert exc_info.value.code == 2
+        payload = json.loads(capsys.readouterr().out)
+        assert payload["error_code"] == "cli_invalid_arguments"
+        assert payload["operation"] == "forecast_generate"
+        assert "symbol" in payload["error"]
+
+    @patch("mtdata.core.cli.api.discover_tools")
+    def test_forecast_generate_invalid_timeframe_is_usage_error(
+        self, mock_discover, capsys
+    ):
+        mock_discover.return_value = {
+            "forecast_generate": {
+                "func": MagicMock(),
+                "meta": {"description": "Generate forecasts"},
+            },
+        }
+        with (
+            patch(
+                "sys.argv",
+                ["cli.py", "forecast_generate", "EURUSD", "--timeframe", "M7", "--json"],
+            ),
+            pytest.raises(SystemExit) as exc_info,
+        ):
+            main()
+
+        assert exc_info.value.code == 2
+        payload = json.loads(capsys.readouterr().out)
+        assert payload["error_code"] == "cli_invalid_arguments"
+        assert payload["operation"] == "forecast_generate"
+        assert "invalid choice" in payload["error"]
+
+    @patch("mtdata.core.cli.api.discover_tools")
     def test_forecast_generate_maps_extras_to_internal_detail(self, mock_discover):
         mock_fn = MagicMock(return_value={"forecast": [1.0, 2.0]})
         mock_fn.__module__ = "mtdata.core.server"
@@ -1268,7 +1315,7 @@ class TestForecastGenerateIntegration:
         assert call_kwargs["fields"] == "forecast,method"
 
     @patch("mtdata.core.cli.api.discover_tools")
-    def test_forecast_generate_accepts_symbol_flag_alias(self, mock_discover):
+    def test_forecast_generate_rejects_symbol_flag_alias(self, mock_discover):
         mock_fn = MagicMock(return_value={"forecast": [1.0, 2.0]})
         mock_fn.__module__ = "mtdata.core.server"
         mock_fn.__name__ = "forecast_generate"
@@ -1280,11 +1327,13 @@ class TestForecastGenerateIntegration:
                 "meta": {"description": "Generate forecasts"},
             },
         }
-        with patch("sys.argv", ["cli.py", "forecast_generate", "--symbol", "BTCUSD"]):
-            result = main()
-        assert result == 0
-        request = mock_fn.call_args[1]["request"]
-        assert request.symbol == "BTCUSD"
+        with (
+            patch("sys.argv", ["cli.py", "forecast_generate", "--symbol", "BTCUSD"]),
+            pytest.raises(SystemExit) as exc_info,
+        ):
+            main()
+        assert exc_info.value.code == 2
+        mock_fn.assert_not_called()
 
     @patch("mtdata.core.cli.api.discover_tools")
     def test_forecast_generate_print_config(self, mock_discover, capsys):
@@ -1366,13 +1415,16 @@ class TestForecastGenerateIntegration:
             },
         }
 
-        with patch(
-            "sys.argv",
-            ["cli.py", "--json", "forecast_generate", "EURUSD", "--horizon", "0"],
+        with (
+            patch(
+                "sys.argv",
+                ["cli.py", "--json", "forecast_generate", "EURUSD", "--horizon", "0"],
+            ),
+            pytest.raises(SystemExit) as exc_info,
         ):
-            result = main()
+            main()
 
-        assert result == 1
+        assert exc_info.value.code == 2
         mock_fn.assert_not_called()
         payload = json.loads(capsys.readouterr().out)
         assert payload["success"] is False

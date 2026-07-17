@@ -232,11 +232,12 @@ class TestAddForecastGenerateArgs:
         assert args.detail == "compact"
         assert args.print_config is True
 
-    def test_symbol_flag_alias(self):
+    def test_symbol_is_required_and_has_no_flag_alias(self):
         parser = argparse.ArgumentParser()
         _add_forecast_generate_args(parser)
-        args = parser.parse_args(["--symbol", "GBPUSD"])
-        assert args.symbol == "GBPUSD"
+        with pytest.raises(SystemExit) as exc_info:
+            parser.parse_args(["--symbol", "GBPUSD"])
+        assert exc_info.value.code == 2
 
     def test_detail_accepts_summary(self):
         parser = argparse.ArgumentParser()
@@ -478,7 +479,7 @@ class TestAddDynamicArguments:
         assert "--set" in help_text
         assert "--params-params" not in help_text
 
-    def test_first_required_param_accepts_flag_alias(self):
+    def test_first_required_param_rejects_flag_alias(self):
         parser = argparse.ArgumentParser()
         func_info = {
             "params": [
@@ -487,11 +488,11 @@ class TestAddDynamicArguments:
             ]
         }
         add_dynamic_arguments(parser, func_info)
-        args = parser.parse_args(["--symbol", "EURUSD", "--count", "20"])
-        assert args.symbol == "EURUSD"
-        assert args.count == 20
+        with pytest.raises(SystemExit) as exc_info:
+            parser.parse_args(["--symbol", "EURUSD", "--count", "20"])
+        assert exc_info.value.code == 2
 
-    def test_first_required_param_flag_alias_is_hidden_from_help(self):
+    def test_first_required_param_has_only_positional_action(self):
         parser = argparse.ArgumentParser()
         func_info = {
             "params": [
@@ -502,10 +503,8 @@ class TestAddDynamicArguments:
         symbol_actions = [
             action for action in parser._actions if action.dest == "symbol"
         ]
-        optional_action = next(
-            action for action in symbol_actions if action.option_strings
-        )
-        assert optional_action.help == argparse.SUPPRESS
+        assert len(symbol_actions) == 1
+        assert symbol_actions[0].option_strings == []
 
     def test_single_word_flag_is_not_duplicated(self):
         parser = argparse.ArgumentParser()

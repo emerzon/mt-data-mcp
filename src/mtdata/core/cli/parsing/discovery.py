@@ -706,24 +706,13 @@ def add_dynamic_arguments(
 
         if param["required"] and param == param_info["params"][0]:
             positional_kwargs = {k: v for k, v in kwargs.items() if k in ("help", "type", "choices", "metavar")}
-            positional_kwargs["nargs"] = (
-                "+"
-                if (
-                    str(cmd_name or "") in _MULTI_VALUE_SYMBOL_POSITIONAL_COMMANDS
-                    and str(param["name"]) == "symbols"
-                )
-                else "?"
-            )
-            positional_kwargs["default"] = argparse.SUPPRESS
+            if (
+                str(cmd_name or "") in _MULTI_VALUE_SYMBOL_POSITIONAL_COMMANDS
+                and str(param["name"]) == "symbols"
+            ):
+                positional_kwargs["nargs"] = "+"
             positional_kwargs["help"] = f"{positional_kwargs.get('help') or param['name']} (required)"
-            positional_action = parser.add_argument(param["name"], **positional_kwargs)
-            positional_action._cli_logically_required = True
-            hidden_alias_kwargs = dict(kwargs)
-            hidden_alias_kwargs["help"] = argparse.SUPPRESS
-            if option_flags:
-                parser.add_argument(*option_flags, **hidden_alias_kwargs)
-            if hidden_option_flags:
-                parser.add_argument(*hidden_option_flags, **hidden_alias_kwargs)
+            parser.add_argument(param["name"], **positional_kwargs)
         elif allow_optional_first_positional:
             positional_kwargs = {k: v for k, v in kwargs.items() if k in ("help", "type", "choices", "metavar")}
             positional_kwargs["nargs"] = (

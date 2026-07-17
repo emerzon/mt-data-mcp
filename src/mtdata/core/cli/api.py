@@ -188,6 +188,7 @@ def _invoke_cli_tool_function(
     return {"success": True, "data": result, "warnings": warning_texts}
 
 
+from ...shared.constants import TIMEFRAME_MAP
 from ...shared.schema import PARAM_HINTS as _PARAM_HINTS
 from ...shared.schema import enrich_schema_with_shared_defs
 from ...shared.schema import get_function_info as _schema_get_function_info
@@ -572,18 +573,22 @@ class _CLIArgumentParser(argparse.ArgumentParser):
                 "The broker must also provide Level 2/DOM data."
             )
         if _json_parse_errors_requested():
-            payload = {
-                "success": False,
-                "error": str(message),
-                "error_code": (
-                    "feature_disabled" if market_depth_disabled else "cli_invalid_arguments"
+            program_parts = str(self.prog or "").split()
+            operation = program_parts[-1] if len(program_parts) > 1 else "cli"
+            payload = build_error_payload(
+                str(message),
+                code=(
+                    "feature_disabled"
+                    if market_depth_disabled
+                    else "cli_invalid_arguments"
                 ),
-                "remediation": (
+                operation=operation,
+                remediation=(
                     "Set MTDATA_ENABLE_MARKET_DEPTH_FETCH=1 and restart the process."
                     if market_depth_disabled
                     else f"Run '{self.prog} --help' to inspect valid arguments."
                 ),
-            }
+            )
             if market_depth_disabled:
                 payload["details"] = {
                     "feature": "market_depth_fetch",
@@ -897,12 +902,7 @@ def _add_forecast_generate_args(cmd_parser: argparse.ArgumentParser) -> None:
 
     cmd_parser.add_argument(
         "symbol",
-        nargs="?",
-        default=argparse.SUPPRESS,
         help=_PARAM_HINTS["symbol"],
-    )
-    cmd_parser.add_argument(
-        "--symbol", dest="symbol", default=argparse.SUPPRESS, help=argparse.SUPPRESS
     )
 
     group_method = cmd_parser.add_argument_group("Method")
@@ -936,6 +936,7 @@ def _add_forecast_generate_args(cmd_parser: argparse.ArgumentParser) -> None:
     group_window.add_argument(
         "--timeframe",
         type=str,
+        choices=tuple(TIMEFRAME_MAP),
         default="H1",
         help=_PARAM_HINTS["timeframe"],
     )
@@ -1760,15 +1761,6 @@ def main():
             except ValueError as exc:
                 cmd_parser.error(str(exc))
 
-            symbol = getattr(args, "symbol", None)
-            if symbol in (None, ""):
-                _render_cli_result(
-                    {"error": "Missing required argument(s): symbol."},
-                    args=args,
-                    cmd_name="forecast_generate",
-                )
-                return 1
-
             params_raw = _resolve_forecast_typed_cli_value(
                 args.params,
                 key="params",
@@ -1840,7 +1832,7 @@ def main():
 
             try:
                 request = ForecastGenerateRequest(
-                    symbol=symbol,
+                    symbol=args.symbol,
                     timeframe=args.timeframe,
                     library=args.library,
                     method=args.method,
@@ -1863,19 +1855,8 @@ def main():
                     detail=resolve_output_contract(args).detail,
                 )
             except ValidationError as exc:
-                out = build_error_payload(
-                    friendly_validation_error(exc, cmd_name="forecast_generate"),
-                    code="cli_invalid_arguments",
-                    operation="forecast_generate",
-                    remediation=(
-                        "Set horizon between 1 and 500 and run "
-                        "'mtdata-cli forecast_generate --help' for accepted arguments."
-                    ),
-                )
-                return _render_cli_result_status(
-                    out,
-                    args=args,
-                    cmd_name="forecast_generate",
+                cmd_parser.error(
+                    friendly_validation_error(exc, cmd_name="forecast_generate")
                 )
 
             if getattr(args, "print_config", False):
