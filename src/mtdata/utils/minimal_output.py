@@ -2073,6 +2073,13 @@ def _compact_forecast_ci(
     if not _is_empty_value(ci_status):
         out["status"] = ci_status
 
+    if ci_status == "not_requested":
+        out["mode"] = "point_only"
+        out["reason"] = (
+            "ci_alpha was not requested; direction is based on the point estimate only."
+        )
+        out["recommended_tool"] = "forecast_conformal_intervals"
+
     if alpha is not None:
         out["ci_alpha"] = alpha
     if not _is_empty_value(confidence_level):

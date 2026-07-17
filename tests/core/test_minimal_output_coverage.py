@@ -265,6 +265,22 @@ class TestNormalizeForecastPayload:
             "percentage_points (1.0 = 1%)"
         )
 
+    def test_non_verbose_discloses_unrequested_uncertainty(self):
+        payload = {
+            "times": ["t1"],
+            "forecast_price": [100.0],
+            "ci_status": "not_requested",
+        }
+
+        result = _normalize_forecast_payload(payload, verbose=False)
+
+        assert result["ci"] == {
+            "status": "not_requested",
+            "mode": "point_only",
+            "reason": "ci_alpha was not requested; direction is based on the point estimate only.",
+            "recommended_tool": "forecast_conformal_intervals",
+        }
+
     def test_q50_dedup(self):
         payload = {
             "times": ["t1"],

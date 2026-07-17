@@ -337,6 +337,15 @@ def test_forecast_generate_defaults_to_compact_payload(monkeypatch):
         "horizon_delta": 0.15,
         "first_step_delta_pct": -4.7619,
         "horizon_delta_pct": 14.2857,
+        "direction_significant": None,
+        "direction_significance_basis": "not_tested",
+        "direction_interpretation": "point_estimate_only_not_significance_tested",
+    }
+    assert out["uncertainty"] == {
+        "status": "not_requested",
+        "mode": "point_only",
+        "reason": "ci_alpha was not requested; direction is based on the point estimate only.",
+        "recommended_tool": "forecast_conformal_intervals",
     }
     assert out["units"]["forecast_vs_last_price.*_delta_pct"] == (
         "percentage_points (1.0 = 1%)"
@@ -614,6 +623,9 @@ def test_forecast_generate_rounds_price_outputs_to_symbol_digits(monkeypatch):
         "horizon_delta": 0.00149,
         "first_step_delta_pct": 0.0409,
         "horizon_delta_pct": 0.1271,
+        "direction_significant": None,
+        "direction_significance_basis": "not_tested",
+        "direction_interpretation": "point_estimate_only_not_significance_tested",
     }
     assert "forecast_price" not in out
     assert out["forecast"] == [
@@ -801,6 +813,7 @@ def test_forecast_generate_compact_nests_available_ci(monkeypatch):
             "upper_price": [101.0, 102.5],
             "ci_status": "available",
             "ci_alpha": 0.05,
+            "last_price": 100.0,
         },
     )
 
@@ -837,6 +850,14 @@ def test_forecast_generate_compact_nests_available_ci(monkeypatch):
     assert "forecast_time" not in out
     assert "forecast_price" not in out
     assert "forecast" not in out
+    assert out["forecast_vs_last_price"]["direction"] == "bullish"
+    assert out["forecast_vs_last_price"]["direction_significant"] is False
+    assert out["forecast_vs_last_price"]["direction_significance_basis"] == (
+        "horizon_interval_vs_last_price"
+    )
+    assert out["forecast_vs_last_price"]["direction_interpretation"] == (
+        "interval_contains_last_price_or_direction_is_neutral"
+    )
 
 
 def test_forecast_generate_standard_preserves_full_arrays(monkeypatch):

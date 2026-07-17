@@ -192,6 +192,13 @@ def _forecast_interval_summary(payload: Dict[str, Any]) -> Optional[Dict[str, fl
 
 def _forecast_compact_ci(payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     ci_status = str(payload.get("ci_status") or "").strip().lower()
+    if ci_status == "not_requested":
+        return {
+            "status": "not_requested",
+            "mode": "point_only",
+            "reason": "ci_alpha was not requested; direction is based on the point estimate only.",
+            "recommended_tool": "forecast_conformal_intervals",
+        }
     if ci_status == "unavailable":
         out: Dict[str, Any] = {
             "status": "unavailable",
@@ -535,6 +542,60 @@ def _forecast_vs_last_price(payload: Dict[str, Any]) -> Optional[Dict[str, Any]]
     return out
 
 
+def _annotate_forecast_direction_significance(
+    payload: Dict[str, Any],
+    price_context: Dict[str, Any],
+) -> None:
+    ci_status = str(payload.get("ci_status") or "").strip().lower()
+    lower_prices = payload.get("lower_price")
+    upper_prices = payload.get("upper_price")
+    has_price_interval = (
+        ci_status == "available"
+        and isinstance(lower_prices, list)
+        and bool(lower_prices)
+        and isinstance(upper_prices, list)
+        and bool(upper_prices)
+    )
+    if not has_price_interval:
+        price_context["direction_significant"] = None
+        price_context["direction_significance_basis"] = "not_tested"
+        price_context["direction_interpretation"] = (
+            "interval_unavailable_not_significance_tested"
+            if ci_status == "unavailable"
+            else "point_estimate_only_not_significance_tested"
+        )
+        return
+
+    last_price = _finite_float(payload.get("last_price"))
+    horizon_low = _finite_float(lower_prices[-1])
+    horizon_high = _finite_float(upper_prices[-1])
+    if last_price is None or horizon_low is None or horizon_high is None:
+        price_context["direction_significant"] = None
+        price_context["direction_significance_basis"] = "not_tested"
+        price_context["direction_interpretation"] = (
+            "interval_not_comparable_to_price_anchor"
+        )
+        return
+
+    direction = str(price_context.get("direction") or "").strip().lower()
+    significant = (
+        horizon_low > last_price
+        if direction == "bullish"
+        else horizon_high < last_price
+        if direction == "bearish"
+        else False
+    )
+    price_context["direction_significant"] = significant
+    price_context["direction_significance_basis"] = (
+        "horizon_interval_vs_last_price"
+    )
+    price_context["direction_interpretation"] = (
+        "interval_excludes_last_price"
+        if significant
+        else "interval_contains_last_price_or_direction_is_neutral"
+    )
+
+
 def _forecast_path_flatness(payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     prices = payload.get("forecast_price")
     if not isinstance(prices, list) or len(prices) < 2:
@@ -577,6 +638,18 @@ def _append_forecast_warning(payload: Dict[str, Any], warning: str) -> None:
 
 def _annotate_forecast_generate_quality(payload: Dict[str, Any]) -> Dict[str, Any]:
     out = dict(payload)
+    ci_status = str(out.get("ci_status") or "").strip().lower()
+    if not ci_status:
+        out["ci_status"] = "not_requested"
+        out.setdefault(
+            "uncertainty",
+            {
+                "status": "not_requested",
+                "mode": "point_only",
+                "reason": "ci_alpha was not requested; direction is based on the point estimate only.",
+                "recommended_tool": "forecast_conformal_intervals",
+            },
+        )
     path_flatness = _forecast_path_flatness(out)
     price_context = _forecast_vs_last_price(out)
     if price_context:
@@ -584,6 +657,7 @@ def _annotate_forecast_generate_quality(payload: Dict[str, Any]) -> Dict[str, An
             price_context["direction"] = "neutral"
             price_context["direction_basis"] = "flat_path"
             price_context["direction_suppressed_reason"] = "flat_path"
+        _annotate_forecast_direction_significance(out, price_context)
         out.setdefault("forecast_vs_last_price", price_context)
         units = dict(out.get("units") or {})
         units.setdefault(
