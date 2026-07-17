@@ -106,6 +106,9 @@ def test_market_scan_freshness_summary_counts_bool_like_stale_flags():
 
     assert result["stale_rows"] == 2
     assert result["freshness"] == "mixed, 2/3 stale"
+    assert result["freshness_basis"] == "conservative_quote_or_bar"
+    assert result["stale_bar_rows"] == 0
+    assert result["unsafe_quote_rows"] == 2
 
 
 def test_market_scan_freshness_summary_labels_closed_weekend_snapshot():
@@ -205,6 +208,10 @@ def test_market_scan_keeps_future_quote_unsafe_when_bar_is_fresh() -> None:
     assert row["warning"] == row["timestamp_warning"]
     assert row["bar_stale"] is False
     assert row["bar_freshness"] == "latest completed bar, 1h 0m ago"
+    assert result["freshness"] == "stale"
+    assert result["stale_rows"] == 1
+    assert result["stale_bar_rows"] == 0
+    assert result["unsafe_quote_rows"] == 1
 
 
 def test_market_scan_default_limit_is_concise():

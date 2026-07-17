@@ -2023,11 +2023,16 @@ def _market_scan_freshness_summary(
     if not rows:
         return {}
     def _row_stale(row: Dict[str, Any]) -> bool:
-        if "bar_stale" in row:
-            return bool(row.get("bar_stale"))
-        return bool(row.get("data_stale"))
+        return bool(row.get("bar_stale")) or bool(row.get("data_stale"))
 
     stale_count = sum(1 for row in rows if _row_stale(row))
+    stale_bar_count = sum(1 for row in rows if bool(row.get("bar_stale")))
+    unsafe_quote_count = sum(
+        1
+        for row in rows
+        if bool(row.get("data_stale"))
+        or row.get("usable_for_live_trading") is False
+    )
     row_count = len(rows)
     if stale_count == row_count:
         freshness = "stale"
@@ -2039,6 +2044,9 @@ def _market_scan_freshness_summary(
     out: Dict[str, Any] = {
         "freshness": freshness,
         "stale_rows": int(stale_count),
+        "freshness_basis": "conservative_quote_or_bar",
+        "stale_bar_rows": int(stale_bar_count),
+        "unsafe_quote_rows": int(unsafe_quote_count),
     }
     if stale_count and include_stale_symbols:
         out["stale_symbols"] = [

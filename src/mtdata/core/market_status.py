@@ -694,6 +694,13 @@ def _symbol_tick_snapshot(symbol: str, tick: Any, *, now_utc: datetime) -> Dict[
                 out["last_tick_age_seconds"] = freshness["data_age_seconds"]
                 out["tick_freshness"] = freshness.get("freshness_state", "unknown")
                 for key in (
+                    "data_stale",
+                    "usable_for_live_trading",
+                    "usable_for_live_trading_basis",
+                    "freshness_reason",
+                    "timestamp_in_future",
+                    "timestamp_skew_seconds",
+                    "timestamp_warning",
                     "market_status",
                     "market_status_reason",
                     "market_status_source",
@@ -934,6 +941,10 @@ def _check_symbol_market_status(
         open_state = "weekend_closed"
         can_open = False
         reason = "weekend"
+    elif can_open is True and tick_status.get("data_stale") is True:
+        open_state = "quote_not_live_ready"
+        can_open = False
+        reason = str(tick_status.get("freshness_reason") or "stale_quote")
     elif can_open is True and tick_freshness in {"live", "recent"}:
         open_state = "probably_open"
     elif can_open is True and recent_schedule_allows_now and tick_available:
@@ -1029,7 +1040,17 @@ def _check_symbol_market_status(
             authoritative_clock = timezone_context.get("authoritative_clock")
             if authoritative_clock is not None:
                 result["authoritative_clock"] = authoritative_clock
-        for key in ("tick_available", "last_tick_time", "last_tick_age_seconds"):
+        for key in (
+            "tick_available",
+            "last_tick_time",
+            "last_tick_age_seconds",
+            "data_stale",
+            "usable_for_live_trading",
+            "freshness_reason",
+            "timestamp_in_future",
+            "timestamp_skew_seconds",
+            "timestamp_warning",
+        ):
             if key in tick_status:
                 result[key] = tick_status[key]
     return result

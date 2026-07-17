@@ -188,6 +188,49 @@ def test_market_status_symbol_timezone_context_labels_server_clock(monkeypatch) 
     assert context["market_now"] == "2024-01-02T14:00:00+02:00"
 
 
+def test_market_status_blocks_tradability_when_tick_timestamp_is_unsafe(monkeypatch) -> None:
+    raw = _unwrap(market_status_mod.market_status)
+    fixed_now = datetime(2026, 7, 16, 12, 0, tzinfo=timezone.utc)
+
+    class FixedDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return fixed_now.replace(tzinfo=None) if tz is None else fixed_now.astimezone(tz)
+
+    class Gateway:
+        SYMBOL_TRADE_MODE_FULL = 4
+        SYMBOL_TRADE_MODE_DISABLED = 0
+        SYMBOL_TRADE_MODE_CLOSEONLY = 3
+        SYMBOL_TRADE_MODE_LONGONLY = 1
+        SYMBOL_TRADE_MODE_SHORTONLY = 2
+
+        def ensure_connection(self) -> None:
+            return None
+
+        def symbol_info(self, symbol: str):
+            return SimpleNamespace(name=symbol, visible=True, trade_mode=4)
+
+        def symbol_info_tick(self, symbol: str):
+            return SimpleNamespace(
+                time=fixed_now.timestamp() + 15.0,
+                bid=1.1,
+                ask=1.2,
+            )
+
+    monkeypatch.setattr(market_status_mod, "datetime", FixedDateTime)
+    monkeypatch.setattr(market_status_mod, "create_mt5_gateway", lambda **kwargs: Gateway())
+
+    result = raw(symbol="EURUSD")
+
+    assert result["status"] == "quote_not_live_ready"
+    assert result["trade_mode_allows_opening"] is True
+    assert result["can_open_new_positions"] is False
+    assert result["is_tradable"] is False
+    assert result["tick_freshness"] == "stale"
+    assert result["freshness_reason"] == "future_timestamp"
+    assert result["timestamp_in_future"] is True
+
+
 def test_market_status_symbol_timezone_context_honors_local_and_utc_display(
     monkeypatch,
 ) -> None:
