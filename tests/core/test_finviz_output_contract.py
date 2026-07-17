@@ -1,6 +1,7 @@
 from unittest.mock import patch
 
 from mtdata.core.finviz import (
+    _normalize_finviz_market_payload,
     finviz_calendar,
     finviz_earnings,
     finviz_filters_list,
@@ -74,6 +75,34 @@ def test_filters_list_defaults_to_index_and_supports_exact_lookup():
         {"value": "NASDAQ", "token": "exch_nasd"},
         {"value": "NYSE", "token": "exch_nyse"},
     ]
+
+
+def test_screen_pagination_uses_unknown_total_lower_bound() -> None:
+    result = _normalize_finviz_market_payload(
+        {
+            "success": True,
+            "stocks": [{"Ticker": f"TEST{index}"} for index in range(5)],
+            "total": None,
+            "total_lower_bound": 6,
+            "has_more": True,
+            "truncated": True,
+        },
+        rows_key="stocks",
+        tool="finviz_screen",
+        request={"view": "overview"},
+        detail="compact",
+        limit=5,
+    )
+
+    assert result["pagination"] == {
+        "total": 6,
+        "returned": 5,
+        "offset": 0,
+        "limit": 5,
+        "has_more": True,
+        "more_available": 1,
+        "total_is_lower_bound": True,
+    }
 
 
 class TestFinvizEarningsOutputContract:
@@ -167,6 +196,7 @@ class TestFinvizEarningsOutputContract:
         assert result["truncated"] is True
         assert result["total_lower_bound"] == 3
         assert result["next_page"] == 2
+
 
     @patch("mtdata.core.finviz.get_earnings_calendar")
     def test_full_includes_numeric_market_cap(self, mock_get):

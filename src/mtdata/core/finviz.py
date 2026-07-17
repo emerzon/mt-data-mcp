@@ -698,12 +698,21 @@ def _normalize_finviz_market_payload(
     available = len(normalized_rows)
     if rows_key != "stocks":
         out["available_count"] = available
+    pagination_total = (
+        int(out.get("total") or out.get("total_lower_bound") or 0)
+        if rows_key == "stocks"
+        else available
+    )
     out["pagination"] = build_pagination_meta(
-        total=(int(out.get("total") or 0) if rows_key == "stocks" else available),
+        total=pagination_total,
         returned=len(output_rows),
         offset=0,
         limit=limit_value,
     )
+    if rows_key == "stocks" and out.get("total") in (None, "") and out.get(
+        "total_lower_bound"
+    ) not in (None, ""):
+        out["pagination"]["total_is_lower_bound"] = True
     if rows_key == "stocks" and out.get("total") not in (None, ""):
         omitted = max(0, int(out.get("total") or 0) - int(out["count"]))
     else:
