@@ -512,8 +512,10 @@ def test_wait_event_tool_compact_result_preserves_boundary_closed_candle() -> No
 def test_wait_event_compact_timeout_omits_inferred_event_catalog() -> None:
     result = core_data._compact_wait_event_public_result(
         {
-            "success": True,
+            "success": False,
             "status": "timeout",
+            "error_code": "wait_event_timeout",
+            "error": "Wait timed out before a watched event or boundary was observed.",
             "matched": False,
             "event": None,
             "elapsed_seconds": 2.003,
@@ -533,6 +535,8 @@ def test_wait_event_compact_timeout_omits_inferred_event_catalog() -> None:
     )
 
     assert result["status"] == "timeout"
+    assert result["success"] is False
+    assert result["error_code"] == "wait_event_timeout"
     assert result["waited_seconds"] == 2.003
     assert result["next_poll_hint"] == "retry after 0.5s"
     assert "events_monitored" not in result

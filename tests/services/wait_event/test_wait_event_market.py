@@ -918,6 +918,9 @@ def test_wait_event_does_not_replay_pre_start_touch_by_default() -> None:
     )
 
     assert result["status"] == "timeout"
+    assert result["success"] is False
+    assert result["timeout"] is True
+    assert result["error_code"] == "wait_event_timeout"
     assert result["matched_event"] is None
 
 

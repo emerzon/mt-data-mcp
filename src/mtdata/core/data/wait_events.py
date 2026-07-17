@@ -2555,8 +2555,9 @@ def _build_wait_result(
 ) -> Dict[str, Any]:
     elapsed_seconds = max(0.0, (observed_at_utc - started_at_utc).total_seconds())
     matched_event = _with_wait_event_identity(matched_event)
+    timed_out = status == "timeout"
     result = {
-        "success": True,
+        "success": not timed_out,
         "status": status,
         "matched": status in {"matched", "already_satisfied"},
         "event": matched_event["type"] if matched_event is not None else None,
@@ -2578,6 +2579,16 @@ def _build_wait_result(
             "accept_preexisting": bool(request.accept_preexisting),
         },
     }
+    if timed_out:
+        result.update(
+            {
+                "timeout": True,
+                "error_code": "wait_event_timeout",
+                "error": (
+                    "Wait timed out before a watched event or boundary was observed."
+                ),
+            }
+        )
     result.update(
         _wait_result_identity_payload(
             request,

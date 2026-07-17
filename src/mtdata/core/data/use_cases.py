@@ -166,7 +166,14 @@ def run_wait_event(
             now_utc_impl=now_utc_impl,
         ),
         success_eval=lambda r: (
-            isinstance(r, Ok) or (isinstance(r, dict) and "error" not in r)
+            (
+                isinstance(r, Ok)
+                and (
+                    not isinstance(r.value, dict)
+                    or r.value.get("success") is not False
+                )
+            )
+            or (isinstance(r, dict) and "error" not in r)
         ),
     )
     return to_dict(result) if isinstance(result, (Ok, Err)) else result
