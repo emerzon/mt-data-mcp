@@ -391,13 +391,20 @@ def seasonality_detect(
             qualities = [str(row.get("signal_quality") or "") for row in rows]
             out["signal_quality"] = rows[0].get("signal_quality")
             if all(quality in {"very_weak", "weak"} for quality in qualities):
+                out["detection_status"] = "not_detected"
                 out["quality_note"] = (
                     "Returned periods are weak statistical candidates; treat as exploratory, not confirmed seasonality."
                 )
+            elif rows[0].get("signal_quality") == "strong":
+                out["detection_status"] = "detected"
+            else:
+                out["detection_status"] = "candidate"
             if all(float(row.get("spectral_strength") or 0.0) == 0.0 for row in rows):
                 out["spectral_strength_note"] = (
                     "All returned periods have zero rounded spectral strength; ranking is driven by autocorrelation only."
                 )
+        else:
+            out["detection_status"] = "not_detected"
         if normalize_output_verbosity_detail(detail, default="compact") == "full":
             out["method"] = {
                 "acf_weight": 0.55,

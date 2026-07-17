@@ -92,6 +92,7 @@ def test_seasonality_detect_finds_known_period(monkeypatch):
     assert result["success"] is True
     assert result["dominant_period_bars"] == 12
     assert result["signal_quality"] in {"moderate", "strong"}
+    assert result["detection_status"] in {"candidate", "detected"}
     assert "signal_quality" in result["items"][0]
     assert result["items"][0]["period_duration"] == "12 hours"
     assert result["items"][0]["period_duration_seconds"] == 43_200
@@ -121,6 +122,13 @@ def test_seasonality_detect_does_not_inflate_noise_spectral_score(monkeypatch):
         row["signal_quality"] in {"very_weak", "weak", "moderate"}
         for row in result["items"]
     )
+    if all(
+        row["signal_quality"] in {"very_weak", "weak"}
+        for row in result["items"]
+    ):
+        assert result["detection_status"] == "not_detected"
+    else:
+        assert result["detection_status"] == "candidate"
 
 
 def test_outliers_detect_flags_price_and_volume_spike(monkeypatch):
