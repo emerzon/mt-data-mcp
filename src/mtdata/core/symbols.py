@@ -1853,6 +1853,12 @@ def _build_market_scan_bar_row(
             **_market_scan_freshness_fields(bar_time, timeframe=timeframe, symbol=symbol),
             "open": _market_scan_round(open_price, digits=digits),
             "close": _market_scan_round(close_price, digits=digits),
+            "price_currency": str(
+                getattr(symbol, "currency_profit", "") or ""
+            ).strip()
+            or None,
+            "price_basis": "mt5_latest_completed_bar_close",
+            "price_point": _market_scan_float(getattr(symbol, "point", None)),
             "tick_volume": tick_volume,
             "real_volume": real_volume,
             "price_change_pct": _market_scan_round(
@@ -1928,6 +1934,7 @@ _MARKET_SCAN_UNITS = {
     "spread_cost_per_lot": "currency_per_lot_estimate",
     "rsi": "0_100",
     "sma_distance_pct": "percentage_points (1.0 = 1%)",
+    "price_point": "broker_price_increment",
     "data_age_seconds": "seconds",
     "data_freshness_seconds": "seconds",
     "stale_after_seconds": "seconds",
@@ -2511,6 +2518,12 @@ def _build_market_scan_signal_row(
             "previous_close": _market_scan_round(previous_close, digits=digits),
             "open": _market_scan_round(open_price, digits=digits),
             "close": _market_scan_round(close_price, digits=digits),
+            "price_currency": str(
+                getattr(symbol, "currency_profit", "") or ""
+            ).strip()
+            or None,
+            "price_basis": "mt5_latest_completed_bar_close",
+            "price_point": _market_scan_float(getattr(symbol, "point", None)),
             "tick_volume": tick_volume,
             "real_volume": real_volume,
             "price_change_pct": _market_scan_round(
@@ -3495,8 +3508,7 @@ def market_scan(  # noqa: C901
                     skipped_examples.append({"symbol": symbol_name, "reason": reason})
 
             for missing_symbol in selection_meta.get("missing_symbols", []):
-                if len(skipped_examples) < 10:
-                    skipped_examples.append({"symbol": missing_symbol, "reason": "Requested symbol not found."})
+                _record_issue(missing_symbol, "Requested symbol not found.")
 
             def _evaluate_symbol(symbol_obj: Any) -> None:
                 nonlocal evaluated_symbols
@@ -3523,6 +3535,8 @@ def market_scan(  # noqa: C901
 
                 row = dict(spread_row)
                 row.update(signal_row)
+                row.pop("usable_for_live_trading", None)
+                row.pop("usable_for_live_trading_basis", None)
                 metric_error = _market_scan_missing_required_metric(
                     row,
                     rank_by=rank_by_value,
@@ -3589,8 +3603,6 @@ def market_scan(  # noqa: C901
                 "data_age_metric",
                 "stale_after_seconds",
                 "data_stale",
-                "usable_for_live_trading",
-                "usable_for_live_trading_basis",
                 "freshness_reason",
                 "timestamp_in_future",
                 "timestamp_skew_seconds",
@@ -3610,6 +3622,9 @@ def market_scan(  # noqa: C901
                 "bar_stale_warning",
                 "previous_close",
                 "close",
+                "price_currency",
+                "price_basis",
+                "price_point",
                 "price_change_pct",
                 "tick_volume",
                 "spread_pct",
@@ -3627,7 +3642,6 @@ def market_scan(  # noqa: C901
                 "data_source",
                 "time",
                 "data_stale",
-                "usable_for_live_trading",
                 "freshness_reason",
                 "timestamp_in_future",
                 "timestamp_warning",
@@ -3637,6 +3651,9 @@ def market_scan(  # noqa: C901
                 "bar_freshness_policy_relaxed",
                 "bar_freshness",
                 "close",
+                "price_currency",
+                "price_basis",
+                "price_point",
                 "price_change_pct",
                 "tick_volume",
                 "spread_pct",
@@ -3770,6 +3787,14 @@ def market_scan(  # noqa: C901
                 out["summary"]["counts"]["matched_symbols"] = int(
                     stats["matched_symbols"]
                 )
+            missing_symbols = list(selection_meta.get("missing_symbols") or [])
+            if missing_symbols:
+                out["missing_symbols"] = missing_symbols
+                out["warnings"] = [
+                    "Requested symbol(s) not found and excluded from the scan: "
+                    + ", ".join(missing_symbols)
+                    + "."
+                ]
             out.update(freshness_summary)
             units = _market_scan_units_for_rows(table_payload["rows"])
             if units:

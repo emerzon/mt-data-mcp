@@ -203,7 +203,7 @@ def test_market_scan_keeps_future_quote_unsafe_when_bar_is_fresh() -> None:
     row = result["data"][0]
     assert row["timestamp_in_future"] is True
     assert row["data_stale"] is True
-    assert row["usable_for_live_trading"] is False
+    assert "usable_for_live_trading" not in row
     assert row["freshness_reason"] == "future_timestamp"
     assert row["warning"] == row["timestamp_warning"]
     assert row["bar_stale"] is False
@@ -1361,7 +1361,7 @@ class TestMarketScan:
         mock_group,
     ):
         mock_symbols_get.return_value = [
-            _make_symbol("EURUSD", description="Euro"),
+            _make_symbol("EURUSD", description="Euro", currency_profit="USD"),
             _make_symbol("GBPUSD", description="Pound"),
         ]
         mock_tick.return_value = _make_tick(bid=1.1000, ask=1.1001)
@@ -1373,6 +1373,35 @@ class TestMarketScan:
         assert result["success"] is True
         assert result["meta"]["request"]["symbols_input"] == ["EURUSD"]
         assert [row["symbol"] for row in result["data"]] == ["EURUSD"]
+        assert result["data"][0]["price_currency"] == "USD"
+        assert result["data"][0]["price_basis"] == "mt5_latest_completed_bar_close"
+        assert result["data"][0]["price_point"] == 0.0001
+        assert "usable_for_live_trading" not in result["data"][0]
+
+    @patch("mtdata.core.symbols._extract_group_path_util", side_effect=lambda s: s.path)
+    @patch("mtdata.core.symbols._mt5_copy_rates_from_pos")
+    @patch("mtdata.core.symbols.mt5.symbol_info_tick")
+    @patch("mtdata.core.symbols.mt5.symbols_get")
+    def test_market_scan_reports_missing_requested_symbols(
+        self,
+        mock_symbols_get,
+        mock_tick,
+        mock_rates,
+        mock_group,
+    ):
+        mock_symbols_get.return_value = [_make_symbol("EURUSD")]
+        mock_tick.return_value = _make_tick(bid=1.1000, ask=1.1001)
+        mock_rates.return_value = _make_bars([1.0, 1.01, 1.02, 1.03])
+
+        result = _get_market_scan()(symbols="EURUSD,NOTAREALPAIR", lookback=4)
+
+        assert result["success"] is True
+        assert result["missing_symbols"] == ["NOTAREALPAIR"]
+        assert result["summary"]["counts"]["skipped_symbols"] == 1
+        assert result["warnings"] == [
+            "Requested symbol(s) not found and excluded from the scan: "
+            "NOTAREALPAIR."
+        ]
 
     @patch("mtdata.core.symbols._extract_group_path_util", side_effect=lambda s: s.path)
     @patch("mtdata.core.symbols._mt5_copy_rates_from_pos")
