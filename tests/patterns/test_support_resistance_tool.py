@@ -120,7 +120,15 @@ def test_support_resistance_tool_uses_live_tick_as_level_reference():
     gateway = _gateway(tick=tick)
 
     with patch("mtdata.core.pivot.create_mt5_gateway", return_value=gateway), \
-         patch("mtdata.core.pivot._fetch_history", return_value=_frame()):
+         patch("mtdata.core.pivot._fetch_history", return_value=_frame()), \
+         patch(
+             "mtdata.core.pivot.build_tick_freshness_context",
+             return_value={
+                 "usable_for_live_trading": True,
+                 "freshness_state": "live",
+                 "freshness_reason": "live_quote",
+             },
+         ):
         result = fn(
             "EURUSD",
             timeframe="H1",
@@ -135,6 +143,48 @@ def test_support_resistance_tool_uses_live_tick_as_level_reference():
     assert result["current_price"] == 111.1
     assert result["current_price_source"] == "live_tick_mid"
     assert result["reference_quote_as_of"] == "2023-11-16T02:00Z"
+    assert result["reference_quote_usable_for_live_trading"] is True
+    assert result["reference_quote_freshness_state"] == "live"
+
+
+def test_support_resistance_tool_rejects_non_live_tick_as_level_reference():
+    fn = _get_support_resistance_fn()
+    tick = SimpleNamespace(
+        bid=111.0,
+        ask=111.2,
+        last=111.1,
+        time=1_700_100_000,
+        time_msc=1_700_100_000_000,
+    )
+    gateway = _gateway(tick=tick)
+
+    with patch("mtdata.core.pivot.create_mt5_gateway", return_value=gateway), \
+         patch("mtdata.core.pivot._fetch_history", return_value=_frame()), \
+         patch(
+             "mtdata.core.pivot.build_tick_freshness_context",
+             return_value={
+                 "usable_for_live_trading": False,
+                 "freshness_state": "stale",
+                 "freshness_reason": "stale_age",
+             },
+         ):
+        result = fn(
+            "EURUSD",
+            timeframe="H1",
+            lookback=200,
+            tolerance_pct=0.005,
+            min_touches=1,
+            max_levels=3,
+            max_distance_pct=None,
+            reaction_bars=4,
+        )
+
+    assert result["current_price"] == 105.0
+    assert result["current_price_source"] == "last_completed_bar_close"
+    assert result["reference_quote_as_of"] == "2023-11-16T02:00Z"
+    assert result["reference_quote_usable_for_live_trading"] is False
+    assert result["reference_quote_freshness_reason"] == "stale_age"
+    assert "latest completed bar close" in result["warnings"][0]
 
 
 def test_support_resistance_tool_applies_near_price_distance_default():

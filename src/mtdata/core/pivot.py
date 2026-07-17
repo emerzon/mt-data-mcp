@@ -20,6 +20,7 @@ from ..shared.validators import (
 )
 from ..utils.coercion import round_finite
 from ..utils.level_confluence import build_level_confluence_payload
+from ..utils.market_metadata import build_tick_freshness_context
 from ..utils.mt5 import (
     MT5ConnectionError,
     _mt5_copy_rates_from,
@@ -971,19 +972,31 @@ def support_resistance_levels(
             reference_price = None
             reference_price_source = None
             reference_quote_as_of = None
+            reference_quote_context: Dict[str, Any] = {}
             if not start and not end:
                 tick = gateway.symbol_info_tick(symbol)
-                reference_price = _tick_reference_price(tick)
-                if reference_price is not None:
-                    reference_price_source = "live_tick_mid"
-                    tick_epoch = getattr(tick, "time_msc", None)
-                    try:
-                        tick_epoch = float(tick_epoch) / 1000.0 if tick_epoch else None
-                    except (TypeError, ValueError):
-                        tick_epoch = None
-                    if tick_epoch is None:
-                        tick_epoch = getattr(tick, "time", None)
+                tick_price = _tick_reference_price(tick)
+                tick_epoch = getattr(tick, "time_msc", None)
+                try:
+                    tick_epoch = float(tick_epoch) / 1000.0 if tick_epoch else None
+                except (TypeError, ValueError):
+                    tick_epoch = None
+                if tick_epoch is None:
+                    tick_epoch = getattr(tick, "time", None)
+                if tick_epoch is not None:
                     reference_quote_as_of = _format_time_minimal(tick_epoch)
+                reference_quote_context = build_tick_freshness_context(
+                    symbol,
+                    tick_epoch=tick_epoch,
+                    now_epoch=datetime.now(timezone.utc).timestamp(),
+                    item="reference quote",
+                )
+                if (
+                    tick_price is not None
+                    and reference_quote_context.get("usable_for_live_trading") is True
+                ):
+                    reference_price = tick_price
+                    reference_price_source = "live_tick_mid"
             result = compute_support_resistance_payload(
                 fetch_history_impl=_fetch_history,
                 symbol=symbol,
@@ -1004,6 +1017,25 @@ def support_resistance_levels(
             )
             if reference_quote_as_of is not None:
                 result["reference_quote_as_of"] = reference_quote_as_of
+            if reference_quote_context:
+                result["reference_quote_usable_for_live_trading"] = bool(
+                    reference_quote_context.get("usable_for_live_trading")
+                )
+                for source_key, target_key in (
+                    ("freshness_state", "reference_quote_freshness_state"),
+                    ("freshness_reason", "reference_quote_freshness_reason"),
+                ):
+                    value = reference_quote_context.get(source_key)
+                    if value is not None:
+                        result[target_key] = value
+                if (
+                    reference_price is None
+                    and _tick_reference_price(tick) is not None
+                ):
+                    result.setdefault("warnings", []).append(
+                        "The latest quote was not usable for live trading, so distances "
+                        "and nearest-level ordering use the latest completed bar close."
+                    )
             detail_value = str(detail).strip().lower()
             if normalize_output_extras(extras):
                 detail_value = "full"
