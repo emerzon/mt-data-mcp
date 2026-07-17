@@ -57,6 +57,10 @@ _COMMAND_PARAM_CHOICE_OVERRIDES: Dict[tuple[str, str], list[str]] = {
     ("forecast_barrier_optimize", "search_profile"): ["fast", "medium", "long"],
 }
 
+_POSITIONAL_ONLY_OPTIONAL_FIRST_PARAMS: set[tuple[str, str]] = {
+    ("market_scan", "symbols"),
+}
+
 _MULTI_VALUE_SYMBOL_POSITIONAL_COMMANDS = frozenset(
     {"correlation_matrix", "cointegration_test", "cross_correlation"}
 )
@@ -65,7 +69,6 @@ _COMMAND_REQUIRED_OPTIONS: set[tuple[str, str]] = {
     ("trade_place", "volume"),
     ("trade_place", "order_type"),
 }
-
 
 _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
     ("data_fetch_candles", "indicators"): "Technical indicators. On PowerShell, quote parenthesized specs such as --indicators \"rsi(14)\", or use shell-safe rsi_14 / sma=20 syntax. JSON arrays like '[{\"name\":\"rsi\",\"params\":[14]}]' and named params like rsi(length=14) also work. Use params syntax, not sma,20.",
@@ -722,7 +725,10 @@ def add_dynamic_arguments(
             cmd_name=cmd_name,
             param_names=param_names,
         )
-        if (str(cmd_name or ""), str(param["name"])) in _COMMAND_REQUIRED_OPTIONS:
+        is_required_option = (
+            param["required"] and param != param_info["params"][0]
+        ) or (str(cmd_name or ""), str(param["name"])) in _COMMAND_REQUIRED_OPTIONS
+        if is_required_option:
             kwargs["required"] = True
             kwargs["default"] = argparse.SUPPRESS
             kwargs["help"] = f"{kwargs.get('help') or param['name']} (required)"
@@ -760,9 +766,10 @@ def add_dynamic_arguments(
                 or (str(cmd_name or ""), str(param["name"])) in _HIDDEN_OPTIONAL_FIRST_POSITIONAL_FLAGS
             ):
                 option_kwargs["help"] = argparse.SUPPRESS
-            if option_flags:
+            positional_key = (str(cmd_name or ""), str(param["name"]))
+            if option_flags and positional_key not in _POSITIONAL_ONLY_OPTIONAL_FIRST_PARAMS:
                 parser.add_argument(*option_flags, **option_kwargs)
-            if hidden_option_flags:
+            if hidden_option_flags and positional_key not in _POSITIONAL_ONLY_OPTIONAL_FIRST_PARAMS:
                 hidden_option_kwargs = dict(kwargs)
                 hidden_option_kwargs["help"] = argparse.SUPPRESS
                 parser.add_argument(*hidden_option_flags, **hidden_option_kwargs)

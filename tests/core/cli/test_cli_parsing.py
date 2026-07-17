@@ -419,10 +419,46 @@ class TestAddDynamicArguments:
 
         help_text = _strip_ansi(parser.format_help())
 
-        assert "--symbols" in help_text
+        assert "--symbols" not in help_text
         assert "Comma-separated MT5 symbols" in help_text
-        assert parser.parse_args(["--symbols", "EURUSD,GBPUSD"]).symbols == "EURUSD,GBPUSD"
         assert parser.parse_args(["EURUSD,GBPUSD"]).symbols == "EURUSD,GBPUSD"
+
+    def test_non_positional_required_parameters_are_required_options(self):
+        parser = argparse.ArgumentParser()
+        func_info = {
+            "params": [
+                {
+                    "name": "spot",
+                    "type": float,
+                    "required": True,
+                    "default": None,
+                },
+                {
+                    "name": "strike",
+                    "type": float,
+                    "required": True,
+                    "default": None,
+                },
+                {
+                    "name": "barrier",
+                    "type": float,
+                    "required": True,
+                    "default": None,
+                },
+            ]
+        }
+
+        add_dynamic_arguments(parser, func_info, cmd_name="options_barrier_price")
+
+        help_text = _strip_ansi(parser.format_help())
+        assert "--strike STRIKE" in help_text
+        assert "--barrier BARRIER" in help_text
+        assert help_text.count("(required)") == 3
+        with pytest.raises(SystemExit):
+            parser.parse_args(["100"])
+        parsed = parser.parse_args(["100", "--strike", "105", "--barrier", "90"])
+        assert parsed.strike == 105.0
+        assert parsed.barrier == 90.0
 
     def test_list_param(self):
         parser = argparse.ArgumentParser()
