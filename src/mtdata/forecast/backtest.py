@@ -1462,10 +1462,14 @@ def forecast_backtest(  # noqa: C901
         if (
             not anchors
             and int(steps) > 1
-            and int(spacing) <= int(horizon)
+            and int(spacing) < int(horizon)
         ):
             return {
-                "error": "spacing must be greater than horizon when steps > 1"
+                "error": (
+                    "spacing must be greater than or equal to horizon when steps > 1 "
+                    f"(got spacing={int(spacing)}, horizon={int(horizon)}); try "
+                    f"spacing={int(horizon)} or steps=1"
+                )
             }
 
         # Fetch sufficient history via shared helper; ensure enough bars for anchors

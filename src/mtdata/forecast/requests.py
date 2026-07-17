@@ -88,9 +88,24 @@ def _normalize_methods_value(value: Any) -> Any:
 class ForecastBacktestRequest(BaseModel):
     symbol: str
     timeframe: TimeframeLiteral = "H1"
-    horizon: int = Field(12, ge=1, le=MAX_FORECAST_HORIZON, description="Bars forecast after each backtest anchor.")
-    steps: int = Field(5, ge=1, le=MAX_BACKTEST_STEPS, description="Number of rolling-origin backtest anchors to run.")
-    spacing: int = Field(20, ge=1, le=MAX_BACKTEST_SPACING, description="Bars between consecutive rolling-origin anchors.")
+    horizon: int = Field(
+        12,
+        ge=1,
+        le=MAX_FORECAST_HORIZON,
+        description="Bars forecast after each backtest anchor; spacing must be at least this value when steps > 1.",
+    )
+    steps: int = Field(
+        5,
+        ge=1,
+        le=MAX_BACKTEST_STEPS,
+        description="Number of rolling-origin backtest anchors; when greater than 1, spacing must be at least horizon.",
+    )
+    spacing: int = Field(
+        20,
+        ge=1,
+        le=MAX_BACKTEST_SPACING,
+        description="Spacing in bars between anchors; must be greater than or equal to horizon when steps > 1.",
+    )
     start: Optional[str] = None
     end: Optional[str] = None
     methods: Optional[List[str]] = None
@@ -121,6 +136,16 @@ class ForecastBacktestRequest(BaseModel):
     @classmethod
     def _reject_removed_target(cls, values: Any) -> Any:
         return reject_removed_field(values, field_name="target", replacement="quantity")
+
+    @model_validator(mode="after")
+    def _validate_spacing(self) -> "ForecastBacktestRequest":
+        if self.steps > 1 and self.spacing < self.horizon:
+            raise ValueError(
+                "spacing must be greater than or equal to horizon when steps > 1 "
+                f"(got spacing={self.spacing}, horizon={self.horizon}); try "
+                f"spacing={self.horizon} or steps=1"
+            )
+        return self
 
 
 class StrategyBacktestRequest(BaseModel):

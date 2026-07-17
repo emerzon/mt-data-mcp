@@ -508,6 +508,25 @@ def test_forecast_backtest_request_accepts_methods():
     assert request.methods == ["theta"]
 
 
+def test_forecast_backtest_request_validates_anchor_spacing_up_front():
+    equal_spacing = ForecastBacktestRequest(
+        symbol="EURUSD", horizon=6, steps=3, spacing=6
+    )
+    assert equal_spacing.spacing == equal_spacing.horizon
+
+    with pytest.raises(
+        ValidationError,
+        match=r"got spacing=5, horizon=6.*try spacing=6 or steps=1",
+    ):
+        ForecastBacktestRequest(symbol="EURUSD", horizon=6, steps=3, spacing=5)
+
+    descriptions = {
+        name: str(ForecastBacktestRequest.model_fields[name].description)
+        for name in ("horizon", "steps", "spacing")
+    }
+    assert all("spacing" in value.lower() for value in descriptions.values())
+
+
 def test_forecast_generate_compact_omits_training_period(monkeypatch):
     raw = _unwrap(cf.forecast_generate)
     monkeypatch.setattr(

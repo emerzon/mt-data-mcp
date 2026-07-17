@@ -254,11 +254,16 @@ class TestForecastBacktest:
             methods=["theta"],
         )
 
-        assert result == {"error": "spacing must be greater than horizon when steps > 1"}
+        assert result == {
+            "error": (
+                "spacing must be greater than or equal to horizon when steps > 1 "
+                "(got spacing=10, horizon=12); try spacing=12 or steps=1"
+            )
+        }
         fetch.assert_not_called()
 
     @patch("mtdata.forecast.backtest._fetch_history")
-    def test_rejects_boundary_overlapping_generated_backtest_windows(self, fetch):
+    def test_allows_adjacent_generated_backtest_windows(self, fetch):
         result = forecast_backtest(
             "EURUSD",
             timeframe="H1",
@@ -268,8 +273,8 @@ class TestForecastBacktest:
             methods=["theta"],
         )
 
-        assert result == {"error": "spacing must be greater than horizon when steps > 1"}
-        fetch.assert_not_called()
+        assert result == {"error": "Not enough closed bars for backtest"}
+        fetch.assert_called_once()
 
     @patch("mtdata.forecast.backtest._fetch_history")
     def test_explicit_anchors(self, fetch):
