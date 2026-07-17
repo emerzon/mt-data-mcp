@@ -115,6 +115,34 @@ def _bootstrap_mean_ci(values: Sequence[float], samples: int, seed: int = 42) ->
     return [float(np.quantile(means, 0.025)), float(np.quantile(means, 0.975))]
 
 
+def _round_execution_stat(value: Any, *, significant_digits: int = 6) -> Any:
+    """Remove binary float tails from derived execution statistics."""
+    if value is None:
+        return None
+    numeric = float(value)
+    if not math.isfinite(numeric) or numeric == 0.0:
+        return numeric
+    decimals = significant_digits - int(math.floor(math.log10(abs(numeric)))) - 1
+    return round(numeric, decimals)
+
+
+def _execution_percentiles(values: Iterable[float]) -> Dict[str, Optional[float]]:
+    return {
+        key: _round_execution_stat(value)
+        for key, value in _percentiles(values).items()
+    }
+
+
+def _execution_bootstrap_mean_ci(
+    values: Sequence[float],
+    samples: int,
+) -> Optional[List[float]]:
+    interval = _bootstrap_mean_ci(values, samples)
+    if interval is None:
+        return None
+    return [_round_execution_stat(value) for value in interval]
+
+
 def _block_bootstrap_positive_mean_p_value(
     values: Sequence[float], samples: int, seed: int = 42
 ) -> Optional[float]:
@@ -569,29 +597,33 @@ def analyze_execution_quality(request: TradeExecutionQualityRequest, gateway: An
         "orders": len({item["order_ticket"] for item in fills}),
         "market_order_fills": len(market_order_fills),
         "non_market_order_fills": len(non_market_order_fills),
-        "slippage_bps": _percentiles(slippages),
-        "mean_slippage_ci_95": _bootstrap_mean_ci(slippages, 500),
-        "price_improvement_rate": float(np.mean([item["price_improved"] for item in fills])) if fills else None,
-        "partial_fill_rate": float(np.mean([(item.get("fill_ratio") or 1.0) < 0.999 for item in fills])) if fills else None,
-        "market_order_latency_ms": _percentiles(
+        "slippage_bps": _execution_percentiles(slippages),
+        "mean_slippage_ci_95": _execution_bootstrap_mean_ci(slippages, 500),
+        "price_improvement_rate": _round_execution_stat(
+            np.mean([item["price_improved"] for item in fills])
+        ) if fills else None,
+        "partial_fill_rate": _round_execution_stat(
+            np.mean([(item.get("fill_ratio") or 1.0) < 0.999 for item in fills])
+        ) if fills else None,
+        "market_order_latency_ms": _execution_percentiles(
             item["order_to_fill_ms"]
             for item in market_order_fills
             if item.get("order_to_fill_ms") is not None
         ),
-        "non_market_order_latency_ms": _percentiles(
+        "non_market_order_latency_ms": _execution_percentiles(
             item["order_to_fill_ms"]
             for item in non_market_order_fills
             if item.get("order_to_fill_ms") is not None
         ),
-        "order_to_fill_ms": _percentiles(
+        "order_to_fill_ms": _execution_percentiles(
             item["order_to_fill_ms"]
             for item in fills
             if item.get("order_to_fill_ms") is not None
         ),
-        "commission_fee_per_lot": _percentiles(item["commission_fee_per_lot"] for item in fills),
+        "commission_fee_per_lot": _execution_percentiles(item["commission_fee_per_lot"] for item in fills),
     }
     for horizon in request.markout_seconds:
-        summary.setdefault("markout_bps", {})[str(horizon)] = _percentiles(item["markout_bps"].get(str(horizon)) for item in fills if item["markout_bps"].get(str(horizon)) is not None)
+        summary.setdefault("markout_bps", {})[str(horizon)] = _execution_percentiles(item["markout_bps"].get(str(horizon)) for item in fills if item["markout_bps"].get(str(horizon)) is not None)
     breakdowns: Dict[str, List[Dict[str, Any]]] = {}
     if fills:
         fill_frame = pd.DataFrame(fills)
@@ -600,9 +632,9 @@ def analyze_execution_quality(request: TradeExecutionQualityRequest, gateway: An
             for group_key, items in fill_frame.groupby(keys):
                 labels = group_key if isinstance(group_key, tuple) else (group_key,)
                 row = {name: value for name, value in zip(keys, labels)}
-                row.update({"fills": len(items), "slippage_bps": _percentiles(items["slippage_bps"])})
+                row.update({"fills": len(items), "slippage_bps": _execution_percentiles(items["slippage_bps"])})
                 if label == "by_order_type":
-                    row["order_to_fill_ms"] = _percentiles(items["order_to_fill_ms"])
+                    row["order_to_fill_ms"] = _execution_percentiles(items["order_to_fill_ms"])
                 breakdowns[label].append(row)
     sample_start = format_epoch_utc(fills[0]["fill_epoch"]) if fills else None
     sample_end = format_epoch_utc(fills[-1]["fill_epoch"]) if fills else None

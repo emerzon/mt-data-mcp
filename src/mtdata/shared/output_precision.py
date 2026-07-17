@@ -18,6 +18,7 @@ _AUTO_ALIASES = {"auto", "default", ""}
 _FULL_BY_DEFAULT_PREFIXES = ("trade_",)
 
 _FULL_BY_DEFAULT_TOOLS = {
+    "finviz_forex",
     "forecast_barrier_optimize",
     "forecast_barrier_prob",
     "forecast_generate",

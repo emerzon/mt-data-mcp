@@ -10,6 +10,7 @@ import pytest
 from mtdata.analytics.engines import (
     _barrier_returns,
     _filtered_historical_returns,
+    _execution_percentiles,
     _tick_frame,
     analyze_execution_quality,
     analyze_microstructure,
@@ -308,6 +309,16 @@ def test_execution_quality_matches_order_and_computes_markout() -> None:
         "including_pending_wait"
     )
     assert result["items"][0]["markout_bps"]["5"] is not None
+
+
+def test_execution_quality_statistics_remove_binary_float_tails() -> None:
+    stats = _execution_percentiles(
+        [-0.47683719545640957, 0.2623938317292096, 1.375197583110125]
+    )
+
+    assert stats["mean"] == pytest.approx(0.386918)
+    assert stats["median"] == pytest.approx(0.262394)
+    assert stats["p95"] == pytest.approx(1.26392)
 
 
 def test_execution_quality_handles_empty_tick_history() -> None:
