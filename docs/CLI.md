@@ -464,6 +464,9 @@ mtdata-cli strategy_backtest EURUSD --timeframe H1 --strategy sma_cross \
 
 mtdata-cli strategy_backtest EURUSD --timeframe H1 --strategy rsi_reversion \
   --rsi-length 14 --oversold 30 --overbought 70 --position-mode long_only --json
+
+# Historical MT5 bar spread is the default cost model. For a controlled constant:
+mtdata-cli strategy_backtest EURUSD --cost-model fixed --spread-bps 1.2 --json
 ```
 
 ### Analyze Risk

@@ -166,7 +166,7 @@ class StrategyBacktestRequest(BaseModel):
     oversold: float = Field(30.0, gt=0.0, lt=100.0)
     overbought: float = Field(70.0, gt=0.0, lt=100.0)
     max_hold_bars: Optional[int] = Field(None, ge=1)
-    cost_model: Literal["current_spread_proxy", "fixed"] = "current_spread_proxy"
+    cost_model: Literal["historical_bar_spread", "fixed"] = "historical_bar_spread"
     spread_bps: Optional[float] = Field(None, ge=0.0)
     slippage_bps: float = 1.0
 
@@ -176,6 +176,8 @@ class StrategyBacktestRequest(BaseModel):
             raise ValueError("fast_period must be less than slow_period")
         if self.oversold >= self.overbought:
             raise ValueError("oversold must be less than overbought")
+        if self.cost_model == "historical_bar_spread" and self.spread_bps is not None:
+            raise ValueError("spread_bps is only valid with cost_model='fixed'")
         return self
 
 

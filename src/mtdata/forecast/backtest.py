@@ -6,11 +6,11 @@ import numpy as np
 
 from ..core.output_contract import normalize_output_verbosity_detail
 from ..shared.constants import TIMEFRAME_MAP
-from ..shared.schema import DetailLiteral, DenoiseSpec, TimeframeLiteral
+from ..shared.schema import DenoiseSpec, DetailLiteral, TimeframeLiteral
 from ..shared.validators import invalid_timeframe_error
 from ..utils.denoise import normalize_denoise_spec as _normalize_denoise_spec
-from ..utils.time import _format_time_minimal
 from ..utils.mt5 import mt5
+from ..utils.time import _format_time_minimal
 from .common import (
     annualization_context as _annualization_context,
 )
@@ -155,7 +155,8 @@ def _compact_strategy_backtest_result(result: Dict[str, Any]) -> Dict[str, Any]:
                 summary_out.pop("gross_return_pct", None)
         except Exception:
             pass
-        summary_out.pop("metrics_reliability", None)
+        if not summary_out.get("metrics_reliability_reasons"):
+            summary_out.pop("metrics_reliability", None)
         summary_out.pop("trades_observed", None)
         out["summary"] = summary_out
     metrics = out.get("metrics")
@@ -897,9 +898,53 @@ def _build_strategy_trade(
         "entry_price": float(entry_price),
         "exit_price": float(exit_price),
         "bars_held": int(max(1, exit_idx - entry_idx)),
+        "spread_cost_bps": float(abs(spread_bps) or 0.0),
+        "slippage_cost_bps": 2.0 * float(abs(slippage_bps) or 0.0),
         "return_gross": gross_return,
         "return_net": net_return,
     }
+
+
+def _historical_bar_spread_prices(symbol: str, frame: Any) -> Tuple[Optional[np.ndarray], float]:
+    """Return per-bar quoted spread in price units and its valid-row coverage."""
+    if "spread" not in frame.columns or len(frame) == 0:
+        return None, 0.0
+    try:
+        spread_points = np.asarray(frame["spread"], dtype=float)
+        info = mt5.symbol_info(symbol)
+        point = float(getattr(info, "point", 0.0) or 0.0)
+    except Exception:
+        return None, 0.0
+    if not math.isfinite(point) or point <= 0.0:
+        return None, 0.0
+    valid = np.isfinite(spread_points) & (spread_points >= 0.0)
+    coverage = float(np.mean(valid)) if len(valid) else 0.0
+    if not bool(np.any(valid)):
+        return None, coverage
+    spread_prices = np.where(valid, spread_points * point, np.nan)
+    return spread_prices, coverage
+
+
+def _historical_trade_spread_bps(
+    *,
+    direction: int,
+    entry_idx: int,
+    exit_idx: int,
+    entry_price: float,
+    exit_price: float,
+    spread_prices: Optional[np.ndarray],
+) -> Optional[float]:
+    """Price a bid-OHLC trade at the bar where it crosses the quoted spread."""
+    if spread_prices is None:
+        return None
+    spread_idx = int(entry_idx if direction > 0 else exit_idx)
+    execution_price = float(entry_price if direction > 0 else exit_price)
+    if spread_idx < 0 or spread_idx >= len(spread_prices) or execution_price <= 0.0:
+        return None
+    spread_price = float(spread_prices[spread_idx])
+    if not math.isfinite(spread_price) or spread_price < 0.0:
+        return None
+    return (spread_price / execution_price) * 10000.0
 
 
 def strategy_backtest(  # noqa: C901
@@ -917,7 +962,7 @@ def strategy_backtest(  # noqa: C901
     oversold: float = 30.0,
     overbought: float = 70.0,
     max_hold_bars: Optional[int] = None,
-    cost_model: Literal["current_spread_proxy", "fixed"] = "current_spread_proxy",
+    cost_model: Literal["historical_bar_spread", "fixed"] = "historical_bar_spread",
     spread_bps: Optional[float] = None,
     slippage_bps: float = 1.0,
 ) -> Dict[str, Any]:
@@ -956,24 +1001,16 @@ def strategy_backtest(  # noqa: C901
             return {"error": "fast_period must be less than slow_period"}
         if float(oversold) >= float(overbought):
             return {"error": "oversold must be less than overbought"}
-        cost_model_value = str(cost_model or "current_spread_proxy").strip().lower()
-        if cost_model_value not in {"current_spread_proxy", "fixed"}:
+        cost_model_value = str(cost_model or "historical_bar_spread").strip().lower()
+        if cost_model_value not in {"historical_bar_spread", "fixed"}:
             return {
-                "error": "cost_model must be 'current_spread_proxy' or 'fixed'"
+                "error": "cost_model must be 'historical_bar_spread' or 'fixed'"
             }
-        resolved_spread_bps = float(spread_bps or 0.0)
-        spread_source = "explicit" if spread_bps is not None else "unavailable"
-        if spread_bps is None and cost_model_value == "current_spread_proxy":
-            try:
-                tick = mt5.symbol_info_tick(symbol)
-                bid = float(getattr(tick, "bid", 0.0) or 0.0)
-                ask = float(getattr(tick, "ask", 0.0) or 0.0)
-                mid = (bid + ask) / 2.0
-                if ask > bid > 0.0 and mid > 0.0:
-                    resolved_spread_bps = (ask - bid) / mid * 10000.0
-                    spread_source = "mt5_current_quote"
-            except Exception:
-                pass
+        if cost_model_value == "historical_bar_spread" and spread_bps is not None:
+            return {
+                "error": "spread_bps is only valid with cost_model='fixed'"
+            }
+        fixed_spread_bps = float(spread_bps or 0.0)
 
         if strategy_value in {"sma_cross", "ema_cross"}:
             warmup_bars = max(int(slow_period), 5)
@@ -991,6 +1028,13 @@ def strategy_backtest(  # noqa: C901
         min_required = warmup_bars + 5 if range_requested else max(int(lookback), warmup_bars + 5)
         if len(df) < min_required:
             return {"error": "Not enough closed bars for strategy backtest"}
+
+        historical_spread_prices: Optional[np.ndarray] = None
+        historical_spread_coverage = 0.0
+        if cost_model_value == "historical_bar_spread":
+            historical_spread_prices, historical_spread_coverage = (
+                _historical_bar_spread_prices(symbol, df)
+            )
 
         signal_series, diagnostics, signal_warmup = _build_strategy_signal_series(
             df,
@@ -1013,6 +1057,8 @@ def strategy_backtest(  # noqa: C901
         signals = signal_series.to_numpy(dtype=float)
 
         trades: List[Dict[str, Any]] = []
+        observed_spread_costs: List[float] = []
+        missing_spread_costs = 0
         current_direction = 0
         entry_idx = None
         entry_time = None
@@ -1052,6 +1098,23 @@ def strategy_backtest(  # noqa: C901
             if desired_direction == current_direction and not hit_max_hold:
                 continue
 
+            trade_spread_bps = (
+                fixed_spread_bps
+                if cost_model_value == "fixed" and spread_bps is not None
+                else _historical_trade_spread_bps(
+                    direction=current_direction,
+                    entry_idx=int(entry_idx),
+                    exit_idx=action_idx,
+                    entry_price=float(entry_price),
+                    exit_price=float(action_price),
+                    spread_prices=historical_spread_prices,
+                )
+            )
+            if trade_spread_bps is None:
+                missing_spread_costs += 1
+                trade_spread_bps = 0.0
+            else:
+                observed_spread_costs.append(float(trade_spread_bps))
             trades.append(
                 _build_strategy_trade(
                     direction=current_direction,
@@ -1062,7 +1125,7 @@ def strategy_backtest(  # noqa: C901
                     entry_price=float(entry_price),
                     exit_price=float(action_price),
                     slippage_bps=float(slippage_bps),
-                    spread_bps=resolved_spread_bps,
+                    spread_bps=float(trade_spread_bps),
                 )
             )
             current_direction = 0
@@ -1081,6 +1144,23 @@ def strategy_backtest(  # noqa: C901
             final_exit_price = float(closes[final_exit_idx])
             if not math.isfinite(final_exit_price) or final_exit_price <= 0.0:
                 final_exit_price = _execution_price(final_exit_idx) or float(entry_price)
+            trade_spread_bps = (
+                fixed_spread_bps
+                if cost_model_value == "fixed" and spread_bps is not None
+                else _historical_trade_spread_bps(
+                    direction=current_direction,
+                    entry_idx=int(entry_idx),
+                    exit_idx=int(final_exit_idx),
+                    entry_price=float(entry_price),
+                    exit_price=float(final_exit_price),
+                    spread_prices=historical_spread_prices,
+                )
+            )
+            if trade_spread_bps is None:
+                missing_spread_costs += 1
+                trade_spread_bps = 0.0
+            else:
+                observed_spread_costs.append(float(trade_spread_bps))
             trades.append(
                 _build_strategy_trade(
                     direction=current_direction,
@@ -1091,7 +1171,7 @@ def strategy_backtest(  # noqa: C901
                     entry_price=float(entry_price),
                     exit_price=float(final_exit_price),
                     slippage_bps=float(slippage_bps),
-                    spread_bps=resolved_spread_bps,
+                    spread_bps=float(trade_spread_bps),
                 )
             )
 
@@ -1155,9 +1235,10 @@ def strategy_backtest(  # noqa: C901
             "lookback": int(lookback),
             "slippage_bps": float(slippage_bps),
             "cost_model": cost_model_value,
-            "spread_bps": resolved_spread_bps,
             **_strategy_params,
         }
+        if cost_model_value == "fixed":
+            _params["spread_bps"] = fixed_spread_bps
         if start is not None:
             _params["start"] = start
         if end is not None:
@@ -1165,6 +1246,32 @@ def strategy_backtest(  # noqa: C901
         bars_used = len(df) if range_requested else int(lookback)
         gross_return = float(gross_equity[-1] - 1.0)
         net_return = float(net_equity[-1] - 1.0)
+        mean_spread_cost_bps = (
+            float(np.mean(observed_spread_costs))
+            if observed_spread_costs
+            else None
+        )
+        cost_model_complete = (
+            cost_model_value == "fixed" and spread_bps is not None
+        ) or (
+            cost_model_value == "historical_bar_spread"
+            and historical_spread_prices is not None
+            and missing_spread_costs == 0
+        )
+        spread_source = (
+            "explicit"
+            if cost_model_value == "fixed" and spread_bps is not None
+            else (
+                "mt5_historical_bar_spread"
+                if historical_spread_prices is not None
+                else "unavailable"
+            )
+        )
+        reported_spread_cost_bps = (
+            fixed_spread_bps
+            if cost_model_value == "fixed" and spread_bps is not None
+            else mean_spread_cost_bps
+        )
 
         result: Dict[str, Any] = {
             "success": True,
@@ -1178,13 +1285,16 @@ def strategy_backtest(  # noqa: C901
             "price_basis": "mt5_bid_ohlc",
             "cost_model": {
                 "type": cost_model_value,
-                "spread_bps_round_trip": resolved_spread_bps,
+                "spread_bps_round_trip": reported_spread_cost_bps,
                 "spread_source": spread_source,
+                "spread_observations": len(observed_spread_costs),
                 "slippage_bps_per_side": float(slippage_bps),
-                "round_trip_cost_bps": resolved_spread_bps + float(slippage_bps) * 2.0,
-                "complete": (
-                    cost_model_value == "fixed" and spread_source == "explicit"
+                "round_trip_cost_bps": (
+                    reported_spread_cost_bps + float(slippage_bps) * 2.0
+                    if reported_spread_cost_bps is not None
+                    else None
                 ),
+                "complete": cost_model_complete,
             },
             "units": _backtest_units(),
             "parameters": _params,
@@ -1215,10 +1325,19 @@ def strategy_backtest(  # noqa: C901
                 "time": _format_time_minimal(float(times[last_idx])),
             },
         }
-        if cost_model_value == "current_spread_proxy":
+        if cost_model_value == "historical_bar_spread":
+            result["cost_model"]["historical_spread_coverage_pct"] = round(
+                historical_spread_coverage * 100.0,
+                2,
+            )
+        if not cost_model_complete:
             result["warnings"] = [
-                "Transaction costs use one current MT5 quote as a fixed proxy "
-                "for every historical trade; they are not historical observed spreads."
+                "Transaction costs are incomplete because the selected spread model "
+                "could not price every trade. Net metrics exclude missing spread costs."
+            ]
+            result["summary"]["metrics_reliability"] = "low"
+            result["summary"]["metrics_reliability_reasons"] = [
+                "incomplete_transaction_costs"
             ]
         sample_notice = metrics.get("sample_notice") if isinstance(metrics, dict) else None
         if isinstance(sample_notice, dict):
@@ -1404,6 +1523,8 @@ def strategy_backtest(  # noqa: C901
                 "oversold": float(oversold),
                 "overbought": float(overbought),
                 "max_hold_bars": int(max_hold_bars) if max_hold_bars is not None else None,
+                "cost_model": cost_model_value,
+                "spread_bps": spread_bps,
                 "slippage_bps": float(slippage_bps),
             },
             detail=detail_mode,
