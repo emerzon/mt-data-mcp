@@ -540,10 +540,63 @@ def test_forecast_generate_compact_preserves_history_reliability(monkeypatch):
 
     assert out["history_sample_ok"] is False
     assert out["forecast_reliability"] == "low"
+    assert out["forecast_reliability_basis"] == "history_sample_size"
     assert out["forecast_reliability_reason"] == "below_recommended_history"
+    assert out["trust_level"] == "low"
+    assert "insufficient_history_sample" in out["trust_blockers"]
     assert out["recommended_history_bars"] == 36
     assert out["history_shortfall_bars"] == 33
     assert "Low-history forecast." in out["warnings"]
+
+
+def test_forecast_generate_combines_sample_and_history_policy_trust(monkeypatch):
+    raw = _unwrap(cf.forecast_generate)
+    monkeypatch.setattr(
+        cf,
+        "_forecast_impl",
+        lambda **kwargs: {
+            "success": True,
+            "method": kwargs["method"],
+            "horizon": kwargs["horizon"],
+            "quantity": kwargs["quantity"],
+            "forecast_time": ["2026-06-02 20:00"],
+            "forecast_price": [1.0],
+            "forecast_reliability": "adequate",
+            "history_policy_ok": False,
+            "ci_status": "available",
+        },
+    )
+
+    out = raw(request=ForecastGenerateRequest(symbol="EURUSD", method="theta"))
+
+    assert out["forecast_reliability"] == "adequate"
+    assert out["forecast_reliability_basis"] == "history_sample_size"
+    assert out["trust_level"] == "degraded"
+    assert out["trust_blockers"] == ["history_freshness_policy_not_met"]
+
+
+def test_run_forecast_generate_adds_available_methods_to_invalid_error(monkeypatch):
+    monkeypatch.setattr(
+        forecast_use_cases,
+        "get_forecast_methods_snapshot",
+        lambda: {
+            "methods": [
+                {"method": "theta", "available": True},
+                {"method": "drift", "available": True},
+                {"method": "missing_dependency", "available": False},
+            ]
+        },
+    )
+
+    result = forecast_use_cases.run_forecast_generate(
+        ForecastGenerateRequest(symbol="EURUSD", method="nope"),
+        forecast_impl=lambda **kwargs: {
+            "error": "Invalid method: nope. Run forecast_list_methods for the full catalog."
+        },
+    )
+
+    assert result["valid_values"] == {"method": ["drift", "theta"]}
+    assert result["related_tools"] == ["forecast_list_methods"]
 
 
 def test_forecast_backtest_request_rejects_singular_method_alias():

@@ -29,7 +29,7 @@ from .barriers_shared import barrier_method_error, normalize_barrier_method
 from .capabilities import resolve_capability_request
 from .exceptions import ForecastError, raise_if_error_result
 from .forecast import execute_forecast as _forecast_impl
-from .forecast_methods import get_forecast_method_names
+from .forecast_methods import get_forecast_method_names, get_forecast_methods_snapshot
 from .forecast_validation import format_invalid_method_error
 from .requests import (
     ForecastBacktestRequest,
@@ -671,6 +671,62 @@ def _annotate_forecast_generate_quality(payload: Dict[str, Any]) -> Dict[str, An
         out["forecast_status"] = "non_informative"
         out["signal_status"] = "not_actionable"
         _append_forecast_warning(out, _FORECAST_FLAT_PATH_WARNING)
+    out.setdefault("forecast_reliability_basis", "history_sample_size")
+    trust_blockers: List[str] = []
+    if str(out.get("forecast_reliability") or "").strip().lower() == "low":
+        trust_blockers.append("insufficient_history_sample")
+    if out.get("history_policy_ok") is False:
+        trust_blockers.append("history_freshness_policy_not_met")
+    ci_status = str(out.get("ci_status") or "").strip().lower()
+    if ci_status in {"not_requested", "unavailable"}:
+        trust_blockers.append("forecast_uncertainty_not_available")
+    if path_flatness:
+        trust_blockers.append("non_informative_forecast_path")
+    out["trust_level"] = (
+        "low"
+        if any(
+            blocker in trust_blockers
+            for blocker in (
+                "insufficient_history_sample",
+                "non_informative_forecast_path",
+            )
+        )
+        else "degraded"
+        if trust_blockers
+        else "adequate"
+    )
+    out["trust_level_basis"] = [
+        "history_sample_size",
+        "history_freshness_policy",
+        "forecast_uncertainty",
+    ]
+    if trust_blockers:
+        out["trust_blockers"] = trust_blockers
+    return out
+
+
+def _attach_invalid_method_guidance(payload: Dict[str, Any]) -> Dict[str, Any]:
+    if not isinstance(payload, dict):
+        return payload
+    error = str(payload.get("error") or "").strip()
+    if not error.lower().startswith("invalid method:"):
+        return payload
+    methods = get_forecast_methods_snapshot().get("methods", [])
+    available = sorted(
+        {
+            str(row.get("method"))
+            for row in methods
+            if isinstance(row, dict)
+            and row.get("method")
+            and row.get("available") is not False
+        }
+    )
+    out = dict(payload)
+    display_limit = 20
+    out["valid_values"] = {"method": available[:display_limit]}
+    if len(available) > display_limit:
+        out["valid_values_truncated"] = len(available) - display_limit
+    out["related_tools"] = ["forecast_list_methods"]
     return out
 
 
@@ -2094,6 +2150,8 @@ def run_forecast_generate(
             async_mode=getattr(request, 'async_mode', False),
             model_id=getattr(request, 'model_id', None),
         )
+        if isinstance(out, dict):
+            out = _attach_invalid_method_guidance(out)
         if isinstance(out, dict) and "success" not in out and infer_result_success(out):
             out["success"] = True
         if proxy_defaulted and isinstance(out, dict) and not out.get("error"):
