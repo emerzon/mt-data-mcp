@@ -346,7 +346,7 @@ def test_market_snapshot_exposes_quote_and_assembly_timestamps(monkeypatch):
     with patch.object(snapshot_mod, "datetime", fake_datetime):
         result = _raw_market_snapshot(symbol="EURUSD", detail="compact")
 
-    assert result["as_of"] == "2023-11-14T22:13:20Z"
+    assert result["as_of"] == "2026-06-15T19:34:08Z"
     assert result["quote_as_of"] == "2023-11-14T22:13:20Z"
     assert result["assembled_at"] == "2026-06-15T19:34:08Z"
 

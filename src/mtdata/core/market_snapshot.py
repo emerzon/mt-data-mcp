@@ -746,9 +746,9 @@ def market_snapshot(
     snapshot stays fast and comparable. Call dedicated regime/forecast/pattern
     tools for custom methods and parameters.
 
-    Timestamp semantics: `as_of` tracks the latest quote time when available,
-    `quote_as_of` duplicates that normalized quote timestamp explicitly, and
-    `assembled_at` records when this snapshot payload was built. The quote runs
+    Timestamp semantics: `as_of` and `assembled_at` record when this snapshot
+    payload was built, while `quote_as_of` records the normalized source quote
+    time when available. The quote runs
     after analytical sections and its freshness is revalidated at `assembled_at`,
     so live-readiness describes the delivered snapshot rather than an early step.
     """
@@ -791,7 +791,7 @@ def market_snapshot(
             "success": bool(health.get("success")),
             "symbol": symbol,
             "timeframe": timeframe,
-            "as_of": quote_as_of or assembled_at,
+            "as_of": assembled_at,
             "assembled_at": assembled_at,
             "sections_requested": list(selected),
             **{key: value for key, value in health.items() if key != "success"},
