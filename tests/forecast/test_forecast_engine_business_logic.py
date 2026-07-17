@@ -58,6 +58,49 @@ def test_normalize_weights_and_lookback_helpers():
     assert fe._calculate_lookback_bars("fourier_ols", horizon=4, lookback=None, seasonality=24, timeframe="H1") >= 300
 
 
+def test_forecast_history_sample_quality_flags_short_windows():
+    low = fe._forecast_history_sample_quality(
+        method="theta",
+        horizon=12,
+        history_bars=3,
+    )
+    adequate = fe._forecast_history_sample_quality(
+        method="theta",
+        horizon=12,
+        history_bars=36,
+    )
+
+    assert low["history_sample_ok"] is False
+    assert low["forecast_reliability"] == "low"
+    assert low["forecast_reliability_reason"] == "below_recommended_history"
+    assert low["recommended_history_bars"] == 36
+    assert low["history_shortfall_bars"] == 33
+    assert "used 3 bars" in low["warning"]
+    assert adequate == {
+        "history_sample_ok": True,
+        "forecast_reliability": "adequate",
+        "recommended_history_bars": 36,
+    }
+
+
+def test_forecast_engine_surfaces_short_history_reliability():
+    out = fe.forecast_engine(
+        symbol="EURUSD",
+        timeframe="H1",
+        method="theta",
+        horizon=12,
+        ci_alpha=None,
+        prefetched_df=_df(3),
+    )
+
+    assert out["success"] is True
+    assert out["history_sample_ok"] is False
+    assert out["forecast_reliability"] == "low"
+    assert out["forecast_reliability_reason"] == "below_recommended_history"
+    assert out["recommended_history_bars"] == 36
+    assert any("Low-history forecast" in item for item in out["warnings"])
+
+
 def test_preprocessing_helpers_and_output_format():
     df = _df(6)
     base_col = fp._prepare_base_data(df, quantity="return")
@@ -1221,9 +1264,11 @@ def test_forecast_engine_surfaces_broker_time_misalignment_warning(monkeypatch):
 
     assert out["success"] is True
     assert out["diagnostics"]["broker_time_check"]["status"] == "misaligned"
-    assert out["warnings"] == [
+    assert any("Low-history forecast" in item for item in out["warnings"])
+    assert (
         "MT5 UTC timestamp sanity check failed: latest tick is 3600s in the future"
-    ]
+        in out["warnings"]
+    )
 
 
 def test_forecast_engine_keeps_stale_broker_time_check_diagnostic_only(monkeypatch):
@@ -1270,7 +1315,8 @@ def test_forecast_engine_keeps_stale_broker_time_check_diagnostic_only(monkeypat
 
     assert out["success"] is True
     assert out["diagnostics"]["broker_time_check"]["status"] == "stale"
-    assert "warnings" not in out
+    assert any("Low-history forecast" in item for item in out["warnings"])
+    assert not any("market is closed" in item for item in out["warnings"])
 
 
 def test_forecast_engine_skips_broker_time_check_for_prefetched_and_asof(monkeypatch):

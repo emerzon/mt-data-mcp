@@ -468,7 +468,7 @@ def test_forecast_generate_compact_normalizes_utc_times_and_neutral_delta(monkey
             "last_price_stale": False,
             "denoise_applied": False,
             "forecast_time": ["2026-06-02 20:00", "2026-06-02 21:00"],
-            "forecast_price": [1.00004, 1.00005],
+            "forecast_price": [1.00004, 1.00006],
             "last_price": 1.0,
             "digits": 5,
         },
@@ -500,10 +500,50 @@ def test_forecast_generate_compact_normalizes_utc_times_and_neutral_delta(monkey
     assert "denoise_applied" not in out
     assert out["forecast"] == [
         {"time": "2026-06-02T20:00Z", "value": 1.00004},
-        {"time": "2026-06-02T21:00Z", "value": 1.00005},
+        {"time": "2026-06-02T21:00Z", "value": 1.00006},
     ]
     assert out["forecast_vs_last_price"]["direction"] == "neutral"
     assert out["forecast_vs_last_price"]["direction_threshold_pct"] == 0.01
+
+
+def test_forecast_generate_compact_preserves_history_reliability(monkeypatch):
+    raw = _unwrap(cf.forecast_generate)
+    monkeypatch.setattr(
+        cf,
+        "_forecast_impl",
+        lambda **kwargs: {
+            "success": True,
+            "method": kwargs["method"],
+            "horizon": kwargs["horizon"],
+            "quantity": kwargs["quantity"],
+            "last_observation_time": "2026-06-02 19:00",
+            "forecast_time": ["2026-06-02 20:00"],
+            "forecast_price": [1.0],
+            "last_price": 1.0,
+            "history_sample_ok": False,
+            "forecast_reliability": "low",
+            "forecast_reliability_reason": "below_recommended_history",
+            "recommended_history_bars": 36,
+            "history_shortfall_bars": 33,
+            "warnings": ["Low-history forecast."],
+        },
+    )
+
+    out = raw(
+        request=ForecastGenerateRequest(
+            symbol="EURUSD",
+            timeframe="H1",
+            method="theta",
+            horizon=12,
+        )
+    )
+
+    assert out["history_sample_ok"] is False
+    assert out["forecast_reliability"] == "low"
+    assert out["forecast_reliability_reason"] == "below_recommended_history"
+    assert out["recommended_history_bars"] == 36
+    assert out["history_shortfall_bars"] == 33
+    assert "Low-history forecast." in out["warnings"]
 
 
 def test_forecast_backtest_request_rejects_singular_method_alias():

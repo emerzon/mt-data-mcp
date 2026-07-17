@@ -635,6 +635,31 @@ def _build_engine_diagnostics(
     return diagnostics
 
 
+def _forecast_history_sample_quality(
+    *,
+    method: str,
+    horizon: int,
+    history_bars: int,
+) -> Dict[str, Any]:
+    recommended = max(30, 3 * max(1, int(horizon)))
+    bars = max(0, int(history_bars))
+    sample_ok = bars >= recommended
+    out: Dict[str, Any] = {
+        "history_sample_ok": sample_ok,
+        "forecast_reliability": "adequate" if sample_ok else "low",
+        "recommended_history_bars": recommended,
+    }
+    if not sample_ok:
+        out["forecast_reliability_reason"] = "below_recommended_history"
+        out["history_shortfall_bars"] = recommended - bars
+        out["warning"] = (
+            f"Low-history forecast: method '{method}' used {bars} bars; at least "
+            f"{recommended} are recommended for horizon {int(horizon)}. Treat the "
+            "result as exploratory and validate it with forecast_backtest_run."
+        )
+    return out
+
+
 def _compute_model_key(
     forecaster: "ForecastMethod",
     method_l: str,
@@ -1415,6 +1440,18 @@ def forecast_engine(  # noqa: C901
             base_col=base_col,
             target_series=target_series,
         )
+        sample_quality = _forecast_history_sample_quality(
+            method=method_l,
+            horizon=horizon,
+            history_bars=len(df),
+        )
+        engine_diagnostics.update(
+            {
+                key: value
+                for key, value in sample_quality.items()
+                if key != "warning"
+            }
+        )
         if feature_info:
             engine_diagnostics["feature_preparation"] = feature_info
         broker_time_check_result: Optional[Dict[str, Any]] = None
@@ -1551,6 +1588,21 @@ def forecast_engine(  # noqa: C901
             symbol=symbol,
             timeframe=timeframe,
         )
+        result.update(
+            {
+                key: value
+                for key, value in sample_quality.items()
+                if key != "warning"
+            }
+        )
+        sample_warning = sample_quality.get("warning")
+        if sample_warning:
+            warnings = result.get("warnings")
+            if not isinstance(warnings, list):
+                warnings = []
+            if sample_warning not in warnings:
+                warnings.append(str(sample_warning))
+            result["warnings"] = warnings
         if broker_time_check_result and broker_time_check_result.get("status") == "misaligned":
             warning_text = str(broker_time_check_result.get("warning") or "").strip()
             if warning_text:
