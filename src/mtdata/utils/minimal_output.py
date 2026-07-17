@@ -470,6 +470,7 @@ def _normalize_forecast_payload(
                 "forecast_vs_last_price",
                 "path_flat",
                 "path_range",
+                "units",
             ):
                 value = payload.get(key)
                 if (
@@ -1905,6 +1906,7 @@ def _normalize_support_resistance_payload(
         "method",
         "current_price",
         "level_counts",
+        "units",
     ):
         value = payload.get(key)
         if not _is_empty_value(value):

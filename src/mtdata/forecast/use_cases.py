@@ -585,6 +585,12 @@ def _annotate_forecast_generate_quality(payload: Dict[str, Any]) -> Dict[str, An
             price_context["direction_basis"] = "flat_path"
             price_context["direction_suppressed_reason"] = "flat_path"
         out.setdefault("forecast_vs_last_price", price_context)
+        units = dict(out.get("units") or {})
+        units.setdefault(
+            "forecast_vs_last_price.*_delta_pct",
+            "percentage_points (1.0 = 1%)",
+        )
+        out["units"] = units
     if path_flatness:
         out.update(path_flatness)
         out.setdefault("point_forecast_mode", "flat_model_path")

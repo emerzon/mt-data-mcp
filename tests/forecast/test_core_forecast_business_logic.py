@@ -338,6 +338,9 @@ def test_forecast_generate_defaults_to_compact_payload(monkeypatch):
         "first_step_delta_pct": -4.7619,
         "horizon_delta_pct": 14.2857,
     }
+    assert out["units"]["forecast_vs_last_price.*_delta_pct"] == (
+        "percentage_points (1.0 = 1%)"
+    )
     assert "forecast_time" not in out
     assert "forecast_price" not in out
     assert out["forecast"] == [

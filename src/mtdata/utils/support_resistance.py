@@ -2341,6 +2341,7 @@ def merge_support_resistance_results(  # noqa: C901
                 "a relative 0-to-1 scale"
             ),
         },
+        "units": {"distance_pct": "percentage_points (1.0 = 1%)"},
         "max_levels": int(max_levels_value),
         "max_distance_pct": None if max_distance_value is None else float(max_distance_value),
         "volume_weighting": volume_weighting_mode,
@@ -2505,6 +2506,7 @@ def compact_support_resistance_payload(payload: Dict[str, Any]) -> Dict[str, Any
         "structure_as_of",
         "timezone",
         "timeframes_analyzed",
+        "units",
     ):
         value = payload.get(key)
         if value is not None:
@@ -2832,6 +2834,7 @@ def compute_support_resistance_levels(
                 "a relative 0-to-1 scale"
             ),
         },
+        "units": {"distance_pct": "percentage_points (1.0 = 1%)"},
         "max_levels": int(max_levels_value),
         "max_distance_pct": None if max_distance_value is None else float(max_distance_value),
         "volume_weighting": volume_weighting_mode,
