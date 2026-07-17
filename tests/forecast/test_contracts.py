@@ -89,7 +89,8 @@ def test_forecast_detail_schema_distinguishes_standard_support() -> None:
 
 def test_forecast_generate_default_horizon_matches_forecast_tooling() -> None:
     assert ForecastGenerateRequest(symbol="EURUSD").horizon == 12
-    assert ForecastGenerateRequest(symbol="EURUSD").ci_alpha is None
+    assert ForecastGenerateRequest(symbol="EURUSD").ci_alpha == 0.05
+    assert ForecastGenerateRequest(symbol="EURUSD", ci_alpha=None).ci_alpha is None
 
 
 def test_forecast_tool_requests_default_to_price_quantity() -> None:

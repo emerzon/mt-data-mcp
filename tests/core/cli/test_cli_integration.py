@@ -1188,7 +1188,7 @@ class TestForecastGenerateIntegration:
         assert request.library == "native"
         assert request.method == "theta"
         assert request.detail == "compact"
-        assert request.ci_alpha is None
+        assert request.ci_alpha == 0.05
         assert call_kwargs["__cli_raw"] is True
 
     @patch("mtdata.core.cli.api.discover_tools")

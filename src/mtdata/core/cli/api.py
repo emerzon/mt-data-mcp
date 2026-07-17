@@ -982,8 +982,8 @@ def _add_forecast_generate_args(cmd_parser: argparse.ArgumentParser) -> None:
         "--ci-alpha",
         dest="ci_alpha",
         type=float,
-        default=None,
-        help="Request a confidence interval with this alpha (0.05 => 95%%).",
+        default=0.05,
+        help="Confidence interval alpha (default 0.05 => 95%%).",
     )
     group_uncertainty.add_argument(
         "--detail",
