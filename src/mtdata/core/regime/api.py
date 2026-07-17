@@ -901,8 +901,19 @@ def _mark_collapsed_state_confidence(payload: Dict[str, Any]) -> Dict[str, Any]:
     """Prevent a one-state posterior from masquerading as model certainty."""
     current = payload.get("current_regime")
     if isinstance(current, dict):
+        if current.get("regime_confidence") is not None:
+            current["raw_posterior_mass"] = current["regime_confidence"]
         current["regime_confidence"] = 0.0
         current["label_quality"] = "unidentifiable_state_collapse"
+    regimes = payload.get("regimes")
+    if isinstance(regimes, list):
+        for segment in regimes:
+            if not isinstance(segment, dict):
+                continue
+            if segment.get("regime_confidence") is not None:
+                segment["raw_posterior_mass"] = segment["regime_confidence"]
+            segment["regime_confidence"] = 0.0
+            segment["label_quality"] = "unidentifiable_state_collapse"
     payload["signal_status"] = "not_actionable"
     return payload
 
