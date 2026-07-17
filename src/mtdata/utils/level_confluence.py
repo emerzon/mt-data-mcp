@@ -547,6 +547,21 @@ def build_level_confluence_payload(
             "fraction": tolerance_pct,
             "points": tolerance_points,
         },
+        "score_basis": {
+            "scale": "unbounded_nonnegative",
+            "definition": (
+                "additive source-family score plus pivot-method, support/resistance, "
+                "touch, Fibonacci, and cluster-tightness bonuses"
+            ),
+            "comparison": (
+                "rank within this response; higher means more independent agreement, "
+                "not a probability or historical win rate"
+            ),
+        },
+        "units": {
+            "score": "unbounded_heuristic_points",
+            "distance_pct": "percentage_points (1.0 = 1%)",
+        },
         "levels": top_clusters,
     }
     side_counts = {
@@ -589,12 +604,12 @@ def build_level_confluence_payload(
         out["count"] = len(top_clusters)
     else:
         out["detail"] = detail_value
-        out["units"] = {
+        out["units"].update({
             "tolerance.price": "price",
             "tolerance.pct_points": "percentage_points (1.0 = 1%)",
             "tolerance.fraction": "price_fraction (0.0015 = 0.15%)",
             "tolerance.points": "broker_points",
-        }
+        })
         out["max_distance_pct"] = max_distance_pct
         out["min_source_families"] = min_families
         out["level_counts"] = level_counts

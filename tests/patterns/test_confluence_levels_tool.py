@@ -127,6 +127,9 @@ def test_confluence_levels_tool_combines_pivot_sr_and_fibonacci():
     assert result["pivot_timeframe"] == "D1"
     assert result["sr_timeframe"] == "auto"
     assert result["levels"]
+    assert result["score_basis"]["scale"] == "unbounded_nonnegative"
+    assert "not a probability" in result["score_basis"]["comparison"]
+    assert result["units"]["score"] == "unbounded_heuristic_points"
     top = result["levels"][0]
     assert "pivot_formula" in top["source_families"]
     assert "touch_derived" in top["source_families"]
