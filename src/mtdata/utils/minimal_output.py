@@ -94,6 +94,26 @@ def _move_top_level_metadata_to_tail(payload: Dict[str, Any]) -> Dict[str, Any]:
     return out
 
 
+def _compact_error_envelope(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Compact error details without dropping machine-readable discriminators."""
+    keys = (
+        "success",
+        "error",
+        "error_code",
+        "request_id",
+        "operation",
+        "remediation",
+        "related_tools",
+        "valid_values",
+        "details",
+    )
+    return {
+        key: payload[key]
+        for key in keys
+        if key in payload and not _is_empty_value(payload.get(key))
+    }
+
+
 def _render_news_bucket_toon(
     key: str,
     items: List[Any],
@@ -1601,7 +1621,7 @@ def _normalize_forecast_methods_payload(
         return None
 
     if "error" in payload and not _is_empty_value(payload.get("error")):
-        return {"error": payload.get("error")}
+        return _compact_error_envelope(payload)
 
     out: Dict[str, Any] = {
         "success": bool(payload.get("success"))
@@ -1722,7 +1742,7 @@ def _normalize_library_models_payload(
         return None
 
     if "error" in payload and not _is_empty_value(payload.get("error")):
-        return {"error": payload.get("error")}
+        return _compact_error_envelope(payload)
 
     out: Dict[str, Any] = {}
     library = payload.get("library")
@@ -1870,7 +1890,7 @@ def _normalize_support_resistance_payload(
         return None
 
     if "error" in payload and not _is_empty_value(payload.get("error")):
-        return {"error": payload.get("error")}
+        return _compact_error_envelope(payload)
 
     detail_value = str(payload.get("detail") or "compact").strip().lower()
     if detail_value in {"standard", "full"}:

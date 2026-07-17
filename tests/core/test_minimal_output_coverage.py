@@ -1475,3 +1475,32 @@ class TestFormatComplexValue:
     def test_scalar(self):
         result = _format_complex_value(42)
         assert "42" in result
+
+
+@pytest.mark.parametrize(
+    "tool_name",
+    [
+        "support_resistance_levels",
+        "forecast_list_methods",
+        "forecast_list_library_models",
+    ],
+)
+def test_compact_tool_errors_preserve_standard_envelope(tool_name):
+    result = format_result_minimal(
+        {
+            "success": False,
+            "error": "request failed",
+            "error_code": "invalid_input",
+            "request_id": "request-123",
+            "operation": tool_name,
+            "remediation": "Correct the request.",
+        },
+        verbose=False,
+        tool_name=tool_name,
+    )
+
+    assert "success: false" in result
+    assert "error: request failed" in result
+    assert "error_code: invalid_input" in result
+    assert "request_id: request-123" in result
+    assert f"operation: {tool_name}" in result
