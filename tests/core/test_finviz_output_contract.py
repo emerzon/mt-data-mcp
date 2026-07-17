@@ -294,8 +294,11 @@ class TestFinvizCalendarOutputContract:
 
         assert result["items"] == [
             {
-                "earnings_date": "2026-04-29T08:30:00",
+                "earnings_date": "2026-04-29T12:30:00Z",
                 "symbol": "ABBV",
+                "date": "2026-04-29T12:30:00Z",
+                "local_time": "2026-04-29T08:30:00-04:00",
+                "local_timezone": "America/New_York",
                 "eps_estimate": 2.59,
                 "eps_actual": 2.65,
                 "eps_surprise": 2.23,
@@ -339,6 +342,7 @@ class TestFinvizCalendarOutputContract:
                 "impact": "medium",
             }
         ]
+        assert result["timezone"] == "UTC"
 
     @patch("mtdata.core.finviz.get_economic_calendar")
     def test_calendar_economic_filters_by_currency(self, mock_get):

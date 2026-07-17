@@ -2024,6 +2024,29 @@ def _normalize_finviz_economic_calendar_time(item: Dict[str, Any]) -> Dict[str, 
     return normalized
 
 
+def _normalize_finviz_earnings_calendar_time(item: Dict[str, Any]) -> Dict[str, Any]:
+    normalized = dict(item)
+    raw_value = normalized.get("earnings_date")
+    raw_text = str(raw_value or "").strip()
+    if len(raw_text) <= 10:
+        return normalized
+    parsed = _parse_finviz_calendar_time(raw_value)
+    if parsed is None:
+        return normalized
+    local_dt = parsed.astimezone(_FINVIZ_CALENDAR_LOCAL_TZ)
+    utc_text = (
+        parsed.astimezone(timezone.utc)
+        .replace(microsecond=0)
+        .isoformat()
+        .replace("+00:00", "Z")
+    )
+    normalized["earnings_date"] = utc_text
+    normalized["date"] = utc_text
+    normalized["local_time"] = local_dt.replace(microsecond=0).isoformat()
+    normalized["local_timezone"] = _FINVIZ_CALENDAR_LOCAL_TIMEZONE
+    return normalized
+
+
 def _finviz_calendar_importance_label(value: Any) -> Optional[str]:
     try:
         importance = int(value)
@@ -2322,6 +2345,13 @@ def _normalize_finviz_calendar_payload(
                 else item
                 for item in normalized_items
             ]
+        elif calendar_mode == "earnings":
+            normalized_items = [
+                _normalize_finviz_earnings_calendar_time(item)
+                if isinstance(item, dict)
+                else item
+                for item in normalized_items
+            ]
         if country_code_filter:
             normalized_items = [
                 item
@@ -2355,7 +2385,7 @@ def _normalize_finviz_calendar_payload(
                 out["hint"] = "Relax impact, country, currency, start, or end filters."
     if country_code_filter:
         out["country_filter"] = str(country_code_filter).upper()
-    if str(calendar_type or "economic").strip().lower() == "economic":
+    if str(calendar_type or "economic").strip().lower() in {"economic", "earnings"}:
         out["timezone"] = "UTC"
     else:
         out.setdefault("timezone", _FINVIZ_CALENDAR_LOCAL_TIMEZONE)
