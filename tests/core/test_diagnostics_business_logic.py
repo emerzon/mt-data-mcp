@@ -87,6 +87,7 @@ def test_seasonality_detect_finds_known_period(monkeypatch):
         min_period=4,
         max_period=30,
     )
+    assert result["score_formula"].startswith("0.55*acf + 0.45*spectral_strength")
 
     assert result["success"] is True
     assert result["dominant_period_bars"] == 12

@@ -385,7 +385,7 @@ def seasonality_detect(
             "items": rows,
             "count": len(rows),
             "dominant_period_bars": rows[0]["period_bars"] if rows else None,
-            "score_formula": "0.55*acf_strength + 0.45*spectral_power_fraction; range 0-1, higher = stronger seasonality",
+            "score_formula": "0.55*acf + 0.45*spectral_strength; range 0-1, higher = stronger seasonality",
         }
         if rows:
             qualities = [str(row.get("signal_quality") or "") for row in rows]
