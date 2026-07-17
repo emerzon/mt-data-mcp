@@ -585,6 +585,13 @@ class TestTemplateBasic:
         assert report["meta"]["template"] == "basic"
         assert report["meta"]["horizon"] == 12
         assert "sections" in report
+        backtest_call = next(
+            call
+            for call in mock_raw.call_args_list
+            if "backtest" in getattr(call.args[0], "__name__", "").lower()
+        )
+        assert backtest_call.kwargs["detail"] == "full"
+        assert "error" not in report["sections"]["forecast"]
 
     @patch(f"{_BASIC_MODULE}._get_raw_result")
     @patch(f"{_BASIC_MODULE}.now_utc_iso", return_value="2024-01-15T00:00:00Z")

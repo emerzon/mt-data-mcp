@@ -715,6 +715,7 @@ def template_basic(  # noqa: C901
             start=start,
             end=end,
             methods=methods,
+            detail='full',
         )
         if report_section_enabled(p, 'backtest')
         else {'error': 'backtest section not requested'}
