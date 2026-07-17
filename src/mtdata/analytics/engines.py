@@ -388,10 +388,16 @@ def analyze_microstructure(request: MarketMicrostructureRequest, gateway: Any) -
                 "duration_seconds": duration,
                 "ticks_per_second": float(len(df) / duration),
                 "spread": {
-                    "median": spread_stats.get("median"),
-                    "p95": spread_stats.get("p95"),
+                    "median": _round_execution_stat(spread_stats.get("median")),
+                    "p95": _round_execution_stat(spread_stats.get("p95")),
                     "unit": spread_unit,
+                    "basis": "historical_tick_window_distribution",
+                    "source": "mt5.copy_ticks_range",
                 },
+            },
+            "observed_window": {
+                "start": format_epoch_utc(float(df["epoch"].iloc[0])),
+                "end": format_epoch_utc(float(df["epoch"].iloc[-1])),
             },
             "data_quality": {
                 key: data_quality[key]

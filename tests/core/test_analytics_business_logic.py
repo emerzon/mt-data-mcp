@@ -164,6 +164,10 @@ def test_microstructure_compact_output_omits_research_events() -> None:
     assert result["summary"]["feed_tier"] == "trade_volume"
     assert result["summary"]["spread"]["unit"] == "fx_pips"
     assert result["summary"]["spread"]["median"] == pytest.approx(1.0)
+    assert result["summary"]["spread"]["basis"] == "historical_tick_window_distribution"
+    assert result["summary"]["spread"]["source"] == "mt5.copy_ticks_range"
+    assert result["observed_window"]["start"].endswith("Z")
+    assert result["observed_window"]["end"].endswith("Z")
     assert "liquidity_events" not in result
     assert "method_applicability" not in result
     assert set(result["data_quality"]) == {
