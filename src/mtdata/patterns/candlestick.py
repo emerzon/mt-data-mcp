@@ -21,6 +21,7 @@ from ..shared.constants import TIME_DISPLAY_FORMAT, TIMEFRAME_SECONDS
 from ..shared.validators import invalid_timeframe_error
 from ..utils.time import _format_time_minimal_local, _use_client_tz
 from ..utils.utils import (
+    _parse_end_datetime,
     _parse_start_datetime,
     _table_from_rows,
 )
@@ -660,7 +661,7 @@ def detect_candlestick_patterns(  # noqa: C901
     start_dt = _parse_start_datetime(start) if start else None
     if start and start_dt is None:
         return {"error": "Invalid start time."}
-    end_dt = _parse_start_datetime(end) if end else None
+    end_dt = _parse_end_datetime(end) if end else None
     if end and end_dt is None:
         return {"error": "Invalid end time."}
     if start_dt is not None and end_dt is None:

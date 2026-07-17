@@ -1,4 +1,5 @@
 import math
+import re
 from datetime import datetime, timedelta, timezone
 from numbers import Number
 from typing import Any, Dict, List, Optional, Set, Tuple
@@ -391,6 +392,16 @@ def _parse_start_datetime(value: str) -> Optional[datetime]:
     if dt.tzinfo is not None:
         dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
     return dt
+
+
+def _parse_end_datetime(value: str) -> Optional[datetime]:
+    """Parse an inclusive range end, expanding ISO date-only values to day end."""
+    parsed = _parse_start_datetime(value)
+    if parsed is None:
+        return None
+    if re.fullmatch(r"\d{4}-\d{2}-\d{2}", str(value).strip()):
+        return parsed + timedelta(days=1) - timedelta(microseconds=1)
+    return parsed
 
 
 def _utc_epoch_seconds(dt: datetime) -> float:

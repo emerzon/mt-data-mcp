@@ -825,6 +825,7 @@ def test_run_trade_history_logs_finish_event(caplog) -> None:
             format_time_minimal=lambda ts: f"t{int(ts)}",
             format_time_minimal_local=lambda ts: f"lt{int(ts)}",
             mt5_epoch_to_utc=lambda ts: ts,
+            parse_end_datetime=lambda value: None,
             parse_start_datetime=lambda value: None,
             normalize_limit=lambda value: value,
             comment_row_metadata=lambda comment: {},
@@ -1021,6 +1022,7 @@ def test_trade_history_queries_minutes_back_as_absolute_mt5_epoch_window() -> No
         format_time_minimal=lambda ts: f"t{int(ts)}",
         format_time_minimal_local=lambda ts: f"lt{int(ts)}",
         mt5_epoch_to_utc=lambda ts: ts,
+        parse_end_datetime=lambda value: parsed_end if value == "2026-03-01 11:00" else None,
         parse_start_datetime=lambda value: parsed_end if value == "2026-03-01 11:00" else None,
         normalize_limit=lambda value: value,
         comment_row_metadata=lambda comment: {},
@@ -1157,6 +1159,21 @@ def test_trade_history_reports_explicit_period_context() -> None:
     assert out["period_source"] == "explicit_range"
     assert "minutes_back_effective" not in out
     assert "note" not in out
+
+
+def test_trade_history_date_only_end_covers_full_day() -> None:
+    out = normalize_trade_history_output(
+        [{"ticket": 1, "symbol": "EURUSD"}],
+        request=TradeHistoryRequest(
+            history_kind="deals",
+            detail="standard",
+            start="2026-01-01",
+            end="2026-01-03",
+        ),
+    )
+
+    assert out["period_start"] == "2026-01-01T00:00:00Z"
+    assert out["period_end"] == "2026-01-03T23:59:59Z"
 
 
 def test_trade_history_empty_message_uses_enveloped_contract() -> None:

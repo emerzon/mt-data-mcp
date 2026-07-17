@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Literal, Optional
 from ...utils.market_metadata import build_tick_freshness_context
 from ...utils.time import format_epoch_utc
 from ...utils.time import _format_datetime_second_explicit
-from ...utils.utils import _parse_start_datetime
+from ...utils.utils import _parse_end_datetime, _parse_start_datetime
 from . import validation
 
 
@@ -96,7 +96,7 @@ def resolve_trade_period_context(
             value = value.astimezone(timezone.utc)
         return _format_datetime_second_explicit(value)
 
-    to_dt = _parse_start_datetime(end) if end else None
+    to_dt = _parse_end_datetime(end) if end else None
     if to_dt is None:
         to_dt = datetime.now(timezone.utc).replace(tzinfo=None)
 

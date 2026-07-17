@@ -26,7 +26,7 @@ from ..utils.mt5 import (
     get_symbol_info_cached,
     mt5,
 )
-from ..utils.utils import _parse_start_datetime, _utc_epoch_seconds
+from ..utils.utils import _parse_end_datetime, _parse_start_datetime, _utc_epoch_seconds
 
 _FORECAST_RESERVED_COLUMNS = {"unique_id", "ds", "y"}
 _FORECAST_PREFERRED_COLUMNS = ("y_hat", "mean", "median", "pred", "forecast")
@@ -1052,14 +1052,18 @@ def fetch_history(
             from_dt = _parse_start_datetime(start)
             if not from_dt:
                 raise RuntimeError("Invalid start time.")
-            to_dt = _parse_start_datetime(end) if end else datetime.now(timezone.utc).replace(tzinfo=None)
+            to_dt = _parse_end_datetime(end) if end else datetime.now(timezone.utc).replace(tzinfo=None)
             if not to_dt:
                 raise RuntimeError("Invalid end time.")
             if from_dt > to_dt:
                 raise RuntimeError("start must be before or equal to end.")
             rates = _mt5_copy_rates_range(symbol, mt5_tf, from_dt, to_dt)
         elif as_of or end:
-            to_dt = _parse_start_datetime(as_of or end or "")
+            to_dt = (
+                _parse_start_datetime(as_of)
+                if as_of
+                else _parse_end_datetime(end or "")
+            )
             if not to_dt:
                 raise RuntimeError("Invalid as_of time." if as_of else "Invalid end time.")
 
@@ -1084,7 +1088,11 @@ def fetch_history(
 
     # Manual truncation if an upper bound was provided.
     if (as_of or end) and not df.empty and 'time' in df.columns:
-        to_dt = _parse_start_datetime(as_of or end or "")
+        to_dt = (
+            _parse_start_datetime(as_of)
+            if as_of
+            else _parse_end_datetime(end or "")
+        )
         if to_dt:
             cutoff = _utc_epoch_seconds(to_dt)
             # Filter: include the bar exactly AT the cutoff if it exists

@@ -27,7 +27,7 @@ from ..utils.mt5 import (
     mt5,
 )
 from ..utils.time import _format_time_minimal
-from ..utils.utils import _parse_start_datetime, parse_kv_or_json
+from ..utils.utils import _parse_end_datetime, _parse_start_datetime, parse_kv_or_json
 from .common import (
     annualization_context as _annualization_context,
 )
@@ -740,7 +740,7 @@ def _fetch_mt5_rates_guarded(
         start_dt = _parse_start_datetime(start) if start else None
         if start and start_dt is None:
             return None, "Invalid start time."
-        end_dt = _parse_start_datetime(end) if end else None
+        end_dt = _parse_end_datetime(end) if end else None
         if end and end_dt is None:
             return None, "Invalid end time."
         if start_dt is not None and end_dt is None:

@@ -29,7 +29,7 @@ from ..utils.symbol import (
 from ..utils.symbol import (
     _normalize_group_path_query,
 )
-from ..utils.utils import _parse_start_datetime
+from ..utils.utils import _parse_end_datetime, _parse_start_datetime
 from ._mcp_instance import mcp
 from .execution_logging import run_logged_operation
 from .mt5_gateway import create_mt5_gateway, mt5_connection_error
@@ -377,7 +377,7 @@ def _resolve_history_window(
     start_dt = _parse_start_datetime(start) if start else None
     if start and start_dt is None:
         return None, None, "Invalid start time."
-    end_dt = _parse_start_datetime(end) if end else None
+    end_dt = _parse_end_datetime(end) if end else None
     if end and end_dt is None:
         return None, None, "Invalid end time."
     if start_dt is not None and end_dt is None:

@@ -96,6 +96,7 @@ from ..utils.time import (
 from ..utils.utils import (
     _format_numeric_rows_from_df,
     _normalize_ohlcv_arg,
+    _parse_end_datetime,
     _parse_start_datetime,
     _table_from_rows,
     _utc_epoch_seconds,
@@ -288,7 +289,7 @@ def _bounded_weekend_no_data_context(
         return {}
     try:
         start_utc, _ = _parse_fetch_datetime_arg(start_datetime)
-        end_utc, _ = _parse_fetch_datetime_arg(end_datetime)
+        end_utc, _ = _parse_fetch_datetime_arg(end_datetime, end_bound=True)
         if start_utc is None or end_utc is None:
             return {}
         start_utc = (
@@ -581,7 +582,7 @@ def _fetch_rates_with_warmup(  # noqa: C901
         if timeframe_error:
             return None, timeframe_error
         from_date, from_date_error = _parse_fetch_datetime_arg(start_datetime)
-        to_date, to_date_error = _parse_fetch_datetime_arg(end_datetime)
+        to_date, to_date_error = _parse_fetch_datetime_arg(end_datetime, end_bound=True)
         if from_date_error or to_date_error:
             return None, from_date_error or to_date_error
         if from_date > to_date:
@@ -617,7 +618,7 @@ def _fetch_rates_with_warmup(  # noqa: C901
             )
 
     elif end_datetime:
-        to_date, to_date_error = _parse_fetch_datetime_arg(end_datetime)
+        to_date, to_date_error = _parse_fetch_datetime_arg(end_datetime, end_bound=True)
         if to_date_error:
             return None, to_date_error
         seconds_per_bar, timeframe_error = _resolve_fetch_timeframe_seconds(timeframe)
@@ -701,8 +702,12 @@ def _fetch_rates_with_warmup(  # noqa: C901
     return rates, None
 
 
-def _parse_fetch_datetime_arg(value: str) -> tuple[Optional[datetime], Optional[str]]:
-    parsed = _parse_start_datetime(value)
+def _parse_fetch_datetime_arg(
+    value: str,
+    *,
+    end_bound: bool = False,
+) -> tuple[Optional[datetime], Optional[str]]:
+    parsed = _parse_end_datetime(value) if end_bound else _parse_start_datetime(value)
     if parsed is None:
         return None, f"Could not parse date {value!r}. {_DATE_FORMAT_HINT}"
     return parsed, None
@@ -914,7 +919,7 @@ def _trim_df_to_target(
 ) -> pd.DataFrame:
     if start_datetime and end_datetime:
         from_dt = _parse_start_datetime(start_datetime)
-        to_dt = _parse_start_datetime(end_datetime)
+        to_dt = _parse_end_datetime(end_datetime)
         if not from_dt or not to_dt:
             out = df.iloc[0:0]
             return out.copy() if copy_rows else out
@@ -931,7 +936,7 @@ def _trim_df_to_target(
         if len(out) > candles:
             out = out.iloc[-candles:]
     elif end_datetime:
-        to_dt = _parse_start_datetime(end_datetime)
+        to_dt = _parse_end_datetime(end_datetime)
         if not to_dt:
             out = df.iloc[0:0]
             return out.copy() if copy_rows else out
@@ -2543,7 +2548,7 @@ def fetch_ticks(  # noqa: C901
                 if not from_date:
                     return {"error": f"Could not parse start date {start!r}. {_DATE_FORMAT_HINT}"}
                 if end:
-                    to_date = _parse_start_datetime(end)
+                    to_date = _parse_end_datetime(end)
                     if not to_date:
                         return {"error": f"Could not parse end date {end!r}. {_DATE_FORMAT_HINT}"}
                     if from_date > to_date:

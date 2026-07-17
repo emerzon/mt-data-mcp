@@ -22,6 +22,7 @@ from ...utils.time import (
 )
 from ...utils.utils import (
     _normalize_limit,
+    _parse_end_datetime,
     _parse_start_datetime,
 )
 from .._mcp_instance import mcp
@@ -88,6 +89,7 @@ def _run_trade_history_request(request: TradeHistoryRequest) -> Any:
         format_time_minimal=_format_time_minimal,
         format_time_minimal_local=_format_time_minimal_local,
         mt5_epoch_to_utc=_utc_epoch_identity,
+        parse_end_datetime=_parse_end_datetime,
         parse_start_datetime=_parse_start_datetime,
         normalize_limit=_normalize_limit,
         comment_row_metadata=comments._comment_row_metadata,

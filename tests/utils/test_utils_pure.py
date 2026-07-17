@@ -17,6 +17,7 @@ from mtdata.utils.utils import (
     _format_numeric_rows_from_df,
     _normalize_limit,
     _normalize_ohlcv_arg,
+    _parse_end_datetime,
     _parse_start_datetime,
     _table_from_rows,
     _utc_epoch_seconds,
@@ -276,6 +277,18 @@ class TestParseStartDatetime:
         assert last_friday is not None
         assert last_friday.weekday() == 4
         assert last_friday.date() < today
+
+
+class TestParseEndDatetime:
+    def test_date_only_expands_to_end_of_day(self):
+        assert _parse_end_datetime("2023-01-15") == datetime(
+            2023, 1, 15, 23, 59, 59, 999999
+        )
+
+    def test_explicit_timestamp_remains_exact(self):
+        assert _parse_end_datetime("2023-01-15 12:34:56") == datetime(
+            2023, 1, 15, 12, 34, 56
+        )
 
 
 class TestFormatNumericRowsFromDf:

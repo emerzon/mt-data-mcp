@@ -2503,6 +2503,7 @@ def run_trade_history(  # noqa: C901
     format_time_minimal: Any,
     format_time_minimal_local: Any,
     mt5_epoch_to_utc: Any,
+    parse_end_datetime: Any,
     parse_start_datetime: Any,
     normalize_limit: Any,
     comment_row_metadata: Any,
@@ -2627,7 +2628,7 @@ def run_trade_history(  # noqa: C901
                 return {"error": minutes_back_error}
 
             if request.end:
-                to_dt = parse_start_datetime(request.end)
+                to_dt = parse_end_datetime(request.end)
                 if not to_dt:
                     return {"error": "Invalid end time."}
             else:

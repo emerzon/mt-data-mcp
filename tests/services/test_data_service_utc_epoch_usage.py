@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
 
 import pandas as pd
@@ -21,6 +21,24 @@ def test_trim_df_to_target_uses_utc_epoch_seconds() -> None:
     assert mock_epoch.call_count == 2
     # End bound is inclusive: epochs in [150, 250] are kept.
     assert out["__epoch"].tolist() == [200.0, 250.0]
+
+
+def test_trim_df_to_target_includes_entire_date_only_end() -> None:
+    epochs = [
+        datetime(2025, 1, 1, 0, 0, tzinfo=timezone.utc).timestamp(),
+        datetime(2025, 1, 1, 12, 0, tzinfo=timezone.utc).timestamp(),
+        datetime(2025, 1, 2, 0, 0, tzinfo=timezone.utc).timestamp(),
+    ]
+    df = pd.DataFrame({"__epoch": epochs, "close": [1.0, 2.0, 3.0]})
+
+    out = data_service._trim_df_to_target(
+        df,
+        "2025-01-01",
+        "2025-01-01",
+        candles=100,
+    )
+
+    assert out["close"].tolist() == [1.0, 2.0]
 
 
 def test_fetch_rates_with_warmup_uses_utc_epoch_seconds_for_end_ts() -> None:

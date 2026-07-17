@@ -41,7 +41,7 @@ from ..utils.mt5 import (
 )
 from ..utils.ohlcv import validate_and_clean_ohlcv_frame
 from ..utils.time import _format_time_minimal
-from ..utils.utils import _parse_start_datetime
+from ..utils.utils import _parse_end_datetime, _parse_start_datetime
 from ..utils.utils import to_float_np as __to_float_np
 from ..utils.volume_profile import annotate_level_confluence
 from ._mcp_instance import mcp
@@ -155,7 +155,7 @@ def _fetch_pattern_data(
     start_dt = _parse_start_datetime(start) if start else None
     if start and start_dt is None:
         return None, {"error": "Invalid start time."}
-    end_dt = _parse_start_datetime(end) if end else None
+    end_dt = _parse_end_datetime(end) if end else None
     if end and end_dt is None:
         return None, {"error": "Invalid end time."}
     if start_dt is not None and end_dt is None:

@@ -29,6 +29,7 @@ from ..utils.time import (
     _resolve_client_tz,
 )
 from ..utils.utils import (
+    _parse_end_datetime,
     _parse_start_datetime,
 )
 from ._mcp_instance import mcp
@@ -856,7 +857,7 @@ def _fetch_rates(
 
     if start and end:
         start_dt = _parse_start_datetime(start)
-        end_dt = _parse_start_datetime(end)
+        end_dt = _parse_end_datetime(end)
         if not start_dt or not end_dt:
             return None, "Invalid start/end date format."
         if start_dt > end_dt:
@@ -876,7 +877,7 @@ def _fetch_rates(
         return rates, None
 
     if end:
-        end_dt = _parse_start_datetime(end)
+        end_dt = _parse_end_datetime(end)
         if not end_dt:
             return None, "Invalid end date format."
         rates = _mt5_copy_rates_from(symbol, mt5_tf, end_dt, int(limit))

@@ -15,6 +15,7 @@ from ..utils.mt5 import (
 )
 from ..utils.time import _format_datetime_explicit
 from ..utils.utils import (
+    _parse_end_datetime,
     _parse_start_datetime,
     _positive_float_attr,
 )
@@ -57,7 +58,7 @@ def _positive_int_attr(obj: Any, *names: str) -> Optional[int]:
 
 def _window_days(start: Optional[str], end: Optional[str]) -> Optional[float]:
     start_dt = _parse_start_datetime(start) if start else None
-    end_dt = _parse_start_datetime(end) if end else None
+    end_dt = _parse_end_datetime(end) if end else None
     if start and start_dt is None:
         return None
     if end and end_dt is None:
@@ -82,7 +83,7 @@ def _resolve_profile_window(
     if start:
         return {"start": start, "end": end}
     if timeframe is None and limit is None:
-        end_dt = _parse_start_datetime(end) if end else _utc_now_naive()
+        end_dt = _parse_end_datetime(end) if end else _utc_now_naive()
         if end and end_dt is None:
             return {"error": f"Could not parse end datetime {end!r}"}
         assert end_dt is not None
@@ -111,7 +112,7 @@ def _resolve_profile_window(
                     f"omit limit to use the default {int(_DEFAULT_PROFILE_LIMIT)} bars."
                 )
             }
-    end_dt = _parse_start_datetime(end) if end else _utc_now_naive()
+    end_dt = _parse_end_datetime(end) if end else _utc_now_naive()
     if end and end_dt is None:
         return {"error": f"Could not parse end datetime {end!r}"}
     assert end_dt is not None
