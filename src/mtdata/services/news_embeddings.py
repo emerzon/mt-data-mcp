@@ -111,7 +111,7 @@ class NewsEmbeddingService:
 
     @property
     def enabled(self) -> bool:
-        return True
+        return bool(news_embeddings_config.enabled) and self.weight > 0.0
 
     @property
     def top_n(self) -> int:
@@ -165,6 +165,8 @@ class NewsEmbeddingService:
     def _ensure_model(self) -> Any:
         if self._model is not None:
             return self._model
+        if not self.enabled:
+            return None
         if self._load_attempted:
             return None
 

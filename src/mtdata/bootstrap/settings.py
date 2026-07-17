@@ -511,6 +511,7 @@ class NewsEmbeddingsConfig:
     """Optional embedding reranking configuration for unified news."""
 
     def __init__(self) -> None:
+        self.enabled = False
         self.model_name = "Qwen/Qwen3-Embedding-0.6B"
         self.top_n = 8
         self.weight = 1.0
@@ -520,6 +521,7 @@ class NewsEmbeddingsConfig:
         self.reload_from_env()
 
     def reload_from_env(self) -> None:
+        self.enabled = _env_bool("MTDATA_NEWS_EMBEDDINGS_ENABLED", default=False)
         self.model_name = (
             os.getenv("MTDATA_NEWS_EMBEDDINGS_MODEL", "Qwen/Qwen3-Embedding-0.6B").strip()
             or "Qwen/Qwen3-Embedding-0.6B"

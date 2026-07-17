@@ -113,9 +113,13 @@ CORS_ORIGINS=http://192.168.1.10:5173
 ## News Embeddings
 
 Configure the HuggingFace model used to rerank MT5 / external news by relevance.
+Embedding reranking is disabled by default so an ordinary news request never
+downloads or initializes a foundation model. Enabling it may download the
+configured model on first use when it is not already cached.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
+| `MTDATA_NEWS_EMBEDDINGS_ENABLED` | `0` | Opt in to loading the embedding backend and model |
 | `MTDATA_NEWS_EMBEDDINGS_MODEL` | `Qwen/Qwen3-Embedding-0.6B` | HuggingFace model name |
 | `MTDATA_NEWS_EMBEDDINGS_TOP_N` | `8` | Number of top-ranked items to keep after reranking |
 | `MTDATA_NEWS_EMBEDDINGS_WEIGHT` | `1.0` | Weight for embedding-based reranking (0.0 disables) |
@@ -294,6 +298,7 @@ A starter template with all sections. Uncomment and fill in what you need.
 
 # ── News Embeddings ────────────────────────────────────
 # MTDATA_NEWS_EMBEDDINGS_MODEL=Qwen/Qwen3-Embedding-0.6B
+# MTDATA_NEWS_EMBEDDINGS_ENABLED=0
 # MTDATA_NEWS_EMBEDDINGS_TOP_N=8
 # MTDATA_NEWS_EMBEDDINGS_WEIGHT=1.0
 # MTDATA_NEWS_EMBEDDINGS_TRUNCATE_DIM=
