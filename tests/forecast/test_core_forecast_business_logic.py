@@ -252,7 +252,10 @@ def test_forecast_generate_native_theta_adds_disambiguation_warning(monkeypatch)
 
     assert out["ok"] is True
     assert out["success"] is True
-    assert any("StatsForecast theta is available" in str(w) for w in out.get("warnings", []))
+    assert any(
+        "StatsForecast theta is available via the statsforecast library" in str(w)
+        for w in out.get("warnings", [])
+    )
 
 
 def test_forecast_generate_native_theta_suppresses_duplicate_interval_guidance(monkeypatch):

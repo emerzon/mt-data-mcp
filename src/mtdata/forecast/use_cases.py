@@ -2033,8 +2033,9 @@ def run_forecast_generate(
         ):
             detail_value = _normalize_trader_detail(getattr(request, "detail", "compact"))
             warning = (
-                "Using native theta. StatsForecast theta is available via "
-                "and may produce different forecasts/interval behavior."
+                "Using native theta. StatsForecast theta is available via the "
+                "statsforecast library (--library statsforecast --method Theta) "
+                "and may produce different forecasts or interval behavior."
             )
             if detail_value != "compact":
                 warning = (
