@@ -1,6 +1,6 @@
 import argparse
 import inspect
-from typing import Any, Callable, Dict, Optional, Tuple
+from typing import Any, Callable, Dict, Optional, Sequence, Tuple
 
 ToolInfo = Dict[str, Any]
 
@@ -327,6 +327,22 @@ def _normalize_cli_choice_value(value: Any) -> str:
     return str(value or "").strip().lower()
 
 
+def _case_insensitive_choice_parser(choices: Sequence[str]) -> Callable[[Any], str]:
+    canonical = [str(choice) for choice in choices]
+    folded: Dict[str, Optional[str]] = {}
+    for choice in canonical:
+        key = choice.casefold()
+        folded[key] = choice if key not in folded else None
+
+    def _parse(value: Any) -> str:
+        text = str(value or "").strip()
+        if text in canonical:
+            return text
+        return folded.get(text.casefold()) or text
+
+    return _parse
+
+
 def _is_forecast_method_literal(
     ptype: Any,
     *,
@@ -635,7 +651,9 @@ def resolve_param_kwargs(
                     choices = [str(v) for v in get_args(inner)]
                     if choices:
                         kwargs["choices"] = choices
-                    kwargs["type"] = str
+                        kwargs["type"] = _case_insensitive_choice_parser(choices)
+                    else:
+                        kwargs["type"] = str
                     kwargs["nargs"] = "+"
                 else:
                     kwargs["type"] = str
@@ -644,7 +662,9 @@ def resolve_param_kwargs(
                 choices = [str(v) for v in get_args(base_type)]
                 if choices:
                     kwargs["choices"] = choices
-                kwargs["type"] = str
+                    kwargs["type"] = _case_insensitive_choice_parser(choices)
+                else:
+                    kwargs["type"] = str
         except Exception as exc:
             debug(f"Type resolution failed for param '{param['name']}': {exc}")
             kwargs["type"] = str
@@ -655,8 +675,9 @@ def resolve_param_kwargs(
     choice_override_key = (str(cmd_name or ""), str(param["name"]))
     choice_override = _COMMAND_PARAM_CHOICE_OVERRIDES.get(choice_override_key)
     if choice_override:
-        kwargs["choices"] = list(choice_override)
-        kwargs["type"] = _normalize_cli_choice_value
+        choices = list(choice_override)
+        kwargs["choices"] = choices
+        kwargs["type"] = _case_insensitive_choice_parser(choices)
 
     if (str(cmd_name or ""), str(param["name"])) == ("indicators_list", "category"):
         kwargs["type"] = lambda value: str(value or "").strip().lower()

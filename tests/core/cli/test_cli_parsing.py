@@ -864,6 +864,21 @@ class TestResolveParamKwargs:
         }
         kwargs, is_mapping = _resolve_param_kwargs(param, None)
         assert kwargs["choices"] == ["a", "b", "c"]
+        assert kwargs["type"]("B") == "b"
+
+    def test_literal_type_preserves_canonical_choice_case(self):
+        param = {
+            "name": "timeframe",
+            "type": Literal["M1", "H1", "D1"],
+            "required": False,
+            "default": "H1",
+        }
+
+        kwargs, _ = _resolve_param_kwargs(param, None)
+
+        assert kwargs["type"]("h1") == "H1"
+        assert kwargs["type"]("D1") == "D1"
+        assert kwargs["type"]("bad") == "bad"
 
     def test_patterns_mode_choices_are_explicit(self):
         param = {
@@ -932,6 +947,7 @@ class TestResolveParamKwargs:
         kwargs, _ = _resolve_param_kwargs(param, None)
         assert kwargs["choices"] == ["a", "b"]
         assert kwargs["nargs"] == "+"
+        assert kwargs["type"]("A") == "a"
 
     def test_forecast_method_help_avoids_massive_choices(self):
         param = {"name": "method", "type": str, "required": False, "default": None}
