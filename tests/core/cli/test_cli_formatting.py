@@ -1711,6 +1711,42 @@ class TestFormatResultForCli:
         assert "zone_overlap" not in result
         assert "show_all_hint" not in result
 
+    @pytest.mark.parametrize("precision", ["compact", "full"])
+    def test_confluence_toon_preserves_nested_symbol_price_precision(
+        self,
+        precision,
+    ):
+        result = _format_result_for_cli(
+            {
+                "success": True,
+                "symbol": "EURUSD",
+                "price_precision": 5,
+                "levels": [
+                    {
+                        "price": 1.14462,
+                        "range": {
+                            "low": 1.14328,
+                            "high": 1.14594,
+                            "width": 0.00266,
+                        },
+                        "score": 39.02,
+                        "confidence": {"low": 0.123456, "high": 0.654321},
+                    }
+                ],
+            },
+            fmt="toon",
+            verbose=False,
+            cmd_name="confluence_levels",
+            precision=precision,
+        )
+
+        assert "1.14462,low=1.14328; high=1.14594; width=0.00266" in result
+        assert "low=1.143; high=1.146" not in result
+        if precision == "compact":
+            assert "confidence" in result
+            assert "low=0.1235; high=0.654" in result
+            assert "low=0.12346; high=0.65432" not in result
+
     def test_toon_format_keeps_compact_support_resistance_lists(self):
         result = _format_result_for_cli(
             {

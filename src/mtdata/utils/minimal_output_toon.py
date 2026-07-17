@@ -87,6 +87,14 @@ def _payload_price_precision(value: Any) -> Optional[int]:
         precision = _coerce_precision(value.get(key))
         if precision is not None:
             return precision
+    for key in ("price_point", "point", "price_increment"):
+        point = _coerce_float(value.get(key))
+        if point is None or not math.isfinite(point) or point <= 0.0:
+            continue
+        text = f"{point:.15f}".rstrip("0")
+        if "." in text:
+            return min(15, len(text.split(".", 1)[1]))
+        return 0
     return None
 
 
@@ -194,22 +202,102 @@ def _stringify_scalar(value: Any) -> str:
     return str(value)
 
 
-def _stringify_cell(value: Any) -> str:
+def _stringify_cell(
+    value: Any,
+    *,
+    simplify_numbers: bool = True,
+    decimals: Optional[int] = None,
+    price_precision: Optional[int] = None,
+    key: Optional[str] = None,
+    parent_key: Optional[str] = None,
+    price_context: bool = False,
+) -> str:
+    local_price_context = price_context or (
+        str(key or "").lower() in {"range", "zone", "price_range"}
+        and str(parent_key or "").lower() in _PRICE_CONTAINER_KEYS
+    )
     if _is_scalar_value(value):
+        if isinstance(value, int) and not isinstance(value, bool):
+            return format_number(value)
+        if isinstance(value, Number) and not isinstance(value, bool):
+            num = _coerce_float(value)
+            if num is not None and math.isfinite(num):
+                field = str(key or "").lower()
+                price_decimals = (
+                    _coerce_precision(price_precision)
+                    if local_price_context
+                    and field
+                    in {
+                        "low",
+                        "high",
+                        "open",
+                        "close",
+                        "last",
+                        "lower",
+                        "upper",
+                        "value",
+                        "price",
+                        "width",
+                    }
+                    else None
+                )
+                if price_decimals is not None:
+                    return _format_fixed_float(num, price_decimals)
+                if decimals is not None:
+                    return _format_float(num, int(decimals))
+                return (
+                    format_number(num)
+                    if simplify_numbers
+                    else _format_number_full(num)
+                )
         return _stringify_scalar(value)
     if isinstance(value, list):
         values = [v for v in value if not _is_empty_value(v)]
         if not values:
             return ""
         if all(_is_scalar_value(v) for v in values):
-            return "|".join(_stringify_scalar(v) for v in values)
-        return "; ".join(_stringify_cell(v) for v in values if not _is_empty_value(v))
+            return "|".join(
+                _stringify_cell(
+                    item,
+                    simplify_numbers=simplify_numbers,
+                    decimals=decimals,
+                    price_precision=price_precision,
+                    key=key,
+                    parent_key=parent_key,
+                    price_context=local_price_context,
+                )
+                for item in values
+            )
+        return "; ".join(
+            _stringify_cell(
+                item,
+                simplify_numbers=simplify_numbers,
+                decimals=decimals,
+                price_precision=price_precision,
+                key=key,
+                parent_key=parent_key,
+                price_context=local_price_context,
+            )
+            for item in values
+            if not _is_empty_value(item)
+        )
     if isinstance(value, dict):
         parts = []
-        for key, subval in value.items():
+        for subkey, subval in value.items():
             if _is_empty_value(subval):
                 continue
-            parts.append(f"{key}={_stringify_cell(subval)}")
+            parts.append(
+                f"{subkey}="
+                + _stringify_cell(
+                    subval,
+                    simplify_numbers=simplify_numbers,
+                    decimals=decimals,
+                    price_precision=price_precision,
+                    key=str(subkey),
+                    parent_key=key,
+                    price_context=local_price_context,
+                )
+            )
         return "; ".join(parts)
     return str(value)
 
@@ -348,6 +436,9 @@ def _stringify_for_toon_value(
     delimiter: str,
     *,
     simplify_numbers: bool = True,
+    field: Optional[str] = None,
+    parent_key: Optional[str] = None,
+    price_precision: Optional[int] = None,
 ) -> str:
     if value is None:
         return "null"
@@ -356,7 +447,14 @@ def _stringify_for_toon_value(
     if isinstance(value, int):
         return format_number(value)
     if isinstance(value, (dict, list, tuple, set)):
-        rendered = _stringify_cell(value)
+        rendered = _stringify_cell(
+            value,
+            simplify_numbers=simplify_numbers,
+            decimals=decimals,
+            price_precision=price_precision,
+            key=field,
+            parent_key=parent_key,
+        )
         return _quote_if_needed(rendered, delimiter) if rendered else ""
     if isinstance(value, Number):
         num = _coerce_float(value)
@@ -391,24 +489,23 @@ def _encode_tabular(
         if simplify_numbers
         else {}
     )
-    fixed_decimals = {
-        header: precision
-        for header in headers
-        if (
-            precision := _symbol_precision_for_field(header, price_precision)
-        )
-        is not None
-    }
     lines = [f"{ind}{name}[{len(rows)}]{{{header_line}}}:"]
     row_indent = ind + _INDENT
     for row in rows:
+        row_price_precision = _payload_price_precision(row)
+        if row_price_precision is None:
+            row_price_precision = price_precision
         vals = []
         for header in headers:
             value = row.get(header)
-            if header in fixed_decimals and isinstance(value, Number) and not isinstance(value, bool):
+            fixed_decimals = _symbol_precision_for_field(
+                header,
+                row_price_precision,
+            )
+            if fixed_decimals is not None and isinstance(value, Number) and not isinstance(value, bool):
                 num = _coerce_float(value)
                 if num is not None and math.isfinite(num):
-                    vals.append(_format_fixed_float(num, fixed_decimals[header]))
+                    vals.append(_format_fixed_float(num, fixed_decimals))
                     continue
             vals.append(
                 _stringify_for_toon_value(
@@ -416,6 +513,9 @@ def _encode_tabular(
                     col_decimals.get(header),
                     delimiter,
                     simplify_numbers=simplify_numbers,
+                    field=header,
+                    parent_key=name,
+                    price_precision=row_price_precision,
                 )
             )
         lines.append(f"{row_indent}{delimiter.join(vals)}")
@@ -547,7 +647,7 @@ def _format_to_toon(
             int(decimals)
             if decimals is not None
             else symbol_decimals
-            if simplify_numbers and symbol_decimals is not None
+            if symbol_decimals is not None
             else _forced_scalar_decimals(key, parent_key=parent_key)
             if simplify_numbers
             else None

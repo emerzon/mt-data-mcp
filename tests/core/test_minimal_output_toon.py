@@ -200,3 +200,23 @@ class TestEncodeTabularNestedCells:
         assert "prob_win_ci95" in result
         assert "low=0.3; high=0.5" in result
         assert "{'low': 0.3, 'high': 0.5}" not in result
+
+    def test_row_price_point_preserves_price_column_precision(self):
+        result = _encode_tabular(
+            "data",
+            ["close", "score"],
+            [{"close": 1.14328, "score": 1, "price_point": 0.00001}],
+            simplify_numbers=True,
+        )
+
+        assert "1.14328,1" in result
+
+    def test_full_nested_cells_keep_integers_as_integers(self):
+        result = _encode_tabular(
+            "data",
+            ["stats"],
+            [{"stats": {"count": 2, "mean": 1.23456789}}],
+            simplify_numbers=False,
+        )
+
+        assert "count=2; mean=1.23456789" in result
