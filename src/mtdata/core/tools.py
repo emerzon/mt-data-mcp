@@ -107,7 +107,11 @@ def tools_list(
             categories.setdefault(row_category, []).append(str(row.get("name") or ""))
         catalog = dict(catalog)
         catalog["tools"] = slimmed
-        catalog["categories"] = categories
+        if compact_mode:
+            catalog.pop("categories", None)
+            catalog.pop("output_extras", None)
+        else:
+            catalog["categories"] = categories
         catalog["count"] = len(slimmed)
         catalog["total_count"] = len(filtered)
         catalog["offset"] = offset_value

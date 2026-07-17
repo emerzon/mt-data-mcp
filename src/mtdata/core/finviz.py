@@ -39,6 +39,7 @@ from ._mcp_instance import mcp
 from .error_envelope import build_error_payload
 from .execution_logging import run_logged_operation
 from .output_contract import (
+    build_pagination_meta,
     normalize_output_detail,
     normalize_output_extras,
     normalize_output_verbosity_detail,
@@ -697,6 +698,12 @@ def _normalize_finviz_market_payload(
     available = len(normalized_rows)
     if rows_key != "stocks":
         out["available_count"] = available
+    out["pagination"] = build_pagination_meta(
+        total=(int(out.get("total") or 0) if rows_key == "stocks" else available),
+        returned=len(output_rows),
+        offset=0,
+        limit=limit_value,
+    )
     if rows_key == "stocks" and out.get("total") not in (None, ""):
         omitted = max(0, int(out.get("total") or 0) - int(out["count"]))
     else:

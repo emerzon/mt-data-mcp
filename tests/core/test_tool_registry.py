@@ -189,6 +189,18 @@ def test_tools_list_filters_and_paginates_rows():
         "more_available": out["total_count"] - 4,
     }
     assert all(row["category"] == "forecast" for row in out["tools"])
+    assert "categories" not in out
+    assert "output_extras" not in out
+
+
+def test_tools_list_standard_includes_catalog_metadata():
+    bootstrap_tools()
+    raw_tools_list = getattr(tools_list, "__wrapped__", tools_list)
+
+    out = raw_tools_list(limit=1, detail="standard")
+
+    assert out["categories"]
+    assert out["output_extras"]
 
 
 def test_tools_list_compact_keeps_rows_slim_by_default(monkeypatch):

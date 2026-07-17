@@ -13,7 +13,7 @@ from ...utils.time import format_epoch_utc
 from ...utils.utils import _normalize_limit
 from .._mcp_instance import mcp
 from ..execution_logging import run_logged_operation
-from ..output_contract import resolve_output_contract
+from ..output_contract import build_pagination_meta, resolve_output_contract
 from . import comments, validation
 from .gateway import create_trading_gateway
 from .requests import TradeGetOpenRequest, TradeGetPendingRequest
@@ -1065,6 +1065,17 @@ def normalize_trade_history_output(
     if out.get("success") is True and isinstance(out.get("items"), list):
         out.setdefault("row_key", "items")
         raw_items = list(out["items"])
+        total_count = int(out.get("total_count") or len(raw_items))
+        offset_value = int(out.get("offset") or getattr(request, "offset", 0) or 0)
+        limit_value = out.get("limit")
+        if limit_value is None:
+            limit_value = getattr(request, "limit", None)
+        out["pagination"] = build_pagination_meta(
+            total=total_count,
+            returned=len(raw_items),
+            offset=offset_value,
+            limit=limit_value,
+        )
         for item in raw_items:
             if isinstance(item, dict) and item.get("timezone"):
                 timezone_label = str(item["timezone"])

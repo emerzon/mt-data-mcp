@@ -163,6 +163,14 @@ class TestSymbolsListNoSearch:
         assert res["offset"] == 1
         assert res["limit"] == 2
         assert res["has_more"] is True
+        assert res["pagination"] == {
+            "total": 4,
+            "returned": 2,
+            "offset": 1,
+            "limit": 2,
+            "has_more": True,
+            "more_available": 1,
+        }
 
     @patch(_NORM_LIMIT, return_value=25)
     @patch(_GROUP_PATH, return_value="Forex\\Majors")

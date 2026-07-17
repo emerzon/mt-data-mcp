@@ -57,6 +57,7 @@ from .execution_logging import run_logged_operation
 from .mt5_gateway import create_mt5_gateway
 from .output_contract import (
     attach_collection_contract,
+    build_pagination_meta,
     normalize_output_detail,
     normalize_output_verbosity_detail,
     resolve_output_contract,
@@ -1083,6 +1084,12 @@ def symbols_list(  # noqa: C901
                     out["total_count"] = total_count
                     out["offset"] = offset_value
                     out["has_more"] = has_more
+                out["pagination"] = build_pagination_meta(
+                    total=total_count,
+                    returned=len(symbol_list),
+                    offset=offset_value,
+                    limit=limit_value,
+                )
                 return out
             if detail_mode == "compact":
                 headers = ["symbol", "group", "description"]
@@ -1147,6 +1154,12 @@ def symbols_list(  # noqa: C901
                 result["offset"] = offset_value
                 result["limit"] = limit_value
                 result["has_more"] = has_more
+            result["pagination"] = build_pagination_meta(
+                total=total_count,
+                returned=len(symbol_list),
+                offset=offset_value,
+                limit=limit_value,
+            )
             return attach_collection_contract(
                 result,
                 collection_kind="table",
@@ -3727,6 +3740,12 @@ def market_scan(  # noqa: C901
                 "offset": int(offset_value),
                 "total_count": int(total_matches),
                 "has_more": bool(offset_value + table_payload["row_count"] < total_matches),
+                "pagination": build_pagination_meta(
+                    total=total_matches,
+                    returned=table_payload["row_count"],
+                    offset=offset_value,
+                    limit=limit_value,
+                ),
                 "universe_size": int(len(selected_symbols)),
                 "summary": {
                     "counts": {

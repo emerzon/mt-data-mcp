@@ -4,6 +4,7 @@ from mtdata.core.finviz import (
     finviz_calendar,
     finviz_earnings,
     finviz_filters_list,
+    finviz_forex,
     finviz_insider,
     finviz_insider_activity,
     finviz_peers,
@@ -701,6 +702,27 @@ class TestFinvizProgressiveDisclosure:
 
         assert result["success"] is True
         assert result["detail"] == "compact"
+
+    @patch("mtdata.core.finviz.get_forex_performance")
+    def test_forex_includes_normalized_pagination(self, mock_get):
+        mock_get.return_value = {
+            "success": True,
+            "pairs": [
+                {"Ticker": "EURUSD", "Price": "1.10"},
+                {"Ticker": "GBPUSD", "Price": "1.25"},
+            ],
+        }
+
+        result = _unwrap(finviz_forex)(limit=1)
+
+        assert result["pagination"] == {
+            "total": 2,
+            "returned": 1,
+            "offset": 0,
+            "limit": 1,
+            "has_more": True,
+            "more_available": 1,
+        }
 
 
 def test_finviz_description_compact_truncates_long_text():
