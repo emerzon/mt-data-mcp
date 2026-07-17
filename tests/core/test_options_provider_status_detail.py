@@ -50,7 +50,8 @@ def test_provider_status_marks_tradier_without_key_as_yahoo_fallback(monkeypatch
     assert out["local_tools_ready"] is True
     assert out["chain_provider_ready"] is False
     assert out["chain_data_ready"] is False
-    assert out["chain_data_access_available"] is True
+    assert out["chain_request_supported"] is True
+    assert out["live_chain_requests_expected_to_work"] is False
     assert out["degraded"] is True
     assert out["provider_mode"] == "best_effort"
     assert out["action_required"] == "configure_options_provider"

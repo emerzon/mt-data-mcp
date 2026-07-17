@@ -3099,7 +3099,7 @@ def _ready_options_provider():
         "effective_provider": "tradier",
         "api_key_configured": True,
         "chain_data_ready": True,
-        "chain_data_access_available": True,
+        "chain_request_supported": True,
         "action_required": None,
         "remediation": None,
     }
@@ -3191,6 +3191,34 @@ def test_options_tools_validate_and_normalize_symbols(monkeypatch):
     assert out["symbol"] == "BRK.B"
 
 
+def test_options_tools_validate_expiration_before_provider_calls(monkeypatch):
+    raw_chain = _unwrap(opt.options_chain)
+    raw_cal = _unwrap(opt.options_heston_calibrate)
+
+    import mtdata.forecast.quantlib_tools as quantlib_tools
+    import mtdata.services.options_service as options_service
+
+    def fail_call(**kwargs):
+        raise AssertionError("options provider should not be queried")
+
+    monkeypatch.setattr(options_service, "get_options_chain", fail_call)
+    monkeypatch.setattr(
+        quantlib_tools,
+        "calibrate_heston_quantlib_from_options",
+        fail_call,
+    )
+    monkeypatch.setattr(opt, "_options_provider_readiness", _ready_options_provider)
+
+    for expiration in ("GTC", "2026/07/17", "2026-02-30"):
+        for tool in (raw_chain, raw_cal):
+            out = tool(symbol="AAPL", expiration=expiration)
+            assert out["success"] is False
+            assert out["error_code"] == "invalid_expiration"
+            assert out["parameter"] == "expiration"
+            assert out["value"] == expiration
+            assert out["expected_format"] == "YYYY-MM-DD"
+
+
 def test_options_chain_tools_short_circuit_when_provider_not_ready(monkeypatch):
     raw_exp = _unwrap(opt.options_expirations)
     raw_chain = _unwrap(opt.options_chain)
@@ -3249,7 +3277,7 @@ def test_options_chain_tools_allow_yahoo_best_effort_provider(monkeypatch):
             "effective_provider": "yahoo",
             "api_key_configured": False,
             "chain_data_ready": False,
-            "chain_data_access_available": True,
+            "chain_request_supported": True,
             "provider_mode": "best_effort",
             "action_required": None,
         },

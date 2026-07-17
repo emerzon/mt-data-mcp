@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import re
+from datetime import date
 from typing import Any, Dict, Literal, Optional
 
 from ..shared.schema import DetailLiteral
@@ -24,6 +25,7 @@ _OPTIONS_CHAIN_COMPACT_FIELDS = (
     "open_interest",
 )
 _OPTIONS_SYMBOL_PATTERN = re.compile(r"^[A-Z0-9^][A-Z0-9.^=_/-]{0,63}$")
+_OPTIONS_EXPIRATION_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 
 def _normalize_options_symbol(
@@ -44,6 +46,31 @@ def _normalize_options_symbol(
                 "market-symbol characters: . ^ = _ / -."
             ),
             "error_code": "invalid_symbol",
+        }
+    return normalized, None
+
+
+def _normalize_option_expiration(
+    expiration: Any,
+) -> tuple[Optional[str], Optional[Dict[str, Any]]]:
+    if expiration in (None, ""):
+        return None, None
+    normalized = str(expiration).strip()
+    try:
+        if _OPTIONS_EXPIRATION_PATTERN.fullmatch(normalized) is None:
+            raise ValueError
+        date.fromisoformat(normalized)
+    except ValueError:
+        return None, {
+            "success": False,
+            "error": (
+                f"Invalid expiration: {expiration!r}. Expected a calendar date "
+                "in YYYY-MM-DD format, for example 2026-07-17."
+            ),
+            "error_code": "invalid_expiration",
+            "parameter": "expiration",
+            "value": expiration,
+            "expected_format": "YYYY-MM-DD",
         }
     return normalized, None
 
@@ -95,7 +122,7 @@ def _options_provider_readiness() -> Dict[str, Any]:
             "401/429. For reliable chains, set MTDATA_OPTIONS_PROVIDER=tradier and "
             "MTDATA_OPTIONS_API_KEY."
         ) if effective_provider == "yahoo" else None
-    chain_data_access_available = effective_provider in {"yahoo", "tradier"}
+    chain_request_supported = effective_provider in {"yahoo", "tradier"}
     chain_provider_ready = effective_provider == "tradier" and api_key_configured
     chain_data_ready = chain_provider_ready
     provider_mode = "best_effort" if effective_provider == "yahoo" else "authenticated"
@@ -113,7 +140,8 @@ def _options_provider_readiness() -> Dict[str, Any]:
         "local_tools_ready": True,
         "chain_provider_ready": chain_provider_ready,
         "chain_data_ready": chain_data_ready,
-        "chain_data_access_available": chain_data_access_available,
+        "chain_request_supported": chain_request_supported,
+        "live_chain_requests_expected_to_work": chain_data_ready,
         "degraded": bool(provider_mode == "best_effort"),
         "provider_mode": provider_mode,
         "supported_providers": ["tradier", "yahoo"],
@@ -133,7 +161,7 @@ def _options_provider_readiness() -> Dict[str, Any]:
 
 def _options_chain_provider_gate(tool_name: str) -> Optional[Dict[str, Any]]:
     readiness = _options_provider_readiness()
-    if readiness.get("chain_data_access_available") is True:
+    if readiness.get("chain_request_supported") is True:
         return None
     provider = readiness.get("effective_provider")
     error_code = (
@@ -412,12 +440,21 @@ def options_chain(
             detail=detail,
             func=lambda: symbol_error or {"error": "symbol is required"},
         )
+    expiration_value, expiration_error = _normalize_option_expiration(expiration)
+    if expiration_error is not None:
+        return _run_options_operation(
+            "options_chain",
+            symbol=symbol_value,
+            expiration=expiration,
+            detail=detail,
+            func=lambda: expiration_error,
+        )
     gate = _options_chain_provider_gate("options_chain")
     if gate is not None:
         return _run_options_operation(
             "options_chain",
             symbol=symbol_value,
-            expiration=expiration,
+            expiration=expiration_value,
             option_type=option_type,
             limit=limit,
             detail=detail,
@@ -427,14 +464,14 @@ def options_chain(
     return _run_options_operation(
         "options_chain",
         symbol=symbol_value,
-        expiration=expiration,
+        expiration=expiration_value,
         option_type=option_type,
         limit=limit,
         detail=detail,
         func=lambda: _apply_options_detail(
             _impl(
                 symbol=symbol_value,
-                expiration=expiration,
+                expiration=expiration_value,
                 option_type=option_type,
                 min_open_interest=int(min_open_interest),
                 min_volume=int(min_volume),
@@ -558,12 +595,21 @@ def options_heston_calibrate(
             detail=detail,
             func=lambda: symbol_error or {"error": "symbol is required"},
         )
+    expiration_value, expiration_error = _normalize_option_expiration(expiration)
+    if expiration_error is not None:
+        return _run_options_operation(
+            "options_heston_calibrate",
+            symbol=symbol_value,
+            expiration=expiration,
+            detail=detail,
+            func=lambda: expiration_error,
+        )
     gate = _options_chain_provider_gate("options_heston_calibrate")
     if gate is not None:
         return _run_options_operation(
             "options_heston_calibrate",
             symbol=symbol_value,
-            expiration=expiration,
+            expiration=expiration_value,
             option_type=option_type,
             max_contracts=max_contracts,
             detail=detail,
@@ -573,7 +619,7 @@ def options_heston_calibrate(
     return _run_options_operation(
         "options_heston_calibrate",
         symbol=symbol_value,
-        expiration=expiration,
+        expiration=expiration_value,
         valuation_date=valuation_date,
         option_type=option_type,
         max_contracts=max_contracts,
@@ -581,7 +627,7 @@ def options_heston_calibrate(
         func=lambda: _apply_options_detail(
             _impl(
                 symbol=symbol_value,
-                expiration=expiration,
+                expiration=expiration_value,
                 valuation_date=valuation_date,
                 option_type=option_type,
                 risk_free_rate=float(risk_free_rate),
