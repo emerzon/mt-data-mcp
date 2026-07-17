@@ -5,7 +5,11 @@ from pydantic import ValidationError
 
 from mtdata.core import data as core_data
 from mtdata.core.data.requests import DataFetchCandlesRequest, DataFetchTicksRequest
-from mtdata.core.data.use_cases import run_data_fetch_candles, run_data_fetch_ticks
+from mtdata.core.data.use_cases import (
+    _compact_tick_row,
+    run_data_fetch_candles,
+    run_data_fetch_ticks,
+)
 from mtdata.utils.mt5 import MT5ConnectionError
 
 
@@ -1276,6 +1280,18 @@ def test_run_data_fetch_ticks_echoes_limit_and_cap_signal():
     )
     assert partial["requested_limit"] == 20
     assert partial["limit_reached"] is False
+
+
+def test_compact_tick_row_marks_locked_quote_spread_unavailable():
+    row, spread_sample = _compact_tick_row(
+        {"time": "2026-07-17T01:53:23Z", "bid": 1.14396, "ask": 1.14396},
+        price_point=0.00001,
+    )
+
+    assert row["spread"] == 0.0
+    assert row["spread_valid"] is False
+    assert row["spread_basis"] == "unavailable"
+    assert spread_sample is None
 
 
 def test_run_data_fetch_ticks_compact_prunes_row_diagnostics():

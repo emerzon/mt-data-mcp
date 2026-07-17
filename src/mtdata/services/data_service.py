@@ -2701,12 +2701,19 @@ def fetch_ticks(  # noqa: C901
             for update_type in quote_update_types
         )
         zero_spread_count = sum(
-            bool(valid)
+            quote_type == "bid_ask"
+            and (
+                (bid_updated and ask_updated)
+                if has_quote_update_flags
+                else True
+            )
             and bid is not None
             and ask is not None
             and float(ask) == float(bid)
-            for valid, bid, ask in zip(
-                spread_valid_flags,
+            for quote_type, bid_updated, ask_updated, bid, ask in zip(
+                quote_types,
+                bid_changed_flags,
+                ask_changed_flags,
                 effective_bids,
                 effective_asks,
                 strict=False,
@@ -2809,10 +2816,22 @@ def fetch_ticks(  # noqa: C901
         df_ticks["flags"] = flags
         df_ticks["trade_event"] = trade_events
         df_ticks["spread_valid"] = [
-            bid is not None and ask is not None and ask >= bid
+            bid is not None and ask is not None and ask > bid
             for bid, ask in zip(effective_bids, effective_asks, strict=False)
         ]
-        df_ticks["spread_sample_eligible"] = spread_valid_flags
+        spread_sample_eligible_flags = [
+            eligible
+            and bid is not None
+            and ask is not None
+            and ask > bid
+            for eligible, bid, ask in zip(
+                spread_valid_flags,
+                effective_bids,
+                effective_asks,
+                strict=False,
+            )
+        ]
+        df_ticks["spread_sample_eligible"] = spread_sample_eligible_flags
         df_ticks["spread_basis"] = [
             "quote_snapshot" if valid else "unavailable"
             for valid in df_ticks["spread_valid"].tolist()
@@ -2847,9 +2866,11 @@ def fetch_ticks(  # noqa: C901
                 "incomplete_ticks": incomplete_ticks,
                 "total_ticks": int(original_count),
                 "incomplete_quote_ratio": round(incomplete_ratio, 4),
-                "spread_ticks_excluded": int(incomplete_quote_count),
+                "spread_ticks_excluded": int(
+                    original_count - sum(spread_sample_eligible_flags)
+                ),
                 "one_sided_updates": int(one_sided_update_count),
-                "valid_spread_ticks": int(sum(spread_valid_flags)),
+                "valid_spread_ticks": int(sum(spread_sample_eligible_flags)),
                 "spread_sample_basis": "coherent_bid_ask_updates",
                 "zero_spread_ticks": int(zero_spread_count),
                 "warning_ratio": _ONE_SIDED_TICK_WARNING_RATIO,
@@ -2922,7 +2943,7 @@ def fetch_ticks(  # noqa: C901
             bid = _finite_or_none(frame["bid"].iloc[-1])
             ask = _finite_or_none(frame["ask"].iloc[-1])
             spread_valid = bool(
-                bid is not None and ask is not None and float(ask) >= float(bid)
+                bid is not None and ask is not None and float(ask) > float(bid)
             )
             spread = float(ask) - float(bid) if spread_valid else None
             mid = (float(bid) + float(ask)) / 2.0 if spread_valid else None
@@ -3389,7 +3410,7 @@ def fetch_ticks(  # noqa: C901
                 snapshot_spread_valid = bool(
                     bid_value is not None
                     and ask_value is not None
-                    and ask_value >= bid_value
+                    and ask_value > bid_value
                 )
                 values.extend(
                     [
@@ -3398,7 +3419,7 @@ def fetch_ticks(  # noqa: C901
                         ask_changed_flags[i],
                         snapshot_spread_valid,
                         "quote_snapshot" if snapshot_spread_valid else "unavailable",
-                        spread_valid_flags[i],
+                        spread_sample_eligible_flags[i],
                     ]
                 )
                 mid = (

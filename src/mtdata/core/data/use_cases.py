@@ -1384,10 +1384,12 @@ def _compact_tick_row(
         bid is not None
         and ask is not None
         and numeric_spread is not None
-        and numeric_spread >= 0.0
+        and ask > bid
+        and numeric_spread > 0.0
     )
-    if compact["spread_valid"]:
-        compact["spread_basis"] = "quote_snapshot"
+    compact["spread_basis"] = (
+        "quote_snapshot" if compact["spread_valid"] else "unavailable"
+    )
     return compact, numeric_spread if compact["spread_valid"] else None
 
 
