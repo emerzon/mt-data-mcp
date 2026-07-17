@@ -441,9 +441,10 @@ class DataFetchCandlesRequest(_DetailNormalizedRequest):
     include_spread: bool = Field(
         False,
         description=(
-            "Append MT5 historical candle spread values. Defaults false because many "
-            "symbols/timeframes return missing or zero historical spread and the extra "
-            "column increases every row."
+            "Request MT5 historical per-bar spread values. When unavailable, returns "
+            "spread_mode=single_reference with one non-historical live/tick reference, "
+            "or spread_mode=unavailable. Defaults false because the per-bar column "
+            "increases every row."
         ),
     )
     include_incomplete: bool = False

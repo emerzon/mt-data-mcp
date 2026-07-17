@@ -2040,6 +2040,7 @@ def fetch_candles(  # noqa: C901
         if include_spread:
             payload["spread_source"] = "mt5_candle"
             payload["spread_historical_available"] = True
+            payload["spread_mode"] = "per_bar"
         if session_gap_warning:
             payload["meta"]["diagnostics"]["session_gaps"]["warning"] = session_gap_warning
         payload["timezone"] = _timezone_label(use_client_tz=_use_ctz, client_tz=client_tz)
@@ -2198,6 +2199,7 @@ def fetch_candles(  # noqa: C901
                 )
                 payload["data"] = data_rows
                 payload["spread_historical_available"] = False
+                payload["spread_mode"] = "unavailable"
                 payload.pop("spread_source", None)
                 units = payload.get("units")
                 if isinstance(units, dict):
@@ -2206,10 +2208,9 @@ def fetch_candles(  # noqa: C901
                     if not units:
                         payload.pop("units", None)
                 if spread_mostly_zero and not spread_all_zero:
-                    payload.setdefault("warnings", []).append(
-                        "include_spread native candle spread is zero for most bars; "
-                        "using an estimated spread because MT5 candle spread appears sparse."
-                    )
+                    payload.setdefault("meta", {}).setdefault("diagnostics", {}).setdefault(
+                        "spread_estimate", {}
+                    )["native_spread_quality"] = "mostly_zero"
                 try:
                     tick_stats = fetch_ticks(symbol, limit=5000, format="stats")
                     spread_stats = tick_stats.get("stats", {}).get("spread")
@@ -2225,10 +2226,6 @@ def fetch_candles(  # noqa: C901
                             payload.setdefault("meta", {}).setdefault("diagnostics", {}).setdefault("spread_estimate", {})["live_spread"] = live_spread
                             payload["meta"]["diagnostics"]["spread_estimate"]["live_diff_ratio"] = diff_ratio
                             if diff_ratio > 0.5:
-                                payload.setdefault("warnings", []).append(
-                                    "include_spread tick-stat estimate differed from live spread "
-                                    f"by {diff_ratio:.0%}; live ticker spread ({live_spread:g}) applied."
-                                )
                                 est_mean = float(live_spread)
                                 estimate_source = "live_ticker_crosscheck"
                                 payload["spread_accuracy"] = "tick_stats_replaced_by_live"
@@ -2243,6 +2240,7 @@ def fetch_candles(  # noqa: C901
                             "source": estimate_source,
                             "basis": "single_reference_not_per_bar_historical",
                         }
+                        payload["spread_mode"] = "single_reference"
                         payload.setdefault("meta", {}).setdefault("diagnostics", {}).setdefault("spread_estimate", {})["estimated_mean"] = est_mean
                         payload["meta"]["diagnostics"]["spread_estimate"]["source"] = estimate_source
                         payload["meta"]["diagnostics"]["spread_estimate"]["unit"] = "price"
@@ -2262,11 +2260,20 @@ def fetch_candles(  # noqa: C901
                                 "source": "live_ticker",
                                 "basis": "single_reference_not_per_bar_historical",
                             }
+                            payload["spread_mode"] = "single_reference"
                             payload.setdefault("meta", {}).setdefault("diagnostics", {}).setdefault("spread_estimate", {})["estimated_mean"] = est_mean
                             payload["meta"]["diagnostics"]["spread_estimate"]["source"] = "live_ticker"
                             payload["meta"]["diagnostics"]["spread_estimate"]["unit"] = "price"
                 except Exception:
                     payload.setdefault("warnings", []).append("include_spread requested but spread unavailable; no fallback available.")
+                if payload.get("spread_mode") == "unavailable" and not any(
+                    "include_spread requested" in str(item)
+                    for item in payload.get("warnings", [])
+                ):
+                    payload.setdefault("warnings", []).append(
+                        "include_spread requested but historical per-bar spread and a "
+                        "live/tick reference are unavailable."
+                    )
 
         return payload
     except Exception as e:

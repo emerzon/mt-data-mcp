@@ -491,9 +491,9 @@ def data_fetch_candles(
         "open,high,low,close,volume".
 
     include_spread : bool, optional
-        Append the historical MT5 candle spread column to each returned row.
-        Defaults to false because many symbols/timeframes return missing or zero
-        historical spread and the extra column increases every row.
+        Request the historical MT5 per-bar spread column. When unavailable,
+        the result reports spread_mode=single_reference with one non-historical
+        live/tick reference, or spread_mode=unavailable. Defaults to false.
     
     indicators : list, optional
         Technical indicators list, e.g., [{"name": "rsi", "params": [14]}]

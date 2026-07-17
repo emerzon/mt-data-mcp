@@ -96,7 +96,10 @@ PARAM_HINTS = {
     "indicators": "Indicators as compact specs like 'rsi_14', 'rsi(length=14)', 'macd(12,26,9)', or 'macd(fast=12,slow=26,signal=9)', or JSON like '[{\"name\":\"rsi\",\"params\":{\"length\":14}}]'. Bare names such as 'rsi' are also accepted.",
     "denoise": "Denoise preset name or JSON spec. Examples: --denoise kalman or --denoise '{\"method\":\"kalman\",\"params\":{\"lookback\":100}}'.",
     "simplify": "Simplify preset name or JSON spec. Examples: --simplify select, --simplify '{\"mode\":\"select\",\"method\":\"lttb\",\"ratio\":0.2}', or --simplify select --simplify-params \"ratio=0.2\".",
-    "include_spread": "Append MT5 historical candle spread values when available; defaults to false.",
+    "include_spread": (
+        "Request MT5 historical per-bar spread values; when unavailable, the result "
+        "reports a single non-historical reference or spread_mode=unavailable."
+    ),
     "include_incomplete": "Include the latest forming candle; defaults to false, so responses expose has_forming_candle/incomplete_candles_skipped while returned rows stay on closed bars.",
     "allow_stale": "Return the latest available closed bars when freshness checks would otherwise fail; defaults to false.",
     "explain_indicators": "Add compact latest-value interpretation notes for requested indicators; defaults to false.",

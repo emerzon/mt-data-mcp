@@ -209,6 +209,7 @@ class TestFetchCandlesCore(unittest.TestCase):
         self.assertEqual(result['units']['spread'], 'absolute_price')
         self.assertEqual(result['units']['spread_points'], 'broker_points')
         self.assertEqual(result['spread_source'], 'mt5_candle')
+        self.assertEqual(result['spread_mode'], 'per_bar')
 
     @patch(f'{_DS}.fetch_ticks')
     @patch(_MT5_CONFIG)
@@ -242,6 +243,7 @@ class TestFetchCandlesCore(unittest.TestCase):
         row = result['data'][0]
         self.assertNotIn('spread', row)
         self.assertFalse(result['spread_historical_available'])
+        self.assertEqual(result['spread_mode'], 'single_reference')
         self.assertNotIn('spread', result.get('units', {}))
         self.assertNotIn('spread_points', result.get('units', {}))
         self.assertEqual(
@@ -253,6 +255,11 @@ class TestFetchCandlesCore(unittest.TestCase):
                 'basis': 'single_reference_not_per_bar_historical',
             },
         )
+        spread_warnings = [
+            item for item in result.get('warnings', [])
+            if 'include_spread requested' in item
+        ]
+        self.assertEqual(len(spread_warnings), 1)
 
     @patch(_MT5_CONFIG)
     @patch(_RATES_FROM)

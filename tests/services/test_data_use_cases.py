@@ -649,6 +649,41 @@ def test_run_data_fetch_candles_compact_keeps_spread_estimate_without_meta():
     }
 
 
+def test_run_data_fetch_candles_does_not_duplicate_structured_spread_warning():
+    request = DataFetchCandlesRequest(
+        symbol="EURUSD",
+        timeframe="H1",
+        include_spread=True,
+    )
+    warning = (
+        "include_spread requested but per-bar spread unavailable; a single "
+        "reference spread is returned at payload level."
+    )
+
+    result = run_data_fetch_candles(
+        request,
+        gateway=SimpleNamespace(ensure_connection=lambda: None),
+        fetch_candles_impl=lambda **kwargs: {
+            "success": True,
+            "candles": 1,
+            "data": [{"time": 1.0, "close": 1.1}],
+            "spread_mode": "single_reference",
+            "spread_historical_available": False,
+            "spread_reference": {
+                "value": 0.00009,
+                "unit": "price",
+                "source": "tick_stats",
+                "basis": "single_reference_not_per_bar_historical",
+            },
+            "warnings": [warning],
+        },
+    )
+
+    assert result["spread_mode"] == "single_reference"
+    assert result["warnings"] == [warning]
+    assert "spread_unavailable" not in result
+
+
 def test_run_data_fetch_candles_compact_exposes_range_gap_metadata():
     request = DataFetchCandlesRequest(
         symbol="EURUSD",
