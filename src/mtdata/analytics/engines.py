@@ -208,17 +208,7 @@ def _tick_frame(gateway: Any, symbol: str, start: datetime, end: datetime, max_t
         if column not in df:
             df[column] = 0.0
         df[column] = _finite(df[column]).fillna(0.0)
-    quote_flag_mask = (
-        getattr(gateway, "TICK_FLAG_BID", 2)
-        | getattr(gateway, "TICK_FLAG_ASK", 4)
-    )
-    observed_quote_flags = (df["flags"].astype(np.int64) & quote_flag_mask) != 0
-    complete_quote_update = (
-        (df["flags"].astype(np.int64) & quote_flag_mask) == quote_flag_mask
-    )
     valid_quote = (df["bid"] > 0) & (df["ask"] >= df["bid"])
-    if bool(observed_quote_flags.any()):
-        valid_quote &= complete_quote_update
     df["spread_valid"] = valid_quote
     df["mid"] = np.where(valid_quote, (df["bid"] + df["ask"]) / 2.0, np.nan)
     df["spread"] = np.where(np.isfinite(df["mid"]), df["ask"] - df["bid"], np.nan)

@@ -193,6 +193,22 @@ def test_microstructure_does_not_recount_last_trade_snapshots() -> None:
     assert result["data_quality"]["trade_tick_coverage"] == pytest.approx(1 / 200)
 
 
+def test_microstructure_keeps_single_sided_quote_updates() -> None:
+    gateway = FakeGateway()
+    gateway.tick_rows = _ticks(real_volume=False)
+    for index, row in enumerate(gateway.tick_rows):
+        row["flags"] = 2 if index % 2 == 0 else 4
+
+    result = analyze_microstructure(
+        MarketMicrostructureRequest(symbol="EURUSD", minutes_back=60),
+        gateway,
+    )
+
+    assert result["success"] is True
+    assert result["data_quality"]["quote_coverage"] == pytest.approx(1.0)
+    assert result["data_quality"]["invalid_partial_quote_ticks"] == 0
+
+
 def test_tick_frame_keeps_distinct_same_timestamp_events() -> None:
     gateway = FakeGateway()
     epoch = _now() - 10
@@ -264,7 +280,7 @@ def test_microstructure_reports_closed_session_for_short_tick_stream(monkeypatch
     assert "reopen" in result["remediation"]
 
 
-def test_tick_frame_nulls_derived_quotes_for_one_sided_updates() -> None:
+def test_tick_frame_keeps_derived_quotes_for_one_sided_updates() -> None:
     gateway = FakeGateway()
     gateway.tick_rows = [
         {"time": 1, "bid": 1.1, "ask": 1.1, "flags": 2},
@@ -279,8 +295,8 @@ def test_tick_frame_nulls_derived_quotes_for_one_sided_updates() -> None:
         100,
     )
 
-    assert np.isnan(frame.iloc[0]["mid"])
-    assert np.isnan(frame.iloc[0]["spread"])
+    assert frame.iloc[0]["mid"] == pytest.approx(1.1)
+    assert frame.iloc[0]["spread"] == pytest.approx(0.0)
     assert frame.iloc[1]["spread"] == pytest.approx(0.0002)
 
 
