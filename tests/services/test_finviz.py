@@ -48,9 +48,15 @@ class TestFinvizService:
         result = get_stock_fundamentals("INVALID")
         
         assert "error" in result
-        assert result["error_code"] == "finviz_unavailable"
+        assert result["error_code"] == "finviz_endpoint_failed"
         assert result["retryable"] is True
-        assert result["remediation"] == "Retry after the provider recovers."
+        assert result["error"] == (
+            "Finviz fundamentals failed for INVALID. Other Finviz endpoints may still be available."
+        )
+        assert result["remediation"] == (
+            "Retry this endpoint or use finviz_screen valuation fields as an "
+            "alternative fundamentals source."
+        )
         assert result["provider"] == "finviz"
         assert result["endpoint"] == "fundamentals"
         assert result["stage"] == "ticker_fundament"
@@ -67,6 +73,9 @@ class TestFinvizService:
         assert result["error_code"] == "finviz_provider_blocked"
         assert result["retryable"] is True
         assert result["endpoint"] == "fundamentals"
+        assert result["remediation"] == (
+            "Retry this endpoint after the upstream condition clears."
+        )
 
     @patch('finvizfinance.quote.finvizfinance')
     def test_get_stock_fundamentals_reports_empty_data_consistently(self, mock_finviz):

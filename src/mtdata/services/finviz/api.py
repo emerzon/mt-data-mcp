@@ -397,11 +397,23 @@ def get_stock_fundamentals(symbol: str) -> Dict[str, Any]:
         logger.exception(f"Error fetching fundamentals for {symbol}")
         message = _sanitize_error_message(e, symbol=symbol)
         error_code, retryable = _finviz_error_kind(message)
-        remediation = (
-            "Retry after the provider recovers."
-            if retryable
-            else "Check the equity ticker and provider compatibility before retrying."
-        )
+        if error_code == "finviz_unavailable":
+            error_code = "finviz_endpoint_failed"
+            message = (
+                f"Finviz fundamentals failed for "
+                f"{_normalize_finviz_equity_symbol(symbol)}. Other Finviz endpoints "
+                "may still be available."
+            )
+            remediation = (
+                "Retry this endpoint or use finviz_screen valuation fields as an "
+                "alternative fundamentals source."
+            )
+        else:
+            remediation = (
+                "Retry this endpoint after the upstream condition clears."
+                if retryable
+                else "Check the equity ticker and provider compatibility before retrying."
+            )
         return {
             "success": False,
             "error": message,
