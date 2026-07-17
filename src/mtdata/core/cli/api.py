@@ -78,14 +78,17 @@ from .runtime import (
     _debug_enabled,
     _suppress_cli_side_output,
 )
-from .runtime.commands import LIVE_TRADE_MUTATION_TOOLS, LIVE_TRADE_MUTATION_WARNING
+from .runtime.commands import (
+    LIVE_TRADE_MUTATION_TOOLS,
+    LIVE_TRADE_MUTATION_WARNING,
+    friendly_validation_error,
+)
 from .runtime.commands import (
     coerce_cli_scalar as _coerce_cli_scalar_impl,
 )
 from .runtime.commands import (
     create_command_function as _create_command_function_impl,
 )
-from .runtime.commands import friendly_validation_error
 from .runtime.commands import (
     merge_dict as _merge_dict_impl,
 )
@@ -1646,15 +1649,16 @@ def main():
 
     shell_parser = subparsers.add_parser(
         "shell",
-        help="Run repeated CLI commands in one warm Python process",
+        help="Run interactive commands or a stdin batch in one warm Python process",
         description=(
-            "Run an interactive mtdata-cli session. Enter ordinary command lines "
-            "without the mtdata-cli prefix; use exit or quit to stop."
+            "Run an interactive mtdata-cli session or read a batch from stdin. "
+            "Enter ordinary command lines without the mtdata-cli prefix; blank "
+            "lines and comments are ignored, and exit or quit stops the session."
         ),
         formatter_class=_CLIHelpFormatter,
         allow_abbrev=False,
     )
-    shell_parser.set_defaults(func=lambda _args: run_shell())
+    shell_parser.set_defaults(func=lambda _args: run_shell(interactive=sys.stdin.isatty()))
 
     # Dynamically create subparsers for each function, except forecast_generate
     forecast_tool = None
@@ -1938,39 +1942,54 @@ def main():
         return 1
 
 
-def run_shell() -> int:
+def run_shell(*, interactive: bool = True) -> int:
     """Run repeated CLI commands while reusing the initialized Python process."""
-    print("mtdata-cli shell (type 'exit' or 'quit' to stop)")
+    if interactive:
+        print("mtdata-cli shell (type 'exit' or 'quit' to stop)")
     original_argv = list(sys.argv)
+    overall_status = 0
     try:
         while True:
-            try:
-                line = input("mtdata> ")
-            except EOFError:
-                print("")
-                return 0
-            except KeyboardInterrupt:
-                print("")
-                continue
+            if interactive:
+                try:
+                    line = input("mtdata> ")
+                except EOFError:
+                    print("")
+                    return overall_status
+                except KeyboardInterrupt:
+                    print("")
+                    continue
+            else:
+                line = sys.stdin.readline()
+                if line == "":
+                    return overall_status
             stripped = line.strip()
-            if not stripped:
+            if not stripped or stripped.startswith("#"):
                 continue
             if stripped.lower() in {"exit", "quit"}:
-                return 0
+                return overall_status
             try:
                 command_argv = shlex.split(stripped, posix=False)
             except ValueError as exc:
                 print(f"Invalid command line: {exc}", file=sys.stderr)
+                if not interactive:
+                    overall_status = 2
                 continue
             if command_argv and command_argv[0].lower() == "shell":
                 print("A shell session is already active.", file=sys.stderr)
+                if not interactive:
+                    overall_status = 2
                 continue
             sys.argv = [original_argv[0], *command_argv]
             try:
-                main()
-            except SystemExit:
+                status = main()
+                if not interactive and isinstance(status, int) and status != 0:
+                    overall_status = status
+            except SystemExit as exc:
                 # argparse has already rendered its error or help text. Keep the
                 # warmed shell alive for the next command.
+                if not interactive and isinstance(exc.code, int) and exc.code != 0:
+                    overall_status = exc.code
                 continue
     finally:
         sys.argv = original_argv

@@ -11,6 +11,9 @@ Use it for scripts, exploration, and copy-paste workflows. Each one-shot
 invocation starts Python and discovers the requested command family. For repeated
 local exploration, run `mtdata-cli shell` and enter ordinary command lines
 without the `mtdata-cli` prefix; imports remain warm until `exit` or `quit`.
+The shell also accepts newline-delimited commands on stdin for non-interactive
+batches, ignores blank lines and `#` comments, and exits nonzero if any command
+fails.
 Repeated agent or application calls should keep a process alive with
 `mtdata-stdio`, `mtdata-streamable-http`, or `mtdata-webapi`. The full tool surface is also
 available over [MCP](GLOSSARY.md#mcp-model-context-protocol). The Web API
