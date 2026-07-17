@@ -392,7 +392,7 @@ class TestCausalDiscoverSignals:
             "ETHUSD": pd.Series(np.linspace(2.0, 3.0, 50), index=idx_b),
         }
 
-        def _fetch_side_effect(symbol, timeframe, count):
+        def _fetch_side_effect(symbol, timeframe, count, **_kwargs):
             return series_map[symbol], None
 
         mock_fetch.side_effect = _fetch_side_effect
@@ -423,7 +423,7 @@ class TestCausalDiscoverSignals:
             "USDJPY": pd.Series(np.linspace(3.0, 4.0, 200), index=idx),
         }
 
-        def _fetch_side_effect(symbol, timeframe, count):
+        def _fetch_side_effect(symbol, timeframe, count, **_kwargs):
             return series_map[symbol], None
 
         mock_fetch.side_effect = _fetch_side_effect
@@ -454,7 +454,7 @@ class TestCausalDiscoverSignals:
             "C": pd.Series(np.linspace(3.0, 4.0, 80), index=idx),
         }
 
-        mock_fetch.side_effect = lambda symbol, timeframe, count: (
+        mock_fetch.side_effect = lambda symbol, timeframe, count, **_kwargs: (
             series_map[symbol],
             None,
         )
@@ -496,7 +496,7 @@ class TestCausalDiscoverSignals:
             "USDJPY": pd.Series(np.linspace(3.0, 4.0, 100), index=idx_c),
         }
 
-        def _fetch_side_effect(symbol, timeframe, count):
+        def _fetch_side_effect(symbol, timeframe, count, **_kwargs):
             return series_map[symbol], None
 
         mock_fetch.side_effect = _fetch_side_effect
@@ -538,7 +538,7 @@ class TestCausalDiscoverSignals:
             "USDJPY": pd.Series(np.linspace(3.0, 4.0, 80), index=idx_c),
         }
 
-        def _fetch_side_effect(symbol, timeframe, count):
+        def _fetch_side_effect(symbol, timeframe, count, **_kwargs):
             return series_map[symbol], None
 
         mock_fetch.side_effect = _fetch_side_effect
@@ -569,7 +569,7 @@ class TestCausalDiscoverSignals:
             "LTCUSD": pd.Series(np.linspace(3.0, 4.0, 80), index=idx_peers),
         }
 
-        def _fetch_side_effect(symbol, timeframe, count):
+        def _fetch_side_effect(symbol, timeframe, count, **_kwargs):
             return series_map[symbol], None
 
         mock_fetch.side_effect = _fetch_side_effect
@@ -587,7 +587,7 @@ class TestCausalDiscoverSignals:
     def test_single_symbol_auto_expand_fails_when_anchor_fetch_is_missing(self, mock_fetch, _mock_expand):
         idx_peer = pd.date_range("2024-01-01", periods=80, freq="h")
 
-        def _fetch_side_effect(symbol, timeframe, count):
+        def _fetch_side_effect(symbol, timeframe, count, **_kwargs):
             if symbol == "BTCUSD":
                 return pd.Series(dtype=float), "Failed to fetch data for BTCUSD"
             return pd.Series(np.linspace(2.0, 3.0, 80), index=idx_peer), None
@@ -626,7 +626,7 @@ class TestCausalDiscoverSignals:
             "B": pd.Series(base * 1.01 + 0.001, index=idx),
         }
 
-        def _fetch_side_effect(symbol, timeframe, count):
+        def _fetch_side_effect(symbol, timeframe, count, **_kwargs):
             return series_map[symbol], None
 
         mock_fetch.side_effect = _fetch_side_effect
@@ -695,7 +695,7 @@ class TestCausalDiscoverSignals:
             "B": pd.Series(np.linspace(2.0, 3.0, 80), index=idx),
         }
 
-        mock_fetch.side_effect = lambda symbol, timeframe, count: (
+        mock_fetch.side_effect = lambda symbol, timeframe, count, **_kwargs: (
             series_map[symbol],
             None,
         )
@@ -734,7 +734,7 @@ class TestCausalDiscoverSignals:
             "B": pd.Series(np.linspace(2.0, 1.0, 80), index=idx),
         }
 
-        mock_fetch.side_effect = lambda symbol, timeframe, count: (series_map[symbol], None)
+        mock_fetch.side_effect = lambda symbol, timeframe, count, **_kwargs: (series_map[symbol], None)
         mock_granger.side_effect = [
             {1: ({"ssr_ftest": (1.0, 0.20, 10, 1)}, None)},
             {1: ({"ssr_ftest": (1.0, 0.01, 10, 1)}, None)},
@@ -788,7 +788,7 @@ class TestCausalDiscoverSignals:
             "B": pd.Series(np.linspace(2.0, 1.0, 80), index=idx),
         }
 
-        def _fetch_side_effect(symbol, timeframe, count):
+        def _fetch_side_effect(symbol, timeframe, count, **_kwargs):
             return series_map[symbol], None
 
         mock_fetch.side_effect = _fetch_side_effect
@@ -834,7 +834,7 @@ class TestCausalDiscoverSignals:
             "B": pd.Series(base * 1.01 + 0.001, index=idx),
         }
 
-        def _fetch_side_effect(symbol, timeframe, count):
+        def _fetch_side_effect(symbol, timeframe, count, **_kwargs):
             return series_map[symbol], None
 
         def _granger_side_effect(*args, **kwargs):
@@ -862,7 +862,7 @@ class TestCausalDiscoverSignals:
             "B": pd.Series(base * 1.01 + 0.001, index=idx),
         }
 
-        def _fetch_side_effect(symbol, timeframe, count):
+        def _fetch_side_effect(symbol, timeframe, count, **_kwargs):
             return series_map[symbol], None
 
         mock_fetch.side_effect = _fetch_side_effect
@@ -900,7 +900,7 @@ class TestCausalDiscoverSignals:
             "B": pd.Series(base * 1.01 + 0.001, index=idx),
         }
 
-        def _fetch_side_effect(symbol, timeframe, count):
+        def _fetch_side_effect(symbol, timeframe, count, **_kwargs):
             return series_map[symbol], None
 
         mock_fetch.side_effect = _fetch_side_effect
@@ -908,9 +908,10 @@ class TestCausalDiscoverSignals:
 
         result = self._unwrapped()("A,B", max_lag=2, transform="diff", normalize=False)
 
-        assert result["success"] is True
+        assert result["success"] is False
+        assert result["error_code"] == "no_tests_completed"
         assert result["meta"]["stats"]["pairs_failed"] >= 1
-        assert result["meta"]["stats"]["pair_failures"][0]["error_type"] == "RuntimeError"
+        assert result["details"][0]["error_type"] == "RuntimeError"
         assert "warnings" in result
 
 
@@ -967,7 +968,7 @@ class TestCorrelationMatrix:
             "ETHUSD": pd.Series(95.0 * np.exp(np.cumsum((rets * 0.9) + 0.0003)), index=idx),
         }
 
-        def _fetch_side_effect(name, timeframe, count):
+        def _fetch_side_effect(name, timeframe, count, **_kwargs):
             return series_map[name], None
 
         mock_fetch.side_effect = _fetch_side_effect
@@ -987,7 +988,7 @@ class TestCorrelationMatrix:
             "B": pd.Series([1.0, 2.0, 3.0], index=idx),
         }
 
-        def _fetch_side_effect(symbol, timeframe, count):
+        def _fetch_side_effect(symbol, timeframe, count, **_kwargs):
             return series_map[symbol], None
 
         mock_fetch.side_effect = _fetch_side_effect
@@ -1010,7 +1011,7 @@ class TestCorrelationMatrix:
             "C": pd.Series(120.0 * np.exp(np.cumsum(-rets)), index=idx),
         }
 
-        def _fetch_side_effect(symbol, timeframe, count):
+        def _fetch_side_effect(symbol, timeframe, count, **_kwargs):
             return series_map[symbol], None
 
         mock_fetch.side_effect = _fetch_side_effect
@@ -1071,7 +1072,7 @@ class TestCorrelationMatrix:
             "C": pd.Series(120.0 * np.exp(np.cumsum(-rets)), index=idx),
         }
 
-        mock_fetch.side_effect = lambda symbol, timeframe, count: (series_map[symbol], None)
+        mock_fetch.side_effect = lambda symbol, timeframe, count, **_kwargs: (series_map[symbol], None)
 
         result = self._unwrapped()(
             "A,B,C",
@@ -1116,7 +1117,7 @@ class TestCorrelationMatrix:
             "B": pd.Series(80.0 * np.exp(np.cumsum((rets * 0.95) + 0.0005)), index=idx),
             "C": pd.Series(120.0 * np.exp(np.cumsum(-rets)), index=idx),
         }
-        mock_fetch.side_effect = lambda symbol, timeframe, count: (series_map[symbol], None)
+        mock_fetch.side_effect = lambda symbol, timeframe, count, **_kwargs: (series_map[symbol], None)
 
         result = self._unwrapped()(
             "A,B,C",
@@ -1143,7 +1144,7 @@ class TestCorrelationMatrix:
             "C": pd.Series(110.0 * np.exp(np.cumsum(rets)), index=idx_c),
         }
 
-        def _fetch_side_effect(symbol, timeframe, count):
+        def _fetch_side_effect(symbol, timeframe, count, **_kwargs):
             return series_map[symbol], None
 
         mock_fetch.side_effect = _fetch_side_effect
@@ -1170,7 +1171,7 @@ class TestCorrelationMatrix:
             "C": pd.Series(110.0 * np.exp(np.cumsum(rets[20:] * 0.99)), index=base_idx[20:]),
         }
 
-        mock_fetch.side_effect = lambda symbol, timeframe, count: (series_map[symbol], None)
+        mock_fetch.side_effect = lambda symbol, timeframe, count, **_kwargs: (series_map[symbol], None)
 
         result = self._unwrapped()(
             "A,B,C",
@@ -1197,7 +1198,7 @@ class TestCorrelationMatrix:
             "B": pd.Series(95.0 * np.exp(np.cumsum((rets * 0.9) + 0.0003)), index=idx),
         }
 
-        def _fetch_side_effect(symbol, timeframe, count):
+        def _fetch_side_effect(symbol, timeframe, count, **_kwargs):
             if symbol == "C":
                 return pd.Series(dtype=float), "Failed to fetch data for C"
             return series_map[symbol], None
@@ -1223,7 +1224,7 @@ class TestCorrelationMatrix:
             "GBPUSD": pd.Series(90.0 * np.exp(np.cumsum((rets * 0.98) + 0.0001)), index=idx),
         }
 
-        def _fetch_side_effect(symbol, timeframe, count):
+        def _fetch_side_effect(symbol, timeframe, count, **_kwargs):
             return series_map[symbol], None
 
         mock_fetch.side_effect = _fetch_side_effect
@@ -1251,7 +1252,7 @@ class TestCorrelationMatrix:
         idx = pd.date_range("2024-01-01", periods=80, freq="h")
         series_eth = pd.Series(100.0 * np.exp(np.cumsum(np.linspace(-0.01, 0.01, 80))), index=idx)
 
-        def _fetch_side_effect(symbol, timeframe, count):
+        def _fetch_side_effect(symbol, timeframe, count, **_kwargs):
             if symbol == "BTCUSD":
                 return pd.Series(dtype=float), "Failed to fetch data for BTCUSD"
             return series_eth, None
@@ -1275,7 +1276,7 @@ class TestCorrelationMatrix:
             "B": pd.Series(80.0 * np.exp(np.cumsum(np.linspace(-0.01, 0.01, 50))), index=idx_b),
         }
 
-        def _fetch_side_effect(symbol, timeframe, count):
+        def _fetch_side_effect(symbol, timeframe, count, **_kwargs):
             return series_map[symbol], None
 
         mock_fetch.side_effect = _fetch_side_effect
@@ -1333,7 +1334,7 @@ class TestCointegrationTest:
             "B": pd.Series(50.0 * np.exp(base * 0.98), index=idx),
         }
 
-        def _fetch_side_effect(symbol, timeframe, count):
+        def _fetch_side_effect(symbol, timeframe, count, **_kwargs):
             return series_map[symbol], None
 
         mock_fetch.side_effect = _fetch_side_effect
@@ -1358,7 +1359,7 @@ class TestCointegrationTest:
             "B": pd.Series(50.0 * np.exp(base * 0.98), index=idx),
         }
 
-        def _fetch_side_effect(symbol, timeframe, count):
+        def _fetch_side_effect(symbol, timeframe, count, **_kwargs):
             return series_map[symbol], None
 
         mock_fetch.side_effect = _fetch_side_effect
@@ -1399,7 +1400,7 @@ class TestCointegrationTest:
             "B": pd.Series(50.0 * np.exp(base * 0.98), index=idx),
         }
 
-        def _fetch_side_effect(symbol, timeframe, count):
+        def _fetch_side_effect(symbol, timeframe, count, **_kwargs):
             return series_map[symbol], None
 
         mock_fetch.side_effect = _fetch_side_effect
@@ -1431,7 +1432,7 @@ class TestCointegrationTest:
             "B": pd.Series(50.0 * np.exp(base * 0.98), index=idx),
         }
 
-        def _fetch_side_effect(symbol, timeframe, count):
+        def _fetch_side_effect(symbol, timeframe, count, **_kwargs):
             return series_map[symbol], None
 
         mock_fetch.side_effect = _fetch_side_effect
