@@ -542,7 +542,11 @@ def _timestamp_mode_for_history_query(
     module: Any,
     kwargs: Dict[str, Any],
 ) -> str:
-    """Probe a live symbol before converting standalone history query bounds."""
+    """Reuse a fresh clock mode or probe before converting history bounds."""
+    cached_mode = _valid_cached_timestamp_mode()
+    if cached_mode is not None:
+        return cached_mode
+
     probe_symbol = str(kwargs.get("symbol") or "").strip()
     if not probe_symbol:
         try:
