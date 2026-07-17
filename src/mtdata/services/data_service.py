@@ -42,7 +42,7 @@ from ..utils.denoise import (
 from ..utils.denoise import (
     normalize_denoise_spec as _normalize_denoise_spec,
 )
-from ..utils.freshness import closed_session_context
+from ..utils.freshness import closed_session_context, is_standard_weekend_closure
 from ..utils.indicators import (
     _apply_ta_indicators,
     _estimate_warmup_bars,
@@ -279,6 +279,60 @@ def _describe_rate_fetch_error(symbol: str, *, info_before: Any = None) -> str:
     return f"Failed to get rates for {symbol}: {error_text}"
 
 
+def _bounded_weekend_no_data_context(
+    symbol: str,
+    start_datetime: Optional[str],
+    end_datetime: Optional[str],
+) -> Dict[str, Any]:
+    if not start_datetime or not end_datetime:
+        return {}
+    try:
+        start_utc, _ = _parse_fetch_datetime_arg(start_datetime)
+        end_utc, _ = _parse_fetch_datetime_arg(end_datetime)
+        if start_utc is None or end_utc is None:
+            return {}
+        start_utc = (
+            start_utc.replace(tzinfo=dt_timezone.utc)
+            if start_utc.tzinfo is None
+            else start_utc.astimezone(dt_timezone.utc)
+        )
+        end_utc = (
+            end_utc.replace(tzinfo=dt_timezone.utc)
+            if end_utc.tzinfo is None
+            else end_utc.astimezone(dt_timezone.utc)
+        )
+        duration = end_utc - start_utc
+        if duration.total_seconds() < 0 or duration > timedelta(days=3):
+            return {}
+        if not (
+            is_standard_weekend_closure(start_utc)
+            and is_standard_weekend_closure(end_utc)
+        ):
+            return {}
+        midpoint = start_utc + duration / 2
+        session = closed_session_context(
+            symbol,
+            now_epoch=midpoint.timestamp(),
+            item="candles",
+        )
+        if not session or session.get("market_status_reason") != "weekend":
+            return {}
+    except Exception:
+        return {}
+
+    return {
+        "no_data_reason": "market_closed_weekend",
+        "market_status": "closed",
+        "market_status_reason": "weekend",
+        "market_status_source": "standard_weekend_hours",
+        "note": (
+            f"The requested range falls entirely within standard weekend closure "
+            f"hours for {symbol}; no candles are expected."
+        ),
+        "suggestion": "Choose a range containing an open trading session.",
+    }
+
+
 def _build_no_data_error_with_context(
     symbol: str,
     timeframe: TimeframeLiteral,
@@ -296,6 +350,9 @@ def _build_no_data_error_with_context(
             k: v for k, v in [("start", start_datetime), ("end", end_datetime)]
             if v is not None
         }
+    details.update(
+        _bounded_weekend_no_data_context(symbol, start_datetime, end_datetime)
+    )
     
     # Try to sample available bars for this timeframe to suggest a usable range.
     try:

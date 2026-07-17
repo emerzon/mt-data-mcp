@@ -106,6 +106,42 @@ def test_no_data_context_uses_non_negative_history_position(monkeypatch) -> None
     assert "before earliest available data" in result["error"]
 
 
+def test_no_data_context_explains_bounded_weekend_closure(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "mtdata.services.data_service._mt5_copy_rates_from_pos",
+        lambda *args, **kwargs: None,
+    )
+
+    result = _build_no_data_error_with_context(
+        "EURUSD",
+        "H1",
+        1,
+        "2026-07-11",
+        "2026-07-12",
+    )
+
+    assert result["details"]["no_data_reason"] == "market_closed_weekend"
+    assert result["details"]["market_status_reason"] == "weekend"
+    assert "no candles are expected" in result["details"]["note"]
+
+
+def test_no_data_context_does_not_label_continuous_crypto_weekend(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "mtdata.services.data_service._mt5_copy_rates_from_pos",
+        lambda *args, **kwargs: None,
+    )
+
+    result = _build_no_data_error_with_context(
+        "BTCUSD",
+        "H1",
+        1,
+        "2026-07-11",
+        "2026-07-12",
+    )
+
+    assert "no_data_reason" not in result["details"]
+
+
 def test_compact_tick_summary_preserves_false_like_spread_availability() -> None:
     class FalseLike:
         def __bool__(self):
