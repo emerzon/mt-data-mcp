@@ -514,6 +514,9 @@ def _compact_report_payload(  # noqa: C901
     completeness = report.get("completeness")
     if completeness not in (None, "", [], {}):
         compact["completeness"] = completeness
+    sections_to_retry = report.get("sections_to_retry")
+    if sections_to_retry not in (None, "", [], {}):
+        compact["sections_to_retry"] = sections_to_retry
     assessment = report.get("overall_assessment")
     if assessment not in (None, "", [], {}):
         compact["assessment"] = _compact_report_assessment(assessment)
@@ -828,6 +831,9 @@ def _build_report_executive_summary(
     sections_with_issues = report.get("sections_with_issues")
     if sections_with_issues not in (None, "", [], {}):
         out["sections_with_issues"] = sections_with_issues
+    sections_to_retry = report.get("sections_to_retry")
+    if sections_to_retry not in (None, "", [], {}):
+        out["sections_to_retry"] = sections_to_retry
     return {key: value for key, value in out.items() if value not in (None, "", [], {})}
 
 
@@ -1491,6 +1497,7 @@ def run_report_generate(  # noqa: C901
                 rep["sections_status"] = sections_status
                 summary_counts = sections_status.get("summary", {})
                 error_count = int(summary_counts.get("error", 0))
+                ok_count = int(summary_counts.get("ok", 0))
                 partial_count = int(summary_counts.get("partial", 0))
                 omitted_count = int(summary_counts.get("omitted", 0))
                 controls = rep.get("section_controls")
@@ -1505,16 +1512,21 @@ def run_report_generate(  # noqa: C901
                     and missing_requested
                     and not summary_mode
                 )
+                usable_section_count = ok_count + partial_count
+                hard_failed = bool(
+                    selection_failed
+                    or (error_count > 0 and usable_section_count == 0)
+                )
                 rep["completeness"] = (
                     "failed"
-                    if error_count > 0 or selection_failed
+                    if hard_failed
                     else "partial"
-                    if partial_count > 0 or omitted_count > 0
+                    if partial_count > 0 or error_count > 0 or omitted_count > 0
                     else "summary_only"
                     if summary_mode
                     else "complete"
                 )
-                rep["success"] = bool(error_count == 0 and not selection_failed)
+                rep["success"] = not hard_failed
                 if selection_failed:
                     rep["error_code"] = "report_sections_not_found"
                     rep["error"] = (
@@ -1530,6 +1542,7 @@ def run_report_generate(  # noqa: C901
                     sections_with_issues["partial"] = partial_section_names
                 if error_section_names:
                     sections_with_issues["error"] = error_section_names
+                    rep["sections_to_retry"] = error_section_names
                 if omitted_section_names:
                     sections_with_issues["omitted"] = omitted_section_names
                 if sections_with_issues:

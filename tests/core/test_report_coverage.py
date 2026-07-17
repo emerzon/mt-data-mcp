@@ -1297,7 +1297,7 @@ class TestReportWarnings:
         assert {"path": "error", "message": "Volatility estimation failed."} in errors
         assert all(item["message"] != "no value" for item in errors)
 
-    def test_error_only_section_marks_report_failed(self):
+    def test_error_section_marks_otherwise_usable_report_partial(self):
         fn = _get_report_generate()
         sec = _make_full_sections()
         sec["forecast"] = {"error": "forecast failed"}
@@ -1313,8 +1313,26 @@ class TestReportWarnings:
             res = fn("EURUSD", template="basic", format="toon")
 
         assert res["sections_status"]["sections"]["forecast"] == "error"
+        assert res["completeness"] == "partial"
+        assert res["success"] is True
+        assert res["sections_to_retry"] == ["forecast"]
+
+    def test_all_error_sections_mark_report_failed(self):
+        fn = _get_report_generate()
+        rep = _make_report(
+            sections={
+                "forecast": {"error": "forecast failed"},
+                "context": {"error": "context failed"},
+            }
+        )
+        mock_basic = MagicMock(return_value=rep)
+        with patch("mtdata.core.report_templates.template_basic", mock_basic, create=True), \
+             patch(_FMT_NUM, side_effect=str):
+            res = fn("EURUSD", template="basic", format="toon")
+
         assert res["completeness"] == "failed"
         assert res["success"] is False
+        assert res["sections_to_retry"] == ["forecast", "context"]
 
     def test_forecast_section_without_finite_values_is_not_healthy(self):
         from mtdata.core.report.use_cases import _build_sections_status
