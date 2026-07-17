@@ -197,6 +197,23 @@ class TestFetchRatesWithWarmup(unittest.TestCase):
 
     @patch(_RATES_RANGE)
     @patch(_PARSE_START)
+    def test_equal_start_and_end_is_allowed(self, mock_parse, mock_range):
+        """Inclusive MT5 ranges allow a single timestamp boundary."""
+        instant = datetime(2025, 1, 1, tzinfo=_UTC)
+        mock_parse.side_effect = [instant, instant]
+        mock_range.return_value = _make_rates(1, base_ts=instant.timestamp())
+
+        result, err = _fetch_rates_with_warmup(
+            'EURUSD', 16385, 'H1', 5, 0, '2025-01-01', '2025-01-01',
+            retry=False, sanity_check=False,
+        )
+
+        self.assertIsNone(err)
+        self.assertIsNotNone(result)
+        mock_range.assert_called_once()
+
+    @patch(_RATES_RANGE)
+    @patch(_PARSE_START)
     def test_future_start_with_end_returns_error(self, mock_parse, mock_range):
         """A start in the future yields no historical data and must error."""
         mock_parse.side_effect = [

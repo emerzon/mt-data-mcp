@@ -41,6 +41,9 @@ _ERROR_GUIDANCE: Dict[str, Dict[str, Any]] = {
             "Increase the lookback, request more bars, or use a longer timeframe."
         ),
     },
+    "invalid_date_range": {
+        "remediation": "Set start to a timestamp earlier than or equal to end.",
+    },
     "forecast_task_not_found": {
         "remediation": (
             "Use forecast_task_list to inspect active and recent forecast tasks."
@@ -58,6 +61,15 @@ _ERROR_GUIDANCE: Dict[str, Dict[str, Any]] = {
         "remediation": "Use forecast_models_list to inspect stored forecast models.",
         "related_tools": ["forecast_models_list"],
     },
+}
+
+_CANONICAL_DATE_RANGE_MESSAGE = "start must be before or equal to end."
+_GUIDANCE_KEYS = {
+    "remediation",
+    "related_tools",
+    "valid_values",
+    "example",
+    "documentation",
 }
 
 
@@ -118,6 +130,76 @@ def _apply_error_guidance(
         payload[key] = value
 
 
+def _error_payload_text(value: Any) -> list[str]:
+    if isinstance(value, str):
+        text = value.strip()
+        return [text] if text else []
+    if isinstance(value, dict):
+        out: list[str] = []
+        for item in value.values():
+            out.extend(_error_payload_text(item))
+        return out
+    if isinstance(value, (list, tuple, set)):
+        out = []
+        for item in value:
+            out.extend(_error_payload_text(item))
+        return out
+    return []
+
+
+def _canonical_error_code(payload: Dict[str, Any], current_code: str) -> str:
+    evidence = " ".join(
+        _error_payload_text(
+            {
+                "error": payload.get("error"),
+                "details": payload.get("details"),
+                "warnings": payload.get("warnings"),
+            }
+        )
+    ).lower()
+    symbol_failure = (
+        "unknown symbol" in evidence
+        or "failed to select symbol" in evidence
+        or (
+            "symbol" in evidence
+            and any(
+                phrase in evidence
+                for phrase in (
+                    "not found",
+                    "was not found",
+                    "could not be fetched",
+                )
+            )
+        )
+    )
+    if symbol_failure:
+        return "symbol_not_found"
+    if any(
+        phrase in evidence
+        for phrase in (
+            "start_datetime must be before end_datetime",
+            "start must be before end",
+            "start must be before or equal to end",
+        )
+    ):
+        return "invalid_date_range"
+    return current_code
+
+
+def _dedupe_error_sequence(value: Any) -> Any:
+    if not isinstance(value, list):
+        return value
+    out: list[Any] = []
+    seen: set[str] = set()
+    for item in value:
+        marker = repr(item)
+        if marker in seen:
+            continue
+        seen.add(marker)
+        out.append(item)
+    return out
+
+
 def normalize_error_payload(
     payload: Dict[str, Any],
     *,
@@ -130,13 +212,21 @@ def normalize_error_payload(
         return payload
 
     out = dict(payload)
-    error_code = str(out.get("error_code") or default_code or "tool_error").strip()
+    original_error_code = str(
+        out.get("error_code") or default_code or "tool_error"
+    ).strip()
+    error_code = _canonical_error_code(out, original_error_code)
+    error_code_changed = error_code != original_error_code
     rid = str(out.get("request_id") or "").strip() or (request_id or new_request_id())
     operation_value = str(out.get("operation") or operation or "").strip()
 
+    normalized_error = str(error_text)
+    if error_code == "invalid_date_range":
+        normalized_error = _CANONICAL_DATE_RANGE_MESSAGE
+
     normalized: Dict[str, Any] = {
         "success": False,
-        "error": str(error_text),
+        "error": normalized_error,
         "error_code": error_code,
         "request_id": rid,
     }
@@ -151,6 +241,10 @@ def normalize_error_payload(
             "operation",
         }:
             continue
+        if error_code_changed and key in _GUIDANCE_KEYS:
+            continue
+        if key in {"details", "warnings"}:
+            value = _dedupe_error_sequence(value)
         normalized[key] = value
     _apply_error_guidance(
         normalized,

@@ -528,7 +528,7 @@ def _fetch_rates_with_warmup(  # noqa: C901
         if from_date_error or to_date_error:
             return None, from_date_error or to_date_error
         if from_date > to_date:
-            return None, "start_datetime must be before end_datetime"
+            return None, "start must be before or equal to end."
         future_error = _future_start_error(start_datetime, from_date, seconds_per_bar)
         if future_error:
             return None, future_error

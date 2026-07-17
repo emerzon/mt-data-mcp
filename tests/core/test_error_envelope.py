@@ -43,3 +43,43 @@ def test_normalize_error_payload_adds_symbol_lookup_guidance():
 
     assert out["remediation"].startswith("Use symbols_list")
     assert out["related_tools"] == ["symbols_list"]
+
+
+def test_normalize_error_payload_classifies_symbol_root_cause_from_warnings():
+    out = normalize_error_payload(
+        {
+            "error": "Not enough valid symbol data fetched.",
+            "error_code": "insufficient_symbols",
+            "warnings": [
+                "Symbol NOTAREALSYM was not found in MT5.",
+                "Symbol NOTAREALSYM was not found in MT5.",
+            ],
+            "remediation": "Increase the lookback.",
+        },
+        operation="correlation_matrix",
+    )
+
+    assert out["error_code"] == "symbol_not_found"
+    assert out["warnings"] == ["Symbol NOTAREALSYM was not found in MT5."]
+    assert out["remediation"].startswith("Use symbols_list")
+    assert out["related_tools"] == ["symbols_list"]
+
+
+def test_normalize_error_payload_canonicalizes_date_ranges_and_details():
+    out = normalize_error_payload(
+        {
+            "error": "Error detecting regimes: start_datetime must be before end_datetime",
+            "error_code": "tool_error",
+            "details": [
+                "start_datetime must be before end_datetime",
+                "start_datetime must be before end_datetime",
+            ],
+            "remediation": "Run forecast_list_methods.",
+        },
+        operation="regime_detect",
+    )
+
+    assert out["error_code"] == "invalid_date_range"
+    assert out["error"] == "start must be before or equal to end."
+    assert out["details"] == ["start_datetime must be before end_datetime"]
+    assert out["remediation"] == "Set start to a timestamp earlier than or equal to end."
