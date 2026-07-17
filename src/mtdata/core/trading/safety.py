@@ -120,6 +120,12 @@ def assess_margin_stress(account: Any) -> Dict[str, Any]:
         or (free_ratio is not None and free_ratio <= 25.0)
     ):
         status = "stressed"
+        if margin_level is not None and 0 < margin_level <= 150.0:
+            reasons.append("margin_level_at_or_below_150_pct")
+        if utilization is not None and utilization >= 75.0:
+            reasons.append("margin_utilization_at_or_above_75_pct")
+        if free_ratio is not None and free_ratio <= 25.0:
+            reasons.append("free_margin_at_or_below_25_pct_of_equity")
     elif any(value is not None for value in (margin_level, utilization, free_ratio)):
         status = "healthy"
     else:
