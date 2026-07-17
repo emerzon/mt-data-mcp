@@ -2,7 +2,7 @@ from typing import Any, Dict, Optional
 
 from ...shared.schema import DenoiseSpec
 from ...utils.barriers import get_tick_size as _get_pip_size
-from ..report.utils import market_snapshot, merge_params
+from ..report.utils import market_snapshot, merge_params, report_section_enabled
 from .common import build_report_with_market
 
 
@@ -35,7 +35,12 @@ def template_scalping(
     # Choose default timeframe for scalping if not provided
     if 'timeframe' not in p:
         p['timeframe'] = 'M5'
-    snap = market_snapshot(symbol)
+    needs_snapshot = (
+        report_section_enabled(p, 'market')
+        or report_section_enabled(p, 'execution_gates')
+        or report_section_enabled(p, 'barriers')
+    )
+    snap = market_snapshot(symbol) if needs_snapshot else {}
     if str(p.get('mode', '')).lower() == 'ticks':
         last_price = None
         spread_ticks = None

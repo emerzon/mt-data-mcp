@@ -2,13 +2,14 @@ from __future__ import annotations
 
 from typing import Any, Dict, Iterable, Optional
 
+from ...shared.schema import DenoiseSpec
 from ..report.utils import (
     adapt_forecast_payload_for_report,
     now_utc_iso,
     parse_table_tail,
+    report_section_enabled,
     resolve_report_context_indicators,
 )
-from ...shared.schema import DenoiseSpec
 from .basic import _TREND_COMPACT_LEGEND, _compute_compact_trend, _get_raw_result
 
 _MINIMAL_SKIPPED_SECTIONS = (
@@ -77,16 +78,20 @@ def template_minimal(
     )
     from ..data import data_fetch_candles
 
-    ctx = _get_raw_result(
-        data_fetch_candles,
-        symbol=symbol,
-        timeframe=tf,
-        limit=int(p.get("context_limit", 200)),
-        start=start,
-        end=end,
-        indicators=indicators,  # type: ignore[arg-type]
-        denoise=denoise,
-        simplify={"mode": "select", "method": "lttb", "ratio": 0.2},  # type: ignore[arg-type]
+    ctx = (
+        _get_raw_result(
+            data_fetch_candles,
+            symbol=symbol,
+            timeframe=tf,
+            limit=int(p.get("context_limit", 200)),
+            start=start,
+            end=end,
+            indicators=indicators,  # type: ignore[arg-type]
+            denoise=denoise,
+            simplify={"mode": "select", "method": "lttb", "ratio": 0.2},  # type: ignore[arg-type]
+        )
+        if report_section_enabled(p, "context")
+        else {"error": "context section not requested"}
     )
 
     if "error" in ctx:
@@ -139,7 +144,11 @@ def template_minimal(
     if isinstance(forecast_params, dict) and forecast_params:
         forecast_kwargs["params"] = forecast_params
 
-    fc = _get_raw_result(forecast_generate, **forecast_kwargs)
+    fc = (
+        _get_raw_result(forecast_generate, **forecast_kwargs)
+        if report_section_enabled(p, "forecast")
+        else {"error": "forecast section not requested"}
+    )
     if "error" in fc:
         report["sections"]["forecast"] = {
             "error": fc["error"],
@@ -148,6 +157,10 @@ def template_minimal(
             "selection_mode": "direct",
             "selection_note": "Minimal template skips backtest ranking and barrier optimization.",
         }
+        if not report_section_enabled(p, "forecast"):
+            report["sections"].pop("forecast", None)
+        if not report_section_enabled(p, "context"):
+            report["sections"].pop("context", None)
         return report
 
     forecast_section = {
@@ -158,4 +171,6 @@ def template_minimal(
     }
     forecast_section.update(adapt_forecast_payload_for_report(fc))
     report["sections"]["forecast"] = forecast_section
+    if not report_section_enabled(p, "context"):
+        report["sections"].pop("context", None)
     return report

@@ -1,6 +1,7 @@
 from typing import Any, Dict, Optional
 
 from ...shared.schema import DenoiseSpec
+from ..report.utils import report_section_enabled
 from .basic import (
     _current_only_section_omission,
     _first_volatility_value,
@@ -33,62 +34,66 @@ def template_advanced(
 
     # Rest of the function continues as before...
 
-    # Regime summaries
-    from ..regime import regime_detect
     p = dict(params or {})
-    bocpd = _get_raw_result(regime_detect,
-        symbol=symbol,
-        timeframe=tf,
-        limit=int(p.get('regime_limit', 1500)),
-        start=start,
-        end=end,
-        method='bocpd', threshold=float(p.get('cp_threshold', 0.6)), detail='summary', lookback=int(p.get('regime_lookback', 300))
-    )
-    hmm = _get_raw_result(regime_detect,
-        symbol=symbol,
-        timeframe=tf,
-        limit=int(p.get('regime_limit', 1500)),
-        start=start,
-        end=end,
-        method='hmm', params={'n_states': int(p.get('hmm_states', 3))}, detail='compact', lookback=int(p.get('regime_lookback', 300))
-    )
-    base.setdefault('sections', {})['regime'] = {
-        'bocpd': bocpd if 'error' in bocpd else {'summary': bocpd.get('summary')},
-        'hmm': hmm if 'error' in hmm else {'summary': hmm.get('summary')},
-    }
+    if report_section_enabled(p, 'regime'):
+        # Regime summaries
+        from ..regime import regime_detect
+        bocpd = _get_raw_result(regime_detect,
+            symbol=symbol,
+            timeframe=tf,
+            limit=int(p.get('regime_limit', 1500)),
+            start=start,
+            end=end,
+            method='bocpd', threshold=float(p.get('cp_threshold', 0.6)), detail='summary', lookback=int(p.get('regime_lookback', 300))
+        )
+        hmm = _get_raw_result(regime_detect,
+            symbol=symbol,
+            timeframe=tf,
+            limit=int(p.get('regime_limit', 1500)),
+            start=start,
+            end=end,
+            method='hmm', params={'n_states': int(p.get('hmm_states', 3))}, detail='compact', lookback=int(p.get('regime_lookback', 300))
+        )
+        base.setdefault('sections', {})['regime'] = {
+            'bocpd': bocpd if 'error' in bocpd else {'summary': bocpd.get('summary')},
+            'hmm': hmm if 'error' in hmm else {'summary': hmm.get('summary')},
+        }
 
     # HAR-RV volatility summary
-    from ..forecast import forecast_volatility_estimate
-    har = _get_raw_result(
-        forecast_volatility_estimate,
-        symbol=symbol,
-        timeframe=tf,
-        horizon=int(horizon),
-        method='har_rv',
-        start=start,
-        end=end,
-        params={'rv_timeframe': 'M5', 'days': 150, 'window_w': 5, 'window_m': 22},
-    )
-    if 'error' in har:
-        base['sections']['volatility_har_rv'] = {'error': har['error']}
-    else:
-        base['sections']['volatility_har_rv'] = {
-            'volatility_per_bar': _first_volatility_value(
-                har,
-                ('volatility_per_bar', 'sigma_bar_price'),
-            ),
-            'volatility_horizon': _first_volatility_value(
-                har,
-                ('volatility_horizon', 'horizon_sigma_price'),
-            ),
-        }
+    if report_section_enabled(p, 'volatility_har_rv'):
+        from ..forecast import forecast_volatility_estimate
+        har = _get_raw_result(
+            forecast_volatility_estimate,
+            symbol=symbol,
+            timeframe=tf,
+            horizon=int(horizon),
+            method='har_rv',
+            start=start,
+            end=end,
+            params={'rv_timeframe': 'M5', 'days': 150, 'window_w': 5, 'window_m': 22},
+        )
+        if 'error' in har:
+            base['sections']['volatility_har_rv'] = {'error': har['error']}
+        else:
+            base['sections']['volatility_har_rv'] = {
+                'volatility_per_bar': _first_volatility_value(
+                    har,
+                    ('volatility_per_bar', 'sigma_bar_price'),
+                ),
+                'volatility_horizon': _first_volatility_value(
+                    har,
+                    ('volatility_horizon', 'horizon_sigma_price'),
+                ),
+            }
 
     # Conformal intervals around chosen method
     try:
         best_method = base.get('sections', {}).get('backtest', {}).get('best_method', {}).get('method')
     except Exception:
         best_method = None
-    if _is_bounded_report_window(start, end):
+    if not report_section_enabled(p, 'forecast_conformal'):
+        pass
+    elif _is_bounded_report_window(start, end):
         base['sections']['forecast_conformal'] = _current_only_section_omission(
             'forecast_conformal', start=start, end=end
         )
@@ -113,5 +118,9 @@ def template_advanced(
                 'per_step_q': conf.get('conformal', {}).get('per_step_q'),
                 'ci_alpha': conf.get('ci_alpha'),
             }
+    elif p.get('_report_section_controls_active'):
+        base['sections']['forecast_conformal'] = {
+            'error': 'No backtest-selected method was available for conformal intervals.'
+        }
 
     return base

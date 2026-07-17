@@ -19,6 +19,37 @@ _BARRIER_EV_EDGE_CONFLICT_NOTE = (
     "lower-confidence and review win probability, payoff skew, and no-hit share."
 )
 
+_BASIC_REPORT_SECTIONS = (
+    "context",
+    "pivot",
+    "contexts_multi",
+    "pivot_multi",
+    "volatility",
+    "backtest",
+    "forecast",
+    "barriers",
+    "patterns",
+)
+_REPORT_TEMPLATE_SECTIONS = {
+    "minimal": ("context", "forecast"),
+    "basic": _BASIC_REPORT_SECTIONS,
+    "advanced": (
+        *_BASIC_REPORT_SECTIONS,
+        "regime",
+        "volatility_har_rv",
+        "forecast_conformal",
+    ),
+    "scalping": (*_BASIC_REPORT_SECTIONS, "market", "execution_gates"),
+    "intraday": (*_BASIC_REPORT_SECTIONS, "market", "execution_gates"),
+    "swing": _BASIC_REPORT_SECTIONS,
+    "position": _BASIC_REPORT_SECTIONS,
+}
+_REPORT_SECTION_DEPENDENCIES = {
+    "forecast": ("backtest",),
+    "forecast_conformal": ("backtest",),
+    "execution_gates": ("market",),
+}
+
 
 def _round_report_barrier_metric(name: str, value: Any) -> Any:
     try:
@@ -595,18 +626,61 @@ def _split_report_section_names(value: Any) -> Optional[List[str]]:
     return None
 
 
+def _resolve_report_section_plan(
+    template: str,
+    *,
+    include_sections: Any = None,
+    max_sections: Optional[int] = None,
+) -> Dict[str, List[str]]:
+    available = list(_REPORT_TEMPLATE_SECTIONS.get(template, ()))
+    requested = _split_report_section_names(include_sections)
+    missing: List[str] = []
+    if requested:
+        lookup = {name.casefold(): name for name in available}
+        selected: List[str] = []
+        for requested_name in requested:
+            actual = lookup.get(requested_name.casefold())
+            if actual is None:
+                missing.append(requested_name)
+            elif actual not in selected:
+                selected.append(actual)
+    else:
+        selected = list(available)
+    if max_sections is not None:
+        selected = selected[: max(0, int(max_sections))]
+
+    execution = list(selected)
+    dependency_index = 0
+    while dependency_index < len(execution):
+        section = execution[dependency_index]
+        for dependency in _REPORT_SECTION_DEPENDENCIES.get(section, ()):
+            if dependency not in execution:
+                execution.append(dependency)
+        dependency_index += 1
+    if template == "scalping" and "barriers" in execution and "market" not in execution:
+        execution.append("market")
+    return {
+        "available": available,
+        "selected": selected,
+        "execution": execution,
+        "missing": missing,
+    }
+
+
 def _apply_report_section_controls(
     report: Dict[str, Any],
     *,
     include_sections: Any = None,
     max_sections: Optional[int] = None,
     summary_mode: bool = False,
+    available_sections: Optional[List[str]] = None,
 ) -> None:
     sections = report.get("sections")
     if not isinstance(sections, dict):
         return
 
     original_names = list(sections.keys())
+    selectable_names = list(available_sections or original_names)
     if summary_mode and original_names:
         report["sections_available"] = list(original_names)
     if summary_mode:
@@ -615,7 +689,7 @@ def _apply_report_section_controls(
     else:
         requested_names = _split_report_section_names(include_sections)
         if requested_names:
-            requested_lookup = {name.casefold(): name for name in original_names}
+            requested_lookup = {name.casefold(): name for name in selectable_names}
             selected_names = []
             missing_requested = []
             for requested in requested_names:
@@ -625,19 +699,20 @@ def _apply_report_section_controls(
                 elif actual not in selected_names:
                     selected_names.append(actual)
         else:
-            selected_names = list(original_names)
+            selected_names = list(selectable_names)
             missing_requested = []
 
         if max_sections is not None:
             selected_names = selected_names[: max(0, int(max_sections))]
 
-    report["sections"] = {name: sections[name] for name in selected_names if name in sections}
-    omitted_names = [name for name in original_names if name not in selected_names]
+    selected_present = [name for name in selected_names if name in sections]
+    report["sections"] = {name: sections[name] for name in selected_present}
+    omitted_names = [name for name in selectable_names if name not in selected_names]
     if omitted_names or missing_requested or summary_mode or max_sections is not None or include_sections:
         report["section_controls"] = {
             "summary_mode": bool(summary_mode),
-            "included_sections": selected_names,
-            "included_count": len(selected_names),
+            "included_sections": selected_present,
+            "included_count": len(selected_present),
             "omitted_sections": omitted_names,
             "omitted_count": len(omitted_names),
         }
@@ -827,6 +902,16 @@ def run_report_generate(  # noqa: C901
                 params["end"] = request.end
             if request.methods is not None:
                 params["methods"] = request.methods
+            section_plan = _resolve_report_section_plan(
+                name,
+                include_sections=request.include_sections,
+                max_sections=request.max_sections,
+            )
+            params["_report_execution_sections"] = section_plan["execution"]
+            params["_report_selected_sections"] = section_plan["selected"]
+            params["_report_section_controls_active"] = bool(
+                request.include_sections or request.max_sections is not None
+            )
 
             try:
                 from ..report_templates import (
@@ -913,6 +998,35 @@ def run_report_generate(  # noqa: C901
                 for warning_text in captured_warnings:
                     append_diagnostic_warning(rep, warning_text)
 
+            source_sections_status = None
+            summary_mode = detail_value == "summary"
+            template_sections = (
+                rep.get("sections") if isinstance(rep.get("sections"), dict) else None
+            )
+            if summary_mode and isinstance(rep.get("sections"), dict):
+                source_sections_status = _build_sections_status(rep["sections"])
+            if not summary_mode:
+                _apply_report_section_controls(
+                    rep,
+                    include_sections=request.include_sections,
+                    max_sections=request.max_sections,
+                    summary_mode=False,
+                    available_sections=(
+                        section_plan["available"]
+                        if request.include_sections or request.max_sections is not None
+                        else None
+                    ),
+                )
+            if summary_mode:
+                source_sections = template_sections
+            else:
+                source_sections = (
+                    rep.get("sections")
+                    if isinstance(rep.get("sections"), dict)
+                    else None
+                )
+
+            rep.pop("summary_structured", None)
             summ: List[str] = []
             summary_structured: Dict[str, Any] = {}
             try:
@@ -1369,17 +1483,8 @@ def run_report_generate(  # noqa: C901
             rep["summary"] = summ
             if summary_structured:
                 rep["summary_structured"] = summary_structured
-            source_sections_status = None
-            source_sections = rep.get("sections") if isinstance(rep.get("sections"), dict) else None
-            summary_mode = detail_value == "summary"
-            if summary_mode and isinstance(rep.get("sections"), dict):
-                source_sections_status = _build_sections_status(rep["sections"])
-            _apply_report_section_controls(
-                rep,
-                include_sections=request.include_sections,
-                max_sections=request.max_sections,
-                summary_mode=summary_mode,
-            )
+            if summary_mode:
+                _apply_report_section_controls(rep, summary_mode=True)
             sections = rep.get("sections")
             if isinstance(sections, dict):
                 sections_status = source_sections_status or _build_sections_status(sections)

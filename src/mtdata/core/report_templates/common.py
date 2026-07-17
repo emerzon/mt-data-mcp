@@ -1,7 +1,7 @@
 from typing import Any, Dict, List, Optional
 
-from ..report.utils import attach_market_and_timeframes, attach_report_timeframes
 from ...shared.schema import DenoiseSpec
+from ..report.utils import attach_market_and_timeframes, attach_report_timeframes
 from .basic import template_basic
 
 

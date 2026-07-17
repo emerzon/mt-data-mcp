@@ -5,8 +5,8 @@ from typing import Any, Dict, List, Literal, Optional, Union
 from pydantic import BaseModel, Field, model_validator
 
 from ...shared.schema import (
-    DetailLiteral,
     DenoiseSpec,
+    DetailLiteral,
     TimeframeLiteral,
     reject_removed_field,
 )
@@ -45,12 +45,18 @@ class ReportGenerateRequest(BaseModel):
     methods: Optional[Union[str, List[str]]] = None
     include_sections: Optional[Union[str, List[str]]] = Field(
         None,
-        description="Only include these report sections. Accepts a list or comma/space separated names.",
+        description=(
+            "Only execute and return these report sections (plus internal dependencies). "
+            "Accepts a list or comma/space separated names."
+        ),
     )
     max_sections: Optional[int] = Field(
         None,
         ge=1,
-        description="Maximum number of report sections to include, after include_sections filtering.",
+        description=(
+            "Maximum number of report sections to execute and return, after "
+            "include_sections filtering."
+        ),
     )
     denoise: Optional[DenoiseSpec] = None
     params: Optional[Dict[str, Any]] = Field(

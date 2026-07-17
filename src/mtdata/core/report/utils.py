@@ -128,6 +128,17 @@ def adapt_forecast_payload_for_report(payload: Dict[str, Any]) -> Dict[str, Any]
     return out
 
 
+def report_section_enabled(params: Optional[Dict[str, Any]], section: str) -> bool:
+    """Return whether a template section belongs to the request execution plan."""
+    if not isinstance(params, dict) or "_report_execution_sections" not in params:
+        return True
+    requested = params.get("_report_execution_sections")
+    if not isinstance(requested, (list, tuple, set, frozenset)):
+        return True
+    section_key = str(section).strip().casefold()
+    return any(str(item).strip().casefold() == section_key for item in requested)
+
+
 def parse_table_tail(data: Any, tail: int = 1) -> List[Dict[str, Any]]:
     """Return the last N rows from a tabular payload (list[dict] or {data|bars: ...})."""
     try:
@@ -820,8 +831,12 @@ def attach_report_timeframes(
     default_pivots: Optional[List[str]] = None,
     _fetch_cache: Optional[Dict[Tuple[str, ...], Optional[Dict[str, Any]]]] = None,
 ) -> None:
-    extra = (params or {}).get('extra_timeframes') or default_extra
-    pivots = (params or {}).get('pivot_timeframes') or default_pivots
+    context_enabled = report_section_enabled(params, 'contexts_multi')
+    pivot_enabled = report_section_enabled(params, 'pivot_multi')
+    if not context_enabled and not pivot_enabled:
+        return
+    extra = ((params or {}).get('extra_timeframes') or default_extra) if context_enabled else []
+    pivots = ((params or {}).get('pivot_timeframes') or default_pivots) if pivot_enabled else []
     start = (params or {}).get('start')
     end = (params or {}).get('end')
     attach_multi_timeframes(
@@ -847,11 +862,15 @@ def attach_market_and_timeframes(
     snapshot: Optional[Dict[str, Any]] = None,
     _fetch_cache: Optional[Dict[Tuple[str, ...], Optional[Dict[str, Any]]]] = None,
 ) -> Dict[str, Any]:
-    snap = snapshot if snapshot is not None else market_snapshot(symbol)
-    report.setdefault('sections', {})['market'] = snap
-    gates = apply_market_gates(snap if isinstance(snap, dict) else {}, params or {})
-    if gates:
-        report['sections']['execution_gates'] = gates
+    market_enabled = report_section_enabled(params, 'market')
+    gates_enabled = report_section_enabled(params, 'execution_gates')
+    snap: Dict[str, Any] = {}
+    if market_enabled or gates_enabled:
+        snap = snapshot if snapshot is not None else market_snapshot(symbol)
+        report.setdefault('sections', {})['market'] = snap
+        gates = apply_market_gates(snap if isinstance(snap, dict) else {}, params or {})
+        if gates:
+            report['sections']['execution_gates'] = gates
     attach_report_timeframes(
         report,
         symbol,

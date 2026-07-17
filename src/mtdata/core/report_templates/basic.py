@@ -4,13 +4,14 @@ from typing import Any, Dict, List, Optional
 from ...shared.schema import DenoiseSpec
 from ...utils.coercion import safe_float as _safe_float
 from ..report.utils import (
+    adapt_forecast_payload_for_report,
     attach_candle_freshness_diagnostics,
     attach_multi_timeframes,
-    adapt_forecast_payload_for_report,
     extract_report_forecast_values,
     now_utc_iso,
     parse_table_tail,
     pick_best_forecast_method,
+    report_section_enabled,
     resolve_report_context_indicators,
     summarize_barrier_grid,
 )
@@ -391,15 +392,19 @@ def template_basic(  # noqa: C901
     )
     from ..data import data_fetch_candles
     
-    ctx = _get_raw_result(data_fetch_candles,
-        symbol=symbol,
-        timeframe=tf,
-        limit=int(p.get('context_limit', 300)),
-        start=start,
-        end=end,
-        indicators=indicators,  # type: ignore[arg-type]
-        denoise=denoise,
-        simplify={'mode': 'select', 'method': 'lttb', 'ratio': 0.2},  # type: ignore[arg-type]
+    ctx = (
+        _get_raw_result(data_fetch_candles,
+            symbol=symbol,
+            timeframe=tf,
+            limit=int(p.get('context_limit', 300)),
+            start=start,
+            end=end,
+            indicators=indicators,  # type: ignore[arg-type]
+            denoise=denoise,
+            simplify={'mode': 'select', 'method': 'lttb', 'ratio': 0.2},  # type: ignore[arg-type]
+        )
+        if report_section_enabled(p, 'context')
+        else {'error': 'context section not requested'}
     )
     
     if 'error' in ctx:
@@ -439,27 +444,17 @@ def template_basic(  # noqa: C901
                 ctx_obj['trend_compact_legend'] = dict(_TREND_COMPACT_LEGEND)
             report['sections']['context'] = attach_candle_freshness_diagnostics(ctx_obj, ctx)
 
+    pivot_enabled = report_section_enabled(p, 'pivot')
+    contexts_multi_enabled = report_section_enabled(p, 'contexts_multi')
+    pivot_multi_enabled = report_section_enabled(p, 'pivot_multi')
+
     # Pivots use the current completed source bar and cannot honor a report
     # window. Keep bounded reports temporally coherent by omitting them.
-    if bounded_window:
+    if pivot_enabled and bounded_window:
         report['sections']['pivot'] = _current_only_section_omission(
             'pivot', start=start, end=end
         )
-        try:
-            attach_multi_timeframes(
-                report,
-                symbol,
-                denoise,
-                extra_timeframes=['M15','H1','H4','D1'],
-                pivot_timeframes=[],
-                context_indicators=indicators,
-                start=start,
-                end=end,
-                _fetch_cache=_fetch_cache,
-            )
-        except Exception:
-            pass
-    else:
+    elif pivot_enabled:
         from ..pivot import pivot_compute_points
 
         piv = _get_raw_result(pivot_compute_points, symbol=symbol, timeframe='D1')
@@ -476,27 +471,34 @@ def template_basic(  # noqa: C901
                 'calculation_basis': piv.get('calculation_basis'),
                 'timezone': piv.get('timezone'),
             }
-            # Attach multi-timeframe context and pivots for MTF alignment (lightweight)
-            try:
-                attach_multi_timeframes(
-                    report,
-                    symbol,
-                    denoise,
-                    extra_timeframes=['M15','H1','H4','D1'],
-                    pivot_timeframes=['H4','D1'],
-                    context_indicators=indicators,
-                    start=start,
-                    end=end,
-                    _fetch_cache=_fetch_cache,
-                )
-            except Exception:
-                pass
+
+    if contexts_multi_enabled or pivot_multi_enabled:
+        try:
+            attach_multi_timeframes(
+                report,
+                symbol,
+                denoise,
+                extra_timeframes=(
+                    ['M15','H1','H4','D1'] if contexts_multi_enabled else []
+                ),
+                pivot_timeframes=(
+                    ['H4','D1']
+                    if pivot_multi_enabled and not bounded_window
+                    else []
+                ),
+                context_indicators=indicators,
+                start=start,
+                end=end,
+                _fetch_cache=_fetch_cache,
+            )
+        except Exception:
+            pass
 
 
     # Fallback: if MTF sections missing, build minimal ones inline
     try:
         secs = report.setdefault('sections', {})
-        if 'contexts_multi' not in secs or 'pivot_multi' not in secs:
+        if contexts_multi_enabled and 'contexts_multi' not in secs:
             from ..report.utils import _extract_base_timeframe, context_for_tf
             base_tf = _extract_base_timeframe(report)
             tf_list = ['M15','H1','H4','D1']
@@ -519,11 +521,11 @@ def template_basic(  # noqa: C901
                     ctxs[tf_i] = snap
             if ctxs:
                 secs['contexts_multi'] = ctxs
-        if bounded_window:
+        if pivot_multi_enabled and bounded_window:
             secs['pivot_multi'] = _current_only_section_omission(
                 'pivot_multi', start=start, end=end
             )
-        elif 'pivot_multi' not in secs:
+        elif pivot_multi_enabled and 'pivot_multi' not in secs:
             from ..pivot import pivot_compute_points as _compute_pivot_points
             pivs: Dict[str, Any] = {}
             pivot_sec = secs.get('pivot')
@@ -563,9 +565,10 @@ def template_basic(  # noqa: C901
     # Clamp very large long horizon to avoid heavy calls
     long_h = min(long_h, base_h * 3)
     vol_horizons = []
-    for hh in (short_h, base_h, long_h):
-        if hh not in vol_horizons:
-            vol_horizons.append(hh)
+    if report_section_enabled(p, 'volatility'):
+        for hh in (short_h, base_h, long_h):
+            if hh not in vol_horizons:
+                vol_horizons.append(hh)
 
     # Build method x horizon matrix (Horizon σ); keep per-bar for potential future use
     methods = ['ewma', 'parkinson', 'gk', 'yang_zhang']
@@ -701,16 +704,20 @@ def template_basic(  # noqa: C901
             min_dir_acc = max(0.0, min(1.0, float(min_dir_acc)))
     from ..forecast import forecast_backtest_run
     methods = p.get('methods')
-    bt = _get_raw_result(
-        forecast_backtest_run,
-        symbol=symbol,
-        timeframe=tf,
-        horizon=int(horizon),
-        steps=steps,
-        spacing=spacing,
-        start=start,
-        end=end,
-        methods=methods,
+    bt = (
+        _get_raw_result(
+            forecast_backtest_run,
+            symbol=symbol,
+            timeframe=tf,
+            horizon=int(horizon),
+            steps=steps,
+            spacing=spacing,
+            start=start,
+            end=end,
+            methods=methods,
+        )
+        if report_section_enabled(p, 'backtest')
+        else {'error': 'backtest section not requested'}
     )
     sec_bt: Dict[str, Any]
     if 'error' in bt:
@@ -795,6 +802,9 @@ def template_basic(  # noqa: C901
         first_degenerate: Optional[Dict[str, Any]] = None
         first_degenerate_method: Optional[str] = None
 
+        if not report_section_enabled(p, 'forecast'):
+            candidate_methods = []
+
         for method_name in candidate_methods:
             fc = _get_raw_result(
                 forecast_generate,
@@ -826,12 +836,12 @@ def template_basic(  # noqa: C901
             selected_stats = dict(stats_by_method.get(selected_method) or best_stats or {})
             selected_forecast = first_degenerate
 
-        if selected_forecast is None:
+        if selected_forecast is None and report_section_enabled(p, 'forecast'):
             report['sections']['forecast'] = {
                 'error': first_error or 'No usable forecast generated.',
                 'method': best_name,
             }
-        else:
+        elif selected_forecast is not None and report_section_enabled(p, 'forecast'):
             report['sections']['forecast'] = {
                 'method': selected_method,
                 **adapt_forecast_payload_for_report(selected_forecast),
@@ -894,6 +904,11 @@ def template_basic(  # noqa: C901
             best_method_payload['selection_warnings'] = fallback_notes
         report['sections']['backtest']['best_method'] = best_method_payload
 
+    if report_section_enabled(p, 'forecast') and 'forecast' not in report['sections']:
+        report['sections']['forecast'] = {
+            'error': 'No usable forecast method was selected by the backtest.',
+        }
+
     # Barriers (grid)
     from ..forecast import forecast_barrier_optimize
     # Dynamic defaults to keep levels realistic and adaptive
@@ -953,7 +968,7 @@ def template_basic(  # noqa: C901
 
     mode_val = str(p.get('mode', 'pct'))
     barrier_method = str(p.get('barrier_method', 'hmm_mc'))
-    if bounded_window:
+    if bounded_window or not report_section_enabled(p, 'barriers'):
         grid_long = grid_short = None
     else:
         grid_long = _get_raw_result(forecast_barrier_optimize,
@@ -985,7 +1000,7 @@ def template_basic(  # noqa: C901
             direction='short',
         )
     sec_bar: Dict[str, Any] = {}
-    if bounded_window:
+    if bounded_window or not report_section_enabled(p, 'barriers'):
         sec_bar = _current_only_section_omission('barriers', start=start, end=end)
     elif isinstance(grid_long, dict) and isinstance(grid_short, dict) and 'error' in grid_long and 'error' in grid_short:
         sec_bar = {'error': grid_long.get('error') or grid_short.get('error') or 'Barrier optimization failed'}
@@ -1033,15 +1048,19 @@ def template_basic(  # noqa: C901
 
     # Patterns
     from ..patterns import patterns_detect
-    pats = _get_raw_result(
-        patterns_detect,
-        symbol=symbol,
-        timeframe=tf,
-        mode='candlestick',
-        detail='compact',
-        limit=int(p.get('patterns_limit', 120)),
-        start=start,
-        end=end,
+    pats = (
+        _get_raw_result(
+            patterns_detect,
+            symbol=symbol,
+            timeframe=tf,
+            mode='candlestick',
+            detail='compact',
+            limit=int(p.get('patterns_limit', 120)),
+            start=start,
+            end=end,
+        )
+        if report_section_enabled(p, 'patterns')
+        else {'error': 'patterns section not requested'}
     )
     if 'error' in pats:
         report['sections']['patterns'] = {'error': pats['error']}
@@ -1053,5 +1072,9 @@ def template_basic(  # noqa: C901
             rows = parse_table_tail(pats, tail=20)
             detections = rows[-5:] if rows else []
         report['sections']['patterns'] = {'recent': detections}
+
+    for section_name in list(report['sections']):
+        if not report_section_enabled(p, section_name):
+            report['sections'].pop(section_name, None)
 
     return report

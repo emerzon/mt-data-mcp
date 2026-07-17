@@ -112,6 +112,23 @@ def test_report_section_control_type_hints_resolve() -> None:
     assert get_type_hints(_apply_report_section_controls)
 
 
+@pytest.mark.parametrize(
+    "template",
+    ["minimal", "basic", "advanced", "scalping", "intraday", "swing", "position"],
+)
+def test_report_section_plan_limits_every_template_to_context(template: str) -> None:
+    from mtdata.core.report.use_cases import _resolve_report_section_plan
+
+    plan = _resolve_report_section_plan(
+        template,
+        include_sections=["context", "forecast"],
+        max_sections=1,
+    )
+
+    assert plan["selected"] == ["context"]
+    assert plan["execution"] == ["context"]
+
+
 def test_report_generate_request_template_choices_are_validated():
     from mtdata.core.report.requests import ReportGenerateRequest
 
@@ -1158,6 +1175,50 @@ class TestReportWarnings:
         assert res["completeness"] == "failed"
         assert res["error_code"] == "report_sections_not_found"
         assert res["section_controls"]["missing_requested_sections"] == ["not-a-section"]
+
+    def test_forecast_selection_runs_dependency_without_summary_leak(self):
+        fn = _get_report_generate()
+        captured_params: Dict[str, Any] = {}
+
+        def mock_template(_symbol, _horizon, _denoise, params):
+            captured_params.update(params)
+            return _make_report(
+                sections={
+                    "backtest": {
+                        "best_method": {
+                            "method": "theta",
+                            "stats": {"avg_rmse": 0.001},
+                        }
+                    },
+                    "forecast": {
+                        "method": "theta",
+                        "forecast": [
+                            {"time": "2026-01-01T01:00Z", "value": 1.101},
+                            {"time": "2026-01-01T02:00Z", "value": 1.102},
+                            {"time": "2026-01-01T03:00Z", "value": 1.103},
+                        ],
+                    },
+                    "barriers": {"long": {"best": {"ev": 0.2}}},
+                }
+            )
+
+        with (
+            patch("mtdata.core.report_templates.template_basic", mock_template, create=True),
+            patch(_FMT_NUM, side_effect=str),
+        ):
+            res = fn(
+                "EURUSD",
+                template="basic",
+                include_sections=["forecast"],
+                format="toon",
+            )
+
+        assert captured_params["_report_execution_sections"] == ["forecast", "backtest"]
+        assert list(res["sections"]) == ["forecast"]
+        assert list(res["summary_structured"]) == ["forecast"]
+        assert res["section_controls"]["included_sections"] == ["forecast"]
+        assert "backtest" in res["section_controls"]["omitted_sections"]
+        assert "barriers" in res["section_controls"]["omitted_sections"]
 
 
     def test_report_generate_uses_data_timestamp_for_as_of(self):

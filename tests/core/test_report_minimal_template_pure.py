@@ -122,6 +122,64 @@ def test_template_minimal_forwards_context_indicators_param() -> None:
     assert requested_indicators == ["ema(20),rsi(14)"]
 
 
+def test_template_minimal_context_plan_skips_forecast_call() -> None:
+    calls: list[str] = []
+
+    def _fake_get_raw_result(func, *args, **kwargs):
+        func_name = getattr(func, "__name__", "")
+        calls.append(func_name)
+        if func_name == "data_fetch_candles":
+            return {"bars": _make_context_bars()}
+        raise AssertionError(f"Unexpected tool call: {func_name}")
+
+    with patch(
+        "mtdata.core.report_templates.minimal._get_raw_result",
+        side_effect=_fake_get_raw_result,
+    ):
+        from mtdata.core.report_templates.minimal import template_minimal
+
+        report = template_minimal(
+            "EURUSD",
+            12,
+            None,
+            {"_report_execution_sections": ["context"]},
+        )
+
+    assert calls == ["data_fetch_candles"]
+    assert list(report["sections"]) == ["context"]
+
+
+def test_template_basic_context_plan_skips_expensive_sections() -> None:
+    calls: list[str] = []
+
+    def _fake_get_raw_result(func, *args, **kwargs):
+        func_name = getattr(func, "__name__", "")
+        calls.append(func_name)
+        if func_name == "data_fetch_candles":
+            return {"data": _make_context_bars()}
+        raise AssertionError(f"Unexpected tool call: {func_name}")
+
+    with (
+        patch(
+            "mtdata.core.report_templates.basic._get_raw_result",
+            side_effect=_fake_get_raw_result,
+        ),
+        patch("mtdata.core.report_templates.basic.attach_multi_timeframes") as attach_mtf,
+    ):
+        from mtdata.core.report_templates.basic import template_basic
+
+        report = template_basic(
+            "EURUSD",
+            12,
+            None,
+            {"_report_execution_sections": ["context"]},
+        )
+
+    assert calls == ["data_fetch_candles"]
+    assert list(report["sections"]) == ["context"]
+    attach_mtf.assert_not_called()
+
+
 def test_template_basic_forwards_context_indicators_param() -> None:
     requested_indicators = []
 
