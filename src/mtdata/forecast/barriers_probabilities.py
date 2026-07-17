@@ -390,6 +390,9 @@ def forecast_barrier_hit_probabilities(  # noqa: C901
         bb_enabled = method_key == 'mc_gbm_bb'
         seed_raw = p.get('seed')
         seed_provided = seed_raw is not None
+        # Live reference prices change the barrier geometry, not the stochastic
+        # path generator. Keep common random draws across tick-only changes so
+        # nearby barrier results are directly comparable.
         request_seed_base = (
             normalize_barrier_seed(seed_raw)
             if seed_provided
@@ -400,9 +403,6 @@ def forecast_barrier_hit_probabilities(  # noqa: C901
                 horizon_val,
                 method_key,
                 direction_norm,
-                float(last_price),
-                float(tp_price),
-                float(sl_price),
                 int(sims),
                 int(len(prices)),
                 float(prices[-1]),

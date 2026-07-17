@@ -2179,6 +2179,8 @@ def forecast_barrier_optimize(  # noqa: C901
             )
         seed_raw = params_dict.get('seed')
         seed_provided = seed_raw is not None
+        # The live reference price affects grid scoring but not path generation.
+        # Excluding it preserves common random draws across tick-only changes.
         request_seed_base = (
             normalize_barrier_seed(seed_raw)
             if seed_provided
@@ -2193,7 +2195,6 @@ def forecast_barrier_optimize(  # noqa: C901
                 objective_val,
                 optimizer_val,
                 search_profile_val,
-                float(last_price),
                 int(sims),
                 int(n_seeds),
                 int(len(prices)),

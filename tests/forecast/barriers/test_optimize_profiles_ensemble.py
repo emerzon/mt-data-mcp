@@ -345,6 +345,59 @@ class TestBarrierOptimizeProfilesEnsemble(_BarrierTestBase):
         self.assertEqual(best["tp_price"], 1.2283)
         self.assertEqual(best["sl_price"], 1.2407)
 
+    def test_forecast_barrier_optimize_default_seed_is_stable_across_live_ticks(self):
+        self._set_flat_history(1.0, bars=200)
+        paths = self._sample_paths()
+        kwargs = {
+            "symbol": "EURUSD",
+            "timeframe": "H1",
+            "horizon": 4,
+            "method": "mc_gbm",
+            "direction": "long",
+            "mode": "pct",
+            "tp_min": 0.5,
+            "tp_max": 0.5,
+            "tp_steps": 1,
+            "sl_min": 0.5,
+            "sl_max": 0.5,
+            "sl_steps": 1,
+            "params": {"n_sims": 10},
+            "viable_only": False,
+        }
+
+        with patch(
+            f'{_BARRIER_OPT_ROOT}._simulate_gbm_mc',
+            return_value={"price_paths": paths},
+        ), patch(
+            f'{_BARRIER_OPT_ROOT}._get_live_reference_price',
+            return_value=(1.2345, "live_tick_ask"),
+        ):
+            first = forecast_barrier_optimize(**kwargs)
+        with patch(
+            f'{_BARRIER_OPT_ROOT}._simulate_gbm_mc',
+            return_value={"price_paths": paths},
+        ), patch(
+            f'{_BARRIER_OPT_ROOT}._get_live_reference_price',
+            return_value=(1.2346, "live_tick_ask"),
+        ):
+            second = forecast_barrier_optimize(**kwargs)
+
+        self.assertTrue(first["success"])
+        self.assertTrue(second["success"])
+        self.assertNotEqual(first["last_price"], second["last_price"])
+        self.assertEqual(
+            first["compute_profile"]["seed"],
+            second["compute_profile"]["seed"],
+        )
+        self.assertEqual(
+            first["compute_profile"]["seed_source"],
+            "derived_from_request",
+        )
+        self.assertEqual(
+            second["compute_profile"]["seed_source"],
+            "derived_from_request",
+        )
+
     def test_forecast_barrier_optimize_reanchors_paths_to_live_reference_price(self):
         self._set_flat_history(1.0, bars=200)
         paths = self._sample_paths()

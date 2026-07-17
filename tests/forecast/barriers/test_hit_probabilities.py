@@ -153,6 +153,37 @@ class TestBarrierHitProbabilities(_BarrierTestBase):
         self.assertEqual(first["prob_sl_first"], second["prob_sl_first"])
         self.assertEqual(first["prob_no_hit"], second["prob_no_hit"])
 
+    def test_default_seed_is_stable_across_live_tick_changes(self):
+        self._set_flat_history(1.0, bars=200)
+        kwargs = {
+            "symbol": "EURUSD",
+            "timeframe": "H1",
+            "horizon": 4,
+            "method": "mc_gbm",
+            "direction": "long",
+            "tp_pct": 0.5,
+            "sl_pct": 0.5,
+            "params": {"n_sims": 10},
+        }
+
+        with patch(
+            f'{_BARRIER_PROB_ROOT}._get_live_reference_price',
+            return_value=(1.2345, "live_tick_ask"),
+        ):
+            first = forecast_barrier_hit_probabilities(**kwargs)
+        with patch(
+            f'{_BARRIER_PROB_ROOT}._get_live_reference_price',
+            return_value=(1.2346, "live_tick_ask"),
+        ):
+            second = forecast_barrier_hit_probabilities(**kwargs)
+
+        self.assertTrue(first["success"])
+        self.assertTrue(second["success"])
+        self.assertNotEqual(first["last_price"], second["last_price"])
+        self.assertEqual(first["seed"], second["seed"])
+        self.assertEqual(first["seed_source"], "derived_from_request")
+        self.assertEqual(second["seed_source"], "derived_from_request")
+
     def test_forecast_barrier_hit_probabilities_normalizes_oversized_seed(self):
         self._set_flat_history(1.0)
         seen_seeds = []
