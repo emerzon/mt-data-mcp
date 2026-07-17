@@ -269,6 +269,7 @@ def test_fetch_unified_news_uses_symbol_metadata_for_crypto_classification(monke
     context_titles = [item["title"] for item in result["market_context"]]
 
     assert result["success"] is True
+    assert result["relevance_status"] == "symbol_matched"
     assert result["instrument"]["asset_class"] == "crypto"
     assert result["instrument"]["metadata_hints"]["currency_base"] == "BTC"
     assert any("market snapshot" in title.lower() for title in context_titles)
@@ -1089,6 +1090,27 @@ def test_systemic_impact_news_surfaces_major_war_headline(monkeypatch) -> None:
     assert result["impact_news"][0]["metadata"]["systemic_impact_score"] >= 2.4
 
 
+def test_systemic_impact_terms_do_not_match_inside_words() -> None:
+    context = svc.InstrumentContext(
+        symbol="EURUSD",
+        asset_class="forex",
+        base_asset="EUR",
+        quote_asset="USD",
+        aliases=(),
+        terms=(),
+    )
+    item = svc.NewsItem(
+        title="Warner announces quarterly streaming results",
+        provider="test",
+        source="test",
+    )
+
+    score, matched = svc._score_systemic_impact(item, context)
+
+    assert score == 0.0
+    assert "war" not in matched
+
+
 def test_european_index_matches_regional_macro_events(monkeypatch) -> None:
     future_time = (datetime.now(timezone.utc) + timedelta(hours=4)).strftime("%Y-%m-%dT%H:%M:%SZ")
     monkeypatch.setattr(svc, "get_general_news", lambda news_type="news", limit=20, page=1: {"success": True, "items": []})
@@ -1380,6 +1402,7 @@ def test_fetch_unified_news_includes_ycnbc_general_candidates_when_enabled(monke
     result = svc.fetch_unified_news()
 
     assert result["success"] is True
+    assert result["relevance_status"] == "market_wide"
     assert "ycnbc" in result["sources_used"]
     assert any(item["provider"] == "ycnbc" for item in result["general_news"])
     assert result["source_details"]["ycnbc"]["selected_general"] >= 1

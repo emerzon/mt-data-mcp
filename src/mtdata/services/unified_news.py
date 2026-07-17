@@ -1083,13 +1083,24 @@ def _score_systemic_impact(item: NewsItem, context: InstrumentContext) -> tuple[
     matched_terms: List[str] = []
     score = 0.0
 
+    def _matches_term(term: str) -> bool:
+        normalized = str(term or "").strip().lower()
+        if not normalized:
+            return False
+        return bool(
+            re.search(
+                rf"(?<![a-z0-9]){re.escape(normalized)}(?:s|es)?(?![a-z0-9])",
+                text,
+            )
+        )
+
     for term, weight in _SYSTEMIC_IMPACT_TERMS.items():
-        if term in text:
+        if _matches_term(term):
             score += weight
             matched_terms.append(term)
 
     for term, weight in _ASSET_CLASS_IMPACT_TERMS.get(context.asset_class, {}).items():
-        if term in text:
+        if _matches_term(term):
             score += weight
             matched_terms.append(term)
 
@@ -1912,6 +1923,13 @@ class NewsAggregator:
         payload = {
             "success": True,
             "symbol": context.symbol if context is not None else None,
+            "relevance_status": (
+                "market_wide"
+                if context is None
+                else "symbol_matched"
+                if related_news
+                else "no_symbol_specific_news"
+            ),
             "instrument": context.to_dict() if context is not None else None,
             "sources_used": list(selected_sources.keys()),
             "source_details": source_details,
