@@ -1149,5 +1149,9 @@ def test_open_position_quote_context_discloses_contract_notional() -> None:
     row = payload["items"][0]
     assert row["contract_size"] == 100_000.0
     assert row["contract_units"] == 10_000.0
+    assert row["lot_definition"] == "1 broker lot = 100000 contract units"
+    assert row["size_interpretation"] == (
+        "0.1 broker lots × 100000 units/lot = 10000 contract units"
+    )
     assert row["notional_estimate"] == 11_000.0
     assert row["notional_currency"] == "USD"

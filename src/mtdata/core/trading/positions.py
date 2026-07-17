@@ -88,6 +88,13 @@ def _attach_open_position_quote_context(
             if contract_size_value > 0.0 and volume_value > 0.0:
                 item["contract_size"] = contract_size_value
                 item["contract_units"] = round(volume_value * contract_size_value, 6)
+                item["lot_definition"] = (
+                    f"1 broker lot = {contract_size_value:g} contract units"
+                )
+                item["size_interpretation"] = (
+                    f"{volume_value:g} broker lots × {contract_size_value:g} "
+                    f"units/lot = {item['contract_units']:g} contract units"
+                )
                 if mark_value > 0.0:
                     item["notional_estimate"] = round(
                         volume_value * contract_size_value * mark_value,
