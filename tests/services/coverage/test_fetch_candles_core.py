@@ -781,13 +781,15 @@ class TestFetchCandlesCore(unittest.TestCase):
         self.assertTrue(result.get('success'))
         self.assertNotIn('error', result)
         freshness = result['meta']['diagnostics']['freshness']
+        expected_end_epoch = float(to_date.timestamp() + (24 * 60 * 60) - 1e-6)
+        last_bar_epoch = float(to_date.timestamp() - (10 * 60 * 60))
         self.assertEqual(
             freshness,
             {
-                'last_bar_epoch': float(to_date.timestamp() - (10 * 60 * 60)),
-                'expected_end_epoch': float(to_date.timestamp()),
-                'freshness_cutoff_epoch': float(to_date.timestamp() - (4 * 60 * 60)),
-                'data_freshness_seconds': float(10 * 60 * 60),
+                'last_bar_epoch': last_bar_epoch,
+                'expected_end_epoch': expected_end_epoch,
+                'freshness_cutoff_epoch': expected_end_epoch - (4 * 60 * 60),
+                'data_freshness_seconds': round(expected_end_epoch - last_bar_epoch),
                 'last_bar_within_policy_window': False,
                 'data_freshness_anchor': 'query_expected_end',
                 'data_freshness_metric': 'requested_range_end_gap_seconds',
@@ -827,7 +829,12 @@ class TestFetchCandlesCore(unittest.TestCase):
         self.assertNotIn('error', result)
         freshness = result['meta']['diagnostics']['freshness']
         self.assertFalse(freshness['last_bar_within_policy_window'])
-        self.assertEqual(freshness['data_freshness_seconds'], float(10 * 60 * 60))
+        expected_end_epoch = float(to_date.timestamp() + (24 * 60 * 60) - 1e-6)
+        last_bar_epoch = float(to_date.timestamp() - (10 * 60 * 60))
+        self.assertEqual(
+            freshness['data_freshness_seconds'],
+            round(expected_end_epoch - last_bar_epoch),
+        )
 
     # ------------------------------------------------------------------ #
     # Start / End datetime queries                                         #
