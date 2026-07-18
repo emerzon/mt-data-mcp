@@ -2306,6 +2306,7 @@ def test_forecast_conformal_intervals_request_defaults_and_spacing_validation():
     assert request.horizon == 12
     assert request.steps == 50
     assert request.spacing == 20
+    assert request.ci_alpha == 0.05
     assert request.detail == "compact"
 
     with pytest.raises(ValidationError, match="spacing must be greater than or equal to horizon when steps > 1"):

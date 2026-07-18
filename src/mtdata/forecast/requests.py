@@ -194,13 +194,14 @@ class ForecastConformalIntervalsRequest(BaseModel):
     )
     spacing: int = Field(20, ge=1, le=MAX_BACKTEST_SPACING, description="Bars between consecutive calibration anchors.")
     ci_alpha: float = Field(
-        0.1,
+        0.05,
         gt=0.0,
         lt=1.0,
         description=(
             "Residual-quantile alpha for rolling-backtest absolute-error bands "
-            "(not a true conformal coverage guarantee). 0.10 ≈ 90% empirical "
-            "target, 0.05 ≈ 95%. Values outside 0.05-0.20 are warned."
+            "(not a true conformal coverage guarantee). Defaults to 0.05, the "
+            "same 95% target used by forecast_generate; 0.10 targets 90%. "
+            "Values outside 0.05-0.20 are warned."
         ),
     )
     denoise: Optional[DenoiseSpec] = None
