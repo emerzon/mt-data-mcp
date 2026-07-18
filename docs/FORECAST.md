@@ -318,7 +318,7 @@ mtdata-cli forecast_optimize_hints EURUSD --timeframes H1 H4 D1 \
 | Parameter | Default | Description |
 |-----------|---------|-------------|
 | `--timeframes` | `H1 H4 D1 W1` | Timeframes to search (space- or comma-separated) |
-| `--methods` | (all eligible) | Methods to search; omit to let the search pick |
+| `--methods` | fast classical baselines | Methods to search; neural/foundation methods must be requested explicitly and may initialize or download large models |
 | `--horizon` | 12 | Bars forecast after each backtest anchor |
 | `--steps` | 5 | Rolling-origin backtest anchors per candidate |
 | `--population` / `--generations` | 8 / 5 | Genetic search population and generation counts |

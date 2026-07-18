@@ -111,7 +111,14 @@ class ForecastBacktestRequest(BaseModel):
     )
     start: Optional[str] = None
     end: Optional[str] = None
-    methods: Optional[List[str]] = None
+    methods: Optional[List[str]] = Field(
+        None,
+        description=(
+            "Forecast methods to search. When omitted, uses fast classical "
+            "baselines only. Pass neural or foundation methods explicitly; they "
+            "may initialize large models or download model assets."
+        ),
+    )
     params_per_method: Optional[Dict[str, Any]] = None
     quantity: Literal["price", "return", "volatility"] = "price"
     denoise: Optional[DenoiseSpec] = None

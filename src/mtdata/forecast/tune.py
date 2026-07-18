@@ -1000,7 +1000,7 @@ def genetic_search_optimize_hints(  # noqa: C901
 
     Searches across:
     - Timeframes (H1, H4, D1, W1, etc.)
-    - Methods (fast + pretrained: theta, ARIMA, chronos, timesfm, etc.)
+    - Methods (fast classical baselines by default; heavyweight methods are opt-in)
     - Method-specific parameters
     - Optional feature indicators (RSI, MACD, Bollinger Bands)
 
@@ -1010,7 +1010,7 @@ def genetic_search_optimize_hints(  # noqa: C901
     Args:
         symbol: Symbol to optimize for
         timeframes: Timeframes to search (default: ['H1', 'H4', 'D1', 'W1'])
-        methods: Methods to search (default: fast + pretrained)
+        methods: Methods to search (default: fast classical baselines)
         horizon, steps, spacing: Backtest parameters
         search_space: Optional pre-built search space. If None, uses default from optimize module.
         fitness_metric: 'composite' or specific metric name ('avg_rmse', 'sharpe_ratio', etc.)

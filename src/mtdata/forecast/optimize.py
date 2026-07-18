@@ -129,7 +129,7 @@ def build_comprehensive_search_space(
     Returns a structure like:
     {
         'timeframe': {'type': 'categorical', 'choices': ['H1', 'H4', 'D1']},
-        'method': {'type': 'categorical', 'choices': ['theta', 'fourier_ols', 'chronos']},
+        'method': {'type': 'categorical', 'choices': ['theta', 'fourier_ols', 'drift']},
         '_method_spaces': {
             'theta': {'seasonality': {'type': 'int', 'min': 8, 'max': 72}},
             'fourier_ols': {...},
@@ -139,7 +139,7 @@ def build_comprehensive_search_space(
 
     Args:
         timeframes: List of timeframes to search (default: ['H1', 'H4', 'D1', 'W1'])
-        methods: List of methods to search (default: common fast+pretrained methods)
+        methods: List of methods to search (default: fast classical baselines)
         method_search_spaces: Optional dict of method-specific parameter spaces
         include_features: If True, add feature indicator genes (RSI, MACD, etc.)
 
@@ -149,7 +149,9 @@ def build_comprehensive_search_space(
     if not timeframes:
         timeframes = ['H1', 'H4', 'D1', 'W1']
     if not methods:
-        # Default: fast + pretrained methods only
+        # Keep the implicit search local and predictable. Foundation methods may
+        # download models or initialize heavyweight runtimes, so callers must opt
+        # into them explicitly through ``methods``.
         methods = [
             'theta',
             'fourier_ols',
@@ -158,11 +160,6 @@ def build_comprehensive_search_space(
             'seasonal_naive',
             'ses',
             'holt',
-            'arima',
-            'sarima',
-            'chronos_bolt',
-            'chronos2',
-            'timesfm',
         ]
 
     # Use provided method spaces or fall back to defaults

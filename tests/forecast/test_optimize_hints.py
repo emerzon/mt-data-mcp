@@ -101,6 +101,16 @@ class TestBuildComprehensiveSearchSpace:
         assert '_method_spaces' in space
         assert space['timeframe']['type'] == 'categorical'
         assert space['method']['type'] == 'categorical'
+        assert set(space['method']['choices']) == {
+            'theta',
+            'fourier_ols',
+            'drift',
+            'naive',
+            'seasonal_naive',
+            'ses',
+            'holt',
+        }
+        assert not ({'chronos_bolt', 'chronos2', 'timesfm'} & set(space['method']['choices']))
 
     def test_custom_timeframes(self):
         space = build_comprehensive_search_space(timeframes=['H1', 'D1'])
