@@ -1269,6 +1269,8 @@ def _normalize_barrier_prob_payload(
 ) -> Optional[Dict[str, Any]]:
     if tool_name != "forecast_barrier_prob" or verbose:
         return None
+    if payload.get("error"):
+        return _compact_error_envelope(payload)
 
     out: Dict[str, Any] = {}
     for key in (

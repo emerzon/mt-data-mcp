@@ -18,6 +18,7 @@ from ..core.execution_logging import (
     log_operation_finish,
     log_operation_start,
 )
+from ..core.error_envelope import build_error_payload
 from ..core.output_contract import attach_collection_contract
 from ..utils.coercion import coerce_finite_float as _finite_float
 from ..utils.coercion import is_explicit_false as _is_explicit_false
@@ -2962,21 +2963,23 @@ def run_forecast_barrier_prob(
                 )
             )
             if not has_resolved_barriers:
-                result = {
-                    "success": False,
-                    "error": (
+                result = build_error_payload(
+                    (
                         "Barrier probabilities require an explicit take-profit and "
                         "stop-loss pair."
                     ),
-                    "error_code": "barrier_parameters_missing",
-                    "operation": "forecast_barrier_prob",
-                    "remediation": (
+                    code="barrier_parameters_missing",
+                    operation="forecast_barrier_prob",
+                    remediation=(
                         "Provide tp_pct/sl_pct, tp_abs/sl_abs, or tp_ticks/sl_ticks "
                         "scaled to the symbol and forecast horizon. Use "
                         "forecast_barrier_optimize for data-driven candidates."
                     ),
-                    "related_tools": ["forecast_barrier_optimize", "labels_triple_barrier"],
-                }
+                    related_tools=[
+                        "forecast_barrier_optimize",
+                        "labels_triple_barrier",
+                    ],
+                )
                 log_operation_finish(
                     logger,
                     operation="forecast_barrier_prob",

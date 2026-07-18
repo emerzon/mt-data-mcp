@@ -490,6 +490,28 @@ class TestFormatResultForCli:
         assert "tp_hit_prob_by_t" not in result
         assert "sl_hit_prob_by_t" not in result
 
+    def test_toon_format_preserves_barrier_probability_error_envelope(self):
+        result = _format_result_for_cli(
+            {
+                "success": False,
+                "error": "Barrier probabilities require explicit barriers.",
+                "error_code": "barrier_parameters_missing",
+                "request_id": "request-123",
+                "operation": "forecast_barrier_prob",
+                "remediation": "Provide a take-profit and stop-loss pair.",
+                "related_tools": ["forecast_barrier_optimize"],
+            },
+            fmt="toon",
+            verbose=False,
+            cmd_name="forecast_barrier_prob",
+        )
+
+        assert "error_code: barrier_parameters_missing" in result
+        assert "request_id: request-123" in result
+        assert "operation: forecast_barrier_prob" in result
+        assert "remediation:" in result
+        assert "forecast_barrier_optimize" in result
+
     def test_toon_format_hides_barrier_grid_and_param_help_in_shared_output(self):
         result = _format_result_for_cli(
             {

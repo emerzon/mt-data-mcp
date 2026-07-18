@@ -2677,6 +2677,8 @@ def test_forecast_barrier_prob_requires_explicit_barriers(monkeypatch):
     assert called is False
     assert out["success"] is False
     assert out["error_code"] == "barrier_parameters_missing"
+    assert isinstance(out["request_id"], str)
+    assert out["operation"] == "forecast_barrier_prob"
     assert "forecast_barrier_optimize" in out["remediation"]
 
 
