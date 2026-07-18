@@ -479,8 +479,8 @@ def test_market_ticker_price_field_returns_simple_price() -> None:
         time=1700000000,
     )
     with patch("mtdata.core.market_depth.mt5") as mt5, patch(
-        "mtdata.core.market_depth._use_client_tz", return_value=False
-    ):
+        "mtdata.core.market_depth.time.time", return_value=1_700_001_000.0
+    ), patch("mtdata.core.market_depth._use_client_tz", return_value=False):
         mt5.symbol_select.return_value = True
         mt5.symbol_info.return_value = SimpleNamespace(
             digits=5,
@@ -581,8 +581,10 @@ def test_market_ticker_compact_explains_unrefreshable_future_tick() -> None:
 
         out = _raw_market_ticker("EURUSD", detail="compact")
 
-    assert out["freshness"] == "stale, tick 0s ago"
+    assert out["freshness"] == "clock skew, tick timestamp 10s ahead of wall clock"
+    assert out["freshness_state"] == "clock_skew"
     assert out["freshness_reason"] == "future_timestamp"
+    assert out.get("data_age_seconds") is None
     assert out["timestamp_in_future"] is True
     assert out["timestamp_skew_seconds"] == 10.0
     assert "MT5 time alignment" in out["timestamp_warning"]
