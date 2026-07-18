@@ -1231,7 +1231,6 @@ def _compact_tick_rows_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
         if key in payload and payload[key] not in (None, "", [], {})
     }
     rows = compact.get("data")
-    price_point = _tick_price_point(payload)
     if isinstance(rows, list):
         compact_rows: List[Any] = []
         last_spread: Optional[float] = None
@@ -1239,7 +1238,6 @@ def _compact_tick_rows_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
             compact_row, row_spread = _compact_tick_row(
                 row,
                 last_spread=last_spread,
-                price_point=price_point,
             )
             if row_spread is not None:
                 last_spread = row_spread
@@ -1267,13 +1265,6 @@ def _compact_tick_rows_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
         for field in ("bid", "ask", "mid", "spread"):
             if any(isinstance(row, dict) and field in row for row in compact["data"]):
                 compact_units.setdefault(field, "absolute_price")
-        for field, unit in (
-            ("spread_points", "broker_points"),
-            ("spread_pips", "pips"),
-            ("spread_pct", "percentage_points (1.0 = 1%)"),
-        ):
-            if any(isinstance(row, dict) and field in row for row in compact["data"]):
-                compact_units.setdefault(field, unit)
         if compact_units:
             compact["units"] = compact_units
         compact["volume_fields"] = [
@@ -1335,7 +1326,6 @@ def _compact_tick_row(
     row: Any,
     *,
     last_spread: Optional[float] = None,
-    price_point: Optional[float] = None,
 ) -> tuple[Any, Optional[float]]:
     if not isinstance(row, dict):
         return row, None
@@ -1349,10 +1339,18 @@ def _compact_tick_row(
     spread = row.get("spread")
     if spread in (None, ""):
         spread = _tick_row_spread(row.get("bid"), row.get("ask"))
-    compact["spread"] = spread if spread not in ("",) else None
     bid = _tick_row_price(row.get("bid"))
     ask = _tick_row_price(row.get("ask"))
     numeric_spread = _tick_row_price(spread)
+    spread_valid = bool(
+        bid is not None
+        and ask is not None
+        and numeric_spread is not None
+        and ask > bid
+        and numeric_spread > 0.0
+    )
+    if spread_valid:
+        compact["spread"] = numeric_spread
     if bid is not None and ask is not None:
         compact["mid"] = round((bid + ask) / 2.0, 10)
     elif last_spread is not None and bid is not None:
@@ -1361,18 +1359,6 @@ def _compact_tick_row(
     elif last_spread is not None and ask is not None:
         compact["mid"] = round(ask - (last_spread / 2.0), 10)
         compact["mid_inferred"] = True
-    row_spread_points = _tick_row_price(row.get("spread_points"))
-    if row_spread_points is not None:
-        compact["spread_points"] = row_spread_points
-    elif numeric_spread is not None and price_point is not None and price_point > 0.0:
-        compact["spread_points"] = round(numeric_spread / price_point, 4)
-    row_spread_pct = _tick_row_price(row.get("spread_pct"))
-    if row_spread_pct is not None:
-        compact["spread_pct"] = row_spread_pct
-    elif numeric_spread is not None:
-        spread_mid = _tick_row_price(compact.get("mid"))
-        if spread_mid is not None and spread_mid > 0.0:
-            compact["spread_pct"] = round((numeric_spread / spread_mid) * 100.0, 6)
     last = _tick_row_price(row.get("last"))
     if last is not None and last > 0.0:
         compact["last"] = last
@@ -1381,42 +1367,20 @@ def _compact_tick_row(
         if volume is not None and volume != 0.0:
             compact[field] = volume
     decoded = row.get("flags_decoded")
-    sample_eligible: Optional[bool] = None
     if isinstance(decoded, list) and decoded:
         quote_flags = {str(value).strip().lower() for value in decoded}
         bid_updated = "bid" in quote_flags
         ask_updated = "ask" in quote_flags
-        compact["bid_changed"] = bid_updated
-        compact["ask_changed"] = ask_updated
-        sample_eligible = bid_updated and ask_updated
         if bid_updated != ask_updated:
             compact["quote_update_type"] = (
                 "bid_only_update" if bid_updated else "ask_only_update"
             )
-        elif bid_updated and ask_updated:
-            compact["quote_update_type"] = "bid_ask_update"
-    if row.get("spread_sample_eligible") is not None:
-        sample_eligible = bool(row.get("spread_sample_eligible"))
-    if sample_eligible is not None:
-        compact["spread_sample_eligible"] = sample_eligible
-    compact["spread_valid"] = bool(
-        bid is not None
-        and ask is not None
-        and numeric_spread is not None
-        and ask > bid
-        and numeric_spread > 0.0
-    )
-    compact["spread_basis"] = (
-        "quote_snapshot" if compact["spread_valid"] else "unavailable"
-    )
-    return compact, numeric_spread if compact["spread_valid"] else None
-
-
-def _tick_price_point(payload: Dict[str, Any]) -> Optional[float]:
-    point = _tick_row_price(payload.get("price_point"))
-    if point is not None and point > 0.0:
-        return point
-    return None
+    elif str(row.get("quote_update_type") or "") in {
+        "bid_only_update",
+        "ask_only_update",
+    }:
+        compact["quote_update_type"] = row["quote_update_type"]
+    return compact, numeric_spread if spread_valid else None
 
 
 def _tick_row_spread(bid: Any, ask: Any) -> Optional[float]:

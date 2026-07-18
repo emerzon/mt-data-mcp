@@ -1320,12 +1320,11 @@ def test_run_data_fetch_ticks_echoes_limit_and_cap_signal():
 def test_compact_tick_row_marks_locked_quote_spread_unavailable():
     row, spread_sample = _compact_tick_row(
         {"time": "2026-07-17T01:53:23Z", "bid": 1.14396, "ask": 1.14396},
-        price_point=0.00001,
     )
 
-    assert row["spread"] == 0.0
-    assert row["spread_valid"] is False
-    assert row["spread_basis"] == "unavailable"
+    assert "spread" not in row
+    assert "spread_valid" not in row
+    assert "spread_basis" not in row
     assert spread_sample is None
 
 
@@ -1407,16 +1406,9 @@ def test_run_data_fetch_ticks_compact_prunes_row_diagnostics():
                 "ask": 1.16596,
                 "spread": 0.00006,
                 "mid": 1.16593,
-                "spread_points": 6.0,
-                "spread_pct": 0.005146,
                 "volume": 3.0,
                 "volume_real": 1.25,
-                "bid_changed": True,
-                "ask_changed": False,
                 "quote_update_type": "bid_only_update",
-                "spread_sample_eligible": False,
-                "spread_valid": True,
-                "spread_basis": "quote_snapshot",
             },
             {
                 "time": "2026-05-29 20:57",
@@ -1424,15 +1416,7 @@ def test_run_data_fetch_ticks_compact_prunes_row_diagnostics():
                 "ask": 1.16599,
                 "spread": 0.00008,
                 "mid": 1.16595,
-                "spread_points": 8.0,
-                "spread_pct": 0.006861,
                 "volume": 4.0,
-                "bid_changed": True,
-                "ask_changed": True,
-                "quote_update_type": "bid_ask_update",
-                "spread_sample_eligible": True,
-                "spread_valid": True,
-                "spread_basis": "quote_snapshot",
             },
         ],
         "timezone": "UTC",
@@ -1449,8 +1433,6 @@ def test_run_data_fetch_ticks_compact_prunes_row_diagnostics():
             "ask": "absolute_price",
             "spread": "absolute_price",
             "mid": "absolute_price",
-            "spread_points": "broker_points",
-            "spread_pct": "percentage_points (1.0 = 1%)",
             "volume": "last_trade_volume",
             "volume_real": "last_trade_volume_real",
         },
