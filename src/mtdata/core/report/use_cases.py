@@ -382,6 +382,31 @@ _COMPACT_SUMMARY_STRUCTURED_KEYS = (
 )
 
 
+def _round_compact_summary_value(value: Any, *, significant_digits: int = 6) -> Any:
+    if isinstance(value, bool) or value is None:
+        return value
+    if isinstance(value, float):
+        if not math.isfinite(value) or value == 0.0:
+            return value
+        decimals = (
+            int(significant_digits)
+            - int(math.floor(math.log10(abs(value))))
+            - 1
+        )
+        return round(value, decimals)
+    if isinstance(value, dict):
+        return {
+            key: _round_compact_summary_value(item, significant_digits=significant_digits)
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [
+            _round_compact_summary_value(item, significant_digits=significant_digits)
+            for item in value
+        ]
+    return value
+
+
 def _compact_summary_structured(value: Any) -> Any:
     if not isinstance(value, dict):
         return value
@@ -402,7 +427,7 @@ def _compact_summary_structured(value: Any) -> Any:
                 barriers[str(name)] = entry_out
             section = barriers
         if section not in (None, "", [], {}):
-            out[key] = section
+            out[key] = _round_compact_summary_value(section)
     if not out:
         return value
     omitted = [str(key) for key in value if key not in out]

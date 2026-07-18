@@ -268,6 +268,36 @@ def test_compact_report_payload_omits_string_summary_when_structured_exists():
     assert "summary" not in out
 
 
+def test_compact_report_payload_rounds_summary_floats_to_six_significant_digits():
+    from mtdata.core.report.use_cases import _compact_report_payload
+
+    out = _compact_report_payload(
+        {
+            "success": True,
+            "summary_structured": {
+                "market": {"close": 1.14375, "rsi": 47.792770221604044},
+                "backtest": {
+                    "stats": {
+                        "avg_rmse": 0.0018917237203165866,
+                        "avg_directional_accuracy": 0.5309090909090909,
+                    }
+                },
+                "volatility": {"sigma": 0.001660812248886065},
+            },
+        },
+        symbol="EURUSD",
+        template="basic",
+    )
+
+    structured = out["summary_structured"]
+    assert structured["market"] == {"close": 1.14375, "rsi": 47.7928}
+    assert structured["backtest"]["stats"] == {
+        "avg_rmse": 0.00189172,
+        "avg_directional_accuracy": 0.530909,
+    }
+    assert structured["volatility"]["sigma"] == 0.00166081
+
+
 def test_compact_report_payload_omits_duplicate_assessment_blocks():
     from mtdata.core.report.use_cases import _compact_report_payload
 
