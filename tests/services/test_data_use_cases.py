@@ -1462,6 +1462,34 @@ def test_run_data_fetch_ticks_compact_prunes_row_diagnostics():
     }
 
 
+def test_run_data_fetch_ticks_compact_retains_clock_skew_safety_fields():
+    result = run_data_fetch_ticks(
+        DataFetchTicksRequest(symbol="EURUSD", limit=1, detail="compact"),
+        gateway=SimpleNamespace(ensure_connection=lambda: None),
+        fetch_ticks_impl=lambda **_kwargs: {
+            "success": True,
+            "symbol": "EURUSD",
+            "count": 1,
+            "data": [{"time": "2026-07-17T23:56:59Z", "bid": 1.1, "ask": 1.1001}],
+            "freshness": "clock skew, tick timestamp 4m 44s ahead of wall clock",
+            "freshness_state": "clock_skew",
+            "freshness_reason": "future_timestamp",
+            "data_stale": True,
+            "timestamp_in_future": True,
+            "timestamp_skew_seconds": 284.0,
+            "timestamp_warning": "Latest tick timestamp is ahead of the wall clock.",
+            "usable_for_live_trading": False,
+        },
+    )
+
+    assert result["freshness_state"] == "clock_skew"
+    assert result["freshness_reason"] == "future_timestamp"
+    assert result["timestamp_in_future"] is True
+    assert result["timestamp_skew_seconds"] == 284.0
+    assert "ahead of the wall clock" in result["timestamp_warning"]
+    assert result["usable_for_live_trading"] is False
+
+
 @pytest.mark.parametrize(
     ("error", "start", "end", "error_code"),
     [
