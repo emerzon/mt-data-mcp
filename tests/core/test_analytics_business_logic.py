@@ -9,6 +9,7 @@ import pytest
 
 from mtdata.analytics.engines import (
     _barrier_returns,
+    _execution_duration_display,
     _filtered_historical_returns,
     _execution_percentiles,
     _tick_frame,
@@ -395,6 +396,11 @@ def test_execution_quality_separates_pending_wait_from_market_latency() -> None:
     assert result["summary"]["market_fill_latency_ms"]["mean"] == 1000.0
     assert result["summary"]["pending_time_to_fill_ms"]["mean"] == 10000.0
     assert result["summary"]["order_to_fill_duration_ms"]["mean"] == 5500.0
+    duration_display = result["summary"]["duration_display"]
+    assert duration_display["pending_time_to_fill"]["mean"] == "10s"
+    assert duration_display["pending_time_to_fill"]["p95"] == "10s"
+    assert duration_display["order_to_fill_duration"]["mean"] == "6s"
+    assert duration_display["order_to_fill_duration"]["p95"] == "10s"
     assert result["items"][1]["fill_timing_basis"] == "pending_time_to_fill"
     assert any("not broker execution latency" in item for item in result["warnings"])
 
@@ -407,6 +413,14 @@ def test_execution_quality_statistics_remove_binary_float_tails() -> None:
     assert stats["mean"] == pytest.approx(0.386918)
     assert stats["median"] == pytest.approx(0.262394)
     assert stats["p95"] == pytest.approx(1.26392)
+
+
+def test_execution_quality_formats_long_pending_durations() -> None:
+    display = _execution_duration_display(
+        {"mean": 7_063_990.0, "p95": 41_793_600.0, "max": 48_936_100.0}
+    )
+
+    assert display == {"mean": "1h 57m", "p95": "11h 36m", "max": "13h 35m"}
 
 
 def test_execution_quality_handles_empty_tick_history() -> None:

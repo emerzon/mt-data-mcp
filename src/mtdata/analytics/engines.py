@@ -22,7 +22,7 @@ from ..core.analytics_requests import (
 from ..shared.constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
 from ..shared.market_units import forex_points_per_pip
 from ..utils.barriers import normalize_same_bar_policy
-from ..utils.freshness import closed_session_context
+from ..utils.freshness import closed_session_context, format_age_seconds
 from ..utils.tick_flags import mt5_trade_event_mask
 from ..utils.time import format_epoch_utc
 
@@ -131,6 +131,20 @@ def _execution_percentiles(values: Iterable[float]) -> Dict[str, Optional[float]
         key: _round_execution_stat(value)
         for key, value in _percentiles(values).items()
     }
+
+
+def _execution_duration_display(
+    stats: Dict[str, Optional[float]],
+) -> Dict[str, str]:
+    """Format millisecond duration statistics for quick human inspection."""
+    out: Dict[str, str] = {}
+    for key, value in stats.items():
+        if value is None:
+            continue
+        display = format_age_seconds(float(value) / 1000.0)
+        if display is not None:
+            out[str(key)] = display
+    return out
 
 
 def _execution_bootstrap_mean_ci(
@@ -651,6 +665,17 @@ def analyze_execution_quality(request: TradeExecutionQualityRequest, gateway: An
         ),
         "commission_fee_per_lot": _execution_percentiles(item["commission_fee_per_lot"] for item in fills),
     }
+    duration_display = {
+        name.removesuffix("_ms"): display
+        for name in ("pending_time_to_fill_ms", "order_to_fill_duration_ms")
+        if (
+            display := _execution_duration_display(
+                summary.get(name) if isinstance(summary.get(name), dict) else {}
+            )
+        )
+    }
+    if duration_display:
+        summary["duration_display"] = duration_display
     for horizon in request.markout_seconds:
         summary.setdefault("markout_bps", {})[str(horizon)] = _execution_percentiles(item["markout_bps"].get(str(horizon)) for item in fills if item["markout_bps"].get(str(horizon)) is not None)
     breakdowns: Dict[str, List[Dict[str, Any]]] = {}
