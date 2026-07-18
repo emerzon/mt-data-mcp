@@ -457,6 +457,40 @@ class TestCreateCommandFunction:
         assert isinstance(request, StrategyValidateRequest)
         assert request.barrier == BarrierSpec(horizon=8, tp_pct=0.3, sl_pct=0.3)
 
+    def test_strategy_validate_bare_candidate_has_actionable_shape_error(self, capsys):
+        mock_fn = MagicMock(return_value={"ok": True})
+        func_info = {
+            "func": mock_fn,
+            "request_model": StrategyValidateRequest,
+            "request_param_name": "request",
+            "params": [
+                {"name": "symbol", "type": str, "required": True, "default": None},
+                {"name": "lookback", "type": int, "required": False, "default": 3000},
+                {
+                    "name": "candidates",
+                    "type": List[Dict[str, Any]],
+                    "required": True,
+                    "default": None,
+                },
+            ],
+        }
+        cmd_fn = create_command_function(func_info, cmd_name="strategy_validate")
+        args = argparse.Namespace(
+            symbol="EURUSD",
+            lookback=400,
+            candidates="sma_cross",
+            set_overrides=None,
+            json=False,
+            verbose=False,
+        )
+
+        assert cmd_fn(args) == 1
+        output = capsys.readouterr().out
+        assert "candidates must be a JSON list of strategy objects" in output
+        assert "ema_cross" in output
+        assert "StrategyCandidate" not in output
+        mock_fn.assert_not_called()
+
     def test_wait_event_single_quote_event_arrays_are_coerced(self, capsys):
         mock_fn = MagicMock(return_value={"ok": True})
         func_info = {

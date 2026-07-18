@@ -221,6 +221,13 @@ def friendly_validation_error(exc: ValidationError, *, cmd_name: str) -> str:
                 "shocks must be a JSON object mapping symbols to percentage shocks. "
                 "Examples: '{\"*\":-2}' or '{\"EURUSD\":-1,\"XAUUSD\":-3}'."
             )
+        if cmd_name == "strategy_validate" and loc.split(".", 1)[0] == "candidates":
+            return (
+                "candidates must be a JSON list of strategy objects. Example: "
+                "'[{\"id\":\"cross\",\"type\":\"builtin_strategy\","
+                "\"strategy\":\"ema_cross\"}]'. Use type=forecast_threshold "
+                "with a method field for forecast candidates."
+            )
         if "indicators" in loc and "params" in loc and any(
             marker in msg.lower()
             for marker in ("list", "dict", "dictionary", "mapping", "valid")
