@@ -460,6 +460,13 @@ class TestSymbolsTopMarkets:
         mock_rates.side_effect = lambda symbol, timeframe, start_pos, count: {
             "EURUSD": [
                 {
+                    "time": 1699996400.0,
+                    "open": 1.1000,
+                    "close": 1.1000,
+                    "tick_volume": 90,
+                    "real_volume": 0,
+                },
+                {
                     "time": 1700000000.0,
                     "open": 1.1000,
                     "close": 1.0450,
@@ -468,6 +475,13 @@ class TestSymbolsTopMarkets:
                 }
             ],
             "GBPUSD": [
+                {
+                    "time": 1699996400.0,
+                    "open": 1.3000,
+                    "close": 1.3000,
+                    "tick_volume": 40,
+                    "real_volume": 0,
+                },
                 {
                     "time": 1700000000.0,
                     "open": 1.3000,
@@ -488,6 +502,10 @@ class TestSymbolsTopMarkets:
         assert len(result["data"]) == 1
         assert result["data"][0]["symbol"] == "EURUSD"
         assert result["data"][0]["close"] == 1.045
+        assert result["data"][0]["price_change_pct"] == -5.0
+        assert result["price_change_basis"] == (
+            "previous_completed_close_to_latest_completed_close"
+        )
         assert "bid" not in result["data"][0]
         assert "spread_points" not in result["data"][0]
         assert result["units"]["tick_volume"] == "broker_tick_count"
@@ -516,6 +534,13 @@ class TestSymbolsTopMarkets:
         mock_rates.side_effect = lambda symbol, timeframe, start_pos, count: {
             "EURUSD": [
                 {
+                    "time": 1699996400.0,
+                    "open": 1.1000,
+                    "close": 1.1000,
+                    "tick_volume": 90,
+                    "real_volume": 0,
+                },
+                {
                     "time": 1700000000.0,
                     "open": 1.1000,
                     "close": 1.1100,
@@ -524,6 +549,13 @@ class TestSymbolsTopMarkets:
                 }
             ],
             "GBPUSD": [
+                {
+                    "time": 1699996400.0,
+                    "open": 1.3000,
+                    "close": 1.3000,
+                    "tick_volume": 40,
+                    "real_volume": 0,
+                },
                 {
                     "time": 1700000000.0,
                     "open": 1.3000,
@@ -650,8 +682,8 @@ class TestSymbolsTopMarkets:
             "GBPUSD": _make_tick(bid=1.3000, ask=1.3004),
         }[symbol]
         mock_rates.side_effect = lambda symbol, timeframe, start_pos, count: {
-            "EURUSD": [{"time": 1700000000.0, "open": 1.1000, "close": 1.1010, "tick_volume": 100, "real_volume": 0}],
-            "GBPUSD": [{"time": 1700000000.0, "open": 1.3000, "close": 1.3300, "tick_volume": 50, "real_volume": 0}],
+            "EURUSD": _make_bars([1.1000, 1.1010], tick_volume=99),
+            "GBPUSD": _make_bars([1.3000, 1.3300], tick_volume=49),
         }[symbol]
 
         fn = _get_symbols_top_markets()
@@ -755,24 +787,8 @@ class TestSymbolsTopMarkets:
             "GBPUSD": _make_tick(bid=1.3000, ask=1.3004),
         }[symbol]
         mock_rates.side_effect = lambda symbol, timeframe, start_pos, count: {
-            "EURUSD": [
-                {
-                    "time": 1700000000.0,
-                    "open": 1.1000,
-                    "close": 1.1010,
-                    "tick_volume": 100,
-                    "real_volume": 0,
-                }
-            ],
-            "GBPUSD": [
-                {
-                    "time": 1700000000.0,
-                    "open": 1.3000,
-                    "close": 1.3300,
-                    "tick_volume": 50,
-                    "real_volume": 0,
-                }
-            ],
+            "EURUSD": _make_bars([1.1000, 1.1010], tick_volume=99),
+            "GBPUSD": _make_bars([1.3000, 1.3300], tick_volume=49),
         }[symbol]
 
         fn = _get_symbols_top_markets()
@@ -881,7 +897,7 @@ class TestSymbolsTopMarkets:
             _make_symbol("GBPUSD"),
         ]
         mock_rates.side_effect = lambda symbol, timeframe, start_pos, count: {
-            "EURUSD": [{"time": 1700000000.0, "open": 1.1000, "close": 1.1010, "tick_volume": 100, "real_volume": 0}],
+            "EURUSD": _make_bars([1.1000, 1.1010], tick_volume=99),
             "GBPUSD": None,
         }[symbol]
 
@@ -1012,7 +1028,8 @@ class TestMarketScan:
         mock_rates.return_value = _make_bars([1.0, 2.0, 3.0, 4.0], tick_volume=120)
 
         fn = _get_market_scan()
-        result = fn(timeframe="H1", lookback=4, limit=5)
+        with patch("mtdata.core.symbols.time.time", return_value=1_700_014_400.0):
+            result = fn(timeframe="H1", lookback=4, limit=5)
 
         assert result["success"] is True
         assert "columns" not in result
@@ -1101,6 +1118,45 @@ class TestMarketScan:
         assert isinstance(row["spread_points"], int)
         assert row["spread_pips"] is None
         assert "spread_pips" not in result["units"]
+
+    @patch("mtdata.core.symbols._extract_group_path_util", side_effect=lambda s: s.path)
+    @patch("mtdata.core.symbols._mt5_copy_rates_from_pos")
+    @patch("mtdata.core.symbols.mt5.symbol_info_tick")
+    @patch("mtdata.core.symbols.mt5.symbols_get")
+    def test_market_scan_and_top_markets_share_price_and_freshness_semantics(
+        self,
+        mock_symbols_get,
+        mock_tick,
+        mock_rates,
+        mock_group,
+    ):
+        now = 1_700_043_200.0
+        mock_symbols_get.return_value = [_make_symbol("EURUSD", description="Euro")]
+        mock_tick.return_value = SimpleNamespace(
+            bid=1.0199,
+            ask=1.0200,
+            time=now - 5.0,
+        )
+        mock_rates.return_value = _make_bars([1.0, 1.01, 1.02], tick_volume=100)
+
+        with patch("mtdata.core.symbols.time.time", return_value=now):
+            scan = _get_market_scan()(timeframe="H1", lookback=3, limit=1)
+            top = _get_symbols_top_markets()(
+                rank_by="abs_price_change",
+                timeframe="H1",
+                limit=1,
+            )
+
+        scan_row = scan["data"][0]
+        top_row = top["data"][0]
+        assert scan_row["price_change_pct"] == top_row["price_change_pct"]
+        assert scan_row["data_stale"] is False
+        assert top_row["data_stale"] is False
+        assert scan_row["bar_stale"] is True
+        assert top_row["bar_stale"] is True
+        assert scan["stale_rows"] == top["stale_rows"] == 1
+        assert scan["stale_bar_rows"] == top["stale_bar_rows"] == 1
+        assert scan["unsafe_quote_rows"] == top["unsafe_quote_rows"] == 0
 
     @patch("mtdata.core.symbols._extract_group_path_util", side_effect=lambda s: s.path)
     @patch("mtdata.core.symbols._mt5_copy_rates_from_pos")

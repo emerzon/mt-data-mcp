@@ -1836,18 +1836,22 @@ def _build_market_scan_bar_row(
         symbol.name,
         timeframe=timeframe,
         mt5_timeframe=mt5_timeframe,
-        count=1,
+        count=2,
     )
-    if rates is None or len(rates) < 1:
-        return None, f"No completed {timeframe} bar data returned."
+    if rates is None or len(rates) < 2:
+        return None, f"At least two completed {timeframe} bars are required."
 
     latest_bar = rates[-1]
+    previous_bar = rates[-2]
     open_price = _market_scan_float(latest_bar["open"])
     close_price = _market_scan_float(latest_bar["close"])
+    previous_close = _market_scan_float(previous_bar["close"])
     if open_price is None or close_price is None:
         return None, "Completed bar is missing open/close prices."
-    if open_price == 0:
-        return None, "Completed bar open price is zero."
+    if previous_close is None:
+        return None, "Previous completed bar is missing its close price."
+    if previous_close == 0:
+        return None, "Previous completed bar close price is zero."
 
     digits = max(0, int(getattr(symbol, "digits", 0) or 0))
     bar_time = _market_scan_float(latest_bar["time"])
@@ -1859,7 +1863,12 @@ def _build_market_scan_bar_row(
             "timeframe": timeframe,
             "data_source": f"{timeframe}_bars",
             "time": _format_time_explicit(bar_time) if bar_time is not None else None,
-            **_market_scan_freshness_fields(bar_time, timeframe=timeframe, symbol=symbol),
+            **_market_scan_bar_freshness_fields(
+                bar_time,
+                timeframe=timeframe,
+                symbol=symbol,
+            ),
+            "previous_close": _market_scan_round(previous_close, digits=digits),
             "open": _market_scan_round(open_price, digits=digits),
             "close": _market_scan_round(close_price, digits=digits),
             "price_currency": str(
@@ -1871,9 +1880,10 @@ def _build_market_scan_bar_row(
             "tick_volume": tick_volume,
             "real_volume": real_volume,
             "price_change_pct": _market_scan_round(
-                ((close_price - open_price) / open_price) * 100.0,
+                ((close_price - previous_close) / previous_close) * 100.0,
                 digits=6,
             ),
+            "price_change_basis": "previous_completed_close_to_latest_completed_close",
         }
     )
     return row, None
@@ -2128,6 +2138,8 @@ _TOP_MARKETS_COMPACT_SPREAD_HEADERS = [
 ]
 
 _TOP_MARKETS_COMPACT_BAR_HEADERS = [
+    "bar_stale",
+    "bar_freshness",
     "close",
     "tick_volume",
     "price_change_pct",
@@ -2135,6 +2147,8 @@ _TOP_MARKETS_COMPACT_BAR_HEADERS = [
 
 _TOP_MARKETS_COMPACT_HEADERS = [
     *_TOP_MARKETS_COMPACT_BASE_HEADERS,
+    "bar_stale",
+    "bar_freshness",
     "close",
     "bid",
     "ask",
@@ -2153,13 +2167,16 @@ _TOP_MARKETS_FULL_BASE_HEADERS = [
     "data_source",
     "time",
     "data_age_seconds",
-    "data_freshness_seconds",
+    "data_age_anchor",
+    "data_age_metric",
     "stale_after_seconds",
-    "bar_age_hours",
     "data_stale",
+    "freshness_reason",
+    "timestamp_in_future",
+    "timestamp_skew_seconds",
+    "timestamp_warning",
     "freshness",
     "warning",
-    "stale_warning",
 ]
 
 _TOP_MARKETS_FULL_SPREAD_HEADERS = [
@@ -2174,6 +2191,18 @@ _TOP_MARKETS_FULL_SPREAD_HEADERS = [
 ]
 
 _TOP_MARKETS_FULL_BAR_HEADERS = [
+    "bar_age_seconds",
+    "bar_freshness_anchor",
+    "bar_freshness_metric",
+    "bar_stale_after_seconds",
+    "bar_age_hours",
+    "bar_stale",
+    "bar_market_status",
+    "bar_market_status_reason",
+    "bar_freshness_policy_relaxed",
+    "bar_freshness",
+    "bar_stale_warning",
+    "previous_close",
     "open",
     "close",
     "tick_volume",
@@ -2911,11 +2940,12 @@ def symbols_top_markets(  # noqa: C901
             def _collect_for_symbol(symbol: Any) -> None:
                 symbol_name = str(getattr(symbol, "name", "") or "")
 
-                if rank_kind in {"all", "spread"}:
+                spread_row = None
+                if rank_kind in {"all", "spread"} or needs_bar_data:
                     spread_row, spread_error = _build_market_scan_spread_row(symbol, mt5_gateway)
-                    if spread_error:
+                    if spread_error and rank_kind in {"all", "spread"}:
                         _record_issue("spread", symbol_name, spread_error)
-                    elif spread_row is not None:
+                    elif spread_row is not None and rank_kind in {"all", "spread"}:
                         spread_rows.append(spread_row)
 
                 if needs_bar_data and mt5_timeframe is not None:
@@ -2934,14 +2964,16 @@ def symbols_top_markets(  # noqa: C901
                         }:
                             _record_issue("price_change", symbol_name, bar_error)
                     elif bar_row is not None:
+                        combined_bar_row = dict(spread_row or {})
+                        combined_bar_row.update(bar_row)
                         if rank_kind in {"all", "volume"}:
-                            volume_rows.append(dict(bar_row))
+                            volume_rows.append(dict(combined_bar_row))
                         if rank_kind in {
                             "all",
                             "price_change",
                             "abs_price_change",
                         }:
-                            price_change_rows.append(dict(bar_row))
+                            price_change_rows.append(dict(combined_bar_row))
 
             for symbol in selected_symbols:
                 symbol_name = str(getattr(symbol, "name", "") or "")
@@ -2974,7 +3006,7 @@ def symbols_top_markets(  # noqa: C901
             )
             volume_rows.sort(
                 key=lambda row: (
-                    bool(row.get("data_stale")),
+                    bool(row.get("data_stale")) or bool(row.get("bar_stale")),
                     row.get("tick_volume") is None,
                     -(row.get("tick_volume") or 0),
                     row.get("symbol") or "",
@@ -2982,7 +3014,7 @@ def symbols_top_markets(  # noqa: C901
             )
             price_change_rows.sort(
                 key=lambda row: (
-                    bool(row.get("data_stale")),
+                    bool(row.get("data_stale")) or bool(row.get("bar_stale")),
                     row.get("price_change_pct") is None,
                     (
                         -abs(float(row.get("price_change_pct") or 0.0))
@@ -3116,6 +3148,9 @@ def symbols_top_markets(  # noqa: C901
                     if rank_kind == "abs_price_change"
                     else "highest_price_change_pct"
                 )
+                out["price_change_basis"] = (
+                    "previous_completed_close_to_latest_completed_close"
+                )
                 out.update(_scope_fields("price_change", price_change_rows))
                 out.update(
                     _market_scan_freshness_summary(
@@ -3147,6 +3182,9 @@ def symbols_top_markets(  # noqa: C901
             )
             out.update(scan_meta)
             out["ranking"] = "all"
+            out["price_change_basis"] = (
+                "previous_completed_close_to_latest_completed_close"
+            )
             out["rank_categories"] = [
                 "lowest_spread",
                 "highest_tick_volume",
