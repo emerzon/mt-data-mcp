@@ -1116,8 +1116,44 @@ class TestMarketScan:
         row = result["data"][0]
         assert row["spread_points"] == 50
         assert isinstance(row["spread_points"], int)
-        assert row["spread_pips"] is None
+        assert "spread_pips" not in row
         assert "spread_pips" not in result["units"]
+
+    def test_market_scan_compact_hoists_repeated_row_metadata(self):
+        from mtdata.core.symbols import _compact_market_scan_projection
+
+        warning = "Latest tick timestamp is ahead of the wall clock."
+        headers, shared = _compact_market_scan_projection(
+            [
+                "symbol",
+                "timestamp_in_future",
+                "timestamp_warning",
+                "price_basis",
+                "spread_pips",
+            ],
+            [
+                {
+                    "symbol": "EURUSD",
+                    "timestamp_in_future": True,
+                    "timestamp_warning": warning,
+                    "price_basis": "mt5_latest_completed_bar_close",
+                    "spread_pips": None,
+                },
+                {
+                    "symbol": "GBPUSD",
+                    "timestamp_in_future": True,
+                    "timestamp_warning": warning,
+                    "price_basis": "mt5_latest_completed_bar_close",
+                    "spread_pips": None,
+                },
+            ],
+        )
+
+        assert headers == ["symbol", "timestamp_in_future"]
+        assert shared == {
+            "price_basis": "mt5_latest_completed_bar_close",
+            "warnings": [warning],
+        }
 
     @patch("mtdata.core.symbols._extract_group_path_util", side_effect=lambda s: s.path)
     @patch("mtdata.core.symbols._mt5_copy_rates_from_pos")

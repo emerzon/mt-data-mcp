@@ -1941,6 +1941,49 @@ def _project_market_scan_rows(
     return projected
 
 
+def _compact_market_scan_projection(
+    headers: List[str],
+    rows: List[Dict[str, Any]],
+) -> tuple[List[str], Dict[str, Any]]:
+    """Prune empty columns and hoist metadata repeated across scan rows."""
+    projected_headers = [
+        header
+        for header in headers
+        if any(row.get(header) is not None for row in rows)
+    ]
+    shared: Dict[str, Any] = {}
+    if len(rows) > 1:
+        for header in (
+            "price_basis",
+            "bar_market_status_reason",
+            "bar_freshness_policy_relaxed",
+        ):
+            values = [row.get(header) for row in rows]
+            first = values[0]
+            if first is not None and all(value == first for value in values[1:]):
+                shared[header] = first
+                projected_headers = [
+                    candidate
+                    for candidate in projected_headers
+                    if candidate != header
+                ]
+
+        timestamp_warnings = [
+            str(row.get("timestamp_warning"))
+            for row in rows
+            if row.get("timestamp_warning") not in (None, "")
+        ]
+        unique_warnings = list(dict.fromkeys(timestamp_warnings))
+        if len(timestamp_warnings) > len(unique_warnings):
+            shared["warnings"] = unique_warnings
+            projected_headers = [
+                header
+                for header in projected_headers
+                if header != "timestamp_warning"
+            ]
+    return projected_headers, shared
+
+
 _MARKET_SCAN_UNITS = {
     "close": "price",
     "previous_close": "price",
@@ -3724,6 +3767,11 @@ def market_scan(  # noqa: C901
                 if header not in optional_compact_headers
                 or any(row.get(header) is not None for row in limited_rows)
             ]
+            compact_shared_fields: Dict[str, Any] = {}
+            if detail_mode == "compact":
+                compact_headers, compact_shared_fields = (
+                    _compact_market_scan_projection(compact_headers, limited_rows)
+                )
             headers = compact_headers if detail_mode == "compact" else full_headers
             output_rows = (
                 _project_market_scan_rows(headers, limited_rows)
@@ -3821,6 +3869,10 @@ def market_scan(  # noqa: C901
                 },
                 "meta": _market_scan_contract_meta(request=request, stats=stats),
             }
+            compact_warnings = compact_shared_fields.pop("warnings", None)
+            out.update(compact_shared_fields)
+            if compact_warnings:
+                out["warnings"] = list(compact_warnings)
             if preset_value:
                 out["preset"] = preset_value
                 out["preset_filters"] = {
@@ -3837,11 +3889,11 @@ def market_scan(  # noqa: C901
             missing_symbols = list(selection_meta.get("missing_symbols") or [])
             if missing_symbols:
                 out["missing_symbols"] = missing_symbols
-                out["warnings"] = [
+                out.setdefault("warnings", []).append(
                     "Requested symbol(s) not found and excluded from the scan: "
                     + ", ".join(missing_symbols)
                     + "."
-                ]
+                )
             out.update(freshness_summary)
             units = _market_scan_units_for_rows(table_payload["rows"])
             if units:
