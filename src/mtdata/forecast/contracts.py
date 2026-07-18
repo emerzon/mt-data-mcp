@@ -85,6 +85,8 @@ _FIELD_OWNERSHIP: Dict[RequestSurface, Dict[str, ContractOwner]] = {
         "oversold": "strategy",
         "overbought": "strategy",
         "max_hold_bars": "strategy",
+        "cost_model": "evaluation",
+        "spread_bps": "evaluation",
         "slippage_bps": "evaluation",
     },
     "forecast_optimize_hints": {
