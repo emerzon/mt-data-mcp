@@ -1271,7 +1271,7 @@ class TestTemplateBasic:
             if "forecast_generate" in name.lower() or "generate" in name.lower():
                 method = kwargs.get("method")
                 if method == "sf_autoarima":
-                    return {"forecast_price": [65290.6] * 12}
+                    return {"forecast_price": [float("nan")] * 12}
                 if method == "naive":
                     return {"forecast_price": [65290.6, 65320.0, 65380.0, 65440.0]}
                 return {"error": f"unexpected method: {method}"}

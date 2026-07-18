@@ -350,7 +350,9 @@ def _extract_forecast_values(payload: Dict[str, Any]) -> Optional[List[float]]:
 
 def _is_degenerate_forecast_payload(payload: Dict[str, Any]) -> bool:
     vals = _extract_forecast_values(payload)
-    if not isinstance(vals, list) or len(vals) < 3:
+    if not vals:
+        return True
+    if len(vals) < 3:
         return False
     first = vals[0]
     span = max(vals) - min(vals)
