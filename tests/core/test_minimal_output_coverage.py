@@ -903,6 +903,12 @@ class TestFormatResultMinimal:
             "type": "quote",
             "spread": 0.00022,
             "spread_pips": 2.2,
+            "units": {
+                "bid": "price",
+                "ask": "price",
+                "spread": "price",
+                "spread_pips": "pips",
+            },
         }
 
         result = _normalize_market_ticker_payload(
@@ -913,7 +919,9 @@ class TestFormatResultMinimal:
 
         # spread_pips is the standard FX spread unit and must survive compact mode
         # for parity with market_snapshot.
+        assert result["spread"] == 0.00022
         assert result["spread_pips"] == 2.2
+        assert result["units"] == {"spread": "price", "spread_pips": "pips"}
 
     def test_market_ticker_minimal_preserves_error_envelope(self):
         payload = {

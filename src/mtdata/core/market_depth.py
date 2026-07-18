@@ -167,6 +167,22 @@ def _compact_market_ticker_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     for key in ("spread", "spread_points", "spread_pips", "spread_pct"):
         if payload.get(key) is not None:
             out[key] = payload[key]
+    units = payload.get("units")
+    if isinstance(units, dict):
+        compact_units = {
+            key: units[key]
+            for key in (
+                "bid",
+                "ask",
+                "spread",
+                "spread_points",
+                "spread_pips",
+                "spread_pct",
+            )
+            if key in out and units.get(key) is not None
+        }
+        if compact_units:
+            out["units"] = compact_units
     if out.get("warning") == out.get("timestamp_warning"):
         out.pop("warning", None)
     return out

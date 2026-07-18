@@ -1069,7 +1069,9 @@ def _normalize_market_ticker_payload(
             "freshness",
             "market_status_reason",
         ]
-        if primary_spread_key is not None:
+        if not _is_empty_value(payload.get("spread")):
+            compact_keys.append("spread")
+        if primary_spread_key is not None and primary_spread_key != "spread":
             compact_keys.append(primary_spread_key)
         if primary_spread_key == "spread_points":
             compact_keys.append("point")
@@ -1108,7 +1110,7 @@ def _normalize_market_ticker_payload(
         out["meta"] = meta
 
     if not verbose:
-        units = out.get("units")
+        units = payload.get("units")
         if isinstance(units, dict):
             primary_spread_key = next(
                 (
@@ -1120,8 +1122,8 @@ def _normalize_market_ticker_payload(
             )
             filtered_units = {
                 key: units.get(key)
-                for key in ("bid", "ask", primary_spread_key)
-                if key and units.get(key) is not None
+                for key in ("bid", "ask", "spread", primary_spread_key)
+                if key and key in out and units.get(key) is not None
             }
             if filtered_units:
                 out["units"] = filtered_units
