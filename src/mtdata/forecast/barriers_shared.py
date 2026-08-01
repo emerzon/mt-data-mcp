@@ -183,6 +183,15 @@ def _scale_price_paths_to_reference(
 
 
 def _sort_candidate_results(res_list: List[Dict[str, Any]], objective_val: str) -> None:
+    def _candidate_geometry(row: Dict[str, Any]) -> Tuple[float, ...]:
+        """Provide a deterministic tie-break without changing grid-order semantics."""
+
+        def _value(key: str) -> float:
+            value = _safe_float(row.get(key))
+            return float("inf") if value is None else float(value)
+
+        return tuple(_value(key) for key in ("tp", "sl", "tp_price", "sl_price"))
+
     def _metric(key: str, *, descending: bool) -> Any:
         default = float("-inf") if descending else float("inf")
 
@@ -191,6 +200,12 @@ def _sort_candidate_results(res_list: List[Dict[str, Any]], objective_val: str) 
             return default if value is None else float(value)
 
         return _resolve
+
+    # Candidate evaluation is normally generated in ascending TP/SL grid order,
+    # but parallel optimizers can return rows in completion order.  Establish the
+    # same canonical geometry order first; the stable objective sort below then
+    # preserves it whenever objective values tie.
+    res_list.sort(key=_candidate_geometry)
 
     if objective_val == 'edge':
         res_list.sort(key=_metric('edge', descending=True), reverse=True)
