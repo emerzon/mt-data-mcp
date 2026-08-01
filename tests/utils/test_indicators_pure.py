@@ -197,6 +197,14 @@ class TestParseTiSpecs:
         assert name == "ema"
         assert kwargs.get("length") == 21
 
+    def test_literal_digit_suffixed_indicator_takes_precedence(self, monkeypatch):
+        import mtdata.utils.indicators as indicators_mod
+
+        monkeypatch.setattr(indicators_mod.pta, "hlc3", lambda: None, raising=False)
+        indicators_mod._is_available_ta_indicator.cache_clear()
+
+        assert _parse_ti_specs("hlc3") == [("hlc3", [], {})]
+
     def test_cdl_name_with_trailing_digits_is_not_rewritten(self):
         specs = _parse_ti_specs("CDL_FAKE12")
         name, args, kwargs = specs[0]

@@ -115,7 +115,7 @@ Separate high-frequency noise from low-frequency trend.
 
 **Example:**
 ```bash
---denoise lowpass_fft --denoise-params "cutoff_ratio=0.1"
+--denoise lowpass_fft --denoise-params "cutoff_ratio=0.1,causality=zero_phase"
 ```
 
 ### Trend Extractors
@@ -130,7 +130,7 @@ Isolate the slow-moving trend component.
 
 **Example:**
 ```bash
---denoise hp --denoise-params "lambda=1600"
+--denoise hp --denoise-params "lambda=1600,causality=zero_phase"
 ```
 
 ### Adaptive Filters
@@ -159,7 +159,7 @@ Fit local curves to smooth the data.
 
 **Example:**
 ```bash
---denoise savgol --denoise-params "window=11,polyorder=3"
+--denoise savgol --denoise-params "window=11,polyorder=3,causality=zero_phase"
 ```
 
 ### Decomposition Methods
@@ -179,7 +179,7 @@ Split into components and reconstruct smoother parts.
 
 **Example:**
 ```bash
---denoise wavelet --denoise-params "wavelet=db4,level=3"
+--denoise wavelet --denoise-params "wavelet=db4,level=3,causality=zero_phase"
 ```
 
 ### Kernel / Smoothing Filters
@@ -210,18 +210,17 @@ Split into components and reconstruct smoother parts.
 
 **Critical for backtesting:** Some filters use future data to smooth each point (zero-phase filtering). This looks great on charts but creates unrealistic results.
 
-**Causal filters** (use only past data):
-- `ema`, `sma`, `kalman`, `lms`, `rls`
+**Causal-capable filters** (default to past-only processing):
+- `ema`, `sma`, `median`, `butterworth`, `kalman`, `hampel`, `bilateral`, `lms`, `rls`, `beta`
 
 **Non-causal-only filters** (use past and future):
-- `lowpass_fft`, `hp`, `wavelet`
+- `lowpass_fft`, `wavelet`, `wavelet_packet`, `hp`, `whittaker`, `l1_trend`, `gaussian`, `savgol`, `loess`, `stl`, `tv`, `ssa`, `vmd`, `emd`, `eemd`, `ceemdan`
 
 Causal-capable filters and the public `denoise_series` helper default to causal
-operation. Selecting a non-causal-only preset is an explicit zero-phase choice;
-the normalized specification records `causality=zero_phase`. For a
-causal-capable filter such as Butterworth, request `causality=zero_phase`
-explicitly. Use zero-phase methods only for retrospective analysis, not
-backtesting or live trading.
+operation. Non-causal-only presets are rejected unless the request explicitly
+sets `causality=zero_phase`. For a causal-capable filter such as Butterworth,
+request `causality=zero_phase` explicitly. Use zero-phase methods only for
+retrospective analysis, not backtesting or live trading.
 
 ---
 

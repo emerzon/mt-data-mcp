@@ -468,7 +468,38 @@ def _denoise_base_defaults(default_when: str = "pre_ti") -> Dict[str, Any]:
     """Get base defaults for denoise spec."""
     base = deepcopy(_DENOISE_BASE_DEFAULTS)
     base["when"] = default_when
+    base["keep_original"] = default_when != "pre_ti"
     return base
+
+
+def _normalize_denoise_param_aliases(
+    method: str,
+    values: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Map the public ``lambda`` spelling to each filter's implementation key."""
+    out = dict(values)
+    if "lambda" not in out:
+        return out
+    target = {
+        "hp": "lamb",
+        "l1_trend": "lamb",
+        "whittaker": "lamb",
+        "tv": "weight",
+        "rls": "lambda_",
+    }.get(method)
+    if target is not None:
+        out[target] = out.pop("lambda")
+    return out
+
+
+def _default_denoise_causality(method: str) -> str:
+    supported = _supported_denoise_causality(method)
+    if "causal" in supported:
+        return "causal"
+    raise ValueError(
+        f"Denoise method '{method}' is non-causal and requires the explicit "
+        "opt-in causality='zero_phase'."
+    )
 
 
 def normalize_denoise_spec(spec: Any, default_when: str = 'pre_ti') -> Optional[Dict[str, Any]]:
@@ -495,13 +526,12 @@ def normalize_denoise_spec(spec: Any, default_when: str = 'pre_ti') -> Optional[
         )
         method = str(out.get('method') or 'none').strip().lower()
         if "causality" not in spec:
-            supported = _supported_denoise_causality(method)
-            out["causality"] = "causal" if "causal" in supported else supported[0]
+            out["causality"] = _default_denoise_causality(method)
         params = deepcopy(_DENOISE_METHOD_DEFAULT_PARAMS.get(method, {}))
-        params.update(top_level_params)
+        params.update(_normalize_denoise_param_aliases(method, top_level_params))
         supplied_params = out.get('params')
         if isinstance(supplied_params, dict):
-            params.update(supplied_params)
+            params.update(_normalize_denoise_param_aliases(method, supplied_params))
         out['method'] = method
         out['params'] = params
         cols = out.get('columns')
@@ -519,8 +549,7 @@ def normalize_denoise_spec(spec: Any, default_when: str = 'pre_ti') -> Optional[
     params = deepcopy(_DENOISE_METHOD_DEFAULT_PARAMS.get(method, {}))
     out = dict(base)
     out.update({"method": method, "params": params})
-    supported = _supported_denoise_causality(method)
-    out["causality"] = "causal" if "causal" in supported else supported[0]
+    out["causality"] = _default_denoise_causality(method)
     return out
 
 

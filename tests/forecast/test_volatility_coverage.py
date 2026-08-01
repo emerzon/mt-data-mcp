@@ -1395,7 +1395,7 @@ class TestGeneralMethodErrors:
             with patch(f"{MOD}.apply_denoise") as mock_dn:
                 r = forecast_volatility("EURUSD", "H1", 5, method="theta",
                                         proxy="squared_return",
-                                        denoise={"method": "wavelet"})
+                                        denoise={"method": "wavelet", "causality": "zero_phase"})
                 assert r.get("success") is True
                 assert mock_dn.called
 

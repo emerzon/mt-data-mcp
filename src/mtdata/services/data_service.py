@@ -1963,6 +1963,8 @@ def fetch_candles(  # noqa: C901
                         "requested": bool(ti_spec),
                         "spec": _normalize_indicator_spec_for_display(ti_spec),
                         "added_columns": ti_added_cols,
+                        "volume_source": df.attrs.get("indicator_volume_source"),
+                        "index_time_basis": "utc_epoch" if ti_spec else None,
                     },
                     "session_gaps": {
                         "expected_bar_seconds": float(expected_bar_seconds) if expected_bar_seconds > 0 else None,

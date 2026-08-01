@@ -116,6 +116,80 @@ def test_apply_ta_indicators_prefers_nonzero_tick_volume_over_zero_volume(monkey
     assert observed["volume"].reset_index(drop=True).equals(df["tick_volume"].reset_index(drop=True))
 
 
+def test_apply_ta_indicators_prefers_real_volume_over_tick_alias(monkeypatch) -> None:
+    df = _sample_df()
+    df["volume"] = np.arange(1, len(df) + 1, dtype=float)
+    df["real_volume"] = np.arange(1001, 1001 + len(df), dtype=float)
+    df["tick_volume"] = np.arange(1, len(df) + 1, dtype=float)
+    observed = {}
+
+    def _fake_obv(close, volume):
+        observed["volume"] = volume.copy()
+        return pd.Series(np.asarray(volume, dtype=float), index=close.index, name="OBV")
+
+    monkeypatch.setattr(indicators.pta, "obv", _fake_obv, raising=False)
+
+    _apply_ta_indicators(df, "obv")
+
+    assert observed["volume"].reset_index(drop=True).equals(
+        df["real_volume"].reset_index(drop=True)
+    )
+    assert df.attrs["indicator_volume_source"] == "real_volume"
+
+
+def test_apply_ta_indicators_maps_open_column_to_open_Parameter(monkeypatch) -> None:
+    idx = pd.date_range("2024-01-01", periods=20, freq="h")
+    close = np.linspace(100.0, 101.0, len(idx))
+    df = pd.DataFrame(
+        {
+            "open": close - 0.1,
+            "high": close + 0.2,
+            "low": close - 0.2,
+            "close": close,
+        },
+        index=idx,
+    )
+    observed = {}
+
+    def _fake_bop(open_, high, low, close):
+        observed["open"] = open_.copy()
+        return pd.Series(close - open_, index=close.index, name="BOP")
+
+    monkeypatch.setattr(indicators.pta, "bop", _fake_bop, raising=False)
+
+    added = _apply_ta_indicators(df, "bop")
+
+    assert "BOP" in added
+    assert observed["open"].equals(df["open"])
+
+
+def test_indicator_datetime_index_uses_utc_epoch_not_display_time(monkeypatch) -> None:
+    epochs = np.array([1_700_000_000 + 3600 * i for i in range(20)], dtype=float)
+    close = np.linspace(100.0, 101.0, len(epochs))
+    df = pd.DataFrame(
+        {
+            "__epoch": epochs,
+            "time": ["2099-01-01 00:00"] * len(epochs),
+            "high": close + 0.2,
+            "low": close - 0.2,
+            "close": close,
+            "volume": np.arange(1, len(epochs) + 1, dtype=float),
+        }
+    )
+    observed = {}
+
+    def _fake_vwap(high, low, close, volume):
+        observed["index"] = close.index.copy()
+        return pd.Series(close, index=close.index, name="VWAP_D")
+
+    monkeypatch.setattr(indicators.pta, "vwap", _fake_vwap, raising=False)
+
+    _apply_ta_indicators(df, "vwap")
+
+    expected = pd.to_datetime(epochs, unit="s", utc=True)
+    assert observed["index"].equals(expected)
+
+
 def test_apply_ta_indicators_raises_actionable_error_without_retries(monkeypatch) -> None:
     df = _sample_df()
 

@@ -1213,7 +1213,7 @@ mtdata-cli regime_detect EURUSD --timeframe H1 --method hmm --params "n_states=2
 # Apply denoising before simulation
 mtdata-cli forecast_barrier_optimize EURUSD --timeframe H1 --horizon 12 \
   --method hmm_mc --mode pct --grid-style preset --preset swing \
-  --denoise lowpass_fft --denoise-params "cutoff_ratio=0.1"
+  --denoise lowpass_fft --denoise-params "cutoff_ratio=0.1,causality=zero_phase"
 ```
 
 ---

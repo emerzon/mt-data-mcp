@@ -17,8 +17,8 @@ except ModuleNotFoundError as exc:
     ) from exc
 
 
-_INDICATOR_SERIES_NAMES = ("open", "high", "low", "close", "volume")
-_VOLUME_SOURCE_COLUMNS = ("volume", "real_volume", "tick_volume")
+_INDICATOR_SERIES_NAMES = ("open", "open_", "high", "low", "close", "volume")
+_VOLUME_SOURCE_COLUMNS = ("real_volume", "volume", "tick_volume")
 _TA_INDICATOR_CATEGORIES = (
     "candles",
     "momentum",
@@ -287,6 +287,7 @@ def _parse_ti_specs(spec: str) -> List[Tuple[str, List[int | float], Dict[str, i
             m
             and str(m.group(1) or "").strip()
             and not normalized_name.startswith("cdl_")
+            and not _is_available_ta_indicator(normalized_name)
             and not args
             and 'length' not in kwargs
         ):
@@ -363,6 +364,7 @@ def _resolve_indicator_volume_series(df: pd.DataFrame) -> Optional[pd.Series]:
             numeric = series
         try:
             if bool((numeric.fillna(0) != 0).any()):
+                df.attrs["indicator_volume_source"] = col_name
                 return series
         except Exception:
             pass
@@ -390,10 +392,11 @@ def _resolve_indicator_series_inputs(
                 resolved[name] = volume_series
             continue
 
-        if name not in df.columns:
+        source_name = "open" if name == "open_" else name
+        if source_name not in df.columns:
             missing.append(name)
             continue
-        resolved[name] = df[name]
+        resolved[name] = df[source_name]
 
     if missing:
         raise ValueError(
@@ -421,7 +424,8 @@ def _apply_ta_indicators(df: pd.DataFrame, ti_spec: str) -> List[str]:  # noqa: 
     try:
         if not isinstance(df.index, pd.DatetimeIndex):
             try:
-                df.index = pd.to_datetime(df['time'], unit='s', utc=True)
+                epoch_source = df['__epoch'] if '__epoch' in df.columns else df['time']
+                df.index = pd.to_datetime(epoch_source, unit='s', utc=True)
             except Exception:
                 try:
                     df.index = pd.to_datetime(df['time'])
@@ -454,7 +458,7 @@ def _apply_ta_indicators(df: pd.DataFrame, ti_spec: str) -> List[str]:  # noqa: 
 
                 # Generic mapping: map provided numeric args to function parameters in declared order
                 # Skip series parameters and any already supplied in call_kwargs
-                series_names = {'open', 'high', 'low', 'close', 'volume'}
+                series_names = {'open', 'open_', 'high', 'low', 'close', 'volume'}
                 ordered_param_names = []
                 for pname, p in params.items():
                     if p.kind in (inspect.Parameter.VAR_KEYWORD, inspect.Parameter.VAR_POSITIONAL):
@@ -487,6 +491,10 @@ def _apply_ta_indicators(df: pd.DataFrame, ti_spec: str) -> List[str]:  # noqa: 
                         df[c] = out[c]
                 elif isinstance(out, pd.Series):
                     df[out.name or lname] = out
+                elif out is None:
+                    raise ValueError(
+                        f"Indicator '{lname}' returned no output for the supplied data and parameters."
+                    )
             except ValueError:
                 raise
             except Exception as apply_exc:

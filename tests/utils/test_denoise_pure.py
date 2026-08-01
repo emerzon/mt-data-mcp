@@ -75,12 +75,17 @@ class TestNormalizeDenoiseSec:
         assert "span" in out["params"]
 
     def test_string_wavelet(self):
-        out = normalize_denoise_spec("wavelet")
+        with pytest.raises(ValueError, match="explicit.*zero_phase"):
+            normalize_denoise_spec("wavelet")
+
+        out = normalize_denoise_spec(
+            {"method": "wavelet", "causality": "zero_phase"}
+        )
         assert out is not None
         assert out["method"] == "wavelet"
         assert out["params"]["wavelet"] == "db4"
         assert out["causality"] == "zero_phase"
-        assert out["keep_original"] is True
+        assert out["keep_original"] is False
 
     def test_string_sma(self):
         out = normalize_denoise_spec("sma")
@@ -91,7 +96,7 @@ class TestNormalizeDenoiseSec:
         assert out["method"] == "median"
 
     def test_string_hp(self):
-        out = normalize_denoise_spec("hp")
+        out = normalize_denoise_spec({"method": "hp", "causality": "zero_phase"})
         assert out["method"] == "hp"
         assert out["params"]["lamb"] == 1600.0
 
@@ -100,11 +105,11 @@ class TestNormalizeDenoiseSec:
         assert out["method"] == "butterworth"
 
     def test_string_savgol(self):
-        out = normalize_denoise_spec("savgol")
+        out = normalize_denoise_spec({"method": "savgol", "causality": "zero_phase"})
         assert out["method"] == "savgol"
 
     def test_string_tv(self):
-        out = normalize_denoise_spec("tv")
+        out = normalize_denoise_spec({"method": "tv", "causality": "zero_phase"})
         assert out["method"] == "tv"
 
     def test_string_kalman(self):
@@ -120,11 +125,11 @@ class TestNormalizeDenoiseSec:
         assert out["method"] == "bilateral"
 
     def test_string_ssa(self):
-        out = normalize_denoise_spec("ssa")
+        out = normalize_denoise_spec({"method": "ssa", "causality": "zero_phase"})
         assert out["method"] == "ssa"
 
     def test_string_l1_trend(self):
-        out = normalize_denoise_spec("l1_trend")
+        out = normalize_denoise_spec({"method": "l1_trend", "causality": "zero_phase"})
         assert out["method"] == "l1_trend"
 
     def test_string_lms(self):
@@ -140,43 +145,43 @@ class TestNormalizeDenoiseSec:
         assert out["method"] == "beta"
 
     def test_string_loess(self):
-        out = normalize_denoise_spec("loess")
+        out = normalize_denoise_spec({"method": "loess", "causality": "zero_phase"})
         assert out["method"] == "loess"
 
     def test_string_stl(self):
-        out = normalize_denoise_spec("stl")
+        out = normalize_denoise_spec({"method": "stl", "causality": "zero_phase"})
         assert out["method"] == "stl"
 
     def test_string_lowpass_fft(self):
-        out = normalize_denoise_spec("lowpass_fft")
+        out = normalize_denoise_spec({"method": "lowpass_fft", "causality": "zero_phase"})
         assert out["method"] == "lowpass_fft"
 
     def test_string_gaussian(self):
-        out = normalize_denoise_spec("gaussian")
+        out = normalize_denoise_spec({"method": "gaussian", "causality": "zero_phase"})
         assert out["method"] == "gaussian"
 
     def test_string_whittaker(self):
-        out = normalize_denoise_spec("whittaker")
+        out = normalize_denoise_spec({"method": "whittaker", "causality": "zero_phase"})
         assert out["method"] == "whittaker"
 
     def test_string_wavelet_packet(self):
-        out = normalize_denoise_spec("wavelet_packet")
+        out = normalize_denoise_spec({"method": "wavelet_packet", "causality": "zero_phase"})
         assert out["method"] == "wavelet_packet"
 
     def test_string_vmd(self):
-        out = normalize_denoise_spec("vmd")
+        out = normalize_denoise_spec({"method": "vmd", "causality": "zero_phase"})
         assert out["method"] == "vmd"
 
     def test_string_emd(self):
-        out = normalize_denoise_spec("emd")
+        out = normalize_denoise_spec({"method": "emd", "causality": "zero_phase"})
         assert out["method"] == "emd"
 
     def test_string_eemd(self):
-        out = normalize_denoise_spec("eemd")
+        out = normalize_denoise_spec({"method": "eemd", "causality": "zero_phase"})
         assert out["method"] == "eemd"
 
     def test_string_ceemdan(self):
-        out = normalize_denoise_spec("ceemdan")
+        out = normalize_denoise_spec({"method": "ceemdan", "causality": "zero_phase"})
         assert out["method"] == "ceemdan"
 
     def test_dict_spec(self):
@@ -236,6 +241,35 @@ class TestNormalizeDenoiseSec:
         assert out["params"] == {"span": 10, "alpha": 0.2}
         assert out["when"] == "post_ti"
         assert "alpha" not in out
+
+    @pytest.mark.parametrize(
+        ("method", "canonical_key", "value"),
+        [
+            ("hp", "lamb", 321.0),
+            ("l1_trend", "lamb", 4.0),
+            ("whittaker", "lamb", 12.0),
+            ("tv", "weight", 0.3),
+            ("rls", "lambda_", 0.98),
+        ],
+    )
+    def test_public_lambda_alias_overrides_method_default(
+        self,
+        method,
+        canonical_key,
+        value,
+    ):
+        spec = {"method": method, "lambda": value}
+        if method != "rls":
+            spec["causality"] = "zero_phase"
+
+        out = normalize_denoise_spec(spec)
+
+        assert out["params"][canonical_key] == value
+        assert "lambda" not in out["params"]
+
+    def test_pre_ti_overwrites_by_default_and_post_ti_keeps_original(self):
+        assert normalize_denoise_spec("ema")["keep_original"] is False
+        assert normalize_denoise_spec("ema", default_when="post_ti")["keep_original"] is True
 
     def test_nested_filter_params_override_top_level_values(self):
         out = normalize_denoise_spec(
@@ -629,14 +663,15 @@ class TestApplyDenoise:
         assert "close_dn" in df.columns
         assert len(df["close_dn"]) == N
 
-    def test_default_spec_preserves_canonical_close(self):
+    def test_default_pre_ti_spec_overwrites_canonical_close(self):
         df = self._make_df()
         original_close = df["close"].copy()
 
         added = apply_denoise(df, normalize_denoise_spec("ema"))
 
-        assert added == ["close_dn"]
-        pd.testing.assert_series_equal(df["close"], original_close)
+        assert added == []
+        assert "close_dn" not in df.columns
+        assert not np.allclose(df["close"], original_close)
 
     def test_ema_overwrite(self):
         df = self._make_df()

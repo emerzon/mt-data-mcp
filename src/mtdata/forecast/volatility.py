@@ -808,6 +808,13 @@ def forecast_volatility(  # noqa: C901
     Meta: ensemble aggregates multiple successful component volatility forecasts.
     """
     try:
+        try:
+            denoise = _normalize_denoise_spec(
+                denoise,
+                default_when="pre_ti",
+            )
+        except Exception as ex:
+            return {"error": f"Invalid denoise specification: {ex}"}
         if timeframe not in TIMEFRAME_MAP:
             return {"error": invalid_timeframe_error(timeframe, TIMEFRAME_MAP)}
         mt5_tf = TIMEFRAME_MAP[timeframe]

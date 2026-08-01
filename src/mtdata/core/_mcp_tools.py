@@ -931,15 +931,12 @@ def _recording_tool_decorator(*dargs, **dkwargs):  # type: ignore[override]  # n
                     json=json_output,
                     extras=normalized_extras,
                 )
-                try:
-                    if "denoise" in kw:
-                        from ..utils.denoise import (
-                            normalize_denoise_spec as _norm_dn,  # type: ignore
-                        )
+                if "denoise" in kw:
+                    from ..utils.denoise import (
+                        normalize_denoise_spec as _norm_dn,  # type: ignore
+                    )
 
-                        kw["denoise"] = _norm_dn(kw.get("denoise"))
-                except Exception:
-                    pass
+                    kw["denoise"] = _norm_dn(kw.get("denoise"))
 
                 out = func(*a, **kw)
             except Exception as exc:
