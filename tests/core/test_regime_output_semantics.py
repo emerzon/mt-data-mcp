@@ -263,7 +263,7 @@ def test_regime_detect_all_reports_runtime_diagnostics_for_partial_results(monke
     assert result["summary"]["methods_failed"] == 1
 
 
-def test_ensemble_labels_follow_mean_return_sign() -> None:
+def test_ensemble_labels_require_significant_mean_return() -> None:
     descriptions = _build_regime_descriptions(
         {
             "mean_return": [
@@ -277,12 +277,14 @@ def test_ensemble_labels_follow_mean_return_sign() -> None:
             "volatility": [0.00435, 0.00386, 0.00466, 0.00614, 0.00469, 0.00593],
         },
         "ensemble",
+        state_counts={index: 1000 for index in range(6)},
     )
 
     assert descriptions[0]["label"].startswith("negative_")
     assert descriptions[1]["label"].startswith("negative_")
     assert descriptions[2]["label"].startswith("neutral_")
-    assert descriptions[3]["label"].startswith("positive_")
+    assert descriptions[3]["label"].startswith("neutral_")
+    assert descriptions[4]["label"].startswith("positive_")
     assert "bearish" not in descriptions[2]["label"]
 
 
@@ -293,6 +295,7 @@ def test_regime_volatility_labels_are_scale_invariant() -> None:
             "volatility": [0.0001, 0.0004],
         },
         "hmm",
+        state_counts={0: 100, 1: 100},
     )
     high_scale = _build_regime_descriptions(
         {
@@ -300,6 +303,7 @@ def test_regime_volatility_labels_are_scale_invariant() -> None:
             "volatility": [0.01, 0.04],
         },
         "hmm",
+        state_counts={0: 100, 1: 100},
     )
 
     assert [low_scale[i]["stat_label"] for i in range(2)] == [
@@ -307,11 +311,13 @@ def test_regime_volatility_labels_are_scale_invariant() -> None:
         "positive_high_vol",
     ]
     assert [high_scale[i]["stat_label"] for i in range(2)] == [
-        "negative_low_vol",
-        "positive_high_vol",
+        "neutral_low_vol",
+        "neutral_high_vol",
     ]
     assert low_scale[0]["label"] == "bearish_quiet"
-    assert high_scale[1]["label"] == "bullish_volatile"
+    assert high_scale[1]["label"] == "volatile_range"
+    assert low_scale[0]["direction_significant"] is True
+    assert high_scale[0]["direction_significant"] is False
 
 
 def test_single_regime_uses_neutral_relative_volatility_tier() -> None:
@@ -350,10 +356,11 @@ def test_wavelet_labels_include_frequency_character() -> None:
             },
         },
         "wavelet",
+        state_counts={0: 500, 1: 500, 2: 500},
     )
 
-    assert descriptions[0]["label"] == "negative_mixed_freq_moderate_vol"
-    assert descriptions[1]["label"] == "negative_trend_dominant_low_vol"
+    assert descriptions[0]["label"] == "neutral_mixed_freq_moderate_vol"
+    assert descriptions[1]["label"] == "neutral_trend_dominant_low_vol"
     assert descriptions[2]["label"] == "positive_trend_dominant_high_vol"
 
 

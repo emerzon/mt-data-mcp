@@ -203,12 +203,10 @@ def _normalize_direction_signal(
     if "neutral" in text:
         return "neutral"
 
-    mean_value = _coerce_optional_float(mean_return)
-    if mean_value is None:
-        return None
-    if abs(mean_value) < 1e-4:
-        return "neutral"
-    return "bullish" if mean_value > 0 else "bearish"
+    # A mean without state dispersion and occupancy cannot support a
+    # timeframe-independent direction claim. State labels encode the shared
+    # t-statistic criterion when sufficient evidence exists.
+    return None
 
 
 def _normalize_volatility_signal(

@@ -1,5 +1,6 @@
 """Payload consolidation utilities for regime detection output formatting."""
 
+from collections import Counter
 from typing import Any, Dict, List, Optional
 
 import numpy as np
@@ -13,9 +14,28 @@ from .smoothing import _canonicalize_regime_labels
 _DIRECTION_T_STAT_THRESHOLD = 1.96
 
 
-def _return_level_from_mean(mu: float, *, neutral_threshold: float = 0.0001) -> str:
-    """Map a mean return to a semantic direction bucket."""
-    if abs(mu) < neutral_threshold:
+def _mean_return_t_stat(
+    mu: float,
+    sigma: Optional[float],
+    samples: Optional[int],
+) -> Optional[float]:
+    if sigma is None or samples is None or int(samples) < 2:
+        return None
+    sigma_value = float(sigma)
+    if not np.isfinite(sigma_value) or sigma_value <= 1e-12:
+        return None
+    return float(mu) / (sigma_value / np.sqrt(float(samples)))
+
+
+def _return_level_from_mean(
+    mu: float,
+    *,
+    sigma: Optional[float] = None,
+    samples: Optional[int] = None,
+) -> str:
+    """Map a state mean to direction using its sampling uncertainty."""
+    t_stat = _mean_return_t_stat(mu, sigma, samples)
+    if t_stat is None or abs(t_stat) < _DIRECTION_T_STAT_THRESHOLD:
         return "neutral"
     return "positive" if mu > 0 else "negative"
 
@@ -58,8 +78,14 @@ def _relative_volatility_levels(sigmas: Any) -> Dict[int, str]:
     return {index: tier_by_value[value] for index, value in finite}
 
 
-def _trader_hmm_label(mu: float, volatility: str) -> str:
-    direction = _return_level_from_mean(mu)
+def _trader_hmm_label(
+    mu: float,
+    volatility: str,
+    *,
+    sigma: Optional[float] = None,
+    samples: Optional[int] = None,
+) -> str:
+    direction = _return_level_from_mean(mu, sigma=sigma, samples=samples)
     if volatility in {"very_low_vol", "low_vol"}:
         tempo = "quiet"
     elif volatility == "mod_vol":
@@ -186,6 +212,8 @@ def _wavelet_concentration_character(energy_profile: Any) -> Optional[str]:
 def _compose_wavelet_label(
     *,
     mean_return: Optional[float],
+    return_sigma: Optional[float],
+    samples: Optional[int],
     volatility_level: Optional[str],
     energy_profile: Any,
     target: str,
@@ -194,7 +222,11 @@ def _compose_wavelet_label(
     """Build a descriptive wavelet label from return, energy shape, and volatility."""
     parts: List[str] = []
     if target != "price" and mean_return is not None:
-        parts.append(_return_level_from_mean(float(mean_return)))
+        parts.append(
+            _return_level_from_mean(
+                float(mean_return), sigma=return_sigma, samples=samples
+            )
+        )
 
     frequency_character = _wavelet_frequency_character(energy_profile)
     if include_concentration:
@@ -218,6 +250,7 @@ def _build_wavelet_labels(
     *,
     target: str,
     indexed_states: List[tuple[int, int]],
+    state_counts: Optional[Dict[int, int]] = None,
 ) -> Dict[int, str]:
     """Build wavelet labels with volatility relative to the fitted states."""
     mu_list = regime_params.get("mu") or regime_params.get("mean_return") or []
@@ -235,6 +268,12 @@ def _build_wavelet_labels(
         )
         label = _compose_wavelet_label(
             mean_return=mean_return,
+            return_sigma=(
+                float(sigma_list[source_state])
+                if source_state < len(sigma_list)
+                else None
+            ),
+            samples=(state_counts or {}).get(regime_id),
             volatility_level=volatility_levels.get(source_state),
             energy_profile=energy_profiles.get(str(source_state)),
             target=target,
@@ -254,6 +293,12 @@ def _build_wavelet_labels(
         )
         refined_label = _compose_wavelet_label(
             mean_return=mean_return,
+            return_sigma=(
+                float(sigma_list[source_state])
+                if source_state < len(sigma_list)
+                else None
+            ),
+            samples=(state_counts or {}).get(regime_id),
             volatility_level=volatility_levels.get(source_state),
             energy_profile=energy_profiles.get(str(source_state)),
             target=target,
@@ -465,6 +510,7 @@ def _interpret_regime_label(
     total_states: int,
     target: Optional[str] = "return",
     volatility_level: Optional[str] = None,
+    samples: Optional[int] = None,
 ) -> str:
     """Generate human-readable regime label from statistical parameters.
 
@@ -497,7 +543,9 @@ def _interpret_regime_label(
         and mu is not None
         and sigma is not None
     ):
-        return_level = _return_level_from_mean(float(mu))
+        return_level = _return_level_from_mean(
+            float(mu), sigma=float(sigma), samples=samples
+        )
         vol_level = volatility_level or "mod_vol"
         return f"{return_level}_{vol_level}"
 
@@ -538,7 +586,9 @@ def _interpret_regime_label(
     # Ensemble method - derive labels from observed return sign + volatility.
     # This avoids state-index names that can contradict the regime statistics.
     if method == "ensemble" and mu is not None and sigma is not None:
-        return_level = _return_level_from_mean(float(mu))
+        return_level = _return_level_from_mean(
+            float(mu), sigma=float(sigma), samples=samples
+        )
         vol_level = volatility_level or "mod_vol"
         return f"{return_level}_{vol_level}"
 
@@ -568,6 +618,7 @@ def _build_regime_descriptions(
     *,
     target: Optional[str] = "return",
     label_mapping: Any = None,
+    state_counts: Optional[Dict[int, int]] = None,
 ) -> Dict[int, Dict[str, Any]]:
     """Build a mapping of regime_id -> descriptive info from regime_params.
 
@@ -606,6 +657,7 @@ def _build_regime_descriptions(
             regime_params,
             target=target_name,
             indexed_states=indexed_states,
+            state_counts=state_counts,
         )
         if method == "wavelet"
         else {}
@@ -624,6 +676,7 @@ def _build_regime_descriptions(
             if weights_list and source_state < len(weights_list)
             else None
         )
+        samples = int((state_counts or {}).get(regime_id, 0) or 0) or None
 
         label = wavelet_labels.get(regime_id)
         if label is None:
@@ -635,6 +688,7 @@ def _build_regime_descriptions(
                 described_states,
                 target=target_name,
                 volatility_level=volatility_levels.get(source_state),
+                samples=samples,
             )
 
         desc: Dict[str, Any] = {"label": label}
@@ -643,6 +697,8 @@ def _build_regime_descriptions(
             label = _trader_hmm_label(
                 float(mu),
                 volatility_levels.get(source_state, "mod_vol"),
+                sigma=float(sigma),
+                samples=samples,
             )
             desc["label"] = label
             desc["stat_label"] = stat_label
@@ -659,6 +715,15 @@ def _build_regime_descriptions(
             else:
                 desc["volatility"] = round(sigma, 6)
                 desc["volatility_pct"] = round(sigma * 100, 4)
+        if target_name != "price" and mu is not None and sigma is not None:
+            mean_t_stat = _mean_return_t_stat(float(mu), float(sigma), samples)
+            desc["direction_criterion"] = "abs_mean_t_stat_gte_1.96"
+            desc["direction_significant"] = bool(
+                mean_t_stat is not None
+                and abs(mean_t_stat) >= _DIRECTION_T_STAT_THRESHOLD
+            )
+            if mean_t_stat is not None:
+                desc["mean_t_stat"] = round(mean_t_stat, 4)
         if weight is not None:
             desc["weight"] = round(weight, 4)
 
@@ -883,6 +948,7 @@ def _consolidate_payload(  # noqa: C901
                 )
                 else None
             ),
+            state_counts=dict(Counter(int(state) for state in states)),
         )
 
         final_segments = []

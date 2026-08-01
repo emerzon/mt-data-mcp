@@ -48,6 +48,11 @@ Model parameters are still fitted on the requested analysis window, and canonica
 state IDs are ordered by full-window state means. Historical canonical IDs are
 therefore retrospective labels; use rolling `as_of` calls for point-in-time tests.
 
+Return direction labels use one shared statistical rule across state models,
+BOCPD, and PELT: bullish or bearish requires the estimated mean to be at least
+1.96 standard errors from zero. State-model labels use the state's dispersion
+and observed bar count; without enough evidence the label remains neutral.
+
 **Example:**
 ```bash
 mtdata-cli regime_detect EURUSD --timeframe H1 --method hmm --params "n_states=2"

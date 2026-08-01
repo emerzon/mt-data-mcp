@@ -235,9 +235,8 @@ class TestConsolidatePayload:
             "method": "hmm",
             "target": "return",
             "success": True,
-            "times": ["T1", "T2"],
-            "state": [0, 1],
-            "state_probabilities": [[0.95, 0.05], [0.05, 0.95]],
+            "times": [f"T{i}" for i in range(100)],
+            "state": [0] * 50 + [1] * 50,
             "regime_params": {
                 "weights": [0.6, 0.4],
                 "mu": [0.002, -0.001],
@@ -274,9 +273,8 @@ class TestConsolidatePayload:
             "method": "ms_ar",
             "target": "return",
             "success": True,
-            "times": ["T1", "T2"],
-            "state": [0, 1],
-            "state_probabilities": [[0.95, 0.05], [0.05, 0.95]],
+            "times": [f"T{i}" for i in range(100)],
+            "state": [0] * 50 + [1] * 50,
             "regime_params": {
                 "mean_return": [-0.002, 0.001],
                 "volatility": [0.003, 0.0005],
@@ -381,15 +379,10 @@ class TestConsolidatePayload:
             "method": "clustering",
             "target": "return",
             "success": True,
-            "times": ["T1", "T2", "T3"],
-            "state": [0, 1, 2],
-            "state_probabilities": [
-                [1.0, 0.0, 0.0],
-                [0.0, 1.0, 0.0],
-                [0.0, 0.0, 1.0],
-            ],
+            "times": [f"T{i}" for i in range(150)],
+            "state": [0] * 50 + [1] * 50 + [2] * 50,
             "regime_params": {
-                "mean_return": [-0.001, 0.0, 0.001],
+                "mean_return": [-0.001, 0.0, 0.002],
                 "volatility": [0.0004, 0.0015, 0.004],
             },
         }
