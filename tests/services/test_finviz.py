@@ -15,6 +15,24 @@ def test_finviz_fundamental_percent_units_are_explicit() -> None:
     }
 
 
+def test_finviz_numeric_percent_values_scale_above_one_hundred_percent() -> None:
+    from mtdata.core.finviz import _finviz_percent_value
+
+    assert _finviz_percent_value(5.1702) == 517.02
+    assert _finviz_percent_value("517.02%") == 517.02
+
+
+def test_finviz_intraday_news_time_is_localized_from_new_york() -> None:
+    from datetime import datetime, timezone
+
+    from mtdata.core.finviz import _normalize_finviz_published_at
+
+    now = datetime(2026, 8, 1, 12, 0, tzinfo=timezone.utc)
+    assert _normalize_finviz_published_at("05:30AM", now=now) == (
+        "2026-08-01T09:30:00+00:00"
+    )
+
+
 class TestFinvizService:
     """Tests for the canonical finviz package functions."""
 
@@ -1771,11 +1789,17 @@ class TestFinvizTools:
                 "earnings": "Apr 27/b",
                 "earnings_timing": "before_market",
                 "market_cap": "14.17M",
-                "price": "12.85",
+                "price": 12.85,
                 "change_pct": -2.58,
                 "volume": "6593",
+                "price_source": "finviz_delayed",
+                "data_delayed": True,
+                "delay_minutes_min": 15,
+                "delay_minutes_max": 20,
             }
         ]
+        assert result["data_delayed"] is True
+        assert result["price_source"] == "finviz_delayed"
 
     @patch("mtdata.core.finviz.get_earnings_calendar")
     def test_finviz_earnings_rejects_invalid_detail(self, mock_get_earnings):

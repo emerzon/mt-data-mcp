@@ -151,6 +151,22 @@ def test_both_option_sides_share_the_global_limit():
     assert {item["strike"] for item in selected[:2]} == {100.0}
 
 
+def test_single_option_side_is_limited_nearest_to_spot():
+    items = [
+        {"side": "call", "strike": strike, "contract": f"call-{strike}"}
+        for strike in (50.0, 95.0, 100.0, 105.0, 150.0)
+    ]
+
+    selected = osvc._limit_option_contracts(
+        items,
+        option_type="call",
+        limit=3,
+        underlying_price=100.0,
+    )
+
+    assert [item["strike"] for item in selected] == [100.0, 95.0, 105.0]
+
+
 def test_get_options_chain_rejects_unavailable_expiration(monkeypatch):
     expiry = osvc._ymd_to_epoch("2026-04-17")
     monkeypatch.setattr(

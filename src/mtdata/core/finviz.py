@@ -495,11 +495,11 @@ def _finviz_percent_value(
         return None
     if not fraction_input:
         return round(float(parsed), 6)
-    if isinstance(value, (int, float)) and abs(float(parsed)) <= 1.0:
+    if isinstance(value, (int, float)):
         parsed = float(parsed) * 100.0
         return round(float(parsed), 6)
     text = str(value).strip()
-    if text and not text.endswith("%") and abs(float(parsed)) <= 1.0:
+    if text and not text.endswith("%"):
         parsed = float(parsed) * 100.0
     return round(float(parsed), 6)
 
@@ -1305,7 +1305,11 @@ def _clean_finviz_text_value(value: Any) -> Any:
 
 def _normalize_finviz_published_at(value: Any, *, now: Optional[datetime] = None) -> Any:
     if isinstance(value, datetime):
-        dt = value if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)
+        dt = (
+            value
+            if value.tzinfo is not None
+            else value.replace(tzinfo=_FINVIZ_CALENDAR_LOCAL_TZ)
+        )
         return dt.astimezone(timezone.utc).isoformat()
     if not isinstance(value, str):
         return value
@@ -1317,7 +1321,7 @@ def _normalize_finviz_published_at(value: Any, *, now: Optional[datetime] = None
     try:
         dt = datetime.fromisoformat(iso_text)
         if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
+            dt = dt.replace(tzinfo=_FINVIZ_CALENDAR_LOCAL_TZ)
         return dt.astimezone(timezone.utc).isoformat()
     except ValueError:
         pass
@@ -1325,7 +1329,11 @@ def _normalize_finviz_published_at(value: Any, *, now: Optional[datetime] = None
     for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%d"):
         try:
             dt = datetime.strptime(text, fmt)
-            return dt.replace(tzinfo=timezone.utc).isoformat()
+            return (
+                dt.replace(tzinfo=_FINVIZ_CALENDAR_LOCAL_TZ)
+                .astimezone(timezone.utc)
+                .isoformat()
+            )
         except ValueError:
             continue
 
@@ -1338,18 +1346,19 @@ def _normalize_finviz_published_at(value: Any, *, now: Optional[datetime] = None
         if reference.tzinfo is None:
             reference = reference.replace(tzinfo=timezone.utc)
         reference = reference.astimezone(timezone.utc)
+        reference_local = reference.astimezone(_FINVIZ_CALENDAR_LOCAL_TZ)
         dt = datetime.combine(
-            reference.date(),
+            reference_local.date(),
             datetime_time(
                 parsed_time.hour,
                 parsed_time.minute,
                 parsed_time.second,
-                tzinfo=timezone.utc,
+                tzinfo=_FINVIZ_CALENDAR_LOCAL_TZ,
             ),
         )
-        if dt > reference + timedelta(hours=1):
+        if dt.astimezone(timezone.utc) > reference + timedelta(hours=1):
             dt -= timedelta(days=1)
-        return dt.isoformat()
+        return dt.astimezone(timezone.utc).isoformat()
 
     return text
 
@@ -1762,6 +1771,10 @@ _FINVIZ_EARNINGS_COMPACT_FIELDS = (
     "price",
     "change",
     "volume",
+    "price_source",
+    "data_delayed",
+    "delay_minutes_min",
+    "delay_minutes_max",
 )
 _FINVIZ_EARNINGS_TIMING_SUFFIXES = {
     "/b": "before_market",
@@ -2010,6 +2023,8 @@ def _normalize_finviz_earnings_rows(rows: Any) -> List[Any]:
     for row in normalized:
         if not isinstance(row, dict):
             continue
+        if row.get("price") not in (None, ""):
+            row.update(_mark_finviz_delayed_price(row))
         earnings_text = str(row.get("earnings") or "").strip().lower()
         for suffix, timing in _FINVIZ_EARNINGS_TIMING_SUFFIXES.items():
             if earnings_text.endswith(suffix):
@@ -3864,6 +3879,11 @@ def finviz_earnings(
             "has_more": bool(result.get("has_more")),
             "truncated": bool(result.get("truncated")),
         }
+        if any(
+            isinstance(item, dict) and item.get("data_delayed") is True
+            for item in output_items
+        ):
+            _attach_finviz_delayed_root_metadata(out)
         if out["detail"] != "full":
             out["hint"] = (
                 "Period-based earnings view; use finviz_calendar(calendar='earnings') "

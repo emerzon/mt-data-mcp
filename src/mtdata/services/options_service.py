@@ -610,7 +610,7 @@ def _limit_option_contracts(
         return distance, strike
 
     if option_type != "both":
-        return sorted(items, key=lambda item: float(item.get("strike", 0.0)))[:safe_limit]
+        return sorted(items, key=_key)[:safe_limit]
 
     calls = sorted((item for item in items if item.get("side") == "call"), key=_key)
     puts = sorted((item for item in items if item.get("side") == "put"), key=_key)
