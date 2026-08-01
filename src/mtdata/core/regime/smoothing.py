@@ -58,8 +58,12 @@ def _confirm_state_changes_causally(
         return raw.copy(), {
             "min_regime_bars": max(1, int(min_regime_bars)),
             "postprocess": "causal_confirmation",
+            "confirmation_semantics": "consecutive_raw_state_evidence_before_transition",
             "transitions_before": 0,
             "transitions_after": 0,
+            "pending_state": None,
+            "pending_bars": 0,
+            "pending_bars_required": max(1, int(min_regime_bars)),
         }
     required = max(1, int(min_regime_bars))
     emitted = np.empty_like(raw)
@@ -87,11 +91,13 @@ def _confirm_state_changes_causally(
     return emitted, {
         "min_regime_bars": required,
         "postprocess": "causal_confirmation",
+        "confirmation_semantics": "consecutive_raw_state_evidence_before_transition",
         "smoothing_applied": bool(np.any(emitted != raw)),
         "transitions_before": before,
         "transitions_after": after,
         "pending_state": int(candidate) if candidate != confirmed else None,
         "pending_bars": int(candidate_count),
+        "pending_bars_required": required,
     }
 
 

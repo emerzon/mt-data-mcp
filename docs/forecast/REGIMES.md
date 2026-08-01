@@ -40,7 +40,10 @@ The implementation is a Gaussian HMM with an estimated transition matrix.
 `params.inference=filtered` is the default and uses observations through each
 bar under parameters fitted on the requested window. Use
 `params.inference=smoothed` only for retrospective segmentation because it uses
-later observations. State changes are confirmed causally by `min_regime_bars`.
+later observations. A state change is emitted only after the new raw state has
+persisted for `min_regime_bars` consecutive observations. This is a causal
+confirmation delay, not a promise that every emitted run will contain that many
+rows; a still-unconfirmed terminal candidate is reported in `warnings`.
 Model parameters are still fitted on the requested analysis window, and canonical
 state IDs are ordered by full-window state means. Historical canonical IDs are
 therefore retrospective labels; use rolling `as_of` calls for point-in-time tests.
@@ -172,7 +175,8 @@ Like HMM, MS-AR defaults to filtered probabilities. Set
 
 The scaler, optional PCA, cluster model, and canonical state ordering are fitted
 on the full requested window. Clustering output is descriptive; reproduce live
-behavior with rolling `as_of` calls. `min_regime_bars` confirmation itself is causal.
+behavior with rolling `as_of` calls. `min_regime_bars` confirmation itself is
+causal and reports a terminal candidate that is still awaiting confirmation.
 
 **Example:**
 ```bash

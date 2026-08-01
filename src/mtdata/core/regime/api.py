@@ -556,12 +556,14 @@ def _method_parameter_warnings(
 
 
 def _smoothing_warnings(method: str, smoothing_meta: Dict[str, Any]) -> List[str]:
-    if bool(smoothing_meta.get("min_regime_bars_satisfied", True)):
+    pending_state = smoothing_meta.get("pending_state")
+    pending_bars = int(smoothing_meta.get("pending_bars", 0) or 0)
+    if pending_state is None or pending_bars <= 0:
         return []
     return [
-        "min_regime_bars could not be fully satisfied for "
-        f"method='{method}' with the available decoded state sequence; "
-        f"{int(smoothing_meta.get('remaining_short_runs', 0))} short run(s) remain."
+        f"method='{method}' has candidate state {pending_state} pending confirmation "
+        f"({pending_bars}/{int(smoothing_meta.get('pending_bars_required', 1))} "
+        "required consecutive bars); the current emitted regime is retained."
     ]
 
 

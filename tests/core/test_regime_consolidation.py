@@ -5,6 +5,7 @@ import pytest
 from mtdata.core.regime.api import (
     _apply_bocpd_output_mode,
     _consolidate_payload,
+    _smoothing_warnings,
     _summary_only_payload,
 )
 from mtdata.core.regime.smoothing import (
@@ -20,6 +21,27 @@ def test_causal_state_confirmation_never_rewrites_prefix() -> None:
     assert full[:6].tolist() == prefix.tolist()
     assert full.tolist() == [0, 0, 0, 0, 0, 0, 0, 1]
     assert meta["postprocess"] == "causal_confirmation"
+    assert meta["confirmation_semantics"] == (
+        "consecutive_raw_state_evidence_before_transition"
+    )
+    assert meta["pending_state"] is None
+    assert meta["pending_bars"] == 0
+
+
+def test_causal_state_confirmation_reports_pending_terminal_candidate() -> None:
+    emitted, meta = _confirm_state_changes_causally(
+        np.array([0, 0, 1, 1], dtype=int),
+        3,
+    )
+
+    assert emitted.tolist() == [0, 0, 0, 0]
+    assert meta["pending_state"] == 1
+    assert meta["pending_bars"] == 2
+    assert meta["pending_bars_required"] == 3
+    assert _smoothing_warnings("hmm", meta) == [
+        "method='hmm' has candidate state 1 pending confirmation (2/3 required "
+        "consecutive bars); the current emitted regime is retained."
+    ]
 
 
 def test_bocpd_compact_lookback_preserves_true_segment_age() -> None:
