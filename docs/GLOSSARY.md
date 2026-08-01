@@ -546,7 +546,9 @@ Risk a **fixed percent of equity** per trade (e.g. 1% from entry to stop). Simpl
 ---
 
 ### Directional Accuracy
-**What it measures:** How often the forecast predicts the correct direction (up/down).
+**What it measures:** How often the forecast predicts the correct terminal
+horizon direction (up/down) from the forecast anchor. Backtest path-directional
+accuracy is a separate diagnostic for step-to-step shape agreement.
 
 **Example:** Directional accuracy = 0.58 means 58% of forecasts got the direction right.
 

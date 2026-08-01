@@ -196,7 +196,8 @@ mtdata-cli forecast_backtest_run EURUSD --horizon 12 --methods theta \
 |--------|-------------|------------|
 | `avg_mae` | Mean Absolute Error (average) | Lower is better |
 | `avg_rmse` | Root Mean Squared Error (average) | Lower is better |
-| `avg_directional_accuracy` | % of correct direction predictions | > 0.55 |
+| `avg_directional_accuracy` | Fraction of terminal horizon moves called in the correct direction from the anchor price | > 0.55 |
+| `avg_path_directional_accuracy` | Diagnostic agreement between forecast and realized step-to-step path directions | context-dependent |
 | `win_rate` | % of profitable forecast-target/horizon trades | > 0.50 |
 | `successful_tests` | Tests that completed without error | = num_tests |
 

@@ -12,6 +12,7 @@ import pytest
 
 from mtdata.forecast.backtest import (
     _compute_performance_metrics,
+    _forecast_direction_metrics,
     forecast_backtest,
 )
 from mtdata.utils.time import _format_time_minimal
@@ -23,7 +24,43 @@ def _make_df(n: int, base_time: float = 1700000000.0, base_close: float = 100.0)
     return pd.DataFrame({"time": times, "close": closes})
 
 
-# ── Fix 1: DA in return mode compares sign(forecast[i]) vs sign(actual[i]) ───
+# ── Fix 1: DA scores terminal trade direction ───
+
+
+def test_price_direction_uses_terminal_move_not_path_shape():
+    terminal, path = _forecast_direction_metrics(
+        [99.0, 105.0],
+        [101.0, 104.0],
+        entry_price=100.0,
+        target_mode="price",
+    )
+
+    assert terminal == (1.0, 1, 1)
+    assert path == (1.0, 1, 1)
+
+
+def test_price_direction_separates_wrong_terminal_call_from_matching_path():
+    terminal, path = _forecast_direction_metrics(
+        [99.0, 98.0],
+        [101.0, 100.5],
+        entry_price=100.0,
+        target_mode="price",
+    )
+
+    assert terminal == (0.0, 1, 1)
+    assert path == (1.0, 1, 1)
+
+
+def test_return_direction_uses_cumulative_horizon_return():
+    terminal, path = _forecast_direction_metrics(
+        [0.02, -0.01],
+        [-0.02, 0.03],
+        entry_price=100.0,
+        target_mode="return",
+    )
+
+    assert terminal == (1.0, 1, 1)
+    assert path == (0.0, 2, 2)
 
 
 class TestDAReturnMode:
@@ -40,11 +77,10 @@ class TestDAReturnMode:
             )
         detail = result["results"]["naive"]["details"][0]
         assert detail["success"] is True
-        # In return mode, DA = fraction where sign(forecast[i]) == sign(actual[i])
-        # actual returns are log returns, they should have same sign pattern as
-        # the linearly increasing close prices (all positive)
+        # The cumulative forecast and realized horizon returns are both positive.
         assert isinstance(detail["directional_accuracy"], float)
         assert not math.isnan(detail["directional_accuracy"])
+        assert "path_directional_accuracy" in detail
 
     @patch("mtdata.forecast.backtest._fetch_history")
     def test_da_return_mode_all_opposite_signs(self, fetch):
@@ -62,7 +98,7 @@ class TestDAReturnMode:
             )
         detail = result["results"]["naive"]["details"][0]
         assert detail["success"] is True
-        # All signs differ → DA = 0.0
+        # The cumulative forecast is negative and the realized horizon is positive.
         assert detail["directional_accuracy"] == pytest.approx(0.0)
 
     @patch("mtdata.forecast.backtest._fetch_history")

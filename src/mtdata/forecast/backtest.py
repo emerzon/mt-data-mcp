@@ -289,6 +289,9 @@ _TRADE_BACKTEST_UNITS = {
     "avg_directional_accuracy": "fraction",
     "directional_calls_made": "count",
     "directional_opportunities": "count",
+    "avg_path_directional_accuracy": "fraction",
+    "path_directional_calls_made": "count",
+    "path_directional_opportunities": "count",
     "slippage_bps": "basis_points",
     "successful_tests": "count",
     "num_tests": "count",
@@ -350,6 +353,45 @@ def _directional_accuracy_from_signs(
 
     accuracy = float(np.mean(forecast_arr[call_mask] == actual_arr[call_mask]))
     return accuracy, calls_made, opportunities
+
+
+def _forecast_direction_metrics(
+    forecast_values: Any,
+    actual_values: Any,
+    *,
+    entry_price: float,
+    target_mode: str,
+) -> tuple[
+    Tuple[Optional[float], int, int],
+    Tuple[Optional[float], int, int],
+]:
+    """Score terminal trade direction and retain path-shape agreement."""
+    forecast_arr = np.asarray(forecast_values, dtype=float)
+    actual_arr = np.asarray(actual_values, dtype=float)
+    width = min(forecast_arr.size, actual_arr.size)
+    if width <= 0:
+        empty = (None, 0, 0)
+        return empty, empty
+
+    forecast_arr = forecast_arr[:width]
+    actual_arr = actual_arr[:width]
+    if target_mode == "return":
+        terminal_forecast = float(np.sum(forecast_arr))
+        terminal_actual = float(np.sum(actual_arr))
+        path_forecast = np.sign(forecast_arr)
+        path_actual = np.sign(actual_arr)
+    else:
+        terminal_forecast = float(forecast_arr[-1] - entry_price)
+        terminal_actual = float(actual_arr[-1] - entry_price)
+        path_forecast = np.sign(np.diff(forecast_arr))
+        path_actual = np.sign(np.diff(actual_arr))
+
+    terminal = _directional_accuracy_from_signs(
+        [np.sign(terminal_forecast)],
+        [np.sign(terminal_actual)],
+    )
+    path = _directional_accuracy_from_signs(path_forecast, path_actual)
+    return terminal, path
 
 
 def _compute_performance_metrics(
@@ -1836,22 +1878,20 @@ def forecast_backtest(  # noqa: C901
                         continue
                     mae = float(np.mean(np.abs(fcv[:m] - act[:m])))
                     rmse = float(np.sqrt(np.mean((fcv[:m] - act[:m])**2)))
-                    if target_mode == 'return':
-                        # Return mode: DA = did forecasted non-zero return signs match realized signs?
-                        da, directional_calls_made, directional_opportunities = _directional_accuracy_from_signs(
-                            np.sign(fcv[:m]),
-                            np.sign(act[:m]),
-                        )
-                    elif m > 1:
-                        da, directional_calls_made, directional_opportunities = _directional_accuracy_from_signs(
-                            np.sign(np.diff(fcv[:m])),
-                            np.sign(np.diff(act[:m])),
-                        )
-                    else:
-                        da = None
-                        directional_calls_made = 0
-                        directional_opportunities = 0
                     entry_price = float(closes[idx]) if idx < len(closes) else float('nan')
+                    (
+                        (da, directional_calls_made, directional_opportunities),
+                        (
+                            path_da,
+                            path_directional_calls_made,
+                            path_directional_opportunities,
+                        ),
+                    ) = _forecast_direction_metrics(
+                        fcv[:m],
+                        act[:m],
+                        entry_price=entry_price,
+                        target_mode=target_mode,
+                    )
                     if target_mode == 'return':
                         expected_move = float(np.nansum(fcv[:m]))
                     else:
@@ -1958,6 +1998,9 @@ def forecast_backtest(  # noqa: C901
                         "directional_accuracy": da,
                         "directional_calls_made": directional_calls_made,
                         "directional_opportunities": directional_opportunities,
+                        "path_directional_accuracy": path_da,
+                        "path_directional_calls_made": path_directional_calls_made,
+                        "path_directional_opportunities": path_directional_opportunities,
                         "entry_price": entry_price,
                         "exit_price": exit_price,
                         "exit_step": int(exit_step) + 1 if m > 0 else 0,
@@ -2015,6 +2058,26 @@ def forecast_backtest(  # noqa: C901
                     da_vals = [v for v in da_vals if v is not None and np.isfinite(v)]
                     if da_vals:
                         agg["avg_directional_accuracy"] = float(np.mean(da_vals))
+                    path_directional_calls_made = sum(
+                        int(x.get("path_directional_calls_made") or 0) for x in ok
+                    )
+                    path_directional_opportunities = sum(
+                        int(x.get("path_directional_opportunities") or 0) for x in ok
+                    )
+                    agg["path_directional_calls_made"] = path_directional_calls_made
+                    agg["path_directional_opportunities"] = (
+                        path_directional_opportunities
+                    )
+                    path_da_vals = [x.get("path_directional_accuracy") for x in ok]
+                    path_da_vals = [
+                        value
+                        for value in path_da_vals
+                        if value is not None and np.isfinite(value)
+                    ]
+                    if path_da_vals:
+                        agg["avg_path_directional_accuracy"] = float(
+                            np.mean(path_da_vals)
+                        )
                     # Exclude flat positions from trade metrics
                     trade_returns = [
                         float(x['trade_return']) for x in ok
