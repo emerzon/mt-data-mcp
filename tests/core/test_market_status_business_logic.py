@@ -150,7 +150,7 @@ def test_market_status_symbol_mode_reports_heuristic_status(monkeypatch) -> None
     assert result["heuristic_note"].startswith(
         "Symbol status is inferred from MT5 trade_mode, tick freshness"
     )
-    assert "FX weekly sessions typically run Sun 22:00-Fri 22:00 UTC" in result[
+    assert "FX weekly sessions typically run Sun 17:00-Fri 17:00" in result[
         "heuristic_note"
     ]
     assert result["can_open_new_positions"] is True
@@ -592,6 +592,57 @@ def test_recent_sunday_reopen_is_not_classified_as_weekend_trading() -> None:
     assert result["saturday_candles"] == 0
     assert result["sunday_candles"] == 1
 
+
+def test_market_status_reconciles_future_cached_tick_with_live_stream(monkeypatch) -> None:
+    fixed_now = datetime(2026, 7, 30, 12, 0, tzinfo=timezone.utc)
+    now_epoch = fixed_now.timestamp()
+
+    class FixedDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return fixed_now.replace(tzinfo=None) if tz is None else fixed_now.astimezone(tz)
+
+    class Gateway:
+        COPY_TICKS_ALL = 0
+        TIMEFRAME_M1 = 1
+        SYMBOL_TRADE_MODE_FULL = 4
+        SYMBOL_TRADE_MODE_DISABLED = 0
+        SYMBOL_TRADE_MODE_CLOSEONLY = 3
+        SYMBOL_TRADE_MODE_LONGONLY = 1
+        SYMBOL_TRADE_MODE_SHORTONLY = 2
+
+        def ensure_connection(self) -> None:
+            return None
+
+        def symbol_info(self, symbol: str):
+            return SimpleNamespace(name=symbol, visible=True, trade_mode=4)
+
+        def symbol_info_tick(self, _symbol: str):
+            return SimpleNamespace(time=now_epoch + 45, bid=100.0, ask=101.0)
+
+        def copy_ticks_range(self, _symbol, _start, _end, _flags):
+            return [
+                {
+                    "time": now_epoch - 1,
+                    "time_msc": (now_epoch - 1) * 1000,
+                    "bid": 100.1,
+                    "ask": 100.2,
+                }
+            ]
+
+        def copy_rates_range(self, _symbol, _timeframe, _start, _end):
+            return []
+
+    monkeypatch.setattr(market_status_mod, "datetime", FixedDateTime)
+    monkeypatch.setattr(market_status_mod, "create_mt5_gateway", lambda **kwargs: Gateway())
+
+    result = _unwrap(market_status_mod.market_status)(symbol="BTCUSD", detail="full")
+
+    assert result["status"] == "probably_open"
+    assert result["can_open_new_positions"] is True
+    assert result["tick"]["quote_source"] == "mt5.copy_ticks_range"
+    assert result["tick"]["quote_source_state"] == "refreshed_from_tick_stream"
+    assert result["tick"]["last_tick_age_seconds"] == 1.0
 
 def test_market_status_symbol_mode_marks_weekend_snapshot_freshness(monkeypatch) -> None:
     raw = _unwrap(market_status_mod.market_status)

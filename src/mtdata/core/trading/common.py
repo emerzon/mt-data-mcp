@@ -6,8 +6,8 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Literal, Optional
 
 from ...utils.market_metadata import build_tick_freshness_context
-from ...utils.time import format_epoch_utc
-from ...utils.time import _format_datetime_second_explicit
+from ...utils.quote import tick_epoch
+from ...utils.time import _format_datetime_second_explicit, format_epoch_utc
 from ...utils.utils import _parse_end_datetime, _parse_start_datetime
 from . import validation
 
@@ -19,17 +19,7 @@ def build_trade_quote_context(
     now_epoch: Optional[float] = None,
 ) -> Dict[str, Any]:
     """Build trust metadata for a quote used by a pre-trade calculation."""
-    tick_epoch = getattr(tick, "time_msc", None)
-    try:
-        tick_epoch = float(tick_epoch) / 1000.0 if tick_epoch else None
-    except (TypeError, ValueError):
-        tick_epoch = None
-    if tick_epoch is None:
-        tick_epoch = getattr(tick, "time", None)
-    try:
-        epoch_value = float(tick_epoch)
-    except (TypeError, ValueError):
-        epoch_value = None
+    epoch_value = tick_epoch(tick)
     if epoch_value is None or epoch_value <= 0.0:
         return {
             "quote_source": "mt5.symbol_info_tick",

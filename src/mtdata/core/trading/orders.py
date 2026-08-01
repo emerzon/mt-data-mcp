@@ -9,6 +9,7 @@ from typing import Any, Callable, Dict, List, Optional, TypedDict, Union
 from ...bootstrap.settings import mt5_config, trade_guardrails_config
 from ...shared.market_units import forex_points_per_pip
 from ...utils.coercion import round_finite
+from ...utils.quote import resolve_quote_tick, tick_value
 from . import comments, common, time, validation
 from .gateway import MT5TradingGateway, create_trading_gateway, trading_connection_error
 from .positions import _resolve_open_position
@@ -903,12 +904,18 @@ def build_trade_place_dry_run_preview(
     if volume_error:
         return {"preview_error": volume_error}
 
-    tick = mt5.symbol_info_tick(symbol)
+    quote_now = _stdlib_time.time()
+    tick, quote_source = resolve_quote_tick(
+        mt5,
+        symbol,
+        mt5.symbol_info_tick(symbol),
+        now_epoch=quote_now,
+    )
     if tick is None:
         return {"preview_error": f"Failed to get current price for {symbol}"}
 
-    bid = validation._safe_float_attr(tick, "bid")
-    ask = validation._safe_float_attr(tick, "ask")
+    bid = validation.coerce_finite_float(tick_value(tick, "bid"))
+    ask = validation.coerce_finite_float(tick_value(tick, "ask"))
     if bid is None or ask is None or not math.isfinite(bid) or not math.isfinite(ask):
         return {"preview_error": f"Failed to get valid bid/ask for {symbol}"}
 
@@ -918,11 +925,17 @@ def build_trade_place_dry_run_preview(
     order_type_value = _order_type_constant(mt5, order_type)
     entry_price = float(price) if pending and price not in (None, 0) else (ask if side == "BUY" else bid)
 
+    quote_context = common.build_trade_quote_context(
+        symbol,
+        tick,
+        now_epoch=quote_now,
+    )
+    quote_context.update(quote_source)
     out: Dict[str, Any] = {
         "bid": _round_preview_price(bid, digits=digits),
         "ask": _round_preview_price(ask, digits=digits),
         "estimated_fill_price": _round_preview_price(entry_price, digits=digits),
-        "quote_context": common.build_trade_quote_context(symbol, tick),
+        "quote_context": quote_context,
     }
     if pending:
         out["entry_price"] = _round_preview_price(entry_price, digits=digits)

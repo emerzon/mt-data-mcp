@@ -465,7 +465,10 @@ def test_build_trade_place_dry_run_preview_uses_live_quote_and_margin():
     )
     gateway.account_info.return_value = SimpleNamespace(margin_free=1000.0)
 
-    with patch("mtdata.core.trading.common.datetime", wraps=datetime) as mock_datetime:
+    with patch("mtdata.core.trading.common.datetime", wraps=datetime) as mock_datetime, patch(
+        "mtdata.core.trading.orders._stdlib_time.time",
+        return_value=fixed_now.timestamp(),
+    ):
         mock_datetime.now.return_value = fixed_now
         result = build_trade_place_dry_run_preview(
             symbol="EURUSD",
@@ -493,6 +496,61 @@ def test_build_trade_place_dry_run_preview_uses_live_quote_and_margin():
     assert result["quote_context"]["freshness_state"] == "live"
     assert result["quote_context"]["quote_timezone"] == "UTC"
     adapter.order_calc_margin.assert_called_once_with(0, "EURUSD", 0.1, 1.1001)
+
+
+def test_trade_preview_reconciles_equal_timestamp_quote_conflict():
+    now = datetime(2026, 7, 15, 12, 0, tzinfo=timezone.utc).timestamp()
+    gateway = MagicMock()
+    gateway.adapter = SimpleNamespace(
+        ORDER_TYPE_BUY=0,
+        order_calc_margin=MagicMock(return_value=123.45),
+    )
+    gateway.ORDER_TYPE_BUY = 0
+    gateway.COPY_TICKS_ALL = 0
+    gateway.symbol_info.return_value = SimpleNamespace(
+        visible=True,
+        volume_min=0.01,
+        volume_max=100.0,
+        volume_step=0.01,
+        point=0.00001,
+        digits=5,
+        trade_stops_level=10,
+        trade_freeze_level=0,
+    )
+    gateway.symbol_info_tick.return_value = SimpleNamespace(
+        bid=1.15304,
+        ask=1.15326,
+        time=now,
+        time_msc=now * 1000,
+    )
+    gateway.copy_ticks_range.return_value = [
+        {
+            "bid": 1.15308,
+            "ask": 1.15322,
+            "time": now,
+            "time_msc": now * 1000,
+        }
+    ]
+
+    with patch("mtdata.core.trading.orders._stdlib_time.time", return_value=now):
+        result = build_trade_place_dry_run_preview(
+            symbol="EURUSD",
+            volume=0.1,
+            order_type="BUY",
+            pending=False,
+            price=None,
+            stop_loss=None,
+            take_profit=None,
+            gateway=gateway,
+        )
+
+    assert result["bid"] == 1.15308
+    assert result["ask"] == 1.15322
+    assert result["estimated_fill_price"] == 1.15322
+    assert result["quote_context"]["quote_source"] == "mt5.copy_ticks_range"
+    assert result["quote_context"]["quote_source_conflict"]["reason"] == (
+        "equal_timestamp_bid_ask_disagreement"
+    )
 
 
 def test_build_trade_place_dry_run_preview_preserves_zero_symbol_digits():

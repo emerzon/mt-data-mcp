@@ -3,7 +3,6 @@ import logging
 import math
 import os
 import time
-from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Literal, Optional
 
 from ..shared.market_units import forex_points_per_pip
@@ -28,6 +27,7 @@ from ..utils.mt5 import (
     symbol_price_digits,
     symbol_price_point,
 )
+from ..utils.quote import resolve_quote_tick, tick_epoch, tick_value
 from ..utils.symbol import match_symbol_infos
 from ..utils.time import (
     _format_time_second_explicit,
@@ -189,54 +189,11 @@ def _compact_market_ticker_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _market_ticker_tick_value(tick: Any, field: str) -> Any:
-    if isinstance(tick, dict):
-        return tick.get(field)
-    try:
-        return tick[field]
-    except Exception:
-        return getattr(tick, field, None)
+    return tick_value(tick, field)
 
 
 def _market_ticker_tick_epoch(tick: Any) -> Optional[float]:
-    time_msc = _market_ticker_tick_value(tick, "time_msc")
-    try:
-        epoch = float(time_msc) / 1000.0
-        if math.isfinite(epoch) and epoch > 0.0:
-            return epoch
-    except (TypeError, ValueError):
-        pass
-    try:
-        epoch = float(_market_ticker_tick_value(tick, "time"))
-    except (TypeError, ValueError):
-        return None
-    return epoch if math.isfinite(epoch) and epoch > 0.0 else None
-
-
-def _market_ticker_stream_tick(
-    gateway: Any,
-    symbol: str,
-    *,
-    now_epoch: float,
-) -> Any:
-    try:
-        rows = gateway.copy_ticks_range(
-            symbol,
-            datetime.fromtimestamp(now_epoch, tz=timezone.utc) - timedelta(minutes=15),
-            datetime.fromtimestamp(now_epoch, tz=timezone.utc) + timedelta(seconds=5),
-            gateway.COPY_TICKS_ALL,
-        )
-    except Exception:
-        return None
-    if rows is None:
-        return None
-    try:
-        candidates = list(rows)
-    except (TypeError, ValueError):
-        return None
-    candidates = [row for row in candidates if _market_ticker_tick_epoch(row) is not None]
-    if not candidates:
-        return None
-    return max(candidates, key=lambda row: float(_market_ticker_tick_epoch(row) or 0.0))
+    return tick_epoch(tick)
 
 
 def _market_ticker_refresh_tick(
@@ -246,56 +203,13 @@ def _market_ticker_refresh_tick(
     *,
     now_epoch: float,
 ) -> tuple[Any, Dict[str, Any]]:
-    tick_epoch = _market_ticker_tick_epoch(tick)
-    if tick_epoch is None:
-        return tick, {"quote_source": "mt5.symbol_info_tick"}
-    source_freshness = build_tick_freshness_context(
+    return resolve_quote_tick(
+        gateway,
         symbol,
-        tick_epoch=tick_epoch,
+        tick,
         now_epoch=now_epoch,
-        item="tick",
         stale_after_seconds=_MARKET_TICKER_STALE_SECONDS,
-        age_rounder=_market_ticker_age_seconds,
     )
-    if (
-        source_freshness.get("usable_for_live_trading") is not False
-        or source_freshness.get("freshness_policy_relaxed")
-        or source_freshness.get("market_status") == "closed"
-    ):
-        return tick, {
-            "quote_source": "mt5.symbol_info_tick",
-            "quote_source_state": "current",
-        }
-
-    stream_tick = _market_ticker_stream_tick(gateway, symbol, now_epoch=now_epoch)
-    metadata: Dict[str, Any] = {
-        "quote_source": "mt5.symbol_info_tick",
-        "quote_source_state": "unverified_stale",
-        "quote_refresh_attempted": True,
-    }
-    if stream_tick is None:
-        return tick, metadata
-    stream_epoch = _market_ticker_tick_epoch(stream_tick)
-    stream_freshness = build_tick_freshness_context(
-        symbol,
-        tick_epoch=stream_epoch,
-        now_epoch=now_epoch,
-        item="tick",
-        stale_after_seconds=_MARKET_TICKER_STALE_SECONDS,
-        age_rounder=_market_ticker_age_seconds,
-    )
-    if stream_freshness.get("usable_for_live_trading") is not True:
-        metadata["stream_tick_time_epoch"] = stream_epoch
-        return tick, metadata
-    metadata.update(
-        {
-            "quote_source": "mt5.copy_ticks_range",
-            "quote_source_state": "refreshed_from_tick_stream",
-            "symbol_info_tick_time_epoch": tick_epoch,
-            "stream_tick_time_epoch": stream_epoch,
-        }
-    )
-    return stream_tick, metadata
 
 
 def _positive_market_ticker_float(value: Any) -> Optional[float]:

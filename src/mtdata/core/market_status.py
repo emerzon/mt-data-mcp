@@ -13,14 +13,15 @@ import holidays
 
 from ..shared.schema import DetailLiteral
 from ..shared.symbols import is_probably_crypto_symbol, is_probably_forex_symbol
-from ..utils.market_metadata import build_tick_freshness_context
 from ..utils.freshness import is_standard_weekend_closure
+from ..utils.market_metadata import build_tick_freshness_context
 from ..utils.mt5 import (
     MT5ConnectionError,
     _normalize_times_in_struct,
     ensure_mt5_connection_or_raise,
 )
 from ..utils.mt5_enums import decode_mt5_enum_label
+from ..utils.quote import resolve_quote_tick, tick_value
 from ._mcp_instance import mcp
 from .execution_logging import run_logged_operation
 from .mt5_gateway import create_mt5_gateway
@@ -666,7 +667,13 @@ def _symbol_trade_mode_status(gateway: Any, trade_mode: Any) -> Dict[str, Any]:
     }
 
 
-def _symbol_tick_snapshot(symbol: str, tick: Any, *, now_utc: datetime) -> Dict[str, Any]:
+def _symbol_tick_snapshot(
+    symbol: str,
+    tick: Any,
+    *,
+    now_utc: datetime,
+    source_metadata: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
     if tick is None:
         return {
             "tick_available": False,
@@ -676,7 +683,9 @@ def _symbol_tick_snapshot(symbol: str, tick: Any, *, now_utc: datetime) -> Dict[
     out: Dict[str, Any] = {
         "tick_available": True,
     }
-    tick_time = getattr(tick, "time", None)
+    if source_metadata:
+        out.update(source_metadata)
+    tick_time = tick_value(tick, "time")
     if tick_time is not None:
         try:
             tick_epoch = float(tick_time)
@@ -717,7 +726,7 @@ def _symbol_tick_snapshot(symbol: str, tick: Any, *, now_utc: datetime) -> Dict[
         out["tick_freshness"] = "unknown"
 
     for field in ("bid", "ask", "last", "volume"):
-        value = getattr(tick, field, None)
+        value = tick_value(tick, field)
         if value is not None:
             out[field] = value
     return out
@@ -909,8 +918,19 @@ def _check_symbol_market_status(
     now_utc = datetime.now(timezone.utc)
     trade_mode = getattr(info, "trade_mode", None)
     mode_status = _symbol_trade_mode_status(mt5_gateway, trade_mode)
-    tick = mt5_gateway.symbol_info_tick(symbol_name)
-    tick_status = _symbol_tick_snapshot(symbol_name, tick, now_utc=now_utc)
+    raw_tick = mt5_gateway.symbol_info_tick(symbol_name)
+    tick, quote_source = resolve_quote_tick(
+        mt5_gateway,
+        symbol_name,
+        raw_tick,
+        now_epoch=now_utc.timestamp(),
+    )
+    tick_status = _symbol_tick_snapshot(
+        symbol_name,
+        tick,
+        now_utc=now_utc,
+        source_metadata=quote_source,
+    )
     schedule_status = _infer_symbol_schedule_from_recent_candles(
         symbol_name,
         mt5_gateway,
@@ -1050,6 +1070,9 @@ def _check_symbol_market_status(
             "timestamp_in_future",
             "timestamp_skew_seconds",
             "timestamp_warning",
+            "quote_source",
+            "quote_source_state",
+            "quote_source_conflict",
         ):
             if key in tick_status:
                 result[key] = tick_status[key]
@@ -1063,7 +1086,8 @@ def _symbol_status_heuristic_note(symbol_name: str) -> str:
     )
     if is_probably_forex_symbol(symbol_name):
         note += (
-            " FX weekly sessions typically run Sun 22:00-Fri 22:00 UTC, "
+            " FX weekly sessions typically run Sun 17:00-Fri 17:00 "
+            "America/New_York, "
             "subject to broker holidays and session gaps."
         )
     return note

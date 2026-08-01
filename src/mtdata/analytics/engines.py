@@ -22,7 +22,11 @@ from ..core.analytics_requests import (
 from ..shared.constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
 from ..shared.market_units import forex_points_per_pip
 from ..utils.barriers import normalize_same_bar_policy
-from ..utils.freshness import closed_session_context, format_age_seconds
+from ..utils.freshness import (
+    closed_session_context,
+    format_age_seconds,
+    standard_weekend_window,
+)
 from ..utils.market_metadata import build_tick_freshness_context
 from ..utils.tick_flags import mt5_trade_event_mask
 from ..utils.time import format_epoch_utc
@@ -304,11 +308,47 @@ def _tick_frame(gateway: Any, symbol: str, start: datetime, end: datetime, max_t
 def analyze_microstructure(request: MarketMicrostructureRequest, gateway: Any) -> Dict[str, Any]:
     start, end = _window(request.start, request.end, request.minutes_back)
     df, truncated = _tick_frame(gateway, request.symbol, start, end, request.max_ticks)
+    completed_session_context = None
+    session = closed_session_context(
+        request.symbol,
+        now_epoch=end.timestamp(),
+        item="tick stream",
+    )
+    if (
+        len(df) < 20
+        and session is not None
+        and request.start is None
+        and request.end is None
+    ):
+        closure = standard_weekend_window(end)
+        if closure is not None:
+            completed_end = closure[0]
+            completed_start = completed_end - timedelta(minutes=request.minutes_back)
+            completed_df, completed_truncated = _tick_frame(
+                gateway,
+                request.symbol,
+                completed_start,
+                completed_end,
+                request.max_ticks,
+            )
+            if len(completed_df) > len(df):
+                start, end = completed_start, completed_end
+                df, truncated = completed_df, completed_truncated
+                last_epoch = float(df["epoch"].iloc[-1])
+                completed_session_context = closed_session_context(
+                    request.symbol,
+                    now_epoch=datetime.now(timezone.utc).timestamp(),
+                    item="tick stream",
+                    data_age_seconds=max(
+                        0.0,
+                        datetime.now(timezone.utc).timestamp() - last_epoch,
+                    ),
+                )
     if len(df) < 20:
         last_tick_epoch = float(df["epoch"].iloc[-1]) if len(df) else None
-        session = closed_session_context(
+        error_session = closed_session_context(
             request.symbol,
-            now_epoch=end.timestamp(),
+            now_epoch=datetime.now(timezone.utc).timestamp(),
             item="tick stream",
             data_age_seconds=(
                 max(0.0, end.timestamp() - last_tick_epoch)
@@ -316,7 +356,7 @@ def analyze_microstructure(request: MarketMicrostructureRequest, gateway: Any) -
                 else None
             ),
         )
-        if session and session.get("market_status") == "closed":
+        if error_session and error_session.get("market_status") == "closed":
             return {
                 "error": "Market is closed and fewer than 20 recent usable ticks are available.",
                 "error_code": "market_closed",
@@ -329,7 +369,11 @@ def analyze_microstructure(request: MarketMicrostructureRequest, gateway: Any) -
                     if last_tick_epoch is not None
                     else None
                 ),
-                **session,
+                **error_session,
+                "note": (
+                    "Market is closed; fewer than 20 ticks were found in the "
+                    "latest completed-session analysis window."
+                ),
             }
         return {"error": "At least 20 usable ticks are required.", "error_code": "insufficient_data"}
     quote_mask = np.isfinite(df["mid"])
@@ -434,6 +478,10 @@ def analyze_microstructure(request: MarketMicrostructureRequest, gateway: Any) -
         for item in event_windows
     ]
     warnings = []
+    if completed_session_context is not None:
+        warnings.append(
+            "Market is closed; metrics use the latest completed-session tick window."
+        )
     if tier != "trade_volume":
         warnings.append("Real trade volume is insufficient; volume-impact metrics were omitted.")
     warnings.append(
@@ -465,7 +513,7 @@ def analyze_microstructure(request: MarketMicrostructureRequest, gateway: Any) -
             "spread": "absolute_price",
         }[spread_key]
         spread_stats = summary[spread_key]
-        return {
+        compact_result = {
             "success": True,
             "symbol": request.symbol,
             "summary": {
@@ -495,7 +543,10 @@ def analyze_microstructure(request: MarketMicrostructureRequest, gateway: Any) -
             },
             "warnings": warnings,
         }
-    return {
+        if completed_session_context is not None:
+            compact_result.update(completed_session_context)
+        return compact_result
+    result = {
         "success": True,
         "symbol": request.symbol,
         "timezone": "UTC",
@@ -521,6 +572,9 @@ def analyze_microstructure(request: MarketMicrostructureRequest, gateway: Any) -
         },
         "warnings": warnings,
     }
+    if completed_session_context is not None:
+        result.update(completed_session_context)
+    return result
 
 
 def _deal_side(row: Dict[str, Any], gateway: Any) -> Optional[str]:

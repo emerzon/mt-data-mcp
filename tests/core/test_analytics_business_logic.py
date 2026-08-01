@@ -286,6 +286,40 @@ def test_microstructure_reports_closed_session_for_short_tick_stream(monkeypatch
     assert "reopen" in result["remediation"]
 
 
+def test_microstructure_uses_completed_session_window_when_weekend_is_closed(
+    monkeypatch,
+) -> None:
+    gateway = FakeGateway()
+    rows = _ticks(30)
+    gateway.copy_ticks_range = lambda _symbol, start, _end, _flags: (
+        rows if start.weekday() == 4 else []
+    )
+    monkeypatch.setattr(
+        "mtdata.analytics.engines.closed_session_context",
+        lambda *args, **kwargs: {
+            "market_status": "closed",
+            "market_status_reason": "weekend",
+            "note": "Market is closed; showing the latest completed session tick stream.",
+        },
+    )
+    monkeypatch.setattr(
+        "mtdata.analytics.engines.standard_weekend_window",
+        lambda _now: (
+            datetime(2026, 7, 31, 21, tzinfo=timezone.utc),
+            datetime(2026, 8, 2, 21, tzinfo=timezone.utc),
+        ),
+    )
+
+    result = analyze_microstructure(
+        MarketMicrostructureRequest(symbol="EURUSD", minutes_back=60), gateway
+    )
+
+    assert result["success"] is True
+    assert result["summary"]["ticks"] == 30
+    assert result["market_status"] == "closed"
+    assert any("completed-session" in warning for warning in result["warnings"])
+
+
 def test_tick_frame_keeps_derived_quotes_for_one_sided_updates() -> None:
     gateway = FakeGateway()
     gateway.tick_rows = [
