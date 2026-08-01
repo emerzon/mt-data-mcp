@@ -430,7 +430,9 @@ def test_calibrate_heston_quantlib_uses_calendar_override_for_business_days(monk
     assert out["success"] is True
     assert out["days_to_expiry"] == 18
     assert out["pricing_assumptions"]["calendar"] == "NullCalendar"
-    assert out["pricing_assumptions"]["maturity_basis"] == "business_days"
+    assert out["pricing_assumptions"]["maturity_convention"] == "calendar_days_to_contract_expiry"
+    assert out["pricing_assumptions"]["days_to_expiry_basis"] == "business_days"
+    assert "maturity_basis" not in out["pricing_assumptions"]
 
 
 def test_calibrate_heston_rejects_invalid_valuation_date(monkeypatch):

@@ -142,7 +142,7 @@ mtdata-cli options_heston_calibrate TSLA \
 | `--min-volume` | 0 | Min volume for contract selection |
 | `--max-contracts` | 25 | Max contracts used in calibration |
 | `--calendar` | `UnitedStates.NYSE` | QuantLib calendar name used for maturity assumptions |
-| `--maturity-basis` | `calendar_days` | Interpret days-to-expiry as `calendar_days` or `business_days` in the selected calendar |
+| `--maturity-basis` | `calendar_days` | Basis for the reported `days_to_expiry` diagnostic. The Heston helper maturity is always anchored to the contract's calendar expiry date. |
 
 **Heston parameters returned:**
 

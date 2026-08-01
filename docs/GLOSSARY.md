@@ -907,7 +907,7 @@ Return per unit of volatility (often excess return / σ). Higher is “more rewa
 ### Dry-run
 A **preview** of a trading request: validation and routing checks **without** sending the order to MT5. Clean dry-runs are necessary but not sufficient (broker margin/stops still apply live).
 
-**In mtdata:** `--dry-run true` on `trade_place` / `trade_modify` / `trade_close`. Defaults are **live** unless you pass dry-run. See [TRADING_SAFETY.md](TRADING_SAFETY.md).
+**In mtdata:** `trade_place`, `trade_modify`, and `trade_close` default to preview mode (`--dry-run true`). Set `--dry-run false` explicitly for live execution. See [TRADING_SAFETY.md](TRADING_SAFETY.md).
 
 ### Trade guardrails
 Optional environment limits: allowed symbols, max volume, max risk % of equity, blocklists, etc. Defense-in-depth so a bad agent or typo cannot empty an account.

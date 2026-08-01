@@ -401,6 +401,22 @@ def _barrier_option_params(
     }
 
 
+def _heston_pricing_assumptions(
+    *,
+    calendar: str,
+    days_to_expiry_basis: str,
+) -> Dict[str, str]:
+    assumptions = _quantlib_pricing_assumptions(
+        "Heston analytic calibration",
+        calendar=calendar,
+        maturity_basis=days_to_expiry_basis,
+    )
+    assumptions.pop("maturity_basis", None)
+    assumptions["maturity_convention"] = "calendar_days_to_contract_expiry"
+    assumptions["days_to_expiry_basis"] = days_to_expiry_basis
+    return assumptions
+
+
 def calibrate_heston_quantlib_from_options(
     *,
     symbol: str,
@@ -591,10 +607,9 @@ def calibrate_heston_quantlib_from_options(
             "rho": float(model.rho()),
             "v0": float(model.v0()),
         },
-        "pricing_assumptions": _quantlib_pricing_assumptions(
-            "Heston analytic calibration",
+        "pricing_assumptions": _heston_pricing_assumptions(
             calendar=calendar_name,
-            maturity_basis=maturity_basis_norm,
+            days_to_expiry_basis=maturity_basis_norm,
         ),
         "risk_free_rate": float(risk_free_rate),
         "dividend_yield": float(dividend_yield),

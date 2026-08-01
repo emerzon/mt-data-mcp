@@ -96,6 +96,12 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
         "to its MT5 group. Optional with --group."
     ),
     ("options_barrier_price", "option_type"): "Option side: call or put.",
+    ("options_barrier_price", "calendar"): (
+        "QuantLib calendar name, such as UnitedStates.NYSE, TARGET, or NullCalendar."
+    ),
+    ("options_barrier_price", "maturity_basis"): (
+        "Interpret maturity_days as calendar_days or business_days in the selected QuantLib calendar."
+    ),
     ("options_barrier_price", "barrier"): (
         "Option knock-in/knock-out barrier price level, in the same units as spot "
         "and strike. This is a numeric parametric pricer; it does not fetch a symbol quote."
@@ -130,6 +136,12 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
     ),
     ("options_heston_calibrate", "symbol"): (
         "Underlying symbol for listed options, e.g. AAPL or SPX."
+    ),
+    ("options_heston_calibrate", "calendar"): (
+        "QuantLib calendar name used by calibration helpers, such as UnitedStates.NYSE or NullCalendar."
+    ),
+    ("options_heston_calibrate", "maturity_basis"): (
+        "Basis for the reported days_to_expiry diagnostic; calibration remains anchored to the contract expiry date."
     ),
     ("options_chain", "expiration"): (
         "Listed option expiration date in YYYY-MM-DD format, e.g. 2026-07-17. "

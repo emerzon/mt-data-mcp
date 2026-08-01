@@ -142,7 +142,7 @@ PARAM_HINTS = {
     "segments": "Segment count.",
     "bucket_seconds": "Resample bucket size in seconds.",
     "buffer_seconds": "Extra seconds to wait after the candle close before returning.",
-    "max_wait_seconds": "Maximum seconds this tool may block before returning timing metadata instead.",
+    "max_wait_seconds": "Maximum seconds to block before returning a failed timeout payload with wait timing fields.",
     "schema": "Encoding schema (e.g. delta).",
     "bits": "Bits per symbol for encoding schemas.",
     "paa": "PAA segments for symbolic representation.",
