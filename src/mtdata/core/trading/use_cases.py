@@ -966,8 +966,6 @@ def _extract_trade_risk_kelly_inputs(
             (
                 "kelly_avg_win",
                 "avg_win_return",
-                "avg_win",
-                "average_win",
                 "mean_win_return",
             ),
         ),
@@ -976,10 +974,7 @@ def _extract_trade_risk_kelly_inputs(
             (
                 "kelly_avg_loss",
                 "avg_loss_return",
-                "avg_loss",
-                "average_loss",
                 "mean_loss_return",
-                "avg_loss_magnitude",
             ),
         ),
     }
@@ -3892,18 +3887,14 @@ def run_trade_risk_analyze(  # noqa: C901
                         )
                         if sizing_method == "fixed_fraction"
                         else (
-                            "Kelly sizing needs win rate and average win/loss "
-                            "returns; desired_risk_pct is optional and acts as a "
-                            "cap. Use trade_journal_analyze to estimate "
-                            "win_rate, avg_win, and avg_loss from realized "
-                            "trades."
+                            "Kelly sizing needs win rate and stake-normalized average "
+                            "win/loss returns (for example, R-multiples); "
+                            "desired_risk_pct is optional and acts as a cap. Raw "
+                            "account-currency PnL averages are not valid inputs."
                         ),
                     }
                     if sizing_method == "kelly":
                         position_sizing["sizing_method"] = sizing_method
-                        position_sizing["related_tools"] = [
-                            "trade_journal_analyze"
-                        ]
                     if position_sizing_provided:
                         proposed_context = {
                             key: value
@@ -4129,8 +4120,9 @@ def run_trade_risk_analyze(  # noqa: C901
                                     else "Invalid Kelly sizing inputs"
                                 ),
                                 remediation=(
-                                    "Provide valid Kelly metrics or derive them from "
-                                    "trade_journal_analyze."
+                                    "Provide win rate and stake-normalized average "
+                                    "win/loss returns from a consistently risk-sized "
+                                    "out-of-sample track record."
                                 ),
                                 details={
                                     "kelly_win_rate": kelly_inputs.get("win_rate"),

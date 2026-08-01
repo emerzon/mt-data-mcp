@@ -66,8 +66,10 @@ def compute_kelly_sizing_context(
 ) -> Tuple[Optional[float], Dict[str, Any]]:
     """Compute the effective risk percent implied by Kelly inputs.
 
-    Returns ``(effective_risk_pct, metadata)``. Non-positive Kelly edge is a
-    valid outcome and returns ``0.0`` with ``status="kelly_no_edge"``.
+    ``avg_win`` and ``avg_loss`` must use the same stake-normalized return
+    basis (for example, R-multiples), not raw account-currency PnL. Returns
+    ``(effective_risk_pct, metadata)``. Non-positive Kelly edge is a valid
+    outcome and returns ``0.0`` with ``status="kelly_no_edge"``.
     """
     errors: List[str] = []
     win_rate_f = _finite_float(win_rate)

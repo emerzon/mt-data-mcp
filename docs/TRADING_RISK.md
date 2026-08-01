@@ -60,8 +60,8 @@ mtdata-cli trade_risk_analyze EURUSD --direction long \
 | Parameter | Default | Description |
 |-----------|---------|-------------|
 | `kelly_win_rate` | — | Win probability as a fraction in `[0, 1]`. |
-| `kelly_avg_win` | — | Average winning return. |
-| `kelly_avg_loss` | — | Average losing return magnitude. |
+| `kelly_avg_win` | — | Average winning return normalized to a consistent stake or unit of risk (for example, an R-multiple). |
+| `kelly_avg_loss` | — | Average losing return magnitude on the same normalized basis. |
 | `kelly_fraction_multiplier` | `0.5` | Multiplier on the raw Kelly fraction (half-Kelly = `0.5`). |
 | `kelly_max_risk_pct` | `2.0` | Hard cap on account risk (%) for Kelly sizing. |
 | `kelly_metrics` | — | Dict alternative carrying `win_rate`, `avg_win_return`, `avg_loss_return`; explicit `kelly_*` fields override it. |
@@ -70,6 +70,11 @@ The Kelly fraction is `win_rate − (1 − win_rate) / (avg_win / |avg_loss|)`, 
 by `kelly_fraction_multiplier` and capped by `kelly_max_risk_pct` (and
 `desired_risk_pct` when set). On a non-positive edge the tool reports
 `status="kelly_no_edge"` and a suggested volume of `0.0`.
+
+`trade_journal_analyze` reports `avg_win` and `avg_loss` in account currency. Those
+raw PnL averages are not Kelly inputs because deal sizes and capital at risk can vary.
+Normalize each historical outcome to a consistent stake or initial risk before
+computing the average return metrics supplied here.
 
 Portfolio stop risk is the gross sum of each ticket's remaining loss from its
 current MT5 mark to its stop. This measures equity at risk now; it does not reuse
@@ -163,8 +168,8 @@ metadata is available — `equity_before`/`equity_after`/`impact_pct`.
   period; they are not a guarantee of maximum loss.
 - Stress shocks are deterministic and linear in price; they do not model spread
   widening, gaps, swaps, or correlation breaks.
-- Kelly sizing is only as good as its inputs — estimate `win_rate` and average win/loss
-  from a sufficient out-of-sample track record (see `trade_journal_analyze`).
+- Kelly sizing is only as good as its inputs — estimate `win_rate` and normalized
+  average win/loss returns from a sufficient out-of-sample track record.
 
 ## See also
 
