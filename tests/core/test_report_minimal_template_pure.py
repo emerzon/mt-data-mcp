@@ -25,6 +25,7 @@ def test_template_minimal_builds_fast_path_without_basic_template() -> None:
     def _fake_get_raw_result(func, *args, **kwargs):
         func_name = getattr(func, "__name__", "")
         if func_name == "data_fetch_candles":
+            assert "simplify" not in kwargs
             return {"bars": _make_context_bars(), "timezone": "UTC"}
         if func_name == "forecast_generate":
             assert kwargs["method"] == "arima"

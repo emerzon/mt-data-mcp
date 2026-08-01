@@ -304,7 +304,8 @@ def test_compact_report_payload_omits_duplicate_assessment_blocks():
     out = _compact_report_payload(
         {
             "success": True,
-            "completeness": "partial",
+            "section_run_status": "partial",
+            "content_detail": "summary_only",
             "executive_summary": {
                 "recommended_action": "review_partial_sections",
                 "confidence": "medium",
@@ -338,6 +339,8 @@ def test_compact_report_payload_omits_duplicate_assessment_blocks():
     )
 
     assert out["assessment"]["partial_sections"] == ["barriers"]
+    assert out["section_run_status"] == "partial"
+    assert out["content_detail"] == "summary_only"
     assert "section_health" not in out["assessment"]
     assert out["summary_structured"]["template_focus"] == {"profile": "balanced"}
     assert "executive_summary" not in out
@@ -506,6 +509,8 @@ def test_report_generate_compact_exposes_template_focus():
         out = fn("EURUSD", template="swing", horizon=24, detail="compact")
 
     focus = out["summary_structured"]["template_focus"]
+    assert out["section_run_status"] == "complete"
+    assert out["content_detail"] == "summary_only"
     assert focus["profile"] == "swing_mtf"
     assert focus["base_timeframe"] == "H4"
     assert focus["horizon"] == 24
@@ -536,6 +541,8 @@ def test_report_generate_standard_infers_root_timezone_from_sections():
 
     assert out["timezone"] == "America/Chicago"
     assert out["sections"]["context"]["timezone"] == "America/Chicago"
+    assert out["section_run_status"] == "complete"
+    assert out["content_detail"] == "full_sections"
 
 
 def _make_full_sections():
@@ -1180,7 +1187,8 @@ class TestReportWarnings:
         assert sorted(res["sections_available"]) == sorted(_make_full_sections().keys())
         assert res["sections_status"]["summary"]["total"] > 0
         assert res["overall_assessment"]["section_health"]["total"] > 0
-        assert res["completeness"] == "summary_only"
+        assert res["section_run_status"] == "complete"
+        assert res["content_detail"] == "summary_only"
         assert res["detail"] == "summary"
         assert "diagnostics" not in res
         assert res["overall_assessment"]["summary"] != (
@@ -1202,7 +1210,7 @@ class TestReportWarnings:
 
         assert res["sections"] == {}
         assert res["success"] is False
-        assert res["completeness"] == "failed"
+        assert res["section_run_status"] == "failed"
         assert res["error_code"] == "report_sections_not_found"
         assert res["section_controls"]["missing_requested_sections"] == ["not-a-section"]
 
@@ -1297,7 +1305,7 @@ class TestReportWarnings:
         assert res["overall_assessment"]["recommended_action"] == "review_partial_sections"
         assert res["sections_status"]["details"]["barriers"]["errors"][0]["path"] == "short"
         assert "usable data" in res["sections_status"]["definitions"]["partial"]
-        assert res["completeness"] == "partial"
+        assert res["section_run_status"] == "partial"
         assert res["success"] is True
 
     def test_sections_status_filters_placeholder_error_noise(self):
@@ -1343,7 +1351,7 @@ class TestReportWarnings:
             res = fn("EURUSD", template="basic", format="toon")
 
         assert res["sections_status"]["sections"]["forecast"] == "error"
-        assert res["completeness"] == "partial"
+        assert res["section_run_status"] == "partial"
         assert res["success"] is True
         assert res["sections_to_retry"] == ["forecast"]
 
@@ -1360,7 +1368,7 @@ class TestReportWarnings:
              patch(_FMT_NUM, side_effect=str):
             res = fn("EURUSD", template="basic", format="toon")
 
-        assert res["completeness"] == "failed"
+        assert res["section_run_status"] == "failed"
         assert res["success"] is False
         assert res["sections_to_retry"] == ["forecast", "context"]
 
@@ -1481,6 +1489,33 @@ def test_report_assessment_names_section_health_confidence_explicitly():
     assert assessment["assembly_confidence_basis"] == "report_section_health"
     assert "confidence" not in assessment
     assert assessment["is_trade_signal"] is False
+
+
+def test_report_assessment_elevates_closed_session_freshness():
+    from mtdata.core.report.use_cases import _build_overall_report_assessment
+
+    assessment = _build_overall_report_assessment(
+        {
+            "sections_status": {
+                "summary": {"total": 2, "ok": 2, "partial": 0, "error": 0}
+            },
+            "sections": {
+                "context": {
+                    "freshness": {"market_status": "closed", "data_stale": True}
+                },
+                "forecast": {"last_observation_stale": True},
+            },
+        }
+    )
+
+    assert assessment["recommended_action"] == (
+        "review_stale_or_closed_session_data"
+    )
+    assert assessment["data_trust"] == {
+        "status": "closed_session",
+        "affected_sections": ["context", "forecast"],
+    }
+    assert "closed-session data" in assessment["summary"]
 
 
 @pytest.mark.parametrize("horizon", [0, -1])

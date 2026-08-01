@@ -25,6 +25,8 @@ _TREND_COMPACT_LEGEND: Dict[str, str] = {
     "regime_code": "Regime code: 0=neutral, 1=uptrend, 2=downtrend, 3=breakout_up, 4=breakout_down.",
     "bars_since_swing_high": "Bars since most recent swing high (within lookback window).",
     "bars_since_swing_low": "Bars since most recent swing low (within lookback window).",
+    "bars_analyzed": "Consecutive source-timeframe bars used by the calculations.",
+    "input_resolution": "Input spacing used by bar-window calculations.",
     "data_quality": "Missing-input summary when close/high/low values were imputed for trend calculations.",
 }
 
@@ -240,14 +242,14 @@ def _compute_compact_trend(rows: List[Dict[str, Any]]) -> Optional[Dict[str, Any
 
     # Slope windows
     wins = [5, 20, 60]
-    s_vals: List[int] = []
-    r_vals: List[int] = []
+    s_vals: List[Optional[int]] = []
+    r_vals: List[Optional[int]] = []
     for w in wins:
-        seg = clean_close[-w:] if len(clean_close) >= w else clean_close
-        if len(seg) < 2:
-            s_vals.append(0)
-            r_vals.append(0)
+        if len(clean_close) < w:
+            s_vals.append(None)
+            r_vals.append(None)
             continue
+        seg = clean_close[-w:]
         # Use log price for scale invariance
         import math
         logs = [math.log(max(1e-12, v)) for v in seg]
@@ -284,8 +286,9 @@ def _compute_compact_trend(rows: List[Dict[str, Any]]) -> Optional[Dict[str, Any
         q = _percentile_rank(widths, curr_width)
 
     # Regime code
-    s5, s20 = s_vals[0], s_vals[1] if len(s_vals) > 1 else (s_vals[0] if s_vals else 0)
-    r20 = r_vals[1] if len(r_vals) > 1 else 0
+    s5 = s_vals[0] if s_vals[0] is not None else 0
+    s20 = s_vals[1] if s_vals[1] is not None else 0
+    r20 = r_vals[1] if r_vals[1] is not None else 0
     # Donchian breakout check
     g = 0
     if len(clean_high) >= 21 and len(clean_low) >= 21:
@@ -326,6 +329,8 @@ def _compute_compact_trend(rows: List[Dict[str, Any]]) -> Optional[Dict[str, Any
         'regime_code': int(g),   # regime code
         'bars_since_swing_high': int(h_idx),
         'bars_since_swing_low': int(l_idx),
+        'bars_analyzed': int(len(clean_close)),
+        'input_resolution': 'consecutive_timeframe_bars',
     }
     if imputed_bars:
         out['data_quality'] = {
@@ -403,7 +408,6 @@ def template_basic(  # noqa: C901
             end=end,
             indicators=indicators,  # type: ignore[arg-type]
             denoise=denoise,
-            simplify={'mode': 'select', 'method': 'lttb', 'ratio': 0.2},  # type: ignore[arg-type]
         )
         if report_section_enabled(p, 'context')
         else {'error': 'context section not requested'}
@@ -412,15 +416,20 @@ def template_basic(  # noqa: C901
     if 'error' in ctx:
         report['sections']['context'] = attach_candle_freshness_diagnostics({'error': ctx['error']}, ctx)
     else:
-        # Extract a tail window of candle rows
+        # Metrics require consecutive source bars. Only the snapshot is
+        # projected to the requested display tail.
+        context_limit = int(p.get('context_limit', 300))
+        context_rows = parse_table_tail(ctx, tail=context_limit)
         tail_n = int(p.get('context_tail', 40))
-        tail_rows = parse_table_tail(ctx, tail=tail_n)
+        tail_rows = context_rows[-tail_n:]
         if not tail_rows:
             # Fallbacks when calling through minimal formatter
             if isinstance(ctx, dict) and isinstance(ctx.get('data'), list):     
-                tail_rows = ctx.get('data')[-tail_n:]  # type: ignore[index]    
+                context_rows = list(ctx.get('data'))  # type: ignore[arg-type]
+                tail_rows = context_rows[-tail_n:]
             elif isinstance(ctx, list):
-                tail_rows = ctx
+                context_rows = ctx
+                tail_rows = context_rows[-tail_n:]
             else:
                 tail_rows = []
 
@@ -431,7 +440,7 @@ def template_basic(  # noqa: C901
             )
         else:
             last = tail_rows[-1] if tail_rows else {}
-            compact = _compute_compact_trend(tail_rows)
+            compact = _compute_compact_trend(context_rows)
             ctx_obj: Dict[str, Any] = {
                 'symbol': symbol,
                 'timeframe': tf,

@@ -623,7 +623,8 @@ def context_for_tf(
                 _fetch_cache[cache_key] = cached_error
             return cached_error
         freshness = extract_candle_freshness_diagnostics(res)
-        rows = parse_table_tail(res, tail=int(tail))
+        all_rows = parse_table_tail(res, tail=int(limit))
+        rows = all_rows[-int(tail):]
 
         if not rows:
             empty_out = {'freshness': freshness} if freshness else None
@@ -642,7 +643,7 @@ def context_for_tf(
         # Compute trend compact data for MTF matrix
         try:
             from ..report_templates.basic import _compute_compact_trend
-            compact = _compute_compact_trend(rows)
+            compact = _compute_compact_trend(all_rows)
             if compact:
                 out['trend_compact'] = compact
         except Exception:

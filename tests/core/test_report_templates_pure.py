@@ -15,7 +15,6 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from mtdata.core.report import _report_error_payload
-from mtdata.utils.coercion import safe_float as _safe_float
 from mtdata.core.report_templates.basic import (
     _bars_since_latest_pivot,
     _compute_compact_trend,
@@ -26,6 +25,7 @@ from mtdata.core.report_templates.basic import (
     _percentile_rank,
     _wilder_rma,
 )
+from mtdata.utils.coercion import safe_float as _safe_float
 
 # ---------------------------------------------------------------------------
 # Synthetic candle helpers
@@ -278,6 +278,16 @@ class TestComputeCompactTrend:
         assert result is not None
         assert len(result['slope_atr_scores']) == 3  # windows [5, 20, 60]
         assert len(result['fit_r2_pcts']) == 3
+
+    def test_unavailable_window_is_not_silently_shortened(self):
+        result = _compute_compact_trend(_make_rows(30))
+
+        assert result is not None
+        assert result["slope_atr_scores"][:2] != [None, None]
+        assert result["slope_atr_scores"][2] is None
+        assert result["fit_r2_pcts"][2] is None
+        assert result["bars_analyzed"] == 30
+        assert result["input_resolution"] == "consecutive_timeframe_bars"
 
     def test_uptrend_positive_slopes(self):
         rows = _make_rows(30, base=100, step=0.5)
@@ -634,6 +644,10 @@ class TestTemplateBasic:
         assert "slope_atr_scores" in ctx["trend_compact_legend"]
         assert "trend_compact_explained" not in ctx
         assert "sparkline_close" not in ctx
+        context_call = next(
+            call for call in mock_raw.call_args_list if "limit" in call.kwargs
+        )
+        assert "simplify" not in context_call.kwargs
 
     @patch(f"{_BASIC_MODULE}._get_raw_result")
     @patch(f"{_BASIC_MODULE}.now_utc_iso", return_value="2024-01-15T00:00:00Z")
@@ -696,7 +710,7 @@ class TestTemplateBasic:
 
         def raw_side_effect(func, *args, **kwargs):
             name = func.__name__ if hasattr(func, "__name__") else str(func)
-            if "simplify" in kwargs and "limit" in kwargs:
+            if "limit" in kwargs and "indicators" in kwargs:
                 return {"data": candle_rows, "meta": {"diagnostics": {"freshness": dict(base_freshness)}}}
             if "pivot" in name.lower():
                 return _mock_pivot_data()

@@ -88,7 +88,6 @@ def template_minimal(
             end=end,
             indicators=indicators,  # type: ignore[arg-type]
             denoise=denoise,
-            simplify={"mode": "select", "method": "lttb", "ratio": 0.2},  # type: ignore[arg-type]
         )
         if report_section_enabled(p, "context")
         else {"error": "context section not requested"}
@@ -97,15 +96,20 @@ def template_minimal(
     if "error" in ctx:
         report["sections"]["context"] = {"error": ctx["error"]}
     else:
+        context_limit = int(p.get("context_limit", 200))
+        context_rows = parse_table_tail(ctx, tail=context_limit)
         tail_n = int(p.get("context_tail", 40))
-        tail_rows = parse_table_tail(ctx, tail=tail_n)
+        tail_rows = context_rows[-tail_n:]
         if not tail_rows:
             if isinstance(ctx, dict) and isinstance(ctx.get("bars"), list):
-                tail_rows = ctx.get("bars")[-tail_n:]  # type: ignore[index]
+                context_rows = list(ctx.get("bars"))  # type: ignore[arg-type]
+                tail_rows = context_rows[-tail_n:]
             elif isinstance(ctx, dict) and isinstance(ctx.get("data"), list):
-                tail_rows = ctx.get("data")[-tail_n:]  # type: ignore[index]
+                context_rows = list(ctx.get("data"))  # type: ignore[arg-type]
+                tail_rows = context_rows[-tail_n:]
             elif isinstance(ctx, list):
-                tail_rows = ctx
+                context_rows = ctx
+                tail_rows = context_rows[-tail_n:]
             else:
                 tail_rows = []
 
@@ -113,7 +117,7 @@ def template_minimal(
             report["sections"]["context"] = {"error": "No candle data available for context section."}
         else:
             last = tail_rows[-1] if tail_rows else {}
-            compact = _compute_compact_trend(tail_rows)
+            compact = _compute_compact_trend(context_rows)
             ctx_obj: Dict[str, Any] = {
                 "symbol": symbol,
                 "timeframe": tf,

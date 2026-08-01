@@ -283,7 +283,8 @@ def _build_sections_status(sections: Dict[str, Any]) -> Dict[str, Any]:
 def _prioritize_report_payload(report: Dict[str, Any]) -> Dict[str, Any]:
     preferred_keys = (
         "success",
-        "completeness",
+        "section_run_status",
+        "content_detail",
         "as_of",
         "generated_at",
         "timezone",
@@ -536,9 +537,10 @@ def _compact_report_payload(  # noqa: C901
         and report.get("generated_at") != report.get("as_of")
     ):
         compact["generated_at"] = report.get("generated_at")
-    completeness = report.get("completeness")
-    if completeness not in (None, "", [], {}):
-        compact["completeness"] = completeness
+    for key in ("section_run_status", "content_detail"):
+        value = report.get(key)
+        if value not in (None, "", [], {}):
+            compact[key] = value
     sections_to_retry = report.get("sections_to_retry")
     if sections_to_retry not in (None, "", [], {}):
         compact["sections_to_retry"] = sections_to_retry
@@ -802,6 +804,42 @@ def _build_overall_report_assessment(report: Dict[str, Any]) -> Dict[str, Any]:
         recommended_action = "review_key_levels_and_risk"
         summary_text = "Report sections completed successfully; review levels, forecast, and risk context before acting."
 
+    stale_sections: List[str] = []
+    closed_session = False
+    report_sections = report.get("sections")
+    if isinstance(report_sections, dict):
+        for section_name in ("context", "forecast"):
+            section = report_sections.get(section_name)
+            if not isinstance(section, dict):
+                continue
+            freshness = section.get("freshness")
+            freshness = freshness if isinstance(freshness, dict) else {}
+            is_stale = any(
+                value is True
+                for value in (
+                    section.get("last_observation_stale"),
+                    section.get("data_stale"),
+                    freshness.get("data_stale"),
+                    freshness.get("last_observation_stale"),
+                )
+            )
+            market_status = str(
+                section.get("market_status")
+                or freshness.get("market_status")
+                or freshness.get("market_session_status")
+                or ""
+            ).lower()
+            if is_stale or market_status == "closed":
+                stale_sections.append(section_name)
+            closed_session = closed_session or market_status == "closed"
+    if stale_sections:
+        trust_reason = "closed-session" if closed_session else "stale"
+        summary_text += (
+            f" Market inputs include {trust_reason} data; verify freshness before acting."
+        )
+        if recommended_action == "review_key_levels_and_risk":
+            recommended_action = "review_stale_or_closed_session_data"
+
     assessment: Dict[str, Any] = {
         "is_trade_signal": False,
         "recommended_action": recommended_action,
@@ -822,6 +860,11 @@ def _build_overall_report_assessment(report: Dict[str, Any]) -> Dict[str, Any]:
         assessment["partial_sections"] = partial_sections[:6]
     if omitted_sections:
         assessment["omitted_sections"] = omitted_sections[:6]
+    if stale_sections:
+        assessment["data_trust"] = {
+            "status": "closed_session" if closed_session else "stale",
+            "affected_sections": stale_sections,
+        }
     return assessment
 
 
@@ -844,7 +887,8 @@ def _build_report_executive_summary(
         "recommended_action": assessment.get("recommended_action"),
         "assembly_confidence": assessment.get("assembly_confidence"),
         "assembly_confidence_basis": assessment.get("assembly_confidence_basis"),
-        "completeness": report.get("completeness"),
+        "section_run_status": report.get("section_run_status"),
+        "content_detail": report.get("content_detail"),
     }
     section_health = assessment.get("section_health")
     if isinstance(section_health, dict):
@@ -1542,14 +1586,19 @@ def run_report_generate(  # noqa: C901
                     selection_failed
                     or (error_count > 0 and usable_section_count == 0)
                 )
-                rep["completeness"] = (
+                rep["section_run_status"] = (
                     "failed"
                     if hard_failed
                     else "partial"
                     if partial_count > 0 or error_count > 0 or omitted_count > 0
-                    else "summary_only"
-                    if summary_mode
                     else "complete"
+                )
+                rep["content_detail"] = (
+                    "summary_only"
+                    if detail_value in {"compact", "summary"}
+                    else "selected_sections"
+                    if request.include_sections or request.max_sections is not None
+                    else "full_sections"
                 )
                 rep["success"] = not hard_failed
                 if selection_failed:

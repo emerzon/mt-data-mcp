@@ -55,6 +55,28 @@ class TestContextForTfCache:
         assert r2 is not None
         assert r1["close"] == r2["close"]
 
+    def test_trend_uses_full_resolution_fetch_not_display_tail(self, monkeypatch):
+        rows = [
+            {"close": float(index), "high": float(index + 1), "low": float(index - 1)}
+            for index in range(1, 81)
+        ]
+        analyzed_lengths = []
+
+        monkeypatch.setattr(
+            "mtdata.core.data.data_fetch_candles",
+            lambda **_kwargs: {"data": rows},
+        )
+        monkeypatch.setattr(
+            "mtdata.core.report_templates.basic._compute_compact_trend",
+            lambda values: analyzed_lengths.append(len(values)) or {"bars": len(values)},
+        )
+
+        result = context_for_tf("EURUSD", "H1", None, limit=80, tail=1)
+
+        assert analyzed_lengths == [80]
+        assert result["trend_compact"] == {"bars": 80}
+        assert result["close"] == 80.0
+
     def test_cache_is_case_insensitive(self, monkeypatch):
         """'h1' and 'H1' should share the same cache entry."""
         call_count = 0

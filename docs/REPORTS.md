@@ -93,5 +93,13 @@ variants. Check the report-level and per-section status before consuming a
 value: a successful report envelope can still describe omitted or partial
 sections.
 
+`section_run_status` reports whether scheduled sections completed (`complete`,
+`partial`, or `failed`). `content_detail` separately reports how much content
+was returned (`summary_only`, `selected_sections`, or `full_sections`). Compact
+responses are therefore explicitly `content_detail: summary_only` even when all
+scheduled sections ran successfully. Context trend windows are calculated from
+consecutive source-timeframe candles; unavailable long windows are `null`
+rather than silently shortened.
+
 For automation, prefer `--json` and follow the stable envelope rules in
 [OUTPUT.md](OUTPUT.md). Do not parse the human-oriented TOON rendering.
