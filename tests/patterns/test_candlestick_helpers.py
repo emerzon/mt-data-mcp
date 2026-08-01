@@ -81,12 +81,12 @@ class TestCandlestickStrengthScore:
             deprioritize={"doji"},
         )
 
-        # base + span_bonus + raw_signal_bonus (raw 100 → +0.20)
+        # Reliability, span, detector hit and neutral geometry fallback.
         assert engulfing == pytest.approx(1.0)
-        assert doji == pytest.approx(0.75)
+        assert doji == pytest.approx(0.65)
         assert engulfing > doji
 
-    def test_larger_raw_signal_receives_bonus(self):
+    def test_raw_backend_scale_does_not_change_strength(self):
         weak = _candlestick_strength_score(
             "cdl_alpha",
             50.0,
@@ -99,7 +99,7 @@ class TestCandlestickStrengthScore:
             robust_set=set(),
             deprioritize=set(),
         )
-        # Raw signals above 100 cap at the same bonus as 100 (pandas_ta scale).
+        # pandas-ta fallback detectors may emit 1 while TA-Lib emits 100.
         capped = _candlestick_strength_score(
             "cdl_alpha",
             200.0,
@@ -107,10 +107,28 @@ class TestCandlestickStrengthScore:
             deprioritize=set(),
         )
 
-        assert weak == pytest.approx(0.85)
-        assert full == pytest.approx(0.95)
-        assert capped == pytest.approx(0.95)
-        assert full > weak
+        assert weak == pytest.approx(0.75)
+        assert full == pytest.approx(0.75)
+        assert capped == pytest.approx(0.75)
+
+    def test_geometry_changes_same_pattern_strength(self):
+        weak = _candlestick_strength_score(
+            "cdl_alpha",
+            100.0,
+            robust_set=set(),
+            deprioritize=set(),
+            geometry_score=0.1,
+        )
+        strong = _candlestick_strength_score(
+            "cdl_alpha",
+            100.0,
+            robust_set=set(),
+            deprioritize=set(),
+            geometry_score=0.9,
+        )
+
+        assert weak == pytest.approx(0.59)
+        assert strong == pytest.approx(0.91)
 
 
 class TestIsCandlestickAllowed:

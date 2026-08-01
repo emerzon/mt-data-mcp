@@ -141,7 +141,7 @@ use `--include-completed true` to include broken levels as well.
 | `--limit` | 150 | Bars to analyze |
 | `--robust-only` | false | Restrict detection to a curated subset of established multi-bar candlestick types. This is a name preset, not a confidence threshold. |
 | `--whitelist` | — | Comma-separated list of specific patterns |
-| `--min-strength` | 0.70 | Minimum semantic candlestick conviction score (0.0-1.0) |
+| `--min-strength` | 0.70 | Minimum OHLC-geometry and pattern-reliability strength score (0.0-1.0) |
 | `--config` | — | Detector-specific overrides. Fractals support `left_bars`, `right_bars`, `breakout_basis`, `min_prominence_pct`, and `confidence_prominence_cap_pct`. Harmonics support `pattern_types`, `ratio_tolerance`, `min_confidence`, and pivot controls. |
 
 Pattern names listed in this guide describe detector coverage, not a promise
@@ -149,6 +149,10 @@ that every pattern is returned at the default threshold. `robust_only=true`
 restricts which candlestick methods run based on pattern name, while
 `min_strength` independently filters their conviction scores. Lower-strength
 and deprioritized formations such as many dojis may be absent by default.
+The score uses body/range geometry, directional close location, range expansion,
+pattern span, and the curated reliability tier. Raw detector magnitudes remain
+in `raw_signal` but do not alter strength because pandas-ta backends use
+different native signal scales.
 
 ### Filtering Patterns
 

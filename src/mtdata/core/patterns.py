@@ -837,8 +837,15 @@ def _format_harmonic_patterns(
             is_recent = age_bars < recent_bars
             row["age_bars"] = age_bars
             row["is_recent"] = is_recent
-            row["signal_eligible"] = is_recent
-            row["bias_scope"] = "current" if is_recent else "historical_structure"
+            signal_eligible = is_recent and str(p.status).lower() == "completed"
+            row["signal_eligible"] = signal_eligible
+            row["bias_scope"] = (
+                "current"
+                if signal_eligible
+                else "provisional_structure"
+                if is_recent
+                else "historical_structure"
+            )
             if target_1 is not None:
                 row["target_price"] = float(target_1)
                 row["target_price_1"] = float(target_1)
@@ -1342,8 +1349,8 @@ def patterns_detect(
     min_strength : float, optional (default=0.70)
         Minimum semantic conviction threshold (0.0 to 1.0). This filters on a
         normalized candlestick strength score that combines pattern reliability,
-        multi-bar span, and any raw detector bonus rather than raw pandas_ta
-        signal magnitude alone.
+        multi-bar span, body/range geometry, directional close location, and
+        range expansion. Backend-native detector magnitude is diagnostic only.
     
     min_gap : int, optional (default=3)
         Minimum gap between patterns (in bars)

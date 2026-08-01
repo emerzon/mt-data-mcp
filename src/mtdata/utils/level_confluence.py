@@ -341,8 +341,11 @@ def _cluster_records(records: List[Dict[str, Any]], *, tolerance_abs: float) -> 
         if not current:
             current = [record]
             continue
-        center = _weighted_mean(current)
-        if abs(price - center) <= tolerance:
+        # Records are sorted. Complete linkage to the first/lowest member keeps
+        # every cluster's full width within the advertised tolerance; comparing
+        # only with a moving center allowed single-linkage-style chaining.
+        low = float(current[0]["price"])
+        if price - low <= tolerance:
             current.append(record)
         else:
             clusters.append(current)
@@ -380,7 +383,15 @@ def _score_cluster(
         for record in records
         if record.get("source_family") == "pivot_formula"
     }
-    pivot_bonus = min(max(len(pivot_methods) - 1, 0) * 0.75, 2.25)
+    independent_pivot_prices = {
+        round(float(record["price"]), 10)
+        for record in records
+        if record.get("source_family") == "pivot_formula"
+    }
+    pivot_bonus = min(
+        max(len(independent_pivot_prices) - 1, 0) * 0.75,
+        2.25,
+    )
 
     sr_scores = [
         _as_float(record.get("score"))
@@ -409,6 +420,7 @@ def _score_cluster(
     components = {
         "family_score": _round_metric(family_score),
         "pivot_method_bonus": _round_metric(pivot_bonus),
+        "independent_pivot_prices": len(independent_pivot_prices),
         "support_resistance_bonus": _round_metric(sr_score_bonus + touch_bonus),
         "fibonacci_bonus": _round_metric(fib_bonus),
         "tightness_bonus": _round_metric(tightness_bonus),

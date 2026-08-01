@@ -1874,6 +1874,11 @@ def _build_market_scan_bar_row(
                 digits=6,
             ),
             "price_change_basis": "previous_completed_close_to_latest_completed_close",
+            "gap_pct": _market_scan_round(
+                ((open_price - previous_close) / previous_close) * 100.0,
+                digits=6,
+            ),
+            "gap_basis": "previous_completed_close_to_latest_completed_open",
         }
     )
     return row, None
@@ -1978,6 +1983,7 @@ _MARKET_SCAN_UNITS = {
     "close": "price",
     "previous_close": "price",
     "price_change_pct": "percentage_points (1.0 = 1%)",
+    "gap_pct": "percentage_points (1.0 = 1%)",
     "tick_volume": "broker_tick_count",
     "real_volume": "traded_volume",
     "spread_points": "broker_points",
@@ -2602,6 +2608,11 @@ def _build_market_scan_signal_row(
                 digits=6,
             ),
             "price_change_basis": "previous_completed_close_to_latest_completed_close",
+            "gap_pct": _market_scan_round(
+                ((open_price - previous_close) / previous_close) * 100.0,
+                digits=6,
+            ),
+            "gap_basis": "previous_completed_close_to_latest_completed_open",
         }
     )
     if include_rsi:
@@ -2623,12 +2634,16 @@ def _market_scan_missing_required_metric(
     min_tick_volume: Optional[int],
     min_price_change_pct: Optional[float],
     max_price_change_pct: Optional[float],
+    min_gap_pct: Optional[float] = None,
+    max_gap_pct: Optional[float] = None,
     rsi_length: int,
     sma_period: int,
 ) -> Optional[str]:
     requirements: List[tuple[str, str]] = []
     if rank_by in {"abs_price_change_pct", "price_change_pct"}:
         requirements.append(("price_change_pct", "price-change data is unavailable."))
+    elif rank_by == "gap_pct":
+        requirements.append(("gap_pct", "Gap data is unavailable."))
     elif rank_by == "tick_volume":
         requirements.append(("tick_volume", "Tick-volume data is unavailable."))
     elif rank_by == "rsi":
@@ -2638,6 +2653,8 @@ def _market_scan_missing_required_metric(
 
     if min_price_change_pct is not None or max_price_change_pct is not None:
         requirements.append(("price_change_pct", "price-change data is unavailable."))
+    if min_gap_pct is not None or max_gap_pct is not None:
+        requirements.append(("gap_pct", "Gap data is unavailable."))
     if max_spread_pct is not None:
         requirements.append(("spread_pct", "Spread data is unavailable."))
     if min_tick_volume is not None:
@@ -2663,8 +2680,11 @@ def _market_scan_row_matches_filters(
     rsi_below: Optional[float],
     rsi_above: Optional[float],
     price_vs_sma: Optional[str],
+    min_gap_pct: Optional[float] = None,
+    max_gap_pct: Optional[float] = None,
 ) -> bool:
     price_change_pct = _market_scan_float(row.get("price_change_pct"))
+    gap_pct = _market_scan_float(row.get("gap_pct"))
     spread_pct = _market_scan_float(row.get("spread_pct"))
     tick_volume = _market_scan_bar_int(row.get("tick_volume"))
     rsi_value = _market_scan_float(row.get("rsi"))
@@ -2674,6 +2694,10 @@ def _market_scan_row_matches_filters(
     if min_price_change_pct is not None and (price_change_pct is None or price_change_pct < float(min_price_change_pct)):
         return False
     if max_price_change_pct is not None and (price_change_pct is None or price_change_pct > float(max_price_change_pct)):
+        return False
+    if min_gap_pct is not None and (gap_pct is None or gap_pct < float(min_gap_pct)):
+        return False
+    if max_gap_pct is not None and (gap_pct is None or gap_pct > float(max_gap_pct)):
         return False
     if max_spread_pct is not None and (spread_pct is None or spread_pct > float(max_spread_pct)):
         return False
@@ -2785,6 +2809,8 @@ def _market_scan_ranking_label(
         return "largest_abs_price_change_pct"
     if rank_by == "price_change_pct":
         return "highest_price_change_pct"
+    if rank_by == "gap_pct":
+        return "largest_gap_pct"
     if rank_by == "tick_volume":
         return "highest_tick_volume"
     if rank_by == "spread_pct":
@@ -3283,8 +3309,8 @@ _MARKET_SCAN_PRESETS: Dict[str, Dict[str, Any]] = {
     "overbought": {"rsi_above": 70.0, "min_tick_volume": 1000, "rank_by": "rsi"},
     "high_volume": {"rank_by": "tick_volume"},
     "tight_spread": {"max_spread_pct": 0.01, "min_tick_volume": 500, "rank_by": "spread_pct"},
-    "gap_up": {"min_price_change_pct": 2.0, "rank_by": "price_change_pct"},
-    "gap_down": {"max_price_change_pct": -2.0, "rank_by": "price_change_pct"},
+    "gap_up": {"min_gap_pct": 2.0, "rank_by": "gap_pct"},
+    "gap_down": {"max_gap_pct": -2.0, "rank_by": "gap_pct"},
 }
 
 
@@ -3328,6 +3354,8 @@ def market_scan(  # noqa: C901
     preset_value = str(preset or "").strip().lower().replace("-", "_")
     preset_error = None
     preset_config = _MARKET_SCAN_PRESETS.get(preset_value) if preset_value else None
+    min_gap_pct: Optional[float] = None
+    max_gap_pct: Optional[float] = None
     if preset_value and preset_config is None:
         preset_error = (
             "preset must be one of: "
@@ -3335,6 +3363,8 @@ def market_scan(  # noqa: C901
             + "."
         )
     elif preset_config:
+        min_gap_pct = preset_config.get("min_gap_pct")
+        max_gap_pct = preset_config.get("max_gap_pct")
         if min_price_change_pct is None and "min_price_change_pct" in preset_config:
             min_price_change_pct = preset_config["min_price_change_pct"]
         if max_price_change_pct is None and "max_price_change_pct" in preset_config:
@@ -3368,6 +3398,8 @@ def market_scan(  # noqa: C901
                 for key, value in {
                     "min_price_change_pct": min_price_change_pct,
                     "max_price_change_pct": max_price_change_pct,
+                    "min_gap_pct": min_gap_pct,
+                    "max_gap_pct": max_gap_pct,
                     "max_spread_pct": max_spread_pct,
                     "min_tick_volume": min_tick_volume,
                     "rsi_below": rsi_below,
@@ -3423,7 +3455,7 @@ def market_scan(  # noqa: C901
             request["rank_by"] = rank_by_value
             if rank_by_input != rank_by_value:
                 request["rank_by_input"] = rank_by_input
-            if rank_by_value not in {"abs_price_change_pct", "price_change_pct", "tick_volume", "rsi", "spread_pct"}:
+            if rank_by_value not in {"abs_price_change_pct", "price_change_pct", "gap_pct", "tick_volume", "rsi", "spread_pct"}:
                 return _market_scan_error(
                     (
                         "rank_by must be one of: "
@@ -3627,6 +3659,8 @@ def market_scan(  # noqa: C901
                     min_tick_volume=min_tick_volume,
                     min_price_change_pct=min_price_change_pct,
                     max_price_change_pct=max_price_change_pct,
+                    min_gap_pct=min_gap_pct,
+                    max_gap_pct=max_gap_pct,
                     rsi_length=rsi_length_value,
                     sma_period=sma_period_value,
                 )
@@ -3644,6 +3678,8 @@ def market_scan(  # noqa: C901
                     rsi_below=rsi_below,
                     rsi_above=rsi_above,
                     price_vs_sma=price_vs_sma_value,
+                    min_gap_pct=min_gap_pct,
+                    max_gap_pct=max_gap_pct,
                 ):
                     return
                 matched_rows.append(row)
@@ -3706,6 +3742,7 @@ def market_scan(  # noqa: C901
                 "price_basis",
                 "price_point",
                 "price_change_pct",
+                "gap_pct",
                 "tick_volume",
                 "spread_pct",
                 "spread_cost_per_lot",
@@ -3735,6 +3772,7 @@ def market_scan(  # noqa: C901
                 "price_basis",
                 "price_point",
                 "price_change_pct",
+                "gap_pct",
                 "tick_volume",
                 "spread_pct",
                 "spread_points",
@@ -3773,6 +3811,8 @@ def market_scan(  # noqa: C901
                 for key, value in {
                     "min_price_change_pct": min_price_change_pct,
                     "max_price_change_pct": max_price_change_pct,
+                    "min_gap_pct": min_gap_pct,
+                    "max_gap_pct": max_gap_pct,
                     "max_spread_pct": max_spread_pct,
                     "min_tick_volume": min_tick_volume,
                     "rsi_below": rsi_below,
@@ -3838,6 +3878,7 @@ def market_scan(  # noqa: C901
                     rsi_below=rsi_below,
                 ),
                 "price_change_basis": "previous_completed_close_to_latest_completed_close",
+                "gap_basis": "previous_completed_close_to_latest_completed_open",
                 "pagination": build_pagination_meta(
                     total=total_matches,
                     returned=table_payload["row_count"],

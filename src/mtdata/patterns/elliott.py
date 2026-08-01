@@ -830,12 +830,13 @@ def _evaluate_impulse_rules(
     if (not bullish) and w[2] >= w[0]:
         violations.append("wave2_over_retrace")
 
-    # Rule 3 is defined in percentage terms. Arithmetic lengths are retained as
-    # diagnostics, but do not decide validity on instruments with large moves.
+    # Rule 3 compares the three motive-wave lengths on one price scale. Dividing
+    # each leg by its own start price can reverse their ordering after a large
+    # advance and admit a genuinely shortest wave 3.
     pct1 = absL[0] / abs(w[0]) if w[0] != 0 else 0.0
     pct3 = absL[2] / abs(w[2]) if w[2] != 0 else 0.0
     pct5 = absL[4] / abs(w[4]) if w[4] != 0 else 0.0
-    if pct3 < min(pct1, pct5):
+    if absL[2] < min(absL[0], absL[4]):
         violations.append("wave3_shortest")
 
     if bullish and w[3] <= w[1]:

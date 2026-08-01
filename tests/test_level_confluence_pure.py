@@ -1,6 +1,9 @@
 from __future__ import annotations
 
-from mtdata.utils.level_confluence import build_level_confluence_payload
+from mtdata.utils.level_confluence import (
+    _cluster_records,
+    build_level_confluence_payload,
+)
 
 
 def test_confluence_clusters_pivot_sr_and_fibonacci_levels():
@@ -171,3 +174,45 @@ def test_single_family_clusters_are_returned_but_score_lower_than_multi_family()
     assert multi["levels"]
     assert single["levels"][0]["source_families"] == ["pivot_formula"]
     assert multi["levels"][0]["score"] > single["levels"][0]["score"]
+
+
+def test_confluence_cluster_width_never_exceeds_tolerance():
+    records = [
+        {"price": 100.0},
+        {"price": 100.8},
+        {"price": 101.4},
+    ]
+
+    clusters = _cluster_records(records, tolerance_abs=1.0)
+
+    assert [[row["price"] for row in group] for group in clusters] == [
+        [100.0, 100.8],
+        [101.4],
+    ]
+    assert all(
+        max(row["price"] for row in group)
+        - min(row["price"] for row in group)
+        <= 1.0
+        for group in clusters
+    )
+
+
+def test_duplicate_pivot_prices_do_not_earn_method_agreement_bonus():
+    payload = build_level_confluence_payload(
+        symbol="EURUSD",
+        pivot_timeframe="D1",
+        sr_timeframe="H1",
+        reference_price=1.1,
+        tolerance_pct=0.001,
+        pivot_methods=[
+            {"method": "classic", "levels": {"PP": 1.1}},
+            {"method": "fibonacci", "levels": {"PP": 1.1}},
+            {"method": "camarilla", "levels": {"PP": 1.1}},
+        ],
+        support_resistance_payload={"levels": []},
+        detail="standard",
+    )
+
+    components = payload["levels"][0]["score_components"]
+    assert components["pivot_method_bonus"] == 0.0
+    assert components["independent_pivot_prices"] == 1

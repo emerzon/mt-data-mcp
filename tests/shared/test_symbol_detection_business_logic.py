@@ -11,5 +11,13 @@ def test_crypto_symbol_detection_stays_consistent_across_modules() -> None:
     for symbol in ("BNBUSDT", "TRXUSD", "NEARUSD", "FILUSD"):
         assert is_probably_crypto_symbol(symbol) is True
 
-    for symbol in ("EURUSD", "", None):
+    for symbol in (
+        "EURUSD",
+        "SOLV",
+        "ATOM",
+        "UNIT",
+        "LINKEDIN",
+        "",
+        None,
+    ):
         assert is_probably_crypto_symbol(symbol) is False

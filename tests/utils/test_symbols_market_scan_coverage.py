@@ -354,6 +354,51 @@ def _make_bars(closes, *, tick_volume: int = 100):
     return bars
 
 
+@patch("mtdata.core.symbols._extract_group_path_util", side_effect=lambda s: s.path)
+@patch("mtdata.core.symbols._mt5_copy_rates_from_pos")
+@patch("mtdata.core.symbols.mt5.symbol_info_tick")
+@patch("mtdata.core.symbols.mt5.symbols_get")
+def test_gap_up_preset_uses_open_vs_previous_close(
+    mock_symbols_get,
+    mock_tick,
+    mock_rates,
+    mock_group,
+):
+    mock_symbols_get.return_value = [
+        _make_symbol("EURUSD"),
+        _make_symbol("GBPUSD"),
+    ]
+    mock_tick.side_effect = lambda symbol: _make_tick(
+        bid=100.0,
+        ask=100.1,
+    )
+    genuine_gap = _make_bars([100.0, 100.0])
+    genuine_gap[-1]["open"] = 103.0
+    close_only_rally = _make_bars([100.0, 103.0])
+    close_only_rally[-1]["open"] = 100.0
+    mock_rates.side_effect = lambda symbol, timeframe, start_pos, count: (
+        genuine_gap if symbol == "EURUSD" else close_only_rally
+    )
+
+    result = _get_market_scan()(
+        symbols="EURUSD,GBPUSD",
+        preset="gap_up",
+        timeframe="H1",
+        lookback=2,
+        detail="full",
+    )
+
+    assert result["success"] is True
+    assert result["rank_by"] == "gap_pct"
+    assert result["preset_filters"] == {"min_gap_pct": 2.0}
+    assert [row["symbol"] for row in result["data"]] == ["EURUSD"]
+    assert result["data"][0]["gap_pct"] == 3.0
+    assert result["data"][0]["price_change_pct"] == 0.0
+    assert result["gap_basis"] == (
+        "previous_completed_close_to_latest_completed_open"
+    )
+
+
 def test_symbol_category_prefers_stock_group_over_crypto_substrings():
     from mtdata.core.symbols import _symbol_category
 

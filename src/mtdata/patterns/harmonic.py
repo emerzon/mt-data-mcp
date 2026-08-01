@@ -426,13 +426,11 @@ def _score_ratio(
         if dist > tol:
             return None
         return float(max(0.0, 1.0 - dist / tol))
-    # Peak at band midpoint so wide acceptance ranges do not inflate confidence.
-    mid = 0.5 * (lo_f + hi_f)
-    half = 0.5 * (hi_f - lo_f)
     if lo_f <= value_f <= hi_f:
-        if half <= 1e-12:
-            return 1.0
-        return float(max(0.0, 1.0 - abs(value_f - mid) / half))
+        # Bounds describe accepted Fibonacci levels/ranges, not a tolerance
+        # window around their arithmetic midpoint. Canonical endpoints must not
+        # receive a zero fit score.
+        return 1.0
     dist = lo_f - value_f if value_f < lo_f else value_f - hi_f
     if dist > tol:
         return None
@@ -557,6 +555,10 @@ def _build_result(
     prz_high = float(max(prz_values))
     prz_mid = float((prz_low + prz_high) / 2.0)
     bars_since_d = int(max(0, (n_bars - 1) - int(points[-1].index)))
+    confirmation_bars = max(1, int(cfg.min_distance))
+    terminal_pivot_confirmed = bars_since_d >= confirmation_bars
+    status = "completed" if terminal_pivot_confirmed else "forming"
+    available_at_index = int(points[-1].index) + confirmation_bars
     completion_freshness = (
         "recent" if bars_since_d <= int(cfg.recent_bars) else "historical"
     )
@@ -583,10 +585,14 @@ def _build_result(
         "invalidation_price": float(invalidation),
         "bars_since_completion_pivot": int(bars_since_d),
         "completion_freshness": completion_freshness,
+        "terminal_pivot_confirmed": terminal_pivot_confirmed,
+        "confirmation_bars_required": confirmation_bars,
+        "available_at_index": available_at_index,
+        "status_basis": "right_hand_pivot_confirmation",
     }
     return HarmonicPatternResult(
         name=f"{direction_label} {spec.display}",
-        status="completed",
+        status=status,
         confidence=confidence,
         start_index=int(points[0].index),
         end_index=int(points[-1].index),

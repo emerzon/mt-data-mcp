@@ -201,6 +201,8 @@ PARAM_HINTS = {
     "minutes_back": "Look back this many minutes from end/now instead of using start.",
     "min_strength": (
         "Candlestick strength threshold 0.0-1.0, default 0.70. "
+        "Strength uses the detected candle's OHLC geometry plus pattern "
+        "reliability and span. "
         "Use 0.30-0.50 for exploratory scans, 0.50-0.70 for broader "
         "trading context, and 0.70+ for stricter high-conviction detections."
     ),

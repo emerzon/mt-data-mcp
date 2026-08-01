@@ -18,9 +18,25 @@ def test_impulse_rule_rejects_wave3_shortest():
     assert isinstance(evaluation.metrics, dict)
 
 
-def test_impulse_rule_compares_actionary_waves_by_percentage():
+def test_impulse_rule_compares_motive_waves_on_one_price_scale():
     close = np.array([100.0, 120.0, 110.0, 130.0, 121.0, 146.0], dtype=float)
     evaluation = _evaluate_impulse_rules(close, [0, 1, 2, 3, 4, 5], bullish=True)
+
+    assert evaluation.valid is True
+    assert "wave3_shortest" not in evaluation.violations
+
+
+def test_impulse_rule_rejects_shortest_wave3_after_large_advance():
+    close = np.array(
+        [1.02231, 1.10052, 1.08451, 1.15832, 1.14022, 1.21646],
+        dtype=float,
+    )
+
+    evaluation = _evaluate_impulse_rules(
+        close,
+        [0, 1, 2, 3, 4, 5],
+        bullish=True,
+    )
 
     assert evaluation.valid is False
     assert "wave3_shortest" in evaluation.violations

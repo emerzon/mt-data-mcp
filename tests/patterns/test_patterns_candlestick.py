@@ -201,7 +201,7 @@ def test_extract_candlestick_rows_includes_metrics_when_enabled():
     assert rows[0][4:] == [100, 101.5, "T0", "T1", 2, 0, 1]
 
 
-def test_extract_candlestick_rows_strength_tracks_signal_magnitude():
+def test_extract_candlestick_rows_normalizes_detector_signal_scale():
     df_tail = pd.DataFrame(
         {"time": ["T0", "T1"], "close": [100.0, 101.0]}
     )
@@ -221,7 +221,7 @@ def test_extract_candlestick_rows_strength_tracks_signal_magnitude():
         include_metrics=True,
     )
 
-    assert [row[3] for row in rows] == pytest.approx([0.85, 0.95])
+    assert [row[3] for row in rows] == pytest.approx([0.75, 0.75])
 
 
 def test_detect_candlestick_patterns_rejects_out_of_range_min_strength():
@@ -332,8 +332,8 @@ def test_detect_candlestick_patterns_prefilters_methods_by_whitelist(monkeypatch
     assert res["success"] is True
     assert calls == ["cdl_alpha"]
     assert res["min_strength"] == pytest.approx(0.95)
-    assert res["strength_scale"] == "semantic_pattern_conviction_v2"
-    assert res["signal_scale"] == "pandas_ta_signal_x100"
+    assert res["strength_scale"] == "ohlc_geometry_and_pattern_reliability_v3"
+    assert res["signal_scale"] == "backend_native_cdl_signal"
 
 
 def test_detect_candlestick_patterns_whitelist_accepts_display_names(monkeypatch):
@@ -394,7 +394,7 @@ def test_detect_candlestick_patterns_whitelist_accepts_display_names(monkeypatch
         symbol="EURUSD",
         timeframe="H1",
         limit=10,
-        min_strength=0.75,
+        min_strength=0.70,
         min_gap=0,
         robust_only=False,
         whitelist="Bullish BELTHOLD",
@@ -441,7 +441,7 @@ def test_detect_candlestick_patterns_whitelist_error_lists_detectors(monkeypatch
         symbol="EURUSD",
         timeframe="H1",
         limit=10,
-        min_strength=0.75,
+        min_strength=0.70,
         min_gap=0,
         robust_only=False,
         whitelist="foo",
@@ -512,7 +512,7 @@ def test_detect_candlestick_patterns_top_k_uses_semantic_strength(monkeypatch):
 
     assert res["success"] is True
     assert res["data"][0]["pattern"] == "Bullish ENGULFING"
-    assert res["data"][0]["confidence"] == pytest.approx(1.0)
+    assert res["data"][0]["confidence"] > 0.95
 
 
 def test_detect_candlestick_patterns_dedupes_redundant_same_window_hits(monkeypatch):
@@ -565,7 +565,7 @@ def test_detect_candlestick_patterns_dedupes_redundant_same_window_hits(monkeypa
         symbol="EURUSD",
         timeframe="H1",
         limit=10,
-        min_strength=0.95,
+        min_strength=0.70,
         min_gap=0,
         robust_only=False,
         whitelist=None,
@@ -626,7 +626,7 @@ def test_detect_candlestick_patterns_drops_still_forming_last_bar(monkeypatch):
         symbol="EURUSD",
         timeframe="H1",
         limit=10,
-        min_strength=0.95,
+        min_strength=0.70,
         min_gap=0,
         robust_only=False,
         whitelist=None,
@@ -696,7 +696,7 @@ def test_detect_candlestick_patterns_uses_broker_tick_reference_for_live_bar_tri
         symbol="EURUSD",
         timeframe="H1",
         limit=10,
-        min_strength=0.95,
+        min_strength=0.70,
         min_gap=0,
         robust_only=False,
         whitelist=None,
@@ -756,7 +756,7 @@ def test_detect_candlestick_patterns_exposes_raw_signal_and_quality_warning(
         symbol="EURUSD",
         timeframe="H1",
         limit=10,
-        min_strength=0.95,
+        min_strength=0.75,
         min_gap=0,
         robust_only=False,
         whitelist=None,
@@ -815,7 +815,7 @@ def test_detect_candlestick_patterns_adds_volume_and_regime_enrichment(monkeypat
         symbol="EURUSD",
         timeframe="H1",
         limit=20,
-        min_strength=0.95,
+        min_strength=0.90,
         min_gap=0,
         robust_only=False,
         whitelist=None,

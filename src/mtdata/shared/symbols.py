@@ -52,6 +52,18 @@ CRYPTO_SYMBOL_HINTS = (
     "UNI",
 )
 
+_CRYPTO_QUOTE_CODES = frozenset(
+    {
+        *FOREX_CURRENCY_CODES,
+        "USDT",
+        "USDC",
+        "BUSD",
+        "DAI",
+        "BTC",
+        "ETH",
+    }
+)
+
 
 def _alnum_upper(symbol: Any) -> str:
     return "".join(ch for ch in str(symbol or "").upper().strip() if ch.isalnum())
@@ -73,13 +85,19 @@ def finviz_forex_symbol_to_mt5(symbol: Any) -> str | None:
 
 
 def is_probably_crypto_symbol(symbol: Any) -> bool:
-    text = str(symbol or "").upper().strip()
-    if not text:
-        return False
-    normalized = "".join(ch for ch in text if ch.isalnum())
+    normalized = _alnum_upper(symbol)
     if not normalized:
         return False
-    return any(token in normalized for token in CRYPTO_SYMBOL_HINTS)
+    # Classify only a recognizable base/quote pair. Substring containment made
+    # equities such as SOLV, ATOM and UNIT look like 24/7 crypto instruments.
+    for base in sorted(CRYPTO_SYMBOL_HINTS, key=len, reverse=True):
+        if not normalized.startswith(base):
+            continue
+        remainder = normalized[len(base) :]
+        for quote in sorted(_CRYPTO_QUOTE_CODES, key=len, reverse=True):
+            if remainder.startswith(quote):
+                return True
+    return False
 
 
 def is_probably_forex_symbol(
