@@ -2203,6 +2203,7 @@ def forecast_barrier_optimize(  # noqa: C901
             )
         )
         optuna_seed = normalize_barrier_seed(request_seed_base)
+        hmm_sim_meta_records: List[Dict[str, int]] = []
 
         def _simulate_paths_for_seed_range(
             seed_base: Optional[int],
@@ -2253,6 +2254,15 @@ def forecast_barrier_optimize(  # noqa: C901
                         seed=offset_barrier_seed(local_seed_base, offset),
                     )
                     local_paths_list.append(np.asarray(sim['price_paths'], dtype=float))
+                    requested_states = sim.get("requested_n_states")
+                    fitted_states = sim.get("fitted_n_states")
+                    if requested_states is not None and fitted_states is not None:
+                        hmm_sim_meta_records.append(
+                            {
+                                "requested_n_states": int(requested_states),
+                                "fitted_n_states": int(fitted_states),
+                            }
+                        )
             elif method_name == 'garch':
                 p_order = int(params_dict.get('p', 1))
                 q_order = int(params_dict.get('q', 1))
@@ -3721,6 +3731,35 @@ def forecast_barrier_optimize(  # noqa: C901
                 "slippage_bps": _safe_float(slippage_bps_val) if slippage_bps_val else None,
                 "slippage_pct": _safe_float(slippage_pct_val) if slippage_pct_val else None,
             }
+        if method_name == "hmm_mc" and hmm_sim_meta_records:
+            requested_states = max(
+                row["requested_n_states"] for row in hmm_sim_meta_records
+            )
+            fitted_states_observed = sorted(
+                {row["fitted_n_states"] for row in hmm_sim_meta_records}
+            )
+            collapsed_batches = sum(
+                row["fitted_n_states"] < row["requested_n_states"]
+                for row in hmm_sim_meta_records
+            )
+            out["sim_meta"] = {
+                "requested_n_states": requested_states,
+                "fitted_n_states": min(fitted_states_observed),
+                "fitted_n_states_observed": fitted_states_observed,
+                "simulation_batches": len(hmm_sim_meta_records),
+                "collapsed_batches": int(collapsed_batches),
+            }
+            if collapsed_batches:
+                warnings_out = list(out.get("warnings") or [])
+                warnings_out.append(
+                    "HMM state collapse detected: requested "
+                    f"{requested_states} states but fitted fewer states in "
+                    f"{collapsed_batches} of {len(hmm_sim_meta_records)} simulation "
+                    "batches; optimization used the reduced-state paths."
+                )
+                out["warnings"] = warnings_out
+            if fitted_states_observed == [1]:
+                out["effective_method"] = "single_regime_gaussian_mc"
         return _finalize_barrier_output(
             out,
             output_mode=output_mode,

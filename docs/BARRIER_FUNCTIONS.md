@@ -173,6 +173,12 @@ Transition: P(s_t = j | s_{t-1} = i) = A_{ij}
 4. Sample returns conditional on current state
 5. Build price paths
 
+If fitting cannot support the requested number of states, barrier probability
+and optimization outputs expose `sim_meta.requested_n_states` and
+`sim_meta.fitted_n_states`. Optimization also emits an HMM state-collapse
+warning and reports `effective_method: single_regime_gaussian_mc` when every
+simulation batch fits only one state.
+
 **Strengths**:
 - Captures volatility regimes (low/high vol)
 - Adapts to changing market conditions

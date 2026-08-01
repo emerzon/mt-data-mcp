@@ -62,6 +62,37 @@ class TestBarrierOptimizeBasic(_BarrierTestBase):
         self.assertTrue(result["success"])
         self.assertEqual(result["distance_unit"], "ticks")
 
+    def test_hmm_state_collapse_is_visible_in_summary_output(self):
+        paths = self._sample_paths()
+        with patch(f'{_BARRIER_OPT_ROOT}._simulate_hmm_mc') as mock_sim:
+            mock_sim.return_value = {
+                "price_paths": paths,
+                "requested_n_states": 2,
+                "fitted_n_states": 1,
+            }
+            result = forecast_barrier_optimize(
+                symbol="EURUSD",
+                timeframe="H1",
+                horizon=3,
+                method="hmm_mc",
+                direction="long",
+                mode="pct",
+                tp_min=0.2,
+                tp_max=0.4,
+                tp_steps=2,
+                sl_min=0.2,
+                sl_max=0.4,
+                sl_steps=2,
+                params={"sims": 3, "n_states": 2},
+            )
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["sim_meta"]["requested_n_states"], 2)
+        self.assertEqual(result["sim_meta"]["fitted_n_states"], 1)
+        self.assertEqual(result["sim_meta"]["collapsed_batches"], 1)
+        self.assertEqual(result["effective_method"], "single_regime_gaussian_mc")
+        self.assertTrue(any("state collapse" in item for item in result["warnings"]))
+
     def test_forecast_barrier_optimize_rejects_legacy_pips_mode(self):
         result = forecast_barrier_optimize(
             symbol="EURUSD",
