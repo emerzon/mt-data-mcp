@@ -56,3 +56,16 @@ def test_trade_stress_test_offsets_long_and_short_positions():
     assert result["positions_evaluated"] == 2
     assert result["total_pnl_impact"] == -550.0
     assert result["equity_after"] == 9450.0
+
+
+def test_trade_stress_test_rejects_failed_position_snapshot():
+    gateway = _Gateway()
+    gateway.positions_get = lambda: None
+
+    result = run_trade_stress_test(
+        TradeStressTestRequest(shocks={"EURUSD": -1.0}),
+        gateway=gateway,
+    )
+
+    assert result["success"] is False
+    assert result["error_code"] == "positions_snapshot_unavailable"

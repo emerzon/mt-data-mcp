@@ -357,6 +357,60 @@ def test_run_trade_var_cvar_calculate_returns_empty_when_no_open_positions() -> 
     assert "worst_observations" not in out
 
 
+def test_run_trade_var_cvar_rejects_failed_position_snapshot() -> None:
+    gateway = SimpleNamespace(
+        ensure_connection=lambda: None,
+        account_info=lambda: SimpleNamespace(equity=1000.0, currency="USD"),
+        positions_get=lambda symbol=None: None,
+    )
+
+    out = run_trade_var_cvar_calculate(TradeVarCvarRequest(), gateway=gateway)
+
+    assert out["success"] is False
+    assert out["error_code"] == "positions_snapshot_unavailable"
+
+
+def test_run_trade_var_cvar_rejects_partial_symbol_history() -> None:
+    positions = [
+        SimpleNamespace(
+            ticket=1,
+            symbol=symbol,
+            type=0,
+            volume=1.0,
+            price_current=100.0,
+            price_open=99.0,
+            profit=1.0,
+        )
+        for symbol in ("EURUSD", "GBPUSD")
+    ]
+    rates = [
+        {"time": index + 1, "close": 100.0 + index}
+        for index in range(6)
+    ]
+    gateway = SimpleNamespace(
+        ensure_connection=lambda: None,
+        account_info=lambda: SimpleNamespace(equity=1000.0, currency="USD"),
+        positions_get=lambda symbol=None: positions,
+        symbol_info=lambda symbol: _symbol_info(),
+        copy_rates_from_pos=lambda symbol, timeframe, start, count: (
+            rates if symbol == "EURUSD" else None
+        ),
+        POSITION_TYPE_BUY=0,
+        POSITION_TYPE_SELL=1,
+        ORDER_TYPE_BUY=0,
+        ORDER_TYPE_SELL=1,
+    )
+
+    out = run_trade_var_cvar_calculate(
+        TradeVarCvarRequest(lookback=6, min_observations=5),
+        gateway=gateway,
+    )
+
+    assert out["success"] is False
+    assert out["error_code"] == "portfolio_var_incomplete"
+    assert out["omitted_symbols"] == ["GBPUSD"]
+
+
 def test_run_trade_var_cvar_calculate_reports_account_info_failure() -> None:
     def account_info():
         raise RuntimeError("MT5 disconnected")

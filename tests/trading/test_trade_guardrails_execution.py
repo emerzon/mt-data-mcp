@@ -111,6 +111,21 @@ def test_modify_pending_order_blocks_risk_increase(
     assert result["guardrail_rule"] == "wallet_risk"
 
 
+def test_modify_pending_order_blocks_failed_position_snapshot(
+    restore_trade_guardrails,
+    patch_gateway,
+):
+    trade_guardrails_config.enabled = True
+    trade_guardrails_config.wallet_risk_limits.max_risk_pct_of_equity = 5.0
+    patch_gateway.positions_get = lambda *args, **kwargs: None
+
+    result = _modify_pending_order(ticket=100, price=1.1000, stop_loss=1.0940)
+
+    assert result["guardrail_blocked"] is True
+    assert result["error_code"] == "positions_snapshot_unavailable"
+    assert result["guardrail_rule"] == "snapshot_integrity"
+
+
 def test_modify_pending_order_allows_tighter_stop_loss(
     restore_trade_guardrails,
     patch_gateway,

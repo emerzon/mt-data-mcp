@@ -204,9 +204,10 @@ class TestTradeRiskAnalyze:
         mt5 = sys.modules["MetaTrader5"]
         self._setup_mt5(mt5)
         mt5.account_info.return_value = SimpleNamespace(equity=10000, currency="USD")
-        mt5.positions_get.return_value = None
+        mt5.positions_get.return_value = ()
         result = _unwrap_mcp(trade_risk_analyze())
-        assert "success" in result and "positions_count" in result
+        assert "success: true" in result
+        assert "positions_snapshot_unavailable" not in result
 
     @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
     def test_positions_with_sl(self):
@@ -215,7 +216,7 @@ class TestTradeRiskAnalyze:
         mt5.account_info.return_value = SimpleNamespace(equity=10000, currency="USD")
         pos = SimpleNamespace(
             ticket=1, symbol="EURUSD", type=0, volume=0.1,
-            price_open=1.1, sl=1.09, tp=1.12, profit=50,
+            price_open=1.1, price_current=1.1, sl=1.09, tp=1.12, profit=50,
         )
         mt5.positions_get.return_value = [pos]
         mt5.symbol_info.return_value = _sym()
@@ -229,7 +230,7 @@ class TestTradeRiskAnalyze:
         mt5.account_info.return_value = SimpleNamespace(equity=10000, currency="USD")
         pos = SimpleNamespace(
             ticket=1, symbol="EURUSD", type=0, volume=0.1,
-            price_open=1.1, sl=0, tp=0, profit=50,
+            price_open=1.1, price_current=1.1, sl=0, tp=0, profit=50,
         )
         mt5.positions_get.return_value = [pos]
         mt5.symbol_info.return_value = _sym()
@@ -283,7 +284,7 @@ class TestTradeRiskAnalyze:
         mt5.account_info.return_value = SimpleNamespace(equity=1000, currency="USD")
         pos = SimpleNamespace(
             ticket=1, symbol="EURUSD", type=0, volume=10.0,
-            price_open=1.1, sl=1.0, tp=1.2, profit=0,
+            price_open=1.1, price_current=1.1, sl=1.0, tp=1.2, profit=0,
         )
         mt5.positions_get.return_value = [pos]
         mt5.symbol_info.return_value = _sym()

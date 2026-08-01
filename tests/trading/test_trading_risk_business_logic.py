@@ -548,6 +548,7 @@ def test_trade_risk_analyze_preserves_zero_position_risk_metrics() -> None:
             type=0,
             volume=1.0,
             price_open=100.0,
+            price_current=100.0,
             sl=100.0,
             tp=110.0,
         ),
@@ -557,6 +558,7 @@ def test_trade_risk_analyze_preserves_zero_position_risk_metrics() -> None:
             type=0,
             volume=1.0,
             price_open=100.0,
+            price_current=100.0,
             sl=90.0,
             tp=100.0,
         ),
@@ -1017,6 +1019,7 @@ def test_run_trade_risk_analyze_uses_gateway_position_type_constants() -> None:
                 type=7,
                 volume=0.1,
                 price_open=100.0,
+                price_current=100.0,
                 sl=90.0,
                 tp=120.0,
             )
@@ -1032,6 +1035,35 @@ def test_run_trade_risk_analyze_uses_gateway_position_type_constants() -> None:
 
     assert out["success"] is True
     assert out["positions"][0]["type"] == "BUY"
+
+
+def test_run_trade_risk_analyze_rejects_failed_position_snapshot() -> None:
+    gateway = SimpleNamespace(
+        ensure_connection=lambda: None,
+        account_info=lambda: SimpleNamespace(equity=1000.0, currency="USD"),
+        positions_get=lambda symbol=None: None,
+    )
+
+    out = run_trade_risk_analyze(TradeRiskAnalyzeRequest(), gateway=gateway)
+
+    assert out["success"] is False
+    assert out["error_code"] == "positions_snapshot_unavailable"
+
+
+def test_run_trade_risk_analyze_rejects_failed_pending_snapshot() -> None:
+    gateway = SimpleNamespace(
+        ensure_connection=lambda: None,
+        account_info=lambda: SimpleNamespace(equity=1000.0, currency="USD"),
+        positions_get=lambda symbol=None: (),
+        orders_get=lambda symbol=None: None,
+        POSITION_TYPE_BUY=0,
+        POSITION_TYPE_SELL=1,
+    )
+
+    out = run_trade_risk_analyze(TradeRiskAnalyzeRequest(), gateway=gateway)
+
+    assert out["success"] is False
+    assert out["error_code"] == "orders_snapshot_unavailable"
 
 
 def test_run_trade_risk_analyze_caches_symbol_info_per_symbol() -> None:
@@ -1118,6 +1150,7 @@ def test_trade_risk_analyze_uses_loss_tick_value_for_open_position_risk() -> Non
             type=0,
             volume=1.0,
             price_open=100.0,
+            price_current=100.0,
             sl=90.0,
             tp=110.0,
         )
@@ -1140,7 +1173,7 @@ def test_trade_risk_analyze_uses_loss_tick_value_for_open_position_risk() -> Non
     assert out["portfolio_risk"]["total_risk_currency"] == 20.0
 
 
-def test_trade_risk_analyze_treats_locked_profit_stop_as_zero_risk() -> None:
+def test_trade_risk_analyze_measures_trailed_stop_from_current_mark() -> None:
     mt5 = MagicMock()
     mt5.account_info.return_value = SimpleNamespace(equity=1000.0, currency="USD")
     mt5.positions_get.return_value = [
@@ -1150,6 +1183,7 @@ def test_trade_risk_analyze_treats_locked_profit_stop_as_zero_risk() -> None:
             type=0,
             volume=1.0,
             price_open=100.0,
+            price_current=120.0,
             sl=110.0,
             tp=120.0,
         )
@@ -1163,10 +1197,12 @@ def test_trade_risk_analyze_treats_locked_profit_stop_as_zero_risk() -> None:
         out = trade_risk_analyze(__cli_raw=True)
 
     position = out["positions"][0]
-    assert position["risk_currency"] == 0.0
-    assert position["risk_pct"] == 0.0
+    assert position["risk_currency"] == 20.0
+    assert position["risk_pct"] == 2.0
     assert position["risk_status"] == "defined"
-    assert out["portfolio_risk"]["total_risk_currency"] == 0.0
+    assert position["risk_reference_price"] == 120.0
+    assert position["risk_reference_basis"] == "current_mark"
+    assert out["portfolio_risk"]["total_risk_currency"] == 20.0
 
 
 def test_trade_risk_analyze_does_not_report_wrong_side_tp_as_reward() -> None:
@@ -1179,6 +1215,7 @@ def test_trade_risk_analyze_does_not_report_wrong_side_tp_as_reward() -> None:
             type=0,
             volume=1.0,
             price_open=100.0,
+            price_current=100.0,
             sl=90.0,
             tp=95.0,
         )
@@ -1213,6 +1250,7 @@ def test_trade_risk_analyze_converts_notional_with_broker_tick_value() -> None:
             type=0,
             volume=1.0,
             price_open=110.0,
+            price_current=110.0,
             sl=109.0,
             tp=111.0,
         )
@@ -1254,6 +1292,7 @@ def test_trade_risk_analyze_flags_invalid_tick_configuration_with_existing_stop_
             type=0,
             volume=0.1,
             price_open=100.0,
+            price_current=100.0,
             sl=90.0,
             tp=110.0,
         )
@@ -1290,6 +1329,7 @@ def test_trade_risk_analyze_flags_invalid_tick_size_even_when_point_is_available
             type=0,
             volume=0.1,
             price_open=100.0,
+            price_current=100.0,
             sl=90.0,
             tp=110.0,
         )
@@ -1325,6 +1365,7 @@ def test_trade_risk_analyze_preserves_quantified_risk_level_with_unlimited_posit
                 type=0,
                 volume=1.0,
                 price_open=100.0,
+                price_current=100.0,
                 sl=80.0,
                 tp=120.0,
             ),
@@ -1334,6 +1375,7 @@ def test_trade_risk_analyze_preserves_quantified_risk_level_with_unlimited_posit
                 type=0,
                 volume=1.0,
                 price_open=100.0,
+                price_current=100.0,
                 sl=0.0,
                 tp=0.0,
             ),

@@ -199,6 +199,38 @@ def _wallet_limits_active(limits: Optional[WalletRiskLimits]) -> bool:
     return limits is not None and _model_has_values(limits)
 
 
+def guardrails_require_position_snapshot(
+    config: Optional[TradeGuardrailsConfig],
+    *,
+    account_info: Any = None,
+    enforce_safety_policy: bool = True,
+    enforce_account_risk: bool = True,
+    enforce_wallet_risk: bool = True,
+) -> bool:
+    """Return whether enabled guardrails depend on the current position book."""
+    if not _guardrails_active(config):
+        return False
+    if _guardrails_ignored_for_demo(config, account_info=account_info):
+        return False
+    if (
+        enforce_safety_policy
+        and config is not None
+        and config.safety_policy.reduce_only
+    ):
+        return True
+    if (
+        enforce_account_risk
+        and config is not None
+        and config.account_risk_limits.max_total_exposure_lots is not None
+    ):
+        return True
+    return bool(
+        enforce_wallet_risk
+        and config is not None
+        and _wallet_limits_active(config.wallet_risk_limits)
+    )
+
+
 def _account_is_demo(account_info: Any) -> bool:
     if account_info is None:
         return False
@@ -625,9 +657,9 @@ def _total_portfolio_risk_currency(
             issues.append(f"{symbol}: unable to determine position side")
             continue
         volume = _safe_float_attr(position, "volume")
-        entry_price = _safe_float_attr(position, "price_open")
+        mark_price = _safe_float_attr(position, "price_current")
         stop_loss = _safe_float_attr(position, "sl")
-        if volume is None or entry_price is None:
+        if volume is None or mark_price is None or mark_price <= 0:
             issues.append(f"{symbol}: position metadata is incomplete")
             continue
         if stop_loss is None or math.isclose(stop_loss, 0.0, abs_tol=1e-12):
@@ -642,10 +674,9 @@ def _total_portfolio_risk_currency(
         risk_currency, risk_error = _estimate_order_risk_currency(
             symbol_info=symbol_info,
             volume=abs(volume),
-            entry_price=entry_price,
+            entry_price=mark_price,
             stop_loss=stop_loss,
             side=side,
-            allow_profit_stop=True,
         )
         if risk_currency is None:
             issues.append(f"{symbol}: unable to quantify risk ({risk_error}).")
@@ -750,19 +781,18 @@ def _evaluate_wallet_risk_limits(
             if pos_side != net_side:
                 continue
             pos_volume = _safe_float_attr(position, "volume")
-            pos_entry = _safe_float_attr(position, "price_open")
+            pos_mark = _safe_float_attr(position, "price_current")
             pos_sl = _safe_float_attr(position, "sl")
-            if pos_volume is None or pos_entry is None or pos_sl is None:
+            if pos_volume is None or pos_mark is None or pos_mark <= 0 or pos_sl is None:
                 continue
             if math.isclose(pos_sl, 0.0, abs_tol=1e-12):
                 continue
             pos_risk, _err = _estimate_order_risk_currency(
                 symbol_info=symbol_info,
                 volume=abs(pos_volume),
-                entry_price=pos_entry,
+                entry_price=pos_mark,
                 stop_loss=pos_sl,
                 side=pos_side,
-                allow_profit_stop=True,
             )
             if pos_risk is None or pos_volume <= 0:
                 continue

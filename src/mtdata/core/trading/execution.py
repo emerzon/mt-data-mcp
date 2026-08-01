@@ -11,7 +11,11 @@ from ...utils.mt5 import _to_mt5_history_epoch_seconds
 from . import comments, time, validation
 from .gateway import MT5TradingGateway, create_trading_gateway, trading_connection_error
 from .positions import _resolve_open_position, _resolve_pending_order
-from .safety import evaluate_trade_guardrails, pending_order_risk_increased
+from .safety import (
+    evaluate_trade_guardrails,
+    guardrails_require_position_snapshot,
+    pending_order_risk_increased,
+)
 from .time import ExpirationValue
 
 logger = logging.getLogger(__name__)
@@ -120,6 +124,16 @@ def _evaluate_position_modify_guardrails(
         positions = mt5.positions_get()
     except Exception:
         positions = None
+    if positions is None and guardrails_require_position_snapshot(
+        trade_guardrails_config,
+        account_info=account_info,
+    ):
+        return validation.snapshot_unavailable_error(
+            mt5,
+            snapshot="positions",
+            context="evaluate configured trade guardrails",
+            guardrail_blocked=True,
+        )
     guardrail_block = evaluate_trade_guardrails(
         trade_guardrails_config,
         symbol=position.symbol,
@@ -736,6 +750,20 @@ def _modify_pending_order(
                     positions = mt5.positions_get()
                 except Exception:
                     positions = None
+                if positions is None and guardrails_require_position_snapshot(
+                    trade_guardrails_config,
+                    account_info=account_info,
+                ):
+                    snapshot_error = validation.snapshot_unavailable_error(
+                        mt5,
+                        snapshot="positions",
+                        context="evaluate configured trade guardrails",
+                        guardrail_blocked=True,
+                    )
+                    snapshot_error["pending_order_ticket"] = resolved_ticket
+                    snapshot_error["ticket_requested"] = ticket_id
+                    snapshot_error["ticket_resolution"] = ticket_resolution
+                    return snapshot_error
                 guardrail_block = evaluate_trade_guardrails(
                     trade_guardrails_config,
                     symbol=order.symbol,

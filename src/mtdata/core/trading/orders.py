@@ -12,7 +12,7 @@ from ...utils.coercion import round_finite
 from . import comments, common, time, validation
 from .gateway import MT5TradingGateway, create_trading_gateway, trading_connection_error
 from .positions import _resolve_open_position
-from .safety import evaluate_trade_guardrails
+from .safety import evaluate_trade_guardrails, guardrails_require_position_snapshot
 from .time import ExpirationValue
 from .validation import MarketOrderTypeInput, OrderTypeInput
 
@@ -675,6 +675,16 @@ def _evaluate_live_trade_guardrails(
         positions = mt5.positions_get()
     except Exception:
         positions = None
+    if positions is None and guardrails_require_position_snapshot(
+        trade_guardrails_config,
+        account_info=account_info,
+    ):
+        return validation.snapshot_unavailable_error(
+            mt5,
+            snapshot="positions",
+            context="evaluate configured trade guardrails",
+            guardrail_blocked=True,
+        )
     return evaluate_trade_guardrails(
         trade_guardrails_config,
         symbol=symbol,

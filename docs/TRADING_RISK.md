@@ -71,10 +71,13 @@ by `kelly_fraction_multiplier` and capped by `kelly_max_risk_pct` (and
 `desired_risk_pct` when set). On a non-positive edge the tool reports
 `status="kelly_no_edge"` and a suggested volume of `0.0`.
 
-Portfolio stop risk is the gross sum of defined per-ticket losses at each stop. It is
-a conservative path-risk measure, not a same-symbol net-exposure estimate; a path can
-trigger both sides of a hedge sequentially. Pending-order stop risk is reported
-separately as contingent and is included in the total only when `include_pending=true`.
+Portfolio stop risk is the gross sum of each ticket's remaining loss from its
+current MT5 mark to its stop. This measures equity at risk now; it does not reuse
+the original entry-to-stop loss after unrealized P&L has changed. It is a
+conservative path-risk measure, not a same-symbol net-exposure estimate; a path
+can trigger both sides of a hedge sequentially. Pending-order stop risk is
+reported separately as contingent and is included in the total only when
+`include_pending=true`.
 
 `notional_value` and portfolio notional fields are linearized account-currency
 exposures derived from the broker's tick value and tick size. The per-position
@@ -118,6 +121,9 @@ symbol's broker-provided tick value and tick size (`pnl_model` is
 `tick_value_linear_sensitivity`). Positions without usable tick economics are rejected
 rather than mixed into a portfolio in incompatible quote-currency units. The model is
 linearized and does not include gaps, spread changes, swaps, or nonlinear payoff effects.
+Every included symbol must have usable history. The tool returns
+`portfolio_var_incomplete` instead of silently calculating a smaller portfolio
+when any symbol history is unavailable.
 
 ---
 
@@ -150,6 +156,9 @@ metadata is available — `equity_before`/`equity_after`/`impact_pct`.
 ## Caveats
 
 - All three tools read live MT5 state; results change as positions and quotes move.
+- A `None` position/order response from MT5 is a failed snapshot, not an empty
+  book. Snapshot-dependent analytics return a `*_snapshot_unavailable` error;
+  empty tuples/lists remain valid empty books.
 - VaR/CVaR assume the recent return distribution persists and use a single-bar holding
   period; they are not a guarantee of maximum loss.
 - Stress shocks are deterministic and linear in price; they do not model spread

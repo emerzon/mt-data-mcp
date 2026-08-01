@@ -249,7 +249,7 @@ def test_evaluate_trade_guardrails_blocks_wallet_risk_threshold():
     assert result["guardrail_rule"] == "wallet_risk"
 
 
-def test_wallet_risk_treats_locked_profit_stop_as_zero_existing_risk():
+def test_wallet_risk_measures_trailed_stop_from_current_mark():
     config = TradeGuardrailsConfig(
         enabled=True,
         ignore_on_demo=False,
@@ -271,6 +271,7 @@ def test_wallet_risk_treats_locked_profit_stop_as_zero_existing_risk():
             type=0,
             volume=10.0,
             price_open=100.0,
+            price_current=120.0,
             sl=110.0,
         )
     ]
@@ -289,7 +290,9 @@ def test_wallet_risk_treats_locked_profit_stop_as_zero_existing_risk():
         enforce_account_risk=False,
     )
 
-    assert result is None
+    assert result is not None
+    assert result["guardrail_blocked"] is True
+    assert result["guardrail_rule"] == "wallet_risk"
 
 
 def test_wallet_risk_adds_opposite_order_risk_on_hedging_account():

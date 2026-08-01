@@ -53,6 +53,7 @@ from .requests import (
 from .safety import (
     assess_margin_stress,
     evaluate_trade_guardrails,
+    guardrails_require_position_snapshot,
     preview_trade_guardrails,
 )
 from .sizing import (
@@ -296,13 +297,14 @@ def _best_effort_trade_guardrail_account_info() -> Any:
         return None
 
 
-def _best_effort_trade_guardrail_positions() -> List[Any]:
+def _best_effort_trade_guardrail_positions() -> Optional[List[Any]]:
     if not trade_guardrails_config.is_enabled():
         return []
     try:
-        return list(mt5_adapter.positions_get() or [])
+        positions = mt5_adapter.positions_get()
     except Exception:
-        return []
+        return None
+    return None if positions is None else list(positions)
 
 
 def _normalize_idempotency_key(value: Any) -> Optional[str]:
@@ -1661,7 +1663,28 @@ def run_trade_place(  # noqa: C901
 
         if bool(request.dry_run):
             guardrail_account_info = _best_effort_trade_guardrail_account_info()
-            guardrail_positions = _best_effort_trade_guardrail_positions()
+            snapshot_required = guardrails_require_position_snapshot(
+                trade_guardrails_config,
+                account_info=guardrail_account_info,
+                enforce_account_risk=False,
+                enforce_wallet_risk=False,
+            )
+            guardrail_positions = (
+                _best_effort_trade_guardrail_positions()
+                if snapshot_required
+                else []
+            )
+            if guardrail_positions is None:
+                return _finish(
+                    validation.snapshot_unavailable_error(
+                        mt5_adapter,
+                        snapshot="positions",
+                        context="preview configured trade guardrails",
+                        guardrail_blocked=True,
+                    ),
+                    order_type=order_type_norm,
+                    pending=is_pending,
+                )
             guardrail_preview = preview_trade_guardrails(
                 trade_guardrails_config,
                 symbol=symbol_norm,
@@ -1726,7 +1749,26 @@ def run_trade_place(  # noqa: C901
             )
 
         guardrail_account_info = _best_effort_trade_guardrail_account_info()
-        guardrail_positions = _best_effort_trade_guardrail_positions()
+        snapshot_required = guardrails_require_position_snapshot(
+            trade_guardrails_config,
+            account_info=guardrail_account_info,
+            enforce_account_risk=False,
+            enforce_wallet_risk=False,
+        )
+        guardrail_positions = (
+            _best_effort_trade_guardrail_positions() if snapshot_required else []
+        )
+        if guardrail_positions is None:
+            return _finish(
+                validation.snapshot_unavailable_error(
+                    mt5_adapter,
+                    snapshot="positions",
+                    context="evaluate configured trade guardrails",
+                    guardrail_blocked=True,
+                ),
+                order_type=order_type_norm,
+                pending=is_pending,
+            )
         static_guardrail = evaluate_trade_guardrails(
             trade_guardrails_config,
             symbol=symbol_norm,
@@ -3094,20 +3136,31 @@ def run_trade_risk_analyze(  # noqa: C901
             equity = validation._safe_float_attr(account, "equity", 0.0)
             margin_stress = assess_margin_stress(account)
             currency = getattr(account, "currency", None)
-            positions = (
-                gateway.positions_get(symbol=request.symbol)
-                if request.symbol
-                else gateway.positions_get()
-            )
+            try:
+                positions = (
+                    gateway.positions_get(symbol=request.symbol)
+                    if request.symbol
+                    else gateway.positions_get()
+                )
+            except Exception:
+                positions = None
             if positions is None:
-                positions = []
+                return validation.snapshot_unavailable_error(
+                    gateway,
+                    snapshot="positions",
+                    context="analyze open-position risk",
+                )
             portfolio_positions_total: Optional[int] = None
+            portfolio_snapshot_available = True
             if request.symbol:
                 try:
                     portfolio_positions = gateway.positions_get()
                 except Exception:
                     portfolio_positions = None
-                portfolio_positions_total = len(list(portfolio_positions or []))
+                if portfolio_positions is None:
+                    portfolio_snapshot_available = False
+                else:
+                    portfolio_positions_total = len(list(portfolio_positions))
 
             position_type_buy = validation._safe_int_attr(
                 gateway,
@@ -3150,6 +3203,12 @@ def run_trade_risk_analyze(  # noqa: C901
                         continue
 
                     entry_price = float(pos.price_open)
+                    mark_price = float(pos.price_current)
+                    if not math.isfinite(mark_price) or mark_price <= 0.0:
+                        raise ValueError(
+                            "Current mark price is unavailable; remaining stop risk "
+                            "cannot be calculated."
+                        )
                     sl_price = float(pos.sl) if pos.sl and pos.sl > 0 else None
                     tp_price = float(pos.tp) if pos.tp and pos.tp > 0 else None
                     volume = float(pos.volume)
@@ -3174,10 +3233,10 @@ def run_trade_risk_analyze(  # noqa: C901
                     if not math.isfinite(contract_size) or contract_size <= 0:
                         contract_size = 1.0
 
-                    contract_price_product = abs(volume) * contract_size * entry_price
+                    contract_price_product = abs(volume) * contract_size * mark_price
                     notional_value = _linearized_account_currency_notional(
                         volume=volume,
-                        price=entry_price,
+                        price=mark_price,
                         symbol_info=sym_info,
                     )
                     notional_items_total += 1
@@ -3198,9 +3257,9 @@ def run_trade_risk_analyze(  # noqa: C901
 
                     if sl_price and tick_size > 0 and tick_value_valid:
                         risk_ticks = (
-                            price_delta_ticks(entry_price, sl_price, tick_size)
+                            price_delta_ticks(mark_price, sl_price, tick_size)
                             if is_buy_position
-                            else price_delta_ticks(sl_price, entry_price, tick_size)
+                            else price_delta_ticks(sl_price, mark_price, tick_size)
                         )
                         risk_ticks = max(0, risk_ticks or 0)
                         risk_currency = risk_ticks * risk_tick_value * abs(volume)
@@ -3212,9 +3271,9 @@ def run_trade_risk_analyze(  # noqa: C901
 
                         if tp_price:
                             reward_ticks = (
-                                price_delta_ticks(tp_price, entry_price, tick_size)
+                                price_delta_ticks(tp_price, mark_price, tick_size)
                                 if is_buy_position
-                                else price_delta_ticks(entry_price, tp_price, tick_size)
+                                else price_delta_ticks(mark_price, tp_price, tick_size)
                             )
                             if reward_ticks is not None and reward_ticks > 0:
                                 reward_currency = (
@@ -3251,6 +3310,9 @@ def run_trade_risk_analyze(  # noqa: C901
                                 "1 broker lot equals contract_size contract units."
                             ),
                             "entry": entry_price,
+                            "current_mark": mark_price,
+                            "risk_reference_price": mark_price,
+                            "risk_reference_basis": "current_mark",
                             "sl": sl_price,
                             "tp": tp_price,
                             "risk_currency": _round_optional_number(
@@ -3292,7 +3354,11 @@ def run_trade_risk_analyze(  # noqa: C901
                     else gateway.orders_get()
                 )
                 if pending_orders is None:
-                    pending_orders = []
+                    return validation.snapshot_unavailable_error(
+                        gateway,
+                        snapshot="orders",
+                        context="include pending-order risk",
+                    )
                 pending_buy_types = {
                     validation._safe_int_attr(gateway, "ORDER_TYPE_BUY_LIMIT", 2),
                     validation._safe_int_attr(gateway, "ORDER_TYPE_BUY_STOP", 4),
@@ -3572,8 +3638,18 @@ def run_trade_risk_analyze(  # noqa: C901
                 scoped_risk = result.pop("portfolio_risk")
                 result["scoped_risk"] = scoped_risk
                 result["risk_visibility"] = (
-                    "partial" if other_positions_count else "symbol_scope"
+                    "partial"
+                    if other_positions_count or not portfolio_snapshot_available
+                    else "symbol_scope"
                 )
+                if not portfolio_snapshot_available:
+                    scoped_risk["overall_risk_status"] = "incomplete"
+                    scoped_risk["quantified_risk_level"] = "unknown"
+                    result["scope_warning"] = (
+                        "The symbol-scoped analysis succeeded, but the full portfolio "
+                        "position snapshot was unavailable. Aggregate portfolio risk "
+                        "and other-position counts are unknown."
+                    )
                 if other_positions_count:
                     scoped_risk["overall_risk_status"] = "partial"
                     scoped_risk["quantified_risk_level"] = "unknown"
@@ -3591,16 +3667,22 @@ def run_trade_risk_analyze(  # noqa: C901
                     "risk_target_basis": "percent_of_account_equity",
                     "candidate_symbol": str(request.symbol),
                     "account_margin_context_included": True,
-                    "existing_portfolio_stop_risk_included": not bool(
-                        other_positions_count
+                    "existing_portfolio_stop_risk_included": bool(
+                        portfolio_snapshot_available and not other_positions_count
                     ),
-                    "portfolio_positions": int(portfolio_positions_total or 0),
-                    "other_positions": int(other_positions_count or 0),
                     "note": (
                         "Suggested volume limits this candidate trade's stop risk; "
                         "it does not cap aggregate portfolio stop risk."
                     ),
                 }
+                if portfolio_positions_total is not None:
+                    result["sizing_risk_policy"]["portfolio_positions"] = int(
+                        portfolio_positions_total
+                    )
+                if other_positions_count is not None:
+                    result["sizing_risk_policy"]["other_positions"] = int(
+                        other_positions_count
+                    )
             else:
                 result["risk_visibility"] = "portfolio"
                 result["scope"] = {
@@ -4427,7 +4509,13 @@ def run_trade_stress_test(
         positions = gateway.positions_get()
     except Exception as exc:
         return {"error": str(exc)}
-    positions = list(positions or [])
+    if positions is None:
+        return validation.snapshot_unavailable_error(
+            gateway,
+            snapshot="positions",
+            context="run a portfolio stress test",
+        )
+    positions = list(positions)
     equity = validation._safe_float_attr(account, "equity", 0.0) if account is not None else 0.0
     currency = str(getattr(account, "currency", "") or "").strip() if account is not None else ""
     position_type_buy = validation._safe_int_attr(
@@ -4649,9 +4737,21 @@ def run_trade_var_cvar_calculate(  # noqa: C901
             else gateway.positions_get()
         )
     except Exception as exc:
-        return _finish({"error": str(exc)})
+        result = validation.snapshot_unavailable_error(
+            gateway,
+            snapshot="positions",
+            context="calculate portfolio VaR/CVaR",
+        )
+        result["cause"] = str(exc)
+        return _finish(result)
     if positions is None:
-        positions = []
+        return _finish(
+            validation.snapshot_unavailable_error(
+                gateway,
+                snapshot="positions",
+                context="calculate portfolio VaR/CVaR",
+            )
+        )
     if not positions:
         message = (
             f"No open positions found for symbol {request.symbol}"
@@ -4868,6 +4968,31 @@ def run_trade_var_cvar_calculate(  # noqa: C901
             history_failures.append({"symbol": symbol, "error": history_error})
             continue
         return_series[symbol] = returns
+
+    if history_failures:
+        return _finish(
+            {
+                "success": False,
+                "error": (
+                    "Portfolio VaR/CVaR requires return history for every included "
+                    "open-position symbol; refusing a partial calculation."
+                ),
+                "error_code": "portfolio_var_incomplete",
+                "scope": "symbol" if request.symbol else "portfolio",
+                "history_failures": history_failures,
+                "omitted_symbols": sorted(
+                    {
+                        str(item.get("symbol"))
+                        for item in history_failures
+                        if item.get("symbol")
+                    }
+                ),
+                "remediation": (
+                    "Restore price history for every omitted symbol or narrow the "
+                    "request to a symbol with sufficient history."
+                ),
+            }
+        )
 
     if not return_series:
         result: Dict[str, Any] = {

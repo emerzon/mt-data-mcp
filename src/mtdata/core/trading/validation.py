@@ -855,6 +855,41 @@ def _validate_live_protection_levels(
     return None
 
 
+def snapshot_unavailable_error(
+    mt5: Any,
+    *,
+    snapshot: str,
+    context: str,
+    guardrail_blocked: bool = False,
+) -> Dict[str, Any]:
+    """Build an actionable error for a failed MT5 collection snapshot."""
+    normalized_snapshot = str(snapshot or "positions").strip().lower()
+    label = "open positions" if normalized_snapshot == "positions" else "pending orders"
+    payload: Dict[str, Any] = {
+        "success": False,
+        "error": (
+            f"Unable to read the current {label} snapshot from MT5; "
+            f"cannot safely {context}."
+        ),
+        "error_code": f"{normalized_snapshot}_snapshot_unavailable",
+        "snapshot": normalized_snapshot,
+        "remediation": (
+            "Confirm the MT5 terminal and account connection, then retry. An empty "
+            "book is returned as an empty tuple/list; None indicates a read failure."
+        ),
+    }
+    last_error = _safe_last_error(mt5)
+    if (
+        isinstance(last_error, (str, int, float, list, tuple, dict))
+        and last_error not in (None, False, (0, ""))
+    ):
+        payload["last_error"] = last_error
+    if guardrail_blocked:
+        payload["guardrail_blocked"] = True
+        payload["guardrail_rule"] = "snapshot_integrity"
+    return payload
+
+
 def _validate_basic_protection_levels(
     *,
     side: str,

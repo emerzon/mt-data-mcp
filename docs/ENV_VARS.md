@@ -229,6 +229,14 @@ Optional pre-trade controls that can block `trade_place` and risk-increasing pen
 Notes:
 
 - Wallet-risk caps require a quantifiable stop-loss and valid broker tick metadata.
+- Existing position risk is measured from the current mark to each stop, so
+  trailed stops still reserve the equity that would be lost from the current
+  account state. If the position snapshot is unavailable, snapshot-dependent
+  guardrails block the action.
+- Wallet-risk guardrails reserve open-position risk and the candidate order's
+  risk. Other pending orders are not reserved by this execution gate; inspect
+  contingent pending risk with `trade_risk_analyze` before submitting multiple
+  simultaneous entries.
 - Leave any variable unset to disable only that rule.
 - `trade_modify` guardrails apply only to pending-order changes and position SL changes that increase risk; close/reduce flows stay allowed.
 
