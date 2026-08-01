@@ -11,7 +11,7 @@ from mtdata.core.cli.api import (
 
 
 def test_cli_description_promotes_warm_workflows() -> None:
-    assert "One-shot commands initialize the full tool runtime" in _CLI_DESCRIPTION
+    assert "One-shot commands initialize the requested tool family" in _CLI_DESCRIPTION
     assert "mtdata-cli shell" in _CLI_DESCRIPTION
     assert "long-lived stdio or HTTP server" in _CLI_DESCRIPTION
 

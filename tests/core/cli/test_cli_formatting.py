@@ -219,7 +219,7 @@ class TestFormatResultForCli:
         parsed = json.loads(result)
         assert parsed["avg_return"] == -0.024297043390669737
 
-    def test_json_compact_precision_rounds_floats(self):
+    def test_json_compact_precision_preserves_canonical_floats(self):
         result = _format_result_for_cli(
             {"avg_return": -0.024297043390669737},
             fmt="json",
@@ -228,7 +228,7 @@ class TestFormatResultForCli:
             precision="compact",
         )
         parsed = json.loads(result)
-        assert parsed["avg_return"] == -0.0243
+        assert parsed["avg_return"] == -0.024297043390669737
 
     def test_json_format_replaces_non_finite_with_null(self):
         result = _format_result_for_cli(
