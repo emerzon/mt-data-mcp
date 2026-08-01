@@ -100,8 +100,8 @@ def test_temporal_analyze_session_groups_use_analysis_timezone_clock() -> None:
     assert result["timezone"] == "Europe/London"
     assert result["bars"] == 2
     assert result["session_definition"]["clock"] == "Europe/London"
-    assert [group["group"] for group in result["groups"]] == ["ny"]
-    assert [group["group_label"] for group in result["groups"]] == ["ny"]
+    assert [group["group"] for group in result["groups"]] == ["london_ny_overlap"]
+    assert [group["group_label"] for group in result["groups"]] == ["london ny overlap"]
 
 
 def test_temporal_analyze_compact_keeps_session_clock_definition() -> None:
