@@ -266,17 +266,23 @@ def test_support_resistance_watchers_ignore_non_finite_levels(monkeypatch) -> No
     ]
 
 def test_pivot_zone_watchers_use_adjacent_pivot_bands(monkeypatch) -> None:
-    monkeypatch.setattr(
-        core_data,
-        "pivot_compute_points",
-        lambda symbol, timeframe="D1": {
+    captured = {}
+
+    def fake_pivots(symbol, timeframe="D1", detail="compact"):
+        captured.update(symbol=symbol, timeframe=timeframe, detail=detail)
+        return {
             "success": True,
             "levels": [
                 {"level": "S1", "traditional": 99.0, "fibonacci": 99.0},
                 {"level": "PP", "traditional": 100.0, "fibonacci": 100.0},
                 {"level": "R1", "traditional": 101.0, "fibonacci": 101.0},
             ],
-        },
+        }
+
+    monkeypatch.setattr(
+        core_data,
+        "pivot_compute_points",
+        fake_pivots,
     )
 
     watchers = core_data._pivot_zone_watchers(symbol="BTCUSD", timeframe="M15")
@@ -285,6 +291,7 @@ def test_pivot_zone_watchers_use_adjacent_pivot_bands(monkeypatch) -> None:
         {"type": "price_enter_zone", "symbol": "BTCUSD", "lower": 99.0, "upper": 100.0, "direction": "either"},
         {"type": "price_enter_zone", "symbol": "BTCUSD", "lower": 100.0, "upper": 101.0, "direction": "either"},
     ]
+    assert captured == {"symbol": "BTCUSD", "timeframe": "D1", "detail": "standard"}
 
 def test_run_wait_event_matches_adaptive_price_change() -> None:
     clock = FakeClock(datetime(2026, 3, 15, 12, 0, 0, tzinfo=timezone.utc))

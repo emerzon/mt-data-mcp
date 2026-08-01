@@ -187,7 +187,11 @@ def _support_resistance_watchers(
 def _pivot_zone_watchers(*, symbol: str, timeframe: TimeframeLiteral) -> List[Dict[str, Any]]:
     try:
         raw_tool = getattr(pivot_compute_points, "__wrapped__", pivot_compute_points)
-        payload = raw_tool(symbol=symbol, timeframe=_default_wait_event_pivot_timeframe(timeframe))
+        payload = raw_tool(
+            symbol=symbol,
+            timeframe=_default_wait_event_pivot_timeframe(timeframe),
+            detail="standard",
+        )
     except Exception:
         return []
     if not isinstance(payload, dict) or payload.get("error"):
