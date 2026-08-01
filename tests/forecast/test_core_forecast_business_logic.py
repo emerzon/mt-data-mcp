@@ -1969,6 +1969,27 @@ def test_forecast_generate_standard_preserves_requested_volatility_quantity():
     assert "Error listing forecast methods" in _unwrap(cf.forecast_list_methods)()["error"]
 
 
+def test_forecast_generate_standard_preserves_requested_volatility_quantity():
+    out = forecast_use_cases._apply_forecast_generate_detail(
+        {
+            "success": True,
+            "method": "ewma",
+            "horizon": 3,
+            "volatility_per_bar": 0.01,
+        },
+        ForecastGenerateRequest(
+            symbol="EURUSD",
+            timeframe="H1",
+            method="ewma",
+            quantity="volatility",
+            horizon=3,
+            detail="standard",
+        ),
+    )
+
+    assert out["quantity"] == "volatility"
+
+
 def test_forecast_list_methods_standard_exposes_ci_method(monkeypatch):
     monkeypatch.setattr(
         cf,
