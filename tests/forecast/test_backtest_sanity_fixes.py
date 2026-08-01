@@ -185,6 +185,10 @@ class TestNonFiniteForecastValidation:
             assert d["success"] is False
             assert "Non-finite" in d.get("error", "")
 
+        assert result["success"] is False
+        assert result["error_code"] == "forecast_backtest_no_successful_methods"
+        assert result["failed_methods"] == ["naive"]
+
     @patch("mtdata.forecast.backtest._fetch_history")
     def test_inf_forecast_fails_anchor(self, fetch):
         fetch.return_value = _make_df(500)

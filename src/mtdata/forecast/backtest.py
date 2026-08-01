@@ -2158,8 +2158,14 @@ def forecast_backtest(  # noqa: C901
                 int(len(anchor_indices)) - 1,
             ) * int(spacing)
 
+        successful_methods = [
+            method
+            for method, method_result in results.items()
+            if isinstance(method_result, dict) and method_result.get("success") is True
+        ]
+        failed_methods = [method for method in results if method not in successful_methods]
         result_payload = {
-            "success": True,
+            "success": bool(successful_methods),
             "symbol": symbol,
             "timeframe": timeframe,
             "units": _backtest_units(quantity),
@@ -2169,6 +2175,13 @@ def forecast_backtest(  # noqa: C901
             "detail": detail_mode,
             "results": results,
         }
+        if failed_methods:
+            result_payload["failed_methods"] = failed_methods
+        if not successful_methods:
+            result_payload["error_code"] = "forecast_backtest_no_successful_methods"
+            result_payload["error"] = (
+                "No requested forecast method produced a successful backtest observation."
+            )
         attach_denoise_causality_disclosure(result_payload, _dn_used)
         return result_payload
     except Exception as e:
