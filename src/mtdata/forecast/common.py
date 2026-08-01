@@ -27,6 +27,7 @@ from ..utils.mt5 import (
     mt5,
 )
 from ..utils.utils import _parse_end_datetime, _parse_start_datetime, _utc_epoch_seconds
+from ..utils.time import bar_close_epoch
 
 _FORECAST_RESERVED_COLUMNS = {"unique_id", "ds", "y"}
 _FORECAST_PREFERRED_COLUMNS = ("y_hat", "mean", "median", "pred", "forecast")
@@ -1095,8 +1096,15 @@ def fetch_history(
         )
         if to_dt:
             cutoff = _utc_epoch_seconds(to_dt)
-            # Filter: include the bar exactly AT the cutoff if it exists
-            df = df[df['time'] <= cutoff]
+            if as_of:
+                # An as-of anchor describes information available by that
+                # instant, so exclude a bar that merely opened at the cutoff.
+                completed = df['time'].map(
+                    lambda value: bar_close_epoch(value, timeframe) <= cutoff
+                )
+                df = df[completed]
+            else:
+                df = df[df['time'] <= cutoff]
             # Bounded ranges keep the full requested window; end-only mirrors as_of.
             if not start and len(df) > need:
                 df = df.iloc[-int(need):]

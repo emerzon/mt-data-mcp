@@ -126,23 +126,23 @@ def test_fetch_history_as_of_and_drop_last_live_paths(monkeypatch):
 
     rates = [
         {"time": 100.0, "open": 1.0},
-        {"time": 200.0, "open": 2.0},
-        {"time": 300.0, "open": 3.0},
-        {"time": 400.0, "open": 4.0},
+        {"time": 3700.0, "open": 2.0},
+        {"time": 7300.0, "open": 3.0},
+        {"time": 10900.0, "open": 4.0},
     ]
 
     monkeypatch.setattr(fc, "_mt5_copy_rates_from", lambda symbol, tf, to_dt, count: rates)
     monkeypatch.setattr(fc, "_mt5_copy_rates_from_pos", lambda symbol, tf, start, count: rates)
     monkeypatch.setattr(fc, "_parse_start_datetime", lambda _as_of: datetime(2024, 1, 1))
-    monkeypatch.setattr(fc, "_utc_epoch_seconds", lambda _dt: 300.0)
+    monkeypatch.setattr(fc, "_utc_epoch_seconds", lambda _dt: 7300.0)
 
     out = fc.fetch_history("EURUSD", "H1", need=2, as_of="2024-01-01")
-    assert out["time"].tolist() == [200.0, 300.0]
+    assert out["time"].tolist() == [100.0, 3700.0]
     assert ("EURUSD", False) in symbol_select_calls
 
     monkeypatch.setattr(fc, "_is_last_bar_forming", lambda rates, timeframe: True)
     out = fc.fetch_history("EURUSD", "H1", need=4, as_of=None, drop_last_live=True)
-    assert out["time"].tolist() == [100.0, 200.0, 300.0]
+    assert out["time"].tolist() == [100.0, 3700.0, 7300.0]
 
 
 def test_fetch_history_as_of_anchors_directly_not_latest_window(monkeypatch):
@@ -158,7 +158,7 @@ def test_fetch_history_as_of_anchors_directly_not_latest_window(monkeypatch):
     monkeypatch.setattr(fc, "_mt5_copy_rates_from_pos", lambda symbol, tf, start, count: newest_rates)
     monkeypatch.setattr(fc, "_mt5_copy_rates_from", lambda symbol, tf, to_dt, count: asof_rates)
     monkeypatch.setattr(fc, "_parse_start_datetime", lambda _as_of: datetime(2020, 1, 1))
-    monkeypatch.setattr(fc, "_utc_epoch_seconds", lambda _dt: 250.0)
+    monkeypatch.setattr(fc, "_utc_epoch_seconds", lambda _dt: 3800.0)
 
     out = fc.fetch_history("EURUSD", "H1", need=2, as_of="2020-01-01")
     assert out["time"].tolist() == [100.0, 200.0]

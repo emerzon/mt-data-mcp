@@ -362,13 +362,13 @@ class TestFetchCandlesCore(unittest.TestCase):
             result = fetch_candles('EURUSD', timeframe='H1', limit=5, time_as_epoch=True)
         self.assertTrue(result.get('success'))
         returned_times = [row['time'] for row in result.get('data', [])]
-        self.assertIn(base_ts, returned_times)
-        self.assertEqual(returned_times[-1], base_ts)
+        self.assertNotIn(base_ts, returned_times)
+        self.assertEqual(returned_times[-1], base_ts - 3600)
         self.assertNotIn('last_candle_open', result)
-        self.assertFalse(result['has_forming_candle'])
-        self.assertEqual(result['forming_candle_status'], 'none')
+        self.assertTrue(result['has_forming_candle'])
+        self.assertEqual(result['forming_candle_status'], 'skipped')
         self.assertFalse(result['forming_candle_included'])
-        self.assertFalse(result['forming_candle_skipped'])
+        self.assertTrue(result['forming_candle_skipped'])
 
     @patch(_MT5_CONFIG)
     @patch(_RATES_FROM)
@@ -387,15 +387,15 @@ class TestFetchCandlesCore(unittest.TestCase):
         self.assertTrue(result.get('success'))
         returned_times = [row['time'] for row in result.get('data', [])]
         self.assertEqual(len(returned_times), 5)
-        self.assertEqual(returned_times[0], base_ts - (4 * 3600))
-        self.assertEqual(returned_times[-1], base_ts)
+        self.assertEqual(returned_times[0], base_ts - (5 * 3600))
+        self.assertEqual(returned_times[-1], base_ts - 3600)
         self.assertEqual(result['candles'], 5)
         self.assertEqual(result['candles_excluded'], 0)
-        self.assertEqual(result['incomplete_candles_skipped'], 0)
-        self.assertFalse(result['has_forming_candle'])
-        self.assertEqual(result['forming_candle_status'], 'none')
+        self.assertEqual(result['incomplete_candles_skipped'], 1)
+        self.assertTrue(result['has_forming_candle'])
+        self.assertEqual(result['forming_candle_status'], 'skipped')
         self.assertFalse(result['forming_candle_included'])
-        self.assertFalse(result['forming_candle_skipped'])
+        self.assertTrue(result['forming_candle_skipped'])
 
     @patch(_MT5_CONFIG)
     @patch(_RATES_FROM)
@@ -690,7 +690,7 @@ class TestFetchCandlesCore(unittest.TestCase):
             include_incomplete=True,
         )
 
-        self.assertTrue(result.get('success'))
+        self.assertTrue(result.get('success'), result)
         self.assertEqual(result['candles'], 4)
         times = [float(row['time']) for row in result['data']]
         self.assertEqual(times, sorted(times))
@@ -782,7 +782,7 @@ class TestFetchCandlesCore(unittest.TestCase):
         self.assertNotIn('error', result)
         freshness = result['meta']['diagnostics']['freshness']
         expected_end_epoch = float(to_date.timestamp() + (24 * 60 * 60) - 1e-6)
-        last_bar_epoch = float(to_date.timestamp() - (10 * 60 * 60))
+        last_bar_epoch = float(to_date.timestamp() - (9 * 60 * 60))
         self.assertEqual(
             freshness,
             {
@@ -830,7 +830,7 @@ class TestFetchCandlesCore(unittest.TestCase):
         freshness = result['meta']['diagnostics']['freshness']
         self.assertFalse(freshness['last_bar_within_policy_window'])
         expected_end_epoch = float(to_date.timestamp() + (24 * 60 * 60) - 1e-6)
-        last_bar_epoch = float(to_date.timestamp() - (10 * 60 * 60))
+        last_bar_epoch = float(to_date.timestamp() - (9 * 60 * 60))
         self.assertEqual(
             freshness['data_freshness_seconds'],
             round(expected_end_epoch - last_bar_epoch),
@@ -854,19 +854,18 @@ class TestFetchCandlesCore(unittest.TestCase):
         self.assertTrue(result.get('success'))
 
     @patch(_MT5_CONFIG)
-    @patch(_RATES_FROM)
+    @patch(_RATES_RANGE)
     @patch(_CACHED_INFO, return_value=MagicMock())
     @patch(_RESOLVE_CTZ, return_value=None)
     @patch(_ESTIMATE_WARMUP, return_value=0)
     @patch(_GUARD, _mock_symbol_guard)
-    def test_start_only(self, mock_warmup, mock_ctz, mock_info, mock_from, mock_cfg):
-        # start-only queries fetch recent bars via copy_rates_from (bounded by limit),
-        # not a full open-ended range fetch.
+    def test_start_only(self, mock_warmup, mock_ctz, mock_info, mock_range, mock_cfg):
+        # start-only queries return the first bounded window after start.
         mock_cfg.get_time_offset_seconds.return_value = 0
-        mock_from.return_value = _make_rates(20)
+        mock_range.return_value = _make_rates(20)
         result = fetch_candles('EURUSD', limit=5, start='2025-01-01')
         self.assertTrue(result.get('success'))
-        mock_from.assert_called()
+        mock_range.assert_called()
 
     @patch(_MT5_CONFIG)
     @patch(_RATES_FROM)

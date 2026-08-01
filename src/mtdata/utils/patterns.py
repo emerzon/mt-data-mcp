@@ -31,6 +31,7 @@ from .denoise import (
 from .dimred import DimReducer as _DimReducer
 from .dimred import create_reducer as _create_reducer
 from .mt5 import _mt5_copy_rates_from, _rates_to_df
+from .time import bar_close_epoch
 from .utils import align_finite
 
 
@@ -465,8 +466,16 @@ def _fetch_symbol_df(
     if rates is None or len(rates) == 0:
         raise RuntimeError(f"Failed to fetch rates for {symbol}")
     df = _rates_to_df(rates)
-    if drop_last_live and as_of is None and len(df) >= 2:
-        df = df.iloc[:-1]
+    if drop_last_live and len(df) >= 1:
+        epoch_column = "__epoch" if "__epoch" in df.columns else "time"
+        reference_epoch = pd.Timestamp(to_dt).timestamp()
+        try:
+            tail_open = float(df[epoch_column].iloc[-1])
+            if reference_epoch < bar_close_epoch(tail_open, timeframe):
+                df = df.iloc[:-1]
+        except (KeyError, TypeError, ValueError):
+            # An unclassifiable tail is not safe to treat as a completed bar.
+            df = df.iloc[:-1]
     # Keep last `bars` rows
     if len(df) > bars:
         df = df.iloc[-bars:].copy()

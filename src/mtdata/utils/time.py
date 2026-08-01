@@ -6,6 +6,35 @@ from typing import Any, Optional
 from ..shared.constants import TIME_DISPLAY_FORMAT
 
 
+def bar_close_epoch(open_epoch: Any, timeframe: str) -> float:
+    """Return the UTC end epoch for a bar opened at *open_epoch*.
+
+    Monthly bars use the next calendar-month boundary; the shared timeframe
+    seconds remain appropriate for every other MT5 timeframe.
+    """
+    opened = float(open_epoch)
+    if str(timeframe).upper() == "MN1":
+        opened_at = datetime.fromtimestamp(opened, tz=timezone.utc)
+        if opened_at.month == 12:
+            closed_at = opened_at.replace(
+                year=opened_at.year + 1, month=1, day=1,
+                hour=0, minute=0, second=0, microsecond=0,
+            )
+        else:
+            closed_at = opened_at.replace(
+                month=opened_at.month + 1, day=1,
+                hour=0, minute=0, second=0, microsecond=0,
+            )
+        return float(closed_at.timestamp())
+
+    from ..shared.constants import TIMEFRAME_SECONDS
+
+    seconds = TIMEFRAME_SECONDS.get(str(timeframe).upper())
+    if seconds is None:
+        raise ValueError(f"Unknown timeframe: {timeframe}")
+    return opened + float(seconds)
+
+
 def format_epoch_utc(value: Any) -> Optional[str]:
     """Format epoch seconds as second-resolution RFC 3339 UTC."""
     try:

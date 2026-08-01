@@ -77,6 +77,7 @@ from ..utils.mt5 import (
     symbol_price_point as _symbol_price_point,
 )
 from ..utils.ohlcv import validate_and_clean_ohlcv_frame
+from ..utils.time import bar_close_epoch
 
 # Simplify entrypoint and helpers.
 from ..utils.simplify import (
@@ -432,23 +433,30 @@ def _is_last_bar_forming(
 ) -> bool:
     """Return True if the last bar in *rates_or_df* is still forming."""
     try:
-        seconds_per_bar = TIMEFRAME_SECONDS.get(timeframe, 3600)
         current_time = (
             float(current_time_epoch)
             if current_time_epoch is not None and math.isfinite(float(current_time_epoch))
             else float(_utc_epoch_seconds(datetime.now(dt_timezone.utc)))
         )
         if isinstance(rates_or_df, pd.DataFrame):
-            if len(rates_or_df) == 0 or '__epoch' not in rates_or_df.columns:
+            if len(rates_or_df) == 0:
                 return False
-            last_epoch = float(rates_or_df['__epoch'].iloc[-1])
+            epoch_column = '__epoch' if '__epoch' in rates_or_df.columns else 'time'
+            if epoch_column not in rates_or_df.columns:
+                return True
+            last_epoch = float(rates_or_df[epoch_column].iloc[-1])
         else:
             if rates_or_df is None or len(rates_or_df) == 0:
                 return False
             last_epoch = float(rates_or_df[-1]["time"])
-        return 0 <= current_time - last_epoch < seconds_per_bar
+        return current_time < bar_close_epoch(last_epoch, timeframe)
     except Exception:
-        return False
+        # A non-empty tail whose timestamp cannot be classified must not be
+        # silently presented as a completed candle.
+        try:
+            return rates_or_df is not None and len(rates_or_df) > 0
+        except Exception:
+            return False
 
 
 def _drop_incomplete_tail(
@@ -606,16 +614,17 @@ def _fetch_rates_with_warmup(  # noqa: C901
         future_error = _future_start_error(start_datetime, from_date, seconds_per_bar)
         if future_error:
             return None, future_error
-        to_date = datetime.now(dt_timezone.utc)
+        now_utc = datetime.now(dt_timezone.utc)
+        requested_rows = candles + warmup_bars + extra_bars
+        # A start-only query means "the first N bars from start", not "the
+        # latest N bars, filtered by start".  Allow extra calendar space for
+        # closed sessions while retaining a bounded provider request.
+        span_seconds = seconds_per_bar * max(requested_rows * 3, requested_rows + 7)
+        to_date = min(now_utc, from_date + timedelta(seconds=span_seconds))
         expected_end_ts = _utc_epoch_seconds(to_date)
 
         def _fetch():
-            return _mt5_copy_rates_from(
-                symbol,
-                mt5_timeframe,
-                to_date,
-                candles + warmup_bars + extra_bars,
-            )
+            return _mt5_copy_rates_range(symbol, mt5_timeframe, from_date, to_date)
 
     elif end_datetime:
         to_date, to_date_error = _parse_fetch_datetime_arg(end_datetime, end_bound=True)
@@ -648,8 +657,24 @@ def _fetch_rates_with_warmup(  # noqa: C901
         if rates is not None and len(rates) > 0:
             last_t = rates[-1]["time"]
             freshness_cutoff = expected_end_ts - seconds_per_bar * (SANITY_BARS_TOLERANCE + extra_bars)
+            tail_is_forming = _is_last_bar_forming(
+                rates, timeframe, current_time_epoch=expected_end_ts
+            )
+            if tail_is_forming and include_incomplete:
+                # The forming bar itself proves the feed reached its open
+                # time; completed-bar freshness is attached after it is
+                # excluded, while live output gets last-tick freshness.
+                last_completed_epoch = float(last_t)
+            elif tail_is_forming and len(rates) >= 2:
+                last_completed_epoch = bar_close_epoch(
+                    rates[-2]["time"], timeframe
+                )
+            elif tail_is_forming:
+                last_completed_epoch = None
+            else:
+                last_completed_epoch = bar_close_epoch(last_t, timeframe)
             freshness_meta = _build_candle_freshness_diagnostics(
-                last_bar_epoch=last_t,
+                last_bar_epoch=last_completed_epoch,
                 expected_end_epoch=expected_end_ts,
                 freshness_cutoff_epoch=freshness_cutoff,
             )
@@ -710,6 +735,10 @@ def _parse_fetch_datetime_arg(
     parsed = _parse_end_datetime(value) if end_bound else _parse_start_datetime(value)
     if parsed is None:
         return None, f"Could not parse date {value!r}. {_DATE_FORMAT_HINT}"
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=dt_timezone.utc)
+    else:
+        parsed = parsed.astimezone(dt_timezone.utc)
     return parsed, None
 
 
@@ -934,7 +963,7 @@ def _trim_df_to_target(
         target_from = _utc_epoch_seconds(from_dt)
         out = df.loc[df['__epoch'] >= target_from]
         if len(out) > candles:
-            out = out.iloc[-candles:]
+            out = out.iloc[:candles]
     elif end_datetime:
         to_dt = _parse_end_datetime(end_datetime)
         if not to_dt:
@@ -1681,6 +1710,7 @@ def fetch_candles(  # noqa: C901
             "applied": False,
             "warmup_bars": int(warmup_bars),
         }
+        indicator_window_rebuilt = False
         indicator_rows_dropped = 0
 
         # If TI requested, check for NaNs and retry once with increased warmup
@@ -1715,6 +1745,7 @@ def fetch_candles(  # noqa: C901
                         )
                     # Rebuild df and indicators with the larger window
                     if retry_applied:
+                        indicator_window_rebuilt = True
                         df, ti_cols = _rebuild_candle_indicator_window(
                             rates_retry,
                             use_client_tz=_use_ctz,
@@ -1788,10 +1819,13 @@ def fetch_candles(  # noqa: C901
                 )
                 rows_after_target_trim = int(len(df))
 
-        # Authoritative incomplete-tail trim: covers the initial fetch *and*
-        # the TI-retry rebuild path, applied before any non-causal transforms.
+        # Authoritative incomplete-tail trim for paths not already trimmed.
+        # The ordinary fetch was classified above; do not classify its new
+        # tail a second time when a mocked/feed clock is behind the bar open.
         _trimmed_incomplete = False
-        if not include_incomplete:
+        if not include_incomplete and (
+            not initial_incomplete_trimmed or indicator_window_rebuilt
+        ):
             df, _trimmed_incomplete = _drop_incomplete_tail_df(
                 df,
                 timeframe,
@@ -1996,7 +2030,7 @@ def fetch_candles(  # noqa: C901
             latest_bar_age_epoch = float(latest_bar_epoch)
             latest_bar_age_metric = "latest_bar_open_age_seconds"
             if not forming_candle_included and expected_bar_seconds > 0:
-                latest_bar_age_epoch = float(latest_bar_epoch) + float(expected_bar_seconds)
+                latest_bar_age_epoch = bar_close_epoch(latest_bar_epoch, timeframe)
                 latest_bar_age_metric = "latest_completed_bar_close_age_seconds"
             data_window["latest_bar_age_seconds"] = round(
                 max(0.0, float(as_of_epoch) - latest_bar_age_epoch),

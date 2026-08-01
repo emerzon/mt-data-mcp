@@ -6,6 +6,7 @@ from mtdata.utils.freshness import (
     is_standard_weekend_closure,
 )
 from mtdata.utils.market_metadata import build_tick_freshness_context
+from mtdata.utils.time import bar_close_epoch
 
 
 def test_closed_session_context_marks_weekend_fx_but_not_crypto():
@@ -33,18 +34,33 @@ def test_closed_session_context_allows_fx_after_sunday_utc_reopen() -> None:
     assert closed_session_context("EURUSD", now_epoch=sunday_reopen) is None
 
 
-def test_standard_weekend_closure_uses_22_utc_boundaries() -> None:
+def test_weekend_boundary_tracks_new_york_daylight_saving_time() -> None:
+    winter_before_reopen = datetime(2026, 1, 4, 21, 30, tzinfo=timezone.utc)
+    winter_after_reopen = datetime(2026, 1, 4, 22, 30, tzinfo=timezone.utc)
+
+    assert is_standard_weekend_closure(winter_before_reopen)
+    assert not is_standard_weekend_closure(winter_after_reopen)
+
+
+def test_monthly_bar_close_uses_calendar_month_boundary() -> None:
+    opened = datetime(2026, 2, 1, tzinfo=timezone.utc).timestamp()
+    expected = datetime(2026, 3, 1, tzinfo=timezone.utc).timestamp()
+
+    assert bar_close_epoch(opened, "MN1") == expected
+
+
+def test_standard_weekend_closure_uses_new_york_close_boundaries() -> None:
     assert is_standard_weekend_closure(
-        datetime(2026, 6, 14, 21, 59, tzinfo=timezone.utc)
+        datetime(2026, 6, 14, 20, 59, tzinfo=timezone.utc)
     )
     assert not is_standard_weekend_closure(
-        datetime(2026, 6, 14, 22, 0, tzinfo=timezone.utc)
+        datetime(2026, 6, 14, 21, 0, tzinfo=timezone.utc)
     )
     assert not is_standard_weekend_closure(
-        datetime(2026, 6, 12, 21, 59, tzinfo=timezone.utc)
+        datetime(2026, 6, 12, 20, 59, tzinfo=timezone.utc)
     )
     assert is_standard_weekend_closure(
-        datetime(2026, 6, 12, 22, 0, tzinfo=timezone.utc)
+        datetime(2026, 6, 12, 21, 0, tzinfo=timezone.utc)
     )
 
 

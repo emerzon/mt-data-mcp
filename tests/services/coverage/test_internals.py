@@ -117,7 +117,7 @@ def test_no_data_context_explains_bounded_weekend_closure(monkeypatch) -> None:
         "H1",
         1,
         "2026-07-11",
-        "2026-07-12",
+        "2026-07-12 15:00",
     )
 
     assert result["details"]["no_data_reason"] == "market_closed_weekend"
@@ -277,20 +277,21 @@ class TestFetchRatesWithWarmup(unittest.TestCase):
         self.assertIn('future', err)
         mock_range.assert_not_called()
 
-    @patch(_RATES_FROM)
+    @patch(_RATES_RANGE)
     @patch(_PARSE_START)
-    def test_start_only(self, mock_parse, mock_from):
+    def test_start_only(self, mock_parse, mock_range):
         """Only start_datetime provided."""
         t1 = datetime(2025, 1, 1, tzinfo=_UTC)
         mock_parse.return_value = t1
         rates = _make_rates(5, base_ts=t1.timestamp() + 600)
-        mock_from.return_value = rates
+        mock_range.return_value = rates
         result, err = _fetch_rates_with_warmup(
             'EURUSD', 16385, 'H1', 5, 0, '2025-01-01', None,
             retry=False, sanity_check=False,
         )
         self.assertIsNone(err)
         self.assertEqual(result, rates)
+        mock_range.assert_called_once()
 
     @patch(_PARSE_START)
     def test_start_only_invalid(self, mock_parse):
@@ -346,7 +347,10 @@ class TestFetchRatesWithWarmup(unittest.TestCase):
         )
         self.assertIsNone(err)
         self.assertEqual(result, rates)
-        mock_from.assert_called_once_with('EURUSD', 16385, t2, 5)
+        requested_end = mock_from.call_args.args[2]
+        self.assertEqual(requested_end.date(), t2.date())
+        self.assertEqual(requested_end.hour, 23)
+        self.assertEqual(mock_from.call_args.args[3], 5)
 
     @patch(_PARSE_START)
     def test_end_only_invalid(self, mock_parse):
@@ -467,7 +471,8 @@ class TestFetchRatesWithWarmup(unittest.TestCase):
         to_date = datetime(2025, 1, 2, tzinfo=_UTC)
         mock_parse.return_value = to_date
         stale_rates = _make_rates(5, base_ts=to_date.timestamp() - (10 * 60 * 60), step=60 * 60)
-        fresh_rates = _make_rates(5, base_ts=to_date.timestamp(), step=60 * 60)
+        end_of_day = to_date.timestamp() + (24 * 60 * 60) - 1e-6
+        fresh_rates = _make_rates(5, base_ts=end_of_day, step=60 * 60)
         mock_from.side_effect = [stale_rates, fresh_rates]
         diagnostics = {}
 
@@ -480,18 +485,12 @@ class TestFetchRatesWithWarmup(unittest.TestCase):
         self.assertIsNone(err)
         self.assertEqual(result, fresh_rates)
         self.assertEqual(mock_from.call_count, 2)
-        self.assertEqual(
-            diagnostics['freshness'],
-            {
-                'last_bar_epoch': float(fresh_rates[-1]['time']),
-                'expected_end_epoch': float(to_date.timestamp()),
-                'freshness_cutoff_epoch': float(to_date.timestamp() - (4 * 60 * 60)),
-                'data_freshness_seconds': 0.0,
-                'data_freshness_anchor': 'query_expected_end',
-                'data_freshness_metric': 'requested_range_end_gap_seconds',
-                'last_bar_within_policy_window': True,
-            },
-        )
+        freshness = diagnostics['freshness']
+        self.assertEqual(freshness['last_bar_epoch'], float(fresh_rates[-1]['time']))
+        self.assertAlmostEqual(freshness['expected_end_epoch'], end_of_day, places=3)
+        self.assertEqual(freshness['data_freshness_seconds'], 0.0)
+        self.assertTrue(freshness['last_bar_within_policy_window'])
+        self.assertEqual(freshness['data_freshness_anchor'], 'query_expected_end')
 
 
 # ============================================================================
@@ -581,15 +580,14 @@ class TestTrimDfToTarget(unittest.TestCase):
         out = _trim_df_to_target(df, None, None, 10)
         self.assertEqual(len(out), 3)
 
+    @patch(f'{_DS}._parse_end_datetime')
     @patch(_PARSE_START)
-    def test_start_and_end(self, mock_parse):
+    def test_start_and_end(self, mock_parse, mock_end):
         df = self._make_df(20)
         epoch_5 = df['__epoch'].iloc[5]
         epoch_14 = df['__epoch'].iloc[14]
-        mock_parse.side_effect = [
-            datetime.fromtimestamp(epoch_5, tz=_UTC),
-            datetime.fromtimestamp(epoch_14, tz=_UTC),
-        ]
+        mock_parse.return_value = datetime.fromtimestamp(epoch_5, tz=_UTC)
+        mock_end.return_value = datetime.fromtimestamp(epoch_14, tz=_UTC)
         with patch(f'{_DS}._utc_epoch_seconds', side_effect=lambda d: d.timestamp()):
             out = _trim_df_to_target(df, '2025-01-01', '2025-01-02', 100)
         self.assertEqual(len(out), 10)  # rows 5..14 inclusive
@@ -608,9 +606,9 @@ class TestTrimDfToTarget(unittest.TestCase):
         mock_parse.return_value = datetime.fromtimestamp(epoch_10, tz=_UTC)
         with patch(f'{_DS}._utc_epoch_seconds', side_effect=lambda d: d.timestamp()):
             out = _trim_df_to_target(df, '2025-01-01', None, 5)
-        # 10 rows from index 10 onward, but capped at candles=5
+        # Return the first five bars at or after the requested start.
         self.assertEqual(len(out), 5)
-        self.assertEqual(list(out['time']), [f"t{i}" for i in range(15, 20)])
+        self.assertEqual(list(out['time']), [f"t{i}" for i in range(10, 15)])
 
     @patch(_PARSE_START)
     def test_start_only_invalid(self, mock_parse):

@@ -3,6 +3,7 @@ from __future__ import annotations
 import math
 from datetime import datetime, timezone
 from typing import Any, Optional
+from zoneinfo import ZoneInfo
 
 from ..shared.symbols import is_probably_crypto_symbol
 
@@ -15,12 +16,14 @@ MAX_STANDARD_WEEKEND_DATA_AGE_SECONDS = 3 * 24 * 60 * 60
 
 
 def is_standard_weekend_closure(now_utc: datetime) -> bool:
-    weekday = now_utc.weekday()
+    utc_value = now_utc if now_utc.tzinfo else now_utc.replace(tzinfo=timezone.utc)
+    new_york = utc_value.astimezone(ZoneInfo("America/New_York"))
+    weekday = new_york.weekday()
     if weekday == 5:
         return True
-    if weekday == 6 and now_utc.hour < 22:
+    if weekday == 6 and new_york.hour < 17:
         return True
-    if weekday == 4 and now_utc.hour >= 22:
+    if weekday == 4 and new_york.hour >= 17:
         return True
     return False
 
