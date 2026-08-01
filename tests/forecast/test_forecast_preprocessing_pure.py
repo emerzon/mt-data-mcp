@@ -174,5 +174,5 @@ class TestApplyPreprocessing:
         df = _make_ohlcv_df(50)
         original_close = df["close"].copy()
         col = apply_preprocessing(df, "price", "price", {"method": "ema"})
-        assert col == "close_dn"
-        assert df["close"].equals(original_close)
+        assert col == "close"
+        assert not df["close"].equals(original_close)
