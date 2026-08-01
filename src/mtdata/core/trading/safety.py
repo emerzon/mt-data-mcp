@@ -677,6 +677,7 @@ def _total_portfolio_risk_currency(
             entry_price=mark_price,
             stop_loss=stop_loss,
             side=side,
+            allow_profit_stop=True,
         )
         if risk_currency is None:
             issues.append(f"{symbol}: unable to quantify risk ({risk_error}).")
@@ -748,6 +749,7 @@ def _evaluate_wallet_risk_limits(
         entry_price=float(entry_price),
         stop_loss=float(stop_loss),
         side=normalized_side,
+        allow_profit_stop=True,
     )
     if candidate_risk is None:
         return _build_guardrail_block(
@@ -793,6 +795,7 @@ def _evaluate_wallet_risk_limits(
                 entry_price=pos_mark,
                 stop_loss=pos_sl,
                 side=pos_side,
+                allow_profit_stop=True,
             )
             if pos_risk is None or pos_volume <= 0:
                 continue
@@ -1031,12 +1034,10 @@ def preview_trade_guardrails(
         side=side,
         account_info=account_info,
         existing_positions=existing_positions,
-        enforce_account_risk=False,
+        enforce_account_risk=True,
         enforce_wallet_risk=False,
     )
     checks_not_performed: List[str] = []
-    if _model_has_values(config.account_risk_limits):
-        checks_not_performed.append("account_risk")
     if _wallet_limits_active(config.wallet_risk_limits):
         checks_not_performed.append("wallet_risk")
     preview = {
@@ -1099,6 +1100,7 @@ def pending_order_risk_increased(
         entry_price=next_entry,
         stop_loss=next_sl,
         side=side,
+        allow_profit_stop=True,
     )
     if next_risk is None:
         return next_error in {

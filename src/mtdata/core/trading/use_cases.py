@@ -886,6 +886,14 @@ def _shape_trade_var_cvar_payload(
             "currency",
             "history_failures",
             "warnings",
+            "mark_freshness_status",
+            "usable_for_live_trading",
+            "data_stale",
+            "valuation_time",
+            "valuation_basis",
+            "market_status",
+            "market_status_reason",
+            "mark_freshness",
         )
         if key in result
     }
@@ -1284,6 +1292,8 @@ def run_trade_place(  # noqa: C901
             ]
             if dry_run_protection_error is not None:
                 local_blockers.append("invalid_protection_levels")
+            if guardrail_preview.get("checks_not_performed"):
+                local_blockers.append("guardrail_checks_incomplete")
             preview: Dict[str, Any] = {
                 "success": True,
                 "dry_run": True,
@@ -1666,7 +1676,7 @@ def run_trade_place(  # noqa: C901
             snapshot_required = guardrails_require_position_snapshot(
                 trade_guardrails_config,
                 account_info=guardrail_account_info,
-                enforce_account_risk=False,
+                enforce_account_risk=True,
                 enforce_wallet_risk=False,
             )
             guardrail_positions = (
@@ -2335,6 +2345,8 @@ def run_trade_close(  # noqa: C901
                         "total_profit",
                         "filters_applied",
                         "would_send_orders",
+                        "preview_ok",
+                        "market_readiness",
                     ):
                         if key in position_preview:
                             preview[key] = position_preview[key]
@@ -3525,7 +3537,16 @@ def run_trade_risk_analyze(  # noqa: C901
                 (total_notional_exposure / equity) * 100.0 if equity > 0 else 0.0
             )
 
-            stop_risk_level = "high" if total_risk_pct > 10 else "moderate" if total_risk_pct > 5 else "low"
+            if positions_without_sl > 0 or pending_orders_without_sl > 0:
+                stop_risk_level = "unlimited"
+            else:
+                stop_risk_level = (
+                    "high"
+                    if total_risk_pct > 10
+                    else "moderate"
+                    if total_risk_pct > 5
+                    else "low"
+                )
             margin_risk_level = (
                 "high" if margin_stress["status"] == "critical"
                 else "moderate" if margin_stress["status"] == "stressed"
@@ -3535,7 +3556,13 @@ def run_trade_risk_analyze(  # noqa: C901
                 "high" if notional_exposure_pct >= 400.0
                 else "moderate" if notional_exposure_pct >= 200.0 else "low"
             )
-            risk_rank = {"unknown": -1, "low": 0, "moderate": 1, "high": 2}
+            risk_rank = {
+                "unknown": -1,
+                "low": 0,
+                "moderate": 1,
+                "high": 2,
+                "unlimited": 3,
+            }
             quantified_risk_level = max(
                 (stop_risk_level, margin_risk_level, notional_risk_level),
                 key=lambda value: risk_rank[value],
@@ -4632,11 +4659,83 @@ def run_trade_stress_test(
     if not positions:
         result.update({"empty": True, "message": "No open positions found."})
     elif not rows:
-        result["message"] = "No open positions matched the requested shocks or had usable tick metadata."
+        result.update(
+            {
+                "success": False,
+                "error_code": "stress_no_positions_evaluated",
+                "error": (
+                    "No open positions matched the requested shocks or had usable "
+                    "tick metadata."
+                ),
+            }
+        )
     if warnings_out:
         result["warnings"] = warnings_out
         result["partial_failure"] = True
+    result.update(_position_mark_freshness(gateway, positions))
     return result
+
+
+def _position_mark_freshness(
+    gateway: Any,
+    positions: List[Any],
+) -> Dict[str, Any]:
+    contexts: List[Dict[str, Any]] = []
+    for position in positions:
+        symbol = str(getattr(position, "symbol", "") or "").strip()
+        if not symbol:
+            continue
+        try:
+            tick = gateway.symbol_info_tick(symbol)
+        except Exception:
+            tick = None
+        context = build_trade_quote_context(symbol, tick)
+        context["symbol"] = symbol
+        contexts.append(context)
+    if not contexts:
+        return {
+            "mark_freshness_status": "unknown",
+            "usable_for_live_trading": False,
+            "data_stale": None,
+        }
+    def _age(context: Dict[str, Any]) -> float:
+        try:
+            value = context.get("data_age_seconds")
+            return float(value) if value is not None else float("inf")
+        except (TypeError, ValueError):
+            return float("inf")
+
+    oldest = max(contexts, key=_age)
+    live_ready = all(
+        item.get("usable_for_live_trading") is True for item in contexts
+    )
+    stale_values = [item.get("data_stale") for item in contexts]
+    data_stale = (
+        True
+        if any(value is True for value in stale_values)
+        else False
+        if all(value is False for value in stale_values)
+        else None
+    )
+    out: Dict[str, Any] = {
+        "mark_freshness_status": "live" if live_ready else "stale_or_unverified",
+        "usable_for_live_trading": live_ready,
+        "data_stale": data_stale,
+        "valuation_time": oldest.get("quote_time"),
+        "valuation_basis": (
+            "live_position_marks" if live_ready else "stale_or_unverified_position_marks"
+        ),
+        "mark_freshness": contexts,
+    }
+    for key in ("market_status", "market_status_reason"):
+        values = [item.get(key) for item in contexts if item.get(key) not in (None, "")]
+        if values:
+            out[key] = values[0]
+    return {
+        key: value
+        for key, value in out.items()
+        if value is not None or key == "data_stale"
+    }
 
 
 def run_trade_var_cvar_calculate(  # noqa: C901
@@ -5176,6 +5275,7 @@ def run_trade_var_cvar_calculate(  # noqa: C901
         result["history_failures"] = history_failures
     if warnings:
         result["warnings"] = warnings
+    result.update(_position_mark_freshness(gateway, positions))
     return _finish(
         _shape_trade_var_cvar_payload(result, detail=request.detail)
     )

@@ -23,6 +23,7 @@ from ..shared.constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
 from ..shared.market_units import forex_points_per_pip
 from ..utils.barriers import normalize_same_bar_policy
 from ..utils.freshness import closed_session_context, format_age_seconds
+from ..utils.market_metadata import build_tick_freshness_context
 from ..utils.tick_flags import mt5_trade_event_mask
 from ..utils.time import format_epoch_utc
 
@@ -34,6 +35,77 @@ def _mapping(row: Any) -> Dict[str, Any]:
     if callable(converter):
         return dict(converter())
     return {name: getattr(row, name) for name in dir(row) if not name.startswith("_") and not callable(getattr(row, name, None))}
+
+
+def _portfolio_mark_context(gateway: Any, positions: List[Dict[str, Any]]) -> Dict[str, Any]:
+    now_epoch = datetime.now(timezone.utc).timestamp()
+    contexts: List[Dict[str, Any]] = []
+    valid_times: List[float] = []
+    for row in positions:
+        symbol = str(row.get("symbol") or "").strip()
+        if not symbol:
+            continue
+        try:
+            tick = gateway.symbol_info_tick(symbol)
+        except Exception:
+            tick = None
+        tick_epoch = getattr(tick, "time_msc", None) if tick is not None else None
+        try:
+            tick_epoch = float(tick_epoch) / 1000.0 if tick_epoch else None
+        except (TypeError, ValueError):
+            tick_epoch = None
+        if tick_epoch is None and tick is not None:
+            tick_epoch = getattr(tick, "time", None)
+        freshness = build_tick_freshness_context(
+            symbol,
+            tick_epoch=tick_epoch,
+            now_epoch=now_epoch,
+        )
+        if tick_epoch is not None:
+            try:
+                valid_times.append(float(tick_epoch))
+            except (TypeError, ValueError):
+                pass
+        if not freshness:
+            freshness = {
+                "data_stale": None,
+                "usable_for_live_trading": False,
+                "freshness_state": "unknown",
+                "freshness_reason": "missing_tick_timestamp",
+            }
+        freshness["symbol"] = symbol
+        freshness["quote_time"] = format_epoch_utc(tick_epoch)
+        contexts.append(freshness)
+    if not contexts:
+        return {
+            "valuation_time": None,
+            "valuation_basis": "no_position_marks",
+            "data_stale": None,
+            "usable_for_live_trading": False,
+            "mark_freshness": [],
+        }
+    live_ready = bool(contexts) and all(
+        item.get("usable_for_live_trading") is True for item in contexts
+    )
+    stale_values = [item.get("data_stale") for item in contexts]
+    data_stale = (
+        True
+        if any(value is True for value in stale_values)
+        else False
+        if all(value is False for value in stale_values)
+        else None
+    )
+    return {
+        "valuation_time": format_epoch_utc(min(valid_times)) if valid_times else None,
+        "valuation_basis": (
+            "live_position_marks_with_completed_bar_return_history"
+            if live_ready
+            else "stale_or_unverified_position_marks_with_completed_bar_return_history"
+        ),
+        "data_stale": data_stale,
+        "usable_for_live_trading": live_ready,
+        "mark_freshness": contexts,
+    }
 
 
 def _filtered_historical_returns(
@@ -1325,8 +1397,6 @@ def decompose_portfolio_risk(request: PortfolioRiskDecomposeRequest, gateway: An
         "ewma_half_life": request.ewma_half_life,
         "random_seed": request.seed,
         "completion_policy": "allow_partial" if request.allow_partial else "fail_closed",
-        "valuation_time": format_epoch_utc(datetime.now(timezone.utc).timestamp()),
-        "valuation_basis": "live_position_marks_with_completed_bar_return_history",
     }
     account = None
     try:
@@ -1347,6 +1417,7 @@ def decompose_portfolio_risk(request: PortfolioRiskDecomposeRequest, gateway: An
             "price_current": getattr(tick, "ask" if request.proposed_trade.side == "buy" else "bid", None),
             "proposed": True,
         })
+    model_context.update(_portfolio_mark_context(gateway, positions))
     if not positions:
         return {
             "success": True,

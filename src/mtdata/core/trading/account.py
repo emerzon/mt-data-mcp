@@ -31,7 +31,7 @@ from ..output_contract import (
     ensure_common_meta,
     resolve_output_contract,
 )
-from . import comments, validation
+from . import comments, safety, validation
 from .gateway import create_trading_gateway
 from .positions import _gateway_account_currency, normalize_trade_history_output
 from .requests import TradeHistoryRequest, TradeJournalAnalyzeRequest
@@ -65,6 +65,9 @@ _TRADE_ACCOUNT_COMPACT_KEYS = (
     "currency",
     "leverage",
     "trade_allowed",
+    "broker_trade_allowed",
+    "account_risk_status",
+    "account_risk_reasons",
     "trade_expert",
 )
 _TRADE_JOURNAL_UNITS: Dict[str, str] = {
@@ -808,6 +811,15 @@ def trade_account_info(
             account_info=info,
             terminal_info=terminal_info,
         )
+        margin_stress = safety.assess_margin_stress(info)
+        broker_trade_allowed = validation._coerce_optional_bool(
+            getattr(info, "trade_allowed", None)
+        )
+        actionable_trade_allowed = bool(
+            broker_trade_allowed is True
+            and margin_stress.get("status") != "critical"
+            and preflight.get("execution_ready") is not False
+        )
         login = preflight.get("login")
         if login is None:
             login = getattr(info, "login", None)
@@ -854,7 +866,10 @@ def trade_account_info(
             "margin_level": margin_level,
             "currency": info.currency,
             "leverage": info.leverage,
-            "trade_allowed": info.trade_allowed,
+            "trade_allowed": actionable_trade_allowed,
+            "broker_trade_allowed": broker_trade_allowed,
+            "account_risk_status": margin_stress.get("status"),
+            "account_risk_reasons": margin_stress.get("reasons"),
             "trade_expert": info.trade_expert,
             "server": preflight.get("server"),
             "company": preflight.get("company"),

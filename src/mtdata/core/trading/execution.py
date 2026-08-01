@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Optional, Union
 from ...bootstrap.settings import trade_guardrails_config
 from ...utils.mt5 import _to_mt5_history_epoch_seconds
 from . import comments, time, validation
+from .common import build_trade_quote_context
 from .gateway import MT5TradingGateway, create_trading_gateway, trading_connection_error
 from .positions import _resolve_open_position, _resolve_pending_order
 from .safety import (
@@ -1295,8 +1296,25 @@ def _close_positions_dry_run_preview(
     profit_only: bool,
     loss_only: bool,
     close_priority: Optional[str],
+    mt5: Any,
 ) -> Dict[str, Any]:
     rows = [_close_position_preview_row(position) for position in positions]
+    quote_contexts: List[Dict[str, Any]] = []
+    for row in rows:
+        symbol_value = str(row.get("symbol") or "").strip()
+        if not symbol_value:
+            continue
+        try:
+            tick = mt5.symbol_info_tick(symbol_value)
+        except Exception:
+            tick = None
+        context = build_trade_quote_context(symbol_value, tick)
+        row["quote_context"] = context
+        quote_contexts.append(context)
+    live_ready = bool(quote_contexts) and all(
+        context.get("usable_for_live_trading") is True
+        for context in quote_contexts
+    )
     total_volume = 0.0
     total_profit = 0.0
     for position in positions:
@@ -1323,6 +1341,15 @@ def _close_positions_dry_run_preview(
         "success": True,
         "dry_run": True,
         "actionability": "preview_only",
+        "preview_ok": live_ready,
+        "market_readiness": {
+            "symbols_checked": len(quote_contexts),
+            "usable_for_live_trading": live_ready,
+            "stale_or_unverified": sum(
+                context.get("usable_for_live_trading") is not True
+                for context in quote_contexts
+            ),
+        },
         "matched_count": len(rows),
         "matched_positions": rows,
         "total_volume": round(total_volume, 8),
@@ -1490,6 +1517,7 @@ def _close_positions(  # noqa: C901
                     profit_only=profit_only,
                     loss_only=loss_only,
                     close_priority=close_priority,
+                    mt5=mt5,
                 )
 
             # 3. Close positions

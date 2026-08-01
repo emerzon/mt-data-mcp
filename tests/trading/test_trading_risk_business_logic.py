@@ -1391,6 +1391,7 @@ def test_trade_risk_analyze_preserves_quantified_risk_level_with_unlimited_posit
 
     assert out["success"] is True
     assert out["portfolio_risk"]["overall_risk_status"] == "unlimited"
-    assert out["portfolio_risk"]["quantified_risk_level"] == "high"
+    assert out["portfolio_risk"]["quantified_risk_level"] == "unlimited"
+    assert out["portfolio_risk"]["stop_risk_level"] == "unlimited"
     assert out["portfolio_risk"]["total_risk_pct"] == 20.0
     assert out["portfolio_risk"]["positions_without_sl"] == 1

@@ -58,6 +58,11 @@ def test_run_trade_var_cvar_calculate_summarizes_open_position_portfolio() -> No
         account_info=lambda: SimpleNamespace(equity=1000.0, currency="USD"),
         positions_get=lambda symbol=None: [position],
         symbol_info=lambda symbol: _symbol_info(),
+        symbol_info_tick=lambda symbol: SimpleNamespace(
+            bid=99.0,
+            ask=101.0,
+            time=1,
+        ),
         copy_rates_from_pos=lambda symbol, timeframe, start, count: [
             {"time": 1, "close": 100.0},
             {"time": 2, "close": 95.0},
@@ -99,6 +104,10 @@ def test_run_trade_var_cvar_calculate_summarizes_open_position_portfolio() -> No
     assert out["symbol_exposures"][0]["symbol"] == "EURUSD"
     assert out["positions"][0]["signed_notional"] == 100.0
     assert out["worst_observations"][0]["simulated_pnl"] == -14.29
+    assert out["mark_freshness_status"] == "stale_or_unverified"
+    assert out["usable_for_live_trading"] is False
+    assert out["data_stale"] is True
+    assert out["valuation_time"] == "1970-01-01T00:00:01Z"
 
 
 def test_run_trade_var_cvar_uses_account_currency_tick_sensitivity() -> None:

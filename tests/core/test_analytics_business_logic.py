@@ -119,7 +119,7 @@ class FakeGateway:
         return [SimpleNamespace(name=name, path="Forex\\Majors", visible=True) for name in self.bar_rows]
 
     def symbol_info_tick(self, symbol):
-        return SimpleNamespace(bid=1.0999, ask=1.1001)
+        return SimpleNamespace(bid=1.0999, ask=1.1001, time=_now())
 
     def symbol_info(self, symbol):
         return SimpleNamespace(point=0.00001, digits=5)
@@ -695,6 +695,12 @@ def test_portfolio_risk_reconciles_component_expected_shortfall() -> None:
         {"ticket": 1, "symbol": "EURUSD", "type": 0, "volume": 1.0, "price_current": 1.1},
         {"ticket": 2, "symbol": "GBPUSD", "type": 1, "volume": 0.5, "price_current": 1.1},
     ]
+    stale_mark_time = _now() - 3600
+    gateway.symbol_info_tick = lambda symbol: SimpleNamespace(
+        bid=1.0999,
+        ask=1.1001,
+        time=stale_mark_time,
+    )
     result = decompose_portfolio_risk(
         PortfolioRiskDecomposeRequest(lookback=300, horizon_bars=[1], confidence=[0.95], simulations=500),
         gateway,
@@ -721,7 +727,10 @@ def test_portfolio_risk_reconciles_component_expected_shortfall() -> None:
         "random_seed": 42,
         "completion_policy": "fail_closed",
         "valuation_time": result["model_context"]["valuation_time"],
-        "valuation_basis": "live_position_marks_with_completed_bar_return_history",
+        "valuation_basis": "stale_or_unverified_position_marks_with_completed_bar_return_history",
+        "data_stale": True,
+        "usable_for_live_trading": False,
+        "mark_freshness": result["model_context"]["mark_freshness"],
         "aligned_returns": result["summary"]["aligned_rows"],
         "data_start": result["model_context"]["data_start"],
         "data_end": result["model_context"]["data_end"],
@@ -729,6 +738,13 @@ def test_portfolio_risk_reconciles_component_expected_shortfall() -> None:
     assert datetime.fromisoformat(
         result["model_context"]["valuation_time"].replace("Z", "+00:00")
     ).tzinfo == timezone.utc
+    assert result["model_context"]["valuation_time"] == datetime.fromtimestamp(
+        stale_mark_time, tz=timezone.utc
+    ).isoformat().replace("+00:00", "Z")
+    assert all(
+        mark["usable_for_live_trading"] is False
+        for mark in result["model_context"]["mark_freshness"]
+    )
     assert "as_of" not in result["model_context"]
 
 

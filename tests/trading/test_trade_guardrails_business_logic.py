@@ -97,6 +97,47 @@ def test_preview_trade_guardrails_reports_dynamic_checks(restore_trade_guardrail
     assert "wallet_risk" in preview["checks_not_performed"]
 
 
+def test_preview_trade_guardrails_evaluates_account_exposure():
+    config = TradeGuardrailsConfig(
+        enabled=True,
+        account_risk_limits={"max_total_exposure_lots": 1.5},
+        ignore_on_demo=False,
+    )
+
+    preview = preview_trade_guardrails(
+        config,
+        symbol="EURUSD",
+        volume=1.0,
+        side="BUY",
+        existing_positions=[
+            SimpleNamespace(symbol="EURUSD", type=0, volume=1.0)
+        ],
+        account_info=SimpleNamespace(is_demo=False, margin_mode=2),
+    )
+
+    assert preview["blocked"] is True
+    assert preview["rule"] == "account_risk"
+    assert "account_risk" not in preview["checks_not_performed"]
+
+
+def test_profit_side_stop_is_classified_as_risk_reducing():
+    symbol_info = SimpleNamespace(
+        trade_tick_size=0.0001,
+        trade_tick_value=10.0,
+        trade_tick_value_loss=10.0,
+    )
+
+    assert pending_order_risk_increased(
+        symbol_info=symbol_info,
+        side="BUY",
+        volume=1.0,
+        existing_entry_price=1.0800,
+        existing_stop_loss=1.0780,
+        candidate_entry_price=1.0800,
+        candidate_stop_loss=1.0810,
+    ) is False
+
+
 def test_preview_trade_guardrails_ignores_demo_accounts_by_default():
     config = TradeGuardrailsConfig(
         enabled=True,
@@ -475,6 +516,46 @@ def test_run_trade_place_dry_run_reports_guardrail_block(restore_trade_guardrail
     assert "Symbol BTCUSD is blocked by guardrail policy." in result["error"]
     place_market_order.assert_not_called()
     place_pending_order.assert_not_called()
+
+
+def test_run_trade_place_dry_run_is_not_clean_when_wallet_check_is_incomplete(
+    restore_trade_guardrails,
+):
+    trade_guardrails_config.enabled = True
+    trade_guardrails_config.wallet_risk_limits.max_risk_pct_of_equity = 1.0
+
+    with patch(
+        "mtdata.core.trading.use_cases.mt5_adapter.account_info",
+        return_value=SimpleNamespace(trade_mode=2, equity=10_000.0),
+    ):
+        result = run_trade_place(
+            TradePlaceRequest(
+                symbol="EURUSD",
+                volume=0.1,
+                order_type="BUY",
+                stop_loss=1.09,
+                take_profit=1.12,
+                dry_run=True,
+                detail="full",
+            ),
+            normalize_order_type_input=lambda value: ("BUY", None),
+            normalize_pending_expiration=lambda value: (value, False),
+            prevalidate_trade_place_market_input=lambda symbol, volume: None,
+            place_market_order=MagicMock(),
+            place_pending_order=MagicMock(),
+            close_positions=lambda **kwargs: {"closed_count": 1},
+            safe_int_ticket=lambda value: value,
+            build_dry_run_preview=lambda **kwargs: {
+                "bid": 1.0999,
+                "ask": 1.1001,
+                "estimated_fill_price": 1.1001,
+            },
+        )
+
+    assert result["success"] is True
+    assert result["preview_ok"] is False
+    assert "guardrail_checks_incomplete" in result["blockers"]
+    assert result["guardrails_preview"]["checks_not_performed"] == ["wallet_risk"]
 
 
 def test_run_trade_place_dry_run_ignores_guardrails_for_demo_account(

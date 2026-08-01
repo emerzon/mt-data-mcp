@@ -172,8 +172,39 @@ def test_trade_account_info_compact_detail_includes_account_fields_without_diagn
     assert out["is_demo"] is True
     assert out["is_live"] is False
     assert out["trade_allowed"] is True
+    assert out["broker_trade_allowed"] is True
+    assert out["account_risk_status"] == "healthy"
     assert out["trade_expert"] is True
     assert "execution_ready" not in out
+
+
+def test_trade_account_info_blocks_actionable_flag_on_critical_margin() -> None:
+    account = SimpleNamespace(
+        balance=10000.0,
+        equity=1000.0,
+        profit=-9000.0,
+        margin=900.0,
+        margin_free=100.0,
+        margin_level=111.11,
+        currency="USD",
+        leverage=100,
+        trade_allowed=True,
+        trade_expert=True,
+    )
+    gateway = SimpleNamespace(
+        ensure_connection=lambda: None,
+        account_info=lambda: account,
+        terminal_info=lambda: None,
+        build_trade_preflight=lambda **kwargs: {"execution_ready": True},
+    )
+
+    raw = _unwrap(trade_account_info)
+    with patch.object(core_trading_account, "create_trading_gateway", return_value=gateway):
+        out = raw(detail="compact")
+
+    assert out["broker_trade_allowed"] is True
+    assert out["trade_allowed"] is False
+    assert out["account_risk_status"] == "critical"
 
 
 def test_trade_account_info_includes_terminal_server_clock_when_available() -> None:
