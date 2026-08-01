@@ -15,7 +15,7 @@ def test_compact_ticker_keeps_absolute_spread_for_non_forex_quotes() -> None:
             "contract_size": 100.0,
             "lot_definition": "1 broker lot equals contract_size contract units.",
             "pricing_basis": "per_1_lot_estimate",
-            "units": {"spread": "price", "lot": "broker_lot"},
+            "units": {"spread": "absolute_price", "lot": "broker_lot"},
         }
     )
 
@@ -27,7 +27,7 @@ def test_compact_ticker_keeps_absolute_spread_for_non_forex_quotes() -> None:
     assert "contract_size" not in result
     assert "lot_definition" not in result
     assert "pricing_basis" not in result
-    assert "units" not in result
+    assert result["units"] == {"spread": "absolute_price"}
 
 
 def test_compact_ticker_preserves_delayed_freshness_label() -> None:

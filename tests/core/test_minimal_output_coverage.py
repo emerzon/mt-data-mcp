@@ -904,9 +904,9 @@ class TestFormatResultMinimal:
             "spread": 0.00022,
             "spread_pips": 2.2,
             "units": {
-                "bid": "price",
-                "ask": "price",
-                "spread": "price",
+                "bid": "absolute_price",
+                "ask": "absolute_price",
+                "spread": "absolute_price",
                 "spread_pips": "pips",
             },
         }
@@ -921,7 +921,7 @@ class TestFormatResultMinimal:
         # for parity with market_snapshot.
         assert result["spread"] == 0.00022
         assert result["spread_pips"] == 2.2
-        assert result["units"] == {"spread": "price", "spread_pips": "pips"}
+        assert result["units"] == {"spread": "absolute_price", "spread_pips": "pips"}
 
     def test_market_ticker_minimal_preserves_error_envelope(self):
         payload = {
