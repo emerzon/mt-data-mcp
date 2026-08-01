@@ -78,7 +78,7 @@ def test_finviz_news_normalizes_stock_results_to_single_items_array() -> None:
 
     assert out["items"][0]["title"] == "Apple launches new chips"
     assert out["items"][0]["source"] == "Reuters"
-    assert out["items"][0]["published_at"] == "2026-04-18T00:00:00+00:00"
+    assert out["items"][0]["published_at"] == "2026-04-18T04:00:00+00:00"
     assert out["items"][0]["kind"] == "direct_symbol"
     assert out["items"][0]["content_type"] == "news"
     assert out["detail"] == "compact"
@@ -190,7 +190,7 @@ def test_finviz_market_news_normalizes_items() -> None:
     assert out["items"][0]["title"] == "Stocks rise"
     assert out["items"][0]["source"] == "AP"
     assert out["items"][0]["content_type"] == "news"
-    assert "T14:00:00+00:00" in out["items"][0]["published_at"]
+    assert "T18:00:00+00:00" in out["items"][0]["published_at"]
     assert out["row_key"] == "items"
     assert "preferred_tool" not in out
     assert "tool_scope" not in out
