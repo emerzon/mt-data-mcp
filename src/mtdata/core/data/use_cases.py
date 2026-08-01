@@ -1416,15 +1416,20 @@ def _run_wait_candle_impl(
         )
         max_wait_seconds = request.max_wait_seconds
         if max_wait_seconds is not None and float(preview["sleep_seconds"]) > float(max_wait_seconds):
-            preview["success"] = True
-            preview["status"] = "deferred_timeout_risk"
+            preview["success"] = False
+            preview["status"] = "wait_budget_exceeded"
+            preview["error_code"] = "wait_budget_exceeded"
+            preview["error"] = (
+                "The next candle boundary is beyond max_wait_seconds; no wait was "
+                "performed and no candle-close event was observed."
+            )
+            preview["not_waited"] = True
             preview["slept"] = False
             preview["slept_seconds"] = 0.0
             preview["remaining_seconds"] = float(preview["sleep_seconds"])
             preview["max_wait_seconds"] = float(max_wait_seconds)
-            preview["warning"] = (
-                "Skipping blocking wait because the remaining candle wait exceeds max_wait_seconds. "
-                "Increase max_wait_seconds in clients that allow longer MCP tool timeouts."
+            preview["remediation"] = (
+                "Increase max_wait_seconds beyond remaining_seconds and retry."
             )
             return Ok(preview)
 

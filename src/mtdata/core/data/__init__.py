@@ -638,7 +638,9 @@ def wait_event(
     interactive and agent calls have a short timebox. Set it to null to use no
     timeout, or raise it explicitly for longer long-lived transport waits. A
     timeout is a failed wait (`success=false`, `error_code=wait_event_timeout`)
-    and produces a nonzero CLI exit status.
+    and produces a nonzero CLI exit status. A candle boundary already known to
+    be beyond the budget returns `error_code=wait_budget_exceeded` immediately,
+    with no event, because no boundary was observed.
     Set `poll_interval_seconds` to tune polling cadence; omit it to use the
     engine default.
 

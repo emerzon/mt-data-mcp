@@ -810,9 +810,12 @@ def test_run_wait_event_defers_boundary_only_when_cap_is_short(monkeypatch) -> N
         gateway=None,
     )
 
-    assert result["success"] is True
-    assert result["status"] == "deferred_timeout_risk"
-    assert result["event"] == "candle_close"
+    assert result["success"] is False
+    assert result["status"] == "wait_budget_exceeded"
+    assert result["error_code"] == "wait_budget_exceeded"
+    assert result["not_waited"] is True
+    assert result["event"] is None
+    assert result["boundary_event"] is None
 
 def test_run_wait_event_uses_timeframe_as_boundary_when_watchers_are_inferred(monkeypatch) -> None:
     monkeypatch.setattr(

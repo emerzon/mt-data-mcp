@@ -53,7 +53,9 @@ def test_run_wait_candle_defers_when_wait_exceeds_cap(monkeypatch) -> None:
 
     result = run_wait_candle(WaitCandleRequest(timeframe="M5", max_wait_seconds=25.0))
 
-    assert result["success"] is True
+    assert result["success"] is False
     assert result["slept"] is False
-    assert result["status"] == "deferred_timeout_risk"
+    assert result["status"] == "wait_budget_exceeded"
+    assert result["error_code"] == "wait_budget_exceeded"
+    assert result["not_waited"] is True
     assert result["remaining_seconds"] == 171.0
