@@ -425,8 +425,9 @@ mtdata-cli symbols_describe EURUSD --json
 # Rank the current watchlist by spread, volume, and price change
 mtdata-cli symbols_top_markets --rank-by all --limit 5 --timeframe H1 --json
 
-# Opt into a slower full-universe scan when you need hidden tradable symbols too
-mtdata-cli symbols_top_markets --rank-by spread --limit 10 --universe all --json
+# Include hidden symbols within a bounded comparable category
+mtdata-cli symbols_top_markets --rank-by spread --limit 10 --universe all \
+  --category forex --json
 
 # Scan visible majors for strong RSI and price above SMA
 mtdata-cli market_scan --group "Forex\\Majors" --rsi-above 60 --price-vs-sma above \
@@ -437,6 +438,10 @@ mtdata-cli market_scan EURUSD,GBPUSD,USDJPY --rsi-below 35 --max-spread-pct 0.03
 
 # Multi-symbol selectors use the canonical `symbols` selector.
 ```
+
+`symbols_list` rejects non-positive limits. `symbols_top_markets` preserves
+exact ranking semantics and rejects a filtered candidate universe above 250
+symbols before activating hidden quotes; narrow it with `group` or `category`.
 
 ### Fetch Market Data
 ```bash

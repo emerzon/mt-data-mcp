@@ -73,6 +73,7 @@ def _clean_broker_text(value: Any) -> Any:
     return re.sub(r"[\ud800-\udfff]", "\ufffd", value)
 _MARKET_SCAN_STALE_BAR_SECONDS = 7 * 24 * 60 * 60
 _MARKET_SCAN_STALE_QUOTE_SECONDS = QUOTE_STALE_SECONDS
+_TOP_MARKETS_MAX_CANDIDATES = 250
 _FOREX_SEARCH_PAIR_PRIORITY = {
     pair: idx
     for idx, pair in enumerate(
@@ -887,8 +888,14 @@ def symbols_list(  # noqa: C901
     search_mode_value = str(search_mode or "auto").strip().lower()
     universe_value = str(universe or "visible").strip().lower()
 
-    def _run() -> Dict[str, Any]:
+    def _run() -> Dict[str, Any]:  # noqa: C901
         try:
+            if limit is not None:
+                try:
+                    if int(limit) <= 0:
+                        return {"error": "limit must be a positive integer when provided."}
+                except (TypeError, ValueError):
+                    return {"error": "limit must be a positive integer when provided."}
             mt5_gateway = create_mt5_gateway(
                 adapter=mt5,
                 ensure_connection_impl=ensure_mt5_connection_or_raise,
@@ -2861,6 +2868,12 @@ def symbols_top_markets(  # noqa: C901
 
     def _run() -> Dict[str, Any]:  # noqa: C901
         try:
+            if limit is not None:
+                try:
+                    if int(limit) <= 0:
+                        return {"error": "limit must be a positive integer when provided."}
+                except (TypeError, ValueError):
+                    return {"error": "limit must be a positive integer when provided."}
             raw_rank_by_value = str(rank_by or "abs_price_change_pct").strip().lower()
             if raw_rank_by_value == "volume":
                 return {
@@ -2971,6 +2984,19 @@ def symbols_top_markets(  # noqa: C901
                 selected_symbols,
                 key=lambda symbol: _case_insensitive_sort_key(getattr(symbol, "name", "")),
             )
+
+            if len(selected_symbols) > _TOP_MARKETS_MAX_CANDIDATES:
+                return {
+                    "error": (
+                        f"The filtered universe contains {len(selected_symbols)} candidates, "
+                        f"above the safe synchronous cap of {_TOP_MARKETS_MAX_CANDIDATES}. "
+                        "Narrow the exact ranking with group or category."
+                    ),
+                    "error_code": "candidate_universe_too_large",
+                    "candidate_count": len(selected_symbols),
+                    "candidate_cap": _TOP_MARKETS_MAX_CANDIDATES,
+                    "filters": filters,
+                }
 
             limit_value = _normalize_limit(limit) or 10
             started_at = time.perf_counter()

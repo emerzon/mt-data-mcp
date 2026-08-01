@@ -933,6 +933,29 @@ class TestSymbolsTopMarkets:
         assert [row["symbol"] for row in result["data"]] == ["EURUSD", "USDJPY"]
         mock_ready_guard.assert_called_once_with("USDJPY", info_before=mock_symbols_get.return_value[1])
 
+    @patch("mtdata.core.symbols._symbol_ready_guard")
+    @patch("mtdata.core.symbols.mt5.symbols_get")
+    def test_all_universe_rejects_oversized_candidate_set_before_activation(
+        self,
+        mock_symbols_get,
+        mock_ready_guard,
+    ):
+        mock_symbols_get.return_value = [
+            _make_symbol(f"SYM{index:04d}", visible=False)
+            for index in range(251)
+        ]
+
+        result = _get_symbols_top_markets()(
+            rank_by="spread",
+            universe="all",
+            limit=5,
+        )
+
+        assert result["error_code"] == "candidate_universe_too_large"
+        assert result["candidate_count"] == 251
+        assert result["candidate_cap"] == 250
+        mock_ready_guard.assert_not_called()
+
     @patch("mtdata.core.symbols._extract_group_path_util", side_effect=lambda s: s.path)
     @patch("mtdata.core.symbols._mt5_copy_rates_from_pos")
     @patch("mtdata.core.symbols.mt5.symbols_get")

@@ -60,6 +60,14 @@ _NORM_LIMIT = "mtdata.core.symbols._normalize_limit"
 
 class TestSymbolsListNoSearch:
 
+    @pytest.mark.parametrize("limit", [0, -1])
+    def test_rejects_nonpositive_limit(self, limit):
+        result = _get_symbols_list()(limit=limit)
+
+        assert result == {
+            "error": "limit must be a positive integer when provided."
+        }
+
     @patch(_NORM_LIMIT, return_value=25)
     @patch(_TABLE, side_effect=lambda h, r: {"headers": h, "data": r})
     @patch(_GROUP_PATH, return_value="Forex\\Majors")
