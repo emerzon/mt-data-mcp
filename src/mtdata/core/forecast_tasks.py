@@ -424,7 +424,7 @@ def _task_status_payload(
             payload["produced_model_ids"] = [task.result.model_id]
         payload["message"] = (
             f"Training complete. Model stored as '{task.result.model_id}'. "
-            "Subsequent forecast_generate calls will use this model automatically."
+            "Matching live forecast_generate calls will reuse this model and report its staleness in bars."
         )
         if detail == "full":
             payload["result"] = _serialize_model_handle(task.result, detail="full")

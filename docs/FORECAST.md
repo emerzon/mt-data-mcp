@@ -346,11 +346,17 @@ mtdata-cli forecast_task_list --json
 mtdata-cli forecast_task_cancel --task-id <task_id>
 ```
 
-Once the task completes the model is persisted on disk and any later `forecast_generate` call with the same `(method, symbol, timeframe, params)` key reuses it without re-fitting.
+Once training completes, the model is persisted under a key derived from method,
+symbol, timeframe, horizon, seasonality, exogenous-input shape, preprocessing, and
+training parameters. The observed history start/end are freshness metadata, not
+part of that identity. Live `forecast_generate` calls reuse the latest matching
+artifact for at most one resolved seasonal cycle and report
+`model_staleness_bars`; historical `as_of` calls require the artifact's exact
+training anchor to prevent look-ahead reuse.
 
 ```bash
 mtdata-cli forecast_models_list --json
-mtdata-cli forecast_models_delete --model-id "nhits/EURUSD-H1/abc123"
+mtdata-cli forecast_models_delete --model-id "nhits/EURUSD_H1/abc123"
 ```
 
 Configuration (see [ENV_VARS.md](ENV_VARS.md#async-training--model-store)):
@@ -363,7 +369,10 @@ Configuration (see [ENV_VARS.md](ENV_VARS.md#async-training--model-store)):
 - `MTDATA_MODEL_STORE` — root directory for cached models (default `~/.mtdata/models`).
 - `MTDATA_MODEL_TTL_DAYS` — cache idle expiry in days since last use (default `7`); this is not a maximum model age.
 
-`forecast_generate` will also auto-train in the background when called with `async_mode=true` and the requested method is heavy / moderate; the response includes a `task_id` you can poll with `forecast_task_status`. Without `async_mode`, `forecast_generate` blocks until the fit completes (and still caches the result for next time).
+`forecast_generate` auto-trains any trainable method in the background when
+called with `async_mode=true`; the response includes a `task_id` to poll with
+`forecast_task_status`. Without `async_mode`, it performs the same train,
+persist, and predict lifecycle synchronously.
 
 ---
 

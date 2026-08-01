@@ -22,6 +22,7 @@ from src.mtdata.forecast.interface import (
     ForecastMethod,
     ForecastResult,
     TrainedModelHandle,
+    TrainResult,
 )
 
 # Canonical patch targets for lazy imports inside forecast_engine helpers.
@@ -72,7 +73,11 @@ class _StubTrainable(ForecastMethod):
         return self._predict_result
 
     def train(self, series, horizon, seasonality, params, **kw):
-        return b"fake_artifact"
+        return TrainResult(
+            artifact_bytes=b"fake_artifact",
+            params_used=dict(params),
+            metadata={"src": "train"},
+        )
 
     def serialize_artifact(self, artifact):
         return artifact if isinstance(artifact, bytes) else b"serialized"
@@ -168,6 +173,50 @@ class TestComputeModelKey:
 
         assert first != second
 
+    def test_training_window_does_not_affect_hash(self):
+        stub = _StubTrainable()
+        context = {
+            "base_col": "close",
+            "denoise": None,
+            "features": None,
+            "target_spec": None,
+            "exog_columns": 0,
+        }
+        first = fe._compute_model_key(
+            stub,
+            "stub_trainable",
+            10,
+            24,
+            {
+                "_training_context": {
+                    **context,
+                    "target_points": 500,
+                    "history_start_epoch": 1000.0,
+                    "training_end_epoch": 2000.0,
+                }
+            },
+            "H1",
+            False,
+        )
+        second = fe._compute_model_key(
+            stub,
+            "stub_trainable",
+            10,
+            24,
+            {
+                "_training_context": {
+                    **context,
+                    "target_points": 501,
+                    "history_start_epoch": 1001.0,
+                    "training_end_epoch": 5600.0,
+                }
+            },
+            "H1",
+            False,
+        )
+
+        assert first == second
+
 
 # ---------------------------------------------------------------------------
 # Tests: _try_predict_with_stored_model
@@ -175,7 +224,7 @@ class TestComputeModelKey:
 
 class TestTryPredictWithStoredModel:
 
-    def test_rejects_model_trained_at_different_anchor(self):
+    def test_historical_prediction_rejects_different_training_anchor(self):
         stub = _StubTrainable()
         handle = TrainedModelHandle(
             model_id="stub_trainable/EURUSD_H1/abc123",
@@ -201,9 +250,80 @@ class TestTryPredictWithStoredModel:
                 None,
                 {},
                 current_anchor_epoch=2000.0,
+                require_exact_anchor=True,
             )
 
         assert result is None
+        mock_store.load_bytes.assert_not_called()
+
+    def test_live_prediction_reuses_older_model_and_reports_staleness(self):
+        stub = _StubTrainable()
+        handle = TrainedModelHandle(
+            model_id="stub_trainable/EURUSD_H1/abc123",
+            method="stub_trainable",
+            data_scope="EURUSD_H1",
+            params_hash="abc123",
+            created_at=1000.0,
+            metadata={"training_context": {"training_end_epoch": 1000.0}},
+        )
+        mock_store = MagicMock()
+        mock_store.find.return_value = handle
+        mock_store.load_bytes.return_value = b"fake_artifact"
+
+        with patch(_PATCH_MODEL_STORE, mock_store):
+            result = fe._try_predict_with_stored_model(
+                stub,
+                "stub_trainable",
+                "EURUSD_H1",
+                "abc123",
+                _sample_series(),
+                3,
+                24,
+                {},
+                None,
+                {},
+                current_anchor_epoch=8200.0,
+                timeframe_seconds=3600,
+            )
+
+        assert result is not None
+        assert result[2]["model_info"]["model_staleness_bars"] == 2.0
+        assert result[2]["model_info"]["reuse_policy"] == "live_latest_artifact"
+
+    def test_live_prediction_rejects_model_past_staleness_limit(self):
+        stub = _StubTrainable()
+        handle = TrainedModelHandle(
+            model_id="stub_trainable/EURUSD_H1/abc123",
+            method="stub_trainable",
+            data_scope="EURUSD_H1",
+            params_hash="abc123",
+            created_at=1000.0,
+            metadata={"training_context": {"training_end_epoch": 1000.0}},
+        )
+        mock_store = MagicMock()
+        mock_store.find.return_value = handle
+        rejection = {}
+
+        with patch(_PATCH_MODEL_STORE, mock_store):
+            result = fe._try_predict_with_stored_model(
+                stub,
+                "stub_trainable",
+                "EURUSD_H1",
+                "abc123",
+                _sample_series(),
+                3,
+                24,
+                {},
+                None,
+                {},
+                current_anchor_epoch=1000.0 + 25 * 3600,
+                timeframe_seconds=3600,
+                max_staleness_bars=24,
+                rejection=rejection,
+            )
+
+        assert result is None
+        assert rejection["reason"] == "model_staleness_limit_exceeded"
         mock_store.load_bytes.assert_not_called()
 
     def test_returns_none_when_no_model(self):
@@ -431,8 +551,7 @@ class TestRunRegisteredForecastMethodIntegration:
                     ),
                 )
 
-    def test_trainable_no_stored_model_falls_to_sync(self):
-        """Trainable method with no stored model, sync mode → falls through to forecast()."""
+    def test_trainable_no_stored_model_trains_and_persists_synchronously(self):
         stub = _StubTrainable(category="heavy")
 
         class FakeReg:
@@ -442,14 +561,22 @@ class TestRunRegisteredForecastMethodIntegration:
 
         mock_store = MagicMock()
         mock_store.find.return_value = None
+        mock_store.save.return_value = TrainedModelHandle(
+            model_id="stub_trainable/EURUSD_H1/new",
+            method="stub_trainable",
+            data_scope="EURUSD_H1",
+            params_hash="new",
+            created_at=1000.0,
+        )
 
         with patch.object(fe, "ForecastRegistry", FakeReg), \
              patch(_PATCH_MODEL_STORE, mock_store):
             result = fe._run_registered_forecast_method(**_common_call_kwargs())
 
         forecast_arr, ci, metadata = result
-        # Falls through to forecast() because async_mode=False
-        assert metadata.get("src") == "forecast"
+        assert metadata.get("src") == "predict_with_model"
+        assert metadata["model_info"]["source"] == "synchronous_training"
+        mock_store.save.assert_called_once()
 
     def test_explicit_model_id_missing_raises(self):
         stub = _StubTrainable(category="heavy")
@@ -476,6 +603,35 @@ class TestRunRegisteredForecastMethodIntegration:
             "EURUSD_H1",
             "missing_model",
         )
+
+    def test_explicit_model_id_reports_historical_anchor_rejection(self):
+        stub = _StubTrainable(category="heavy")
+
+        class FakeReg:
+            @staticmethod
+            def get(name):
+                return stub
+
+        handle = TrainedModelHandle(
+            model_id="stub_trainable/EURUSD_H1/abc",
+            method="stub_trainable",
+            data_scope="EURUSD_H1",
+            params_hash="abc",
+            created_at=1000.0,
+            metadata={"training_context": {"training_end_epoch": 1000.0}},
+        )
+        mock_store = MagicMock()
+        mock_store.find.return_value = handle
+        kwargs = _common_call_kwargs(
+            model_id="stub_trainable/EURUSD_H1/abc"
+        )
+        kwargs["as_of"] = "2026-01-01T00:00:00Z"
+
+        with patch.object(fe, "ForecastRegistry", FakeReg), patch(
+            _PATCH_MODEL_STORE, mock_store
+        ):
+            with pytest.raises(ValueError, match="historical_anchor_mismatch"):
+                fe._run_registered_forecast_method(**kwargs)
 
     def test_trainable_with_stored_model_uses_predict(self):
         """Trainable method with stored model → uses predict_with_model."""

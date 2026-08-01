@@ -257,7 +257,14 @@ mtdata-cli data_fetch_candles EURUSD --start "2025-12-01" --end "2025-12-31"
 | `forecast_models_delete` | Delete a stored model by `model_id` |
 | `forecast_models_cleanup` | Preview or delete stale/expired stored models |
 
-Trained models are written under `~/.mtdata/models/` by default and re-used automatically by subsequent `forecast_generate` calls with the same method/symbol/timeframe/params. Task status is persisted in `~/.mtdata/forecast/jobs.sqlite` by default, so recent task state can survive process restarts. See [ENV_VARS.md](ENV_VARS.md#async-training--model-store) for the related environment variables.
+Trained models are written under `~/.mtdata/models/` by default and reused by
+live `forecast_generate` calls with the same method, symbol, timeframe, horizon,
+seasonality, preprocessing, and training parameters. Results report model age
+in bars, and live reuse is capped at one resolved seasonal cycle. Historical
+`as_of` forecasts require an exact training anchor. Task
+status is persisted in `~/.mtdata/forecast/jobs.sqlite` by default, so recent
+task state can survive process restarts. See
+[ENV_VARS.md](ENV_VARS.md#async-training--model-store) for related variables.
 
 ### Risk Analysis
 | Command | Description |

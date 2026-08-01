@@ -403,6 +403,21 @@ class ForecastMethod(ABC):
             k: v for k, v in sorted((params or {}).items())
             if k not in _PREDICTION_ONLY_KEYS
         }
+        training_context = filtered_params.get("_training_context")
+        if isinstance(training_context, dict):
+            # The observed window describes artifact freshness, not identity.
+            # Keep pipeline choices in the key while allowing the same trained
+            # model to be reused as new bars arrive.
+            filtered_params["_training_context"] = {
+                key: value
+                for key, value in sorted(training_context.items())
+                if key
+                not in {
+                    "target_points",
+                    "history_start_epoch",
+                    "training_end_epoch",
+                }
+            }
         return {
             "method": self.name,
             "horizon": int(horizon),

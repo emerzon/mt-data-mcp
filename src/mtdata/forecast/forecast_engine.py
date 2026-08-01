@@ -786,7 +786,7 @@ def _training_context_fingerprint(
         "denoise": _stable_training_value(denoise),
         "features": _stable_training_value(features),
         "target_spec": _stable_training_value(target_spec),
-        "exog_shape": list(exog.shape) if exog is not None else None,
+        "exog_columns": int(exog.shape[1]) if exog is not None and exog.ndim > 1 else 0,
     }
 
 
@@ -811,7 +811,7 @@ def _params_hash_from_model_id(
     return params_hash
 
 
-def _try_predict_with_stored_model(
+def _try_predict_with_stored_model(  # noqa: C901
     forecaster: "ForecastMethod",
     method_l: str,
     data_scope: str,
@@ -823,6 +823,11 @@ def _try_predict_with_stored_model(
     future_exog: Optional[np.ndarray],
     call_kwargs: Dict[str, Any],
     current_anchor_epoch: Optional[float] = None,
+    *,
+    require_exact_anchor: bool = False,
+    timeframe_seconds: Optional[int] = None,
+    max_staleness_bars: Optional[int] = None,
+    rejection: Optional[Dict[str, Any]] = None,
 ) -> Optional[Tuple[np.ndarray, Optional[np.ndarray], Dict[str, Any]]]:
     """Attempt to load a trained model and predict. Returns None if no model found."""
     try:
@@ -830,20 +835,79 @@ def _try_predict_with_stored_model(
         from .model_store import model_store as _store
         handle = _store.find(method_l, data_scope, params_hash)
         if handle is None:
+            if rejection is not None:
+                rejection.update({"reason": "not_found"})
             return None
+        trained_anchor: Optional[float] = None
         if current_anchor_epoch is not None:
             training_context = handle.metadata.get("training_context")
             if not isinstance(training_context, dict):
-                return None
-            trained_anchor = training_context.get("training_end_epoch")
-            try:
-                anchor_matches = abs(
-                    float(trained_anchor) - float(current_anchor_epoch)
-                ) < 1e-6
-            except (TypeError, ValueError):
-                anchor_matches = False
-            if not anchor_matches:
-                return None
+                if require_exact_anchor:
+                    if rejection is not None:
+                        rejection.update(
+                            {
+                                "reason": "missing_training_anchor",
+                                "model_id": handle.model_id,
+                            }
+                        )
+                    return None
+            else:
+                try:
+                    trained_anchor = float(training_context.get("training_end_epoch"))
+                    requested_anchor = float(current_anchor_epoch)
+                except (TypeError, ValueError):
+                    trained_anchor = None
+                if trained_anchor is None:
+                    if require_exact_anchor:
+                        if rejection is not None:
+                            rejection.update(
+                                {
+                                    "reason": "missing_training_anchor",
+                                    "model_id": handle.model_id,
+                                }
+                            )
+                        return None
+                elif trained_anchor > requested_anchor + 1e-6:
+                    if rejection is not None:
+                        rejection.update(
+                            {
+                                "reason": "trained_after_requested_anchor",
+                                "model_id": handle.model_id,
+                                "trained_anchor_epoch": trained_anchor,
+                                "requested_anchor_epoch": requested_anchor,
+                            }
+                        )
+                    return None
+                elif require_exact_anchor and abs(trained_anchor - requested_anchor) >= 1e-6:
+                    if rejection is not None:
+                        rejection.update(
+                            {
+                                "reason": "historical_anchor_mismatch",
+                                "model_id": handle.model_id,
+                                "trained_anchor_epoch": trained_anchor,
+                                "requested_anchor_epoch": requested_anchor,
+                            }
+                        )
+                    return None
+                elif (
+                    not require_exact_anchor
+                    and timeframe_seconds is not None
+                    and int(timeframe_seconds) > 0
+                    and max_staleness_bars is not None
+                    and (requested_anchor - trained_anchor) / float(timeframe_seconds)
+                    > float(max_staleness_bars)
+                ):
+                    if rejection is not None:
+                        rejection.update(
+                            {
+                                "reason": "model_staleness_limit_exceeded",
+                                "model_id": handle.model_id,
+                                "trained_anchor_epoch": trained_anchor,
+                                "requested_anchor_epoch": requested_anchor,
+                                "max_staleness_bars": int(max_staleness_bars),
+                            }
+                        )
+                    return None
         raw = _store.load_bytes(handle.model_id)
         if raw is None:
             return None
@@ -864,7 +928,18 @@ def _try_predict_with_stored_model(
             'trained_at': handle.created_at,
             'data_scope': handle.data_scope,
             'source': 'model_store',
+            'reuse_policy': (
+                'exact_training_anchor' if require_exact_anchor else 'live_latest_artifact'
+            ),
         }
+        if trained_anchor is not None and current_anchor_epoch is not None:
+            staleness_seconds = max(0.0, float(current_anchor_epoch) - trained_anchor)
+            model_info["training_end_epoch"] = trained_anchor
+            model_info["model_staleness_seconds"] = staleness_seconds
+            if timeframe_seconds is not None and int(timeframe_seconds) > 0:
+                model_info["model_staleness_bars"] = round(
+                    staleness_seconds / float(timeframe_seconds), 4
+                )
         try:
             compatibility = describe_store_metadata_compatibility(handle.store_metadata)
         except Exception as compat_exc:
@@ -1038,19 +1113,36 @@ def _run_registered_forecast_method(
             )
         )
 
+        model_rejection: Dict[str, Any] = {}
         stored_result = _try_predict_with_stored_model(
             forecaster, method_l, data_scope, params_hash,
             target_series, horizon, seasonality,
             method_params, future_exog, call_kwargs,
             float(df["time"].iloc[-1]),
+            require_exact_anchor=as_of is not None,
+            timeframe_seconds=TIMEFRAME_SECONDS.get(str(timeframe)),
+            max_staleness_bars=max(1, int(seasonality)),
+            rejection=model_rejection,
         )
         if stored_result is not None:
             return stored_result
         if requested_model_id:
+            reason = str(model_rejection.get("reason") or "unloadable")
+            if reason != "not_found":
+                anchor_detail = ""
+                if model_rejection.get("trained_anchor_epoch") is not None:
+                    anchor_detail = (
+                        f" Trained anchor={model_rejection['trained_anchor_epoch']}; "
+                        f"requested anchor={model_rejection.get('requested_anchor_epoch')}."
+                    )
+                raise ValueError(
+                    f"Model with ID '{requested_model_id}' exists but was rejected: "
+                    f"{reason}.{anchor_detail} Historical forecasts require an exact "
+                    "training anchor; live forecasts reject artifacts trained after the request."
+                )
             raise ValueError(
-                f"Model with ID '{requested_model_id}' was not found "
-                "in the model store or could not be loaded. Use forecast_models_list "
-                "to see available models, or omit model_id for an on-the-fly forecast."
+                f"Model with ID '{requested_model_id}' was not found in the model store. "
+                "Use forecast_models_list to see available models."
             )
 
         # No stored model — async route for any trainable method when requested
@@ -1064,7 +1156,55 @@ def _run_registered_forecast_method(
             )
             raise _AsyncTrainingStarted(async_resp)
 
-    # --- Default synchronous path (backward compatible) ---
+    # --- Default synchronous path ---
+    if supports_training:
+        training_context = training_params.pop("_training_context", None)
+        trained = forecaster.train(
+            target_series,
+            horizon,
+            seasonality,
+            training_params,
+            exog=X,
+            timeframe=str(timeframe),
+        )
+        from .model_store import model_store as _store
+
+        handle = _store.save(
+            method=method_l,
+            data_scope=data_scope,
+            params_hash=params_hash,
+            artifact_bytes=trained.artifact_bytes,
+            metadata={
+                **(trained.metadata or {}),
+                "params_used": trained.params_used,
+                "source_task_id": None,
+                "training_context": training_context,
+            },
+        )
+        artifact = forecaster.deserialize_artifact(trained.artifact_bytes)
+        res = forecaster.predict_with_model(
+            artifact,
+            target_series,
+            horizon,
+            seasonality,
+            method_params,
+            exog_future=future_exog,
+            **call_kwargs,
+        )
+        metadata = {**(trained.metadata or {}), **(res.metadata or {})}
+        metadata["params_used"] = res.params_used
+        metadata["model_info"] = {
+            "model_id": handle.model_id,
+            "trained_at": handle.created_at,
+            "data_scope": handle.data_scope,
+            "source": "synchronous_training",
+            "reuse_policy": "live_latest_artifact",
+            "training_end_epoch": float(df["time"].iloc[-1]),
+            "model_staleness_seconds": 0.0,
+            "model_staleness_bars": 0.0,
+        }
+        return res.forecast, res.ci_values, metadata
+
     res = forecaster.forecast(
         target_series,
         horizon,
