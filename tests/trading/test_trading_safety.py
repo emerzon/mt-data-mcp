@@ -47,6 +47,21 @@ def test_stressed_margin_reports_triggering_thresholds() -> None:
     ]
 
 
+@pytest.mark.parametrize("equity", [0.0, -100.0])
+def test_nonpositive_equity_is_critical(equity: float) -> None:
+    result = assess_margin_stress(
+        SimpleNamespace(
+            equity=equity,
+            margin=0.0,
+            margin_free=-25.0,
+            margin_level=0.0,
+        )
+    )
+
+    assert result["status"] == "critical"
+    assert result["reasons"] == ["equity_at_or_below_zero"]
+
+
 # ---------------------------------------------------------------------------
 # No-policy pass-through
 # ---------------------------------------------------------------------------

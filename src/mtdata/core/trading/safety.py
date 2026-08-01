@@ -100,7 +100,10 @@ def assess_margin_stress(account: Any) -> Dict[str, Any]:
     free_ratio = (margin_free / equity * 100.0) if equity and equity > 0 and margin_free is not None else None
 
     reasons: List[str] = []
-    if margin is not None and margin <= 0:
+    if equity is not None and equity <= 0:
+        status = "critical"
+        reasons.append("equity_at_or_below_zero")
+    elif margin is not None and margin <= 0:
         status = "healthy"
     elif (
         (margin_level is not None and 0 < margin_level <= 120.0)
