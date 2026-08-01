@@ -921,6 +921,25 @@ class TestRecordingToolDecorator:
         finally:
             tools._ORIG_TOOL_DECORATOR = original
 
+    def test_cli_raw_output_keeps_requested_guidance(self):
+        import mtdata.core._mcp_tools as tools
+
+        original = tools._ORIG_TOOL_DECORATOR
+        try:
+            tools._ORIG_TOOL_DECORATOR = lambda *a, **k: (lambda fn: fn)
+            dec = tools._recording_tool_decorator()
+
+            def market_ticker():
+                return {"success": True, "value": 1}
+
+            wrapped = dec(market_ticker)
+            result = wrapped(__cli_raw=True, extras="guidance")
+
+            assert result["success"] is True
+            assert result["related_tools"]
+        finally:
+            tools._ORIG_TOOL_DECORATOR = original
+
     def test_wrapped_function_injects_extras_into_supplied_request_model(self):
         import mtdata.core._mcp_tools as tools
 

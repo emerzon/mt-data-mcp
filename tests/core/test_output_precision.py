@@ -29,6 +29,18 @@ def test_json_auto_precision_keeps_full_numbers():
     assert policy.simplify_numbers is False
 
 
+@pytest.mark.parametrize("precision", ["auto", "compact", "display", "full", "raw"])
+def test_json_precision_modes_never_rewrite_numbers(precision):
+    policy = resolve_output_precision(
+        None,
+        tool_name="data_fetch_candles",
+        fmt="json",
+        precision=precision,
+    )
+
+    assert policy.simplify_numbers is False
+
+
 def test_auto_precision_compacts_large_tables_but_not_trading_tools():
     compact = resolve_output_precision(None, tool_name="data_fetch_candles")
     trading = resolve_output_precision(None, tool_name="trade_positions")

@@ -975,6 +975,11 @@ def _recording_tool_decorator(*dargs, **dkwargs):  # type: ignore[override]  # n
                     operation=getattr(func, "__name__", "tool"),
                 )
 
+            if raw_output and isinstance(out, dict) and "guidance" in contract_state.extras:
+                out = attach_success_guidance(
+                    out,
+                    tool_name=getattr(func, "__name__", ""),
+                )
             if raw_output:
                 return out
 

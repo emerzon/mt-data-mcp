@@ -95,9 +95,10 @@ For scripts that always require JSON, set `MTDATA_OUTPUT_FORMAT=json` in the
 environment or `.env` file. Accepted values are `json` and `toon`; an explicit
 `--json` flag always selects JSON.
 
-JSON output keeps numeric values unminimized by default. Text output uses
-`--precision auto`, which preserves full precision for trading and price-level
-tools while compacting known large tables such as candles and scans.
+JSON output always keeps numeric values unminimized. Text output uses
+`--precision auto`, which compacts most tools while preserving full precision
+for an explicit set of sensitive outputs, including trading, quotes, forecasts,
+reports, and price-level tools.
 
 Control display precision explicitly:
 ```bash
@@ -107,13 +108,13 @@ mtdata-cli market_ticker EURUSD --precision full
 # Compact a large table for token-saving display
 mtdata-cli data_fetch_candles EURUSD --limit 200 --precision compact
 
-# Use a deterministic display decimal count
-mtdata-cli data_fetch_candles EURUSD --limit 200 --precision compact --decimals 5
 ```
 
 `--precision raw` is accepted as an alias for `full`, and `display` is accepted
-as an alias for `compact`. Precision controls only presentation; internal tool
-processing and JSON/raw payloads keep numeric values.
+as an alias for `compact`. There is no global `--decimals` option; tools with a
+domain-specific decimal control document it in their own help. Precision
+controls only text presentation; internal tool processing and JSON/raw payloads
+keep numeric values.
 
 ### Extras
 Compact output is implicit. For richer sections such as runtime metadata,

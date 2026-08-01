@@ -92,7 +92,11 @@ def resolve_output_precision(
 
     mode = normalize_precision_mode(precision)
 
-    if mode == PRECISION_FULL:
+    # JSON is the canonical machine-readable payload.  Precision flags are a
+    # text-rendering concern and must never rewrite JSON numbers.
+    if str(fmt or "").strip().lower() == "json":
+        simplify = False
+    elif mode == PRECISION_FULL:
         simplify = False
     elif mode == PRECISION_COMPACT:
         simplify = True
