@@ -1329,7 +1329,7 @@ def _format_forecast_output(
     forecast_times = [fmt_time(float(epoch)) for epoch in future_epochs]
     last_observation_time = fmt_time(float(last_epoch))
     calendar_gaps, skipped_bars = _forecast_calendar_gap_rows(
-        future_epochs,
+        [float(last_epoch), *future_epochs],
         tf_secs,
         fmt_time,
     )

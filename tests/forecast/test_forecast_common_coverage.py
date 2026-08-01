@@ -342,10 +342,10 @@ class TestNextTimesFromLast:
             pd.Timestamp(epoch, unit="s", tz="UTC").strftime("%Y-%m-%d %H:%M")
             for epoch in result
         ] == [
+            "2026-05-24 21:00",
             "2026-05-24 22:00",
             "2026-05-24 23:00",
             "2026-05-25 00:00",
-            "2026-05-25 01:00",
         ]
 
 
@@ -741,7 +741,7 @@ class TestFormatForecastOutput:
             )
 
         assert result["forecast_time"] == [
-            "2026-05-22T21:00Z",
+            "2026-05-24T21:00Z",
             "2026-05-24T22:00Z",
             "2026-05-24T23:00Z",
             "2026-05-25T00:00Z",
@@ -750,8 +750,8 @@ class TestFormatForecastOutput:
         ]
         assert result["forecast_calendar_gaps"] == [
             {
-                "from": "2026-05-22T22:00Z",
-                "to": "2026-05-24T21:00Z",
+                "from": "2026-05-22T21:00Z",
+                "to": "2026-05-24T20:00Z",
                 "skipped_bars": 48,
                 "reason": "weekend",
             }
