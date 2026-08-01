@@ -466,6 +466,34 @@ def _volatility_annualization_context(
     )
 
 
+def _bars_per_session_from_annualization(
+    bars_per_year_value: float,
+    annualization_basis: str,
+) -> float:
+    """Recover the per-session bar count from the reported year convention."""
+    basis = str(annualization_basis or "")
+    sessions_per_year = 365.0 if basis.startswith("365_") else 260.0 if basis.startswith("260_") else 252.0
+    return float(bars_per_year_value) / sessions_per_year
+
+
+def _daily_realized_variance(frame: pd.DataFrame) -> tuple[pd.Series, int]:
+    """Calculate intraday RV without treating an overnight gap as an intraday return."""
+    values = pd.DataFrame(
+        {
+            "time": pd.to_numeric(frame.get("time"), errors="coerce"),
+            "close": pd.to_numeric(frame.get("close"), errors="coerce"),
+        }
+    ).dropna()
+    values = values.sort_values("time", kind="stable")
+    values["day"] = pd.to_datetime(values["time"], unit="s", utc=True).dt.floor("D")
+    values["return"] = values.groupby("day", sort=True)["close"].transform(
+        lambda series: np.log(series.where(series > 0)).diff()
+    )
+    finite = values[np.isfinite(values["return"])].copy()
+    finite["r2"] = np.square(finite["return"].astype(float))
+    return finite.groupby("day", sort=True)["r2"].sum().astype(float), int(len(finite))
+
+
 def _volatility_input_context(
     df: pd.DataFrame,
     *,
@@ -1284,21 +1312,15 @@ def forecast_volatility(  # noqa: C901
                         apply_denoise(dfrv, dn_spec_used, default_when='pre_ti')
                     except Exception:
                         pass
-                bpy, _ = _volatility_annualization_context(
+                bpy, annualization_basis = _volatility_annualization_context(
                     symbol,
                     timeframe,
                     observed_times=dfrv.get("time"),
                     observed_timeframe=rv_tf,
                 )
-                c = dfrv['close'].astype(float).to_numpy()
-                if c.size < 10:
+                if len(dfrv) < 10:
                     return {"error": "Insufficient intraday bars for RV"}
-                rr = _log_returns_from_prices(c)
-                rr = rr[np.isfinite(rr)]
-                dt = pd.to_datetime(dfrv['time'].iloc[1:].astype(float), unit='s', utc=True)
-                days_idx = pd.DatetimeIndex(dt).floor('D')
-                df_r = pd.DataFrame({'day': days_idx, 'r2': rr * rr})
-                daily_rv = df_r.groupby('day')['r2'].sum().astype(float)
+                daily_rv, realized_returns = _daily_realized_variance(dfrv)
                 if len(daily_rv) < max(30, m + 5):
                     return {"error": "Not enough daily RV observations for HAR-RV"}
                 RV = daily_rv.to_numpy(dtype=float)
@@ -1328,9 +1350,13 @@ def forecast_volatility(  # noqa: C901
                 tf_secs = TIMEFRAME_SECONDS.get(timeframe)
                 if not tf_secs:
                     return {"error": unsupported_timeframe_seconds_error(timeframe)}
-                bars_per_day = float(86400.0 / float(tf_secs))
-                sbar = float(math.sqrt(rv_next / bars_per_day))
-                h_days = float(int(horizon)) / bars_per_day
+                bars_per_session = _bars_per_session_from_annualization(
+                    bpy, annualization_basis
+                )
+                if not math.isfinite(bars_per_session) or bars_per_session <= 0:
+                    return {"error": "Unable to resolve HAR-RV bars per trading session"}
+                sbar = float(math.sqrt(rv_next / bars_per_session))
+                h_days = float(int(horizon)) / bars_per_session
                 hsig = float(math.sqrt(rv_next * max(h_days, 0.0)))
                 return _finalize_volatility_with_context(
                     {"success": True, "symbol": symbol, "timeframe": timeframe, "method": method_l, "horizon": int(horizon),
@@ -1338,12 +1364,14 @@ def forecast_volatility(  # noqa: C901
                      "volatility_horizon": hsig, "volatility_horizon_annualized": _annualize_horizon_sigma(hsig, bpy, int(horizon)),
                      "params_used": {"rv_timeframe": rv_tf, "window_w": w, "window_m": m,
                                       "beta": [float(b) for b in beta.tolist()],
-                                      "days": days},
+                                      "days": days,
+                                      "bars_per_session": float(bars_per_session),
+                                      "daily_rv_gap_policy": "within_utc_day_returns_only"},
                      "denoise_used": dn_spec_used},
                     df=dfrv,
                     symbol=symbol,
                     timeframe=timeframe,
-                    returns_used=int(rr.size),
+                    returns_used=int(realized_returns),
                     live_window=as_of is None and end is None,
                     detail=detail,
                     data_timeframe=rv_tf,

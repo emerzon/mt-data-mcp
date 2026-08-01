@@ -17,6 +17,7 @@ import pandas as pd
 import pytest
 
 import mtdata.forecast.volatility as vol_mod
+from mtdata.forecast.common import bars_per_year as _bars_per_year
 from mtdata.forecast.volatility import (
     _garman_klass_sigma_sq,
     _kernel_weight,
@@ -26,7 +27,6 @@ from mtdata.forecast.volatility import (
     forecast_volatility,
     get_volatility_methods_data,
 )
-from mtdata.forecast.common import bars_per_year as _bars_per_year
 
 MOD = "mtdata.forecast.volatility"
 
@@ -1723,6 +1723,47 @@ class TestHarRvBlock:
                 r["volatility_horizon"] * math.sqrt(expected_bpy / 5)
             )
             assert "beta" in r["params_used"]
+
+    def test_session_limited_horizon_uses_observed_session_density(self):
+        with _mock_env(rates_side_effect=self._har_rv_side_effect()), patch(
+            f"{MOD}._volatility_annualization_context",
+            return_value=(1764.0, "252_trading_days_observed_session"),
+        ):
+            result = forecast_volatility(
+                "US500", "H1", 7, method="har_rv", detail="full"
+            )
+
+        assert result["success"] is True
+        assert result["params_used"]["bars_per_session"] == 7.0
+        assert result["volatility_horizon"] == pytest.approx(
+            result["volatility_per_bar"] * math.sqrt(7.0)
+        )
+        assert result["params_used"]["daily_rv_gap_policy"] == (
+            "within_utc_day_returns_only"
+        )
+
+    def test_daily_realized_variance_excludes_overnight_jump(self):
+        timestamps = pd.to_datetime(
+            [
+                "2026-01-05T14:00Z",
+                "2026-01-05T15:00Z",
+                "2026-01-06T14:00Z",
+                "2026-01-06T15:00Z",
+            ]
+        )
+        frame = pd.DataFrame(
+            {
+                "time": [value.timestamp() for value in timestamps],
+                "close": [100.0, 101.0, 200.0, 202.0],
+            }
+        )
+
+        daily, returns_used = vol_mod._daily_realized_variance(frame)
+
+        assert returns_used == 2
+        assert daily.to_list() == pytest.approx(
+            [math.log(1.01) ** 2, math.log(1.01) ** 2]
+        )
 
     def test_invalid_rv_timeframe(self):
         """Line 1090-1091: rv_timeframe not in TIMEFRAME_MAP."""
