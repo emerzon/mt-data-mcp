@@ -3,6 +3,7 @@ Simplification helpers extracted for reuse across server tools.
 
 Contains target-point selection utilities and core selection algorithms.
 """
+from statistics import NormalDist
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
@@ -666,13 +667,20 @@ def _handle_encode_mode(df: pd.DataFrame, headers: List[str], spec: Dict[str, An
             f"min={float(np.min(vals)):.6g}|max={float(np.max(vals)):.6g}"
         )
     else:
-        scale = spec.get('scale', 1.0)
-        try:
-            scale_f = float(scale)
-        except Exception:
-            scale_f = 1.0
-        scale_f = scale_f if abs(scale_f) > 1e-12 else 1.0
         diffs = np.diff(vals, prepend=vals[0])
+        scale = spec.get('scale', 'auto')
+        scale_source = 'explicit'
+        if scale in (None, '', 'auto'):
+            nonzero = np.abs(diffs[np.isfinite(diffs) & (np.abs(diffs) > 1e-12)])
+            scale_f = float(np.median(nonzero)) if nonzero.size else 1.0
+            scale_source = 'median_nonzero_delta' if nonzero.size else 'constant_series_fallback'
+        else:
+            try:
+                scale_f = float(scale)
+            except Exception:
+                scale_f = 1.0
+                scale_source = 'invalid_scale_fallback'
+        scale_f = scale_f if abs(scale_f) > 1e-12 else 1.0
         q = np.round(diffs / scale_f).astype(int)
         if bool(spec.get('as_chars', False)):
             zero_char = str(spec.get('zero_char', '0'))[:1] or '0'
@@ -690,6 +698,10 @@ def _handle_encode_mode(df: pd.DataFrame, headers: List[str], spec: Dict[str, An
         'returned_rows': 1,
         'points': 1,
     }
+    if schema == 'delta':
+        meta['scale'] = float(scale_f)
+        meta['scale_source'] = scale_source
+        meta['degenerate'] = bool(np.all(q == 0))
     return out_df, meta
 
 
@@ -761,8 +773,8 @@ def _handle_symbolic_mode(df: pd.DataFrame, headers: List[str], spec: Dict[str, 
         return df, {'mode': 'symbolic', 'error': 'No numeric column available for symbolic mode'}
 
     vals = pd.to_numeric(df[value_col], errors='coerce').to_numpy(dtype=float)
-    vals = vals[np.isfinite(vals)]
-    if vals.size <= 0:
+    finite_mask = np.isfinite(vals)
+    if not bool(np.any(finite_mask)):
         return df, {'mode': 'symbolic', 'error': 'No finite values to symbolize'}
 
     try:
@@ -780,20 +792,34 @@ def _handle_symbolic_mode(df: pd.DataFrame, headers: List[str], spec: Dict[str, 
 
     x = vals.copy()
     if bool(spec.get('znorm', True)):
-        mu = float(np.mean(x))
-        sigma = float(np.std(x))
+        mu = float(np.mean(x[finite_mask]))
+        sigma = float(np.std(x[finite_mask]))
         if sigma > 1e-12:
             x = (x - mu) / sigma
         else:
             x = x - mu
 
     chunks = np.array_split(x, paa)
-    paa_vals = np.array([float(np.mean(c)) if len(c) else 0.0 for c in chunks], dtype=float)
+    paa_vals = np.array(
+        [
+            float(np.mean(c[np.isfinite(c)]))
+            if bool(np.any(np.isfinite(c)))
+            else 0.0
+            for c in chunks
+        ],
+        dtype=float,
+    )
     quantiles = np.linspace(0.0, 1.0, bins_n + 1)
-    edges = np.quantile(paa_vals, quantiles)
-    for i in range(1, len(edges)):
-        if edges[i] <= edges[i - 1]:
-            edges[i] = edges[i - 1] + 1e-12
+    normal = NormalDist()
+    edges = np.asarray(
+        [
+            float('-inf') if q <= 0.0
+            else float('inf') if q >= 1.0
+            else normal.inv_cdf(float(q))
+            for q in quantiles
+        ],
+        dtype=float,
+    )
     ids = np.searchsorted(edges[1:-1], paa_vals, side='right')
     symbols = ''.join(alphabet[int(i)] for i in ids.tolist())
 
@@ -801,6 +827,7 @@ def _handle_symbolic_mode(df: pd.DataFrame, headers: List[str], spec: Dict[str, 
     meta = {
         'mode': 'symbolic',
         'schema': 'sax',
+        'breakpoint_basis': 'standard_normal',
         'value_col': value_col,
         'paa': int(paa),
         'alphabet': alphabet,

@@ -509,6 +509,50 @@ class TestHandleEncodeMode:
         assert "encoding" in out.columns
         assert meta["schema"] == "delta"
 
+    def test_delta_encoding_auto_scales_price_changes(self):
+        df = pd.DataFrame({"close": [1.1000, 1.1001, 1.1002, 1.1001]})
+
+        out, meta = _handle_encode_mode(df, ["close"], {"schema": "delta"})
+
+        assert out["encoding"].iloc[0] == "0,1,1,-1"
+        assert meta["scale"] == pytest.approx(0.0001)
+        assert meta["scale_source"] == "median_nonzero_delta"
+        assert meta["degenerate"] is False
+
+    def test_symbolic_mode_uses_fixed_standard_normal_breakpoints(self):
+        base = np.linspace(-2.0, 2.0, 80)
+        first = pd.DataFrame({"close": base})
+        second = pd.DataFrame({"close": base * 100.0 + 500.0})
+
+        out_a, meta_a = _simplify_dataframe_rows_ext(
+            first,
+            ["close"],
+            {"mode": "symbolic", "paa": 8},
+        )
+        out_b, meta_b = _simplify_dataframe_rows_ext(
+            second,
+            ["close"],
+            {"mode": "symbolic", "paa": 8},
+        )
+
+        assert out_a["symbolic"].iloc[0] == out_b["symbolic"].iloc[0]
+        assert meta_a["breakpoint_basis"] == "standard_normal"
+        assert meta_b["schema"] == "sax"
+
+    def test_symbolic_paa_preserves_nan_time_positions(self):
+        values = np.arange(12, dtype=float)
+        values[1] = np.nan
+        df = pd.DataFrame({"close": values})
+
+        out, meta = _simplify_dataframe_rows_ext(
+            df,
+            ["close"],
+            {"mode": "symbolic", "paa": 4},
+        )
+
+        assert len(out["symbolic"].iloc[0]) == 4
+        assert meta["original_rows"] == 12
+
     def test_envelope_encoding(self):
         df = _make_df(50)
         out, meta = _handle_encode_mode(df, ["time", "close"], {"schema": "envelope"})

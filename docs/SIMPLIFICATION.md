@@ -121,6 +121,11 @@ mtdata-cli data_fetch_candles EURUSD --limit 5000 --simplify apca \
 - Simplification is meant for **visualization and UI performance**. For quantitative analysis (e.g., volatility estimation, backtests), use full-resolution data.
 - In `mode=select`, mtdata returns existing rows; this can miss intra-bar extremes if you simplify OHLC data aggressively.
 
+`mode=encode` with `schema=delta` derives its scale from the median non-zero
+change unless `scale` is supplied explicitly, and reports the resolved scale in
+metadata. `mode=symbolic` implements SAX with PAA, optional z-normalization, and
+fixed standard-normal breakpoints, so encodings are comparable across series.
+
 ---
 
 ## See Also
