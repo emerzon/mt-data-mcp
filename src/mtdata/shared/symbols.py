@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from typing import Any, AbstractSet
+from typing import AbstractSet, Any
 
-# Major G10-style fiat codes used for conservative pair detection and news.
+# Major G10-style fiat codes used for conservative news-provider conversion.
 FIAT_CURRENCY_CODES = frozenset(
     {
         "AUD",
@@ -107,13 +107,15 @@ def is_probably_forex_symbol(
 ) -> bool:
     """Return True when the symbol looks like a 6-letter FX pair.
 
-    Defaults to major fiat codes. Pass ``FOREX_CURRENCY_CODES`` for the
-    extended set used by pip/weekend heuristics.
+    Defaults to the extended FX set used by pip, annualization, and weekend
+    heuristics. Pass a narrower set only for a provider-specific contract.
     """
-    codes = FIAT_CURRENCY_CODES if currency_codes is None else currency_codes
+    codes = FOREX_CURRENCY_CODES if currency_codes is None else currency_codes
     normalized = _alnum_upper(symbol)
     if len(normalized) < 6:
         return False
-    base = normalized[:3]
-    quote = normalized[3:6]
-    return base in codes and quote in codes
+    return any(
+        normalized[index : index + 3] in codes
+        and normalized[index + 3 : index + 6] in codes
+        for index in range(len(normalized) - 5)
+    )
