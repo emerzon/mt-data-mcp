@@ -120,7 +120,7 @@ Area Low (VAL) from bounded raw ticks or an M1-bar approximation.
 
 ```bash
 # Window by calendar range
-mtdata-cli volume_profile_levels EURUSD --start "1 week ago" --end "now" \
+mtdata-cli volume_profile_levels EURUSD --start "1 day ago" --end "now" \
   --source auto --price-source mid --bucket-points 10 --json
 
 # Window by lookback on a timeframe
@@ -140,12 +140,15 @@ mtdata-cli volume_profile_levels EURUSD --timeframe H1 --limit 168 \
 | `max_buckets` | `120` | Upper bound on buckets. |
 | `value_area_pct` | `0.70` | Fraction of volume that defines the value area (70% is standard). |
 | `reference_price` | — | Anchor for distance calculations (defaults to current price). |
-| `max_tick_window_days` | `7` | Cap the tick window pulled. |
-| `max_ticks` | `200000` | Cap the number of ticks pulled. |
+| `max_tick_window_days` | `1` | Cap the tick window pulled. Larger `auto` windows use M1 bars. |
+| `max_ticks` | `50000` | Cap the number of ticks pulled. |
 | `max_m1_bars` | `20000` | Cap the M1 bars pulled in approximation mode. |
 
-**Output:** `poc`, `vah`, `val`, and a `value_area` summary. `--detail full` (or
-`--extras metadata`) adds the full `levels` histogram.
+**Output:** `poc`, `vah`, `val`, and a `value_area` summary. `profile_source` and
+`volume_profile_accuracy` always identify whether `auto` used ticks or the M1
+approximation. `--detail full` (or `--extras metadata`) adds the full `levels`
+histogram. To request a week of ticks, explicitly set
+`--max-tick-window-days 7` and an appropriate `--max-ticks` cap.
 
 ---
 

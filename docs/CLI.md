@@ -292,7 +292,7 @@ Trained models are written under `~/.mtdata/models/` by default and re-used auto
 Volume profile example:
 
 ```bash
-mtdata-cli volume_profile_levels EURUSD --start "1 week ago" --end "now" \
+mtdata-cli volume_profile_levels EURUSD --start "1 day ago" --end "now" \
   --source auto --price-source mid --bucket-points 10 --json
 ```
 
@@ -302,6 +302,9 @@ You can also derive the window from a lookback:
 mtdata-cli volume_profile_levels EURUSD --timeframe H1 --limit 168 \
   --source auto --bucket-points 10 --json
 ```
+
+The default tick window is one day and 50,000 ticks. Longer `auto` windows use
+the labeled M1-bar approximation unless those caps are raised explicitly.
 
 For fractal + volume-structure confluence, opt in through pattern config:
 

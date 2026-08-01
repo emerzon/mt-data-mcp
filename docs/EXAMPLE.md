@@ -227,7 +227,7 @@ Volume-profile structure levels from bounded tick data:
 
 ```bash
 mtdata-cli volume_profile_levels EURUSD \
-  --start "2026-01-01" --end "2026-01-08" \
+  --start "2026-01-07" --end "2026-01-08" \
   --source auto --price-source mid --bucket-points 10 --json
 ```
 
@@ -245,7 +245,10 @@ mtdata-cli patterns_detect EURUSD --timeframe H1 --mode fractal --limit 300 \
   --config '{"volume_profile":true,"volume_profile_tolerance_points":25}' --json
 ```
 
-`volume_profile_levels` returns POC, VAH, and VAL. `source=auto` uses raw ticks for bounded windows and falls back to an M1-bar approximation for larger windows; broker FX volume is usually tick activity, not exchange-traded volume.
+`volume_profile_levels` returns POC, VAH, and VAL. The defaults admit up to one
+day and 50,000 raw ticks; `source=auto` falls back to an explicitly labeled M1
+bar approximation for larger windows. Broker FX volume is usually tick
+activity, not exchange-traded volume.
 
 ---
 
