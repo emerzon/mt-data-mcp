@@ -88,7 +88,7 @@ def _preflight_snapshot_symbol(
     )
 
 
-def _compact_quote(quote: Any) -> Any:
+def _compact_quote(quote: Any, *, detail: str = "compact") -> Any:
     if not isinstance(quote, dict) or quote.get("error"):
         return quote
     normalized_quote = dict(quote)
@@ -107,6 +107,8 @@ def _compact_quote(quote: Any) -> Any:
             )
     elif display_time not in (None, "") and raw_time in (None, ""):
         normalized_quote["time"] = display_time
+    if str(detail or "compact").strip().lower() in {"standard", "full"}:
+        return normalized_quote
     keys = (
         "symbol",
         "bid",
@@ -652,7 +654,8 @@ def _call_section(name: str, symbol: str, timeframe: str, horizon: int, detail: 
                     symbol=symbol,
                     detail=detail,
                     raw_tool_output=True,
-                )
+                ),
+                detail=detail,
             )
         if name == "levels":
             from .pivot import support_resistance_levels

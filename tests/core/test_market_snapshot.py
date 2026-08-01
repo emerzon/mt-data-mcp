@@ -57,6 +57,33 @@ def test_market_snapshot_quote_compaction_formats_epoch_without_display():
     assert quote["time_epoch"] == 1700000000
 
 
+def test_market_snapshot_full_quote_preserves_ticker_diagnostics(monkeypatch):
+    monkeypatch.setattr(
+        snapshot_mod,
+        "call_tool_sync_structured",
+        lambda func, **kwargs: {
+            "success": True,
+            "symbol": "EURUSD",
+            "bid": 1.1,
+            "ask": 1.1002,
+            "time": 1700000000,
+            "time_display": "2023-11-14 22:13 UTC",
+            "tick_available": True,
+            "units": {"spread": "price"},
+            "meta": {"tool": "market_ticker"},
+        },
+    )
+
+    quote = snapshot_mod._call_section("quote", "EURUSD", "H1", 8, "full")
+
+    assert quote["tick_available"] is True
+    assert quote["units"] == {"spread": "price"}
+    assert quote["meta"] == {"tool": "market_ticker"}
+    assert quote["time"] == "2023-11-14 22:13 UTC"
+    assert quote["time_epoch"] == 1700000000
+    assert "time_display" not in quote
+
+
 def test_market_snapshot_marks_invalid_symbol_failure(monkeypatch):
     def fake_call_section(name, symbol, timeframe, horizon, detail):
         if name == "quote":
