@@ -2464,10 +2464,19 @@ def test_run_forecast_conformal_intervals_compact_omits_technical_metadata():
             "forecast": [{"time": "2026-05-29 21:00", "value": 100.123456789}],
             "params_used": {"alpha": 0.2, "trend_slope": -0.000012493247702752267},
             "price_precision": 5,
+            "last_price_age_seconds": 12.5,
+            "last_price_stale": False,
+            "history_policy_ok": True,
+            "freshness_basis": "last_completed_bar_close",
         },
     )
 
     assert result["detail"] == "compact"
+    assert result["last_price_age_seconds"] == 12.5
+    assert result["data_age_seconds"] == 12.5
+    assert result["last_price_stale"] is False
+    assert result["data_stale"] is False
+    assert result["history_policy_ok"] is True
     # Compact mode folds point/interval series into forecast rows and drops the
     # parallel technical arrays/metadata fields.
     assert "forecast_time" not in result

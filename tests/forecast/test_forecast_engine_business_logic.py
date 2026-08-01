@@ -994,6 +994,23 @@ def test_forecast_engine_inverts_price_target_transform_and_intervals(monkeypatc
     assert out["upper_price"] == pytest.approx([107.0, 108.0])
 
 
+def test_return_price_intervals_accumulate_variance_not_tail_paths():
+    point_returns = np.zeros(4)
+    point_prices = np.full(4, 100.0)
+
+    lower, upper = fe._reconstruct_price_intervals_from_target(
+        point_returns,
+        (np.full(4, -0.01), np.full(4, 0.01)),
+        point_prices,
+        np.array([100.0]),
+        {"transform": "log_return"},
+    )
+
+    assert lower[-1] == pytest.approx(100.0 * np.exp(-0.02))
+    assert upper[-1] == pytest.approx(100.0 * np.exp(0.02))
+    assert upper[-1] < 100.0 * np.exp(0.04)
+
+
 def test_forecast_engine_injects_context_for_analog(monkeypatch):
     from mtdata.forecast.methods.analog import AnalogMethod
 

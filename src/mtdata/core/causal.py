@@ -9,6 +9,7 @@ import math
 import time
 import warnings
 from datetime import datetime, timezone
+from statistics import NormalDist
 from typing import Any, Dict, List, Literal, Optional, Tuple
 
 import numpy as np
@@ -522,24 +523,31 @@ def _bar_completion_context(
 
 def _transform_frame(frame: pd.DataFrame, transform: str) -> pd.DataFrame:
     transform = transform.strip().lower()
-    if transform in ("log_return", "logret", "log-returns"):
-        # log return r_t = ln(p_t) - ln(p_{t-1})
-        clean = frame.astype(float).where(frame > 0)
-        clean = clean.mask(clean <= 0)
-        log_prices = np.log(clean)
-        log_prices = log_prices.replace([np.inf, -np.inf], np.nan)
-        frame = log_prices.diff()
-    elif transform in ("log_level", "log", "log-price", "log_price"):
-        clean = frame.astype(float).where(frame > 0)
-        clean = clean.mask(clean <= 0)
-        frame = np.log(clean).replace([np.inf, -np.inf], np.nan)
-    elif transform in ("pct", "return", "pct_change"):
-        frame = frame.pct_change()
-    elif transform in ("diff", "difference", "first_diff"):
-        frame = frame.diff()
-    else:
-        # default no transform
+    if transform not in {
+        "log_return", "logret", "log-returns", "log_level", "log",
+        "log-price", "log_price", "pct", "return", "pct_change",
+        "diff", "difference", "first_diff",
+    }:
         return frame
+
+    # Transform each symbol on its own observed index. Applying diff/pct_change
+    # after an outer join lets another symbol's timestamp interrupt the true
+    # predecessor relationship and creates artificial missing returns.
+    transformed: Dict[str, pd.Series] = {}
+    for column in frame.columns:
+        series = frame[column].dropna().astype(float)
+        if transform in ("log_return", "logret", "log-returns"):
+            clean = series.where(series > 0)
+            values = np.log(clean).replace([np.inf, -np.inf], np.nan).diff()
+        elif transform in ("log_level", "log", "log-price", "log_price"):
+            clean = series.where(series > 0)
+            values = np.log(clean).replace([np.inf, -np.inf], np.nan)
+        elif transform in ("pct", "return", "pct_change"):
+            values = series.pct_change(fill_method=None)
+        else:
+            values = series.diff()
+        transformed[str(column)] = values
+    frame = pd.concat(transformed, axis=1, join="outer").sort_index()
     # Keep pairwise-complete rows for each tested symbol pair later.
     return frame.dropna(how="all")
 
@@ -796,6 +804,8 @@ def _rank_correlation_pairs(
     method: str,
     window_bars: int,
     min_overlap: int,
+    inference_supported: bool = True,
+    family_alpha: float = 0.05,
 ) -> tuple[List[Dict[str, Any]], Dict[str, int], Dict[str, int]]:
     rows: List[Dict[str, Any]] = []
     pair_overlaps: Dict[str, int] = {}
@@ -823,7 +833,6 @@ def _rank_correlation_pairs(
                 continue
             corr_f = float(corr)
             corr_rounded = round(corr_f, 6)
-            ci95_low, ci95_high = _correlation_fisher_ci(corr_f, int(len(subset)))
             period_start = _format_sample_time(subset.index[0])
             period_end = _format_sample_time(subset.index[-1])
             rows.append(
@@ -831,8 +840,6 @@ def _rank_correlation_pairs(
                     "left": left,
                     "right": right,
                     "correlation": corr_rounded,
-                    "ci95_low": ci95_low,
-                    "ci95_high": ci95_high,
                     "abs_correlation": round(abs(corr_f), 6),
                     "samples": int(len(subset)),
                     "period_start": period_start,
@@ -853,6 +860,23 @@ def _rank_correlation_pairs(
                 }
             )
 
+    if inference_supported and rows:
+        family_size = len(rows)
+        family_z = NormalDist().inv_cdf(
+            1.0 - float(family_alpha) / (2.0 * float(family_size))
+        )
+        for row in rows:
+            low, high = _correlation_fisher_ci(
+                float(row["correlation"]),
+                int(row["samples"]),
+                z=family_z,
+            )
+            row["ci_familywise_low"] = low
+            row["ci_familywise_high"] = high
+            row["ci_familywise_alpha"] = float(family_alpha)
+            row["ci_familywise_method"] = "bonferroni_fisher_z"
+            row["pair_tests_run"] = int(family_size)
+
     rows.sort(
         key=lambda item: (
             -float(item["abs_correlation"]),
@@ -865,19 +889,27 @@ def _rank_correlation_pairs(
 
 
 def _compact_correlation_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    return [
-        {
+    compact: List[Dict[str, Any]] = []
+    for row in rows:
+        item = {
             "symbol1": row.get("left"),
             "symbol2": row.get("right"),
             "correlation": row.get("correlation"),
-            "ci95_low": row.get("ci95_low"),
-            "ci95_high": row.get("ci95_high"),
             "samples": row.get("samples"),
             "period_start": row.get("period_start"),
             "period_end": row.get("period_end"),
         }
-        for row in rows
-    ]
+        for key in (
+            "ci_familywise_low",
+            "ci_familywise_high",
+            "ci_familywise_alpha",
+            "ci_familywise_method",
+            "pair_tests_run",
+        ):
+            if key in row:
+                item[key] = row[key]
+        compact.append(item)
+    return compact
 
 
 def _normalize_output_limit(limit: Optional[int]) -> tuple[int | None, str | None]:
@@ -1581,7 +1613,8 @@ def causal_discover_signals(  # noqa: C901
         include_incomplete: Include the current forming candle. Defaults to false
             so statistical tests use completed bars only.
         transform: Preprocessing transform: "log_return", "pct", "diff", "level", or "log_level".
-        normalize: Z-score columns before testing to stabilise scale.
+        normalize: Z-score columns for numerical conditioning. With the OLS
+            intercept used here, this does not change the exact Granger statistic.
         detail: "compact" returns significant links plus top pair summaries; "full"
             returns every tested pair in items.
     """
@@ -1609,6 +1642,7 @@ def causal_discover_signals(  # noqa: C901
             "include_incomplete": bool(include_incomplete),
             "transform": str(transform),
             "normalize": bool(normalize),
+            "normalization_role": "numerical_conditioning_only_affine_invariant",
             "detail": detail_mode,
         }
         transform_value = _normalize_transform_name(transform)
@@ -2487,6 +2521,7 @@ def correlation_matrix(  # noqa: C901
             method=method_value,
             window_bars=int(window_bars),
             min_overlap=int(min_overlap),
+            inference_supported=transform_value in {"log_return", "pct", "diff"},
         )
         output_rows_raw, output_truncated, pagination = _limit_pair_rows(
             rows,
@@ -2538,6 +2573,18 @@ def correlation_matrix(  # noqa: C901
                 series_map, include_incomplete=bool(include_incomplete)
             ),
         }
+        if transform_value in {"log_return", "pct", "diff"}:
+            context["correlation_inference"] = {
+                "family_alpha": 0.05,
+                "family_size": int(len(rows)),
+                "method": "bonferroni_fisher_z",
+                "scope": "computed_symbol_pairs",
+            }
+        else:
+            warnings_out.append(
+                "Correlation confidence intervals are suppressed for price-level transforms; "
+                "use log_return, pct, or diff for inferential correlation analysis."
+            )
         alignment_context, alignment_warning = _pairwise_period_alignment(
             rows,
             timeframe=timeframe,

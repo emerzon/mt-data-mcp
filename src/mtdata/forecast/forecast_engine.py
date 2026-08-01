@@ -422,6 +422,80 @@ def _reconstruct_prices_from_target(
     return np.asarray(reconstructed, dtype=float)
 
 
+def _reconstruct_price_intervals_from_target(
+    forecast_values: np.ndarray,
+    ci_values: Tuple[np.ndarray, np.ndarray],
+    reconstructed_prices: np.ndarray,
+    price_history: Optional[np.ndarray],
+    target_info: Optional[Dict[str, Any]],
+) -> Optional[Tuple[np.ndarray, np.ndarray]]:
+    """Map marginal target intervals to cumulative price uncertainty.
+
+    Return/difference bounds describe uncertainty at each forecast step. Treating
+    every lower (or upper) bound as a path compounds the same confidence tail at
+    every horizon and greatly overstates long-horizon width. Independent marginal
+    errors instead accumulate in variance space along each transform lag chain.
+    """
+    point = np.asarray(forecast_values, dtype=float).reshape(-1)
+    lower = np.asarray(ci_values[0], dtype=float).reshape(-1)
+    upper = np.asarray(ci_values[1], dtype=float).reshape(-1)
+    prices = np.asarray(reconstructed_prices, dtype=float).reshape(-1)
+    if not (point.size == lower.size == upper.size == prices.size):
+        return None
+
+    transform = str((target_info or {}).get("transform", "none")).strip().lower()
+    base_transform = transform.split("(", 1)[0]
+    if base_transform in {"none", "log"}:
+        lower_prices = _reconstruct_prices_from_target(
+            lower, price_history, target_info
+        )
+        upper_prices = _reconstruct_prices_from_target(
+            upper, price_history, target_info
+        )
+        if lower_prices is None or upper_prices is None:
+            return None
+        return lower_prices, upper_prices
+
+    lag = 1
+    if "(k=" in transform:
+        try:
+            lag = max(1, int(transform.rsplit("(k=", 1)[1].rstrip(") ")))
+        except Exception:
+            lag = 1
+
+    if base_transform == "log_return":
+        lower_step = point - lower
+        upper_step = upper - point
+        multiplicative = True
+    elif base_transform in {"return", "pct_change", "pct"}:
+        scale = 100.0 if base_transform == "pct" else 1.0
+        point_factor = 1.0 + point / scale
+        lower_factor = 1.0 + lower / scale
+        upper_factor = 1.0 + upper / scale
+        if np.any(point_factor <= 0) or np.any(lower_factor <= 0) or np.any(upper_factor <= 0):
+            return None
+        lower_step = np.log(point_factor / lower_factor)
+        upper_step = np.log(upper_factor / point_factor)
+        multiplicative = True
+    elif base_transform == "diff":
+        lower_step = point - lower
+        upper_step = upper - point
+        multiplicative = False
+    else:
+        return None
+
+    lower_variance = np.square(np.maximum(lower_step, 0.0))
+    upper_variance = np.square(np.maximum(upper_step, 0.0))
+    for index in range(lag, point.size):
+        lower_variance[index] += lower_variance[index - lag]
+        upper_variance[index] += upper_variance[index - lag]
+    lower_width = np.sqrt(lower_variance)
+    upper_width = np.sqrt(upper_variance)
+    if multiplicative:
+        return prices * np.exp(-lower_width), prices * np.exp(upper_width)
+    return prices - lower_width, prices + upper_width
+
+
 def _inverse_log_return(anchor: float, value: float) -> float:
     """log_return: price = anchor * exp(value)"""
     return anchor * float(np.exp(value))
@@ -1553,18 +1627,22 @@ def forecast_engine(  # noqa: C901
                     )
                 }
             if ci_values is not None and len(ci_values) == 2:
-                lower_prices = _reconstruct_prices_from_target(
-                    np.asarray(ci_values[0], dtype=float),
+                reconstructed_price_ci = _reconstruct_price_intervals_from_target(
+                    np.asarray(forecast_values, dtype=float),
+                    (
+                        np.asarray(ci_values[0], dtype=float),
+                        np.asarray(ci_values[1], dtype=float),
+                    ),
+                    reconstructed_prices,
                     price_anchor_history,
                     target_info,
                 )
-                upper_prices = _reconstruct_prices_from_target(
-                    np.asarray(ci_values[1], dtype=float),
-                    price_anchor_history,
-                    target_info,
-                )
-                if lower_prices is not None and upper_prices is not None:
-                    reconstructed_price_ci = (lower_prices, upper_prices)
+                if target_transform.split("(", 1)[0] in {
+                    "log_return", "return", "pct_change", "pct", "diff"
+                }:
+                    metadata["price_interval_reconstruction"] = (
+                        "independent_step_variance_from_marginal_target_intervals"
+                    )
 
         # Format and return output
         denoise_used = dn_spec_used is not None

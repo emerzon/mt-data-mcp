@@ -105,16 +105,18 @@ Because the best lag is selected by maximum absolute correlation, the interval
 uses a Bonferroni-adjusted per-lag confidence level to provide 95% family-wise
 coverage across all evaluated lags. `best.significant` is true only when that
 adjusted interval excludes zero; the context reports the number of lag tests
-and both confidence levels. The adjusted bounds are exposed as
-`best.ci95_low` and `best.ci95_high`, matching `correlation_matrix`'s fixed-95%
-interval field names.
+and both confidence levels. The adjusted bounds are exposed as `best.ci95_low`
+and `best.ci95_high`. `correlation_matrix` separately reports
+`ci_familywise_low` and `ci_familywise_high`, corrected across all computed
+symbol pairs.
 
 ### `causal_discover_signals`
 
 For each ordered pair of symbols `(cause → effect)`, the tool:
 1. Aligns each pair on that pair's overlapping close-price history
 2. Applies a transform (by default `log_return`) to improve stationarity
-3. Optionally z-scores the series (`normalize=true`)
+3. Optionally z-scores the series for numerical conditioning (`normalize=true`);
+   with the fitted intercept, this does not change the exact Granger statistic
 4. Runs Granger causality tests for lags `1..max_lag`
 5. Selects the **best (lowest raw p-value) lag** per pair using `ssr_ftest`
 6. Applies Bonferroni correction first across the tested lags, then across all
@@ -141,7 +143,7 @@ proof that no predictive relationships exist.
 | `max_lag` | `5` | Maximum lag to test (≥ 1). |
 | `significance` | `0.05` | Family-wise alpha threshold after Bonferroni correction across tested lags and directed pairs. |
 | `transform` | `log_return` | One of: `log_return`, `log_level`, `pct`, `diff`, `level`. |
-| `normalize` | `true` | Z-score each series before testing. |
+| `normalize` | `true` | Z-score each series for numerical conditioning; this is affine-invariant with the fitted intercept. |
 
 ---
 

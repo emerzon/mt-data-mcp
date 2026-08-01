@@ -127,6 +127,8 @@ def test_rank_correlation_pairs_rounds_statistical_estimates() -> None:
     assert row["correlation"] == round(row["correlation"], 6)
     assert row["abs_correlation"] == round(row["abs_correlation"], 6)
     assert len(str(row["correlation"]).split(".")[1]) <= 6
+    assert row["ci_familywise_method"] == "bonferroni_fisher_z"
+    assert row["pair_tests_run"] == 1
 
 
 def test_pair_workflow_related_tools_are_cataloged():
@@ -169,6 +171,21 @@ class TestTransformFrame:
         result = _transform_frame(df, "log_return")
         # Zero prices → NaN in log → dropped
         assert len(result) <= 2
+
+    def test_transform_uses_each_series_true_predecessor(self):
+        frame = pd.DataFrame(
+            {
+                "A": pd.Series([100.0, 110.0, 121.0], index=[0, 2, 4]),
+                "B": pd.Series([50.0, 55.0, 60.5], index=[0, 1, 4]),
+            }
+        )
+
+        result = _transform_frame(frame, "pct")
+
+        assert result.loc[2, "A"] == pytest.approx(0.1)
+        assert result.loc[1, "B"] == pytest.approx(0.1)
+        assert result.loc[4, "A"] == pytest.approx(0.1)
+        assert result.loc[4, "B"] == pytest.approx(0.1)
 
 
 class TestStandardizeFrame:

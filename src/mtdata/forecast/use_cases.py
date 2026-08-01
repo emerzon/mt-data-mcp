@@ -1285,11 +1285,24 @@ def _apply_conformal_intervals_detail(
         "ci_warning",
         "last_price",
         "last_price_source",
+        "last_price_age_seconds",
+        "last_price_stale",
+        "history_policy_ok",
+        "freshness_basis",
+        "stale_after_seconds",
+        "market_status",
+        "market_status_reason",
+        "retrieved_at",
+        "retrieval_time",
         "warnings",
     ):
         value = payload.get(key)
         if value not in (None, "", [], {}):
             out[key] = value
+    if "last_price_age_seconds" in out:
+        out["data_age_seconds"] = out["last_price_age_seconds"]
+    if "last_price_stale" in out:
+        out["data_stale"] = out["last_price_stale"]
     conformal = _conformal_summary(payload.get("conformal"))
     if conformal:
         out["conformal"] = conformal

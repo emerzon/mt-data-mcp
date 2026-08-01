@@ -11,8 +11,8 @@ import pytest
 from mtdata.analytics.engines import (
     _barrier_returns,
     _execution_duration_display,
-    _filtered_historical_returns,
     _execution_percentiles,
+    _filtered_historical_returns,
     _tick_frame,
     analyze_execution_quality,
     analyze_microstructure,
@@ -327,6 +327,13 @@ def test_execution_quality_matches_order_and_computes_markout() -> None:
         "account_currency_per_broker_lot"
     )
     assert result["items"][0]["benchmark_source"] == "arrival_quote"
+    assert result["items"][0]["benchmark_price"] == pytest.approx(1.100059)
+    assert result["items"][0]["fill_time_quote"] == pytest.approx(1.10006)
+    assert result["items"][0]["benchmark_epoch"] == start + 9
+    assert result["items"][0]["execution_shortfall_currency_estimate"] > 0
+    assert result["units"]["execution_shortfall_currency_estimate"] == (
+        "account_currency_positive_is_worse"
+    )
     assert result["items"][0]["order_to_fill_duration_ms"] == 1000.0
     assert result["items"][0]["fill_timing_basis"] == "market_fill_latency"
     assert result["summary"]["market_fill_latency_ms"]["mean"] == 1000.0

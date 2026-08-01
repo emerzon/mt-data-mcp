@@ -552,7 +552,9 @@ def _order_type_label(value: Any, gateway: Any) -> str:
     return "UNKNOWN"
 
 
-def analyze_execution_quality(request: TradeExecutionQualityRequest, gateway: Any) -> Dict[str, Any]:
+def analyze_execution_quality(  # noqa: C901
+    request: TradeExecutionQualityRequest, gateway: Any
+) -> Dict[str, Any]:
     start, end = _window(request.start, request.end, request.minutes_back)
     account_currency = None
     account_info = getattr(gateway, "account_info", None)
@@ -601,16 +603,39 @@ def analyze_execution_quality(request: TradeExecutionQualityRequest, gateway: An
         symbol = str(deal.get("symbol") or "").strip()
         order = order_by_ticket.get(int(deal.get("order") or 0), {})
         fill_epoch = float(deal.get("time_msc") or 0) / 1000.0 or float(deal.get("time") or 0)
+        time_setup_msc = float(order.get("time_setup_msc") or 0.0)
+        if not time_setup_msc and order.get("time_setup"):
+            time_setup_msc = float(order["time_setup"]) * 1000.0
+        setup_epoch = time_setup_msc / 1000.0 if time_setup_msc else None
         qstart = datetime.fromtimestamp(fill_epoch - request.quote_window_seconds, tz=timezone.utc)
         qend = datetime.fromtimestamp(fill_epoch + max(request.markout_seconds) + 5, tz=timezone.utc)
         ticks, _ = _tick_frame(gateway, symbol, qstart, qend, 50_000)
         before = ticks[(ticks["epoch"] <= fill_epoch) & np.isfinite(ticks["mid"])]
+        fill_time_quote = None
+        if len(before):
+            fill_tick = before.iloc[-1]
+            fill_time_quote = float(fill_tick["ask"] if side == "buy" else fill_tick["bid"])
         arrival = None
+        benchmark_epoch = None
         benchmark_source = None
-        if request.benchmark == "arrival_quote" and len(before):
-            latest = before.iloc[-1]
-            arrival = float(latest["ask"] if side == "buy" else latest["bid"])
-            benchmark_source = "arrival_quote"
+        if request.benchmark == "arrival_quote" and setup_epoch is not None:
+            arrival_start = datetime.fromtimestamp(
+                setup_epoch - request.quote_window_seconds,
+                tz=timezone.utc,
+            )
+            arrival_end = datetime.fromtimestamp(setup_epoch, tz=timezone.utc)
+            arrival_ticks, _ = _tick_frame(
+                gateway, symbol, arrival_start, arrival_end, 50_000
+            )
+            arrival_before = arrival_ticks[
+                (arrival_ticks["epoch"] <= setup_epoch)
+                & np.isfinite(arrival_ticks["mid"])
+            ]
+            if len(arrival_before):
+                latest = arrival_before.iloc[-1]
+                arrival = float(latest["ask"] if side == "buy" else latest["bid"])
+                benchmark_epoch = float(latest["epoch"])
+                benchmark_source = "arrival_quote"
         if request.benchmark == "order_price":
             candidate = float(order.get("price_open") or order.get("price_current") or 0.0)
             if candidate > 0:
@@ -631,9 +656,6 @@ def analyze_execution_quality(request: TradeExecutionQualityRequest, gateway: An
         benchmark_sources[str(benchmark_source)] += 1
         sign = 1.0 if side == "buy" else -1.0
         slippage_bps = sign * (fill_price - arrival) / arrival * 10_000.0
-        time_setup_msc = float(order.get("time_setup_msc") or 0.0)
-        if not time_setup_msc and order.get("time_setup"):
-            time_setup_msc = float(order["time_setup"]) * 1000.0
         markouts: Dict[str, Optional[float]] = {}
         for horizon in request.markout_seconds:
             candidates = ticks[(ticks["epoch"] >= fill_epoch + horizon) & (ticks["epoch"] <= fill_epoch + horizon + 5) & np.isfinite(ticks["mid"])]
@@ -669,6 +691,13 @@ def analyze_execution_quality(request: TradeExecutionQualityRequest, gateway: An
             "fill_price": fill_price,
             "benchmark_price": arrival,
             "benchmark_source": benchmark_source,
+            "benchmark_epoch": benchmark_epoch,
+            "benchmark_time": (
+                format_epoch_utc(benchmark_epoch)
+                if benchmark_epoch is not None
+                else None
+            ),
+            "fill_time_quote": fill_time_quote,
             "slippage_bps": slippage_bps,
             "price_improved": slippage_bps < 0,
             "order_to_fill_duration_ms": order_to_fill_duration_ms,
@@ -692,7 +721,7 @@ def analyze_execution_quality(request: TradeExecutionQualityRequest, gateway: An
             action = getattr(gateway, "ORDER_TYPE_BUY", 0) if side == "buy" else getattr(gateway, "ORDER_TYPE_SELL", 1)
             shortfall = gateway.order_calc_profit(action, symbol, volume, arrival, fill_price)
             if shortfall is not None:
-                item["execution_shortfall_currency_estimate"] = float(-shortfall)
+                item["execution_shortfall_currency_estimate"] = float(shortfall)
         except Exception:
             pass
         fills.append(item)
@@ -832,7 +861,7 @@ def analyze_execution_quality(request: TradeExecutionQualityRequest, gateway: An
             "commission": "account_currency",
             "fee": "account_currency",
             "commission_fee_per_lot": "account_currency_per_broker_lot",
-            "execution_shortfall_currency_estimate": "account_currency",
+            "execution_shortfall_currency_estimate": "account_currency_positive_is_worse",
         },
         "warnings": warnings,
     }

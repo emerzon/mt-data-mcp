@@ -1092,11 +1092,21 @@ class TestCorrelationMatrix:
             "symbol1",
             "symbol2",
             "correlation",
-            "ci95_low",
-            "ci95_high",
+            "ci_familywise_low",
+            "ci_familywise_high",
+            "ci_familywise_alpha",
+            "ci_familywise_method",
+            "pair_tests_run",
             "samples",
             "period_start",
             "period_end",
+        }
+        assert result["items"][0]["pair_tests_run"] == 3
+        assert result["context"]["correlation_inference"] == {
+            "family_alpha": 0.05,
+            "family_size": 3,
+            "method": "bonferroni_fisher_z",
+            "scope": "computed_symbol_pairs",
         }
         assert result["items"][0]["samples"] == 60
         assert result["context"]["timezone"] == "UTC"
