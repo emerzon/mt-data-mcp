@@ -435,6 +435,32 @@ class TestModelStoreDataScopeEscaping(unittest.TestCase):
         loaded = self.store.load_bytes(handle.model_id)
         self.assertEqual(loaded, b"multi")
 
+    def test_distinct_path_characters_do_not_collide(self):
+        slash = self.store.save("m", "EUR/USD_H1", "p", b"slash")
+        backslash = self.store.save("m", "EUR\\USD_H1", "p", b"backslash")
+        underscore = self.store.save("m", "EUR_USD_H1", "p", b"underscore")
+
+        self.assertEqual(len({slash.model_id, backslash.model_id, underscore.model_id}), 3)
+        self.assertEqual(self.store.load_bytes(slash.model_id), b"slash")
+        self.assertEqual(self.store.load_bytes(backslash.model_id), b"backslash")
+        self.assertEqual(self.store.load_bytes(underscore.model_id), b"underscore")
+
+    def test_cleanup_retries_staged_tombstone_removal(self):
+        handle = self.store.save("m", "scope", "p", b"data")
+
+        with unittest.mock.patch(
+            "mtdata.forecast.model_store.shutil.rmtree",
+            side_effect=PermissionError("locked"),
+        ):
+            self.assertTrue(self.store.delete(handle.model_id))
+
+        deleted_root = self.store._deleted_root()
+        self.assertTrue(any(deleted_root.iterdir()))
+
+        self.store.cleanup_expired()
+
+        self.assertEqual(list(deleted_root.iterdir()), [])
+
 
 if __name__ == "__main__":
     unittest.main()

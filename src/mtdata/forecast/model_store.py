@@ -49,6 +49,7 @@ import time
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Dict, Iterator, List, Optional
+from urllib.parse import quote
 
 from .interface import TrainedModelHandle
 
@@ -206,7 +207,7 @@ class ModelStore:
     def _model_dir(self, method: str, data_scope: str, params_hash: str) -> Path:
         safe_method = self._validate_path_component(method, name="method")
         safe_scope = self._validate_path_component(
-            str(data_scope).replace("/", "_").replace("\\", "_"),
+            quote(str(data_scope), safe=""),
             name="data_scope",
         )
         safe_hash = self._validate_path_component(params_hash, name="params_hash")
@@ -218,11 +219,23 @@ class ModelStore:
     def _model_id(cls, method: str, data_scope: str, params_hash: str) -> str:
         safe_method = cls._validate_path_component(method, name="method")
         safe_scope = cls._validate_path_component(
-            str(data_scope).replace("/", "_").replace("\\", "_"),
+            quote(str(data_scope), safe=""),
             name="data_scope",
         )
         safe_hash = cls._validate_path_component(params_hash, name="params_hash")
         return f"{safe_method}/{safe_scope}/{safe_hash}"
+
+    def _model_dir_from_id(self, model_id: str) -> Path:
+        parts = str(model_id).split("/")
+        if len(parts) != 3:
+            raise ValueError(f"Invalid model_id format: {model_id}")
+        method, encoded_scope, params_hash = parts
+        safe_method = self._validate_path_component(method, name="method")
+        safe_scope = self._validate_path_component(encoded_scope, name="data_scope")
+        safe_hash = self._validate_path_component(params_hash, name="params_hash")
+        return self._resolve_within_root(
+            self._root / safe_method / safe_scope / safe_hash
+        )
 
     # ------------------------------------------------------------------
     # Public API
@@ -289,12 +302,8 @@ class ModelStore:
         Updates ``last_used`` on successful access.
         Raises ``FileNotFoundError`` if the model does not exist.
         """
-        parts = model_id.split("/")
-        if len(parts) != 3:
-            raise FileNotFoundError(f"Invalid model_id format: {model_id}")
-        method, data_scope, params_hash = parts
         try:
-            model_dir = self._model_dir(method, data_scope, params_hash)
+            model_dir = self._model_dir_from_id(model_id)
         except ValueError as exc:
             raise FileNotFoundError(f"Invalid model_id format: {model_id}") from exc
         artifact_path = model_dir / "model.bin"
@@ -360,12 +369,8 @@ class ModelStore:
 
     def delete(self, model_id: str) -> bool:
         """Delete a model by *model_id*. Returns ``True`` if it existed."""
-        parts = model_id.split("/")
-        if len(parts) != 3:
-            return False
-        method, data_scope, params_hash = parts
         try:
-            model_dir = self._model_dir(method, data_scope, params_hash)
+            model_dir = self._model_dir_from_id(model_id)
         except ValueError:
             return False
         with self._model_dir_lock(model_dir, blocking=True):
@@ -412,6 +417,7 @@ class ModelStore:
 
     def cleanup_expired(self) -> int:
         """Remove all models that have exceeded the TTL. Returns count removed."""
+        self._sweep_deleted()
         if self._ttl <= 0:
             return 0
         removed = 0
@@ -568,6 +574,29 @@ class ModelStore:
 
     def _deleted_root(self) -> Path:
         return self._resolve_within_root(self._root / ".deleted")
+
+    def _sweep_deleted(self) -> int:
+        """Retry physical removal of model directories staged as tombstones."""
+        deleted_root = self._deleted_root()
+        if not deleted_root.is_dir():
+            return 0
+        removed = 0
+        for tombstone in list(deleted_root.iterdir()):
+            try:
+                if tombstone.is_dir():
+                    shutil.rmtree(tombstone)
+                else:
+                    tombstone.unlink()
+                removed += 1
+            except FileNotFoundError:
+                continue
+            except Exception as exc:
+                logger.warning(
+                    "Failed to remove staged model tombstone %s: %s",
+                    tombstone,
+                    exc,
+                )
+        return removed
 
     def _lock_path_for_model_dir(self, model_dir: Path) -> Path:
         safe_model_dir = self._resolve_within_root(model_dir)
