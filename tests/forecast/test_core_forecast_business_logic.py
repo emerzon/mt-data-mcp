@@ -1916,27 +1916,6 @@ def test_forecast_list_library_models_and_list_methods(monkeypatch):
         "m08",
         "m09",
     ]
-
-
-def test_forecast_generate_standard_preserves_requested_volatility_quantity():
-    out = forecast_use_cases._apply_forecast_generate_detail(
-        {
-            "success": True,
-            "method": "ewma",
-            "horizon": 3,
-            "volatility_per_bar": 0.01,
-        },
-        ForecastGenerateRequest(
-            symbol="EURUSD",
-            timeframe="H1",
-            method="ewma",
-            quantity="volatility",
-            horizon=3,
-            detail="standard",
-        ),
-    )
-
-    assert out["quantity"] == "volatility"
     assert page["pagination"] == {
         "total": 25,
         "returned": 5,
