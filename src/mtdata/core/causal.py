@@ -2766,8 +2766,8 @@ def cross_correlation(  # noqa: C901
             {
                 "leader": symbol_list[0] if int(best["lag"]) > 0 else symbol_list[1] if int(best["lag"]) < 0 else None,
                 "follower": symbol_list[1] if int(best["lag"]) > 0 else symbol_list[0] if int(best["lag"]) < 0 else None,
-                "ci_low": round(ci_low, 6) if ci_low is not None else None,
-                "ci_high": round(ci_high, 6) if ci_high is not None else None,
+                "ci95_low": round(ci_low, 6) if ci_low is not None else None,
+                "ci95_high": round(ci_high, 6) if ci_high is not None else None,
                 "significant": bool(ci_low is not None and ci_high is not None and (ci_low > 0.0 or ci_high < 0.0)),
             }
         )

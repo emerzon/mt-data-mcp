@@ -71,6 +71,10 @@ def test_cross_correlation_adjusts_selected_lag_interval(monkeypatch):
 
     assert result["success"] is True
     assert observed["confidence"] == 0.99
+    assert result["best"]["ci95_low"] == -0.01
+    assert result["best"]["ci95_high"] == 0.01
+    assert "ci_low" not in result["best"]
+    assert "ci_high" not in result["best"]
     assert result["best"]["significant"] is False
 
 

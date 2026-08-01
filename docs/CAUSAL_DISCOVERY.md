@@ -105,7 +105,9 @@ Because the best lag is selected by maximum absolute correlation, the interval
 uses a Bonferroni-adjusted per-lag confidence level to provide 95% family-wise
 coverage across all evaluated lags. `best.significant` is true only when that
 adjusted interval excludes zero; the context reports the number of lag tests
-and both confidence levels.
+and both confidence levels. The adjusted bounds are exposed as
+`best.ci95_low` and `best.ci95_high`, matching `correlation_matrix`'s fixed-95%
+interval field names.
 
 ### `causal_discover_signals`
 
