@@ -32,10 +32,10 @@ Timeline: [----history----][forecast horizon]
 
 **Parameters:**
 - **steps**: Number of anchor points to test
-- **spacing**: Bars between anchor points
+- **spacing**: Bars between anchor points; when `steps > 1`, this must be at least `horizon`
 - **horizon**: How far ahead each forecast predicts
 
-**Example:** `steps=20, spacing=10, horizon=12` creates 20 test points, each 10 bars apart, each forecasting 12 bars ahead.
+**Example:** `steps=20, spacing=12, horizon=12` creates 20 test points, each 12 bars apart, each forecasting 12 bars ahead.
 
 ---
 
@@ -45,7 +45,7 @@ Timeline: [----history----][forecast horizon]
 
 ```bash
 mtdata-cli forecast_backtest_run EURUSD --timeframe H1 --horizon 12 \
-  --methods "theta sf_autoarima analog" --steps 20 --spacing 10
+  --methods "theta sf_autoarima analog" --steps 20 --spacing 12
 ```
 
 ### Single Method with Custom Parameters
@@ -78,7 +78,7 @@ mtdata-cli forecast_backtest_run <SYMBOL> [OPTIONS]
 | `--timeframe` | H1 | Candle timeframe |
 | `--horizon` | 12 | Bars to forecast at each anchor |
 | `--steps` | 5 | Number of test anchors |
-| `--spacing` | 20 | Bars between anchors |
+| `--spacing` | 20 | Bars between anchors; must be `>= --horizon` when `--steps > 1` |
 | `--methods` | auto | Space or comma-separated method names |
 
 ### Method Parameters
@@ -300,7 +300,7 @@ Automatically find optimal parameters for a forecasting method:
 
 ```bash
 mtdata-cli forecast_tune_genetic EURUSD --timeframe H1 --method theta \
-  --horizon 12 --steps 20 --spacing 10 \
+  --horizon 12 --steps 20 --spacing 12 \
   --metric avg_rmse --mode min \
   --population 20 --generations 10
 ```
@@ -316,7 +316,7 @@ mtdata-cli forecast_tune_genetic EURUSD --timeframe H1 --method theta \
 | `--generations` | 10 | Number of generations |
 | `--crossover-rate` | 0.6 | Probability of crossover |
 | `--mutation-rate` | 0.3 | Probability of mutation |
-| `--seed` | None | Random seed for reproducibility |
+| `--seed` | 42 | Random seed for reproducibility |
 
 ### Available Metrics
 
@@ -357,7 +357,7 @@ Each method has sensible defaults. Examples:
 
 | Method | Parameters Searched |
 |--------|-------------------|
-| `theta` | alpha (0.05-0.5) |
+| `theta` | seasonality (8-72) |
 | `arima` | p (0-3), d (0-2), q (0-3) |
 | `fourier_ols` | m (8-96), K (1-6), trend (true/false) |
 | `sf_autoarima` | seasonality, stepwise, d, D |
@@ -385,16 +385,16 @@ mtdata-cli forecast_backtest_run EURUSD --timeframe M5 --horizon 6 \
 ### Example 2: Optimize Theta for Swing Trading
 
 ```bash
-# Step 1: Find optimal alpha
+# Step 1: Find optimal seasonality
 mtdata-cli forecast_tune_genetic EURUSD --timeframe H4 --method theta \
-  --horizon 48 --steps 30 --spacing 24 \
+  --horizon 48 --steps 30 --spacing 48 \
   --metric sharpe_ratio --mode max \
   --population 20 --generations 15
 
 # Step 2: Backtest with optimal params
 mtdata-cli forecast_backtest_run EURUSD --timeframe H4 --horizon 48 \
-  --methods theta --params "alpha=0.25" \
-  --steps 50 --slippage-bps 2
+  --methods theta --params "seasonality=48" \
+  --steps 50 --spacing 48 --slippage-bps 2
 ```
 
 ### Example 3: Compare Volatility Methods
@@ -477,7 +477,7 @@ mtdata-cli forecast_backtest_run EURUSD --horizon 12 --methods theta \
 1. **Reduce steps for initial screening:**
    ```bash
    --steps 10 --spacing 30  # Quick check
-   --steps 50 --spacing 10  # Full validation
+   --steps 50 --spacing 12  # Full validation
    ```
 
 2. **Use fast methods first:**

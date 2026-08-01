@@ -204,7 +204,7 @@ mtdata-cli forecast_generate EURUSD --timeframe H1 --horizon 12 \
 | `top_k` | 20 | Number of similar patterns to use |
 | `metric` | euclidean | Distance metric |
 | `scale` | zscore | Normalization: zscore, minmax, none |
-| `refine_metric` | none | Refinement: dtw, softdtw, affine, ncc |
+| `refine_metric` | dtw | Refinement: dtw, softdtw, affine, ncc, none |
 | `search_engine` | ckdtree | Search algorithm |
 
 ### Scaling Options

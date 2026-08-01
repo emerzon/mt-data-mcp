@@ -6,13 +6,14 @@ React + Vite + Tailwind single-page app for chart visualization and forecast int
 
 | File | Lines | Purpose |
 |------|-------|---------|
-| `src/App.tsx` | 547 | Main app component — symbol selector, chart, toolbar, panels |
+| `src/App.tsx` | 108 | Main app component — symbol selector, chart, toolbar, panels |
 | `src/main.tsx` | — | React entry point (renders App) |
 | `src/types.ts` | — | Shared TypeScript type definitions |
 | `src/styles.css` | — | Tailwind base styles |
 | **Components** | | |
-| `src/components/ChartToolbar.tsx` | 579 | Timeframe, indicators, denoise controls |
-| `src/components/ForecastPanel.tsx` | 553 | Forecast configuration and display |
+| `src/components/ApiAuthControl.tsx` | — | API auth token control |
+| `src/components/ChartToolbar.tsx` | 147 | Timeframe, indicators, denoise controls |
+| `src/components/ForecastPanel.tsx` | 540 | Forecast configuration and display |
 | `src/components/DenoiseModal.tsx` | — | Denoise filter selection modal |
 | `src/components/OHLCChart.tsx` | — | OHLC candlestick chart (lightweight-charts) |
 | **Data Layer** | | |

@@ -106,9 +106,9 @@ mtdata-cli forecast_conformal_intervals EURUSD --timeframe H1 --method fourier_o
 
 ```bash
 mtdata-cli forecast_barrier_optimize EURUSD --timeframe H1 --horizon 12 \
-  --method hmm_mc --mode pct --grid-style volatility --refine true --refine-radius 0.35 \
-  --tp-min 0.25 --tp-max 1.5 --tp-steps 7 --sl-min 0.25 --sl-max 2.5 --sl-steps 9 \
-  --params "n_sims=5000 seed=7" --top-k 5 --return-grid false --json
+  --method hmm_mc --mode pct --grid-style volatility \
+  --params "n_sims=5000 seed=7 refine=true refine_radius=0.35 tp_min=0.25 tp_max=1.5 tp_steps=7 sl_min=0.25 sl_max=2.5 sl_steps=9 return_grid=false" \
+  --top-k 5 --json
 ```
 
 - Choose a combo by objective (edge/kelly/ev/ev_cond/ev_per_bar/prob_resolve/profit_factor/min_loss_prob/utility) subject to constraints:

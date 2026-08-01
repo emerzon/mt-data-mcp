@@ -127,7 +127,7 @@ EWMA (fast default):
 
 ```bash
 mtdata-cli forecast_volatility_estimate EURUSD --timeframe H1 --horizon 12 \
-  --method ewma --params "lambda=0.94" --json
+  --method ewma --params "lambda_=0.94" --json
 ```
 
 HAR-RV (uses intraday realized volatility):
@@ -153,9 +153,7 @@ Barrier optimization (search a TP/SL grid):
 
 ```bash
 mtdata-cli forecast_barrier_optimize EURUSD --timeframe H1 --horizon 12 \
-  --method hmm_mc --mode pct --grid-style volatility --refine true \
-  --tp-min 0.25 --tp-max 1.5 --tp-steps 7 \
-  --sl-min 0.25 --sl-max 2.5 --sl-steps 9 \
+  --method hmm_mc --mode pct --preset volatility --search-profile medium \
   --params "n_sims=5000 seed=7" --json
 ```
 

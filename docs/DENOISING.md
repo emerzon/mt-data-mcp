@@ -39,10 +39,10 @@ mtdata-cli data_fetch_candles EURUSD --timeframe H1 --limit 200 \
 
 ## Dependencies
 
-Most denoising methods are available with the base install. A few require extras:
+The default package declares the denoising libraries used by the method catalog:
 
-- `statsmodels`: used by HP, STL, and related filters — install separately if missing
-- `PyWavelets`, `vmdpy`, `EMD-signal`: bundled as core dependencies, so wavelet, VMD, and EMD-family methods work out of the box
+- `statsmodels`: used by LOESS and STL
+- `PyWavelets`, `vmdpy`, `EMD-signal`: used by wavelet, VMD, and EMD-family methods
 
 Tip: `GET /api/denoise/methods` (see [WEB_API.md](WEB_API.md)) reports availability and required packages for the current environment.
 
@@ -124,13 +124,13 @@ Isolate the slow-moving trend component.
 
 | Method | Description | Parameters |
 |--------|-------------|------------|
-| `hp` | Hodrick-Prescott filter | `lambda` |
-| `l1_trend` | L1 trend filter | `lambda` |
-| `tv` | Total variation denoising | `lambda` |
+| `hp` | Hodrick-Prescott filter | `lamb` |
+| `l1_trend` | L1 trend filter | `lamb`, `n_iter`, `rho` |
+| `tv` | Total variation denoising | `weight`, `n_iter`, `tol` |
 
 **Example:**
 ```bash
---denoise hp --denoise-params "lambda=1600,causality=zero_phase"
+--denoise hp --denoise-params "lamb=1600,causality=zero_phase"
 ```
 
 ### Adaptive Filters
@@ -188,7 +188,7 @@ Split into components and reconstruct smoother parts.
 |--------|-------------|------------|
 | `gaussian` | Gaussian kernel smoothing | `sigma` |
 | `bilateral` | Bilateral filter (edge-preserving) | `sigma_s`, `sigma_r` |
-| `whittaker` | Whittaker smoother | `lambda` |
+| `whittaker` | Whittaker smoother | `lamb`, `order` |
 | `beta` | Robust beta smoother | `alpha`, `beta` |
 
 ---
@@ -201,8 +201,8 @@ Split into components and reconstruct smoother parts.
 | `when` | `pre_ti` or `post_ti` | `pre_ti` |
 | `causality` | `causal` or explicitly opted-in `zero_phase` | `causal` |
 | `keep_original` | Keep original column (adds `_dn` suffix) | `false` |
-| `alpha` | Smoothing factor (EMA) | 0.1 |
-| `window` | Window size (filters) | 5 |
+| `alpha` | Optional smoothing factor (EMA; overrides `span`) | — |
+| `window` | Window size (filters) | method-specific |
 
 ---
 

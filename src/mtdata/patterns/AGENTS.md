@@ -1,23 +1,28 @@
 # patterns/ — Pattern Detection
 
-Chart pattern and Elliott wave detection. 12 files across `patterns/` and `classic_impl/`.
+Chart pattern and Elliott wave detection. 15 files across `patterns/` and `classic_impl/`.
 
 ## PUBLIC API
 
 Exported from `__init__.py`:
 - `detect_classic_patterns(df, config)` → `ClassicPatternResult`
 - `detect_elliott_waves(df, config)` → `ElliottWaveResult`
-- Config classes: `ClassicDetectorConfig`, `ElliottWaveConfig`
+- `detect_fractal_patterns(df, config)` → `FractalPatternResult`
+- `detect_harmonic_patterns(df, config)` → `HarmonicPatternResult`
+- Config classes: `ClassicDetectorConfig`, `ElliottWaveConfig`, `FractalDetectorConfig`, `HarmonicDetectorConfig`
 
 ## FILE MAP
 
 | File | Lines | Purpose |
 |------|-------|---------|
-| `__init__.py` | 11 | Public API exports (see above) |
-| `classic.py` | — | Facade — delegates to `classic_impl/` algorithms |
-| `elliott.py` | 757 | Standalone Elliott wave detection |
-| `candlestick.py` | — | Candlestick pattern detection |
-| `common.py` | — | Shared pattern types and helpers |
+| `__init__.py` | 31 | Public API exports (see above) |
+| `classic.py` | 255 | Facade — delegates to `classic_impl/` algorithms |
+| `elliott.py` | 2690 | Standalone Elliott wave detection |
+| `elliott_adaptation.py` | — | Elliott adaptation helpers |
+| `candlestick.py` | 1094 | Candlestick pattern detection |
+| `fractal.py` | — | Fractal pattern detection |
+| `harmonic.py` | — | Harmonic pattern detection |
+| `common.py` | 449 | Shared pattern types and helpers |
 
 ### classic_impl/ — Pattern Algorithms
 
@@ -36,4 +41,4 @@ Exported from `__init__.py`:
 - `classic.py` is the ONLY entry point for classic patterns — never call `classic_impl/` directly.
 - Optional dependency `stock-pattern` (external git dep, `patterns-ext` group) adds additional detection.
 - Do NOT confuse with `utils/patterns.py` — that file has shared helpers, this package has detectors.
-- Consumed by `core/patterns.py` (MCP tools) and `core/patterns_support.py` (896 lines of helpers).
+- Consumed by `core/patterns.py` (MCP tools) and `core/patterns_support.py` (2625 lines of helpers).

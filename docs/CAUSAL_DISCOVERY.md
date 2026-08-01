@@ -135,7 +135,7 @@ proof that no predictive relationships exist.
 
 | Parameter | Default | Description |
 |----------|---------|-------------|
-| `symbols` | (required) | Comma-separated MT5 symbols. If you pass **one** symbol, mtdata expands to other visible symbols in the same MT5 group. |
+| `symbols` / `--group` | one required | Comma-separated MT5 symbols, or an explicit MT5 group path. If you pass **one** symbol, mtdata expands to other visible symbols in the same MT5 group. |
 | `timeframe` | `H1` | Bar timeframe (`M15`, `H1`, etc.). |
 | `window_bars` | `500` | Maximum overlapping transformed samples analyzed per pair. |
 | `limit` | all rows | Optional maximum number of ranked result rows returned. |

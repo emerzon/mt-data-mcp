@@ -1,6 +1,6 @@
 # forecast/ — Forecasting Engine
 
-Price forecasting pipeline: preprocessing → method selection → execution → post-processing. 35 files across `forecast/` and `forecast/methods/`.
+Price forecasting pipeline: preprocessing → method selection → execution → post-processing. 43 files across `forecast/` and `forecast/methods/`.
 
 ## FILE MAP
 
@@ -8,13 +8,13 @@ Price forecasting pipeline: preprocessing → method selection → execution →
 
 | File | Lines | Purpose |
 |------|-------|---------|
-| `forecast_engine.py` | 735 | Main orchestrator: prep → run → post-process |
-| `forecast_preprocessing.py` | 641 | Data cleaning, normalization, feature extraction |
-| `forecast_validation.py` | — | Input validation and sanity checks |
-| `forecast_methods.py` | — | Method dispatch helpers |
-| `forecast.py` | — | High-level forecast convenience functions |
-| `use_cases.py` | 856 | Forecast use case orchestration |
-| `requests.py` | — | Forecast request models |
+| `forecast_engine.py` | 1867 | Main orchestrator: prep → run → post-process |
+| `forecast_preprocessing.py` | 673 | Data cleaning, normalization, feature extraction |
+| `forecast_validation.py` | 541 | Input validation and sanity checks |
+| `forecast_methods.py` | 281 | Method dispatch helpers |
+| `forecast.py` | 164 | High-level forecast convenience functions |
+| `use_cases.py` | 3406 | Forecast use case orchestration |
+| `requests.py` | 408 | Forecast request models |
 
 ### Method Registry
 
@@ -22,26 +22,25 @@ Price forecasting pipeline: preprocessing → method selection → execution →
 |------|---------|
 | `interface.py` | `ForecastMethod` ABC + `ForecastResult` dataclass |
 | `forecast_registry.py` | Maps method names → implementations |
-| `registry.py` | Additional registry helpers |
+| `capabilities.py` | Forecast library/model capability helpers |
 
 ### Barrier Analysis
 
 | File | Lines | Purpose |
 |------|-------|---------|
-| `barriers.py` | — | Barrier tool entry points |
-| `barriers_shared.py` | 501 | Shared barrier types and helpers |
-| `barriers_probabilities.py` | — | TP/SL hit probability calculation |
-| `barriers_optimization.py` | 1504 | Barrier level optimization |
+| `barriers_shared.py` | 869 | Shared barrier types and helpers |
+| `barriers_probabilities.py` | 847 | TP/SL hit probability calculation |
+| `barriers_optimization.py` | 3785 | Barrier level optimization |
 
 ### Specialized Engines
 
 | File | Lines | Purpose |
 |------|-------|---------|
-| `volatility.py` | 1258 | Volatility estimation (GARCH, realized, etc.) |
-| `monte_carlo.py` | 720 | Monte Carlo price simulation |
-| `backtest.py` | — | Rolling forecast backtesting |
-| `tune.py` | 829 | Hyperparameter tuning (Optuna) |
-| `quantlib_tools.py` | — | QuantLib barrier pricing, Heston calibration |
+| `volatility.py` | 1633 | Volatility estimation (GARCH, realized, etc.) |
+| `monte_carlo.py` | 920 | Monte Carlo price simulation |
+| `backtest.py` | 2201 | Rolling forecast backtesting |
+| `tune.py` | 1351 | Hyperparameter tuning (Optuna) |
+| `quantlib_tools.py` | 617 | QuantLib barrier pricing, Heston calibration |
 
 ### Shared
 
@@ -63,7 +62,7 @@ Price forecasting pipeline: preprocessing → method selection → execution →
 | `sktime.py` | — | sktime model wrappers | forecast-classical |
 | `mlforecast.py` | — | LightGBM via mlforecast | forecast-classical |
 | `neural.py` | — | Neural network models | forecast-foundation |
-| `pretrained.py` | 817 | Chronos, TimesFM | forecast-foundation |
+| `pretrained.py` | 1277 | Chronos, TimesFM | forecast-foundation |
 | `pretrained_helpers.py` | — | Pretrained model utilities | forecast-foundation |
 | `analog.py` | — | Analog/pattern-matching forecast | core |
 | `monte_carlo.py` | — | MC-specific forecast method | core |

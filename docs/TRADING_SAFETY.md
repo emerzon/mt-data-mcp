@@ -59,7 +59,7 @@ Requires `symbol`, `volume`, and `order_type`.
 
 | Flag | Default | Notes |
 |------|---------|-------|
-| `--symbol` | — | Broker symbol |
+| `symbol` | — | Broker symbol |
 | `--volume` | — | Lots (validated against broker min/max/step) |
 | `--order-type` | — | See [Order types](#order-types) |
 | `--price` | — | Entry for pending orders; **omit for market orders** |
@@ -106,7 +106,7 @@ Modifies an existing order/position by ticket.
 
 | Flag | Default | Notes |
 |------|---------|-------|
-| `--ticket` | — | **Required** |
+| `ticket` | — | **Required** |
 | `--price` | — | New pending-order price |
 | `--stop-loss` / `--sl` | — | New stop-loss |
 | `--take-profit` / `--tp` | — | New take-profit |

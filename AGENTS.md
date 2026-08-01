@@ -12,7 +12,7 @@ MetaTrader 5 research/automation toolkit exposing 91 MCP tools (plus a gated `ma
 ```
 mtdata/
 ├── src/mtdata/
-│   ├── bootstrap/      # Runtime init, settings, tool loading (4 files)
+│   ├── bootstrap/      # Runtime init, settings, tool loading (5 files)
 │   ├── core/           # MCP tools, CLI, server, web API, all API-facing logic
 │   │   ├── cli/        # Dynamic CLI (argparse) with parsing/ and runtime/ subpackages
 │   │   ├── data/       # data_fetch_candles / data_fetch_ticks / wait_event tools
@@ -32,8 +32,8 @@ mtdata/
 │       └── denoise/    # Denoising package with filters/ subdirectory
 ├── tests/              # 158+ test files, hybrid pytest/unittest.TestCase
 ├── webui/              # React + Vite + Tailwind frontend
-│   └── src/            # App.tsx, 4 components, hooks, API client, chart lib (16 .ts/.tsx files)
-├── docs/               # User-facing documentation (26 files including forecast/ subdirectory)
+│   └── src/            # App.tsx, 5 components, hooks, API client, chart lib (17 .ts/.tsx files)
+├── docs/               # User-facing documentation (36 files including forecast/ subdirectory)
 ├── scripts/            # MT5 time offset detection, backtest plotting
 └── prompts/            # Prompt templates
 ```
@@ -50,7 +50,7 @@ mtdata/
 | Modify pattern detection | `src/mtdata/patterns/` | `classic.py` delegates to `classic_impl/` |
 | Change indicators | `src/mtdata/utils/indicators.py` | 100+ technical indicators |
 | Edit denoising filters | `src/mtdata/utils/denoise/` | Package with filters/ subdirectory |
-| Modify web UI | `webui/src/` | App.tsx is main, 4 components, features/, hooks/, lib/ |
+| Modify web UI | `webui/src/` | App.tsx is main, 5 components, features/, hooks/, lib/ |
 | Server/transport config | `src/mtdata/core/server.py` | SSE, stdio, streamable-HTTP modes |
 | Web API routes | `src/mtdata/core/web_api.py` (+ `web_api_runtime.py`, `web_api_handlers.py`, `web_api_models.py`) | Routes mounted under both `/api` and `/api/v1` |
 | CLI changes | `src/mtdata/core/cli/` | Package with `parsing/`, `runtime/`, and `formatting/` subpackages for CLI helpers |

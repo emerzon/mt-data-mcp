@@ -485,7 +485,7 @@ does not combine statistics from different member-specific optima.
 | `medium` (default) | 4,000 | 63 | 7 × 9 | off |
 | `long` | 10,000 | 600 | 41 × 51 | on |
 
-Use `--fast-defaults true` as a shortcut for the `fast` profile. Explicit `--n-sims`, `--tp-steps`, etc. override the profile values.
+Use `--search-profile fast` for the fast profile. Explicit `params` values such as `n_sims` and `tp_steps` override the profile values.
 
 **Grid Styles**:
 
@@ -503,8 +503,7 @@ Total combinations: tp_steps × sl_steps
 mtdata-cli forecast_barrier_optimize \
   EURUSD --timeframe H1 --horizon 12 \
   --method hmm_mc --mode pct \
-  --tp-min 0.25 --tp-max 1.5 --tp-steps 7 \
-  --sl-min 0.25 --sl-max 2.5 --sl-steps 9
+  --params "tp_min=0.25 tp_max=1.5 tp_steps=7 sl_min=0.25 sl_max=2.5 sl_steps=9"
 ```
 
 ---
@@ -555,8 +554,7 @@ For each SL in [sl_min, sl_max]:
 mtdata-cli forecast_barrier_optimize \
   EURUSD --timeframe H1 --horizon 12 \
   --method hmm_mc --mode pct --grid-style ratio \
-  --ratio_min 1.5 --ratio_max 3.0 --ratio_steps 5 \
-  --sl-min 0.3 --sl-max 1.0 --sl-steps 5
+  --params "ratio_min=1.5 ratio_max=3.0 ratio_steps=5 sl_min=0.3 sl_max=1.0 sl_steps=5"
 ```
 
 ---
@@ -701,9 +699,7 @@ valued at the target, matching a resting limit-order premise. The result adds
 mtdata-cli forecast_barrier_optimize \
   EURUSD --timeframe H1 --horizon 12 \
   --method hmm_mc --mode pct \
-  --tp-min 0.25 --tp-max 1.5 --tp-steps 5 \
-  --sl-min 0.25 --sl-max 2.5 --sl-steps 5 \
-  --refine true --refine_radius 0.35 --refine_steps 7
+  --params "tp_min=0.25 tp_max=1.5 tp_steps=5 sl_min=0.25 sl_max=2.5 sl_steps=5 refine=true refine_radius=0.35 refine_steps=7"
 ```
 
 ---
@@ -723,9 +719,7 @@ Filter candidates before ranking:
 mtdata-cli forecast_barrier_optimize \
   EURUSD --timeframe H1 --horizon 12 \
   --method hmm_mc --mode pct \
-  --tp-min 0.5 --tp-max 2.0 --tp-steps 5 \
-  --sl-min 0.5 --sl-max 2.0 --sl-steps 5 \
-  --min_prob_win 0.55 --max_prob_no_hit 0.15 --max_median_time 8
+  --params "tp_min=0.5 tp_max=2.0 tp_steps=5 sl_min=0.5 sl_max=2.0 sl_steps=5 min_prob_win=0.55 max_prob_no_hit=0.15 max_median_time=8"
 ```
 
 ---
@@ -904,7 +898,7 @@ mtdata-cli forecast_barrier_optimize \
   --method mc_gbm_bb --mode pct --grid-style preset \
   --preset scalp \
   --objective kelly_cond \
-  --refine true --refine_radius 0.25
+  --params "refine=true refine_radius=0.25"
 ```
 
 **Interpretation**:
@@ -929,8 +923,8 @@ mtdata-cli forecast_barrier_optimize \
 mtdata-cli forecast_barrier_optimize \
   XAUUSD --timeframe H4 --horizon 60 \
   --method hmm_mc --mode pct --grid-style volatility \
-  --params "vol_window=300 vol_min_mult=0.8 vol_max_mult=3.0" \
-  --objective edge --min_prob_win 0.5
+  --params "vol_window=300 vol_min_mult=0.8 vol_max_mult=3.0 min_prob_win=0.5" \
+  --objective edge
 ```
 
 **Interpretation**:
@@ -955,9 +949,7 @@ mtdata-cli forecast_barrier_optimize \
 mtdata-cli forecast_barrier_optimize \
   AAPL --timeframe D1 --horizon 5 \
   --method jump_diffusion --mode pct \
-  --tp-min 3.0 --tp-max 10.0 --tp-steps 5 \
-  --sl-min 2.0 --sl-max 6.0 --sl-steps 5 \
-  --params "jump_lambda=0.3" \
+  --params "jump_lambda=0.3 tp_min=3.0 tp_max=10.0 tp_steps=5 sl_min=2.0 sl_max=6.0 sl_steps=5" \
   --objective ev
 ```
 
@@ -983,10 +975,8 @@ mtdata-cli forecast_barrier_optimize \
 mtdata-cli forecast_barrier_optimize \
   EURUSD --timeframe H1 --horizon 12 \
   --method bootstrap --mode pct \
-  --tp-min 0.2 --tp-max 0.6 --tp-steps 5 \
-  --sl-min 0.2 --sl-max 0.6 --sl-steps 5 \
-  --objective prob_resolve \
-  --max_prob_no_hit 0.3
+  --params "tp_min=0.2 tp_max=0.6 tp_steps=5 sl_min=0.2 sl_max=0.6 sl_steps=5 max_prob_no_hit=0.3" \
+  --objective prob_resolve
 ```
 
 **Interpretation**:
@@ -1012,7 +1002,7 @@ for pair in EURUSD GBPUSD USDJPY AUDUSD NZDUSD USDCAD USDCHF; do
   mtdata-cli forecast_barrier_optimize \
     $pair --timeframe H1 --horizon 12 \
     --method auto --mode pct --grid-style volatility \
-    --objective edge --top_k 1
+    --objective edge --top-k 1
 done
 ```
 
@@ -1134,7 +1124,7 @@ mtdata-cli forecast_barrier_prob EURUSD --timeframe H1 --horizon 10 \
 **Solution**:
 ```bash
 # Add constraint
---max_prob_no_hit 0.2
+--params "max_prob_no_hit=0.2"
 
 # Or optimize for resolve probability
 --objective prob_resolve
@@ -1324,7 +1314,7 @@ mtdata-cli forecast_barrier_prob \
 mtdata-cli forecast_barrier_optimize \
   EURUSD --timeframe H1 --horizon 12 \
   --method hmm_mc --mode pct --grid-style volatility \
-  --refine true --objective edge
+  --params "refine=true" --objective edge
 ```
 
 **Closed-form check**:

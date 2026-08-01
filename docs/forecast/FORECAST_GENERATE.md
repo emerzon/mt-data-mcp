@@ -52,7 +52,7 @@ forecast[12]{time,value}:
 ### Uncertainty
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| `--ci-alpha` | not requested | Request a confidence interval (0.05 = 95% CI) |
+| `--ci-alpha` | 0.05 | Confidence interval alpha (0.05 = 95% CI); use `null` in API payloads to omit intervals |
 
 ### Pipeline
 | Parameter | Description |
@@ -288,8 +288,8 @@ mtdata-cli forecast_generate EURUSD --timeframe H1 --horizon 12 \
 | `forecast` | Compact rows for forecast points; each row uses `time` and `value` |
 | `forecast_price` | Predicted price values |
 | `forecast_return` | Predicted return values when `quantity=return` |
-| `lower` | Lower confidence bound (if `--ci-alpha`) |
-| `upper` | Upper confidence bound (if `--ci-alpha`) |
+| `lower_price` | Lower confidence bound for price forecasts (if available) |
+| `upper_price` | Upper confidence bound for price forecasts (if available) |
 | `trend` | Detected trend direction (if available) |
 | `method` | Method used |
 | `params_used` | Actual parameters applied |

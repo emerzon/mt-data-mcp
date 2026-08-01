@@ -16,7 +16,7 @@ Intervals from the model’s assumptions (for example normal errors).
 **Limitation:** Markets often have fat tails and regime shifts, so these bands can be **too narrow**.
 
 ### Conformal intervals
-Bands calibrated from **historical forecast errors** — empirical coverage without strong distributional assumptions.
+Bands calibrated from **historical forecast errors** — empirical residual-quantile coverage without strong distributional assumptions.
 
 **Advantage:** More realistic bounds based on actual performance.
 
@@ -53,7 +53,7 @@ mtdata-cli forecast_generate EURUSD --timeframe H1 --horizon 12 \
 
 ## Conformal Intervals (`forecast_conformal_intervals`)
 
-Conformal prediction calibrates intervals from rolling backtest residuals, making no distributional assumptions.
+Residual-quantile calibration builds intervals from rolling backtest residuals, making no distributional assumptions.
 
 ### How It Works
 1. Run a rolling-origin backtest on historical data
@@ -85,13 +85,15 @@ mtdata-cli forecast_conformal_intervals EURUSD --timeframe H1 \
   "forecast": [1.1755, 1.1756, ...],
   "lower_price": [1.1740, 1.1738, ...],
   "upper_price": [1.1770, 1.1774, ...],
-  "conformal_residual_quantiles": [0.0005, 0.0008, ...]
+  "conformal": {
+    "per_step_q": [0.0005, 0.0008, ...]
+  }
 }
 ```
 
 **Interpretation:**
 - `lower_price` / `upper_price`: Empirically calibrated bounds
-- With the default alpha, the empirical target coverage is 95%. This is a calibration target, not a guarantee.
+- With the default alpha, the empirical target coverage is 95%. This is a calibration target, not a finite-sample guarantee.
 
 ### When to Use
 - When you don't trust model-based intervals

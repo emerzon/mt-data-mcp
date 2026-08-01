@@ -94,8 +94,6 @@ Models volatility clustering—the tendency for high-volatility periods to follo
 | `sarima` | Seasonal ARIMA on volatility proxy |
 | `ets` | Exponential smoothing state-space |
 | `theta` | Theta method |
-| `nhits` | Neural Hierarchical Interpolation (requires neuralforecast) |
-| `mlf_rf` | Random Forest via MLForecast |
 | `ensemble` | Ensemble of fast estimators |
 
 **GARCH Example:**

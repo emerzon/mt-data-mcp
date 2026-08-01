@@ -1,6 +1,6 @@
 # Technical indicators
 
-Turn raw OHLCV into **trend, momentum, volatility, and volume** context. mtdata ships **100+** indicators you can attach when fetching candles or explore via the catalog tools.
+Turn raw OHLCV into **trend, momentum, volatility, and volume** context. mtdata ships **194** indicators you can attach when fetching candles or explore via the catalog tools.
 
 Indicators are decision support — combine them with structure, volatility, and risk tools rather than treating any single reading as a trade by itself.
 
@@ -58,7 +58,7 @@ Column naming convention: `INDICATOR_PARAM1_PARAM2`
 
 ## Indicator Categories
 
-> The tables below highlight commonly used indicators. The engine exposes **~190 indicators** discovered dynamically from `pandas_ta` at runtime, so the authoritative, environment-specific list comes from `mtdata-cli indicators_list` (optionally `--category <name>`). Use canonical names only (for example `bbands`, not historical nicknames like `bb`/`boll`).
+> The tables below highlight commonly used indicators. The engine exposes **194 indicators** discovered dynamically from `pandas_ta` at runtime, so the authoritative, environment-specific list comes from `mtdata-cli indicators_list` (optionally `--category <name>`). Use canonical names only (for example `bbands`, not historical nicknames like `bb`/`boll`).
 
 ### Trend / Overlap
 

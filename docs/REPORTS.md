@@ -43,8 +43,8 @@ pipeline with its preset parameters.
 `minimal` is the quick path. The other templates may perform several MT5
 fetches and invoke pivots, patterns, backtests, barriers, or regime checks.
 Runtime and dependency requirements therefore vary by template. Section
-filters are applied to the completed report, so they reduce output size rather
-than computation.
+controls select the sections to execute and return, while internal
+dependencies may still run when a requested section requires them.
 
 ## Control template, scope, and output
 
@@ -88,7 +88,7 @@ template descriptions.
 
 Full reports contain a `sections` mapping plus summary and status information.
 Section names depend on the template and may include context, forecast,
-backtest, volatility, pivots, patterns, barriers, regimes, or multi-timeframe
+backtest, volatility, pivot, patterns, barriers, regime, or multi-timeframe
 variants. Check the report-level and per-section status before consuming a
 value: a successful report envelope can still describe omitted or partial
 sections.

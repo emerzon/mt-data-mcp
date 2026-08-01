@@ -1,6 +1,6 @@
 # tests/ — Test Suite
 
-235 test files, hybrid pytest/unittest.TestCase. No CI — manual runs only. No pytest.ini — all config in `conftest.py`.
+265 test files, hybrid pytest/unittest.TestCase. No CI — manual runs only. No pytest.ini — all config in `conftest.py`.
 
 ## NAMING CONVENTIONS
 
@@ -27,17 +27,17 @@ Files mirror `src/mtdata/` module structure with suffix indicating scope:
 | Prefix | Covers | File Count |
 |--------|--------|------------|
 | `test_trading_*` | Trading logic | 20+ |
-| `test_forecast_*` | Forecast engine | 60+ |
-| `test_report_*` | Report generation | 10+ |
-| `test_data_*` | Data service | 15+ |
-| `test_patterns_*` | Pattern detection | 20+ |
-| `test_regime_*` | Regime detection | 15+ |
-| `test_volatility_*` | Volatility | 10+ |
-| `test_indicators_*` | Indicators | 15+ |
-| `test_denoise_*` | Denoising | 10+ |
-| `test_web_api_*` | Web API | 10+ |
+| `test_forecast_*` | Forecast engine | 15 |
+| `test_report_*` | Report generation | 5 |
+| `test_data_*` | Data service | 2 |
+| `test_patterns_*` | Pattern detection | 16 |
+| `test_regime_*` | Regime detection | 13 |
+| `test_volatility_*` | Volatility | 2 |
+| `test_indicators_*` | Indicators | 3 |
+| `test_denoise_*` | Denoising | 3 |
+| `test_web_api_*` | Web API | 3 |
 | `test_cli_*` | CLI | 5+ |
-| `test_server_*` | MCP server | 5+ |
+| `test_server_*` | MCP server | 2 |
 
 ## SUBDIRECTORIES
 
@@ -45,17 +45,17 @@ Large modules use subdirectories for organization:
 
 | Directory | Contains | Original File |
 |-----------|----------|---------------|
-| `tests/core/cli/` | 5 focused CLI test files | `test_cli_coverage.py` (6,006 lines) |
+| `tests/core/cli/` | 6 focused CLI test files | `test_cli_coverage.py` (6,006 lines) |
 | `tests/patterns/coverage/` | 7 focused pattern test files | `test_patterns_core_coverage.py` (2,461 lines) |
 | `tests/patterns/` | 3 split pattern business logic files | `test_patterns_business_logic.py` (3,736 lines) |
 | `tests/trading/coverage/` | 7 focused trading test files | `test_trading_coverage.py` (2,837 lines) |
 | `tests/services/wait_event/` | 4 focused wait event files | `test_wait_event_use_cases.py` (2,744 lines) |
-| `tests/services/coverage/` | 7 focused data-service test files | `test_data_service_coverage.py` (2,992 lines) |
+| `tests/services/coverage/` | 6 focused data-service test files | `test_data_service_coverage.py` (2,992 lines) |
 | `tests/forecast/barriers/` | 8 focused barrier test files | `test_forecast_barriers.py` (2,723 lines) |
 
 ## CONFTEST FIXTURES
 
-`conftest.py` (70 lines) handles critical test infrastructure:
+`conftest.py` (245 lines) handles critical test infrastructure:
 
 - **`sys.modules` stubbing**: Injects `MagicMock` for `MetaTrader5` into `sys.modules` at import time so tests run without a real MT5 terminal.
 - **`mt5_module` fixture**: Per-test MT5 stub with automatic cleanup.

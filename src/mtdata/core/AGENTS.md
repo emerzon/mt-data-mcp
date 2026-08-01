@@ -8,58 +8,68 @@ All 91 MCP tools (+1 conditional), CLI commands, web API endpoints, and server t
 
 | File | Lines | Domain |
 |------|-------|--------|
-| `data.py` | — | Data fetch tools (candles, ticks, market depth) |
-| `forecast.py` | 792 | Forecast generation/backtest tools |
-| `trading.py` | — | Trading tool entry points |
-| `patterns.py` | 706 | Pattern detection tools |
-| `regime.py` | 1264 | Regime detection (HMM + rule-based) |
-| `temporal.py` | 555 | Temporal/seasonal analysis tools |
-| `causal.py` | 534 | Causal analysis tools |
-| `finviz.py` | 518 | Finviz fundamentals/screening tools |
-| `indicators.py` | — | Indicator computation tools |
-| `market_depth.py` | — | Market depth tools |
-| `symbols.py` | — | Symbol listing/search tools |
-| `labels.py` | — | Labeling tools |
-| `pivot.py` | — | Pivot point tools |
+| `data/` | — | Data fetch tools (candles, ticks, wait events) |
+| `forecast.py` | 2087 | Forecast generation/backtest tools |
+| `forecast_tasks.py` | — | Forecast training/task/model-store tools |
+| `analytics.py` | — | Advanced analytics, strategy validation, portfolio risk |
+| `diagnostics.py` | — | Time-series diagnostics tools |
+| `denoise.py` | — | Denoising catalog tools |
+| `trading/` | — | Trading tool entry points |
+| `patterns.py` | 1484 | Pattern detection tools |
+| `regime/` | — | Regime detection (HMM + rule-based) |
+| `temporal.py` | 1531 | Temporal/seasonal analysis tools |
+| `causal.py` | 3528 | Causal analysis tools |
+| `finviz.py` | 3919 | Finviz fundamentals/screening tools |
+| `indicators.py` | 743 | Indicator computation tools |
+| `market_depth.py` | 914 | Market depth tools |
+| `market_snapshot.py` | — | Unified market snapshot tools |
+| `market_status.py` | — | Market/session status tools |
+| `options.py` | — | Options and QuantLib tools |
+| `symbols.py` | 3994 | Symbol listing/search tools |
+| `labels.py` | 883 | Labeling tools |
+| `pivot.py` | 1081 | Pivot point tools |
+| `volume_profile.py` | — | Volume profile tools |
+| `news.py` | — | Unified news tools |
+| `report/` | — | Report tool entry points |
+| `tools.py` | — | Tool catalog/listing tools |
 
 ### Trading (split by concern)
 
 | File | Lines | Purpose |
 |------|-------|---------|
-| `trading_use_cases.py` | 1414 | Orchestration layer |
-| `trading_orders.py` | 636 | Order placement/modification |
-| `trading_execution.py` | 620 | Execution logic |
-| `trading_positions.py` | — | Position queries |
-| `trading_risk.py` | — | Risk calculations |
-| `trading_validation.py` | — | Input validation |
-| `trading_gateway.py` | — | MT5 trade API wrapper |
-| `trading_account.py` | — | Account info queries |
-| `trading_common.py` | — | Shared trading types |
-| `trading_comments.py` | — | Order comment encoding |
-| `trading_time.py` | — | Trading time helpers |
-| `trading_requests.py` | — | Request models |
+| `trading/use_cases.py` | 5902 | Orchestration layer |
+| `trading/orders.py` | 1569 | Order placement/modification |
+| `trading/execution.py` | 2194 | Execution logic |
+| `trading/positions.py` | 1573 | Position queries |
+| `trading/risk.py` | 108 | Risk calculations |
+| `trading/validation.py` | 1135 | Input validation |
+| `trading/gateway.py` | 91 | MT5 trade API wrapper |
+| `trading/account.py` | 944 | Account info queries |
+| `trading/common.py` | 269 | Shared trading types |
+| `trading/comments.py` | 209 | Order comment encoding |
+| `trading/time.py` | 322 | Trading time helpers |
+| `trading/requests.py` | 565 | Request models |
 
 ### Reports
 
 | File | Lines | Purpose |
 |------|-------|---------|
-| `report.py` | — | Report tool entry points |
-| `report_use_cases.py` | — | Report orchestration |
-| `report_rendering.py` | 768 | Markdown/HTML rendering |
-| `report_utils.py` | 607 | Report helper functions |
-| `report_shared.py` | — | Shared report types |
-| `report_requests.py` | — | Report request models |
-| `report_templates/` | 8 files | Template implementations (basic.py = 1032 lines) |
+| `report/` | — | Report tool entry points |
+| `report/use_cases.py` | 1675 | Report orchestration |
+| `report/utils.py` | 943 | Report helper functions |
+| `report/shared.py` | 123 | Shared report types |
+| `report/requests.py` | 97 | Report request models |
+| `report_templates/` | 9 files | Template implementations (basic.py = 1092 lines) |
 
 ### Server, CLI, Web API
 
 | File | Purpose |
 |------|---------|
 | `server.py` | MCP server entry (SSE, stdio, streamable-HTTP) |
-| `cli.py` (1514) | Dynamic CLI — discovers tools, builds argparse subparsers |
+| `cli/` | Dynamic CLI — discovers tools, builds argparse subparsers |
 | `web_api.py` | Web API entry point |
 | `web_api_runtime.py` | FastAPI app creation, CORS, uvicorn |
-| `web_api_handlers.py` (697) | REST route handlers |
+| `web_api_handlers.py` | REST route handlers |
 | `web_api_models.py` | Request/response Pydantic models |
 
 ### Infrastructure
@@ -68,26 +78,25 @@ All 91 MCP tools (+1 conditional), CLI commands, web API endpoints, and server t
 |------|---------|
 | `_mcp_instance.py` | Singleton MCP server instance |
 | `_mcp_tools.py` | Tool registration decorator, type coercion |
-| `config.py` | Environment/MT5 config loading |
-| `constants.py` | SERVICE_NAME, TIMEFRAME_MAP, TIMEFRAME_SECONDS |
-| `schema.py` | Core-level Pydantic schemas |
+| `../bootstrap/settings.py` | Environment/MT5 config loading |
+| `../shared/constants.py` | SERVICE_NAME, TIMEFRAME_MAP, TIMEFRAME_SECONDS |
+| `../shared/schema.py` | Shared Pydantic schemas |
 | `schema_attach.py` | Schema attachment helpers |
 | `error_envelope.py` | Standardized error response format |
 | `execution_logging.py` | Execution/query logging |
 | `unified_params.py` | Shared parameter definitions |
 | `features.py` | Internal rolling feature extraction helper used by forecast/regime code |
-| `patterns_support.py` (896) | Complex pattern detection helpers |
+| `patterns_support.py` (2625) | Complex pattern detection helpers |
 | `patterns_requests.py` | Pattern request models |
 | `patterns_use_cases.py` | Pattern detection orchestration |
-| `data_requests.py` | Data request models |
-| `data_use_cases.py` | Data fetch orchestration |
-| `indicators_docs.py` | Indicator documentation strings |
+| `data/requests.py` | Data request models |
+| `data/use_cases.py` | Data fetch orchestration |
 | `mt5_gateway.py` | MT5 connection management |
 
 ## CONVENTIONS
 
-- **Domain pattern**: `{domain}.py` (tools) → `{domain}_requests.py` (input models) → `{domain}_use_cases.py` (orchestration).
-- **`__init__.py` is intentionally empty** — import modules directly to avoid circular deps.
+- **Domain pattern**: `{domain}.py` or `{domain}/` (tools) → `{domain}/requests.py` or `{domain}_requests.py` (input models) → `{domain}/use_cases.py` or `{domain}_use_cases.py` (orchestration).
+- **`__init__.py` is intentionally minimal** — import modules directly to avoid circular deps.
 - **`_` prefix** on `_mcp_instance.py` and `_mcp_tools.py` signals internal infrastructure.
 
 ## ANTI-PATTERNS

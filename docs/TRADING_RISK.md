@@ -24,7 +24,7 @@ new trade. Supports two sizing methods: fixed-fraction and Kelly.
 mtdata-cli trade_risk_analyze --json
 
 # Size a new long: risk-based volume from entry + stop
-mtdata-cli trade_risk_analyze --symbol EURUSD --direction long \
+mtdata-cli trade_risk_analyze EURUSD --direction long \
   --entry 1.0850 --stop-loss 1.0800 --desired-risk-pct 1.0 --json
 ```
 
@@ -51,7 +51,7 @@ suggestion is not an aggregate portfolio stop-risk cap.
 Set `sizing_method=kelly` and supply edge statistics:
 
 ```bash
-mtdata-cli trade_risk_analyze --symbol EURUSD --direction long \
+mtdata-cli trade_risk_analyze EURUSD --direction long \
   --entry 1.0850 --stop-loss 1.0800 --sizing-method kelly \
   --kelly-win-rate 0.55 --kelly-avg-win 0.012 --kelly-avg-loss 0.010 \
   --kelly-fraction-multiplier 0.5 --kelly-max-risk-pct 2.0 --json
@@ -98,7 +98,7 @@ symbol.
 mtdata-cli trade_var_cvar_calculate --timeframe H1 --lookback 500 --confidence 95 --json
 
 # Symbol-scoped, parametric/Gaussian, percentage returns
-mtdata-cli trade_var_cvar_calculate --symbol EURUSD --method gaussian \
+mtdata-cli trade_var_cvar_calculate EURUSD --method gaussian \
   --transform pct --lookback 300 --json
 ```
 

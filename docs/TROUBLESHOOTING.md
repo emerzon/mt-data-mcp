@@ -165,7 +165,7 @@ mtdata-cli forecast_generate EURUSD --json | jq '.forecast'
 
 ### Output is Too Verbose
 
-**Solution:** Omit `--verbose` flag (default is compact output).
+**Solution:** Omit `--extras` and keep the default compact detail level.
 
 ### Missing Columns in Output
 
@@ -272,7 +272,7 @@ If the broker uses a suffix, rerun the command with the exact symbol shown by `s
 
 ### A Trading Command Might Execute Live
 
-**Cause:** `trade_*` commands operate on the MT5 account currently logged into the terminal. Some commands support `--dry-run true`, but live execution is still possible when you omit dry-run.
+**Cause:** `trade_*` commands operate on the MT5 account currently logged into the terminal. `trade_place`, `trade_modify`, and `trade_close` default to preview mode, but live execution is possible when you set `--dry-run false`.
 
 **Immediate checks:**
 ```bash

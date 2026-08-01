@@ -547,7 +547,7 @@ mtdata-cli trade_place BTCUSD --volume 0.01 --order-type BUY \
 | `--require-sl-tp` | `trade_place` | Require both stop-loss and take-profit on market orders. |
 | `--auto-close-on-sl-tp-fail` | `trade_place` | If SL/TP attachment fails after a market fill, try to close the unprotected position. |
 | `--expiration` | `trade_place`, `trade_modify` | Expiration time for pending orders (`dateparser`, UTC epoch seconds, or `GTC`). |
-| `--idempotency-key` | `trade_place`, `trade_modify` | Dedupe repeated requests within the current process only (in-memory ~5-minute TTL; not persisted across restarts or shared across workers). |
+| `--idempotency-key` | `trade_place`, `trade_modify` | Durable dedupe key shared by CLI and server processes within the configured retention window. |
 | `--close-all` | `trade_close` | Close all matching positions instead of one ticket. |
 | `--profit-only` / `--loss-only` | `trade_close` | Restrict closes to positions currently in profit or loss. |
 | `--close-priority` | `trade_close` | When multiple positions match, close `loss_first`, `profit_first`, or `largest_first`. |

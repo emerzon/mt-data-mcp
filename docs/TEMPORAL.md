@@ -31,6 +31,7 @@ mtdata-cli temporal_analyze EURUSD --timeframe D1 --group-by month --lookback 10
 | `--start` | (optional) | Start date (ISO or flexible format) |
 | `--end` | (optional) | End date (ISO or flexible format) |
 | `--group-by` | `dow` | Grouping: `dow` (day of week), `hour`, `month`, `session` (Asia/London/overlap/NY/off), or `all` (all four breakdowns) |
+| `--session-calendar` | `auto` | Session calendar for `session` grouping: `auto`, `fx`, or `equity`. |
 | `--day-of-week` | (optional) | Filter to a specific day (0–6 or name, e.g., `Mon`, `Friday`) |
 | `--month` | (optional) | Filter to a specific month (1–12 or name, e.g., `Jan`, `September`) |
 | `--time-range` | (optional) | Filter by time window `HH:MM-HH:MM` using a half-open interval `[start, end)` (wraps midnight, e.g., `22:00-02:00`) |

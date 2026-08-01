@@ -189,7 +189,7 @@ mtdata-cli forecast_generate EURUSD --timeframe H1 --horizon 12 \
 - `window_size`: Pattern length to match (default: 64 bars)
 - `search_depth`: How far back to search (default: 5000 bars)
 - `top_k`: Number of similar patterns to average (default: 20)
-- `metric`: Distance metric (euclidean, dtw, cosine)
+- `metric`: Initial search metric (euclidean, cosine, correlation); use `refine_metric=dtw` for DTW re-ranking
 
 ---
 
@@ -220,7 +220,7 @@ Validate forecast accuracy with rolling-origin backtests.
 
 ```bash
 mtdata-cli forecast_backtest_run EURUSD --timeframe H1 --horizon 12 \
-  --methods "theta sf_autoarima analog" --steps 20 --spacing 10
+  --methods "theta sf_autoarima analog" --steps 20 --spacing 12
 ```
 
 **Parameters:**
