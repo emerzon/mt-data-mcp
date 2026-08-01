@@ -2416,9 +2416,10 @@ def regime_detect(  # noqa: C901
                 sc = spectral_cls(**sc_kwargs)
                 labels = sc.fit_predict(X_final)
             else:
-                # KMeans — seed centroids from evenly-spaced rows so KMeans++
-                # init is skipped.  KMeans++ triggers joblib CPU-topology probing
-                # which blocks indefinitely in asyncio.to_thread workers on Windows.
+                # Seed centroids from evenly-spaced rows for deterministic
+                # initialization. KMeans still asks joblib for its OpenMP thread
+                # count before initialization; MCP startup warms that Windows CPU
+                # topology cache before requests enter asyncio worker threads.
                 idx = np.round(np.linspace(0, n_samples - 1, n_states_cluster)).astype(int)
                 kmeans = kmeans_cls(
                     n_clusters=n_states_cluster,

@@ -2,14 +2,15 @@
 
 import atexit
 import logging
+import os
 from typing import Literal, Optional, cast
 
-from ..bootstrap.settings import load_environment
 from ..bootstrap.runtime import (
     McpRuntimeSettings,
     apply_mcp_runtime_settings,
     load_mcp_runtime_settings,
 )
+from ..bootstrap.settings import load_environment
 from ..bootstrap.tools import bootstrap_tools
 from ..shared.constants import SERVICE_NAME
 from ..utils.mt5 import mt5_connection
@@ -21,6 +22,22 @@ def _disconnect_mt5():
     mt5_connection.disconnect()
 
 
+def _warm_windows_joblib_cpu_cache() -> None:
+    """Resolve joblib CPU topology before MCP tools enter worker threads."""
+    if os.name != "nt":
+        return
+
+    try:
+        import joblib
+
+        joblib.cpu_count(only_physical_cores=True)
+    except Exception:
+        logging.getLogger(__name__).warning(
+            "Could not warm joblib CPU topology cache.",
+            exc_info=True,
+        )
+
+
 def main(
     *,
     transport: Optional[Literal["stdio", "sse", "streamable-http"]] = None,
@@ -29,6 +46,10 @@ def main(
     """Main entry point for the MCP server"""
     load_environment()
     runtime = runtime_settings or load_mcp_runtime_settings(transport_override=transport)
+    # sklearn asks joblib for the physical CPU count before every first
+    # KMeans fit. On Windows, resolving that count from an asyncio worker can
+    # leave joblib waiting indefinitely on its PowerShell topology probe.
+    _warm_windows_joblib_cpu_cache()
     bootstrap_tools()
     apply_mcp_runtime_settings(mcp, runtime)
     settings = getattr(mcp, 'settings', None)

@@ -2,6 +2,7 @@
 
 import asyncio
 import inspect
+import logging
 import math
 import os
 import sys
@@ -1329,9 +1330,59 @@ class TestDisconnectMt5:
         mock_conn.disconnect.assert_called_once()
 
 
+class TestJoblibCpuCacheWarmup:
+
+    def test_skips_non_windows(self, monkeypatch):
+        from mtdata.core import server
+
+        mock_cpu_count = MagicMock()
+        fake_joblib = types.SimpleNamespace(cpu_count=mock_cpu_count)
+        monkeypatch.setattr(server.os, "name", "posix")
+        monkeypatch.setitem(sys.modules, "joblib", fake_joblib)
+
+        server._warm_windows_joblib_cpu_cache()
+
+        mock_cpu_count.assert_not_called()
+
+    def test_warms_physical_core_cache_on_windows(self, monkeypatch):
+        from mtdata.core import server
+
+        mock_cpu_count = MagicMock(return_value=8)
+        fake_joblib = types.SimpleNamespace(cpu_count=mock_cpu_count)
+        monkeypatch.setattr(server.os, "name", "nt")
+        monkeypatch.setitem(sys.modules, "joblib", fake_joblib)
+
+        server._warm_windows_joblib_cpu_cache()
+
+        mock_cpu_count.assert_called_once_with(only_physical_cores=True)
+
+    def test_warmup_failure_does_not_block_server_startup(
+        self, monkeypatch, caplog
+    ):
+        from mtdata.core import server
+
+        mock_cpu_count = MagicMock(side_effect=RuntimeError("probe failed"))
+        fake_joblib = types.SimpleNamespace(cpu_count=mock_cpu_count)
+        monkeypatch.setattr(server.os, "name", "nt")
+        monkeypatch.setitem(sys.modules, "joblib", fake_joblib)
+
+        with caplog.at_level(logging.WARNING):
+            server._warm_windows_joblib_cpu_cache()
+
+        assert "Could not warm joblib CPU topology cache." in caplog.text
+
+
 # ── main / main_stdio / main_sse ──────────────────────────────────────────
 
 class TestMainEntryPoints:
+
+    @pytest.fixture(autouse=True)
+    def _mock_joblib_cpu_cache_warmup(self):
+        with patch(
+            "mtdata.core.server._warm_windows_joblib_cpu_cache"
+        ) as mock_warmup:
+            self.mock_joblib_cpu_cache_warmup = mock_warmup
+            yield
 
     @patch("mtdata.core.server.bootstrap_tools")
     @patch("mtdata.core.server.mcp")
@@ -1349,6 +1400,7 @@ class TestMainEntryPoints:
         mock_mcp.run = MagicMock()
         from mtdata.core.server import main
         main()
+        self.mock_joblib_cpu_cache_warmup.assert_called_once_with()
         mock_mcp.run.assert_called_once()
 
     @patch("mtdata.core.server.main")
