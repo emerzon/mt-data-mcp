@@ -901,6 +901,8 @@ def _apply_forecast_generate_detail(
 ) -> Dict[str, Any]:
     if not isinstance(payload, dict) or payload.get("error"):
         return payload
+    payload = dict(payload)
+    payload.setdefault("quantity", request.quantity)
     payload = _round_forecast_generate_payload(payload)
     payload = _normalize_forecast_time_fields(payload)
     if str(payload.get("quantity") or request.quantity or "").strip().lower() == "volatility":

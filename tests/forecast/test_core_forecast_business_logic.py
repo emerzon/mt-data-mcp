@@ -415,7 +415,6 @@ def test_forecast_generate_compact_volatility_uses_summary_row(monkeypatch):
             "success": True,
             "method": kwargs["method"],
             "horizon": kwargs["horizon"],
-            "quantity": kwargs["quantity"],
             "volatility_per_bar": 0.012345,
             "volatility_annualized": 0.194444,
             "volatility_horizon": 0.021234,
@@ -434,6 +433,7 @@ def test_forecast_generate_compact_volatility_uses_summary_row(monkeypatch):
     )
 
     assert out["volatility_per_bar"] == pytest.approx(0.012345)
+    assert out["quantity"] == "volatility"
     assert out["volatility_horizon"] == pytest.approx(0.021234)
     assert out["forecast_summary_mode"] == "scalar_volatility_estimate"
     assert "no distinct per-step path is implied" in out["quantity_note"]
@@ -1916,6 +1916,27 @@ def test_forecast_list_library_models_and_list_methods(monkeypatch):
         "m08",
         "m09",
     ]
+
+
+def test_forecast_generate_standard_preserves_requested_volatility_quantity():
+    out = forecast_use_cases._apply_forecast_generate_detail(
+        {
+            "success": True,
+            "method": "ewma",
+            "horizon": 3,
+            "volatility_per_bar": 0.01,
+        },
+        ForecastGenerateRequest(
+            symbol="EURUSD",
+            timeframe="H1",
+            method="ewma",
+            quantity="volatility",
+            horizon=3,
+            detail="standard",
+        ),
+    )
+
+    assert out["quantity"] == "volatility"
     assert page["pagination"] == {
         "total": 25,
         "returned": 5,
