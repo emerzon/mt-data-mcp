@@ -235,6 +235,11 @@ Get cryptocurrency performance.
 mtdata-cli finviz_crypto --json
 ```
 
+Finviz may round prices for very low-priced tokens to zero. In that case the
+tool returns `price_status: unavailable_provider_rounded_zero`, omits `price`,
+and includes a warning instead of presenting the rounded value as a tradable
+zero price.
+
 **Returns:** Price, daily change, volume, and market cap for major cryptocurrencies.
 
 ### `finviz_futures`

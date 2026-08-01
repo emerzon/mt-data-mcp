@@ -293,6 +293,7 @@ _FINVIZ_MARKET_COMPACT_FIELDS = (
     "display_symbol",
     "name",
     "price",
+    "price_status",
     "price_currency",
     "price_source",
     "data_delayed",

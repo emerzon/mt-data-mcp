@@ -284,6 +284,27 @@ class TestFinvizService:
         assert result["coins"][0]["Price"] == "1.5e-09"
 
     @patch('finvizfinance.crypto.Crypto')
+    def test_get_crypto_performance_marks_provider_rounded_zero_unavailable(
+        self, mock_crypto_class
+    ):
+        from mtdata.services.finviz import get_crypto_performance
+
+        mock_crypto = MagicMock()
+        mock_crypto.performance.return_value = pd.DataFrame(
+            [{"Ticker": "SHIBUSD", "Price": 0.0, "Change": "2.5%"}]
+        )
+        mock_crypto_class.return_value = mock_crypto
+
+        result = get_crypto_performance()
+
+        assert result["coins"][0]["Price"] is None
+        assert (
+            result["coins"][0]["Price Status"]
+            == "unavailable_provider_rounded_zero"
+        )
+        assert "SHIBUSD" in result["warnings"][0]
+
+    @patch('finvizfinance.crypto.Crypto')
     def test_get_crypto_performance_drops_week_when_day_week_identical(self, mock_crypto_class):
         """When day/week values are identical, drop unreliable week fields and warn."""
         from mtdata.services.finviz import get_crypto_performance
@@ -877,6 +898,37 @@ class TestFinvizTools:
         result = raw()
 
         assert result["items"][0]["perf_day_pct"] == 0.91
+
+    @patch("mtdata.core.finviz.get_crypto_performance")
+    def test_finviz_crypto_compact_preserves_unavailable_price_status(
+        self, mock_get_crypto
+    ):
+        from mtdata.core.finviz import finviz_crypto
+
+        mock_get_crypto.return_value = {
+            "success": True,
+            "market": "crypto",
+            "coins": [
+                {
+                    "Ticker": "SHIBUSD",
+                    "Price": None,
+                    "Price Status": "unavailable_provider_rounded_zero",
+                }
+            ],
+            "warnings": ["Finviz omitted a provider-rounded zero price."],
+        }
+
+        result = getattr(finviz_crypto, "__wrapped__", finviz_crypto)()
+
+        assert result["items"] == [
+            {
+                "symbol": "SHIBUSD",
+                "price_status": "unavailable_provider_rounded_zero",
+            }
+        ]
+        assert result["warnings"] == [
+            "Finviz omitted a provider-rounded zero price."
+        ]
 
     @patch("mtdata.core.finviz.get_crypto_performance")
     def test_finviz_crypto_compact_maps_wtd_to_week_when_week_missing(self, mock_get_crypto):

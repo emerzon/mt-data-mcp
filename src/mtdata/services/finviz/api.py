@@ -786,12 +786,25 @@ def get_crypto_performance() -> Dict[str, Any]:
             empty_error="No crypto performance data available",
         )
         warnings_out: List[str] = []
+        rounded_zero_symbols: List[str] = []
         for row in items_list:
             if not isinstance(row, dict) or "Price" not in row:
                 continue
             price_display = crypto_price_display(row.get("Price"))
-            if price_display is not None:
+            if price_display is not None and float(price_display) == 0.0:
+                row["Price"] = None
+                row["Price Status"] = "unavailable_provider_rounded_zero"
+                symbol = str(row.get("Ticker") or row.get("Name") or "unknown")
+                rounded_zero_symbols.append(symbol)
+            elif price_display is not None:
                 row["Price"] = price_display
+        if rounded_zero_symbols:
+            warnings_out.append(
+                "Finviz returned zero for crypto prices that its feed cannot "
+                "represent at sub-penny precision; omitted those prices for: "
+                + ", ".join(rounded_zero_symbols)
+                + "."
+            )
         if _drop_duplicate_day_week_performance(items_list):
             warnings_out.append(
                 "Finviz returned identical 'Perf Day' and 'Perf Week' values; "
