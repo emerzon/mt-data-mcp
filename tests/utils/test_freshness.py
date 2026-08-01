@@ -29,7 +29,7 @@ def test_closed_session_context_marks_other_non_crypto_weekend_markets() -> None
 
 
 def test_closed_session_context_allows_fx_after_sunday_utc_reopen() -> None:
-    sunday_reopen = datetime(2026, 6, 14, 22, 0, tzinfo=timezone.utc).timestamp()
+    sunday_reopen = datetime(2026, 6, 14, 21, 0, tzinfo=timezone.utc).timestamp()
 
     assert closed_session_context("EURUSD", now_epoch=sunday_reopen) is None
 
@@ -75,6 +75,9 @@ def test_closed_session_context_does_not_relax_very_old_data():
 
     assert result is not None
     assert result["freshness_policy_relaxed"] is False
+    assert result["assumed_closure_start"] == "2026-06-05T21:00:00Z"
+    assert result["assumed_closure_end"] == "2026-06-07T21:00:00Z"
+    assert result["assumed_closure_seconds"] == 48 * 60 * 60
 
 
 def test_weekend_tick_keeps_absolute_stale_flag() -> None:

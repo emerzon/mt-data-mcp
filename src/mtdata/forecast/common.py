@@ -4,7 +4,7 @@ import math
 import os
 import re
 import threading
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
@@ -17,7 +17,7 @@ from ..shared.symbols import (
     is_probably_crypto_symbol,
     is_probably_forex_symbol,
 )
-from ..utils.freshness import is_standard_weekend_closure
+from ..utils.freshness import is_standard_weekend_closure, standard_weekend_window
 from ..utils.mt5 import (
     _ensure_symbol_ready,
     _mt5_copy_rates_from,
@@ -26,8 +26,8 @@ from ..utils.mt5 import (
     get_symbol_info_cached,
     mt5,
 )
-from ..utils.utils import _parse_end_datetime, _parse_start_datetime, _utc_epoch_seconds
 from ..utils.time import bar_close_epoch
+from ..utils.utils import _parse_end_datetime, _parse_start_datetime, _utc_epoch_seconds
 
 _FORECAST_RESERVED_COLUMNS = {"unique_id", "ds", "y"}
 _FORECAST_PREFERRED_COLUMNS = ("y_hat", "mean", "median", "pred", "forecast")
@@ -428,23 +428,10 @@ def uses_standard_weekend_projection(symbol: Optional[str], tf_secs: int) -> boo
 
 def _next_standard_weekend_open_epoch(epoch: float) -> float:
     dt_utc = datetime.fromtimestamp(float(epoch), tz=timezone.utc)
-    weekday = dt_utc.weekday()
-    if weekday == 6:
-        open_dt = dt_utc.replace(hour=22, minute=0, second=0, microsecond=0)
-    else:
-        days_until_sunday = (6 - weekday) % 7
-        open_date = (dt_utc + timedelta(days=days_until_sunday)).date()
-        open_dt = datetime(
-            open_date.year,
-            open_date.month,
-            open_date.day,
-            22,
-            0,
-            0,
-            tzinfo=timezone.utc,
-        )
-    open_epoch = float(open_dt.timestamp())
-    return open_epoch if open_epoch > float(epoch) else float(epoch)
+    window = standard_weekend_window(dt_utc)
+    if window is None:
+        return float(epoch)
+    return float(window[1].timestamp())
 
 
 def next_times_from_last(

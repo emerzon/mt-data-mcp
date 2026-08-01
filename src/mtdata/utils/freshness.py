@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import math
-from datetime import datetime, timezone
+from datetime import datetime, time, timedelta, timezone
 from typing import Any, Optional
 from zoneinfo import ZoneInfo
 
@@ -12,20 +12,26 @@ from ..shared.symbols import is_probably_crypto_symbol
 QUOTE_LIVE_SECONDS = 30
 QUOTE_RECENT_SECONDS = 60
 QUOTE_STALE_SECONDS = 300
-MAX_STANDARD_WEEKEND_DATA_AGE_SECONDS = 3 * 24 * 60 * 60
+_NEW_YORK = ZoneInfo("America/New_York")
+
+
+def standard_weekend_window(now_utc: datetime) -> Optional[tuple[datetime, datetime]]:
+    """Return the DST-aware FX weekend window containing ``now_utc``."""
+    utc_value = now_utc if now_utc.tzinfo else now_utc.replace(tzinfo=timezone.utc)
+    new_york = utc_value.astimezone(_NEW_YORK)
+    days_since_friday = (new_york.weekday() - 4) % 7
+    friday = new_york.date() - timedelta(days=days_since_friday)
+    close_local = datetime.combine(friday, time(17), tzinfo=_NEW_YORK)
+    open_local = datetime.combine(friday + timedelta(days=2), time(17), tzinfo=_NEW_YORK)
+    close_utc = close_local.astimezone(timezone.utc)
+    open_utc = open_local.astimezone(timezone.utc)
+    if close_utc <= utc_value < open_utc:
+        return close_utc, open_utc
+    return None
 
 
 def is_standard_weekend_closure(now_utc: datetime) -> bool:
-    utc_value = now_utc if now_utc.tzinfo else now_utc.replace(tzinfo=timezone.utc)
-    new_york = utc_value.astimezone(ZoneInfo("America/New_York"))
-    weekday = new_york.weekday()
-    if weekday == 5:
-        return True
-    if weekday == 6 and new_york.hour < 17:
-        return True
-    if weekday == 4 and new_york.hour >= 17:
-        return True
-    return False
+    return standard_weekend_window(now_utc) is not None
 
 
 def closed_session_context(
@@ -44,7 +50,8 @@ def closed_session_context(
         now_utc = datetime.fromtimestamp(float(now_epoch), tz=timezone.utc)
     except Exception:
         return None
-    if not is_standard_weekend_closure(now_utc):
+    closure_window = standard_weekend_window(now_utc)
+    if closure_window is None:
         return None
     item_label = str(item or "data").strip() or "data"
     out = {
@@ -58,8 +65,16 @@ def closed_session_context(
             age_seconds = max(0.0, float(data_age_seconds))
         except (TypeError, ValueError):
             age_seconds = float("inf")
-        out["freshness_policy_relaxed"] = (
-            age_seconds <= MAX_STANDARD_WEEKEND_DATA_AGE_SECONDS
+        close_utc, open_utc = closure_window
+        closure_seconds = (open_utc - close_utc).total_seconds()
+        out.update(
+            {
+                "data_age_seconds": None if not math.isfinite(age_seconds) else age_seconds,
+                "assumed_closure_start": close_utc.isoformat().replace("+00:00", "Z"),
+                "assumed_closure_end": open_utc.isoformat().replace("+00:00", "Z"),
+                "assumed_closure_seconds": closure_seconds,
+                "freshness_policy_relaxed": age_seconds <= closure_seconds,
+            }
         )
     return out
 
