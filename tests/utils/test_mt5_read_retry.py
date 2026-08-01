@@ -25,6 +25,35 @@ class TestMt5ReadWithRetry:
         assert result == [4, 5]
         assert fn.call_count == 2
 
+    def test_reconnects_dropped_session_before_retry(self):
+        fn = MagicMock(side_effect=[None, [4, 5]])
+        connection = MagicMock(connected=True)
+        connection.is_connected.return_value = False
+        connection._ensure_connection.return_value = True
+
+        with (
+            patch.object(mt5_mod, "mt5_connection", connection),
+            patch.object(mt5_mod, "_MT5_READ_BASE_DELAY", 0.001),
+        ):
+            result = mt5_mod._mt5_read_with_retry(fn, max_retries=1)
+
+        assert result == [4, 5]
+        connection._ensure_connection.assert_called_once_with()
+
+    def test_does_not_reinitialize_when_session_remains_connected(self):
+        fn = MagicMock(side_effect=[None, [4, 5]])
+        connection = MagicMock(connected=True)
+        connection.is_connected.return_value = True
+
+        with (
+            patch.object(mt5_mod, "mt5_connection", connection),
+            patch.object(mt5_mod, "_MT5_READ_BASE_DELAY", 0.001),
+        ):
+            result = mt5_mod._mt5_read_with_retry(fn, max_retries=1)
+
+        assert result == [4, 5]
+        connection._ensure_connection.assert_not_called()
+
     def test_returns_none_after_all_retries_exhausted(self):
         fn = MagicMock(return_value=None)
         with patch.object(mt5_mod, "_MT5_READ_BASE_DELAY", 0.001):

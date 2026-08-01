@@ -896,6 +896,21 @@ def _enforce_read_spacing() -> None:
     _mt5_last_read_ts = time.monotonic()
 
 
+def _recover_dropped_read_connection() -> bool:
+    """Reconnect a session that was established before an MT5 read failed."""
+    connection = globals().get("mt5_connection")
+    if connection is None or not bool(getattr(connection, "connected", False)):
+        return False
+    try:
+        if connection.is_connected():
+            return False
+        logger.warning("MT5 session disconnected during a read; reconnecting before retry")
+        return bool(connection._ensure_connection())
+    except Exception as exc:
+        logger.warning("MT5 read reconnect attempt failed: %s", exc)
+        return False
+
+
 def _mt5_read_with_retry(fn, *args, max_retries: int = _MT5_READ_MAX_RETRIES):
     """Execute a read-only MT5 operation with bounded retry and backoff.
 
@@ -912,6 +927,7 @@ def _mt5_read_with_retry(fn, *args, max_retries: int = _MT5_READ_MAX_RETRIES):
         if result is not None:
             return result
         if attempt < max_retries:
+            _recover_dropped_read_connection()
             delay = _MT5_READ_BASE_DELAY * (2 ** attempt)
             logger.warning(
                 "MT5 read returned None (attempt %d/%d), retrying in %.1fs",
