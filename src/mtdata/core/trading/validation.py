@@ -919,6 +919,7 @@ def _validate_basic_protection_levels(
 
     sl = normalized["stop_loss"]
     tp = normalized["take_profit"]
+    side_norm = str(side or "").strip().upper()
     if sl is not None and tp is not None and math.isclose(sl, tp, rel_tol=1e-12):
         return {
             "error": "stop_loss and take_profit must be different prices.",
@@ -926,6 +927,21 @@ def _validate_basic_protection_levels(
             "stop_loss": sl,
             "take_profit": tp,
         }
+    if sl is not None and tp is not None:
+        if side_norm.startswith("BUY") and tp < sl:
+            return {
+                "error": "take_profit must be above stop_loss for BUY orders.",
+                "error_code": "invalid_protection_levels",
+                "stop_loss": sl,
+                "take_profit": tp,
+            }
+        if side_norm.startswith("SELL") and sl < tp:
+            return {
+                "error": "stop_loss must be above take_profit for SELL orders.",
+                "error_code": "invalid_protection_levels",
+                "stop_loss": sl,
+                "take_profit": tp,
+            }
 
     if entry_price in (None, 0):
         return None
@@ -936,7 +952,6 @@ def _validate_basic_protection_levels(
     if not math.isfinite(entry) or entry <= 0.0:
         return None
 
-    side_norm = str(side or "").strip().upper()
     if side_norm.startswith("BUY"):
         if sl is not None and sl >= entry:
             return {

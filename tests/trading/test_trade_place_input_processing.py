@@ -440,6 +440,42 @@ def test_trade_place_dry_run_rejects_identical_protection_before_mt5() -> None:
     mock_market.assert_not_called()
 
 
+@pytest.mark.parametrize(
+    ("order_type", "stop_loss", "take_profit", "expected_error"),
+    [
+        ("BUY", 1.1, 1.0, "take_profit must be above stop_loss for BUY orders."),
+        ("SELL", 1.0, 1.1, "stop_loss must be above take_profit for SELL orders."),
+    ],
+)
+def test_trade_place_dry_run_rejects_reversed_protection_before_mt5(
+    order_type: str,
+    stop_loss: float,
+    take_profit: float,
+    expected_error: str,
+) -> None:
+    with patch("mtdata.core.trading._place_market_order") as mock_market, patch(
+        "mtdata.core.trading.build_trade_place_dry_run_preview"
+    ) as mock_preview:
+        out = trade_place(
+            symbol="EURUSD",
+            volume=0.01,
+            order_type=order_type,
+            stop_loss=stop_loss,
+            take_profit=take_profit,
+            dry_run=True,
+            detail="standard",
+            __cli_raw=True,
+        )
+
+    assert out["success"] is True
+    assert out["validation_code"] == "invalid_protection_levels"
+    assert out["validation_error"] == expected_error
+    assert out["validation"]["local_requirements_passed"] is False
+    assert out["no_action_reason"] == "dry_run_validation_blocked"
+    mock_preview.assert_not_called()
+    mock_market.assert_not_called()
+
+
 def test_trade_place_dry_run_preserves_mt5_connection_error() -> None:
     with patch("mtdata.core.trading._place_market_order") as mock_market, patch(
         "mtdata.core.trading.build_trade_place_dry_run_preview",
@@ -484,7 +520,7 @@ def test_trade_place_dry_run_rejects_bool_like_invalid_protection_preview() -> N
             volume=0.03,
             order_type="BUY",
             stop_loss=64000,
-            take_profit=63000,
+            take_profit=68000,
             dry_run=True,
             __cli_raw=True,
         )
