@@ -120,6 +120,28 @@ def test_preview_trade_guardrails_evaluates_account_exposure():
     assert "account_risk" not in preview["checks_not_performed"]
 
 
+def test_preview_trade_guardrails_includes_pending_exposure():
+    preview = preview_trade_guardrails(
+        TradeGuardrailsConfig(
+            enabled=True,
+            account_risk_limits={"max_total_exposure_lots": 1.5},
+            ignore_on_demo=False,
+        ),
+        symbol="EURUSD",
+        volume=0.6,
+        side="BUY",
+        existing_positions=[],
+        existing_pending_orders=[
+            SimpleNamespace(symbol="EURUSD", type=2, volume_current=1.0)
+        ],
+        account_info=SimpleNamespace(is_demo=False),
+        candidate_is_pending=True,
+    )
+
+    assert preview["blocked"] is True
+    assert preview["guardrail_context"]["projected_exposure_lots"] == 1.6
+
+
 def test_profit_side_stop_is_classified_as_risk_reducing():
     symbol_info = SimpleNamespace(
         trade_tick_size=0.0001,
@@ -260,6 +282,39 @@ def test_exposure_cap_counts_opposite_order_on_hedging_account():
     assert block["guardrail_context"]["projected_exposure_lots"] == 2.0
 
 
+def test_exposure_cap_counts_existing_and_candidate_pending_orders():
+    from mtdata.core.trading.safety import AccountRiskLimits
+
+    block = evaluate_trade_guardrails(
+        TradeGuardrailsConfig(
+            enabled=True,
+            account_risk_limits=AccountRiskLimits(max_total_exposure_lots=2.0),
+            ignore_on_demo=False,
+        ),
+        symbol="EURUSD",
+        volume=0.75,
+        side="SELL",
+        existing_positions=[],
+        existing_pending_orders=[
+            SimpleNamespace(
+                symbol="EURUSD",
+                type=2,
+                volume_current=1.5,
+                price_open=1.1,
+                sl=1.09,
+            )
+        ],
+        account_info=SimpleNamespace(is_demo=False, margin=0.0),
+        enforce_wallet_risk=False,
+        enforce_safety_policy=False,
+        candidate_is_pending=True,
+    )
+
+    assert block is not None
+    assert block["guardrail_rule"] == "account_risk"
+    assert block["guardrail_context"]["projected_exposure_lots"] == 2.25
+
+
 def test_evaluate_trade_guardrails_blocks_wallet_risk_threshold():
     config = TradeGuardrailsConfig(
         enabled=True,
@@ -288,6 +343,93 @@ def test_evaluate_trade_guardrails_blocks_wallet_risk_threshold():
     assert result is not None
     assert result["guardrail_blocked"] is True
     assert result["guardrail_rule"] == "wallet_risk"
+
+
+def test_wallet_risk_counts_contingent_pending_order_risk():
+    config = TradeGuardrailsConfig(
+        enabled=True,
+        ignore_on_demo=False,
+        wallet_risk_limits=WalletRiskLimits(max_risk_pct_of_equity=1.5),
+    )
+    account = SimpleNamespace(
+        equity=10000.0,
+        balance=10000.0,
+        margin_free=8000.0,
+    )
+    symbol_info = SimpleNamespace(
+        trade_tick_size=1.0,
+        trade_tick_value=1.0,
+        trade_tick_value_loss=1.0,
+    )
+
+    result = evaluate_trade_guardrails(
+        config,
+        symbol="BTCUSD",
+        volume=10.0,
+        stop_loss=90.0,
+        side="BUY",
+        entry_price=100.0,
+        account_info=account,
+        existing_positions=[],
+        existing_pending_orders=[
+            SimpleNamespace(
+                symbol="BTCUSD",
+                type=4,
+                volume_current=10.0,
+                price_open=100.0,
+                sl=90.0,
+            )
+        ],
+        symbol_info=symbol_info,
+        symbol_info_resolver=lambda _symbol: symbol_info,
+        candidate_is_pending=True,
+    )
+
+    assert result is not None
+    assert result["guardrail_rule"] == "wallet_risk"
+    assert result["guardrail_context"] == {
+        "symbol": "BTCUSD",
+        "candidate_risk": 100.0,
+        "portfolio_risk_after": 200.0,
+    }
+
+
+def test_wallet_risk_fails_closed_for_pending_order_without_stop():
+    symbol_info = SimpleNamespace(
+        trade_tick_size=1.0,
+        trade_tick_value=1.0,
+        trade_tick_value_loss=1.0,
+    )
+
+    result = evaluate_trade_guardrails(
+        TradeGuardrailsConfig(
+            enabled=True,
+            ignore_on_demo=False,
+            wallet_risk_limits=WalletRiskLimits(max_risk_pct_of_equity=5.0),
+        ),
+        symbol="BTCUSD",
+        volume=1.0,
+        stop_loss=90.0,
+        side="BUY",
+        entry_price=100.0,
+        account_info=SimpleNamespace(equity=10000.0),
+        existing_positions=[],
+        existing_pending_orders=[
+            SimpleNamespace(
+                symbol="BTCUSD",
+                type=4,
+                volume_current=1.0,
+                price_open=100.0,
+                sl=0.0,
+            )
+        ],
+        symbol_info=symbol_info,
+        symbol_info_resolver=lambda _symbol: symbol_info,
+    )
+
+    assert result is not None
+    assert result["guardrail_rule"] == "wallet_risk"
+    assert "cannot be quantified without a stop-loss" in result["violations"][0]
 
 
 def test_wallet_risk_measures_trailed_stop_from_current_mark():

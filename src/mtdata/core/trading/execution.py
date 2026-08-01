@@ -14,7 +14,7 @@ from .gateway import MT5TradingGateway, create_trading_gateway, trading_connecti
 from .positions import _resolve_open_position, _resolve_pending_order
 from .safety import (
     evaluate_trade_guardrails,
-    guardrails_require_position_snapshot,
+    load_guardrail_book_snapshots,
     pending_order_risk_increased,
 )
 from .time import ExpirationValue
@@ -81,6 +81,27 @@ def _positions_excluding_current(
     ]
 
 
+def _pending_orders_excluding_current(
+    orders: Optional[List[Any]],
+    *,
+    resolved_ticket: Optional[int],
+    requested_ticket: Optional[int],
+) -> List[Any]:
+    ticket_values = {
+        value
+        for value in (
+            validation._safe_int_ticket(resolved_ticket),
+            validation._safe_int_ticket(requested_ticket),
+        )
+        if value is not None
+    }
+    return [
+        order
+        for order in list(orders or [])
+        if not _position_matches_any_ticket(order, ticket_values)
+    ]
+
+
 def _evaluate_position_modify_guardrails(
     mt5: Any,
     *,
@@ -121,20 +142,13 @@ def _evaluate_position_modify_guardrails(
         account_info = mt5.account_info()
     except Exception:
         account_info = None
-    try:
-        positions = mt5.positions_get()
-    except Exception:
-        positions = None
-    if positions is None and guardrails_require_position_snapshot(
+    positions, pending_orders, snapshot_error = load_guardrail_book_snapshots(
+        mt5,
         trade_guardrails_config,
         account_info=account_info,
-    ):
-        return validation.snapshot_unavailable_error(
-            mt5,
-            snapshot="positions",
-            context="evaluate configured trade guardrails",
-            guardrail_blocked=True,
-        )
+    )
+    if snapshot_error is not None:
+        return snapshot_error
     guardrail_block = evaluate_trade_guardrails(
         trade_guardrails_config,
         symbol=position.symbol,
@@ -145,10 +159,11 @@ def _evaluate_position_modify_guardrails(
         entry_price=entry_price,
         account_info=account_info,
         existing_positions=_positions_excluding_current(
-            list(positions or []),
+            positions,
             resolved_ticket=resolved_ticket,
             requested_ticket=requested_ticket,
         ),
+        existing_pending_orders=pending_orders,
         symbol_info=symbol_info,
         symbol_info_resolver=mt5.symbol_info,
         enforce_symbol_rules=False,
@@ -747,20 +762,12 @@ def _modify_pending_order(
                     account_info = mt5.account_info()
                 except Exception:
                     account_info = None
-                try:
-                    positions = mt5.positions_get()
-                except Exception:
-                    positions = None
-                if positions is None and guardrails_require_position_snapshot(
+                positions, pending_orders, snapshot_error = load_guardrail_book_snapshots(
+                    mt5,
                     trade_guardrails_config,
                     account_info=account_info,
-                ):
-                    snapshot_error = validation.snapshot_unavailable_error(
-                        mt5,
-                        snapshot="positions",
-                        context="evaluate configured trade guardrails",
-                        guardrail_blocked=True,
-                    )
+                )
+                if snapshot_error is not None:
                     snapshot_error["pending_order_ticket"] = resolved_ticket
                     snapshot_error["ticket_requested"] = ticket_id
                     snapshot_error["ticket_resolution"] = ticket_resolution
@@ -774,10 +781,16 @@ def _modify_pending_order(
                     side=side,
                     entry_price=float(normalized_price),
                     account_info=account_info,
-                    existing_positions=list(positions or []),
+                    existing_positions=positions,
+                    existing_pending_orders=_pending_orders_excluding_current(
+                        pending_orders,
+                        resolved_ticket=resolved_ticket,
+                        requested_ticket=ticket_id,
+                    ),
                     symbol_info=symbol_info,
                     symbol_info_resolver=mt5.symbol_info,
                     enforce_symbol_rules=False,
+                    candidate_is_pending=True,
                 )
                 if guardrail_block is not None:
                     guardrail_block["pending_order_ticket"] = resolved_ticket

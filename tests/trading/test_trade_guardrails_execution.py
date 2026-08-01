@@ -11,6 +11,7 @@ from mtdata.core.trading.execution import _modify_pending_order, _modify_positio
 from mtdata.core.trading.gateway import (
     create_trading_gateway as create_real_trading_gateway,
 )
+from mtdata.core.trading.orders import _evaluate_live_trade_guardrails
 
 
 @pytest.fixture
@@ -123,6 +124,35 @@ def test_modify_pending_order_blocks_failed_position_snapshot(
 
     assert result["guardrail_blocked"] is True
     assert result["error_code"] == "positions_snapshot_unavailable"
+    assert result["guardrail_rule"] == "snapshot_integrity"
+
+
+def test_trade_guardrails_block_failed_pending_order_snapshot(
+    restore_trade_guardrails,
+    patch_gateway,
+):
+    trade_guardrails_config.enabled = True
+    trade_guardrails_config.account_risk_limits.max_total_exposure_lots = 5.0
+    patch_gateway.orders_get = lambda *args, **kwargs: None
+    patch_gateway.last_error = lambda: (1, "snapshot unavailable")
+
+    result = _evaluate_live_trade_guardrails(
+        create_real_trading_gateway(
+            adapter=patch_gateway,
+            ensure_connection_impl=lambda: None,
+        ),
+        symbol="EURUSD",
+        volume=1.0,
+        stop_loss=1.09,
+        deviation=20,
+        side="BUY",
+        entry_price=1.1,
+        symbol_info=patch_gateway.symbol_info("EURUSD"),
+    )
+
+    assert result is not None
+    assert result["guardrail_blocked"] is True
+    assert result["error_code"] == "orders_snapshot_unavailable"
     assert result["guardrail_rule"] == "snapshot_integrity"
 
 

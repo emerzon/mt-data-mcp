@@ -53,6 +53,7 @@ from .requests import (
 from .safety import (
     assess_margin_stress,
     evaluate_trade_guardrails,
+    guardrails_require_pending_snapshot,
     guardrails_require_position_snapshot,
     preview_trade_guardrails,
 )
@@ -305,6 +306,16 @@ def _best_effort_trade_guardrail_positions() -> Optional[List[Any]]:
     except Exception:
         return None
     return None if positions is None else list(positions)
+
+
+def _best_effort_trade_guardrail_pending_orders() -> Optional[List[Any]]:
+    if not trade_guardrails_config.is_enabled():
+        return []
+    try:
+        pending_orders = mt5_adapter.orders_get()
+    except Exception:
+        return None
+    return None if pending_orders is None else list(pending_orders)
 
 
 def _normalize_idempotency_key(value: Any) -> Optional[str]:
@@ -1695,6 +1706,28 @@ def run_trade_place(  # noqa: C901
                     order_type=order_type_norm,
                     pending=is_pending,
                 )
+            pending_snapshot_required = guardrails_require_pending_snapshot(
+                trade_guardrails_config,
+                account_info=guardrail_account_info,
+                enforce_account_risk=True,
+                enforce_wallet_risk=False,
+            )
+            guardrail_pending_orders = (
+                _best_effort_trade_guardrail_pending_orders()
+                if pending_snapshot_required
+                else []
+            )
+            if guardrail_pending_orders is None:
+                return _finish(
+                    validation.snapshot_unavailable_error(
+                        mt5_adapter,
+                        snapshot="orders",
+                        context="preview configured trade guardrails",
+                        guardrail_blocked=True,
+                    ),
+                    order_type=order_type_norm,
+                    pending=is_pending,
+                )
             guardrail_preview = preview_trade_guardrails(
                 trade_guardrails_config,
                 symbol=symbol_norm,
@@ -1704,6 +1737,8 @@ def run_trade_place(  # noqa: C901
                 side=_guardrail_order_side(order_type_norm),
                 account_info=guardrail_account_info,
                 existing_positions=guardrail_positions,
+                existing_pending_orders=guardrail_pending_orders,
+                candidate_is_pending=is_pending,
             )
             if guardrail_preview.get("blocked"):
                 violations = list(guardrail_preview.get("violations") or [])

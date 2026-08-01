@@ -13,7 +13,10 @@ from ...utils.quote import resolve_quote_tick, tick_value
 from . import comments, common, time, validation
 from .gateway import MT5TradingGateway, create_trading_gateway, trading_connection_error
 from .positions import _resolve_open_position
-from .safety import evaluate_trade_guardrails, guardrails_require_position_snapshot
+from .safety import (
+    evaluate_trade_guardrails,
+    load_guardrail_book_snapshots,
+)
 from .time import ExpirationValue
 from .validation import MarketOrderTypeInput, OrderTypeInput
 
@@ -665,6 +668,7 @@ def _evaluate_live_trade_guardrails(
     side: str,
     entry_price: float,
     symbol_info: Any,
+    candidate_is_pending: bool = False,
 ) -> Optional[Dict[str, Any]]:
     if not trade_guardrails_config.is_enabled():
         return None
@@ -672,20 +676,13 @@ def _evaluate_live_trade_guardrails(
         account_info = mt5.account_info()
     except Exception:
         account_info = None
-    try:
-        positions = mt5.positions_get()
-    except Exception:
-        positions = None
-    if positions is None and guardrails_require_position_snapshot(
+    positions, pending_orders, snapshot_error = load_guardrail_book_snapshots(
+        mt5,
         trade_guardrails_config,
         account_info=account_info,
-    ):
-        return validation.snapshot_unavailable_error(
-            mt5,
-            snapshot="positions",
-            context="evaluate configured trade guardrails",
-            guardrail_blocked=True,
-        )
+    )
+    if snapshot_error is not None:
+        return snapshot_error
     return evaluate_trade_guardrails(
         trade_guardrails_config,
         symbol=symbol,
@@ -695,9 +692,11 @@ def _evaluate_live_trade_guardrails(
         side=side,
         entry_price=entry_price,
         account_info=account_info,
-        existing_positions=list(positions or []),
+        existing_positions=positions,
+        existing_pending_orders=pending_orders,
         symbol_info=symbol_info,
         symbol_info_resolver=mt5.symbol_info,
+        candidate_is_pending=candidate_is_pending,
     )
 
 
@@ -1472,6 +1471,7 @@ def _place_pending_order(
                 side="BUY" if "BUY" in str(t) else "SELL",
                 entry_price=float(norm_price),
                 symbol_info=symbol_info,
+                candidate_is_pending=True,
             )
             if guardrail_block is not None:
                 return guardrail_block

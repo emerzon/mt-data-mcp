@@ -168,7 +168,7 @@ Guardrails span several layers:
 | Account risk | Margin too low, floating loss or exposure too high | `MTDATA_TRADE_MIN_MARGIN_LEVEL_PCT`, `MTDATA_TRADE_MAX_FLOATING_LOSS`, `MTDATA_TRADE_MAX_TOTAL_EXPOSURE_LOTS` |
 | Wallet risk | Post-trade risk exceeds a % of equity/balance/free margin | `MTDATA_TRADE_MAX_RISK_PCT_OF_EQUITY`, `MTDATA_TRADE_MAX_RISK_PCT_OF_BALANCE`, `MTDATA_TRADE_MAX_RISK_PCT_OF_FREE_MARGIN` |
 
-> **Note:** A per-symbol volume map (`MTDATA_TRADE_MAX_VOLUME_BY_SYMBOL`) also acts as an allowlist — a symbol missing from the map is rejected. Wallet-risk caps require a quantifiable stop-loss and valid broker tick metadata.
+> **Note:** A per-symbol volume map (`MTDATA_TRADE_MAX_VOLUME_BY_SYMBOL`) also acts as an allowlist — a symbol missing from the map is rejected. Exposure and wallet-risk caps include both open positions and pending orders. Wallet-risk caps fail closed when any position or pending order lacks a quantifiable stop-loss or valid broker tick metadata.
 
 Reduce-only checks the current open positions before allowing an opposite-side
 order no larger than the net position. On hedging accounts, `trade_place` cannot

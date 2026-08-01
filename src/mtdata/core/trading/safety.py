@@ -231,6 +231,70 @@ def guardrails_require_position_snapshot(
     )
 
 
+def guardrails_require_pending_snapshot(
+    config: Optional[TradeGuardrailsConfig],
+    *,
+    account_info: Any = None,
+    enforce_account_risk: bool = True,
+    enforce_wallet_risk: bool = True,
+) -> bool:
+    """Return whether enabled portfolio guardrails depend on pending orders."""
+    if not _guardrails_active(config):
+        return False
+    if _guardrails_ignored_for_demo(config, account_info=account_info):
+        return False
+    if (
+        enforce_account_risk
+        and config is not None
+        and config.account_risk_limits.max_total_exposure_lots is not None
+    ):
+        return True
+    return bool(
+        enforce_wallet_risk
+        and config is not None
+        and _wallet_limits_active(config.wallet_risk_limits)
+    )
+
+
+def load_guardrail_book_snapshots(
+    gateway: Any,
+    config: Optional[TradeGuardrailsConfig],
+    *,
+    account_info: Any = None,
+) -> tuple[List[Any], List[Any], Optional[Dict[str, Any]]]:
+    """Load every book component required by configured portfolio limits."""
+    try:
+        positions = gateway.positions_get()
+    except Exception:
+        positions = None
+    if positions is None and guardrails_require_position_snapshot(
+        config,
+        account_info=account_info,
+    ):
+        return [], [], validation.snapshot_unavailable_error(
+            gateway,
+            snapshot="positions",
+            context="evaluate configured trade guardrails",
+            guardrail_blocked=True,
+        )
+
+    try:
+        pending_orders = gateway.orders_get()
+    except Exception:
+        pending_orders = None
+    if pending_orders is None and guardrails_require_pending_snapshot(
+        config,
+        account_info=account_info,
+    ):
+        return [], [], validation.snapshot_unavailable_error(
+            gateway,
+            snapshot="orders",
+            context="evaluate configured trade guardrails",
+            guardrail_blocked=True,
+        )
+    return list(positions or []), list(pending_orders or []), None
+
+
 def _account_is_demo(account_info: Any) -> bool:
     if account_info is None:
         return False
@@ -539,12 +603,39 @@ def _estimate_order_risk_currency(
     return risk_currency, None
 
 
-def _sum_existing_exposure_lots(existing_positions: Optional[List[Any]]) -> float:
+def _pending_order_volume(order: Any) -> Optional[float]:
+    for field in ("volume_current", "volume_initial", "volume"):
+        volume = _safe_float_attr(order, field)
+        if volume is not None and math.isfinite(volume) and volume > 0.0:
+            return abs(volume)
+    return None
+
+
+def _resolve_pending_order_side(order: Any) -> Optional[str]:
+    order_type = _safe_float_attr(order, "type")
+    if order_type is None:
+        return None
+    type_value = int(order_type)
+    if type_value in {2, 4, 6}:
+        return "BUY"
+    if type_value in {3, 5, 7}:
+        return "SELL"
+    return None
+
+
+def _sum_existing_exposure_lots(
+    existing_positions: Optional[List[Any]],
+    existing_pending_orders: Optional[List[Any]] = None,
+) -> float:
     total = 0.0
     for position in list(existing_positions or []):
         volume = _safe_float_attr(position, "volume")
         if volume is not None:
             total += abs(volume)
+    for order in list(existing_pending_orders or []):
+        volume = _pending_order_volume(order)
+        if volume is not None:
+            total += volume
     return total
 
 
@@ -593,27 +684,49 @@ def _account_uses_hedging(account_info: Any) -> bool:
         return False
 
 
+def _candidate_reduces_existing_net(
+    account_info: Any,
+    *,
+    candidate_is_pending: bool,
+    side: Optional[str],
+    net_side: Optional[str],
+    net_volume: float,
+) -> bool:
+    return bool(
+        not candidate_is_pending
+        and not _account_uses_hedging(account_info)
+        and net_side is not None
+        and net_volume > 0
+        and side == {"BUY": "SELL", "SELL": "BUY"}.get(net_side)
+    )
+
+
 def _projected_exposure_lots(
     *,
     existing_positions: Optional[List[Any]],
+    existing_pending_orders: Optional[List[Any]],
     symbol: str,
     side: Optional[str],
     volume: Optional[float],
     account_info: Any = None,
+    candidate_is_pending: bool = False,
 ) -> float:
     """Project gross exposure after applying a candidate order.
 
     Opposite-side volume up to the current net size reduces exposure; any
     residual that would flip direction is counted as new exposure.
     """
-    existing = _sum_existing_exposure_lots(existing_positions)
+    existing = _sum_existing_exposure_lots(
+        existing_positions,
+        existing_pending_orders,
+    )
     try:
         new_volume = abs(float(volume or 0.0))
     except (TypeError, ValueError):
         new_volume = 0.0
     if new_volume <= 0 or not math.isfinite(new_volume):
         return existing
-    if _account_uses_hedging(account_info):
+    if candidate_is_pending or _account_uses_hedging(account_info):
         return existing + new_volume
 
     normalized_side = _normalize_side(side)
@@ -638,11 +751,12 @@ def _projected_exposure_lots(
 def _total_portfolio_risk_currency(
     *,
     existing_positions: Optional[List[Any]],
+    existing_pending_orders: Optional[List[Any]],
     symbol_info_resolver: Optional[Callable[[str], Any]],
 ) -> tuple[Optional[float], List[str]]:
     total = 0.0
     issues: List[str] = []
-    if not existing_positions:
+    if not existing_positions and not existing_pending_orders:
         return 0.0, issues
     if symbol_info_resolver is None:
         return None, ["symbol metadata resolver unavailable"]
@@ -684,6 +798,45 @@ def _total_portfolio_risk_currency(
             continue
         total += risk_currency
 
+    for order in list(existing_pending_orders or []):
+        symbol = _normalize_symbol(getattr(order, "symbol", None))
+        if not symbol:
+            issues.append("pending order symbol missing")
+            continue
+        side = _resolve_pending_order_side(order)
+        if side is None:
+            issues.append(f"{symbol}: unable to determine pending order side")
+            continue
+        volume = _pending_order_volume(order)
+        entry_price = _safe_float_attr(order, "price_open")
+        stop_loss = _safe_float_attr(order, "sl")
+        if volume is None or entry_price is None or entry_price <= 0:
+            issues.append(f"{symbol}: pending order metadata is incomplete")
+            continue
+        if stop_loss is None or math.isclose(stop_loss, 0.0, abs_tol=1e-12):
+            issues.append(
+                f"{symbol}: pending order risk cannot be quantified without a stop-loss."
+            )
+            continue
+        symbol_info = symbol_info_resolver(symbol)
+        if symbol_info is None:
+            issues.append(f"{symbol}: symbol metadata unavailable")
+            continue
+        risk_currency, risk_error = _estimate_order_risk_currency(
+            symbol_info=symbol_info,
+            volume=volume,
+            entry_price=entry_price,
+            stop_loss=stop_loss,
+            side=side,
+            allow_profit_stop=True,
+        )
+        if risk_currency is None:
+            issues.append(
+                f"{symbol}: unable to quantify pending order risk ({risk_error})."
+            )
+            continue
+        total += risk_currency
+
     return total, issues
 
 
@@ -692,6 +845,7 @@ def _evaluate_wallet_risk_limits(
     *,
     account_info: Any,
     existing_positions: Optional[List[Any]],
+    existing_pending_orders: Optional[List[Any]],
     symbol_info: Any,
     symbol_info_resolver: Optional[Callable[[str], Any]],
     symbol: str,
@@ -699,6 +853,7 @@ def _evaluate_wallet_risk_limits(
     entry_price: Optional[float],
     stop_loss: Optional[float],
     side: Optional[str],
+    candidate_is_pending: bool,
 ) -> Optional[Dict[str, Any]]:
     if not _wallet_limits_active(limits):
         return None
@@ -732,6 +887,7 @@ def _evaluate_wallet_risk_limits(
 
     existing_total_risk, existing_issues = _total_portfolio_risk_currency(
         existing_positions=existing_positions,
+        existing_pending_orders=existing_pending_orders,
         symbol_info_resolver=symbol_info_resolver,
     )
     if existing_total_risk is None:
@@ -762,13 +918,13 @@ def _evaluate_wallet_risk_limits(
     net_side, net_volume = _resolve_existing_symbol_net(
         symbol=symbol, existing_positions=existing_positions
     )
-    opposite = {"BUY": "SELL", "SELL": "BUY"}
     order_volume = float(volume)
-    if (
-        not _account_uses_hedging(account_info)
-        and net_side is not None
-        and net_volume > 0
-        and normalized_side == opposite.get(net_side)
+    if _candidate_reduces_existing_net(
+        account_info,
+        candidate_is_pending=candidate_is_pending,
+        side=normalized_side,
+        net_side=net_side,
+        net_volume=net_volume,
     ):
         reduce_volume = min(order_volume, net_volume)
         flip_volume = max(0.0, order_volume - net_volume)
@@ -880,6 +1036,8 @@ def evaluate_trade_guardrails(
     entry_price: Optional[float] = None,
     account_info: Any = None,
     existing_positions: Optional[List[Any]] = None,
+    existing_pending_orders: Optional[List[Any]] = None,
+    candidate_is_pending: bool = False,
     symbol_info: Any = None,
     symbol_info_resolver: Optional[Callable[[str], Any]] = None,
     enforce_symbol_rules: bool = True,
@@ -948,10 +1106,12 @@ def evaluate_trade_guardrails(
     if enforce_account_risk:
         projected_total = _projected_exposure_lots(
             existing_positions=existing_positions,
+            existing_pending_orders=existing_pending_orders,
             symbol=normalized_symbol,
             side=normalized_side,
             volume=volume,
             account_info=account_info,
+            candidate_is_pending=candidate_is_pending,
         )
         # Gate checks existing+new against the cap. Pass the full projected
         # exposure as new_volume so reduces (including from already-over-cap
@@ -978,6 +1138,7 @@ def evaluate_trade_guardrails(
             config.wallet_risk_limits,
             account_info=account_info,
             existing_positions=existing_positions,
+            existing_pending_orders=existing_pending_orders,
             symbol_info=symbol_info,
             symbol_info_resolver=symbol_info_resolver,
             symbol=normalized_symbol,
@@ -985,6 +1146,7 @@ def evaluate_trade_guardrails(
             entry_price=entry_price,
             stop_loss=stop_loss,
             side=normalized_side,
+            candidate_is_pending=candidate_is_pending,
         )
         if wallet_result is not None:
             return wallet_result
@@ -1002,6 +1164,8 @@ def preview_trade_guardrails(
     side: Optional[str] = None,
     account_info: Any = None,
     existing_positions: Optional[List[Any]] = None,
+    existing_pending_orders: Optional[List[Any]] = None,
+    candidate_is_pending: bool = False,
 ) -> Dict[str, Any]:
     """Produce a dry-run friendly preview of guardrail checks."""
     enabled = _guardrails_active(config)
@@ -1034,6 +1198,8 @@ def preview_trade_guardrails(
         side=side,
         account_info=account_info,
         existing_positions=existing_positions,
+        existing_pending_orders=existing_pending_orders,
+        candidate_is_pending=candidate_is_pending,
         enforce_account_risk=True,
         enforce_wallet_risk=False,
     )
