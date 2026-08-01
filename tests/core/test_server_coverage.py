@@ -68,7 +68,7 @@ class TestMcpRuntimeSettings:
         monkeypatch.setenv("FASTMCP_HOST", "0.0.0.0")
         monkeypatch.delenv("FASTMCP_ALLOW_REMOTE", raising=False)
         monkeypatch.delenv("MCP_AUTH_TOKEN", raising=False)
-        with pytest.raises(ValueError, match="MCP_AUTH_TOKEN"):
+        with pytest.raises(ValueError, match="FASTMCP_ALLOW_REMOTE"):
             load_mcp_runtime_settings()
 
     def test_non_loopback_host_with_auth_token(self, monkeypatch):
@@ -77,10 +77,8 @@ class TestMcpRuntimeSettings:
         monkeypatch.setenv("FASTMCP_HOST", "0.0.0.0")
         monkeypatch.setenv("MCP_AUTH_TOKEN", "remote-secret")
         monkeypatch.delenv("FASTMCP_ALLOW_REMOTE", raising=False)
-        with pytest.warns(RuntimeWarning, match="FASTMCP_ALLOW_REMOTE"):
-            settings = load_mcp_runtime_settings()
-        assert settings.host == "0.0.0.0"
-        assert settings.auth_token == "remote-secret"
+        with pytest.raises(ValueError, match="FASTMCP_ALLOW_REMOTE"):
+            load_mcp_runtime_settings()
 
     def test_stdio_skips_remote_bind_guard(self, monkeypatch):
         from mtdata.bootstrap.runtime import load_mcp_runtime_settings
@@ -1399,7 +1397,7 @@ class TestMainEntryPoints:
 
     @patch("mtdata.core.server.bootstrap_tools")
     @patch("mtdata.core.server.mcp")
-    def test_main_remote_bind_warns_and_starts(self, mock_mcp, mock_bootstrap, monkeypatch):
+    def test_main_remote_bind_requires_explicit_opt_in(self, mock_mcp, mock_bootstrap, monkeypatch):
         monkeypatch.delenv("MCP_TRANSPORT", raising=False)
         monkeypatch.setenv("FASTMCP_HOST", "0.0.0.0")
         monkeypatch.setenv("MCP_AUTH_TOKEN", "remote-secret")
@@ -1408,11 +1406,11 @@ class TestMainEntryPoints:
         mock_mcp.run = MagicMock()
         from mtdata.core.server import main
 
-        with pytest.warns(RuntimeWarning, match="FASTMCP_ALLOW_REMOTE"):
+        with pytest.raises(ValueError, match="FASTMCP_ALLOW_REMOTE"):
             main()
 
-        mock_bootstrap.assert_called_once()
-        mock_mcp.run.assert_called_once()
+        mock_bootstrap.assert_not_called()
+        mock_mcp.run.assert_not_called()
 
 
 # ── mcp instance ──────────────────────────────────────────────────────────

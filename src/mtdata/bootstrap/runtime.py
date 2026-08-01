@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import hmac
 import os
-import warnings
 from dataclasses import dataclass
 from ipaddress import ip_address
 from typing import Any, Literal, Optional
@@ -53,14 +52,11 @@ def _require_explicit_remote_bind(host: str, *, allow_remote: bool, host_env: st
     normalized = str(host or "").strip() or "127.0.0.1"
     if is_loopback_host(normalized) or allow_remote:
         return normalized
-    warnings.warn(
-        f"{host_env}={normalized!r} is a non-loopback bind. "
-        f"Set {allow_remote_env}=1 to suppress this warning. "
-        f"For local-only startup, set {host_env}=127.0.0.1.",
-        RuntimeWarning,
-        stacklevel=3,
+    raise ValueError(
+        f"{host_env}={normalized!r} is a non-loopback bind and requires "
+        f"{allow_remote_env}=1. For local-only startup, set "
+        f"{host_env}=127.0.0.1."
     )
-    return normalized
 
 
 def _validate_cors_origins(origins: tuple[str, ...]) -> tuple[str, ...]:
