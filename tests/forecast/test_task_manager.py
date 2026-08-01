@@ -137,6 +137,35 @@ class TestTaskManagerBasic(_TaskManagerTestCase):
             self.assertIsInstance(final.result, TrainedModelHandle)
             self.assertIsNotNone(final.started_at)
             self.assertIsNotNone(final.completed_at)
+            deadline = time.time() + 1.0
+            while task_id in self.tm._futures and time.time() < deadline:
+                time.sleep(0.01)
+            self.assertNotIn(task_id, self.tm._futures)
+
+    def test_mutation_holds_manager_lock_through_persistence(self):
+        task = self.tm._create_task("fake", "EURUSD_H1", "hash-lock")
+        original_persist = self.tm._persist_task
+        competing_acquired = threading.Event()
+        contender_done = threading.Event()
+
+        def _contend_for_lock():
+            with self.tm._lock:
+                competing_acquired.set()
+            contender_done.set()
+
+        def _persist_while_observing_lock(snapshot):
+            contender = threading.Thread(target=_contend_for_lock)
+            contender.start()
+            self.assertFalse(competing_acquired.wait(0.05))
+            original_persist(snapshot)
+
+        with patch.object(self.tm, "_persist_task", side_effect=_persist_while_observing_lock):
+            self.tm._mutate_task(task.task_id, status="completed", completed_at=time.time())
+
+        self.assertTrue(contender_done.wait(1.0))
+        persisted = self._job_store.get(task.task_id)
+        self.assertIsNotNone(persisted)
+        self.assertEqual(persisted.status, "completed")
 
     def test_failed_task_persists_error(self):
         fake = _FakeMethod(delay=0.01, fail=True)

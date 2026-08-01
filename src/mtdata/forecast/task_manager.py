@@ -454,7 +454,7 @@ class TaskManager:
                 setattr(task, key, value)
             self._cache_task(task)
             snapshot = _snapshot(task)
-        self._persist_task(snapshot)
+            self._persist_task(snapshot)
         return snapshot
 
     def _task_state(self, task_id: str) -> tuple[Optional[str], bool]:
@@ -726,6 +726,13 @@ class TaskManager:
 
         with self._lock:
             self._futures[task.task_id] = future
+
+        def _discard_completed_future(completed: Future) -> None:
+            with self._lock:
+                if self._futures.get(task.task_id) is completed:
+                    self._futures.pop(task.task_id, None)
+
+        future.add_done_callback(_discard_completed_future)
         return task.task_id, True
 
     def submit(
