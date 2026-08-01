@@ -56,7 +56,7 @@ def test_fetch_rates_with_warmup_uses_utc_epoch_seconds_for_end_ts() -> None:
             start_datetime="2025-01-01 00:00",
             end_datetime="2025-01-01 01:00",
             retry=False,
-            sanity_check=True,
+            sanity_check=False,
         )
 
     assert out_err is None

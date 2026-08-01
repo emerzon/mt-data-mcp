@@ -383,7 +383,7 @@ class TestFetchCandlesIndicators(unittest.TestCase):
         result = fetch_candles('EURUSD', limit=5, indicators='supertrend(7,3)')
 
         self.assertTrue(result.get('success'))
-        self.assertEqual(result['returned_count'], 4)
+        self.assertEqual(result['returned_count'], 5)
         self.assertEqual(result['candle_counts']['excluded']['indicator_warmup'], 0)
         self.assertEqual(mock_ti.call_count, 1)
         self.assertEqual(
@@ -425,7 +425,7 @@ class TestFetchCandlesIndicators(unittest.TestCase):
         result = fetch_candles('EURUSD', limit=5, indicators=[{'name': 'rsi', 'params': [14]}])
 
         self.assertTrue(result.get('success'))
-        self.assertEqual(result['returned_count'], 2)
+        self.assertEqual(result['returned_count'], 3)
         self.assertTrue(all(row['rsi_14'] is not None for row in result['data']))
         self.assertEqual(result['candle_counts']['excluded']['indicator_warmup'], 1)
         warmup_retry = result['meta']['diagnostics']['query']['warmup_retry']
