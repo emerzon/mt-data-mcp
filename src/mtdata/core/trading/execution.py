@@ -60,6 +60,113 @@ def _position_matches_any_ticket(position: Any, ticket_values: set[int]) -> bool
     return False
 
 
+def _exact_ticket_row(rows: Any, ticket: Optional[int]) -> Optional[Any]:
+    expected = validation._safe_int_ticket(ticket)
+    if expected is None:
+        return None
+    for row in list(rows or []):
+        if validation._safe_int_ticket(getattr(row, "ticket", None)) == expected:
+            return row
+    return None
+
+
+def _position_modify_readback(
+    mt5: Any,
+    *,
+    resolved_ticket: Optional[int],
+    price_increment: float,
+    digits: int,
+    price_tol: float,
+) -> Optional[Dict[str, Optional[float]]]:
+    try:
+        row = _exact_ticket_row(
+            mt5.positions_get(ticket=resolved_ticket),
+            resolved_ticket,
+        )
+    except Exception:
+        row = None
+    if row is None:
+        return None
+    actual_sl = validation._normalize_price_for_symbol(
+        getattr(row, "sl", None),
+        point=price_increment,
+        digits=digits,
+    )
+    actual_tp = validation._normalize_price_for_symbol(
+        getattr(row, "tp", None),
+        point=price_increment,
+        digits=digits,
+    )
+    return {
+        "applied_sl": _normalize_protection_level(actual_sl, tol=price_tol),
+        "applied_tp": _normalize_protection_level(actual_tp, tol=price_tol),
+    }
+
+
+def _pending_modify_readback(
+    mt5: Any,
+    *,
+    resolved_ticket: Optional[int],
+    price_increment: float,
+    digits: int,
+    price_tol: float,
+) -> Optional[Dict[str, Any]]:
+    try:
+        row = _exact_ticket_row(
+            mt5.orders_get(ticket=resolved_ticket),
+            resolved_ticket,
+        )
+    except Exception:
+        row = None
+    if row is None:
+        return None
+
+    def _price(name: str) -> Optional[float]:
+        normalized = validation._normalize_price_for_symbol(
+            getattr(row, name, None),
+            point=price_increment,
+            digits=digits,
+        )
+        return _normalize_protection_level(normalized, tol=price_tol)
+
+    return {
+        "applied_price": _price("price_open"),
+        "applied_sl": _price("sl"),
+        "applied_tp": _price("tp"),
+        "applied_expiration": validation._safe_int_attr(
+            row,
+            "time_expiration",
+            None,
+        ),
+        "applied_type_time": validation._safe_int_attr(row, "type_time", None),
+    }
+
+
+def _readback_adjustments(
+    requested: Dict[str, Any],
+    applied: Dict[str, Any],
+    *,
+    price_tol: float,
+) -> Dict[str, Dict[str, Any]]:
+    adjustments: Dict[str, Dict[str, Any]] = {}
+    for key, requested_value in requested.items():
+        applied_value = applied.get(key)
+        if key in {"applied_price", "applied_sl", "applied_tp"}:
+            matches = _protection_levels_match(
+                requested_value,
+                applied_value,
+                tol=price_tol,
+            )
+        else:
+            matches = requested_value == applied_value
+        if not matches:
+            adjustments[key.removeprefix("applied_")] = {
+                "requested": requested_value,
+                "applied": applied_value,
+            }
+    return adjustments
+
+
 def _positions_excluding_current(
     positions: Optional[List[Any]],
     *,
@@ -588,6 +695,13 @@ def _modify_position(
                     out["comment_fallback"] = comment_fallback
                 return out
 
+            readback = _position_modify_readback(
+                mt5,
+                resolved_ticket=resolved_ticket,
+                price_increment=price_increment,
+                digits=digits,
+                price_tol=price_tol,
+            )
             out = {
                 "success": True,
                 "retcode": result_retcode,
@@ -599,9 +713,38 @@ def _modify_position(
                 "position_ticket": resolved_ticket,
                 "ticket_requested": ticket_id,
                 "ticket_resolution": ticket_resolution,
-                "applied_sl": desired_sl,
-                "applied_tp": desired_tp,
+                "requested_sl": desired_sl,
+                "requested_tp": desired_tp,
             }
+            if readback is None:
+                out.update(
+                    {
+                        "applied_sl": None,
+                        "applied_tp": None,
+                        "verification_status": "unverified",
+                        "warnings": [
+                            "Broker accepted the position modification, but the live "
+                            "SL/TP values could not be read back."
+                        ],
+                    }
+                )
+            else:
+                out.update(readback)
+                out["verification_status"] = "verified"
+                adjustments = _readback_adjustments(
+                    {
+                        "applied_sl": desired_sl,
+                        "applied_tp": desired_tp,
+                    },
+                    readback,
+                    price_tol=price_tol,
+                )
+                if adjustments:
+                    out["broker_adjusted"] = True
+                    out["adjustment"] = adjustments
+                    out["warnings"] = [
+                        "Broker-reported SL/TP values differ from the requested modification."
+                    ]
             if isinstance(comment_fallback, dict):
                 out["comment_fallback"] = comment_fallback
             return out
@@ -870,7 +1013,61 @@ def _modify_pending_order(
 
             result_retcode = getattr(result, "retcode", None)
             no_change_code = validation._safe_int_attr(mt5, "TRADE_RETCODE_NO_CHANGES", 10025)
+            pending_readback = None
+            pending_requested: Dict[str, Any] = {}
+            pending_adjustments: Dict[str, Dict[str, Any]] = {}
+            if result_retcode in {no_change_code, mt5.TRADE_RETCODE_DONE}:
+                pending_readback = _pending_modify_readback(
+                    mt5,
+                    resolved_ticket=resolved_ticket,
+                    price_increment=price_increment,
+                    digits=digits,
+                    price_tol=_protection_level_tolerance(point=price_increment),
+                )
+                pending_requested = {
+                    "applied_price": float(normalized_price),
+                    "applied_sl": _normalize_protection_level(
+                        request_sl,
+                        tol=_protection_level_tolerance(point=price_increment),
+                    ),
+                    "applied_tp": _normalize_protection_level(
+                        request_tp,
+                        tol=_protection_level_tolerance(point=price_increment),
+                    ),
+                }
+                if "type_time" in request:
+                    pending_requested["applied_type_time"] = validation._safe_int_attr(
+                        request,
+                        "type_time",
+                        request.get("type_time"),
+                    )
+                if "expiration" in request:
+                    pending_requested["applied_expiration"] = validation._safe_int_ticket(
+                        request.get("expiration")
+                    )
+                if pending_readback is not None:
+                    pending_adjustments = _readback_adjustments(
+                        pending_requested,
+                        pending_readback,
+                        price_tol=_protection_level_tolerance(point=price_increment),
+                    )
             if result_retcode == no_change_code:
+                if pending_readback is not None and pending_adjustments:
+                    return {
+                        "error": (
+                            "Broker reported no changes, but the live pending order "
+                            "does not match the requested values."
+                        ),
+                        "retcode": result_retcode,
+                        "retcode_name": mt5.retcode_name(result_retcode),
+                        "pending_order_ticket": resolved_ticket,
+                        "ticket_requested": ticket_id,
+                        "ticket_resolution": ticket_resolution,
+                        "requested": pending_requested,
+                        "actual": pending_readback,
+                        "adjustment": pending_adjustments,
+                        "no_change": True,
+                    }
                 out = {
                     "success": True,
                     "no_change": True,
@@ -878,14 +1075,27 @@ def _modify_pending_order(
                     "retcode_name": mt5.retcode_name(result_retcode),
                     "comment": getattr(result, "comment", None),
                     "request_id": getattr(result, "request_id", None),
-                    "applied_price": request.get("price"),
-                    "applied_sl": request.get("sl"),
-                    "applied_tp": request.get("tp"),
-                    "applied_expiration": request.get("expiration"),
                     "pending_order_ticket": resolved_ticket,
                     "ticket_requested": ticket_id,
                     "ticket_resolution": ticket_resolution,
                 }
+                if pending_readback is None:
+                    out.update(
+                        {
+                            "applied_price": None,
+                            "applied_sl": None,
+                            "applied_tp": None,
+                            "applied_expiration": None,
+                            "verification_status": "unverified",
+                            "warnings": [
+                                "Broker reported no changes, but the pending order "
+                                "could not be read back."
+                            ],
+                        }
+                    )
+                else:
+                    out.update(pending_readback)
+                    out["verification_status"] = "verified"
                 if isinstance(comment_fallback, dict):
                     out["comment_fallback"] = comment_fallback
                 return out
@@ -911,14 +1121,33 @@ def _modify_pending_order(
                 "order": result.order,
                 "comment": result.comment,
                 "request_id": result.request_id,
-                "applied_price": request.get("price"),
-                "applied_sl": request.get("sl"),
-                "applied_tp": request.get("tp"),
-                "applied_expiration": request.get("expiration"),
                 "pending_order_ticket": resolved_ticket,
                 "ticket_requested": ticket_id,
                 "ticket_resolution": ticket_resolution,
             }
+            if pending_readback is None:
+                out.update(
+                    {
+                        "applied_price": None,
+                        "applied_sl": None,
+                        "applied_tp": None,
+                        "applied_expiration": None,
+                        "verification_status": "unverified",
+                        "warnings": [
+                            "Broker accepted the pending-order modification, but the "
+                            "live values could not be read back."
+                        ],
+                    }
+                )
+            else:
+                out.update(pending_readback)
+                out["verification_status"] = "verified"
+                if pending_adjustments:
+                    out["broker_adjusted"] = True
+                    out["adjustment"] = pending_adjustments
+                    out["warnings"] = [
+                        "Broker-reported pending-order values differ from the requested modification."
+                    ]
             if isinstance(comment_fallback, dict):
                 out["comment_fallback"] = comment_fallback
                 if comment_fallback.get("used"):
@@ -938,7 +1167,6 @@ def _modify_pending_order(
     return _modify_pending_order()
 
 
-_CLOSE_ABORT_CONSECUTIVE_FAILURES = 3
 _CLOSE_TICK_MAX_AGE_SECONDS = 10.0
 
 
@@ -1535,21 +1763,7 @@ def _close_positions(  # noqa: C901
 
             # 3. Close positions
             results.clear()
-            consecutive_failures = 0
             for position in to_close:
-                # Abort early if consecutive transport/broker failures suggest
-                # a connection problem rather than per-position issues.
-                if consecutive_failures >= _CLOSE_ABORT_CONSECUTIVE_FAILURES:
-                    results.append({
-                        "ticket": getattr(position, "ticket", None),
-                        "error": (
-                            f"Skipped: {consecutive_failures} consecutive close failures "
-                            "suggest a broker/transport problem."
-                        ),
-                        "aborted": True,
-                    })
-                    continue
-
                 # Re-read position to check it still exists
                 try:
                     fresh_positions = mt5.positions_get(ticket=position.ticket)
@@ -1564,7 +1778,6 @@ def _close_positions(  # noqa: C901
                     if last_error is not None:
                         error_result["last_error"] = last_error
                     results.append(error_result)
-                    consecutive_failures += 1
                     continue
                 if len(fresh_positions) == 0:
                     results.append(
@@ -1689,12 +1902,6 @@ def _close_positions(  # noqa: C901
                     if isinstance(ticket_resolution, dict):
                         close_result.setdefault("ticket_resolution", ticket_resolution)
                 results.append(close_result)
-
-                # Track consecutive failures for abort policy
-                if close_result.get("error"):
-                    consecutive_failures += 1
-                else:
-                    consecutive_failures = 0
 
             # If only one position was targeted by ticket, return single result
             if ticket is not None and len(results) == 1:

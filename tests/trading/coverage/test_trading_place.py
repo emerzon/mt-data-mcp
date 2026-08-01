@@ -446,6 +446,53 @@ class TestPlaceMarketOrder:
         assert mt5.order_send.call_count == 2
 
     @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_sl_tp_follow_up_does_not_retry_ambiguous_none(self):
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        mt5.order_send.side_effect = [_order_result(), None]
+        mt5.positions_get.return_value = [_position(sl=0.0, tp=0.0)]
+        from mtdata.core.trading import _place_market_order
+
+        result = _place_market_order(
+            "EURUSD",
+            0.01,
+            "BUY",
+            stop_loss=1.09,
+            take_profit=1.12,
+        )
+
+        assert mt5.order_send.call_count == 2
+        assert (result.get("sl_tp_result") or {}).get("status") == "unverified"
+        assert "not retried" in (result.get("sl_tp_result") or {}).get("error", "")
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_sl_tp_resolution_rejects_same_symbol_heuristic_match(self):
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        mt5.order_send.return_value = _order_result(order=10, deal=20)
+        mt5.history_deals_get.return_value = []
+        mt5.positions_get.return_value = [
+            _position(ticket=99, sl=0.0, tp=0.0, time=int(time.time()))
+        ]
+        from mtdata.core.trading import _place_market_order
+
+        with patch(
+            "mtdata.core.trading.orders._POSITION_RESOLUTION_WAIT_SCHEDULE_SECONDS",
+            (),
+        ):
+            result = _place_market_order(
+                "EURUSD",
+                0.01,
+                "BUY",
+                stop_loss=1.09,
+                take_profit=1.12,
+            )
+
+        assert mt5.order_send.call_count == 1
+        assert (result.get("sl_tp_result") or {}).get("status") == "unverified"
+        assert result.get("position_ticket") is None
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
     def test_sl_tp_readback_rejects_different_position_ticket(self):
         mt5 = sys.modules["MetaTrader5"]
         self._setup_mt5(mt5)
@@ -531,13 +578,12 @@ class TestPlaceMarketOrder:
         assert sl_tp_result.get("last_retcode") == 10004
 
     @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
-    def test_sl_tp_attach_retries_through_transient_none_return(self):
-        """A transient None return from order_send must not abort the attach loop;
-        the loop should keep retrying until a terminal retcode is seen."""
+    def test_sl_tp_attach_stops_after_ambiguous_none_return(self):
+        """A missing write response must not trigger another modify request."""
         mt5 = sys.modules["MetaTrader5"]
         self._setup_mt5(mt5)
 
-        # place -> REQUOTE -> None (transient) -> DONE (then verified).
+        # place -> REQUOTE -> None (ambiguous); the later DONE must not be sent.
         results = [
             _order_result(),                                # market order fill
             _order_result(retcode=10004, comment="Requote"),
@@ -559,9 +605,9 @@ class TestPlaceMarketOrder:
         with patch("mtdata.core.trading.orders._stdlib_time.sleep", lambda *_a, **_k: None):
             from mtdata.core.trading import _place_market_order
             result = _place_market_order("EURUSD", 0.01, "BUY", stop_loss=1.09, take_profit=1.12)
-        # Placement + 3 attach attempts (REQUOTE, None, DONE) => 4 order_send calls.
-        assert calls["n"] == 4
-        assert (result.get("sl_tp_result") or {}).get("status") == "applied"
+        # Placement + REQUOTE + ambiguous None => no further write.
+        assert calls["n"] == 3
+        assert (result.get("sl_tp_result") or {}).get("status") == "unverified"
 
     @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
     def test_initial_protected_order_failure_returns_error(self):

@@ -273,6 +273,8 @@ def _attach_post_fill_protection(
                 side=side,
                 volume=volume,
                 magic=magic,
+                require_exact_ticket_match=True,
+                allow_alternate_ticket_match=True,
             )
             if isinstance(resolve_info, dict):
                 last_resolve_info = dict(resolve_info)
@@ -361,6 +363,14 @@ def _attach_post_fill_protection(
                         modify_result = None
                         sl_tp_last_error = str(ex)
                         sl_tp_error = f"Error setting TP/SL: {str(ex)}"
+                    if modify_result is None:
+                        if sl_tp_error is None:
+                            sl_tp_error = (
+                                "Ambiguous broker response while setting TP/SL; "
+                                "the request was not retried."
+                            )
+                        sl_tp_apply_status = "unverified"
+                        break
                     if modify_result is not None:
                         sl_tp_last_retcode = getattr(modify_result, "retcode", None)
                         sl_tp_last_comment = getattr(modify_result, "comment", None)
@@ -432,7 +442,8 @@ def _attach_post_fill_protection(
                         if sl_tp_last_error:
                             detail_bits.append(f"broker_error={sl_tp_last_error!r}")
                         sl_tp_error = "Failed to set TP/SL (" + ", ".join(detail_bits) + ")"
-                    sl_tp_apply_status = "failed"
+                    if sl_tp_apply_status != "unverified":
+                        sl_tp_apply_status = "failed"
         else:
             checked = ", ".join(str(v) for v in position_ticket_candidates) or "none"
             sl_tp_error = (

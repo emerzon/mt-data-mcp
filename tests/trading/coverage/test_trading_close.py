@@ -1178,8 +1178,8 @@ class TestClosePositions:
     # -----------------------------------------------------------------
 
     @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
-    def test_aborts_after_consecutive_failures(self):
-        """Bulk close skips remaining positions after 3 consecutive failures."""
+    def test_attempts_every_position_after_consecutive_failures(self):
+        """Bulk close keeps trying distinct positions after earlier failures."""
         mt5 = sys.modules["MetaTrader5"]
         self._setup_mt5(mt5)
 
@@ -1206,10 +1206,9 @@ class TestClosePositions:
         res = _close_positions(symbol="EURUSD")
 
         results = res.get("results", [res])
-        aborted = [r for r in results if r.get("aborted")]
-        # Positions 4 and 5 should be aborted (after 3 consecutive failures on 1,2,3)
-        assert len(aborted) == 2
-        assert all("consecutive" in r["error"].lower() for r in aborted)
+        assert len(results) == 5
+        assert mt5.order_send.call_count == 5
+        assert not any(r.get("aborted") for r in results)
 
     @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
     def test_single_ticket_exception_returns_structured_error(self):

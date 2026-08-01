@@ -270,12 +270,19 @@ class TestModifyPosition:
     def test_success(self):
         mt5 = sys.modules["MetaTrader5"]
         self._setup_mt5(mt5)
-        mt5.positions_get.return_value = [_position()]
+        mt5.positions_get.side_effect = [
+            [_position()],
+            [_position(sl=1.081, tp=1.129)],
+        ]
         mt5.symbol_info.return_value = _sym()
         mt5.order_send.return_value = _order_result()
         from mtdata.core.trading import _modify_position
         result = _modify_position(ticket=1, stop_loss=1.08, take_profit=1.13)
         assert result.get("success") is True
+        assert result["verification_status"] == "verified"
+        assert result["applied_sl"] == pytest.approx(1.081)
+        assert result["applied_tp"] == pytest.approx(1.129)
+        assert result["broker_adjusted"] is True
 
     @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
     def test_dry_run_validates_and_skips_order_send(self):
@@ -494,11 +501,17 @@ class TestModifyPendingOrder:
     def test_success(self):
         mt5 = sys.modules["MetaTrader5"]
         self._setup_mt5(mt5)
-        mt5.orders_get.return_value = [_pending_order()]
+        mt5.orders_get.side_effect = [
+            [_pending_order()],
+            [_pending_order(price_open=1.0948)],
+        ]
         mt5.order_send.return_value = _order_result()
         from mtdata.core.trading import _modify_pending_order
         result = _modify_pending_order(ticket=100, price=1.095)
         assert result.get("success") is True
+        assert result["verification_status"] == "verified"
+        assert result["applied_price"] == pytest.approx(1.0948)
+        assert result["broker_adjusted"] is True
 
     @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
     def test_broker_no_changes_retcode_is_pending_modify_success(self):

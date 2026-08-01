@@ -1282,7 +1282,12 @@ def _resolve_open_position(
         if picked is not None:
             direct_ticket = validation._safe_int_ticket(getattr(picked, "ticket", None))
             if require_exact_ticket_match and direct_ticket != candidate:
-                continue
+                alternate_match = bool(
+                    allow_alternate_ticket_match
+                    and candidate in set(_ticket_fields(picked).values())
+                )
+                if not alternate_match:
+                    continue
             resolved = (
                 direct_ticket
                 if require_exact_ticket_match
