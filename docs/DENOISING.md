@@ -216,10 +216,12 @@ Split into components and reconstruct smoother parts.
 **Non-causal-only filters** (use past and future):
 - `lowpass_fft`, `hp`, `wavelet`
 
-All denoising stages default to causal operation. Non-causal filters and the
-zero-phase mode of filters such as Butterworth require an explicit
-`causality=zero_phase` opt-in. Use that mode only for retrospective analysis,
-not backtesting or live trading.
+Causal-capable filters and the public `denoise_series` helper default to causal
+operation. Selecting a non-causal-only preset is an explicit zero-phase choice;
+the normalized specification records `causality=zero_phase`. For a
+causal-capable filter such as Butterworth, request `causality=zero_phase`
+explicitly. Use zero-phase methods only for retrospective analysis, not
+backtesting or live trading.
 
 ---
 

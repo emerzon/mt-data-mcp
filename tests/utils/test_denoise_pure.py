@@ -284,6 +284,9 @@ class TestDenoiseSeriesDispatch:
         _check_basic(result.values, N)
         assert _smoothness(result.values) < _smoothness(NOISY_SIGNAL)
 
+        expected = s.ewm(span=10, adjust=False).mean()
+        pd.testing.assert_series_equal(result, expected)
+
     def test_ema_with_alpha(self):
         s = _make_series(NOISY_SIGNAL)
         result = denoise_series(s, method="ema", params={"alpha": 0.2})
@@ -315,25 +318,42 @@ class TestDenoiseSeriesDispatch:
 
     def test_lowpass_fft(self):
         s = _make_series(NOISY_SIGNAL)
-        result = denoise_series(s, method="lowpass_fft", params={"cutoff_ratio": 0.1})
+        result = denoise_series(
+            s,
+            method="lowpass_fft",
+            params={"cutoff_ratio": 0.1},
+            causality="zero_phase",
+        )
         _check_basic(result.values, N)
         assert _smoothness(result.values) < _smoothness(NOISY_SIGNAL)
 
     def test_hp(self):
         s = _make_series(NOISY_SIGNAL)
-        result = denoise_series(s, method="hp", params={"lamb": 1600.0})
+        result = denoise_series(
+            s, method="hp", params={"lamb": 1600.0}, causality="zero_phase"
+        )
         _check_basic(result.values, N)
 
     def test_whittaker(self):
         s = _make_series(NOISY_SIGNAL)
-        result = denoise_series(s, method="whittaker", params={"lamb": 1000.0, "order": 2})
+        result = denoise_series(
+            s,
+            method="whittaker",
+            params={"lamb": 1000.0, "order": 2},
+            causality="zero_phase",
+        )
         _check_basic(result.values, N)
         assert _smoothness(result.values) < _smoothness(NOISY_SIGNAL)
 
     def test_savgol(self):
         pytest.importorskip("scipy.signal")
         s = _make_series(NOISY_SIGNAL)
-        result = denoise_series(s, method="savgol", params={"window": 11, "polyorder": 2})
+        result = denoise_series(
+            s,
+            method="savgol",
+            params={"window": 11, "polyorder": 2},
+            causality="zero_phase",
+        )
         _check_basic(result.values, N)
         assert _smoothness(result.values) <= _smoothness(NOISY_SIGNAL)
 
@@ -342,12 +362,19 @@ class TestDenoiseSeriesDispatch:
         s = _make_series(np.array([1.0, 2.0, 3.0, 4.0, 5.0]))
 
         with pytest.raises(ValueError, match="window_length"):
-            denoise_series(s, method="savgol", params={"window": 9, "polyorder": 2})
+            denoise_series(
+                s,
+                method="savgol",
+                params={"window": 9, "polyorder": 2},
+                causality="zero_phase",
+            )
 
     def test_gaussian(self):
         pytest.importorskip("scipy.ndimage")
         s = _make_series(NOISY_SIGNAL)
-        result = denoise_series(s, method="gaussian", params={"sigma": 2.0})
+        result = denoise_series(
+            s, method="gaussian", params={"sigma": 2.0}, causality="zero_phase"
+        )
         _check_basic(result.values, N)
         assert _smoothness(result.values) < _smoothness(NOISY_SIGNAL)
 
@@ -384,30 +411,47 @@ class TestDenoiseSeriesDispatch:
 
     def test_tv(self):
         s = _make_series(NOISY_SIGNAL)
-        result = denoise_series(s, method="tv")
+        result = denoise_series(s, method="tv", causality="zero_phase")
         _check_basic(result.values, N)
 
     def test_wavelet(self):
         pytest.importorskip("pywt")
         s = _make_series(NOISY_SIGNAL)
-        result = denoise_series(s, method="wavelet", params={"wavelet": "db4"})
+        result = denoise_series(
+            s,
+            method="wavelet",
+            params={"wavelet": "db4"},
+            causality="zero_phase",
+        )
         _check_basic(result.values, N)
 
     def test_wavelet_packet(self):
         pytest.importorskip("pywt")
         s = _make_series(NOISY_SIGNAL)
-        result = denoise_series(s, method="wavelet_packet", params={"wavelet": "db4"})
+        result = denoise_series(
+            s,
+            method="wavelet_packet",
+            params={"wavelet": "db4"},
+            causality="zero_phase",
+        )
         _check_basic(result.values, N)
 
     def test_ssa(self):
         s = _make_series(NOISY_SIGNAL)
-        result = denoise_series(s, method="ssa", params={"window": 30, "components": 2})
+        result = denoise_series(
+            s,
+            method="ssa",
+            params={"window": 30, "components": 2},
+            causality="zero_phase",
+        )
         _check_basic(result.values, N)
         assert _smoothness(result.values) < _smoothness(NOISY_SIGNAL)
 
     def test_l1_trend(self):
         s = _make_series(NOISY_SIGNAL)
-        result = denoise_series(s, method="l1_trend", params={"lamb": 5.0})
+        result = denoise_series(
+            s, method="l1_trend", params={"lamb": 5.0}, causality="zero_phase"
+        )
         _check_basic(result.values, N)
 
     def test_lms(self):
@@ -428,44 +472,58 @@ class TestDenoiseSeriesDispatch:
     def test_vmd(self):
         pytest.importorskip("vmdpy")
         s = _make_series(NOISY_SIGNAL)
-        result = denoise_series(s, method="vmd")
+        result = denoise_series(s, method="vmd", causality="zero_phase")
         _check_basic(result.values, N)
 
     def test_emd(self):
         pytest.importorskip("PyEMD")
         s = _make_series(NOISY_SIGNAL)
-        result = denoise_series(s, method="emd")
+        result = denoise_series(s, method="emd", causality="zero_phase")
         _check_basic(result.values, N)
 
     def test_eemd(self):
         pytest.importorskip("PyEMD")
         s = _make_series(NOISY_SIGNAL)
-        result = denoise_series(s, method="eemd", params={"trials": 10, "random_state": 42})
+        result = denoise_series(
+            s,
+            method="eemd",
+            params={"trials": 10, "random_state": 42},
+            causality="zero_phase",
+        )
         _check_basic(result.values, N)
 
     def test_ceemdan(self):
         pytest.importorskip("PyEMD")
         s = _make_series(NOISY_SIGNAL)
-        result = denoise_series(s, method="ceemdan", params={"trials": 10, "random_state": 42})
+        result = denoise_series(
+            s,
+            method="ceemdan",
+            params={"trials": 10, "random_state": 42},
+            causality="zero_phase",
+        )
         _check_basic(result.values, N)
 
     def test_loess(self):
         pytest.importorskip("statsmodels")
         s = _make_series(NOISY_SIGNAL)
-        result = denoise_series(s, method="loess", params={"frac": 0.2})
+        result = denoise_series(
+            s, method="loess", params={"frac": 0.2}, causality="zero_phase"
+        )
         _check_basic(result.values, N)
         assert _smoothness(result.values) < _smoothness(NOISY_SIGNAL)
 
     def test_stl(self):
         pytest.importorskip("statsmodels")
         s = _make_series(NOISY_SIGNAL)
-        result = denoise_series(s, method="stl", params={"period": 50})
+        result = denoise_series(
+            s, method="stl", params={"period": 50}, causality="zero_phase"
+        )
         _check_basic(result.values, N)
 
     def test_stl_no_period_returns_identity(self):
         pytest.importorskip("statsmodels")
         s = _make_series(NOISY_SIGNAL)
-        result = denoise_series(s, method="stl", params={})
+        result = denoise_series(s, method="stl", params={}, causality="zero_phase")
         pd.testing.assert_series_equal(result, s)
 
     def test_unknown_method_returns_identity(self):
@@ -478,7 +536,12 @@ class TestDenoiseSeriesDispatch:
         monkeypatch.setattr("mtdata.utils.denoise.api._pywt", None)
 
         with pytest.raises(RuntimeError, match="requires PyWavelets"):
-            denoise_series(s, method="wavelet", params={"wavelet": "db4"})
+            denoise_series(
+                s,
+                method="wavelet",
+                params={"wavelet": "db4"},
+                causality="zero_phase",
+            )
 
     def test_ema_causal(self):
         s = _make_series(NOISY_SIGNAL)

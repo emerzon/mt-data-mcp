@@ -248,7 +248,7 @@ def _supported_denoise_causality(method: str) -> List[str]:
 
 
 def _normalize_denoise_causality(method: str, causality: str) -> str:
-    normalized = str(causality or "zero_phase").strip().lower() or "zero_phase"
+    normalized = str(causality or "causal").strip().lower() or "causal"
     supported = _supported_denoise_causality(method)
     if normalized not in supported:
         supported_txt = ", ".join(supported)
@@ -308,9 +308,9 @@ def denoise_series(
     s: pd.Series,
     method: str = 'none',
     params: Optional[Dict[str, Any]] = None,
-    causality: str = 'zero_phase',
+    causality: str = 'causal',
 ) -> pd.Series:
-    """Apply denoising to a single series."""
+    """Apply denoising to a single series without look-ahead by default."""
     if params is None:
         params = {}
     method = (method or 'none').lower().strip()
