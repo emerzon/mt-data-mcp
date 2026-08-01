@@ -378,7 +378,7 @@ mtdata-cli forecast_backtest_run EURUSD --timeframe M5 --horizon 6 \
 ```
 
 **What to look for:**
-- Highest `win_rate` with positive `avg_trade_return`
+- Highest `win_rate` with positive `avg_return_per_trade`
 - Low `max_drawdown`
 - `sharpe_ratio` > 1.0
 
@@ -447,7 +447,7 @@ mtdata-cli forecast_backtest_run EURUSD --horizon 12 --methods theta \
 
 ✅ `avg_rmse` is small relative to price volatility
 ✅ `avg_directional_accuracy` > 0.55 (better than random)
-✅ `win_rate` > 0.50 with positive `avg_trade_return`
+✅ `win_rate` > 0.50 with positive `avg_return_per_trade`
 ✅ `sharpe_ratio` > 1.0
 ✅ `max_drawdown` < 10-15%
 ✅ Results consistent across different `spacing` values

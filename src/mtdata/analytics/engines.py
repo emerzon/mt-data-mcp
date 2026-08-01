@@ -893,7 +893,10 @@ def _barrier_returns(
     outcomes: List[float] = []
     tp = float(tp_pct) / 100.0
     sl = float(sl_pct) / 100.0
+    next_eligible_signal = 0
     for idx in range(len(df) - horizon):
+        if idx < next_eligible_signal:
+            continue
         direction = float(signal.iloc[idx]) if pd.notna(signal.iloc[idx]) else 0.0
         if direction == 0:
             continue
@@ -928,18 +931,55 @@ def _barrier_returns(
             result = direction * (float(df["close"].iloc[idx + horizon]) / entry - 1.0)
         indices.append(idx)
         outcomes.append(float(result))
+        # A persistent state is one position, not a fresh overlapping trade on
+        # every bar.  The next entry may be considered only after this
+        # position's full outcome window has ended.
+        next_eligible_signal = idx + int(horizon)
     return np.asarray(indices, dtype=int), np.asarray(outcomes, dtype=float)
 
 
-def _observed_spread_bps(request: StrategyValidateRequest, gateway: Any) -> Tuple[float, str, bool]:
+def _observed_spread_bps(
+    request: StrategyValidateRequest,
+    gateway: Any,
+) -> Tuple[Optional[float], str, bool, Dict[str, Any]]:
     if request.spread_bps is not None:
-        return float(request.spread_bps), "explicit", request.cost_model == "fixed"
+        return (
+            float(request.spread_bps),
+            "explicit",
+            request.cost_model == "fixed",
+            {"basis": "request"},
+        )
     now = datetime.now(timezone.utc)
-    ticks, _ = _tick_frame(gateway, request.symbol, now - timedelta(hours=1), now, 10_000)
+    to_dt = _parse_time(request.end, now)
+    from_dt = _parse_time(request.start, to_dt - timedelta(hours=1))
+    if request.start and not request.end:
+        to_dt = from_dt + timedelta(hours=1)
+    ticks, _ = _tick_frame(gateway, request.symbol, from_dt, to_dt, 10_000)
     valid = ticks[np.isfinite(ticks["mid"]) & (ticks["mid"] > 0)]
     if len(valid):
-        return float(np.median(valid["spread"] / valid["mid"] * 10_000.0)), "mt5_tick_median", False
-    return 0.0, "unavailable", False
+        source = "mt5_tick_median_historical_window" if request.start or request.end else "mt5_tick_median_recent"
+        return (
+            float(np.median(valid["spread"] / valid["mid"] * 10_000.0)),
+            source,
+            False,
+            {
+                "basis": "tick_window",
+                "start": from_dt.isoformat().replace("+00:00", "Z"),
+                "end": to_dt.isoformat().replace("+00:00", "Z"),
+                "observations": int(len(valid)),
+            },
+        )
+    return (
+        None,
+        "unavailable",
+        False,
+        {
+            "basis": "tick_window",
+            "start": from_dt.isoformat().replace("+00:00", "Z"),
+            "end": to_dt.isoformat().replace("+00:00", "Z"),
+            "observations": 0,
+        },
+    )
 
 
 def validate_strategies(  # noqa: C901
@@ -955,7 +995,22 @@ def validate_strategies(  # noqa: C901
     )
     if len(df) < 200:
         return {"error": "At least 200 completed bars are required.", "error_code": "insufficient_data"}
-    spread_bps, spread_source, complete = _observed_spread_bps(request, gateway)
+    spread_bps, spread_source, complete, spread_window = _observed_spread_bps(request, gateway)
+    if spread_bps is None:
+        return {
+            "success": False,
+            "error": (
+                "Transaction-cost spread is unavailable for the requested evaluation window. "
+                "Provide spread_bps with cost_model='fixed' or use a window with tick history."
+            ),
+            "error_code": "cost_model_unavailable",
+            "cost_model": {
+                "source": spread_source,
+                "spread_bps": None,
+                "window": spread_window,
+                "complete": False,
+            },
+        }
     round_trip_bps = spread_bps + 2.0 * (request.commission_bps + request.slippage_bps)
     purge = int(request.purge_bars or 0)
     embargo = int(
@@ -1047,12 +1102,13 @@ def validate_strategies(  # noqa: C901
                     from sklearn.linear_model import LogisticRegression
 
                     train_x = signal.iloc[indices[train_mask]].to_numpy(dtype=float).reshape(-1, 1)
-                    train_y = (gross[train_mask] > 0).astype(int)
+                    train_net = gross[train_mask] - round_trip_bps / 10_000.0
+                    train_y = (train_net > 0).astype(int)
                     test_x = signal.iloc[test_indices].to_numpy(dtype=float).reshape(-1, 1)
                     if len(np.unique(train_y)) > 1 and np.all(np.isfinite(train_x)) and np.all(np.isfinite(test_x)):
                         calibrator = LogisticRegression(random_state=42).fit(train_x, train_y)
                         calibrated_probabilities.extend(calibrator.predict_proba(test_x)[:, 1].tolist())
-                        calibrated_labels.extend((test_gross > 0).astype(int).tolist())
+                        calibrated_labels.extend((test > 0).astype(int).tolist())
                 except Exception:
                     pass
             fold_rows.append({
@@ -1077,8 +1133,11 @@ def validate_strategies(  # noqa: C901
         peaks = np.maximum.accumulate(equity)
         drawdown = equity / peaks - 1.0
         std = float(np.std(arr, ddof=1)) if len(arr) > 1 else 0.0
-        sharpe = float(np.mean(arr) / std * math.sqrt(len(arr))) if std > 0 else None
         per_trade_sharpe = float(np.mean(arr) / std) if std > 0 else 0.0
+        sharpe = per_trade_sharpe if std > 0 else None
+        mean_return_t_stat = (
+            float(per_trade_sharpe * math.sqrt(len(arr))) if std > 0 else None
+        )
         trials = max(1, len(request.candidates))
         gamma = 0.5772156649015329
         expected_max = 0.0
@@ -1100,16 +1159,21 @@ def validate_strategies(  # noqa: C901
         fold_stability = float(
             np.sum(np.asarray(fold_expectancies) > 0) / request.n_splits
         ) if fold_expectancies else 0.0
-        calibration = {"status": "insufficient_data", "observations": len(calibrated_labels)}
+        base_rate_stability = {"status": "insufficient_data", "observations": len(calibrated_labels)}
         if calibrated_labels:
             probs = np.asarray(calibrated_probabilities, dtype=float)
             labels = np.asarray(calibrated_labels, dtype=float)
-            ece = 0.0
-            for lower in np.linspace(0.0, 0.9, 10):
-                mask = (probs >= lower) & (probs < lower + 0.1 if lower < 0.9 else probs <= 1.0)
-                if np.any(mask):
-                    ece += float(np.mean(mask)) * abs(float(np.mean(probs[mask])) - float(np.mean(labels[mask])))
-            calibration = {"status": "calibrated", "observations": len(labels), "method": "sigmoid_train_only", "brier_score": float(np.mean((probs - labels) ** 2)), "expected_calibration_error": ece}
+            distinct_probabilities = int(len(np.unique(np.round(probs, 12))))
+            base_rate_stability = {
+                "status": "available",
+                "observations": len(labels),
+                "method": "direction_group_train_base_rate",
+                "base_rate_brier_score": float(np.mean((probs - labels) ** 2)),
+                "weighted_base_rate_gap": float(abs(np.mean(probs) - np.mean(labels))),
+                "distinct_probabilities": distinct_probabilities,
+                "label_basis": "net_return_after_costs_positive",
+                "interpretation": "Long/short win-rate stability across folds; not continuous-score calibration.",
+            }
         results.append({
             "id": candidate.id,
             "type": candidate.type,
@@ -1120,6 +1184,7 @@ def validate_strategies(  # noqa: C901
             "win_rate": float(np.mean(arr > 0)),
             "profit_factor": float(arr[arr > 0].sum() / abs(arr[arr < 0].sum())) if np.any(arr < 0) else None,
             "sharpe": sharpe,
+            "mean_return_t_stat": mean_return_t_stat,
             "deflated_sharpe_probability": deflated_probability,
             "mean_return_p_value": mean_return_p_value,
             "max_drawdown": float(np.min(drawdown)),
@@ -1130,7 +1195,7 @@ def validate_strategies(  # noqa: C901
             "signal_coverage": signal_coverage,
             "skipped_folds": skipped_folds,
             "same_bar_policy": same_bar_policy,
-            "calibration": calibration,
+            "direction_base_rate_stability": base_rate_stability,
             **({"folds": fold_rows} if request.detail == "full" else {}),
         })
     eligible_p = sorted(
@@ -1174,7 +1239,9 @@ def validate_strategies(  # noqa: C901
             "minimum_positive_fold_share": float(request.min_positive_fold_share),
         }
     ranked = sorted(results, key=lambda item: (item.get("net_expectancy") is None, -(item.get("net_expectancy") or -1e9)))
-    warnings_out = [] if complete else ["Observed spread was used, but commission/slippage completeness could not be proven from sufficient matched fills."]
+    warnings_out = [] if complete else [
+        "A tick-window spread proxy was used; commission and slippage remain the explicit request values."
+    ]
     for item in results:
         folds_evaluated = int(item.get("folds_evaluated") or 0)
         if item.get("evaluation_status") == "complete" and folds_evaluated < request.n_splits:
@@ -1204,8 +1271,15 @@ def validate_strategies(  # noqa: C901
             "execution_timing": "next_bar_open",
             "barrier_window": "entry_bar_through_horizon",
         },
-        "cost_model": {"source": spread_source, "spread_bps": spread_bps, "commission_bps_per_side": request.commission_bps, "slippage_bps_per_side": request.slippage_bps, "round_trip_bps": round_trip_bps, "complete": complete},
+        "cost_model": {"source": spread_source, "spread_bps": spread_bps, "commission_bps_per_side": request.commission_bps, "slippage_bps_per_side": request.slippage_bps, "round_trip_bps": round_trip_bps, "window": spread_window, "complete": complete},
         "data_quality": {"bars": len(df), "cost_model_complete": complete},
+        "units": {
+            "net_expectancy": "return_fraction_per_trade",
+            "max_drawdown": "return_fraction",
+            "sharpe": "mean_net_return_per_trade_divided_by_per_trade_standard_deviation",
+            "mean_return_t_stat": "dimensionless_test_statistic",
+            "trades": "non_overlapping_positions",
+        },
         "warnings": warnings_out,
     }
 

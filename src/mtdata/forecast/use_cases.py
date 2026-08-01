@@ -1711,6 +1711,8 @@ def _compact_backtest_result(result: Dict[str, Any]) -> Dict[str, Any]:
         "win_rate_pct": 4,
         "max_drawdown": 4,
         "max_drawdown_pct": 4,
+        "cumulative_return": 6,
+        "cumulative_return_pct": 4,
         "avg_return": 6,
         "avg_return_pct": 4,
         "avg_return_per_trade": 6,
@@ -1796,6 +1798,8 @@ def _compact_backtest_result(result: Dict[str, Any]) -> Dict[str, Any]:
                 else (
                     "win_rate",
                     "win_rate_pct",
+                    "cumulative_return",
+                    "cumulative_return_pct",
                     "max_drawdown",
                     "max_drawdown_pct",
                     "avg_return",

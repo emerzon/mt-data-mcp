@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
@@ -539,6 +540,14 @@ def test_strategy_validation_returns_walk_forward_oos_metrics() -> None:
     assert result["rankings"][0]["id"] == "cross"
     assert result["rankings"][0]["trades"] > 0
     assert result["rankings"][0]["evaluation_status"] == "complete"
+    candidate = result["rankings"][0]
+    assert "calibration" not in candidate
+    assert "direction_base_rate_stability" in candidate
+    if candidate["sharpe"] is not None:
+        assert candidate["mean_return_t_stat"] == pytest.approx(
+            candidate["sharpe"] * math.sqrt(candidate["trades"])
+        )
+    assert result["units"]["trades"] == "non_overlapping_positions"
     assert result["rankings"][0]["evidence"]["classification"] in {
         "positive", "negative", "inconclusive"
     }
@@ -567,6 +576,52 @@ def test_strategy_barrier_entry_uses_next_bar_open_after_gap() -> None:
 
     assert indices.tolist() == [0]
     assert outcomes.tolist() == pytest.approx([0.0])
+
+
+def test_strategy_barrier_returns_do_not_overlap_persistent_signals() -> None:
+    frame = pd.DataFrame(
+        {
+            "open": np.full(12, 100.0),
+            "high": np.full(12, 100.1),
+            "low": np.full(12, 99.9),
+            "close": np.full(12, 100.0),
+        }
+    )
+    signal = pd.Series(np.ones(12))
+
+    indices, outcomes = _barrier_returns(
+        frame,
+        signal,
+        horizon=3,
+        tp_pct=5.0,
+        sl_pct=5.0,
+    )
+
+    assert indices.tolist() == [0, 3, 6]
+    assert outcomes.tolist() == pytest.approx([0.0, 0.0, 0.0])
+
+
+def test_strategy_validation_fails_when_cost_spread_is_unavailable() -> None:
+    gateway = FakeGateway()
+    gateway.copy_ticks_range = lambda *_args, **_kwargs: []
+    request = StrategyValidateRequest(
+        symbol="EURUSD",
+        lookback=400,
+        candidates=[
+            {
+                "id": "cross",
+                "type": "builtin_strategy",
+                "strategy": "sma_cross",
+                "params": {"fast_period": 5, "slow_period": 20},
+            }
+        ],
+    )
+
+    result = validate_strategies(request, gateway)
+
+    assert result["success"] is False
+    assert result["error_code"] == "cost_model_unavailable"
+    assert result["cost_model"]["spread_bps"] is None
 
 
 def test_forecast_strategy_folds_cover_computed_signal_window(monkeypatch) -> None:

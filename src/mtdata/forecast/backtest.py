@@ -190,6 +190,8 @@ def _unavailable_performance_metrics(reason: str, slippage_bps: float) -> Dict[s
     return {
         "avg_return": None,
         "avg_return_pct": None,
+        "cumulative_return": None,
+        "cumulative_return_pct": None,
         "avg_return_per_trade": None,
         "avg_return_per_trade_pct": None,
         "win_rate": None,
@@ -262,6 +264,8 @@ _MIN_ANNUALIZATION_TRADES = 30
 _MIN_ANNUALIZATION_YEARS = 0.25
 _TRADE_BACKTEST_UNITS = {
     "returns": "return_fraction",
+    "cumulative_return": "return_fraction",
+    "cumulative_return_pct": "percentage_points",
     "gross_return": "return_fraction",
     "gross_return_pct": "percentage_points",
     "net_return": "return_fraction",
@@ -423,6 +427,8 @@ def _compute_performance_metrics(
             else float("nan")
         )
         return {
+            "cumulative_return": 0.0,
+            "cumulative_return_pct": 0.0,
             "avg_return_per_trade": 0.0,
             "avg_return_per_trade_pct": 0.0,
             "win_rate": 0.0,
@@ -553,6 +559,7 @@ def _compute_performance_metrics(
         else None
     )
     metrics.update({
+        "cumulative_return": float(equity[-1] - 1.0),
         "avg_return_per_trade": avg_return,
         "win_rate": float(round(win_rate_value, 4)) if win_rate_value is not None else None,
         "win_rate_pct": win_rate_pct,
@@ -578,6 +585,7 @@ def _compute_performance_metrics(
         "slippage_bps": float(slippage_bps),
     })
     for source_key in (
+        "cumulative_return",
         "avg_return_per_trade",
         "avg_win_return",
         "avg_loss_return",
