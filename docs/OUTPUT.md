@@ -115,6 +115,14 @@ List-style tools return a normalized pagination block so you can page determinis
 | `limit` | Page size requested (`null` when unbounded) |
 | `has_more` | `true` when more rows remain after this page |
 | `more_available` | Count of rows remaining after this page |
+| `total_is_lower_bound` | Present and `true` when a bounded provider fetch cannot know the exact total |
+
+The `pagination` object is authoritative and is the only pagination
+representation in canonical payloads. Root-level `total_count`, `offset`,
+`limit`, `page`, `pages`, `has_more`, and `more_available` aliases are not
+emitted. A root `count` may still describe the size of the returned collection.
+Tools that accept a one-based `page` input convert it to the zero-based
+`pagination.offset` value.
 
 Page through results with `--offset` and `--limit`:
 

@@ -5,6 +5,7 @@ import pytest
 from mtdata.core.output_contract import (
     _coerce_optional_verbose_flag,
     attach_collection_contract,
+    build_pagination_meta,
     ensure_common_meta,
     normalize_output_detail,
     normalize_output_extras,
@@ -13,6 +14,23 @@ from mtdata.core.output_contract import (
     resolve_output_contract,
 )
 from mtdata.shared.schema import CANONICAL_OUTPUT_DETAIL_ALIASES
+
+
+def test_pagination_meta_can_label_a_provider_lower_bound() -> None:
+    assert build_pagination_meta(
+        total=21,
+        returned=20,
+        limit=20,
+        total_is_lower_bound=True,
+    ) == {
+        "total": 21,
+        "returned": 20,
+        "offset": 0,
+        "limit": 20,
+        "has_more": True,
+        "more_available": 1,
+        "total_is_lower_bound": True,
+    }
 
 
 def test_normalize_output_detail_preserves_summary_and_standard() -> None:

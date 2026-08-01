@@ -72,8 +72,6 @@ def tools_list(
             paged = filtered[start:]
         else:
             paged = filtered[start : start + limit_value]
-        has_more = start + len(paged) < len(filtered)
-
         gated_tools: list[Dict[str, Any]] = []
         slimmed: list[Dict[str, Any]] = []
         compact_mode = detail_mode == "compact"
@@ -113,10 +111,6 @@ def tools_list(
         else:
             catalog["categories"] = categories
         catalog["count"] = len(slimmed)
-        catalog["total_count"] = len(filtered)
-        catalog["offset"] = offset_value
-        catalog["limit"] = limit_value
-        catalog["has_more"] = has_more
         catalog["pagination"] = build_pagination_meta(
             total=len(filtered),
             returned=len(slimmed),

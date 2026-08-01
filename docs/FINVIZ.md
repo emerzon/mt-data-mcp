@@ -95,8 +95,11 @@ mtdata-cli finviz_news --limit 20 --json
 | `--limit` | 20 | Max news items |
 | `--page` | 1 | Pagination page |
 
-Stock-specific responses keep the legacy `news` rows and also include a
-normalized `items` list with `title`, `source`, `published_at`, and `url`.
+Stock-specific responses use a normalized `items` list with `title`, `source`,
+`published_at`, and `url`. Finviz tools may accept one-based `--page` inputs,
+but responses use the shared offset-based `pagination` object documented in
+[OUTPUT.md](OUTPUT.md#pagination); flat provider `page`/`pages` fields are not
+emitted.
 
 ### `finviz_market_news`
 

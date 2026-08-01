@@ -1899,12 +1899,11 @@ def _forecast_list_methods_impl(  # noqa: C901
             out_full = dict(data)
             out_full["detail"] = "full"
             out_full["methods"] = filtered_full
-            out_full["total"] = int(data.get("total") or len(methods_full))
-            out_full["total_filtered"] = int(total_filtered)
+            out_full["catalog_total"] = int(data.get("total") or len(methods_full))
+            out_full.pop("total", None)
             out_full["available"] = available_count
             out_full["unavailable"] = int(len(filtered_full) - available_count)
-            out_full["methods_shown"] = int(len(filtered_full))
-            out_full["methods_hidden"] = int(
+            hidden_count = int(
                 max(0, total_filtered - offset_value - len(filtered_full))
             )
             out_full["pagination"] = build_pagination_meta(
@@ -1913,14 +1912,7 @@ def _forecast_list_methods_impl(  # noqa: C901
                 offset=offset_value,
                 limit=limit_value,
             )
-            if offset_value:
-                out_full["methods_before"] = int(min(offset_value, total_filtered))
-                out_full["offset"] = int(offset_value)
-            if out_full["methods_hidden"] > 0 or offset_value:
-                out_full["has_more"] = bool(
-                    offset_value + len(filtered_full) < total_filtered
-                )
-            if out_full["methods_hidden"] > 0 and limit_value is not None:
+            if hidden_count > 0 and limit_value is not None:
                 if offset_value:
                     out_full["truncation_reason"] = (
                         f"Limit {limit_value} at offset {offset_value}; "
@@ -2057,13 +2049,10 @@ def _forecast_list_methods_impl(  # noqa: C901
                     "for all filtered methods."
                 )
         out = {
-            "total": int(data.get("total") or len(compact_methods)),
-            "total_filtered": int(len(compact_methods)),
+            "catalog_total": int(data.get("total") or len(compact_methods)),
             "available": available_count,
             "unavailable": unavailable_count,
             "methods": selected_methods,
-            "methods_shown": int(len(selected_methods)),
-            "methods_hidden": hidden_count,
             "pagination": build_pagination_meta(
                 total=len(compact_methods),
                 returned=len(selected_methods),
@@ -2091,13 +2080,6 @@ def _forecast_list_methods_impl(  # noqa: C901
                     "mtdata-cli forecast_generate SYMBOL --method mc_gbm",
                     "mtdata-cli forecast_volatility_estimate SYMBOL --method ewma",
                 ]
-        if offset_value:
-            out["methods_before"] = int(min(offset_value, len(compact_methods)))
-            out["offset"] = int(offset_value)
-        if hidden_count > 0 or offset_value:
-            out["has_more"] = bool(
-                offset_value + len(selected_methods) < len(compact_methods)
-            )
         if truncation_reason:
             out["truncation_reason"] = truncation_reason
         return out

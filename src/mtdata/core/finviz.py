@@ -697,29 +697,25 @@ def _normalize_finviz_market_payload(
     if symbol_filter_norm is not None:
         out["symbol"] = symbol_filter_norm
     available = len(normalized_rows)
-    if rows_key != "stocks":
-        out["available_count"] = available
-    pagination_total = (
-        int(out.get("total") or out.get("total_lower_bound") or 0)
+    pagination_total = out.get("total") if rows_key == "stocks" else available
+    pagination_lower_bound = (
+        (out.get("total_lower_bound") or available)
         if rows_key == "stocks"
-        else available
+        else None
     )
-    out["pagination"] = build_pagination_meta(
-        total=pagination_total,
+    pagination_has_more = bool(
+        out.get("has_more") or available > len(limited_rows)
+    )
+    out.pop("omitted_item_count", None)
+    _apply_finviz_pagination_contract(
+        out,
         returned=len(output_rows),
-        offset=0,
         limit=limit_value,
+        page=int(out.get("page") or request.get("page") or 1),
+        total=pagination_total,
+        total_lower_bound=pagination_lower_bound,
+        has_more=pagination_has_more,
     )
-    if rows_key == "stocks" and out.get("total") in (None, "") and out.get(
-        "total_lower_bound"
-    ) not in (None, ""):
-        out["pagination"]["total_is_lower_bound"] = True
-    if rows_key == "stocks" and out.get("total") not in (None, ""):
-        omitted = max(0, int(out.get("total") or 0) - int(out["count"]))
-    else:
-        omitted = max(0, available - len(limited_rows))
-    if omitted:
-        out["omitted_item_count"] = omitted
     out["detail"] = detail_mode
     has_price = any(
         isinstance(row, dict) and row.get("price") not in (None, "")
@@ -823,6 +819,72 @@ def _coerce_finviz_offset(offset: Optional[int]) -> int:
         return max(0, int(offset or 0))
     except Exception:
         return 0
+
+
+_FINVIZ_FLAT_PAGINATION_FIELDS = (
+    "total",
+    "total_count",
+    "total_lower_bound",
+    "total_is_lower_bound",
+    "offset",
+    "limit",
+    "page",
+    "pages",
+    "has_more",
+    "more_available",
+    "next_offset",
+    "next_page",
+    "truncated",
+)
+
+
+def _apply_finviz_pagination_contract(
+    out: Dict[str, Any],
+    *,
+    returned: int,
+    limit: int,
+    page: int = 1,
+    total: Any = None,
+    total_lower_bound: Any = None,
+    has_more: Optional[bool] = None,
+) -> Dict[str, Any]:
+    """Replace Finviz page aliases with the canonical offset pagination block."""
+    limit_value = max(1, int(limit))
+    page_value = max(1, int(page))
+    offset_value = (page_value - 1) * limit_value
+    returned_value = max(0, int(returned))
+
+    exact_total: Optional[int]
+    try:
+        exact_total = None if total in (None, "") else max(0, int(total))
+    except (TypeError, ValueError):
+        exact_total = None
+    try:
+        lower_bound = (
+            None
+            if total_lower_bound in (None, "")
+            else max(0, int(total_lower_bound))
+        )
+    except (TypeError, ValueError):
+        lower_bound = None
+
+    total_is_lower_bound = exact_total is None
+    if exact_total is not None:
+        pagination_total = exact_total
+    else:
+        minimum_total = offset_value + returned_value + (1 if has_more else 0)
+        pagination_total = max(lower_bound or 0, minimum_total)
+
+    for field in _FINVIZ_FLAT_PAGINATION_FIELDS:
+        out.pop(field, None)
+    out["pagination"] = build_pagination_meta(
+        total=pagination_total,
+        returned=returned_value,
+        offset=offset_value,
+        limit=limit_value,
+        total_is_lower_bound=total_is_lower_bound,
+    )
+    return out
 
 
 def _build_tool_contract_meta(
@@ -1215,10 +1277,12 @@ def finviz_filters_list(
         "success": True,
         "items": limited_rows,
         "count": len(limited_rows),
-        "total": len(rows),
-        "limit": limit_value,
-        "offset": offset_value,
-        "has_more": offset_value + len(limited_rows) < len(rows),
+        "pagination": build_pagination_meta(
+            total=len(rows),
+            returned=len(limited_rows),
+            offset=offset_value,
+            limit=limit_value,
+        ),
         "detail": detail_mode,
         "hint": (
             "Use finviz_screen filters as Filter=Value pairs or shorthand "
@@ -1230,8 +1294,6 @@ def finviz_filters_list(
         out["search"] = search
     if filter_name not in (None, ""):
         out["filter_name"] = filter_name
-    if len(rows) > len(limited_rows):
-        out["omitted_item_count"] = max(0, len(rows) - offset_value - len(limited_rows))
     return out
 
 
@@ -1367,6 +1429,8 @@ def _normalize_finviz_news_payload(
     *,
     detail: DetailLiteral = "compact",  # type: ignore
     kind: str = "headline",
+    limit: int = 20,
+    page: int = 1,
 ) -> Dict[str, Any]:
     out = dict(result)
     out.pop("tool_scope", None)
@@ -1393,6 +1457,22 @@ def _normalize_finviz_news_payload(
         for item in source_rows
     ]
     out.pop("news", None)
+    pages = result.get("pages")
+    page_value = int(result.get("page") or page or 1)
+    has_more = bool(
+        result.get("has_more")
+        or (pages not in (None, "") and page_value < int(pages))
+    )
+    _apply_finviz_pagination_contract(
+        out,
+        returned=len(normalized_items),
+        limit=limit,
+        page=page_value,
+        total=result.get("total"),
+        total_lower_bound=result.get("total_lower_bound"),
+        has_more=has_more,
+    )
+    out.pop("omitted_item_count", None)
     if detail_mode == "summary":
         out.pop("items", None)
         out["count"] = int(out.get("count") or len(normalized_items))
@@ -2314,6 +2394,8 @@ def _normalize_finviz_calendar_payload(
     detail: str = "compact",
     calendar_type: str = "economic",
     country_code_filter: Optional[str] = None,
+    limit: int = 20,
+    page: int = 1,
 ) -> Dict[str, Any]:
     if not isinstance(result, dict) or result.get("error"):
         return result
@@ -2398,6 +2480,22 @@ def _normalize_finviz_calendar_payload(
             "special_amount": "listing_currency_per_share",
             "yield_pct": "percentage_points (1.0 = 1%)",
         }
+    page_value = int(result.get("page") or page or 1)
+    pages = result.get("pages")
+    has_more = bool(
+        result.get("has_more")
+        or (pages not in (None, "") and page_value < int(pages))
+    )
+    _apply_finviz_pagination_contract(
+        out,
+        returned=len(out.get("items") or []),
+        limit=limit,
+        page=page_value,
+        total=result.get("total"),
+        total_lower_bound=result.get("total_lower_bound"),
+        has_more=has_more,
+    )
+    out.pop("omitted_item_count", None)
     out["detail"] = detail_mode
     return out
 
@@ -2492,7 +2590,13 @@ def _normalize_finviz_insider_rows(rows: Any) -> List[Any]:
     return normalized
 
 
-def _compact_finviz_insider_payload(result: Dict[str, Any], *, detail: str) -> Dict[str, Any]:
+def _compact_finviz_insider_payload(
+    result: Dict[str, Any],
+    *,
+    detail: str,
+    limit: int = 20,
+    page: int = 1,
+) -> Dict[str, Any]:
     error = _validate_finviz_detail(detail, operation="finviz_insider")
     if error is not None or not result.get("success"):
         return error or result
@@ -2503,13 +2607,28 @@ def _compact_finviz_insider_payload(result: Dict[str, Any], *, detail: str) -> D
     normalized_rows = _normalize_finviz_insider_rows(rows)
     out = {key: value for key, value in result.items() if key != "insider_trades"}
     out["detail"] = detail_mode
+    page_value = int(result.get("page") or page or 1)
+    pages = result.get("pages")
+    has_more = bool(
+        result.get("has_more")
+        or (pages not in (None, "") and page_value < int(pages))
+    )
     if detail_mode == "full":
         out["items"] = normalized_rows
         out["count"] = len(normalized_rows)
+        _apply_finviz_pagination_contract(
+            out,
+            returned=len(normalized_rows),
+            limit=limit,
+            page=page_value,
+            total=result.get("total"),
+            total_lower_bound=result.get("total_lower_bound"),
+            has_more=has_more,
+        )
         return out
     compact_rows = [
         _compact_finviz_insider_row(row, include_symbol=False)
-        for row in normalized_rows[:3]
+        for row in normalized_rows
     ]
     transaction_texts = [_transaction_text(row) for row in normalized_rows if isinstance(row, dict)]
     buys = sum(1 for text in transaction_texts if "buy" in text or "purchase" in text)
@@ -2524,12 +2643,24 @@ def _compact_finviz_insider_payload(result: Dict[str, Any], *, detail: str) -> D
         "Single-symbol insider trades; use finviz_insider_activity for "
         "market-wide scans."
     )
-    out["omitted_item_count"] = max(0, len(normalized_rows) - len(compact_rows))
+    _apply_finviz_pagination_contract(
+        out,
+        returned=len(compact_rows),
+        limit=limit,
+        page=page_value,
+        total=result.get("total"),
+        total_lower_bound=result.get("total_lower_bound"),
+        has_more=has_more,
+    )
     return out
 
 
 def _compact_finviz_insider_activity_payload(
-    result: Dict[str, Any], *, detail: str
+    result: Dict[str, Any],
+    *,
+    detail: str,
+    limit: int = 50,
+    page: int = 1,
 ) -> Dict[str, Any]:
     error = _validate_finviz_detail(detail, operation="finviz_insider_activity")
     if error is not None or not result.get("success"):
@@ -2542,13 +2673,28 @@ def _compact_finviz_insider_activity_payload(
     normalized_rows = _normalize_finviz_insider_rows(rows)
     out = {key: value for key, value in result.items() if key != "insider_trades"}
     out["detail"] = detail_mode
+    page_value = int(result.get("page") or page or 1)
+    pages = result.get("pages")
+    has_more = bool(
+        result.get("has_more")
+        or (pages not in (None, "") and page_value < int(pages))
+    )
     if detail_mode == "full":
         out["items"] = normalized_rows
         out["count"] = len(normalized_rows)
+        _apply_finviz_pagination_contract(
+            out,
+            returned=len(normalized_rows),
+            limit=limit,
+            page=page_value,
+            total=result.get("total"),
+            total_lower_bound=result.get("total_lower_bound"),
+            has_more=has_more,
+        )
         return out
 
     compact_rows: List[Any] = []
-    for row in normalized_rows[:5]:
+    for row in normalized_rows:
         if not isinstance(row, dict):
             compact_rows.append(row)
             continue
@@ -2567,7 +2713,15 @@ def _compact_finviz_insider_activity_payload(
         "top_symbols": _summarize_insider_activity_tickers(normalized_rows),
     }
     out["hint"] = "Market-wide insider activity; use finviz_insider SYMBOL for one ticker."
-    out["omitted_item_count"] = max(0, len(normalized_rows) - len(compact_rows))
+    _apply_finviz_pagination_contract(
+        out,
+        returned=len(compact_rows),
+        limit=limit,
+        page=page_value,
+        total=result.get("total"),
+        total_lower_bound=result.get("total_lower_bound"),
+        has_more=has_more,
+    )
     return out
 
 
@@ -2588,11 +2742,14 @@ def _compact_finviz_ratings_payload(
     omitted = max(0, len(normalized_rows) - len(limited_rows))
     out["ratings"] = limited_rows
     out["count"] = len(limited_rows)
-    out["available_count"] = len(normalized_rows)
-    out["truncated"] = omitted > 0
+    out["pagination"] = build_pagination_meta(
+        total=len(normalized_rows),
+        returned=len(limited_rows),
+        offset=0,
+        limit=max(1, limit_value),
+    )
     out["detail"] = detail_mode
     if detail_mode == "full":
-        out["omitted_item_count"] = omitted
         if omitted:
             out["show_all_hint"] = f"Increase limit to {len(normalized_rows)} to view all ratings."
         return out
@@ -2601,7 +2758,6 @@ def _compact_finviz_ratings_payload(
     out["summary"] = {
         "latest": compact_rows[0] if compact_rows else None,
     }
-    out["omitted_item_count"] = omitted
     if omitted:
         out["show_all_hint"] = f"Set extras='metadata' or limit={len(normalized_rows)} to view all ratings."
     return out
@@ -2626,18 +2782,22 @@ def _compact_finviz_peers_payload(
     if detail_mode == "full":
         out["peers"] = limited_peers
         out["count"] = len(limited_peers)
-        out["available_count"] = len(peers)
-        out["offset"] = offset_value
-        out["has_more"] = offset_value + len(limited_peers) < len(peers)
-        out["omitted_item_count"] = omitted
+        out["pagination"] = build_pagination_meta(
+            total=len(peers),
+            returned=len(limited_peers),
+            offset=offset_value,
+            limit=max(1, limit_value),
+        )
         return out
     compact_peers = limited_peers
     out["peers"] = compact_peers
     out["count"] = len(compact_peers)
-    out["available_count"] = len(peers)
-    out["offset"] = offset_value
-    out["has_more"] = offset_value + len(compact_peers) < len(peers)
-    out["omitted_item_count"] = omitted
+    out["pagination"] = build_pagination_meta(
+        total=len(peers),
+        returned=len(compact_peers),
+        offset=offset_value,
+        limit=max(1, limit_value),
+    )
     if omitted:
         out["show_all_hint"] = (
             f"{omitted} more peers available; pass offset={offset_value + len(compact_peers)}."
@@ -2996,6 +3156,8 @@ def finviz_news(
             get_stock_news(symbol_norm, limit=limit, page=page),
             detail=detail,
             kind="direct_symbol",
+            limit=limit,
+            page=page,
         )
 
     return _run_logged_tool("finviz_news", fields, _run)
@@ -3023,8 +3185,8 @@ def finviz_insider(
     page : int
         Page number for pagination (default 1)
     detail : {"compact", "full"}
-        "compact" returns the first three rows plus aggregate buy/sell counts.
-        "full" preserves all returned trades.
+        "compact" normalizes each row in the requested page and adds aggregate
+        buy/sell counts. "full" preserves all fields for the returned page.
     
     Returns
     -------
@@ -3041,6 +3203,8 @@ def finviz_insider(
         return _compact_finviz_insider_payload(
             get_stock_insider_trades(symbol_norm, limit=limit, page=page),
             detail=detail,
+            limit=limit,
+            page=page,
         )
 
     return _run_logged_tool(
@@ -3294,6 +3458,8 @@ def finviz_market_news(
             get_general_news(news_type=news_type, limit=limit, page=page),
             detail=detail,
             kind="blog" if str(news_type).lower().strip() == "blogs" else "headline",
+            limit=limit,
+            page=page,
         ),
     )
 
@@ -3322,8 +3488,8 @@ def finviz_insider_activity(
     page : int
         Page number for pagination (default 1)
     detail : {"compact", "full"}
-        Response detail level. Compact returns a short normalized item list and
-        summary; full keeps all normalized rows including SEC link fields.
+        Response detail level. Compact normalizes every row in the requested
+        page and adds a summary; full keeps all fields including SEC links.
     
     Returns
     -------
@@ -3337,6 +3503,8 @@ def finviz_insider_activity(
         return _compact_finviz_insider_activity_payload(
             get_insider_activity(option=option, limit=limit, page=page),
             detail=detail,
+            limit=limit,
+            page=page,
         )
 
     return _run_logged_tool(
@@ -3557,6 +3725,8 @@ def finviz_calendar(
                 detail=detail,
                 calendar_type=cal,
                 country_code_filter=country_filter,
+                limit=limit,
+                page=page,
             )
         if cal == "earnings":
             return _normalize_finviz_calendar_payload(
@@ -3568,6 +3738,8 @@ def finviz_calendar(
                 ),
                 detail=detail,
                 calendar_type=cal,
+                limit=limit,
+                page=page,
             )
         if cal == "dividends":
             return _normalize_finviz_calendar_payload(
@@ -3579,6 +3751,8 @@ def finviz_calendar(
                 ),
                 detail=detail,
                 calendar_type=cal,
+                limit=limit,
+                page=page,
             )
         return {"error": f"Unsupported calendar '{calendar}'. Expected economic, earnings, or dividends."}
 
@@ -3674,14 +3848,6 @@ def finviz_earnings(
             if detail_mode == "full"
             else _compact_finviz_earnings_items(normalized_items)
         )
-        pagination = {
-            "page": result.get("page"),
-            "total": result.get("total"),
-            "pages": result.get("pages"),
-            "has_more": bool(result.get("has_more")),
-            "total_lower_bound": result.get("total_lower_bound"),
-            "truncated": bool(result.get("truncated")),
-        }
         stats = {
             "truncated": result.get("truncated"),
         }
@@ -3691,23 +3857,14 @@ def finviz_earnings(
             "detail": detail_mode,
             "items": output_items,
             "row_key": "items",
-            "count": int(result.get("count") or len(output_items)),
+            "count": len(output_items),
             "total": result.get("total"),
             "page": result.get("page"),
             "pages": result.get("pages"),
             "has_more": bool(result.get("has_more")),
             "truncated": bool(result.get("truncated")),
         }
-        if result.get("total_lower_bound") is not None:
-            out["total_lower_bound"] = result.get("total_lower_bound")
-        if out["has_more"] and out.get("page") is not None:
-            out["next_page"] = int(out["page"]) + 1
         if out["detail"] != "full":
-            out["omitted_item_count"] = (
-                None
-                if out.get("total") is None
-                else max(0, int(out["total"]) - int(out["count"]))
-            )
             out["hint"] = (
                 "Period-based earnings view; use finviz_calendar(calendar='earnings') "
                 "for date-range EPS/sales actuals and surprises."
@@ -3717,8 +3874,22 @@ def finviz_earnings(
                 tool="finviz_earnings",
                 request=request,
                 stats=stats,
-                pagination=pagination,
             )
+        page_value = int(result.get("page") or page or 1)
+        pages = result.get("pages")
+        has_more = bool(
+            result.get("has_more")
+            or (pages not in (None, "") and page_value < int(pages))
+        )
+        _apply_finviz_pagination_contract(
+            out,
+            returned=len(output_items),
+            limit=limit,
+            page=page_value,
+            total=result.get("total"),
+            total_lower_bound=result.get("total_lower_bound"),
+            has_more=has_more,
+        )
         return out
 
     return _run_logged_tool(

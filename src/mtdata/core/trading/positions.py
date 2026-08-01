@@ -1104,6 +1104,19 @@ def normalize_trade_history_output(
             offset=offset_value,
             limit=limit_value,
         )
+        for field in (
+            "total_count",
+            "offset",
+            "limit",
+            "has_more",
+            "more_available",
+            "truncated",
+            "page",
+            "pages",
+            "next_offset",
+            "next_page",
+        ):
+            out.pop(field, None)
         for item in raw_items:
             if isinstance(item, dict) and item.get("timezone"):
                 timezone_label = str(item["timezone"])
@@ -1128,8 +1141,6 @@ def normalize_trade_history_output(
     if include_request_metadata:
         for key in ("symbol", "ticket"):
             out.pop(key, None)
-        if "total_count" not in out:
-            out.pop("limit", None)
         request_echo = _trade_history_request_echo(request, history_kind=history_kind)
         if request_echo:
             out["request_echo"] = request_echo

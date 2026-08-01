@@ -121,10 +121,6 @@ def test_trade_history_supports_offset_pagination() -> None:
 
     assert out["success"] is True
     assert [item["deal_ticket"] for item in out["items"]] == [3, 2]
-    assert out["total_count"] == 4
-    assert out["offset"] == 1
-    assert out["limit"] == 2
-    assert out["has_more"] is True
     assert out["pagination"] == {
         "total": 4,
         "returned": 2,
@@ -133,6 +129,7 @@ def test_trade_history_supports_offset_pagination() -> None:
         "has_more": True,
         "more_available": 1,
     }
+    assert not {"total_count", "offset", "limit", "has_more"} & out.keys()
 
     with patch("mtdata.core.trading.account._use_client_tz", lambda: False):
         ascending = trade_history(

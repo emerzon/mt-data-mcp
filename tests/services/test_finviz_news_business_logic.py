@@ -60,9 +60,9 @@ def test_finviz_news_normalizes_stock_results_to_single_items_array() -> None:
         "success": True,
         "symbol": "AAPL",
         "count": 1,
-        "total": 1,
-        "page": 1,
-        "pages": 1,
+        "total": 3,
+        "page": 2,
+        "pages": 3,
         "news": [
             {
                 "Title": "  Apple launches new chips  ",
@@ -74,7 +74,7 @@ def test_finviz_news_normalizes_stock_results_to_single_items_array() -> None:
     }
 
     with patch("mtdata.core.finviz.get_stock_news", return_value=service_result):
-        out = raw(symbol="AAPL", limit=5, page=1)
+        out = raw(symbol="AAPL", limit=1, page=2)
 
     assert out["items"][0]["title"] == "Apple launches new chips"
     assert out["items"][0]["source"] == "Reuters"
@@ -87,6 +87,15 @@ def test_finviz_news_normalizes_stock_results_to_single_items_array() -> None:
     assert "output_shape" not in out
     assert "timezone" not in out
     assert "news" not in out
+    assert out["pagination"] == {
+        "total": 3,
+        "returned": 1,
+        "offset": 1,
+        "limit": 1,
+        "has_more": True,
+        "more_available": 1,
+    }
+    assert not {"total", "page", "pages", "has_more"} & out.keys()
 
 
 def test_finviz_news_repairs_mojibake_titles() -> None:

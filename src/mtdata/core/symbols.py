@@ -1028,7 +1028,6 @@ def symbols_list(  # noqa: C901
                 symbol_list = symbol_list[offset_value:]
             if limit_value:
                 symbol_list = symbol_list[:limit_value]
-            has_more = offset_value + len(symbol_list) < total_count
             if detail_mode == "summary":
                 out = {
                     "success": True,
@@ -1037,7 +1036,6 @@ def symbols_list(  # noqa: C901
                     "search_term": normalized_search_term,
                     "search_mode": search_mode_value,
                     "universe": effective_universe,
-                    "limit": limit_value,
                 }
                 if filters:
                     out["filters"] = filters
@@ -1087,10 +1085,6 @@ def symbols_list(  # noqa: C901
                         )
                 if not normalized_search_term:
                     out["sort"] = "market_overview"
-                if offset_value or has_more:
-                    out["total_count"] = total_count
-                    out["offset"] = offset_value
-                    out["has_more"] = has_more
                 out["pagination"] = build_pagination_meta(
                     total=total_count,
                     returned=len(symbol_list),
@@ -1156,11 +1150,6 @@ def symbols_list(  # noqa: C901
                     )
             if not normalized_search_term:
                 result["sort"] = "market_overview"
-            if offset_value or has_more:
-                result["total_count"] = total_count
-                result["offset"] = offset_value
-                result["limit"] = limit_value
-                result["has_more"] = has_more
             result["pagination"] = build_pagination_meta(
                 total=total_count,
                 returned=len(symbol_list),
@@ -1264,7 +1253,6 @@ def _list_symbol_groups(
             filtered_items = filtered_items[offset_value:]
         if limit_value:
             filtered_items = filtered_items[:limit_value]
-        has_more = offset_value + len(filtered_items) < total_count
 
         detail_mode = normalize_output_detail(detail, default="compact")
         if detail_mode == "summary":
@@ -1273,12 +1261,13 @@ def _list_symbol_groups(
                 "list_mode": "groups",
                 "count": len(filtered_items),
                 "search_term": search_term,
-                "limit": limit_value,
+                "pagination": build_pagination_meta(
+                    total=total_count,
+                    returned=len(filtered_items),
+                    offset=offset_value,
+                    limit=limit_value,
+                ),
             }
-            if offset_value or has_more:
-                out["total_count"] = total_count
-                out["offset"] = offset_value
-                out["has_more"] = has_more
             if group_search_note:
                 out["note"] = group_search_note
             return out
@@ -1302,11 +1291,12 @@ def _list_symbol_groups(
                 ["group", "symbol_count", "visible_count", "sample_symbols"],
                 rows,
             )
-        if offset_value or has_more:
-            result["total_count"] = total_count
-            result["offset"] = offset_value
-            result["limit"] = limit_value
-            result["has_more"] = has_more
+        result["pagination"] = build_pagination_meta(
+            total=total_count,
+            returned=len(filtered_items),
+            offset=offset_value,
+            limit=limit_value,
+        )
         if group_search_note:
             result["note"] = group_search_note
         return attach_collection_contract(
@@ -3848,10 +3838,6 @@ def market_scan(  # noqa: C901
                     rsi_below=rsi_below,
                 ),
                 "price_change_basis": "previous_completed_close_to_latest_completed_close",
-                "requested_limit": int(limit_value),
-                "offset": int(offset_value),
-                "total_count": int(total_matches),
-                "has_more": bool(offset_value + table_payload["row_count"] < total_matches),
                 "pagination": build_pagination_meta(
                     total=total_matches,
                     returned=table_payload["row_count"],

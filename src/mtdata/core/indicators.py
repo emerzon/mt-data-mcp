@@ -623,19 +623,11 @@ def indicators_list(  # noqa: C901
                 offset=offset_value,
                 limit=limit_value,
             )
-            if total_matches > len(items) or offset_value:
-                result["total_count"] = total_matches
-                result["offset"] = offset_value
-                if limit_value is not None:
-                    result["limit"] = limit_value
-                result["has_more"] = more_available > 0
-                result["more_available"] = more_available
-                if more_available > 0:
-                    result["truncated"] = True
-                    result["search_hint"] = (
-                        "Use search_term to match indicator names, "
-                        "categories, or docs."
-                    )
+            if more_available > 0:
+                result["search_hint"] = (
+                    "Use search_term to match indicator names, "
+                    "categories, or docs."
+                )
             return result
         except Exception as exc:
             return {"error": f"Error listing indicators: {exc}"}

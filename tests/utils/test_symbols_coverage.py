@@ -182,10 +182,6 @@ class TestSymbolsListNoSearch:
         res = fn(search_term=None, limit=2, offset=1)
 
         assert [row[0] for row in res["data"]] == ["GBPUSD", "USDJPY"]
-        assert res["total_count"] == 4
-        assert res["offset"] == 1
-        assert res["limit"] == 2
-        assert res["has_more"] is True
         assert res["pagination"] == {
             "total": 4,
             "returned": 2,
@@ -194,6 +190,7 @@ class TestSymbolsListNoSearch:
             "has_more": True,
             "more_available": 1,
         }
+        assert not {"total_count", "offset", "limit", "has_more"} & res.keys()
 
     @patch(_NORM_LIMIT, return_value=25)
     @patch(_GROUP_PATH, return_value="Forex\\Majors")
@@ -209,7 +206,7 @@ class TestSymbolsListNoSearch:
         assert res["count"] == 2
         assert res["search_term"] is None
         assert res["search_mode"] == "auto"
-        assert res["limit"] == 25
+        assert res["pagination"]["limit"] == 25
         assert res["universe"] == "visible"
         assert res["visible_count"] == 2
         assert res["broker_symbol_count"] == 2
@@ -630,10 +627,15 @@ class TestListSymbolGroups:
         res = _list_symbol_groups(limit=1, offset=1)
 
         assert res["data"] == [["G2", 1, 1, ["B1"]]]
-        assert res["total_count"] == 3
-        assert res["offset"] == 1
-        assert res["limit"] == 1
-        assert res["has_more"] is True
+        assert res["pagination"] == {
+            "total": 3,
+            "returned": 1,
+            "offset": 1,
+            "limit": 1,
+            "has_more": True,
+            "more_available": 1,
+        }
+        assert not {"total_count", "offset", "limit", "has_more"} & res.keys()
 
     @patch(_TABLE, side_effect=lambda h, r: {"headers": h, "data": r})
     @patch(_NORM_LIMIT, return_value=25)

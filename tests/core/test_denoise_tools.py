@@ -27,9 +27,7 @@ def test_denoise_list_methods_compact_lists_small_catalog_by_default(monkeypatch
     result = _raw_list_methods()()
 
     assert result["count"] == 12
-    assert result["total"] == 12
-    assert result["has_more"] is False
-    assert result["methods_hidden"] == 0
+    assert not {"total", "limit", "has_more", "methods_hidden"} & result.keys()
     assert result["pagination"] == {
         "total": 12,
         "returned": 12,
@@ -67,9 +65,7 @@ def test_denoise_list_methods_compact_reports_hidden_catalog_hint(monkeypatch):
     result = _raw_list_methods()()
 
     assert result["count"] == 30
-    assert result["total"] == 35
-    assert result["has_more"] is True
-    assert result["methods_hidden"] == 5
+    assert not {"total", "limit", "has_more", "methods_hidden"} & result.keys()
     assert result["pagination"] == {
         "total": 35,
         "returned": 30,
@@ -144,7 +140,7 @@ def test_denoise_list_methods_filters_for_causal_available_no_extras(monkeypatch
     result = _raw_list_methods()(available_only=True, causality="causal", no_extras=True)
 
     assert result["count"] == 1
-    assert result["total"] == 1
+    assert result["pagination"]["total"] == 1
     assert result["available_only"] is True
     assert result["causality"] == "causal"
     assert result["no_extras"] is True

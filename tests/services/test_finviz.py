@@ -712,8 +712,8 @@ class TestFinvizTools:
         result = raw(limit=2)
 
         assert result["count"] == 2
-        assert result["available_count"] == 3
-        assert result["omitted_item_count"] == 1
+        assert result["pagination"]["total"] == 3
+        assert result["pagination"]["more_available"] == 1
         assert result["items"] == [
             {
                 "symbol": "EURUSD",
@@ -747,7 +747,7 @@ class TestFinvizTools:
         assert result["success"] is True
         assert result["symbol"] == "GBPUSD"
         assert result["count"] == 1
-        assert result["available_count"] == 1
+        assert result["pagination"]["total"] == 1
         assert result["items"] == [
             {
                 "symbol": "GBPUSD",
@@ -806,7 +806,7 @@ class TestFinvizTools:
         result = raw(limit=10)
 
         assert result["count"] == 2
-        assert result["available_count"] == 2
+        assert result["pagination"]["total"] == 2
         assert result["items"] == [
             {
                 "symbol": "EURUSD",
@@ -1553,10 +1553,10 @@ class TestFinvizTools:
         result = raw("AAPL")
 
         assert result["detail"] == "compact"
-        assert result["count"] == 3
+        assert result["count"] == 4
         assert result["items"][0]["price_per_share"] == 411.34
         assert "cost" not in result["items"][0]
-        assert result["omitted_item_count"] == 1
+        assert result["pagination"]["more_available"] == 0
         assert result["summary"]["buy_transactions"] == 1
 
     @patch("mtdata.core.finviz.get_stock_insider_trades")
@@ -1577,8 +1577,8 @@ class TestFinvizTools:
         result = raw("AAPL", detail=None)
 
         assert result["detail"] == "compact"
-        assert result["count"] == 3
-        assert result["omitted_item_count"] == 1
+        assert result["count"] == 4
+        assert result["pagination"]["more_available"] == 0
 
     @patch("mtdata.core.finviz.get_stock_ratings")
     def test_finviz_ratings_structures_price_targets(self, mock_get_ratings):
@@ -1658,7 +1658,7 @@ class TestFinvizTools:
 
         assert result["detail"] == "compact"
         assert result["count"] == 2
-        assert result["available_count"] == 2
+        assert result["pagination"]["total"] == 2
         assert "meta" not in result
 
     @patch("mtdata.core.finviz.get_stock_peers")
@@ -1676,7 +1676,7 @@ class TestFinvizTools:
 
         assert result["detail"] == "compact"
         assert result["count"] == 3
-        assert result["available_count"] == 3
+        assert result["pagination"]["total"] == 3
         assert "meta" not in result
 
     @patch("mtdata.core.finviz.get_insider_activity")
@@ -1763,7 +1763,7 @@ class TestFinvizTools:
 
         mock_get_earnings.assert_called_once_with(period="This Week", limit=10, page=1)
         assert result["detail"] == "compact"
-        assert result["omitted_item_count"] == 11
+        assert result["pagination"]["more_available"] == 11
         assert result["items"] == [
             {
                 "symbol": "APLM",
@@ -2158,7 +2158,7 @@ class TestFinvizTools:
 
         assert result["items"] == [{"symbol": "AAPL", "market_cap": "3.0T"}]
         assert "available_count" not in result
-        assert result["omitted_item_count"] == 1
+        assert result["pagination"]["more_available"] == 1
         assert result["detail"] == "full"
         assert result["meta"]["tool"] == "finviz_screen"
 

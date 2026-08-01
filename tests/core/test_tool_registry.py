@@ -176,18 +176,16 @@ def test_tools_list_filters_and_paginates_rows():
     assert out["success"] is True
     assert out["filters"] == {"category": "forecast", "search": None}
     assert out["count"] == 3
-    assert out["total_count"] > out["count"]
-    assert out["offset"] == 1
-    assert out["limit"] == 3
-    assert out["has_more"] is True
+    assert out["pagination"]["total"] > out["count"]
     assert out["pagination"] == {
-        "total": out["total_count"],
+        "total": out["pagination"]["total"],
         "returned": 3,
         "offset": 1,
         "limit": 3,
         "has_more": True,
-        "more_available": out["total_count"] - 4,
+        "more_available": out["pagination"]["total"] - 4,
     }
+    assert not {"total_count", "offset", "limit", "has_more"} & out.keys()
     assert all(row["category"] == "forecast" for row in out["tools"])
     assert "categories" not in out
     assert "output_extras" not in out

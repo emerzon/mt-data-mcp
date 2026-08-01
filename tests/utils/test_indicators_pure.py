@@ -555,9 +555,6 @@ Values above 70 often indicate overbought conditions.
         assert out["count"] == 25
         assert out["data"][0]["params_count"] == 1
         assert set(out["data"][0]) == {"name", "category", "params_count"}
-        assert out["total_count"] == 30
-        assert out["more_available"] == 5
-        assert out["truncated"] is True
         assert out["pagination"] == {
             "total": 30,
             "returned": 25,
@@ -566,6 +563,14 @@ Values above 70 often indicate overbought conditions.
             "has_more": True,
             "more_available": 5,
         }
+        assert not {
+            "total_count",
+            "offset",
+            "limit",
+            "has_more",
+            "more_available",
+            "truncated",
+        } & out.keys()
         assert out["search_hint"] == (
             "Use search_term to match indicator names, "
             "categories, or docs."
@@ -625,11 +630,6 @@ Values above 70 often indicate overbought conditions.
         assert out["success"] is True
         assert out["count"] == 3
         assert [row["name"] for row in out["data"]] == ["ind_04", "ind_05", "ind_06"]
-        assert out["total_count"] == 10
-        assert out["offset"] == 4
-        assert out["limit"] == 3
-        assert out["has_more"] is True
-        assert out["more_available"] == 3
         assert out["pagination"] == {
             "total": 10,
             "returned": 3,
@@ -638,6 +638,7 @@ Values above 70 often indicate overbought conditions.
             "has_more": True,
             "more_available": 3,
         }
+        assert not {"total_count", "offset", "limit", "has_more", "more_available"} & out.keys()
 
     def test_indicators_list_full_detail_includes_descriptions(self, monkeypatch):
         from mtdata.core import indicators as core_indicators

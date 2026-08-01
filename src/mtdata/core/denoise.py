@@ -128,10 +128,6 @@ def denoise_list_methods(
             "detail": detail_mode,
             "available_only": bool(available_only),
             "count": len(visible),
-            "total": len(methods),
-            "limit": limit_value,
-            "has_more": hidden > 0,
-            "methods_hidden": hidden,
             "pagination": build_pagination_meta(
                 total=len(methods),
                 returned=len(visible),

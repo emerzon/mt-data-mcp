@@ -1729,7 +1729,7 @@ def test_forecast_list_library_models_and_list_methods(monkeypatch):
     )
     compact = _unwrap(cf.forecast_list_methods)(profile="quickstart")
     assert "detail" not in compact
-    assert compact["total"] == 2
+    assert compact["catalog_total"] == 2
     assert compact["available"] == 1
     assert compact["unavailable"] == 0
     assert compact["methods"][0]["method"] == "theta"
@@ -1747,8 +1747,8 @@ def test_forecast_list_library_models_and_list_methods(monkeypatch):
     assert "selector" not in compact["methods"][0]
     assert "params" not in compact["methods"][0]
     assert all("requires" not in row for row in compact["methods"])
-    assert compact["methods_shown"] == 1
-    assert compact["methods_hidden"] == 0
+    assert compact["pagination"]["returned"] == 1
+    assert compact["pagination"]["more_available"] == 0
     assert compact["profile"] == "quickstart"
     assert compact["profile_methods_hidden"] == 1
     assert compact["profile_hint"] == "Use profile=all to list all registered methods."
@@ -1781,10 +1781,9 @@ def test_forecast_list_library_models_and_list_methods(monkeypatch):
 
     full = _unwrap(cf.forecast_list_methods)(detail="full", show_unavailable=True, profile="all")
     assert full["detail"] == "full"
-    assert full["total"] == 2
-    assert full["total_filtered"] == 2
-    assert full["methods_shown"] == 2
-    assert full["methods_hidden"] == 0
+    assert full["catalog_total"] == 2
+    assert full["pagination"]["total"] == 2
+    assert full["pagination"]["returned"] == 2
     assert isinstance(full.get("methods"), list)
     assert "params" in full["methods"][0]
     assert full["methods"][0]["params"] == [{"name": "window"}]
@@ -1852,11 +1851,11 @@ def test_forecast_list_library_models_and_list_methods(monkeypatch):
     sf_rows = [r for r in grouped["methods"] if r.get("category") == "statsforecast"]
     assert len(sf_rows) == 3
     assert all(str(r.get("category")) == "statsforecast" for r in sf_rows)
-    assert grouped["methods_hidden"] == 0
+    assert grouped["pagination"]["more_available"] == 0
     filtered = _unwrap(cf.forecast_list_methods)(search_term="theta", limit=1, profile="all")
     assert "filters" not in filtered
     assert len(filtered["methods"]) == 1
-    assert filtered["methods_hidden"] >= 1
+    assert filtered["pagination"]["more_available"] >= 1
     assert "theta" in str(filtered["methods"][0]["method"]).lower()
     sf_only = _unwrap(cf.forecast_list_methods)(library="statsforecast", profile="all")
     assert "filters" not in sf_only
@@ -1899,9 +1898,6 @@ def test_forecast_list_library_models_and_list_methods(monkeypatch):
     )
     default_out = _unwrap(cf.forecast_list_methods)(profile="all")
     assert "filters" not in default_out
-    assert default_out["methods_shown"] == 25
-    assert default_out["methods_hidden"] == 0
-    assert "has_more" not in default_out
     assert default_out["pagination"] == {
         "total": 25,
         "returned": 25,
@@ -1920,10 +1916,6 @@ def test_forecast_list_library_models_and_list_methods(monkeypatch):
         "m08",
         "m09",
     ]
-    assert page["methods_before"] == 5
-    assert page["methods_hidden"] == 15
-    assert page["offset"] == 5
-    assert page["has_more"] is True
     assert page["pagination"] == {
         "total": 25,
         "returned": 5,
@@ -1932,14 +1924,22 @@ def test_forecast_list_library_models_and_list_methods(monkeypatch):
         "has_more": True,
         "more_available": 15,
     }
+    assert not {
+        "total_filtered",
+        "methods_shown",
+        "methods_hidden",
+        "methods_before",
+        "offset",
+        "has_more",
+    } & page.keys()
     assert page["truncation_reason"] == (
         "Limit 5 at offset 5; set offset=10 for more filtered methods."
     )
 
     filtered_uncapped = _unwrap(cf.forecast_list_methods)(category="classical", profile="all")
     assert "filters" not in filtered_uncapped
-    assert filtered_uncapped["methods_shown"] == 25
-    assert filtered_uncapped["methods_hidden"] == 0
+    assert filtered_uncapped["pagination"]["returned"] == 25
+    assert filtered_uncapped["pagination"]["more_available"] == 0
     assert "truncation_reason" not in filtered_uncapped
 
     monkeypatch.setattr(cf, "_get_forecast_methods_data", lambda: {"methods": [1]})
