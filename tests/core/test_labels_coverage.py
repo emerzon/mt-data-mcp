@@ -81,6 +81,8 @@ class TestLabelsTripleBarrier:
         assert "labels" not in result
         assert "same_bar" not in result
         assert result["labeling_spec"]["label_on"] == "high_low"
+        assert result["labeling_spec"]["entry_price_source"] == "close"
+        assert result["labeling_spec"]["hit_price_source"] == "raw_high_low"
         assert result["labeling_spec"]["barrier_unit"] == "percent"
         assert result["labeling_spec"]["requested_barriers"] == {
             "tp_pct": 0.5,
@@ -643,6 +645,7 @@ class TestLabelsTripleBarrier:
         )
         assert result["success"] is True
         assert result["direction"] == "short"
+        assert result["labeling_spec"]["hit_price_source"] == "close"
         assert result["labels"][0] == 1
 
     @patch(f"{_LABELS_MOD}._get_pip_size", return_value=0.0001)

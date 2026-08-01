@@ -312,7 +312,10 @@ def labels_triple_barrier(
       - Ticks: tp_ticks/sl_ticks (trade_tick_size from symbol info)
       Use exactly one barrier unit family per call; mixed units are rejected.
 
-    label_on='high_low' considers intrabar extremes for barrier hits; 'close' uses closes only.
+    label_on='high_low' considers raw intrabar extremes for barrier hits, even
+    when denoise changes the close used to anchor barriers. Real observed price
+    touches are not smoothed away. Use label_on='close' for close-series-only
+    labeling on the resolved (and potentially denoised) base series.
     same_bar_policy explicitly resolves bars that touch both barriers; the default
     is conservative SL-first because the intrabar ordering is unknowable.
     direction='long' or 'short' controls which side is treated as TP/SL.
@@ -558,6 +561,9 @@ def labels_triple_barrier(
                     "direction": direction_value,
                     "label_on": str(label_on),
                     "entry_price_source": str(base_col),
+                    "hit_price_source": (
+                        "raw_high_low" if label_on == "high_low" else str(base_col)
+                    ),
                     "same_bar_policy": same_bar_policy_value,
                     "horizon_bars": horizon_bars,
                     "barrier_unit": next(

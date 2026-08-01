@@ -117,6 +117,12 @@ In `high_low` mode, `same_bar_policy` resolves a bar that touches both
 barriers. The default is conservatively `sl_first`; `tp_first` and `neutral`
 are explicit alternatives.
 
+When denoising is enabled, the resolved close series anchors each barrier.
+`high_low` still uses raw intrabar highs and lows so an observed tradable touch
+is not smoothed away; `labeling_spec.hit_price_source` reports this as
+`raw_high_low`. Choose `label_on=close` to use only the resolved close series
+for both anchors and hits.
+
 ### Usage
 
 ```bash
@@ -130,7 +136,11 @@ mtdata-cli labels_triple_barrier EURUSD --timeframe H1 --horizon 12 \
 | `--horizon` | Maximum bars to wait |
 | `--tp-pct` | Take-profit distance (% of price) |
 | `--sl-pct` | Stop-loss distance (% of price) |
-| `--tp-pips` / `--sl-pips` | Alternative: distance in pips |
+| `--tp-ticks` / `--sl-ticks` | Alternative: distance in MT5 `trade_tick_size` units |
+
+A conventional FX pip is not the same unit as an MT5 tick. Convert pips using
+the symbol's quote precision before supplying tick distances (for many
+five-digit FX quotes, one pip is 10 ticks).
 
 ### Output
 
