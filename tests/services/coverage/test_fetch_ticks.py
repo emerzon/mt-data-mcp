@@ -237,6 +237,44 @@ class TestFetchTicks(unittest.TestCase):
         self.assertEqual(set(stats['spread']), {'low', 'high', 'mean'})
 
     @patch(_TICKS_RANGE)
+    @patch(_CACHED_INFO, return_value=SimpleNamespace(digits=5))
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_GUARD, _mock_symbol_guard)
+    def test_summary_spread_statistics_use_consistent_precision(
+        self, mock_ctz, mock_info, mock_ticks
+    ):
+        ticks = _make_ticks(20)
+        for idx, tick in enumerate(ticks):
+            tick["bid"] = 1.1
+            tick["ask"] = 1.1 + (0.000004 if idx == 0 else 0.000006)
+            tick["flags"] = 6
+        mock_ticks.return_value = ticks
+
+        result = fetch_ticks("EURUSD", limit=20, format="summary")
+
+        spread = result["stats"]["spread"]
+        self.assertLessEqual(spread["low"], spread["mean"])
+        self.assertLessEqual(spread["mean"], spread["high"])
+        self.assertEqual(spread["low"], 0.000004)
+
+    @patch(_TICKS_RANGE)
+    @patch(_CACHED_INFO, return_value=SimpleNamespace(digits=5))
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_GUARD, _mock_symbol_guard)
+    def test_summary_marks_spread_unavailable_without_coherent_quotes(
+        self, mock_ctz, mock_info, mock_ticks
+    ):
+        ticks = _make_ticks(20)
+        for tick in ticks:
+            tick["ask"] = tick["bid"]
+            tick["flags"] = 6
+        mock_ticks.return_value = ticks
+
+        result = fetch_ticks("EURUSD", limit=20, format="summary")
+
+        self.assertEqual(result["stats"]["spread"], {"available": False})
+
+    @patch(_TICKS_RANGE)
     @patch(_CACHED_INFO, return_value=MagicMock())
     @patch(_RESOLVE_CTZ, return_value=None)
     @patch(_GUARD, _mock_symbol_guard)

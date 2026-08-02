@@ -222,9 +222,7 @@ def _round_tick_price_payload(out: Dict[str, Any], digits: int) -> None:
                 continue
             for key in _TICK_PRICE_STAT_KEYS:
                 if key in values:
-                    stat_digits = digits
-                    if name == "spread" and key in {"mean", "std", "stderr"}:
-                        stat_digits = max(digits + 2, digits)
+                    stat_digits = digits + 2 if name == "spread" else digits
                     values[key] = _round_price_value(values[key], stat_digits)
     last_quote = out.get("last_quote")
     if isinstance(last_quote, dict):
@@ -3052,11 +3050,15 @@ def fetch_ticks(  # noqa: C901
                 ),
                 "timezone": _timezone_label(use_client_tz=_use_ctz, client_tz=client_tz),
                 "stats": {
-                    "spread": {
-                        "low": float(spread.min()),
-                        "high": float(spread.max()),
-                        "mean": float(spread.mean()),
-                    }
+                    "spread": (
+                        {
+                            "low": float(spread.min()),
+                            "high": float(spread.max()),
+                            "mean": float(spread.mean()),
+                        }
+                        if not spread.empty
+                        else {"available": False}
+                    )
                 },
                 "last_quote": _last_snapshot_quote(df_stats),
             }
