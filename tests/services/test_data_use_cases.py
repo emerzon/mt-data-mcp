@@ -684,6 +684,29 @@ def test_run_data_fetch_candles_does_not_duplicate_structured_spread_warning():
     assert "spread_unavailable" not in result
 
 
+def test_run_data_fetch_candles_does_not_reinfer_service_spread_contract():
+    request = DataFetchCandlesRequest(
+        symbol="EURUSD",
+        timeframe="H1",
+        include_spread=True,
+        detail="full",
+    )
+
+    result = run_data_fetch_candles(
+        request,
+        gateway=SimpleNamespace(ensure_connection=lambda: None),
+        fetch_candles_impl=lambda **kwargs: {
+            "success": True,
+            "candles": 1,
+            "data": [[1.0, 1.1, 0.0]],
+        },
+    )
+
+    assert "spread_mode" not in result
+    assert "spread_unavailable" not in result
+    assert "warnings" not in result
+
+
 def test_run_data_fetch_candles_compact_exposes_range_gap_metadata():
     request = DataFetchCandlesRequest(
         symbol="EURUSD",

@@ -209,49 +209,6 @@ def _run_data_fetch_candles_impl(
         allow_stale=request.allow_stale,
     )
     result = _normalize_candle_query_error(result, request=request)
-    # Detect missing or all-zero spread when include_spread requested.
-    # MT5 often only reports spread at tick level; aggregated higher-timeframe bars may show spread==0.
-    if (
-        isinstance(result, dict)
-        and getattr(request, "include_spread", False)
-        and result.get("spread_mode") not in {"per_bar", "single_reference", "unavailable"}
-    ):
-        data = result.get("data")
-        if isinstance(data, list) and len(data) > 0:
-            has_spread_values = False
-            spread_all_zero = True
-            for bar in data:
-                if isinstance(bar, dict):
-                    spread_value = bar.get("spread_points", bar.get("spread"))
-                    if spread_value is not None:
-                        has_spread_values = True
-                        try:
-                            if float(spread_value) != 0.0:
-                                spread_all_zero = False
-                                break
-                        except Exception:
-                            # non-numeric spread; treat as available
-                            has_spread_values = True
-                            spread_all_zero = False
-                            break
-                # If bars are lists/sequences, skip detection here.
-            if not has_spread_values:
-                # No spread values present at all
-                result.setdefault("warnings", []).append(
-                    "include_spread requested but returned bars do not contain "
-                    "spread or spread_points values; spread unavailable at this "
-                    "timeframe or source."
-                )
-                result["spread_unavailable"] = True
-                result["spread_mode"] = "unavailable"
-            elif spread_all_zero:
-                result.setdefault("warnings", []).append(
-                    "include_spread requested but all returned spread values are zero; spread likely unavailable at this timeframe/source."
-                )
-                result["spread_unavailable"] = True
-                result["spread_mode"] = "unavailable"
-            else:
-                result["spread_mode"] = "per_bar"
     detail_mode = str(request.detail or "compact").strip().lower()
     if isinstance(result, dict):
         if bool(getattr(request, "explain_indicators", False)):
