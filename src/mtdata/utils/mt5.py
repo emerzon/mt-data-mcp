@@ -804,11 +804,14 @@ def _normalize_times_in_struct(
             out[field] = normalized
         return out
     except Exception as exc:
-        logger.warning(
-            "Failed to normalize MT5 server-clock rows; preserving raw epochs: %s",
+        logger.error(
+            "Failed to normalize MT5 server-clock rows: %s",
             exc,
         )
-        return arr
+        raise RuntimeError(
+            "Failed to normalize MT5 server-clock rows to UTC; raw server epochs "
+            "cannot be returned safely."
+        ) from exc
 
 
 def _normalize_object_times(
@@ -854,8 +857,11 @@ def _normalize_object_times(
                 pass
         return SimpleNamespace(**data)
     except Exception as exc:
-        logger.debug("Failed to normalize MT5 object timestamps: %s", exc)
-        return obj
+        logger.error("Failed to normalize MT5 object timestamps: %s", exc)
+        raise RuntimeError(
+            "Failed to normalize MT5 object timestamps to UTC; raw server epochs "
+            "cannot be returned safely."
+        ) from exc
 
 
 def _normalize_object_time_rows(
@@ -872,8 +878,11 @@ def _normalize_object_time_rows(
         return [_normalize_object_times(row, mode=mode) for row in rows]
     try:
         return type(rows)(_normalize_object_times(row, mode=mode) for row in rows)
-    except Exception:
-        return rows
+    except Exception as exc:
+        raise RuntimeError(
+            "Failed to preserve the MT5 row collection while normalizing server-clock "
+            "timestamps to UTC."
+        ) from exc
 
 
 # ---------------------------------------------------------------------------

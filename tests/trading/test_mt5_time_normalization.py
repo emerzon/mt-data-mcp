@@ -69,6 +69,38 @@ def test_normalize_times_in_struct_preserves_native_utc_epochs(monkeypatch) -> N
     assert result.tolist() == arr.tolist()
 
 
+def test_server_clock_struct_normalization_fails_closed(monkeypatch) -> None:
+    rows = np.array([(1_768_478_400.0,)], dtype=[("time", float)])
+    monkeypatch.setattr(mt5_mod.mt5_config, "time_offset_minutes", 0, raising=False)
+    monkeypatch.setattr(mt5_mod.mt5_config, "get_server_tz", lambda: None)
+    monkeypatch.setattr(
+        mt5_mod,
+        "_server_epoch_to_utc",
+        lambda value: (_ for _ in ()).throw(ValueError("bad server epoch")),
+    )
+
+    with pytest.raises(RuntimeError, match="cannot be returned safely"):
+        mt5_mod._normalize_times_in_struct(
+            rows,
+            mode=mt5_mod._MT5_TIMESTAMP_MODE_SERVER,
+        )
+
+
+def test_server_clock_object_normalization_fails_closed(monkeypatch) -> None:
+    tick = SimpleNamespace(time=1_768_478_400.0, bid=1.1)
+    monkeypatch.setattr(
+        mt5_mod,
+        "_server_epoch_to_utc",
+        lambda value: (_ for _ in ()).throw(ValueError("bad server epoch")),
+    )
+
+    with pytest.raises(RuntimeError, match="cannot be returned safely"):
+        mt5_mod._normalize_object_times(
+            tick,
+            mode=mt5_mod._MT5_TIMESTAMP_MODE_SERVER,
+        )
+
+
 def test_adapter_aligns_server_clock_tick_history_to_utc(monkeypatch) -> None:
     now = datetime(2026, 7, 14, 14, 45, tzinfo=timezone.utc)
     now_epoch = now.timestamp()
