@@ -15,13 +15,20 @@ from ..utils.mt5 import MT5ConnectionError
 from ..utils.support_resistance import compact_support_resistance_payload
 from .error_envelope import build_error_payload
 from .mt5_gateway import create_mt5_gateway
-from .output_contract import apply_output_verbosity, ensure_common_meta, output_extras_shape_detail
+from .output_contract import (
+    apply_output_verbosity,
+    ensure_common_meta,
+    output_extras_shape_detail,
+)
 from .pivot import compute_support_resistance_payload
 from .tool_calling import resolve_sync_tool_result
 from .web_api_models import BacktestBody, ForecastPriceBody, ForecastVolBody
 
 logger = logging.getLogger(__name__)
 _MAX_DENOISE_PARAMS_CHARS = 4096
+_HISTORY_DENOISE_CONTROL_KEYS = frozenset(
+    {"columns", "when", "causality", "keep_original"}
+)
 
 
 def _shape_detail_from_extras(extras: Any) -> str:
@@ -178,6 +185,31 @@ def _history_denoise_columns(value: Any) -> List[str]:
             operation="get_history",
         )
     return columns
+
+
+def _apply_history_denoise_controls(
+    spec_input: Dict[str, Any],
+    controls: Dict[str, Any],
+) -> None:
+    if "columns" in controls:
+        spec_input["columns"] = _history_denoise_columns(controls["columns"])
+    if "when" in controls:
+        spec_input["when"] = _history_denoise_choice(
+            controls["when"],
+            field_name="when",
+            allowed={"post_ti", "pre_ti"},
+        )
+    if "causality" in controls:
+        spec_input["causality"] = _history_denoise_choice(
+            controls["causality"],
+            field_name="causality",
+            allowed={"causal", "zero_phase"},
+        )
+    if "keep_original" in controls:
+        spec_input["keep_original"] = _history_denoise_bool(
+            controls["keep_original"],
+            field_name="keep_original",
+        )
 
 
 def get_instruments_response(
@@ -478,29 +510,14 @@ def get_history_response(  # noqa: C901
                     if "params" in payload:
                         spec_input["params"] = _history_denoise_params_dict(payload.pop("params"))
                     else:
-                        reserved = {"columns", "when", "causality", "keep_original"}
-                        extra_params = {key: value for key, value in payload.items() if key not in reserved}
+                        extra_params = {
+                            key: value
+                            for key, value in payload.items()
+                            if key not in _HISTORY_DENOISE_CONTROL_KEYS
+                        }
                         if extra_params:
                             spec_input["params"] = extra_params
-                    if "columns" in payload:
-                        spec_input["columns"] = _history_denoise_columns(payload["columns"])
-                    if "when" in payload:
-                        spec_input["when"] = _history_denoise_choice(
-                            payload["when"],
-                            field_name="when",
-                            allowed={"post_ti", "pre_ti"},
-                        )
-                    if "causality" in payload:
-                        spec_input["causality"] = _history_denoise_choice(
-                            payload["causality"],
-                            field_name="causality",
-                            allowed={"causal", "zero_phase"},
-                        )
-                    if "keep_original" in payload:
-                        spec_input["keep_original"] = _history_denoise_bool(
-                            payload["keep_original"],
-                            field_name="keep_original",
-                        )
+                    _apply_history_denoise_controls(spec_input, payload)
                 else:
                     raise ValueError("payload not dict")
             except HTTPException:
@@ -544,7 +561,13 @@ def get_history_response(  # noqa: C901
                             params_dict[key] = float(value) if value.replace(".", "", 1).lstrip("-").isdigit() else value
                         except Exception:
                             params_dict[key] = value
+                controls = {
+                    key: params_dict.pop(key)
+                    for key in tuple(params_dict)
+                    if key in _HISTORY_DENOISE_CONTROL_KEYS
+                }
                 spec_input["params"] = params_dict
+                _apply_history_denoise_controls(spec_input, controls)
         denoise_spec = normalize_denoise_spec(spec_input, default_when="post_ti")
 
     try:

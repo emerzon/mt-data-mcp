@@ -108,7 +108,7 @@ Fetch OHLCV candles for a symbol.
   - `timestamp_format` (`epoch` | `iso`): Timestamp encoding for returned rows. Default `iso`; explicit epoch responses identify the unit as `unix_seconds_utc`.
   - `extras` (`metadata`, optional): Include full diagnostics and runtime metadata. Compact responses omit the diagnostic `meta` tree.
   - `denoise_method` (string, optional): Apply denoising (e.g., "ema").
-  - `denoise_params` (string, optional): JSON or "k=v" params for denoising.
+  - `denoise_params` (string, optional): JSON or comma-separated `k=v` denoising settings. Both forms accept `when`, `causality`, `keep_original`, and `columns`; other keys are method parameters. Use JSON for multiple columns.
 - **Response Notes:**
   - Compact responses expose `server_utc_offset_seconds` when available.
     `extras=metadata` includes the full runtime timezone tree under

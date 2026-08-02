@@ -874,6 +874,31 @@ class TestGetHistory:
         assert call_arg["params"]["level"] == 3.0
         assert call_arg["params"]["wavelet"] == "db4"
 
+    def test_denoise_kv_params_preserve_control_fields(self):
+        payload = {"data": [{"time": 1.0}]}
+        dn_methods = {"methods": [{"method": "wavelet", "available": True}]}
+        with patch.object(web_api.mt5_connection, "_ensure_connection", return_value=True), \
+             patch("mtdata.core.web_api._fetch_candles_impl", return_value=payload), \
+             patch("mtdata.core.web_api._get_denoise_methods", return_value=dn_methods), \
+             patch("mtdata.core.web_api._norm_dn", return_value={"method": "wavelet"}) as mock_norm, \
+             patch("mtdata.core.web_api.mt5_config") as mock_cfg:
+            mock_cfg.get_time_offset_seconds.return_value = 0
+            resp = _client.get("/api/history", params={
+                "symbol": "EURUSD",
+                "denoise_method": "wavelet",
+                "denoise_params": (
+                    "window=14,when=pre_ti,causality=causal,"
+                    "keep_original=false,columns=close"
+                ),
+            })
+        assert resp.status_code == 200
+        call_arg = mock_norm.call_args[0][0]
+        assert call_arg["params"] == {"window": 14.0}
+        assert call_arg["when"] == "pre_ti"
+        assert call_arg["causality"] == "causal"
+        assert call_arg["keep_original"] is False
+        assert call_arg["columns"] == ["close"]
+
     def test_denoise_kv_params_rejects_duplicate_keys(self):
         dn_methods = {"methods": [{"method": "wavelet", "available": True}]}
         with patch.object(web_api.mt5_connection, "_ensure_connection", return_value=True), \
