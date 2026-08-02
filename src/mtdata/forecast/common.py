@@ -1083,9 +1083,10 @@ def fetch_history(
         )
         if to_dt:
             cutoff = _utc_epoch_seconds(to_dt)
-            if as_of:
-                # An as-of anchor describes information available by that
-                # instant, so exclude a bar that merely opened at the cutoff.
+            if as_of or drop_last_live:
+                # Analysis defaults to closed bars. An as-of anchor is always
+                # information-available-at-instant; bounded ranges apply the
+                # same rule unless the caller explicitly requests live bars.
                 completed = df['time'].map(
                     lambda value: bar_close_epoch(value, timeframe) <= cutoff
                 )

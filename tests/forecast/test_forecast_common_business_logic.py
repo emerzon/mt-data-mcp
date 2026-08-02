@@ -188,7 +188,7 @@ def test_fetch_history_start_end_uses_range_without_lookback_trim(monkeypatch):
         "_parse_start_datetime",
         lambda value: datetime(2024, 1, 1) if value == "2024-01-01" else datetime(2024, 1, 2),
     )
-    monkeypatch.setattr(fc, "_utc_epoch_seconds", lambda _dt: 350.0)
+    monkeypatch.setattr(fc, "_utc_epoch_seconds", lambda _dt: 3950.0)
 
     out = fc.fetch_history(
         "EURUSD",
@@ -201,6 +201,41 @@ def test_fetch_history_start_end_uses_range_without_lookback_trim(monkeypatch):
     assert captured["symbol"] == "EURUSD"
     assert captured["tf"] == 1
     assert out["time"].tolist() == [100.0, 200.0, 300.0]
+
+
+def test_fetch_history_end_bound_excludes_bar_not_closed_by_cutoff(monkeypatch):
+    monkeypatch.setattr(fc, "TIMEFRAME_MAP", {"H1": 1})
+    monkeypatch.setattr(fc, "_ensure_symbol_ready", lambda _symbol: None)
+    monkeypatch.setattr(
+        fc,
+        "get_symbol_info_cached",
+        lambda _symbol: SimpleNamespace(visible=True),
+    )
+    monkeypatch.setattr(fc.mt5, "last_error", lambda: (1, "err"))
+    rates = [
+        {"time": 100.0, "open": 1.0},
+        {"time": 3700.0, "open": 2.0},
+        {"time": 7300.0, "open": 3.0},
+    ]
+    monkeypatch.setattr(
+        fc,
+        "_mt5_copy_rates_from",
+        lambda symbol, tf, to_dt, count: rates,
+    )
+    monkeypatch.setattr(fc, "_parse_end_datetime", lambda _end: datetime(2024, 1, 1))
+    monkeypatch.setattr(fc, "_utc_epoch_seconds", lambda _dt: 7300.0)
+
+    closed = fc.fetch_history("EURUSD", "H1", need=3, end="2024-01-01T02:00:00Z")
+    including_live = fc.fetch_history(
+        "EURUSD",
+        "H1",
+        need=3,
+        end="2024-01-01T02:00:00Z",
+        drop_last_live=False,
+    )
+
+    assert closed["time"].tolist() == [100.0, 3700.0]
+    assert including_live["time"].tolist() == [100.0, 3700.0, 7300.0]
 
 
 def test_fetch_history_preserves_live_native_utc_epochs(monkeypatch):
