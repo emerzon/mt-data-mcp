@@ -130,22 +130,51 @@ class ThetaMethod(ClassicalMethod):
         if not np.all(np.isfinite(vals)):
             raise ValueError("Theta forecast requires all series values to be finite")
         alpha = float(params.get('alpha', 0.2))
-        
+        if not np.isfinite(alpha) or not 0.0 < alpha <= 1.0:
+            raise ValueError("Theta alpha must be finite and in the interval (0, 1]")
+
         tt = np.arange(1, n + 1, dtype=float)
+        m = max(1, int(seasonality))
+        seasonal = np.zeros(m, dtype=float)
+        seasonality_applied = m > 1 and n >= 2 * m
+        adjusted_vals = vals
+        if seasonality_applied:
+            raw_design = np.vstack([np.ones(n), tt]).T
+            raw_coef, _, _, _ = np.linalg.lstsq(raw_design, vals, rcond=None)
+            detrended = vals - raw_design @ raw_coef
+            phases = np.arange(n) % m
+            seasonal = np.asarray(
+                [float(np.mean(detrended[phases == phase])) for phase in range(m)],
+                dtype=float,
+            )
+            seasonal -= float(np.mean(seasonal))
+            adjusted_vals = vals - seasonal[phases]
+
         A = np.vstack([np.ones(n), tt]).T
-        coef, _, _, _ = np.linalg.lstsq(A, vals, rcond=None)
+        coef, _, _, _ = np.linalg.lstsq(A, adjusted_vals, rcond=None)
         if coef.size < 2 or not np.all(np.isfinite(coef)):
             raise ValueError("Theta trend fit produced non-finite coefficients")
         a, b = float(coef[0]), float(coef[1])
         trend_future = a + b * (tt[-1] + np.arange(1, int(horizon) + 1, dtype=float))
         
-        level = float(vals[0])
-        for v in vals[1:]:
+        level = float(adjusted_vals[0])
+        for v in adjusted_vals[1:]:
             level = alpha * float(v) + (1.0 - alpha) * level
         ses_future = np.full(int(horizon), level, dtype=float)
-        
+
         f_vals = 0.5 * (trend_future + ses_future)
-        return ForecastResult(forecast=f_vals, params_used={"alpha": alpha, "trend_slope": b})
+        if seasonality_applied:
+            future_phases = (n + np.arange(int(horizon))) % m
+            f_vals += seasonal[future_phases]
+        return ForecastResult(
+            forecast=f_vals,
+            params_used={
+                "alpha": alpha,
+                "trend_slope": b,
+                "m": m,
+                "seasonality_applied": seasonality_applied,
+            },
+        )
 
 @ForecastRegistry.register("fourier_ols")
 class FourierOLSMethod(ClassicalMethod):
