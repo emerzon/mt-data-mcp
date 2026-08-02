@@ -613,7 +613,10 @@ def _fetch_rates_with_warmup(  # noqa: C901
         if future_error:
             return None, future_error
         now_utc = datetime.now(dt_timezone.utc)
-        requested_rows = candles + warmup_bars + extra_bars
+        from_date_internal = from_date - timedelta(
+            seconds=seconds_per_bar * (warmup_bars + extra_bars)
+        )
+        requested_rows = candles + extra_bars
         # A start-only query means "the first N bars from start", not "the
         # latest N bars, filtered by start".  Allow extra calendar space for
         # closed sessions while retaining a bounded provider request.
@@ -622,7 +625,9 @@ def _fetch_rates_with_warmup(  # noqa: C901
         expected_end_ts = _utc_epoch_seconds(to_date)
 
         def _fetch():
-            return _mt5_copy_rates_range(symbol, mt5_timeframe, from_date, to_date)
+            return _mt5_copy_rates_range(
+                symbol, mt5_timeframe, from_date_internal, to_date
+            )
 
     elif end_datetime:
         to_date, to_date_error = _parse_fetch_datetime_arg(end_datetime, end_bound=True)

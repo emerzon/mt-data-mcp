@@ -9,7 +9,7 @@ Covers:
 """
 
 import unittest
-from datetime import datetime
+from datetime import datetime, timedelta
 from unittest.mock import MagicMock, patch
 
 from mtdata.services.data_service import fetch_candles
@@ -23,6 +23,7 @@ from ._helpers import (
     _MT5_CONFIG,
     _PARSE_START,
     _RATES_FROM,
+    _RATES_RANGE,
     _RESOLVE_CTZ,
     _UTC,
     _make_rates,
@@ -313,6 +314,52 @@ class TestFetchCandlesIndicators(unittest.TestCase):
     # ------------------------------------------------------------------ #
     # NaN warmup retry                                                    #
     # ------------------------------------------------------------------ #
+
+    @patch(_MT5_CONFIG)
+    @patch(_APPLY_TI)
+    @patch(_RATES_RANGE)
+    @patch(_CACHED_INFO, return_value=MagicMock())
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_ESTIMATE_WARMUP, return_value=3)
+    @patch(_GUARD, _mock_symbol_guard)
+    def test_start_only_indicator_fetch_prepends_warmup_history(
+        self,
+        mock_warmup,
+        mock_ctz,
+        mock_info,
+        mock_range,
+        mock_ti,
+        mock_cfg,
+    ):
+        mock_cfg.get_time_offset_seconds.return_value = 0
+        requested_start = datetime(2025, 1, 1, tzinfo=_UTC)
+
+        def rates_for_range(symbol, timeframe, from_date, to_date):
+            count = int((to_date - from_date).total_seconds() / 3600) + 1
+            return _make_rates(count, base_ts=to_date.timestamp(), step=3600)
+
+        def add_rolling_indicator(df, spec):
+            df['sma_3'] = df['close'].rolling(3).mean()
+            return ['sma_3']
+
+        mock_range.side_effect = rates_for_range
+        mock_ti.side_effect = add_rolling_indicator
+
+        result = fetch_candles(
+            'EURUSD',
+            timeframe='H1',
+            limit=2,
+            start='2025-01-01T00:00:00Z',
+            indicators='sma(3)',
+        )
+
+        self.assertTrue(result.get('success'))
+        self.assertEqual(len(result['data']), 2)
+        self.assertEqual(result['data'][0]['time'], '2025-01-01T00:00Z')
+        self.assertTrue(all(row['sma_3'] is not None for row in result['data']))
+        fetched_from = mock_range.call_args.args[2]
+        self.assertLess(fetched_from, requested_start)
+        self.assertEqual(fetched_from, requested_start - timedelta(hours=4))
 
     @patch(_MT5_CONFIG)
     @patch(_APPLY_TI)
