@@ -155,7 +155,7 @@ def _normalize_side(value: Any) -> Optional[str]:
 
 def _model_has_values(model: Any) -> bool:
     if hasattr(model, "model_dump"):
-        values = getattr(model, "model_dump")().values()
+        values = model.model_dump().values()
     elif isinstance(model, dict):
         values = model.values()
     else:
@@ -841,6 +841,48 @@ def _total_portfolio_risk_currency(
     return total, issues
 
 
+def _released_position_risk_currency(
+    *,
+    existing_positions: Optional[List[Any]],
+    symbol_info: Any,
+    symbol: str,
+    net_side: Optional[str],
+    reduce_volume: float,
+) -> float:
+    """Return the quantified risk released by reducing an existing net position."""
+    released = 0.0
+    normalized_symbol = _normalize_symbol(symbol)
+    for position in list(existing_positions or []):
+        if _normalize_symbol(getattr(position, "symbol", None)) != normalized_symbol:
+            continue
+        pos_side = validation._resolve_position_side(position)
+        if pos_side != net_side:
+            continue
+        pos_volume = _safe_float_attr(position, "volume")
+        pos_mark = _safe_float_attr(position, "price_current")
+        pos_sl = _safe_float_attr(position, "sl")
+        if pos_volume is None or pos_mark is None or pos_mark <= 0 or pos_sl is None:
+            continue
+        if math.isclose(pos_sl, 0.0, abs_tol=1e-12):
+            continue
+        pos_risk, _err = _estimate_order_risk_currency(
+            symbol_info=symbol_info,
+            volume=abs(pos_volume),
+            entry_price=pos_mark,
+            stop_loss=pos_sl,
+            side=pos_side,
+            allow_profit_stop=True,
+        )
+        if pos_risk is None or pos_volume <= 0:
+            continue
+        share = min(1.0, reduce_volume / abs(pos_volume)) if pos_volume else 0.0
+        released += float(pos_risk) * share
+        reduce_volume -= abs(pos_volume) * share
+        if reduce_volume <= 1e-12:
+            break
+    return released
+
+
 def _evaluate_wallet_risk_limits(
     limits: Optional[WalletRiskLimits],
     *,
@@ -930,37 +972,13 @@ def _evaluate_wallet_risk_limits(
         reduce_volume = min(order_volume, net_volume)
         flip_volume = max(0.0, order_volume - net_volume)
         # Risk released proportional to volume closed on the existing book.
-        released = 0.0
-        for position in list(existing_positions or []):
-            if _normalize_symbol(getattr(position, "symbol", None)) != _normalize_symbol(
-                symbol
-            ):
-                continue
-            pos_side = validation._resolve_position_side(position)
-            if pos_side != net_side:
-                continue
-            pos_volume = _safe_float_attr(position, "volume")
-            pos_mark = _safe_float_attr(position, "price_current")
-            pos_sl = _safe_float_attr(position, "sl")
-            if pos_volume is None or pos_mark is None or pos_mark <= 0 or pos_sl is None:
-                continue
-            if math.isclose(pos_sl, 0.0, abs_tol=1e-12):
-                continue
-            pos_risk, _err = _estimate_order_risk_currency(
-                symbol_info=symbol_info,
-                volume=abs(pos_volume),
-                entry_price=pos_mark,
-                stop_loss=pos_sl,
-                side=pos_side,
-                allow_profit_stop=True,
-            )
-            if pos_risk is None or pos_volume <= 0:
-                continue
-            share = min(1.0, reduce_volume / abs(pos_volume)) if pos_volume else 0.0
-            released += float(pos_risk) * share
-            reduce_volume -= abs(pos_volume) * share
-            if reduce_volume <= 1e-12:
-                break
+        released = _released_position_risk_currency(
+            existing_positions=existing_positions,
+            symbol_info=symbol_info,
+            symbol=symbol,
+            net_side=net_side,
+            reduce_volume=reduce_volume,
+        )
         flip_risk = 0.0
         if flip_volume > 1e-12:
             flip_risk_val, flip_err = _estimate_order_risk_currency(

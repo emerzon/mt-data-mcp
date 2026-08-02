@@ -7,7 +7,6 @@ from src.mtdata.core.trading.safety import (
     _evaluate_account_risk_gate,
 )
 
-
 # ---------------------------------------------------------------------------
 # No-limits pass-through
 # ---------------------------------------------------------------------------
