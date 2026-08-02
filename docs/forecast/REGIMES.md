@@ -307,6 +307,15 @@ Some methods use a heuristic to choose `n_states` when it is not explicitly supp
 | `garch` | Realized-volatility percentile spread plus return kurtosis |
 | `ensemble` | Return-distribution kurtosis |
 
+GARCH selects four states when the 90th/10th realized-volatility percentile
+ratio is above 10 or raw return kurtosis is above 6; it selects three when the
+ratio is above 5 or kurtosis is above 4, and two otherwise. With 10 or fewer
+usable realized-volatility observations, it defaults to three states.
+
+The ensemble uses a separate rule based only on raw return kurtosis: above 6
+selects six states, above 4.5 selects five, above 3.5 selects four, and all
+other values select three.
+
 These rules control output granularity; they are not AIC/BIC model selection and
 do not estimate the true number of market regimes. Set `n_states` explicitly and
 compare out-of-sample or backtest results when the state count affects a strategy.

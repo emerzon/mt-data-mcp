@@ -1150,9 +1150,10 @@ def regime_detect(  # noqa: C901
           path into relative full-window percentile tiers (or an explicit
           absolute threshold for two states). This is not a switching-GARCH model.
           n_states is AUTO-DETECTED by default from realized-vol percentile spread
-          (vol_ratio_90_10) plus return kurtosis (see docs/forecast/REGIMES.md):
-            wider 90/10 vol spread and/or heavy tails → more states (up to 4)
-            tighter spreads → 2 states (low/high)
+          (vol_ratio_90_10) plus raw return kurtosis:
+            vol_ratio > 10 or kurtosis > 6 → 4 states
+            vol_ratio > 5 or kurtosis > 4 → 3 states
+            otherwise → 2 states (10 or fewer usable volatility observations defaults to 3)
           Explicit n_states parameter overrides auto-detection.
           Uses percentile-based classification with volatility characteristics reported in output.
         - 'rule_based': Returns `current_regime` and a single-item `regimes` list with
@@ -1166,7 +1167,8 @@ def regime_detect(  # noqa: C901
           Default voters are HMM, clustering, and wavelet. Only state methods
           whose IDs are canonicalized by return are accepted; change-point,
           rule-based, and GARCH volatility-tier methods cannot vote.
-          When omitted, n_states is selected by return-distribution kurtosis:
+          For ensemble only, omitted n_states is selected by raw
+          return-distribution kurtosis:
             kurtosis > 6.0 → 6 states
             kurtosis > 4.5 → 5 states
             kurtosis > 3.5 → 4 states
