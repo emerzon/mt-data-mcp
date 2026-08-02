@@ -921,6 +921,7 @@ def _try_predict_with_stored_model(  # noqa: C901
             exog_future=future_exog,
             **call_kwargs,
         )
+        _store.mark_used(handle.model_id)
         metadata = res.metadata or {}
         metadata['params_used'] = res.params_used
         model_info = {

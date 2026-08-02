@@ -203,11 +203,18 @@ class TestModelStoreTTL(unittest.TestCase):
         self.assertIsNone(self.store.find("m", "d", "p"))
         self.assertTrue(model_dir.exists())
 
-    def test_load_refreshes_last_used(self):
+    def test_load_does_not_refresh_last_used_until_marked(self):
         self.store.save("m", "d", "p", b"data")
-        # Load to refresh last_used
-        self.store.load_bytes("m/d/p")
         meta_path = self.store._model_dir("m", "d", "p") / "metadata.json"
+        with open(meta_path) as f:
+            original_meta = json.load(f)
+
+        self.store.load_bytes("m/d/p")
+        with open(meta_path) as f:
+            loaded_meta = json.load(f)
+        self.assertEqual(loaded_meta["last_used"], original_meta["last_used"])
+
+        self.assertTrue(self.store.mark_used("m/d/p"))
         with open(meta_path) as f:
             meta = json.load(f)
         self.assertAlmostEqual(meta["last_used"], time.time(), delta=2)
@@ -215,7 +222,7 @@ class TestModelStoreTTL(unittest.TestCase):
         self.assertEqual(meta["store_metadata"]["compatibility_version"], 1)
         self.assertAlmostEqual(meta["store_metadata"]["last_used"], meta["last_used"], delta=0.01)
 
-    def test_load_updates_last_used_under_store_lock(self):
+    def test_mark_used_updates_last_used_under_store_lock(self):
         self.store.save("m", "d", "p", b"data")
         lock_states = []
         original_touch = self.store._touch_last_used
@@ -226,7 +233,7 @@ class TestModelStoreTTL(unittest.TestCase):
 
         self.store._touch_last_used = wrapped_touch
 
-        self.assertEqual(self.store.load_bytes("m/d/p"), b"data")
+        self.assertTrue(self.store.mark_used("m/d/p"))
         self.assertEqual(lock_states, [True])
 
     def test_find_backfills_store_metadata_for_legacy_metadata(self):
@@ -275,6 +282,19 @@ class TestModelStoreTTL(unittest.TestCase):
         self.assertEqual(removed, 1)
         self.assertIsNone(self.store.find("m1", "d", "p1"))
         self.assertIsNotNone(self.store.find("m2", "d", "p2"))
+
+    def test_cleanup_expired_removes_metadata_less_artifact(self):
+        model_dir = self.store._model_dir("m", "d", "orphan")
+        model_dir.mkdir(parents=True)
+        artifact_path = model_dir / "model.bin"
+        artifact_path.write_bytes(b"orphan")
+        old = time.time() - 10
+        os.utime(artifact_path, (old, old))
+
+        removed = self.store.cleanup_expired()
+
+        self.assertEqual(removed, 1)
+        self.assertFalse(model_dir.exists())
 
     def test_cleanup_expired_deletes_under_store_lock(self):
         self.store.save("m1", "d", "p1", b"d")

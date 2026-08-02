@@ -299,7 +299,8 @@ class ModelStore:
     def load_bytes(self, model_id: str) -> bytes:
         """Load raw artifact bytes by *model_id*.
 
-        Updates ``last_used`` on successful access.
+        Loading opaque bytes does not renew the model TTL. Call ``mark_used``
+        only after method-owned deserialization and prediction succeed.
         Raises ``FileNotFoundError`` if the model does not exist.
         """
         try:
@@ -313,8 +314,23 @@ class ModelStore:
                 raise FileNotFoundError(f"No model artifact at {artifact_path}")
 
             data = artifact_path.read_bytes()
-            self._touch_last_used(model_dir)
         return data
+
+    def mark_used(self, model_id: str) -> bool:
+        """Renew idle TTL after an artifact has been used successfully."""
+        try:
+            model_dir = self._model_dir_from_id(model_id)
+            with self._model_dir_lock(model_dir, blocking=True):
+                with self._lock:
+                    if not (model_dir / "model.bin").is_file():
+                        return False
+                    if self._read_raw_meta(model_dir) is None:
+                        return False
+                    self._touch_last_used(model_dir)
+            return True
+        except Exception as exc:
+            logger.debug("Failed to mark model %s as used: %s", model_id, exc)
+            return False
 
     def find(
         self,
@@ -445,11 +461,52 @@ class ModelStore:
                         continue
                     if self._remove_dir(model_dir):
                         removed += 1
+        removed += self._cleanup_expired_orphans(now)
         return removed
 
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
+
+    def _cleanup_expired_orphans(self, now: float) -> int:
+        """Remove old artifacts that have no readable metadata handle."""
+        if not self._root.is_dir():
+            return 0
+        removed = 0
+        for method_dir in list(self._root.iterdir()):
+            if not method_dir.is_dir() or method_dir.name.startswith("."):
+                continue
+            for scope_dir in list(method_dir.iterdir()):
+                if not scope_dir.is_dir() or scope_dir.name.startswith("."):
+                    continue
+                for model_dir in list(scope_dir.iterdir()):
+                    if not model_dir.is_dir() or model_dir.name.startswith("."):
+                        continue
+                    artifact_path = model_dir / "model.bin"
+                    if not artifact_path.is_file() or self._read_raw_meta(model_dir) is not None:
+                        continue
+                    metadata_path = model_dir / "metadata.json"
+                    mtimes = [artifact_path.stat().st_mtime]
+                    if metadata_path.exists():
+                        mtimes.append(metadata_path.stat().st_mtime)
+                    if (now - max(mtimes)) <= self._ttl:
+                        continue
+                    with self._model_dir_lock(model_dir, blocking=False) as locked:
+                        if not locked:
+                            continue
+                        with self._lock:
+                            if self._read_raw_meta(model_dir) is not None:
+                                continue
+                            if not artifact_path.is_file():
+                                continue
+                            current_mtimes = [artifact_path.stat().st_mtime]
+                            if metadata_path.exists():
+                                current_mtimes.append(metadata_path.stat().st_mtime)
+                            if (time.time() - max(current_mtimes)) <= self._ttl:
+                                continue
+                            if self._remove_dir(model_dir):
+                                removed += 1
+        return removed
 
     def _read_handle(
         self, model_dir: Path, *, skip_expiry: bool = False,

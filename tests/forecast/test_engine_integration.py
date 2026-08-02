@@ -363,6 +363,30 @@ class TestTryPredictWithStoredModel:
         assert ci is not None
         assert metadata["model_info"]["model_id"] == "stub_trainable/EURUSD_H1/abc123"
         assert metadata["model_info"]["source"] == "model_store"
+        mock_store.mark_used.assert_called_once_with(handle.model_id)
+
+    def test_failed_deserialization_does_not_renew_model_ttl(self):
+        stub = _StubTrainable()
+        stub.deserialize_artifact = MagicMock(side_effect=ValueError("corrupt artifact"))
+        handle = TrainedModelHandle(
+            model_id="stub_trainable/EURUSD_H1/abc123",
+            method="stub_trainable",
+            data_scope="EURUSD_H1",
+            params_hash="abc123",
+            created_at=1000.0,
+        )
+        mock_store = MagicMock()
+        mock_store.find.return_value = handle
+        mock_store.load_bytes.return_value = b"corrupt"
+
+        with patch(_PATCH_MODEL_STORE, mock_store):
+            result = fe._try_predict_with_stored_model(
+                stub, "stub_trainable", "EURUSD_H1", "abc123",
+                _sample_series(), 3, 24, {}, None, {},
+            )
+
+        assert result is None
+        mock_store.mark_used.assert_not_called()
 
     def test_surfaces_legacy_compatibility_warning_when_model_exists(self):
         stub = _StubTrainable()
