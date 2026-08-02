@@ -815,6 +815,15 @@ def _forecast_generate_compact_rows(payload: Dict[str, Any]) -> List[Dict[str, A
     if not isinstance(lower_values, list) or not isinstance(upper_values, list):
         lower_values = payload.get("lower")
         upper_values = payload.get("upper")
+    if quantity == "return" and forecast_key == "forecast_return":
+        lower_field = "lower_return"
+        upper_field = "upper_return"
+    elif quantity == "price" and forecast_key == "forecast_price":
+        lower_field = "lower_price"
+        upper_field = "upper_price"
+    else:
+        lower_field = "lower"
+        upper_field = "upper"
     market_status = payload.get("forecast_market_status")
 
     count = min(len(times), len(forecast_values))
@@ -832,8 +841,8 @@ def _forecast_generate_compact_rows(payload: Dict[str, Any]) -> List[Dict[str, A
             row["market_status"] = market_status[idx]
         if isinstance(lower_values, list) and isinstance(upper_values, list):
             if idx < len(lower_values) and idx < len(upper_values):
-                row["lower"] = lower_values[idx]
-                row["upper"] = upper_values[idx]
+                row[lower_field] = lower_values[idx]
+                row[upper_field] = upper_values[idx]
         rows.append(row)
     return rows
 
@@ -1040,7 +1049,10 @@ def _apply_forecast_generate_detail(
             "last": forecast_rows[-1],
             "path_omitted": "non_informative_flat_path",
         }
-    elif forecast_rows and not ci_has_intervals:
+    elif forecast_rows and (
+        not ci_has_intervals
+        or str(compact.get("quantity") or "").strip().lower() == "return"
+    ):
         compact["forecast"] = forecast_rows
     elif volatility_rows:
         compact["forecast"] = volatility_rows

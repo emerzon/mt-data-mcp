@@ -953,6 +953,56 @@ def test_forecast_generate_compact_nests_available_ci(monkeypatch):
     )
 
 
+def test_forecast_generate_compact_return_keeps_price_path_with_labeled_ci():
+    out = forecast_use_cases._apply_forecast_generate_detail(
+        {
+            "success": True,
+            "method": "arima",
+            "horizon": 2,
+            "quantity": "return",
+            "forecast_time": ["t1", "t2"],
+            "forecast_return": [0.01, -0.005],
+            "forecast_price": [101.0, 100.4963],
+            "lower_return": [0.002, -0.012],
+            "upper_return": [0.018, 0.002],
+            "ci_status": "available",
+            "ci_alpha": 0.05,
+            "last_price": 100.0,
+        },
+        ForecastGenerateRequest(
+            symbol="BTCUSD",
+            timeframe="H1",
+            method="arima",
+            horizon=2,
+            quantity="return",
+        ),
+    )
+
+    assert out["forecast"] == [
+        {
+            "time": "t1",
+            "return": 0.01,
+            "price": 101.0,
+            "lower_return": 0.002,
+            "upper_return": 0.018,
+        },
+        {
+            "time": "t2",
+            "return": -0.005,
+            "price": 100.4963,
+            "lower_return": -0.012,
+            "upper_return": 0.002,
+        },
+    ]
+    assert out["uncertainty"]["intervals"] == [
+        {"time": "t1", "forecast": 0.01, "low": 0.002, "high": 0.018},
+        {"time": "t2", "forecast": -0.005, "low": -0.012, "high": 0.002},
+    ]
+    assert out["return_unit"] == "return_fraction"
+    assert "forecast_price" not in out
+    assert "forecast_return" not in out
+
+
 def test_forecast_generate_standard_preserves_full_arrays(monkeypatch):
     raw = _unwrap(cf.forecast_generate)
     monkeypatch.setattr(
