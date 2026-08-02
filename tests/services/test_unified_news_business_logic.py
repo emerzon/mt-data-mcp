@@ -54,7 +54,7 @@ def test_fetch_unified_news_without_symbol_returns_only_general_bucket(monkeypat
                     "source": "FXStreet",
                     "category": "Economic Calendar",
                     "priority": 1,
-                    "relative_time": "10 minutes ago",
+                    "published_at": "2026-03-29T07:50:00Z",
                 }
             ],
         }
@@ -71,6 +71,32 @@ def test_fetch_unified_news_without_symbol_returns_only_general_bucket(monkeypat
     assert result["related_news"] == []
     assert result["general_count"] == 2
     assert set(result["sources_used"]) == {"finviz", "mt5"}
+
+
+def test_mt5_source_uses_absolute_published_time(monkeypatch) -> None:
+    monkeypatch.setattr(
+        svc,
+        "get_mt5_news",
+        lambda **_kwargs: {
+            "success": True,
+            "news": [
+                {
+                    "subject": "Broker headline",
+                    "source": "Broker",
+                    "category": "Markets",
+                    "priority": 0,
+                    "published_at": "2026-03-29T07:54:32+00:00",
+                    "relative_time": "10 minutes ago",
+                }
+            ],
+        },
+    )
+    source = svc.MT5NewsSource()
+    source._available = True
+
+    items = source.fetch_general_candidates(limit=1)
+
+    assert items[0].published_at == datetime(2026, 3, 29, 7, 54, 32, tzinfo=timezone.utc)
 
 
 def test_fetch_unified_news_rejects_unknown_equity_symbol(monkeypatch) -> None:
@@ -228,7 +254,7 @@ def test_fetch_unified_news_uses_symbol_metadata_for_crypto_classification(monke
                     "source": "FXStreet",
                     "category": "Economic Calendar",
                     "priority": 1,
-                    "relative_time": "5 minutes ago",
+                    "published_at": "2026-03-29T07:55:00Z",
                 }
             ],
         }

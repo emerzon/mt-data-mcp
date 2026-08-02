@@ -1644,7 +1644,7 @@ class MT5NewsSource:
                         provider=self.name,
                         source=_safe_text(item.get("source") or item.get("category")) or "MT5",
                         kind="headline",
-                        published_at=_parse_relative_time(_safe_text(item.get("relative_time"))),
+                        published_at=_maybe_parse_datetime(item.get("published_at")),
                         category=_safe_text(item.get("category")) or None,
                         priority=priority,
                         metadata={

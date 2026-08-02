@@ -36,6 +36,7 @@ class MT5NewsRecord:
     
     def to_dict(self, now: Optional[datetime] = None) -> Dict[str, Any]:
         return {
+            "published_at": self.timestamp.astimezone(timezone.utc).isoformat(),
             "relative_time": format_relative_time(self.timestamp, now=now),
             "subject": self.subject,
             "category": self.category,

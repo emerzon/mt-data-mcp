@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 import pytest
@@ -48,6 +48,20 @@ def test_get_mt5_news_surfaces_warning_for_inverted_date_range(monkeypatch) -> N
     assert result["count"] == 0
     assert result["news"] == []
     assert result["warning"] == "from_date is after to_date; returning no results"
+
+
+def test_mt5_news_record_preserves_absolute_published_time() -> None:
+    published_at = datetime(2026, 3, 15, 12, 34, 56, tzinfo=timezone.utc)
+
+    item = svc.MT5NewsRecord(
+        timestamp=published_at,
+        subject="Fed preview",
+        category="FXStreet",
+        source="FXStreet",
+    ).to_dict(now=published_at + timedelta(minutes=10))
+
+    assert item["published_at"] == "2026-03-15T12:34:56+00:00"
+    assert item["relative_time"] == "10 minutes ago"
 
 
 def test_get_mt5_news_reports_invalid_date_filter_as_input_error(monkeypatch) -> None:
