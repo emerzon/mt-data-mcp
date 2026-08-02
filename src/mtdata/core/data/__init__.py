@@ -7,12 +7,12 @@ from pydantic import ValidationError
 
 from ...services.data_service import fetch_candles, fetch_ticks
 from ...shared.schema import DetailLiteral, TimeframeLiteral
+from ...utils.coercion import coerce_finite_float
 from ...utils.mt5 import (
     ensure_mt5_connection_or_raise,
     get_symbol_info_cached,
     symbol_candle_price_basis,
 )
-from ...utils.coercion import coerce_finite_float
 from .._mcp_instance import mcp
 from ..execution_logging import run_logged_operation
 from ..mt5_gateway import create_mt5_gateway

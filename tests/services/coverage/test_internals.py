@@ -20,8 +20,8 @@ from mtdata.services.data_service import (
     _build_no_data_error_with_context,
     _build_rates_df,
     _compact_tick_summary,
-    _fetch_recent_ticks_backwards,
     _fetch_rates_with_warmup,
+    _fetch_recent_ticks_backwards,
     _trim_df_to_target,
 )
 

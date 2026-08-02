@@ -1,12 +1,12 @@
 from datetime import datetime, timezone
 
+from mtdata.utils import time as time_utils
 from mtdata.utils.freshness import (
     closed_session_context,
     format_freshness_label,
     is_standard_weekend_closure,
 )
 from mtdata.utils.market_metadata import build_tick_freshness_context
-from mtdata.utils import time as time_utils
 from mtdata.utils.time import bar_close_epoch
 
 
