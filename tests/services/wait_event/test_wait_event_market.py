@@ -215,6 +215,7 @@ class DisconnectingGateway(SequenceGateway):
 
 def test_support_resistance_watchers_use_compact_levels(monkeypatch) -> None:
     captured: dict[str, object] = {}
+    monkeypatch.setattr(core_data, "_default_level_price_source", lambda symbol: "bid")
 
     monkeypatch.setattr(
         core_data,
@@ -238,14 +239,15 @@ def test_support_resistance_watchers_use_compact_levels(monkeypatch) -> None:
     watchers = core_data._support_resistance_watchers(symbol="BTCUSD")
 
     assert watchers == [
-        {"type": "price_touch_level", "symbol": "BTCUSD", "level": 99.5, "direction": "either"},
-        {"type": "price_break_level", "symbol": "BTCUSD", "level": 99.5, "direction": "down"},
-        {"type": "price_touch_level", "symbol": "BTCUSD", "level": 101.0, "direction": "either"},
-        {"type": "price_break_level", "symbol": "BTCUSD", "level": 101.0, "direction": "up"},
+        {"type": "price_touch_level", "symbol": "BTCUSD", "level": 99.5, "direction": "either", "price_source": "bid"},
+        {"type": "price_break_level", "symbol": "BTCUSD", "level": 99.5, "direction": "down", "price_source": "bid"},
+        {"type": "price_touch_level", "symbol": "BTCUSD", "level": 101.0, "direction": "either", "price_source": "bid"},
+        {"type": "price_break_level", "symbol": "BTCUSD", "level": 101.0, "direction": "up", "price_source": "bid"},
     ]
     assert captured == {"symbol": "BTCUSD", "timeframe": "auto", "detail": "compact"}
 
 def test_support_resistance_watchers_ignore_non_finite_levels(monkeypatch) -> None:
+    monkeypatch.setattr(core_data, "_default_level_price_source", lambda symbol: "bid")
     monkeypatch.setattr(
         core_data,
         "support_resistance_levels",
@@ -261,12 +263,13 @@ def test_support_resistance_watchers_ignore_non_finite_levels(monkeypatch) -> No
     watchers = core_data._support_resistance_watchers(symbol="BTCUSD")
 
     assert watchers == [
-        {"type": "price_touch_level", "symbol": "BTCUSD", "level": 101.0, "direction": "either"},
-        {"type": "price_break_level", "symbol": "BTCUSD", "level": 101.0, "direction": "up"},
+        {"type": "price_touch_level", "symbol": "BTCUSD", "level": 101.0, "direction": "either", "price_source": "bid"},
+        {"type": "price_break_level", "symbol": "BTCUSD", "level": 101.0, "direction": "up", "price_source": "bid"},
     ]
 
 def test_pivot_zone_watchers_use_adjacent_pivot_bands(monkeypatch) -> None:
     captured = {}
+    monkeypatch.setattr(core_data, "_default_level_price_source", lambda symbol: "last")
 
     def fake_pivots(symbol, timeframe="D1", detail="compact"):
         captured.update(symbol=symbol, timeframe=timeframe, detail=detail)
@@ -288,10 +291,24 @@ def test_pivot_zone_watchers_use_adjacent_pivot_bands(monkeypatch) -> None:
     watchers = core_data._pivot_zone_watchers(symbol="BTCUSD", timeframe="M15")
 
     assert watchers == [
-        {"type": "price_enter_zone", "symbol": "BTCUSD", "lower": 99.0, "upper": 100.0, "direction": "either"},
-        {"type": "price_enter_zone", "symbol": "BTCUSD", "lower": 100.0, "upper": 101.0, "direction": "either"},
+        {"type": "price_enter_zone", "symbol": "BTCUSD", "lower": 99.0, "upper": 100.0, "direction": "either", "price_source": "last"},
+        {"type": "price_enter_zone", "symbol": "BTCUSD", "lower": 100.0, "upper": 101.0, "direction": "either", "price_source": "last"},
     ]
     assert captured == {"symbol": "BTCUSD", "timeframe": "D1", "detail": "standard"}
+
+
+@pytest.mark.parametrize(
+    ("chart_mode", "expected"),
+    [(0, "bid"), (1, "last"), (None, "auto")],
+)
+def test_default_level_price_source_uses_chart_mode(monkeypatch, chart_mode, expected) -> None:
+    monkeypatch.setattr(
+        core_data,
+        "get_symbol_info_cached",
+        lambda symbol: SimpleNamespace(chart_mode=chart_mode),
+    )
+
+    assert core_data._default_level_price_source("BTCUSD") == expected
 
 def test_run_wait_event_matches_adaptive_price_change() -> None:
     clock = FakeClock(datetime(2026, 3, 15, 12, 0, 0, tzinfo=timezone.utc))

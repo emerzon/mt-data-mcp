@@ -7,7 +7,11 @@ from pydantic import ValidationError
 
 from ...services.data_service import fetch_candles, fetch_ticks
 from ...shared.schema import DetailLiteral, TimeframeLiteral
-from ...utils.mt5 import ensure_mt5_connection_or_raise
+from ...utils.mt5 import (
+    ensure_mt5_connection_or_raise,
+    get_symbol_info_cached,
+    symbol_candle_price_basis,
+)
 from ...utils.coercion import coerce_finite_float
 from .._mcp_instance import mcp
 from ..execution_logging import run_logged_operation
@@ -153,6 +157,7 @@ def _support_resistance_watchers(
     if not isinstance(levels, list):
         return []
     watch_for: List[Dict[str, Any]] = []
+    price_source = _default_level_price_source(symbol)
     for level in levels:
         if not isinstance(level, dict):
             continue
@@ -171,6 +176,7 @@ def _support_resistance_watchers(
                 "symbol": symbol,
                 "level": level_value,
                 "direction": "either",
+                "price_source": price_source,
             }
         )
         watch_for.append(
@@ -179,6 +185,7 @@ def _support_resistance_watchers(
                 "symbol": symbol,
                 "level": level_value,
                 "direction": direction,
+                "price_source": price_source,
             }
         )
     return watch_for
@@ -200,6 +207,7 @@ def _pivot_zone_watchers(*, symbol: str, timeframe: TimeframeLiteral) -> List[Di
     if len(levels) < 2:
         return []
     watch_for: List[Dict[str, Any]] = []
+    price_source = _default_level_price_source(symbol)
     for idx in range(len(levels) - 1):
         lower = levels[idx]["value"]
         upper = levels[idx + 1]["value"]
@@ -212,9 +220,23 @@ def _pivot_zone_watchers(*, symbol: str, timeframe: TimeframeLiteral) -> List[Di
                 "lower": lower,
                 "upper": upper,
                 "direction": "either",
+                "price_source": price_source,
             }
         )
     return watch_for
+
+
+def _default_level_price_source(symbol: str) -> str:
+    """Match generated chart levels against the broker's chart price basis."""
+    try:
+        basis = symbol_candle_price_basis(get_symbol_info_cached(symbol))
+    except Exception:
+        return "auto"
+    if basis == "bid":
+        return "bid"
+    if basis == "last_trade":
+        return "last"
+    return "auto"
 
 
 def _default_wait_event_pivot_timeframe(timeframe: TimeframeLiteral) -> TimeframeLiteral:
