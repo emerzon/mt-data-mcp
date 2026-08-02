@@ -6,6 +6,7 @@ from mtdata.utils.freshness import (
     is_standard_weekend_closure,
 )
 from mtdata.utils.market_metadata import build_tick_freshness_context
+from mtdata.utils import time as time_utils
 from mtdata.utils.time import bar_close_epoch
 
 
@@ -42,9 +43,38 @@ def test_weekend_boundary_tracks_new_york_daylight_saving_time() -> None:
     assert not is_standard_weekend_closure(winter_after_reopen)
 
 
-def test_monthly_bar_close_uses_calendar_month_boundary() -> None:
+def test_monthly_bar_close_uses_calendar_month_boundary(monkeypatch) -> None:
+    monkeypatch.setattr(time_utils, "_broker_calendar_timezone", lambda at_time: timezone.utc)
     opened = datetime(2026, 2, 1, tzinfo=timezone.utc).timestamp()
     expected = datetime(2026, 3, 1, tzinfo=timezone.utc).timestamp()
+
+    assert bar_close_epoch(opened, "MN1") == expected
+
+
+def test_daily_bar_close_uses_broker_calendar_across_dst(monkeypatch) -> None:
+    from zoneinfo import ZoneInfo
+
+    monkeypatch.setattr(
+        time_utils,
+        "_broker_calendar_timezone",
+        lambda at_time: ZoneInfo("Europe/Helsinki"),
+    )
+    opened = datetime(2026, 3, 28, 22, 0, tzinfo=timezone.utc).timestamp()
+    expected = datetime(2026, 3, 29, 21, 0, tzinfo=timezone.utc).timestamp()
+
+    assert bar_close_epoch(opened, "D1") == expected
+
+
+def test_monthly_bar_close_uses_broker_local_month(monkeypatch) -> None:
+    from zoneinfo import ZoneInfo
+
+    monkeypatch.setattr(
+        time_utils,
+        "_broker_calendar_timezone",
+        lambda at_time: ZoneInfo("Europe/Helsinki"),
+    )
+    opened = datetime(2026, 2, 28, 22, 0, tzinfo=timezone.utc).timestamp()
+    expected = datetime(2026, 3, 31, 21, 0, tzinfo=timezone.utc).timestamp()
 
     assert bar_close_epoch(opened, "MN1") == expected
 

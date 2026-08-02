@@ -1,6 +1,6 @@
 """Canonical time formatting and client-timezone helpers."""
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
 from ..shared.constants import TIME_DISPLAY_FORMAT
@@ -9,30 +9,65 @@ from ..shared.constants import TIME_DISPLAY_FORMAT
 def bar_close_epoch(open_epoch: Any, timeframe: str) -> float:
     """Return the UTC end epoch for a bar opened at *open_epoch*.
 
-    Monthly bars use the next calendar-month boundary; the shared timeframe
-    seconds remain appropriate for every other MT5 timeframe.
+    Daily, weekly, and monthly bars close on broker-calendar boundaries so a
+    configured broker timezone remains correct across daylight-saving changes.
     """
     opened = float(open_epoch)
-    if str(timeframe).upper() == "MN1":
+    normalized_timeframe = str(timeframe).upper()
+    if normalized_timeframe in {"D1", "W1", "MN1"}:
         opened_at = datetime.fromtimestamp(opened, tz=timezone.utc)
-        if opened_at.month == 12:
-            closed_at = opened_at.replace(
-                year=opened_at.year + 1, month=1, day=1,
-                hour=0, minute=0, second=0, microsecond=0,
+        broker_tz = _broker_calendar_timezone(opened_at)
+        opened_local = opened_at.astimezone(broker_tz)
+        local_naive = opened_local.replace(tzinfo=None)
+        if normalized_timeframe == "D1":
+            closed_local_naive = local_naive + timedelta(days=1)
+        elif normalized_timeframe == "W1":
+            closed_local_naive = local_naive + timedelta(days=7)
+        elif local_naive.month == 12:
+            closed_local_naive = local_naive.replace(
+                year=local_naive.year + 1, month=1, day=1
             )
         else:
-            closed_at = opened_at.replace(
-                month=opened_at.month + 1, day=1,
-                hour=0, minute=0, second=0, microsecond=0,
+            closed_local_naive = local_naive.replace(
+                month=local_naive.month + 1, day=1
             )
-        return float(closed_at.timestamp())
+        closed_at = _localize_broker_calendar_time(
+            broker_tz,
+            closed_local_naive,
+        )
+        return float(closed_at.astimezone(timezone.utc).timestamp())
 
     from ..shared.constants import TIMEFRAME_SECONDS
 
-    seconds = TIMEFRAME_SECONDS.get(str(timeframe).upper())
+    seconds = TIMEFRAME_SECONDS.get(normalized_timeframe)
     if seconds is None:
         raise ValueError(f"Unknown timeframe: {timeframe}")
     return opened + float(seconds)
+
+
+def _broker_calendar_timezone(at_time: datetime):
+    from ..bootstrap.settings import mt5_config
+
+    static_offset_minutes = int(getattr(mt5_config, "time_offset_minutes", 0) or 0)
+    if static_offset_minutes:
+        return timezone(timedelta(minutes=static_offset_minutes))
+    server_tz = mt5_config.get_server_tz()
+    if server_tz is not None:
+        return server_tz
+    offset_seconds = int(mt5_config.get_time_offset_seconds(at_time=at_time) or 0)
+    return timezone(timedelta(seconds=offset_seconds))
+
+
+def _localize_broker_calendar_time(broker_tz: Any, value: datetime) -> datetime:
+    localize = getattr(broker_tz, "localize", None)
+    if callable(localize):
+        try:
+            return localize(value, is_dst=None)
+        except Exception as exc:
+            if type(exc).__name__ not in {"AmbiguousTimeError", "NonExistentTimeError"}:
+                raise
+            return localize(value, is_dst=False)
+    return value.replace(tzinfo=broker_tz)
 
 
 def format_epoch_utc(value: Any) -> Optional[str]:
