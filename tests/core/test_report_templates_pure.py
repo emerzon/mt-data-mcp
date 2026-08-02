@@ -1538,6 +1538,25 @@ class TestTemplateScalping:
 
         assert isinstance(report, dict)
         mock_build.assert_called_once()
+        params = mock_build.call_args.args[3]
+        assert params["tp_min"] == 50.0
+        assert params["tp_max"] == 120.0
+        assert params["sl_min"] == 50.0
+        assert params["sl_max"] == 160.0
+
+    @patch(f"{_SCALP_MODULE}.build_report_with_market")
+    @patch(f"{_SCALP_MODULE}.market_snapshot")
+    @patch(f"{_SCALP_MODULE}.merge_params")
+    @patch(f"{_SCALP_MODULE}._get_pip_size", return_value=0.00001)
+    def test_scalping_preserves_user_barriers(self, mock_pip, mock_merge, mock_snap, mock_build):
+        mock_merge.return_value = {"mode": "ticks", "tp_min": 7.0}
+        mock_snap.return_value = {"bid": 1.2345, "ask": 1.2347, "spread_ticks": 20}
+        mock_build.return_value = {"meta": {}, "sections": {}}
+
+        from mtdata.core.report_templates.scalping import template_scalping
+        template_scalping("EURUSD", 8, None, {"tp_min": 7.0})
+
+        assert mock_build.call_args.args[3]["tp_min"] == 7.0
 
     @patch(f"{_SCALP_MODULE}.build_report_with_market")
     @patch(f"{_SCALP_MODULE}.market_snapshot")

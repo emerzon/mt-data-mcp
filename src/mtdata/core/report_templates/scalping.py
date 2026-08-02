@@ -61,7 +61,7 @@ def template_scalping(
             except Exception:
                 spread_ticks = None
         tick_size = _get_pip_size(symbol)
-        if last_price and tick_size and last_price > 1000:
+        if last_price and tick_size:
             def _set_default(key: str, value: float) -> None:
                 if key in user_keys:
                     return
