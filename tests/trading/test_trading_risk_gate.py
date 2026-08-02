@@ -90,7 +90,7 @@ def test_floating_loss_ignores_positive_profit():
 def test_exposure_blocks_over_limit():
     limits = AccountRiskLimits(max_total_exposure_lots=5.0)
     result = _evaluate_account_risk_gate(
-        limits, existing_volume=4.0, new_volume=2.0,
+        limits, projected_exposure_lots=6.0,
     )
     assert result is not None
     assert "exposure" in result["violations"][0].lower()
@@ -99,7 +99,7 @@ def test_exposure_blocks_over_limit():
 def test_exposure_allows_within_limit():
     limits = AccountRiskLimits(max_total_exposure_lots=5.0)
     assert _evaluate_account_risk_gate(
-        limits, existing_volume=2.0, new_volume=2.5,
+        limits, projected_exposure_lots=4.5,
     ) is None
 
 
@@ -115,7 +115,7 @@ def test_multiple_violations():
     )
     acct = SimpleNamespace(margin_level=100.0, profit=-500.0)
     result = _evaluate_account_risk_gate(
-        limits, account_info=acct, existing_volume=2.0, new_volume=1.0,
+        limits, account_info=acct, projected_exposure_lots=3.0,
     )
     assert result is not None
     assert len(result["violations"]) == 3

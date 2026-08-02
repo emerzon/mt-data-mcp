@@ -435,10 +435,9 @@ def _evaluate_account_risk_gate(
     limits: Optional[AccountRiskLimits],
     *,
     account_info: Any = None,
-    new_volume: float = 0.0,
-    existing_volume: float = 0.0,
+    projected_exposure_lots: float = 0.0,
 ) -> Optional[Dict[str, Any]]:
-    """Evaluate *limits* against current account state."""
+    """Evaluate *limits* against current and projected account state."""
     if limits is None:
         return None
 
@@ -470,10 +469,9 @@ def _evaluate_account_risk_gate(
             )
 
     if limits.max_total_exposure_lots is not None:
-        total_after = existing_volume + new_volume
-        if total_after > limits.max_total_exposure_lots:
+        if projected_exposure_lots > limits.max_total_exposure_lots:
             violations.append(
-                f"Total exposure {total_after:.2f} lots would exceed the "
+                f"Total exposure {projected_exposure_lots:.2f} lots would exceed the "
                 f"limit of {limits.max_total_exposure_lots:.2f} lots."
             )
 
@@ -1116,14 +1114,10 @@ def evaluate_trade_guardrails(
             account_info=account_info,
             candidate_is_pending=candidate_is_pending,
         )
-        # Gate checks existing+new against the cap. Pass the full projected
-        # exposure as new_volume so reduces (including from already-over-cap
-        # books) are evaluated on post-trade risk, not additive volume.
         account_result = _evaluate_account_risk_gate(
             config.account_risk_limits,
             account_info=account_info,
-            new_volume=projected_total,
-            existing_volume=0.0,
+            projected_exposure_lots=projected_total,
         )
         if account_result is not None:
             return _build_guardrail_block(
