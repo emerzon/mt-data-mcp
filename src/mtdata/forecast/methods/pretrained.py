@@ -638,7 +638,7 @@ class ChronosBoltMethod(PretrainedMethod):
         model_name, pipeline_order = _resolve_chronos_model_defaults(method_name, p)
         ctx_len = int(p.get('context_length', 0) or 0)
         device_map = p.get('device_map', None)
-        quantiles = process_quantile_levels(p.get('quantiles'))
+        quantiles = process_quantile_levels(p.get('quantiles'), method_name)
         
         vals = series.values
         n = len(vals)
@@ -1130,7 +1130,7 @@ class TimesFMMethod(PretrainedMethod):
 
         p = params or {}
         ctx_len = int(p.get('context_length', 0) or 0)
-        quantiles = process_quantile_levels(p.get('quantiles'))
+        quantiles = process_quantile_levels(p.get('quantiles'), self.name)
         
         vals = series.values
         n = len(vals)
