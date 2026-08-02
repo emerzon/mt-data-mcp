@@ -20,6 +20,7 @@ from mtdata.services.data_service import (
     _build_no_data_error_with_context,
     _build_rates_df,
     _compact_tick_summary,
+    _fetch_recent_ticks_backwards,
     _fetch_rates_with_warmup,
     _trim_df_to_target,
 )
@@ -62,6 +63,38 @@ def test_candle_freshness_diagnostics_never_reports_negative_freshness() -> None
 
     assert diagnostics["data_freshness_seconds"] == 0.0
     assert diagnostics["last_bar_within_policy_window"] is True
+
+
+def test_recent_tick_chunks_overlap_without_duplicate_boundary_ticks(monkeypatch) -> None:
+    start = datetime(2026, 3, 1, tzinfo=timezone.utc)
+    boundary = datetime(2026, 3, 2, tzinfo=timezone.utc)
+    end = datetime(2026, 3, 3, tzinfo=timezone.utc)
+    calls = []
+
+    def fake_fetch(symbol, from_date, to_date):
+        calls.append((from_date, to_date))
+        boundary_tick = {"time_msc": int(boundary.timestamp() * 1000)}
+        if len(calls) == 1:
+            return [boundary_tick]
+        return [
+            {"time_msc": int((start.timestamp() + 3600) * 1000)},
+            boundary_tick,
+        ]
+
+    monkeypatch.setattr(
+        "mtdata.services.data_service._fetch_ticks_range_with_retry",
+        fake_fetch,
+    )
+
+    result = _fetch_recent_ticks_backwards(
+        "EURUSD",
+        to_date=end,
+        limit=10,
+        min_from_date=start,
+    )
+
+    assert calls[1][1] == calls[0][0] == boundary
+    assert [row["time_msc"] for row in result].count(int(boundary.timestamp() * 1000)) == 1
 
 
 def test_candle_freshness_diagnostics_rounds_machine_age() -> None:

@@ -210,7 +210,12 @@ class TestFetchTicks(unittest.TestCase):
     @patch(_RESOLVE_CTZ, return_value=None)
     @patch(_GUARD, _mock_symbol_guard)
     def test_recent_ticks_expand_lookback_until_limit_is_met(self, mock_ctz, mock_info, mock_ticks):
-        mock_ticks.side_effect = [_make_ticks(2), _make_ticks(10)]
+        counts = iter((2, 10))
+
+        def ticks_for_range(symbol, from_date, to_date, flags):
+            return _make_ticks(next(counts), base_ts=from_date.timestamp() + 1.0)
+
+        mock_ticks.side_effect = ticks_for_range
         result = fetch_ticks('EURUSD', limit=5, format='rows')
 
         self.assertTrue(result.get('success'))

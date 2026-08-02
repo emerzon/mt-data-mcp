@@ -911,11 +911,23 @@ def _fetch_recent_ticks_backwards(
         if min_from_date is not None and chunk_from < min_from_date:
             chunk_from = min_from_date
 
+        overlaps_newer_range = saw_response
         ticks_candidate = _fetch_ticks_range_with_retry(symbol, chunk_from, cursor_end)
         if ticks_candidate is not None:
             saw_response = True
-            if len(ticks_candidate) > 0:
-                collected = list(ticks_candidate) + collected
+            candidate_rows = list(ticks_candidate)
+            if overlaps_newer_range and candidate_rows:
+                boundary_epoch = float(cursor_end.timestamp())
+                candidate_rows = [
+                    tick
+                    for tick in candidate_rows
+                    if (
+                        (tick_epoch := _tick_epoch_seconds_from_row(tick)) is None
+                        or tick_epoch < boundary_epoch
+                    )
+                ]
+            if candidate_rows:
+                collected = candidate_rows + collected
                 if len(collected) > limit:
                     collected = collected[-limit:]
                 if len(collected) >= limit:
@@ -929,13 +941,20 @@ def _fetch_recent_ticks_backwards(
             if lookback_days_used >= max_lookback_days:
                 break
 
-        cursor_end = chunk_from - timedelta(microseconds=1)
+        cursor_end = chunk_from
 
     if collected:
         return collected
     if saw_response:
         return []
     return None
+
+
+def _tick_epoch_seconds_from_row(tick: Any) -> Optional[float]:
+    time_msc = _finite_or_none(_tick_field_value(tick, "time_msc"))
+    if time_msc is not None and time_msc > 0.0:
+        return time_msc / 1000.0
+    return _finite_or_none(_tick_field_value(tick, "time"))
 
 
 def _trim_df_to_target(
