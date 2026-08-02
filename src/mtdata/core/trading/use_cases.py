@@ -1838,7 +1838,7 @@ def run_trade_place(  # noqa: C901
             if isinstance(result, dict):
                 sl_tp_requested, sl_tp_status = _sl_tp_result_details(result)
                 sl_tp_failed = sl_tp_status == "failed"
-                sl_tp_unverified = sl_tp_status == "unverified"
+                sl_tp_unverified = sl_tp_status not in {"applied", "failed"}
                 if sl_tp_requested and (sl_tp_failed or sl_tp_unverified):
                     warnings_out = _coerce_warning_list(result.get("warnings"))
                     pos_ticket = result.get("position_ticket")

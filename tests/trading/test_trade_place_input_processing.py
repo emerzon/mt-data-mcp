@@ -668,6 +668,40 @@ def test_trade_place_require_sl_tp_flags_unverified_market_fill() -> None:
     assert any("AUTO-CLOSE FAILED" in warning for warning in out.get("warnings", [])), out
 
 
+def test_trade_place_treats_unknown_protection_status_as_unverified() -> None:
+    with patch(
+        "mtdata.core.trading._place_market_order",
+        return_value={
+            "retcode": 10009,
+            "sl_tp_result": {
+                "status": "unexpected",
+                "requested": {"sl": 64000.0, "tp": 68000.0},
+            },
+            "position_ticket": 456,
+        },
+    ), patch(
+        "mtdata.core.trading._close_positions",
+        return_value={"closed_count": 1},
+    ) as mock_close:
+        out = trade_place(
+            symbol="BTCUSD",
+            volume=0.03,
+            order_type="BUY",
+            stop_loss=64000,
+            take_profit=68000,
+            require_sl_tp=True,
+            dry_run=False,
+            __cli_raw=True,
+        )
+
+    mock_close.assert_called_once()
+    assert out["success"] is False
+    assert out["protection_status"] == "auto_closed_after_sl_tp_fail"
+    assert out["error"] == (
+        "Order was executed, but TP/SL protection could not be verified."
+    )
+
+
 def test_trade_place_does_not_treat_auto_close_not_found_as_closed() -> None:
     with patch(
         "mtdata.core.trading._place_market_order",
