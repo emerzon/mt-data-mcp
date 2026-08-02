@@ -353,7 +353,7 @@ def test_market_ticker_returns_lightweight_spread_snapshot() -> None:
     assert out["spread_points"] == 100.0
     assert "spread_pips" not in out
     assert "spread_pct_display" not in out
-    assert "data_stale" not in out
+    assert out["data_stale"] is True
     assert out["data_age_seconds"] > out["stale_after_seconds"]
     assert out["freshness_state"] == "stale"
     assert out["usable_for_live_trading"] is False
@@ -435,7 +435,7 @@ def test_market_ticker_compact_detail_omits_verbose_fields() -> None:
     assert "tick_volume" not in out
     assert out["time"] == "2023-11-14T22:13:20Z"
     assert "time_display" not in out
-    assert "data_stale" not in out
+    assert out["data_stale"] is True
     assert out["stale_after_seconds"] == 300
     assert "freshness_basis" not in out
     assert "data_age" not in out

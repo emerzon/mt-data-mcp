@@ -134,6 +134,7 @@ def _compact_market_ticker_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
         "freshness_state",
         "freshness_reason",
         "data_age_seconds",
+        "data_stale",
         "usable_for_live_trading",
         "usable_for_live_trading_basis",
         "live_max_age_seconds",

@@ -38,12 +38,14 @@ def test_compact_ticker_preserves_delayed_freshness_label() -> None:
             "freshness": "delayed, tick 1m 3s ago",
             "freshness_state": "delayed",
             "data_age_seconds": 63.0,
+            "data_stale": True,
             "usable_for_live_trading": False,
         }
     )
 
     assert result["freshness"] == "delayed, tick 1m 3s ago"
     assert result["freshness_state"] == "delayed"
+    assert result["data_stale"] is True
 
 
 def test_compact_ticker_preserves_future_timestamp_cause() -> None:
