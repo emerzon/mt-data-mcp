@@ -71,13 +71,6 @@ def _normalize_ohlcv_arg(ohlcv: Optional[str]) -> Optional[Set[str]]:
         return {"O", "H", "L", "C"}
     if t in ("price", "close"):
         return {"C"}
-    # Compact letters like 'cl', 'oh', etc.
-    if all(ch in "ohlcv" for ch in t):
-        return {ch.upper() for ch in t}
-    # Comma separated names
-    parts = [p.strip().lower() for p in t.replace(";", ",").split(",") if p.strip() != ""]
-    if not parts:
-        return None
     mapping = {
         "o": "O", "open": "O",
         "h": "H", "high": "H",
@@ -85,6 +78,15 @@ def _normalize_ohlcv_arg(ohlcv: Optional[str]) -> Optional[Set[str]]:
         "c": "C", "close": "C", "price": "C",
         "v": "V", "vol": "V", "volume": "V", "tick_volume": "V",
     }
+    if t in mapping:
+        return {mapping[t]}
+    # Compact letters like 'cl', 'oh', etc.
+    if all(ch in "ohlcv" for ch in t):
+        return {ch.upper() for ch in t}
+    # Comma separated names
+    parts = [p.strip().lower() for p in t.replace(";", ",").split(",") if p.strip() != ""]
+    if not parts:
+        return None
     out: Set[str] = set()
     for p in parts:
         key = mapping.get(p)

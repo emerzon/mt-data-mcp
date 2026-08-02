@@ -109,6 +109,9 @@ class TestNormalizeOhlcvArg:
     def test_compact_letters(self):
         assert _normalize_ohlcv_arg("cl") == {"C", "L"}
 
+    def test_short_volume_name_takes_precedence_over_compact_letters(self):
+        assert _normalize_ohlcv_arg("vol") == {"V"}
+
     def test_comma_separated_names(self):
         result = _normalize_ohlcv_arg("open,high,close")
         assert result == {"O", "H", "C"}
