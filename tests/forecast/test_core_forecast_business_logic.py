@@ -337,9 +337,9 @@ def test_forecast_generate_defaults_to_compact_payload(monkeypatch):
         "horizon_delta": 0.15,
         "first_step_delta_pct": -4.7619,
         "horizon_delta_pct": 14.2857,
-        "direction_significant": None,
-        "direction_significance_basis": "not_tested",
-        "direction_interpretation": "point_estimate_only_not_significance_tested",
+        "direction_interval_excludes_last_price": None,
+        "direction_interval_basis": "not_available",
+        "direction_interpretation": "point_estimate_only",
     }
     assert out["uncertainty"] == {
         "status": "not_requested",
@@ -716,9 +716,9 @@ def test_forecast_generate_rounds_price_outputs_to_symbol_digits(monkeypatch):
         "horizon_delta": 0.00149,
         "first_step_delta_pct": 0.0409,
         "horizon_delta_pct": 0.1271,
-        "direction_significant": None,
-        "direction_significance_basis": "not_tested",
-        "direction_interpretation": "point_estimate_only_not_significance_tested",
+        "direction_interval_excludes_last_price": None,
+        "direction_interval_basis": "not_available",
+        "direction_interpretation": "point_estimate_only",
     }
     assert "forecast_price" not in out
     assert out["forecast"] == [
@@ -944,8 +944,8 @@ def test_forecast_generate_compact_nests_available_ci(monkeypatch):
     assert "forecast_price" not in out
     assert "forecast" not in out
     assert out["forecast_vs_last_price"]["direction"] == "bullish"
-    assert out["forecast_vs_last_price"]["direction_significant"] is False
-    assert out["forecast_vs_last_price"]["direction_significance_basis"] == (
+    assert out["forecast_vs_last_price"]["direction_interval_excludes_last_price"] is False
+    assert out["forecast_vs_last_price"]["direction_interval_basis"] == (
         "horizon_interval_vs_last_price"
     )
     assert out["forecast_vs_last_price"]["direction_interpretation"] == (

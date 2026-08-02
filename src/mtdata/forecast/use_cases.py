@@ -543,7 +543,7 @@ def _forecast_vs_last_price(payload: Dict[str, Any]) -> Optional[Dict[str, Any]]
     return out
 
 
-def _annotate_forecast_direction_significance(
+def _annotate_forecast_direction_interval(
     payload: Dict[str, Any],
     price_context: Dict[str, Any],
 ) -> None:
@@ -558,12 +558,12 @@ def _annotate_forecast_direction_significance(
         and bool(upper_prices)
     )
     if not has_price_interval:
-        price_context["direction_significant"] = None
-        price_context["direction_significance_basis"] = "not_tested"
+        price_context["direction_interval_excludes_last_price"] = None
+        price_context["direction_interval_basis"] = "not_available"
         price_context["direction_interpretation"] = (
-            "interval_unavailable_not_significance_tested"
+            "interval_unavailable"
             if ci_status == "unavailable"
-            else "point_estimate_only_not_significance_tested"
+            else "point_estimate_only"
         )
         return
 
@@ -571,28 +571,28 @@ def _annotate_forecast_direction_significance(
     horizon_low = _finite_float(lower_prices[-1])
     horizon_high = _finite_float(upper_prices[-1])
     if last_price is None or horizon_low is None or horizon_high is None:
-        price_context["direction_significant"] = None
-        price_context["direction_significance_basis"] = "not_tested"
+        price_context["direction_interval_excludes_last_price"] = None
+        price_context["direction_interval_basis"] = "not_comparable"
         price_context["direction_interpretation"] = (
             "interval_not_comparable_to_price_anchor"
         )
         return
 
     direction = str(price_context.get("direction") or "").strip().lower()
-    significant = (
+    excludes_last_price = (
         horizon_low > last_price
         if direction == "bullish"
         else horizon_high < last_price
         if direction == "bearish"
         else False
     )
-    price_context["direction_significant"] = significant
-    price_context["direction_significance_basis"] = (
+    price_context["direction_interval_excludes_last_price"] = excludes_last_price
+    price_context["direction_interval_basis"] = (
         "horizon_interval_vs_last_price"
     )
     price_context["direction_interpretation"] = (
         "interval_excludes_last_price"
-        if significant
+        if excludes_last_price
         else "interval_contains_last_price_or_direction_is_neutral"
     )
 
@@ -658,7 +658,7 @@ def _annotate_forecast_generate_quality(payload: Dict[str, Any]) -> Dict[str, An
             price_context["direction"] = "neutral"
             price_context["direction_basis"] = "flat_path"
             price_context["direction_suppressed_reason"] = "flat_path"
-        _annotate_forecast_direction_significance(out, price_context)
+        _annotate_forecast_direction_interval(out, price_context)
         out.setdefault("forecast_vs_last_price", price_context)
         units = dict(out.get("units") or {})
         units.setdefault(
