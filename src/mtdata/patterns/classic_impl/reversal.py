@@ -473,13 +473,19 @@ def detect_rounding(
     n = c.size
     configured_windows = [int(v) for v in getattr(cfg, "rounding_window_sizes", []) if int(v) > 0]
     candidate_windows = configured_windows or [100, 150, int(cfg.rounding_window_bars), 300]
-    valid_windows = sorted({min(int(w), n) for w in candidate_windows if min(int(w), n) >= 100})
+    valid_windows = sorted(
+        {
+            min(int(w), n - 1)
+            for w in candidate_windows
+            if min(int(w), n - 1) >= 100
+        }
+    )
     if not valid_windows:
         return out
 
     candidates: List[ClassicPatternResult] = []
     for W in valid_windows:
-        seg = c[-W:]
+        seg = c[-(W + 1):-1]
         x = np.linspace(-1.0, 1.0, W)
         try:
             qa, qb, qc = np.polyfit(x, seg.astype(float), 2)
@@ -507,13 +513,14 @@ def detect_rounding(
             continue
 
         tol_abs = _tol_abs_from_close(c, cfg.same_level_tol_pct)
+        confirmation_close = float(c[-1])
         if qa > 0:
             name = "Rounding Bottom"
-            status = "completed" if float(c[-1]) > (max(left_edge, right_edge) + tol_abs) else "forming"
+            status = "completed" if confirmation_close > (max(left_edge, right_edge) + tol_abs) else "forming"
             bias = "bullish"
         else:
             name = "Rounding Top"
-            status = "completed" if float(c[-1]) < (min(left_edge, right_edge) - tol_abs) else "forming"
+            status = "completed" if confirmation_close < (min(left_edge, right_edge) - tol_abs) else "forming"
             bias = "bearish"
 
         conf = min(1.0, 0.5 + 0.3 * min(1.0, amp_pct / 12.0))
@@ -521,8 +528,8 @@ def detect_rounding(
             name,
             status,
             conf,
-            int(n - W),
-            int(n - 1),
+            int(n - W - 1),
+            int(n - 2),
             t,
             {
                 "quad_a": float(qa),
@@ -533,6 +540,7 @@ def detect_rounding(
                 "amplitude_pct": float(amp_pct),
                 "window_bars": int(W),
                 "bias": bias,
+                "breakout_index": int(n - 1) if status == "completed" else None,
             },
         )
         candidates.append(candidate)

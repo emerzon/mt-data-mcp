@@ -158,13 +158,18 @@ def _scan_classic_patterns(
         prefix_ends.append(n_total)
 
     scan_cfg = replace(cfg, scan_historical=False)
-    full_peaks, full_troughs = _detect_pivots_close(c, scan_cfg, h, l)
-    full_peaks = np.asarray(full_peaks, dtype=int)
-    full_troughs = np.asarray(full_troughs, dtype=int)
     pivot_confirm_gap = max(2, int(getattr(scan_cfg, "min_distance", 5)))
 
     merged: List[ClassicPatternResult] = []
     for end in prefix_ends:
+        prefix_peaks, prefix_troughs = _detect_pivots_close(
+            c[:end],
+            scan_cfg,
+            h[:end],
+            l[:end],
+        )
+        prefix_peaks = np.asarray(prefix_peaks, dtype=int)
+        prefix_troughs = np.asarray(prefix_troughs, dtype=int)
         pivot_cutoff = max(0, int(end) - pivot_confirm_gap)
         batch = _detect_classic_patterns_once(
             t[:end],
@@ -173,8 +178,8 @@ def _scan_classic_patterns(
             l[:end],
             int(end),
             scan_cfg,
-            peaks=full_peaks[full_peaks < pivot_cutoff],
-            troughs=full_troughs[full_troughs < pivot_cutoff],
+            peaks=prefix_peaks[prefix_peaks < pivot_cutoff],
+            troughs=prefix_troughs[prefix_troughs < pivot_cutoff],
         )
         merged = _merge_scanned_patterns(merged, batch, cfg)
     return merged

@@ -284,18 +284,17 @@ def test_detect_classic_patterns_historical_scan_finds_older_prefix_pattern(
     assert match.status == "forming"
     assert match.end_index == 139
 
-def test_detect_classic_patterns_historical_scan_reuses_global_pivots(monkeypatch):
+def test_detect_classic_patterns_historical_scan_recomputes_prefix_pivots(monkeypatch):
     n = 220
     df = pd.DataFrame(
         {"time": np.arange(n, dtype=float), "close": np.linspace(100.0, 120.0, n)}
     )
-    calls = {"count": 0}
+    calls = []
 
     def _fake_pivots(c, cfg, *args):
-        _ = c
         _ = cfg
         _ = args
-        calls["count"] += 1
+        calls.append(len(c))
         return np.array([], dtype=int), np.array([], dtype=int)
 
     monkeypatch.setattr(classic_mod, "_detect_pivots_close", _fake_pivots)
@@ -315,7 +314,7 @@ def test_detect_classic_patterns_historical_scan_reuses_global_pivots(monkeypatc
     )
 
     assert out == []
-    assert calls["count"] == 1
+    assert calls == list(range(120, 221, 10))
 
 
 def test_detect_classic_patterns_surfaces_confidence_calibration_errors(monkeypatch):
@@ -1689,6 +1688,38 @@ def test_detect_rounding_returns_multiple_non_overlapping_windows(monkeypatch):
 
     assert len(out) == 2
     assert {pattern.details["window_bars"] for pattern in out} == {100, 220}
+
+
+def test_detect_rounding_uses_a_post_structure_confirmation_bar(monkeypatch):
+    from src.mtdata.patterns.classic_impl import reversal
+
+    x = np.linspace(-1.0, 1.0, 100)
+    structure = 100.0 + 5.0 * np.square(x)
+    rim_level = float(np.mean(structure[-10:]))
+    close = np.concatenate([structure, [rim_level]])
+    monkeypatch.setattr(reversal, "_tol_abs_from_close", lambda *_args: 0.1)
+
+    forming = reversal.detect_rounding(
+        close,
+        np.arange(close.size, dtype=float),
+        ClassicDetectorConfig(rounding_window_sizes=[100]),
+    )
+
+    assert forming
+    assert forming[0].status == "forming"
+    assert forming[0].end_index == 99
+    assert forming[0].details["breakout_index"] is None
+
+    close[-1] = rim_level + 1.0
+    completed = reversal.detect_rounding(
+        close,
+        np.arange(close.size, dtype=float),
+        ClassicDetectorConfig(rounding_window_sizes=[100]),
+    )
+
+    assert completed[0].status == "completed"
+    assert completed[0].end_index == 99
+    assert completed[0].details["breakout_index"] == 100
 
 
 def test_dedupe_overlapping_head_shoulders_results():
