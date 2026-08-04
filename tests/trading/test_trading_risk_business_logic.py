@@ -499,6 +499,32 @@ def test_trade_risk_analyze_reanchors_omitted_entry_after_direction_inference() 
     assert out["trade_evaluation"]["entry"] == 100.2
 
 
+def test_trade_risk_analyze_rejects_direction_inference_inside_spread() -> None:
+    mt5 = MagicMock()
+    mt5.account_info.return_value = SimpleNamespace(equity=1000.0, currency="USD")
+    mt5.positions_get.return_value = []
+    mt5.symbol_info.return_value = _make_symbol_info()
+    mt5.symbol_info_tick.return_value = SimpleNamespace(
+        bid=100.0,
+        ask=100.2,
+        time=time.time(),
+    )
+
+    with _patched_mt5_module(mt5):
+        out = trade_risk_analyze(
+            symbol="BTCUSD",
+            desired_risk_pct=1.0,
+            stop_loss=100.08,
+        )
+
+    assert out["trade_evaluation"]["status"] == "invalid"
+    assert out["trade_evaluation"]["direction"] is None
+    error = out["position_sizing_error"]
+    assert error["code"] == "direction_inference_ambiguous"
+    assert error["entry_in_spread"] is True
+    assert "position_sizing" not in out
+
+
 def test_trade_risk_analyze_sizes_from_stale_tick_as_reference_only() -> None:
     mt5 = MagicMock()
     mt5.account_info.return_value = SimpleNamespace(equity=1000.0, currency="USD")

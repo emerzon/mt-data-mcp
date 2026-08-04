@@ -571,6 +571,10 @@ def _resolve_live_trade_risk_entry(
 
     bid = _positive_trade_price(getattr(tick, "bid", None))
     ask = _positive_trade_price(getattr(tick, "ask", None))
+    if bid is not None:
+        quote_context["bid"] = bid
+    if ask is not None:
+        quote_context["ask"] = ask
     direction_norm = None
     if direction is not None:
         direction_norm, direction_error = normalize_trade_direction(str(direction))
@@ -3798,7 +3802,59 @@ def run_trade_risk_analyze(  # noqa: C901
                 except Exception:
                     candidate_symbol_info = None
 
-            if request.entry is not None and request.stop_loss is not None:
+            direction_inference_ambiguous = False
+            if (
+                entry_was_omitted
+                and request.direction is None
+                and request.stop_loss is not None
+            ):
+                quote_bid = _positive_trade_price(live_quote_context.get("bid"))
+                quote_ask = _positive_trade_price(live_quote_context.get("ask"))
+                if (
+                    quote_bid is not None
+                    and quote_ask is not None
+                    and min(quote_bid, quote_ask)
+                    <= float(request.stop_loss)
+                    <= max(quote_bid, quote_ask)
+                ):
+                    direction_inference_ambiguous = True
+                    ambiguity_reason = (
+                        "Direction cannot be inferred from a stop_loss inside the live "
+                        "bid/ask spread. Provide direction='long' or direction='short'."
+                    )
+                    result["trade_evaluation"] = {
+                        "status": "invalid",
+                        "symbol": request.symbol,
+                        "direction": None,
+                        "direction_source": "ambiguous_inside_spread",
+                        "entry": request.entry,
+                        "sl": float(request.stop_loss),
+                        "tp": (
+                            float(request.take_profit)
+                            if request.take_profit is not None
+                            else None
+                        ),
+                        "error": ambiguity_reason,
+                    }
+                    result["position_sizing_error"] = _build_position_sizing_error(
+                        code="direction_inference_ambiguous",
+                        field="direction",
+                        reason=ambiguity_reason,
+                        entry=float(request.entry) if request.entry is not None else None,
+                        remediation="Provide direction='long' or direction='short'.",
+                        details={
+                            "bid": quote_bid,
+                            "ask": quote_ask,
+                            "stop_loss": float(request.stop_loss),
+                            "entry_in_spread": True,
+                        },
+                    )
+
+            if (
+                not direction_inference_ambiguous
+                and request.entry is not None
+                and request.stop_loss is not None
+            ):
                 result["trade_evaluation"] = _build_trade_evaluation(
                     symbol=request.symbol,
                     direction=request.direction,
@@ -3933,6 +3989,7 @@ def run_trade_risk_analyze(  # noqa: C901
 
             sizing_ready = bool(
                 sizing_method_error is None
+                and not direction_inference_ambiguous
                 and request.entry is not None
                 and request.stop_loss is not None
                 and (
