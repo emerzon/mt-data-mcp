@@ -967,7 +967,9 @@ def _historical_bar_spread_prices(symbol: str, frame: Any) -> Tuple[Optional[np.
         return None, 0.0
     if not math.isfinite(point) or point <= 0.0:
         return None, 0.0
-    valid = np.isfinite(spread_points) & (spread_points >= 0.0)
+    # MT5 commonly fills unavailable historical spread samples with zero. A
+    # zero-spread series is not evidence of frictionless execution.
+    valid = np.isfinite(spread_points) & (spread_points > 0.0)
     coverage = float(np.mean(valid)) if len(valid) else 0.0
     if not bool(np.any(valid)):
         return None, coverage
@@ -1380,10 +1382,22 @@ def strategy_backtest(  # noqa: C901
                 historical_spread_coverage * 100.0,
                 2,
             )
+            if historical_spread_prices is None and "spread" in df.columns:
+                result["cost_model"]["historical_spread_status"] = (
+                    "unavailable_zero_or_missing_samples"
+                )
         if not cost_model_complete:
+            spread_warning = (
+                " Historical zero spread samples are treated as unavailable, not as "
+                "frictionless execution."
+                if cost_model_value == "historical_bar_spread"
+                and historical_spread_prices is None
+                else ""
+            )
             result["warnings"] = [
                 "Transaction costs are incomplete because the selected spread model "
                 "could not price every trade. Net metrics exclude missing spread costs."
+                + spread_warning
             ]
             result["summary"]["metrics_reliability"] = "low"
             result["summary"]["metrics_reliability_reasons"] = [

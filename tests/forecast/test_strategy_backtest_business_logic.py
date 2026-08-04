@@ -102,6 +102,31 @@ def test_strategy_backtest_uses_historical_bar_spread_by_default(monkeypatch):
     assert historical["summary"]["net_return"] < fixed["summary"]["net_return"]
 
 
+def test_strategy_backtest_rejects_zero_historical_spread_samples(monkeypatch):
+    history = _history_from_closes(
+        [1.0, 1.0, 1.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0],
+        spread_points=0.0,
+    )
+    monkeypatch.setattr(forecast_backtest, "_fetch_history", lambda *args, **kwargs: history)
+    monkeypatch.setattr(
+        forecast_backtest.mt5,
+        "symbol_info",
+        lambda _symbol: type("Info", (), {"point": 0.0001})(),
+    )
+
+    out = forecast_backtest.strategy_backtest(
+        symbol="EURUSD", lookback=8, fast_period=2, slow_period=3, detail="full"
+    )
+
+    assert out["cost_model"]["spread_source"] == "unavailable"
+    assert out["cost_model"]["historical_spread_coverage_pct"] == 0.0
+    assert out["cost_model"]["historical_spread_status"] == (
+        "unavailable_zero_or_missing_samples"
+    )
+    assert out["cost_model"]["complete"] is False
+    assert "zero spread samples are treated as unavailable" in out["warnings"][0]
+
+
 def test_strategy_backtest_includes_first_valid_warmup_signal(monkeypatch):
     monkeypatch.setattr(
         forecast_backtest,
