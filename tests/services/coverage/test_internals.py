@@ -228,7 +228,9 @@ class TestFetchRatesWithWarmup(unittest.TestCase):
 
     @patch(_RATES_RANGE)
     @patch(_PARSE_START)
-    def test_long_range_clamps_provider_window_to_row_budget(self, mock_parse, mock_range):
+    def test_long_range_clamps_provider_window_to_row_budget(
+        self, mock_parse, mock_range
+    ):
         requested_start = datetime(2010, 1, 1, tzinfo=_UTC)
         requested_end = datetime(2026, 1, 1, tzinfo=_UTC)
         mock_parse.side_effect = [requested_start, requested_end]

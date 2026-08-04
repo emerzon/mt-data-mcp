@@ -170,7 +170,9 @@ class TestLogReturnsFromPrices:
 # ===================================================================
 class TestExtractForecastValues:
     def test_y_column_requires_explicit_actual_fallback(self):
-        df = pd.DataFrame({"unique_id": ["ts"] * 3, "ds": range(3), "y": [1.0, 2.0, 3.0]})
+        df = pd.DataFrame(
+            {"unique_id": ["ts"] * 3, "ds": range(3), "y": [1.0, 2.0, 3.0]}
+        )
         with pytest.raises(RuntimeError, match="refusing to use actuals column 'y'"):
             _extract_forecast_values(df, fh=3)
         result = _extract_forecast_values(df, fh=3, allow_actual_fallback=True)

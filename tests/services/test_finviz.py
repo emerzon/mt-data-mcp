@@ -157,7 +157,10 @@ class TestFinvizService:
         assert result["insider_trades"][0]["Date"] == "2025-11-07"
 
     def test_finviz_error_kind_classification(self):
-        from mtdata.services.finviz.api import _finviz_error_kind, _sanitize_error_message
+        from mtdata.services.finviz.api import (
+            _finviz_error_kind,
+            _sanitize_error_message,
+        )
 
         assert _finviz_error_kind("Finviz request timed out. Retry later.") == ("finviz_timeout", True)
         assert _finviz_error_kind("Finviz rejected the request as unauthorized.") == ("finviz_unauthorized", False)

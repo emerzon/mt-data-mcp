@@ -414,7 +414,9 @@ def _walkforward_quantile_threshold_calibration(
     max_w = int(max(1, max_windows))
     n_boot = int(max(1, bootstrap_runs))
     seed_val = int(seed)
-    max_rl = int(max(1, max_run_length if max_run_length is not None else min(1000, x.size)))
+    max_rl = int(
+        max(1, max_run_length if max_run_length is not None else min(1000, x.size))
+    )
 
     # Check calibration cache
     cache_key = _calibration_cache_key(

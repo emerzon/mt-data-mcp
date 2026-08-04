@@ -3841,7 +3841,11 @@ def run_trade_risk_analyze(  # noqa: C901
                         code="direction_inference_ambiguous",
                         field="direction",
                         reason=ambiguity_reason,
-                        entry=float(request.entry) if request.entry is not None else None,
+                        entry=(
+                            float(request.entry)
+                            if request.entry is not None
+                            else None
+                        ),
                         remediation="Provide direction='long' or direction='short'.",
                         details={
                             "bid": quote_bid,

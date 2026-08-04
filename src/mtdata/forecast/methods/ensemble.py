@@ -324,7 +324,9 @@ class EnsembleMethod(ForecastMethod):
         seen: set[str] = set()
         base_methods = [m for m in base_methods if not (m in seen or seen.add(m))]
         if not base_methods:
-            raise ValueError("Ensemble requires at least one available component method")
+            raise ValueError(
+                "Ensemble requires at least one available component method"
+            )
 
         params_in = params.get('method_params') if isinstance(params.get('method_params'), dict) else {}
         params_map = {str(k).lower(): (v if isinstance(v, dict) else {}) for k, v in params_in.items()}

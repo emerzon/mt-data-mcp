@@ -228,7 +228,9 @@ class TestFetchTicks(unittest.TestCase):
     @patch(_CACHED_INFO, return_value=MagicMock())
     @patch(_RESOLVE_CTZ, return_value=None)
     @patch(_GUARD, _mock_symbol_guard)
-    def test_explicit_range_uses_bounded_backward_pages(self, mock_ctz, mock_info, mock_ticks):
+    def test_explicit_range_uses_bounded_backward_pages(
+        self, mock_ctz, mock_info, mock_ticks
+    ):
         mock_ticks.return_value = _make_ticks(5)
 
         result = fetch_ticks(

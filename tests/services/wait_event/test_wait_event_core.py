@@ -406,7 +406,9 @@ def test_wait_event_tool_accepts_simple_event_names(monkeypatch) -> None:
     assert result["criteria"]["end_on_inferred"] is False
 
 
-def test_wait_event_explicit_watch_does_not_add_an_implicit_boundary(monkeypatch) -> None:
+def test_wait_event_explicit_watch_does_not_add_an_implicit_boundary(
+    monkeypatch,
+) -> None:
     captured = {}
 
     def _mock_run_wait_event(request, gateway):

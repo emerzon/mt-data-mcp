@@ -280,7 +280,9 @@ def _calculate_lookback_bars(method_l: str, horizon: int, lookback: Optional[int
         if mode in ('bma', 'stacking'):
             methods = p.get('methods')
             if isinstance(methods, str):
-                method_count = len([item for item in methods.split(',') if item.strip()])
+                method_count = len(
+                    [item for item in methods.split(',') if item.strip()]
+                )
             elif isinstance(methods, (list, tuple)):
                 method_count = len(methods)
             else:

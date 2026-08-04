@@ -516,11 +516,19 @@ def detect_rounding(
         confirmation_close = float(c[-1])
         if qa > 0:
             name = "Rounding Bottom"
-            status = "completed" if confirmation_close > (max(left_edge, right_edge) + tol_abs) else "forming"
+            status = (
+                "completed"
+                if confirmation_close > (max(left_edge, right_edge) + tol_abs)
+                else "forming"
+            )
             bias = "bullish"
         else:
             name = "Rounding Top"
-            status = "completed" if confirmation_close < (min(left_edge, right_edge) - tol_abs) else "forming"
+            status = (
+                "completed"
+                if confirmation_close < (min(left_edge, right_edge) - tol_abs)
+                else "forming"
+            )
             bias = "bearish"
 
         conf = min(1.0, 0.5 + 0.3 * min(1.0, amp_pct / 12.0))

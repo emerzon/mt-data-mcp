@@ -19,7 +19,14 @@ def test_extract_forecast_values_requires_exact_horizon():
     with pytest.raises(ValueError, match="requested 3, received 1"):
         fc._extract_forecast_values(yf_alt, fh=3, method_name="m")
 
-    yf_with_actuals = pd.DataFrame({"unique_id": ["ts"] * 2, "ds": [0, 1], "y": [1.0, 2.0], "pred": [9.0, 10.0]})
+    yf_with_actuals = pd.DataFrame(
+        {
+            "unique_id": ["ts"] * 2,
+            "ds": [0, 1],
+            "y": [1.0, 2.0],
+            "pred": [9.0, 10.0],
+        }
+    )
     out = fc._extract_forecast_values(yf_with_actuals, fh=2, method_name="m")
     assert out.tolist() == [9.0, 10.0]
 

@@ -604,7 +604,9 @@ def _fetch_rates_with_warmup(  # noqa: C901
         future_error = _future_start_error(start_datetime, from_date, seconds_per_bar)
         if future_error:
             return None, future_error
-        from_date_internal = from_date - timedelta(seconds=seconds_per_bar * (warmup_bars + extra_bars))
+        from_date_internal = from_date - timedelta(
+            seconds=seconds_per_bar * (warmup_bars + extra_bars)
+        )
         expected_end_ts = _utc_epoch_seconds(to_date)
         requested_rows = max(1, candles + warmup_bars + extra_bars)
         bounded_span_seconds = max(

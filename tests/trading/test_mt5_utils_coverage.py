@@ -520,12 +520,17 @@ class TestMT5Connection:
     @patch("mtdata.utils.mt5.clear_mt5_time_alignment_cache")
     @patch("mtdata.utils.mt5.clear_symbol_info_cache")
     @patch("mtdata.utils.mt5.mt5_config")
-    def test_connected_session_refresh_clears_caches_when_identity_changes(self, cfg, clear_symbol_cache, clear_alignment_cache):
+    def test_connected_session_refresh_clears_caches_when_identity_changes(
+        self, cfg, clear_symbol_cache, clear_alignment_cache
+    ):
         conn = MT5Connection()
         conn.connected = True
         conn._connection_identity = (12345, "Demo-A")
         cfg.get_login.return_value = None
-        _mt5_mock.terminal_info.return_value = MagicMock(connected=True, server="Demo-B")
+        _mt5_mock.terminal_info.return_value = MagicMock(
+            connected=True,
+            server="Demo-B",
+        )
         _mt5_mock.account_info.return_value = MagicMock(login=67890, server="Demo-B")
 
         assert conn._ensure_connection() is True
@@ -539,7 +544,10 @@ class TestMT5Connection:
         conn.connected = True
         conn._connection_identity = (12345, "Demo-A")
         cfg.get_login.return_value = 12345
-        _mt5_mock.terminal_info.return_value = MagicMock(connected=True, server="Demo-B")
+        _mt5_mock.terminal_info.return_value = MagicMock(
+            connected=True,
+            server="Demo-B",
+        )
         _mt5_mock.account_info.return_value = MagicMock(login=67890, server="Demo-B")
         _mt5_mock.shutdown.reset_mock()
 
@@ -750,7 +758,11 @@ class TestInspectMt5TimeAlignment:
         now = 1_700_000_045.0
         current_bar = float((int(now) // 60) * 60)
         last_closed_bar = current_bar - 60.0
-        monkeypatch.setattr(_mt5_mod, "ensure_mt5_connection_or_raise", lambda **kwargs: None)
+        monkeypatch.setattr(
+            _mt5_mod,
+            "ensure_mt5_connection_or_raise",
+            lambda **kwargs: None,
+        )
         monkeypatch.setattr(_mt5_mod, "_ensure_symbol_ready", lambda symbol: None)
         monkeypatch.setattr(_mt5_mod.time, "time", lambda: now)
         monkeypatch.setattr(_mt5_mod.mt5, "symbol_info_tick", lambda symbol: MagicMock(time=now - 1.0))
@@ -801,7 +813,11 @@ class TestInspectMt5TimeAlignment:
     def test_h4_boundary_uses_configured_server_offset(self, monkeypatch):
         now = datetime(2026, 1, 5, 6, 30, tzinfo=timezone.utc).timestamp()
         current_bar = datetime(2026, 1, 5, 6, 0, tzinfo=timezone.utc).timestamp()
-        monkeypatch.setattr(_mt5_mod, "ensure_mt5_connection_or_raise", lambda **kwargs: None)
+        monkeypatch.setattr(
+            _mt5_mod,
+            "ensure_mt5_connection_or_raise",
+            lambda **kwargs: None,
+        )
         monkeypatch.setattr(_mt5_mod, "_ensure_symbol_ready", lambda symbol: None)
         monkeypatch.setattr(_mt5_mod.time, "time", lambda: now)
         monkeypatch.setattr(
