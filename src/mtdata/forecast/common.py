@@ -39,16 +39,14 @@ _NF_ENV_LOCK = threading.RLock()
 
 
 def edge_pad_to_length(values: np.ndarray, length: int) -> np.ndarray:
-    """Trim or edge-pad a 1D array to exactly `length` elements."""
+    """Validate that a 1D forecast array exactly matches `length`."""
     target = max(0, int(length))
     vals = np.asarray(values, dtype=float).ravel()
-    if target == 0:
-        return np.array([], dtype=float)
-    if vals.size >= target:
-        return vals[:target].astype(float, copy=False)
-    if vals.size == 0:
-        return np.full(target, np.nan, dtype=float)
-    return np.pad(vals, (0, target - vals.size), mode='edge').astype(float, copy=False)
+    if vals.size != target:
+        raise ValueError(
+            f"Forecast output length mismatch: requested {target}, received {vals.size}"
+        )
+    return vals.astype(float, copy=False)
 
 
 def build_ci_diagnostics(

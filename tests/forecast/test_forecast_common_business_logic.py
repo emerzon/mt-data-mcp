@@ -10,32 +10,32 @@ import pytest
 from mtdata.forecast import common as fc
 
 
-def test_extract_forecast_values_handles_standard_alt_and_padding():
-    yf_standard = pd.DataFrame({"pred": [1.0, 2.0, 3.0]})
+def test_extract_forecast_values_requires_exact_horizon():
+    yf_standard = pd.DataFrame({"pred": [1.0, 2.0]})
     out = fc._extract_forecast_values(yf_standard, fh=2, method_name="m")
     assert out.tolist() == [1.0, 2.0]
 
     yf_alt = pd.DataFrame({"unique_id": ["ts"], "ds": [0], "pred": [9.0]})
-    out = fc._extract_forecast_values(yf_alt, fh=3, method_name="m")
-    assert out.tolist() == [9.0, 9.0, 9.0]
+    with pytest.raises(ValueError, match="requested 3, received 1"):
+        fc._extract_forecast_values(yf_alt, fh=3, method_name="m")
 
-    yf_with_actuals = pd.DataFrame({"unique_id": ["ts"], "ds": [0], "y": [1.0], "pred": [9.0]})
+    yf_with_actuals = pd.DataFrame({"unique_id": ["ts"] * 2, "ds": [0, 1], "y": [1.0, 2.0], "pred": [9.0, 10.0]})
     out = fc._extract_forecast_values(yf_with_actuals, fh=2, method_name="m")
-    assert out.tolist() == [9.0, 9.0]
+    assert out.tolist() == [9.0, 10.0]
 
     with pytest.raises(RuntimeError, match="refusing to use actuals column 'y'"):
         fc._extract_forecast_values(pd.DataFrame({"y": [1.0, 2.0]}), fh=2, method_name="m")
 
     yf_with_auxiliary = pd.DataFrame(
         {
-            "unique_id": ["ts"],
-            "ds": [0],
-            "cutoff": ["2026-04-09T00:00:00Z"],
-            "NHITS": [7.5],
+            "unique_id": ["ts"] * 2,
+            "ds": [0, 1],
+            "cutoff": ["2026-04-09T00:00:00Z"] * 2,
+            "NHITS": [7.5, 8.0],
         }
     )
     out = fc._extract_forecast_values(yf_with_auxiliary, fh=2, method_name="nhits")
-    assert out.tolist() == [7.5, 7.5]
+    assert out.tolist() == [7.5, 8.0]
 
     with pytest.raises(RuntimeError, match="prediction columns not found"):
         fc._extract_forecast_values(pd.DataFrame({"unique_id": ["ts"], "ds": [0]}), fh=1, method_name="demo")

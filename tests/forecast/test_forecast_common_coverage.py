@@ -80,33 +80,29 @@ class TestEdgePadToLength:
 
     def test_trim_longer(self):
         arr = np.array([10.0, 20.0, 30.0, 40.0, 50.0])
-        result = edge_pad_to_length(arr, 3)
-        np.testing.assert_array_equal(result, [10.0, 20.0, 30.0])
+        with pytest.raises(ValueError, match="requested 3, received 5"):
+            edge_pad_to_length(arr, 3)
 
     def test_pad_shorter(self):
         arr = np.array([1.0, 2.0])
-        result = edge_pad_to_length(arr, 5)
-        assert result.shape == (5,)
-        np.testing.assert_array_equal(result[:2], [1.0, 2.0])
-        # edge-padded with last value
-        np.testing.assert_array_equal(result[2:], [2.0, 2.0, 2.0])
+        with pytest.raises(ValueError, match="requested 5, received 2"):
+            edge_pad_to_length(arr, 5)
 
     def test_zero_length(self):
-        result = edge_pad_to_length(np.array([1.0, 2.0]), 0)
-        assert result.shape == (0,)
+        with pytest.raises(ValueError, match="requested 0, received 2"):
+            edge_pad_to_length(np.array([1.0, 2.0]), 0)
 
     def test_negative_length_treated_as_zero(self):
-        result = edge_pad_to_length(np.array([1.0]), -5)
-        assert result.shape == (0,)
+        with pytest.raises(ValueError, match="requested 0, received 1"):
+            edge_pad_to_length(np.array([1.0]), -5)
 
     def test_empty_input_pad(self):
-        result = edge_pad_to_length(np.array([]), 4)
-        assert result.shape == (4,)
-        assert np.all(np.isnan(result))
+        with pytest.raises(ValueError, match="requested 4, received 0"):
+            edge_pad_to_length(np.array([]), 4)
 
     def test_single_element_pad(self):
-        result = edge_pad_to_length(np.array([7.0]), 3)
-        np.testing.assert_array_equal(result, [7.0, 7.0, 7.0])
+        with pytest.raises(ValueError, match="requested 3, received 1"):
+            edge_pad_to_length(np.array([7.0]), 3)
 
     def test_float_dtype(self):
         result = edge_pad_to_length(np.array([1, 2, 3]), 3)
@@ -114,14 +110,13 @@ class TestEdgePadToLength:
 
     def test_2d_input_flattened(self):
         arr = np.array([[1.0, 2.0], [3.0, 4.0]])
-        result = edge_pad_to_length(arr, 3)
+        result = edge_pad_to_length(arr, 4)
         assert result.ndim == 1
-        assert result.shape == (3,)
+        assert result.shape == (4,)
 
     def test_large_pad(self):
-        result = edge_pad_to_length(np.array([5.0]), 100)
-        assert result.shape == (100,)
-        assert np.all(result == 5.0)
+        with pytest.raises(ValueError, match="requested 100, received 1"):
+            edge_pad_to_length(np.array([5.0]), 100)
 
 
 # ===================================================================
@@ -175,7 +170,7 @@ class TestLogReturnsFromPrices:
 # ===================================================================
 class TestExtractForecastValues:
     def test_y_column_requires_explicit_actual_fallback(self):
-        df = pd.DataFrame({"unique_id": ["ts"] * 5, "ds": range(5), "y": [1.0, 2.0, 3.0, 4.0, 5.0]})
+        df = pd.DataFrame({"unique_id": ["ts"] * 3, "ds": range(3), "y": [1.0, 2.0, 3.0]})
         with pytest.raises(RuntimeError, match="refusing to use actuals column 'y'"):
             _extract_forecast_values(df, fh=3)
         result = _extract_forecast_values(df, fh=3, allow_actual_fallback=True)
@@ -189,14 +184,13 @@ class TestExtractForecastValues:
 
     def test_pad_when_fewer_values(self):
         df = pd.DataFrame({"unique_id": ["ts"] * 2, "ds": range(2), "pred": [1.0, 2.0]})
-        result = _extract_forecast_values(df, fh=5)
-        assert result.shape == (5,)
-        np.testing.assert_array_equal(result[:2], [1.0, 2.0])
+        with pytest.raises(ValueError, match="requested 5, received 2"):
+            _extract_forecast_values(df, fh=5)
 
     def test_trim_when_more_values(self):
         df = pd.DataFrame({"pred": range(10)})
-        result = _extract_forecast_values(df, fh=3)
-        assert result.shape == (3,)
+        with pytest.raises(ValueError, match="requested 3, received 10"):
+            _extract_forecast_values(df, fh=3)
 
     def test_no_prediction_column_raises(self):
         df = pd.DataFrame({"unique_id": ["ts"], "ds": [0]})

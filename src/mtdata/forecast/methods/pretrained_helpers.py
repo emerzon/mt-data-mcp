@@ -46,7 +46,7 @@ def adjust_forecast_length(
     method_name: str = "forecast"
 ) -> np.ndarray:
     """
-    Adjust forecast length to match requested horizon by padding or truncating.
+    Validate that forecast length matches the requested horizon.
     
     Args:
         values: Forecast values array
@@ -54,7 +54,7 @@ def adjust_forecast_length(
         method_name: Name of the forecasting method for error messages
         
     Returns:
-        Adjusted forecast values array
+        Validated forecast values array
     """
     return _edge_pad_to_length(values, int(fh))
 
