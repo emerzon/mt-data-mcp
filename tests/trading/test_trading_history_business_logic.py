@@ -143,6 +143,24 @@ def test_trade_history_supports_offset_pagination() -> None:
     assert [item["deal_ticket"] for item in ascending["items"]] == [1, 2]
 
 
+def test_trade_history_warns_when_default_window_misses_open_event() -> None:
+    mt5, prev = _install_mock_mt5()
+    mt5.history_deals_get.return_value = []
+    old_epoch = (datetime.now(timezone.utc) - timedelta(days=8)).timestamp()
+    mt5.positions_get.return_value = [
+        SimpleNamespace(ticket=42, symbol="EURUSD", time=old_epoch)
+    ]
+
+    out = trade_history(history_kind="deals", __cli_raw=True)
+    if prev is not None:
+        sys.modules["MetaTrader5"] = prev
+
+    assert out["history_incomplete_for_open_positions"] is True
+    assert out["open_positions_outside_history_window_count"] == 1
+    assert out["open_positions_outside_history_window"][0]["ticket"] == 42
+    assert "default 7-day history window" in out["warnings"][0]
+
+
 def test_trade_history_labels_account_currency_money_fields() -> None:
     out = normalize_trade_history_output(
         [

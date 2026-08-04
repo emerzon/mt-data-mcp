@@ -5,8 +5,30 @@ from types import SimpleNamespace
 from mtdata.core.trading.requests import TradeVarCvarRequest
 from mtdata.core.trading.use_cases import (
     _calculate_var_cvar_from_pnl,
+    _position_mark_freshness,
     run_trade_var_cvar_calculate,
 )
+
+
+def test_position_mark_freshness_fetches_each_symbol_once() -> None:
+    calls = []
+    gateway = SimpleNamespace(
+        symbol_info_tick=lambda symbol: calls.append(symbol)
+        or SimpleNamespace(bid=1.0, ask=1.1, time=1_700_000_000),
+    )
+
+    out = _position_mark_freshness(
+        gateway,
+        [
+            SimpleNamespace(symbol="EURUSD"),
+            SimpleNamespace(symbol="EURUSD"),
+            SimpleNamespace(symbol="GBPUSD"),
+        ],
+    )
+
+    assert calls == ["EURUSD", "GBPUSD"]
+    assert out["mark_freshness"][0]["positions"] == 2
+    assert out["mark_freshness"][1]["positions"] == 1
 
 
 def _symbol_info(**overrides):

@@ -341,6 +341,40 @@ def _attach_trade_volume_units(out: Dict[str, Any]) -> None:
         out["units"] = units
 
 
+def _attach_open_position_protection_summary(out: Dict[str, Any]) -> None:
+    items = out.get("items")
+    if not isinstance(items, list) or out.get("success") is False:
+        return
+
+    def _missing(value: Any) -> bool:
+        try:
+            return value is None or math.isclose(float(value), 0.0, abs_tol=1e-12)
+        except (TypeError, ValueError):
+            return True
+
+    rows = [item for item in items if isinstance(item, dict)]
+    without_sl = sum(1 for item in rows if _missing(item.get("sl")))
+    without_tp = sum(1 for item in rows if _missing(item.get("tp")))
+    without_either = sum(
+        1 for item in rows if _missing(item.get("sl")) or _missing(item.get("tp"))
+    )
+    fully_unprotected = sum(
+        1 for item in rows if _missing(item.get("sl")) and _missing(item.get("tp"))
+    )
+    out["protection_summary"] = {
+        "positions": len(rows),
+        "positions_without_stop_loss": without_sl,
+        "positions_without_take_profit": without_tp,
+        "positions_missing_any_protection": without_either,
+        "fully_unprotected_positions": fully_unprotected,
+    }
+    if without_either:
+        out["protection_warning"] = (
+            f"{without_either} open position(s) are missing a stop-loss, "
+            "take-profit, or both."
+        )
+
+
 def _gateway_account_currency(gateway: Any) -> Optional[str]:
     account_info = getattr(gateway, "account_info", None)
     if not callable(account_info):
@@ -1529,6 +1563,7 @@ def trade_get_open(
             kind="open_positions",
             account_currency=_gateway_account_currency(gateway),
         )
+        _attach_open_position_protection_summary(out)
         _attach_open_position_quote_context(out, gateway)
         return out
 

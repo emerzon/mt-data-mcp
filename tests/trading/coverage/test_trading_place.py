@@ -41,15 +41,14 @@ _mt5_stub.POSITION_TYPE_BUY = 0
 _mt5_stub.POSITION_TYPE_SELL = 1
 sys.modules["MetaTrader5"] = _mt5_stub
 
-from mtdata.core.trading import (
-    trade_place as _trade_place_tool,
+from mtdata.core.trading import trade_place as _trade_place_tool
+from mtdata.core.trading.orders import (
+    _prepare_order_symbol_context,
+    _send_order_with_fill_mode_retry,
+    _submit_order_request,
 )
-from mtdata.core.trading.orders import _send_order_with_fill_mode_retry
-from mtdata.core.trading.requests import (
-    TradePlaceRequest,
-)
+from mtdata.core.trading.requests import TradePlaceRequest
 from mtdata.core.trading.use_cases import _should_persist_idempotency_outcome
-
 
 # ===================================================================
 # Helpers
@@ -181,6 +180,48 @@ def test_ambiguous_order_send_outcome_is_idempotency_safe():
     assert _should_persist_idempotency_outcome(
         {"error_code": "order_send_ambiguous", "ambiguous": True}
     )
+
+
+def test_order_preflight_blocks_critical_account_margin_before_symbol_lookup():
+    gateway = MagicMock()
+    gateway.build_trade_preflight.return_value = {"execution_ready_strict": True}
+    gateway.account_info.return_value = SimpleNamespace(
+        equity=1000.0, margin=950.0, margin_free=50.0, margin_level=105.26
+    )
+
+    context, error = _prepare_order_symbol_context(
+        gateway, symbol="EURUSD", volume=0.01
+    )
+
+    assert context is None
+    assert error["error_code"] == "trade_blocked_account_state"
+    assert "critical_margin_stress" in error["blockers"]
+    gateway.symbol_info.assert_not_called()
+
+
+def test_failed_order_omits_success_last_error_sentinel():
+    gateway = MagicMock()
+    gateway.TRADE_RETCODE_DONE = 10009
+    gateway.TRADE_RETCODE_DONE_PARTIAL = 10010
+    gateway.TRADE_RETCODE_PLACED = 10008
+    gateway.TRADE_RETCODE_INVALID_FILL = 10030
+    gateway.ORDER_FILLING_FOK = 0
+    gateway.ORDER_FILLING_IOC = 1
+    gateway.ORDER_FILLING_RETURN = 2
+    gateway.order_send.return_value = _order_result(retcode=10004)
+    gateway.last_error.return_value = (1, "Success")
+    gateway.retcode_name.side_effect = lambda value: str(value)
+
+    outcome, error = _submit_order_request(
+        gateway,
+        {"type_filling": 1},
+        base_error="Order failed",
+        invalid_comment_error="Invalid comment",
+    )
+
+    assert outcome is None
+    assert error["retcode"] == 10004
+    assert "last_error" not in error
 
 
 # Patch MT5 connection helpers to avoid real terminal access in tests
@@ -756,8 +797,8 @@ class TestPlaceMarketOrder:
 
     def test_accepts_injected_gateway(self):
         """Market order placement accepts an injected MT5TradingGateway."""
-        from mtdata.core.trading.gateway import MT5TradingGateway
         from mtdata.core.trading import _place_market_order
+        from mtdata.core.trading.gateway import MT5TradingGateway
 
         adapter = MagicMock()
         adapter.symbol_info.return_value = _sym()

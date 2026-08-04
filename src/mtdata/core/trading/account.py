@@ -115,11 +115,62 @@ def _run_trade_history_request(request: TradeHistoryRequest) -> Any:
         decode_mt5_enum_label=decode_mt5_enum_label,
         mt5_config=mt5_config,
     )
-    return normalize_trade_history_output(
+    out = normalize_trade_history_output(
         result,
         request=request,
         account_currency=_gateway_account_currency(gateway),
     )
+    if (
+        isinstance(out, dict)
+        and out.get("success") is not False
+        and request.start is None
+        and request.end is None
+        and request.minutes_back is None
+    ):
+        cutoff = datetime.now(timezone.utc).timestamp() - (
+            _DEFAULT_TRADE_HISTORY_LOOKBACK_DAYS * 86400
+        )
+        try:
+            position_rows = (
+                gateway.positions_get(symbol=request.symbol)
+                if request.symbol
+                else gateway.positions_get()
+            )
+            open_positions = list(position_rows or [])
+        except Exception:
+            open_positions = []
+        older: List[Dict[str, Any]] = []
+        for position in open_positions:
+            try:
+                opened_epoch = float(getattr(position, "time", 0.0) or 0.0)
+            except (TypeError, ValueError):
+                continue
+            if opened_epoch <= 0 or opened_epoch >= cutoff:
+                continue
+            if (
+                request.position_ticket is not None
+                and str(getattr(position, "ticket", ""))
+                != str(request.position_ticket)
+            ):
+                continue
+            older.append(
+                {
+                    "ticket": getattr(position, "ticket", None),
+                    "symbol": getattr(position, "symbol", None),
+                    "opened_at": _format_time_minimal(opened_epoch),
+                }
+            )
+        if older:
+            out["history_incomplete_for_open_positions"] = True
+            out["open_positions_outside_history_window_count"] = len(older)
+            out["open_positions_outside_history_window"] = older[:20]
+            warnings_out = list(out.get("warnings") or [])
+            warnings_out.append(
+                f"The default {_DEFAULT_TRADE_HISTORY_LOOKBACK_DAYS}-day history window "
+                "does not include the opening event for one or more current positions."
+            )
+            out["warnings"] = warnings_out
+    return out
 
 
 def _safe_trade_journal_float(value: Any) -> Optional[float]:

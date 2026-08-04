@@ -85,6 +85,28 @@ def test_normalize_trade_read_output_open_positions_includes_as_of():
     assert isinstance(out.get("as_of"), str) and out["as_of"].endswith("Z")
 
 
+def test_open_position_protection_summary_surfaces_missing_levels():
+    out = {
+        "success": True,
+        "items": [
+            {"ticket": 1, "sl": 0.0, "tp": 1.2},
+            {"ticket": 2, "sl": None, "tp": 0.0},
+            {"ticket": 3, "sl": 1.0, "tp": 1.3},
+        ],
+    }
+
+    positions._attach_open_position_protection_summary(out)
+
+    assert out["protection_summary"] == {
+        "positions": 3,
+        "positions_without_stop_loss": 2,
+        "positions_without_take_profit": 1,
+        "positions_missing_any_protection": 2,
+        "fully_unprotected_positions": 1,
+    }
+    assert "2 open position(s)" in out["protection_warning"]
+
+
 def test_normalize_trade_read_output_compact_empty_keeps_contract_shape():
     out = positions._normalize_trade_read_output(
         [],

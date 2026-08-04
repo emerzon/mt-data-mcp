@@ -4,6 +4,7 @@ import logging
 import math
 import time as _stdlib_time
 from datetime import datetime, timedelta, timezone
+from numbers import Real
 from typing import Any, Callable, Dict, List, Optional, TypedDict, Union
 
 from ...bootstrap.settings import mt5_config, trade_guardrails_config
@@ -14,6 +15,7 @@ from . import comments, common, time, validation
 from .gateway import MT5TradingGateway, create_trading_gateway, trading_connection_error
 from .positions import _resolve_open_position
 from .safety import (
+    assess_margin_stress,
     evaluate_trade_guardrails,
     load_guardrail_book_snapshots,
 )
@@ -652,6 +654,52 @@ def _prepare_order_symbol_context(
             "next_steps": guidance,
         }
 
+    try:
+        account_info = mt5.account_info()
+    except Exception:
+        account_info = None
+    if account_info is not None:
+        numeric_margin_fields = {
+            field: getattr(account_info, field, None)
+            for field in ("equity", "margin", "margin_free", "margin_level")
+        }
+        has_concrete_margin_data = any(
+            isinstance(value, Real) and not isinstance(value, bool)
+            for value in numeric_margin_fields.values()
+        )
+        margin_stress = (
+            assess_margin_stress(account_info)
+            if has_concrete_margin_data
+            else {"status": "unknown", "reasons": []}
+        )
+        margin_free = (
+            validation._safe_float_attr(account_info, "margin_free", None)
+            if isinstance(numeric_margin_fields["margin_free"], Real)
+            and not isinstance(numeric_margin_fields["margin_free"], bool)
+            else None
+        )
+        margin_blockers: List[str] = []
+        if getattr(account_info, "trade_allowed", None) is False:
+            margin_blockers.append("account_trading_disabled")
+        if margin_free is not None and margin_free <= 0:
+            margin_blockers.append("no_free_margin")
+        if margin_stress.get("status") == "critical":
+            margin_blockers.append("critical_margin_stress")
+        if margin_blockers:
+            return None, {
+                "error": "Trading blocked by the current account execution or margin state.",
+                "error_code": "trade_blocked_account_state",
+                "blockers": list(dict.fromkeys(margin_blockers)),
+                "margin_free": margin_free,
+                "margin_stress": margin_stress,
+                "preflight": preflight,
+                "remediation": (
+                    "Enable account trading if disabled, reduce or close exposure, "
+                    "restore free margin, and re-check trade_account_info before "
+                    "placing a new order."
+                ),
+            }
+
     symbol_info = mt5.symbol_info(symbol)
     if symbol_info is None:
         return None, {"error": f"Symbol {symbol} not found"}
@@ -738,6 +786,21 @@ def _order_retcode_name(mt5: Any, retcode: Any) -> Optional[str]:
         return common._retcode_name(mt5, retcode)
 
 
+def _meaningful_last_error(value: Any) -> Any:
+    """Drop MT5's success sentinel when an order result itself is a failure."""
+    if value is None:
+        return None
+    if isinstance(value, (tuple, list)) and value:
+        try:
+            code = int(value[0])
+        except (TypeError, ValueError):
+            code = None
+        message = str(value[1] if len(value) > 1 else "").strip().lower()
+        if code in {0, 1} and message in {"", "success", "ok", "no error"}:
+            return None
+    return value
+
+
 def _submit_order_request(
     mt5: Any,
     request: Dict[str, Any],
@@ -753,17 +816,20 @@ def _submit_order_request(
         symbol_info=symbol_info,
         price_refresh=price_refresh,
     )
+    diagnostic_last_error = _meaningful_last_error(last_error)
     if result is None:
-        return None, {
+        failure = {
             "error": (
                 "Order submission outcome is unknown; the broker may have accepted "
                 "the request. Do not retry without reconciling open orders and positions."
             ),
             "error_code": "order_send_ambiguous",
             "ambiguous": True,
-            "last_error": last_error,
             "fill_mode_attempts": fill_mode_attempts,
         }
+        if diagnostic_last_error is not None:
+            failure["last_error"] = diagnostic_last_error
+        return None, failure
 
     retcode = _order_result_value(result, "retcode")
     if not validation._retcode_is_done(mt5, retcode):
@@ -785,9 +851,10 @@ def _submit_order_request(
             "retcode_name": _order_retcode_name(mt5, retcode),
             "comment": _order_result_value(result, "comment"),
             "request_id": _order_result_value(result, "request_id"),
-            "last_error": last_error,
             "fill_mode_attempts": fill_mode_attempts,
         }
+        if diagnostic_last_error is not None:
+            failure["last_error"] = diagnostic_last_error
         if ambiguous:
             failure.update(error_code="order_send_ambiguous", ambiguous=True)
         return None, failure

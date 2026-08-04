@@ -180,10 +180,13 @@ def _build_trade_ready(
     elif bool(quote.get("data_stale")):
         blockers.append("quote_stale")
 
-    can_open_new_positions = None
+    trade_mode_allows_opening = None
     if isinstance(tradability, dict) and tradability.get("error") in (None, ""):
-        can_open_new_positions = tradability.get("can_open_new_positions")
-        if can_open_new_positions is False:
+        trade_mode_allows_opening = tradability.get(
+            "trade_mode_allows_opening",
+            tradability.get("can_open_new_positions"),
+        )
+        if trade_mode_allows_opening is False:
             blockers.append("market_not_open_for_new_positions")
 
     deduped_blockers = list(dict.fromkeys(blockers))
@@ -207,8 +210,11 @@ def _build_trade_ready(
         result["margin_level"] = margin_level
     if margin_utilization_pct is not None:
         result["margin_utilization_pct"] = margin_utilization_pct
-    if can_open_new_positions is not None:
-        result["can_open_new_positions"] = can_open_new_positions
+    if trade_mode_allows_opening is not None:
+        result["trade_mode_allows_opening"] = trade_mode_allows_opening
+        result["can_open_new_positions"] = bool(
+            trade_mode_allows_opening and not deduped_blockers
+        )
     return result
 
 
@@ -328,6 +334,7 @@ def _compact_trade_session_context_payload(payload: Dict[str, Any]) -> Dict[str,
             "market_status_reason",
             "is_tradable",
             "can_open_new_positions",
+            "trade_mode_allows_opening",
         )
         if payload.get(key) not in (None, "")
     }
@@ -607,6 +614,10 @@ def trade_session_context(request: TradeSessionContextRequest) -> Dict[str, Any]
             payload["can_open_new_positions"] = tradability.get(
                 "can_open_new_positions"
             )
+            payload["trade_mode_allows_opening"] = tradability.get(
+                "trade_mode_allows_opening",
+                tradability.get("can_open_new_positions"),
+            )
         if other_positions_count is not None:
             payload["portfolio_positions_count"] = portfolio_positions_count
             payload["other_positions_count"] = other_positions_count
@@ -617,6 +628,10 @@ def trade_session_context(request: TradeSessionContextRequest) -> Dict[str, Any]
                 quote_res,
                 tradability,
             )
+            if payload["trade_ready"].get("can_open_new_positions") is not None:
+                payload["can_open_new_positions"] = payload["trade_ready"][
+                    "can_open_new_positions"
+                ]
         if partial_failure:
             payload["partial_failure"] = True
         if request.detail == "compact":

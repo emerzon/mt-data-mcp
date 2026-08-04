@@ -4708,16 +4708,20 @@ def _position_mark_freshness(
     positions: List[Any],
 ) -> Dict[str, Any]:
     contexts: List[Dict[str, Any]] = []
+    symbol_counts: Dict[str, int] = {}
     for position in positions:
         symbol = str(getattr(position, "symbol", "") or "").strip()
         if not symbol:
             continue
+        symbol_counts[symbol] = symbol_counts.get(symbol, 0) + 1
+    for symbol, position_count in symbol_counts.items():
         try:
             tick = gateway.symbol_info_tick(symbol)
         except Exception:
             tick = None
         context = build_trade_quote_context(symbol, tick)
         context["symbol"] = symbol
+        context["positions"] = int(position_count)
         contexts.append(context)
     if not contexts:
         return {

@@ -55,6 +55,8 @@ def test_trade_ready_blocks_critical_margin_stress() -> None:
     assert readiness["execution_preconditions_met"] is False
     assert "critical_margin_stress" in readiness["blockers"]
     assert readiness["margin_stress"]["status"] == "critical"
+    assert readiness["trade_mode_allows_opening"] is True
+    assert readiness["can_open_new_positions"] is False
 
 
 def test_trade_session_context_compacts_nested_sections_by_default() -> None:
