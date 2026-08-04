@@ -595,8 +595,9 @@ def _estimate_order_risk_currency(
         return None, "stop_loss_wrong_side"
     if risk_ticks <= 0:
         if allow_profit_stop:
-            return 0.0, None
-        return None, "stop_loss_wrong_side"
+            risk_ticks = abs(risk_ticks)
+        else:
+            return None, "stop_loss_wrong_side"
 
     risk_currency = abs(float(volume) * risk_ticks * risk_tick_value)
     if not math.isfinite(risk_currency) or risk_currency < 0:

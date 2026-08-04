@@ -3309,13 +3309,14 @@ def run_trade_risk_analyze(  # noqa: C901
                             if is_buy_position
                             else price_delta_ticks(sl_price, mark_price, tick_size)
                         )
-                        risk_ticks = max(0, risk_ticks or 0)
+                        stop_breached = risk_ticks is not None and risk_ticks < 0
+                        risk_ticks = abs(risk_ticks or 0)
                         risk_currency = risk_ticks * risk_tick_value * abs(volume)
                         risk_pct = (
                             (risk_currency / equity) * 100.0 if equity > 0 else 0.0
                         )
                         total_risk_currency += risk_currency
-                        risk_status = "defined"
+                        risk_status = "breached" if stop_breached else "defined"
 
                         if tp_price:
                             reward_ticks = (
