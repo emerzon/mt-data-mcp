@@ -74,6 +74,13 @@ def main(
             getattr(settings, 'sse_path', '/sse'),
             getattr(settings, 'message_path', '/message'),
         )
+    elif transport_name == "streamable-http" and settings is not None:
+        logger.info(
+            "Streamable HTTP listening at http://%s:%s%s",
+            getattr(settings, 'host', '127.0.0.1'),
+            getattr(settings, 'port', 8000),
+            getattr(settings, 'streamable_http_path', runtime.mount_path),
+        )
 
     run_fn = getattr(mcp, 'run', None)
     if run_fn is not None:

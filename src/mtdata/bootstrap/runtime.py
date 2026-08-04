@@ -161,6 +161,8 @@ def apply_mcp_runtime_settings(mcp: Any, settings: McpRuntimeSettings) -> None:
     runtime.port = settings.port
     runtime.log_level = settings.log_level
     runtime.mount_path = settings.mount_path
+    if settings.transport == "streamable-http":
+        runtime.streamable_http_path = settings.mount_path
     runtime.sse_path = settings.sse_path
     runtime.message_path = settings.message_path
     if settings.auth_token and settings.transport != "stdio":

@@ -309,7 +309,7 @@ After editable install, these entry points are available:
 | `FASTMCP_HOST` | `127.0.0.1` | Bind address |
 | `FASTMCP_ALLOW_REMOTE` | `0` | Set to `1` to allow non-loopback binds such as `0.0.0.0` |
 | `FASTMCP_PORT` | `8000` | Listen port |
-| `FASTMCP_MOUNT_PATH` | `/` | Mount path |
+| `FASTMCP_MOUNT_PATH` | `/` | SSE base mount path or streamable-HTTP endpoint path |
 | `FASTMCP_SSE_PATH` | `/sse` | SSE event stream path |
 | `FASTMCP_MESSAGE_PATH` | `/message` | Message endpoint path |
 | `FASTMCP_LOG_LEVEL` | (default) | Logging level |

@@ -80,7 +80,7 @@ Control how the MCP server binds and exposes endpoints.
 | `FASTMCP_ALLOW_REMOTE` | `false` | Set to `1` to allow non-loopback binds (e.g. `0.0.0.0`) |
 | `MCP_AUTH_TOKEN` | — | Bearer / API-key token for SSE and streamable-HTTP. **Required** when binding to a non-loopback address. Optional on loopback; when set, clients must send `Authorization: Bearer <token>` or `X-API-Key: <token>`. Not used for `stdio`. |
 | `FASTMCP_LOG_LEVEL` | `INFO` | Logging level |
-| `FASTMCP_MOUNT_PATH` | `/` | Base mount path |
+| `FASTMCP_MOUNT_PATH` | `/` | SSE base mount path or streamable-HTTP endpoint path |
 | `FASTMCP_SSE_PATH` | `/sse` | SSE event-stream path |
 | `FASTMCP_MESSAGE_PATH` | `/message` | Message endpoint path |
 

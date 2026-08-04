@@ -119,6 +119,24 @@ class TestMcpRuntimeSettings:
         assert mcp.settings.sse_path == "/events"
         assert mcp.settings.message_path == "/message"
 
+    def test_apply_mount_path_to_streamable_http_endpoint(self):
+        from mtdata.bootstrap.runtime import (
+            McpRuntimeSettings,
+            apply_mcp_runtime_settings,
+        )
+
+        mcp = MagicMock()
+        mcp.settings = MagicMock()
+        apply_mcp_runtime_settings(
+            mcp,
+            McpRuntimeSettings(
+                transport="streamable-http",
+                mount_path="/mtdata",
+            ),
+        )
+
+        assert mcp.settings.streamable_http_path == "/mtdata"
+
     def test_mcp_auth_factory_fails_closed_when_middleware_attach_fails(self):
         from mtdata.bootstrap.runtime import _install_mcp_bearer_auth
 
