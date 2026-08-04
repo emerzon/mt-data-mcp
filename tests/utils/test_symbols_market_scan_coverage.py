@@ -201,11 +201,11 @@ def test_market_scan_keeps_future_quote_unsafe_when_bar_is_fresh() -> None:
         )
 
     row = result["data"][0]
-    assert row["timestamp_in_future"] is True
-    assert row["data_stale"] is True
+    assert row["quote_timestamp_in_future"] is True
+    assert row["quote_stale"] is True
     assert "usable_for_live_trading" not in row
-    assert row["freshness_reason"] == "future_timestamp"
-    assert row["warning"] == row["timestamp_warning"]
+    assert row["quote_freshness_reason"] == "future_timestamp"
+    assert row["quote_warning"] == row["quote_timestamp_warning"]
     assert row["bar_stale"] is False
     assert row["bar_freshness"] == "latest completed bar, 1h 0m ago"
     assert result["freshness"] == "stale"
@@ -1254,7 +1254,9 @@ class TestMarketScan:
         scan_row = scan["data"][0]
         top_row = top["data"][0]
         assert scan_row["price_change_pct"] == top_row["price_change_pct"]
-        assert scan_row["data_stale"] is False
+        assert scan_row["quote_stale"] is False
+        assert scan_row["price_as_of"] == scan_row["time"]
+        assert "freshness_reason" not in scan_row
         assert top_row["data_stale"] is False
         assert scan_row["bar_stale"] is True
         assert top_row["bar_stale"] is True

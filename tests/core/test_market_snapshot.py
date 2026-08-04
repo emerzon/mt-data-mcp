@@ -298,7 +298,15 @@ def test_market_snapshot_compact_keeps_requested_regime_and_forecast(monkeypatch
         if name == "regime":
             return {"success": True, "current_regime": "trend_up", "confidence": 0.8}
         if name == "forecast":
-            return {"success": True, "method": "theta", "forecast": [1.1, 1.2]}
+            return {
+                "success": True,
+                "method": "theta",
+                "forecast": [1.1, 1.2],
+                "ci_status": "unavailable",
+                "trust_level": "degraded",
+                "trust_blockers": ["prediction_interval_unavailable"],
+                "calendar_treatment": "continuous",
+            }
         return {"success": True}
 
     monkeypatch.setattr(snapshot_mod, "_call_section", fake_call_section)
@@ -314,6 +322,10 @@ def test_market_snapshot_compact_keeps_requested_regime_and_forecast(monkeypatch
     assert result["snapshot"]["forecast"] == {
         "method": "theta",
         "forecast": [1.1, 1.2],
+        "ci_status": "unavailable",
+        "trust_level": "degraded",
+        "trust_blockers": ["prediction_interval_unavailable"],
+        "calendar_treatment": "continuous",
     }
 
 

@@ -315,6 +315,12 @@ def _normalize_candle_query_error(
             "Use the broker's exact MT5 symbol name; call market_ticker for symbol "
             "discovery when the broker uses suffixes or aliases."
         )
+    elif "could not parse date" in normalized or "invalid date" in normalized:
+        error_code = "data_fetch_candles_invalid_date"
+        remediation = (
+            "Use an ISO 8601 date or timestamp, for example 2026-08-03 or "
+            "2026-08-03T14:30:00Z."
+        )
     elif (
         "start_datetime must be before end_datetime" in normalized
         or "start must be before or equal to end" in normalized

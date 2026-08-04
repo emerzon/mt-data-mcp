@@ -34,7 +34,7 @@ from ..utils.utils import _parse_end_datetime, _parse_start_datetime
 from ._mcp_instance import mcp
 from .execution_logging import run_logged_operation
 from .mt5_gateway import create_mt5_gateway, mt5_connection_error
-from .output_contract import normalize_output_verbosity_detail
+from .output_contract import build_pagination_meta, normalize_output_verbosity_detail
 
 logger = logging.getLogger(__name__)
 
@@ -947,13 +947,13 @@ def _limit_pair_rows(
         page = rows[start : start + int(limit)]
     has_more = bool(start + len(page) < total)
     truncated = bool(start > 0 or has_more)
-    pagination = {
-        "total_count": total,
-        "offset": int(start),
-        "limit": limit,
-        "has_more": has_more,
-    }
-    return page, truncated, pagination
+    pagination = build_pagination_meta(
+        total=total,
+        returned=len(page),
+        offset=start,
+        limit=limit,
+    )
+    return page, truncated, {"pagination": pagination}
 
 
 def _public_pair_row(row: Dict[str, Any]) -> Dict[str, Any]:

@@ -58,6 +58,12 @@ def match_symbol_infos(
     if not text:
         return []
     query_upper = text.upper()
+    query_token = _normalize_symbol_token(text)
+    query_tokens = {query_token}
+    # Crypto venues commonly publish USD pairs when users search for the
+    # equivalent USDT convention. This is suggestion-only, never auto-resolution.
+    if query_token.endswith("usdt") and len(query_token) > 4:
+        query_tokens.add(f"{query_token[:-4]}usd")
     matches: list[Any] = []
     for info in symbols:
         name = str(getattr(info, "name", "") or "")
@@ -66,12 +72,21 @@ def match_symbol_infos(
             group = str(group_of(info) or "")
         else:
             group = str(getattr(info, "path", "") or "")
-        if query_upper in f"{name} {description} {group}".upper():
+        searchable = f"{name} {description} {group}"
+        searchable_token = _normalize_symbol_token(searchable)
+        if query_upper in searchable.upper() or any(
+            token and token in searchable_token for token in query_tokens
+        ):
             matches.append(info)
     if sort_key is None:
         matches.sort(
             key=lambda info: (
-                not str(getattr(info, "name", "") or "").upper().startswith(query_upper),
+                _normalize_symbol_token(str(getattr(info, "name", "") or ""))
+                not in query_tokens,
+                not any(
+                    _normalize_symbol_token(str(getattr(info, "name", "") or "")).startswith(token)
+                    for token in query_tokens
+                ),
                 str(getattr(info, "name", "") or "").casefold(),
             )
         )

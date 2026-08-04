@@ -2108,15 +2108,20 @@ def _market_scan_freshness_summary(
     if not rows:
         return {}
     def _row_stale(row: Dict[str, Any]) -> bool:
-        return bool(row.get("bar_stale")) or bool(row.get("data_stale"))
+        return bool(row.get("bar_stale")) or bool(
+            row.get("quote_stale", row.get("data_stale"))
+        )
 
     stale_count = sum(1 for row in rows if _row_stale(row))
     stale_bar_count = sum(1 for row in rows if bool(row.get("bar_stale")))
     unsafe_quote_count = sum(
         1
         for row in rows
-        if bool(row.get("data_stale"))
-        or row.get("usable_for_live_trading") is False
+        if bool(row.get("quote_stale", row.get("data_stale")))
+        or row.get(
+            "quote_usable_for_live_trading",
+            row.get("usable_for_live_trading"),
+        ) is False
     )
     row_count = len(rows)
     if stale_count == row_count:
@@ -2162,6 +2167,31 @@ def _market_scan_freshness_summary(
         if stale_count == 0:
             out["freshness"] = f"mixed, {closed_count}/{row_count} closed_weekend_snapshot"
     return out
+
+
+def _namespace_market_scan_quote_freshness(row: Dict[str, Any]) -> None:
+    """Keep quote freshness distinct from the bar that supplies scan prices."""
+    field_map = {
+        "tick_time": "quote_time",
+        "data_age_seconds": "quote_age_seconds",
+        "data_age_anchor": "quote_age_anchor",
+        "data_age_metric": "quote_age_metric",
+        "stale_after_seconds": "quote_stale_after_seconds",
+        "data_stale": "quote_stale",
+        "freshness_reason": "quote_freshness_reason",
+        "timestamp_in_future": "quote_timestamp_in_future",
+        "timestamp_skew_seconds": "quote_timestamp_skew_seconds",
+        "timestamp_warning": "quote_timestamp_warning",
+        "warning": "quote_warning",
+        "freshness": "quote_freshness",
+        "usable_for_live_trading": "quote_usable_for_live_trading",
+        "usable_for_live_trading_basis": "quote_usable_for_live_trading_basis",
+    }
+    for source, target in field_map.items():
+        if source in row:
+            row[target] = row.pop(source)
+    row["price_as_of"] = row.get("time")
+    row["price_freshness"] = row.get("bar_freshness")
 
 
 _TOP_MARKETS_COMPACT_BASE_HEADERS = [
@@ -3673,8 +3703,7 @@ def market_scan(  # noqa: C901
 
                 row = dict(spread_row)
                 row.update(signal_row)
-                row.pop("usable_for_live_trading", None)
-                row.pop("usable_for_live_trading_basis", None)
+                _namespace_market_scan_quote_freshness(row)
                 metric_error = _market_scan_missing_required_metric(
                     row,
                     rank_by=rank_by_value,
@@ -3739,18 +3768,21 @@ def market_scan(  # noqa: C901
                 "description",
                 "timeframe",
                 "time",
-                "tick_time",
-                "data_age_seconds",
-                "data_age_anchor",
-                "data_age_metric",
-                "stale_after_seconds",
-                "data_stale",
-                "freshness_reason",
-                "timestamp_in_future",
-                "timestamp_skew_seconds",
-                "timestamp_warning",
-                "warning",
-                "freshness",
+                "price_as_of",
+                "price_freshness",
+                "quote_time",
+                "quote_age_seconds",
+                "quote_age_anchor",
+                "quote_age_metric",
+                "quote_stale_after_seconds",
+                "quote_stale",
+                "quote_freshness_reason",
+                "quote_timestamp_in_future",
+                "quote_timestamp_skew_seconds",
+                "quote_timestamp_warning",
+                "quote_warning",
+                "quote_freshness",
+                "quote_usable_for_live_trading",
                 "bar_age_seconds",
                 "bar_freshness_anchor",
                 "bar_freshness_metric",
@@ -3784,10 +3816,12 @@ def market_scan(  # noqa: C901
                 "timeframe",
                 "data_source",
                 "time",
-                "data_stale",
-                "freshness_reason",
-                "timestamp_in_future",
-                "timestamp_warning",
+                "price_as_of",
+                "price_freshness",
+                "quote_stale",
+                "quote_freshness_reason",
+                "quote_timestamp_in_future",
+                "quote_timestamp_warning",
                 "bar_stale",
                 "bar_market_status",
                 "bar_market_status_reason",
@@ -3809,8 +3843,8 @@ def market_scan(  # noqa: C901
             if include_sma:
                 compact_headers.append("sma_distance_pct")
             optional_compact_headers = {
-                "timestamp_in_future",
-                "timestamp_warning",
+                "quote_timestamp_in_future",
+                "quote_timestamp_warning",
                 "bar_market_status",
                 "bar_market_status_reason",
                 "bar_freshness_policy_relaxed",

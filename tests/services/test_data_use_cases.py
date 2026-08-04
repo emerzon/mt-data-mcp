@@ -68,6 +68,10 @@ def test_run_data_fetch_candles_passes_allow_stale_to_service():
             "start datetime 2099-01-01 is in the future; no historical data is available for future dates.",
             "data_fetch_candles_future_date_range",
         ),
+        (
+            "Could not parse date 'tomorrowish'",
+            "data_fetch_candles_invalid_date",
+        ),
     ],
 )
 def test_run_data_fetch_candles_classifies_query_errors(message, expected_code):

@@ -11,6 +11,7 @@ from mtdata.core.causal import (
     _evaluate_cointegration_pair,
     _fit_cointegration_hedge,
     _format_summary,
+    _limit_pair_rows,
     _normalize_cointegration_transform,
     _normalize_cointegration_trend,
     _normalize_correlation_method,
@@ -47,6 +48,27 @@ def test_cointegration_pair_uses_stable_left_dependent_orientation():
     assert row["dependent"] == "A"
     assert row["hedge"] == "B"
     assert row["orientation_policy"] == "left_dependent"
+
+
+def test_pair_pagination_uses_canonical_nested_contract():
+    rows, truncated, metadata = _limit_pair_rows(
+        [{"pair": 1}, {"pair": 2}, {"pair": 3}],
+        limit=1,
+        offset=1,
+    )
+
+    assert rows == [{"pair": 2}]
+    assert truncated is True
+    assert metadata == {
+        "pagination": {
+            "total": 3,
+            "returned": 1,
+            "offset": 1,
+            "limit": 1,
+            "has_more": True,
+            "more_available": 1,
+        }
+    }
 
 
 class TestParseSymbols:

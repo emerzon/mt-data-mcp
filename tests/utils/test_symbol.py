@@ -1,7 +1,7 @@
 """Tests for src/mtdata/utils/symbol.py"""
 from types import SimpleNamespace
 
-from mtdata.utils.symbol import _extract_group_path
+from mtdata.utils.symbol import _extract_group_path, match_symbol_infos
 
 
 class TestExtractGroupPath:
@@ -40,3 +40,10 @@ class TestExtractGroupPath:
     def test_missing_attributes(self):
         sym = object()
         assert _extract_group_path(sym) == "Unknown"
+
+
+def test_match_symbol_infos_suggests_usd_crypto_pair_for_usdt_query():
+    btc = SimpleNamespace(name="BTCUSD", description="Bitcoin", path="Crypto")
+    eth = SimpleNamespace(name="ETHUSD", description="Ethereum", path="Crypto")
+
+    assert match_symbol_infos([eth, btc], "BTCUSDT") == [btc]

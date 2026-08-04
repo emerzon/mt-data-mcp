@@ -621,7 +621,22 @@ def _snapshot_summary_payload(sections: Dict[str, Any]) -> Dict[str, Any]:
     if isinstance(forecast, dict):
         compact_forecast = {
             key: forecast[key]
-            for key in ("method", "forecast", "values", "predictions", "horizon", "quantity")
+            for key in (
+                "method",
+                "forecast",
+                "values",
+                "predictions",
+                "horizon",
+                "quantity",
+                "uncertainty",
+                "ci_status",
+                "forecast_mode",
+                "trust_level",
+                "trust_blockers",
+                "calendar_treatment",
+                "last_observation_time",
+                "last_observation_epoch",
+            )
             if key in forecast
         }
         if compact_forecast:
