@@ -227,6 +227,28 @@ class TestFetchRatesWithWarmup(unittest.TestCase):
 
     @patch(_RATES_RANGE)
     @patch(_PARSE_START)
+    def test_long_range_clamps_provider_window_to_row_budget(self, mock_parse, mock_range):
+        requested_start = datetime(2010, 1, 1, tzinfo=_UTC)
+        requested_end = datetime(2026, 1, 1, tzinfo=_UTC)
+        mock_parse.side_effect = [requested_start, requested_end]
+        mock_range.return_value = _make_rates(2, base_ts=requested_end.timestamp())
+        diagnostics = {}
+
+        result, err = _fetch_rates_with_warmup(
+            'EURUSD', 16385, 'H1', 2, 0, '2010-01-01', '2026-01-01',
+            retry=False, sanity_check=False, diagnostics=diagnostics,
+        )
+
+        self.assertIsNone(err)
+        self.assertIsNotNone(result)
+        provider_start = mock_range.call_args.args[2]
+        self.assertGreater(provider_start, requested_start)
+        self.assertLess(provider_start, requested_end)
+        self.assertTrue(diagnostics["range_fetch"]["provider_bounded"])
+        self.assertEqual(diagnostics["range_fetch"]["provider_row_budget"], 3)
+
+    @patch(_RATES_RANGE)
+    @patch(_PARSE_START)
     def test_start_and_end_invalid_from(self, mock_parse, mock_range):
         """start_datetime fails to parse."""
         mock_parse.side_effect = [None, datetime(2025, 1, 2, tzinfo=_UTC)]

@@ -470,24 +470,42 @@ def _apply_range_limit_cap(result: Dict[str, Any], *, limit: int) -> None:
     except Exception:
         return
     available = len(data)
-    if available <= limit_value:
+    provider_bounded = bool(query.get("provider_bounded"))
+    if available <= limit_value and not provider_bounded:
         return
 
-    retained = data[-limit_value:]
+    retained = data[-limit_value:] if available > limit_value else data
     result["data"] = retained
     result["count"] = len(retained)
-    result["available_count"] = available
     result["limit_applied"] = limit_value
     result["truncated"] = True
     result["truncation"] = {
         "reason": "limit",
         "retained": "last",
-        "excluded_count": available - len(retained),
     }
-    result.setdefault("warnings", []).append(
-        f"Range contained {available} bars; returned the latest {len(retained)} "
-        f"because limit={limit_value}. Set limit>={available} to return the full range."
-    )
+    if available > limit_value:
+        result["available_count"] = available
+        result["truncation"]["excluded_count"] = available - len(retained)
+        warning = (
+            f"Fetched range contained {available} bars; returned the latest "
+            f"{len(retained)} because limit={limit_value}."
+        )
+    else:
+        result["truncation"]["excluded_count"] = None
+        warning = (
+            "The requested range began before the bounded provider window; "
+            f"returned up to the latest {limit_value} bars. Increase limit or "
+            "move the range start forward to retrieve an earlier page."
+        )
+    result.setdefault("warnings", []).append(warning)
+    data_window = result.get("data_window")
+    if isinstance(data_window, dict) and retained:
+        first_row = retained[0]
+        last_row = retained[-1]
+        if isinstance(first_row, dict) and first_row.get("time") is not None:
+            data_window["start"] = first_row["time"]
+        if isinstance(last_row, dict) and last_row.get("time") is not None:
+            data_window["end"] = last_row["time"]
     candle_counts = result.get("candle_counts")
     if isinstance(candle_counts, dict):
         candle_counts["returned"] = len(retained)
@@ -495,8 +513,9 @@ def _apply_range_limit_cap(result: Dict[str, Any], *, limit: int) -> None:
         if not isinstance(excluded, dict):
             excluded = {}
             candle_counts["excluded"] = excluded
-        excluded["limit_truncated"] = max(0, available - len(retained))
-        excluded["total"] = int(excluded.get("total") or 0) + max(0, available - len(retained))
+        excluded_count = max(0, available - len(retained))
+        excluded["limit_truncated"] = excluded_count
+        excluded["total"] = int(excluded.get("total") or 0) + excluded_count
     query["limit_applied_to_range"] = True
     query["available_rows_before_limit"] = available
     query["returned_rows_after_limit"] = len(retained)

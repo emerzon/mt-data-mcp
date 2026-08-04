@@ -533,6 +533,7 @@ def test_run_data_fetch_candles_range_applies_limit_cap():
             "success": True,
             "candles": 5,
             "data": rows,
+            "data_window": {"start": "t0", "end": "t4"},
             "meta": {"diagnostics": {"query": {"mode": "range"}}},
         },
     )
@@ -548,9 +549,9 @@ def test_run_data_fetch_candles_range_applies_limit_cap():
         "retained": "last",
         "excluded_count": 3,
     }
+    assert result["data_window"] == {"start": "t3", "end": "t4"}
     assert result["warnings"] == [
-        "Range contained 5 bars; returned the latest 2 because limit=2. "
-        "Set limit>=5 to return the full range."
+        "Fetched range contained 5 bars; returned the latest 2 because limit=2."
     ]
     assert result["query_type"] == "historical"
 
@@ -617,7 +618,7 @@ def test_run_data_fetch_candles_normalizes_count_metadata():
     assert result["requested_limit"] == 2
     assert "candles" not in result
     assert "returned_count" not in result
-    assert result["data_window"] == {"start": "t1", "end": "t2"}
+    assert result["data_window"] == {"start": "t3", "end": "t4"}
 
 
 def test_run_data_fetch_candles_compact_keeps_spread_estimate_without_meta():

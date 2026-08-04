@@ -608,9 +608,34 @@ def _fetch_rates_with_warmup(  # noqa: C901
             return None, future_error
         from_date_internal = from_date - timedelta(seconds=seconds_per_bar * (warmup_bars + extra_bars))
         expected_end_ts = _utc_epoch_seconds(to_date)
+        requested_rows = max(1, candles + warmup_bars + extra_bars)
+        bounded_span_seconds = max(
+            seconds_per_bar * requested_rows * 2,
+            seconds_per_bar * requested_rows + 7 * 24 * 60 * 60,
+        )
+        provider_from_date = max(
+            from_date_internal,
+            to_date - timedelta(seconds=bounded_span_seconds),
+        )
+        if diagnostics is not None:
+            diagnostics["range_fetch"] = {
+                "provider_bounded": provider_from_date > from_date_internal,
+                "provider_start": _format_time_explicit(
+                    _utc_epoch_seconds(provider_from_date)
+                ),
+                "requested_start": _format_time_explicit(
+                    _utc_epoch_seconds(from_date)
+                ),
+                "provider_row_budget": requested_rows,
+            }
 
         def _fetch():
-            return _mt5_copy_rates_range(symbol, mt5_timeframe, from_date_internal, to_date)
+            return _mt5_copy_rates_range(
+                symbol,
+                mt5_timeframe,
+                provider_from_date,
+                to_date,
+            )
 
     elif start_datetime:
         from_date, from_date_error = _parse_fetch_datetime_arg(start_datetime)
@@ -2024,6 +2049,13 @@ def fetch_candles(  # noqa: C901
                         "quality_rows_removed": int(quality_rows_removed),
                         "cache_status": "unknown",
                         "warmup_retry": warmup_retry_meta,
+                        **(
+                            dict(rate_fetch_diagnostics.get("range_fetch"))
+                            if isinstance(
+                                rate_fetch_diagnostics.get("range_fetch"), dict
+                            )
+                            else {}
+                        ),
                     },
                     "indicators": {
                         "requested": bool(ti_spec),
