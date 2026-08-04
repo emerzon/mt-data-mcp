@@ -200,7 +200,6 @@ export type SupportResistanceParams = {
   symbol: string
   timeframe?: string
   lookback?: number
-  limit?: number
   tolerance_pct?: number
   min_touches?: number
   max_levels?: number

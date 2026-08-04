@@ -224,16 +224,36 @@ export function useChartWorkspace() {
 
   const handleForecastResult = useCallback(
     (result: ForecastPayload) => {
-      const main = result.forecast_price
-      if (!main?.length || main.some((value) => !Number.isFinite(value))) {
+      const compactRows: NonNullable<ForecastPayload['forecast']> | undefined = result.forecast?.length
+        ? result.forecast
+        : result.uncertainty?.intervals?.map((row) => ({
+            time: row.time,
+            value: row.forecast,
+            lower: row.low,
+            upper: row.high,
+          }))
+      const mainValues = result.forecast_price || compactRows?.map((row) => row.value)
+      if (
+        !mainValues?.length ||
+        !mainValues.every(
+          (value): value is number =>
+            typeof value === 'number' && Number.isFinite(value)
+        )
+      ) {
         setForecastOverlays([])
         setMetrics(null)
         return
       }
+      const main = mainValues
       let times: number[] = []
 
       if (result.forecast_epoch && result.forecast_epoch.length === main.length) {
         times = result.forecast_epoch.map((value) => toUtcSec(value))
+      } else if (
+        compactRows?.length === main.length &&
+        compactRows.every((row) => row.time)
+      ) {
+        times = compactRows.map((row) => toUtcSec(row.time!))
       } else {
         const step = tfSeconds(timeframe)
         const anchorOverride = result.__anchor !== undefined ? Number(result.__anchor) : undefined
@@ -259,21 +279,23 @@ export function useChartWorkspace() {
         },
       ]
 
+      const lower = result.lower_price || compactRows?.map((row) => row.lower_price ?? row.lower)
+      const upper = result.upper_price || compactRows?.map((row) => row.upper_price ?? row.upper)
       if (
-        result.lower_price?.length === main.length &&
-        result.upper_price?.length === main.length &&
-        result.lower_price.every(Number.isFinite) &&
-        result.upper_price.every(Number.isFinite)
+        lower?.length === main.length &&
+        upper?.length === main.length &&
+        lower.every((value) => Number.isFinite(value)) &&
+        upper.every((value) => Number.isFinite(value))
       ) {
         overlays.push({
           name: 'lower',
-          points: times.map((time, index) => ({ time, value: result.lower_price![index] })),
+          points: times.map((time, index) => ({ time, value: lower[index]! })),
           color: '#64748b',
           lineStyle: 'dashed',
         })
         overlays.push({
           name: 'upper',
-          points: times.map((time, index) => ({ time, value: result.upper_price![index] })),
+          points: times.map((time, index) => ({ time, value: upper[index]! })),
           color: '#64748b',
           lineStyle: 'dashed',
         })

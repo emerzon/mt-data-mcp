@@ -8,7 +8,7 @@ import {
   getErrorMessage,
 } from '../api/client'
 import { useForecast, useForecastMethods, useForecastSettings } from '../hooks/useForecast'
-import type { BacktestResult, ForecastPayload } from '../types'
+import type { BacktestResult, ForecastPayload, VolatilityPayload } from '../types'
 import { formatDateTime, coerce } from '../lib/utils'
 import { DenoiseModal } from './DenoiseModal'
 
@@ -303,7 +303,7 @@ function VolatilityTab({ symbol, timeframe, anchor }: { symbol: string; timefram
   const [proxy, setProxy] = useState('squared_return')
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [result, setResult] = useState<{ annualized_vol?: number } | null>(null)
+  const [result, setResult] = useState<VolatilityPayload | null>(null)
 
   const run = async () => {
     if (!symbol) return
@@ -387,7 +387,12 @@ function VolatilityTab({ symbol, timeframe, anchor }: { symbol: string; timefram
         <div className="bg-slate-800/50 rounded-lg p-3 text-sm">
           <div className="text-slate-400 text-xs mb-2">Result</div>
           <div className="text-slate-200">
-            Annualized Vol: <span className="font-mono">{((result.annualized_vol ?? 0) * 100).toFixed(2)}%</span>
+            Annualized Vol:{' '}
+            <span className="font-mono">
+              {result.volatility_annualized === undefined
+                ? 'Unavailable'
+                : `${(result.volatility_annualized * 100).toFixed(2)}%`}
+            </span>
           </div>
         </div>
       )}

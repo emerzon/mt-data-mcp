@@ -153,8 +153,15 @@ export function useSupportResistance(symbol: string, timeframe: string, limit: n
     try {
       setIsLoading(true)
       setError(null)
-      const data = await getSupportResistance({ symbol, timeframe: 'auto', limit })
-      const parsed = (data.levels || []).filter(row => Number.isFinite(row?.value))
+      const data = await getSupportResistance({
+        symbol,
+        timeframe: 'auto',
+        lookback: limit,
+      })
+      const parsed = [
+        ...(data.supports || []),
+        ...(data.resistances || []),
+      ].filter(row => Number.isFinite(row?.value))
 
       if (!parsed.length) {
         setError('No support/resistance levels detected')
@@ -168,7 +175,7 @@ export function useSupportResistance(symbol: string, timeframe: string, limit: n
         method: data.method ?? 'swing',
         tolerance_pct: data.tolerance_pct ?? 0,
         min_touches: data.min_touches ?? 2,
-        window: data.window,
+        window: data.scan_window,
       })
     } catch (err) {
       setError(getErrorMessage(err))

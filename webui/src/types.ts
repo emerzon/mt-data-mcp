@@ -155,11 +155,12 @@ export type SupportResistanceResponse = {
     current_atr_pct?: number | null
     baseline_atr_pct?: number | null
   }>
-  limit: number
-  method: string
-  tolerance_pct: number
+  lookback?: number
+  limit?: number
+  method?: string
+  tolerance_pct?: number
   effective_tolerance_pct?: number
-  min_touches: number
+  min_touches?: number
   qualification_basis?: 'episodes'
   max_levels?: number
   reaction_bars?: number
@@ -171,7 +172,8 @@ export type SupportResistanceResponse = {
   baseline_atr_pct?: number | null
   current_price?: number | null
   window?: { start?: string | null; end?: string | null }
-  levels: SupportResistanceLevel[]
+  scan_window?: { start?: string | null; end?: string | null }
+  levels?: SupportResistanceLevel[]
   supports?: SupportResistanceLevel[]
   resistances?: SupportResistanceLevel[]
 }
@@ -189,6 +191,24 @@ export type ForecastPayload = {
   lower_price?: number[]
   upper_price?: number[]
   forecast_quantiles?: Record<string, number[]>
+  forecast?: Array<{
+    time?: string
+    value?: number
+    price?: number
+    return?: number
+    lower_price?: number
+    upper_price?: number
+    lower?: number
+    upper?: number
+  }>
+  uncertainty?: {
+    intervals?: Array<{
+      time?: string
+      forecast?: number
+      low?: number
+      high?: number
+    }>
+  }
   // client-only context
   __anchor?: number
   __kind?: 'full' | 'partial' | 'backtest'
@@ -202,7 +222,7 @@ export type VolatilityPayload = {
   forecast_epoch?: number[]
   forecast_time?: string[]
   forecast_vol?: number[]
-  annualized_vol?: number
+  volatility_annualized?: number
 }
 
 // ============================================================================
