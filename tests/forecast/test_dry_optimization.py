@@ -11,6 +11,7 @@ import os
 import sys
 
 import numpy as np
+import pytest
 
 # Add the src directory to Python path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
@@ -77,17 +78,19 @@ def test_helper_functions():
     # Test adjust_forecast_length
     print("  Testing adjust_forecast_length...")
     
-    # Padding
+    # Incomplete output
     forecast = np.array([1.0, 2.0])
-    adjusted = adjust_forecast_length(forecast, 5)
-    expected = np.array([1.0, 2.0, 2.0, 2.0, 2.0])
-    assert np.array_equal(adjusted, expected), "Should pad with edge values"
-    
-    # Truncation
+    with pytest.raises(ValueError, match="requested 5, received 2"):
+        adjust_forecast_length(forecast, 5)
+
+    # Excess output
     forecast = np.array([1.0, 2.0, 3.0, 4.0, 5.0])
-    adjusted = adjust_forecast_length(forecast, 3)
-    expected = np.array([1.0, 2.0, 3.0])
-    assert np.array_equal(adjusted, expected), "Should truncate to target length"
+    with pytest.raises(ValueError, match="requested 3, received 5"):
+        adjust_forecast_length(forecast, 3)
+
+    # Exact output
+    adjusted = adjust_forecast_length(forecast, 5)
+    assert np.array_equal(adjusted, forecast)
     
     print("    ✓ adjust_forecast_length works correctly")
     
