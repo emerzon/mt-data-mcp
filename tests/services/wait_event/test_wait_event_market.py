@@ -987,7 +987,7 @@ def test_snapshot_quote_updates_do_not_repeat_trade_volume() -> None:
     from mtdata.core.data.wait_events import _volume_metric_for_ticks
 
     ticks = [
-        {"volume": 8.0, "volume_real": 8.0, "flags": 1032},
+        {"volume": 8.0, "volume_real": 8.0, "flags": 8},
         {"volume": 8.0, "volume_real": 8.0, "flags": 6},
         {"volume": 8.0, "volume_real": 8.0, "flags": 6},
     ]

@@ -2473,11 +2473,6 @@ def _tick_flag_definitions() -> tuple[tuple[int, str, str], ...]:
             "sell",
             "Last trade was seller-initiated.",
         ),
-        (
-            _mt5_tick_flag_value("TICK_FLAG_VOLUME_REAL", 1024),
-            "volume_real",
-            "Last-trade real volume changed in this snapshot.",
-        ),
     )
 
 
