@@ -86,6 +86,9 @@ def _sanitize_error_message(exc: Exception, *, symbol: str | None = None) -> str
     """
     error_str = str(exc)
     error_lower = error_str.lower()
+
+    if isinstance(exc, ValueError) and error_lower.startswith("invalid"):
+        return f"Invalid Finviz parameter: {error_str}"
     
     # Check for HTTP error patterns and replace with user-friendly message
     if "404" in error_str and "Client Error" in error_str:
@@ -133,6 +136,8 @@ def _finviz_error_kind(message: str) -> tuple[str, bool]:
         return "finviz_connection_error", True
     if "could not be parsed" in low:
         return "finviz_parse_error", False
+    if "invalid finviz parameter" in low:
+        return "finviz_invalid_parameter", False
     if "adjust filters" in low or "available" in low:
         return "finviz_no_data", False
     return "finviz_unavailable", True
@@ -643,7 +648,13 @@ def screen_stocks(
         }
     except Exception as e:
         logger.warning("Error running stock screener: %s", e)
-        return {"error": _sanitize_error_message(e)}
+        message = _sanitize_error_message(e)
+        error_code, retryable = _finviz_error_kind(message)
+        return {
+            "error": message,
+            "error_code": error_code,
+            "retryable": retryable,
+        }
 
 
 def get_general_news(news_type: str = "news", limit: int = 20, page: int = 1) -> Dict[str, Any]:

@@ -120,37 +120,16 @@ def build_finviz_screener(view: str) -> Any:
 
 
 def apply_finvizfinance_timeout_patch() -> None:
-    """Patch finvizfinance's internal bare requests.get call to include timeout."""
+    """Apply the configured timeout to finvizfinance's HTTP helper."""
     try:
-        import finvizfinance.quote as _fv_quote
+        import finvizfinance.util as _fv_util
     except Exception:
         return
-
-    # Avoid double-patch
-    if getattr(_fv_quote, "_mtdata_timeout_patched", False):
-        return
-
-    import requests
 
     from .client import get_finviz_http_timeout
 
-    _orig_get = requests.get
-
-    def _patched_get(url: str, **kwargs: Any) -> Any:
-        if "timeout" not in kwargs:
-            kwargs["timeout"] = get_finviz_http_timeout()
-        return _orig_get(url, **kwargs)
-
-    try:
-        import finvizfinance as _fv
-        import finvizfinance.custom as _fv_custom
-        if hasattr(_fv_custom, "_mtdata_timeout_patched"):
-            return
-        _fv.requester.session.get = _patched_get
-        _fv_custom._mtdata_timeout_patched = True  # type: ignore[attr-defined]
-        _fv_quote._mtdata_timeout_patched = True  # type: ignore[attr-defined]
-    except Exception:
-        pass
+    _fv_util.timeout_value = get_finviz_http_timeout()
+    _fv_util._mtdata_timeout_configured = True  # type: ignore[attr-defined]
 
 
 __all__ = [

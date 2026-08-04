@@ -215,6 +215,23 @@ def test_screen_stocks_uses_bounded_screener_view(monkeypatch):
     assert int(FakeOverview.last_kwargs.get("verbose")) == 0
 
 
+def test_screen_stocks_reports_invalid_parameters_as_non_retryable(monkeypatch):
+    class InvalidScreener:
+        def set_filter(self, filters_dict):
+            raise ValueError(
+                "Invalid filter 'Sectr'. Possible filter: ['Sector']"
+            )
+
+    monkeypatch.setattr(svc, "_build_finviz_screener", lambda _view: InvalidScreener())
+    monkeypatch.setattr(svc, "_apply_finvizfinance_timeout_patch", lambda: None)
+
+    result = svc.screen_stocks(filters={"Sectr": "Technology"})
+
+    assert result["error_code"] == "finviz_invalid_parameter"
+    assert result["retryable"] is False
+    assert "Possible filter" in result["error"]
+
+
 def test_get_earnings_calendar_uses_financial_screener_with_pagination(monkeypatch):
     class FakeFinancial:
         last_filters = None
@@ -264,6 +281,18 @@ def test_build_finviz_session_sets_user_agent():
     session = finviz_client._build_finviz_session()
     assert session.headers.get("User-Agent") == "Mozilla/5.0"
     session.close()
+
+
+def test_finvizfinance_timeout_configuration_reaches_library_helper(monkeypatch):
+    import finvizfinance.util as finviz_util
+
+    monkeypatch.setattr(finviz_util, "timeout_value", 99.0)
+    monkeypatch.setattr(finviz_client, "_FINVIZ_HTTP_TIMEOUT", 7.5)
+
+    svc.apply_finvizfinance_timeout_patch()
+
+    assert finviz_util.timeout_value == 7.5
+    assert finviz_util._mtdata_timeout_configured is True
 
 
 def test_reset_finviz_session_clears_singleton(monkeypatch):

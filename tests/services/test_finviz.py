@@ -157,12 +157,17 @@ class TestFinvizService:
         assert result["insider_trades"][0]["Date"] == "2025-11-07"
 
     def test_finviz_error_kind_classification(self):
-        from mtdata.services.finviz.api import _finviz_error_kind
+        from mtdata.services.finviz.api import _finviz_error_kind, _sanitize_error_message
 
         assert _finviz_error_kind("Finviz request timed out. Retry later.") == ("finviz_timeout", True)
         assert _finviz_error_kind("Finviz rejected the request as unauthorized.") == ("finviz_unauthorized", False)
         assert _finviz_error_kind("Finviz response could not be parsed.") == ("finviz_parse_error", False)
         assert _finviz_error_kind("Unable to fetch data from Finviz. Please try again later.") == ("finviz_unavailable", True)
+        message = _sanitize_error_message(
+            ValueError("Invalid order 'market-cap'. Possible order: ['Market Cap']")
+        )
+        assert message.startswith("Invalid Finviz parameter: Invalid order")
+        assert _finviz_error_kind(message) == ("finviz_invalid_parameter", False)
 
     def test_get_insider_activity_error_is_structured(self):
         from mtdata.services.finviz import api as finviz_api
