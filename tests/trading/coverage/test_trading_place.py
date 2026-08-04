@@ -182,6 +182,12 @@ def test_ambiguous_order_send_outcome_is_idempotency_safe():
     )
 
 
+def test_dry_run_preview_is_not_persisted_as_idempotent_outcome():
+    assert not _should_persist_idempotency_outcome(
+        {"success": True, "dry_run": True, "no_action": True}
+    )
+
+
 def test_order_preflight_blocks_critical_account_margin_before_symbol_lookup():
     gateway = MagicMock()
     gateway.build_trade_preflight.return_value = {"execution_ready_strict": True}

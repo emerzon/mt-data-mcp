@@ -373,6 +373,8 @@ def _should_persist_idempotency_outcome(result: Any) -> bool:
     """
     if not isinstance(result, dict):
         return False
+    if result.get("dry_run") or result.get("no_action"):
+        return False
     if result.get("duplicate"):
         return True
     if result.get("ambiguous") or result.get("error_code") == "order_send_ambiguous":
