@@ -69,7 +69,7 @@ class ModelCache:
         with self._lock:
             entry = self._entries.get(key)
             if entry is not None:
-                if (time.monotonic() - entry.created_at) <= self._ttl:
+                if (time.monotonic() - entry.last_used) <= self._ttl:
                     entry.last_used = time.monotonic()
                     entry.hit_count += 1
                     return entry.model, {
@@ -88,7 +88,7 @@ class ModelCache:
                 # Double-check after acquiring lock
                 with self._lock:
                     entry = self._entries.get(key)
-                    if entry is not None and (time.monotonic() - entry.created_at) <= self._ttl:
+                    if entry is not None and (time.monotonic() - entry.last_used) <= self._ttl:
                         entry.last_used = time.monotonic()
                         entry.hit_count += 1
                         return entry.model, {

@@ -53,6 +53,23 @@ def test_ttl_expiry():
     assert meta["cache"] == "miss"
 
 
+def test_ttl_expires_by_idle_time_not_entry_age():
+    cache = ModelCache(ttl_seconds=10, max_entries=4)
+    first, _ = cache.get_or_load("k", lambda: "v1")
+
+    cache._entries["k"].created_at -= 20
+    second, meta = cache.get_or_load("k", lambda: "v2")
+
+    assert second is first
+    assert meta["cache"] == "hit"
+
+    cache._entries["k"].last_used -= 20
+    third, meta = cache.get_or_load("k", lambda: "v3")
+
+    assert third == "v3"
+    assert meta["cache"] == "miss"
+
+
 # ---------------------------------------------------------------------------
 # LRU eviction
 # ---------------------------------------------------------------------------
