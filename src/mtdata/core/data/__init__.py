@@ -728,7 +728,7 @@ def wait_event(
             request_kwargs["poll_interval_seconds"] = poll_interval_seconds
         if normalized_end_on is not None:
             request_kwargs["end_on"] = list(normalized_end_on)
-        else:
+        elif normalized_watch_for is None or wait_next_bar:
             request_kwargs["end_on"] = [
                 {"type": "candle_close", "timeframe": timeframe},
             ]

@@ -406,6 +406,47 @@ def test_wait_event_tool_accepts_simple_event_names(monkeypatch) -> None:
     assert result["criteria"]["end_on_inferred"] is False
 
 
+def test_wait_event_explicit_watch_does_not_add_an_implicit_boundary(monkeypatch) -> None:
+    captured = {}
+
+    def _mock_run_wait_event(request, gateway):
+        captured["request"] = request
+        return {
+            "success": False,
+            "status": "timeout",
+            "error_code": "wait_event_timeout",
+            "error": "Wait timed out before a watched event was observed.",
+            "matched": False,
+            "event": None,
+            "criteria": {
+                "watch_for": list(request.watch_for or []),
+                "watch_for_inferred": False,
+                "end_on": list(request.end_on or []),
+                "end_on_inferred": False,
+                "accept_preexisting": False,
+            },
+        }
+
+    monkeypatch.setattr(core_data, "run_wait_event", _mock_run_wait_event)
+    monkeypatch.setattr(
+        core_data,
+        "create_mt5_gateway",
+        lambda ensure_connection_impl=None: object(),
+    )
+
+    raw = getattr(core_data.wait_event, "__wrapped__", core_data.wait_event)
+    result = raw(
+        symbol="EURUSD",
+        timeframe="M1",
+        watch_for=[{"type": "order_filled", "symbol": "EURUSD"}],
+        max_wait_seconds=300,
+        detail="full",
+    )
+
+    assert result["status"] == "timeout"
+    assert captured["request"].end_on == []
+
+
 def test_wait_event_tool_routes_candle_close_watch_for_to_end_on(monkeypatch) -> None:
     captured = {}
 
