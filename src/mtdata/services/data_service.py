@@ -364,9 +364,11 @@ def _build_no_data_error_with_context(
         _bounded_weekend_no_data_context(symbol, start_datetime, end_datetime)
     )
     
-    # Try to sample available bars for this timeframe to suggest a usable range.
+    # Fetch only the latest available bar. Error construction must remain cheap;
+    # discovering the terminal's full historical floor would require an
+    # unbounded history read.
     try:
-        available_bars = _mt5_copy_rates_from_pos(symbol, mt5_timeframe, 0, 100_000)
+        available_bars = _mt5_copy_rates_from_pos(symbol, mt5_timeframe, 0, 1)
 
         if available_bars is not None and len(available_bars) > 0:
             times: List[float] = []
@@ -379,14 +381,13 @@ def _build_no_data_error_with_context(
                     times.append(epoch)
             if not times:
                 raise ValueError("available bars have no finite timestamps")
-            first_epoch = min(times)
             last_epoch = max(times)
-            first_time = datetime.fromtimestamp(first_epoch, tz=dt_timezone.utc)
             last_time = datetime.fromtimestamp(last_epoch, tz=dt_timezone.utc)
 
             details["available_range"] = {
-                "earliest": _format_time_explicit(first_epoch),
                 "latest": _format_time_explicit(last_epoch),
+                "earliest": None,
+                "earliest_status": "not_scanned",
             }
 
             # Provide a suggestion based on the mismatch
@@ -400,9 +401,6 @@ def _build_no_data_error_with_context(
                     if req_start and req_start > last_time:
                         error_msg = f"No data available - requested start date is after latest available data ({_format_time_explicit(last_epoch)})"
                         details["suggestion"] = f"Use start='{_format_time_explicit(last_epoch)}' or earlier"
-                    elif req_start and req_start < first_time:
-                        error_msg = f"No data available - requested date range is before earliest available data ({_format_time_explicit(first_epoch)})"
-                        details["suggestion"] = f"Use start='{_format_time_explicit(first_epoch)}' or later"
                 except Exception:
                     pass
     except Exception:

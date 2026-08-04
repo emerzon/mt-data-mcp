@@ -127,16 +127,17 @@ def test_no_data_context_uses_non_negative_history_position(monkeypatch) -> None
         None,
     )
 
-    assert calls == [("EURUSD", 1, 0, 100_000)]
+    assert calls == [("EURUSD", 1, 0, 1)]
     assert result["success"] is False
     assert result["error_code"] == "data_fetch_candles_no_data"
     assert result["operation"] == "data_fetch_candles"
     assert result["request_id"]
     assert result["details"]["available_range"] == {
-        "earliest": "1970-01-01T00:01Z",
         "latest": "1970-01-01T00:03Z",
+        "earliest": None,
+        "earliest_status": "not_scanned",
     }
-    assert "before earliest available data" in result["error"]
+    assert result["error"] == "No data available"
 
 
 def test_no_data_context_explains_bounded_weekend_closure(monkeypatch) -> None:
