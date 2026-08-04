@@ -939,6 +939,12 @@ def _fetch_recent_ticks_backwards(
 
     chunk_days = 1
     max_lookback_days = max(max(1, int(TICKS_LOOKBACK_DAYS)), 30)
+    budget_floor = to_date - timedelta(days=max_lookback_days)
+    effective_floor = (
+        max(min_from_date, budget_floor)
+        if min_from_date is not None
+        else budget_floor
+    )
     cursor_end = to_date
     lookback_days_used = 0
     saw_response = False
@@ -946,8 +952,8 @@ def _fetch_recent_ticks_backwards(
 
     while True:
         chunk_from = cursor_end - timedelta(days=chunk_days)
-        if min_from_date is not None and chunk_from < min_from_date:
-            chunk_from = min_from_date
+        if chunk_from < effective_floor:
+            chunk_from = effective_floor
 
         overlaps_newer_range = saw_response
         ticks_candidate = _fetch_ticks_range_with_retry(symbol, chunk_from, cursor_end)
@@ -971,15 +977,19 @@ def _fetch_recent_ticks_backwards(
                 if len(collected) >= limit:
                     break
 
-        if min_from_date is not None:
-            if chunk_from <= min_from_date:
-                break
-        else:
-            lookback_days_used += chunk_days
-            if lookback_days_used >= max_lookback_days:
-                break
+        chunk_span_days = max(
+            1,
+            int(math.ceil((cursor_end - chunk_from).total_seconds() / 86_400.0)),
+        )
+        lookback_days_used += chunk_span_days
+        if chunk_from <= effective_floor or lookback_days_used >= max_lookback_days:
+            break
 
         cursor_end = chunk_from
+        chunk_days = min(
+            chunk_days * 2,
+            max(1, max_lookback_days - lookback_days_used),
+        )
 
     if collected:
         return collected
@@ -2573,6 +2583,10 @@ def _compact_tick_summary(out: Dict[str, Any]) -> Dict[str, Any]:
         "broker_server_tz",
         "session_utc_offset_seconds",
         "spread_statistics_basis",
+        "history_window_truncated",
+        "history_window_limit_days",
+        "history_window_floor",
+        "warnings",
     ):
         if out.get(key) is not None:
             compact[key] = out.get(key)
@@ -2621,6 +2635,8 @@ def fetch_ticks(  # noqa: C901
     try:
         symbol = resolve_broker_symbol_name(symbol)
         effective_limit = int(limit)
+        history_window_truncated = False
+        history_window_floor: Optional[datetime] = None
         if effective_limit <= 0:
             return {"error": "limit must be greater than 0."}
         # Ensure symbol is ready; remember original visibility to restore later
@@ -2660,13 +2676,27 @@ def fetch_ticks(  # noqa: C901
                         return {"error": f"Could not parse end date {end!r}. {_DATE_FORMAT_HINT}"}
                     if from_date > to_date:
                         return {"error": "start must be before or equal to end."}
-                    ticks = _fetch_ticks_range_with_retry(symbol, from_date, to_date)
-                    if ticks is not None and effective_limit and len(ticks) > effective_limit:
-                        ticks = ticks[-effective_limit:]
-                else:
+                    max_lookback_days = max(max(1, int(TICKS_LOOKBACK_DAYS)), 30)
+                    history_window_floor = to_date - timedelta(days=max_lookback_days)
+                    history_window_truncated = from_date < history_window_floor
                     ticks = _fetch_recent_ticks_backwards(
                         symbol,
-                        to_date=datetime.now(dt_timezone.utc),
+                        to_date=to_date,
+                        limit=effective_limit,
+                        min_from_date=from_date,
+                    )
+                else:
+                    max_lookback_days = max(max(1, int(TICKS_LOOKBACK_DAYS)), 30)
+                    history_to_date = datetime.now(dt_timezone.utc)
+                    if from_date.tzinfo is None or from_date.utcoffset() is None:
+                        history_to_date = history_to_date.replace(tzinfo=None)
+                    history_window_floor = history_to_date - timedelta(
+                        days=max_lookback_days
+                    )
+                    history_window_truncated = from_date < history_window_floor
+                    ticks = _fetch_recent_ticks_backwards(
+                        symbol,
+                        to_date=history_to_date,
                         limit=effective_limit,
                         min_from_date=from_date,
                     )
@@ -3021,6 +3051,19 @@ def fetch_ticks(  # noqa: C901
 
         def _add_tick_context_fields(payload: Dict[str, Any]) -> None:
             payload["spread_statistics_basis"] = "coherent_bid_ask_updates"
+            if history_window_truncated:
+                payload["history_window_truncated"] = True
+                payload["history_window_limit_days"] = max(
+                    max(1, int(TICKS_LOOKBACK_DAYS)), 30
+                )
+                if history_window_floor is not None:
+                    payload["history_window_floor"] = _format_time_explicit(
+                        history_window_floor.timestamp()
+                    )
+                payload.setdefault("warnings", []).append(
+                    "Tick history retrieval stopped at the configured lookback "
+                    "budget before reaching the requested start."
+                )
             last_quote = payload.get("last_quote")
             if isinstance(last_quote, dict) and price_point is not None:
                 spread_value = _finite_or_none(last_quote.get("spread"))

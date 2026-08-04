@@ -1184,7 +1184,7 @@ def _attach_tick_pagination(payload: Any, *, requested_limit: int) -> None:
     """Echo the requested limit and disclose whether the source cap was reached."""
     if not isinstance(payload, dict) or payload.get("error"):
         return
-    count = payload.get("count")
+    count = payload.get("tick_count", payload.get("count"))
     if not isinstance(count, int):
         return
     try:

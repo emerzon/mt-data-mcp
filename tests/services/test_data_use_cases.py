@@ -1344,6 +1344,19 @@ def test_run_data_fetch_ticks_echoes_limit_and_cap_signal():
     assert partial["requested_limit"] == 20
     assert partial["limit_reached"] is False
 
+    simplified = run_data_fetch_ticks(
+        DataFetchTicksRequest(symbol="EURUSD", limit=100, detail="standard"),
+        gateway=SimpleNamespace(ensure_connection=lambda: None),
+        fetch_ticks_impl=lambda **_kwargs: {
+            "success": True,
+            "count": 30,
+            "tick_count": 100,
+            "data": [],
+        },
+    )
+    assert simplified["requested_limit"] == 100
+    assert simplified["limit_reached"] is True
+
 
 def test_compact_tick_row_marks_locked_quote_spread_unavailable():
     row, spread_sample = _compact_tick_row(

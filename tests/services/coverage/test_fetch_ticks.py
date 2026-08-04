@@ -222,6 +222,31 @@ class TestFetchTicks(unittest.TestCase):
         self.assertEqual(result['count'], 5)
         self.assertEqual(mock_ticks.call_count, 2)
 
+    @patch(f'{_DS}.FETCH_RETRY_DELAY', 0)
+    @patch(f'{_DS}.FETCH_RETRY_ATTEMPTS', 1)
+    @patch(_TICKS_RANGE)
+    @patch(_CACHED_INFO, return_value=MagicMock())
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_GUARD, _mock_symbol_guard)
+    def test_explicit_range_uses_bounded_backward_pages(self, mock_ctz, mock_info, mock_ticks):
+        mock_ticks.return_value = _make_ticks(5)
+
+        result = fetch_ticks(
+            'EURUSD',
+            limit=5,
+            start='2020-01-01',
+            end='2026-01-01',
+            format='rows',
+        )
+
+        self.assertTrue(result.get('success'))
+        self.assertEqual(result['count'], 5)
+        self.assertTrue(result['history_window_truncated'])
+        self.assertEqual(mock_ticks.call_count, 1)
+        provider_from = mock_ticks.call_args.args[1]
+        provider_to = mock_ticks.call_args.args[2]
+        self.assertLessEqual((provider_to - provider_from).days, 1)
+
     @patch(_TICKS_RANGE)
     @patch(_CACHED_INFO, return_value=MagicMock())
     @patch(_RESOLVE_CTZ, return_value=None)
