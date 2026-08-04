@@ -68,7 +68,10 @@ class _AsyncTrainingStarted(Exception):
         super().__init__("async training started")
 
 
-from .forecast_registry import ForecastRegistry, get_forecast_method_availability_snapshot
+from .forecast_registry import (
+    ForecastRegistry,
+    get_forecast_method_availability_snapshot,
+)
 from .target_builder import build_target_series, resolve_alias_base
 
 _ENSEMBLE_BASE_METHODS = (

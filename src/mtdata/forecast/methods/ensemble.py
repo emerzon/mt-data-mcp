@@ -17,8 +17,11 @@ from ..ensemble_dispatch import (
 from ..ensemble_dispatch import (
     dispatch_callback_with_error as _dispatch_callback_with_error,
 )
+from ..forecast_registry import (
+    ForecastRegistry,
+    get_forecast_method_availability_snapshot,
+)
 from ..interface import ForecastCallContext, ForecastMethod, ForecastResult
-from ..forecast_registry import ForecastRegistry, get_forecast_method_availability_snapshot
 
 # Canonical type for component dispatch callables.  Every ensemble dispatch
 # route (engine-injected or standalone default) must conform to this
@@ -291,11 +294,13 @@ class EnsembleMethod(ForecastMethod):
 
         get_available_methods = kwargs.get("get_available_methods")
         if not callable(get_available_methods):
-            get_available_methods = lambda: tuple(
-                method
-                for method in ForecastRegistry.get_all_method_names()
-                if get_forecast_method_availability_snapshot().get(method, False)
-            )
+            def get_available_methods() -> tuple[str, ...]:
+                availability = get_forecast_method_availability_snapshot()
+                return tuple(
+                    method
+                    for method in ForecastRegistry.get_all_method_names()
+                    if availability.get(method, False)
+                )
 
         base_methods_in = params.get('methods')
         if isinstance(base_methods_in, str):

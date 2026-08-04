@@ -7,11 +7,11 @@ import numpy as np
 import pytest
 
 from mtdata.core.regime.methods.bocpd.core import (
+    _CALIBRATION_CACHE_TTL_SECONDS,
     _calibration_cache,
     _calibration_cache_get,
     _calibration_cache_key,
     _calibration_cache_put,
-    _CALIBRATION_CACHE_TTL_SECONDS,
     _walkforward_quantile_threshold_calibration,
 )
 

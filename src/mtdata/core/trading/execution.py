@@ -2157,7 +2157,6 @@ def _cancel_pending(
                 )
                 if result is None:
                     result_entry = {
-                        "success": True,
                         "ticket": order.ticket,
                         "error": "Failed to send cancel order",
                         "last_error": last_error,
