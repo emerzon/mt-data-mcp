@@ -1449,6 +1449,7 @@ def _execute_single_close(
         is_partial_fill = True
 
     res_dict: Dict[str, Any] = {
+        "success": True,
         "ticket": position.ticket,
         "retcode": result.retcode,
         "retcode_name": mt5.retcode_name(result.retcode),
@@ -2156,6 +2157,7 @@ def _cancel_pending(
                 )
                 if result is None:
                     result_entry = {
+                        "success": True,
                         "ticket": order.ticket,
                         "error": "Failed to send cancel order",
                         "last_error": last_error,

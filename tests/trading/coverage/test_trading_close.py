@@ -805,6 +805,7 @@ class TestClosePositions:
         mt5.order_send.return_value = _order_result()
         from mtdata.core.trading import _close_positions
         result = _close_positions(ticket=42)
+        assert result["success"] is True
         assert result["ticket"] == 42
         assert result["open_price"] == 1.1
         assert result["close_price"] == 1.1
