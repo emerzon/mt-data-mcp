@@ -1398,8 +1398,52 @@ def inspect_mt5_time_alignment(
         out["error"] = str(exc)
         return out
 
-    expected_current_bar_open_epoch = math.floor(now_utc_epoch / float(tf_secs)) * float(tf_secs)
-    expected_last_closed_bar_open_epoch = expected_current_bar_open_epoch - float(tf_secs)
+    server_offset_seconds = _configured_server_offset_seconds(now_utc_epoch)
+    shifted_now_epoch = now_utc_epoch + float(server_offset_seconds)
+    if tf_name == "W1":
+        shifted_now = datetime.fromtimestamp(shifted_now_epoch, tz=timezone.utc)
+        shifted_open = shifted_now.replace(
+            hour=0,
+            minute=0,
+            second=0,
+            microsecond=0,
+        ) - timedelta(days=shifted_now.weekday())
+        expected_current_bar_open_epoch = (
+            shifted_open.timestamp() - float(server_offset_seconds)
+        )
+        expected_last_closed_bar_open_epoch = (
+            expected_current_bar_open_epoch - 7 * 24 * 60 * 60
+        )
+    elif tf_name == "MN1":
+        shifted_now = datetime.fromtimestamp(shifted_now_epoch, tz=timezone.utc)
+        shifted_open = shifted_now.replace(
+            day=1,
+            hour=0,
+            minute=0,
+            second=0,
+            microsecond=0,
+        )
+        if shifted_open.month == 1:
+            previous_open = shifted_open.replace(
+                year=shifted_open.year - 1,
+                month=12,
+            )
+        else:
+            previous_open = shifted_open.replace(month=shifted_open.month - 1)
+        expected_current_bar_open_epoch = (
+            shifted_open.timestamp() - float(server_offset_seconds)
+        )
+        expected_last_closed_bar_open_epoch = (
+            previous_open.timestamp() - float(server_offset_seconds)
+        )
+    else:
+        expected_current_bar_open_epoch = (
+            math.floor(shifted_now_epoch / float(tf_secs)) * float(tf_secs)
+            - float(server_offset_seconds)
+        )
+        expected_last_closed_bar_open_epoch = (
+            expected_current_bar_open_epoch - float(tf_secs)
+        )
     current_bar_delta_seconds = float(current_bar_open_epoch - expected_current_bar_open_epoch)
     last_closed_bar_delta_seconds = float(last_closed_bar_open_epoch - expected_last_closed_bar_open_epoch)
 
@@ -1415,6 +1459,7 @@ def inspect_mt5_time_alignment(
             "expected_last_closed_bar_open_utc_epoch": expected_last_closed_bar_open_epoch,
             "expected_last_closed_bar_open_utc_time": format_epoch_utc(expected_last_closed_bar_open_epoch),
             "last_closed_bar_delta_seconds": last_closed_bar_delta_seconds,
+            "bar_boundary_server_utc_offset_seconds": server_offset_seconds,
         }
     )
 

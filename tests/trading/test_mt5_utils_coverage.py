@@ -798,6 +798,38 @@ class TestInspectMt5TimeAlignment:
         assert result["reason"] == "timestamp_in_future"
         assert "latest tick is 3600s in the future" in result["warning"]
 
+    def test_h4_boundary_uses_configured_server_offset(self, monkeypatch):
+        now = datetime(2026, 1, 5, 6, 30, tzinfo=timezone.utc).timestamp()
+        current_bar = datetime(2026, 1, 5, 6, 0, tzinfo=timezone.utc).timestamp()
+        monkeypatch.setattr(_mt5_mod, "ensure_mt5_connection_or_raise", lambda **kwargs: None)
+        monkeypatch.setattr(_mt5_mod, "_ensure_symbol_ready", lambda symbol: None)
+        monkeypatch.setattr(_mt5_mod.time, "time", lambda: now)
+        monkeypatch.setattr(
+            _mt5_mod,
+            "_configured_server_offset_seconds",
+            lambda _epoch: 2 * 60 * 60,
+        )
+        monkeypatch.setattr(
+            _mt5_mod.mt5,
+            "symbol_info_tick",
+            lambda symbol: MagicMock(time=now - 1.0),
+        )
+        monkeypatch.setattr(
+            _mt5_mod,
+            "_mt5_copy_rates_from_pos",
+            lambda symbol, timeframe, start_pos, count: [
+                {"time": current_bar - 8 * 60 * 60},
+                {"time": current_bar - 4 * 60 * 60},
+                {"time": current_bar},
+            ],
+        )
+
+        result = inspect_mt5_time_alignment("EURUSD", probe_timeframe="H4")
+
+        assert result["status"] == "ok"
+        assert result["current_bar_delta_seconds"] == 0.0
+        assert result["bar_boundary_server_utc_offset_seconds"] == 7200
+
     def test_reports_stale_data(self, monkeypatch):
         now = 1_700_000_045.0
         current_bar = float((int(now) // 60) * 60)
