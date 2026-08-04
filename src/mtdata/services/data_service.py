@@ -3015,15 +3015,40 @@ def fetch_ticks(  # noqa: C901
             spread_valid = bool(
                 bid is not None and ask is not None and float(ask) > float(bid)
             )
-            spread = float(ask) - float(bid) if spread_valid else None
-            mid = (float(bid) + float(ask)) / 2.0 if spread_valid else None
+            two_sided = bid is not None and ask is not None
+            spread = (
+                float(ask) - float(bid)
+                if two_sided and float(ask) >= float(bid)
+                else None
+            )
+            mid = (
+                (float(bid) + float(ask)) / 2.0
+                if two_sided and float(ask) >= float(bid)
+                else None
+            )
+            spread_quality = (
+                "two_sided"
+                if spread_valid
+                else "locked"
+                if two_sided and float(ask) == float(bid)
+                else "inverted"
+                if two_sided
+                else "one_sided"
+            )
             return {
                 "bid": bid,
                 "ask": ask,
                 "mid": mid,
                 "spread": spread,
                 "spread_valid": spread_valid,
-                "spread_basis": "quote_snapshot" if spread_valid else "unavailable",
+                "spread_quality": spread_quality,
+                "spread_basis": (
+                    "quote_snapshot"
+                    if spread_valid
+                    else "quote_snapshot_locked"
+                    if spread_quality == "locked"
+                    else "unavailable"
+                ),
             }
 
         def _compact_summary_from_ticks() -> Dict[str, Any]:

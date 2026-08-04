@@ -1065,9 +1065,18 @@ def _normalize_market_ticker_payload(
             "price_currency",
             "bid",
             "ask",
+            "mid",
             "tick_volume",
             "freshness",
+            "freshness_state",
+            "freshness_reason",
+            "data_stale",
+            "usable_for_live_trading",
             "market_status_reason",
+            "spread_valid",
+            "spread_quality",
+            "quote_source_state",
+            "quote_source_conflict",
         ]
         if not _is_empty_value(payload.get("spread")):
             compact_keys.append("spread")

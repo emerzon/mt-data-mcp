@@ -145,7 +145,10 @@ def _compact_market_ticker_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
         "warning",
         "quote_source",
         "quote_source_state",
+        "quote_source_conflict",
         "quote_refresh_attempted",
+        "spread_valid",
+        "spread_quality",
         "market_status_reason",
         "time",
         "time_epoch",
@@ -685,6 +688,16 @@ def market_ticker(  # noqa: C901
             mid = None
             spread_cost_per_lot = None
             pricing_basis = "quote_only"
+            spread_valid = bool(bid is not None and ask is not None and ask > bid)
+            spread_quality = (
+                "two_sided"
+                if spread_valid
+                else "locked"
+                if bid is not None and ask is not None and ask == bid
+                else "inverted"
+                if bid is not None and ask is not None and ask < bid
+                else "one_sided"
+            )
             if bid is not None and ask is not None and ask >= bid:
                 spread_abs = float(ask - bid)
                 mid = (ask + bid) / 2.0
@@ -732,6 +745,8 @@ def market_ticker(  # noqa: C901
                 "spread_pips": spread_pips,
                 "spread_pct": spread_pct,
                 "spread_cost_per_lot": spread_cost_per_lot,
+                "spread_valid": spread_valid,
+                "spread_quality": spread_quality,
                 "pricing_basis": pricing_basis,
                 "units": {
                     "bid": "absolute_price",
@@ -793,6 +808,22 @@ def market_ticker(  # noqa: C901
                     out["data_age"] = age_display
                 if out["data_stale"]:
                     out["warning"] = _market_ticker_stale_warning(out, tick_time)
+            if not spread_valid:
+                out["usable_for_live_trading"] = False
+                out["usable_for_live_trading_basis"] = (
+                    "quote_age_market_session_and_positive_spread"
+                )
+                quality_warning = (
+                    "Locked quote (bid equals ask) is not usable for live trading."
+                    if spread_quality == "locked"
+                    else "Quote is not a valid positive two-sided market."
+                )
+                existing_warning = out.get("warning")
+                out["warning"] = (
+                    f"{existing_warning} {quality_warning}"
+                    if existing_warning
+                    else quality_warning
+                )
             diagnostics = {
                 "source": out.get("quote_source", "mt5.symbol_info_tick"),
                 "cache_used": False,
@@ -880,7 +911,10 @@ def market_ticker(  # noqa: C901
                     "warning",
                     "quote_source",
                     "quote_source_state",
+                    "quote_source_conflict",
                     "quote_refresh_attempted",
+                    "spread_valid",
+                    "spread_quality",
                 ):
                     if out.get(key) is not None:
                         simple[key] = out.get(key)

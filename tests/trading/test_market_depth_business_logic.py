@@ -604,6 +604,69 @@ def test_market_ticker_prefers_stream_for_equal_timestamp_quote_conflict() -> No
     }
 
 
+def test_market_ticker_keeps_positive_cached_quote_over_locked_stream_conflict() -> None:
+    now = 1_700_000_100.0
+    cached_tick = SimpleNamespace(
+        bid=1.15304,
+        ask=1.15326,
+        time=now - 1.0,
+        time_msc=(now - 1.0) * 1000.0,
+    )
+    stream_tick = {
+        "bid": 1.15310,
+        "ask": 1.15310,
+        "time": now - 1.0,
+        "time_msc": (now - 1.0) * 1000.0,
+    }
+    with patch("mtdata.core.market_depth.mt5") as mt5, patch(
+        "mtdata.core.market_depth.time.time", return_value=now
+    ), patch("mtdata.core.market_depth._use_client_tz", return_value=False):
+        mt5.COPY_TICKS_ALL = 0
+        mt5.symbol_select.return_value = True
+        mt5.symbol_info.return_value = SimpleNamespace(
+            digits=5,
+            point=0.00001,
+            trade_tick_size=0.00001,
+            trade_tick_value=1.0,
+        )
+        mt5.symbol_info_tick.return_value = cached_tick
+        mt5.copy_ticks_range.return_value = [stream_tick]
+
+        out = _raw_market_ticker("EURUSD", detail="compact")
+
+    assert out["bid"] == 1.15304
+    assert out["ask"] == 1.15326
+    assert out["quote_source"] == "mt5.symbol_info_tick"
+    assert out["quote_source_conflict"]["selected_source"] == "mt5.symbol_info_tick"
+    assert out["spread_valid"] is True
+    assert out["spread_quality"] == "two_sided"
+
+
+def test_market_ticker_marks_locked_quote_unusable() -> None:
+    now = 1_700_000_100.0
+    tick = SimpleNamespace(bid=1.1, ask=1.1, last=1.1, time=now - 1.0)
+    with patch("mtdata.core.market_depth.mt5") as mt5, patch(
+        "mtdata.core.market_depth.time.time", return_value=now
+    ):
+        mt5.symbol_select.return_value = True
+        mt5.symbol_info.return_value = SimpleNamespace(
+            digits=5,
+            point=0.00001,
+            trade_tick_size=0.00001,
+            trade_tick_value=1.0,
+        )
+        mt5.symbol_info_tick.return_value = tick
+        mt5.copy_ticks_range.return_value = []
+
+        out = _raw_market_ticker("EURUSD", detail="compact")
+
+    assert out["spread"] == 0.0
+    assert out["spread_valid"] is False
+    assert out["spread_quality"] == "locked"
+    assert out["usable_for_live_trading"] is False
+    assert "Locked quote" in out["warning"]
+
+
 def test_market_ticker_compact_explains_unrefreshable_future_tick() -> None:
     now = 1_700_000_100.0
     future_tick = SimpleNamespace(

@@ -973,7 +973,7 @@ class TestFormatResultMinimal:
         )
 
         assert result["freshness"] == "closed weekend, tick 1h 36m ago"
-        assert "data_stale" not in result
+        assert result["data_stale"] is False
         assert "stale_after_seconds" not in result
         assert "market_status" not in result
         assert result["market_status_reason"] == "weekend"

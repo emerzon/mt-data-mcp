@@ -71,6 +71,23 @@ def _quote_pair(tick: Any) -> tuple[Optional[float], Optional[float]]:
     return values[0], values[1]
 
 
+def _quote_pair_quality(tick: Any) -> str:
+    bid, ask = _quote_pair(tick)
+    if bid is None or ask is None:
+        return "one_sided"
+    if ask < bid:
+        return "inverted"
+    if ask == bid:
+        return "locked"
+    return "two_sided"
+
+
+def _quote_pair_quality_rank(tick: Any) -> int:
+    return {"inverted": 0, "one_sided": 1, "locked": 2, "two_sided": 3}[
+        _quote_pair_quality(tick)
+    ]
+
+
 def resolve_quote_tick(
     gateway: Any,
     symbol: str,
@@ -114,17 +131,30 @@ def resolve_quote_tick(
     stream_live_ready = stream_freshness.get("usable_for_live_trading") is True
     same_epoch = raw_epoch is not None and abs(stream_epoch - raw_epoch) <= 0.001
     quote_conflict = same_epoch and _quote_pair(raw_tick) != _quote_pair(stream_tick)
+    use_stream_for_conflict = quote_conflict and (
+        _quote_pair_quality_rank(stream_tick) >= _quote_pair_quality_rank(raw_tick)
+    )
     use_stream = (
         raw_tick is None
-        or quote_conflict
+        or use_stream_for_conflict
         or (raw_epoch is not None and stream_epoch > raw_epoch + 0.001)
         or (not raw_live_ready and stream_live_ready)
     )
     if not use_stream:
         metadata["quote_source_state"] = (
-            "current" if raw_live_ready else "unverified_stale"
+            "reconciled_equal_timestamp_conflict"
+            if quote_conflict
+            else ("current" if raw_live_ready else "unverified_stale")
         )
         metadata["stream_tick_time_epoch"] = stream_epoch
+        if quote_conflict:
+            metadata["quote_source_conflict"] = {
+                "reason": "equal_timestamp_bid_ask_disagreement",
+                "time_epoch": stream_epoch,
+                "selected_source": "mt5.symbol_info_tick",
+                "symbol_info_tick": dict(zip(("bid", "ask"), _quote_pair(raw_tick))),
+                "stream_tick": dict(zip(("bid", "ask"), _quote_pair(stream_tick))),
+            }
         return raw_tick, metadata
 
     metadata.update(
