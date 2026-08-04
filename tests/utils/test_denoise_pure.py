@@ -98,7 +98,7 @@ class TestNormalizeDenoiseSec:
     def test_string_hp(self):
         out = normalize_denoise_spec({"method": "hp", "causality": "zero_phase"})
         assert out["method"] == "hp"
-        assert out["params"]["lamb"] == 1600.0
+        assert out["params"]["lamb"] == 100.0
 
     def test_string_butterworth(self):
         out = normalize_denoise_spec("butterworth")

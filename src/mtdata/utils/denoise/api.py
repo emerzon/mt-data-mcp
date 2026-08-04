@@ -88,7 +88,7 @@ _DENOISE_METHOD_DEFAULT_PARAMS: Dict[str, Dict[str, Any]] = {
     "median": {"window": 7},
     "lowpass_fft": {"cutoff_ratio": 0.1},
     "butterworth": {"cutoff": 0.1, "order": 4, "btype": "low", "padlen": None},
-    "hp": {"lamb": 1600.0},
+    "hp": {"lamb": 100.0},
     "savgol": {"window": 11, "polyorder": 2, "mode": "interp"},
     "tv": {"weight": "auto", "n_iter": 50, "tol": 1e-4},
     "kalman": {"process_var": "auto", "measurement_var": "auto", "initial_state": None, "initial_cov": None},
