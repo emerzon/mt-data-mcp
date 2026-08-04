@@ -1032,6 +1032,33 @@ class MT5Connection:
         with self._lock:
             if self.is_connected():
                 self._refresh_connection_identity()
+                configured_login = mt5_config.get_login()
+                connected_login = (
+                    self._connection_identity[0]
+                    if self._connection_identity is not None
+                    else None
+                )
+                if (
+                    configured_login is not None
+                    and (
+                        connected_login is None
+                        or int(connected_login) != int(configured_login)
+                    )
+                ):
+                    logger.error(
+                        "Connected MT5 account changed: configured login "
+                        f"{configured_login}; connected_login={connected_login}. "
+                        "Refusing to continue on a different account."
+                    )
+                    try:
+                        mt5.shutdown()
+                    except Exception:
+                        pass
+                    self.connected = False
+                    self._connection_identity = None
+                    clear_symbol_info_cache()
+                    clear_mt5_time_alignment_cache()
+                    return False
                 return True
             try:
                 if mt5_config.has_credentials():
