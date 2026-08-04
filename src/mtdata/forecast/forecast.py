@@ -62,6 +62,7 @@ def execute_forecast(
                 as_of=as_of,
                 start=start,
                 end=end,
+                denoise=denoise,
             )
             return raise_if_error_result(result)
 

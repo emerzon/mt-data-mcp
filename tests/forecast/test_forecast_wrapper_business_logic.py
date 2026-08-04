@@ -49,12 +49,26 @@ def test_forecast_validates_timeframe_and_seconds(monkeypatch):
 
 
 def test_forecast_routes_to_volatility_endpoint(monkeypatch):
+    captured = []
     monkeypatch.setattr(ff, "TIMEFRAME_MAP", {"H1": 1})
     monkeypatch.setattr(ff, "TIMEFRAME_SECONDS", {"H1": 3600})
-    monkeypatch.setattr(fv, "forecast_volatility", lambda **kwargs: {"volatility": True, "method": kwargs["method"]})
+    monkeypatch.setattr(
+        fv,
+        "forecast_volatility",
+        lambda **kwargs: captured.append(kwargs)
+        or {"volatility": True, "method": kwargs["method"]},
+    )
 
-    out = ff.forecast(symbol="EURUSD", timeframe="H1", quantity="volatility", method="theta")
+    denoise = {"method": "wavelet", "causality": "zero_phase"}
+    out = ff.forecast(
+        symbol="EURUSD",
+        timeframe="H1",
+        quantity="volatility",
+        method="theta",
+        denoise=denoise,
+    )
     assert out == {"volatility": True, "method": "theta"}
+    assert captured[-1]["denoise"] == denoise
 
     out = ff.forecast(symbol="EURUSD", timeframe="H1", quantity="price", method="vol_garch")
     assert out == {"volatility": True, "method": "vol_garch"}
