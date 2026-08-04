@@ -27,6 +27,37 @@ from mtdata.core.report_templates.basic import (
 )
 from mtdata.utils.coercion import safe_float as _safe_float
 
+
+def test_profile_report_uses_only_its_declared_timeframes(monkeypatch):
+    from mtdata.core.report_templates import common
+
+    report = {"sections": {}}
+    basic_calls = []
+    attach_calls = []
+    monkeypatch.setattr(
+        common,
+        "template_basic",
+        lambda *args, **kwargs: basic_calls.append((args, kwargs)) or report,
+    )
+    monkeypatch.setattr(
+        common,
+        "attach_report_timeframes",
+        lambda *args, **kwargs: attach_calls.append((args, kwargs)),
+    )
+
+    result = common.build_report_with_timeframes(
+        "EURUSD",
+        12,
+        None,
+        {"timeframe": "H4"},
+        default_extra=["H1", "H4", "D1", "W1"],
+        default_pivots=["D1", "W1"],
+    )
+
+    assert result is report
+    assert basic_calls[0][1]["include_default_timeframes"] is False
+    assert attach_calls[0][1]["default_extra"] == ["H1", "H4", "D1", "W1"]
+
 # ---------------------------------------------------------------------------
 # Synthetic candle helpers
 # ---------------------------------------------------------------------------

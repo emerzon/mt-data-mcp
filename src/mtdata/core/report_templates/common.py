@@ -14,7 +14,13 @@ def build_report_with_timeframes(
     default_extra: List[str],
     default_pivots: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
-    base = template_basic(symbol, horizon, denoise, params)
+    base = template_basic(
+        symbol,
+        horizon,
+        denoise,
+        params,
+        include_default_timeframes=False,
+    )
     attach_report_timeframes(base, symbol, denoise, params, default_extra=default_extra, default_pivots=default_pivots)
     return base
 
@@ -29,7 +35,13 @@ def build_report_with_market(
     default_pivots: Optional[List[str]] = None,
     snapshot: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
-    base = template_basic(symbol, horizon, denoise, params)
+    base = template_basic(
+        symbol,
+        horizon,
+        denoise,
+        params,
+        include_default_timeframes=False,
+    )
     attach_market_and_timeframes(
         base, symbol, denoise, params,
         default_extra=default_extra, default_pivots=default_pivots, snapshot=snapshot,

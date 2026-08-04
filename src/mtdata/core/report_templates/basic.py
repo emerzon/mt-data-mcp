@@ -370,6 +370,8 @@ def template_basic(  # noqa: C901
     horizon: int,
     denoise: Optional[DenoiseSpec],
     params: Optional[Dict[str, Any]],
+    *,
+    include_default_timeframes: bool = True,
 ) -> Dict[str, Any]:
     p = dict(params or {})
     tf = str(p.get('timeframe', 'H1'))
@@ -456,8 +458,12 @@ def template_basic(  # noqa: C901
             report['sections']['context'] = attach_candle_freshness_diagnostics(ctx_obj, ctx)
 
     pivot_enabled = report_section_enabled(p, 'pivot')
-    contexts_multi_enabled = report_section_enabled(p, 'contexts_multi')
-    pivot_multi_enabled = report_section_enabled(p, 'pivot_multi')
+    contexts_multi_enabled = include_default_timeframes and report_section_enabled(
+        p, 'contexts_multi'
+    )
+    pivot_multi_enabled = include_default_timeframes and report_section_enabled(
+        p, 'pivot_multi'
+    )
 
     # Pivots use the current completed source bar and cannot honor a report
     # window. Keep bounded reports temporally coherent by omitting them.
