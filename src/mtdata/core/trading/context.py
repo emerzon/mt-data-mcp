@@ -200,7 +200,7 @@ def _build_trade_ready(
         "execution_preconditions_met": not deduped_blockers,
         "any_blockers": bool(deduped_blockers),
         "blockers": deduped_blockers,
-        "margin_sufficient_for_min_lot": margin_sufficient,
+        "margin_available_positive": margin_sufficient,
         "readiness_scope": "connectivity_account_quote_and_symbol_not_portfolio_risk_approval",
         "portfolio_risk_assessed": False,
     }

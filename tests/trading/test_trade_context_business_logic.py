@@ -36,6 +36,8 @@ def test_trade_ready_does_not_claim_portfolio_risk_approval() -> None:
     assert readiness["portfolio_risk_assessed"] is False
     assert readiness["margin_level"] == 120.48
     assert readiness["margin_utilization_pct"] == 83.0
+    assert readiness["margin_available_positive"] is True
+    assert "margin_sufficient_for_min_lot" not in readiness
     assert "not_portfolio_risk_approval" in readiness["readiness_scope"]
 
 
