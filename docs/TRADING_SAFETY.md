@@ -176,6 +176,12 @@ guarantee a reduction, so use `trade_close` with a position ticket instead.
 
 See [ENV_VARS.md § Trade Guardrails](ENV_VARS.md#trade-guardrails) for every variable, defaults, formats, and a ready-to-copy `.env` block. A dry run returns a `guardrails_preview` so you can confirm which rules would fire before going live.
 
+Live market and pending placements are serialized within one mtdata process so
+the portfolio snapshot, guardrail decision, and broker submission are atomic
+against concurrent tool calls. Separate mtdata processes connected to the same
+account do not share that lock; use a single live-trade executor per MT5 account
+when exposure or wallet-risk caps must be enforced across clients.
+
 ---
 
 ## Pre-trade validation & broker behavior

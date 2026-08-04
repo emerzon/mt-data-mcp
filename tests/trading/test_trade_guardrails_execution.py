@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import copy
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -11,7 +13,11 @@ from mtdata.core.trading.execution import _modify_pending_order, _modify_positio
 from mtdata.core.trading.gateway import (
     create_trading_gateway as create_real_trading_gateway,
 )
-from mtdata.core.trading.orders import _evaluate_live_trade_guardrails
+from mtdata.core.trading.orders import (
+    _TRADE_DECISION_LOCK,
+    _evaluate_live_trade_guardrails,
+    _place_market_order,
+)
 
 
 @pytest.fixture
@@ -154,6 +160,32 @@ def test_trade_guardrails_block_failed_pending_order_snapshot(
     assert result["guardrail_blocked"] is True
     assert result["error_code"] == "orders_snapshot_unavailable"
     assert result["guardrail_rule"] == "snapshot_integrity"
+
+
+def test_market_order_decision_is_serialized_across_threads():
+    entered_decision = threading.Event()
+
+    def _symbol_context(*_args, **_kwargs):
+        entered_decision.set()
+        return None, {"error": "stop after lock assertion"}
+
+    with (
+        patch(
+            "mtdata.core.trading.orders._prepare_order_gateway",
+            return_value=(MagicMock(), None),
+        ),
+        patch(
+            "mtdata.core.trading.orders._prepare_order_symbol_context",
+            side_effect=_symbol_context,
+        ),
+        ThreadPoolExecutor(max_workers=1) as executor,
+    ):
+        with _TRADE_DECISION_LOCK:
+            future = executor.submit(_place_market_order, "EURUSD", 0.6, "BUY")
+            assert entered_decision.wait(timeout=0.1) is False
+
+        assert future.result(timeout=2.0)["error"] == "stop after lock assertion"
+        assert entered_decision.is_set()
 
 
 def test_modify_pending_order_allows_tighter_stop_loss(
