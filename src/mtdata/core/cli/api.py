@@ -371,18 +371,6 @@ def _apply_global_cli_overrides(args: Any, argv: List[str]) -> Any:
     return args
 
 
-def _argv_param_present_after_command(
-    argv: List[str], command: str, param_name: str
-) -> bool:
-    flags = (
-        f"--{param_name.replace('_', '-')}",
-        f"--{param_name}",
-    )
-    return any(
-        _argv_option_present_after_command(argv, command, flag) for flag in flags
-    )
-
-
 def _literal_choices_for_cli_param(
     param: Dict[str, Any],
     *,
@@ -402,58 +390,6 @@ def _literal_choices_for_cli_param(
         return None
     choices = [str(value) for value in get_args(base_type) if value is not None]
     return choices or None
-
-
-def _default_cli_compact_choice(
-    choices: List[str],
-) -> Optional[str]:
-    by_lower = {
-        str(choice).strip().lower(): str(choice)
-        for choice in choices
-        if str(choice).strip()
-    }
-    if "full" not in by_lower:
-        return None
-    if "compact" in by_lower:
-        return by_lower["compact"]
-    if "summary" in by_lower:
-        return by_lower["summary"]
-    return None
-
-
-def _apply_cli_output_mode_defaults(
-    args: Any, argv: List[str], functions: Dict[str, ToolInfo]
-) -> Any:
-    command = getattr(args, "command", None)
-    if not isinstance(command, str) or not command:
-        return args
-
-    tool = functions.get(command)
-    if not isinstance(tool, dict):
-        return args
-
-    func = tool.get("func")
-    if func is None:
-        return args
-
-    func_info = tool.setdefault("_cli_func_info", get_function_info(func))
-    _apply_schema_overrides(tool, func_info)
-    for param in func_info.get("params") or []:
-        if not isinstance(param, dict):
-            continue
-        param_name = str(param.get("name") or "").strip()
-        if param_name != "detail":
-            continue
-        if _argv_param_present_after_command(argv, command, param_name):
-            continue
-        choices = _literal_choices_for_cli_param(param, cmd_name=command)
-        if not choices:
-            continue
-        selected = _default_cli_compact_choice(choices)
-        if selected is None:
-            continue
-        setattr(args, param_name, selected)
-    return args
 
 
 def _normalize_console_text(text: str) -> str:
@@ -1897,7 +1833,6 @@ def main():
     # Parse arguments
     args = parser.parse_args(argv)
     args = _apply_global_cli_overrides(args, argv)
-    args = _apply_cli_output_mode_defaults(args, argv, functions)
 
     if not args.command:
         parser.print_help()
