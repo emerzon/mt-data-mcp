@@ -524,7 +524,9 @@ def _evaluate_barrier_candidate(
     ev_gross = float(np.mean(payoffs.gross))
     selected_payoffs = payoffs.net if context.has_trading_costs else payoffs.gross
     ev_val = float(np.mean(selected_payoffs))
-    ev_resolved = float(np.mean(np.where(payoffs.active, selected_payoffs, 0.0)))
+    ev_resolved_contribution = float(
+        np.mean(np.where(payoffs.active, selected_payoffs, 0.0))
+    )
     edge = effective_prob_win - effective_prob_loss
     win_lo, win_hi = _binomial_wilson_95(effective_prob_win, int(sims_total))
     loss_lo, loss_hi = _binomial_wilson_95(effective_prob_loss, int(sims_total))
@@ -624,7 +626,7 @@ def _evaluate_barrier_candidate(
         "prob_resolve": prob_resolve,
         "ev": ev_val,
         "ev_including_timeout": ev_val,
-        "ev_resolved": ev_resolved,
+        "ev_resolved_contribution": ev_resolved_contribution,
         "timeout_mtm_contribution": ev_unresolved_net,
         "ev_gross": ev_gross if context.has_trading_costs else None,
         "ev_net": ev_val if context.has_trading_costs else None,
@@ -866,7 +868,7 @@ _BARRIER_CONCISE_CANDIDATE_KEYS = (
     "edge_vs_breakeven",
     "ev",
     "ev_including_timeout",
-    "ev_resolved",
+    "ev_resolved_contribution",
     "timeout_mtm_contribution",
     "ev_unresolved",
     "ev_timeout_dominated",

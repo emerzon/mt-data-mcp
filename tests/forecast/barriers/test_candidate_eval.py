@@ -129,7 +129,7 @@ class TestUnresolvedTerminalPnl(unittest.TestCase):
         self.assertEqual(result["ev_including_timeout"], result["ev"])
         self.assertEqual(
             result["ev"],
-            result["ev_resolved"] + result["timeout_mtm_contribution"],
+            result["ev_resolved_contribution"] + result["timeout_mtm_contribution"],
         )
         self.assertTrue(result["zero_win_probability"])
         self.assertEqual(
@@ -164,7 +164,7 @@ class TestUnresolvedTerminalPnl(unittest.TestCase):
         self.assertFalse(is_invalid)
         self.assertEqual(result["prob_win"], 0.0)
         self.assertGreater(result["ev_including_timeout"], 0.0)
-        self.assertEqual(result["ev_resolved"], 0.0)
+        self.assertEqual(result["ev_resolved_contribution"], 0.0)
         self.assertGreater(result["timeout_mtm_contribution"], 0.0)
         self.assertTrue(result["ev_timeout_dominated"])
 
