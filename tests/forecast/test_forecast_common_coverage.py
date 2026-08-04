@@ -491,6 +491,9 @@ class TestNormalizeWeights:
     def test_wrong_size(self):
         assert _normalize_weights([1.0, 2.0], 3) is None
 
+    def test_extra_values_are_not_truncated(self):
+        assert _normalize_weights([1.0, 2.0, 3.0], 2) is None
+
     def test_all_zeros(self):
         assert _normalize_weights([0.0, 0.0, 0.0], 3) is None
 

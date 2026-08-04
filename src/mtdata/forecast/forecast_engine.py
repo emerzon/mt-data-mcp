@@ -68,7 +68,7 @@ class _AsyncTrainingStarted(Exception):
         super().__init__("async training started")
 
 
-from .forecast_registry import ForecastRegistry
+from .forecast_registry import ForecastRegistry, get_forecast_method_availability_snapshot
 from .target_builder import build_target_series, resolve_alias_base
 
 _ENSEMBLE_BASE_METHODS = (
@@ -235,7 +235,12 @@ def _prepare_ensemble_cv(
 
 # Supported forecast methods - dynamically fetch from registry
 def _get_available_methods():
-    return tuple(ForecastRegistry.get_all_method_names())
+    availability = get_forecast_method_availability_snapshot()
+    return tuple(
+        method
+        for method in ForecastRegistry.get_all_method_names()
+        if availability.get(method, False)
+    )
 
 
 
@@ -266,6 +271,21 @@ def _calculate_lookback_bars(method_l: str, horizon: int, lookback: Optional[int
     if lookback is not None and lookback > 0:
         return int(lookback) + 2
 
+    if method_l == 'ensemble':
+        p = dict(params or {})
+        mode = str(p.get('mode', 'average')).lower().strip()
+        if mode in ('bma', 'stacking'):
+            methods = p.get('methods')
+            if isinstance(methods, str):
+                method_count = len([item for item in methods.split(',') if item.strip()])
+            elif isinstance(methods, (list, tuple)):
+                method_count = len(methods)
+            else:
+                method_count = 3
+            cv_points = int(p.get('cv_points', max(6, method_count * 2)))
+            min_train = int(p.get('min_train_size', max(30, int(horizon) * 3)))
+            return max(100, min_train + int(horizon) + cv_points + 2)
+        return max(100, int(horizon) + 10)
     if method_l == 'seasonal_naive':
         return max(3 * seasonality, int(horizon) + seasonality + 2)
     elif method_l in ('theta', 'fourier_ols'):

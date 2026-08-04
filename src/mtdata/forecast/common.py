@@ -111,10 +111,10 @@ def _normalize_weights(weights: Any, size: int) -> Optional[np.ndarray]:
         return None
     vals: List[float] = []
     if isinstance(weights, (list, tuple)):
-        vals = [float(v) for v in list(weights)[:size]]
+        vals = [float(v) for v in weights]
     elif isinstance(weights, str):
         parts = [p.strip() for p in weights.split(",") if p.strip()]
-        vals = [float(p) for p in parts[:size]]
+        vals = [float(p) for p in parts]
     else:
         return None
     if len(vals) != size:

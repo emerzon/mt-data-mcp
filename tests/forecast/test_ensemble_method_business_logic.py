@@ -235,6 +235,56 @@ def test_ensemble_default_normalize_weights_reuses_shared_helper():
     assert em._normalize_weights_default is fe._normalize_weights
 
 
+@pytest.mark.parametrize("weights", ([0.25], [0.2, 0.3, 0.5]))
+def test_ensemble_rejects_weight_count_mismatch(weights):
+    method = em.EnsembleMethod()
+
+    with pytest.raises(ValueError, match="exactly 2"):
+        method.forecast(
+            pd.Series(np.linspace(1.0, 20.0, 20)),
+            horizon=2,
+            seasonality=1,
+            params={
+                "methods": ["naive", "theta"],
+                "mode": "average",
+                "weights": weights,
+            },
+            ensemble_dispatch_method=lambda *_args: np.array([1.0, 2.0]),
+            get_available_methods=lambda: ("naive", "theta"),
+        )
+
+
+def test_ensemble_rejects_unavailable_requested_components():
+    method = em.EnsembleMethod()
+
+    with pytest.raises(ValueError, match="sf_autoarima"):
+        method.forecast(
+            pd.Series(np.linspace(1.0, 20.0, 20)),
+            horizon=2,
+            seasonality=1,
+            params={"methods": ["naive", "sf_autoarima"]},
+            ensemble_dispatch_method=lambda *_args: np.array([1.0, 2.0]),
+            get_available_methods=lambda: ("naive",),
+        )
+
+
+def test_ensemble_discloses_adaptive_mode_downgrade():
+    method = em.EnsembleMethod()
+    out = method.forecast(
+        pd.Series(np.linspace(1.0, 20.0, 20)),
+        horizon=2,
+        seasonality=1,
+        params={"methods": ["naive", "theta"], "mode": "bma"},
+        ensemble_dispatch_method=lambda *_args: np.array([1.0, 2.0]),
+        prepare_ensemble_cv=lambda *_args: (np.empty((0, 2)), np.empty((0,))),
+        get_available_methods=lambda: ("naive", "theta"),
+    )
+
+    assert out.metadata["mode_used"] == "average"
+    assert out.metadata["mode_downgraded"] == "average"
+    assert "could not be fitted" in out.metadata["warnings"][0]
+
+
 def test_ensemble_params_applied_metadata():
     """Verify component-specific params are tracked in metadata."""
     series = pd.Series(np.linspace(1.0, 20.0, 20))

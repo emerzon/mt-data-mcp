@@ -18,7 +18,7 @@ from ..ensemble_dispatch import (
     dispatch_callback_with_error as _dispatch_callback_with_error,
 )
 from ..interface import ForecastCallContext, ForecastMethod, ForecastResult
-from ..forecast_registry import ForecastRegistry
+from ..forecast_registry import ForecastRegistry, get_forecast_method_availability_snapshot
 
 # Canonical type for component dispatch callables.  Every ensemble dispatch
 # route (engine-injected or standalone default) must conform to this
@@ -291,7 +291,11 @@ class EnsembleMethod(ForecastMethod):
 
         get_available_methods = kwargs.get("get_available_methods")
         if not callable(get_available_methods):
-            get_available_methods = ForecastRegistry.get_all_method_names
+            get_available_methods = lambda: tuple(
+                method
+                for method in ForecastRegistry.get_all_method_names()
+                if get_forecast_method_availability_snapshot().get(method, False)
+            )
 
         base_methods_in = params.get('methods')
         if isinstance(base_methods_in, str):
@@ -301,13 +305,21 @@ class EnsembleMethod(ForecastMethod):
         else:
             base_methods = ['naive', 'theta', 'fourier_ols']
 
-        available_methods = get_available_methods()
-        base_methods = [m for m in base_methods if m in available_methods and m != 'ensemble']
+        available_methods = set(get_available_methods())
+        unavailable_methods = [
+            method for method in base_methods
+            if method not in available_methods or method == 'ensemble'
+        ]
+        if unavailable_methods:
+            raise ValueError(
+                "Ensemble methods are unavailable or unknown: "
+                + ", ".join(unavailable_methods)
+            )
 
         seen: set[str] = set()
         base_methods = [m for m in base_methods if not (m in seen or seen.add(m))]
         if not base_methods:
-            base_methods = ['naive', 'theta']
+            raise ValueError("Ensemble requires at least one available component method")
 
         params_in = params.get('method_params') if isinstance(params.get('method_params'), dict) else {}
         params_map = {str(k).lower(): (v if isinstance(v, dict) else {}) for k, v in params_in.items()}
@@ -316,6 +328,11 @@ class EnsembleMethod(ForecastMethod):
         min_train = int(params.get('min_train_size', max(30, horizon * 3)))
         expose_components = bool(params.get('expose_components', True))
         weights_vec = normalize_weights(params.get('weights'), len(base_methods))
+        if params.get('weights') is not None and weights_vec is None:
+            raise ValueError(
+                f"Ensemble weights must contain exactly {len(base_methods)} "
+                "finite, non-negative values with a positive sum"
+            )
 
         ensemble_meta: Dict[str, Any] = {
             'mode_requested': mode,
@@ -483,6 +500,12 @@ class EnsembleMethod(ForecastMethod):
             'weights': [float(w) for w in (weights_vec.tolist() if isinstance(weights_vec, np.ndarray) else weights_vec)],
         })
         params_used['mode_used'] = effective_mode
+        if effective_mode != mode:
+            ensemble_meta['mode_downgraded'] = effective_mode
+            ensemble_meta['warnings'] = [
+                f"Requested ensemble mode '{mode}' could not be fitted; "
+                f"used '{effective_mode}' instead"
+            ]
         if rmse is not None:
             ensemble_meta['cv_rmse'] = [float(value) for value in rmse.tolist()]
         if effective_mode == 'stacking':
