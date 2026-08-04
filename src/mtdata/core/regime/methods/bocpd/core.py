@@ -524,20 +524,17 @@ def _filter_bocpd_change_points(
             if not np.isfinite(cp[idx]) or float(cp[idx]) < edge_thr:
                 rejects["edge_threshold"] += 1
                 continue
-            support_start = max(0, idx - conf + 1)
-            support_window = cp[support_start: idx + 1]
-            support_count = int(np.sum(np.asarray(support_window, dtype=float) >= relaxed))
-            need = int(min(conf, support_window.size))
-            if support_count < need:
-                rejects["edge_support"] += 1
-                continue
-        else:
-            fwd = cp[idx: min(n, idx + conf)]
-            support_count = int(np.sum(np.asarray(fwd, dtype=float) >= relaxed))
-            need = int(min(conf, fwd.size))
-            if support_count < need:
-                rejects["confirmation"] += 1
-                continue
+
+        support_start = max(0, idx - conf + 1)
+        support_window = cp[support_start: idx + 1]
+        support_count = int(
+            np.sum(np.asarray(support_window, dtype=float) >= relaxed)
+        )
+        need = int(min(conf, support_window.size))
+        if support_count < need:
+            reject_key = "edge_support" if in_edge_zone else "confirmation"
+            rejects[reject_key] += 1
+            continue
         accepted.append(int(idx))
 
     diagnostics = {

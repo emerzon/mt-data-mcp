@@ -551,6 +551,32 @@ def test_bocpd_reliability_distinguishes_stability_from_filtered_peak() -> None:
     assert filtered_score["decision"] == "all_candidates_filtered"
 
 
+def test_bocpd_confirmation_uses_only_candidate_and_prior_bars() -> None:
+    future_supported = np.full(30, 0.05, dtype=float)
+    future_supported[10:12] = 0.7
+    accepted, _ = _filter_bocpd_change_points(
+        future_supported,
+        0.6,
+        min_distance_bars=1,
+        min_regime_bars=5,
+        confirm_bars=2,
+        confirm_relaxed_mult=0.9,
+    )
+    assert 10 not in accepted
+
+    causally_supported = np.full(30, 0.05, dtype=float)
+    causally_supported[19:21] = 0.7
+    accepted, _ = _filter_bocpd_change_points(
+        causally_supported,
+        0.6,
+        min_distance_bars=1,
+        min_regime_bars=5,
+        confirm_bars=2,
+        confirm_relaxed_mult=0.9,
+    )
+    assert 20 in accepted
+
+
 def test_bocpd_walkforward_threshold_calibration_metadata_is_exposed() -> None:
     raw = _unwrap(regime_detect)
 
