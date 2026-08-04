@@ -1553,6 +1553,7 @@ def regime_detect(  # noqa: C901
                         step=cal_step,
                         max_windows=cal_max_windows,
                         bootstrap_runs=cal_boot,
+                        max_run_length=max_rl,
                     )
                 )
             bocpd_priors = _resolve_bocpd_priors(p, x)

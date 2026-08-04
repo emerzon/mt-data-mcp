@@ -68,6 +68,7 @@ def _calibration_cache_key(
     max_windows: int,
     bootstrap_runs: int,
     seed: int,
+    max_run_length: Optional[int] = None,
 ) -> str:
     """Build a stable cache key from series content hash + calibration params."""
     h = hashlib.sha256()
@@ -77,6 +78,7 @@ def _calibration_cache_key(
         (
             f"|{hazard_lambda}|{base_threshold:.6f}|{target_false_alarm_rate:.6f}"
             f"|{window}|{step}|{max_windows}|{bootstrap_runs}|{seed}"
+            f"|{max_run_length if max_run_length is not None else 'auto'}"
         ).encode()
     )
     return h.hexdigest()[:24]
@@ -389,8 +391,9 @@ def _walkforward_quantile_threshold_calibration(
     max_windows: int = 10,
     bootstrap_runs: int = 20,
     seed: int = 42,
+    max_run_length: Optional[int] = None,
 ) -> Tuple[float, Dict[str, Any]]:
-    """Calibrate CP threshold from null BOCPD maxima over walk-forward windows."""
+    """Calibrate CP threshold using dependence-preserving bootstrap windows."""
     x = np.asarray(series, dtype=float)
     x = x[np.isfinite(x)]
     diagnostics: Dict[str, Any] = {
@@ -411,12 +414,13 @@ def _walkforward_quantile_threshold_calibration(
     max_w = int(max(1, max_windows))
     n_boot = int(max(1, bootstrap_runs))
     seed_val = int(seed)
+    max_rl = int(max(1, max_run_length if max_run_length is not None else min(1000, x.size)))
 
     # Check calibration cache
     cache_key = _calibration_cache_key(
         x, int(hazard_lambda), float(base_threshold),
         diagnostics["target_false_alarm_rate"],
-        int(win), int(stp), int(max_w), int(n_boot), seed_val,
+        int(win), int(stp), int(max_w), int(n_boot), seed_val, max_rl,
     )
     cached = _calibration_cache_get(cache_key)
     if cached is not None:
@@ -436,17 +440,30 @@ def _walkforward_quantile_threshold_calibration(
 
         rng = np.random.default_rng(seed_val)
         null_maxima: List[float] = []
+        block_length = int(max(2, min(win, round(win ** (1.0 / 3.0)))))
         for s in starts:
             seg = x[int(s): int(s + win)]
             if seg.size < 30:
                 continue
-            rl = int(min(1000, seg.size))
             for _ in range(n_boot):
-                shuffled = rng.permutation(seg)
+                block_starts = rng.integers(
+                    0,
+                    seg.size,
+                    size=int(np.ceil(seg.size / block_length)),
+                )
+                sampled_blocks = [
+                    np.take(
+                        seg,
+                        np.arange(start, start + block_length),
+                        mode="wrap",
+                    )
+                    for start in block_starts
+                ]
+                shuffled = np.concatenate(sampled_blocks)[: seg.size]
                 r = bocpd_gaussian(
                     shuffled,
                     hazard_lambda=int(max(1, hazard_lambda)),
-                    max_run_length=rl,
+                    max_run_length=max_rl,
                 )
                 cp = np.asarray(r.get("cp_prob", []), dtype=float)
                 cp = cp[np.isfinite(cp)]
@@ -467,6 +484,10 @@ def _walkforward_quantile_threshold_calibration(
                 "bootstrap_runs": int(n_boot),
                 "null_scores_count": int(len(null_maxima)),
                 "null_max_quantile": float(null_q),
+                "null_model": "moving_block_bootstrap",
+                "block_length": int(block_length),
+                "max_run_length": int(max_rl),
+                "calibration_scope": "in_sample_resampled",
                 "quantile": float(q),
                 "threshold_delta": float(calibrated - float(base_threshold)),
             }

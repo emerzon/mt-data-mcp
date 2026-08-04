@@ -137,3 +137,25 @@ class TestWalkforwardCacheIntegration:
         )
         assert d["calibrated"] is False
         assert len(_calibration_cache) == 0
+
+    def test_calibration_preserves_detection_run_length_configuration(self):
+        series = np.sin(np.linspace(0.0, 12.0, 150))
+
+        with patch(
+            "mtdata.utils.bocpd.bocpd_gaussian",
+            return_value={"cp_prob": np.full(100, 0.2)},
+        ) as bocpd:
+            _, diagnostics = _walkforward_quantile_threshold_calibration(
+                series,
+                hazard_lambda=250,
+                base_threshold=0.5,
+                window=100,
+                max_windows=1,
+                bootstrap_runs=1,
+                max_run_length=77,
+            )
+
+        assert bocpd.call_args.kwargs["max_run_length"] == 77
+        assert diagnostics["max_run_length"] == 77
+        assert diagnostics["null_model"] == "moving_block_bootstrap"
+        assert diagnostics["calibration_scope"] == "in_sample_resampled"
