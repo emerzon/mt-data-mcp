@@ -97,7 +97,7 @@ def composite_fitness_score(
         if md is not None:
             try:
                 md_f = float(md)
-                if math.isfinite(md_f) and md_f > 0:
+                if math.isfinite(md_f) and md_f >= 0:
                     # Invert: 10% dd → 0.9, 50% dd → 0.5, 100% dd → 0
                     inv_dd = max(0.0, 1.0 - md_f)
                 else:

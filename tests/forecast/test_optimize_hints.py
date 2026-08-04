@@ -90,6 +90,20 @@ class TestCompositeFitnessScore:
         score = composite_fitness_score(metrics)
         assert 0.0 <= score <= 1.0
 
+    def test_zero_drawdown_scores_above_positive_drawdown(self):
+        weights = {"inverse_max_drawdown": 1.0}
+
+        zero_drawdown = composite_fitness_score(
+            {"max_drawdown": 0.0}, weights=weights
+        )
+        ten_percent_drawdown = composite_fitness_score(
+            {"max_drawdown": 0.1}, weights=weights
+        )
+
+        assert zero_drawdown == 1.0
+        assert ten_percent_drawdown == 0.9
+        assert zero_drawdown > ten_percent_drawdown
+
 
 class TestBuildComprehensiveSearchSpace:
     """Test search space builder."""
