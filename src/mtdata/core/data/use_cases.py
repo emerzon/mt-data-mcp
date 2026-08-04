@@ -883,7 +883,7 @@ def _candle_summary_statistics(rows: List[Any]) -> Dict[str, Any]:
     return stats
 
 
-def _public_candle_diagnostics(result: Dict[str, Any]) -> Dict[str, Any]:
+def _public_candle_diagnostics(result: Dict[str, Any]) -> Dict[str, Any]:  # noqa: C901
     meta = result.get("meta")
     diagnostics = meta.get("diagnostics") if isinstance(meta, dict) else None
     if not isinstance(diagnostics, dict):

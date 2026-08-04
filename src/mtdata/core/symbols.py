@@ -1316,7 +1316,7 @@ def _list_symbol_groups(
         return {"error": f"Error getting symbol groups: {str(e)}"}
 
 @mcp.tool()
-def symbols_describe(
+def symbols_describe(  # noqa: C901
     symbol: str,
     detail: DetailLiteral = "compact",
 ) -> Dict[str, Any]:
@@ -1337,7 +1337,7 @@ def symbols_describe(
     dict
         Symbol identifier plus requested detail fields
     """
-    def _run() -> Dict[str, Any]:
+    def _run() -> Dict[str, Any]:  # noqa: C901
         try:
             contract = resolve_output_contract(
                 detail=detail,

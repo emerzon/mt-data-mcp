@@ -514,7 +514,7 @@ def _pattern_bias(payload: Any) -> Optional[str]:
     return None
 
 
-def _snapshot_summary_payload(sections: Dict[str, Any]) -> Dict[str, Any]:
+def _snapshot_summary_payload(sections: Dict[str, Any]) -> Dict[str, Any]:  # noqa: C901
     quote = sections.get("quote")
     status = sections.get("status")
     levels = sections.get("levels")

@@ -1275,7 +1275,7 @@ def run_trade_place(  # noqa: C901
         dry_run_missing_protection: List[str] = []
         dry_run_protection_error: Optional[Dict[str, Any]] = None
 
-        def _dry_run_preview(
+        def _dry_run_preview(  # noqa: C901
             *,
             order_type: str,
             pending: bool,

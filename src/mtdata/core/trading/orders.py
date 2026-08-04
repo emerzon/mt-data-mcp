@@ -198,7 +198,7 @@ class _ProtectionOutcome(TypedDict, total=False):
     warnings: List[str]
 
 
-def _attach_post_fill_protection(
+def _attach_post_fill_protection(  # noqa: C901
     mt5: Any,
     *,
     symbol: str,

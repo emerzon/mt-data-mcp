@@ -70,14 +70,23 @@ from ..utils.mt5 import (
     get_symbol_info_cached,
     mt5,
     resolve_broker_symbol_name,
+)
+from ..utils.mt5 import (
     symbol_candle_price_basis as _symbol_candle_price_basis,
+)
+from ..utils.mt5 import (
     symbol_path as _symbol_path,
+)
+from ..utils.mt5 import (
     symbol_price_currency as _symbol_price_currency,
+)
+from ..utils.mt5 import (
     symbol_price_digits as _symbol_price_digits,
+)
+from ..utils.mt5 import (
     symbol_price_point as _symbol_price_point,
 )
 from ..utils.ohlcv import validate_and_clean_ohlcv_frame
-from ..utils.time import bar_close_epoch
 
 # Simplify entrypoint and helpers.
 from ..utils.simplify import (
@@ -92,6 +101,7 @@ from ..utils.time import (
     _format_time_explicit,
     _format_time_explicit_local,
     _resolve_client_tz,
+    bar_close_epoch,
     format_epoch_utc,
 )
 from ..utils.utils import (

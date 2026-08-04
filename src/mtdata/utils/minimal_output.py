@@ -114,7 +114,7 @@ def _compact_error_envelope(payload: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def _render_news_bucket_toon(
+def _render_news_bucket_toon(  # noqa: C901
     key: str,
     items: List[Any],
     *,
@@ -169,13 +169,18 @@ def _render_news_bucket_toon(
     for row in dict_rows:
         values: List[str] = []
 
-        def append_value(value: Any, *, quote: bool = False) -> None:
+        def append_value(
+            value: Any,
+            *,
+            quote: bool = False,
+            row_values: List[str] = values,
+        ) -> None:
             if _is_empty_value(value):
-                values.append("null")
+                row_values.append("null")
             elif quote:
-                values.append(_quote_always(value))
+                row_values.append(_quote_always(value))
             else:
-                values.append(_stringify_for_toon_value(value, None, delimiter))
+                row_values.append(_stringify_for_toon_value(value, None, delimiter))
 
         append_value(row.get("title"), quote=True)
 
@@ -282,9 +287,9 @@ def _resolve_tool_name(result: Any, tool_name: Optional[str]) -> str:
     return ""
 
 
-def _normalize_forecast_payload(
+def _normalize_forecast_payload(  # noqa: C901
     payload: Dict[str, Any], verbose: bool = True, *, format_digits: bool = True
-) -> Optional[Dict[str, Any]]:  # noqa: C901
+) -> Optional[Dict[str, Any]]:
     """Convert forecast payload into meta + tabular rows when possible."""
     try:
         # Detect time column
@@ -757,7 +762,7 @@ def _normalize_trade_table_payload(
     return normalized_rows
 
 
-def _normalize_trade_payload(
+def _normalize_trade_payload(  # noqa: C901
     payload: Dict[str, Any],
     *,
     verbose: bool,
@@ -956,7 +961,7 @@ def _normalize_trade_payload(
     return out
 
 
-def _normalize_market_ticker_payload(
+def _normalize_market_ticker_payload(  # noqa: C901
     payload: Dict[str, Any],
     *,
     verbose: bool,
@@ -1523,7 +1528,7 @@ def _normalize_analysis_legends_payload(
     return out
 
 
-def _normalize_regime_all_payload(
+def _normalize_regime_all_payload(  # noqa: C901
     payload: Dict[str, Any],
     *,
     verbose: bool,
@@ -1748,12 +1753,12 @@ def _normalize_forecast_methods_payload(
     return out
 
 
-def _normalize_library_models_payload(
+def _normalize_library_models_payload(  # noqa: C901
     payload: Dict[str, Any],
     *,
     verbose: bool,
     tool_name: str,
-) -> Optional[Dict[str, Any]]:  # noqa: C901
+) -> Optional[Dict[str, Any]]:
     if tool_name != "forecast_list_library_models" or verbose:
         return None
 
@@ -1896,7 +1901,7 @@ def _normalize_market_status_payload(
     return normalize_market_status_output(payload, detail="compact")
 
 
-def _normalize_support_resistance_payload(
+def _normalize_support_resistance_payload(  # noqa: C901
     payload: Dict[str, Any],
     *,
     verbose: bool,
@@ -2298,7 +2303,9 @@ def _normalize_timezone_display_meta(value: Any) -> Dict[str, Any]:
             out["client"] = client_out
 
     return out
-def format_result_minimal(
+
+
+def format_result_minimal(  # noqa: C901
     result: Any,
     verbose: bool = True,
     *,
