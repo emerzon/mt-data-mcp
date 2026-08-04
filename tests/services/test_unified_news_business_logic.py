@@ -31,6 +31,40 @@ def _disable_embeddings(monkeypatch) -> None:
     monkeypatch.setattr(svc, "get_news_embedding_service", lambda: FakeEmbeddingService())
 
 
+def test_score_then_dedupe_keeps_the_more_relevant_duplicate(monkeypatch) -> None:
+    context = svc.InstrumentContext(
+        symbol="AAPL",
+        asset_class="equity",
+        base_asset="AAPL",
+        quote_asset=None,
+        aliases=("Apple",),
+        terms=("AAPL", "Apple"),
+    )
+    generic = svc.NewsItem(
+        title="Apple update",
+        provider="first",
+        source="First",
+        url="https://example.test/same",
+    )
+    direct = svc.NewsItem(
+        title="Apple update",
+        provider="second",
+        source="Second",
+        kind="direct_symbol",
+        url="https://example.test/same",
+    )
+    monkeypatch.setattr(svc, "_score_importance", lambda item: 1.0)
+    monkeypatch.setattr(
+        svc,
+        "_score_relevance",
+        lambda item, _context: (5.0 if item.kind == "direct_symbol" else 1.0, []),
+    )
+
+    result = svc._score_then_dedupe_items([generic, direct], context)
+
+    assert result == [direct]
+
+
 def test_fetch_unified_news_without_symbol_returns_only_general_bucket(monkeypatch) -> None:
     def fake_general_news(news_type: str = "news", limit: int = 20, page: int = 1):
         return {
