@@ -78,6 +78,8 @@ class McpRuntimeSettings:
     message_path: str = "/message"
     allow_remote: bool = False
     auth_token: Optional[str] = None
+    allowed_hosts: tuple[str, ...] = ()
+    allowed_origins: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -112,6 +114,18 @@ def load_mcp_runtime_settings(
             "MCP_AUTH_TOKEN is required for non-loopback FASTMCP_HOST values "
             "(SSE/streamable-HTTP expose trading tools)."
         )
+    allowed_hosts = _get_csv_env("MCP_ALLOWED_HOSTS", ())
+    allowed_origins = _get_csv_env("MCP_ALLOWED_ORIGINS", ())
+    if transport != "stdio" and not is_loopback_host(host):
+        if host in {"0.0.0.0", "::"} and not allowed_hosts:
+            raise ValueError(
+                "MCP_ALLOWED_HOSTS must list the externally used hostnames or "
+                "IP addresses when FASTMCP_HOST is a wildcard bind."
+            )
+        if not allowed_hosts:
+            allowed_hosts = (f"{host}:*",)
+        if not allowed_origins and host not in {"0.0.0.0", "::"}:
+            allowed_origins = (f"http://{host}:*", f"https://{host}:*")
     return McpRuntimeSettings(
         transport=transport,
         host=host,
@@ -122,6 +136,8 @@ def load_mcp_runtime_settings(
         message_path=(os.getenv("FASTMCP_MESSAGE_PATH", "/message").strip() or "/message"),
         allow_remote=allow_remote,
         auth_token=auth_token,
+        allowed_hosts=allowed_hosts,
+        allowed_origins=allowed_origins,
     )
 
 
@@ -165,6 +181,14 @@ def apply_mcp_runtime_settings(mcp: Any, settings: McpRuntimeSettings) -> None:
         runtime.streamable_http_path = settings.mount_path
     runtime.sse_path = settings.sse_path
     runtime.message_path = settings.message_path
+    if settings.allow_remote and settings.transport != "stdio":
+        from mcp.server.transport_security import TransportSecuritySettings
+
+        runtime.transport_security = TransportSecuritySettings(
+            enable_dns_rebinding_protection=True,
+            allowed_hosts=list(settings.allowed_hosts),
+            allowed_origins=list(settings.allowed_origins),
+        )
     if settings.auth_token and settings.transport != "stdio":
         _install_mcp_bearer_auth(mcp, settings.auth_token)
 

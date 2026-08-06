@@ -308,6 +308,8 @@ After editable install, these entry points are available:
 | `MCP_TRANSPORT` | `sse` | Transport mode: `sse`, `stdio`, `streamable-http` |
 | `FASTMCP_HOST` | `127.0.0.1` | Bind address |
 | `FASTMCP_ALLOW_REMOTE` | `0` | Set to `1` to allow non-loopback binds such as `0.0.0.0` |
+| `MCP_ALLOWED_HOSTS` | — | External host patterns; required when using a wildcard remote bind |
+| `MCP_ALLOWED_ORIGINS` | — | Allowed HTTP Origin patterns for remote MCP clients |
 | `FASTMCP_PORT` | `8000` | Listen port |
 | `FASTMCP_MOUNT_PATH` | `/` | SSE base mount path or streamable-HTTP endpoint path |
 | `FASTMCP_SSE_PATH` | `/sse` | SSE event stream path |

@@ -91,6 +91,39 @@ class TestMcpRuntimeSettings:
         assert settings.transport == "stdio"
         assert settings.host == "0.0.0.0"
 
+    def test_wildcard_remote_bind_requires_allowed_hosts(self, monkeypatch):
+        from mtdata.bootstrap.runtime import load_mcp_runtime_settings
+
+        monkeypatch.setenv("FASTMCP_HOST", "0.0.0.0")
+        monkeypatch.setenv("FASTMCP_ALLOW_REMOTE", "1")
+        monkeypatch.setenv("MCP_AUTH_TOKEN", "remote-secret")
+        monkeypatch.delenv("MCP_ALLOWED_HOSTS", raising=False)
+
+        with pytest.raises(ValueError, match="MCP_ALLOWED_HOSTS"):
+            load_mcp_runtime_settings()
+
+    def test_remote_transport_security_uses_operator_allowlists(self, monkeypatch):
+        from mtdata.bootstrap.runtime import (
+            apply_mcp_runtime_settings,
+            load_mcp_runtime_settings,
+        )
+
+        monkeypatch.setenv("FASTMCP_HOST", "0.0.0.0")
+        monkeypatch.setenv("FASTMCP_ALLOW_REMOTE", "1")
+        monkeypatch.setenv("MCP_AUTH_TOKEN", "remote-secret")
+        monkeypatch.setenv("MCP_ALLOWED_HOSTS", "mt5.example.test:*,192.0.2.10:*")
+        monkeypatch.setenv("MCP_ALLOWED_ORIGINS", "https://client.example.test")
+        settings = load_mcp_runtime_settings()
+        mcp = MagicMock()
+        mcp.settings = MagicMock()
+
+        apply_mcp_runtime_settings(mcp, settings)
+
+        security = mcp.settings.transport_security
+        assert security.enable_dns_rebinding_protection is True
+        assert security.allowed_hosts == ["mt5.example.test:*", "192.0.2.10:*"]
+        assert security.allowed_origins == ["https://client.example.test"]
+
     def test_apply_to_mcp_settings(self):
         from mtdata.bootstrap.runtime import (
             McpRuntimeSettings,
@@ -1456,6 +1489,27 @@ class TestMainEntryPoints:
         main()
         self.mock_joblib_cpu_cache_warmup.assert_called_once_with()
         mock_mcp.run.assert_called_once()
+
+    @patch("mtdata.core.server._run_prefixed_sse")
+    @patch("mtdata.core.server.bootstrap_tools")
+    @patch("mtdata.core.server.mcp")
+    def test_main_mounts_prefixed_sse_app(
+        self,
+        mock_mcp,
+        mock_bootstrap,
+        mock_run_prefixed_sse,
+    ):
+        from mtdata.bootstrap.runtime import McpRuntimeSettings
+        from mtdata.core.server import main
+
+        runtime = McpRuntimeSettings(transport="sse", mount_path="/mtdata")
+        mock_mcp.settings = MagicMock()
+        mock_mcp.run = MagicMock()
+
+        main(runtime_settings=runtime)
+
+        mock_run_prefixed_sse.assert_called_once_with(runtime)
+        mock_mcp.run.assert_not_called()
 
     @patch("mtdata.core.server.main")
     def test_main_stdio_forces_transport(self, mock_main, monkeypatch):

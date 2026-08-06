@@ -79,6 +79,8 @@ Control how the MCP server binds and exposes endpoints.
 | `FASTMCP_PORT` | `8000` | Listen port |
 | `FASTMCP_ALLOW_REMOTE` | `false` | Set to `1` to allow non-loopback binds (e.g. `0.0.0.0`) |
 | `MCP_AUTH_TOKEN` | — | Bearer / API-key token for SSE and streamable-HTTP. **Required** when binding to a non-loopback address. Optional on loopback; when set, clients must send `Authorization: Bearer <token>` or `X-API-Key: <token>`. Not used for `stdio`. |
+| `MCP_ALLOWED_HOSTS` | — | Comma-separated externally used host patterns (for example `mt5.example.com:*`). Required for wildcard remote binds such as `0.0.0.0`. |
+| `MCP_ALLOWED_ORIGINS` | — | Comma-separated allowed HTTP Origin patterns for remote MCP clients. |
 | `FASTMCP_LOG_LEVEL` | `INFO` | Logging level |
 | `FASTMCP_MOUNT_PATH` | `/` | SSE base mount path or streamable-HTTP endpoint path |
 | `FASTMCP_SSE_PATH` | `/sse` | SSE event-stream path |

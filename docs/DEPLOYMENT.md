@@ -49,6 +49,8 @@ MCP_TRANSPORT=sse
 FASTMCP_HOST=127.0.0.1             # loopback only by default
 FASTMCP_PORT=8000
 MCP_AUTH_TOKEN=change-me           # required for non-loopback binds; recommended always
+MCP_ALLOWED_HOSTS=mt5.example.com:* # required with a wildcard bind
+MCP_ALLOWED_ORIGINS=https://client.example.com:*
 
 # Web API (only if you run mtdata-webapi)
 WEBAPI_HOST=127.0.0.1

@@ -17,6 +17,23 @@ from ..utils.mt5 import mt5_connection
 from ._mcp_instance import mcp
 
 
+def _run_prefixed_sse(runtime: McpRuntimeSettings) -> None:
+    """Mount the SSE app so advertised and routed message URLs agree."""
+    import uvicorn
+    from starlette.applications import Starlette
+    from starlette.routing import Mount
+
+    prefix = "/" + runtime.mount_path.strip("/")
+    inner = mcp.sse_app(mount_path=prefix)
+    app = Starlette(routes=[Mount(prefix, app=inner)])
+    uvicorn.run(
+        app,
+        host=runtime.host,
+        port=runtime.port,
+        log_level=runtime.log_level.lower(),
+    )
+
+
 @atexit.register
 def _disconnect_mt5():
     mt5_connection.disconnect()
@@ -84,6 +101,9 @@ def main(
 
     run_fn = getattr(mcp, 'run', None)
     if run_fn is not None:
+        if transport_name == "sse" and mount_path:
+            _run_prefixed_sse(runtime)
+            return
         transport_literal = cast(Literal['stdio', 'sse', 'streamable-http'], transport_name)
         run_fn(transport=transport_literal, mount_path=mount_path if transport_name == "sse" else None)
 
