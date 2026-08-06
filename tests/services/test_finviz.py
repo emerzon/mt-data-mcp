@@ -1809,6 +1809,26 @@ class TestFinvizTools:
         assert result["data_delayed"] is True
         assert result["price_source"] == "finviz_delayed"
 
+    def test_finviz_earnings_yearless_dates_follow_period_across_new_year(self):
+        from datetime import date
+
+        from mtdata.core.finviz import _normalize_finviz_earnings_rows
+
+        next_week = _normalize_finviz_earnings_rows(
+            [{"Earnings": "Jan 02/a"}],
+            period_key="next-week",
+            reference_date=date(2026, 12, 21),
+        )
+        previous_week = _normalize_finviz_earnings_rows(
+            [{"Earnings": "Dec 30/b"}],
+            period_key="previous-week",
+            reference_date=date(2027, 1, 4),
+        )
+
+        assert next_week[0]["earnings_date"] == "2027-01-02"
+        assert previous_week[0]["earnings_date"] == "2026-12-30"
+        assert next_week[0]["earnings_date_year_inferred"] is True
+
     @patch("mtdata.core.finviz.get_earnings_calendar")
     def test_finviz_earnings_rejects_invalid_detail(self, mock_get_earnings):
         from mtdata.core.finviz import finviz_earnings

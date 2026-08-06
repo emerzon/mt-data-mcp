@@ -2016,10 +2016,40 @@ def _normalize_finviz_output_rows(rows: Any) -> Any:
     return [_normalize_finviz_output_row(row) for row in rows]
 
 
-def _normalize_finviz_earnings_rows(rows: Any) -> List[Any]:
+def _finviz_earnings_period_window(
+    period_key: str, reference_date: Any
+) -> tuple[Any, Any]:
+    week_start = reference_date - timedelta(days=reference_date.weekday())
+    if period_key == "next-week":
+        start = week_start + timedelta(days=7)
+        return start, start + timedelta(days=6)
+    if period_key == "previous-week":
+        start = week_start - timedelta(days=7)
+        return start, start + timedelta(days=6)
+    if period_key == "this-month":
+        start = reference_date.replace(day=1)
+        next_month = (
+            start.replace(year=start.year + 1, month=1)
+            if start.month == 12
+            else start.replace(month=start.month + 1)
+        )
+        return start, next_month - timedelta(days=1)
+    return week_start, week_start + timedelta(days=6)
+
+
+def _normalize_finviz_earnings_rows(
+    rows: Any,
+    *,
+    period_key: str = "this-week",
+    reference_date: Any = None,
+) -> List[Any]:
     normalized = _normalize_finviz_output_rows(rows)
     if not isinstance(normalized, list):
         return []
+    reference = reference_date or datetime.now(timezone.utc).astimezone(
+        ZoneInfo("America/New_York")
+    ).date()
+    period_window = _finviz_earnings_period_window(period_key, reference)
     for row in normalized:
         if not isinstance(row, dict):
             continue
@@ -2030,9 +2060,16 @@ def _normalize_finviz_earnings_rows(rows: Any) -> List[Any]:
             if earnings_text.endswith(suffix):
                 row["earnings_timing"] = timing
                 break
-        earnings_date = _finviz_earnings_date_from_token(row.get("earnings"))
+        earnings_date = _finviz_earnings_date_from_token(
+            row.get("earnings"),
+            reference_date=reference,
+            period_window=period_window,
+        )
         if earnings_date:
             row["earnings_date"] = earnings_date
+            date_part = str(row.get("earnings") or "").split("/", 1)[0].strip()
+            if len(date_part) < 10 or date_part[4:5] != "-":
+                row["earnings_date_year_inferred"] = True
         if "market_cap" not in row:
             continue
         market_cap_source = row.get("market_cap")
@@ -2048,7 +2085,12 @@ def _normalize_finviz_earnings_rows(rows: Any) -> List[Any]:
     return normalized
 
 
-def _finviz_earnings_date_from_token(value: Any) -> Optional[str]:
+def _finviz_earnings_date_from_token(
+    value: Any,
+    *,
+    reference_date: Any = None,
+    period_window: Optional[tuple[Any, Any]] = None,
+) -> Optional[str]:
     if value in (None, ""):
         return None
     token = str(value).strip()
@@ -2063,13 +2105,23 @@ def _finviz_earnings_date_from_token(value: Any) -> Optional[str]:
         except ValueError:
             continue
         return parsed.date().isoformat()
-    reference_year = datetime.now(timezone.utc).year
-    for fmt in ("%b %d %Y", "%B %d %Y"):
-        try:
-            parsed = datetime.strptime(f"{date_part} {reference_year}", fmt)
-        except ValueError:
-            continue
-        return parsed.date().isoformat()
+    reference = reference_date or datetime.now(timezone.utc).date()
+    candidates = []
+    for year in (reference.year - 1, reference.year, reference.year + 1):
+        for fmt in ("%b %d %Y", "%B %d %Y"):
+            try:
+                parsed = datetime.strptime(f"{date_part} {year}", fmt).date()
+            except ValueError:
+                continue
+            candidates.append(parsed)
+            break
+    if period_window is not None:
+        start, end = period_window
+        within = [candidate for candidate in candidates if start <= candidate <= end]
+        if within:
+            return min(within, key=lambda candidate: abs(candidate - reference)).isoformat()
+    if candidates:
+        return min(candidates, key=lambda candidate: abs(candidate - reference)).isoformat()
     return None
 
 
@@ -3856,7 +3908,14 @@ def finviz_earnings(
         items = result.get("earnings")
         if not isinstance(items, list):
             items = []
-        normalized_items = _normalize_finviz_earnings_rows(items)
+        reference_date = datetime.now(timezone.utc).astimezone(
+            ZoneInfo("America/New_York")
+        ).date()
+        normalized_items = _normalize_finviz_earnings_rows(
+            items,
+            period_key=period_key,
+            reference_date=reference_date,
+        )
         detail_mode = normalize_output_verbosity_detail(detail, default="compact")
         output_items = (
             normalized_items
@@ -3878,6 +3937,8 @@ def finviz_earnings(
             "pages": result.get("pages"),
             "has_more": bool(result.get("has_more")),
             "truncated": bool(result.get("truncated")),
+            "calendar_reference_date": reference_date.isoformat(),
+            "calendar_timezone": "America/New_York",
         }
         if any(
             isinstance(item, dict) and item.get("data_delayed") is True
