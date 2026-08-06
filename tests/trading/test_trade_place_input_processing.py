@@ -659,6 +659,7 @@ def test_trade_place_require_sl_tp_flags_unverified_market_fill() -> None:
         )
     mock_close.assert_called_once_with(
         ticket=456,
+        volume=0.03,
         comment="AUTO-CLOSE: TP/SL protection unresolved",
         deviation=20,
     )
@@ -681,7 +682,7 @@ def test_trade_place_treats_unknown_protection_status_as_unverified() -> None:
         },
     ), patch(
         "mtdata.core.trading._close_positions",
-        return_value={"closed_count": 1},
+        return_value={"success": True, "closed_count": 1},
     ) as mock_close:
         out = trade_place(
             symbol="BTCUSD",
@@ -739,7 +740,7 @@ def test_trade_place_defaults_to_auto_closing_unprotected_market_fill() -> None:
         },
     ), patch(
         "mtdata.core.trading._close_positions",
-        return_value={"closed_count": 1},
+        return_value={"success": True, "closed_count": 1},
     ) as mock_close:
         out = trade_place(
             symbol="BTCUSD",

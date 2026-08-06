@@ -336,7 +336,8 @@ def test_run_trade_place_dry_run_returns_preview_without_execution():
     assert result["actionability"] == "preview_only"
     assert "validation_not_performed" not in result
     assert "protection_level_preview" in result["preview_checks_performed"]
-    assert "margin_estimate" in result["preview_checks_performed"]
+    assert "margin_estimate" not in result["preview_checks_performed"]
+    assert "margin_estimate" in result["checks_not_performed"]
     assert "broker_acceptance" in result["broker_validation_not_performed"]
     assert result["requested_sl"] == 1.08
     assert result["requested_tp"] == 1.12

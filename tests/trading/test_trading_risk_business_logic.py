@@ -1257,7 +1257,7 @@ def test_trade_risk_analyze_measures_trailed_stop_from_current_mark() -> None:
     assert out["portfolio_risk"]["total_risk_currency"] == 20.0
 
 
-def test_trade_risk_analyze_counts_breached_stop_overrun_as_risk() -> None:
+def test_trade_risk_analyze_marks_breached_stop_as_unbounded() -> None:
     mt5 = MagicMock()
     mt5.account_info.return_value = SimpleNamespace(equity=1000.0, currency="USD")
     mt5.positions_get.return_value = [
@@ -1281,9 +1281,14 @@ def test_trade_risk_analyze_counts_breached_stop_overrun_as_risk() -> None:
         out = trade_risk_analyze(__cli_raw=True)
 
     position = out["positions"][0]
-    assert position["risk_currency"] == 20.0
+    assert position["risk_currency"] is None
+    assert position["stop_overrun_currency"] == 20.0
     assert position["risk_status"] == "breached"
-    assert out["portfolio_risk"]["total_risk_currency"] == 20.0
+    assert out["portfolio_risk"]["total_risk_currency"] == 0.0
+    assert out["portfolio_risk"]["stop_overrun_currency"] == 20.0
+    assert out["portfolio_risk"]["positions_with_breached_stops"] == 1
+    assert out["portfolio_risk"]["overall_risk_status"] == "unlimited"
+    assert out["portfolio_risk"]["stop_risk_level"] == "unlimited"
 
 
 def test_trade_risk_analyze_does_not_report_wrong_side_tp_as_reward() -> None:

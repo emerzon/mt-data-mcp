@@ -13,6 +13,7 @@ from .common import build_trade_quote_context
 from .gateway import MT5TradingGateway, create_trading_gateway, trading_connection_error
 from .positions import _resolve_open_position, _resolve_pending_order
 from .safety import (
+    _resolve_pending_order_side,
     evaluate_trade_guardrails,
     load_guardrail_book_snapshots,
     pending_order_risk_increased,
@@ -224,23 +225,27 @@ def _evaluate_position_modify_guardrails(
     entry_price = validation._safe_float_attr(position, "price_open")
     if not trade_guardrails_config.is_enabled() or position_volume is None:
         return None
-    risk_increased = pending_order_risk_increased(
-        symbol_info=symbol_info,
-        side=side,
-        volume=abs(float(position_volume)),
-        existing_entry_price=entry_price,
-        existing_stop_loss=current_stop_loss,
-        candidate_entry_price=entry_price,
-        candidate_stop_loss=candidate_stop_loss,
-    )
-    stop_loss_required = bool(
-        trade_guardrails_config.safety_policy.require_stop_loss
-        or any(trade_guardrails_config.wallet_risk_limits.model_dump().values())
+    current_has_stop = bool(
+        current_stop_loss is not None
+        and math.isfinite(float(current_stop_loss))
+        and float(current_stop_loss) > 0.0
     )
     candidate_has_stop = bool(
         candidate_stop_loss is not None
         and math.isfinite(float(candidate_stop_loss))
         and float(candidate_stop_loss) > 0.0
+    )
+    if current_has_stop and not candidate_has_stop:
+        risk_increased = True
+    elif not current_has_stop or not candidate_has_stop:
+        risk_increased = False
+    elif side == "BUY":
+        risk_increased = float(candidate_stop_loss) < float(current_stop_loss)
+    else:
+        risk_increased = float(candidate_stop_loss) > float(current_stop_loss)
+    stop_loss_required = bool(
+        trade_guardrails_config.safety_policy.require_stop_loss
+        or any(trade_guardrails_config.wallet_risk_limits.model_dump().values())
     )
     if not risk_increased and not (stop_loss_required and not candidate_has_stop):
         return None
@@ -887,10 +892,12 @@ def _modify_pending_order(
             existing_entry_price = validation._safe_float_attr(order, "price_open")
             candidate_stop_loss = None if request_sl == 0.0 else float(request_sl)
             current_stop_loss = existing_sl
-            side = "BUY" if int(order_type_value) in {
-                validation._safe_int_attr(mt5, "ORDER_TYPE_BUY_LIMIT", 2),
-                validation._safe_int_attr(mt5, "ORDER_TYPE_BUY_STOP", 4),
-            } else "SELL"
+            side = _resolve_pending_order_side(order)
+            if side is None:
+                return {
+                    "error": f"Unsupported pending order type {order_type_value}.",
+                    "error_code": "unsupported_pending_order_type",
+                }
             if (
                 trade_guardrails_config.is_enabled()
                 and order_volume is not None

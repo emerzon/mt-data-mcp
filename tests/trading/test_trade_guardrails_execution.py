@@ -35,6 +35,8 @@ def mock_mt5():
     mt5.ORDER_TYPE_SELL_LIMIT = 3
     mt5.ORDER_TYPE_BUY_STOP = 4
     mt5.ORDER_TYPE_SELL_STOP = 5
+    mt5.ORDER_TYPE_BUY_STOP_LIMIT = 6
+    mt5.ORDER_TYPE_SELL_STOP_LIMIT = 7
     mt5.ORDER_TYPE_BUY = 0
     mt5.ORDER_TYPE_SELL = 1
     mt5.POSITION_TYPE_BUY = 0
@@ -199,6 +201,34 @@ def test_modify_pending_order_allows_tighter_stop_loss(
 
     assert result["success"] is True
     assert result["pending_order_ticket"] == 100
+
+
+def test_modify_buy_stop_limit_uses_buy_side_risk_logic(
+    restore_trade_guardrails,
+    patch_gateway,
+):
+    trade_guardrails_config.enabled = True
+    trade_guardrails_config.wallet_risk_limits.max_risk_pct_of_equity = 5.0
+    order = patch_gateway.orders_get()[0]
+    order.type = patch_gateway.ORDER_TYPE_BUY_STOP_LIMIT
+    order.sl = 1.0995
+    patch_gateway.orders_get = lambda *args, **kwargs: [order]
+
+    with patch(
+        "mtdata.core.trading.execution.validation._validate_pending_order_levels",
+        return_value=None,
+    ), patch(
+        "mtdata.core.trading.execution.pending_order_risk_increased",
+        return_value=False,
+    ) as mock_risk:
+        result = _modify_pending_order(
+            ticket=100,
+            price=1.1000,
+            stop_loss=1.0995,
+        )
+
+    assert result["success"] is True
+    assert mock_risk.call_args.kwargs["side"] == "BUY"
 
 
 def test_modify_pending_order_ignores_guardrails_for_demo_account(

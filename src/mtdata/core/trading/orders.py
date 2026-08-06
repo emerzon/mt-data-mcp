@@ -16,6 +16,9 @@ from . import comments, common, time, validation
 from .gateway import MT5TradingGateway, create_trading_gateway, trading_connection_error
 from .positions import _resolve_open_position
 from .safety import (
+    _account_uses_hedging,
+    _account_uses_netting,
+    _resolve_existing_symbol_net,
     assess_margin_stress,
     evaluate_trade_guardrails,
     load_guardrail_book_snapshots,
@@ -27,6 +30,8 @@ from .validation import MarketOrderTypeInput, OrderTypeInput
 class _OrderSymbolContext(TypedDict):
     symbol_info: Any
     volume: float
+    account_info: Any
+    account_state_block: Optional[Dict[str, Any]]
 
 
 class _OrderSubmitOutcome(TypedDict):
@@ -645,6 +650,7 @@ def _prepare_order_symbol_context(
     *,
     symbol: str,
     volume: float,
+    defer_margin_block: bool = False,
 ) -> tuple[Optional[_OrderSymbolContext], Optional[Dict[str, Any]]]:
     preflight = mt5.build_trade_preflight()
     if not preflight.get("execution_ready_strict", preflight.get("execution_ready", True)):
@@ -688,7 +694,7 @@ def _prepare_order_symbol_context(
         if margin_stress.get("status") == "critical":
             margin_blockers.append("critical_margin_stress")
         if margin_blockers:
-            return None, {
+            account_state_block = {
                 "error": "Trading blocked by the current account execution or margin state.",
                 "error_code": "trade_blocked_account_state",
                 "blockers": list(dict.fromkeys(margin_blockers)),
@@ -701,6 +707,12 @@ def _prepare_order_symbol_context(
                     "placing a new order."
                 ),
             }
+            if not defer_margin_block:
+                return None, account_state_block
+        else:
+            account_state_block = None
+    else:
+        account_state_block = None
 
     symbol_info = mt5.symbol_info(symbol)
     if symbol_info is None:
@@ -716,7 +728,40 @@ def _prepare_order_symbol_context(
     return {
         "symbol_info": symbol_info,
         "volume": volume_validated,
+        "account_info": account_info,
+        "account_state_block": account_state_block,
     }, None
+
+
+def _reduce_only_margin_exemption(
+    mt5: Any,
+    *,
+    symbol: str,
+    side: str,
+    volume: float,
+    account_info: Any,
+) -> tuple[bool, Optional[Dict[str, Any]]]:
+    """Prove that a netting market deal can only reduce current exposure."""
+    if account_info is None or not _account_uses_netting(account_info):
+        return False, None
+    positions = mt5.positions_get(symbol=symbol)
+    if positions is None:
+        return False, validation.snapshot_unavailable_error(
+            mt5,
+            snapshot="positions",
+            context="evaluate a reduce-only margin exemption",
+        )
+    net_side, net_volume = _resolve_existing_symbol_net(
+        symbol=symbol,
+        existing_positions=list(positions),
+    )
+    opposite = {"BUY": "SELL", "SELL": "BUY"}
+    proven = bool(
+        net_side is not None
+        and side == opposite.get(net_side)
+        and float(volume) <= float(net_volume) + 1e-12
+    )
+    return proven, None
 
 
 def _evaluate_live_trade_guardrails(
@@ -1112,6 +1157,7 @@ def _place_market_order(  # noqa: C901
                 mt5,
                 symbol=symbol,
                 volume=volume,
+                defer_margin_block=True,
             )
             if order_context_error is not None:
                 return order_context_error
@@ -1126,6 +1172,28 @@ def _place_market_order(  # noqa: C901
                 return {"error": f"Unsupported order_type '{order_type}'. Use BUY or SELL for market orders."}
             side = t
 
+            account_state_block = order_context.get("account_state_block")
+            if account_state_block is not None:
+                blockers = set(account_state_block.get("blockers") or [])
+                margin_only = blockers and blockers <= {
+                    "no_free_margin",
+                    "critical_margin_stress",
+                }
+                exempt = False
+                exemption_error = None
+                if margin_only:
+                    exempt, exemption_error = _reduce_only_margin_exemption(
+                        mt5,
+                        symbol=symbol,
+                        side=side,
+                        volume=volume_validated,
+                        account_info=order_context.get("account_info"),
+                    )
+                if exemption_error is not None:
+                    return exemption_error
+                if not exempt:
+                    return account_state_block
+
             deviation_validated, deviation_error = validation._validate_deviation(deviation)
             if deviation_error:
                 return {"error": deviation_error}
@@ -1139,6 +1207,32 @@ def _place_market_order(  # noqa: C901
                 return {"error": price_inputs_error}
             norm_sl = price_inputs["stop_loss"]
             norm_tp = price_inputs["take_profit"]
+            if (
+                (norm_sl is not None or norm_tp is not None)
+                and order_context.get("account_info") is not None
+                and _account_uses_netting(order_context["account_info"])
+            ):
+                existing_symbol_positions = mt5.positions_get(symbol=symbol)
+                if existing_symbol_positions is None:
+                    return validation.snapshot_unavailable_error(
+                        mt5,
+                        snapshot="positions",
+                        context="validate netting-account protection scope",
+                    )
+                if list(existing_symbol_positions):
+                    return {
+                        "success": False,
+                        "error": (
+                            "Cannot attach order-specific SL/TP while a netting-account "
+                            f"position already exists for {symbol}; MT5 protection would "
+                            "replace levels on the entire aggregate position."
+                        ),
+                        "error_code": "netting_position_protection_conflict",
+                        "remediation": (
+                            "Modify the existing aggregate position explicitly, or close/reduce "
+                            "it before placing a newly protected order."
+                        ),
+                    }
 
             # Validate against a recent quote, then refresh again right before send.
             validate_tick = mt5.symbol_info_tick(symbol)

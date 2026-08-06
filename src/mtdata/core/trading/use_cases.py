@@ -180,6 +180,7 @@ _TRADE_PLACE_BASIC_KEYS = _TRADE_PLACE_PREVIEW_KEYS + (
     "preview_checks_performed",
     "broker_validation_not_performed",
     "preview_scope_summary",
+    "checks_not_performed",
     "validation_not_performed",
     "warnings",
     "guardrails_preview",
@@ -1335,13 +1336,12 @@ def run_trade_place(  # noqa: C901
                     "Use this preview for request routing only."
                 ),
                 "preview_scope_summary": (
-                    "Routing, local level checks, and margin estimates only."
+                    "Routing and local level checks, plus a margin estimate when available."
                 ),
                 "preview_checks_performed": [
                     "request_routing",
                     "local_safety_requirements",
                     "protection_level_preview",
-                    "margin_estimate",
                 ],
                 "broker_validation_not_performed": list(
                     broker_validation_not_performed
@@ -1397,6 +1397,24 @@ def run_trade_place(  # noqa: C901
                         take_profit=request.take_profit,
                     )
                 )
+            margin_estimate = validation.coerce_finite_float(
+                preview.get("margin_required")
+            )
+            if margin_estimate is not None:
+                preview["preview_checks_performed"].append("margin_estimate")
+            else:
+                checks_not_performed = preview.setdefault(
+                    "checks_not_performed", []
+                )
+                if "margin_estimate" not in checks_not_performed:
+                    checks_not_performed.append("margin_estimate")
+                warnings_out = preview.setdefault("warnings", [])
+                warning = (
+                    "Margin estimate unavailable from MT5; preview_ok covers local "
+                    "request validity only, not affordability."
+                )
+                if warning not in warnings_out:
+                    warnings_out.append(warning)
             quote_context = preview.get("quote_context")
             if (
                 isinstance(quote_context, dict)
@@ -1892,6 +1910,12 @@ def run_trade_place(  # noqa: C901
                         else:
                             auto_close_result = close_positions(
                                 ticket=close_ticket,
+                                volume=(
+                                    validation.coerce_finite_float(
+                                        result.get("filled_volume")
+                                    )
+                                    or float(request.volume)
+                                ),
                                 comment="AUTO-CLOSE: TP/SL protection unresolved",
                                 deviation=request.deviation,
                             )
@@ -1900,7 +1924,13 @@ def run_trade_place(  # noqa: C901
 
                         auto_close_ok = bool(
                             isinstance(auto_close_result, dict)
-                            and auto_close_result.get("success") is True
+                            and (
+                                auto_close_result.get("success") is True
+                                or (
+                                    "success" not in auto_close_result
+                                    and auto_close_result.get("retcode") == 10009
+                                )
+                            )
                         )
                         if auto_close_ok:
                             result["protection_status"] = "auto_closed_after_sl_tp_fail"
@@ -3208,6 +3238,8 @@ def run_trade_risk_analyze(  # noqa: C901
             total_risk_currency = 0.0
             total_pending_risk_currency = 0.0
             positions_without_sl = 0
+            positions_with_breached_stops = 0
+            total_stop_overrun_currency = 0.0
             pending_orders_without_sl = 0
             total_notional_exposure = 0.0
             total_pending_notional_exposure = 0.0
@@ -3275,6 +3307,7 @@ def run_trade_risk_analyze(  # noqa: C901
                         notional_items_included += 1
 
                     risk_currency = None
+                    stop_overrun_currency = None
                     risk_pct = None
                     reward_currency = None
                     rr_ratio = None
@@ -3292,13 +3325,25 @@ def run_trade_risk_analyze(  # noqa: C901
                             else price_delta_ticks(sl_price, mark_price, tick_size)
                         )
                         stop_breached = risk_ticks is not None and risk_ticks < 0
-                        risk_ticks = abs(risk_ticks or 0)
-                        risk_currency = risk_ticks * risk_tick_value * abs(volume)
-                        risk_pct = (
-                            (risk_currency / equity) * 100.0 if equity > 0 else 0.0
-                        )
-                        total_risk_currency += risk_currency
-                        risk_status = "breached" if stop_breached else "defined"
+                        if stop_breached:
+                            positions_with_breached_stops += 1
+                            stop_overrun_currency = (
+                                abs(risk_ticks or 0)
+                                * risk_tick_value
+                                * abs(volume)
+                            )
+                            total_stop_overrun_currency += stop_overrun_currency
+                            risk_status = "breached"
+                        else:
+                            risk_ticks = abs(risk_ticks or 0)
+                            risk_currency = risk_ticks * risk_tick_value * abs(volume)
+                            risk_pct = (
+                                (risk_currency / equity) * 100.0
+                                if equity > 0
+                                else 0.0
+                            )
+                            total_risk_currency += risk_currency
+                            risk_status = "defined"
 
                         if tp_price:
                             reward_ticks = (
@@ -3311,7 +3356,7 @@ def run_trade_risk_analyze(  # noqa: C901
                                     reward_ticks * tick_value * abs(volume)
                                 )
                                 reward_status = "defined"
-                                if risk_currency > 0:
+                                if risk_currency is not None and risk_currency > 0:
                                     rr_ratio = reward_currency / risk_currency
                             else:
                                 reward_status = "invalid"
@@ -3351,6 +3396,9 @@ def run_trade_risk_analyze(  # noqa: C901
                             ),
                             "risk_pct": _round_optional_number(risk_pct, 2),
                             "risk_status": risk_status,
+                            "stop_overrun_currency": _round_optional_number(
+                                stop_overrun_currency, 2
+                            ),
                             "notional_value": _round_optional_number(
                                 notional_value, 2
                             ),
@@ -3556,7 +3604,11 @@ def run_trade_risk_analyze(  # noqa: C901
                 (total_notional_exposure / equity) * 100.0 if equity > 0 else 0.0
             )
 
-            if positions_without_sl > 0 or pending_orders_without_sl > 0:
+            if (
+                positions_without_sl > 0
+                or pending_orders_without_sl > 0
+                or positions_with_breached_stops > 0
+            ):
                 stop_risk_level = "unlimited"
             else:
                 stop_risk_level = (
@@ -3587,7 +3639,11 @@ def run_trade_risk_analyze(  # noqa: C901
                 key=lambda value: risk_rank[value],
             )
 
-            if positions_without_sl > 0 or pending_orders_without_sl > 0:
+            if (
+                positions_without_sl > 0
+                or pending_orders_without_sl > 0
+                or positions_with_breached_stops > 0
+            ):
                 overall_risk_status = "unlimited"
             elif risk_calculation_failures:
                 overall_risk_status = "incomplete"
@@ -3627,6 +3683,8 @@ def run_trade_risk_analyze(  # noqa: C901
                     "pending_orders_included": bool(getattr(request, "include_pending", True)),
                     "pending_orders_count": len(pending_order_risks),
                     "positions_without_sl": positions_without_sl,
+                    "positions_with_breached_stops": positions_with_breached_stops,
+                    "stop_overrun_currency": round(total_stop_overrun_currency, 2),
                     "pending_orders_without_sl": pending_orders_without_sl,
                     "positions_with_risk_calculation_failures": len(
                         risk_calculation_failures

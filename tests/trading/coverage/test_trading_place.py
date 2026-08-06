@@ -205,6 +205,111 @@ def test_order_preflight_blocks_critical_account_margin_before_symbol_lookup():
     gateway.symbol_info.assert_not_called()
 
 
+def _critical_margin_gateway(*, margin_mode: int, positions):
+    from mtdata.core.trading.gateway import MT5TradingGateway
+
+    adapter = MagicMock()
+    adapter.account_info.return_value = SimpleNamespace(
+        equity=1000.0,
+        margin=1000.0,
+        margin_free=0.0,
+        margin_level=100.0,
+        margin_mode=margin_mode,
+        trade_allowed=True,
+    )
+    adapter.positions_get.return_value = list(positions)
+    adapter.symbol_info.return_value = _sym()
+    adapter.symbol_info_tick.return_value = _tick()
+    adapter.symbol_select.return_value = True
+    adapter.order_send.return_value = _order_result(volume=0.5)
+    adapter.ORDER_TYPE_BUY = 0
+    adapter.ORDER_TYPE_SELL = 1
+    adapter.POSITION_TYPE_BUY = 0
+    adapter.POSITION_TYPE_SELL = 1
+    adapter.TRADE_ACTION_DEAL = 1
+    adapter.TRADE_ACTION_SLTP = 6
+    adapter.TRADE_RETCODE_DONE = 10009
+    adapter.TRADE_RETCODE_DONE_PARTIAL = 10010
+    adapter.TRADE_RETCODE_PLACED = 10008
+    adapter.ORDER_TIME_GTC = 0
+    adapter.ORDER_FILLING_IOC = 1
+    return MT5TradingGateway(
+        adapter=adapter,
+        ensure_connection_impl=lambda: None,
+        build_trade_preflight_impl=lambda *_args, **_kwargs: {
+            "execution_ready_strict": True
+        },
+        retcode_name_impl=lambda _adapter, retcode: str(retcode),
+    )
+
+
+def test_critical_margin_allows_proven_netting_reduction():
+    from mtdata.core.trading.orders import _place_market_order
+
+    gateway = _critical_margin_gateway(
+        margin_mode=0,
+        positions=[_position(type_=0, volume=1.0)],
+    )
+
+    result = _place_market_order(
+        "EURUSD",
+        0.5,
+        "SELL",
+        gateway=gateway,
+    )
+
+    assert result["success"] is True
+    assert gateway.adapter.order_send.call_count == 1
+
+
+def test_critical_margin_still_blocks_hedging_order():
+    from mtdata.core.trading.orders import _place_market_order
+
+    gateway = _critical_margin_gateway(
+        margin_mode=2,
+        positions=[_position(type_=0, volume=1.0)],
+    )
+
+    result = _place_market_order(
+        "EURUSD",
+        0.5,
+        "SELL",
+        gateway=gateway,
+    )
+
+    assert result["error_code"] == "trade_blocked_account_state"
+    gateway.adapter.order_send.assert_not_called()
+
+
+def test_netting_order_protection_cannot_mutate_existing_position():
+    from mtdata.core.trading.orders import _place_market_order
+
+    gateway = _critical_margin_gateway(
+        margin_mode=0,
+        positions=[_position(type_=0, volume=1.0)],
+    )
+    gateway.adapter.account_info.return_value = SimpleNamespace(
+        equity=1000.0,
+        margin=100.0,
+        margin_free=900.0,
+        margin_level=1000.0,
+        margin_mode=0,
+        trade_allowed=True,
+    )
+
+    result = _place_market_order(
+        "EURUSD",
+        0.1,
+        "BUY",
+        stop_loss=1.0,
+        take_profit=1.2,
+        gateway=gateway,
+    )
+
+    assert result["error_code"] == "netting_position_protection_conflict"
+    gateway.adapter.order_send.assert_not_called()
+
+
 def test_failed_order_omits_success_last_error_sentinel():
     gateway = MagicMock()
     gateway.TRADE_RETCODE_DONE = 10009

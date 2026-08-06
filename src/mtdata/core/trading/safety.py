@@ -595,7 +595,7 @@ def _estimate_order_risk_currency(
         return None, "stop_loss_wrong_side"
     if risk_ticks <= 0:
         if allow_profit_stop:
-            risk_ticks = abs(risk_ticks)
+            risk_ticks = 0.0
         else:
             return None, "stop_loss_wrong_side"
 
@@ -682,6 +682,20 @@ def _account_uses_hedging(account_info: Any) -> bool:
         return True
     try:
         return int(margin_mode) == 2
+    except (TypeError, ValueError):
+        return False
+
+
+def _account_uses_netting(account_info: Any) -> bool:
+    """Return True only when MT5 explicitly reports a netting account mode."""
+    margin_mode = getattr(account_info, "margin_mode", None)
+    text = str(margin_mode or "").upper()
+    if "NETTING" in text or "EXCHANGE" in text:
+        return True
+    if isinstance(margin_mode, bool) or not isinstance(margin_mode, (int, float)):
+        return False
+    try:
+        return int(margin_mode) in {0, 1}
     except (TypeError, ValueError):
         return False
 
@@ -1299,6 +1313,7 @@ def pending_order_risk_increased(
         entry_price=current_entry,
         stop_loss=current_sl,
         side=side,
+        allow_profit_stop=True,
     )
     if current_risk is None:
         return True if current_error else False

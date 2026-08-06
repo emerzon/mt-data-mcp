@@ -33,7 +33,8 @@ A dry run routes and validates the request **without sending it to MT5**. The `t
   "preview_ok": true,
   "validation_passed": true,
   "validation_scope": "local_preview_plus_estimates",
-  "preview_checks_performed": [ /* routing, local safety/level checks, margin estimate */ ],
+  "preview_checks_performed": [ /* checks actually completed */ ],
+  "checks_not_performed": [ /* for example, margin_estimate when unavailable */ ],
   "broker_validation_not_performed": [ /* broker acceptance/enforcement, margin reservation, fillability, SL/TP attachment */ ],
   "guardrails_preview": { /* which guardrails would apply */ }
 }
@@ -204,7 +205,7 @@ Because these depend on **live** broker state, they are only fully enforced on a
 1. Confirm the account: `mtdata-cli trade_account_info --json` (verify it's the intended demo/live account).
 2. Snapshot context: `mtdata-cli trade_session_context EURUSD --json`.
 3. Configure guardrails in `.env` (allowlist, volume caps, risk %). Restart mtdata.
-4. Preview: run the order with `--dry-run true`; inspect `guardrails_preview`, `preview_checks_performed`, and `broker_validation_not_performed`.
+4. Preview: run the order with `--dry-run true`; inspect `guardrails_preview`, `preview_checks_performed`, `checks_not_performed`, and `broker_validation_not_performed`. A margin estimate appears under performed checks only when MT5 returned a finite estimate.
 5. Go live with a **small** size and `--dry-run false`.
 6. Verify: `mtdata-cli trade_get_open --json`, then manage with `trade_modify` / `trade_close`.
 

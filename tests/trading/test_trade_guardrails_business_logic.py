@@ -159,6 +159,16 @@ def test_profit_side_stop_is_classified_as_risk_reducing():
         candidate_stop_loss=1.0810,
     ) is False
 
+    assert pending_order_risk_increased(
+        symbol_info=symbol_info,
+        side="BUY",
+        volume=1.0,
+        existing_entry_price=1.0800,
+        existing_stop_loss=1.0810,
+        candidate_entry_price=1.0800,
+        candidate_stop_loss=1.0850,
+    ) is False
+
 
 def test_preview_trade_guardrails_ignores_demo_accounts_by_default():
     config = TradeGuardrailsConfig(
