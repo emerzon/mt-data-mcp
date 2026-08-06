@@ -534,6 +534,60 @@ def test_build_trade_place_dry_run_preview_uses_live_quote_and_margin():
     adapter.order_calc_margin.assert_called_once_with(0, "EURUSD", 0.1, 1.1001)
 
 
+def test_build_trade_place_dry_run_preview_exposes_account_blockers():
+    adapter = SimpleNamespace(
+        ORDER_TYPE_BUY=0,
+        order_calc_margin=MagicMock(return_value=20.0),
+    )
+    gateway = MagicMock()
+    gateway.adapter = adapter
+    gateway.ORDER_TYPE_BUY = 0
+    gateway.symbol_info.return_value = SimpleNamespace(
+        visible=True,
+        volume_min=0.01,
+        volume_max=100.0,
+        volume_step=0.01,
+        point=0.00001,
+        digits=5,
+        trade_stops_level=0,
+        trade_freeze_level=0,
+    )
+    now = datetime(2026, 7, 15, 12, 0, tzinfo=timezone.utc).timestamp()
+    gateway.symbol_info_tick.return_value = SimpleNamespace(
+        bid=1.0999,
+        ask=1.1001,
+        time=now,
+    )
+    gateway.account_info.return_value = SimpleNamespace(
+        equity=100.0,
+        margin=101.0,
+        margin_free=-1.0,
+        margin_level=99.0,
+        trade_allowed=False,
+    )
+
+    with patch("mtdata.core.trading.orders._stdlib_time.time", return_value=now):
+        result = build_trade_place_dry_run_preview(
+            symbol="EURUSD",
+            volume=0.1,
+            order_type="BUY",
+            pending=False,
+            price=None,
+            stop_loss=1.08,
+            take_profit=1.12,
+            gateway=gateway,
+        )
+
+    assert result["account_blockers"] == [
+        "account_trading_disabled",
+        "no_free_margin",
+        "critical_margin_stress",
+    ]
+    assert result["account_state"]["trade_allowed"] is False
+    assert result["account_state"]["margin_stress"]["status"] == "critical"
+    assert result["margin_sufficient"] is False
+
+
 def test_trade_preview_reconciles_equal_timestamp_quote_conflict():
     now = datetime(2026, 7, 15, 12, 0, tzinfo=timezone.utc).timestamp()
     gateway = MagicMock()

@@ -112,6 +112,8 @@ _TRADE_PLACE_PREVIEW_KEYS = (
     "margin_required",
     "margin_free",
     "margin_sufficient",
+    "account_state",
+    "account_blockers",
     "sl_distance_points",
     "sl_distance_pct",
     "tp_distance_points",
@@ -1396,6 +1398,32 @@ def run_trade_place(  # noqa: C901
                         stop_loss=request.stop_loss,
                         take_profit=request.take_profit,
                     )
+                )
+            account_blockers = [
+                str(blocker)
+                for blocker in list(preview.get("account_blockers") or [])
+                if str(blocker).strip()
+            ]
+            if account_blockers:
+                validation_payload = preview.get("validation")
+                if isinstance(validation_payload, dict):
+                    existing_blockers = list(
+                        validation_payload.get("blockers") or []
+                    )
+                    validation_payload["blockers"] = [
+                        *account_blockers,
+                        *(
+                            blocker
+                            for blocker in existing_blockers
+                            if blocker not in account_blockers
+                        ),
+                    ]
+                    validation_payload["live_submission_eligible"] = False
+                preview["validation_passed"] = False
+                preview["preview_ok"] = False
+                preview["actionability"] = "blocked_by_account_state"
+                preview["actionability_reason"] = (
+                    "The account execution or margin state blocks a new order."
                 )
             margin_estimate = validation.coerce_finite_float(
                 preview.get("margin_required")

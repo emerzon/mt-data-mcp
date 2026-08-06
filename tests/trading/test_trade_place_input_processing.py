@@ -414,6 +414,47 @@ def test_trade_place_dry_run_rejects_invalid_live_protection_preview() -> None:
     mock_market.assert_not_called()
 
 
+def test_trade_place_dry_run_orders_account_quote_and_protection_blockers() -> None:
+    with patch("mtdata.core.trading._place_market_order") as mock_market, patch(
+        "mtdata.core.trading.build_trade_place_dry_run_preview",
+        return_value={
+            "account_blockers": ["no_free_margin", "critical_margin_stress"],
+            "account_state": {
+                "margin_free": -1.0,
+                "margin_stress": {"status": "critical"},
+            },
+            "quote_context": {
+                "usable_for_live_trading": False,
+                "warning": "Quote is stale.",
+            },
+            "sl_tp_valid": False,
+            "sl_tp_error": "Protection levels are invalid.",
+            "margin_required": 20.0,
+            "margin_free": -1.0,
+            "margin_sufficient": False,
+        },
+    ):
+        out = trade_place(
+            symbol="EURUSD",
+            volume=0.01,
+            order_type="BUY",
+            stop_loss=1.08,
+            take_profit=1.12,
+            dry_run=True,
+            __cli_raw=True,
+        )
+
+    assert out["blockers"] == [
+        "no_free_margin",
+        "critical_margin_stress",
+        "quote_not_live_ready",
+        "invalid_protection_levels",
+    ]
+    assert out["preview_ok"] is False
+    assert out["account_state"]["margin_stress"]["status"] == "critical"
+    mock_market.assert_not_called()
+
+
 def test_trade_place_dry_run_rejects_identical_protection_before_mt5() -> None:
     with patch("mtdata.core.trading._place_market_order") as mock_market, patch(
         "mtdata.core.trading.build_trade_place_dry_run_preview"

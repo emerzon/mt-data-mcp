@@ -645,6 +645,78 @@ def _prepare_order_gateway(
     return mt5, None
 
 
+def _assess_order_account_state(
+    mt5: Any,
+    *,
+    preflight: Optional[Dict[str, Any]] = None,
+) -> tuple[Any, Optional[Dict[str, Any]], Optional[Dict[str, Any]]]:
+    """Return one canonical account snapshot and any new-order blockers."""
+    try:
+        account_info = mt5.account_info()
+    except Exception:
+        account_info = None
+    if account_info is None:
+        return None, None, None
+
+    numeric_margin_fields = {
+        field: getattr(account_info, field, None)
+        for field in ("equity", "margin", "margin_free", "margin_level")
+    }
+    has_concrete_margin_data = any(
+        isinstance(value, Real) and not isinstance(value, bool)
+        for value in numeric_margin_fields.values()
+    )
+    margin_stress = (
+        assess_margin_stress(account_info)
+        if has_concrete_margin_data
+        else {"status": "unknown", "reasons": []}
+    )
+    margin_free = (
+        validation._safe_float_attr(account_info, "margin_free", None)
+        if isinstance(numeric_margin_fields["margin_free"], Real)
+        and not isinstance(numeric_margin_fields["margin_free"], bool)
+        else None
+    )
+    trade_allowed = getattr(account_info, "trade_allowed", None)
+    blockers: List[str] = []
+    if trade_allowed is False:
+        blockers.append("account_trading_disabled")
+    if margin_free is not None and margin_free <= 0:
+        blockers.append("no_free_margin")
+    if margin_stress.get("status") == "critical":
+        blockers.append("critical_margin_stress")
+    blockers = list(dict.fromkeys(blockers))
+
+    account_state: Dict[str, Any] = {
+        "margin_free": margin_free,
+        "margin_stress": margin_stress,
+        "blockers": blockers,
+    }
+    if isinstance(trade_allowed, bool):
+        account_state["trade_allowed"] = trade_allowed
+    account_state = {
+        key: value for key, value in account_state.items() if value is not None
+    }
+
+    if not blockers:
+        return account_info, account_state, None
+    block: Dict[str, Any] = {
+        "error": "Trading blocked by the current account execution or margin state.",
+        "error_code": "trade_blocked_account_state",
+        "blockers": blockers,
+        "margin_free": margin_free,
+        "margin_stress": margin_stress,
+        "remediation": (
+            "Enable account trading if disabled, reduce or close exposure, "
+            "restore free margin, and re-check trade_account_info before "
+            "placing a new order."
+        ),
+    }
+    if preflight is not None:
+        block["preflight"] = preflight
+    return account_info, account_state, block
+
+
 def _prepare_order_symbol_context(
     mt5: Any,
     *,
@@ -662,57 +734,12 @@ def _prepare_order_symbol_context(
             "next_steps": guidance,
         }
 
-    try:
-        account_info = mt5.account_info()
-    except Exception:
-        account_info = None
-    if account_info is not None:
-        numeric_margin_fields = {
-            field: getattr(account_info, field, None)
-            for field in ("equity", "margin", "margin_free", "margin_level")
-        }
-        has_concrete_margin_data = any(
-            isinstance(value, Real) and not isinstance(value, bool)
-            for value in numeric_margin_fields.values()
-        )
-        margin_stress = (
-            assess_margin_stress(account_info)
-            if has_concrete_margin_data
-            else {"status": "unknown", "reasons": []}
-        )
-        margin_free = (
-            validation._safe_float_attr(account_info, "margin_free", None)
-            if isinstance(numeric_margin_fields["margin_free"], Real)
-            and not isinstance(numeric_margin_fields["margin_free"], bool)
-            else None
-        )
-        margin_blockers: List[str] = []
-        if getattr(account_info, "trade_allowed", None) is False:
-            margin_blockers.append("account_trading_disabled")
-        if margin_free is not None and margin_free <= 0:
-            margin_blockers.append("no_free_margin")
-        if margin_stress.get("status") == "critical":
-            margin_blockers.append("critical_margin_stress")
-        if margin_blockers:
-            account_state_block = {
-                "error": "Trading blocked by the current account execution or margin state.",
-                "error_code": "trade_blocked_account_state",
-                "blockers": list(dict.fromkeys(margin_blockers)),
-                "margin_free": margin_free,
-                "margin_stress": margin_stress,
-                "preflight": preflight,
-                "remediation": (
-                    "Enable account trading if disabled, reduce or close exposure, "
-                    "restore free margin, and re-check trade_account_info before "
-                    "placing a new order."
-                ),
-            }
-            if not defer_margin_block:
-                return None, account_state_block
-        else:
-            account_state_block = None
-    else:
-        account_state_block = None
+    account_info, _account_state, account_state_block = _assess_order_account_state(
+        mt5,
+        preflight=preflight,
+    )
+    if account_state_block is not None and not defer_margin_block:
+        return None, account_state_block
 
     symbol_info = mt5.symbol_info(symbol)
     if symbol_info is None:
@@ -973,6 +1000,7 @@ def _margin_preview_fields(
     symbol: str,
     volume: float,
     entry_price: float,
+    account_info: Any = None,
 ) -> Dict[str, Any]:
     if order_type_value is None:
         return {}
@@ -987,7 +1015,6 @@ def _margin_preview_fields(
         return {}
 
     out: Dict[str, Any] = {"margin_required": round(float(margin), 2)}
-    account_info = mt5.account_info()
     margin_free = validation._safe_float_attr(account_info, "margin_free")
     if margin_free is not None and math.isfinite(margin_free):
         out["margin_free"] = round(float(margin_free), 2)
@@ -1017,6 +1044,8 @@ def build_trade_place_dry_run_preview(
                 "mt5_connection_error",
             ),
         }
+
+    account_info, account_state, account_state_block = _assess_order_account_state(mt5)
 
     symbol_info = mt5.symbol_info(symbol)
     if symbol_info is None:
@@ -1061,6 +1090,10 @@ def build_trade_place_dry_run_preview(
         "estimated_fill_price": _round_preview_price(entry_price, digits=digits),
         "quote_context": quote_context,
     }
+    if account_state is not None:
+        out["account_state"] = account_state
+    if account_state_block is not None:
+        out["account_blockers"] = list(account_state_block["blockers"])
     if pending:
         out["entry_price"] = _round_preview_price(entry_price, digits=digits)
 
@@ -1130,6 +1163,7 @@ def build_trade_place_dry_run_preview(
             symbol=symbol,
             volume=float(volume_validated),
             entry_price=float(entry_price),
+            account_info=account_info,
         )
     )
     return {key: value for key, value in out.items() if value is not None}
