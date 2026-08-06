@@ -14,9 +14,9 @@ from mtdata.core.trading.validation import (
     _normalize_order_type_input,
     _normalize_price_for_symbol,
     _normalize_trade_price_inputs,
-    _retcode_is_done,
+    _retcode_is_accepted,
     _safe_float_attr,
-    _trade_done_codes,
+    _trade_accepted_codes,
     _validate_deviation,
     _validate_live_protection_levels,
     _validate_volume,
@@ -69,12 +69,12 @@ def test_trade_done_helpers_use_safe_int_attr_and_cached_codes():
         TRADE_RETCODE_DONE_PARTIAL="10010",
     )
 
-    done_codes = _trade_done_codes(mt5)
+    accepted_codes = _trade_accepted_codes(mt5)
 
-    assert done_codes == {10008, 10009, 10010}
-    assert _retcode_is_done(mt5, "10008", done_codes) is True
-    assert _retcode_is_done(mt5, "10010", done_codes) is True
-    assert _retcode_is_done(mt5, 1, done_codes) is False
+    assert accepted_codes == {10008, 10009, 10010}
+    assert _retcode_is_accepted(mt5, "10008", accepted_codes) is True
+    assert _retcode_is_accepted(mt5, "10010", accepted_codes) is True
+    assert _retcode_is_accepted(mt5, 1, accepted_codes) is False
 
 
 def test_normalize_price_for_symbol_accepts_negative_non_zero_values():
@@ -639,7 +639,7 @@ def test_run_trade_place_auto_close_uses_candidate_ticket_when_primary_is_missin
 
     def close_positions(**kwargs):
         close_calls.append(kwargs)
-        return {"closed_count": 1}
+        return {"success": True, "closed_count": 1}
 
     result = run_trade_place(
         request,

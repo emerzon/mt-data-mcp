@@ -698,6 +698,35 @@ class TestPlaceMarketOrder:
         assert result.get("sl_tp_result") == {"status": "not_requested"}
 
     @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_queued_market_order_is_not_reported_as_filled(self):
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        mt5.order_send.return_value = _order_result(retcode=10008, volume=0.0)
+        from mtdata.core.trading import _place_market_order
+
+        result = _place_market_order("EURUSD", 0.01, "BUY")
+
+        assert result["success"] is False
+        assert result["execution_status"] == "queued"
+        assert result["requested_volume"] == 0.01
+        assert result["filled_volume"] == 0.0
+        assert result["remaining_volume"] == 0.01
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_partial_market_order_exposes_remaining_volume(self):
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        mt5.order_send.return_value = _order_result(retcode=10010, volume=0.004)
+        from mtdata.core.trading import _place_market_order
+
+        result = _place_market_order("EURUSD", 0.01, "BUY")
+
+        assert result["success"] is False
+        assert result["execution_status"] == "partial"
+        assert result["filled_volume"] == 0.004
+        assert result["remaining_volume"] == pytest.approx(0.006)
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
     def test_comment_truncation_is_reported(self):
         mt5 = sys.modules["MetaTrader5"]
         self._setup_mt5(mt5)

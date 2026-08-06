@@ -182,7 +182,7 @@ def _send_order_with_comment_fallback(mt5: Any, request: Dict[str, Any]) -> tupl
     for strategy, alt_request in fallback_requests:
         alt_result = mt5.order_send(alt_request)
         alt_last_error = validation._safe_last_error(mt5)
-        if alt_result is not None and validation._retcode_is_done(
+        if alt_result is not None and validation._retcode_is_accepted(
             mt5,
             getattr(alt_result, "retcode", None),
         ):

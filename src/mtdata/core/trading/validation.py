@@ -315,7 +315,7 @@ def _resolve_position_side(position: Any, mt5: Any = None) -> Optional[str]:
     return None
 
 
-def _trade_done_codes(mt5: Any) -> set[int]:
+def _trade_accepted_codes(mt5: Any) -> set[int]:
     return {
         _safe_int_attr(mt5, "TRADE_RETCODE_PLACED", 10008),
         _safe_int_attr(mt5, "TRADE_RETCODE_DONE", 10009),
@@ -323,17 +323,32 @@ def _trade_done_codes(mt5: Any) -> set[int]:
     }
 
 
-def _retcode_is_done(
+def _retcode_is_accepted(
     mt5: Any,
     retcode: Any,
-    done_codes: Optional[set[int]] = None,
+    accepted_codes: Optional[set[int]] = None,
 ) -> bool:
     try:
-        if done_codes is None:
-            done_codes = _trade_done_codes(mt5)
-        return int(retcode) in done_codes
+        if accepted_codes is None:
+            accepted_codes = _trade_accepted_codes(mt5)
+        return int(retcode) in accepted_codes
     except Exception:
         return False
+
+
+def _trade_execution_status(mt5: Any, retcode: Any) -> str:
+    """Classify an accepted MT5 response without overstating completion."""
+    try:
+        value = int(retcode)
+    except Exception:
+        return "rejected"
+    if value == _safe_int_attr(mt5, "TRADE_RETCODE_DONE", 10009):
+        return "complete"
+    if value == _safe_int_attr(mt5, "TRADE_RETCODE_DONE_PARTIAL", 10010):
+        return "partial"
+    if value == _safe_int_attr(mt5, "TRADE_RETCODE_PLACED", 10008):
+        return "queued"
+    return "rejected"
 
 
 def _candidate_fill_modes(mt5: Any, symbol_info: Any = None) -> list[int]:

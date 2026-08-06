@@ -1898,28 +1898,10 @@ def run_trade_place(  # noqa: C901
                         result["auto_close_on_sl_tp_fail"] = True
                         result["auto_close_result"] = auto_close_result
 
-                        auto_close_ok = False
-                        if isinstance(auto_close_result, dict):
-                            if "error" not in auto_close_result:
-                                retcode = auto_close_result.get("retcode")
-                                if retcode is not None:
-                                    try:
-                                        # DONE / DONE_PARTIAL / PLACED
-                                        auto_close_ok = int(retcode) in {
-                                            10008,
-                                            10009,
-                                            10010,
-                                        }
-                                    except (TypeError, ValueError):
-                                        auto_close_ok = False
-                                else:
-                                    try:
-                                        auto_close_ok = (
-                                            int(auto_close_result.get("closed_count", 0))
-                                            > 0
-                                        )
-                                    except Exception:
-                                        auto_close_ok = False
+                        auto_close_ok = bool(
+                            isinstance(auto_close_result, dict)
+                            and auto_close_result.get("success") is True
+                        )
                         if auto_close_ok:
                             result["protection_status"] = "auto_closed_after_sl_tp_fail"
                             result["success"] = False

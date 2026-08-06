@@ -595,7 +595,7 @@ def _send_order_with_fill_mode_retry(
             last_result = result
             last_request = request_to_send
             try:
-                if validation._retcode_is_done(mt5, getattr(result, "retcode", -1)):
+                if validation._retcode_is_accepted(mt5, getattr(result, "retcode", -1)):
                     return result, last_error, attempts, last_request
             except Exception:
                 pass
@@ -834,7 +834,7 @@ def _submit_order_request(
         return None, failure
 
     retcode = _order_result_value(result, "retcode")
-    if not validation._retcode_is_done(mt5, retcode):
+    if not validation._retcode_is_accepted(mt5, retcode):
         error_message = base_error
         ambiguous = retcode == validation._safe_int_attr(
             mt5, "TRADE_RETCODE_TIMEOUT", 10012
@@ -1321,6 +1321,23 @@ def _place_market_order(  # noqa: C901
             result = send_outcome["result"]
             fill_mode_attempts = send_outcome["fill_mode_attempts"]
             used_request = send_outcome["used_request"]
+            retcode = _order_result_value(result, "retcode")
+            execution_status = validation._trade_execution_status(mt5, retcode)
+            filled_volume = validation._safe_float_attr(
+                result, "volume", default=None
+            )
+            if (
+                execution_status == "complete"
+                and filled_volume is not None
+                and filled_volume > 0.0
+                and filled_volume + 1e-12 < float(volume_validated)
+            ):
+                execution_status = "partial"
+            remaining_volume = (
+                max(0.0, float(volume_validated) - float(filled_volume))
+                if filled_volume is not None
+                else None
+            )
 
             order_ticket = validation._safe_int_ticket(getattr(result, "order", None))
             deal_ticket = validation._safe_int_ticket(getattr(result, "deal", None))
@@ -1337,12 +1354,16 @@ def _place_market_order(  # noqa: C901
             )
             protection_status = None
             warnings_out: List[str] = []
-            if sl_tp_requested:
+            if sl_tp_requested and execution_status != "queued":
                 protection_outcome = _attach_post_fill_protection(
                     mt5,
                     symbol=symbol,
                     side=side,
-                    volume=volume_validated,
+                    volume=(
+                        filled_volume
+                        if filled_volume is not None and filled_volume > 0.0
+                        else volume_validated
+                    ),
                     position_ticket_candidates=position_ticket_candidates,
                     stop_loss=norm_sl,
                     take_profit=norm_tp,
@@ -1364,7 +1385,7 @@ def _place_market_order(  # noqa: C901
                     warning_text = str(warning).strip()
                     if warning_text:
                         warnings_out.append(warning_text)
-            else:
+            elif not sl_tp_requested:
                 if position_ticket_candidates:
                     position_obj, resolved_ticket, resolve_info = _resolve_open_position(
                         mt5,
@@ -1392,13 +1413,39 @@ def _place_market_order(  # noqa: C901
                     last_retcode=None,
                     last_comment=None,
                 )
-            retcode = _order_result_value(result, "retcode")
+            else:
+                sl_tp_result = _build_sl_tp_result(
+                    requested_sl=norm_sl,
+                    requested_tp=norm_tp,
+                    applied_sl=None,
+                    applied_tp=None,
+                    status="pending_fill",
+                    error=(
+                        "Order is queued; protection cannot be verified until a "
+                        "position fill exists."
+                    ),
+                    broker_adjusted=False,
+                    adjustment=None,
+                    attempts=0,
+                    last_retcode=None,
+                    last_comment=None,
+                )
+                protection_status = "pending_fill"
+                warnings_out.append(
+                    "Order is queued, not filled; reconcile the resulting position "
+                    "and attach SL/TP after execution."
+                )
             out: Dict[str, Any] = {
+                "success": execution_status == "complete",
+                "execution_status": execution_status,
                 "retcode": retcode,
                 "retcode_name": _order_retcode_name(mt5, retcode),
                 "deal": _order_result_value(result, "deal"),
                 "order": _order_result_value(result, "order"),
                 "volume": _order_result_value(result, "volume"),
+                "requested_volume": volume_validated,
+                "filled_volume": filled_volume,
+                "remaining_volume": remaining_volume,
                 "price": _order_result_value(result, "price"),
                 "bid": _order_result_value(result, "bid"),
                 "ask": _order_result_value(result, "ask"),
@@ -1604,8 +1651,12 @@ def _place_pending_order(
             used_request = send_outcome["used_request"]
 
             retcode = _order_result_value(result, "retcode")
+            submission_status = validation._trade_execution_status(mt5, retcode)
+            pending_created = submission_status in {"complete", "queued"}
             out: Dict[str, Any] = {
-                "success": True,
+                "success": pending_created,
+                "execution_status": "complete" if pending_created else submission_status,
+                "submission_status": submission_status,
                 "retcode": retcode,
                 "retcode_name": _order_retcode_name(mt5, retcode),
                 "deal": _order_result_value(result, "deal"),

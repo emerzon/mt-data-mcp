@@ -429,9 +429,12 @@ def _resolve_closed_deal_from_history(
 
 def _count_done_results(mt5: Any, results: List[Dict[str, Any]]) -> int:
     success_count = 0
-    done_codes = validation._trade_done_codes(mt5)
     for item in results:
-        if validation._retcode_is_done(mt5, item.get("retcode"), done_codes):
+        if (
+            item.get("success") is not False
+            and validation._trade_execution_status(mt5, item.get("retcode"))
+            == "complete"
+        ):
             success_count += 1
     return success_count
 
@@ -1314,7 +1317,7 @@ def _execute_single_close(
             attempts.append(attempt)
             if isinstance(attempt_comment_fallback, dict):
                 attempts[-1]["comment_fallback"] = attempt_comment_fallback
-            if validation._retcode_is_done(mt5, retcode_val):
+            if validation._retcode_is_accepted(mt5, retcode_val):
                 break
             if retcode_val in invalid_fill_codes:
                 break
@@ -1337,18 +1340,18 @@ def _execute_single_close(
             tick = refreshed_tick
             price_retry_count += 1
             _stdlib_time.sleep(0.15)
-        if validation._retcode_is_done(mt5, getattr(result, "retcode", None) if result is not None else None):
+        if validation._retcode_is_accepted(mt5, getattr(result, "retcode", None) if result is not None else None):
             break
         if stop_retries:
             break
 
-    close_ok = (
-        validation._retcode_is_done(mt5, getattr(result, "retcode", None))
+    close_accepted = (
+        validation._retcode_is_accepted(mt5, getattr(result, "retcode", None))
         if result is not None
         else False
     )
 
-    if not close_ok:
+    if not close_accepted:
         tick_failures = [
             a for a in attempts if "tick data" in str(a.get("error", "")).lower()
         ]
@@ -1447,9 +1450,13 @@ def _execute_single_close(
         and filled_volume + 1e-12 < float(effective_requested_volume)
     ):
         is_partial_fill = True
+    execution_status = validation._trade_execution_status(mt5, result.retcode)
+    if is_partial_fill:
+        execution_status = "partial"
 
     res_dict: Dict[str, Any] = {
-        "success": True,
+        "success": execution_status == "complete",
+        "execution_status": execution_status,
         "ticket": position.ticket,
         "retcode": result.retcode,
         "retcode_name": mt5.retcode_name(result.retcode),
@@ -1467,6 +1474,14 @@ def _execute_single_close(
         "requested_volume": effective_requested_volume,
         "position_volume_before": position_volume_before,
         "position_volume_remaining_estimate": post_fill_remaining_estimate,
+        "remaining_volume": (
+            max(
+                0.0,
+                float(effective_requested_volume) - float(filled_volume),
+            )
+            if effective_requested_volume is not None and filled_volume is not None
+            else None
+        ),
         "attempts": attempts,
     }
     if is_partial_fill:
@@ -2229,7 +2244,12 @@ def _cancel_pending(
                         result_entry["comment_fallback"] = comment_fallback
                     results.append(result_entry)
                 else:
+                    execution_status = validation._trade_execution_status(
+                        mt5, result.retcode
+                    )
                     result_entry = {
+                        "success": execution_status == "complete",
+                        "execution_status": execution_status,
                         "ticket": order.ticket,
                         "retcode": result.retcode,
                         "retcode_name": mt5.retcode_name(result.retcode),
@@ -2237,6 +2257,10 @@ def _cancel_pending(
                         "order": result.order,
                         "comment": result.comment,
                     }
+                    if execution_status != "complete":
+                        result_entry["error"] = (
+                            "Pending order cancellation was not completed by MT5."
+                        )
                     if isinstance(comment_fallback, dict):
                         result_entry["comment_fallback"] = comment_fallback
                     if ticket is not None:
@@ -2251,7 +2275,20 @@ def _cancel_pending(
             if ticket is not None and len(results) == 1:
                 return results[0]
             success_count = _count_done_results(mt5, results)
-            return {"cancelled_count": success_count, "attempted_count": len(results), "results": results}
+            bulk_result: Dict[str, Any] = {
+                "success": bool(results) and success_count == len(results),
+                "cancelled_count": success_count,
+                "attempted_count": len(results),
+                "results": results,
+            }
+            if success_count < len(results):
+                bulk_result["partial_failure"] = success_count > 0
+                bulk_result["error"] = (
+                    "One or more pending orders were not cancelled."
+                    if success_count > 0
+                    else "Failed to cancel any targeted pending orders."
+                )
+            return bulk_result
 
         except Exception as e:
             return {"error": str(e)}

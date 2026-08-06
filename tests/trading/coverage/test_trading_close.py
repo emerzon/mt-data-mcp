@@ -902,6 +902,9 @@ class TestClosePositions:
         assert result["filled_volume"] == 0.03
         assert result["position_volume_remaining_estimate"] == pytest.approx(0.07)
         assert result["partial_fill"] is True
+        assert result["success"] is False
+        assert result["execution_status"] == "partial"
+        assert result["remaining_volume"] == pytest.approx(0.02)
 
     @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
     def test_partial_close_rejects_volume_greater_than_position(self):
@@ -1432,7 +1435,25 @@ class TestCancelPending:
         mt5.order_send.return_value = _order_result()
         from mtdata.core.trading import _cancel_pending
         result = _cancel_pending(ticket=100)
+        assert result["success"] is True
         assert result["ticket"] == 100
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_single_cancel_rejection_is_not_success(self):
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        mt5.orders_get.return_value = [_pending_order(ticket=100)]
+        mt5.order_send.return_value = _order_result(
+            retcode=10006,
+            comment="Rejected",
+        )
+        from mtdata.core.trading import _cancel_pending
+
+        result = _cancel_pending(ticket=100)
+
+        assert result["success"] is False
+        assert result["execution_status"] == "rejected"
+        assert "not completed" in result["error"]
 
     @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
     def test_cancel_order_send_none(self):
