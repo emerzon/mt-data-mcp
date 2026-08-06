@@ -759,6 +759,7 @@ class TestGetHistory:
         assert "meta" not in res
         assert res["timestamp_format"] == "iso"
         assert res["server_utc_offset_seconds"] == 0
+        assert res["server_timezone"] == "Europe/Nicosia"
 
     def test_v1_history_uses_modern_runtime_timezone_meta(self):
         payload = {"data": [{"time": 1.0, "close": 1.1}], "has_forming_candle": False}

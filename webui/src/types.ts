@@ -49,6 +49,7 @@ export type HistoryResponse = {
   forming_candle_skipped?: boolean
   incomplete_candles_skipped?: number
   server_utc_offset_seconds?: number
+  server_timezone?: string
   meta?: {
     runtime?: {
       timezone?: RuntimeTimezoneMeta
@@ -208,6 +209,11 @@ export type ForecastPayload = {
       low?: number
       high?: number
     }>
+  }
+  quantity?: 'price' | 'return' | 'volatility'
+  data_window?: {
+    last_observation?: string | number
+    forecast_start?: string | number
   }
   // client-only context
   __anchor?: number
@@ -373,14 +379,17 @@ export type BacktestResult = {
   horizon: number
   steps: number
   spacing: number
-  results: Record<string, {
-    success: boolean
+  results?: Record<string, BacktestMethodResult>
+  ranked_methods?: Array<BacktestMethodResult & { method: string }>
+}
+
+export type BacktestMethodResult = {
+    success?: boolean
     avg_mae?: number
     avg_rmse?: number
     avg_directional_accuracy?: number
     successful_tests?: number
     num_tests?: number
-  }>
 }
 
 // ============================================================================

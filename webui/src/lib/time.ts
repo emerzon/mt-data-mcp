@@ -14,3 +14,12 @@ export function toUtcSec(input: number | string): number {
   return Math.floor(ms / 1000)
 }
 
+export function formatEpochTime(epochSeconds: number, timeZone: string): string {
+  return new Intl.DateTimeFormat(undefined, {
+    timeZone,
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hourCycle: 'h23',
+  }).format(new Date(epochSeconds * 1000))
+}

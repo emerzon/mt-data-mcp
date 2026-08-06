@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import {
   getHistory,
@@ -287,17 +287,37 @@ export function useForecast(
   symbol: string,
   timeframe: string,
   settings: ForecastSettings,
-  onResult: (payload: ForecastPayload) => void
+  onResult: (payload: ForecastPayload | null) => void,
+  anchor?: number
 ) {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const runId = useRef(0)
+  const onResultRef = useRef(onResult)
+  const requestKey = JSON.stringify({ symbol, timeframe, settings, anchor })
+  const requestKeyRef = useRef(requestKey)
+  requestKeyRef.current = requestKey
+
+  useEffect(() => {
+    onResultRef.current = onResult
+  }, [onResult])
+
+  useEffect(() => {
+    runId.current += 1
+    setIsLoading(false)
+    setError(null)
+    onResultRef.current(null)
+  }, [requestKey])
 
   const run = useCallback(
     async (kind: 'full' | 'partial', anchor?: number) => {
       if (!symbol) return
 
+      const runRequestKey = requestKey
+      const currentRunId = ++runId.current
       setIsLoading(true)
       setError(null)
+      onResultRef.current(null)
 
       try {
         const body: ForecastPriceBody = {
@@ -322,14 +342,31 @@ export function useForecast(
           __kind: kind,
         }
 
-        onResult(payload)
+        if (currentRunId !== runId.current || runRequestKey !== requestKeyRef.current) return
+        const compactRows = payload.forecast ?? []
+        const hasChartPrice =
+          payload.forecast_price?.some(Number.isFinite) ||
+          compactRows.some((row) => Number.isFinite(row.price ?? row.value))
+        if (!hasChartPrice) {
+          setError(
+            settings.quantity === 'return'
+              ? 'The return forecast did not include a reconstructed price path for the price chart.'
+              : 'The forecast did not include a finite price path for the chart.'
+          )
+          return
+        }
+        onResultRef.current(payload)
       } catch (err) {
-        setError(getErrorMessage(err))
+        if (currentRunId === runId.current && runRequestKey === requestKeyRef.current) {
+          setError(getErrorMessage(err))
+        }
       } finally {
-        setIsLoading(false)
+        if (currentRunId === runId.current && runRequestKey === requestKeyRef.current) {
+          setIsLoading(false)
+        }
       }
     },
-    [symbol, timeframe, settings, onResult]
+    [requestKey, settings, symbol, timeframe]
   )
 
   return { run, isLoading, error }
@@ -374,7 +411,7 @@ export function useChartOverlays(
     const lineEnd = maxTime !== undefined ? maxTime + fallbackStep : undefined
 
     // Add denoised line if present
-    if (bars.length && 'close_dn' in bars[0]) {
+    if (bars.some((bar) => Number.isFinite(bar.close_dn))) {
       const dnPoints = bars
         .filter((bar): bar is HistoryBar & { close_dn: number } => 
           Number.isFinite(bar.time) && Number.isFinite(bar.close_dn)

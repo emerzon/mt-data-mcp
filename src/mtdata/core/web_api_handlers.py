@@ -641,6 +641,8 @@ def get_history_response(  # noqa: C901
             server_meta = timezone_meta.get("server") if isinstance(timezone_meta, dict) else None
             if isinstance(server_meta, dict) and server_meta.get("offset_seconds") is not None:
                 payload["server_utc_offset_seconds"] = server_meta["offset_seconds"]
+            if isinstance(server_meta, dict) and server_meta.get("tz"):
+                payload["server_timezone"] = server_meta["tz"]
     return apply_output_verbosity(
         payload,
         detail=shape_detail,

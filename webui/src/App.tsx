@@ -35,6 +35,7 @@ export default function App() {
           showLast={workspace.showLast}
           isLive={workspace.isLive}
           timezoneMode={workspace.timezoneMode}
+          displayTimeZone={workspace.displayTimeZone}
           onToggleBid={workspace.toggleBid}
           onToggleAsk={workspace.toggleAsk}
           onToggleLast={workspace.toggleLast}
@@ -52,8 +53,17 @@ export default function App() {
             anchorTime={workspace.displayAnchor}
             overlays={workspace.displayOverlays}
             priceLines={workspace.priceLines}
+            timeZone={workspace.displayTimeZone}
           />
         </div>
+
+        {workspace.workspaceErrors.length > 0 && (
+          <div className="absolute top-16 left-3 z-20 max-w-xl rounded-lg border border-rose-800 bg-rose-950/95 px-3 py-2 text-xs text-rose-200 shadow-lg">
+            {workspace.workspaceErrors.map((message) => (
+              <div key={message}>{message}</div>
+            ))}
+          </div>
+        )}
 
         {/* Metrics overlay */}
         {workspace.metrics && (

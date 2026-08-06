@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import {
   getDimredMethods,
@@ -18,7 +18,7 @@ type Props = {
   symbol: string
   timeframe: string
   anchor?: number
-  onResult: (res: ForecastPayload) => void
+  onResult: (res: ForecastPayload | null) => void
 }
 
 type Tab = 'forecast' | 'volatility' | 'backtest'
@@ -71,14 +71,14 @@ function ForecastTab({
   symbol: string
   timeframe: string
   anchor?: number
-  onResult: (res: ForecastPayload) => void
+  onResult: (res: ForecastPayload | null) => void
 }) {
-  const { methods } = useForecastMethods()
+  const { methods, error: methodsError } = useForecastMethods()
   const { settings, setSettings, supportsDimred } = useForecastSettings(symbol, timeframe)
   const { data: dimredMethods } = useQuery({ queryKey: ['dimred_methods'], queryFn: getDimredMethods })
   const [showAdvanced, setShowAdvanced] = useState(false)
   const [showDenoise, setShowDenoise] = useState(false)
-  const { run, isLoading, error } = useForecast(symbol, timeframe, settings, onResult)
+  const { run, isLoading, error } = useForecast(symbol, timeframe, settings, onResult, anchor)
 
   const selectedMeta = useMemo(
     () => methods.find((method) => method.method === settings.method),
@@ -261,6 +261,12 @@ function ForecastTab({
         </div>
       )}
 
+      {methodsError && (
+        <div className="text-sm text-rose-400 bg-rose-950/50 border border-rose-800 rounded-lg px-3 py-2">
+          Forecast methods: {methodsError}
+        </div>
+      )}
+
       <div className="flex gap-2">
         <button
           className="flex-1 bg-sky-600 hover:bg-sky-500 text-white text-sm font-medium py-2 rounded-lg disabled:opacity-50"
@@ -296,7 +302,10 @@ function ForecastTab({
 }
 
 function VolatilityTab({ symbol, timeframe, anchor }: { symbol: string; timeframe: string; anchor?: number }) {
-  const { data: methods } = useQuery({ queryKey: ['vol_methods'], queryFn: getVolatilityMethods })
+  const { data: methods, error: methodsQueryError } = useQuery({
+    queryKey: ['vol_methods'],
+    queryFn: getVolatilityMethods,
+  })
 
   const [method, setMethod] = useState('ewma')
   const [horizon, setHorizon] = useState(12)
@@ -304,11 +313,25 @@ function VolatilityTab({ symbol, timeframe, anchor }: { symbol: string; timefram
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [result, setResult] = useState<VolatilityPayload | null>(null)
+  const runId = useRef(0)
+  const requestContract = JSON.stringify({ symbol, timeframe, anchor, method, horizon, proxy })
+  const requestContractRef = useRef(requestContract)
+  requestContractRef.current = requestContract
+
+  useEffect(() => {
+    runId.current += 1
+    setIsLoading(false)
+    setError(null)
+    setResult(null)
+  }, [anchor, horizon, method, proxy, symbol, timeframe])
 
   const run = async () => {
     if (!symbol) return
+    const runContract = requestContract
+    const currentRunId = ++runId.current
     setIsLoading(true)
     setError(null)
+    setResult(null)
     try {
       const response = await forecastVolatility({
         symbol,
@@ -318,11 +341,17 @@ function VolatilityTab({ symbol, timeframe, anchor }: { symbol: string; timefram
         proxy,
         as_of: anchor ? formatDateTime(anchor) : undefined,
       })
-      setResult(response)
+      if (currentRunId === runId.current && runContract === requestContractRef.current) {
+        setResult(response)
+      }
     } catch (err) {
-      setError(getErrorMessage(err))
+      if (currentRunId === runId.current && runContract === requestContractRef.current) {
+        setError(getErrorMessage(err))
+      }
     } finally {
-      setIsLoading(false)
+      if (currentRunId === runId.current && runContract === requestContractRef.current) {
+        setIsLoading(false)
+      }
     }
   }
 
@@ -375,6 +404,12 @@ function VolatilityTab({ symbol, timeframe, anchor }: { symbol: string; timefram
         </div>
       )}
 
+      {methodsQueryError && (
+        <div className="text-sm text-rose-400 bg-rose-950/50 border border-rose-800 rounded-lg px-3 py-2">
+          Volatility methods: {getErrorMessage(methodsQueryError)}
+        </div>
+      )}
+
       <button
         className="w-full bg-sky-600 hover:bg-sky-500 text-white text-sm font-medium py-2 rounded-lg disabled:opacity-50"
         onClick={run}
@@ -401,7 +436,7 @@ function VolatilityTab({ symbol, timeframe, anchor }: { symbol: string; timefram
 }
 
 function BacktestTab({ symbol, timeframe }: { symbol: string; timeframe: string }) {
-  const { methods } = useForecastMethods()
+  const { methods, error: methodsError } = useForecastMethods()
 
   const [selectedMethods, setSelectedMethods] = useState<string[]>(['theta'])
   const [horizon, setHorizon] = useState(12)
@@ -410,8 +445,30 @@ function BacktestTab({ symbol, timeframe }: { symbol: string; timeframe: string 
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [result, setResult] = useState<BacktestResult | null>(null)
+  const runId = useRef(0)
+  const requestContract = JSON.stringify({
+    symbol,
+    timeframe,
+    selectedMethods,
+    horizon,
+    steps,
+    spacing,
+  })
+  const requestContractRef = useRef(requestContract)
+  requestContractRef.current = requestContract
 
   const availableMethods = useMemo(() => methods.filter((method) => method.available), [methods])
+  const resultRows = useMemo(() => {
+    if (result?.ranked_methods) return result.ranked_methods
+    return Object.entries(result?.results ?? {}).map(([method, item]) => ({ method, ...item }))
+  }, [result])
+
+  useEffect(() => {
+    runId.current += 1
+    setIsLoading(false)
+    setError(null)
+    setResult(null)
+  }, [horizon, selectedMethods, spacing, steps, symbol, timeframe])
 
   const toggleMethod = (method: string) => {
     setSelectedMethods((previous) =>
@@ -421,15 +478,24 @@ function BacktestTab({ symbol, timeframe }: { symbol: string; timeframe: string 
 
   const run = async () => {
     if (!symbol || !selectedMethods.length) return
+    const runContract = requestContract
+    const currentRunId = ++runId.current
     setIsLoading(true)
     setError(null)
+    setResult(null)
     try {
       const response = await runBacktest({ symbol, timeframe, horizon, steps, spacing, methods: selectedMethods })
-      setResult(response)
+      if (currentRunId === runId.current && runContract === requestContractRef.current) {
+        setResult(response)
+      }
     } catch (err) {
-      setError(getErrorMessage(err))
+      if (currentRunId === runId.current && runContract === requestContractRef.current) {
+        setError(getErrorMessage(err))
+      }
     } finally {
-      setIsLoading(false)
+      if (currentRunId === runId.current && runContract === requestContractRef.current) {
+        setIsLoading(false)
+      }
     }
   }
 
@@ -493,6 +559,12 @@ function BacktestTab({ symbol, timeframe }: { symbol: string; timeframe: string 
         </div>
       )}
 
+      {methodsError && (
+        <div className="text-sm text-rose-400 bg-rose-950/50 border border-rose-800 rounded-lg px-3 py-2">
+          Forecast methods: {methodsError}
+        </div>
+      )}
+
       <button
         className="w-full bg-sky-600 hover:bg-sky-500 text-white text-sm font-medium py-2 rounded-lg disabled:opacity-50"
         onClick={run}
@@ -512,7 +584,8 @@ function BacktestTab({ symbol, timeframe }: { symbol: string; timeframe: string 
               </tr>
             </thead>
             <tbody>
-              {Object.entries(result.results).map(([method, item]) => {
+              {resultRows.map((item) => {
+                const method = item.method
                 const directionPercent = item.avg_directional_accuracy == null
                   ? null
                   : item.avg_directional_accuracy * 100

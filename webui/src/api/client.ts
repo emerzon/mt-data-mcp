@@ -1,4 +1,4 @@
-import axios, { AxiosError } from 'axios'
+import axios from 'axios'
 import type {
   HistoryBar,
   HistoryResponse,
@@ -51,13 +51,38 @@ function apiPath(path: string): string {
  * Standardized error extraction from axios errors.
  */
 export function getErrorMessage(error: unknown): string {
-  if (error instanceof AxiosError) {
-    return error.response?.data?.detail || error.response?.data?.message || error.message
+  if (axios.isAxiosError(error)) {
+    const data: unknown = error.response?.data
+    const message = extractErrorText(data)
+    return message ?? error.message ?? 'The API request failed'
   }
   if (error instanceof Error) {
     return error.message
   }
-  return 'An unknown error occurred'
+  return extractErrorText(error) ?? 'An unknown error occurred'
+}
+
+function extractErrorText(value: unknown): string | null {
+  if (typeof value === 'string') return value.trim() || null
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value)
+  if (Array.isArray(value)) {
+    const messages = value
+      .map((item) => extractErrorText(item))
+      .filter((item): item is string => Boolean(item))
+    return messages.length ? messages.join('; ') : null
+  }
+  if (!value || typeof value !== 'object') return null
+
+  const record = value as Record<string, unknown>
+  for (const key of ['detail', 'error', 'message', 'msg']) {
+    const message = extractErrorText(record[key])
+    if (message) return message
+  }
+  try {
+    return JSON.stringify(value)
+  } catch {
+    return null
+  }
 }
 
 // ============================================================================

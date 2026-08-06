@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { getHistory, getTick } from '../../api/client'
+import { getErrorMessage, getHistory, getTick } from '../../api/client'
 import { useChartOverlays, usePivotLevels, useSupportResistance } from '../../hooks/useForecast'
 import { loadJSON, saveJSON } from '../../lib/storage'
 import { toUtcSec } from '../../lib/time'
@@ -30,16 +30,19 @@ export function useChartWorkspace() {
   const [showLast, setShowLast] = useState(true)
   const [isLive, setIsLive] = useState(true)
   const [timezoneMode, setTimezoneMode] = useState<TimezoneMode>('local')
-  const [serverOffset, setServerOffset] = useState(0)
   const [forecastOverlays, setForecastOverlays] = useState<ChartOverlay[]>([])
   const [chartDenoise, setChartDenoise] = useState<DenoiseSpecUI | undefined>(undefined)
   const [metrics, setMetrics] = useState<AnchorMetrics | null>(null)
+  const [historyPageError, setHistoryPageError] = useState<string | null>(null)
+  const historyContract = JSON.stringify({ symbol, timeframe, denoise: chartDenoise ?? null })
+  const historyContractRef = useRef(historyContract)
+  historyContractRef.current = historyContract
 
   const pivotState = usePivotLevels(symbol, timeframe)
   const srState = useSupportResistance(symbol, timeframe, QUERY_LIMIT)
   const livePollMs = chartWorkspaceLivePollMs(timeframe)
 
-  const { data: histDataResponse, refetch, isFetching } = useQuery({
+  const { data: histDataResponse, error: historyError, refetch, isFetching } = useQuery({
     queryKey: ['hist', symbol, timeframe, QUERY_LIMIT, end, JSON.stringify(chartDenoise || {}), isLive],
     queryFn: ({ signal }) =>
       getHistory({
@@ -53,27 +56,25 @@ export function useChartWorkspace() {
     enabled: !!symbol,
   })
 
-  const { data: liveDataResponse } = useQuery({
-    queryKey: ['hist-live', symbol, timeframe],
-    queryFn: ({ signal }) => getHistory({ symbol, timeframe, limit: 2, include_incomplete: true }, signal),
+  const { data: liveDataResponse, error: liveHistoryError } = useQuery({
+    queryKey: ['hist-live', symbol, timeframe, JSON.stringify(chartDenoise || {})],
+    queryFn: ({ signal }) => getHistory({
+      symbol,
+      timeframe,
+      limit: 2,
+      denoise: chartDenoise,
+      include_incomplete: true,
+    }, signal),
     enabled: isLive && !!symbol && !end,
     refetchInterval: livePollMs,
   })
 
-  const { data: tickData } = useQuery({
+  const { data: tickData, error: tickError } = useQuery({
     queryKey: ['tick', symbol],
     queryFn: ({ signal }) => getTick(symbol, signal),
     enabled: !!symbol,
     refetchInterval: livePollMs,
   })
-
-  useEffect(() => {
-    const serverOffsetSeconds = histDataResponse?.server_utc_offset_seconds
-      ?? histDataResponse?.meta?.runtime?.timezone?.server?.offset_seconds
-    if (serverOffsetSeconds !== undefined) {
-      setServerOffset(serverOffsetSeconds)
-    }
-  }, [histDataResponse])
 
   useEffect(() => {
     if (!symbol || !timeframe) {
@@ -115,42 +116,32 @@ export function useChartWorkspace() {
     return merged
   }, [end, extraHistory, histDataResponse, isLive, liveDataResponse])
 
-  const displayBars = useMemo(() => {
-    if (timezoneMode === 'utc') return bars
-
-    if (timezoneMode === 'server') {
-      return bars.map((bar) => ({ ...bar, time: bar.time + serverOffset }))
+  const serverTimeZone = useMemo(() => {
+    const candidate = histDataResponse?.server_timezone
+      ?? histDataResponse?.meta?.runtime?.timezone?.server?.tz
+    if (!candidate) return undefined
+    try {
+      new Intl.DateTimeFormat('en-US', { timeZone: candidate }).format(0)
+      return candidate
+    } catch {
+      return undefined
     }
-
-    const localOffset = -new Date().getTimezoneOffset() * 60
-    return bars.map((bar) => ({ ...bar, time: bar.time + localOffset }))
-  }, [bars, timezoneMode, serverOffset])
-
-  const getCanonicalTime = useCallback(
-    (displayTime: number) => {
-      if (timezoneMode === 'utc') return displayTime
-      if (timezoneMode === 'server') return displayTime - serverOffset
-      const localOffset = -new Date().getTimezoneOffset() * 60
-      return displayTime - localOffset
-    },
-    [serverOffset, timezoneMode]
-  )
-
-  const getDisplayTime = useCallback(
-    (utcTime: number) => {
-      if (timezoneMode === 'utc') return utcTime
-      if (timezoneMode === 'server') return utcTime + serverOffset
-      const localOffset = -new Date().getTimezoneOffset() * 60
-      return utcTime + localOffset
-    },
-    [serverOffset, timezoneMode]
-  )
+  }, [histDataResponse])
+  const localTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
+  const displayTimeZone = timezoneMode === 'server'
+    ? serverTimeZone ?? 'UTC'
+    : timezoneMode === 'local'
+      ? localTimeZone
+      : 'UTC'
+  const displayBars = bars
 
   const handleAnchorSelect = useCallback(
-    (displayTime: number) => {
-      setAnchor(getCanonicalTime(displayTime))
+    (utcTime: number) => {
+      setAnchor(utcTime)
+      setForecastOverlays([])
+      setMetrics(null)
     },
-    [getCanonicalTime]
+    []
   )
 
   const resetWorkspaceView = useCallback(() => {
@@ -159,6 +150,7 @@ export function useChartWorkspace() {
     setForecastOverlays([])
     setAnchor(undefined)
     setMetrics(null)
+    setHistoryPageError(null)
     pivotState.reset()
     srState.reset()
   }, [pivotState, srState])
@@ -189,9 +181,11 @@ export function useChartWorkspace() {
   const handleNeedMoreLeft = useCallback(
     async (earliestDisplayTime: number) => {
       if (!symbol || isLoadingMore || isFetching) return
+      const requestedContract = historyContract
       setIsLoadingMore(true)
+      setHistoryPageError(null)
       try {
-        const utcTime = getCanonicalTime(earliestDisplayTime)
+        const utcTime = earliestDisplayTime
         const before = new Date((utcTime - 1) * 1000).toISOString().slice(0, 19).replace('T', ' ')
         const older = await getHistory({
           symbol,
@@ -200,21 +194,27 @@ export function useChartWorkspace() {
           end: before,
           denoise: chartDenoise,
         })
-        if (older.data.length) {
+        if (historyContractRef.current === requestedContract && older.data.length) {
           setExtraHistory((previous) => [...older.data, ...previous])
         }
       } catch (error) {
-        console.error('Failed to load more history:', error)
+        if (historyContractRef.current === requestedContract) {
+          setHistoryPageError(getErrorMessage(error))
+        }
       } finally {
         setIsLoadingMore(false)
       }
     },
-    [chartDenoise, getCanonicalTime, isFetching, isLoadingMore, symbol, timeframe]
+    [chartDenoise, historyContract, isFetching, isLoadingMore, symbol, timeframe]
   )
 
   const handleDenoiseChange = useCallback(
     (denoise?: DenoiseSpecUI) => {
       setChartDenoise(denoise)
+      setExtraHistory([])
+      setHistoryPageError(null)
+      setForecastOverlays([])
+      setMetrics(null)
       if (symbol && timeframe) {
         saveJSON(`chart_dn:${symbol}:${timeframe}`, denoise)
       }
@@ -223,7 +223,12 @@ export function useChartWorkspace() {
   )
 
   const handleForecastResult = useCallback(
-    (result: ForecastPayload) => {
+    (result: ForecastPayload | null) => {
+      if (!result) {
+        setForecastOverlays([])
+        setMetrics(null)
+        return
+      }
       const compactRows: NonNullable<ForecastPayload['forecast']> | undefined = result.forecast?.length
         ? result.forecast
         : result.uncertainty?.intervals?.map((row) => ({
@@ -232,7 +237,7 @@ export function useChartWorkspace() {
             lower: row.low,
             upper: row.high,
           }))
-      const mainValues = result.forecast_price || compactRows?.map((row) => row.value)
+      const mainValues = result.forecast_price || compactRows?.map((row) => row.price ?? row.value)
       if (
         !mainValues?.length ||
         !mainValues.every(
@@ -302,17 +307,19 @@ export function useChartWorkspace() {
       }
       setForecastOverlays(overlays)
 
-      if (result.__kind === 'partial' && anchor && bars.length) {
+      if (result.__kind === 'partial' && result.__anchor !== undefined && bars.length) {
         const closeByTime = new Map<number, number>()
         for (const bar of bars) closeByTime.set(Math.floor(bar.time), bar.close)
 
         const yPred: number[] = []
         const yAct: number[] = []
+        const alignedTimes: number[] = []
         for (let index = 0; index < times.length; index += 1) {
           const actual = closeByTime.get(Math.floor(times[index]))
           if (actual !== undefined && Number.isFinite(main[index])) {
             yPred.push(Number(main[index]))
             yAct.push(Number(actual))
+            alignedTimes.push(times[index])
           }
         }
 
@@ -328,11 +335,30 @@ export function useChartWorkspace() {
               n) *
             100
           const rmse = Math.sqrt(diffs.reduce((total, diff) => total + diff * diff, 0) / n)
-          const anchorClose = bars.find((bar) => Math.floor(bar.time) === Math.floor(anchor))?.close ?? yAct[0]
+          const firstForecastTime = alignedTimes[0]
+          const backendBaselineTime = result.data_window?.last_observation
+          let baselineClose: number | undefined
+          if (backendBaselineTime !== undefined) {
+            const baselineEpoch = toUtcSec(backendBaselineTime)
+            baselineClose = closeByTime.get(Math.floor(baselineEpoch))
+          }
+          if (baselineClose === undefined) {
+            for (let index = bars.length - 1; index >= 0; index -= 1) {
+              const bar = bars[index]
+              if (bar.time < firstForecastTime && Number.isFinite(bar.close)) {
+                baselineClose = bar.close
+                break
+              }
+            }
+          }
+          if (baselineClose === undefined) {
+            setMetrics(null)
+            return
+          }
 
           let correct = 0
           for (let index = 0; index < n; index += 1) {
-            const previous = index === 0 ? anchorClose : yAct[index - 1]
+            const previous = index === 0 ? baselineClose : yAct[index - 1]
             if (Math.sign(yPred[index] - previous) === Math.sign(yAct[index] - previous)) {
               correct += 1
             }
@@ -345,7 +371,7 @@ export function useChartWorkspace() {
         setMetrics(null)
       }
     },
-    [anchor, bars, timeframe]
+    [bars, timeframe]
   )
 
   const chartOverlays = useChartOverlays(
@@ -377,6 +403,33 @@ export function useChartWorkspace() {
   }, [bars, showAsk, showBid, showLast, tickData])
 
   const earliest = bars.length ? bars[0].time : undefined
+  const workspaceErrors = useMemo(() => {
+    const errors = [
+      historyError ? `History: ${getErrorMessage(historyError)}` : null,
+      isLive && !end && liveHistoryError
+        ? `Live history: ${getErrorMessage(liveHistoryError)}`
+        : null,
+      tickError ? `Quote: ${getErrorMessage(tickError)}` : null,
+      historyPageError ? `Older history: ${historyPageError}` : null,
+      pivotState.error ? `Pivots: ${pivotState.error}` : null,
+      srState.error ? `Support/resistance: ${srState.error}` : null,
+      timezoneMode === 'server' && !serverTimeZone
+        ? 'Exchange timezone unavailable; configure an IANA MT5_SERVER_TZ value.'
+        : null,
+    ]
+    return errors.filter((value): value is string => Boolean(value))
+  }, [
+    end,
+    historyError,
+    historyPageError,
+    isLive,
+    liveHistoryError,
+    pivotState.error,
+    serverTimeZone,
+    srState.error,
+    tickError,
+    timezoneMode,
+  ])
 
   return {
     symbol,
@@ -387,6 +440,7 @@ export function useChartWorkspace() {
     showLast,
     isLive,
     timezoneMode,
+    displayTimeZone,
     chartDenoise,
     bars,
     displayBars,
@@ -397,6 +451,7 @@ export function useChartWorkspace() {
     srLevels: srState.levels,
     isFetching,
     isLoadingMore,
+    workspaceErrors,
     earliest,
     setTimezoneMode,
     handleAnchorSelect,
@@ -416,11 +471,12 @@ export function useChartWorkspace() {
     toggleAsk: () => setShowAsk((value) => !value),
     toggleLast: () => setShowLast((value) => !value),
     toggleLive: () => setIsLive((value) => !value),
-    clearAnchor: () => setAnchor(undefined),
-    displayAnchor: anchor !== undefined ? getDisplayTime(anchor) : undefined,
-    displayOverlays: chartOverlays.map((overlay) => ({
-      ...overlay,
-      points: overlay.points.map((point) => ({ ...point, time: getDisplayTime(point.time) })),
-    })),
+    clearAnchor: () => {
+      setAnchor(undefined)
+      setForecastOverlays([])
+      setMetrics(null)
+    },
+    displayAnchor: anchor,
+    displayOverlays: chartOverlays,
   }
 }

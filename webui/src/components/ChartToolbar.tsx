@@ -8,6 +8,7 @@ import {
   TimeframeSelector,
   TimezoneSelector,
 } from '../features/chart-workspace/toolbarMenus'
+import { formatEpochTime } from '../lib/time'
 
 type Props = {
   symbol: string
@@ -35,6 +36,7 @@ type Props = {
   onToggleLast: () => void
   onToggleLive: () => void
   timezoneMode: 'utc' | 'local' | 'server'
+  displayTimeZone: string
   onTimezoneChange: (value: 'utc' | 'local' | 'server') => void
   onAuthChange: () => void
 }
@@ -65,6 +67,7 @@ export function ChartToolbar({
   onToggleLast,
   onToggleLive,
   timezoneMode,
+  displayTimeZone,
   onTimezoneChange,
   onAuthChange,
 }: Props) {
@@ -89,7 +92,7 @@ export function ChartToolbar({
           {barsCount} bars
           {displayAnchor !== undefined && (
             <span className="ml-2 text-amber-400">
-              Anchor: {new Date(displayAnchor * 1000).toISOString().slice(11, 19)}
+              Anchor: {formatEpochTime(displayAnchor, displayTimeZone)}
               <button className="ml-1 text-slate-500 hover:text-slate-300" onClick={onClearAnchor}>
                 ×
               </button>

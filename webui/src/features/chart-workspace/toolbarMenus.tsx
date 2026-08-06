@@ -1,6 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { getDenoiseMethods, getTimeframes, getWavelets, searchInstruments } from '../../api/client'
+import {
+  getDenoiseMethods,
+  getErrorMessage,
+  getTimeframes,
+  getWavelets,
+  searchInstruments,
+} from '../../api/client'
 import { loadJSON } from '../../lib/storage'
 import type { DenoiseSpecUI } from '../../types'
 import { ChevronDown } from './toolbarIcons'
@@ -65,7 +71,7 @@ function SymbolDropdown({
   onClose: () => void
 }) {
   const ref = useDismissiblePanel(onClose)
-  const { data: searchResults } = useQuery({
+  const { data: searchResults, error, isFetching } = useQuery({
     queryKey: ['instruments', search],
     queryFn: ({ signal }) => searchInstruments(search || undefined, 50, signal),
     enabled: !!search,
@@ -99,7 +105,19 @@ function SymbolDropdown({
             {item.description && <span className="ml-2 text-slate-500 text-xs">{item.description}</span>}
           </button>
         ))}
-        {items.length === 0 && <div className="px-3 py-4 text-sm text-slate-500 text-center">No instruments found</div>}
+        {error && (
+          <div className="px-3 py-4 text-sm text-rose-400 text-center">
+            Instrument search failed: {getErrorMessage(error)}
+          </div>
+        )}
+        {!error && isFetching && (
+          <div className="px-3 py-4 text-sm text-slate-500 text-center">Searching...</div>
+        )}
+        {!error && !isFetching && items.length === 0 && (
+          <div className="px-3 py-4 text-sm text-slate-500 text-center">
+            {search ? 'No instruments found' : 'No recent instruments'}
+          </div>
+        )}
       </div>
     </div>
   )
