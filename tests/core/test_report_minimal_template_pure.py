@@ -95,6 +95,29 @@ def test_template_minimal_reports_direct_forecast_error() -> None:
     assert report["sections"]["forecast"]["selection_mode"] == "direct"
 
 
+def test_template_minimal_accepts_space_separated_methods() -> None:
+    requested_methods = []
+
+    def _fake_get_raw_result(func, *args, **kwargs):
+        func_name = getattr(func, "__name__", "")
+        if func_name == "data_fetch_candles":
+            return {"bars": _make_context_bars()}
+        if func_name == "forecast_generate":
+            requested_methods.append(kwargs["method"])
+            return {"forecast_price": [1.1070], "trend": "up"}
+        raise AssertionError(f"Unexpected tool call: {func_name}")
+
+    with patch(
+        "mtdata.core.report_templates.minimal._get_raw_result",
+        side_effect=_fake_get_raw_result,
+    ):
+        from mtdata.core.report_templates.minimal import template_minimal
+
+        template_minimal("EURUSD", 12, None, {"methods": "theta arima"})
+
+    assert requested_methods == ["theta"]
+
+
 def test_template_minimal_forwards_context_indicators_param() -> None:
     requested_indicators = []
 

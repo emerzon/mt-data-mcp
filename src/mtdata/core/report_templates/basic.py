@@ -593,7 +593,7 @@ def template_basic(  # noqa: C901
     vol_errors: List[Dict[str, Any]] = []
     for hh in vol_horizons:
         row: Dict[str, Any] = {'horizon': int(hh)}
-        vals: List[float] = []
+        contributors: List[Dict[str, Any]] = []
         for m in methods:
             vres = _get_raw_result(
                 forecast_volatility_estimate,
@@ -631,46 +631,16 @@ def template_basic(  # noqa: C901
             except Exception:
                 use_val = None
             if use_val is None:
-                # fallback: rolling_std proxy
-                proxy_res = _get_raw_result(
-                    forecast_volatility_estimate,
-                    symbol=symbol,
-                    timeframe=tf,
-                    horizon=int(hh),
-                    method='rolling_std',
-                    start=start,
-                    end=end,
-                    detail='full',
-                )
-                psh = _first_volatility_value(
-                    proxy_res,
-                    ('volatility_horizon', 'horizon_sigma_price'),
-                )
-                try:
-                    pf = float(psh) if psh is not None else None
-                    if pf is not None and pf == pf and pf >= 0.0:
-                        row[m] = pf
-                        row[m + '_note'] = 'std proxy'
-                        vals.append(pf)
-                    else:
-                        error_text = str(proxy_res.get('error') or 'no value')
-                        row[m + '_err'] = error_text
-                        vol_errors.append({
-                            'horizon': int(hh),
-                            'method': m,
-                            'error': error_text,
-                        })
-                except Exception:
-                    error_text = str(proxy_res.get('error') or 'invalid proxy value')
-                    row[m + '_err'] = error_text
-                    vol_errors.append({
-                        'horizon': int(hh),
-                        'method': m,
-                        'error': error_text,
-                    })
+                error_text = 'requested estimator returned no usable horizon value'
+                row[m + '_err'] = error_text
+                vol_errors.append({
+                    'horizon': int(hh),
+                    'method': m,
+                    'error': error_text,
+                })
             else:
                 row[m] = use_val
-                vals.append(use_val)
+                contributors.append({'method': m, 'value': use_val, 'weight': 1.0})
             # store bar sigma too in case renderer wants it later
             if sb is not None:
                 try:
@@ -681,15 +651,50 @@ def template_basic(  # noqa: C901
                         row[m + '_bar_err'] = 'nan bar sigma'
                 except Exception:
                     row[m + '_bar_err'] = 'invalid bar sigma value'
-        if len(vals) > 0:
+        if not contributors:
+            proxy_res = _get_raw_result(
+                forecast_volatility_estimate,
+                symbol=symbol,
+                timeframe=tf,
+                horizon=int(hh),
+                method='rolling_std',
+                start=start,
+                end=end,
+                detail='full',
+            )
+            proxy_value = _first_volatility_value(
+                proxy_res,
+                ('volatility_horizon', 'horizon_sigma_price'),
+            )
             try:
-                row['avg'] = sum(vals) / len(vals)
+                proxy_float = float(proxy_value) if proxy_value is not None else None
             except Exception:
-                pass
+                proxy_float = None
+            if proxy_float is not None and isfinite(proxy_float) and proxy_float >= 0.0:
+                row['rolling_std_proxy'] = proxy_float
+                contributors.append({
+                    'method': 'rolling_std_proxy',
+                    'value': proxy_float,
+                    'weight': 1.0,
+                    'provenance': 'fallback_when_all_requested_estimators_unavailable',
+                })
+        if contributors:
+            values = [float(item['value']) for item in contributors]
+            row['avg'] = sum(values) / len(values)
+            row['avg_method'] = (
+                contributors[0]['method']
+                if len(contributors) == 1
+                else 'ensemble_mean'
+            )
+            equal_weight = 1.0 / len(contributors)
+            for contributor in contributors:
+                contributor['weight'] = equal_weight
+            row['contributors'] = contributors
             matrix_rows.append(row)
     if matrix_rows:
         report['sections']['volatility'] = {
             'methods': methods,
+            'aggregate_method': 'ensemble_mean',
             'matrix': matrix_rows,
         }
     else:
@@ -796,6 +801,35 @@ def template_basic(  # noqa: C901
                 if isinstance(method_stats, dict):
                     stats_by_method[str(method_name)] = method_stats
 
+        quality_candidates: List[tuple[str, float]] = []
+        for method_name, method_stats in stats_by_method.items():
+            if method_stats.get('success') is not True:
+                continue
+            try:
+                method_rmse = float(method_stats.get('avg_rmse'))
+            except Exception:
+                continue
+            if not isfinite(method_rmse):
+                continue
+            if min_dir_acc is not None:
+                try:
+                    method_da = float(method_stats.get('avg_directional_accuracy'))
+                except Exception:
+                    continue
+                if not isfinite(method_da) or method_da < float(min_dir_acc):
+                    continue
+            quality_candidates.append((method_name, method_rmse))
+        quality_best_rmse = min(
+            (item[1] for item in quality_candidates),
+            default=float('inf'),
+        )
+        quality_limit = quality_best_rmse * (1.0 + max(0.0, float(rmse_tol)))
+        eligible_methods = {
+            method_name
+            for method_name, method_rmse in quality_candidates
+            if method_rmse <= quality_limit
+        }
+
         ranked_methods: List[str] = []
         for row in ranking:
             if not isinstance(row, dict):
@@ -806,10 +840,7 @@ def template_basic(  # noqa: C901
 
         candidate_methods: List[str] = [best_name]
         for method_name in ranked_methods:
-            if method_name not in candidate_methods:
-                candidate_methods.append(method_name)
-        for method_name in stats_by_method.keys():
-            if method_name not in candidate_methods:
+            if method_name in eligible_methods and method_name not in candidate_methods:
                 candidate_methods.append(method_name)
 
         selected_method = best_name
@@ -817,8 +848,7 @@ def template_basic(  # noqa: C901
         selected_forecast: Optional[Dict[str, Any]] = None
         fallback_notes: List[str] = []
         first_error: Optional[str] = None
-        first_degenerate: Optional[Dict[str, Any]] = None
-        first_degenerate_method: Optional[str] = None
+        failure_causes: Dict[str, Dict[str, str]] = {}
 
         if not report_section_enabled(p, 'forecast'):
             candidate_methods = []
@@ -836,12 +866,17 @@ def template_basic(  # noqa: C901
             if 'error' in fc:
                 if first_error is None:
                     first_error = str(fc.get('error') or '')
+                failure_causes[method_name] = {
+                    'code': 'forecast_error',
+                    'message': str(fc.get('error') or 'forecast generation failed'),
+                }
                 fallback_notes.append(f"{method_name}: forecast error ({fc.get('error')})")
                 continue
             if _is_degenerate_forecast_payload(fc):
-                if first_degenerate is None:
-                    first_degenerate = fc
-                    first_degenerate_method = method_name
+                failure_causes[method_name] = {
+                    'code': 'degenerate_forecast',
+                    'message': 'forecast values were degenerate',
+                }
                 fallback_notes.append(f"{method_name}: degenerate forecast")
                 continue
             selected_method = method_name
@@ -849,15 +884,11 @@ def template_basic(  # noqa: C901
             selected_forecast = fc
             break
 
-        if selected_forecast is None and first_degenerate is not None:
-            selected_method = first_degenerate_method or best_name
-            selected_stats = dict(stats_by_method.get(selected_method) or best_stats or {})
-            selected_forecast = first_degenerate
-
         if selected_forecast is None and report_section_enabled(p, 'forecast'):
             report['sections']['forecast'] = {
-                'error': first_error or 'No usable forecast generated.',
+                'error': first_error or 'No quality-eligible method produced a usable forecast.',
                 'method': best_name,
+                'eligible_methods': sorted(eligible_methods),
             }
         elif selected_forecast is not None and report_section_enabled(p, 'forecast'):
             report['sections']['forecast'] = {
@@ -865,8 +896,13 @@ def template_basic(  # noqa: C901
                 **adapt_forecast_payload_for_report(selected_forecast),
             }
             if selected_method != best_name:
+                initial_cause = failure_causes.get(best_name) or {
+                    'code': 'forecast_fallback',
+                    'message': 'initial method did not produce a usable forecast',
+                }
                 report['sections']['forecast']['fallback_from'] = best_name
-                report['sections']['forecast']['fallback_reason'] = 'initial best method produced a degenerate forecast'
+                report['sections']['forecast']['fallback_reason_code'] = initial_cause['code']
+                report['sections']['forecast']['fallback_reason'] = initial_cause['message']
                 report['fallback_applied'] = True
                 report['original_method'] = best_name
                 report['fallback_method'] = selected_method
@@ -912,12 +948,20 @@ def template_basic(  # noqa: C901
         except Exception:
             pass
         if selected_forecast is not None and selected_method != best_name:
+            initial_cause = failure_causes.get(best_name) or {
+                'code': 'forecast_fallback',
+                'message': 'initial method did not produce a usable forecast',
+            }
             selection_basis['fallback_applied'] = True
-            selection_basis['fallback_reason'] = 'initial best method produced a degenerate forecast'
+            selection_basis['fallback_reason_code'] = initial_cause['code']
+            selection_basis['fallback_reason'] = initial_cause['message']
         best_method_payload['selection_basis'] = selection_basis
         if selected_forecast is not None and selected_method != best_name:
             best_method_payload['initial_method'] = best_name
-            best_method_payload['selection_warning'] = 'Initial best method forecast was degenerate; fallback applied.'
+            best_method_payload['selection_warning'] = (
+                f"Initial best method failed ({initial_cause['code']}): "
+                f"{initial_cause['message']}; fallback applied."
+            )
         if fallback_notes:
             best_method_payload['selection_warnings'] = fallback_notes
         report['sections']['backtest']['best_method'] = best_method_payload

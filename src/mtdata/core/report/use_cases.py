@@ -10,7 +10,7 @@ from typing import Any, Dict, List, Optional
 from ..execution_logging import log_operation_exception, run_logged_operation
 from ..output_contract import normalize_output_detail
 from .requests import ReportGenerateRequest
-from .utils import extract_report_forecast_values
+from .utils import extract_report_forecast_values, normalize_report_methods
 
 logger = logging.getLogger(__name__)
 
@@ -216,11 +216,31 @@ def _is_user_facing_report_warning(warning_obj: Any) -> bool:
     return bool(warning_text)
 
 
-def _build_sections_status(sections: Dict[str, Any]) -> Dict[str, Any]:
+def _build_sections_status(
+    sections: Dict[str, Any],
+    *,
+    expected_sections: Optional[List[str]] = None,
+) -> Dict[str, Any]:
     statuses: Dict[str, str] = {}
     details: Dict[str, Dict[str, Any]] = {}
     summary = {"ok": 0, "partial": 0, "error": 0, "omitted": 0}
-    for name, payload in sections.items():
+    ordered_names = list(dict.fromkeys([*(expected_sections or []), *sections.keys()]))
+    for name in ordered_names:
+        if name not in sections:
+            statuses[str(name)] = "error"
+            summary["error"] += 1
+            details[str(name)] = {
+                "status": "error",
+                "reason": "scheduled section returned no payload",
+                "errors": [
+                    {
+                        "path": str(name),
+                        "message": "Scheduled report section was not returned by the template.",
+                    }
+                ],
+            }
+            continue
+        payload = sections[name]
         declared_status = (
             str(payload.get("status") or "").strip().lower()
             if isinstance(payload, dict)
@@ -976,7 +996,7 @@ def run_report_generate(  # noqa: C901
             if request.end:
                 params["end"] = request.end
             if request.methods is not None:
-                params["methods"] = request.methods
+                params["methods"] = normalize_report_methods(request.methods)
             section_plan = _resolve_report_section_plan(
                 name,
                 include_sections=request.include_sections,
@@ -1078,8 +1098,11 @@ def run_report_generate(  # noqa: C901
             template_sections = (
                 rep.get("sections") if isinstance(rep.get("sections"), dict) else None
             )
-            if summary_mode and isinstance(rep.get("sections"), dict):
-                source_sections_status = _build_sections_status(rep["sections"])
+            if isinstance(rep.get("sections"), dict):
+                source_sections_status = _build_sections_status(
+                    rep["sections"],
+                    expected_sections=section_plan["execution"],
+                )
             if not summary_mode:
                 _apply_report_section_controls(
                     rep,
@@ -1229,6 +1252,8 @@ def run_report_generate(  # noqa: C901
                                 if int(row.get("horizon") or 0) != int(eff_horizon):
                                     continue
                                 hs = row.get("avg")
+                                if hs is not None:
+                                    vol_method = row.get("avg_method")
                                 if hs is None:
                                     for key, value in row.items():
                                         if key in {"horizon", "avg"} or str(key).endswith(("_bar", "_err", "_note")):
@@ -1237,10 +1262,6 @@ def run_report_generate(  # noqa: C901
                                             hs = value
                                             vol_method = str(key)
                                             break
-                                if hs is not None and vol_method is None:
-                                    methods = vol.get("methods")
-                                    if isinstance(methods, list) and methods:
-                                        vol_method = str(methods[0])
                                 break
                     if hs is not None:
                         summ.append(f"h{eff_horizon} sigma={format_number(hs)}")
@@ -1337,7 +1358,13 @@ def run_report_generate(  # noqa: C901
                         initial = best_payload.get("initial_method")
                         chosen = best_payload.get("method")
                         if initial and chosen and str(initial) != str(chosen):
-                            line += ", fallback=degenerate-initial-forecast"
+                            basis = best_payload.get("selection_basis")
+                            reason_code = (
+                                basis.get("fallback_reason_code")
+                                if isinstance(basis, dict)
+                                else None
+                            )
+                            line += f", fallback={reason_code or 'forecast_fallback'}"
                     forecast_summary = summary_structured.setdefault("forecast", {})
                     if isinstance(forecast_summary, dict):
                         forecast_summary["selection"] = {

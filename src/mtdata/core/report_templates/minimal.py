@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from typing import Any, Dict, Iterable, Optional
+from typing import Any, Dict, Optional
 
 from ...shared.schema import DenoiseSpec
 from ..report.utils import (
     adapt_forecast_payload_for_report,
     now_utc_iso,
+    normalize_report_methods,
     parse_table_tail,
     report_section_enabled,
     resolve_report_context_indicators,
@@ -23,25 +24,11 @@ _MINIMAL_SKIPPED_SECTIONS = (
 )
 
 
-def _iter_requested_methods(value: Any) -> Iterable[str]:
-    if isinstance(value, str):
-        for token in value.split(","):
-            text = str(token or "").strip()
-            if text:
-                yield text
-        return
-    if isinstance(value, (list, tuple)):
-        for token in value:
-            text = str(token or "").strip()
-            if text:
-                yield text
-
-
 def _resolve_minimal_forecast_method(params: Dict[str, Any]) -> str:
     direct_method = str(params.get("method") or "").strip()
     if direct_method:
         return direct_method
-    for method_name in _iter_requested_methods(params.get("methods")):
+    for method_name in normalize_report_methods(params.get("methods")):
         return method_name
     return "theta"
 

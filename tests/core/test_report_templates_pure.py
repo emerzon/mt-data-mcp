@@ -1276,7 +1276,7 @@ class TestTemplateBasic:
     @patch(f"{_BASIC_MODULE}.pick_best_forecast_method")
     @patch(f"{_BASIC_MODULE}.summarize_barrier_grid")
     @patch(f"{_BASIC_MODULE}.attach_multi_timeframes")
-    def test_basic_falls_back_when_best_forecast_is_degenerate(
+    def test_basic_falls_back_with_typed_forecast_error(
         self, mock_mtf, mock_sum_bar, mock_pick, mock_tail,
         mock_now, mock_raw,
     ):
@@ -1300,13 +1300,15 @@ class TestTemplateBasic:
                 return {
                     "results": {
                         "sf_autoarima": {
+                            "success": True,
                             "avg_rmse": 0.9,
                             "avg_mae": 0.7,
                             "avg_directional_accuracy": 0.2,
                             "successful_tests": 20,
                         },
                         "naive": {
-                            "avg_rmse": 0.95,
+                            "success": True,
+                            "avg_rmse": 0.94,
                             "avg_mae": 0.8,
                             "avg_directional_accuracy": 0.1,
                             "successful_tests": 20,
@@ -1316,7 +1318,7 @@ class TestTemplateBasic:
             if "forecast_generate" in name.lower() or "generate" in name.lower():
                 method = kwargs.get("method")
                 if method == "sf_autoarima":
-                    return {"forecast_price": [float("nan")] * 12}
+                    return {"error": "optional dependency unavailable"}
                 if method == "naive":
                     return {"forecast_price": [65290.6, 65320.0, 65380.0, 65440.0]}
                 return {"error": f"unexpected method: {method}"}
@@ -1334,7 +1336,9 @@ class TestTemplateBasic:
         forecast = report["sections"].get("forecast", {})
         assert forecast.get("method") == "naive"
         assert forecast.get("fallback_from") == "sf_autoarima"
-        assert any("degenerate" in str(v).lower() for v in forecast.get("selection_warnings", []))
+        assert forecast.get("fallback_reason_code") == "forecast_error"
+        assert "optional dependency unavailable" in forecast.get("fallback_reason", "")
+        assert any("forecast error" in str(v).lower() for v in forecast.get("selection_warnings", []))
         assert report.get("fallback_applied") is True
         assert report.get("original_method") == "sf_autoarima"
         assert report.get("fallback_method") == "naive"
@@ -1346,6 +1350,7 @@ class TestTemplateBasic:
         assert selection_basis.get("primary_metric") == "avg_rmse"
         assert selection_basis.get("tie_breaker") == "avg_directional_accuracy"
         assert selection_basis.get("fallback_applied") is True
+        assert selection_basis.get("fallback_reason_code") == "forecast_error"
         criteria = report["sections"].get("backtest", {}).get("selection_criteria", {})
         assert criteria.get("primary_metric") == "avg_rmse"
 

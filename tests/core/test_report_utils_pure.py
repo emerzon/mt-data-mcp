@@ -29,6 +29,7 @@ from mtdata.core.report.utils import (
     format_number,
     market_snapshot,
     merge_params,
+    normalize_report_methods,
     now_utc_iso,
     parse_table_tail,
     pick_best_forecast_method,
@@ -53,6 +54,19 @@ class TestNowUtcIso:
         before = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:")
         result = now_utc_iso()
         assert result.startswith(before[:11])  # at least same date
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        (["theta", "arima"], ["theta", "arima"]),
+        ("theta,arima", ["theta", "arima"]),
+        ("theta arima", ["theta", "arima"]),
+        (["theta arima", "theta"], ["theta", "arima"]),
+    ],
+)
+def test_normalize_report_methods_accepts_documented_input_shapes(value, expected):
+    assert normalize_report_methods(value) == expected
 
 
 # ---------------------------------------------------------------------------

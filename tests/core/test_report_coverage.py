@@ -36,6 +36,21 @@ def test_sections_status_preserves_intentional_omissions():
     }
     assert status["details"]["pivot"]["reason"] == "current_only_section_omitted"
 
+
+def test_sections_status_marks_scheduled_missing_sections_as_errors():
+    from mtdata.core.report.use_cases import _build_sections_status
+
+    status = _build_sections_status(
+        {"context": {"close": 1.2}},
+        expected_sections=["context", "forecast"],
+    )
+
+    assert status["sections"] == {"context": "ok", "forecast": "error"}
+    assert status["details"]["forecast"]["reason"] == (
+        "scheduled section returned no payload"
+    )
+    assert status["summary"]["error"] == 1
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -162,11 +177,68 @@ def test_basic_report_volatility_failure_keeps_method_errors(monkeypatch):
     assert "unavailable" in volatility["errors"][0]["error"]
 
 
+def test_basic_report_does_not_fallback_outside_rmse_gate(monkeypatch):
+    from mtdata.core.report_templates import basic as template_basic_mod
+
+    forecast_calls = []
+
+    def fake_raw_result(func, *args, **kwargs):
+        name = getattr(func, "__name__", "")
+        if name == "forecast_backtest_run":
+            return {
+                "results": {
+                    "theta": {
+                        "success": True,
+                        "avg_rmse": 0.9,
+                        "avg_directional_accuracy": 0.7,
+                    },
+                    "naive": {
+                        "success": True,
+                        "avg_rmse": 0.95,
+                        "avg_directional_accuracy": 0.8,
+                    },
+                }
+            }
+        if name == "forecast_generate":
+            forecast_calls.append(kwargs["method"])
+            if kwargs["method"] == "theta":
+                return {"error": "model unavailable"}
+            return {"forecast_price": [1.1, 1.2]}
+        return {"error": "section not requested"}
+
+    monkeypatch.setattr(template_basic_mod, "_get_raw_result", fake_raw_result)
+    monkeypatch.setattr(
+        template_basic_mod,
+        "pick_best_forecast_method",
+        lambda *args, **kwargs: (
+            "theta",
+            {
+                "success": True,
+                "avg_rmse": 0.9,
+                "avg_directional_accuracy": 0.7,
+            },
+        ),
+    )
+
+    out = template_basic_mod.template_basic(
+        "EURUSD",
+        horizon=3,
+        denoise=None,
+        params={"_report_execution_sections": ["backtest", "forecast"]},
+    )
+
+    assert forecast_calls == ["theta"]
+    assert out["sections"]["forecast"]["error"] == "model unavailable"
+    assert out["sections"]["forecast"]["eligible_methods"] == ["theta"]
+
+
 def test_run_report_generate_logs_finish_event(caplog):
     from mtdata.core.report.requests import ReportGenerateRequest
     from mtdata.core.report.use_cases import run_report_generate
 
-    basic_template = MagicMock(return_value={"sections": {}, "diagnostics": {}})
+    basic_template = MagicMock(
+        return_value={"sections": _make_full_sections(), "diagnostics": {}}
+    )
     with patch("mtdata.core.report_templates.template_basic", basic_template, create=True), \
          patch("mtdata.core.report_templates.template_minimal", basic_template, create=True), \
          patch("mtdata.core.report_templates.template_advanced", basic_template, create=True), \
@@ -430,8 +502,21 @@ def test_report_generate_compact_keeps_actionable_section_summaries():
         "timezone": "UTC",
     }
     sections["volatility"] = {
-        "methods": ["ewma"],
-        "matrix": [{"horizon": 3, "ewma": 0.0041, "avg": 0.0041}],
+        "methods": ["ewma", "parkinson"],
+        "aggregate_method": "ensemble_mean",
+        "matrix": [
+            {
+                "horizon": 3,
+                "ewma": 0.0041,
+                "parkinson": 0.0039,
+                "avg": 0.004,
+                "avg_method": "ensemble_mean",
+                "contributors": [
+                    {"method": "ewma", "value": 0.0041, "weight": 0.5},
+                    {"method": "parkinson", "value": 0.0039, "weight": 0.5},
+                ],
+            }
+        ],
     }
     sections["forecast"] = {
         "method": "EMA",
@@ -471,7 +556,11 @@ def test_report_generate_compact_keeps_actionable_section_summaries():
         "S1": 1.098,
         "display_timezone": "UTC",
     }
-    assert structured["volatility"] == {"horizon": 3, "sigma": 0.0041, "method": "ewma"}
+    assert structured["volatility"] == {
+        "horizon": 3,
+        "sigma": 0.004,
+        "method": "ensemble_mean",
+    }
     assert structured["forecast"]["first"] == 1.101
     assert structured["forecast"]["last"] == 1.104
     assert structured["backtest"]["best_method"] == "EMA"
@@ -537,12 +626,18 @@ def test_report_generate_standard_infers_root_timezone_from_sections():
          patch("mtdata.core.report_templates.template_intraday", mock_basic, create=True), \
          patch("mtdata.core.report_templates.template_swing", mock_basic, create=True), \
          patch("mtdata.core.report_templates.template_position", mock_basic, create=True):
-        out = fn("EURUSD", template="basic", horizon=3, detail="standard")
+        out = fn(
+            "EURUSD",
+            template="basic",
+            horizon=3,
+            detail="standard",
+            include_sections=["context"],
+        )
 
     assert out["timezone"] == "America/Chicago"
     assert out["sections"]["context"]["timezone"] == "America/Chicago"
     assert out["section_run_status"] == "complete"
-    assert out["content_detail"] == "full_sections"
+    assert out["content_detail"] == "selected_sections"
 
 
 def _make_full_sections():
@@ -564,8 +659,13 @@ def _make_full_sections():
             ],
             "methods": [{"method": "classic"}],
         },
+        "contexts_multi": {"H1": {"trend_compact": "up"}},
+        "pivot_multi": {"D1": {"levels": {}}},
         "volatility": {
             "horizon_sigma_price": 0.0045,
+        },
+        "backtest": {
+            "best_method": {"method": "EMA", "stats": {"avg_rmse": 0.001}},
         },
         "forecast": {
             "method": "EMA",
@@ -579,6 +679,7 @@ def _make_full_sections():
                 "best": {"tp": 1.2, "sl": 0.7, "edge": 0.2},
             },
         },
+        "patterns": {"recent": []},
     }
 
 
@@ -1370,7 +1471,17 @@ class TestReportWarnings:
 
         assert res["section_run_status"] == "failed"
         assert res["success"] is False
-        assert res["sections_to_retry"] == ["forecast", "context"]
+        assert res["sections_to_retry"] == [
+            "context",
+            "pivot",
+            "contexts_multi",
+            "pivot_multi",
+            "volatility",
+            "backtest",
+            "forecast",
+            "barriers",
+            "patterns",
+        ]
 
     def test_forecast_section_without_finite_values_is_not_healthy(self):
         from mtdata.core.report.use_cases import _build_sections_status

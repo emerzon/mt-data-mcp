@@ -297,6 +297,25 @@ def pick_best_forecast_method(
         return None
 
 
+def normalize_report_methods(value: Any) -> List[str]:
+    """Normalize documented comma/whitespace method inputs in stable order."""
+    if value is None:
+        return []
+    if isinstance(value, str):
+        raw_items = [value]
+    elif isinstance(value, (list, tuple)):
+        raw_items = list(value)
+    else:
+        raw_items = []
+    normalized: List[str] = []
+    for raw in raw_items:
+        for token in str(raw or "").replace(",", " ").split():
+            method = token.strip()
+            if method and method not in normalized:
+                normalized.append(method)
+    return normalized
+
+
 def summarize_barrier_grid(grid: Dict[str, Any], top_k: int = 3) -> Dict[str, Any]:
     try:
         best = grid.get('best') if isinstance(grid, dict) else None
