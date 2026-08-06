@@ -1079,7 +1079,12 @@ def _run_registered_forecast_method(
 ) -> Tuple[np.ndarray, Optional[np.ndarray], Dict[str, Any]]:
     forecaster = ForecastRegistry.get(method_l)
     method_params = dict(params)
-    if ci_alpha is not None and 'ci_alpha' not in method_params:
+    declared_params = getattr(forecaster, "PARAMS", ())
+    accepts_ci_param = any(
+        isinstance(spec, dict) and spec.get("name") == "ci_alpha"
+        for spec in declared_params
+    )
+    if ci_alpha is not None and accepts_ci_param and 'ci_alpha' not in method_params:
         method_params['ci_alpha'] = ci_alpha
     requested_model_id = str(model_id or "").strip()
     supports_training = bool(getattr(forecaster, 'supports_training', False))

@@ -59,11 +59,10 @@ class TestProcessIncludeSpecification:
         cols = _process_include_specification(df, {"include": "nonexistent"})
         assert cols == []
 
-    def test_default_empty_config(self):
+    def test_empty_config_does_not_implicitly_enable_observed_features(self):
         df = _make_ohlcv_df()
         cols = _process_include_specification(df, {})
-        # Default is 'ohlcv'
-        assert "open" in cols
+        assert cols == []
 
 
 class TestCreateFourierFeatures:

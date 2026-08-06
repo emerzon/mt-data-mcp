@@ -197,7 +197,10 @@ class TestUnifiedForecast(unittest.TestCase):
                 timeframe='H1',
                 method='naive',
                 horizon=3,
-                features={'include': 'ohlcv'},
+                features={
+                    'include': 'ohlcv',
+                    'observed_future_policy': 'carry_forward',
+                },
                 dimred_method='pca',
             )
         self.assertTrue(res['success'])
