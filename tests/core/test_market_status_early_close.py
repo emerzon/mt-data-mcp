@@ -263,6 +263,20 @@ class TestNextOpenSkipsAndAllowsHolidaySessions:
 # ---- _get_upcoming_holidays: impact field ----
 
 class TestUpcomingHolidayImpact:
+    def test_shared_derived_sessions_include_every_market(self):
+        now = datetime(2026, 11, 24, 12, 0, tzinfo=timezone.utc)
+
+        upcoming = ms_mod._get_upcoming_holidays(
+            ["NYSE", "NASDAQ"], days_ahead=7, now_utc=now
+        )
+
+        black_friday = next(
+            row
+            for row in upcoming
+            if row["date"] == "2026-11-27" and row["impact"] == "early_close"
+        )
+        assert black_friday["markets_affected"] == ["NASDAQ", "NYSE"]
+
     def test_day_after_holiday_appears_as_early_close(self, monkeypatch):
         """Upcoming holidays should include day-after early close entries."""
         test_market = {

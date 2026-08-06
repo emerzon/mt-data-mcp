@@ -48,6 +48,7 @@ _MARKETS = {
     "NYSE": {
         "name": "New York Stock Exchange",
         "country": "US",
+        "exchange_calendar": "XNYS",
         "timezone": "America/New_York",
         "open": (9, 30),  # 9:30 AM
         "close": (16, 0),  # 4:00 PM
@@ -59,6 +60,7 @@ _MARKETS = {
     "NASDAQ": {
         "name": "NASDAQ",
         "country": "US",
+        "exchange_calendar": "XNYS",
         "timezone": "America/New_York",
         "open": (9, 30),
         "close": (16, 0),
@@ -79,6 +81,7 @@ _MARKETS = {
     "XETRA": {
         "name": "Xetra (Frankfurt)",
         "country": "DE",
+        "exchange_calendar": "XETR",
         "timezone": "Europe/Berlin",
         "open": (9, 0),  # 9:00 AM
         "close": (17, 30),  # 5:30 PM
@@ -97,9 +100,10 @@ _MARKETS = {
     "TSE": {
         "name": "Tokyo Stock Exchange",
         "country": "JP",
+        "exchange_calendar": "XJPX",
         "timezone": "Asia/Tokyo",
         "open": (9, 0),  # 9:00 AM
-        "close": (15, 0),  # 3:00 PM
+        "close": (15, 30),  # 3:30 PM since 2024-11-05
         "lunch_start": (11, 30),
         "lunch_end": (12, 30),
         "early_close": None,
@@ -108,6 +112,7 @@ _MARKETS = {
     "HKEX": {
         "name": "Hong Kong Stock Exchange",
         "country": "HK",
+        "exchange_calendar": "XHKG",
         "timezone": "Asia/Hong_Kong",
         "open": (9, 30),  # 9:30 AM
         "close": (16, 0),  # 4:00 PM
@@ -120,6 +125,7 @@ _MARKETS = {
     "SSE": {
         "name": "Shanghai Stock Exchange",
         "country": "CN",
+        "exchange_calendar": "XSHG",
         "timezone": "Asia/Shanghai",
         "open": (9, 30),  # 9:30 AM
         "close": (15, 0),  # 3:00 PM
@@ -147,9 +153,23 @@ def _get_holidays(country: str, year: int) -> holidays.HolidayBase:
     return holidays.country_holidays(country, years=[int(year)])
 
 
-def _is_holiday(country: str, dt: datetime) -> Tuple[bool, Optional[str]]:
+@lru_cache(maxsize=128)
+def _get_exchange_holidays(exchange: str, year: int) -> holidays.HolidayBase:
+    """Return the venue trading calendar supplied by python-holidays."""
+    return holidays.financial_holidays(exchange, years=[int(year)])
+
+
+def _is_holiday(
+    country: str,
+    dt: datetime,
+    exchange: Optional[str] = None,
+) -> Tuple[bool, Optional[str]]:
     """Check if date is a holiday and return holiday name if so."""
-    h = _get_holidays(country, dt.year)
+    h = (
+        _get_exchange_holidays(exchange, dt.year)
+        if exchange
+        else _get_holidays(country, dt.year)
+    )
     date_key = dt.date()
     if date_key in h:
         return True, str(h[date_key])
@@ -293,7 +313,8 @@ def _is_early_close_session(
     session_dt: datetime,
 ) -> bool:
     """Return whether *session_dt* should trade as an early-close session."""
-    is_holiday_result, holiday_name = _is_holiday(country, session_dt)
+    exchange = market.get("exchange_calendar")
+    is_holiday_result, holiday_name = _is_holiday(country, session_dt, exchange)
 
     if is_holiday_result and holiday_name and market.get("early_close_holidays"):
         for h_name in market["early_close_holidays"]:
@@ -308,7 +329,7 @@ def _is_early_close_session(
 
     if market.get("early_close_day_after"):
         yesterday = session_dt - timedelta(days=1)
-        _, yesterday_holiday = _is_holiday(country, yesterday)
+        _, yesterday_holiday = _is_holiday(country, yesterday, exchange)
         if yesterday_holiday:
             for h_name in market["early_close_day_after"]:
                 if h_name.lower() in yesterday_holiday.lower():
@@ -316,7 +337,7 @@ def _is_early_close_session(
 
     if market.get("early_close_eves"):
         tomorrow = session_dt + timedelta(days=1)
-        _, tomorrow_holiday = _is_holiday(country, tomorrow)
+        _, tomorrow_holiday = _is_holiday(country, tomorrow, exchange)
         if tomorrow_holiday:
             for eve_name in market["early_close_eves"]:
                 if eve_name.lower() in tomorrow_holiday.lower():
@@ -336,7 +357,9 @@ def _next_market_open_datetime(
         if next_open.weekday() >= 5:
             next_open += timedelta(days=1)
             continue
-        is_holiday_result, _holiday_name = _is_holiday(country, next_open)
+        is_holiday_result, _holiday_name = _is_holiday(
+            country, next_open, market.get("exchange_calendar")
+        )
         if is_holiday_result and not _is_early_close_session(market, country, next_open):
             next_open += timedelta(days=1)
             continue
@@ -370,7 +393,9 @@ def _check_market_status(market_id: str, now_local: datetime) -> Dict[str, Any]:
         }
     
     # Check holidays
-    is_holiday_result, holiday_name = _is_holiday(country, now_local)
+    is_holiday_result, holiday_name = _is_holiday(
+        country, now_local, market.get("exchange_calendar")
+    )
 
     # Determine early close BEFORE the holiday return so same-day
     # half-holidays are not treated as full closures.
@@ -473,110 +498,131 @@ def _check_market_status(market_id: str, now_local: datetime) -> Dict[str, Any]:
     }
 
 
-def _get_upcoming_holidays(market_ids: List[str], days_ahead: int = 14) -> List[Dict[str, Any]]:
-    """Get upcoming holidays that will close markets within the next N days."""
-    upcoming: List[Dict[str, Any]] = []
-    now = datetime.now(timezone.utc)
-    seen: set = set()
-    
+def _get_upcoming_holidays(
+    market_ids: List[str],
+    days_ahead: int = 14,
+    *,
+    now_utc: Optional[datetime] = None,
+) -> List[Dict[str, Any]]:
+    """Get venue-local closure and shortened-session events."""
+    events: Dict[Tuple[str, str, str, Optional[str], str], Dict[str, Any]] = {}
+    current_utc = now_utc or datetime.now(timezone.utc)
+
+    def _upsert(
+        *,
+        market_id: str,
+        market: Dict[str, Any],
+        event_date: Any,
+        holiday_name: str,
+        impact: str,
+        early_close_time: Optional[str],
+        days_away: int,
+    ) -> None:
+        country = str(market["country"])
+        key = (
+            event_date.isoformat(),
+            country,
+            impact,
+            early_close_time,
+            holiday_name,
+        )
+        row = events.get(key)
+        if row is None:
+            row = {
+                "date": event_date.isoformat(),
+                "holiday": holiday_name,
+                "country": country,
+                "markets_affected": [],
+                "impact": impact,
+                "early_close_time": early_close_time,
+                "days_away": int(days_away),
+                "calendar_source": (
+                    "exchange_calendar"
+                    if market.get("exchange_calendar")
+                    else "country_calendar_fallback"
+                ),
+            }
+            events[key] = row
+        if market_id not in row["markets_affected"]:
+            row["markets_affected"].append(market_id)
+
     for market_id in market_ids:
-        if market_id not in _MARKETS:
+        market = _MARKETS.get(market_id)
+        if market is None:
             continue
-        
-        market = _MARKETS[market_id]
-        country = market["country"]
-        
+        country = str(market["country"])
+        exchange = market.get("exchange_calendar")
+        now_local = current_utc.astimezone(ZoneInfo(str(market["timezone"])))
         try:
-            # Check next N days
-            for i in range(1, days_ahead + 1):
-                check_date = now + timedelta(days=i)
-                date_key = check_date.date()
+            for days_away in range(0, days_ahead + 1):
+                check_local = now_local + timedelta(days=days_away)
+                is_holiday_result, holiday_name = _is_holiday(
+                    country, check_local, exchange
+                )
+                if not is_holiday_result or holiday_name is None:
+                    continue
+                event_date = check_local.date()
+                same_day_early = any(
+                    name.lower() in holiday_name.lower()
+                    for name in market.get("early_close_holidays", [])
+                )
+                early_time = (
+                    f"{market['early_close'][0]:02d}:{market['early_close'][1]:02d}"
+                    if same_day_early and market.get("early_close")
+                    else None
+                )
+                _upsert(
+                    market_id=market_id,
+                    market=market,
+                    event_date=event_date,
+                    holiday_name=holiday_name,
+                    impact="early_close" if same_day_early else "closed",
+                    early_close_time=early_time,
+                    days_away=days_away,
+                )
 
-                is_holiday_result, holiday_name = _is_holiday(country, check_date)
-                if is_holiday_result and holiday_name is not None:
-                    key = (country, date_key.isoformat())
-                    
-                    if key not in seen:
-                        seen.add(key)
-                        
-                        # Determine impact: same-day half-holiday
-                        is_early_close = False
-                        early_close_time = None
-                        if market.get("early_close_holidays"):
-                            for h_name in market["early_close_holidays"]:
-                                if h_name.lower() in holiday_name.lower():
-                                    is_early_close = True
-                                    break
-
-                        if is_early_close and market.get("early_close"):
-                            early_close_time = f"{market['early_close'][0]:02d}:{market['early_close'][1]:02d}"
-                        
-                        upcoming.append({
-                            "date": date_key.isoformat(),
-                            "holiday": holiday_name,
-                            "country": country,
-                            "markets_affected": [market_id],
-                            "impact": "early_close" if is_early_close else "closed",
-                            "early_close_time": early_close_time,
-                            "days_away": i,
-                        })
-
-                        # Day-after: the day after this holiday may be an
-                        # early close (e.g. Black Friday after Thanksgiving).
-                        if market.get("early_close_day_after"):
-                            for h_name in market["early_close_day_after"]:
-                                if h_name.lower() in holiday_name.lower():
-                                    after_date = check_date + timedelta(days=1)
-                                    after_key = (country, after_date.date().isoformat())
-                                    if after_key not in seen and after_date.date().weekday() < 5:
-                                        seen.add(after_key)
-                                        ect = None
-                                        if market.get("early_close"):
-                                            ect = f"{market['early_close'][0]:02d}:{market['early_close'][1]:02d}"
-                                        upcoming.append({
-                                            "date": after_date.date().isoformat(),
-                                            "holiday": f"Day after {holiday_name}",
-                                            "country": country,
-                                            "markets_affected": [market_id],
-                                            "impact": "early_close",
-                                            "early_close_time": ect,
-                                            "days_away": i + 1,
-                                        })
-                                    break
-
-                        # Eve: the day before this holiday may be an early close.
-                        if market.get("early_close_eves"):
-                            for eve_name in market["early_close_eves"]:
-                                if eve_name.lower() in holiday_name.lower():
-                                    eve_date = check_date - timedelta(days=1)
-                                    eve_key = (country, eve_date.date().isoformat())
-                                    if eve_key not in seen and eve_date.date().weekday() < 5:
-                                        seen.add(eve_key)
-                                        ect = None
-                                        if market.get("early_close"):
-                                            ect = f"{market['early_close'][0]:02d}:{market['early_close'][1]:02d}"
-                                        upcoming.append({
-                                            "date": eve_date.date().isoformat(),
-                                            "holiday": f"Eve of {holiday_name}",
-                                            "country": country,
-                                            "markets_affected": [market_id],
-                                            "impact": "early_close",
-                                            "early_close_time": ect,
-                                            "days_away": max(0, i - 1),
-                                        })
-                                    break
-                    else:
-                        # Add market to existing holiday entry
-                        for entry in upcoming:
-                            if entry["date"] == date_key.isoformat() and entry["country"] == country:
-                                if market_id not in entry["markets_affected"]:
-                                    entry["markets_affected"].append(market_id)
-                                break
+                derived_time = (
+                    f"{market['early_close'][0]:02d}:{market['early_close'][1]:02d}"
+                    if market.get("early_close")
+                    else None
+                )
+                if any(
+                    name.lower() in holiday_name.lower()
+                    for name in market.get("early_close_day_after", [])
+                ):
+                    after_date = event_date + timedelta(days=1)
+                    if after_date.weekday() < 5:
+                        _upsert(
+                            market_id=market_id,
+                            market=market,
+                            event_date=after_date,
+                            holiday_name=f"Day after {holiday_name}",
+                            impact="early_close",
+                            early_close_time=derived_time,
+                            days_away=days_away + 1,
+                        )
+                if any(
+                    name.lower() in holiday_name.lower()
+                    for name in market.get("early_close_eves", [])
+                ):
+                    eve_date = event_date - timedelta(days=1)
+                    if eve_date.weekday() < 5:
+                        _upsert(
+                            market_id=market_id,
+                            market=market,
+                            event_date=eve_date,
+                            holiday_name=f"Eve of {holiday_name}",
+                            impact="early_close",
+                            early_close_time=derived_time,
+                            days_away=max(0, days_away - 1),
+                        )
         except Exception as exc:
-            logger.warning(f"Failed to get holidays for {country}: {exc}")
-    
-    # Sort by date
-    upcoming.sort(key=lambda x: (x["date"], x["country"]))
+            logger.warning("Failed to get exchange holidays for %s: %s", market_id, exc)
+
+    upcoming = list(events.values())
+    for row in upcoming:
+        row["markets_affected"].sort()
+    upcoming.sort(key=lambda row: (row["date"], row["country"], row["impact"]))
     return upcoming
 
 

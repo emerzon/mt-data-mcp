@@ -750,17 +750,21 @@ def test_upcoming_holidays_crosses_into_the_next_year(monkeypatch) -> None:
         def now(cls, tz=None):
             return cls(2030, 12, 30, 12, 0, tzinfo=tz or timezone.utc)
 
-    def fake_country_holidays(country: str, years):
+    def fake_financial_holidays(exchange: str, years):
         year_tuple = tuple(int(value) for value in years)
-        calls.append((country, year_tuple))
+        calls.append((exchange, year_tuple))
         year = year_tuple[0]
         if year == 2031:
             return {date(2031, 1, 1): "New Year's Day"}
         return {}
 
-    market_status_mod._get_holidays.cache_clear()
+    market_status_mod._get_exchange_holidays.cache_clear()
     monkeypatch.setattr(market_status_mod, "datetime", FixedDateTime)
-    monkeypatch.setattr(market_status_mod.holidays, "country_holidays", fake_country_holidays)
+    monkeypatch.setattr(
+        market_status_mod.holidays,
+        "financial_holidays",
+        fake_financial_holidays,
+    )
 
     upcoming = market_status_mod._get_upcoming_holidays(["NYSE"], days_ahead=3)
 
@@ -773,9 +777,60 @@ def test_upcoming_holidays_crosses_into_the_next_year(monkeypatch) -> None:
             "impact": "closed",
             "early_close_time": None,
             "days_away": 2,
+            "calendar_source": "exchange_calendar",
         }
     ]
-    assert calls == [("US", (2030,)), ("US", (2031,))]
+    assert calls == [("XNYS", (2030,)), ("XNYS", (2031,))]
+
+
+def test_upcoming_holidays_use_each_venue_local_date(monkeypatch) -> None:
+    checked_dates: list[date] = []
+
+    def fake_is_holiday(_country: str, dt: datetime, _exchange=None):
+        checked_dates.append(dt.date())
+        if dt.date() == date(2026, 1, 2):
+            return True, "Local closure"
+        return False, None
+
+    monkeypatch.setattr(market_status_mod, "_is_holiday", fake_is_holiday)
+
+    upcoming = market_status_mod._get_upcoming_holidays(
+        ["TSE"],
+        days_ahead=1,
+        now_utc=datetime(2026, 1, 1, 15, 30, tzinfo=timezone.utc),
+    )
+
+    assert checked_dates[0] == date(2026, 1, 2)
+    assert upcoming[0]["date"] == "2026-01-02"
+    assert upcoming[0]["days_away"] == 0
+
+
+def test_exchange_calendar_differs_from_country_calendar() -> None:
+    market_status_mod._get_exchange_holidays.cache_clear()
+
+    good_friday = datetime(2026, 4, 3, 12, tzinfo=timezone.utc)
+    columbus_day = datetime(2026, 10, 12, 12, tzinfo=timezone.utc)
+    veterans_day = datetime(2026, 11, 11, 12, tzinfo=timezone.utc)
+
+    assert market_status_mod._is_holiday("US", good_friday, "XNYS")[0] is True
+    assert market_status_mod._is_holiday("US", columbus_day, "XNYS")[0] is False
+    assert market_status_mod._is_holiday("US", veterans_day, "XNYS")[0] is False
+
+
+def test_tokyo_session_uses_current_1530_close(monkeypatch) -> None:
+    monkeypatch.setattr(
+        market_status_mod,
+        "_is_holiday",
+        lambda _country, _dt, _exchange=None: (False, None),
+    )
+
+    result = market_status_mod._check_market_status(
+        "TSE",
+        datetime(2026, 8, 6, 15, 15, tzinfo=ZoneInfo("Asia/Tokyo")),
+    )
+
+    assert result["status"] == "open"
+    assert result["next_close"].endswith("T15:30:00+09:00")
 
 
 def test_normalize_market_status_output_compact_hides_messages_and_holidays() -> None:
