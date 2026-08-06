@@ -10,9 +10,8 @@ from ...shared.market_units import (
     quote_points_per_pip,
     snap_to_increment,
 )
-from ...utils.coercion import coerce_finite_float
+from ...utils.coercion import coerce_finite_float, coerce_scalar
 from ...utils.quote import tick_value
-from ...utils.utils import coerce_scalar
 from .gateway import MT5TradingGateway, create_trading_gateway, trading_connection_error
 from .sizing import _floor_volume_steps
 

@@ -9,7 +9,7 @@ from functools import lru_cache
 from importlib import import_module
 from typing import Any, Dict, List, Literal, Optional
 
-from ..forecast.barriers_shared import (
+from ..forecast.barrier_constants import (
     BARRIER_MONTE_CARLO_METHODS,
 )
 from ..forecast.exceptions import ForecastError

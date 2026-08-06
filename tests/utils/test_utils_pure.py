@@ -6,14 +6,14 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from mtdata.utils.coercion import coerce_scalar
+from mtdata.utils.coercion import safe_float as _safe_float
 from mtdata.utils.time import (
     _format_datetime_second_explicit,
     _format_time_explicit,
     _format_time_minimal,
 )
-from mtdata.utils.coercion import safe_float as _safe_float
 from mtdata.utils.utils import (
-    coerce_scalar,
     _format_numeric_rows_from_df,
     _normalize_limit,
     _normalize_ohlcv_arg,

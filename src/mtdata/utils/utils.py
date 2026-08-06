@@ -8,13 +8,12 @@ import dateparser
 import numpy as np
 import pandas as pd
 
+from .coercion import coerce_scalar as coerce_scalar
 from .formatting import (
     format_float,
-)
-from .formatting import (
     format_number,
+    optimal_decimals,
 )
-from .formatting import optimal_decimals
 
 
 def _positive_float_attr(obj: Any, *names: str) -> Optional[float]:
@@ -35,22 +34,6 @@ def _positive_float_attr(obj: Any, *names: str) -> Optional[float]:
         if math.isfinite(numeric) and numeric > 0.0:
             return numeric
     return None
-
-
-def coerce_scalar(s: str):
-    """Try to coerce a scalar string to int or float; otherwise return original string."""
-    try:
-        if s is None:
-            return s
-        st = str(s).strip()
-        if st == "":
-            return st
-        if st.isdigit() or (st.startswith('-') and st[1:].isdigit()):
-            return int(st)
-        v = float(st)
-        return v
-    except Exception:
-        return s
 
 
 def _normalize_ohlcv_arg(ohlcv: Optional[str]) -> Optional[Set[str]]:

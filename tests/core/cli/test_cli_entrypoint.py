@@ -1,7 +1,25 @@
 import io
+import subprocess
+import sys
 from unittest.mock import patch
 
 import pytest
+
+
+def test_cli_runtime_import_does_not_register_data_tool_family():
+    probe = (
+        "import sys; import mtdata.core.cli.runtime.commands; "
+        "assert 'mtdata.core.data' not in sys.modules"
+    )
+
+    completed = subprocess.run(
+        [sys.executable, "-c", probe],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 0, completed.stderr
 
 
 def test_version_path_does_not_import_cli_api(capsys):

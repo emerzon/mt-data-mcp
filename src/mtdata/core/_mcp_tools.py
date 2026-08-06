@@ -20,16 +20,15 @@ from ..shared.parameter_contracts import (
     OUTPUT_EXTRAS,
     PUBLIC_OUTPUT_PARAMS,
 )
-from ..utils.coercion import UNPARSED_BOOL, parse_bool_like
-from ..utils.utils import coerce_scalar
+from ..utils.coercion import UNPARSED_BOOL, coerce_scalar, parse_bool_like
 from .error_envelope import (
     build_error_payload,
     log_transport_exception,
     normalize_error_payload,
 )
 from .output_contract import (
-    attach_success_guidance,
     apply_output_verbosity,
+    attach_success_guidance,
     normalize_output_extras,
     resolve_output_contract,
 )

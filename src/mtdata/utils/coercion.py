@@ -5,8 +5,22 @@ from __future__ import annotations
 import math
 from typing import Any, Literal, Optional
 
-
 UNPARSED_BOOL = object()
+
+
+def coerce_scalar(value: Any) -> Any:
+    """Coerce a scalar string to int or float, otherwise preserve its value."""
+    try:
+        if value is None:
+            return value
+        text = str(value).strip()
+        if not text:
+            return text
+        if text.isdigit() or (text.startswith("-") and text[1:].isdigit()):
+            return int(text)
+        return float(text)
+    except Exception:
+        return value
 
 
 def parse_bool_like(value: Any, *, allow_none: bool = False) -> Any:

@@ -9,7 +9,7 @@ import copy
 import logging
 from typing import Any, Callable, Dict, Iterable
 
-from ..forecast.barriers_shared import BARRIER_MONTE_CARLO_METHODS
+from ..forecast.barrier_constants import BARRIER_MONTE_CARLO_METHODS
 from ..shared.parameter_contracts import (
     OUTPUT_EXTRA_FULL_ALIASES,
     OUTPUT_EXTRAS,

@@ -20,6 +20,7 @@ from ..utils.barriers import (
 )
 from ..utils.coercion import safe_float as _safe_float
 from ..utils.utils import parse_kv_or_json as _parse_kv_or_json
+from .barrier_constants import BARRIER_MONTE_CARLO_METHODS, BarrierMethodLiteral
 from .barrier_stats import _confidence_interval_wilson_proportion
 from .common import fetch_history as _fetch_history
 from .common import log_returns_from_prices as _log_returns_from_prices
@@ -61,28 +62,6 @@ BARRIER_METRIC_BASIS_NOTE = (
     "edge=prob_win-prob_loss; edge_vs_breakeven="
     "prob_win_resolved-breakeven_win_rate; "
     "profit_factor=resolved reward/loss; higher is better, positive ev/edge is favorable."
-)
-
-BarrierMethodLiteral = Literal[
-    "mc_gbm",
-    "mc_gbm_bb",
-    "hmm_mc",
-    "garch",
-    "bootstrap",
-    "heston",
-    "jump_diffusion",
-    "auto",
-]
-
-BARRIER_MONTE_CARLO_METHODS: Tuple[BarrierMethodLiteral, ...] = (
-    "mc_gbm",
-    "mc_gbm_bb",
-    "hmm_mc",
-    "garch",
-    "bootstrap",
-    "heston",
-    "jump_diffusion",
-    "auto",
 )
 
 _RANDOM_SEED_MODULUS = 2**32

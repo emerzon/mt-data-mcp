@@ -4,9 +4,6 @@ from typing import Any, Callable, Dict, List, Literal, Optional, Tuple, get_args
 
 from pydantic import ValidationError
 
-from ...data.requests import (
-    _normalize_indicator_specs as _shared_normalize_indicator_specs,
-)
 from ...error_envelope import build_error_payload
 from ...output_contract import normalize_output_extras
 
@@ -299,6 +296,12 @@ def create_command_function(  # noqa: C901
     def _normalize_indicator_specs(value: Any) -> Any:
         if value is None:
             return None
+        # Importing a submodule executes core.data.__init__, which registers the
+        # full candle/tick tool family. Keep that work off unrelated CLI starts.
+        from ...data.requests import (
+            _normalize_indicator_specs as _shared_normalize_indicator_specs,
+        )
+
         return _shared_normalize_indicator_specs(value)
 
     def _parse_wait_event_spec_text(text: str) -> Any:
