@@ -704,7 +704,7 @@ def _resolve_report_section_plan(
     while dependency_index < len(execution):
         section = execution[dependency_index]
         for dependency in _REPORT_SECTION_DEPENDENCIES.get(section, ()):
-            if dependency not in execution:
+            if dependency in available and dependency not in execution:
                 execution.append(dependency)
         dependency_index += 1
     if template == "scalping" and "barriers" in execution and "market" not in execution:

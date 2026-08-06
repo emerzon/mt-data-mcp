@@ -144,6 +144,22 @@ def test_report_section_plan_limits_every_template_to_context(template: str) -> 
     assert plan["execution"] == ["context"]
 
 
+def test_report_section_plan_only_runs_dependencies_available_to_template() -> None:
+    from mtdata.core.report.use_cases import _resolve_report_section_plan
+
+    minimal = _resolve_report_section_plan(
+        "minimal",
+        include_sections=["forecast"],
+    )
+    basic = _resolve_report_section_plan(
+        "basic",
+        include_sections=["forecast"],
+    )
+
+    assert minimal["execution"] == ["forecast"]
+    assert basic["execution"] == ["forecast", "backtest"]
+
+
 def test_report_generate_request_template_choices_are_validated():
     from mtdata.core.report.requests import ReportGenerateRequest
 
