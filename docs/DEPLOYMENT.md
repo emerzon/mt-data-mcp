@@ -77,10 +77,14 @@ Then, from another terminal:
 curl http://127.0.0.1:8001/health
 
 # MCP SSE endpoint is reachable (streams events; Ctrl+C to stop)
-curl -N http://127.0.0.1:8000/sse
+$env:MCP_AUTH_TOKEN = "change-me"
+curl -N -H "Authorization: Bearer $env:MCP_AUTH_TOKEN" http://127.0.0.1:8000/sse
 ```
 
-Stop it with `Ctrl+C` once you've confirmed the endpoints respond.
+Stop it with `Ctrl+C` once you've confirmed the endpoints respond. Clients may
+send the same token as `X-API-Key` instead of a bearer token. A `401` response
+without either header confirms that authentication is being enforced; it is not
+an SSE health failure.
 
 ---
 
