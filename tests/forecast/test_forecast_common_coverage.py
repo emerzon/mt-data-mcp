@@ -7,6 +7,7 @@ import os
 import threading
 import time
 import types
+from datetime import timezone
 
 import math
 from unittest.mock import MagicMock, PropertyMock, call, patch
@@ -343,6 +344,24 @@ class TestNextTimesFromLast:
             "2026-05-24 23:00",
             "2026-05-25 00:00",
         ]
+
+    def test_monthly_projection_uses_calendar_boundaries(self):
+        last_epoch = pd.Timestamp("2025-01-01", tz="UTC").timestamp()
+        with patch(
+            "mtdata.utils.time._broker_calendar_timezone",
+            return_value=timezone.utc,
+        ):
+            result = next_times_from_last(
+                last_epoch,
+                30 * 86400,
+                2,
+                timeframe="MN1",
+            )
+
+        assert [
+            pd.Timestamp(epoch, unit="s", tz="UTC").strftime("%Y-%m-%d")
+            for epoch in result
+        ] == ["2025-02-01", "2025-03-01"]
 
 
 # ===================================================================

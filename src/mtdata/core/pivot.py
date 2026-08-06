@@ -39,6 +39,7 @@ from ..utils.support_resistance import (
     merge_support_resistance_results,
     standard_support_resistance_payload,
 )
+from ..utils.time import bar_close_epoch
 from ..utils.time import (
     _format_time_minimal,
     _format_time_minimal_local,
@@ -323,7 +324,7 @@ def pivot_compute_points(  # noqa: C901
 
             now_ts = server_now_ts
             latest = rates[-1]
-            if (float(latest["time"]) + tf_secs) <= now_ts:
+            if bar_close_epoch(latest["time"], timeframe) <= now_ts:
                 src = latest
             elif len(rates) >= 2:
                 src = rates[-2]
@@ -348,7 +349,7 @@ def pivot_compute_points(  # noqa: C901
                 return {"error": "Pivot calculation requires high, low, and close prices"}
 
             period_start = float(src["time"]) if _has_field(src, "time") else float("nan")
-            period_end = period_start + float(tf_secs)
+            period_end = bar_close_epoch(period_start, timeframe)
 
             digits = symbol_price_digits(_info_before) if _info_before is not None else 0
 
@@ -730,7 +731,7 @@ def confluence_levels(  # noqa: C901
                 return {"error": f"Failed to get rates for {symbol}: {mt5.last_error()}"}
 
             latest = rates[-1]
-            if (float(latest["time"]) + tf_secs) <= server_now_ts:
+            if bar_close_epoch(latest["time"], pivot_tf) <= server_now_ts:
                 source_bar = latest
             elif len(rates) >= 2:
                 source_bar = rates[-2]
@@ -854,9 +855,11 @@ def confluence_levels(  # noqa: C901
                 _use_ctz = _use_client_tz()
                 payload["pivot_period"] = {
                     "start": _format_time_minimal_local(period_start) if _use_ctz else _format_time_minimal(period_start),
-                    "end": _format_time_minimal_local(period_start + float(tf_secs))
+                    "end": _format_time_minimal_local(
+                        bar_close_epoch(period_start, pivot_tf)
+                    )
                     if _use_ctz
-                    else _format_time_minimal(period_start + float(tf_secs)),
+                    else _format_time_minimal(bar_close_epoch(period_start, pivot_tf)),
                 }
                 payload["timezone"] = display_timezone_label(
                     use_client_tz=_use_ctz,

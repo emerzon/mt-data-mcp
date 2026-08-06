@@ -555,6 +555,7 @@ def _prepare_feature_context(
     target_series: pd.Series,
     dimred_method: Optional[str],
     dimred_params: Optional[Dict[str, Any]],
+    timeframe: str = "",
     symbol: Optional[str] = None,
 ) -> Tuple[Optional[np.ndarray], Optional[np.ndarray], Dict[str, Any]]:
     """Prepare training and future exogenous features if requested."""
@@ -567,6 +568,7 @@ def _prepare_feature_context(
             int(tf_secs),
             int(horizon),
             skip_weekends=uses_standard_weekend_projection(symbol, int(tf_secs)),
+            timeframe=timeframe,
         )
         try:
             X, built_future_exog, feat_info = _forecast_preprocessing.prepare_features(
@@ -657,6 +659,7 @@ def build_training_context(
         tf_secs=int(tf_secs),
         horizon=int(horizon),
         target_series=target_series,
+        timeframe=timeframe,
         dimred_method=dimred_method,
         dimred_params=dimred_params,
         symbol=symbol,
@@ -1355,6 +1358,7 @@ def _format_forecast_output(
         tf_secs,
         horizon,
         skip_weekends=uses_standard_weekend_projection(symbol, tf_secs),
+        timeframe=timeframe,
     )
     use_client_tz = _use_client_tz()
     client_tz = _resolve_client_tz() if use_client_tz else None
@@ -1365,11 +1369,15 @@ def _format_forecast_output(
     )
     forecast_times = [fmt_time(float(epoch)) for epoch in future_epochs]
     last_observation_time = fmt_time(float(last_epoch))
-    calendar_gaps, skipped_bars = _forecast_calendar_gap_rows(
-        [float(last_epoch), *future_epochs],
-        tf_secs,
-        fmt_time,
-    )
+    calendar_timeframe = str(timeframe or "").upper() in {"D1", "W1", "MN1"}
+    if calendar_timeframe:
+        calendar_gaps, skipped_bars = [], 0
+    else:
+        calendar_gaps, skipped_bars = _forecast_calendar_gap_rows(
+            [float(last_epoch), *future_epochs],
+            tf_secs,
+            fmt_time,
+        )
     price_anchor_series = df["close"] if "close" in df.columns else df[base_col]
     price_anchor_numeric = pd.to_numeric(price_anchor_series, errors="coerce")
     finite_price_anchors = price_anchor_numeric[np.isfinite(price_anchor_numeric)]
@@ -1382,7 +1390,9 @@ def _format_forecast_output(
     # Build base result
     forecast_start_epoch = float(future_epochs[0]) if future_epochs else None
     forecast_start_gap_bars = (
-        float(forecast_start_epoch - float(last_epoch)) / float(tf_secs)
+        1.0
+        if calendar_timeframe and forecast_start_epoch is not None
+        else float(forecast_start_epoch - float(last_epoch)) / float(tf_secs)
         if forecast_start_epoch is not None and tf_secs
         else None
     )
@@ -1406,15 +1416,19 @@ def _format_forecast_output(
             "1.0 means the next timeframe bar."
         ),
         "forecast_anchor": "next_timeframe_bar_after_last_observation",
-        "forecast_step_seconds": int(tf_secs),
+        "forecast_step_seconds": None if calendar_timeframe else int(tf_secs),
         "forecast_epoch": future_epochs,
         "forecast_time": forecast_times,
         "last_price": last_price,
         "last_price_source": "candle_close" if last_price is not None else None,
         "calendar_treatment": (
-            "forex_weekend_skipped"
-            if uses_standard_weekend_projection(symbol, tf_secs)
-            else "continuous_no_weekend_skip"
+            "broker_calendar_boundaries"
+            if calendar_timeframe
+            else (
+                "forex_weekend_skipped"
+                if uses_standard_weekend_projection(symbol, tf_secs)
+                else "continuous_no_weekend_skip"
+            )
         ),
     }
     if calendar_gaps:
@@ -1665,6 +1679,7 @@ def forecast_engine(  # noqa: C901
             tf_secs=tf_secs,
             horizon=horizon,
             target_series=target_series,
+            timeframe=timeframe,
             dimred_method=dimred_method,
             dimred_params=dimred_params,
             symbol=symbol,

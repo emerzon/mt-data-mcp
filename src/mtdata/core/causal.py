@@ -17,6 +17,7 @@ import pandas as pd
 
 from ..shared.constants import TIME_DISPLAY_FORMAT, TIMEFRAME_MAP, TIMEFRAME_SECONDS
 from ..shared.schema import DetailLiteral, TimeframeLiteral
+from ..utils.time import bar_close_epoch
 from ..utils.mt5 import (
     _ensure_symbol_ready,
     _mt5_copy_rates_from,
@@ -437,13 +438,12 @@ def _fetch_series(
                 (name for name, value in TIMEFRAME_MAP.items() if value == timeframe),
                 "",
             )
-        bar_seconds = int(TIMEFRAME_SECONDS.get(timeframe_name, 0) or 0)
         forming_trimmed = False
         last_is_forming = False
-        if bar_seconds > 0 and not df.empty:
+        if timeframe_name in TIMEFRAME_SECONDS and not df.empty:
             last_open_epoch = float(df.iloc[-1]["time"])
             now_epoch = datetime.now(timezone.utc).timestamp()
-            last_is_forming = last_open_epoch + bar_seconds > now_epoch
+            last_is_forming = bar_close_epoch(last_open_epoch, timeframe_name) > now_epoch
             if not include_incomplete and last_is_forming:
                 df = df.iloc[:-1]
                 forming_trimmed = True

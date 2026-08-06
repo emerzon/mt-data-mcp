@@ -12,6 +12,7 @@ import pandas as pd
 
 from ..services.data_service import _is_last_bar_forming
 from ..shared.constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
+from ..utils.time import bar_close_epoch
 from ..shared.symbols import (
     FOREX_CURRENCY_CODES,
     is_probably_crypto_symbol,
@@ -438,9 +439,18 @@ def next_times_from_last(
     horizon: int,
     *,
     skip_weekends: bool = False,
+    timeframe: Optional[str] = None,
 ) -> List[float]:
     base = float(last_epoch)
     step = float(tf_secs)
+    normalized_timeframe = str(timeframe or "").upper()
+    if normalized_timeframe in {"D1", "W1", "MN1"}:
+        out: List[float] = []
+        current = base
+        for _ in range(int(horizon)):
+            current = bar_close_epoch(current, normalized_timeframe)
+            out.append(current)
+        return out
     if not skip_weekends:
         return [base + step * (i + 1) for i in range(int(horizon))]
     out: List[float] = []

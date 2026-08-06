@@ -351,6 +351,26 @@ class TestFetchRatesWithWarmup(unittest.TestCase):
         self.assertEqual(result, rates)
         mock_range.assert_called_once()
 
+    @patch(_RATES_RANGE)
+    @patch(_PARSE_START)
+    def test_start_only_expands_across_closed_session(self, mock_parse, mock_range):
+        t1 = datetime(2025, 1, 4, tzinfo=_UTC)
+        mock_parse.return_value = t1
+        rates = _make_rates(5, base_ts=t1.timestamp() + (2 * 86400))
+        mock_range.side_effect = [[], rates]
+
+        result, err = _fetch_rates_with_warmup(
+            'EURUSD', 16385, 'H1', 5, 0, '2025-01-04', None,
+            retry=False, sanity_check=False,
+        )
+
+        self.assertIsNone(err)
+        self.assertEqual(result, rates)
+        self.assertEqual(mock_range.call_count, 2)
+        first_end = mock_range.call_args_list[0].args[3]
+        second_end = mock_range.call_args_list[1].args[3]
+        self.assertGreater(second_end, first_end)
+
     @patch(_PARSE_START)
     def test_start_only_invalid(self, mock_parse):
         """start_datetime fails to parse (no end)."""

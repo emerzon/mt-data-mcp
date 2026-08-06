@@ -571,6 +571,26 @@ class TestFetchTicks(unittest.TestCase):
         result = fetch_ticks('EURUSD', limit=5, start='2025-01-01', end='2025-01-02', format='rows')
         self.assertTrue(result.get('success'))
 
+    @patch(_TICKS_RANGE)
+    @patch(_CACHED_INFO, return_value=MagicMock())
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_GUARD, _mock_symbol_guard)
+    def test_end_only_anchors_backward_fetch_at_end(
+        self, mock_ctz, mock_info, mock_range,
+    ):
+        mock_range.return_value = _make_ticks(10)
+
+        result = fetch_ticks(
+            "EURUSD", limit=5, end="2025-01-02T12:00:00Z", format="rows"
+        )
+
+        self.assertTrue(result.get("success"))
+        called_end = mock_range.call_args.args[2]
+        self.assertEqual(
+            called_end.replace(tzinfo=called_end.tzinfo or timezone.utc),
+            datetime(2025, 1, 2, 12, 0, tzinfo=timezone.utc),
+        )
+
     # ------------------------------------------------------------------ #
     # Error paths                                                        #
     # ------------------------------------------------------------------ #
@@ -752,6 +772,29 @@ class TestFetchTicks(unittest.TestCase):
         self.assertEqual(result["tick_count"], 5)
         self.assertEqual(result["trade_event_count"], 1)
         self.assertEqual(result["stats"]["volume"]["sum"], 7.0)
+
+    @patch(_TICKS_RANGE)
+    @patch(_CACHED_INFO, return_value=MagicMock())
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_GUARD, _mock_symbol_guard)
+    def test_resample_does_not_sum_repeated_snapshot_volume(
+        self, mock_ctz, mock_info, mock_ticks,
+    ):
+        ticks = _make_ticks(5)
+        for tick in ticks:
+            tick.update({"last": 1.101, "volume": 7.0, "flags": 6})
+        ticks[0]["flags"] = 24
+        mock_ticks.return_value = ticks
+
+        result = fetch_ticks(
+            "EURUSD",
+            limit=5,
+            format="rows",
+            simplify={"mode": "resample", "bucket_seconds": 60},
+        )
+
+        self.assertTrue(result.get("success"), result)
+        self.assertEqual(result["data"][0]["volume"], 7.0)
 
     # ------------------------------------------------------------------ #
     # Simplify for ticks                                                  #

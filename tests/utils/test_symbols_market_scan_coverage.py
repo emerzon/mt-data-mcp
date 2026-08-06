@@ -159,7 +159,7 @@ def test_market_scan_bar_freshness_uses_timeframe_window():
 
     assert result["stale_after_seconds"] == 2 * 60 * 60
     assert result["data_stale"] is True
-    assert result["freshness"] == "stale, bar 1d 2h ago"
+    assert result["freshness"] == "stale, bar 1d 1h ago"
 
 
 def test_market_scan_labels_recent_bars_as_completed_not_current():
@@ -172,7 +172,7 @@ def test_market_scan_labels_recent_bars_as_completed_not_current():
         )
 
     assert result["data_stale"] is False
-    assert result["freshness"] == "latest completed bar, 1h 0m ago"
+    assert result["freshness"] == "latest completed bar, 0s ago"
 
 
 def test_market_scan_keeps_future_quote_unsafe_when_bar_is_fresh() -> None:
@@ -207,7 +207,7 @@ def test_market_scan_keeps_future_quote_unsafe_when_bar_is_fresh() -> None:
     assert row["quote_freshness_reason"] == "future_timestamp"
     assert row["quote_warning"] == row["quote_timestamp_warning"]
     assert row["bar_stale"] is False
-    assert row["bar_freshness"] == "latest completed bar, 1h 0m ago"
+    assert row["bar_freshness"] == "latest completed bar, 0s ago"
     assert result["freshness"] == "stale"
     assert result["stale_rows"] == 1
     assert result["stale_bar_rows"] == 0

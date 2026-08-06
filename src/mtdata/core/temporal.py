@@ -21,6 +21,7 @@ from ..utils.mt5 import (
     get_symbol_info_cached,
     mt5,
 )
+from ..utils.time import bar_close_epoch
 from ..utils.sessions import (
     EQUITY_SESSION_DEFINITION as _SESSION_DEFINITION,
     FX_SESSION_DEFINITION as _FX_SESSION_DEFINITION,
@@ -996,11 +997,13 @@ def temporal_analyze(  # noqa: C901
                 return _error_response("Failed to normalize bar times.", stage="process", context=context)
 
             if not end:
-                tf_secs = TIMEFRAME_SECONDS.get(timeframe)
-                if tf_secs:
+                if timeframe in TIMEFRAME_SECONDS:
                     now_ts = datetime.now(timezone.utc).timestamp()
                     last_epoch = float(df["__epoch"].iloc[-1])
-                    if 0 <= (now_ts - last_epoch) < float(tf_secs) and len(df) > 1:
+                    if (
+                        last_epoch <= now_ts < bar_close_epoch(last_epoch, timeframe)
+                        and len(df) > 1
+                    ):
                         df = df.iloc[:-1]
 
             if len(df) < 2:

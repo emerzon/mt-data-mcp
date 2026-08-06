@@ -529,6 +529,7 @@ def _volatility_input_context(
             tf_secs,
             max(1, int(horizon)),
             skip_weekends=uses_standard_weekend_projection(symbol, tf_secs),
+            timeframe=timeframe,
         )
         if tf_secs > 0
         else []
@@ -536,20 +537,27 @@ def _volatility_input_context(
     if forecast_epochs:
         start_epoch = float(forecast_epochs[0])
         end_epoch = float(forecast_epochs[-1])
+        calendar_timeframe = str(timeframe).upper() in {"D1", "W1", "MN1"}
         out["forecast_window"] = {
             "anchor": _format_time_minimal(last_epoch),
             "start": _format_time_minimal(start_epoch),
             "end": _format_time_minimal(end_epoch),
             "bars": int(len(forecast_epochs)),
-            "step_seconds": tf_secs,
+            "step_seconds": None if calendar_timeframe else tf_secs,
             "forecast_start_gap_bars": round(
-                (start_epoch - last_epoch) / float(tf_secs),
+                1.0
+                if calendar_timeframe
+                else (start_epoch - last_epoch) / float(tf_secs),
                 4,
             ),
             "calendar_policy": (
-                "forex_weekend_skipped"
-                if uses_standard_weekend_projection(symbol, tf_secs)
-                else "continuous_no_weekend_skip"
+                "broker_calendar_boundaries"
+                if calendar_timeframe
+                else (
+                    "forex_weekend_skipped"
+                    if uses_standard_weekend_projection(symbol, tf_secs)
+                    else "continuous_no_weekend_skip"
+                )
             ),
         }
     if not live_window:

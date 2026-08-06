@@ -660,9 +660,33 @@ def _fetch_rates_with_warmup(  # noqa: C901
         expected_end_ts = _utc_epoch_seconds(to_date)
 
         def _fetch():
-            return _mt5_copy_rates_range(
-                symbol, mt5_timeframe, from_date_internal, to_date
-            )
+            # Closed sessions consume calendar time without producing rows.
+            # Expand only when the bounded response cannot satisfy the first-N
+            # contract, stopping at the present rather than guessing a fixed
+            # weekend/holiday allowance.
+            candidate_end = to_date
+            result = None
+            for _ in range(8):
+                result = _mt5_copy_rates_range(
+                    symbol, mt5_timeframe, from_date_internal, candidate_end
+                )
+                if result is None:
+                    return None
+                qualifying = sum(
+                    float(row["time"]) >= _utc_epoch_seconds(from_date)
+                    for row in result
+                )
+                if qualifying >= candles or candidate_end >= now_utc:
+                    return result
+                elapsed = max(
+                    seconds_per_bar,
+                    (candidate_end - from_date).total_seconds(),
+                )
+                candidate_end = min(
+                    now_utc,
+                    from_date + timedelta(seconds=elapsed * 2),
+                )
+            return result
 
     elif end_datetime:
         to_date, to_date_error = _parse_fetch_datetime_arg(end_datetime, end_bound=True)
@@ -1012,6 +1036,7 @@ def _trim_df_to_target(
     candles: int,
     *,
     copy_rows: bool = True,
+    timeframe: Optional[str] = None,
 ) -> pd.DataFrame:
     if start_datetime and end_datetime:
         from_dt = _parse_start_datetime(start_datetime)
@@ -1021,7 +1046,12 @@ def _trim_df_to_target(
             return out.copy() if copy_rows else out
         target_from = _utc_epoch_seconds(from_dt)
         target_to = _utc_epoch_seconds(to_dt)
-        out = df.loc[(df['__epoch'] >= target_from) & (df['__epoch'] <= target_to)]
+        end_epochs = (
+            df["__epoch"].map(lambda value: bar_close_epoch(value, timeframe))
+            if timeframe
+            else df["__epoch"]
+        )
+        out = df.loc[(df['__epoch'] >= target_from) & (end_epochs <= target_to)]
     elif start_datetime:
         from_dt = _parse_start_datetime(start_datetime)
         if not from_dt:
@@ -1037,7 +1067,12 @@ def _trim_df_to_target(
             out = df.iloc[0:0]
             return out.copy() if copy_rows else out
         target_to = _utc_epoch_seconds(to_dt)
-        out = df.loc[df['__epoch'] <= target_to]
+        end_epochs = (
+            df["__epoch"].map(lambda value: bar_close_epoch(value, timeframe))
+            if timeframe
+            else df["__epoch"]
+        )
+        out = df.loc[end_epochs <= target_to]
         if len(out) > candles:
             out = out.iloc[-candles:]
     else:
@@ -1720,13 +1755,18 @@ def fetch_candles(  # noqa: C901
             )
         raw_bars_fetched = int(len(rates))
         live_bar_reference_epoch = _resolve_live_bar_reference_epoch(symbol, timeframe)
+        completion_reference_epoch = live_bar_reference_epoch
+        if end_datetime:
+            requested_end = _parse_end_datetime(end_datetime)
+            if requested_end is not None:
+                completion_reference_epoch = _utc_epoch_seconds(requested_end)
         initial_incomplete_trimmed = False
         if not include_incomplete:
             rates_before_trim = int(len(rates))
             rates = _drop_incomplete_tail(
                 rates,
                 timeframe,
-                current_time_epoch=live_bar_reference_epoch,
+                current_time_epoch=completion_reference_epoch,
             )
             initial_incomplete_trimmed = int(len(rates)) < rates_before_trim
         if len(rates) == 0:
@@ -1771,7 +1811,14 @@ def fetch_candles(  # noqa: C901
         denoise_warnings.extend(consume_denoise_warnings(df))
 
         # Filter out warmup region to return the intended target window only
-        df = _trim_df_to_target(df, start_datetime, end_datetime, candles, copy_rows=True)
+        df = _trim_df_to_target(
+            df,
+            start_datetime,
+            end_datetime,
+            candles,
+            copy_rows=True,
+            timeframe=timeframe,
+        )
         rows_after_target_trim = int(len(df))
         warmup_retry_meta: Dict[str, Any] = {
             "applied": False,
@@ -1839,7 +1886,14 @@ def fetch_candles(  # noqa: C901
                         if len(df) == 0:
                             return {"error": f"No valid candle data available for {symbol}"}
                         # Re-trim to target window
-                        df = _trim_df_to_target(df, start_datetime, end_datetime, candles, copy_rows=False)
+                        df = _trim_df_to_target(
+                            df,
+                            start_datetime,
+                            end_datetime,
+                            candles,
+                            copy_rows=False,
+                            timeframe=timeframe,
+                        )
                         rows_after_target_trim = int(len(df))
             except Exception as exc:
                 warmup_retry_meta["error"] = str(exc)
@@ -1896,7 +1950,7 @@ def fetch_candles(  # noqa: C901
             df, _trimmed_incomplete = _drop_incomplete_tail_df(
                 df,
                 timeframe,
-                current_time_epoch=live_bar_reference_epoch,
+                current_time_epoch=completion_reference_epoch,
             )
 
         # Optional post-TI denoising (adds new columns by default)
@@ -1933,7 +1987,7 @@ def fetch_candles(  # noqa: C901
         tail_is_forming = _is_last_bar_forming(
             df,
             timeframe,
-            current_time_epoch=live_bar_reference_epoch,
+            current_time_epoch=completion_reference_epoch,
         )
         ti_added_cols = [str(c) for c in ti_cols if isinstance(c, str)]
         price_indicator_cols = _price_indicator_columns(ti_added_cols)
@@ -2696,8 +2750,19 @@ def fetch_ticks(  # noqa: C901
                         min_from_date=from_date,
                     )
             else:
-                # Get recent ticks from current time (now)
-                to_date = datetime.now(dt_timezone.utc)
+                # End-only requests are historical backward queries anchored
+                # at the supplied endpoint, not aliases for "latest".
+                if end:
+                    to_date = _parse_end_datetime(end)
+                    if not to_date:
+                        return {
+                            "error": (
+                                f"Could not parse end date {end!r}. "
+                                f"{_DATE_FORMAT_HINT}"
+                            )
+                        }
+                else:
+                    to_date = datetime.now(dt_timezone.utc)
                 ticks = _fetch_recent_ticks_backwards(
                     symbol,
                     to_date=to_date,
@@ -3436,7 +3501,17 @@ def fetch_ticks(  # noqa: C901
 
         # If simplify mode requests approximation or resampling, use shared path
         if simplify_present and simplify_mode in ('approximate', 'resample'):
-            df_out, simplify_meta = _simplify_dataframe_rows_ext(df_ticks, headers, simplify_used)
+            df_for_simplify = df_ticks.copy()
+            if simplify_mode == "resample":
+                trade_mask = df_for_simplify["trade_event"].astype(bool)
+                for volume_column in ("volume", "volume_real"):
+                    if volume_column in df_for_simplify:
+                        df_for_simplify[volume_column] = df_for_simplify[
+                            volume_column
+                        ].where(trade_mask, 0.0)
+            df_out, simplify_meta = _simplify_dataframe_rows_ext(
+                df_for_simplify, headers, simplify_used
+            )
             rows = _format_numeric_rows_from_df(df_out, headers, stringify=False)
             rows = _round_row_price_columns(
                 rows,
