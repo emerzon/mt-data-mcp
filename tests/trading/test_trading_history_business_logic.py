@@ -1086,7 +1086,7 @@ def test_trade_history_queries_minutes_back_as_absolute_mt5_epoch_window() -> No
         2026, 3, 1, 11, 0, 0, tzinfo=timezone.utc
     ).timestamp()
     assert float(captured["to_dt"]) - float(captured["from_dt"]) == 60 * 60
-    assert captured["symbol"] == "BTCUSD"
+    assert captured["symbol"] is None
     assert out["message"] == "No deals found for BTCUSD in the last 60 minute(s)"
 
 

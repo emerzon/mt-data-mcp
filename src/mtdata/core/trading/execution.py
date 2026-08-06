@@ -1691,6 +1691,15 @@ def _close_positions(  # noqa: C901
                     require_exact_ticket_match=True,
                 )
                 if position is None:
+                    if (
+                        isinstance(ticket_resolution, dict)
+                        and ticket_resolution.get("snapshot_unavailable")
+                    ):
+                        return validation.snapshot_unavailable_error(
+                            mt5,
+                            snapshot="positions",
+                            context=f"close position {ticket}",
+                        )
                     out = {"error": f"Position {ticket} not found", "checked_scopes": ["positions"]}
                     if isinstance(ticket_resolution, dict):
                         out["ticket_resolution"] = ticket_resolution
@@ -1719,11 +1728,23 @@ def _close_positions(  # noqa: C901
                 positions = [position]
             elif symbol is not None:
                 positions = mt5.positions_get(symbol=symbol)
-                if positions is None or len(positions) == 0:
+                if positions is None:
+                    return validation.snapshot_unavailable_error(
+                        mt5,
+                        snapshot="positions",
+                        context=f"close positions for {symbol}",
+                    )
+                if len(positions) == 0:
                     return {"message": f"No open positions for {symbol}"}
             else:
                 positions = mt5.positions_get()
-                if positions is None or len(positions) == 0:
+                if positions is None:
+                    return validation.snapshot_unavailable_error(
+                        mt5,
+                        snapshot="positions",
+                        context="close positions",
+                    )
+                if len(positions) == 0:
                     return {"message": "No open positions"}
 
             # 2. Filter positions
@@ -1982,6 +2003,7 @@ def _resolve_close_dry_run_target(
         mt5,
         ticket_candidates=[requested_ticket],
         symbol=symbol,
+        require_exact_ticket_match=True,
     )
     if position is not None:
         position_volume = validation._safe_float_attr(position, "volume") or None
@@ -2024,6 +2046,16 @@ def _resolve_close_dry_run_target(
             "ticket_resolution": position_resolution,
         }
 
+    if (
+        isinstance(position_resolution, dict)
+        and position_resolution.get("snapshot_unavailable")
+    ):
+        return validation.snapshot_unavailable_error(
+            mt5,
+            snapshot="positions",
+            context=f"preview close target {ticket}",
+        )
+
     if volume is not None:
         return {
             "error": (
@@ -2037,6 +2069,7 @@ def _resolve_close_dry_run_target(
         mt5,
         ticket_candidates=[requested_ticket],
         symbol=symbol,
+        require_exact_ticket_match=True,
     )
     if pending_order is not None:
         return {
@@ -2048,6 +2081,16 @@ def _resolve_close_dry_run_target(
             "target_volume": getattr(pending_order, "volume_current", None),
             "ticket_resolution": pending_resolution,
         }
+
+    if (
+        isinstance(pending_resolution, dict)
+        and pending_resolution.get("snapshot_unavailable")
+    ):
+        return validation.snapshot_unavailable_error(
+            mt5,
+            snapshot="orders",
+            context=f"preview pending cancellation {ticket}",
+        )
 
     return {
         "error": f"Ticket {ticket} not found as position or pending order.",
@@ -2088,6 +2131,15 @@ def _cancel_pending(
                     require_exact_ticket_match=True,
                 )
                 if order is None:
+                    if (
+                        isinstance(ticket_resolution, dict)
+                        and ticket_resolution.get("snapshot_unavailable")
+                    ):
+                        return validation.snapshot_unavailable_error(
+                            mt5,
+                            snapshot="orders",
+                            context=f"cancel pending order {ticket}",
+                        )
                     out = {"error": f"Pending order {ticket} not found", "checked_scopes": ["pending_orders"]}
                     if isinstance(ticket_resolution, dict):
                         out["ticket_resolution"] = ticket_resolution
@@ -2116,11 +2168,23 @@ def _cancel_pending(
                 orders = [order]
             elif symbol is not None:
                 orders = mt5.orders_get(symbol=symbol)
-                if orders is None or len(orders) == 0:
+                if orders is None:
+                    return validation.snapshot_unavailable_error(
+                        mt5,
+                        snapshot="orders",
+                        context=f"cancel pending orders for {symbol}",
+                    )
+                if len(orders) == 0:
                     return {"message": f"No pending orders for {symbol}"}
             else:
                 orders = mt5.orders_get()
-                if orders is None or len(orders) == 0:
+                if orders is None:
+                    return validation.snapshot_unavailable_error(
+                        mt5,
+                        snapshot="orders",
+                        context="cancel pending orders",
+                    )
+                if len(orders) == 0:
                     return {"message": "No pending orders"}
             if magic_filter is not None:
                 orders = [

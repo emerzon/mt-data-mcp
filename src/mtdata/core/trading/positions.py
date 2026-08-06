@@ -1352,6 +1352,7 @@ def _resolve_open_position(
                 "method": "positions_get",
                 "candidate_ids": candidate_ids,
                 "matched": False,
+                "snapshot_unavailable": rows_fallback is None,
             },
         )
 
@@ -1483,7 +1484,12 @@ def _resolve_pending_order(
         return (
             None,
             None,
-            {"method": "orders_get", "candidate_ids": candidate_ids, "matched": False},
+            {
+                "method": "orders_get",
+                "candidate_ids": candidate_ids,
+                "matched": False,
+                "snapshot_unavailable": rows_fallback is None,
+            },
         )
 
     exact_matches: List[Tuple[Any, str, int]] = []

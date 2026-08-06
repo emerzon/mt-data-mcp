@@ -274,6 +274,31 @@ class TestTradeClose:
         assert out["requested_volume"] == 0.2
         assert out["position_volume"] == 0.1
 
+    def test_dry_run_missing_ticket_does_not_select_unrelated_trade(self):
+        adapter = MagicMock()
+
+        def positions_get(**kwargs):
+            if kwargs.get("ticket") == 999:
+                return ()
+            return [_position(ticket=123, symbol="EURUSD", volume=0.1)]
+
+        def orders_get(**kwargs):
+            if kwargs.get("ticket") == 999:
+                return ()
+            return [_pending_order(ticket=456, symbol="EURUSD")]
+
+        adapter.positions_get.side_effect = positions_get
+        adapter.orders_get.side_effect = orders_get
+        gateway = MT5TradingGateway(
+            adapter=adapter,
+            ensure_connection_impl=lambda: None,
+        )
+
+        out = _resolve_close_dry_run_target(ticket=999, gateway=gateway)
+
+        assert "not found" in out["error"]
+        assert out["checked_scopes"] == ["positions", "pending_orders"]
+
     @patch("mtdata.core.trading._cancel_pending")
     @patch("mtdata.core.trading._close_positions")
     def test_profit_only_routes_to_positions_only(self, mock_close, mock_cancel):
@@ -561,6 +586,18 @@ class TestClosePositions:
         from mtdata.core.trading import _close_positions
         result = _close_positions()
         assert "message" in result
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_snapshot_failure_is_not_reported_as_flat(self):
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        mt5.positions_get.return_value = None
+        from mtdata.core.trading import _close_positions
+
+        result = _close_positions()
+
+        assert result["success"] is False
+        assert result["error_code"] == "positions_snapshot_unavailable"
 
     @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
     def test_profit_only_filter(self):
@@ -1374,6 +1411,18 @@ class TestCancelPending:
         from mtdata.core.trading import _cancel_pending
         result = _cancel_pending()
         assert "message" in result
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_snapshot_failure_is_not_reported_as_no_pending_orders(self):
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        mt5.orders_get.return_value = None
+        from mtdata.core.trading import _cancel_pending
+
+        result = _cancel_pending()
+
+        assert result["success"] is False
+        assert result["error_code"] == "orders_snapshot_unavailable"
 
     @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
     def test_single_cancel_success(self):

@@ -864,7 +864,13 @@ def snapshot_unavailable_error(
 ) -> Dict[str, Any]:
     """Build an actionable error for a failed MT5 collection snapshot."""
     normalized_snapshot = str(snapshot or "positions").strip().lower()
-    label = "open positions" if normalized_snapshot == "positions" else "pending orders"
+    labels = {
+        "positions": "open positions",
+        "orders": "pending orders",
+        "history_deals": "deal history",
+        "history_orders": "order history",
+    }
+    label = labels.get(normalized_snapshot, normalized_snapshot.replace("_", " "))
     payload: Dict[str, Any] = {
         "success": False,
         "error": (

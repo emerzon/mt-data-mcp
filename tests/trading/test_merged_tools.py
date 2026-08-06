@@ -66,11 +66,17 @@ class TestMergedTools(unittest.TestCase):
         sys.modules['MetaTrader5'] = self.mt5
     def test_trading_open_get_positions(self):
         # Setup mock
-        self.mt5.positions_get.return_value = None # Simulate empty
+        self.mt5.positions_get.return_value = None  # MT5 snapshot failure
 
         # Test default
         res = get_open(__cli_raw=True)
         self.assertIsInstance(res, dict)
+        self.assertFalse(res.get("success"))
+        self.assertEqual(res.get("error_code"), "positions_snapshot_unavailable")
+        self.assertIn("Unable to read", res.get("error", ""))
+        self.mt5.positions_get.return_value = ()
+
+        res = get_open(__cli_raw=True)
         self.assertTrue(res.get("success"))
         self.assertEqual(res.get("kind"), "open_positions")
         self.assertEqual(res.get("count"), 0)
@@ -213,6 +219,12 @@ class TestMergedTools(unittest.TestCase):
 
         res = get_pending(__cli_raw=True)
         self.assertIsInstance(res, dict)
+        self.assertFalse(res.get("success"))
+        self.assertEqual(res.get("error_code"), "orders_snapshot_unavailable")
+        self.assertIn("Unable to read", res.get("error", ""))
+        self.mt5.orders_get.return_value = ()
+
+        res = get_pending(__cli_raw=True)
         self.assertTrue(res.get("success"))
         self.assertEqual(res.get("kind"), "pending_orders")
         self.assertEqual(res.get("count"), 0)

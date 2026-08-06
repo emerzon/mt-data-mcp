@@ -2940,16 +2940,16 @@ def run_trade_history(  # noqa: C901
 
             if kind == "deals":
                 try:
-                    rows = (
-                        gateway.history_deals_get(
-                            history_from_dt, history_to_dt, symbol=request.symbol
-                        )
-                        if request.symbol
-                        else gateway.history_deals_get(history_from_dt, history_to_dt)
-                    )
+                    rows = gateway.history_deals_get(history_from_dt, history_to_dt)
                 except Exception as exc:
                     return _history_fetch_error("deal", exc)
-                if rows is None or len(rows) == 0:
+                if rows is None:
+                    return validation.snapshot_unavailable_error(
+                        gateway,
+                        snapshot="history_deals",
+                        context="read trade history",
+                    )
+                if len(rows) == 0:
                     return _empty_history_message("deals")
                 df = _trade_rows_to_dataframe(rows, pd_module=pd)
                 if request.symbol and "symbol" in df.columns:
@@ -3001,16 +3001,16 @@ def run_trade_history(  # noqa: C901
                         df = df.drop(columns=[noise_col])
             else:
                 try:
-                    rows = (
-                        gateway.history_orders_get(
-                            history_from_dt, history_to_dt, symbol=request.symbol
-                        )
-                        if request.symbol
-                        else gateway.history_orders_get(history_from_dt, history_to_dt)
-                    )
+                    rows = gateway.history_orders_get(history_from_dt, history_to_dt)
                 except Exception as exc:
                     return _history_fetch_error("order", exc)
-                if rows is None or len(rows) == 0:
+                if rows is None:
+                    return validation.snapshot_unavailable_error(
+                        gateway,
+                        snapshot="history_orders",
+                        context="read trade history",
+                    )
+                if len(rows) == 0:
                     return _empty_history_message("orders")
                 df = _trade_rows_to_dataframe(rows, pd_module=pd)
                 if request.symbol and "symbol" in df.columns:
@@ -5552,6 +5552,8 @@ def _trade_query_empty_filter_message(request: Any) -> Optional[str]:
 def _fetch_trade_query_rows(
     request: Any,
     *,
+    gateway: Any,
+    snapshot: str,
     fetch_rows: Any,
     no_ticket_message: Any,
     no_symbol_message: Any,
@@ -5560,7 +5562,15 @@ def _fetch_trade_query_rows(
     if request.ticket is not None:
         ticket_int = int(request.ticket)
         rows = fetch_rows(ticket=ticket_int)
-        if rows is None or len(rows) == 0:
+        if rows is None:
+            return None, [
+                validation.snapshot_unavailable_error(
+                    gateway,
+                    snapshot=snapshot,
+                    context="read trading state",
+                )
+            ]
+        if len(rows) == 0:
             return None, [{"message": no_ticket_message(request.ticket)}]
     elif request.symbol is not None:
         # Validate symbol before querying
@@ -5568,11 +5578,27 @@ def _fetch_trade_query_rows(
         if symbol_error:
             return None, [{"error": symbol_error}]
         rows = fetch_rows(symbol=request.symbol)
-        if rows is None or len(rows) == 0:
+        if rows is None:
+            return None, [
+                validation.snapshot_unavailable_error(
+                    gateway,
+                    snapshot=snapshot,
+                    context="read trading state",
+                )
+            ]
+        if len(rows) == 0:
             return None, [{"message": no_symbol_message(request.symbol)}]
     else:
         rows = fetch_rows()
-        if rows is None or len(rows) == 0:
+        if rows is None:
+            return None, [
+                validation.snapshot_unavailable_error(
+                    gateway,
+                    snapshot=snapshot,
+                    context="read trading state",
+                )
+            ]
+        if len(rows) == 0:
             return None, [{"message": no_rows_message}]
     return rows, None
 
@@ -5805,6 +5831,7 @@ def _run_trade_query_impl(
     normalize_limit: Any,
     comment_row_metadata: Any,
     pd_module: Any,
+    snapshot: str,
     fetch_rows: Any,
     no_ticket_message: Any,
     no_symbol_message: Any,
@@ -5823,6 +5850,8 @@ def _run_trade_query_impl(
         timezone_label = "client_local" if use_client_tz_value else "UTC"
         rows, empty_response = _fetch_trade_query_rows(
             request,
+            gateway=gateway,
+            snapshot=snapshot,
             fetch_rows=fetch_rows,
             no_ticket_message=no_ticket_message,
             no_symbol_message=no_symbol_message,
@@ -5922,6 +5951,7 @@ def _run_trade_get_open_impl(
         normalize_limit=normalize_limit,
         comment_row_metadata=comment_row_metadata,
         pd_module=pd_module,
+        snapshot="positions",
         fetch_rows=gateway.positions_get,
         no_ticket_message=lambda ticket: f"No position found with ID {ticket}",
         no_symbol_message=lambda symbol: f"No open positions for {symbol}",
@@ -5953,6 +5983,7 @@ def _run_trade_get_pending_impl(
         normalize_limit=normalize_limit,
         comment_row_metadata=comment_row_metadata,
         pd_module=pd_module,
+        snapshot="orders",
         fetch_rows=gateway.orders_get,
         no_ticket_message=lambda ticket: f"No pending order found with ID {ticket}",
         no_symbol_message=lambda symbol: f"No pending orders for {symbol}",
