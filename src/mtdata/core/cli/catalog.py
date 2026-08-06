@@ -194,6 +194,8 @@ def format_root_help(program: str) -> str:
             "  --timeframe TIMEFRAME   Default MT5 timeframe for commands with a",
             "                          timeframe parameter; command-level",
             "                          --timeframe overrides it.",
+            "                          For confluence_levels, it defaults",
+            "                          --pivot-timeframe instead.",
             "",
             f"Run '{program} <command> --help' for command arguments.",
             f"Run '{program} --help <keyword>' to search detailed command help.",

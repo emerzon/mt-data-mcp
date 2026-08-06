@@ -354,10 +354,28 @@ def _apply_global_cli_overrides(args: Any, argv: List[str]) -> Any:
     command = command.replace("-", "_")
     args.command = command
     global_timeframe = getattr(args, "_global_timeframe", None)
-    if global_timeframe is not None and not _argv_option_present_after_command(
-        argv, command, "--timeframe"
-    ):
-        args.timeframe = global_timeframe
+    if global_timeframe is not None:
+        if command == "confluence_levels":
+            pivot_timeframe_present = (
+                _argv_option_present_after_command(
+                    argv,
+                    command,
+                    "--pivot-timeframe",
+                )
+                or _argv_option_present_after_command(
+                    argv,
+                    command,
+                    "--pivot_timeframe",
+                )
+            )
+            if not pivot_timeframe_present:
+                args.pivot_timeframe = global_timeframe
+        elif not _argv_option_present_after_command(
+            argv,
+            command,
+            "--timeframe",
+        ):
+            args.timeframe = global_timeframe
     trade_days = getattr(args, "_trade_days", None)
     if command.startswith("trade_") and trade_days is not None:
         if not (
@@ -1576,7 +1594,8 @@ def main():
         metavar="TIMEFRAME",
         help=(
             "Default MT5 timeframe for commands with a timeframe parameter; "
-            "command-level --timeframe overrides it."
+            "command-level --timeframe overrides it. For confluence_levels, "
+            "this defaults --pivot-timeframe instead."
         ),
     )
 

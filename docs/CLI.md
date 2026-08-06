@@ -303,6 +303,10 @@ task state can survive process restarts. See
 | `cointegration_test` | Engle-Granger pair tests or Johansen multivariate cointegration |
 | `causal_discover_signals` | Granger-style causal discovery between symbols |
 
+The root `--timeframe` default maps to `--pivot-timeframe` for
+`confluence_levels`; an explicit command-level `--pivot-timeframe` takes
+precedence. `--sr-timeframe` remains independent and defaults to `auto`.
+
 Volume profile example:
 
 ```bash

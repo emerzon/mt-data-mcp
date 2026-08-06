@@ -587,6 +587,96 @@ class TestMain:
         assert mock_fn.call_args[1]["timeframe"] == "H1"
 
     @patch("mtdata.core.cli.api.discover_tools")
+    def test_global_timeframe_defaults_confluence_pivot_timeframe(
+        self,
+        mock_discover,
+    ):
+        mock_fn = MagicMock(return_value="output text")
+        mock_fn.__module__ = "mtdata.core.server"
+        mock_fn.__name__ = "confluence_levels"
+        mock_fn.__doc__ = "Confluence levels."
+
+        def confluence_levels(
+            symbol: str,
+            pivot_timeframe: str = "D1",
+            sr_timeframe: str = "auto",
+        ):
+            """Confluence levels."""
+
+        info = get_function_info(confluence_levels)
+        info["func"] = mock_fn
+        mock_discover.return_value = {
+            "confluence_levels": {
+                "func": mock_fn,
+                "meta": {"description": "Confluence levels"},
+                "_cli_func_info": info,
+            },
+        }
+
+        with patch(
+            "sys.argv",
+            [
+                "cli.py",
+                "--timeframe",
+                "H4",
+                "confluence_levels",
+                "EURUSD",
+            ],
+        ):
+            result = main()
+
+        assert result == 0
+        mock_fn.assert_called_once_with(
+            symbol="EURUSD",
+            pivot_timeframe="H4",
+            sr_timeframe="auto",
+            __cli_raw=True,
+        )
+
+    @patch("mtdata.core.cli.api.discover_tools")
+    def test_explicit_confluence_pivot_timeframe_overrides_global(
+        self,
+        mock_discover,
+    ):
+        mock_fn = MagicMock(return_value="output text")
+        mock_fn.__module__ = "mtdata.core.server"
+        mock_fn.__name__ = "confluence_levels"
+        mock_fn.__doc__ = "Confluence levels."
+
+        def confluence_levels(
+            symbol: str,
+            pivot_timeframe: str = "D1",
+        ):
+            """Confluence levels."""
+
+        info = get_function_info(confluence_levels)
+        info["func"] = mock_fn
+        mock_discover.return_value = {
+            "confluence_levels": {
+                "func": mock_fn,
+                "meta": {"description": "Confluence levels"},
+                "_cli_func_info": info,
+            },
+        }
+
+        with patch(
+            "sys.argv",
+            [
+                "cli.py",
+                "--timeframe",
+                "H4",
+                "confluence_levels",
+                "EURUSD",
+                "--pivot-timeframe",
+                "W1",
+            ],
+        ):
+            result = main()
+
+        assert result == 0
+        assert mock_fn.call_args.kwargs["pivot_timeframe"] == "W1"
+
+    @patch("mtdata.core.cli.api.discover_tools")
     def test_json_output_suppresses_mtdata_logs_in_non_verbose_mode(
         self, mock_discover, capsys
     ):
