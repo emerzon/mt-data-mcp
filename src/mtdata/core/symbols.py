@@ -1786,6 +1786,10 @@ def _build_market_scan_spread_row(
         {
             "bid": _market_scan_round(bid, digits=digits),
             "ask": _market_scan_round(ask, digits=digits),
+            "mid": _market_scan_round(mid, digits=digits),
+            "quote_as_of": (
+                _format_time_explicit(tick_time) if tick_time is not None else None
+            ),
             **_market_scan_quote_freshness_fields(tick_time, symbol=symbol.name),
             "spread": _market_scan_round(spread_abs, digits=digits),
             "spread_points": _market_scan_points(spread_points),
@@ -1985,6 +1989,9 @@ def _compact_market_scan_projection(
 
 
 _MARKET_SCAN_UNITS = {
+    "bid": "price",
+    "ask": "price",
+    "mid": "price",
     "close": "price",
     "previous_close": "price",
     "price_change_pct": "percentage_points (1.0 = 1%)",
@@ -2204,8 +2211,10 @@ _TOP_MARKETS_COMPACT_BASE_HEADERS = [
 ]
 
 _TOP_MARKETS_COMPACT_SPREAD_HEADERS = [
+    "quote_as_of",
     "bid",
     "ask",
+    "mid",
     "spread_pct",
     "spread_points",
     "spread_pips",
@@ -2215,6 +2224,10 @@ _TOP_MARKETS_COMPACT_BAR_HEADERS = [
     "bar_stale",
     "bar_freshness",
     "close",
+    "quote_as_of",
+    "bid",
+    "ask",
+    "mid",
     "tick_volume",
     "price_change_pct",
 ]
@@ -2224,8 +2237,10 @@ _TOP_MARKETS_COMPACT_HEADERS = [
     "bar_stale",
     "bar_freshness",
     "close",
+    "quote_as_of",
     "bid",
     "ask",
+    "mid",
     "spread_pct",
     "spread_points",
     "tick_volume",
@@ -2254,8 +2269,10 @@ _TOP_MARKETS_FULL_BASE_HEADERS = [
 ]
 
 _TOP_MARKETS_FULL_SPREAD_HEADERS = [
+    "quote_as_of",
     "bid",
     "ask",
+    "mid",
     "spread",
     "spread_points",
     "spread_pct",
@@ -2279,6 +2296,10 @@ _TOP_MARKETS_FULL_BAR_HEADERS = [
     "previous_close",
     "open",
     "close",
+    "quote_as_of",
+    "bid",
+    "ask",
+    "mid",
     "tick_volume",
     "real_volume",
     "price_change_pct",
@@ -3779,6 +3800,10 @@ def market_scan(  # noqa: C901
                 "price_as_of",
                 "price_freshness",
                 "quote_time",
+                "quote_as_of",
+                "bid",
+                "ask",
+                "mid",
                 "quote_age_seconds",
                 "quote_age_anchor",
                 "quote_age_metric",
@@ -3826,6 +3851,11 @@ def market_scan(  # noqa: C901
                 "time",
                 "price_as_of",
                 "price_freshness",
+                "quote_time",
+                "quote_as_of",
+                "bid",
+                "ask",
+                "mid",
                 "quote_stale",
                 "quote_freshness_reason",
                 "quote_timestamp_in_future",

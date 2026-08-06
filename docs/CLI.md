@@ -446,6 +446,11 @@ mtdata-cli market_scan EURUSD,GBPUSD,USDJPY --rsi-below 35 --max-spread-pct 0.03
 # Multi-symbol selectors use the canonical `symbols` selector.
 ```
 
+`market_scan` and `symbols_top_markets` keep completed-bar values such as
+`close` separate from the current executable quote. When a quote is available,
+rows expose `bid`, `ask`, `mid`, and `quote_as_of`; use those fields for a live
+mark and the bar fields for ranking and indicator context.
+
 `symbols_list` rejects non-positive limits. `symbols_top_markets` preserves
 exact ranking semantics and rejects a filtered candidate universe above 250
 symbols before activating hidden quotes; narrow it with `group` or `category`.

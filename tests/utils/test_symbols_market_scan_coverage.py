@@ -72,6 +72,10 @@ def test_market_scan_spread_cost_uses_account_currency() -> None:
     )
 
     assert error is None
+    assert row["bid"] == 170.0
+    assert row["ask"] == 170.01
+    assert row["mid"] == 170.005
+    assert row["quote_as_of"] == "1970-01-01T00:00Z"
     assert row["spread_cost_per_lot"] == pytest.approx(7.5)
     assert row["spread_cost_currency"] == "USD"
 
@@ -523,10 +527,12 @@ class TestSymbolsTopMarkets:
 
     @patch("mtdata.core.symbols._extract_group_path_util", side_effect=lambda s: s.path)
     @patch("mtdata.core.symbols._mt5_copy_rates_from_pos")
+    @patch("mtdata.core.symbols.mt5.symbol_info_tick")
     @patch("mtdata.core.symbols.mt5.symbols_get")
     def test_default_returns_single_abs_price_change_leaderboard(
         self,
         mock_symbols_get,
+        mock_tick,
         mock_rates,
         mock_group,
     ):
@@ -534,6 +540,10 @@ class TestSymbolsTopMarkets:
             _make_symbol("EURUSD", description="Euro", digits=4),
             _make_symbol("GBPUSD", description="Pound", digits=4),
         ]
+        mock_tick.side_effect = lambda symbol: {
+            "EURUSD": _make_tick(bid=1.0448, ask=1.0450),
+            "GBPUSD": _make_tick(bid=1.3298, ask=1.3300),
+        }[symbol]
         mock_rates.side_effect = lambda symbol, timeframe, start_pos, count: {
             "EURUSD": [
                 {
@@ -583,7 +593,9 @@ class TestSymbolsTopMarkets:
         assert result["price_change_basis"] == (
             "previous_completed_close_to_latest_completed_close"
         )
-        assert "bid" not in result["data"][0]
+        assert result["data"][0]["bid"] == 1.0448
+        assert result["data"][0]["ask"] == 1.045
+        assert result["data"][0]["mid"] == 1.0449
         assert "spread_points" not in result["data"][0]
         assert result["units"]["tick_volume"] == "broker_tick_count"
         assert result["units"]["close"] == "price"
@@ -702,8 +714,10 @@ class TestSymbolsTopMarkets:
             "time",
             "data_stale",
             "freshness",
+            "quote_as_of",
             "bid",
             "ask",
+            "mid",
             "spread_pct",
             "spread_points",
             "spread_pips",
@@ -830,8 +844,10 @@ class TestSymbolsTopMarkets:
             "time",
             "data_stale",
             "freshness",
+            "quote_as_of",
             "bid",
             "ask",
+            "mid",
             "spread_pct",
             "spread_points",
             "spread_pips",
@@ -1267,7 +1283,9 @@ class TestMarketScan:
         mock_group,
     ):
         now = 1_700_043_200.0
-        mock_symbols_get.return_value = [_make_symbol("EURUSD", description="Euro")]
+        mock_symbols_get.return_value = [
+            _make_symbol("EURUSD", description="Euro", digits=5)
+        ]
         mock_tick.return_value = SimpleNamespace(
             bid=1.0199,
             ask=1.0200,
@@ -1286,6 +1304,11 @@ class TestMarketScan:
         scan_row = scan["data"][0]
         top_row = top["data"][0]
         assert scan_row["price_change_pct"] == top_row["price_change_pct"]
+        assert scan_row["bid"] == top_row["bid"] == 1.0199
+        assert scan_row["ask"] == top_row["ask"] == 1.02
+        assert scan_row["mid"] == top_row["mid"] == 1.01995
+        assert scan_row["quote_as_of"] == top_row["quote_as_of"]
+        assert scan_row["quote_time"] == scan_row["quote_as_of"]
         assert scan_row["quote_stale"] is False
         assert scan_row["price_as_of"] == scan_row["time"]
         assert "freshness_reason" not in scan_row
