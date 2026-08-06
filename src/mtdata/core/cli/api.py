@@ -11,7 +11,9 @@ import shlex
 import sys
 import types
 import warnings
+from contextlib import redirect_stderr, redirect_stdout
 from importlib import metadata as importlib_metadata
+from io import StringIO
 from pathlib import Path
 from typing import (
     Any,
@@ -1609,7 +1611,8 @@ def main():
         description=(
             "Run an interactive mtdata-cli session or read a batch from stdin. "
             "Enter ordinary command lines without the mtdata-cli prefix; blank "
-            "lines and comments are ignored, and exit or quit stops the session."
+            "lines and comments are ignored, and exit or quit stops the session. "
+            "Batch output is one JSON envelope per command (NDJSON)."
         ),
         formatter_class=_CLIHelpFormatter,
         allow_abbrev=False,
@@ -1888,12 +1891,63 @@ def _split_shell_command(line: str) -> List[str]:
     return list(lexer)
 
 
+def _shell_batch_record(
+    *,
+    line_number: int,
+    command: str,
+    command_argv: List[str],
+    program: str,
+) -> Tuple[Dict[str, Any], int]:
+    """Run one batch command and capture it in a single NDJSON record."""
+    stdout_buffer = StringIO()
+    stderr_buffer = StringIO()
+    sys.argv = [program, *command_argv]
+    with redirect_stdout(stdout_buffer), redirect_stderr(stderr_buffer):
+        try:
+            raw_status = main()
+        except SystemExit as exc:
+            if isinstance(exc.code, int):
+                raw_status = exc.code
+            else:
+                raw_status = 0 if exc.code is None else 1
+
+    status = int(raw_status) if isinstance(raw_status, int) else 0
+    record: Dict[str, Any] = {
+        "line": line_number,
+        "command": command,
+        "success": status == 0,
+        "status": status,
+    }
+    stdout = stdout_buffer.getvalue().strip()
+    if stdout:
+        try:
+            record["result"] = json.loads(stdout)
+        except (TypeError, ValueError):
+            record["output"] = stdout
+    stderr = stderr_buffer.getvalue().strip()
+    if stderr:
+        record["stderr"] = stderr
+    return record, status
+
+
+def _write_shell_batch_record(record: Dict[str, Any]) -> None:
+    _write_cli_text(
+        json.dumps(
+            record,
+            ensure_ascii=False,
+            separators=(",", ":"),
+            default=_json_default,
+        )
+    )
+
+
 def run_shell(*, interactive: bool = True) -> int:
     """Run repeated CLI commands while reusing the initialized Python process."""
     if interactive:
         print("mtdata-cli shell (type 'exit' or 'quit' to stop)")
     original_argv = list(sys.argv)
     overall_status = 0
+    line_number = 0
     try:
         while True:
             if interactive:
@@ -1909,6 +1963,7 @@ def run_shell(*, interactive: bool = True) -> int:
                 line = sys.stdin.readline()
                 if line == "":
                     return overall_status
+                line_number += 1
             stripped = line.strip()
             if not stripped or stripped.startswith("#"):
                 continue
@@ -1917,25 +1972,54 @@ def run_shell(*, interactive: bool = True) -> int:
             try:
                 command_argv = _split_shell_command(stripped)
             except ValueError as exc:
-                print(f"Invalid command line: {exc}", file=sys.stderr)
-                if not interactive:
+                message = f"Invalid command line: {exc}"
+                if interactive:
+                    print(message, file=sys.stderr)
+                else:
                     overall_status = 2
+                    _write_shell_batch_record(
+                        {
+                            "line": line_number,
+                            "command": stripped,
+                            "success": False,
+                            "status": 2,
+                            "error": message,
+                        }
+                    )
                 continue
             if command_argv and command_argv[0].lower() == "shell":
-                print("A shell session is already active.", file=sys.stderr)
-                if not interactive:
+                message = "A shell session is already active."
+                if interactive:
+                    print(message, file=sys.stderr)
+                else:
                     overall_status = 2
+                    _write_shell_batch_record(
+                        {
+                            "line": line_number,
+                            "command": stripped,
+                            "success": False,
+                            "status": 2,
+                            "error": message,
+                        }
+                    )
+                continue
+            if not interactive:
+                record, status = _shell_batch_record(
+                    line_number=line_number,
+                    command=stripped,
+                    command_argv=command_argv,
+                    program=original_argv[0],
+                )
+                _write_shell_batch_record(record)
+                if status != 0:
+                    overall_status = status
                 continue
             sys.argv = [original_argv[0], *command_argv]
             try:
-                status = main()
-                if not interactive and isinstance(status, int) and status != 0:
-                    overall_status = status
-            except SystemExit as exc:
+                main()
+            except SystemExit:
                 # argparse has already rendered its error or help text. Keep the
                 # warmed shell alive for the next command.
-                if not interactive and isinstance(exc.code, int) and exc.code != 0:
-                    overall_status = exc.code
                 continue
     finally:
         sys.argv = original_argv

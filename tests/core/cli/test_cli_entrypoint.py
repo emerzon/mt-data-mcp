@@ -1,4 +1,5 @@
 import io
+import json
 import subprocess
 import sys
 from unittest.mock import patch
@@ -128,7 +129,9 @@ def test_noninteractive_shell_reads_batch_and_aggregates_failures(monkeypatch, c
 
     def _main():
         observed.append(list(api.sys.argv[1:]))
-        return 2 if api.sys.argv[1] == "bad" else 0
+        if api.sys.argv[1] == "bad":
+            raise SystemExit(2)
+        return 0
 
     monkeypatch.setattr(api.sys, "stdin", io.StringIO(batch))
     monkeypatch.setattr(api, "main", _main)
@@ -139,7 +142,56 @@ def test_noninteractive_shell_reads_batch_and_aggregates_failures(monkeypatch, c
         ["bad", "--flag"],
         ["market_ticker", "GBPUSD"],
     ]
-    assert capsys.readouterr().out == ""
+    records = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    assert records == [
+        {
+            "line": 2,
+            "command": "market_ticker EURUSD",
+            "success": True,
+            "status": 0,
+        },
+        {
+            "line": 4,
+            "command": "bad --flag",
+            "success": False,
+            "status": 2,
+        },
+        {
+            "line": 5,
+            "command": "market_ticker GBPUSD",
+            "success": True,
+            "status": 0,
+        },
+    ]
+
+
+def test_noninteractive_shell_frames_pretty_json_as_ndjson(monkeypatch, capsys):
+    from mtdata.core.cli import api
+
+    batch = "market_ticker EURUSD --json\nmarket_ticker GBPUSD --json\n"
+
+    def _main():
+        print(
+            json.dumps(
+                {"symbol": api.sys.argv[2], "prices": [1.1, 1.2]},
+                indent=2,
+            )
+        )
+        return 0
+
+    monkeypatch.setattr(api.sys, "stdin", io.StringIO(batch))
+    monkeypatch.setattr(api, "main", _main)
+
+    assert api.run_shell(interactive=False) == 0
+    output_lines = capsys.readouterr().out.splitlines()
+    assert len(output_lines) == 2
+    records = [json.loads(line) for line in output_lines]
+    assert [record["line"] for record in records] == [1, 2]
+    assert [record["result"]["symbol"] for record in records] == [
+        "EURUSD",
+        "GBPUSD",
+    ]
+    assert all(record["success"] for record in records)
 
 
 def test_static_command_catalog_matches_registered_tools():
@@ -172,3 +224,4 @@ def test_shell_is_registered_and_has_help(monkeypatch, capsys):
     assert "Run an interactive mtdata-cli session" in output
     assert "batch from stdin" in output
     assert "exit or quit" in output
+    assert "NDJSON" in output
