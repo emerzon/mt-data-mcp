@@ -128,8 +128,8 @@ class TestLabelsTripleBarrier:
             barrier_kwargs={"tp_pct": 0.5, "sl_pct": 0.5},
         )
 
-        assert len(result) == 9
-        assert result == ([], [], [], [], [], [], [], [], 0)
+        assert len(result) == 12
+        assert result == ([], [], [], [], [], [], [], [], [], 0, 0, 0)
 
     @patch(f"{_LABELS_MOD}._get_pip_size", return_value=0.00001)
     @patch(f"{_LABELS_MOD}.resolve_denoise_base_col", return_value="close")
@@ -165,7 +165,8 @@ class TestLabelsTripleBarrier:
 
         with patch(f"{_LABELS_MOD}._resolve_barrier_prices", side_effect=RuntimeError("boom")):
             row = _triple_barrier_sample_row(
-                idx=0,
+                result_idx=0,
+                source_idx=0,
                 closes=np.array([1.23456]),
                 t_entry=["2024-01-01T00:00:00Z"],
                 labels=[1],
@@ -286,9 +287,13 @@ class TestLabelsTripleBarrier:
 
         assert result["success"] is True
         assert result["skipped_entries"] == 1
+        assert result["skipped_entry_reasons"] == {
+            "invalid_price": 1,
+            "invalid_barrier": 0,
+        }
         assert len(result["labels"]) == 8
         assert len(result["entries"]) == 8
-        assert any("Skipped 1 entries" in msg for msg in result["warnings"])
+        assert any("1 invalid or non-positive price" in msg for msg in result["warnings"])
 
     @patch(f"{_LABELS_MOD}._get_pip_size", return_value=0.0001)
     @patch(f"{_LABELS_MOD}.resolve_denoise_base_col", return_value="close")
@@ -303,7 +308,63 @@ class TestLabelsTripleBarrier:
         assert result["success"] is True
         assert result["skipped_entries"] == 1
         assert "summary" in result
-        assert any("Skipped 1 entries" in msg for msg in result["warnings"])
+        assert any("1 invalid or non-positive price" in msg for msg in result["warnings"])
+
+    @patch(f"{_LABELS_MOD}._get_pip_size", return_value=0.0001)
+    @patch(f"{_LABELS_MOD}.resolve_denoise_base_col", return_value="close")
+    @patch(f"{_LABELS_MOD}._fetch_history")
+    def test_invalid_absolute_barriers_have_distinct_skip_reason(
+        self, mock_hist, mock_den, mock_pip
+    ):
+        del mock_den, mock_pip
+        mock_hist.return_value = _make_df(30, base=100.0, step=1.0)
+
+        result = _get_raw_fn()(
+            "SPX", tp_abs=110.0, sl_abs=90.0, horizon=3, detail="full"
+        )
+
+        assert result["skipped_entry_reasons"]["invalid_price"] == 0
+        assert result["skipped_entry_reasons"]["invalid_barrier"] > 0
+        assert any("did not bracket the entry" in msg for msg in result["warnings"])
+
+    def test_sample_row_uses_original_source_index_after_skipped_entry(self):
+        from mtdata.core.labels import (
+            _build_triple_barrier_outputs,
+            _triple_barrier_sample_row,
+        )
+
+        closes = np.array([np.nan, 101.0, 102.0, 103.0, 104.0])
+        outputs = _build_triple_barrier_outputs(
+            closes=closes,
+            highs=closes,
+            lows=closes,
+            times=np.arange(len(closes), dtype=float),
+            horizon=2,
+            label_on="close",
+            direction_value="long",
+            pip_size=0.01,
+            barrier_kwargs={"tp_pct": 1.0, "sl_pct": 1.0},
+        )
+        labels, hold, entries, tp_times, sl_times, same_bar = outputs[:6]
+        source_indices = outputs[8]
+
+        row = _triple_barrier_sample_row(
+            result_idx=0,
+            source_idx=source_indices[0],
+            closes=closes,
+            t_entry=entries,
+            labels=labels,
+            hold=hold,
+            tp_times=tp_times,
+            sl_times=sl_times,
+            same_bar_flags=same_bar,
+            direction_value="long",
+            pip_size=0.01,
+            barrier_kwargs={"tp_pct": 1.0, "sl_pct": 1.0},
+        )
+
+        assert source_indices[0] == 1
+        assert row["entry_price"] == 101.0
 
     @patch(f"{_LABELS_MOD}._get_pip_size", return_value=0.0001)
     @patch(f"{_LABELS_MOD}.resolve_denoise_base_col", return_value="close")
