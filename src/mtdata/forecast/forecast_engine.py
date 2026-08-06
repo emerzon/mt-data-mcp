@@ -318,15 +318,12 @@ def _resolve_history_context(
         base_col = prefetched_base_col or ('close_dn' if 'close_dn' in df.columns else 'close')
         dn_spec_used = None
         if prefetched_denoise_spec:
-            try:
-                dn_spec_used = _normalize_denoise_spec(prefetched_denoise_spec, default_when='pre_ti')
-            except Exception:
-                dn_spec_used = None
+            dn_spec_used = _normalize_denoise_spec(
+                prefetched_denoise_spec,
+                default_when='pre_ti',
+            )
         elif denoise:
-            try:
-                normalized = _normalize_denoise_spec(denoise, default_when='pre_ti')
-            except Exception:
-                normalized = None
+            normalized = _normalize_denoise_spec(denoise, default_when='pre_ti')
             added = apply_denoise(df, normalized, default_when='pre_ti') if normalized else []
             dn_spec_used = normalized
             if len(added) > 0 and base_col == 'close' and f"{base_col}_dn" in added:
@@ -345,10 +342,7 @@ def _resolve_history_context(
     base_col = 'close'
     dn_spec_used = None
     if denoise:
-        try:
-            normalized = _normalize_denoise_spec(denoise, default_when='pre_ti')
-        except Exception:
-            normalized = None
+        normalized = _normalize_denoise_spec(denoise, default_when='pre_ti')
         added = apply_denoise(df, normalized, default_when='pre_ti') if normalized else []
         dn_spec_used = normalized
         if len(added) > 0 and f"{base_col}_dn" in added:

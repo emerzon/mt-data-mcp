@@ -628,19 +628,19 @@ class TestApplyPreprocessing:
         assert col == "close_dn"
 
     def test_denoise_normalize_exception(self):
-        """Lines 615-616: normalize raises."""
+        """Invalid denoise configuration is not replaced by raw data."""
         df = _make_df(20)
         with patch("mtdata.forecast.forecast_preprocessing._normalize_denoise_spec", side_effect=RuntimeError):
-            col = apply_preprocessing(df, "price", "close", {"method": "bad"})
-        assert col == "close"
+            with pytest.raises(RuntimeError):
+                apply_preprocessing(df, "price", "close", {"method": "bad"})
 
     def test_denoise_apply_exception(self):
-        """Lines 619-620: apply raises."""
+        """Denoise application failures are not replaced by raw data."""
         df = _make_df(20)
         with patch("mtdata.forecast.forecast_preprocessing._normalize_denoise_spec", return_value={"m": "x"}), \
              patch("mtdata.forecast.forecast_preprocessing.apply_denoise", side_effect=RuntimeError):
-            col = apply_preprocessing(df, "price", "close", {"method": "ema"})
-        assert col == "close"
+            with pytest.raises(RuntimeError):
+                apply_preprocessing(df, "price", "close", {"method": "ema"})
 
     def test_denoise_no_dn_column(self):
         """Line 621: _dn column not in added list."""

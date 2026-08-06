@@ -380,6 +380,20 @@ class TestForecastBacktest:
         assert any("uses future observations" in warning for warning in result["warnings"])
 
     @patch("mtdata.forecast.backtest._fetch_history")
+    def test_unsupported_denoise_causality_is_rejected(self, fetch):
+        fetch.return_value = _make_df(500)
+
+        result = forecast_backtest(
+            "EURUSD",
+            timeframe="H1",
+            methods=["naive"],
+            denoise={"method": "wavelet", "causality": "causal"},
+        )
+
+        assert result["error_code"] == "denoise_invalid_configuration"
+        assert "does not support causality='causal'" in result["error"]
+
+    @patch("mtdata.forecast.backtest._fetch_history")
     def test_slippage_and_threshold(self, fetch):
         fetch.return_value = _make_df(500)
         with patch("mtdata.forecast.backtest.forecast") as fc:

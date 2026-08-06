@@ -767,6 +767,25 @@ def test_forecast_engine_applies_denoise_to_prefetched_raw_history(monkeypatch):
     assert captured["last_value"] == float(df["close"].iloc[-1] * 10.0)
 
 
+def test_forecast_engine_rejects_unsupported_denoise_causality(monkeypatch):
+    monkeypatch.setattr(fe, "TIMEFRAME_MAP", {"H1": 1})
+    monkeypatch.setattr(fe, "TIMEFRAME_SECONDS", {"H1": 3600})
+    monkeypatch.setattr(fe, "_get_available_methods", lambda: ("naive",))
+    monkeypatch.setattr(fe, "_parse_kv_or_json", lambda value: dict(value or {}))
+
+    out = fe.forecast_engine(
+        symbol="EURUSD",
+        timeframe="H1",
+        method="naive",
+        horizon=1,
+        denoise={"method": "wavelet", "causality": "causal"},
+        prefetched_df=_df(20),
+    )
+
+    assert "success" not in out
+    assert "does not support causality='causal'" in out["error"]
+
+
 def test_forecast_engine_surfaces_denoise_warnings(monkeypatch):
     class CaptureForecaster:
         def forecast(self, series, horizon, seasonality, params, exog_future=None, **kwargs):

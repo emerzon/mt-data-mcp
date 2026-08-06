@@ -78,6 +78,11 @@ class TestNormalizeDenoiseSec:
         with pytest.raises(ValueError, match="explicit.*zero_phase"):
             normalize_denoise_spec("wavelet")
 
+        with pytest.raises(ValueError, match="does not support causality='causal'"):
+            normalize_denoise_spec(
+                {"method": "wavelet", "causality": "causal"}
+            )
+
         out = normalize_denoise_spec(
             {"method": "wavelet", "causality": "zero_phase"}
         )
@@ -716,23 +721,28 @@ class TestApplyDenoise:
         added = apply_denoise(df, spec)
         assert len(added) >= 4
 
-    def test_unknown_method_records_warning_and_returns_raw_data(self):
+    def test_unknown_method_raises_and_preserves_raw_data(self):
         df = self._make_df()
         original = df["close"].copy()
 
-        added = apply_denoise(df, {"method": "nonexistent_method", "columns": ["close"], "keep_original": False})
+        with pytest.raises(ValueError, match="Unknown denoise method"):
+            apply_denoise(
+                df,
+                {
+                    "method": "nonexistent_method",
+                    "columns": ["close"],
+                    "keep_original": False,
+                },
+            )
 
-        assert added == []
         pd.testing.assert_series_equal(df["close"], original)
-        assert "denoise_warnings" in df.attrs
-        assert "Unknown denoise method 'nonexistent_method'" in df.attrs["denoise_warnings"][0]
 
-    def test_all_nan_series_appends_warning_and_skips_column(self):
+    def test_all_nan_series_raises_instead_of_using_raw_data(self):
         df = pd.DataFrame({"close": [np.nan, np.nan, np.nan]})
 
-        added = apply_denoise(df, {"method": "ema", "columns": ["close"]})
+        with pytest.raises(ValueError, match="contains no finite values for denoise"):
+            apply_denoise(df, {"method": "ema", "columns": ["close"]})
 
-        assert added == []
         assert "denoise_warnings" in df.attrs
         assert "contains no finite values for denoise" in df.attrs["denoise_warnings"][0]
 
@@ -745,17 +755,22 @@ class TestApplyDenoise:
         assert np.isnan(df.loc[1, "close_dn"])
         assert any("restored those positions to NaN" in msg for msg in df.attrs["denoise_warnings"])
 
-    def test_unsupported_causality_appends_warning_and_skips_column(self):
+    def test_unsupported_causality_raises_instead_of_using_raw_data(self):
         df = self._make_df()
 
-        added = apply_denoise(
-            df,
-            {"method": "wavelet", "columns": ["close"], "causality": "causal"},
-        )
+        with pytest.raises(
+            ValueError,
+            match="does not support causality='causal'",
+        ):
+            apply_denoise(
+                df,
+                {
+                    "method": "wavelet",
+                    "columns": ["close"],
+                    "causality": "causal",
+                },
+            )
 
-        assert added == []
-        assert "denoise_warnings" in df.attrs
-        assert "does not support causality='causal'" in df.attrs["denoise_warnings"][0]
         assert df.attrs["denoise_last_application"] == {
             "added_columns": [],
             "overwrote_columns": [],

@@ -1756,9 +1756,16 @@ def forecast_backtest(  # noqa: C901
 
         # Normalize denoise spec once for the whole run (uniform across methods)
         try:
-            _dn_used = _normalize_denoise_spec(denoise, default_when='pre_ti') if denoise is not None else None
-        except Exception:
-            _dn_used = None
+            _dn_used = (
+                _normalize_denoise_spec(denoise, default_when='pre_ti')
+                if denoise is not None
+                else None
+            )
+        except Exception as exc:
+            return {
+                "error": f"Invalid denoise configuration: {exc}",
+                "error_code": "denoise_invalid_configuration",
+            }
 
         data_contract = DataPreparationContract(
             symbol=symbol,

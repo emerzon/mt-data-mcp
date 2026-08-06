@@ -371,17 +371,10 @@ def apply_denoise(
     causality = str(spec.get('causality') or 'causal')
     keep_original = bool(spec.get('keep_original')) if 'keep_original' in spec else (when != 'pre_ti')
     suffix = str(spec.get('suffix') or '_dn')
-    try:
-        handler = _resolve_denoise_handler(method)
-    except Exception as ex:
-        _append_denoise_warning(df, str(ex))
-        return added_cols
-    try:
-        causality = _normalize_denoise_causality(method, causality)
-    except Exception as ex:
-        _append_denoise_warning(df, str(ex))
-        return added_cols
+    handler = _resolve_denoise_handler(method)
+    causality = _normalize_denoise_causality(method, causality)
 
+    attempted_columns = 0
     for col in cols:
         if col not in df.columns:
             _append_denoise_warning(
@@ -389,6 +382,7 @@ def apply_denoise(
                 f"Denoise skipped missing column '{col}'.",
             )
             continue
+        attempted_columns += 1
         try:
             y = _run_denoise_handler(df[col], handler, params, causality)
         except Exception as ex:
@@ -439,6 +433,14 @@ def apply_denoise(
         else:
             df[col] = y
             overwritten_cols.append(str(col))
+    if attempted_columns and not added_cols and not overwritten_cols:
+        warnings_out = df.attrs.get("denoise_warnings")
+        reason = (
+            str(warnings_out[-1])
+            if isinstance(warnings_out, list) and warnings_out
+            else f"Denoise method '{method}' did not produce any output."
+        )
+        raise ValueError(reason)
     return added_cols
 
 
@@ -527,6 +529,11 @@ def normalize_denoise_spec(spec: Any, default_when: str = 'pre_ti') -> Optional[
         method = str(out.get('method') or 'none').strip().lower()
         if "causality" not in spec:
             out["causality"] = _default_denoise_causality(method)
+        else:
+            out["causality"] = _normalize_denoise_causality(
+                method,
+                str(out.get("causality") or "causal"),
+            )
         params = deepcopy(_DENOISE_METHOD_DEFAULT_PARAMS.get(method, {}))
         params.update(_normalize_denoise_param_aliases(method, top_level_params))
         supplied_params = out.get('params')

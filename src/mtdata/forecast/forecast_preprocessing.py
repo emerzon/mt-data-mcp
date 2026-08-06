@@ -643,14 +643,12 @@ def apply_preprocessing(
 ) -> str:
     """Apply initial preprocessing and return the effective base column."""
     if denoise:
-        try:
-            denoise_spec = _normalize_denoise_spec(denoise, default_when="pre_ti")
-        except Exception:
-            denoise_spec = None
-        try:
-            added = apply_denoise(df, denoise_spec, default_when="pre_ti") if denoise_spec else []
-        except Exception:
-            added = []
+        denoise_spec = _normalize_denoise_spec(denoise, default_when="pre_ti")
+        added = (
+            apply_denoise(df, denoise_spec, default_when="pre_ti")
+            if denoise_spec
+            else []
+        )
         if f"{base_col}_dn" in added:
             return f"{base_col}_dn"
     return base_col
