@@ -13,11 +13,12 @@ from ..forecast.forecast_methods import get_forecast_methods_payload
 from ..utils.coercion import UNPARSED_BOOL, parse_bool_like
 from ..utils.mt5 import MT5ConnectionError
 from ..utils.support_resistance import compact_support_resistance_payload
-from .error_envelope import build_error_payload
+from .error_envelope import build_error_payload, normalize_error_payload
 from .mt5_gateway import create_mt5_gateway
 from .output_contract import (
     apply_output_verbosity,
     ensure_common_meta,
+    normalize_output_extras,
     output_extras_shape_detail,
 )
 from .pivot import compute_support_resistance_payload
@@ -39,7 +40,21 @@ def _shape_detail_from_extras(extras: Any) -> str:
 
 
 def _shape_detail(detail: str, extras: Any) -> str:
-    return _shape_detail_from_extras(extras) if extras is not None else detail
+    normalized_extras = normalize_output_extras(extras)
+    return _shape_detail_from_extras(normalized_extras) if normalized_extras else detail
+
+
+def _http_status_for_error(payload: Dict[str, Any], *, default: int = 400) -> int:
+    """Map a canonical domain error to HTTP without changing its identity."""
+    code = str(payload.get("error_code") or "").strip().lower()
+    if code == "symbol_not_found":
+        return 404
+    if code == "mt5_connection_error" or (
+        "mt5" in code
+        and any(token in code for token in ("connection", "unavailable", "quote"))
+    ):
+        return 503
+    return default
 
 
 def _http_error(
@@ -50,12 +65,21 @@ def _http_error(
     operation: str,
     details: Optional[Dict[str, Any]] = None,
 ) -> HTTPException:
-    payload = build_error_payload(
-        message,
-        code=code,
-        operation=operation,
-        details=details,
-    )
+    if isinstance(message, dict) and isinstance(message.get("error"), str):
+        payload = normalize_error_payload(
+            message,
+            default_code=code,
+            operation=operation,
+        )
+        if details and "details" not in payload:
+            payload["details"] = dict(details)
+    else:
+        payload = build_error_payload(
+            message,
+            code=code,
+            operation=operation,
+            details=details,
+        )
     log_fn = logger.error if status_code >= 500 else logger.warning
     log_fn(
         "transport=web_api operation=%s request_id=%s status=%s error=%s",
@@ -592,7 +616,12 @@ def get_history_response(  # noqa: C901
     if not isinstance(result, dict):
         raise _http_error(500, "Unexpected history payload", code="history_payload_invalid", operation="get_history")
     if result.get("error"):
-        raise _http_error(400, str(result["error"]), code="history_tool_error", operation="get_history")
+        raise _http_error(
+            _http_status_for_error(result),
+            result,
+            code="history_tool_error",
+            operation="get_history",
+        )
 
     payload = ensure_common_meta(
         result,
@@ -670,8 +699,8 @@ def get_pivots_response(
 
     if isinstance(result, dict) and result.get("error"):
         raise _http_error(
-            400,
-            str(result["error"]),
+            _http_status_for_error(result),
+            result,
             code="pivot_tool_error",
             operation="get_pivots",
         )
@@ -819,7 +848,7 @@ def get_tick_response(
             status_code = 400
         raise _http_error(
             status_code,
-            result["error"],
+            result,
             code=error_code,
             operation="get_tick",
         )
@@ -847,7 +876,12 @@ def post_forecast_price_response(*, body: ForecastPriceBody, forecast_generate_u
             message="Forecast computation failed.",
         )
     if isinstance(result, dict) and result.get("error"):
-        raise _http_error(400, str(result["error"]), code="forecast_tool_error", operation="post_forecast_price")
+        raise _http_error(
+            _http_status_for_error(result),
+            result,
+            code="forecast_tool_error",
+            operation="post_forecast_price",
+        )
     return result
 
 
@@ -872,7 +906,12 @@ def post_forecast_volatility_response(*, body: ForecastVolBody, forecast_vol_imp
             message="Forecast volatility computation failed.",
         )
     if isinstance(result, dict) and result.get("error"):
-        raise _http_error(400, str(result["error"]), code="forecast_volatility_error", operation="post_forecast_volatility")
+        raise _http_error(
+            _http_status_for_error(result),
+            result,
+            code="forecast_volatility_error",
+            operation="post_forecast_volatility",
+        )
     return result
 
 
@@ -892,5 +931,10 @@ def post_backtest_response(*, body: BacktestBody, backtest_use_case: Callable[..
             message="Backtest computation failed.",
         )
     if isinstance(result, dict) and result.get("error"):
-        raise _http_error(400, str(result["error"]), code="backtest_error", operation="post_backtest")
+        raise _http_error(
+            _http_status_for_error(result),
+            result,
+            code="backtest_error",
+            operation="post_backtest",
+        )
     return result

@@ -162,6 +162,18 @@ class TestPydanticModels:
         body = ForecastPriceBody(symbol="EURUSD", detail="summary", extras="metadata")
         assert body.to_domain_request().detail == "full"
 
+    @pytest.mark.parametrize("extras", [[], ""])
+    def test_empty_extras_do_not_override_explicit_detail(self, extras):
+        assert ForecastPriceBody(
+            symbol="EURUSD", detail="full", extras=extras
+        ).to_domain_request().detail == "full"
+        assert ForecastVolBody(
+            symbol="EURUSD", detail="full", extras=extras
+        ).to_domain_request().detail == "full"
+        assert BacktestBody(
+            symbol="EURUSD", detail="full", extras=extras
+        ).to_domain_request().detail == "full"
+
     def test_forecast_price_body_rejects_removed_target(self):
         with pytest.raises(ValidationError):
             ForecastPriceBody(symbol="GBPUSD", target="return")
@@ -1314,6 +1326,23 @@ class TestPostForecastPrice:
         with patch("mtdata.core.web_api._run_forecast_generate_impl", return_value={"error": "fail"}):
             resp = _client.post("/api/forecast/price", json={"symbol": "EURUSD"})
         assert resp.status_code == 400
+
+    def test_canonical_error_is_preserved_and_mt5_outage_is_503(self):
+        result = {
+            "success": False,
+            "error": "terminal unavailable",
+            "error_code": "mt5_connection_error",
+            "request_id": "domain-request-id",
+            "operation": "forecast_generate",
+            "details": {"terminal": "disconnected"},
+            "remediation": "Start MT5.",
+        }
+        with patch("mtdata.core.web_api._run_forecast_generate_impl", return_value=result):
+            resp = _client.post("/api/forecast/price", json={"symbol": "EURUSD"})
+        assert resp.status_code == 503
+        detail = resp.json()["detail"]
+        for key, value in result.items():
+            assert detail[key] == value
 
     def test_passes_all_params(self):
         with patch("mtdata.core.web_api._run_forecast_generate_impl", return_value={}) as mock_fc:

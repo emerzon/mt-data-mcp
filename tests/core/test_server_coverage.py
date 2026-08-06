@@ -1025,8 +1025,9 @@ class TestRecordingToolDecorator:
             assert structured["detail_seen"] == "full"
             assert structured["meta"]["domain"]["symbol"] == "EURUSD"
             assert structured["diagnostics"]["source"] == "mt5"
-            assert isinstance(legacy_structured, str)
-            assert "Invalid extras value" in legacy_structured
+            assert isinstance(legacy_structured, dict)
+            assert legacy_structured["error_code"] == "tool_execution_error"
+            assert "Invalid extras value" in legacy_structured["error"]
             assert detailed["detail_seen"] == "full"
             assert detailed["meta"]["domain"]["symbol"] == "EURUSD"
         finally:

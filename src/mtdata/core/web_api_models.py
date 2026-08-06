@@ -15,12 +15,13 @@ from ..forecast.requests import (
     ForecastVolatilityEstimateRequest,
 )
 from ..shared.schema import DetailLiteral, ForecastLibraryLiteral, reject_removed_field
-from .output_contract import output_extras_shape_detail
+from .output_contract import normalize_output_extras, output_extras_shape_detail
 
 
 def _request_detail(detail: DetailLiteral, extras: Optional[list[str] | str]) -> DetailLiteral:
-    if extras is not None:
-        return output_extras_shape_detail(extras)  # type: ignore[return-value]
+    normalized_extras = normalize_output_extras(extras)
+    if normalized_extras:
+        return output_extras_shape_detail(normalized_extras)  # type: ignore[return-value]
     return detail
 
 

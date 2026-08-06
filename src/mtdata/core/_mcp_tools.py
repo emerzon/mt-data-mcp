@@ -909,7 +909,9 @@ def _recording_tool_decorator(*dargs, **dkwargs):  # type: ignore[override]  # n
             json_output = kw.pop("json", False)
             extras = kw.pop("extras", None)
             fields = kw.pop("fields", None)
-            contract_state = resolve_output_contract({})
+            # Resolve the requested representation before any fallible argument
+            # normalization so wrapper-generated errors keep the same contract.
+            contract_state = resolve_output_contract({}, json=json_output)
 
             try:
                 normalized_extras = normalize_output_extras(extras)
