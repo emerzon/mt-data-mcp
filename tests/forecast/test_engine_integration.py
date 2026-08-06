@@ -575,6 +575,20 @@ class TestRunRegisteredForecastMethodIntegration:
                     ),
                 )
 
+    def test_async_mode_rejects_non_trainable_method(self):
+        non_trainable = _StubNonTrainable()
+
+        class FakeReg:
+            @staticmethod
+            def get(name):
+                return non_trainable
+
+        with patch.object(fe, "ForecastRegistry", FakeReg):
+            with pytest.raises(ValueError, match="async_mode is not supported"):
+                fe._run_registered_forecast_method(
+                    **_common_call_kwargs(async_mode=True)
+                )
+
     def test_trainable_no_stored_model_trains_and_persists_synchronously(self):
         stub = _StubTrainable(category="heavy")
 
@@ -614,6 +628,7 @@ class TestRunRegisteredForecastMethodIntegration:
         mock_store.find.return_value = None
 
         with patch.object(fe, "ForecastRegistry", FakeReg), \
+             patch.object(fe, "_compute_model_key", return_value="missing_model"), \
              patch(_PATCH_MODEL_STORE, mock_store):
             with pytest.raises(ValueError, match="was not found in the model store"):
                 fe._run_registered_forecast_method(
@@ -651,9 +666,9 @@ class TestRunRegisteredForecastMethodIntegration:
         )
         kwargs["as_of"] = "2026-01-01T00:00:00Z"
 
-        with patch.object(fe, "ForecastRegistry", FakeReg), patch(
-            _PATCH_MODEL_STORE, mock_store
-        ):
+        with patch.object(fe, "ForecastRegistry", FakeReg), patch.object(
+            fe, "_compute_model_key", return_value="abc"
+        ), patch(_PATCH_MODEL_STORE, mock_store):
             with pytest.raises(ValueError, match="historical_anchor_mismatch"):
                 fe._run_registered_forecast_method(**kwargs)
 
@@ -742,7 +757,7 @@ class TestRunRegisteredForecastMethodIntegration:
         assert exc_info.value.response["task_id"] == "task-fast"
         assert exc_info.value.response["status"] == "pending"
 
-    def test_canonical_model_id_overrides_computed_hash(self):
+    def test_canonical_model_id_cannot_override_computed_hash(self):
         stub = _StubTrainable(category="heavy")
 
         class FakeReg:
@@ -767,17 +782,16 @@ class TestRunRegisteredForecastMethodIntegration:
         mock_store.load_bytes.return_value = b"artifact"
 
         with patch.object(fe, "ForecastRegistry", FakeReg), \
+             patch.object(fe, "_compute_model_key", return_value="expected_id"), \
              patch(_PATCH_MODEL_STORE, mock_store):
-            result = fe._run_registered_forecast_method(
-                **_common_call_kwargs(
-                    model_id="stub_trainable/EURUSD_H1/custom_id"
-                ),
-            )
+            with pytest.raises(ValueError, match="incompatible"):
+                fe._run_registered_forecast_method(
+                    **_common_call_kwargs(
+                        model_id="stub_trainable/EURUSD_H1/custom_id"
+                    ),
+                )
 
-        # Should have used custom_id for lookup
-        mock_store.find.assert_called_once_with("stub_trainable", "EURUSD_H1", "custom_id")
-        forecast_arr, ci, metadata = result
-        assert metadata["model_info"]["model_id"] == "stub_trainable/EURUSD_H1/custom_id"
+        mock_store.find.assert_not_called()
 
     def test_model_id_rejects_mismatched_scope(self):
         stub = _StubTrainable(category="heavy")

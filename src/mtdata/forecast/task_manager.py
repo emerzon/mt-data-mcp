@@ -89,6 +89,7 @@ class _TrainingSpec:
     series: Optional[pd.Series] = None
     exog: Optional[np.ndarray] = None
     request_payload: Optional[Dict[str, Any]] = None
+    method_object: Any = None
 
 
 @dataclass
@@ -272,7 +273,7 @@ def _execute_training_spec(
     _ensure_training_methods_registered()
     prepared = _prepare_spec_inputs(spec)
     cancel_token.raise_if_cancelled()
-    method_obj = ForecastRegistry.get(prepared["method_name"])
+    method_obj = spec.method_object or ForecastRegistry.get(prepared["method_name"])
     training_params = dict(prepared["params"])
     training_context = training_params.pop("_training_context", None)
     result = method_obj.train(
@@ -707,13 +708,20 @@ class TaskManager:
         timeout_seconds = self._timeout_for_category(training_category)
 
         try:
-            if str(training_category).lower() == "heavy":
-                future = self._heavy_executor.submit(self._run_heavy_task, task.task_id, spec, timeout_seconds)
-            else:
-                cancel_event = threading.Event()
-                with self._lock:
-                    self._thread_cancel_events[task.task_id] = cancel_event
-                future = self._light_executor.submit(self._run_light_task, task.task_id, spec, cancel_event)
+            # Every configured category timeout needs a killable execution
+            # boundary. A worker thread cannot stop a native fit that overruns,
+            # so all categories use the supervised process runner.
+            executor = (
+                self._heavy_executor
+                if str(training_category).lower() == "heavy"
+                else self._light_executor
+            )
+            future = executor.submit(
+                self._run_heavy_task,
+                task.task_id,
+                spec,
+                timeout_seconds,
+            )
         except RuntimeError:
             self._mutate_task(
                 task.task_id,
@@ -771,6 +779,7 @@ class TaskManager:
             timeframe=str(timeframe or ""),
             series=series.copy(),
             exog=np.array(exog, copy=True) if isinstance(exog, np.ndarray) else exog,
+            method_object=ForecastRegistry.get(method_name),
         )
         return self._submit_spec(spec, training_category=str(info.get("training_category", "moderate")))
 
@@ -828,6 +837,7 @@ class TaskManager:
                 if isinstance(context.exog_used, np.ndarray)
                 else context.exog_used
             ),
+            method_object=ForecastRegistry.get(context.method_l),
         )
         return self._submit_spec(spec, training_category=str(info.get("training_category", "moderate")))
 

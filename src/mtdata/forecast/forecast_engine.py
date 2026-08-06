@@ -1083,6 +1083,11 @@ def _run_registered_forecast_method(
         method_params['ci_alpha'] = ci_alpha
     requested_model_id = str(model_id or "").strip()
     supports_training = bool(getattr(forecaster, 'supports_training', False))
+    if async_mode and not supports_training:
+        raise ValueError(
+            f"async_mode is not supported for non-trainable method '{method_l}'. "
+            "Omit async_mode or select a trainable method."
+        )
     if requested_model_id and not supports_training:
         raise ValueError(
             f"model_id '{requested_model_id}' was provided, but method "
@@ -1140,18 +1145,25 @@ def _run_registered_forecast_method(
             target_spec=target_spec,
             exog=X,
         )
-        params_hash = (
-            _params_hash_from_model_id(
+        expected_params_hash = _compute_model_key(
+            forecaster, method_l, horizon, seasonality,
+            training_params, str(timeframe), has_exog,
+        )
+        if requested_model_id:
+            supplied_params_hash = _params_hash_from_model_id(
                 requested_model_id,
                 method=method_l,
                 data_scope=data_scope,
             )
-            if requested_model_id
-            else _compute_model_key(
-                forecaster, method_l, horizon, seasonality,
-                training_params, str(timeframe), has_exog,
-            )
-        )
+            if supplied_params_hash != expected_params_hash:
+                raise ValueError(
+                    f"model_id '{requested_model_id}' is incompatible with the "
+                    "current horizon, seasonality, timeframe, target, features, "
+                    "or training parameters."
+                )
+            params_hash = supplied_params_hash
+        else:
+            params_hash = expected_params_hash
 
         model_rejection: Dict[str, Any] = {}
         stored_result = _try_predict_with_stored_model(
@@ -1159,7 +1171,7 @@ def _run_registered_forecast_method(
             target_series, horizon, seasonality,
             method_params, future_exog, call_kwargs,
             float(df["time"].iloc[-1]),
-            require_exact_anchor=as_of is not None,
+            require_exact_anchor=True,
             timeframe_seconds=TIMEFRAME_SECONDS.get(str(timeframe)),
             max_staleness_bars=max(1, int(seasonality)),
             rejection=model_rejection,

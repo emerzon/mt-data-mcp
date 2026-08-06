@@ -1058,7 +1058,16 @@ def _recording_tool_decorator(*dargs, **dkwargs):  # type: ignore[override]  # n
         # imply that broker or analysis work had stopped.
         @_wraps(func)
         async def _async_wrapped(*a, **kw):
-            return await asyncio.to_thread(_wrapped, *a, **kw)
+            worker = asyncio.create_task(asyncio.to_thread(_wrapped, *a, **kw))
+            try:
+                return await asyncio.shield(worker)
+            except asyncio.CancelledError:
+                # The thread cannot be stopped safely. Keep this handler
+                # attached until the operation reaches a terminal state so a
+                # cancellation acknowledgement cannot imply that a mutating
+                # broker call was aborted.
+                await worker
+                raise
 
         try:
             _async_wrapped.__annotations__ = getattr(_wrapped, "__annotations__", {})

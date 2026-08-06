@@ -1060,6 +1060,41 @@ class TestRecordingToolDecorator:
         finally:
             tools._ORIG_TOOL_DECORATOR = original
 
+    def test_async_wrapped_defers_cancellation_until_worker_finishes(self):
+        import asyncio
+        import threading
+
+        import mtdata.core._mcp_tools as tools
+
+        original = tools._ORIG_TOOL_DECORATOR
+        started = threading.Event()
+        release = threading.Event()
+        try:
+            tools._ORIG_TOOL_DECORATOR = lambda *a, **k: (lambda fn: fn)
+            dec = tools._recording_tool_decorator()
+
+            def slow_tool():
+                started.set()
+                release.wait(timeout=2.0)
+                return {"success": True}
+
+            async_wrapped = dec(slow_tool)._mcp_async_wrapper
+
+            async def exercise():
+                task = asyncio.create_task(async_wrapped(__cli_raw=True))
+                await asyncio.to_thread(started.wait, 1.0)
+                task.cancel()
+                await asyncio.sleep(0.02)
+                assert not task.done()
+                release.set()
+                with pytest.raises(asyncio.CancelledError):
+                    await task
+
+            asyncio.run(exercise())
+        finally:
+            release.set()
+            tools._ORIG_TOOL_DECORATOR = original
+
     def test_async_wrapped_uses_same_worker_path_for_long_analysis_tools(self):
         import asyncio
 

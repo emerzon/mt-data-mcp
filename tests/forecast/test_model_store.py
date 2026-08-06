@@ -431,6 +431,16 @@ class TestModelStoreAtomicWrite(unittest.TestCase):
         loaded = self.store.load_bytes("m/d/p")
         self.assertTrue(loaded.startswith(b"model_data_"))
 
+    def test_artifact_metadata_generation_mismatch_is_rejected(self):
+        self.store.save("m", "d", "p", b"generation-one")
+        model_dir = self.store._model_dir("m", "d", "p")
+        self.store._atomic_write_bytes(
+            model_dir / "model.bin", b"generation-two"
+        )
+
+        with self.assertRaisesRegex(FileNotFoundError, "generation mismatch"):
+            self.store.load_bytes("m/d/p")
+
 
 class TestModelStoreDataScopeEscaping(unittest.TestCase):
     """Data scopes with slashes/backslashes are safely stored."""

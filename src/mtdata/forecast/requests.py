@@ -59,7 +59,10 @@ class ForecastGenerateRequest(BaseModel):
     target_spec: Optional[Dict[str, Any]] = None
     async_mode: bool = Field(
         False,
-        description="When True, heavy methods submit a background training task and return a task_id instead of blocking.",
+        description=(
+            "When True, trainable methods submit a background training task and "
+            "return a task_id. Non-trainable inference methods reject this flag."
+        ),
     )
     model_id: Optional[str] = Field(
         None,

@@ -39,6 +39,7 @@ Usage::
 from __future__ import annotations
 
 import errno
+import hashlib
 import json
 import logging
 import os
@@ -287,6 +288,7 @@ class ModelStore:
                     "last_used": now,
                     "metadata": handle.metadata,
                     "store_metadata": handle.store_metadata,
+                    "artifact_sha256": hashlib.sha256(artifact_bytes).hexdigest(),
                 }
                 meta_path = model_dir / "metadata.json"
                 self._atomic_write_text(
@@ -314,6 +316,18 @@ class ModelStore:
                 raise FileNotFoundError(f"No model artifact at {artifact_path}")
 
             data = artifact_path.read_bytes()
+            metadata = self._read_raw_meta(model_dir)
+            expected_digest = (
+                str(metadata.get("artifact_sha256") or "")
+                if isinstance(metadata, dict)
+                else ""
+            )
+            actual_digest = hashlib.sha256(data).hexdigest()
+            if not expected_digest or expected_digest != actual_digest:
+                raise FileNotFoundError(
+                    f"Model record {model_id} is incomplete or contains an "
+                    "artifact/metadata generation mismatch."
+                )
         return data
 
     def mark_used(self, model_id: str) -> bool:
