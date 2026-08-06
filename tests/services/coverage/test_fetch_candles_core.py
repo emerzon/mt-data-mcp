@@ -852,6 +852,20 @@ class TestFetchCandlesCore(unittest.TestCase):
         mock_range.return_value = _make_rates(20, base_ts=base + 20 * 60, step=60)
         result = fetch_candles('EURUSD', limit=100, start='2025-01-01', end='2025-01-01 00:20')
         self.assertTrue(result.get('success'))
+        self.assertEqual(
+            result['query_applied'],
+            {
+                'mode': 'range',
+                'timeframe': 'H1',
+                'limit': 100,
+                'start': '2025-01-01',
+                'resolved_start': '2025-01-01T00:00:00Z',
+                'start_bound': 'inclusive_day_start',
+                'end': '2025-01-01 00:20',
+                'resolved_end': '2025-01-01T00:20:00Z',
+                'end_bound': 'inclusive_instant',
+            },
+        )
 
     @patch(_MT5_CONFIG)
     @patch(_RATES_RANGE)

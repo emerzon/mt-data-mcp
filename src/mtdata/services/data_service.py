@@ -804,6 +804,17 @@ def _parse_fetch_datetime_arg(
     return parsed, None
 
 
+def _format_resolved_query_bound(value: datetime) -> str:
+    """Format a parsed query bound without hiding an inclusive day-end."""
+    resolved = (
+        value.replace(tzinfo=dt_timezone.utc)
+        if value.tzinfo is None
+        else value.astimezone(dt_timezone.utc)
+    )
+    timespec = "microseconds" if resolved.microsecond else "seconds"
+    return resolved.isoformat(timespec=timespec).replace("+00:00", "Z")
+
+
 def _future_start_error(
     start_datetime: str, from_date: datetime, seconds_per_bar: int
 ) -> Optional[str]:
@@ -2183,8 +2194,35 @@ def fetch_candles(  # noqa: C901
             }
             if start_datetime not in (None, ""):
                 query_applied["start"] = start_datetime
+                resolved_start, _ = _parse_fetch_datetime_arg(start_datetime)
+                if resolved_start is not None:
+                    query_applied["resolved_start"] = _format_resolved_query_bound(
+                        resolved_start
+                    )
+                    query_applied["start_bound"] = (
+                        "inclusive_day_start"
+                        if re.fullmatch(
+                            r"\d{4}-\d{2}-\d{2}", str(start_datetime).strip()
+                        )
+                        else "inclusive_instant"
+                    )
             if end_datetime not in (None, ""):
                 query_applied["end"] = end_datetime
+                resolved_end, _ = _parse_fetch_datetime_arg(
+                    end_datetime,
+                    end_bound=True,
+                )
+                if resolved_end is not None:
+                    query_applied["resolved_end"] = _format_resolved_query_bound(
+                        resolved_end
+                    )
+                    query_applied["end_bound"] = (
+                        "inclusive_day_end"
+                        if re.fullmatch(
+                            r"\d{4}-\d{2}-\d{2}", str(end_datetime).strip()
+                        )
+                        else "inclusive_instant"
+                    )
             payload["query_applied"] = query_applied
         if price_currency:
             payload["price_currency"] = price_currency

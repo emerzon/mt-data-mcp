@@ -211,6 +211,12 @@ mtdata-cli data_fetch_candles EURUSD --start "1 week ago"
 mtdata-cli data_fetch_candles EURUSD --start "2025-12-01" --end "2025-12-31"
 ```
 
+For candle ranges, bounds are inclusive and resolved in UTC. An ISO date-only
+`--start` means 00:00:00 at the beginning of that day, while a date-only
+`--end` means 23:59:59.999999 at the end of that day. Include an explicit time
+and timezone when automation needs an exact instant. Candle responses echo the
+resolved instants and bound modes in `query_applied`.
+
 ---
 
 ## Command Categories

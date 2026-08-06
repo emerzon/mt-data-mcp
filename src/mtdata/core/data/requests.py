@@ -408,8 +408,21 @@ class DataFetchCandlesRequest(_DetailNormalizedRequest):
             "returned window has valid indicator values without raising the limit."
         ),
     )
-    start: Optional[str] = None
-    end: Optional[str] = None
+    start: Optional[str] = Field(
+        None,
+        description=(
+            "Inclusive UTC range start parsed by dateparser. An ISO date-only "
+            "value such as 2026-08-05 resolves to 00:00:00 UTC that day."
+        ),
+    )
+    end: Optional[str] = Field(
+        None,
+        description=(
+            "Inclusive UTC range end parsed by dateparser. An ISO date-only "
+            "value such as 2026-08-06 resolves to 23:59:59.999999 UTC; a value "
+            "with a time is treated as that exact instant."
+        ),
+    )
     timestamp_format: Literal["epoch", "iso"] = Field(
         "iso",
         description=(

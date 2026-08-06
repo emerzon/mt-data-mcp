@@ -218,6 +218,13 @@ def test_data_fetch_candles_schema_documents_ohlcv():
     assert "open,high,low,close,volume" in ohlcv["description"]
 
 
+def test_data_fetch_candles_schema_documents_inclusive_date_bounds():
+    schema = DataFetchCandlesRequest.model_json_schema()
+
+    assert "00:00:00 UTC" in schema["properties"]["start"]["description"]
+    assert "23:59:59.999999 UTC" in schema["properties"]["end"]["description"]
+
+
 def test_run_data_fetch_candles_omits_contract_metadata_in_compact_detail():
     rows = [{"time": 1.0, "close": 1.1}]
     request = DataFetchCandlesRequest(symbol="EURUSD", timeframe="H1", limit=10)
