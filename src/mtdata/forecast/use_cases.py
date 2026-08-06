@@ -12,13 +12,13 @@ from datetime import datetime, timezone
 from functools import lru_cache
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
+from ..core.error_envelope import build_error_payload
 from ..core.execution_logging import (
     infer_result_success,
     log_operation_exception,
     log_operation_finish,
     log_operation_start,
 )
-from ..core.error_envelope import build_error_payload
 from ..core.output_contract import attach_collection_contract
 from ..utils.coercion import coerce_finite_float as _finite_float
 from ..utils.coercion import is_explicit_false as _is_explicit_false
@@ -71,7 +71,9 @@ _TUNING_METRICS = frozenset(
 _VOLATILITY_PROXY_METHODS = {"arima", "sarima", "ets", "theta"}
 _PRETRAINED_FORECAST_METHODS = ("chronos2", "chronos_bolt", "timesfm")
 _DEFAULT_VOLATILITY_PROXY = "squared_return"
-_FORECAST_DIRECTION_NEUTRAL_THRESHOLD_PCT = 0.01
+_FORECAST_DIRECTION_MIN_THRESHOLD_PCT = 0.05
+
+
 def _format_forecast_time_utc(value: Any) -> Any:
     if value in (None, ""):
         return value
@@ -522,7 +524,10 @@ def _forecast_vs_last_price(payload: Dict[str, Any]) -> Optional[Dict[str, Any]]
     if last_price:
         first_delta_pct = first_delta / last_price * 100.0
         horizon_delta_pct = horizon_delta / last_price * 100.0
-    if horizon_delta_pct is not None and abs(horizon_delta_pct) <= _FORECAST_DIRECTION_NEUTRAL_THRESHOLD_PCT:
+    threshold_pct = _finite_float(payload.get("direction_threshold_pct"))
+    if threshold_pct is None or threshold_pct < _FORECAST_DIRECTION_MIN_THRESHOLD_PCT:
+        threshold_pct = _FORECAST_DIRECTION_MIN_THRESHOLD_PCT
+    if horizon_delta_pct is not None and abs(horizon_delta_pct) <= threshold_pct:
         direction = "neutral"
     elif horizon_delta > 0:
         direction = "bullish"
@@ -533,7 +538,9 @@ def _forecast_vs_last_price(payload: Dict[str, Any]) -> Optional[Dict[str, Any]]
     out: Dict[str, Any] = {
         "direction": direction,
         "direction_basis": "horizon_end",
-        "direction_threshold_pct": _FORECAST_DIRECTION_NEUTRAL_THRESHOLD_PCT,
+        "direction_threshold_pct": float(round(threshold_pct, 6)),
+        "direction_threshold_basis": payload.get("direction_threshold_basis")
+        or "minimum_effect_size_0.05_pct",
         "first_step_delta": float(round(first_delta, delta_digits)),
         "horizon_delta": float(round(horizon_delta, delta_digits)),
     }
@@ -541,6 +548,41 @@ def _forecast_vs_last_price(payload: Dict[str, Any]) -> Optional[Dict[str, Any]]
         out["first_step_delta_pct"] = float(round(first_delta_pct, 4))
         out["horizon_delta_pct"] = float(round(horizon_delta_pct, 4))
     return out
+
+
+def _gate_forecast_direction(
+    payload: Dict[str, Any],
+    price_context: Dict[str, Any],
+) -> None:
+    direction = str(price_context.get("direction") or "").strip().lower()
+    if direction not in {"bullish", "bearish"}:
+        price_context["direction_status"] = "neutral"
+        price_context["direction_actionable"] = False
+        return
+
+    interval_excludes_anchor = price_context.get(
+        "direction_interval_excludes_last_price"
+    )
+    if interval_excludes_anchor is True:
+        price_context["direction_status"] = "interval_confirmed"
+        price_context["direction_actionable"] = True
+        return
+
+    price_context["point_estimate_direction"] = direction
+    price_context.pop("direction", None)
+    price_context["direction_status"] = "unconfirmed"
+    price_context["direction_actionable"] = False
+    interval_basis = str(
+        price_context.get("direction_interval_basis") or ""
+    ).strip()
+    if interval_basis == "not_available":
+        reason = "forecast_uncertainty_not_available"
+    elif interval_basis == "not_comparable":
+        reason = "interval_not_comparable_to_price_anchor"
+    else:
+        reason = "horizon_interval_contains_last_price"
+    price_context.setdefault("direction_suppressed_reason", reason)
+    payload["signal_status"] = "not_actionable"
 
 
 def _annotate_forecast_direction_interval(
@@ -565,6 +607,7 @@ def _annotate_forecast_direction_interval(
             if ci_status == "unavailable"
             else "point_estimate_only"
         )
+        _gate_forecast_direction(payload, price_context)
         return
 
     last_price = _finite_float(payload.get("last_price"))
@@ -576,6 +619,7 @@ def _annotate_forecast_direction_interval(
         price_context["direction_interpretation"] = (
             "interval_not_comparable_to_price_anchor"
         )
+        _gate_forecast_direction(payload, price_context)
         return
 
     direction = str(price_context.get("direction") or "").strip().lower()
@@ -595,6 +639,7 @@ def _annotate_forecast_direction_interval(
         if excludes_last_price
         else "interval_contains_last_price_or_direction_is_neutral"
     )
+    _gate_forecast_direction(payload, price_context)
 
 
 def _forecast_path_flatness(payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -651,6 +696,11 @@ def _annotate_forecast_generate_quality(payload: Dict[str, Any]) -> Dict[str, An
                 "recommended_tool": "forecast_conformal_intervals",
             },
         )
+    if str(out.get("ci_status") or "").strip().lower() in {
+        "not_requested",
+        "unavailable",
+    }:
+        out.setdefault("signal_status", "not_actionable")
     path_flatness = _forecast_path_flatness(out)
     price_context = _forecast_vs_last_price(out)
     if price_context:
@@ -659,10 +709,16 @@ def _annotate_forecast_generate_quality(payload: Dict[str, Any]) -> Dict[str, An
             price_context["direction_basis"] = "flat_path"
             price_context["direction_suppressed_reason"] = "flat_path"
         _annotate_forecast_direction_interval(out, price_context)
-        out.setdefault("forecast_vs_last_price", price_context)
+        out["forecast_vs_last_price"] = price_context
+        out.pop("direction_threshold_pct", None)
+        out.pop("direction_threshold_basis", None)
         units = dict(out.get("units") or {})
         units.setdefault(
             "forecast_vs_last_price.*_delta_pct",
+            "percentage_points (1.0 = 1%)",
+        )
+        units.setdefault(
+            "forecast_vs_last_price.direction_threshold_pct",
             "percentage_points (1.0 = 1%)",
         )
         out["units"] = units

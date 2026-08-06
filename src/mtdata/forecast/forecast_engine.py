@@ -1348,6 +1348,33 @@ def _last_price_freshness_fields(
     return out
 
 
+def _forecast_direction_threshold_from_history(
+    price_anchors: Any,
+    horizon: int,
+) -> Tuple[float, str]:
+    minimum_pct = 0.05
+    anchor_values = np.asarray(price_anchors, dtype=float)
+    if anchor_values.size <= 1:
+        return minimum_pct, "minimum_effect_size_0.05_pct"
+    previous_values = anchor_values[:-1]
+    valid_returns = np.isfinite(previous_values) & (previous_values != 0.0)
+    if not np.any(valid_returns):
+        return minimum_pct, "minimum_effect_size_0.05_pct"
+    absolute_returns_pct = np.abs(
+        (anchor_values[1:][valid_returns] - previous_values[valid_returns])
+        / previous_values[valid_returns]
+        * 100.0
+    )
+    median_bar_move_pct = float(np.median(absolute_returns_pct))
+    horizon_noise_pct = median_bar_move_pct * float(
+        np.sqrt(max(1, int(horizon)))
+    )
+    return (
+        max(minimum_pct, horizon_noise_pct),
+        "max(0.05_pct,median_abs_bar_return_pct*sqrt(horizon))",
+    )
+
+
 def _format_forecast_output(
     forecast_values: np.ndarray,
     last_epoch: float,
@@ -1404,6 +1431,9 @@ def _format_forecast_output(
         if len(finite_price_anchors) > 0
         else None
     )
+    direction_threshold_pct, direction_threshold_basis = (
+        _forecast_direction_threshold_from_history(finite_price_anchors, horizon)
+    )
 
     # Build base result
     forecast_start_epoch = float(future_epochs[0]) if future_epochs else None
@@ -1439,6 +1469,8 @@ def _format_forecast_output(
         "forecast_time": forecast_times,
         "last_price": last_price,
         "last_price_source": "candle_close" if last_price is not None else None,
+        "direction_threshold_pct": float(round(direction_threshold_pct, 6)),
+        "direction_threshold_basis": direction_threshold_basis,
         "calendar_treatment": (
             "broker_calendar_boundaries"
             if calendar_timeframe
@@ -1470,6 +1502,8 @@ def _format_forecast_output(
     if custom_target:
         result.pop("last_price", None)
         result.pop("last_price_source", None)
+        result.pop("direction_threshold_pct", None)
+        result.pop("direction_threshold_basis", None)
         result["forecast_target"] = [float(v) for v in forecast_values]
         result["target"] = {
             "base": (target_info or {}).get("base"),

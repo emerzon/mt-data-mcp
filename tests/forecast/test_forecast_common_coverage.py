@@ -3,13 +3,12 @@
 from __future__ import annotations
 
 import inspect
+import math
 import os
 import threading
 import time
 import types
 from datetime import timezone
-
-import math
 from unittest.mock import MagicMock, PropertyMock, call, patch
 
 import numpy as np
@@ -27,7 +26,6 @@ from mtdata.forecast.common import (
     _create_training_dataframes,
     _extract_forecast_values,
     _normalize_weights,
-    bars_per_year as _bars_per_year,
     build_ci_diagnostics,
     default_seasonality,
     edge_pad_to_length,
@@ -36,6 +34,9 @@ from mtdata.forecast.common import (
     next_times_from_last,
     nf_setup_and_predict,
     pd_freq_from_timeframe,
+)
+from mtdata.forecast.common import (
+    bars_per_year as _bars_per_year,
 )
 from mtdata.forecast.forecast_engine import (
     _calculate_lookback_bars,
@@ -690,6 +691,33 @@ class TestFormatForecastOutput:
             quantity="price", denoise_used=False,
         )
         assert result["forecast_epoch"] == [1060.0, 1120.0, 1180.0]
+
+    def test_direction_threshold_scales_with_observed_bar_noise(self):
+        df = pd.DataFrame(
+            {
+                "time": np.arange(5, dtype=float),
+                "close": [100.0, 101.0, 100.0, 101.0, 100.0],
+            }
+        )
+
+        result = _format_forecast_output(
+            forecast_values=np.array([101.0, 102.0, 103.0, 104.0]),
+            last_epoch=1000.0,
+            tf_secs=60,
+            horizon=4,
+            base_col="close",
+            df=df,
+            ci_alpha=None,
+            ci_values=None,
+            method="naive",
+            quantity="price",
+            denoise_used=False,
+        )
+
+        assert result["direction_threshold_pct"] == pytest.approx(1.990099)
+        assert result["direction_threshold_basis"] == (
+            "max(0.05_pct,median_abs_bar_return_pct*sqrt(horizon))"
+        )
 
     def test_forecast_time_anchor_metadata_is_explicit(self):
         vals = np.array([1.0, 2.0])

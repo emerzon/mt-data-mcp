@@ -49,6 +49,12 @@ mtdata-cli forecast_generate EURUSD --timeframe H1 --horizon 12 \
 
 **Caution:** Financial markets have fat tails. Model CIs often underestimate extreme moves.
 
+`forecast_generate` does not promote a bullish or bearish point estimate to
+`direction` unless the horizon interval excludes the last observed price. If a
+method cannot supply the requested interval, the response reports
+`signal_status: not_actionable`, `direction_actionable: false`, and preserves
+the model-only label as `point_estimate_direction` for research diagnostics.
+
 ---
 
 ## Conformal Intervals (`forecast_conformal_intervals`)

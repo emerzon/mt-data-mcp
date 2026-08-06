@@ -54,6 +54,17 @@ forecast[12]{time,value}:
 |-----------|---------|-------------|
 | `--ci-alpha` | 0.05 | Confidence interval alpha (0.05 = 95% CI); use `null` in API payloads to omit intervals |
 
+Not every method can produce a native interval. When the requested interval is
+unavailable, the result is explicitly `signal_status: not_actionable` and keeps
+any model drift under `point_estimate_direction` instead of publishing a
+directional claim. Use `forecast_conformal_intervals` to calibrate empirical
+bands for point-only methods such as the native Theta fallback.
+
+When price intervals are available, `direction` is published only when the
+horizon interval excludes the last observed price. The neutral threshold is
+also scaled from recent absolute bar returns and the forecast horizon, with a
+minimum effect size of 0.05 percentage points.
+
 ### Pipeline
 | Parameter | Description |
 |-----------|-------------|
@@ -290,6 +301,8 @@ mtdata-cli forecast_generate EURUSD --timeframe H1 --horizon 12 \
 | `forecast_return` | Predicted return values when `quantity=return` |
 | `lower_price` | Lower confidence bound for price forecasts (if available) |
 | `upper_price` | Upper confidence bound for price forecasts (if available) |
+| `forecast_vs_last_price` | Horizon move, volatility-aware threshold, and confirmed or suppressed direction metadata |
+| `signal_status` | `not_actionable` when uncertainty cannot confirm a directional point estimate |
 | `trend` | Detected trend direction (if available) |
 | `method` | Method used |
 | `params_used` | Actual parameters applied |

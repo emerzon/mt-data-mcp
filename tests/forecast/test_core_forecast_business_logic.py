@@ -330,9 +330,9 @@ def test_forecast_generate_defaults_to_compact_payload(monkeypatch):
     assert "freshness_basis" not in out
     assert "stale_after_seconds" not in out
     assert out["forecast_vs_last_price"] == {
-        "direction": "bullish",
         "direction_basis": "horizon_end",
-        "direction_threshold_pct": 0.01,
+        "direction_threshold_pct": 0.05,
+        "direction_threshold_basis": "minimum_effect_size_0.05_pct",
         "first_step_delta": -0.05,
         "horizon_delta": 0.15,
         "first_step_delta_pct": -4.7619,
@@ -340,7 +340,12 @@ def test_forecast_generate_defaults_to_compact_payload(monkeypatch):
         "direction_interval_excludes_last_price": None,
         "direction_interval_basis": "not_available",
         "direction_interpretation": "point_estimate_only",
+        "point_estimate_direction": "bullish",
+        "direction_status": "unconfirmed",
+        "direction_actionable": False,
+        "direction_suppressed_reason": "forecast_uncertainty_not_available",
     }
+    assert out["signal_status"] == "not_actionable"
     assert out["uncertainty"] == {
         "status": "not_requested",
         "mode": "point_only",
@@ -503,7 +508,8 @@ def test_forecast_generate_compact_normalizes_utc_times_and_neutral_delta(monkey
         {"time": "2026-06-02T21:00Z", "value": 1.00006},
     ]
     assert out["forecast_vs_last_price"]["direction"] == "neutral"
-    assert out["forecast_vs_last_price"]["direction_threshold_pct"] == 0.01
+    assert out["forecast_vs_last_price"]["direction_threshold_pct"] == 0.05
+    assert out["forecast_vs_last_price"]["direction_actionable"] is False
 
 
 def test_forecast_generate_compact_preserves_history_reliability(monkeypatch):
@@ -709,9 +715,9 @@ def test_forecast_generate_rounds_price_outputs_to_symbol_digits(monkeypatch):
     out = raw(request=ForecastGenerateRequest(symbol="EURUSD", timeframe="H1", method="theta", horizon=2))
 
     assert out["forecast_vs_last_price"] == {
-        "direction": "bullish",
         "direction_basis": "horizon_end",
-        "direction_threshold_pct": 0.01,
+        "direction_threshold_pct": 0.05,
+        "direction_threshold_basis": "minimum_effect_size_0.05_pct",
         "first_step_delta": 0.00048,
         "horizon_delta": 0.00149,
         "first_step_delta_pct": 0.0409,
@@ -719,7 +725,12 @@ def test_forecast_generate_rounds_price_outputs_to_symbol_digits(monkeypatch):
         "direction_interval_excludes_last_price": None,
         "direction_interval_basis": "not_available",
         "direction_interpretation": "point_estimate_only",
+        "point_estimate_direction": "bullish",
+        "direction_status": "unconfirmed",
+        "direction_actionable": False,
+        "direction_suppressed_reason": "forecast_uncertainty_not_available",
     }
+    assert out["signal_status"] == "not_actionable"
     assert "forecast_price" not in out
     assert out["forecast"] == [
         {"time": "t1", "value": 1.17314},
@@ -943,7 +954,13 @@ def test_forecast_generate_compact_nests_available_ci(monkeypatch):
     assert "forecast_time" not in out
     assert "forecast_price" not in out
     assert "forecast" not in out
-    assert out["forecast_vs_last_price"]["direction"] == "bullish"
+    assert "direction" not in out["forecast_vs_last_price"]
+    assert out["forecast_vs_last_price"]["point_estimate_direction"] == "bullish"
+    assert out["forecast_vs_last_price"]["direction_actionable"] is False
+    assert out["forecast_vs_last_price"]["direction_status"] == "unconfirmed"
+    assert out["forecast_vs_last_price"]["direction_suppressed_reason"] == (
+        "horizon_interval_contains_last_price"
+    )
     assert out["forecast_vs_last_price"]["direction_interval_excludes_last_price"] is False
     assert out["forecast_vs_last_price"]["direction_interval_basis"] == (
         "horizon_interval_vs_last_price"
@@ -951,6 +968,39 @@ def test_forecast_generate_compact_nests_available_ci(monkeypatch):
     assert out["forecast_vs_last_price"]["direction_interpretation"] == (
         "interval_contains_last_price_or_direction_is_neutral"
     )
+    assert out["signal_status"] == "not_actionable"
+
+
+def test_forecast_generate_keeps_direction_when_horizon_interval_confirms_it():
+    out = forecast_use_cases._apply_forecast_generate_detail(
+        {
+            "success": True,
+            "method": "arima",
+            "horizon": 2,
+            "quantity": "price",
+            "forecast_time": ["t1", "t2"],
+            "forecast_price": [100.5, 101.0],
+            "lower_price": [99.5, 100.4],
+            "upper_price": [101.0, 102.0],
+            "ci_status": "available",
+            "ci_alpha": 0.05,
+            "last_price": 100.0,
+        },
+        ForecastGenerateRequest(
+            symbol="BTCUSD",
+            timeframe="H1",
+            method="arima",
+            horizon=2,
+        ),
+    )
+
+    context = out["forecast_vs_last_price"]
+    assert context["direction"] == "bullish"
+    assert context["direction_actionable"] is True
+    assert context["direction_status"] == "interval_confirmed"
+    assert context["direction_interval_excludes_last_price"] is True
+    assert "point_estimate_direction" not in context
+    assert "signal_status" not in out
 
 
 def test_forecast_generate_compact_return_keeps_price_path_with_labeled_ci():
