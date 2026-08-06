@@ -859,6 +859,50 @@ class TestFetchCandlesCore(unittest.TestCase):
     @patch(_RESOLVE_CTZ, return_value=None)
     @patch(_ESTIMATE_WARMUP, return_value=0)
     @patch(_GUARD, _mock_symbol_guard)
+    def test_future_range_end_does_not_mark_live_bar_complete(
+        self,
+        mock_warmup,
+        mock_ctz,
+        mock_info,
+        mock_range,
+        mock_cfg,
+    ):
+        mock_cfg.get_time_offset_seconds.return_value = 0
+        bar_18 = datetime(2026, 8, 6, 18, tzinfo=_UTC).timestamp()
+        live_now = datetime(2026, 8, 6, 21, 34, tzinfo=_UTC).timestamp()
+        mock_range.return_value = _make_rates(
+            4,
+            base_ts=bar_18 + (3 * 3600),
+            step=3600,
+        )
+
+        with patch(
+            f'{_DS}._resolve_live_bar_reference_epoch',
+            return_value=live_now,
+        ):
+            result = fetch_candles(
+                'EURUSD',
+                timeframe='H1',
+                limit=100,
+                start='2026-08-06T18:00:00Z',
+                end='2026-08-06T22:00:00Z',
+                time_as_epoch=True,
+            )
+
+        self.assertTrue(result.get('success'), result)
+        returned_times = [row['time'] for row in result['data']]
+        self.assertNotIn(bar_18 + (3 * 3600), returned_times)
+        self.assertEqual(returned_times[-1], bar_18 + (2 * 3600))
+        self.assertEqual(result['forming_candle_status'], 'skipped')
+        self.assertTrue(result['forming_candle_skipped'])
+        self.assertTrue(result['data_window']['latest_bar_complete'])
+
+    @patch(_MT5_CONFIG)
+    @patch(_RATES_RANGE)
+    @patch(_CACHED_INFO, return_value=MagicMock())
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_ESTIMATE_WARMUP, return_value=0)
+    @patch(_GUARD, _mock_symbol_guard)
     def test_start_only(self, mock_warmup, mock_ctz, mock_info, mock_range, mock_cfg):
         # start-only queries return the first bounded window after start.
         mock_cfg.get_time_offset_seconds.return_value = 0

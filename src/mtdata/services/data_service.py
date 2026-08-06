@@ -1755,11 +1755,9 @@ def fetch_candles(  # noqa: C901
             )
         raw_bars_fetched = int(len(rates))
         live_bar_reference_epoch = _resolve_live_bar_reference_epoch(symbol, timeframe)
+        # Requested bounds only clip the returned window. Bar completion is a
+        # live fact and must never be advanced by a future range end.
         completion_reference_epoch = live_bar_reference_epoch
-        if end_datetime:
-            requested_end = _parse_end_datetime(end_datetime)
-            if requested_end is not None:
-                completion_reference_epoch = _utc_epoch_seconds(requested_end)
         initial_incomplete_trimmed = False
         if not include_incomplete:
             rates_before_trim = int(len(rates))
@@ -2152,7 +2150,7 @@ def fetch_candles(  # noqa: C901
             "end": latest_bar_time,
             "requested_limit": candles_requested,
             "returned_count": candles_returned,
-            "latest_bar_complete": not forming_candle_included,
+            "latest_bar_complete": not tail_is_forming,
         }
         if latest_bar_epoch is not None and query_mode != "range":
             latest_bar_age_epoch = float(latest_bar_epoch)
