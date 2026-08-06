@@ -240,6 +240,7 @@ def _forecast_compact_ci(payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     )
     forecasts = payload.get(forecast_key)
     times = payload.get("forecast_time")
+    bar_states = payload.get("forecast_bar_states")
     count = min(len(lower_vals), len(upper_vals))
     if isinstance(forecasts, list):
         count = min(count, len(forecasts))
@@ -248,6 +249,8 @@ def _forecast_compact_ci(payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         row: Dict[str, Any] = {}
         if isinstance(times, list) and idx < len(times):
             row["time"] = times[idx]
+        if isinstance(bar_states, list) and idx < len(bar_states):
+            row["bar_state"] = bar_states[idx]
         if isinstance(forecasts, list):
             row["forecast"] = forecasts[idx]
         row["low"] = lower_vals[idx]
@@ -829,10 +832,15 @@ def _forecast_generate_data_window(payload: Dict[str, Any]) -> Optional[Dict[str
     for source_key, target_key in (
         ("forecast_start_time", "forecast_start"),
         ("forecast_start_gap_bars", "forecast_start_gap_bars"),
+        ("forecast_time_semantics", "forecast_time_semantics"),
+        ("forecast_value_semantics", "forecast_value_semantics"),
     ):
         value = payload.get(source_key)
         if value not in (None, "", [], {}):
             out[target_key] = value
+    bar_states = payload.get("forecast_bar_states")
+    if isinstance(bar_states, list) and bar_states:
+        out["first_forecast_bar_state"] = bar_states[0]
     age_seconds = payload.get("last_price_age_seconds")
     if age_seconds not in (None, "", [], {}):
         out["last_observation_age_seconds"] = age_seconds
@@ -881,12 +889,15 @@ def _forecast_generate_compact_rows(payload: Dict[str, Any]) -> List[Dict[str, A
         lower_field = "lower"
         upper_field = "upper"
     market_status = payload.get("forecast_market_status")
+    bar_states = payload.get("forecast_bar_states")
 
     count = min(len(times), len(forecast_values))
     price_values = payload.get("forecast_price")
     rows: List[Dict[str, Any]] = []
     for idx in range(count):
         row: Dict[str, Any] = {"time": _format_forecast_time_utc(times[idx])}
+        if isinstance(bar_states, list) and idx < len(bar_states):
+            row["bar_state"] = bar_states[idx]
         if quantity == "return" and forecast_key == "forecast_return":
             row["return"] = forecast_values[idx]
             if isinstance(price_values, list) and idx < len(price_values):
@@ -1143,6 +1154,9 @@ def _apply_forecast_generate_detail(
             "forecast_start_gap_bars",
             "forecast_start_gap_note",
             "forecast_time",
+            "forecast_bar_states",
+            "forecast_time_semantics",
+            "forecast_value_semantics",
             "forecast_price",
             "forecast_return",
             "forecast_anchor",

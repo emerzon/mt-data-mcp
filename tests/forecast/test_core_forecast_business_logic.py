@@ -473,6 +473,9 @@ def test_forecast_generate_compact_normalizes_utc_times_and_neutral_delta(monkey
             "last_price_stale": False,
             "denoise_applied": False,
             "forecast_time": ["2026-06-02 20:00", "2026-06-02 21:00"],
+            "forecast_bar_states": ["forming", "future"],
+            "forecast_time_semantics": "target_bar_open_time",
+            "forecast_value_semantics": "target_bar_close",
             "forecast_price": [1.00004, 1.00006],
             "last_price": 1.0,
             "digits": 5,
@@ -496,6 +499,9 @@ def test_forecast_generate_compact_normalizes_utc_times_and_neutral_delta(monkey
         "input_bar_policy": "closed_bars_only",
         "forecast_start": "2026-06-02T20:00Z",
         "forecast_start_gap_bars": 1.0,
+        "forecast_time_semantics": "target_bar_open_time",
+        "forecast_value_semantics": "target_bar_close",
+        "first_forecast_bar_state": "forming",
         "last_observation_age_seconds": 3600,
         "last_observation_stale": False,
     }
@@ -504,8 +510,16 @@ def test_forecast_generate_compact_normalizes_utc_times_and_neutral_delta(monkey
     assert "last_price_stale" not in out
     assert "denoise_applied" not in out
     assert out["forecast"] == [
-        {"time": "2026-06-02T20:00Z", "value": 1.00004},
-        {"time": "2026-06-02T21:00Z", "value": 1.00006},
+        {
+            "time": "2026-06-02T20:00Z",
+            "bar_state": "forming",
+            "value": 1.00004,
+        },
+        {
+            "time": "2026-06-02T21:00Z",
+            "bar_state": "future",
+            "value": 1.00006,
+        },
     ]
     assert out["forecast_vs_last_price"]["direction"] == "neutral"
     assert out["forecast_vs_last_price"]["direction_threshold_pct"] == 0.05
@@ -912,6 +926,7 @@ def test_forecast_generate_compact_nests_available_ci(monkeypatch):
             "horizon": kwargs["horizon"],
             "quantity": kwargs["quantity"],
             "forecast_time": ["t1", "t2"],
+            "forecast_bar_states": ["forming", "future"],
             "forecast_price": [100.0, 101.0],
             "lower_price": [99.0, 99.5],
             "upper_price": [101.0, 102.5],
@@ -935,8 +950,20 @@ def test_forecast_generate_compact_nests_available_ci(monkeypatch):
         "mode": "interval",
         "alpha": 0.05,
         "intervals": [
-            {"time": "t1", "forecast": 100.0, "low": 99.0, "high": 101.0},
-            {"time": "t2", "forecast": 101.0, "low": 99.5, "high": 102.5},
+            {
+                "time": "t1",
+                "bar_state": "forming",
+                "forecast": 100.0,
+                "low": 99.0,
+                "high": 101.0,
+            },
+            {
+                "time": "t2",
+                "bar_state": "future",
+                "forecast": 101.0,
+                "low": 99.5,
+                "high": 102.5,
+            },
         ],
         "summary": {
             "first_low": 99.0,

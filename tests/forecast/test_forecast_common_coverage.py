@@ -692,6 +692,44 @@ class TestFormatForecastOutput:
         )
         assert result["forecast_epoch"] == [1060.0, 1120.0, 1180.0]
 
+    def test_forecast_target_bar_states_distinguish_forming_and_future(self):
+        result = _format_forecast_output(
+            forecast_values=np.array([1.0, 2.0, 3.0]),
+            last_epoch=1000.0,
+            tf_secs=60,
+            horizon=3,
+            base_col="close",
+            df=self._make_df(),
+            ci_alpha=None,
+            ci_values=None,
+            method="naive",
+            quantity="price",
+            denoise_used=False,
+            now_epoch=1090.0,
+        )
+
+        assert result["forecast_bar_states"] == ["forming", "future", "future"]
+        assert result["forecast_time_semantics"] == "target_bar_open_time"
+        assert result["forecast_value_semantics"] == "target_bar_close"
+
+    def test_forecast_target_bar_state_closes_at_bar_boundary(self):
+        result = _format_forecast_output(
+            forecast_values=np.array([1.0, 2.0]),
+            last_epoch=1000.0,
+            tf_secs=60,
+            horizon=2,
+            base_col="close",
+            df=self._make_df(),
+            ci_alpha=None,
+            ci_values=None,
+            method="naive",
+            quantity="price",
+            denoise_used=False,
+            now_epoch=1120.0,
+        )
+
+        assert result["forecast_bar_states"] == ["closed", "forming"]
+
     def test_direction_threshold_scales_with_observed_bar_noise(self):
         df = pd.DataFrame(
             {

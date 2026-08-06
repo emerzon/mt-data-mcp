@@ -14,11 +14,16 @@ mtdata-cli forecast_generate EURUSD --timeframe H1 --horizon 12 --method theta
 
 **Output:**
 ```
-forecast[12]{time,value}:
-    "2026-01-01 18:00",1.17569
-    "2026-01-01 19:00",1.17570
+forecast[12]{time,bar_state,value}:
+    "2026-01-01 18:00",forming,1.17569
+    "2026-01-01 19:00",future,1.17570
     ...
 ```
+
+Forecast row `time` is the target bar's **open timestamp**, while `value` is
+the predicted **bar close**. `bar_state` is `forming` when that target bar is
+already in progress, `future` before it opens, and `closed` when its wall-clock
+interval has elapsed. This is independent of the closed-bars-only input policy.
 
 ---
 
@@ -296,7 +301,8 @@ mtdata-cli forecast_generate EURUSD --timeframe H1 --horizon 12 \
 
 | Field | Description |
 |-------|-------------|
-| `forecast` | Compact rows for forecast points; each row uses `time` and `value` |
+| `forecast` | Compact rows with target-bar `time`, `bar_state`, and `value` |
+| `data_window` | Closed-history anchor plus forecast timestamp/value semantics and first target-bar state |
 | `forecast_price` | Predicted price values |
 | `forecast_return` | Predicted return values when `quantity=return` |
 | `lower_price` | Lower confidence bound for price forecasts (if available) |

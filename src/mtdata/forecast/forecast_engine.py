@@ -1375,6 +1375,30 @@ def _forecast_direction_threshold_from_history(
     )
 
 
+def _forecast_target_bar_states(
+    future_epochs: List[float],
+    tf_secs: int,
+    *,
+    now_epoch: Optional[float] = None,
+) -> List[str]:
+    current_epoch = (
+        datetime.now(timezone.utc).timestamp()
+        if now_epoch is None
+        else float(now_epoch)
+    )
+    step_seconds = max(1, int(tf_secs))
+    states: List[str] = []
+    for value in future_epochs:
+        bar_open = float(value)
+        if current_epoch < bar_open:
+            states.append("future")
+        elif current_epoch < bar_open + step_seconds:
+            states.append("forming")
+        else:
+            states.append("closed")
+    return states
+
+
 def _format_forecast_output(
     forecast_values: np.ndarray,
     last_epoch: float,
@@ -1395,6 +1419,7 @@ def _format_forecast_output(
     symbol: Optional[str] = None,
     timeframe: Optional[str] = None,
     target_info: Optional[Dict[str, Any]] = None,
+    now_epoch: Optional[float] = None,
 ) -> Dict[str, Any]:
     """Format forecast output with proper structure."""
     # Generate future time indices
@@ -1413,6 +1438,11 @@ def _format_forecast_output(
         client_tz=client_tz,
     )
     forecast_times = [fmt_time(float(epoch)) for epoch in future_epochs]
+    forecast_bar_states = _forecast_target_bar_states(
+        future_epochs,
+        tf_secs,
+        now_epoch=now_epoch,
+    )
     last_observation_time = fmt_time(float(last_epoch))
     calendar_timeframe = str(timeframe or "").upper() in {"D1", "W1", "MN1"}
     if calendar_timeframe:
@@ -1467,6 +1497,15 @@ def _format_forecast_output(
         "forecast_step_seconds": None if calendar_timeframe else int(tf_secs),
         "forecast_epoch": future_epochs,
         "forecast_time": forecast_times,
+        "forecast_bar_states": forecast_bar_states,
+        "forecast_time_semantics": "target_bar_open_time",
+        "forecast_value_semantics": (
+            "target_bar_log_return_and_reconstructed_close"
+            if quantity == "return"
+            else "target_bar_close"
+            if quantity == "price"
+            else "target_bar_value"
+        ),
         "last_price": last_price,
         "last_price_source": "candle_close" if last_price is not None else None,
         "direction_threshold_pct": float(round(direction_threshold_pct, 6)),
