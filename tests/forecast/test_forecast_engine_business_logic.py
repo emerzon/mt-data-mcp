@@ -943,6 +943,8 @@ def test_forecast_engine_forwards_ci_alpha_in_params_and_kwargs(monkeypatch):
     captured = {}
 
     class CaptureForecaster:
+        PARAMS = [{"name": "ci_alpha"}]
+
         def forecast(self, series, horizon, seasonality, params, exog_future=None, **kwargs):
             captured["params"] = dict(params)
             captured["kwargs"] = dict(kwargs)
