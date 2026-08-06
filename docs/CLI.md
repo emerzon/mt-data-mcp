@@ -349,8 +349,9 @@ Denoising is applied to data via the `--denoise`/`--denoise-params` flags (see [
 | `trade_stress_test` | Apply deterministic percentage shocks to open positions |
 
 See [TRADING_RISK.md](TRADING_RISK.md) for position sizing (fixed-fraction + Kelly), VaR/CVaR, and stress-test parameters and output.
-For Kelly sizing, `trade_journal_analyze` is the quickest way to derive
-`win_rate`, `avg_win`, and `avg_loss` inputs from realized trade history.
+`trade_journal_analyze` reports raw account-currency PnL per exit deal. Those
+averages are useful for journal review, but they are not Kelly inputs because
+they are not normalized to a consistent stake or unit of risk.
 
 ### News
 | Command | Description |
@@ -573,9 +574,10 @@ mtdata-cli trade_journal_analyze --symbol EURUSD --minutes-back 43200 --breakdow
 ```
 
 `trade_history` and `trade_journal_analyze` default to a 7-day lookback (`--minutes-back 10080`) when you do not pass a time window explicitly.
-For Kelly sizing in `trade_risk_analyze`, map `summary.win_rate`,
-`summary.avg_win`, and `summary.avg_loss` from `trade_journal_analyze` to
-`--kelly-win-rate`, `--kelly-avg-win`, and `--kelly-avg-loss`.
+For Kelly sizing in `trade_risk_analyze`, derive `--kelly-win-rate`,
+`--kelly-avg-win`, and `--kelly-avg-loss` from complete trade lifecycles whose
+returns are normalized consistently (for example, R-multiples). Do not map the
+raw `trade_journal_analyze` PnL averages into those flags.
 
 ### Estimate Portfolio Tail Risk
 ```bash

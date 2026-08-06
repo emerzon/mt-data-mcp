@@ -54,6 +54,31 @@ def test_shell_reuses_process_and_runs_entered_commands(monkeypatch):
     assert observed == [[api.sys.argv[0], "symbols_list", "--limit", "2", "--json"]]
 
 
+def test_shell_removes_syntactic_quotes_and_preserves_windows_paths(monkeypatch):
+    from mtdata.core.cli import api
+
+    commands = iter([
+        'data_fetch_candles EURUSD --indicators "rsi(14)" '
+        '--params \'{"period": 14}\' --path C:\\MT5\\profiles\\default.ini',
+        "quit",
+    ])
+    observed = []
+    monkeypatch.setattr("builtins.input", lambda _prompt: next(commands))
+    monkeypatch.setattr(api, "main", lambda: observed.append(list(api.sys.argv)) or 0)
+
+    assert api.run_shell() == 0
+    assert observed[0][1:] == [
+        "data_fetch_candles",
+        "EURUSD",
+        "--indicators",
+        "rsi(14)",
+        "--params",
+        '{"period": 14}',
+        "--path",
+        "C:\\MT5\\profiles\\default.ini",
+    ]
+
+
 def test_shell_continues_after_argparse_system_exit(monkeypatch):
     from mtdata.core.cli import api
 

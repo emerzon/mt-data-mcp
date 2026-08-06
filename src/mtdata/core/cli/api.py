@@ -1858,6 +1858,17 @@ def main():
         return 1
 
 
+def _split_shell_command(line: str) -> List[str]:
+    """Split a warm-shell command using quote delimiters and Windows-safe paths."""
+    lexer = shlex.shlex(line, posix=True)
+    lexer.whitespace_split = True
+    lexer.commenters = ""
+    # Backslashes are ordinary Windows path characters in this shell grammar.
+    # Quote characters delimit values but are not part of the resulting argv.
+    lexer.escape = ""
+    return list(lexer)
+
+
 def run_shell(*, interactive: bool = True) -> int:
     """Run repeated CLI commands while reusing the initialized Python process."""
     if interactive:
@@ -1885,7 +1896,7 @@ def run_shell(*, interactive: bool = True) -> int:
             if stripped.lower() in {"exit", "quit"}:
                 return overall_status
             try:
-                command_argv = shlex.split(stripped, posix=False)
+                command_argv = _split_shell_command(stripped)
             except ValueError as exc:
                 print(f"Invalid command line: {exc}", file=sys.stderr)
                 if not interactive:
