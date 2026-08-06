@@ -396,7 +396,13 @@ def create_command_function(  # noqa: C901
 
             if (
                 param_name == "symbols"
-                and cmd_name in {"correlation_matrix", "cointegration_test", "cross_correlation"}
+                and cmd_name
+                in {
+                    "correlation_matrix",
+                    "cointegration_test",
+                    "cross_correlation",
+                    "market_relative_strength",
+                }
                 and isinstance(arg_value, (list, tuple))
             ):
                 symbols = [str(value).strip() for value in arg_value if str(value).strip()]

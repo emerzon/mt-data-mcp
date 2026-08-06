@@ -220,6 +220,40 @@ class TestMain:
         mock_fn.assert_called_once_with(symbols="EURUSD,GBPUSD", __cli_raw=True)
 
     @patch("mtdata.core.cli.api.discover_tools")
+    def test_market_relative_strength_accepts_positional_symbols(
+        self, mock_discover
+    ):
+        mock_fn = MagicMock(return_value="output text")
+        mock_fn.__module__ = "mtdata.core.server"
+        mock_fn.__name__ = "market_relative_strength"
+        mock_fn.__doc__ = "Relative strength."
+
+        def market_relative_strength(
+            symbols: Optional[str] = None, group: Optional[str] = None
+        ):
+            """Relative strength."""
+            pass
+
+        info = get_function_info(market_relative_strength)
+        info["func"] = mock_fn
+        mock_discover.return_value = {
+            "market_relative_strength": {
+                "func": mock_fn,
+                "meta": {"description": "Relative strength"},
+                "_cli_func_info": info,
+            },
+        }
+
+        with patch(
+            "sys.argv",
+            ["cli.py", "market_relative_strength", "EURUSD", "GBPUSD"],
+        ):
+            result = main()
+
+        assert result == 0
+        mock_fn.assert_called_once_with(symbols="EURUSD,GBPUSD", __cli_raw=True)
+
+    @patch("mtdata.core.cli.api.discover_tools")
     def test_correlation_matrix_accepts_group_without_symbols(self, mock_discover):
         mock_fn = MagicMock(return_value="output text")
         mock_fn.__module__ = "mtdata.core.server"

@@ -11,6 +11,7 @@ _OPTIONAL_FIRST_POSITIONAL_PARAMS: set[tuple[str, str]] = {
     ("news", "symbol"),
     ("correlation_matrix", "symbols"),
     ("cointegration_test", "symbols"),
+    ("market_relative_strength", "symbols"),
     ("market_scan", "symbols"),
     ("causal_discover_signals", "symbols"),
     ("market_status", "symbol"),
@@ -62,7 +63,12 @@ _POSITIONAL_ONLY_OPTIONAL_FIRST_PARAMS: set[tuple[str, str]] = {
 }
 
 _MULTI_VALUE_SYMBOL_POSITIONAL_COMMANDS = frozenset(
-    {"correlation_matrix", "cointegration_test", "cross_correlation"}
+    {
+        "correlation_matrix",
+        "cointegration_test",
+        "cross_correlation",
+        "market_relative_strength",
+    }
 )
 
 _COMMAND_REQUIRED_OPTIONS: set[tuple[str, str]] = {
@@ -186,6 +192,10 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
     ),
     ("market_scan", "symbols"): (
         "Comma-separated MT5 symbols to scan. Optional with --group."
+    ),
+    ("market_relative_strength", "symbols"): (
+        "Comma- or space-separated MT5 symbols to rank (e.g. EURUSD,GBPUSD "
+        "or EURUSD GBPUSD). Optional with --group."
     ),
     ("market_scan", "preset"): (
         "Built-in scan preset: oversold, overbought, high-volume, tight-spread, "
