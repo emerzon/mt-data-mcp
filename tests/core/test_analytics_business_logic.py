@@ -168,7 +168,11 @@ def test_microstructure_compact_output_omits_research_events() -> None:
 
     assert result["summary"]["feed_tier"] == "trade_volume"
     assert result["summary"]["spread"]["unit"] == "fx_pips"
-    assert result["summary"]["spread"]["median"] == pytest.approx(1.0)
+    assert result["summary"]["spread"]["latest"] == pytest.approx(1.0)
+    assert result["summary"]["spread"]["recent_5m_median"] == pytest.approx(1.0)
+    assert result["summary"]["spread"]["window_median"] == pytest.approx(1.0)
+    assert result["summary"]["spread"]["window_p95"] == pytest.approx(1.0)
+    assert result["summary"]["spread"]["regime"] == "near_window_median"
     assert result["summary"]["spread"]["basis"] == "historical_tick_window_distribution"
     assert result["summary"]["spread"]["source"] == "mt5.copy_ticks_range"
     assert result["observed_window"]["start"].endswith("Z")
@@ -181,6 +185,29 @@ def test_microstructure_compact_output_omits_research_events() -> None:
         "truncated",
     }
     assert any("broker's tick feed" in warning for warning in result["warnings"])
+
+
+def test_microstructure_compact_distinguishes_latest_from_window_spread() -> None:
+    gateway = FakeGateway()
+    gateway.tick_rows = _ticks(count=900)
+    for row in gateway.tick_rows[-300:]:
+        mid = (row["bid"] + row["ask"]) / 2.0
+        row["bid"] = mid - 0.00025
+        row["ask"] = mid + 0.00025
+
+    result = analyze_microstructure(
+        MarketMicrostructureRequest(symbol="EURUSD", minutes_back=60),
+        gateway,
+    )
+
+    spread = result["summary"]["spread"]
+    assert spread["window_median"] == pytest.approx(1.0)
+    assert spread["latest"] == pytest.approx(5.0)
+    assert spread["recent_5m_median"] == pytest.approx(5.0)
+    assert spread["latest_as_of"].endswith("Z")
+    assert spread["regime"] == "wider_than_window"
+    assert spread["latest_to_window_median_ratio"] == pytest.approx(5.0)
+    assert any("differs materially" in warning for warning in result["warnings"])
 
 
 def test_microstructure_does_not_recount_last_trade_snapshots() -> None:

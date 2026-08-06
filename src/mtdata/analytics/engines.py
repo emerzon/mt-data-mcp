@@ -532,6 +532,48 @@ def analyze_microstructure(request: MarketMicrostructureRequest, gateway: Any) -
             "spread": "absolute_price",
         }[spread_key]
         spread_stats = summary[spread_key]
+        if spread_key == "spread_pips":
+            spread_series = q["spread"] / (point * float(points_per_pip))
+        elif spread_key == "spread_points":
+            spread_series = q["spread"] / point
+        else:
+            spread_series = q["spread"]
+        spread_series = pd.to_numeric(spread_series, errors="coerce")
+        latest_spread = (
+            float(spread_series.iloc[-1]) if len(spread_series) else None
+        )
+        latest_quote_epoch = float(q["epoch"].iloc[-1]) if len(q) else None
+        recent_mask = (
+            q["epoch"] >= latest_quote_epoch - 300.0
+            if latest_quote_epoch is not None
+            else pd.Series(False, index=q.index)
+        )
+        recent_spreads = spread_series.loc[recent_mask].dropna()
+        recent_median = (
+            float(recent_spreads.median()) if len(recent_spreads) else None
+        )
+        window_median = spread_stats.get("median")
+        latest_to_window_ratio = (
+            float(latest_spread) / float(window_median)
+            if latest_spread is not None
+            and window_median is not None
+            and float(window_median) > 0
+            else None
+        )
+        spread_regime = (
+            "wider_than_window"
+            if latest_to_window_ratio is not None and latest_to_window_ratio >= 2.0
+            else "tighter_than_window"
+            if latest_to_window_ratio is not None and latest_to_window_ratio <= 0.5
+            else "near_window_median"
+            if latest_to_window_ratio is not None
+            else "unknown"
+        )
+        if spread_regime in {"wider_than_window", "tighter_than_window"}:
+            warnings.append(
+                "Latest analyzed spread differs materially from the full-window "
+                "median; use latest and recent_5m_median for near-term execution context."
+            )
         compact_result = {
             "success": True,
             "symbol": request.symbol,
@@ -541,8 +583,15 @@ def analyze_microstructure(request: MarketMicrostructureRequest, gateway: Any) -
                 "duration_seconds": duration,
                 "ticks_per_second": float(len(df) / duration),
                 "spread": {
-                    "median": _round_execution_stat(spread_stats.get("median")),
-                    "p95": _round_execution_stat(spread_stats.get("p95")),
+                    "latest": _round_execution_stat(latest_spread),
+                    "latest_as_of": format_epoch_utc(latest_quote_epoch),
+                    "recent_5m_median": _round_execution_stat(recent_median),
+                    "window_median": _round_execution_stat(window_median),
+                    "window_p95": _round_execution_stat(spread_stats.get("p95")),
+                    "latest_to_window_median_ratio": _round_execution_stat(
+                        latest_to_window_ratio
+                    ),
+                    "regime": spread_regime,
                     "unit": spread_unit,
                     "basis": "historical_tick_window_distribution",
                     "source": "mt5.copy_ticks_range",
