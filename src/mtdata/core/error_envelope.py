@@ -6,7 +6,6 @@ import logging
 from typing import Any, Dict, Optional
 from uuid import uuid4
 
-
 _ERROR_GUIDANCE: Dict[str, Dict[str, Any]] = {
     "mt5_connection_error": {
         "remediation": "Ensure MetaTrader 5 is running, logged in, and reachable.",
@@ -70,6 +69,13 @@ _GUIDANCE_KEYS = {
     "valid_values",
     "example",
     "documentation",
+}
+_GENERIC_ERROR_CODES = {
+    "",
+    "error",
+    "internal_error",
+    "tool_error",
+    "unknown_error",
 }
 
 
@@ -148,6 +154,8 @@ def _error_payload_text(value: Any) -> list[str]:
 
 
 def _canonical_error_code(payload: Dict[str, Any], current_code: str) -> str:
+    if str(current_code or "").strip().lower() not in _GENERIC_ERROR_CODES:
+        return current_code
     evidence = " ".join(
         _error_payload_text(
             {

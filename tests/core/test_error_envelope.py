@@ -45,7 +45,7 @@ def test_normalize_error_payload_adds_symbol_lookup_guidance():
     assert out["related_tools"] == ["symbols_list"]
 
 
-def test_normalize_error_payload_classifies_symbol_root_cause_from_warnings():
+def test_normalize_error_payload_preserves_specific_code_from_warnings():
     out = normalize_error_payload(
         {
             "error": "Not enough valid symbol data fetched.",
@@ -59,10 +59,39 @@ def test_normalize_error_payload_classifies_symbol_root_cause_from_warnings():
         operation="correlation_matrix",
     )
 
-    assert out["error_code"] == "symbol_not_found"
+    assert out["error_code"] == "insufficient_symbols"
     assert out["warnings"] == ["Symbol NOTAREALSYM was not found in MT5."]
+    assert out["remediation"] == "Increase the lookback."
+    assert "related_tools" not in out
+
+
+def test_normalize_error_payload_classifies_generic_code_from_warnings():
+    out = normalize_error_payload(
+        {
+            "error": "Not enough valid symbol data fetched.",
+            "error_code": "tool_error",
+            "warnings": ["Symbol NOTAREALSYM was not found in MT5."],
+        },
+        operation="correlation_matrix",
+    )
+
+    assert out["error_code"] == "symbol_not_found"
     assert out["remediation"].startswith("Use symbols_list")
     assert out["related_tools"] == ["symbols_list"]
+
+
+def test_normalize_error_payload_does_not_override_dependency_code():
+    out = normalize_error_payload(
+        build_error_payload(
+            "finviz: symbol XYZ not found in screener",
+            code="dependency_missing",
+            operation="news_fetch",
+            details={"provider": "finviz"},
+        )
+    )
+
+    assert out["error_code"] == "dependency_missing"
+    assert "optional dependency group" in out["remediation"]
 
 
 def test_normalize_error_payload_canonicalizes_date_ranges_and_details():
