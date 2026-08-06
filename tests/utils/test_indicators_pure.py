@@ -321,15 +321,15 @@ class TestEstimateWarmupBars:
 
     def test_rsi(self):
         result = _estimate_warmup_bars("rsi(14)")
-        assert result >= 42  # 14*3
+        assert result == 350
 
     def test_macd(self):
         result = _estimate_warmup_bars("macd(12,26,9)")
-        assert result == 105
+        assert result == 650
 
     def test_macd_uses_default_signal_when_missing(self):
         result = _estimate_warmup_bars("macd(fast=12,slow=26)")
-        assert result == 105
+        assert result == 650
 
     def test_bbands(self):
         result = _estimate_warmup_bars("bbands(20)")
@@ -345,7 +345,35 @@ class TestEstimateWarmupBars:
 
     def test_multiple_indicators_takes_max(self):
         result = _estimate_warmup_bars("sma(50),rsi(14)")
-        assert result >= 150  # sma(50) -> 50*3=150
+        assert result == 350
+
+    def test_rsi_tip_converges_across_requested_limits(self):
+        count = 1200
+        idx = np.arange(count, dtype=float)
+        close = 100.0 + np.cumsum(
+            0.02 * np.sin(idx / 7.0)
+            + 0.01 * np.cos(idx / 13.0)
+            + 0.003
+        )
+        source = pd.DataFrame(
+            {
+                "time": idx,
+                "open": close,
+                "high": close + 0.1,
+                "low": close - 0.1,
+                "close": close,
+                "tick_volume": 100,
+            }
+        )
+        warmup = _estimate_warmup_bars("rsi(14)")
+        tips = []
+
+        for limit in (3, 5, 10, 50):
+            frame = source.iloc[-(limit + warmup):].copy()
+            columns = _apply_ta_indicators(frame, "rsi(14)")
+            tips.append(float(frame[columns[0]].iloc[-1]))
+
+        assert max(tips) - min(tips) < 1e-9
 
 
 # ===================================================================

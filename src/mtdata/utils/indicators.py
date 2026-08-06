@@ -516,6 +516,29 @@ def _apply_ta_indicators(df: pd.DataFrame, ti_spec: str) -> List[str]:  # noqa: 
             df.index = original_index
     return added_cols
 
+_RECURSIVE_WARMUP_MULTIPLIER = 25
+_FINITE_WINDOW_WARMUP_MULTIPLIER = 3
+_RECURSIVE_INDICATORS = frozenset(
+    {
+        "adx",
+        "adxr",
+        "atr",
+        "dema",
+        "dm",
+        "ema",
+        "kama",
+        "kc",
+        "natr",
+        "qqe",
+        "rma",
+        "rsi",
+        "supertrend",
+        "t3",
+        "tema",
+    }
+)
+
+
 def _estimate_warmup_bars(ti_spec: Optional[str]) -> int:
     if not ti_spec:
         return 0
@@ -536,8 +559,12 @@ def _estimate_warmup_bars(ti_spec: Optional[str]) -> int:
                     return default
             return default
         warm = 0
-        if lname in ("sma", "ema", "rsi"):
+        multiplier = _FINITE_WINDOW_WARMUP_MULTIPLIER
+        if lname == "sma":
             warm = geti("length", 14)
+        elif lname in _RECURSIVE_INDICATORS:
+            warm = geti("length", 14)
+            multiplier = _RECURSIVE_WARMUP_MULTIPLIER
         elif lname == "macd":
             # Accept both short names and pandas_ta-style *_period kwargs.
             fast = kwargs.get(
@@ -553,9 +580,10 @@ def _estimate_warmup_bars(ti_spec: Optional[str]) -> int:
                 kwargs.get("signal_period", args[2] if len(args) > 2 else 9),
             )
             try:
-                warm = max(int(fast), int(slow)) + int(signal)
+                warm = max(int(fast), int(slow), int(signal))
             except Exception:
-                warm = 35
+                warm = 26
+            multiplier = _RECURSIVE_WARMUP_MULTIPLIER
         elif lname == "stoch":
             k = kwargs.get("k", args[0] if len(args) > 0 else 14)
             d = kwargs.get("d", args[1] if len(args) > 1 else 3)
@@ -572,7 +600,7 @@ def _estimate_warmup_bars(ti_spec: Optional[str]) -> int:
                 warm = 20
         else:
             warm = 50
-        if warm > max_warmup:
-            max_warmup = warm
-    scaled = max(int(max_warmup * 3), 50) if max_warmup > 0 else 0
-    return scaled
+        candidate = max(int(warm * multiplier), 50)
+        if candidate > max_warmup:
+            max_warmup = candidate
+    return max_warmup
