@@ -527,15 +527,14 @@ class TestReduceFeatureFrame:
         _, info = _reduce_feature_frame(X, "x", {"k": 5}, reducer_factory=factory)
         assert info.get("dimred_params") == {"k": 5}
 
-    def test_reducer_exception_fallback(self):
-        """Lines 495-496: reducer raises → return cleaned X."""
+    def test_reducer_exception_is_rejected(self):
         class _BadReducer:
             def fit_transform(self, X):
                 raise ValueError("fail")
         factory = lambda m, p: (_BadReducer(), {})
         X = pd.DataFrame(np.random.randn(10, 3))
-        out, info = _reduce_feature_frame(X, "bad", None, reducer_factory=factory)
-        assert "dimred_error" in info
+        with pytest.raises(ValueError, match="dimensionality reduction.*failed"):
+            _reduce_feature_frame(X, "bad", None, reducer_factory=factory)
 
     def test_reducer_does_not_backfill_indicator_warmup(self):
         captured = {}
@@ -572,7 +571,8 @@ class TestPrepareFeatures:
     def test_ohlcv_features(self):
         df = _make_df(20)
         ft = [float(df["time"].iloc[-1]) + 3600 * i for i in range(1, 4)]
-        tr, tf, info = prepare_features(df, {"include": "ohlcv"}, ft, 3,
+        tr, tf, info = prepare_features(
+                                         df, {"include": "ohlcv", "observed_future_policy": "carry_forward"}, ft, 3,
                                          parse_kv_or_json=lambda x: x)
         assert tr is not None
         assert tf.shape[0] == 3
@@ -592,7 +592,7 @@ class TestPrepareFeatures:
         df = _make_df(20)
         ft = [float(df["time"].iloc[-1]) + 3600 * i for i in range(1, 4)]
         tr, tf, info = prepare_features(
-            df, {"include": "ohlcv", "future_covariates": "hour"}, ft, 3,
+            df, {"include": "ohlcv", "future_covariates": "hour", "observed_future_policy": "carry_forward"}, ft, 3,
             parse_kv_or_json=lambda x: x,
         )
         assert tr.shape[1] > 2

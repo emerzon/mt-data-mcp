@@ -36,7 +36,7 @@ class ETSArimaMethod(ForecastMethod):
         
     @property
     def supports_features(self) -> Dict[str, bool]:
-        return {"price": True, "return": True, "volatility": True, "ci": True}
+        return {"price": True, "return": True, "volatility": False, "ci": False}
 
     @property
     def supports_training(self) -> bool:
@@ -357,6 +357,10 @@ class ETSMethod(ETSArimaMethod):
 
 @ForecastRegistry.register("arima")
 class ARIMAMethod(ETSArimaMethod):
+    @property
+    def supports_features(self) -> Dict[str, bool]:
+        return {"price": True, "return": True, "volatility": True, "ci": True}
+
     PARAMS: List[Dict[str, Any]] = [
         {"name": "order", "type": "tuple", "description": "(p,d,q) order (optional)."},
         {"name": "p", "type": "int", "description": "AR order (default: 1)."},

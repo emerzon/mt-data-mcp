@@ -5,6 +5,7 @@ from typing import Any, Dict, List, Optional
 
 import numpy as np
 import pandas as pd
+from statsmodels.tsa.forecasting.theta import ThetaModel
 
 from ..interface import ForecastMethod, ForecastResult
 from ..forecast_registry import ForecastRegistry
@@ -106,9 +107,7 @@ class SeasonalNaiveMethod(ClassicalMethod):
 
 @ForecastRegistry.register("theta")
 class ThetaMethod(ClassicalMethod):
-    PARAMS: List[Dict[str, Any]] = [
-        {"name": "alpha", "type": "float", "description": "SES smoothing factor (default: 0.2)."},
-    ]
+    PARAMS: List[Dict[str, Any]] = []
 
     @property
     def name(self) -> str:
@@ -129,48 +128,28 @@ class ThetaMethod(ClassicalMethod):
             raise ValueError("Theta forecast requires at least 1 data point")
         if not np.all(np.isfinite(vals)):
             raise ValueError("Theta forecast requires all series values to be finite")
-        alpha = float(params.get('alpha', 0.2))
-        if not np.isfinite(alpha) or not 0.0 < alpha <= 1.0:
-            raise ValueError("Theta alpha must be finite and in the interval (0, 1]")
-
-        tt = np.arange(1, n + 1, dtype=float)
-        m = max(1, int(seasonality))
-        seasonal = np.zeros(m, dtype=float)
-        seasonality_applied = m > 1 and n >= 2 * m
-        adjusted_vals = vals
-        if seasonality_applied:
-            raw_design = np.vstack([np.ones(n), tt]).T
-            raw_coef, _, _, _ = np.linalg.lstsq(raw_design, vals, rcond=None)
-            detrended = vals - raw_design @ raw_coef
-            phases = np.arange(n) % m
-            seasonal = np.asarray(
-                [float(np.mean(detrended[phases == phase])) for phase in range(m)],
-                dtype=float,
+        if params:
+            raise ValueError(
+                "Theta does not accept method parameters; smoothing is fitted "
+                "by the canonical Theta model."
             )
-            seasonal -= float(np.mean(seasonal))
-            adjusted_vals = vals - seasonal[phases]
-
-        A = np.vstack([np.ones(n), tt]).T
-        coef, _, _, _ = np.linalg.lstsq(A, adjusted_vals, rcond=None)
-        if coef.size < 2 or not np.all(np.isfinite(coef)):
-            raise ValueError("Theta trend fit produced non-finite coefficients")
-        a, b = float(coef[0]), float(coef[1])
-        trend_future = a + b * (tt[-1] + np.arange(1, int(horizon) + 1, dtype=float))
-        
-        level = float(adjusted_vals[0])
-        for v in adjusted_vals[1:]:
-            level = alpha * float(v) + (1.0 - alpha) * level
-        ses_future = np.full(int(horizon), level, dtype=float)
-
-        f_vals = 0.5 * (trend_future + ses_future)
-        if seasonality_applied:
-            future_phases = (n + np.arange(int(horizon))) % m
-            f_vals += seasonal[future_phases]
+        m = max(1, int(seasonality))
+        seasonality_applied = m > 1 and n >= 2 * m
+        model = ThetaModel(
+            pd.Series(vals),
+            period=m if seasonality_applied else None,
+            deseasonalize=seasonality_applied,
+            use_test=False,
+            method="additive",
+        )
+        fitted = model.fit(use_mle=False, disp=False)
+        f_vals = fitted.forecast(int(horizon), theta=2.0).to_numpy(dtype=float)
         return ForecastResult(
             forecast=f_vals,
             params_used={
-                "alpha": alpha,
-                "trend_slope": b,
+                "alpha": float(fitted._alpha),
+                "trend_slope": float(fitted._b0),
+                "theta": 2.0,
                 "m": m,
                 "seasonality_applied": seasonality_applied,
             },

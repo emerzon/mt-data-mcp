@@ -162,8 +162,10 @@ def build_target_series(
             y = 100.0 * y
         target_info['transform'] = f'{"pct" if transform == "pct" else "pct_change"}(k={k})'
     else:
-        y = y_base
-        target_info['transform'] = 'none'
+        raise ValueError(
+            f"Unsupported target transform '{transform}'. Use none, return, "
+            "log_return, diff, pct_change, log, or pct."
+        )
     
     target_info['mode'] = 'custom'
     return y, target_info

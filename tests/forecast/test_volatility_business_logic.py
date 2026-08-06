@@ -627,3 +627,55 @@ def test_forecast_volatility_ensemble_aggregates_component_methods(monkeypatch):
         ensemble["volatility_annualized"], rel=1e-6
     )
     assert ensemble["data_window"] == ewma["data_window"]
+
+
+@pytest.mark.parametrize(
+    "params",
+    [
+        {"lambda_": -0.94},
+        {"lambda_": 1.0},
+        {"halflife": 0},
+        {"lookback": 1},
+    ],
+)
+def test_ewma_rejects_invalid_decay_parameters(params):
+    out = vol.forecast_volatility(
+        symbol="EURUSD", timeframe="H1", method="ewma", params=params
+    )
+    assert "error" in out
+
+
+@pytest.mark.parametrize(
+    "params",
+    [
+        {"methods": ["ewma", "bogus"]},
+        {"methods": ["ewma", "rolling_std"], "aggregator": "weighted"},
+        {"methods": ["ewma"], "aggregator": "mystery"},
+    ],
+)
+def test_ensemble_rejects_invalid_components_and_aggregation(params):
+    out = vol.forecast_volatility(
+        symbol="EURUSD", timeframe="H1", method="ensemble", params=params
+    )
+    assert "error" in out
+
+
+def test_short_rolling_window_reports_insufficient_data(monkeypatch):
+    monkeypatch.setattr(
+        vol,
+        "_fetch_mt5_rates_guarded",
+        lambda *args, **kwargs: (_rates(10), None),
+    )
+    monkeypatch.setattr(vol, "_drop_forming_live_bar", lambda frame, *a, **k: frame)
+
+    out = vol.forecast_volatility(
+        symbol="EURUSD",
+        timeframe="H1",
+        method="rolling_std",
+        params={"window": 20},
+        start="2025-01-01",
+        end="2025-01-02",
+    )
+
+    assert "error" in out
+    assert "no finite rolling estimate" in out["error"]

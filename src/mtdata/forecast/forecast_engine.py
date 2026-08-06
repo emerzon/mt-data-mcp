@@ -1350,6 +1350,7 @@ def _format_forecast_output(
     reconstructed_price_ci: Optional[Tuple[np.ndarray, np.ndarray]] = None,
     symbol: Optional[str] = None,
     timeframe: Optional[str] = None,
+    target_info: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Format forecast output with proper structure."""
     # Generate future time indices
@@ -1446,8 +1447,24 @@ def _format_forecast_output(
                 "Confirm the instrument trades during those periods."
             )
 
-    # Choose which arrays to expose
-    if quantity == 'return':
+    # Choose which arrays to expose. Custom targets retain their own semantic
+    # identity instead of being mislabeled as close prices or returns.
+    custom_target = str((target_info or {}).get("mode") or "") == "custom"
+    if custom_target:
+        result.pop("last_price", None)
+        result.pop("last_price_source", None)
+        result["forecast_target"] = [float(v) for v in forecast_values]
+        result["target"] = {
+            "base": (target_info or {}).get("base"),
+            "transform": (target_info or {}).get("transform"),
+            "mode": "custom",
+        }
+        target_numeric = pd.to_numeric(df[base_col], errors="coerce")
+        target_numeric = target_numeric[np.isfinite(target_numeric)]
+        result["last_target"] = (
+            float(target_numeric.iloc[-1]) if len(target_numeric) else None
+        )
+    elif quantity == 'return':
         if forecast_return_values is None:
             forecast_return_values = forecast_values
         result["forecast_return"] = [float(v) for v in forecast_return_values]
@@ -1477,7 +1494,12 @@ def _format_forecast_output(
             result["ci_available"] = True
             lower_vals = [float(v) for v in ci_values[0]]
             upper_vals = [float(v) for v in ci_values[1]]
-            if quantity == 'return':
+            if custom_target:
+                result["lower_target"] = lower_vals
+                result["upper_target"] = upper_vals
+                result["lower"] = lower_vals
+                result["upper"] = upper_vals
+            elif quantity == 'return':
                 result["lower_return"] = lower_vals
                 result["upper_return"] = upper_vals
                 # Keep generic keys for lightweight renderers expecting non-price intervals.
@@ -1800,8 +1822,10 @@ def forecast_engine(  # noqa: C901
         reconstructed_prices = None
         reconstructed_price_ci = None
         target_transform = str(target_info.get("transform") or "none").strip().lower()
+        custom_target = str(target_info.get("mode") or "") == "custom"
         needs_price_reconstruction = (
-            quantity_l == "return" or target_transform != "none"
+            not custom_target
+            and (quantity_l == "return" or target_transform != "none")
         )
         if quantity_l == 'return':
             forecast_return_vals = np.asarray(forecast_values, dtype=float)
@@ -1857,6 +1881,7 @@ def forecast_engine(  # noqa: C901
             reconstructed_price_ci=reconstructed_price_ci,
             symbol=symbol,
             timeframe=timeframe,
+            target_info=target_info,
         )
         result.update(
             {

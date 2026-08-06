@@ -215,32 +215,7 @@ def get_volatility_methods_data() -> Dict[str, Any]:
         "available": True,
         "requires": [],
         "description": "Theta method applied to the volatility proxy.",
-        "params": [
-            {"name": "alpha", "type": "float", "default": 0.2, "description": "Level smoothing coefficient."},
-        ],
-    })
-
-    methods.append({
-        "method": "mlf_rf",
-        "available": _MLF_AVAILABLE,
-        "requires": [] if _MLF_AVAILABLE else ["mlforecast", "scikit-learn"],
-        "description": "Random forest regression on lagged volatility proxy features (mlforecast).",
-        "params": [
-            {"name": "lags", "type": "list[int]", "default": [1, 2, 3, 4, 5], "description": "Autoregressive lags supplied to the regressor."},
-            {"name": "n_estimators", "type": "int", "default": 200, "description": "Number of trees in the random forest."},
-        ],
-    })
-
-    methods.append({
-        "method": "nhits",
-        "available": _NF_AVAILABLE,
-        "requires": [] if _NF_AVAILABLE else ["neuralforecast[torch]"],
-        "description": "NeuralForecast NHITS model on the volatility proxy.",
-        "params": [
-            {"name": "max_epochs", "type": "int", "default": 30, "description": "Training epochs for NHITS."},
-            {"name": "batch_size", "type": "int", "default": 32, "description": "Mini-batch size."},
-            {"name": "input_size", "type": "int", "default": None, "description": "Lookback window (auto when omitted)."},
-        ],
+        "params": [],
     })
 
     methods.append({
@@ -893,6 +868,26 @@ def forecast_volatility(  # noqa: C901
                         f"{', '.join(sorted(allowed_ewma_params))}."
                     )
                 }
+            try:
+                lookback_value = int(p.get("lookback", 1500))
+            except (TypeError, ValueError):
+                return {"error": "EWMA lookback must be a positive integer."}
+            if lookback_value < 2:
+                return {"error": "EWMA lookback must be at least 2."}
+            if p.get("halflife") is not None:
+                try:
+                    halflife_value = float(p["halflife"])
+                except (TypeError, ValueError):
+                    return {"error": "EWMA halflife must be finite and greater than 0."}
+                if not math.isfinite(halflife_value) or halflife_value <= 0.0:
+                    return {"error": "EWMA halflife must be finite and greater than 0."}
+            if p.get("lambda_") is not None:
+                try:
+                    lambda_value = float(p["lambda_"])
+                except (TypeError, ValueError):
+                    return {"error": "EWMA lambda_ must be finite and between 0 and 1."}
+                if not math.isfinite(lambda_value) or not 0.0 < lambda_value < 1.0:
+                    return {"error": "EWMA lambda_ must be finite and strictly between 0 and 1."}
 
         if method_l == 'ensemble':
             default_methods = ['ewma', 'parkinson', 'rolling_std']
@@ -903,7 +898,16 @@ def forecast_volatility(  # noqa: C901
                 base_methods = [str(item).strip().lower() for item in base_methods_in if str(item).strip()]
             else:
                 base_methods = list(default_methods)
-            base_methods = [m for m in base_methods if m in valid_direct.union(valid_general) and m != 'ensemble']
+            invalid_components = sorted(
+                set(base_methods) - valid_direct.union(valid_general)
+            )
+            if invalid_components or "ensemble" in base_methods:
+                return {
+                    "error": (
+                        "Unknown ensemble component method(s): "
+                        + ", ".join([*invalid_components, *(["ensemble"] if "ensemble" in base_methods else [])])
+                    )
+                }
             seen_methods: set[str] = set()
             base_methods = [m for m in base_methods if not (m in seen_methods or seen_methods.add(m))]
             if not base_methods:
@@ -911,7 +915,12 @@ def forecast_volatility(  # noqa: C901
 
             aggregator = str(p.get('aggregator', 'mean')).lower().strip()
             if aggregator not in {'mean', 'median', 'weighted'}:
-                aggregator = 'mean'
+                return {
+                    "error": (
+                        f"Unknown ensemble aggregator '{aggregator}'. "
+                        "Use mean, median, or weighted."
+                    )
+                }
 
             expose_components = bool(p.get('expose_components', True))
             method_params = p.get('method_params') if isinstance(p.get('method_params'), dict) else {}
@@ -940,6 +949,13 @@ def forecast_volatility(  # noqa: C901
                             method_name: float(weight / total_weight)
                             for method_name, weight in zip(base_methods, parsed_weights)
                         }
+            if aggregator == "weighted" and not weight_map:
+                return {
+                    "error": (
+                        "Weighted ensemble requires one finite positive weight "
+                        "for each component method."
+                    )
+                }
 
             component_results: list[dict[str, Any]] = []
             component_errors: list[dict[str, Any]] = []
@@ -1459,8 +1475,16 @@ def forecast_volatility(  # noqa: C901
                 except Exception:
                     lam = 0.94
             lam = float(lam)
-            w = np.power(lam, np.arange(len(tail)-1, -1, -1, dtype=float)); w /= float(np.sum(w))
+            if not math.isfinite(lam) or not 0.0 < lam < 1.0:
+                return {"error": "EWMA decay must be finite and strictly between 0 and 1."}
+            w = np.power(lam, np.arange(len(tail)-1, -1, -1, dtype=float))
+            weight_sum = float(np.sum(w))
+            if not np.all(np.isfinite(w)) or weight_sum <= 0.0:
+                return {"error": "EWMA produced invalid decay weights."}
+            w /= weight_sum
             sigma2 = float(np.sum(w * (tail * tail)))
+            if not math.isfinite(sigma2) or sigma2 < 0.0:
+                return {"error": "EWMA produced a non-finite variance estimate."}
             sbar = math.sqrt(max(0.0, sigma2))
             hsig = float(sbar * math.sqrt(max(1, int(horizon))))
             params_used = {"lookback": lb, "lambda_": lam, "lambda_source": lambda_source}
@@ -1528,7 +1552,18 @@ def forecast_volatility(  # noqa: C901
                     }
                 sigma2 = float(np.mean(finite_tail))
             else:
-                sigma2 = float(v[-1]) if np.isfinite(v[-1]) else float(np.nanmean(v[-window:]))
+                finite_tail = np.asarray(v[-window:], dtype=float)
+                finite_tail = finite_tail[np.isfinite(finite_tail)]
+                if finite_tail.size == 0:
+                    return {
+                        "error": (
+                            f"{method_l} requires at least {window} applicable "
+                            "observations; no finite rolling estimate is available."
+                        )
+                    }
+                sigma2 = float(finite_tail[-1])
+            if not math.isfinite(sigma2):
+                return {"error": f"{method_l} produced a non-finite variance estimate."}
             sbar = math.sqrt(max(0.0, sigma2))
             hsig = float(sbar * math.sqrt(max(1, int(horizon))))
             return _finalize_volatility_with_context(

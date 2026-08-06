@@ -18,8 +18,8 @@ def test_ets_arima_method_metadata_on_concrete_method():
     assert method.supports_features == {
         "price": True,
         "return": True,
-        "volatility": True,
-        "ci": True,
+        "volatility": False,
+        "ci": False,
     }
 
 

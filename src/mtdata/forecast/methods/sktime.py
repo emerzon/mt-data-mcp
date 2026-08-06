@@ -144,9 +144,55 @@ class SktimeMethod(ForecastMethod):
         else:
             f_vals = np.array(y_pred)
 
+        ci_values = None
+        metadata = None
+        ci_alpha = kwargs.get("ci_alpha", params.get("ci_alpha"))
+        if ci_alpha is not None:
+            alpha = float(ci_alpha)
+            coverage = 1.0 - alpha
+            try:
+                intervals = estimator.predict_interval(
+                    fh=fh, X=X_future, coverage=coverage
+                )
+                lower = upper = None
+                for column in intervals.columns:
+                    if not isinstance(column, tuple) or len(column) < 3:
+                        continue
+                    if not np.isclose(float(column[1]), coverage, atol=1e-3):
+                        continue
+                    if column[2] == "lower":
+                        lower = intervals[column].to_numpy(dtype=float)
+                    elif column[2] == "upper":
+                        upper = intervals[column].to_numpy(dtype=float)
+                if lower is not None and upper is not None:
+                    ci_values = (lower, upper)
+                    metadata = _build_ci_diagnostics(
+                        provider=self.name,
+                        requested=True,
+                        available=True,
+                        status="available",
+                        alpha=alpha,
+                        coverage=coverage,
+                    )
+                else:
+                    raise ValueError("matching interval columns were not returned")
+            except Exception as exc:
+                metadata = _build_ci_diagnostics(
+                    provider=self.name,
+                    requested=True,
+                    available=False,
+                    status="error",
+                    alpha=alpha,
+                    coverage=coverage,
+                    error=str(exc),
+                    error_type=type(exc).__name__,
+                )
+
         return ForecastResult(
             forecast=f_vals,
+            ci_values=ci_values,
             params_used={"seasonality": seasonality, **params},
+            metadata=metadata,
         )
 
     def forecast(  # noqa: C901

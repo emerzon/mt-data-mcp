@@ -411,10 +411,10 @@ def simulate_markov_chain(A: np.ndarray, init: np.ndarray, steps: int, sims: int
     cdf = np.cumsum(A, axis=1)
     cdf[:, -1] = 1.0
     for t in range(steps_i):
-        out[:, t] = states
         u = rng.rand(sims_i)
         next_states = np.sum(u[:, None] > cdf[states], axis=1)
         states = np.clip(next_states, 0, K - 1).astype(int)
+        out[:, t] = states
     return out
 
 

@@ -40,7 +40,7 @@ class ForecastGenerateRequest(BaseModel):
     params: Optional[Dict[str, Any]] = None
     ci_alpha: Optional[float] = Field(
         0.05,
-        ge=0.0,
+        gt=0.0,
         le=0.5,
         description=(
             "Interval tail probability; confidence is 1 - ci_alpha. Defaults "

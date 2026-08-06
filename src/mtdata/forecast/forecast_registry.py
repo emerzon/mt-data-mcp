@@ -193,7 +193,8 @@ def _build_forecast_methods_snapshot() -> Tuple[List[Dict[str, Any]], Dict[str, 
                 categories.setdefault("ensemble", []).append(method)
             continue
 
-        supports = inst.supports_features or dict(DEFAULT_METHOD_SUPPORTS)
+        supports = dict(inst.supports_features or DEFAULT_METHOD_SUPPORTS)
+        supports["volatility"] = method in {"arima", "sarima", "ets", "theta"}
         requires = list(getattr(inst, "required_packages", []) or [])
         params = getattr(inst, "PARAMS", None)
         if not isinstance(params, list):

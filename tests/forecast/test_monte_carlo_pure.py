@@ -187,6 +187,18 @@ class TestSimulateMarkovChain:
         r2 = simulate_markov_chain(A, init, 10, 5, rng=np.random.RandomState(1))
         np.testing.assert_array_equal(r1, r2)
 
+    def test_first_output_state_is_after_one_transition(self):
+        transitions = np.array([[0.0, 1.0], [1.0, 0.0]])
+        states = simulate_markov_chain(
+            transitions,
+            np.array([1.0, 0.0]),
+            steps=3,
+            sims=1,
+            rng=np.random.RandomState(1),
+        )
+
+        assert states.tolist() == [[1, 0, 1]]
+
 
 class TestSimulateGbmMc:
     def _prices(self, n=200, seed=42):

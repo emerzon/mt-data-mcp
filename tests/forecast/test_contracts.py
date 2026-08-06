@@ -93,6 +93,8 @@ def test_forecast_generate_default_horizon_matches_forecast_tooling() -> None:
     assert ForecastGenerateRequest(symbol="EURUSD").horizon == 12
     assert ForecastGenerateRequest(symbol="EURUSD").ci_alpha == 0.05
     assert ForecastGenerateRequest(symbol="EURUSD", ci_alpha=None).ci_alpha is None
+    with pytest.raises(ValidationError):
+        ForecastGenerateRequest(symbol="EURUSD", ci_alpha=0.0)
 
 
 def test_forecast_tool_requests_default_to_price_quantity() -> None:

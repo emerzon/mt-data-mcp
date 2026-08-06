@@ -139,7 +139,7 @@ def _coerce_feature_config(
 
 def _process_include_specification(df: pd.DataFrame, fcfg: Dict[str, Any]) -> List[str]:
     """Resolve feature columns requested via include/exog."""
-    include = fcfg.get("include", fcfg.get("exog", "ohlcv"))
+    include = fcfg.get("include", fcfg.get("exog"))
     include_cols: List[str] = []
 
     if isinstance(include, str):
@@ -514,7 +514,9 @@ def _reduce_feature_frame(
         reducer, meta = reducer_factory(dimred_method, dimred_params)
         arr = np.asarray(reducer.fit_transform(X_num.to_numpy(dtype=float)), dtype=float)
     except Exception as exc:
-        return X_num, {"dimred_error": str(exc)}
+        raise ValueError(
+            f"Requested dimensionality reduction '{dimred_method}' failed: {exc}"
+        ) from exc
 
     if arr.ndim == 1:
         arr = arr.reshape(-1, 1)
@@ -587,7 +589,10 @@ def prepare_features(
     selected_feature_names: List[str] = []
 
     if selected_cols:
-        X_df = df[selected_cols].copy()
+        # Market-derived features are finalized with their target bar. Shift
+        # them so each training row contains only information known before its
+        # target was observed.
+        X_df = df[selected_cols].copy().shift(1).ffill().fillna(0.0)
         dr_method = fcfg.get("dimred_method") or dimred_method
         dr_params = fcfg.get("dimred_params") or dimred_params
         X_df, reduce_info = _reduce_feature_frame(
@@ -603,8 +608,19 @@ def prepare_features(
         if exog_train_arr.ndim == 1:
             exog_train_arr = exog_train_arr.reshape(-1, 1)
         if exog_train_arr.size > 0:
+            future_policy = str(fcfg.get("observed_future_policy") or "").strip().lower()
+            if int(horizon) > 1 and future_policy != "carry_forward":
+                raise ValueError(
+                    "Observed market features require observed_future_policy="
+                    "'carry_forward' for horizons above one; otherwise provide "
+                    "only known future calendar covariates."
+                )
             last_row = exog_train_arr[-1]
             exog_future_arr = np.tile(last_row.reshape(1, -1), (int(horizon), 1))
+            feat_info["observed_feature_lag_bars"] = 1
+            feat_info["observed_future_policy"] = (
+                future_policy or "next_bar_last_observation"
+            )
 
     if cal_train_df is not None:
         cal_train_arr = cal_train_df.loc[train_index].to_numpy(dtype=float)

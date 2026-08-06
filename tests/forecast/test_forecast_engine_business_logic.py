@@ -884,7 +884,11 @@ def test_forecast_engine_builds_exog_and_aligns_for_returns(monkeypatch):
         horizon=5,
         quantity="return",
         params={"alpha": 1},
-        features={"include": "open,high low", "future_covariates": "hour,dow,fourier:24,is_weekend"},
+        features={
+            "include": "open,high low",
+            "future_covariates": "hour,dow,fourier:24,is_weekend",
+            "observed_future_policy": "carry_forward",
+        },
         prefetched_df=_df(30),
     )
 
@@ -894,7 +898,7 @@ def test_forecast_engine_builds_exog_and_aligns_for_returns(monkeypatch):
     assert captured["exog_future"].shape == (5, 10)
 
 
-def test_forecast_engine_dimred_failure_falls_back_to_raw_features(monkeypatch):
+def test_forecast_engine_dimred_failure_is_an_error(monkeypatch):
     captured = {}
 
     class CaptureForecaster:
@@ -930,9 +934,9 @@ def test_forecast_engine_dimred_failure_falls_back_to_raw_features(monkeypatch):
         prefetched_df=_df(20),
     )
 
-    assert out["success"] is True
-    assert captured["exog_used"].shape == (20, 2)
-    assert captured["exog_future"].shape == (4, 2)
+    assert out["error_code"] == "feature_build_error"
+    assert "dimensionality reduction" in out["error"]
+    assert captured == {}
 
 
 def test_forecast_engine_forwards_ci_alpha_in_params_and_kwargs(monkeypatch):
@@ -1059,9 +1063,9 @@ def test_forecast_engine_inverts_price_target_transform_and_intervals(monkeypatc
     )
 
     assert out["success"] is True
-    assert out["forecast_price"] == pytest.approx([106.0, 107.0])
-    assert out["lower_price"] == pytest.approx([105.0, 106.0])
-    assert out["upper_price"] == pytest.approx([107.0, 108.0])
+    assert out["forecast_target"] == pytest.approx(np.log([106.0, 107.0]))
+    assert out["lower_target"] == pytest.approx(np.log([105.0, 106.0]))
+    assert out["upper_target"] == pytest.approx(np.log([107.0, 108.0]))
 
 
 def test_return_price_intervals_accumulate_variance_not_tail_paths():
@@ -1560,8 +1564,9 @@ def test_forecast_engine_reconstructs_custom_simple_return_targets(monkeypatch):
     )
 
     assert out["success"] is True
-    assert out["forecast_return"] == [0.1, 0.1]
-    np.testing.assert_allclose(out["forecast_price"], np.array([115.5, 127.05]))
+    assert out["forecast_target"] == [0.1, 0.1]
+    assert out["target"]["mode"] == "custom"
+    assert "forecast_price" not in out
 
 
 def test_forecast_engine_reconstructs_custom_k_lag_return_targets(monkeypatch):
@@ -1596,19 +1601,9 @@ def test_forecast_engine_reconstructs_custom_k_lag_return_targets(monkeypatch):
         target_spec={"base": "close", "transform": "return", "k": 2},
     )
 
-    closes = df["close"].to_numpy(dtype=float)
-    expected = np.array(
-        [
-            closes[-2] * 1.1,
-            closes[-1] * 1.1,
-            (closes[-2] * 1.1) * 1.1,
-        ],
-        dtype=float,
-    )
-
     assert out["success"] is True
-    assert out["forecast_return"] == [0.1, 0.1, 0.1]
-    np.testing.assert_allclose(np.asarray(out["forecast_price"], dtype=float), expected)
+    assert out["forecast_target"] == [0.1, 0.1, 0.1]
+    assert "forecast_price" not in out
 
 
 def test_forecast_engine_ensemble_paths(monkeypatch):
