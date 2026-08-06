@@ -251,6 +251,7 @@ def test_market_depth_tick_fallback_includes_spread_metrics_when_requested() -> 
         )
         mt5.market_book_get.return_value = []
         mt5.symbol_info_tick.return_value = tick
+        mt5.account_info.return_value = SimpleNamespace(currency="USD")
         out = _raw_market_depth_fetch("BTCUSD", spread=True)
 
     assert out["success"] is True
@@ -796,15 +797,17 @@ def test_market_ticker_full_detail_preserves_verbose_fields() -> None:
             point=0.01,
             trade_tick_size=0.01,
             trade_tick_value=1.0,
-            currency_profit="USD",
+            currency_profit="JPY",
             trade_contract_size=1.0,
         )
         mt5.symbol_info_tick.return_value = tick
+        mt5.account_info.return_value = SimpleNamespace(currency="USD")
         out = _raw_market_ticker("BTCUSD", detail="full")
 
     assert out["last"] == 200.5
     assert out["tick_volume"] == 5
     assert out["spread_cost_per_lot"] == 100.0
+    assert out["price_currency"] == "JPY"
     assert out["spread_cost_currency"] == "USD"
     assert out["pricing_basis"] == "per_1_lot_estimate"
     assert out["contract_size"] == 1.0

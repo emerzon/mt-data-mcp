@@ -31,6 +31,7 @@ from ..utils.mt5 import (
     MT5ConnectionError,
     _mt5_copy_rates_from_pos,
     _symbol_ready_guard,
+    account_currency_from_gateway,
     ensure_mt5_connection_or_raise,
     mt5,
 )
@@ -1744,6 +1745,8 @@ def _market_scan_points_per_pip(symbol: Any, *, point: float, digits: int) -> Op
 def _build_market_scan_spread_row(
     symbol: Any,
     mt5_gateway: Any,
+    *,
+    spread_cost_currency: Optional[str] = None,
 ) -> tuple[Optional[Dict[str, Any]], Optional[str]]:
     tick = mt5_gateway.symbol_info_tick(symbol.name)
     if tick is None:
@@ -1773,13 +1776,8 @@ def _build_market_scan_spread_row(
     )
     spread_pct = ((spread_abs / mid) * 100.0) if mid > 0 else None
     spread_cost_per_lot = None
-    spread_cost_currency = str(
-        getattr(symbol, "currency_profit", None)
-        or getattr(symbol, "currency_margin", None)
-        or ""
-    ).strip() or None
     pricing_basis = "quote_only"
-    if tick_size > 0 and tick_value > 0:
+    if tick_size > 0 and tick_value > 0 and spread_cost_currency:
         spread_cost_per_lot = (spread_abs / tick_size) * tick_value
         pricing_basis = "per_1_lot_estimate"
 
@@ -2964,6 +2962,7 @@ def symbols_top_markets(  # noqa: C901
                 ensure_connection_impl=ensure_mt5_connection_or_raise,
             )
             mt5_gateway.ensure_connection()
+            spread_cost_currency = account_currency_from_gateway(mt5_gateway)
 
             raw_symbols = mt5_gateway.symbols_get()
             if raw_symbols is None:
@@ -3057,7 +3056,11 @@ def symbols_top_markets(  # noqa: C901
 
                 spread_row = None
                 if rank_kind in {"all", "spread"} or needs_bar_data:
-                    spread_row, spread_error = _build_market_scan_spread_row(symbol, mt5_gateway)
+                    spread_row, spread_error = _build_market_scan_spread_row(
+                        symbol,
+                        mt5_gateway,
+                        spread_cost_currency=spread_cost_currency,
+                    )
                     if spread_error and rank_kind in {"all", "spread"}:
                         _record_issue("spread", symbol_name, spread_error)
                     elif spread_row is not None and rank_kind in {"all", "spread"}:
@@ -3609,6 +3612,7 @@ def market_scan(  # noqa: C901
                 ensure_connection_impl=ensure_mt5_connection_or_raise,
             )
             mt5_gateway.ensure_connection()
+            spread_cost_currency = account_currency_from_gateway(mt5_gateway)
 
             raw_symbols = mt5_gateway.symbols_get()
             if raw_symbols is None:
@@ -3682,7 +3686,11 @@ def market_scan(  # noqa: C901
                 nonlocal evaluated_symbols
                 symbol_name = str(getattr(symbol_obj, "name", "") or "")
 
-                spread_row, spread_error = _build_market_scan_spread_row(symbol_obj, mt5_gateway)
+                spread_row, spread_error = _build_market_scan_spread_row(
+                    symbol_obj,
+                    mt5_gateway,
+                    spread_cost_currency=spread_cost_currency,
+                )
                 if spread_error or spread_row is None:
                     _record_issue(symbol_name, spread_error or "Spread data is unavailable.")
                     return

@@ -19,6 +19,7 @@ from ..utils.market_metadata import (
 )
 from ..utils.mt5 import (
     MT5ConnectionError,
+    account_currency_from_gateway,
     describe_mt5_time_normalization,
     ensure_mt5_connection_or_raise,
     mt5,
@@ -334,6 +335,7 @@ def _market_depth_fetch_impl(symbol: str, spread: bool = False, require_dom: boo
             tick_size = float(getattr(symbol_info, "trade_tick_size", 0.0) or 0.0)
             tick_value = float(getattr(symbol_info, "trade_tick_value", 0.0) or 0.0)
             price_currency = symbol_price_currency(symbol_info)
+            spread_cost_currency = account_currency_from_gateway(mt5_gateway)
 
             def _compute_spread_metrics(bid: Any, ask: Any) -> Dict[str, Any] | None:
                 try:
@@ -350,7 +352,7 @@ def _market_depth_fetch_impl(symbol: str, spread: bool = False, require_dom: boo
                 spread_points = (spread_abs / point) if point > 0 else None
                 spread_pct = ((spread_abs / mid) * 100.0) if mid > 0 else None
                 spread_cost_per_lot = None
-                if tick_size > 0 and tick_value > 0:
+                if tick_size > 0 and tick_value > 0 and spread_cost_currency:
                     spread_cost_per_lot = (spread_abs / tick_size) * tick_value
                 return {
                     "spread": spread_abs,
@@ -437,6 +439,7 @@ def _market_depth_fetch_impl(symbol: str, spread: bool = False, require_dom: boo
                     "type": "full_depth",
                     "price_precision": digits,
                     "price_currency": price_currency,
+                    "spread_cost_currency": spread_cost_currency,
                     "capabilities": {
                         "dom_available": True,
                         "depth_status": "available",
@@ -506,6 +509,7 @@ def _market_depth_fetch_impl(symbol: str, spread: bool = False, require_dom: boo
                 "depth_status": "unavailable",
                 "price_precision": digits,
                 "price_currency": price_currency,
+                "spread_cost_currency": spread_cost_currency,
                 "recommended_alternative": "market_ticker",
                 "capabilities": {
                     "dom_available": False,
@@ -665,8 +669,8 @@ def market_ticker(  # noqa: C901
             point = symbol_price_point(symbol_info) or 0.0
             tick_size = float(getattr(symbol_info, "trade_tick_size", 0.0) or 0.0)
             tick_value = float(getattr(symbol_info, "trade_tick_value", 0.0) or 0.0)
-            spread_cost_currency = symbol_price_currency(symbol_info)
-            price_currency = spread_cost_currency
+            price_currency = symbol_price_currency(symbol_info)
+            spread_cost_currency = account_currency_from_gateway(mt5_gateway)
             contract_size = _positive_market_ticker_float(
                 getattr(symbol_info, "trade_contract_size", None)
             )
@@ -738,7 +742,7 @@ def market_ticker(  # noqa: C901
                 spread_points = _round_market_ticker_value(spread_points, digits=4)
                 spread_pips = _round_market_ticker_value(spread_pips, digits=4)
                 spread_pct = _round_market_ticker_value(spread_pct, digits=6)
-                if tick_size > 0 and tick_value > 0:
+                if tick_size > 0 and tick_value > 0 and spread_cost_currency:
                     spread_cost_per_lot = _round_market_ticker_value(
                         (float(spread_abs) / tick_size) * tick_value,
                         digits=6,

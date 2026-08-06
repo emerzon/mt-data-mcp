@@ -44,6 +44,38 @@ def _get_select_market_scan_symbols():
     return _select_market_scan_symbols
 
 
+def test_market_scan_spread_cost_uses_account_currency() -> None:
+    from mtdata.core.symbols import _build_market_scan_spread_row
+
+    symbol = SimpleNamespace(
+        name="EURJPY",
+        path="Forex",
+        digits=3,
+        point=0.001,
+        trade_tick_size=0.001,
+        trade_tick_value=0.75,
+        currency_profit="JPY",
+    )
+    gateway = SimpleNamespace(
+        symbol_info_tick=lambda _symbol: SimpleNamespace(
+            bid=170.000,
+            ask=170.010,
+            time=0,
+        ),
+        last_error=lambda: None,
+    )
+
+    row, error = _build_market_scan_spread_row(
+        symbol,
+        gateway,
+        spread_cost_currency="USD",
+    )
+
+    assert error is None
+    assert row["spread_cost_per_lot"] == pytest.approx(7.5)
+    assert row["spread_cost_currency"] == "USD"
+
+
 def test_market_scan_freshness_uses_broker_crypto_category_on_weekends() -> None:
     from mtdata.core.symbols import _market_scan_freshness_fields
 

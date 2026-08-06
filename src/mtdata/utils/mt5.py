@@ -340,6 +340,21 @@ def symbol_price_currency(*infos: Any) -> Optional[str]:
     return None
 
 
+def account_currency_from_gateway(gateway: Any) -> Optional[str]:
+    """Return the MT5 deposit currency used by tick-value money fields."""
+    try:
+        account = gateway.account_info()
+    except Exception:
+        return None
+    try:
+        value = getattr(account, "currency", None)
+    except Exception:
+        return None
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    return None
+
+
 def symbol_price_currency_for(symbol: Any) -> Optional[str]:
     """Look up price currency via cached symbol info for a symbol name."""
     symbol_text = str(symbol or "").strip()
