@@ -22,6 +22,7 @@ from mtdata.utils.simplify import (
     _lttb_select_indices,
     _max_line_error,
     _n_bkps_from_segments_points,
+    _observed_apca_max_error,
     _pla_select_indices,
     _point_line_distance,
     _rdp_keep_mask,
@@ -120,21 +121,33 @@ class TestNBkpsFromSegmentsPoints:
 
 class TestFallbackLttbIndices:
     def test_basic(self):
+        x = np.arange(100, dtype=float)
         y = np.random.RandomState(42).randn(100)
-        result = _fallback_lttb_indices(y, 20)
+        result = _fallback_lttb_indices(x, y, 20)
         assert result[0] == 0
         assert result[-1] == 99
-        assert len(result) <= 25  # approximately target
+        assert len(result) == 20
 
     def test_nout_exceeds(self):
+        x = np.arange(10, dtype=float)
         y = np.arange(10, dtype=float)
-        result = _fallback_lttb_indices(y, 20)
+        result = _fallback_lttb_indices(x, y, 20)
         assert result == list(range(10))
 
     def test_small(self):
+        x = np.arange(2, dtype=float)
         y = np.array([1.0, 2.0])
-        result = _fallback_lttb_indices(y, 2)
+        result = _fallback_lttb_indices(x, y, 2)
         assert result == [0, 1]
+
+    def test_irregular_x_values_affect_triangle_selection(self):
+        y = np.array([0.0, 4.0, 5.0, 6.0, 0.0, 3.0, 0.0])
+        regular = _fallback_lttb_indices(np.arange(7, dtype=float), y, 4)
+        irregular = _fallback_lttb_indices(
+            np.array([0.0, 1.0, 2.0, 20.0, 21.0, 22.0, 23.0]), y, 4
+        )
+
+        assert regular != irregular
 
 
 class TestLttbSelectIndices:
@@ -232,6 +245,10 @@ class TestPlaSelectIndices:
         y = [0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0]
         result = _pla_select_indices(x, y, max_error=0.01)
         assert len(result) >= 2
+        assert max(
+            _max_line_error(x, y, left, right)
+            for left, right in zip(result, result[1:])
+        ) <= 0.01
 
 
 class TestApcaSelectIndices:
@@ -244,6 +261,12 @@ class TestApcaSelectIndices:
 
     def test_short(self):
         assert _apca_select_indices([1.0, 2.0]) == [0, 1]
+
+    def test_max_error_is_enforced_per_constant_segment(self):
+        y = [0.0, 0.1, 0.2, 5.0, 5.1, 5.2]
+        result = _apca_select_indices(y, max_error=0.11)
+
+        assert _observed_apca_max_error(y, result) <= 0.11
 
 # ---------------------------------------------------------------------------
 # Mode / dispatch helpers (folded from former extended suite)
@@ -320,7 +343,9 @@ class TestSelectIndicesPLA:
             _X, _Y, {"method": "pla", "points": 20}
         )
         assert method == "pla"
-        assert meta.get("auto_tuned") is True
+        assert meta["selection_basis"] == "fixed_segments_from_target_points"
+        assert meta["observed_max_error"] > 0
+        assert "max_error" not in meta
 
     def test_pla_fallback_to_lttb(self):
         idxs, method, meta = _select_indices_for_timeseries(
@@ -350,7 +375,9 @@ class TestSelectIndicesAPCA:
             _X, _Y, {"method": "apca", "points": 25}
         )
         assert method == "apca"
-        assert meta.get("auto_tuned") is True
+        assert meta["selection_basis"] == "fixed_segments_from_target_points"
+        assert meta["observed_max_error"] > 0
+        assert "max_error" not in meta
 
     def test_apca_fallback_to_lttb(self):
         idxs, method, meta = _select_indices_for_timeseries(
@@ -633,6 +660,7 @@ class TestAutotune:
     def test_pla_autotune(self):
         idxs, me = _pla_autotune_max_error(_X, _Y, 20)
         assert 0 in idxs and (_N - 1) in idxs
+        assert me > 0
 
     def test_pla_autotune_target_too_large(self):
         idxs, me = _pla_autotune_max_error(_X, _Y, _N + 5)
@@ -641,6 +669,7 @@ class TestAutotune:
     def test_apca_autotune(self):
         idxs, me = _apca_autotune_max_error(_Y, 20)
         assert 0 in idxs
+        assert me > 0
 
     def test_apca_autotune_target_too_large(self):
         idxs, me = _apca_autotune_max_error(_Y, _N + 5)

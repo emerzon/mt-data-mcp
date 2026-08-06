@@ -27,21 +27,24 @@ def test_simplify_dataframe_rows_ext_empty_dataframe_returns_none_meta():
     assert meta is None
 
 
-def test_simplify_dataframe_rows_ext_approximate_falls_back_to_select(monkeypatch):
-    called = {"count": 0}
-
-    def fake_select(df, headers, spec):
-        called["count"] += 1
-        return df.iloc[:1].copy(), {"mode": "select"}
-
-    monkeypatch.setattr(simp, "_handle_select_mode", fake_select)
+def test_simplify_dataframe_rows_ext_approximate_aggregates_segments():
     df = _sample_ohlc_df()
 
-    result_df, meta = simp._simplify_dataframe_rows_ext(df, list(df.columns), {"mode": "approximate"})
+    result_df, meta = simp._simplify_dataframe_rows_ext(
+        df,
+        list(df.columns),
+        {"mode": "approximate", "method": "lttb", "points": 3},
+    )
 
-    assert called["count"] == 1
-    assert len(result_df) == 1
-    assert meta == {"mode": "select"}
+    assert len(result_df) == 3
+    assert meta["mode"] == "approximate"
+    assert meta["method"] == "lttb"
+    assert result_df["volume"].sum() == df["volume"].sum()
+    assert result_df["volume"].max() > df["volume"].max()
+    assert result_df.iloc[1]["open"] == 2.0
+    assert result_df.iloc[1]["high"] == 6.0
+    assert result_df.iloc[1]["low"] == 1.5
+    assert result_df.iloc[1]["close"] == 5.0
 
 
 def test_handle_resample_missing_rule_returns_error_metadata():

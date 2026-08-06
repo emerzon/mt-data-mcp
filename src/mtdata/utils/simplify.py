@@ -83,53 +83,51 @@ def _choose_simplify_points(total: int, spec: Dict[str, Any]) -> int:
 _LTTB_DOWNSAMPLER = MinMaxLTTBDownsampler() if MinMaxLTTBDownsampler is not None else None
 
 
-def _fallback_lttb_indices(y: np.ndarray, n_out: int) -> List[int]:
-    """Pure-Python min/max bucket fallback when tsdownsample is unavailable."""
+def _fallback_lttb_indices(
+    x: np.ndarray, y: np.ndarray, n_out: int
+) -> List[int]:
+    """Pure-Python Largest-Triangle-Three-Buckets implementation."""
     m = int(len(y))
     if n_out >= m:
         return list(range(m))
     if n_out <= 2 or m <= 2:
         return [0, max(0, m - 1)]
-
-    interior_target = max(0, int(n_out) - 2)
-    if interior_target <= 0:
-        return [0, m - 1]
-
-    bucket_count = max(1, int(np.ceil(interior_target / 2.0)))
-    edges = np.linspace(1, m - 1, num=bucket_count + 1, dtype=int)
-    selected: List[int] = []
-
-    for i in range(bucket_count):
-        start = int(edges[i])
-        stop = int(edges[i + 1])
-        if stop <= start:
-            stop = min(start + 1, m - 1)
-        if start >= m - 1:
-            break
-
-        bucket = y[start:stop]
-        if bucket.size == 0:
-            continue
-
-        base = np.arange(start, stop, dtype=int)
-        lo = int(base[int(np.argmin(bucket))])
-        hi = int(base[int(np.argmax(bucket))])
-        if lo == hi:
-            selected.append(lo)
-        elif lo < hi:
-            selected.extend([lo, hi])
+    xx = np.asarray(x, dtype=float)
+    yy = np.asarray(y, dtype=float)
+    every = float(m - 2) / float(n_out - 2)
+    selected = [0]
+    anchor = 0
+    for bucket_index in range(n_out - 2):
+        avg_start = int(np.floor((bucket_index + 1) * every)) + 1
+        avg_end = int(np.floor((bucket_index + 2) * every)) + 1
+        avg_end = min(avg_end, m)
+        if avg_start >= avg_end:
+            avg_x, avg_y = float(xx[-1]), float(yy[-1])
         else:
-            selected.extend([hi, lo])
+            avg_x = float(np.mean(xx[avg_start:avg_end]))
+            avg_y = float(np.mean(yy[avg_start:avg_end]))
 
-    selected = sorted(set(i for i in selected if 0 < i < (m - 1)))
-    if len(selected) < interior_target:
-        fill = np.linspace(1, m - 2, num=interior_target, dtype=int).tolist()
-        selected = sorted(set(selected + fill))
-    if len(selected) > interior_target:
-        keep = np.linspace(0, len(selected) - 1, num=interior_target, dtype=int)
-        selected = [selected[int(i)] for i in keep]
+        range_start = int(np.floor(bucket_index * every)) + 1
+        range_end = int(np.floor((bucket_index + 1) * every)) + 1
+        range_end = min(range_end, m - 1)
+        if range_start >= range_end:
+            range_end = min(range_start + 1, m - 1)
 
-    return _finalize_indices(m, [0, *selected, m - 1])
+        ax, ay = float(xx[anchor]), float(yy[anchor])
+        candidate = range_start
+        max_area = -1.0
+        for index in range(range_start, range_end):
+            area = abs(
+                (ax - avg_x) * (float(yy[index]) - ay)
+                - (ax - float(xx[index])) * (avg_y - ay)
+            )
+            if area > max_area:
+                max_area = area
+                candidate = index
+        selected.append(candidate)
+        anchor = candidate
+    selected.append(m - 1)
+    return _finalize_indices(m, selected)
 
 
 def _finalize_indices(n: int, idxs: List[int]) -> List[int]:
@@ -181,7 +179,9 @@ def _lttb_select_indices(x: List[float], y: List[float], n_out: int) -> List[int
         return [0, max(0, m - 1)]
     yy = np.asarray(y, dtype=float)
     if _LTTB_DOWNSAMPLER is None:
-        return _fallback_lttb_indices(yy, int(n_out))
+        return _fallback_lttb_indices(
+            np.asarray(x, dtype=float), yy, int(n_out)
+        )
     xx = np.asarray(x, dtype=float)
     idxs = _LTTB_DOWNSAMPLER.downsample(xx, yy, n_out=int(n_out))
     return _finalize_indices(m, np.asarray(idxs, dtype=int).tolist())
@@ -265,12 +265,12 @@ def _pla_select_indices(
     n = len(x)
     if n <= 2:
         return list(range(n))
+    if max_error is not None and float(max_error) > 0:
+        return _rdp_select_indices(x, y, float(max_error))
     signal = np.column_stack([np.asarray(y, dtype=float), np.asarray(x, dtype=float)])
     algo = rpt.BottomUp(model="linear", min_size=2, jump=1).fit(signal)
     n_bkps = _n_bkps_from_segments_points(n, segments, points)
-    if max_error is not None and float(max_error) > 0:
-        bkps = algo.predict(epsilon=float(max_error))
-    elif n_bkps is not None:
+    if n_bkps is not None:
         bkps = algo.predict(n_bkps=int(n_bkps))
     else:
         return list(range(n))
@@ -287,12 +287,29 @@ def _apca_select_indices(
     n = len(y)
     if n <= 2:
         return list(range(n))
+    if max_error is not None and float(max_error) > 0:
+        tolerance = float(max_error)
+        values = np.asarray(y, dtype=float)
+        starts = [0]
+        start = 0
+        while start < n - 1:
+            end = start
+            while end + 1 < n:
+                candidate = values[start : end + 2]
+                mean = float(np.mean(candidate))
+                if float(np.max(np.abs(candidate - mean))) > tolerance:
+                    break
+                end += 1
+            next_start = end + 1
+            if next_start >= n:
+                break
+            starts.append(next_start)
+            start = next_start
+        return _finalize_indices(n, starts)
     signal = np.asarray(y, dtype=float).reshape(-1, 1)
     algo = rpt.BottomUp(model="l2", min_size=2, jump=1).fit(signal)
     n_bkps = _n_bkps_from_segments_points(n, segments, points)
-    if max_error is not None and float(max_error) > 0:
-        bkps = algo.predict(epsilon=float(max_error))
-    elif n_bkps is not None:
+    if n_bkps is not None:
         bkps = algo.predict(n_bkps=int(n_bkps))
     else:
         return list(range(n))
@@ -331,24 +348,52 @@ def _rdp_autotune_epsilon(x: List[float], y: List[float], target_points: int, ma
     return best, float(best_eps)
 
 
-def _pla_autotune_max_error(x: List[float], y: List[float], target_points: int, max_iter: int = 24) -> Tuple[List[int], float]:
-    """Approximate target points for PLA via segment count."""
+def _observed_pla_max_error(
+    x: List[float], y: List[float], idxs: List[int]
+) -> float:
+    return max(
+        (_max_line_error(x, y, left, right) for left, right in zip(idxs, idxs[1:])),
+        default=0.0,
+    )
+
+
+def _observed_apca_max_error(y: List[float], idxs: List[int]) -> float:
+    values = np.asarray(y, dtype=float)
+    errors = []
+    for position, start in enumerate(idxs):
+        stop = idxs[position + 1] if position + 1 < len(idxs) else len(values)
+        segment = values[int(start) : int(stop)]
+        if segment.size:
+            errors.append(float(np.max(np.abs(segment - float(np.mean(segment))))))
+    return max(errors, default=0.0)
+
+
+def _pla_autotune_max_error(
+    x: List[float], y: List[float], target_points: int
+) -> Tuple[List[int], float]:
+    """Select a fixed segment count and return its observed line error."""
     n = len(x)
     target = max(3, min(int(target_points), n))
     if target >= n:
         return list(range(n)), 0.0
-    idxs = _pla_select_indices(x, y, max_error=None, segments=max(1, target - 1), points=None)
-    return idxs, 0.0
+    idxs = _pla_select_indices(
+        x, y, max_error=None, segments=max(1, target - 1), points=None
+    )
+    return idxs, _observed_pla_max_error(x, y, idxs)
 
 
-def _apca_autotune_max_error(y: List[float], target_points: int, max_iter: int = 24) -> Tuple[List[int], float]:
-    """Approximate target points for APCA via segment count."""
+def _apca_autotune_max_error(
+    y: List[float], target_points: int
+) -> Tuple[List[int], float]:
+    """Select a fixed segment count and return its observed constant error."""
     n = len(y)
     target = max(3, min(int(target_points), n))
     if target >= n:
         return list(range(n)), 0.0
-    idxs = _apca_select_indices(y, max_error=None, segments=max(1, target - 1), points=None)
-    return idxs, 0.0
+    idxs = _apca_select_indices(
+        y, max_error=None, segments=max(1, target - 1), points=None
+    )
+    return idxs, _observed_apca_max_error(y, idxs)
 
 
 def _select_indices_for_timeseries(x: List[float], y: List[float], spec: Optional[Dict[str, Any]]) -> Tuple[List[int], str, Dict[str, Any]]:  # noqa: C901
@@ -411,7 +456,12 @@ def _select_indices_for_timeseries(x: List[float], y: List[float], spec: Optiona
         points = spec.get("points", None) or spec.get("target_points", None) or spec.get("max_points", None)
         if me is not None and me > 0:
             idxs = _pla_select_indices(x, y, me, None, None)
-            meta.update({"max_error": me})
+            meta.update(
+                {
+                    "max_error": me,
+                    "observed_max_error": _observed_pla_max_error(x, y, idxs),
+                }
+            )
             return idxs, "pla", meta
         if segments is not None:
             idxs = _pla_select_indices(x, y, None, segments, None)
@@ -425,7 +475,13 @@ def _select_indices_for_timeseries(x: List[float], y: List[float], spec: Optiona
             p = _default_target_points(len(x))
         if p is not None and p < len(x):
             idxs, me_used = _pla_autotune_max_error(x, y, p)
-            meta.update({"max_error": me_used, "points": len(idxs), "auto_tuned": True})
+            meta.update(
+                {
+                    "observed_max_error": me_used,
+                    "points": len(idxs),
+                    "selection_basis": "fixed_segments_from_target_points",
+                }
+            )
             return idxs, "pla", meta
         n_out = _choose_simplify_points(len(x), spec)
         idxs = _lttb_select_indices(x, y, n_out)
@@ -443,7 +499,12 @@ def _select_indices_for_timeseries(x: List[float], y: List[float], spec: Optiona
         points = spec.get("points", None) or spec.get("target_points", None) or spec.get("max_points", None)
         if me is not None and me > 0:
             idxs = _apca_select_indices(y, me, None, None)
-            meta.update({"max_error": me})
+            meta.update(
+                {
+                    "max_error": me,
+                    "observed_max_error": _observed_apca_max_error(y, idxs),
+                }
+            )
             return idxs, "apca", meta
         if segments is not None:
             idxs = _apca_select_indices(y, None, segments, None)
@@ -457,7 +518,13 @@ def _select_indices_for_timeseries(x: List[float], y: List[float], spec: Optiona
             p = _default_target_points(len(x))
         if p is not None and p < len(x):
             idxs, me_used = _apca_autotune_max_error(y, p)
-            meta.update({"max_error": me_used, "points": len(idxs), "auto_tuned": True})
+            meta.update(
+                {
+                    "observed_max_error": me_used,
+                    "points": len(idxs),
+                    "selection_basis": "fixed_segments_from_target_points",
+                }
+            )
             return idxs, "apca", meta
         n_out = _choose_simplify_points(len(x), spec)
         idxs = _lttb_select_indices(x, y, n_out)
@@ -579,6 +646,81 @@ def _aggregate_resample_segment(seg: pd.DataFrame, columns: List[str]) -> Dict[s
             continue
         row[col] = _last_non_null_value(series)
     return row
+
+
+def _aggregate_approximate_segment(
+    seg: pd.DataFrame, columns: List[str]
+) -> Dict[str, Any]:
+    row = _aggregate_resample_segment(seg, columns)
+    specialized = {
+        "time",
+        "__epoch",
+        "open",
+        "high",
+        "low",
+        "close",
+        "tick_volume",
+        "real_volume",
+        "volume",
+    }
+    for col in columns:
+        if col in specialized or col not in seg.columns:
+            continue
+        numeric = pd.to_numeric(seg[col], errors="coerce").dropna()
+        if not numeric.empty:
+            row[col] = float(numeric.mean())
+    return row
+
+
+def _handle_approximate_mode(
+    df: pd.DataFrame, headers: List[str], spec: Dict[str, Any]
+) -> Tuple[pd.DataFrame, Optional[Dict[str, Any]]]:
+    original_count = len(df)
+    if original_count <= 2:
+        return df, None
+    series_col = "close" if "close" in df.columns else next(
+        (
+            name
+            for name in headers
+            if name not in {"time", "__epoch"}
+            and name in df.columns
+            and pd.api.types.is_numeric_dtype(df[name])
+        ),
+        None,
+    )
+    if series_col is None:
+        return df, {"mode": "approximate", "error": "No numeric value column"}
+    epochs = (
+        pd.to_numeric(df["__epoch"], errors="coerce").to_numpy(dtype=float)
+        if "__epoch" in df.columns
+        else np.arange(original_count, dtype=float)
+    )
+    values = pd.to_numeric(df[series_col], errors="coerce").to_numpy(dtype=float)
+    idxs, method, params = _select_indices_for_timeseries(
+        epochs.tolist(), values.tolist(), spec
+    )
+    columns = list(df.columns)
+    rows = []
+    for position, start in enumerate(idxs):
+        stop = idxs[position + 1] if position + 1 < len(idxs) else original_count
+        if int(stop) <= int(start):
+            continue
+        rows.append(
+            _aggregate_approximate_segment(
+                df.iloc[int(start) : int(stop)], columns
+            )
+        )
+    out = pd.DataFrame(rows, columns=columns)
+    meta: Dict[str, Any] = {
+        "mode": "approximate",
+        "method": method,
+        "value_col": series_col,
+        "original_rows": int(original_count),
+        "returned_rows": int(len(out)),
+        "breakpoints": int(len(idxs)),
+    }
+    meta.update(params)
+    return out.reset_index(drop=True), meta
 
 
 def _handle_resample_mode(df: pd.DataFrame, headers: List[str], spec: Dict[str, Any]) -> Tuple[pd.DataFrame, Optional[Dict[str, Any]]]:
@@ -855,6 +997,8 @@ def _simplify_dataframe_rows_ext(
 
     if mode == 'resample':
         return _handle_resample_mode(df, headers, spec)
+    if mode == 'approximate':
+        return _handle_approximate_mode(df, headers, spec)
     if mode == 'encode':
         return _handle_encode_mode(df, headers, spec)
     if mode == 'segment':
@@ -869,7 +1013,8 @@ def _simplify_dataframe_rows(df: pd.DataFrame, headers: List[str], simplify: Opt
 
     Modes (simplify['mode']):
     - 'select' (default): pick representative existing rows using the chosen method.
-    - 'approximate': partition by selected breakpoints and aggregate numeric columns per segment.
+    - 'approximate': partition by selected breakpoints and aggregate columns per
+      segment.
     - 'resample': time-based bucketing via 'rule'/'interval' or '__epoch' with 'bucket_seconds'.
     - 'encode': transform per-row representation to a compact schema (e.g., envelope or delta) and
                 optionally pre-select rows before encoding.

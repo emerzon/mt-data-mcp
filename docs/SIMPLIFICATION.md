@@ -94,7 +94,11 @@ mtdata-cli data_fetch_candles EURUSD --limit 5000 --simplify rdp \
 **Piecewise Linear Approximation** (segment-based). Control with:
 - `max_error` — maximum deviation per segment
 - or `segments` — fixed number of segments
-- or `points` / `ratio` — mtdata auto-tunes `max_error` toward the target
+- or `points` / `ratio` — select a fixed segment count toward the target
+
+Tolerance requests enforce the pointwise deviation postcondition. Fixed-size
+requests report `observed_max_error`; they do not claim that a tolerance was
+auto-tuned.
 
 Example:
 ```bash
@@ -106,7 +110,7 @@ mtdata-cli data_fetch_candles EURUSD --limit 5000 --simplify pla \
 **Adaptive Piecewise Constant Approximation** (step-wise). Control with:
 - `max_error`
 - or `segments`
-- or `points` / `ratio` (auto-tuned)
+- or `points` / `ratio` (fixed segment count with measured error)
 
 Example:
 ```bash
