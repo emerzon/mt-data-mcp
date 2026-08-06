@@ -29,7 +29,7 @@ def test_order_risk_uses_integer_tick_distance() -> None:
     assert risk == 150.0
 
 
-def test_breached_stop_overrun_is_counted_when_allowed() -> None:
+def test_breached_stop_overrun_is_counted_by_explicit_policy() -> None:
     risk, error = _estimate_order_risk_currency(
         symbol_info=SimpleNamespace(
             trade_tick_size=1.0,
@@ -40,7 +40,7 @@ def test_breached_stop_overrun_is_counted_when_allowed() -> None:
         entry_price=100.0,
         stop_loss=110.0,
         side="BUY",
-        allow_profit_stop=True,
+        wrong_side_policy="overrun",
     )
 
     assert error is None

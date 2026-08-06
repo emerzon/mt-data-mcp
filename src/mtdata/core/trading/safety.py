@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import math
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -568,7 +568,7 @@ def _estimate_order_risk_currency(
     entry_price: float,
     stop_loss: Optional[float],
     side: str,
-    allow_profit_stop: bool = False,
+    wrong_side_policy: Literal["reject", "secured", "overrun"] = "reject",
 ) -> tuple[Optional[float], Optional[str]]:
     normalized_stop_loss = _normalize_stop_loss_value(stop_loss)
     if normalized_stop_loss is None:
@@ -594,8 +594,10 @@ def _estimate_order_risk_currency(
     if risk_ticks is None:
         return None, "stop_loss_wrong_side"
     if risk_ticks <= 0:
-        if allow_profit_stop:
+        if wrong_side_policy == "secured":
             risk_ticks = 0.0
+        elif wrong_side_policy == "overrun":
+            risk_ticks = abs(risk_ticks)
         else:
             return None, "stop_loss_wrong_side"
 
@@ -807,7 +809,7 @@ def _total_portfolio_risk_currency(
             entry_price=mark_price,
             stop_loss=stop_loss,
             side=side,
-            allow_profit_stop=True,
+            wrong_side_policy="overrun",
         )
         if risk_currency is None:
             issues.append(f"{symbol}: unable to quantify risk ({risk_error}).")
@@ -844,7 +846,7 @@ def _total_portfolio_risk_currency(
             entry_price=entry_price,
             stop_loss=stop_loss,
             side=side,
-            allow_profit_stop=True,
+            wrong_side_policy="reject",
         )
         if risk_currency is None:
             issues.append(
@@ -886,7 +888,7 @@ def _released_position_risk_currency(
             entry_price=pos_mark,
             stop_loss=pos_sl,
             side=pos_side,
-            allow_profit_stop=True,
+            wrong_side_policy="overrun",
         )
         if pos_risk is None or pos_volume <= 0:
             continue
@@ -963,7 +965,7 @@ def _evaluate_wallet_risk_limits(
         entry_price=float(entry_price),
         stop_loss=float(stop_loss),
         side=normalized_side,
-        allow_profit_stop=True,
+        wrong_side_policy="secured",
     )
     if candidate_risk is None:
         return _build_guardrail_block(
@@ -1296,7 +1298,7 @@ def pending_order_risk_increased(
         entry_price=next_entry,
         stop_loss=next_sl,
         side=side,
-        allow_profit_stop=True,
+        wrong_side_policy="secured",
     )
     if next_risk is None:
         return next_error in {
@@ -1313,7 +1315,7 @@ def pending_order_risk_increased(
         entry_price=current_entry,
         stop_loss=current_sl,
         side=side,
-        allow_profit_stop=True,
+        wrong_side_policy="secured",
     )
     if current_risk is None:
         return True if current_error else False
