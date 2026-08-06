@@ -62,10 +62,13 @@ def _portfolio_mark_context(gateway: Any, positions: List[Dict[str, Any]]) -> Di
     now_epoch = datetime.now(timezone.utc).timestamp()
     contexts: List[Dict[str, Any]] = []
     valid_times: List[float] = []
+    symbol_counts: Dict[str, int] = {}
     for row in positions:
         symbol = str(row.get("symbol") or "").strip()
         if not symbol:
             continue
+        symbol_counts[symbol] = symbol_counts.get(symbol, 0) + 1
+    for symbol, position_count in symbol_counts.items():
         try:
             tick = gateway.symbol_info_tick(symbol)
         except Exception:
@@ -95,6 +98,7 @@ def _portfolio_mark_context(gateway: Any, positions: List[Dict[str, Any]]) -> Di
                 "freshness_reason": "missing_tick_timestamp",
             }
         freshness["symbol"] = symbol
+        freshness["positions"] = position_count
         freshness["quote_time"] = format_epoch_utc(tick_epoch)
         contexts.append(freshness)
     if not contexts:

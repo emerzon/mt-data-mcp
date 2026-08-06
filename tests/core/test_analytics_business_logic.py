@@ -14,6 +14,7 @@ from mtdata.analytics.engines import (
     _execution_duration_display,
     _execution_percentiles,
     _filtered_historical_returns,
+    _portfolio_mark_context,
     _tick_frame,
     analyze_execution_quality,
     analyze_microstructure,
@@ -751,6 +752,31 @@ def test_portfolio_risk_marks_empty_position_book() -> None:
     assert result["timeframe"] == "H1"
     assert result["holding_periods"] == ["1 H1 bar", "5 H1 bars"]
     assert result["model_context"]["random_seed"] == 42
+
+
+def test_portfolio_mark_freshness_is_aggregated_by_symbol() -> None:
+    gateway = FakeGateway()
+    calls = []
+
+    def _tick(symbol):
+        calls.append(symbol)
+        return SimpleNamespace(bid=1.0999, ask=1.1001, time=_now())
+
+    gateway.symbol_info_tick = _tick
+    context = _portfolio_mark_context(
+        gateway,
+        [
+            {"ticket": 1, "symbol": "EURUSD"},
+            {"ticket": 2, "symbol": "EURUSD"},
+            {"ticket": 3, "symbol": "GBPUSD"},
+        ],
+    )
+
+    assert calls == ["EURUSD", "GBPUSD"]
+    assert [
+        (row["symbol"], row["positions"])
+        for row in context["mark_freshness"]
+    ] == [("EURUSD", 2), ("GBPUSD", 1)]
 
 
 def test_portfolio_risk_reconciles_component_expected_shortfall() -> None:
