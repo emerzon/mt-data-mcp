@@ -11,6 +11,7 @@ from ...shared.market_units import (
     snap_to_increment,
 )
 from ...utils.coercion import coerce_finite_float
+from ...utils.quote import tick_value
 from ...utils.utils import coerce_scalar
 from .gateway import MT5TradingGateway, create_trading_gateway, trading_connection_error
 from .sizing import _floor_volume_steps
@@ -36,6 +37,16 @@ _SUPPORTED_ORDER_TYPES = {
     "SELL_LIMIT",
     "SELL_STOP",
 }
+
+
+def _tick_bid_ask(tick: Any) -> Tuple[Optional[float], Optional[float]]:
+    """Read finite quotes from MT5 objects, mappings, or structured rows."""
+    return (
+        coerce_finite_float(tick_value(tick, "bid")),
+        coerce_finite_float(tick_value(tick, "ask")),
+    )
+
+
 def _normalize_order_type_input(order_type: Any) -> Tuple[Optional[str], Optional[str]]:
     """Normalize order_type inputs from MCP clients into canonical MT5 order names."""
     if order_type is None:
@@ -562,15 +573,8 @@ def _validate_pending_order_levels(  # noqa: C901
     mt5: Any,
 ) -> Optional[Dict[str, Any]]:
     """Validate pending entry and protection levels against quotes and broker distances."""
-    try:
-        bid = float(getattr(tick, "bid", float("nan")) or float("nan"))
-    except Exception:
-        bid = float("nan")
-    try:
-        ask = float(getattr(tick, "ask", float("nan")) or float("nan"))
-    except Exception:
-        ask = float("nan")
-    if not math.isfinite(bid) or not math.isfinite(ask):
+    bid, ask = _tick_bid_ask(tick)
+    if bid is None or ask is None:
         return {"error": "Failed to get valid current bid/ask for pending-order validation."}
 
     distance = _broker_distance_metadata(symbol_info)
@@ -762,15 +766,8 @@ def _validate_live_protection_levels(
     if side_norm not in {"BUY", "SELL"}:
         return None
 
-    try:
-        bid = float(getattr(tick, "bid", float("nan")) or float("nan"))
-    except Exception:
-        bid = float("nan")
-    try:
-        ask = float(getattr(tick, "ask", float("nan")) or float("nan"))
-    except Exception:
-        ask = float("nan")
-    if not math.isfinite(bid) or not math.isfinite(ask):
+    bid, ask = _tick_bid_ask(tick)
+    if bid is None or ask is None:
         return {"error": "Failed to get valid current bid/ask for SL/TP validation."}
 
     reference_price = bid if side_norm == "BUY" else ask

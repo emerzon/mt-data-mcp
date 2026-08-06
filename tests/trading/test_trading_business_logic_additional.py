@@ -19,6 +19,7 @@ from mtdata.core.trading.validation import (
     _trade_accepted_codes,
     _validate_deviation,
     _validate_live_protection_levels,
+    _validate_pending_order_levels,
     _validate_volume,
 )
 
@@ -119,6 +120,40 @@ def test_validate_live_protection_levels_accepts_negative_quotes():
     )
 
     assert result is None
+
+
+def test_protection_validators_accept_mapping_ticks():
+    symbol_info = SimpleNamespace(
+        point=0.0001,
+        trade_stops_level=0,
+        trade_freeze_level=0,
+    )
+    tick = {"bid": 1.1, "ask": 1.1002}
+
+    live_result = _validate_live_protection_levels(
+        symbol_info=symbol_info,
+        tick=tick,
+        side="BUY",
+        stop_loss=1.09,
+        take_profit=1.11,
+    )
+    pending_result = _validate_pending_order_levels(
+        symbol_info=symbol_info,
+        tick=tick,
+        order_type_value=2,
+        price=1.099,
+        stop_loss=1.09,
+        take_profit=1.11,
+        mt5=SimpleNamespace(
+            ORDER_TYPE_BUY_LIMIT=2,
+            ORDER_TYPE_SELL_LIMIT=3,
+            ORDER_TYPE_BUY_STOP=4,
+            ORDER_TYPE_SELL_STOP=5,
+        ),
+    )
+
+    assert live_result is None
+    assert pending_result is None
 
 
 def test_run_trade_close_rejects_conflicting_profit_and_loss_filters():
@@ -540,14 +575,15 @@ def test_trade_preview_reconciles_equal_timestamp_quote_conflict():
             order_type="BUY",
             pending=False,
             price=None,
-            stop_loss=None,
-            take_profit=None,
+            stop_loss=1.14,
+            take_profit=1.16,
             gateway=gateway,
         )
 
     assert result["bid"] == 1.15308
     assert result["ask"] == 1.15322
     assert result["estimated_fill_price"] == 1.15322
+    assert result["sl_tp_valid"] is True
     assert result["quote_context"]["quote_source"] == "mt5.copy_ticks_range"
     assert result["quote_context"]["quote_source_conflict"]["reason"] == (
         "equal_timestamp_bid_ask_disagreement"
