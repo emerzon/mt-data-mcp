@@ -497,6 +497,12 @@ mtdata-cli strategy_backtest EURUSD --timeframe H1 --strategy rsi_reversion \
 mtdata-cli strategy_backtest EURUSD --cost-model fixed --spread-bps 1.2 --json
 ```
 
+Net returns and derived performance metrics are reported only when every trade has
+a spread cost. If historical spread data cannot price every trade, the response
+keeps gross results, labels the partial result `return_after_known_costs`, reports
+the priced-trade coverage, and marks performance metrics unavailable. Use an
+explicit fixed spread when a complete, comparable net result is required.
+
 ### Analyze Risk
 ```bash
 # Volatility estimate

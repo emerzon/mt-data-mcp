@@ -97,6 +97,8 @@ def test_strategy_backtest_compact_excludes_request_metadata() -> None:
             timeframe="H1",
             strategy="sma_cross",
             lookback=50,
+            cost_model="fixed",
+            spread_bps=0.0,
             detail="compact",
         )
 

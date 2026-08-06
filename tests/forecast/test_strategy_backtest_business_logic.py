@@ -59,15 +59,30 @@ def test_strategy_backtest_sma_cross_generates_long_trade(monkeypatch):
     assert out["summary"]["num_trades"] == 1
     assert out["summary"]["long_trades"] == 1
     assert out["units"]["returns"] == "return_fraction"
-    assert out["units"]["net_return"] == "return_fraction"
-    assert out["units"]["net_return_pct"] == "percentage_points"
+    assert out["units"]["return_after_known_costs"] == "return_fraction"
+    assert out["units"]["return_after_known_costs_pct"] == "percentage_points"
+    assert "net_return" not in out["units"]
     assert out["units"]["drawdown"] == "return_fraction"
     assert out["units"]["win_rate"] == "fraction"
     assert out["trades"][0]["direction"] == "long"
-    assert out["summary"]["net_return"] > 0.0
-    assert out["summary"]["net_return_pct"] == pytest.approx(
-        out["summary"]["net_return"] * 100.0
+    assert out["trades"][0]["spread_cost_status"] == "missing"
+    assert "return_net" not in out["trades"][0]
+    assert out["summary"]["return_after_known_costs"] > 0.0
+    assert out["summary"]["return_after_known_costs_pct"] == pytest.approx(
+        out["summary"]["return_after_known_costs"] * 100.0
     )
+    assert out["summary"]["return_status"] == "partial_transaction_costs"
+    assert "net_return" not in out["summary"]
+    assert out["metrics"] == {
+        "metrics_available": False,
+        "metrics_reason": "incomplete_transaction_costs",
+        "metrics_reliability": "unavailable",
+        "trades_observed": 1,
+    }
+    assert "equity_curve" not in out
+    assert "drawdown_periods" not in out
+    assert "monthly_breakdown" not in out
+    assert "trade_distribution" not in out
 
 
 def test_strategy_backtest_uses_historical_bar_spread_by_default(monkeypatch):
@@ -100,6 +115,9 @@ def test_strategy_backtest_uses_historical_bar_spread_by_default(monkeypatch):
     assert historical["cost_model"]["complete"] is True
     assert "warnings" not in historical
     assert historical["summary"]["net_return"] < fixed["summary"]["net_return"]
+    assert historical["trades"][0]["spread_cost_status"] == "included"
+    assert "return_net" in historical["trades"][0]
+    assert "return_after_known_costs" not in historical["trades"][0]
 
 
 def test_strategy_backtest_rejects_zero_historical_spread_samples(monkeypatch):
@@ -125,6 +143,9 @@ def test_strategy_backtest_rejects_zero_historical_spread_samples(monkeypatch):
     )
     assert out["cost_model"]["complete"] is False
     assert "zero spread samples are treated as unavailable" in out["warnings"][0]
+    assert "net_return" not in out["summary"]
+    assert out["summary"]["return_status"] == "partial_transaction_costs"
+    assert out["metrics"]["metrics_available"] is False
 
 
 def test_strategy_backtest_includes_first_valid_warmup_signal(monkeypatch):
@@ -183,6 +204,8 @@ def test_strategy_backtest_compact_mode_excludes_trades(monkeypatch):
         "spread_bps_round_trip": None,
         "spread_source": "unavailable",
         "spread_observations": 0,
+        "unpriced_trades": 1,
+        "priced_trade_coverage_pct": 0.0,
         "slippage_bps_per_side": 1.0,
         "round_trip_cost_bps": None,
         "complete": False,
@@ -196,12 +219,16 @@ def test_strategy_backtest_compact_mode_excludes_trades(monkeypatch):
     assert out["last_historical_signal"]["signal_status"] == "historical_observation_only"
     assert out["last_historical_signal"]["direction"] == "long"
     assert "signal" not in out["last_historical_signal"]
-    assert out["summary"]["metrics_reliability"] == "low"
+    assert out["summary"]["metrics_reliability"] == "unavailable"
     assert out["summary"]["metrics_reliability_reasons"] == [
         "incomplete_transaction_costs"
     ]
     assert "trades_observed" not in out["summary"]
-    assert out["metrics"]["metrics_reliability"] == "low"
+    assert out["summary"]["return_status"] == "partial_transaction_costs"
+    assert "net_return" not in out["summary"]
+    assert out["metrics"]["metrics_available"] is False
+    assert out["metrics"]["metrics_reason"] == "incomplete_transaction_costs"
+    assert out["metrics"]["metrics_reliability"] == "unavailable"
     assert out["metrics"]["trades_observed"] == 1
     assert "sample_notice" not in out["metrics"]
     assert "warning" not in out

@@ -47,6 +47,8 @@ def test_strategy_backtest_full_detail_includes_equity_curve(monkeypatch):
         lookback=8,
         fast_period=2,
         slow_period=3,
+        cost_model="fixed",
+        spread_bps=0.0,
         detail="full",
     )
 
@@ -77,6 +79,8 @@ def test_strategy_backtest_full_detail_includes_trade_distribution(monkeypatch):
         lookback=8,
         fast_period=2,
         slow_period=3,
+        cost_model="fixed",
+        spread_bps=0.0,
         detail="full",
     )
 
@@ -112,6 +116,8 @@ def test_strategy_backtest_full_detail_includes_monthly_breakdown(monkeypatch):
         lookback=8,
         fast_period=2,
         slow_period=3,
+        cost_model="fixed",
+        spread_bps=0.0,
         detail="full",
     )
 

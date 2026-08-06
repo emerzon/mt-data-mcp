@@ -271,6 +271,8 @@ _TRADE_BACKTEST_UNITS = {
     "gross_return_pct": "percentage_points",
     "net_return": "return_fraction",
     "net_return_pct": "percentage_points",
+    "return_after_known_costs": "return_fraction",
+    "return_after_known_costs_pct": "percentage_points",
     "avg_return": "return_fraction",
     "avg_return_pct": "percentage_points",
     "avg_return_per_trade": "return_fraction",
@@ -934,14 +936,19 @@ def _build_strategy_trade(
     exit_price: float,
     slippage_bps: float,
     spread_bps: float,
+    spread_cost_available: bool,
 ) -> Dict[str, Any]:
     gross_return = float(direction) * ((float(exit_price) - float(entry_price)) / float(entry_price))
     if gross_return <= -0.999:
         gross_return = -0.999
     slip = float(abs(slippage_bps) or 0.0) / 10000.0
-    net_return = gross_return - (float(abs(spread_bps) or 0.0) / 10000.0) - (2.0 * slip)
-    if net_return <= -0.999:
-        net_return = -0.999
+    return_after_known_costs = (
+        gross_return
+        - (float(abs(spread_bps) or 0.0) / 10000.0)
+        - (2.0 * slip)
+    )
+    if return_after_known_costs <= -0.999:
+        return_after_known_costs = -0.999
     return {
         "direction": _strategy_signal_label(float(direction)),
         "entry_time": _format_time_minimal(float(entry_time)),
@@ -950,10 +957,22 @@ def _build_strategy_trade(
         "exit_price": float(exit_price),
         "bars_held": int(max(1, exit_idx - entry_idx)),
         "spread_cost_bps": float(abs(spread_bps) or 0.0),
+        "spread_cost_status": "included" if spread_cost_available else "missing",
         "slippage_cost_bps": 2.0 * float(abs(slippage_bps) or 0.0),
         "return_gross": gross_return,
-        "return_net": net_return,
+        "return_after_known_costs": return_after_known_costs,
     }
+
+
+def _public_strategy_trade(
+    trade: Dict[str, Any],
+    *,
+    cost_model_complete: bool,
+) -> Dict[str, Any]:
+    out = dict(trade)
+    if cost_model_complete:
+        out["return_net"] = out.pop("return_after_known_costs", None)
+    return out
 
 
 def _historical_bar_spread_prices(symbol: str, frame: Any) -> Tuple[Optional[np.ndarray], float]:
@@ -1163,7 +1182,8 @@ def strategy_backtest(  # noqa: C901
                     spread_prices=historical_spread_prices,
                 )
             )
-            if trade_spread_bps is None:
+            spread_cost_available = trade_spread_bps is not None
+            if not spread_cost_available:
                 missing_spread_costs += 1
                 trade_spread_bps = 0.0
             else:
@@ -1179,6 +1199,7 @@ def strategy_backtest(  # noqa: C901
                     exit_price=float(action_price),
                     slippage_bps=float(slippage_bps),
                     spread_bps=float(trade_spread_bps),
+                    spread_cost_available=spread_cost_available,
                 )
             )
             current_direction = 0
@@ -1209,7 +1230,8 @@ def strategy_backtest(  # noqa: C901
                     spread_prices=historical_spread_prices,
                 )
             )
-            if trade_spread_bps is None:
+            spread_cost_available = trade_spread_bps is not None
+            if not spread_cost_available:
                 missing_spread_costs += 1
                 trade_spread_bps = 0.0
             else:
@@ -1225,10 +1247,15 @@ def strategy_backtest(  # noqa: C901
                     exit_price=float(final_exit_price),
                     slippage_bps=float(slippage_bps),
                     spread_bps=float(trade_spread_bps),
+                    spread_cost_available=spread_cost_available,
                 )
             )
 
-        trade_returns = [float(trade["return_net"]) for trade in trades if trade.get("return_net") is not None]
+        trade_returns = [
+            float(trade["return_after_known_costs"])
+            for trade in trades
+            if trade.get("return_after_known_costs") is not None
+        ]
         entry_indices = []
         for trade in trades:
             entry_time_text = str(trade.get("entry_time") or "")
@@ -1255,7 +1282,9 @@ def strategy_backtest(  # noqa: C901
             metrics = _compact_metrics_payload(metrics)
 
         gross_equity = np.cumprod([1.0 + float(trade["return_gross"]) for trade in trades]) if trades else np.array([1.0])
-        net_equity = np.cumprod([1.0 + float(trade["return_net"]) for trade in trades]) if trades else np.array([1.0])
+        known_cost_equity = np.cumprod(
+            [1.0 + float(trade["return_after_known_costs"]) for trade in trades]
+        ) if trades else np.array([1.0])
         long_trades = int(sum(1 for trade in trades if trade.get("direction") == "long"))
         short_trades = int(sum(1 for trade in trades if trade.get("direction") == "short"))
         last_idx = len(df) - 1
@@ -1298,7 +1327,7 @@ def strategy_backtest(  # noqa: C901
             _params["end"] = end
         bars_used = len(df) if range_requested else int(lookback)
         gross_return = float(gross_equity[-1] - 1.0)
-        net_return = float(net_equity[-1] - 1.0)
+        return_after_known_costs = float(known_cost_equity[-1] - 1.0)
         mean_spread_cost_bps = (
             float(np.mean(observed_spread_costs))
             if observed_spread_costs
@@ -1325,6 +1354,43 @@ def strategy_backtest(  # noqa: C901
             if cost_model_value == "fixed" and spread_bps is not None
             else mean_spread_cost_bps
         )
+        priced_trade_count = len(observed_spread_costs)
+        costed_trade_count = priced_trade_count + int(missing_spread_costs)
+        priced_trade_coverage_pct = (
+            round(priced_trade_count / costed_trade_count * 100.0, 2)
+            if costed_trade_count
+            else None
+        )
+        summary_returns = (
+            {
+                "net_return": return_after_known_costs,
+                "net_return_pct": _return_fraction_to_pct(
+                    return_after_known_costs
+                ),
+            }
+            if cost_model_complete
+            else {
+                "return_after_known_costs": return_after_known_costs,
+                "return_after_known_costs_pct": _return_fraction_to_pct(
+                    return_after_known_costs
+                ),
+                "return_status": "partial_transaction_costs",
+            }
+        )
+        result_units = _backtest_units()
+        if cost_model_complete:
+            result_units.pop("return_after_known_costs", None)
+            result_units.pop("return_after_known_costs_pct", None)
+            reported_metrics = metrics
+        else:
+            result_units.pop("net_return", None)
+            result_units.pop("net_return_pct", None)
+            reported_metrics = {
+                "metrics_available": False,
+                "metrics_reason": "incomplete_transaction_costs",
+                "metrics_reliability": "unavailable",
+                "trades_observed": int(len(trades)),
+            }
 
         result: Dict[str, Any] = {
             "success": True,
@@ -1340,7 +1406,9 @@ def strategy_backtest(  # noqa: C901
                 "type": cost_model_value,
                 "spread_bps_round_trip": reported_spread_cost_bps,
                 "spread_source": spread_source,
-                "spread_observations": len(observed_spread_costs),
+                "spread_observations": priced_trade_count,
+                "unpriced_trades": int(missing_spread_costs),
+                "priced_trade_coverage_pct": priced_trade_coverage_pct,
                 "slippage_bps_per_side": float(slippage_bps),
                 "round_trip_cost_bps": (
                     reported_spread_cost_bps + float(slippage_bps) * 2.0
@@ -1349,7 +1417,7 @@ def strategy_backtest(  # noqa: C901
                 ),
                 "complete": cost_model_complete,
             },
-            "units": _backtest_units(),
+            "units": result_units,
             "parameters": _params,
             "summary": {
                 "bars_used": int(bars_used),
@@ -1364,10 +1432,9 @@ def strategy_backtest(  # noqa: C901
                 "short_trades": short_trades,
                 "gross_return": gross_return,
                 "gross_return_pct": _return_fraction_to_pct(gross_return),
-                "net_return": net_return,
-                "net_return_pct": _return_fraction_to_pct(net_return),
+                **summary_returns,
             },
-            "metrics": metrics,
+            "metrics": reported_metrics,
             "last_signal": {
                 "signal_status": "historical_observation_only",
                 "signal": _strategy_signal_label(last_signal_value),
@@ -1397,10 +1464,11 @@ def strategy_backtest(  # noqa: C901
             )
             result["warnings"] = [
                 "Transaction costs are incomplete because the selected spread model "
-                "could not price every trade. Net metrics exclude missing spread costs."
+                "could not price every trade. Returns after known costs exclude missing "
+                "spread costs and are not comparable to complete net results."
                 + spread_warning
             ]
-            result["summary"]["metrics_reliability"] = "low"
+            result["summary"]["metrics_reliability"] = "unavailable"
             result["summary"]["metrics_reliability_reasons"] = [
                 "incomplete_transaction_costs"
             ]
@@ -1415,10 +1483,11 @@ def strategy_backtest(  # noqa: C901
                 "minimum_trades": minimum_trades,
                 **result["summary"],
             }
-            result["warning"] = (
-                f"Only {trades_observed} trade(s) observed; treat strategy metrics as low-confidence "
-                f"until at least {minimum_trades} trades are available."
-            )
+            if cost_model_complete:
+                result["warning"] = (
+                    f"Only {trades_observed} trade(s) observed; treat strategy metrics "
+                    f"as low-confidence until at least {minimum_trades} trades are available."
+                )
         if detail_mode == "full":
             result["contracts"] = {
                 "data_preparation": _contract_payload(data_contract),
@@ -1432,7 +1501,13 @@ def strategy_backtest(  # noqa: C901
             }
         if trades:
             if detail_mode == "full":
-                result["trades"] = trades
+                result["trades"] = [
+                    _public_strategy_trade(
+                        trade,
+                        cost_model_complete=cost_model_complete,
+                    )
+                    for trade in trades
+                ]
                 # Add enriched detail for full mode: equity curve, drawdowns, monthly breakdown, trade distribution
                 
                 # Build equity curve with timestamps
@@ -1450,8 +1525,10 @@ def strategy_backtest(  # noqa: C901
                 
                 for idx in sorted(trade_exit_times.keys()):
                     trade_idx = trade_exit_times[idx]
-                    trade_net_return = float(trades[trade_idx].get("return_net") or 0.0)
-                    cumulative_net *= (1.0 + trade_net_return)
+                    trade_known_cost_return = float(
+                        trades[trade_idx].get("return_after_known_costs") or 0.0
+                    )
+                    cumulative_net *= (1.0 + trade_known_cost_return)
                     equity_curve.append({
                         "time": _format_time_minimal(float(times[idx])),
                         "equity": cumulative_net,
@@ -1500,7 +1577,9 @@ def strategy_backtest(  # noqa: C901
                                 "returns": [],
                             }
                         monthly_stats[month_key]["trades"] += 1
-                        ret = float(trade.get("return_net") or 0.0)
+                        ret = float(
+                            trade.get("return_after_known_costs") or 0.0
+                        )
                         monthly_stats[month_key]["returns"].append(ret)
                         bucket = _trade_return_bucket(ret)
                         if bucket == "winning":
@@ -1527,21 +1606,30 @@ def strategy_backtest(  # noqa: C901
                 if trades:
                     winning_trades = [
                         t for t in trades
-                        if _trade_return_bucket(t.get("return_net")) == "winning"
+                        if _trade_return_bucket(
+                            t.get("return_after_known_costs")
+                        ) == "winning"
                     ]
                     losing_trades = [
                         t for t in trades
-                        if _trade_return_bucket(t.get("return_net")) == "losing"
+                        if _trade_return_bucket(
+                            t.get("return_after_known_costs")
+                        ) == "losing"
                     ]
                     breakeven_trades = [
                         t for t in trades
-                        if _trade_return_bucket(t.get("return_net")) == "breakeven"
+                        if _trade_return_bucket(
+                            t.get("return_after_known_costs")
+                        ) == "breakeven"
                     ]
                     
                     trade_distribution = {}
                     
                     if winning_trades:
-                        winning_returns = [float(t.get("return_net") or 0.0) for t in winning_trades]
+                        winning_returns = [
+                            float(t.get("return_after_known_costs") or 0.0)
+                            for t in winning_trades
+                        ]
                         trade_distribution["winning"] = {
                             "count": len(winning_trades),
                             "avg_return": float(np.mean(winning_returns)),
@@ -1550,7 +1638,10 @@ def strategy_backtest(  # noqa: C901
                         }
                     
                     if losing_trades:
-                        losing_returns = [float(t.get("return_net") or 0.0) for t in losing_trades]
+                        losing_returns = [
+                            float(t.get("return_after_known_costs") or 0.0)
+                            for t in losing_trades
+                        ]
                         trade_distribution["losing"] = {
                             "count": len(losing_trades),
                             "avg_return": float(np.mean(losing_returns)),
@@ -1565,6 +1656,14 @@ def strategy_backtest(  # noqa: C901
                     
                     if trade_distribution:
                         result["trade_distribution"] = trade_distribution
+                if not cost_model_complete:
+                    for incomplete_metric in (
+                        "equity_curve",
+                        "drawdown_periods",
+                        "monthly_breakdown",
+                        "trade_distribution",
+                    ):
+                        result.pop(incomplete_metric, None)
         else:
             result["no_action"] = True
             result["message"] = "The strategy generated no trades on the requested history."
