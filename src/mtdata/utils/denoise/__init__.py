@@ -2,14 +2,17 @@
 
 from __future__ import annotations
 
+# Side-effect import: registers all filter implementations via @register_filter
+from . import filters as _filters  # noqa: F401
 from .api import (
+    DenoiseCausalityError,
     apply_denoise,
     consume_denoise_warnings,
-    denoise_series,
-    resolve_denoise_base_col,
     denoise_list_methods,
+    denoise_series,
     get_denoise_methods_data,
     normalize_denoise_spec,
+    resolve_denoise_base_col,
 )
 from .base import (
     _series_like,
@@ -18,10 +21,8 @@ from .base import (
     register_filter,
 )
 
-# Side-effect import: registers all filter implementations via @register_filter
-from . import filters as _filters  # noqa: F401
-
 __all__ = [
+    "DenoiseCausalityError",
     "register_filter",
     "get_filter",
     "list_filters",

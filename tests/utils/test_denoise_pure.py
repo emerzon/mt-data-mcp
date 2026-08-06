@@ -5,12 +5,13 @@ import pandas as pd
 import pytest
 
 from mtdata.utils.denoise import (
+    DenoiseCausalityError,
     apply_denoise,
-    denoise_series,
-    resolve_denoise_base_col,
     denoise_list_methods,
+    denoise_series,
     get_denoise_methods_data,
     normalize_denoise_spec,
+    resolve_denoise_base_col,
 )
 from mtdata.utils.denoise import api as denoise_api
 from mtdata.utils.denoise.api import _run_denoise_handler
@@ -75,8 +76,12 @@ class TestNormalizeDenoiseSec:
         assert "span" in out["params"]
 
     def test_string_wavelet(self):
-        with pytest.raises(ValueError, match="explicit.*zero_phase"):
+        with pytest.raises(
+            DenoiseCausalityError,
+            match="explicit.*zero_phase",
+        ) as exc_info:
             normalize_denoise_spec("wavelet")
+        assert exc_info.value.method == "wavelet"
 
         with pytest.raises(ValueError, match="does not support causality='causal'"):
             normalize_denoise_spec(
@@ -1304,6 +1309,8 @@ class TestGetDenoiseMethodsData:
 
         assert methods["ema"]["supports"]["causality"] == ["causal", "zero_phase"]
         assert methods["wavelet"]["supports"]["causality"] == ["zero_phase"]
+        assert methods["ema"]["requires_causality_opt_in"] is False
+        assert methods["wavelet"]["requires_causality_opt_in"] is True
 
     def test_reports_tv_unavailable_when_scikit_image_missing(self, monkeypatch):
         monkeypatch.setattr(denoise_api, "_skimage_tv_chambolle", None)

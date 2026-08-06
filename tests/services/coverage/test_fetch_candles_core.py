@@ -15,17 +15,26 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 from zoneinfo import ZoneInfo
 
-from ._helpers import (
-    _UTC, _NOW_TS,
-    _mt5_mock,
-    _mock_symbol_guard, _mock_symbol_guard_error,
-    _make_rates, _make_rates_array,
-    _DS, _GUARD, _RATES_FROM, _RATES_RANGE,
-    _CACHED_INFO, _RESOLVE_CTZ, _PARSE_START,
-    _ESTIMATE_WARMUP, _MT5_CONFIG,
-)
-
 from mtdata.services.data_service import fetch_candles
+
+from ._helpers import (
+    _CACHED_INFO,
+    _DS,
+    _ESTIMATE_WARMUP,
+    _GUARD,
+    _MT5_CONFIG,
+    _NOW_TS,
+    _PARSE_START,
+    _RATES_FROM,
+    _RATES_RANGE,
+    _RESOLVE_CTZ,
+    _UTC,
+    _make_rates,
+    _make_rates_array,
+    _mock_symbol_guard,
+    _mock_symbol_guard_error,
+    _mt5_mock,
+)
 
 
 class TestFetchCandlesCore(unittest.TestCase):
@@ -34,6 +43,21 @@ class TestFetchCandlesCore(unittest.TestCase):
     # ------------------------------------------------------------------ #
     # Success paths                                                        #
     # ------------------------------------------------------------------ #
+
+    def test_noncausal_denoise_fails_before_fetch_with_actionable_error(self):
+        result = fetch_candles("EURUSD", denoise="wavelet")
+
+        self.assertFalse(result["success"])
+        self.assertEqual(
+            result["error_code"],
+            "denoise_non_causal_requires_opt_in",
+        )
+        self.assertNotIn("Error getting rates", result["error"])
+        self.assertIn(
+            "--denoise-params causality=zero_phase",
+            result["remediation"],
+        )
+        self.assertTrue(result["details"]["uses_future_bars"])
 
     @patch(_MT5_CONFIG)
     @patch(_RATES_FROM)

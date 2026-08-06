@@ -219,7 +219,9 @@ Split into components and reconstruct smoother parts.
 Causal-capable filters and the public `denoise_series` helper default to causal
 operation. Non-causal-only presets are rejected unless the request explicitly
 sets `causality=zero_phase`. For a causal-capable filter such as Butterworth,
-request `causality=zero_phase` explicitly. Use zero-phase methods only for
+request `causality=zero_phase` explicitly. `denoise_list_methods` marks methods
+that cannot run causally with `requires_causality_opt_in=true`; on the CLI, opt
+in with `--denoise-params causality=zero_phase`. Use zero-phase methods only for
 retrospective analysis, not backtesting or live trading.
 
 ---

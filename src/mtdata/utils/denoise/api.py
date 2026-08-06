@@ -6,6 +6,17 @@ from typing import Any, Dict, List, Optional
 import numpy as np
 import pandas as pd
 
+
+class DenoiseCausalityError(ValueError):
+    """Raised when a zero-phase-only method lacks explicit user consent."""
+
+    def __init__(self, method: str) -> None:
+        self.method = str(method)
+        super().__init__(
+            f"Denoise method '{self.method}' is non-causal and requires the "
+            "explicit opt-in causality='zero_phase'."
+        )
+
 # Import optional dependencies for availability checking
 try:
     import pywt as _pywt
@@ -498,10 +509,7 @@ def _default_denoise_causality(method: str) -> str:
     supported = _supported_denoise_causality(method)
     if "causal" in supported:
         return "causal"
-    raise ValueError(
-        f"Denoise method '{method}' is non-causal and requires the explicit "
-        "opt-in causality='zero_phase'."
-    )
+    raise DenoiseCausalityError(method)
 
 
 def normalize_denoise_spec(spec: Any, default_when: str = 'pre_ti') -> Optional[Dict[str, Any]]:
@@ -604,6 +612,7 @@ def get_denoise_methods_data() -> Dict[str, Any]:
             "params": [],
             "supports": {"causality": _supported_denoise_causality("none")},
             "supports_causal": True,
+            "requires_causality_opt_in": False,
             "has_auto_params": False,
             "defaults": base_defaults,
         }
@@ -629,6 +638,7 @@ def get_denoise_methods_data() -> Dict[str, Any]:
             "params": _param_defs(default_params),
             "supports": {"causality": _supported_denoise_causality(method_name)},
             "supports_causal": "causal" in _supported_denoise_causality(method_name),
+            "requires_causality_opt_in": "causal" not in supported_causality,
             "has_auto_params": any(_has_auto_param(value) for value in default_params.values()),
             "defaults": method_defaults,
         })
@@ -645,6 +655,7 @@ def denoise_list_methods() -> Dict[str, Any]:
 
 
 __all__ = [
+    "DenoiseCausalityError",
     "denoise_series",
     "apply_denoise",
     "consume_denoise_warnings",

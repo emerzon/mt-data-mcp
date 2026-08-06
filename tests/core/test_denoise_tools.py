@@ -36,11 +36,17 @@ def test_denoise_list_methods_compact_lists_small_catalog_by_default(monkeypatch
         "has_more": False,
         "more_available": 0,
     }
-    assert result["columns"] == ["method", "available", "causality"]
+    assert result["columns"] == [
+        "method",
+        "available",
+        "causality",
+        "requires_causality_opt_in",
+    ]
     assert set(result["methods"][0]) == {
         "method",
         "available",
         "causality",
+        "requires_causality_opt_in",
     }
     assert result["methods"][0]["causality"] == ["causal"]
     assert "list_all_hint" not in result
@@ -51,6 +57,7 @@ def test_denoise_list_methods_compact_lists_small_catalog_by_default(monkeypatch
         "method",
         "available",
         "causality",
+        "requires_causality_opt_in",
         "requires",
         "params",
     ]

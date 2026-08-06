@@ -34,10 +34,11 @@ from ..shared.schema import DenoiseSpec, IndicatorSpec, SimplifySpec, TimeframeL
 from ..shared.validators import invalid_timeframe_error
 from ..utils.coercion import round_finite
 from ..utils.denoise import (
-    apply_denoise as apply_denoise_util,
+    DenoiseCausalityError,
+    consume_denoise_warnings,
 )
 from ..utils.denoise import (
-    consume_denoise_warnings,
+    apply_denoise as apply_denoise_util,
 )
 from ..utils.denoise import (
     normalize_denoise_spec as _normalize_denoise_spec,
@@ -1680,6 +1681,29 @@ def fetch_candles(  # noqa: C901
 ) -> Dict[str, Any]:
     """Return historical candles as tabular data."""
     try:
+        if denoise:
+            try:
+                _normalize_denoise_spec(denoise, default_when="pre_ti")
+            except DenoiseCausalityError as exc:
+                return {
+                    "success": False,
+                    "error_code": "denoise_non_causal_requires_opt_in",
+                    "error": (
+                        f"Denoise method '{exc.method}' requires explicit zero-phase "
+                        "opt-in because it uses future bars."
+                    ),
+                    "operation": "data_fetch_candles",
+                    "remediation": (
+                        "Set denoise causality to zero_phase only for retrospective "
+                        "analysis (CLI: --denoise-params causality=zero_phase). "
+                        "Do not use zero-phase output for live signals or forward tests."
+                    ),
+                    "details": {
+                        "method": exc.method,
+                        "required_causality": "zero_phase",
+                        "uses_future_bars": True,
+                    },
+                }
         symbol = resolve_broker_symbol_name(symbol)
         query_started_at = time.perf_counter()
         # Backward/compat mappings to internal variable names used in implementation

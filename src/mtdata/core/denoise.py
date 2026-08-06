@@ -26,6 +26,9 @@ def _summary_denoise_method(row: Dict[str, Any]) -> Dict[str, Any]:
         "method": row.get("method"),
         "available": bool(row.get("available", False)),
         "causality": list(causality) if isinstance(causality, list) else [],
+        "requires_causality_opt_in": bool(
+            row.get("requires_causality_opt_in", False)
+        ),
         "requires": row.get("requires") or None,
         "params": list(params),
     }
@@ -114,13 +117,21 @@ def denoise_list_methods(
                         if isinstance(row.get("supports"), dict)
                         else []
                     ),
+                    "requires_causality_opt_in": bool(
+                        row.get("requires_causality_opt_in", False)
+                    ),
                 }
                 for row in visible
             ]
             if compact_mode
             else [_summary_denoise_method(row) for row in visible]
         )
-        columns = ["method", "available", "causality"]
+        columns = [
+            "method",
+            "available",
+            "causality",
+            "requires_causality_opt_in",
+        ]
         if not compact_mode:
             columns.extend(["requires", "params"])
         out = {
