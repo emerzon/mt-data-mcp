@@ -28,6 +28,7 @@ from ..utils.freshness import (
     standard_weekend_window,
 )
 from ..utils.market_metadata import build_tick_freshness_context
+from ..utils.sessions import market_session_label, session_definition_for_clock
 from ..utils.tick_flags import mt5_trade_event_mask
 from ..utils.time import format_epoch_utc
 
@@ -39,6 +40,22 @@ def _mapping(row: Any) -> Dict[str, Any]:
     if callable(converter):
         return dict(converter())
     return {name: getattr(row, name) for name in dir(row) if not name.startswith("_") and not callable(getattr(row, name, None))}
+
+
+def _classify_trade_sides(
+    trades: pd.DataFrame, prevailing_mid: pd.Series
+) -> pd.Series:
+    """Apply prevailing-quote classification, then the full-series tick rule."""
+    sides = np.sign(trades["last"] - prevailing_mid.loc[trades.index])
+    tick_sides = (
+        np.sign(trades["last"].diff())
+        .replace(0.0, np.nan)
+        .ffill()
+        .fillna(0.0)
+    )
+    zero = sides == 0
+    sides.loc[zero] = tick_sides.loc[zero]
+    return sides
 
 
 def _portfolio_mark_context(gateway: Any, positions: List[Dict[str, Any]]) -> Dict[str, Any]:
@@ -447,9 +464,7 @@ def analyze_microstructure(request: MarketMicrostructureRequest, gateway: Any) -
     if trade_count:
         trades = df.loc[trade_mask].copy()
         prevailing_mid = df["mid"].ffill()
-        trades["side"] = np.sign(trades["last"] - prevailing_mid.loc[trades.index])
-        zero = trades["side"] == 0
-        trades.loc[zero, "side"] = np.sign(trades.loc[zero, "last"].diff()).fillna(0.0)
+        trades["side"] = _classify_trade_sides(trades, prevailing_mid)
         summary["trade_count"] = trade_count
         summary["trade_count_imbalance"] = float(trades["side"].sum() / max(1, trade_count))
         if tier == "trade_volume":
@@ -770,7 +785,10 @@ def analyze_execution_quality(  # noqa: C901
             "hour_utc": datetime.fromtimestamp(fill_epoch, tz=timezone.utc).hour,
         }
         hour = int(item["hour_utc"])
-        item["session"] = "asia" if hour < 7 else "london" if hour < 13 else "overlap" if hour < 17 else "new_york" if hour < 22 else "off"
+        item["session"] = market_session_label(
+            datetime.fromtimestamp(fill_epoch, tz=timezone.utc),
+            session_calendar="fx",
+        )
         try:
             action = getattr(gateway, "ORDER_TYPE_BUY", 0) if side == "buy" else getattr(gateway, "ORDER_TYPE_SELL", 1)
             shortfall = gateway.order_calc_profit(action, symbol, volume, arrival, fill_price)
@@ -892,6 +910,7 @@ def analyze_execution_quality(  # noqa: C901
                     else None
                 ),
             },
+            "session_definition": session_definition_for_clock("UTC", "fx"),
         },
         "sample": {
             "selection_order": "latest_first",
@@ -1739,18 +1758,25 @@ def rank_relative_strength(request: MarketRelativeStrengthRequest, gateway: Any)
         selected.append(name)
         if len(selected) >= request.max_symbols:
             break
-    if request.benchmark and request.benchmark.upper() not in selected:
-        selected.append(request.benchmark.upper())
+    candidate_symbols = list(selected)
+    data_symbols = list(candidate_symbols)
+    if request.benchmark and request.benchmark.upper() not in data_symbols:
+        data_symbols.append(request.benchmark.upper())
     lookback = max(max(request.horizons) + request.volatility_lookback + 15, 100)
     histories: Dict[str, pd.DataFrame] = {}
     skipped = []
-    for symbol in selected:
+    for symbol in data_symbols:
         bars = _rates(gateway, symbol, request.timeframe, lookback)
         if len(bars) < int(lookback * 0.90):
             skipped.append({"symbol": symbol, "reason": "history coverage below 90%"})
             continue
         histories[symbol] = bars
-    if len(histories) < 2:
+    candidate_histories = {
+        symbol: histories[symbol]
+        for symbol in candidate_symbols
+        if symbol in histories
+    }
+    if len(candidate_histories) < 2:
         return {"error": "At least two symbols with sufficient history are required.", "error_code": "insufficient_data", "skipped": skipped}
     return_frames = []
     for symbol, bars in histories.items():
@@ -1760,7 +1786,7 @@ def rank_relative_strength(request: MarketRelativeStrengthRequest, gateway: Any)
     rows = []
     score_parts: Dict[int, Dict[str, float]] = {h: {} for h in request.horizons}
     stability_parts: Dict[int, Dict[int, Dict[str, float]]] = {offset: {h: {} for h in request.horizons} for offset in (0, 5, 10)}
-    for symbol, bars in histories.items():
+    for symbol, bars in candidate_histories.items():
         own = pd.Series(np.log(bars["close"]).diff().to_numpy(), index=bars["time"].to_numpy()).dropna()
         factor = explicit_factor if explicit_factor is not None else returns.drop(columns=[symbol], errors="ignore").mean(axis=1, skipna=True)
         aligned = pd.concat([own.rename("own"), factor.rename("factor")], axis=1, join="inner").dropna()
@@ -1848,7 +1874,13 @@ def rank_relative_strength(request: MarketRelativeStrengthRequest, gateway: Any)
         ),
         "breadth": breadth,
         "factor": {"source": request.benchmark.upper() if request.benchmark else "equal_weight_universe"},
-        "data_quality": {"selected_symbols": len(selected), "ranked_symbols": len(ordered), "skipped": skipped, "minimum_history_coverage": 0.90},
+        "data_quality": {
+            "selected_symbols": len(candidate_symbols),
+            "data_symbols_fetched": len(histories),
+            "ranked_symbols": len(ordered),
+            "skipped": skipped,
+            "minimum_history_coverage": 0.90,
+        },
         "units": {"raw_momentum": "log_return_fraction", "residual_momentum": "log_return_fraction", "volatility": "per_bar_log_return_stddev", "score": "robust_z_composite", "rank_stability": "fraction_0_to_1", "tick_volume": "broker_tick_count"},
         **({"all_rankings": ordered} if request.detail == "full" else {}),
     }

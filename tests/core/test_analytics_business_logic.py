@@ -10,6 +10,7 @@ import pytest
 
 from mtdata.analytics.engines import (
     _barrier_returns,
+    _classify_trade_sides,
     _execution_duration_display,
     _execution_percentiles,
     _filtered_historical_returns,
@@ -27,6 +28,7 @@ from mtdata.core.analytics_requests import (
     StrategyValidateRequest,
     TradeExecutionQualityRequest,
 )
+from mtdata.utils.sessions import market_session_label
 
 
 def _now() -> int:
@@ -197,6 +199,15 @@ def test_microstructure_does_not_recount_last_trade_snapshots() -> None:
     assert result["success"] is True
     assert result["summary"]["trade_count"] == 1
     assert result["data_quality"]["trade_tick_coverage"] == pytest.approx(1 / 200)
+
+
+def test_microstructure_tick_rule_uses_immediately_preceding_trade() -> None:
+    trades = pd.DataFrame({"last": [100.0, 101.0, 100.5]}, index=[0, 1, 2])
+    prevailing_mid = pd.Series([100.0, 100.5, 100.5], index=[0, 1, 2])
+
+    sides = _classify_trade_sides(trades, prevailing_mid)
+
+    assert list(sides) == [0.0, 1.0, -1.0]
 
 
 def test_microstructure_keeps_single_sided_quote_updates() -> None:
@@ -382,6 +393,19 @@ def test_execution_quality_matches_order_and_computes_markout() -> None:
     assert result["items"][0]["order_type_code"] == 0
     assert result["breakdowns"]["by_order_type"][0]["order_type"] == "BUY"
     assert result["breakdowns"]["by_order_type"][0]["order_type_code"] == 0
+    assert result["data_quality"]["session_definition"]["basis"] == (
+        "dst_aware_market_sessions"
+    )
+
+
+def test_execution_session_clock_tracks_london_new_york_dst_mismatch() -> None:
+    winter = datetime(2026, 1, 12, 12, 30, tzinfo=timezone.utc)
+    summer = datetime(2026, 7, 13, 12, 30, tzinfo=timezone.utc)
+
+    assert market_session_label(winter, session_calendar="fx") == "london"
+    assert market_session_label(summer, session_calendar="fx") == (
+        "london_ny_overlap"
+    )
 
 
 def test_execution_quality_separates_pending_wait_from_market_latency() -> None:
@@ -884,3 +908,24 @@ def test_relative_strength_ranks_and_reports_breadth() -> None:
     assert result["rank_quality"] == "illustrative_small_universe"
     assert result["score_definition"]["weights"] == [0.4, 0.6]
     assert all("rank_percentile" not in row for row in result["leaders"])
+
+
+def test_relative_strength_fetches_external_benchmark_without_ranking_it() -> None:
+    gateway = FakeGateway()
+    request = MarketRelativeStrengthRequest(
+        symbols="EURUSD,GBPUSD",
+        benchmark="USDJPY",
+        horizons=[5],
+        weights=[1.0],
+        volatility_lookback=30,
+        limit=2,
+        detail="full",
+    )
+
+    result = rank_relative_strength(request, gateway)
+
+    assert result["success"] is True
+    assert result["universe_size"] == 2
+    assert result["data_quality"]["selected_symbols"] == 2
+    assert result["data_quality"]["data_symbols_fetched"] == 3
+    assert "USDJPY" not in {row["symbol"] for row in result["all_rankings"]}
