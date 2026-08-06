@@ -104,7 +104,7 @@ def test_market_depth_tick_fallback_hides_zero_last_display() -> None:
 
 def test_market_depth_full_depth_includes_price_display() -> None:
     depth = [
-        {"price": 65601.0, "volume": 1.0, "volume_real": 1.0, "type": 0},
+        {"price": 65601.0, "volume": 1.0, "volume_real": 1.0, "type": 2},
         {"price": 65602.5, "volume": 2.0, "volume_real": 2.0, "type": 1},
     ]
     with patch("mtdata.core.market_depth.mt5") as mt5:
@@ -127,7 +127,7 @@ def test_market_depth_full_depth_includes_price_display() -> None:
 def test_market_depth_full_depth_accepts_mt5_bookinfo_volume_dbl() -> None:
     BookInfo = namedtuple("BookInfo", ["type", "price", "volume", "volume_dbl"])
     depth = [
-        BookInfo(type=0, price=65601.0, volume=1, volume_dbl=1.25),
+        BookInfo(type=2, price=65601.0, volume=1, volume_dbl=1.25),
         BookInfo(type=1, price=65602.5, volume=2, volume_dbl=2.5),
     ]
     with patch("mtdata.core.market_depth.mt5") as mt5:
@@ -144,9 +144,31 @@ def test_market_depth_full_depth_accepts_mt5_bookinfo_volume_dbl() -> None:
     assert out["data"]["sell_orders"][0]["volume_real"] == 2.5
 
 
+def test_market_depth_classifies_all_official_mt5_book_types() -> None:
+    depth = [
+        {"price": 101.0, "volume": 1.0, "volume_real": 1.0, "type": 1},
+        {"price": 100.0, "volume": 1.0, "volume_real": 1.0, "type": 2},
+        {"price": 102.0, "volume": 1.0, "volume_real": 1.0, "type": 3},
+        {"price": 99.0, "volume": 1.0, "volume_real": 1.0, "type": 4},
+        {"price": 98.0, "volume": 1.0, "volume_real": 1.0, "type": 99},
+    ]
+    with patch("mtdata.core.market_depth.mt5") as mt5:
+        mt5.symbol_select.return_value = True
+        mt5.symbol_info.return_value = SimpleNamespace(digits=2)
+        mt5.market_book_get.return_value = depth
+
+        out = _raw_market_depth_fetch("BTCUSD", spread=True)
+
+    assert out["data"]["depth_levels"] == {"buy": 2, "sell": 2, "total": 4}
+    assert out["data"]["best_bid"] == 100.0
+    assert out["data"]["best_ask"] == 101.0
+    assert out["data"]["unclassified_orders"][0]["book_type"] == 99
+    assert out["capabilities"]["unclassified_depth_levels"] == 1
+
+
 def test_market_depth_subscribes_and_releases_book_snapshot() -> None:
     depth = [
-        {"price": 65601.0, "volume": 1.0, "volume_real": 1.0, "type": 0},
+        {"price": 65601.0, "volume": 1.0, "volume_real": 1.0, "type": 2},
         {"price": 65602.5, "volume": 2.0, "volume_real": 2.0, "type": 1},
     ]
     with patch("mtdata.core.market_depth.mt5") as mt5:
@@ -190,7 +212,7 @@ def test_market_depth_releases_book_after_empty_snapshot() -> None:
 
 def test_market_depth_waits_for_initial_subscribed_snapshot() -> None:
     depth = [
-        {"price": 65601.0, "volume": 1.0, "volume_real": 1.0, "type": 0},
+        {"price": 65601.0, "volume": 1.0, "volume_real": 1.0, "type": 2},
     ]
     with patch("mtdata.core.market_depth.mt5") as mt5, patch(
         "mtdata.core.market_depth.time.sleep"
@@ -261,7 +283,7 @@ def test_market_depth_compact_mode_fails_fast_without_dom() -> None:
 
 def test_market_depth_full_depth_includes_spread_metrics_when_requested() -> None:
     depth = [
-        {"price": 100.0, "volume": 1.0, "volume_real": 1.0, "type": 0},
+        {"price": 100.0, "volume": 1.0, "volume_real": 1.0, "type": 2},
         {"price": 101.0, "volume": 2.0, "volume_real": 2.0, "type": 1},
     ]
     with patch("mtdata.core.market_depth.mt5") as mt5:
@@ -284,7 +306,7 @@ def test_market_depth_full_depth_includes_spread_metrics_when_requested() -> Non
 
 def test_market_depth_spread_overlay_skips_all_none_book_prices() -> None:
     depth = [
-        {"price": None, "volume": 1.0, "volume_real": 1.0, "type": 0},
+        {"price": None, "volume": 1.0, "volume_real": 1.0, "type": 2},
         {"price": None, "volume": 2.0, "volume_real": 2.0, "type": 1},
     ]
     with patch("mtdata.core.market_depth.mt5") as mt5:

@@ -399,6 +399,7 @@ def _market_depth_fetch_impl(symbol: str, spread: bool = False, require_dom: boo
             if depth is not None and len(depth) > 0:
                 buy_orders = []
                 sell_orders = []
+                unclassified_orders = []
 
                 for level in depth:
                     try:
@@ -421,10 +422,14 @@ def _market_depth_fetch_impl(symbol: str, spread: bool = False, require_dom: boo
                         "volume_real": volume_real,
                     }
 
-                    if level_type == 0:
+                    if level_type in {2, 4}:
                         buy_orders.append(order_data)
-                    else:
+                    elif level_type in {1, 3}:
                         sell_orders.append(order_data)
+                    else:
+                        unclassified_orders.append(
+                            {**order_data, "book_type": level_type}
+                        )
 
                 out = {
                     "success": True,
@@ -446,9 +451,22 @@ def _market_depth_fetch_impl(symbol: str, spread: bool = False, require_dom: boo
                             "sell": int(len(sell_orders)),
                             "total": int(len(buy_orders) + len(sell_orders)),
                         },
+                        **(
+                            {"unclassified_orders": unclassified_orders}
+                            if unclassified_orders
+                            else {}
+                        ),
                     },
                     "units": dict(_MARKET_DEPTH_BOOK_UNITS),
                 }
+                if unclassified_orders:
+                    out["capabilities"]["unclassified_depth_levels"] = int(
+                        len(unclassified_orders)
+                    )
+                    out["warnings"] = [
+                        "Depth rows with unknown MT5 book types were not assigned "
+                        "to either side."
+                    ]
                 if spread and buy_orders and sell_orders:
                     valid_buy_prices = [
                         float(row.get("price"))
