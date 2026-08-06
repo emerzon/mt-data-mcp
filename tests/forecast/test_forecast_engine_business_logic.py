@@ -39,6 +39,26 @@ def test_normalize_weights_and_lookback_helpers():
     assert fe._normalize_weights([-1, 0], 2) is None
 
 
+def test_training_context_versions_return_value_policy():
+    df = _df(4)
+    target = pd.Series([1.0, 2.0, 3.0], index=df.index[-3:])
+    kwargs = {
+        "df": df,
+        "target_series": target,
+        "base_col": "close",
+        "denoise": None,
+        "features": None,
+        "target_spec": None,
+        "exog": None,
+    }
+
+    price_context = fe._training_context_fingerprint(quantity="price", **kwargs)
+    return_context = fe._training_context_fingerprint(quantity="return", **kwargs)
+
+    assert "invalid_target_value_policy" not in price_context
+    assert return_context["invalid_target_value_policy"] == "mask_v1"
+
+
 def test_available_methods_filters_dependency_unavailable_registry_entries(monkeypatch):
     monkeypatch.setattr(
         fe.ForecastRegistry,

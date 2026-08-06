@@ -41,6 +41,7 @@ from .exceptions import ForecastError, raise_if_error_result
 from .forecast import forecast
 from .forecast_validation import attach_denoise_causality_disclosure
 from .gpu_runtime import cleanup_forecast_gpu_runtime, forecast_methods_may_use_gpu
+from .target_builder import _log_return_array
 from .volatility import forecast_volatility
 
 _BREAKEVEN_RETURN_EPS = 1e-12
@@ -1741,10 +1742,8 @@ def forecast_backtest(  # noqa: C901
             if idx + int(horizon) >= len(closes):
                 continue
             if target_mode == 'return' and quantity != 'volatility':
-                prev = np.maximum(closes[idx: idx + int(horizon)], 1e-12)
-                nxt = np.maximum(closes[idx + 1: idx + 1 + int(horizon)], 1e-12)
-                with np.errstate(divide='ignore', invalid='ignore'):
-                    actual = np.log(nxt / prev).tolist()
+                price_window = closes[idx: idx + int(horizon) + 1]
+                actual = _log_return_array(price_window, k=1)[1:].tolist()
             else:
                 actual = closes[idx + 1: idx + 1 + int(horizon)].tolist()
             ts = times[idx + 1: idx + 1 + int(horizon)].tolist()

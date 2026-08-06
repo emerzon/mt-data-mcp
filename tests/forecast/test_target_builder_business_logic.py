@@ -175,12 +175,10 @@ class TestLogReturnArray:
         expected = np.log(prices[2:]) - np.log(prices[:-2])
         np.testing.assert_allclose(y[2:], expected)
 
-    def test_nonpositive_prices_are_clamped(self):
-        """Non-positive prices are floor-clamped to produce finite targets."""
+    def test_nonpositive_prices_are_masked(self):
         prices = np.array([100.0, 0.0, -5.0, 50.0])
         y = tb._log_return_array(prices, k=1)
-        assert np.isnan(y[0])
-        assert np.all(np.isfinite(y[1:])), "clamping should prevent NaN/inf"
+        assert np.isnan(y).all()
 
     def test_single_element(self):
         y = tb._log_return_array(np.array([42.0]), k=1)
@@ -255,10 +253,8 @@ class TestLogReturnReconstructionRoundTrip:
         np.testing.assert_allclose(reconstructed, prices[2:], rtol=1e-10)
 
 
-class TestFeatureVsTargetDivergence:
-    """Document that _safe_log_return_series (feature engineering, NaN policy)
-    and _log_return_array (target building, clamp policy) intentionally diverge
-    on non-positive inputs."""
+class TestFeatureAndTargetParity:
+    """Feature and target log returns share the same invalid-price policy."""
 
     def test_nonpositive_feature_returns_nan(self):
         from mtdata.forecast.forecast_preprocessing import _safe_log_return_series
@@ -269,12 +265,34 @@ class TestFeatureVsTargetDivergence:
         assert np.isnan(feat.iloc[1])
         assert np.isnan(feat.iloc[2])
 
-    def test_nonpositive_target_returns_finite(self):
+    def test_nonpositive_paths_have_identical_missing_values(self):
+        from mtdata.forecast.forecast_preprocessing import _safe_log_return_series
+
         prices = np.array([100.0, 0.0, -5.0, 50.0])
         tgt = tb._log_return_array(prices, k=1)
-        # Target path clamps non-positive to floor → finite values
-        assert np.isnan(tgt[0])
-        assert np.all(np.isfinite(tgt[1:]))
+        feat = _safe_log_return_series(pd.Series(prices)).to_numpy()
+
+        np.testing.assert_array_equal(np.isnan(tgt), np.isnan(feat))
+
+
+def test_simple_return_transforms_mask_zero_denominators():
+    df = pd.DataFrame({"close": [100.0, 0.0, 50.0]})
+
+    returns, _ = tb.build_target_series(
+        df,
+        base_col="close",
+        target_spec={"base": "close", "transform": "return"},
+    )
+    percentages, _ = tb.build_target_series(
+        df,
+        base_col="close",
+        target_spec={"base": "close", "transform": "pct"},
+    )
+
+    assert returns[1] == pytest.approx(-1.0)
+    assert percentages[1] == pytest.approx(-100.0)
+    assert np.isnan(returns[2])
+    assert np.isnan(percentages[2])
 
 
 def test_aggregate_horizon_target_applies_forward_window_aggregations():

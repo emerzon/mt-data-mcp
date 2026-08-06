@@ -25,6 +25,7 @@ from ..utils.utils import parse_kv_or_json as _parse_kv_or_json
 from .common import (
     pd_freq_from_timeframe as _pd_freq_from_timeframe_common,
 )
+from .target_builder import _log_return_array
 
 ParseKvFn = Callable[[Any], Any]
 ParseTiFn = Callable[[Any], Any]
@@ -50,17 +51,10 @@ def _pd_freq_from_timeframe(tf: str) -> str:
 
 
 def _safe_log_return_series(values: pd.Series) -> pd.Series:
-    """Feature-engineering log returns with NaN masking for non-positive prices.
-
-    For target-series log returns with floor-clamping, see
-    ``target_builder._log_return_array`` instead.
-    """
+    """Feature-engineering log returns with canonical invalid-price masking."""
     numeric = pd.to_numeric(values, errors="coerce").astype(float)
-    prev = numeric.shift(1)
-    with np.errstate(divide="ignore", invalid="ignore"):
-        ratio = numeric.where(numeric > 0.0) / prev.where(prev > 0.0)
-        out = np.log(ratio)
-    return pd.Series(out, index=numeric.index, dtype=float).replace([np.inf, -np.inf], np.nan)
+    out = _log_return_array(numeric.to_numpy(dtype=float), k=1)
+    return pd.Series(out, index=numeric.index, dtype=float)
 
 
 def _create_dimred_reducer(method: Any, params: Optional[Dict[str, Any]]) -> Any:

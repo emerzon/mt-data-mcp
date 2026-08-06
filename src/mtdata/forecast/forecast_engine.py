@@ -671,6 +671,7 @@ def build_training_context(
         df=df,
         target_series=target_series,
         base_col=base_col,
+        quantity=quantity_l,
         denoise=denoise,
         features=features,
         target_spec=target_spec,
@@ -792,12 +793,13 @@ def _training_context_fingerprint(
     df: pd.DataFrame,
     target_series: pd.Series,
     base_col: str,
+    quantity: str,
     denoise: Any,
     features: Any,
     target_spec: Any,
     exog: Optional[np.ndarray],
 ) -> Dict[str, Any]:
-    return {
+    fingerprint = {
         "target_points": int(len(target_series)),
         "history_start_epoch": float(df["time"].iloc[0]),
         "training_end_epoch": float(df["time"].iloc[-1]),
@@ -807,6 +809,20 @@ def _training_context_fingerprint(
         "target_spec": _stable_training_value(target_spec),
         "exog_columns": int(exog.shape[1]) if exog is not None and exog.ndim > 1 else 0,
     }
+    target_transform = (
+        str(target_spec.get("transform") or "").strip().lower()
+        if isinstance(target_spec, dict)
+        else ""
+    )
+    if str(quantity).strip().lower() == "return" or target_transform in {
+        "log",
+        "log_return",
+        "pct",
+        "pct_change",
+        "return",
+    }:
+        fingerprint["invalid_target_value_policy"] = "mask_v1"
+    return fingerprint
 
 
 def _params_hash_from_model_id(
@@ -1115,6 +1131,7 @@ def _run_registered_forecast_method(
             df=df,
             target_series=target_series,
             base_col=base_col,
+            quantity=quantity_l,
             denoise=denoise_spec_used,
             features=features,
             target_spec=target_spec,

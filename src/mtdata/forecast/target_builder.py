@@ -11,25 +11,48 @@ from ..utils.indicators import _parse_ti_specs as _parse_ti_specs_util
 logger = logging.getLogger(__name__)
 
 
-def _log_return_array(
-    prices: np.ndarray, k: int = 1, floor: float = 1e-12,
-) -> np.ndarray:
+def _log_return_array(prices: np.ndarray, k: int = 1) -> np.ndarray:
     """Canonical log-return computation for target series.
 
-    Non-positive prices are clamped to *floor* so the target array stays finite
-    (NaN-free) for downstream model training.  The first *k* elements are set
-    to NaN because they have no valid lag reference.
-
-    For feature-engineering log returns with NaN masking, see
-    ``forecast_preprocessing._safe_log_return_series`` instead.
+    A return is missing when either price is non-finite or non-positive. The
+    first *k* elements are also missing because they have no lag reference.
     """
     prices = np.asarray(prices, dtype=float).reshape(-1)
     k = max(1, int(k))
-    prev = np.roll(prices, k)
+    y = np.full(prices.shape, np.nan, dtype=float)
+    if prices.size <= k:
+        return y
+    current = prices[k:]
+    previous = prices[:-k]
+    valid = (
+        np.isfinite(current)
+        & np.isfinite(previous)
+        & (current > 0.0)
+        & (previous > 0.0)
+    )
     with np.errstate(divide="ignore", invalid="ignore"):
-        y = np.log(np.maximum(prices, floor)) - np.log(np.maximum(prev, floor))
-    y = y.astype(float, copy=False)
-    y[:k] = np.nan
+        values = np.log(current) - np.log(previous)
+    y[k:] = np.where(valid, values, np.nan)
+    return y
+
+
+def _simple_return_array(values: np.ndarray, k: int = 1) -> np.ndarray:
+    """Compute lagged simple returns while masking invalid denominators."""
+    values = np.asarray(values, dtype=float).reshape(-1)
+    k = max(1, int(k))
+    y = np.full(values.shape, np.nan, dtype=float)
+    if values.size <= k:
+        return y
+    current = values[k:]
+    previous = values[:-k]
+    valid = (
+        np.isfinite(current)
+        & np.isfinite(previous)
+        & (np.abs(previous) > 1e-12)
+    )
+    with np.errstate(divide="ignore", invalid="ignore"):
+        returns = (current - previous) / previous
+    y[k:] = np.where(valid, returns, np.nan)
     return y
 
 
@@ -116,17 +139,16 @@ def build_target_series(
         y = y_base
         target_info['transform'] = 'none'
     elif transform in ('return',):
-        prev = np.roll(y_base, k)
-        with np.errstate(divide='ignore', invalid='ignore'):
-            y = (y_base - prev) / np.where(np.abs(prev) > 1e-12, prev, 1.0)
-        y = y.astype(float, copy=False)
-        y[:k] = np.nan
+        y = _simple_return_array(y_base, k=k)
         target_info['transform'] = f'return(k={k})'
     elif transform == 'log_return':
         y = _log_return_array(y_base, k=k)
         target_info['transform'] = f'log_return(k={k})'
     elif transform == 'log':
-        y = np.log(np.maximum(y_base, 1e-12))
+        y = np.full(np.asarray(y_base).shape, np.nan, dtype=float)
+        valid = np.isfinite(y_base) & (y_base > 0.0)
+        with np.errstate(divide='ignore', invalid='ignore'):
+            y[valid] = np.log(y_base[valid])
         target_info['transform'] = 'log'
     elif transform == 'diff':
         prev = np.roll(y_base, k)
@@ -135,13 +157,9 @@ def build_target_series(
         y[:k] = np.nan
         target_info['transform'] = f'diff(k={k})'
     elif transform in ('pct_change', 'pct'):
-        prev = np.roll(y_base, k)
-        with np.errstate(divide='ignore', invalid='ignore'):
-            y = (y_base - prev) / np.where(np.abs(prev) > 1e-12, prev, 1.0)
+        y = _simple_return_array(y_base, k=k)
         if transform == 'pct':
             y = 100.0 * y
-        y = y.astype(float, copy=False)
-        y[:k] = np.nan
         target_info['transform'] = f'{"pct" if transform == "pct" else "pct_change"}(k={k})'
     else:
         y = y_base
