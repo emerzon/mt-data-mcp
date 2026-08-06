@@ -1167,7 +1167,12 @@ def test_run_forecast_backtest_strips_per_anchor_details_in_compact_mode():
             "success": True,
             "request": {"detail": "compact"},
             "resolved_request": {"detail": "compact", "methods": ["theta"]},
-            "units": {"returns": "return_fraction", "forecast_error": "price"},
+            "units": {
+                "returns": "return_fraction",
+                "forecast_error": "price",
+                "avg_mae": "price",
+                "avg_rmse": "price",
+            },
             "results": {
                 "theta": {
                     "avg_mae": 1.0,
@@ -1193,8 +1198,11 @@ def test_run_forecast_backtest_strips_per_anchor_details_in_compact_mode():
     assert "request" not in result
     assert "resolved_request" not in result
     assert "results" not in result
-    assert "units" not in result
-    assert result["units_profile"] == "forecast_backtest_v1"
+    assert result["units"] == {
+        "forecast_error": "price",
+        "avg_mae": "price",
+    }
+    assert "units_profile" not in result
     assert result["ranked_methods"][0]["method"] == "theta"
     assert result["ranked_methods"][0]["details_count"] == 1
     assert "metrics" not in result["ranked_methods"][0]

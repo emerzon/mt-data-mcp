@@ -553,7 +553,8 @@ accuracy is a separate diagnostic for step-to-step shape agreement.
 **Example:** Directional accuracy = 0.58 means 58% of forecasts got the direction right.
 
 **Interpretation:**
-- 0.50 = random guessing
+- 0.50 is the balanced binary-chance reference when realized directions are
+  non-flat; flat outcomes and class imbalance change the empirical baseline
 - 0.55+ is generally useful for trading
 - High directional accuracy with high MAE: right direction, wrong magnitude
 

@@ -48,6 +48,11 @@ def test_backtest_return_target_scores_against_returns() -> None:
     assert detail["success"] is True
     assert abs(float(detail["mae"])) < 1e-12
     assert abs(float(detail["rmse"])) < 1e-12
+    assert res["units"]["avg_mae"] == "log_return"
+    assert res["units"]["avg_rmse"] == "log_return"
+    reference = res["directional_accuracy_reference"]
+    assert reference["value"] == 0.5
+    assert reference["basis"] == "balanced_binary_chance"
 
 
 def test_backtest_volatility_with_return_target_uses_price_truth_windows() -> None:
@@ -77,6 +82,8 @@ def test_backtest_volatility_with_return_target_uses_price_truth_windows() -> No
     detail = res["results"]["ewma"]["details"][0]
     assert bool(detail["success"]) is True
     assert abs(float(detail["realized_sigma"]) - expected_sigma) < 1e-12
+    assert res["units"]["avg_rmse"] == "return_fraction"
+    assert "directional_accuracy_reference" not in res
 
 
 def test_backtest_aggregates_volatility_rmse_from_squared_errors() -> None:

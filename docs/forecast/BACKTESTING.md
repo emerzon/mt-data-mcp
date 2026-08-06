@@ -177,6 +177,16 @@ mtdata-cli forecast_backtest_run EURUSD --horizon 12 --methods theta \
 
 ```json
 {
+  "units": {
+    "forecast_error": "price",
+    "avg_mae": "price",
+    "avg_rmse": "price",
+    "avg_directional_accuracy": "fraction"
+  },
+  "directional_accuracy_reference": {
+    "value": 0.5,
+    "basis": "balanced_binary_chance"
+  },
   "ranked_methods": [
     {
       "method": "theta",
@@ -200,6 +210,12 @@ mtdata-cli forecast_backtest_run EURUSD --horizon 12 --methods theta \
 | `avg_path_directional_accuracy` | Diagnostic agreement between forecast and realized step-to-step path directions | context-dependent |
 | `win_rate` | % of profitable forecast-target/horizon trades | > 0.50 |
 | `successful_tests` | Tests that completed without error | = num_tests |
+
+MAE and RMSE use the forecast target's native space: symbol price for
+`quantity=price`, log return for `quantity=return`, and return fraction for
+`quantity=volatility`. The 0.5 directional reference assumes balanced, non-flat
+binary outcomes; flat observations and class imbalance change the empirical
+baseline, so a below-reference result is not automatically invertible.
 
 ### Trading Performance Metrics
 

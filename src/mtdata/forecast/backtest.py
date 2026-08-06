@@ -2294,6 +2294,17 @@ def forecast_backtest(  # noqa: C901
             "detail": detail_mode,
             "results": results,
         }
+        if quantity != "volatility":
+            result_payload["directional_accuracy_reference"] = {
+                "value": 0.5,
+                "basis": "balanced_binary_chance",
+                "applicability": "non_flat_balanced_realized_directions",
+                "note": (
+                    "Flat outcomes and directional class imbalance change the empirical "
+                    "baseline; a result below 0.5 is not by itself proof of an "
+                    "invertible signal."
+                ),
+            }
         if failed_methods:
             result_payload["failed_methods"] = failed_methods
         if not successful_methods:
