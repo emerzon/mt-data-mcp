@@ -106,16 +106,13 @@ def _days_to_expiry(
     maturity_basis: str,
 ) -> int:
     if maturity_basis == "business_days":
-        return max(
-            1,
-            int(
-                calendar.businessDaysBetween(
-                    _quantlib_date(ql, valuation_day),
-                    _quantlib_date(ql, expiry_date),
-                )
-            ),
+        return int(
+            calendar.businessDaysBetween(
+                _quantlib_date(ql, valuation_day),
+                _quantlib_date(ql, expiry_date),
+            )
         )
-    return max(1, int((expiry_date - valuation_day).days))
+    return int((expiry_date - valuation_day).days)
 
 
 def price_barrier_option_quantlib(
@@ -528,6 +525,17 @@ def calibrate_heston_quantlib_from_options(
                     "Use YYYY-MM-DD."
                 )
             }
+    if valuation_day >= expiry_date:
+        return {
+            "error": (
+                "valuation_date must be before the option expiration date. "
+                f"Received valuation_date={valuation_day.isoformat()} and "
+                f"expiration={expiry_date.isoformat()}."
+            ),
+            "error_code": "invalid_expiration_date_range",
+            "valuation_date": valuation_day.isoformat(),
+            "expiration": expiry_date.isoformat(),
+        }
     days_to_expiry = _days_to_expiry(
         ql=ql,
         calendar=calendar_obj,
@@ -535,6 +543,17 @@ def calibrate_heston_quantlib_from_options(
         expiry_date=expiry_date,
         maturity_basis=maturity_basis_norm,
     )
+    if days_to_expiry <= 0:
+        return {
+            "error": (
+                "The selected calendar and maturity basis produce no positive "
+                "time to expiration."
+            ),
+            "error_code": "invalid_expiration_maturity",
+            "valuation_date": valuation_day.isoformat(),
+            "expiration": expiry_date.isoformat(),
+            "days_to_expiry_basis": maturity_basis_norm,
+        }
 
     ql_today = _quantlib_date(ql, valuation_day)
     ql.Settings.instance().evaluationDate = ql_today
@@ -556,7 +575,7 @@ def calibrate_heston_quantlib_from_options(
     helpers: List[Any] = []
     # HestonModelHelper Period(Days) is calendar-based. Anchor it to the
     # contract's actual expiry date even when diagnostics use business days.
-    maturity_calendar_days = max(1, int((expiry_date - valuation_day).days))
+    maturity_calendar_days = int((expiry_date - valuation_day).days)
     maturity = ql.Period(maturity_calendar_days, ql.Days)
     for row in rows:
         helper_option_type = (

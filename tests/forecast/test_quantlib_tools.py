@@ -3,6 +3,8 @@ from __future__ import annotations
 import datetime as _dt
 import types
 
+import pytest
+
 from mtdata.forecast import quantlib_tools as qtools
 
 
@@ -459,3 +461,33 @@ def test_calibrate_heston_rejects_invalid_valuation_date(monkeypatch):
     assert out == {
         "error": "Invalid valuation_date: 12/01/2026. Use YYYY-MM-DD."
     }
+
+
+@pytest.mark.parametrize("valuation_date", ["2026-12-19", "2026-12-20"])
+def test_calibrate_heston_rejects_nonpositive_contract_maturity(
+    monkeypatch, valuation_date
+):
+    monkeypatch.setitem(__import__("sys").modules, "QuantLib", _make_fake_quantlib())
+    monkeypatch.setattr(
+        qtools,
+        "get_options_chain",
+        lambda **_kwargs: {
+            "success": True,
+            "expiration": "2026-12-19",
+            "underlying_price": 100.0,
+            "options": [
+                {"strike": strike, "implied_volatility": 0.25, "side": "call"}
+                for strike in (90, 95, 100, 105, 110)
+            ],
+        },
+    )
+
+    out = qtools.calibrate_heston_quantlib_from_options(
+        symbol="AAPL",
+        expiration="2026-12-19",
+        valuation_date=valuation_date,
+    )
+
+    assert out["error_code"] == "invalid_expiration_date_range"
+    assert out["valuation_date"] == valuation_date
+    assert out["expiration"] == "2026-12-19"
