@@ -705,6 +705,7 @@ def _build_trade_evaluation(
     if level_error:
         out["status"] = "invalid"
         out["error"] = level_error
+        return out
 
     sl_distance = abs(float(entry) - float(stop_loss))
     out["sl_distance_price"] = round(sl_distance, 10)
@@ -880,6 +881,68 @@ def _shape_trade_risk_analyze_payload(
     if isinstance(position_sizing, dict):
         shaped["position_sizing"] = _compact_trade_risk_position_sizing(position_sizing)
     return shaped
+
+
+def _apply_trade_candidate_outcome(result: Dict[str, Any]) -> Dict[str, Any]:
+    """Promote proposed-trade validity to the operation-level contract."""
+    evaluation = result.get("trade_evaluation")
+    if not isinstance(evaluation, dict):
+        return result
+
+    candidate_status = str(evaluation.get("status") or "").strip().lower()
+    if candidate_status == "valid":
+        result["candidate_valid"] = True
+        result["candidate_status"] = "valid"
+        return result
+    if candidate_status != "invalid":
+        return result
+
+    candidate_error = evaluation.get("error")
+    sizing_error = result.get("position_sizing_error")
+    candidate_error_codes = {
+        "direction_inference_ambiguous",
+        "direction_unable_to_infer",
+        "invalid_direction",
+        "invalid_sl_for_direction",
+        "invalid_tp_for_direction",
+        "non_positive_sl_distance",
+    }
+    if (
+        not isinstance(candidate_error, dict)
+        and isinstance(sizing_error, dict)
+        and sizing_error.get("code") in candidate_error_codes
+    ):
+        candidate_error = sizing_error
+
+    error_code = "invalid_trade_candidate"
+    error_message = "The proposed trade is invalid."
+    if isinstance(candidate_error, dict):
+        error_code = str(candidate_error.get("code") or error_code)
+        error_message = str(
+            candidate_error.get("reason")
+            or candidate_error.get("message")
+            or error_message
+        )
+    elif candidate_error:
+        error_message = str(candidate_error)
+        direction_source = str(evaluation.get("direction_source") or "")
+        if direction_source == "unable_to_infer":
+            error_code = "direction_unable_to_infer"
+        elif evaluation.get("direction") is None:
+            error_code = "invalid_direction"
+
+    result.update(
+        {
+            "success": False,
+            "candidate_valid": False,
+            "candidate_status": "invalid",
+            "error_code": error_code,
+            "error": error_message,
+            "portfolio_snapshot_status": "available",
+        }
+    )
+    result.pop("position_sizing", None)
+    return result
 
 
 def _shape_trade_var_cvar_payload(
@@ -3195,6 +3258,7 @@ def run_trade_risk_analyze(  # noqa: C901
     )
 
     def _finish(result: Dict[str, Any]) -> Dict[str, Any]:
+        result = _apply_trade_candidate_outcome(result)
         result = _shape_trade_risk_analyze_payload(
             result,
             detail=str(getattr(request, "detail", "compact")),

@@ -418,6 +418,8 @@ def test_trade_risk_analyze_evaluates_trade_levels_without_desired_risk_pct() ->
         )
 
     assert out["success"] is True
+    assert out["candidate_valid"] is True
+    assert out["candidate_status"] == "valid"
     assert out["position_sizing"]["missing"] == ["desired_risk_pct"]
     assert "--desired-risk-pct" in out["position_sizing"]["message"]
     assert out["trade_evaluation"] == {
@@ -519,6 +521,11 @@ def test_trade_risk_analyze_rejects_direction_inference_inside_spread() -> None:
 
     assert out["trade_evaluation"]["status"] == "invalid"
     assert out["trade_evaluation"]["direction"] is None
+    assert out["success"] is False
+    assert out["candidate_valid"] is False
+    assert out["candidate_status"] == "invalid"
+    assert out["error_code"] == "direction_inference_ambiguous"
+    assert out["portfolio_snapshot_status"] == "available"
     error = out["position_sizing_error"]
     assert error["code"] == "direction_inference_ambiguous"
     assert error["entry_in_spread"] is True
@@ -950,8 +957,39 @@ def test_trade_risk_analyze_rejects_wrong_side_stop_for_short_trade() -> None:
         )
 
     err = out["position_sizing_error"]
+    assert out["success"] is False
+    assert out["candidate_valid"] is False
+    assert out["candidate_status"] == "invalid"
+    assert out["error_code"] == "invalid_sl_for_direction"
+    assert out["portfolio_snapshot_status"] == "available"
     assert err["code"] == "invalid_sl_for_direction"
     assert err["reason"] == "For short trades, stop_loss must be above entry."
+    assert "risk_per_lot" not in out["trade_evaluation"]
+    assert "sl_distance_ticks" not in out["trade_evaluation"]
+    assert "position_sizing" not in out
+
+
+def test_trade_risk_analyze_rejects_invalid_explicit_candidate_direction() -> None:
+    mt5 = MagicMock()
+    mt5.account_info.return_value = SimpleNamespace(equity=1000.0, currency="USD")
+    mt5.positions_get.return_value = []
+    mt5.symbol_info.return_value = _make_symbol_info()
+
+    with _patched_mt5_module(mt5):
+        out = trade_risk_analyze(
+            symbol="EURUSD",
+            direction="sideways",
+            entry=100.0,
+            stop_loss=95.0,
+        )
+
+    assert out["success"] is False
+    assert out["candidate_valid"] is False
+    assert out["candidate_status"] == "invalid"
+    assert out["error_code"] == "invalid_direction"
+    assert out["portfolio_snapshot_status"] == "available"
+    assert out["account"]["equity"] == 1000.0
+    assert out["trade_evaluation"]["status"] == "invalid"
     assert "position_sizing" not in out
 
 

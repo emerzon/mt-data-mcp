@@ -46,6 +46,12 @@ account-wide margin stress remains a hard safety gate. Existing positions on oth
 symbols do not prevent sizing, but the returned `sizing_risk_policy` states that the
 suggestion is not an aggregate portfolio stop-risk cap.
 
+Candidate validation is independent of portfolio observation. A valid proposed
+trade returns `candidate_valid: true`. If its direction, stop, or target is
+invalid, the response retains the account and portfolio snapshot but returns
+`success: false`, `candidate_valid: false`, a structured `error_code`, and
+`portfolio_snapshot_status: available`; CLI callers receive a nonzero exit status.
+
 ### Kelly sizing
 
 Set `sizing_method=kelly` and supply edge statistics:
