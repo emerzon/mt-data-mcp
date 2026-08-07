@@ -1178,6 +1178,8 @@ def regime_detect(  # noqa: C901
           when include_series=True. Reliability is based on calibration quality.
           Best for detecting transition timing.
         - 'hmm', 'ms_ar', 'clustering': Return 'state' array and 'state_probabilities'.
+          HMM/MS-AR probabilities are model posteriors before causal state-change
+          confirmation, so their argmax can temporarily differ from emitted state.
           Labels like 'positive_low_vol' describe regime characteristics (return + volatility).
           Reliability based on model fit or cluster separation.
         - 'garch': Fits GARCH(1,1), then classifies its conditional-volatility
@@ -1933,13 +1935,13 @@ def regime_detect(  # noqa: C901
 
         elif method == "ms_ar":
             try:
-                from statsmodels.tsa.regime_switching.markov_regression import (
-                    MarkovRegression,  # type: ignore
+                from statsmodels.tsa.regime_switching.markov_autoregression import (
+                    MarkovAutoregression,  # type: ignore
                 )
             except ImportError:
                 return _finish(
                     {
-                        "error": "statsmodels MarkovRegression not available. Install statsmodels.",
+                        "error": "statsmodels MarkovAutoregression not available. Install statsmodels.",
                         "error_code": "dependency_missing",
                         "details": {"method": "ms_ar", "requires": ["statsmodels"]},
                     }
@@ -1955,14 +1957,25 @@ def regime_detect(  # noqa: C901
                 return _finish({"error": n_states_error})
             if n_states_msar is None or n_states_msar < 2:
                 return _finish({"error": "n_states must be >= 2 for ms_ar."})
-            # Default AR(1) so MS-AR is an actual switching autoregression, not intercept-only.
             order, _ = _coerce_param(p, "order", default=1, cast=int)
+            if order < 1:
+                return _finish({"error": "params.order must be >= 1 for ms_ar."})
+            if x.size <= order:
+                return _finish(
+                    {
+                        "error": (
+                            f"ms_ar order={order} requires more than {order} "
+                            "usable observations."
+                        )
+                    }
+                )
             try:
-                mod = MarkovRegression(
+                mod = MarkovAutoregression(
                     endog=x,
                     k_regimes=max(2, n_states_msar),
                     trend="c",
-                    order=max(0, order),
+                    order=order,
+                    switching_ar=True,
                     switching_variance=True,
                 )
                 maxiter, _ = _coerce_param(p, "maxiter", default=100, cast=int)
@@ -1978,6 +1991,13 @@ def regime_detect(  # noqa: C901
                 if hasattr(marginal, "values"):
                     marginal = marginal.values
                 probs = np.asarray(marginal, dtype=float)
+                x_model = np.asarray(x[order:], dtype=float)
+                t_fmt_model = list(t_fmt[order:])
+                if probs.ndim != 2 or probs.shape[0] != x_model.size:
+                    raise ValueError(
+                        "MarkovAutoregression probability rows did not match "
+                        "the AR-aligned analysis window"
+                    )
                 raw_state = np.argmax(probs, axis=1)
                 state, smoothing_meta = _confirm_state_changes_causally(
                     np.asarray(raw_state, dtype=int), min_regime_bars_val
@@ -1985,7 +2005,7 @@ def regime_detect(  # noqa: C901
                 state, probs, canon_meta = _canonicalize_regime_labels(
                     state,
                     probs,
-                    x,
+                    x_model,
                 )
                 smoothing_meta["relabeled"] = canon_meta.get("relabeled", False)
                 mle_retvals = getattr(res, "mle_retvals", None)
@@ -1997,6 +2017,16 @@ def regime_detect(  # noqa: C901
                         converged = mle_retvals.get("converged")
                     except Exception:
                         converged = getattr(mle_retvals, "converged", None)
+                param_names = list(getattr(getattr(res, "model", None), "param_names", []) or [])
+                try:
+                    param_values = np.asarray(getattr(res, "params", []), dtype=float).reshape(-1)
+                except Exception:
+                    param_values = np.array([], dtype=float)
+                fitted_params = {
+                    str(name): float(value)
+                    for name, value in zip(param_names, param_values)
+                    if np.isfinite(value)
+                }
             except Exception as ex:
                 return _finish({"error": f"MS-AR fitting error: {ex}"})
 
@@ -2006,15 +2036,45 @@ def regime_detect(  # noqa: C901
             # mean / 0.0 vol) for states that smoothing had eliminated,
             # which then leaked into payload labels and downstream scoring.
             unique_canonical_states = sorted(int(s) for s in np.unique(state).tolist())
-            msar_regime_params = {"mean_return": [], "volatility": []}
+            msar_regime_params: Dict[str, Any] = {
+                "mean_return": [],
+                "volatility": [],
+            }
+            label_mapping = {
+                int(old): int(new)
+                for old, new in canon_meta.get("mapping", {}).items()
+            }
+            canonical_to_native = {new: old for old, new in label_mapping.items()}
+            intercepts: List[float] = []
+            innovation_volatility: List[float] = []
+            ar_coefficients: List[List[float]] = []
             for s in unique_canonical_states:
                 mask = state == s
                 if mask.any():
-                    msar_regime_params["mean_return"].append(float(np.mean(x[mask])))
-                    msar_regime_params["volatility"].append(float(np.std(x[mask])))
+                    msar_regime_params["mean_return"].append(float(np.mean(x_model[mask])))
+                    msar_regime_params["volatility"].append(float(np.std(x_model[mask])))
                 else:
                     msar_regime_params["mean_return"].append(0.0)
                     msar_regime_params["volatility"].append(0.0)
+                native_state = canonical_to_native.get(s, s)
+                intercept = fitted_params.get(f"const[{native_state}]")
+                sigma2 = fitted_params.get(f"sigma2[{native_state}]")
+                ar_values = [
+                    fitted_params.get(f"ar.L{lag}[{native_state}]")
+                    for lag in range(1, order + 1)
+                ]
+                if intercept is not None:
+                    intercepts.append(float(intercept))
+                if sigma2 is not None and sigma2 >= 0.0:
+                    innovation_volatility.append(float(np.sqrt(sigma2)))
+                if all(value is not None for value in ar_values):
+                    ar_coefficients.append([float(value) for value in ar_values])
+            if len(intercepts) == len(unique_canonical_states):
+                msar_regime_params["intercept"] = intercepts
+            if len(innovation_volatility) == len(unique_canonical_states):
+                msar_regime_params["innovation_volatility"] = innovation_volatility
+            if len(ar_coefficients) == len(unique_canonical_states):
+                msar_regime_params["ar_coefficients"] = ar_coefficients
 
             payload = {
                 "success": True,
@@ -2022,7 +2082,7 @@ def regime_detect(  # noqa: C901
                 "timeframe": timeframe,
                 "method": method,
                 "target": target,
-                "times": t_fmt,
+                "times": t_fmt_model,
                 "state": [int(s) for s in state.tolist()],
                 "state_probabilities": [
                     [float(v) for v in row] for row in probs.tolist()
@@ -2035,6 +2095,8 @@ def regime_detect(  # noqa: C901
                     "inference": inference,
                     "model_fit_scope": "full_window",
                     "state_postprocess": "causal_confirmation",
+                    "state_probability_alignment": "pre_confirmation_model_probabilities",
+                    "regime_params_order": "canonical",
                     "min_regime_bars": int(min_regime_bars_val),
                     "relabeled": bool(canon_meta.get("relabeled", False)),
                     "smoothing_applied": bool(
@@ -2246,6 +2308,7 @@ def regime_detect(  # noqa: C901
                     "inference": inference if method == "hmm" else "component_responsibility",
                     "model_fit_scope": "full_window",
                     "state_postprocess": "causal_confirmation",
+                    "state_probability_alignment": "pre_confirmation_model_probabilities",
                     "min_regime_bars": int(min_regime_bars_val),
                     "relabeled": bool(canon_meta.get("relabeled", False)),
                     "regime_params_order": "canonical",

@@ -44,6 +44,9 @@ later observations. A state change is emitted only after the new raw state has
 persisted for `min_regime_bars` consecutive observations. This is a causal
 confirmation delay, not a promise that every emitted run will contain that many
 rows; a still-unconfirmed terminal candidate is reported in `warnings`.
+Posterior probabilities remain the model's pre-confirmation values, so their
+argmax can temporarily differ from the confirmed state during that delay;
+`params_used.state_probability_alignment` makes this explicit.
 Model parameters are still fitted on the requested analysis window, and canonical
 state IDs are ordered by full-window state means. Historical canonical IDs are
 therefore retrospective labels; use rolling `as_of` calls for point-in-time tests.
@@ -167,6 +170,11 @@ mtdata-cli regime_detect EURUSD --timeframe H1 --method ms_ar --params "n_states
 Use `n_states` to choose the number of regimes.
 Like HMM, MS-AR defaults to filtered probabilities. Set
 `params.inference=smoothed` only for retrospective analysis.
+The reported probability rows are the model's pre-confirmation posterior values.
+When `min_regime_bars` delays a candidate transition, their argmax can therefore
+temporarily differ from the emitted confirmed `state`; `params_used.state_probability_alignment`
+records this contract. Fitted `intercept`, `ar_coefficients`, and
+`innovation_volatility` values are reported in canonical regime order.
 
 **When to use:**
 - When regime changes affect both mean and autocorrelation structure

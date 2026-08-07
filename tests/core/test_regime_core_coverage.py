@@ -666,25 +666,48 @@ class TestRegimeDetectMSAR:
         df = _make_df(60)
         mock_fetch.return_value = df
         mock_res = MagicMock()
-        probs = np.random.default_rng(0).random((59, 2))
+        probs = np.random.default_rng(0).random((58, 2))
         probs = probs / probs.sum(axis=1, keepdims=True)
         mock_res.smoothed_marginal_probabilities = probs
+        mock_res.filtered_marginal_probabilities = probs
+        mock_res.params = np.array([0.1, 0.2, 0.01, 0.04, 0.3, 0.6])
+        mock_res.model.param_names = [
+            "const[0]", "const[1]", "sigma2[0]", "sigma2[1]",
+            "ar.L1[0]", "ar.L1[1]",
+        ]
         mock_mod = MagicMock()
         mock_mod.return_value = mock_mod
         mock_mod.fit.return_value = mock_res
 
         with patch.dict(
             "sys.modules",
-            {"statsmodels.tsa.regime_switching.markov_regression": MagicMock()},
+            {"statsmodels.tsa.regime_switching.markov_autoregression": MagicMock()},
         ):
             with patch(
-                "statsmodels.tsa.regime_switching.markov_regression.MarkovRegression",
+                "statsmodels.tsa.regime_switching.markov_autoregression.MarkovAutoregression",
                 mock_mod,
                 create=True,
             ):
                 fn = _get_regime_detect()
-                res = fn("EURUSD", limit=60, method="ms_ar", detail="full")
+                res = fn(
+                    "EURUSD",
+                    limit=60,
+                    method="ms_ar",
+                    detail="full",
+                    include_series=True,
+                )
         assert isinstance(res, dict)
+        assert len(res["series"]["times"]) == 58
+        assert res["regime_params"]["ar_coefficients"] in (
+            [[0.3], [0.6]],
+            [[0.6], [0.3]],
+        )
+        call_kwargs = mock_mod.call_args.kwargs
+        assert len(call_kwargs["endog"]) == 59
+        assert call_kwargs["k_regimes"] == 2
+        assert call_kwargs["order"] == 1
+        assert call_kwargs["switching_ar"] is True
+        assert call_kwargs["switching_variance"] is True
 
     @patch(_FMT, side_effect=_time_fmt_stub)
     @patch(_DENOISE, return_value="close")
@@ -694,7 +717,7 @@ class TestRegimeDetectMSAR:
         mock_fetch.return_value = df
         fn = _get_regime_detect()
         with patch.dict(
-            "sys.modules", {"statsmodels.tsa.regime_switching.markov_regression": None}
+            "sys.modules", {"statsmodels.tsa.regime_switching.markov_autoregression": None}
         ):
             # Import will fail → error
             res = fn("EURUSD", limit=50, method="ms_ar")
@@ -714,7 +737,7 @@ class TestRegimeDetectMSAR:
         real_import = builtins.__import__
 
         def _raising_import(name, globals=None, locals=None, fromlist=(), level=0):
-            if name == "statsmodels.tsa.regime_switching.markov_regression":
+            if name == "statsmodels.tsa.regime_switching.markov_autoregression":
                 raise RuntimeError("broken statsmodels import hook")
             return real_import(name, globals, locals, fromlist, level)
 
@@ -723,7 +746,7 @@ class TestRegimeDetectMSAR:
 
         assert "error" in res
         assert "broken statsmodels import hook" in res["error"]
-        assert "MarkovRegression not available" not in res["error"]
+        assert "MarkovAutoregression not available" not in res["error"]
 
     @patch(_FMT, side_effect=_time_fmt_stub)
     @patch(_DENOISE, return_value="close")
@@ -732,19 +755,20 @@ class TestRegimeDetectMSAR:
         df = _make_df(60)
         mock_fetch.return_value = df
         mock_res = MagicMock()
-        probs = np.random.default_rng(1).random((59, 2))
+        probs = np.random.default_rng(1).random((58, 2))
         probs = probs / probs.sum(axis=1, keepdims=True)
         mock_res.smoothed_marginal_probabilities = probs
+        mock_res.filtered_marginal_probabilities = probs
         mock_mod = MagicMock()
         mock_mod.return_value = mock_mod
         mock_mod.fit.return_value = mock_res
 
         with patch.dict(
             "sys.modules",
-            {"statsmodels.tsa.regime_switching.markov_regression": MagicMock()},
+            {"statsmodels.tsa.regime_switching.markov_autoregression": MagicMock()},
         ):
             with patch(
-                "statsmodels.tsa.regime_switching.markov_regression.MarkovRegression",
+                "statsmodels.tsa.regime_switching.markov_autoregression.MarkovAutoregression",
                 mock_mod,
                 create=True,
             ):
@@ -759,19 +783,20 @@ class TestRegimeDetectMSAR:
         df = _make_df(60)
         mock_fetch.return_value = df
         mock_res = MagicMock()
-        probs = np.random.default_rng(2).random((59, 2))
+        probs = np.random.default_rng(2).random((58, 2))
         probs = probs / probs.sum(axis=1, keepdims=True)
         mock_res.smoothed_marginal_probabilities = probs
+        mock_res.filtered_marginal_probabilities = probs
         mock_mod = MagicMock()
         mock_mod.return_value = mock_mod
         mock_mod.fit.return_value = mock_res
 
         with patch.dict(
             "sys.modules",
-            {"statsmodels.tsa.regime_switching.markov_regression": MagicMock()},
+            {"statsmodels.tsa.regime_switching.markov_autoregression": MagicMock()},
         ):
             with patch(
-                "statsmodels.tsa.regime_switching.markov_regression.MarkovRegression",
+                "statsmodels.tsa.regime_switching.markov_autoregression.MarkovAutoregression",
                 mock_mod,
                 create=True,
             ):
@@ -793,10 +818,10 @@ class TestRegimeDetectMSAR:
 
         with patch.dict(
             "sys.modules",
-            {"statsmodels.tsa.regime_switching.markov_regression": MagicMock()},
+            {"statsmodels.tsa.regime_switching.markov_autoregression": MagicMock()},
         ):
             with patch(
-                "statsmodels.tsa.regime_switching.markov_regression.MarkovRegression",
+                "statsmodels.tsa.regime_switching.markov_autoregression.MarkovAutoregression",
                 mock_mod,
                 create=True,
             ):
@@ -812,7 +837,7 @@ class TestRegimeDetectMSAR:
         """When smoothed has .values (DataFrame), convert."""
         df = _make_df(60)
         mock_fetch.return_value = df
-        probs = np.random.default_rng(3).random((59, 2))
+        probs = np.random.default_rng(3).random((58, 2))
         probs = probs / probs.sum(axis=1, keepdims=True)
         mock_smoothed = MagicMock()
         mock_smoothed.values = probs
@@ -820,16 +845,17 @@ class TestRegimeDetectMSAR:
         # Make argmax work on the actual ndarray
         mock_res = MagicMock()
         mock_res.smoothed_marginal_probabilities = mock_smoothed
+        mock_res.filtered_marginal_probabilities = probs
         mock_mod = MagicMock()
         mock_mod.return_value = mock_mod
         mock_mod.fit.return_value = mock_res
 
         with patch.dict(
             "sys.modules",
-            {"statsmodels.tsa.regime_switching.markov_regression": MagicMock()},
+            {"statsmodels.tsa.regime_switching.markov_autoregression": MagicMock()},
         ):
             with patch(
-                "statsmodels.tsa.regime_switching.markov_regression.MarkovRegression",
+                "statsmodels.tsa.regime_switching.markov_autoregression.MarkovAutoregression",
                 mock_mod,
                 create=True,
             ):
@@ -846,7 +872,7 @@ class TestRegimeDetectMSAR:
         df = _make_df(60)
         mock_fetch.return_value = df
         probs = np.tile(np.array([[0.95, 0.05], [0.05, 0.95]], dtype=float), (30, 1))[
-            :59
+            :58
         ]
         mock_res = MagicMock()
         mock_res.smoothed_marginal_probabilities = probs
@@ -858,10 +884,10 @@ class TestRegimeDetectMSAR:
 
         with patch.dict(
             "sys.modules",
-            {"statsmodels.tsa.regime_switching.markov_regression": MagicMock()},
+            {"statsmodels.tsa.regime_switching.markov_autoregression": MagicMock()},
         ):
             with patch(
-                "statsmodels.tsa.regime_switching.markov_regression.MarkovRegression",
+                "statsmodels.tsa.regime_switching.markov_autoregression.MarkovAutoregression",
                 mock_mod,
                 create=True,
             ):
@@ -888,10 +914,10 @@ class TestRegimeDetectMSAR:
         # Compact mode should have trading-focused fields only
         with patch.dict(
             "sys.modules",
-            {"statsmodels.tsa.regime_switching.markov_regression": MagicMock()},
+            {"statsmodels.tsa.regime_switching.markov_autoregression": MagicMock()},
         ):
             with patch(
-                "statsmodels.tsa.regime_switching.markov_regression.MarkovRegression",
+                "statsmodels.tsa.regime_switching.markov_autoregression.MarkovAutoregression",
                 mock_mod,
                 create=True,
             ):
@@ -921,14 +947,28 @@ class TestRegimeDetectHMM:
         mu = np.array([0.0, 0.001])
         sigma = np.array([0.001, 0.003])
         with patch(
-            "mtdata.core.regime.api.fit_gaussian_mixture_1d",
-            return_value=(w, mu, sigma, gamma, None),
+            "mtdata.forecast.monte_carlo.fit_gaussian_hmm_1d",
+            return_value={
+                "mu": mu,
+                "sigma": sigma,
+                "state_occupancy": w,
+                "filtered_probabilities": gamma,
+                "smoothed_probabilities": gamma,
+                "trans": np.array([[0.9, 0.1], [0.1, 0.9]]),
+                "start_prob": w,
+                "converged": True,
+                "log_likelihood": -10.0,
+            },
             create=True,
         ):
             fn = _get_regime_detect()
             res = fn("EURUSD", limit=60, method="hmm", detail="full")
         assert isinstance(res, dict)
-        assert "error" not in res or True  # allow graceful handling
+        assert "error" not in res
+        assert (
+            res["params_used"]["state_probability_alignment"]
+            == "pre_confirmation_model_probabilities"
+        )
 
     @patch(_FMT, side_effect=_time_fmt_stub)
     @patch(_DENOISE, return_value="close")
