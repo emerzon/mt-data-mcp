@@ -1720,3 +1720,47 @@ def test_attach_pattern_usage_notice_full_adds_calibration():
     result = {"success": True, "patterns": []}
     core_patterns._attach_pattern_usage_notice(result)
     assert result["calibration"]["confidence"].startswith("heuristic")
+
+
+def test_elliott_enrichment_reuses_regime_for_shared_as_of_index(monkeypatch):
+    df = pd.DataFrame({"close": np.linspace(100.0, 120.0, 80)})
+    rows = [
+        {
+            "confidence": 0.6,
+            "end_index": 39,
+            "details": {"available_at_index": 39},
+        },
+        {
+            "confidence": 0.7,
+            "end_index": 35,
+            "details": {"available_at_index": 39},
+        },
+        {
+            "confidence": 0.8,
+            "end_index": 59,
+            "details": {"available_at_index": 59},
+        },
+    ]
+    inferred_at = []
+
+    def fake_infer(context_df, _config):
+        inferred_at.append(len(context_df))
+        return {
+            "state": "ranging",
+            "direction": "neutral",
+            "window_bars": len(context_df),
+        }
+
+    monkeypatch.setattr(patterns_support_mod, "_infer_market_regime", fake_infer)
+    monkeypatch.setattr(
+        patterns_support_mod,
+        "_attach_elliott_volume_confirmation",
+        lambda row, _df, _config: row,
+    )
+
+    enriched = patterns_support_mod._enrich_elliott_patterns(rows, df)
+
+    assert inferred_at == [40, 60]
+    assert [
+        row["details"]["regime_context"]["window_bars"] for row in enriched
+    ] == [40, 40, 60]

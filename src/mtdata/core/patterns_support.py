@@ -2167,6 +2167,7 @@ def _enrich_elliott_patterns(
     rows: List[Dict[str, Any]], df: pd.DataFrame, config: Any = None
 ) -> List[Dict[str, Any]]:
     out: List[Dict[str, Any]] = []
+    regime_by_end: Dict[int, Optional[Dict[str, Any]]] = {}
     for row in rows:
         if not isinstance(row, dict):
             continue
@@ -2174,11 +2175,12 @@ def _enrich_elliott_patterns(
         available_at = _safe_float(details.get("available_at_index"))
         if available_at is None:
             available_at = _safe_float(row.get("end_index"))
-        context_df = df
+        end = len(df)
         if available_at is not None:
             end = max(0, min(len(df), int(available_at) + 1))
-            context_df = df.iloc[:end]
-        regime_context = _infer_market_regime(context_df, config)
+        if end not in regime_by_end:
+            regime_by_end[end] = _infer_market_regime(df.iloc[:end], config)
+        regime_context = regime_by_end[end]
         enriched = _attach_elliott_volume_confirmation(row, df, config)
         out.append(_attach_regime_context(enriched, regime_context, config))
     raw_min_confidence = getattr(config, "min_confidence", 0.0)
