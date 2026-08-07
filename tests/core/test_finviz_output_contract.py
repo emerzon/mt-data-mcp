@@ -111,6 +111,45 @@ def test_screen_pagination_uses_unknown_total_lower_bound() -> None:
     }
 
 
+def test_market_rows_keep_canonical_price_and_performance_fields_in_full_detail():
+    payload = {
+        "success": True,
+        "pairs": [
+            {
+                "Pair": "EUR/USD",
+                "Price": "1.10",
+                "Perf Day": "0.14%",
+                "Perf Week": "0.73%",
+                "Perf 5Min": "0.02%",
+            }
+        ],
+    }
+
+    compact = _normalize_finviz_market_payload(
+        payload,
+        rows_key="pairs",
+        tool="finviz_forex",
+        request={},
+        detail="compact",
+    )
+    full = _normalize_finviz_market_payload(
+        payload,
+        rows_key="pairs",
+        tool="finviz_forex",
+        request={},
+        detail="full",
+    )
+
+    assert compact["items"][0]["price"] == full["items"][0]["price"] == 1.1
+    assert compact["items"][0]["perf_day_pct"] == full["items"][0]["perf_day_pct"] == 0.14
+    assert compact["items"][0]["perf_week_pct"] == full["items"][0]["perf_week_pct"] == 0.73
+    assert full["items"][0]["perf_5min_pct"] == 0.02
+    assert "delayed_price" not in compact["items"][0]
+    assert "perf_day" not in full["items"][0]
+    assert full["performance_format"] == "percentage_points"
+    assert full["units"]["perf_day_pct"] == "percentage_points (1.0 = 1%)"
+
+
 class TestFinvizEarningsOutputContract:
     def _unwrapped(self):
         return _unwrap(finviz_earnings)

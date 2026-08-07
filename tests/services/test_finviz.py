@@ -706,7 +706,7 @@ class TestFinvizTools:
                 "symbol": "EURUSD",
                 "display_symbol": "EUR/USD",
                 "name": "Euro / US Dollar",
-                "delayed_price": 1.1,
+                "price": 1.1,
                 "price_currency": "USD",
                 "price_source": "finviz_delayed",
                 "data_delayed": True,
@@ -779,7 +779,7 @@ class TestFinvizTools:
                 "symbol": "GBPUSD",
                 "display_symbol": "GBP/USD",
                 "name": "British Pound / US Dollar",
-                "delayed_price": 1.25,
+                "price": 1.25,
                 "price_currency": "USD",
                 "price_source": "finviz_delayed",
                 "data_delayed": True,
@@ -1064,7 +1064,13 @@ class TestFinvizTools:
 
         assert result["detail"] == "full"
         assert result["data_fetched_at"].endswith("Z")
-        assert result["items"] == [{"symbol": "NQ", "name": "Nasdaq 100", "perf_pct": "0.8%"}]
+        assert result["items"] == [
+            {"symbol": "NQ", "name": "Nasdaq 100", "perf_day_pct": 0.8}
+        ]
+        assert result["performance_format"] == "percentage_points"
+        assert result["units"] == {
+            "perf_day_pct": "percentage_points (1.0 = 1%)"
+        }
         assert result["meta"]["tool"] == "finviz_futures"
         assert "request" not in result["meta"]
 

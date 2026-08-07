@@ -218,6 +218,12 @@ mtdata-cli finviz_filters_list --filter-name "Market Cap." --json
 
 ## Macro Market Snapshots
 
+Forex, crypto, and futures snapshots use the same row schema at every detail
+level: `price` is a delayed reference price, and `perf_*_pct` values are
+percentage points (`1.0 = 1%`). Full detail may add source fields, but it does
+not rename or re-unit those canonical values. Check the response `units` and
+`performance_format` fields when consuming rows programmatically.
+
 ### `finviz_forex`
 
 Get forex currency pairs performance.

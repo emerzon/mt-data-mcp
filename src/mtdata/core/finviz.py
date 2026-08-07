@@ -300,11 +300,11 @@ _FINVIZ_MARKET_COMPACT_FIELDS = (
     "delay_minutes_min",
     "delay_minutes_max",
     "group",
-    "perf_day",
-    "perf_week",
-    "perf_month",
-    "perf_quart",
-    "perf_year",
+    "perf_day_pct",
+    "perf_week_pct",
+    "perf_month_pct",
+    "perf_quart_pct",
+    "perf_year_pct",
 )
 _FINVIZ_MARKET_PERFORMANCE_PERIOD_FIELDS = (
     ("day", "perf_day_pct"),
@@ -504,40 +504,52 @@ def _finviz_percent_value(
     return round(float(parsed), 6)
 
 
+def _normalize_finviz_market_performance_fields(
+    row: Dict[str, Any],
+    *,
+    rows_key: str,
+) -> Dict[str, Any]:
+    """Use percentage-point performance fields for every market detail level."""
+    out = dict(row)
+    if "perf_day" not in out and "perf_pct" in out:
+        out["perf_day"] = out["perf_pct"]
+    out.pop("perf_pct", None)
+    if "perf_week" not in out and out.get("perf_wtd") not in (None, ""):
+        out["perf_week"] = out["perf_wtd"]
+        out["perf_week_basis"] = "week_to_date"
+    out.pop("perf_wtd", None)
+
+    for field, value in tuple(out.items()):
+        if (
+            not field.startswith("perf_")
+            or field.endswith("_pct")
+            or field == "perf_week_basis"
+        ):
+            continue
+        pct_value = _finviz_percent_value(
+            value,
+            fraction_input=rows_key != "futures",
+        )
+        if pct_value is not None:
+            out[f"{field}_pct"] = pct_value
+        out.pop(field, None)
+    return out
+
+
 def _compact_finviz_market_row(row: Dict[str, Any], *, rows_key: str) -> Dict[str, Any]:
-    compact = dict(row)
-    if "perf_day" not in compact and "perf_pct" in compact:
-        compact["perf_day"] = compact["perf_pct"]
+    compact = _normalize_finviz_market_performance_fields(row, rows_key=rows_key)
     if rows_key == "pairs" and not compact.get("name"):
         derived_name = _derive_forex_pair_name(compact.get("symbol"))
         if derived_name is not None:
             compact["name"] = derived_name
-    if "perf_week" not in compact and compact.get("perf_wtd") not in (None, ""):
-        compact["perf_week"] = compact["perf_wtd"]
-        compact["_perf_week_basis"] = "week_to_date"
     fields = _FINVIZ_MARKET_COMPACT_FIELDS
-    if rows_key == "pairs" and compact.get("price") not in (None, ""):
-        compact["delayed_price"] = compact.pop("price")
-        fields = tuple(
-            "delayed_price" if field == "price" else field
-            for field in fields
-        )
     out = {
         field: compact[field]
         for field in fields
         if field in compact and compact[field] not in (None, "")
     }
-    for field in tuple(out):
-        if field.startswith("perf_"):
-            pct_value = _finviz_percent_value(
-                out.get(field),
-                fraction_input=rows_key != "futures",
-            )
-            if pct_value is not None:
-                out[f"{field}_pct"] = pct_value
-            out.pop(field, None)
-    if compact.get("_perf_week_basis") and "perf_week_pct" in out:
-        out["perf_week_basis"] = compact["_perf_week_basis"]
+    if compact.get("perf_week_basis") and "perf_week_pct" in out:
+        out["perf_week_basis"] = compact["perf_week_basis"]
     return out
 
 
@@ -650,14 +662,20 @@ def _normalize_finviz_market_payload(
         if rows_key == "stocks"
         else _snake_finviz_market_key
     )
-    normalized_rows = [
-        _canonicalize_finviz_market_row(
+    normalized_rows = []
+    for row in rows if isinstance(rows, list) else []:
+        if not isinstance(row, dict):
+            normalized_rows.append(row)
+            continue
+        normalized_row = _canonicalize_finviz_market_row(
             {key_normalizer(key): value for key, value in row.items()}
         )
-        if isinstance(row, dict)
-        else row
-        for row in (rows if isinstance(rows, list) else [])
-    ]
+        if rows_key in {"pairs", "coins", "futures"}:
+            normalized_row = _normalize_finviz_market_performance_fields(
+                normalized_row,
+                rows_key=rows_key,
+            )
+        normalized_rows.append(normalized_row)
     upstream_count = len(normalized_rows)
     symbol_filter_norm: Optional[str] = None
     if rows_key == "pairs":
@@ -740,7 +758,7 @@ def _normalize_finviz_market_payload(
     if rows_key == "futures":
         _attach_finviz_delayed_root_metadata(out)
         _append_finviz_warning(out, _FINVIZ_FUTURES_DELAYED_WARNING)
-    if detail_mode != "full" and rows_key in {"pairs", "coins", "futures"}:
+    if rows_key in {"pairs", "coins", "futures"}:
         out["performance_format"] = "percentage_points"
     units = _finviz_screen_units_for_rows(output_rows)
     if units:
