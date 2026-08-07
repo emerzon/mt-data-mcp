@@ -622,104 +622,50 @@ class SlHitEventSpec(_WaitAccountEventBase):
     type: Literal["sl_hit"] = "sl_hit"
 
 
-class PriceChangeEventSpec(BaseModel):
-    type: Literal["price_change"] = "price_change"
+class _WaitMarketStatEventBase(BaseModel):
     symbol: Optional[str] = None
     window: WaitEventWindow = Field(default_factory=WaitEventWindow)
     baseline_window: WaitEventWindow = Field(
         default_factory=lambda: WaitEventWindow(kind="minutes", value=60.0)
     )
+    threshold_mode: Literal["ratio_to_baseline", "zscore"] = "ratio_to_baseline"
+    threshold_value: float = 2.0
+
+    @field_validator("threshold_value")
+    @classmethod
+    def _validate_threshold_value(cls, value: float) -> float:
+        return _validate_positive_threshold(value)
+
+
+class PriceChangeEventSpec(_WaitMarketStatEventBase):
+    type: Literal["price_change"] = "price_change"
     price_source: Literal["auto", "bid", "ask", "mid", "last"] = "auto"
     direction: Literal["up", "down", "either"] = "either"
-    threshold_mode: Literal["fixed_pct", "ratio_to_baseline", "zscore"] = "ratio_to_baseline"
-    threshold_value: float = 2.0
-
-    @field_validator("threshold_value")
-    @classmethod
-    def _validate_threshold_value(cls, value: float) -> float:
-        return _validate_positive_threshold(value)
+    threshold_mode: Literal[
+        "fixed_pct", "ratio_to_baseline", "zscore"
+    ] = "ratio_to_baseline"
 
 
-class VolumeSpikeEventSpec(BaseModel):
+class VolumeSpikeEventSpec(_WaitMarketStatEventBase):
     type: Literal["volume_spike"] = "volume_spike"
-    symbol: Optional[str] = None
-    window: WaitEventWindow = Field(default_factory=WaitEventWindow)
-    baseline_window: WaitEventWindow = Field(
-        default_factory=lambda: WaitEventWindow(kind="minutes", value=60.0)
-    )
     source: Literal["auto", "tick_count", "volume", "volume_real"] = "auto"
-    threshold_mode: Literal["ratio_to_baseline", "zscore"] = "ratio_to_baseline"
-    threshold_value: float = 2.0
-
-    @field_validator("threshold_value")
-    @classmethod
-    def _validate_threshold_value(cls, value: float) -> float:
-        return _validate_positive_threshold(value)
 
 
-class TickCountSpikeEventSpec(BaseModel):
+class TickCountSpikeEventSpec(_WaitMarketStatEventBase):
     type: Literal["tick_count_spike"] = "tick_count_spike"
-    symbol: Optional[str] = None
-    window: WaitEventWindow = Field(default_factory=WaitEventWindow)
-    baseline_window: WaitEventWindow = Field(
-        default_factory=lambda: WaitEventWindow(kind="minutes", value=60.0)
-    )
-    threshold_mode: Literal["ratio_to_baseline", "zscore"] = "ratio_to_baseline"
-    threshold_value: float = 2.0
-
-    @field_validator("threshold_value")
-    @classmethod
-    def _validate_threshold_value(cls, value: float) -> float:
-        return _validate_positive_threshold(value)
 
 
-class SpreadSpikeEventSpec(BaseModel):
+class SpreadSpikeEventSpec(_WaitMarketStatEventBase):
     type: Literal["spread_spike"] = "spread_spike"
-    symbol: Optional[str] = None
-    window: WaitEventWindow = Field(default_factory=WaitEventWindow)
-    baseline_window: WaitEventWindow = Field(
-        default_factory=lambda: WaitEventWindow(kind="minutes", value=60.0)
-    )
-    threshold_mode: Literal["ratio_to_baseline", "zscore"] = "ratio_to_baseline"
-    threshold_value: float = 2.0
-
-    @field_validator("threshold_value")
-    @classmethod
-    def _validate_threshold_value(cls, value: float) -> float:
-        return _validate_positive_threshold(value)
 
 
-class TickCountDroughtEventSpec(BaseModel):
+class TickCountDroughtEventSpec(_WaitMarketStatEventBase):
     type: Literal["tick_count_drought"] = "tick_count_drought"
-    symbol: Optional[str] = None
-    window: WaitEventWindow = Field(default_factory=WaitEventWindow)
-    baseline_window: WaitEventWindow = Field(
-        default_factory=lambda: WaitEventWindow(kind="minutes", value=60.0)
-    )
-    threshold_mode: Literal["ratio_to_baseline", "zscore"] = "ratio_to_baseline"
     threshold_value: float = 0.5
 
-    @field_validator("threshold_value")
-    @classmethod
-    def _validate_threshold_value(cls, value: float) -> float:
-        return _validate_positive_threshold(value)
-
-
-class RangeExpansionEventSpec(BaseModel):
+class RangeExpansionEventSpec(_WaitMarketStatEventBase):
     type: Literal["range_expansion"] = "range_expansion"
-    symbol: Optional[str] = None
-    window: WaitEventWindow = Field(default_factory=WaitEventWindow)
-    baseline_window: WaitEventWindow = Field(
-        default_factory=lambda: WaitEventWindow(kind="minutes", value=60.0)
-    )
     price_source: Literal["auto", "bid", "ask", "mid", "last"] = "auto"
-    threshold_mode: Literal["ratio_to_baseline", "zscore"] = "ratio_to_baseline"
-    threshold_value: float = 2.0
-
-    @field_validator("threshold_value")
-    @classmethod
-    def _validate_threshold_value(cls, value: float) -> float:
-        return _validate_positive_threshold(value)
 
 
 class PriceTouchLevelEventSpec(BaseModel):

@@ -29,6 +29,67 @@ class FakeClock:
         self.current = self.current + timedelta(seconds=float(seconds))
 
 
+@pytest.mark.parametrize(
+    ("event_type", "expected_threshold"),
+    [
+        ("price_change", 2.0),
+        ("volume_spike", 2.0),
+        ("tick_count_spike", 2.0),
+        ("spread_spike", 2.0),
+        ("tick_count_drought", 0.5),
+        ("range_expansion", 2.0),
+    ],
+)
+def test_market_stat_event_specs_share_defaults_and_validation(
+    event_type: str, expected_threshold: float
+) -> None:
+    request = WaitEventRequest(
+        watch_for=[{"type": event_type, "symbol": "EURUSD"}]
+    )
+
+    spec = request.watch_for[0]
+    assert spec.window.kind == "minutes"
+    assert spec.baseline_window.kind == "minutes"
+    assert spec.baseline_window.value == 60.0
+    assert spec.threshold_mode == "ratio_to_baseline"
+    assert spec.threshold_value == expected_threshold
+
+    with pytest.raises(ValidationError, match="threshold_value must be greater than 0"):
+        WaitEventRequest(
+            watch_for=[
+                {
+                    "type": event_type,
+                    "symbol": "EURUSD",
+                    "threshold_value": 0,
+                }
+            ]
+        )
+
+
+def test_only_price_change_accepts_fixed_pct_threshold_mode() -> None:
+    request = WaitEventRequest(
+        watch_for=[
+            {
+                "type": "price_change",
+                "symbol": "EURUSD",
+                "threshold_mode": "fixed_pct",
+            }
+        ]
+    )
+    assert request.watch_for[0].threshold_mode == "fixed_pct"
+
+    with pytest.raises(ValidationError):
+        WaitEventRequest(
+            watch_for=[
+                {
+                    "type": "volume_spike",
+                    "symbol": "EURUSD",
+                    "threshold_mode": "fixed_pct",
+                }
+            ]
+        )
+
+
 def test_price_touch_scans_transient_crossing_inside_poll_batch() -> None:
     spec = {
         "type": "price_touch_level",
