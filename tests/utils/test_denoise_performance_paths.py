@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 
+from mtdata.utils.denoise.filters import decomposition
 from mtdata.utils.denoise.filters.adaptive import (
     _adaptive_lms_filter,
     _adaptive_rls_filter,
@@ -257,3 +258,48 @@ def test_vectorized_beta_smoother_matches_windowed_irls() -> None:
             causality=causality,
         )
         np.testing.assert_allclose(actual, expected, rtol=1e-12, atol=1e-12)
+
+
+def test_truncated_ssa_matches_full_svd_reconstruction() -> None:
+    values = np.random.default_rng(16).normal(size=120)
+    window = 30
+    components = 2
+    trajectory = np.column_stack(
+        [values[index : index + window] for index in range(len(values) - window + 1)]
+    )
+    left, singular, right = np.linalg.svd(trajectory, full_matrices=False)
+    reconstructed = (
+        left[:, :components] * singular[:components]
+    ) @ right[:components, :]
+    expected = np.zeros(len(values))
+    counts = np.zeros(len(values))
+    for row in range(reconstructed.shape[0]):
+        for column in range(reconstructed.shape[1]):
+            expected[row + column] += reconstructed[row, column]
+            counts[row + column] += 1.0
+    expected /= counts
+
+    actual = decomposition._ssa_denoise(values, window, components)
+
+    np.testing.assert_allclose(actual, expected, rtol=1e-8, atol=1e-8)
+
+
+def test_ssa_auto_window_is_bounded_but_explicit_window_is_preserved(monkeypatch) -> None:
+    observed = []
+
+    def fake_ssa(values, window, components):
+        observed.append(window)
+        return values
+
+    monkeypatch.setattr(decomposition, "_ssa_denoise", fake_ssa)
+    series = decomposition.pd.Series(np.arange(1200, dtype=float))
+
+    decomposition._denoise_ssa_series(series, series.to_numpy(), {}, "zero_phase")
+    decomposition._denoise_ssa_series(
+        series,
+        series.to_numpy(),
+        {"window": 400},
+        "zero_phase",
+    )
+
+    assert observed == [decomposition._SSA_DEFAULT_MAX_WINDOW, 400]

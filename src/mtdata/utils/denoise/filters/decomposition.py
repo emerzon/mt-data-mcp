@@ -5,6 +5,7 @@ from typing import Any, Dict, Optional
 
 import numpy as np
 import pandas as pd
+from scipy.sparse.linalg import svds as _truncated_svd
 
 _logger = logging.getLogger(__name__)
 
@@ -22,6 +23,8 @@ except Exception:
 
 from ..base import _series_like, register_filter
 
+_SSA_DEFAULT_MAX_WINDOW = 256
+
 
 def _ssa_denoise(
     x: np.ndarray,
@@ -38,8 +41,31 @@ def _ssa_denoise(
     if L >= n:
         return x
     K = n - L + 1
-    X = np.column_stack([x[i : i + L] for i in range(K)])
-    U, s, Vt = np.linalg.svd(X, full_matrices=False)
+    trajectory = np.lib.stride_tricks.sliding_window_view(x, L).T
+    requested_rank: Optional[int] = None
+    if components is None:
+        requested_rank = min(2, min(trajectory.shape))
+    elif isinstance(components, float) and 0 < components <= 1:
+        requested_rank = None
+    else:
+        requested_rank = max(1, min(int(components), min(trajectory.shape)))
+
+    if requested_rank is not None and requested_rank < min(trajectory.shape):
+        try:
+            U, s, Vt = _truncated_svd(
+                trajectory,
+                k=requested_rank,
+                which="LM",
+                return_singular_vectors=True,
+                rng=0,
+            )
+            order = np.argsort(s)[::-1]
+            U, s, Vt = U[:, order], s[order], Vt[order, :]
+        except Exception:
+            U, s, Vt = np.linalg.svd(trajectory, full_matrices=False)
+    else:
+        U, s, Vt = np.linalg.svd(trajectory, full_matrices=False)
+
     if components is None:
         r = min(2, len(s))
     elif isinstance(components, float) and 0 < components <= 1:
@@ -51,14 +77,14 @@ def _ssa_denoise(
     else:
         r = int(components)
     r = max(1, min(r, len(s)))
-    Xr = (U[:, :r] * s[:r]) @ Vt[:r, :]
     y = np.zeros(n, dtype=float)
-    counts = np.zeros(n, dtype=float)
-    for i in range(L):
-        for j in range(K):
-            y[i + j] += Xr[i, j]
-            counts[i + j] += 1.0
-    counts[counts == 0] = 1.0
+    for component in range(r):
+        y += np.convolve(
+            U[:, component] * s[component],
+            Vt[component, :],
+            mode="full",
+        )
+    counts = np.convolve(np.ones(L), np.ones(K), mode="full")
     return y / counts
 
 
@@ -70,7 +96,8 @@ def _denoise_ssa_series(
     causality: str,
 ) -> pd.Series:
     del causality
-    window = int(params.get('window', max(10, len(x) // 3)))
+    default_window = min(max(10, len(x) // 3), _SSA_DEFAULT_MAX_WINDOW)
+    window = int(params.get('window', default_window))
     components = params.get('components')
     y = _ssa_denoise(x, window=window, components=components)
     return _series_like(s, y)
