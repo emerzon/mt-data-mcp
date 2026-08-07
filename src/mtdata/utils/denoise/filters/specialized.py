@@ -52,8 +52,15 @@ def _kalman_filter_causal_auto_1d(
     covariance[0] = (
         float(initial_cov) if initial_cov is not None else initial_measurement
     )
+    running_mean = float(x[0])
+    running_m2 = 0.0
     for t in range(1, n):
-        prefix_variance = float(np.var(x[: t + 1]))
+        value = float(x[t])
+        count = t + 1
+        delta = value - running_mean
+        running_mean += delta / count
+        running_m2 += delta * (value - running_mean)
+        prefix_variance = running_m2 / count
         measurement = max(
             float(measurement_var)
             if measurement_var is not None
@@ -71,6 +78,22 @@ def _kalman_filter_causal_auto_1d(
         xhat[t] = xhat[t - 1] + gain * (float(x[t]) - xhat[t - 1])
         covariance[t] = (1.0 - gain) * predicted_covariance
     return xhat
+
+
+def _padded_window_view(
+    x: np.ndarray,
+    *,
+    left: int,
+    right: int,
+) -> np.ndarray:
+    width = int(left) + 1 + int(right)
+    padded = np.pad(
+        np.asarray(x, dtype=float),
+        (int(left), int(right)),
+        mode="constant",
+        constant_values=np.nan,
+    )
+    return np.lib.stride_tricks.sliding_window_view(padded, width)
 
 
 def _kalman_rts_smoother_1d(
@@ -174,21 +197,18 @@ def _hampel_filter(
     win = max(3, int(window))
     half = win // 2
     y = x.copy()
-    for i in range(n):
-        if causality == 'causal':
-            start = max(0, i - win + 1)
-            end = i + 1
-        else:
-            start = max(0, i - half)
-            end = min(n, i + half + 1)
-        vals = x[start:end]
-        if len(vals) == 0:
-            continue
-        med = float(np.median(vals))
-        mad = float(np.median(np.abs(vals - med)))
-        scale = 1.4826 * mad if mad > 0 else 0.0
-        if scale > 0 and abs(x[i] - med) > float(n_sigmas) * scale:
-            y[i] = med
+    if causality == 'causal':
+        windows = _padded_window_view(x, left=win - 1, right=0)
+    else:
+        windows = _padded_window_view(x, left=half, right=half)
+    medians = np.nanmedian(windows, axis=1)
+    deviations = np.abs(windows - medians[:, None])
+    mad = np.nanmedian(deviations, axis=1)
+    scale = 1.4826 * mad
+    replace = (scale > 0.0) & (
+        np.abs(np.asarray(x, dtype=float) - medians) > float(n_sigmas) * scale
+    )
+    y[replace] = medians[replace]
     return y
 
 
@@ -218,25 +238,30 @@ def _bilateral_filter_1d(
     if sigma_s <= 0 or sigma_r <= 0:
         return x
     radius = max(1, int(round(float(truncate) * float(sigma_s))))
-    y = np.zeros_like(x)
-    for i in range(n):
-        if causality == 'causal':
-            start = max(0, i - radius)
-            end = i + 1
-        else:
-            start = max(0, i - radius)
-            end = min(n, i + radius + 1)
-        idx = np.arange(start, end)
-        if idx.size == 0:
-            y[i] = x[i]
-            continue
-        dist = idx - i
-        w_s = np.exp(-0.5 * (dist / float(sigma_s)) ** 2)
-        w_r = np.exp(-0.5 * ((x[idx] - x[i]) / float(sigma_r)) ** 2)
-        w = w_s * w_r
-        denom = np.sum(w)
-        y[i] = np.sum(w * x[idx]) / denom if denom > 0 else x[i]
-    return y
+    if causality == 'causal':
+        windows = _padded_window_view(x, left=radius, right=0)
+        distances = np.arange(-radius, 1, dtype=float)
+    else:
+        windows = _padded_window_view(x, left=radius, right=radius)
+        distances = np.arange(-radius, radius + 1, dtype=float)
+    spatial_weights = np.exp(-0.5 * (distances / float(sigma_s)) ** 2)
+    center = np.asarray(x, dtype=float)[:, None]
+    range_weights = np.exp(
+        -0.5 * ((windows - center) / float(sigma_r)) ** 2
+    )
+    weights = np.where(
+        np.isfinite(windows),
+        range_weights * spatial_weights[None, :],
+        0.0,
+    )
+    denominators = np.sum(weights, axis=1)
+    numerators = np.nansum(weights * windows, axis=1)
+    return np.divide(
+        numerators,
+        denominators,
+        out=np.asarray(x, dtype=float).copy(),
+        where=denominators > 0.0,
+    )
 
 
 @register_filter('bilateral')

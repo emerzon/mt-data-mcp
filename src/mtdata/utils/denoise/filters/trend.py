@@ -176,16 +176,42 @@ def _beta_smooth(x: np.ndarray, window: int, beta: float, n_iter: int, eps: floa
         return x
     win = max(3, int(window))
     half = win // 2
-    y = x.copy()
-    for i in range(n):
-        if causality == 'causal':
-            start = max(0, i - win + 1)
-            end = i + 1
-        else:
-            start = max(0, i - half)
-            end = min(n, i + half + 1)
-        vals = x[start:end]
-        y[i] = _beta_irls_mean(vals, beta=beta, n_iter=n_iter, eps=eps)
+    if causality == 'causal':
+        padded = np.pad(x, (win - 1, 0), constant_values=np.nan)
+        windows = np.lib.stride_tricks.sliding_window_view(padded, win)
+    else:
+        width = (2 * half) + 1
+        padded = np.pad(x, (half, half), constant_values=np.nan)
+        windows = np.lib.stride_tricks.sliding_window_view(padded, width)
+    valid = np.isfinite(windows)
+    b = float(beta)
+    if b >= 2.0:
+        return np.nanmean(windows, axis=1)
+    if b <= 0.0:
+        return np.nanmedian(windows, axis=1)
+
+    y = (
+        np.nanmedian(windows, axis=1)
+        if b <= 1.0
+        else np.nanmean(windows, axis=1)
+    )
+    active = np.ones(n, dtype=bool)
+    for _ in range(max(1, int(n_iter))):
+        differences = np.abs(windows - y[:, None])
+        weights = np.zeros_like(windows, dtype=float)
+        weights[valid] = (differences[valid] + float(eps)) ** (b - 2.0)
+        weight_sums = np.sum(weights, axis=1)
+        usable = active & (weight_sums > 0.0)
+        if not np.any(usable):
+            break
+        updated = y.copy()
+        updated[usable] = (
+            np.nansum(weights[usable] * windows[usable], axis=1)
+            / weight_sums[usable]
+        )
+        converged = usable & (np.abs(updated - y) <= float(eps))
+        y[usable] = updated[usable]
+        active[converged] = False
     return y
 
 
