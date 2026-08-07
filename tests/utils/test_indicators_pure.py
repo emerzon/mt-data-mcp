@@ -309,6 +309,18 @@ class TestParseTiSpecs:
             assert name in by_name
             assert by_name[name]["category"] == "volatility"
 
+    def test_list_ta_indicators_caches_discovery_without_sharing_mutations(self):
+        import mtdata.utils.indicators as indicators_mod
+
+        indicators_mod._list_ta_indicators_cached.cache_clear()
+        first = indicators_mod.list_ta_indicators(detailed=True)
+        first[0]["name"] = "mutated"
+        second = indicators_mod.list_ta_indicators(detailed=True)
+
+        assert second[0]["name"] != "mutated"
+        assert indicators_mod._list_ta_indicators_cached.cache_info().hits == 1
+        indicators_mod._list_ta_indicators_cached.cache_clear()
+
 
 class TestEstimateWarmupBars:
     def test_empty_spec(self):

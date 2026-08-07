@@ -1,5 +1,6 @@
-import inspect
+import copy
 import importlib
+import inspect
 import logging
 import pydoc
 import re
@@ -155,8 +156,8 @@ def infer_defaults_from_doc(func_name: str, doc_text: str, params: List[Dict[str
                 p['default'] = default_value
 
 
-def list_ta_indicators(*, detailed: bool = False) -> List[Dict[str, Any]]:
-    """Return [{'name','params','description','category'}, ...] discovered from pandas_ta."""
+@lru_cache(maxsize=2)
+def _list_ta_indicators_cached(detailed: bool) -> Tuple[Dict[str, Any], ...]:
     items: List[Dict[str, Any]] = []
     seen = set()
 
@@ -219,7 +220,12 @@ def list_ta_indicators(*, detailed: bool = False) -> List[Dict[str, Any]]:
         except Exception:
             continue
     items.sort(key=lambda x: x["name"])
-    return items
+    return tuple(items)
+
+
+def list_ta_indicators(*, detailed: bool = False) -> List[Dict[str, Any]]:
+    """Return a mutation-safe copy of the process-cached pandas-ta catalog."""
+    return copy.deepcopy(list(_list_ta_indicators_cached(bool(detailed))))
 
 def _parse_ti_specs(spec: str) -> List[Tuple[str, List[int | float], Dict[str, int | float]]]:
     """Parse a compact indicator spec string into [(name, args, kwargs)].
