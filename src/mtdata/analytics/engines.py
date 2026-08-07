@@ -291,6 +291,8 @@ def _tick_frame(gateway: Any, symbol: str, start: datetime, end: datetime, max_t
                     "volume",
                     "volume_real",
                     "flags",
+                    "spread_valid",
+                    "spread_quality",
                     "mid",
                     "spread",
                 )
@@ -319,9 +321,21 @@ def _tick_frame(gateway: Any, symbol: str, start: datetime, end: datetime, max_t
         if column not in df:
             df[column] = 0.0
         df[column] = _finite(df[column]).fillna(0.0)
-    valid_quote = (df["bid"] > 0) & (df["ask"] >= df["bid"])
-    df["spread_valid"] = valid_quote
-    df["mid"] = np.where(valid_quote, (df["bid"] + df["ask"]) / 2.0, np.nan)
+    two_sided_quote = (df["bid"] > 0) & (df["ask"] > df["bid"])
+    locked_quote = (df["bid"] > 0) & (df["ask"] == df["bid"])
+    inverted_quote = (df["bid"] > 0) & (df["ask"] > 0) & (df["ask"] < df["bid"])
+    df["spread_quality"] = np.select(
+        [locked_quote, inverted_quote],
+        ["locked", "inverted"],
+        default="two_sided",
+    )
+    df.loc[(df["bid"] <= 0) | (df["ask"] <= 0), "spread_quality"] = "one_sided"
+    df["spread_valid"] = two_sided_quote
+    df["mid"] = np.where(
+        two_sided_quote,
+        (df["bid"] + df["ask"]) / 2.0,
+        np.nan,
+    )
     df["spread"] = np.where(np.isfinite(df["mid"]), df["ask"] - df["bid"], np.nan)
     return df.reset_index(drop=True), truncated
 
@@ -511,7 +525,11 @@ def analyze_microstructure(request: MarketMicrostructureRequest, gateway: Any) -
         "quote_coverage": float(quote_mask.mean()),
         "trade_tick_coverage": float(trade_mask.mean()),
         "real_volume_trade_coverage": real_share,
-        "invalid_partial_quote_ticks": int((~df["spread_valid"]).sum()),
+        "invalid_partial_quote_ticks": int(
+            df["spread_quality"].isin({"one_sided", "inverted"}).sum()
+        ),
+        "locked_quote_ticks": int((df["spread_quality"] == "locked").sum()),
+        "latest_spread_quality": str(df["spread_quality"].iloc[-1]),
         "truncated": truncated,
         "requested_start": start.isoformat(),
         "requested_end": end.isoformat(),
@@ -539,10 +557,18 @@ def analyze_microstructure(request: MarketMicrostructureRequest, gateway: Any) -
         else:
             spread_series = q["spread"]
         spread_series = pd.to_numeric(spread_series, errors="coerce")
-        latest_spread = (
-            float(spread_series.iloc[-1]) if len(spread_series) else None
-        )
-        latest_quote_epoch = float(q["epoch"].iloc[-1]) if len(q) else None
+        latest_tick = df.iloc[-1]
+        latest_spread_quality = str(latest_tick["spread_quality"])
+        latest_quote_epoch = float(latest_tick["epoch"])
+        latest_spread = None
+        if latest_spread_quality in {"two_sided", "locked"}:
+            latest_absolute_spread = float(latest_tick["ask"] - latest_tick["bid"])
+            if spread_key == "spread_pips":
+                latest_spread = latest_absolute_spread / (point * float(points_per_pip))
+            elif spread_key == "spread_points":
+                latest_spread = latest_absolute_spread / point
+            else:
+                latest_spread = latest_absolute_spread
         recent_mask = (
             q["epoch"] >= latest_quote_epoch - 300.0
             if latest_quote_epoch is not None
@@ -555,13 +581,18 @@ def analyze_microstructure(request: MarketMicrostructureRequest, gateway: Any) -
         window_median = spread_stats.get("median")
         latest_to_window_ratio = (
             float(latest_spread) / float(window_median)
-            if latest_spread is not None
+            if latest_spread_quality == "two_sided"
+            and latest_spread is not None
             and window_median is not None
             and float(window_median) > 0
             else None
         )
         spread_regime = (
-            "wider_than_window"
+            "locked_quote"
+            if latest_spread_quality == "locked"
+            else "unreliable_quote"
+            if latest_spread_quality != "two_sided"
+            else "wider_than_window"
             if latest_to_window_ratio is not None and latest_to_window_ratio >= 2.0
             else "tighter_than_window"
             if latest_to_window_ratio is not None and latest_to_window_ratio <= 0.5
@@ -569,6 +600,16 @@ def analyze_microstructure(request: MarketMicrostructureRequest, gateway: Any) -
             if latest_to_window_ratio is not None
             else "unknown"
         )
+        if latest_spread_quality == "locked":
+            warnings.append(
+                "Latest analyzed quote is locked (bid equals ask); its zero "
+                "spread is not usable for execution."
+            )
+        elif latest_spread_quality != "two_sided":
+            warnings.append(
+                "Latest analyzed quote is not a valid two-sided quote; do not "
+                "use it for execution."
+            )
         if spread_regime in {"wider_than_window", "tighter_than_window"}:
             warnings.append(
                 "Latest analyzed spread differs materially from the full-window "
@@ -585,6 +626,8 @@ def analyze_microstructure(request: MarketMicrostructureRequest, gateway: Any) -
                 "spread": {
                     "latest": _round_execution_stat(latest_spread),
                     "latest_as_of": format_epoch_utc(latest_quote_epoch),
+                    "spread_valid": latest_spread_quality == "two_sided",
+                    "spread_quality": latest_spread_quality,
                     "recent_5m_median": _round_execution_stat(recent_median),
                     "window_median": _round_execution_stat(window_median),
                     "window_p95": _round_execution_stat(spread_stats.get("p95")),
@@ -606,6 +649,8 @@ def analyze_microstructure(request: MarketMicrostructureRequest, gateway: Any) -
                 for key in (
                     "quote_coverage",
                     "invalid_partial_quote_ticks",
+                    "locked_quote_ticks",
+                    "latest_spread_quality",
                     "truncated",
                 )
             },

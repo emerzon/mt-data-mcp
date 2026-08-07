@@ -12,6 +12,8 @@ Use them when you already have a research loop and want **execution-aware** or *
 
 `market_microstructure_analyze` measures spread distributions, quote-update
 intensity, gaps, mid-price volatility, and liquidity-stress windows.
+Its compact spread summary marks locked, one-sided, and inverted latest quotes as
+unsafe rather than treating them as unusually tight execution spreads.
 
 ```bash
 mtdata-cli market_microstructure_analyze EURUSD --minutes-back 60 --json

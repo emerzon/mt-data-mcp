@@ -182,6 +182,8 @@ def test_microstructure_compact_output_omits_research_events() -> None:
     assert set(result["data_quality"]) == {
         "quote_coverage",
         "invalid_partial_quote_ticks",
+        "locked_quote_ticks",
+        "latest_spread_quality",
         "truncated",
     }
     assert any("broker's tick feed" in warning for warning in result["warnings"])
@@ -359,7 +361,7 @@ def test_microstructure_uses_completed_session_window_when_weekend_is_closed(
     assert any("completed-session" in warning for warning in result["warnings"])
 
 
-def test_tick_frame_keeps_derived_quotes_for_one_sided_updates() -> None:
+def test_tick_frame_marks_locked_quotes_as_unusable() -> None:
     gateway = FakeGateway()
     gateway.tick_rows = [
         {"time": 1, "bid": 1.1, "ask": 1.1, "flags": 2},
@@ -374,9 +376,34 @@ def test_tick_frame_keeps_derived_quotes_for_one_sided_updates() -> None:
         100,
     )
 
-    assert frame.iloc[0]["mid"] == pytest.approx(1.1)
-    assert frame.iloc[0]["spread"] == pytest.approx(0.0)
+    assert bool(frame.iloc[0]["spread_valid"]) is False
+    assert frame.iloc[0]["spread_quality"] == "locked"
+    assert math.isnan(frame.iloc[0]["mid"])
+    assert math.isnan(frame.iloc[0]["spread"])
+    assert bool(frame.iloc[1]["spread_valid"]) is True
+    assert frame.iloc[1]["spread_quality"] == "two_sided"
     assert frame.iloc[1]["spread"] == pytest.approx(0.0002)
+
+
+def test_microstructure_marks_latest_locked_quote_unsafe() -> None:
+    gateway = FakeGateway()
+    gateway.tick_rows = _ticks()
+    latest = gateway.tick_rows[-1]
+    latest["ask"] = latest["bid"]
+
+    result = analyze_microstructure(
+        MarketMicrostructureRequest(symbol="EURUSD", minutes_back=60),
+        gateway,
+    )
+
+    spread = result["summary"]["spread"]
+    assert spread["latest"] == pytest.approx(0.0)
+    assert spread["spread_valid"] is False
+    assert spread["spread_quality"] == "locked"
+    assert spread["regime"] == "locked_quote"
+    assert spread["latest_to_window_median_ratio"] is None
+    assert result["data_quality"]["locked_quote_ticks"] == 1
+    assert any("locked" in warning.lower() for warning in result["warnings"])
 
 
 def test_execution_quality_matches_order_and_computes_markout() -> None:
