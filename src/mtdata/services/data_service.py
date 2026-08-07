@@ -122,7 +122,8 @@ _TICK_SUMMARY_MIN_ANALYTIC_TICKS = 20
 _ONE_SIDED_TICK_WARNING_RATIO = 0.50
 _DATE_FORMAT_HINT = (
     "Accepted examples: '2026-01-15', '2026-01-15 14:30', "
-    "'2026-01-15T14:30:00Z', 'yesterday', '2 days ago', 'last Friday'."
+    "'2026-01-15T14:30:00Z', '2026-01-15 09:30 America/New_York', "
+    "'yesterday', '2 days ago', 'last Friday'."
 )
 _CANDLE_PRICE_COLUMNS = frozenset({"open", "high", "low", "close", "spread"})
 _TICK_PRICE_COLUMNS = frozenset({"bid", "ask", "mid", "spread", "last"})

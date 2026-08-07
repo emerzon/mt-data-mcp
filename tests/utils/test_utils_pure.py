@@ -268,6 +268,14 @@ class TestParseStartDatetime:
         assert dt.tzinfo is None
         assert int(_utc_epoch_seconds(dt)) == 1577836800
 
+    def test_iana_timezone_uses_the_zone_dst_offset(self):
+        dt = _parse_start_datetime("2026-08-03 09:30 America/New_York")
+
+        assert dt == datetime(2026, 8, 3, 13, 30)
+
+    def test_iana_timezone_rejects_ambiguous_dst_local_time(self):
+        assert _parse_start_datetime("2026-11-01 01:30 America/New_York") is None
+
     def test_relative_weekdays(self):
         today = datetime.now(timezone.utc).date()
 

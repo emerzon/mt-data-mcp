@@ -3,6 +3,7 @@ import re
 from datetime import datetime, timedelta, timezone
 from numbers import Number
 from typing import Any, Dict, List, Optional, Set, Tuple
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import dateparser
 import numpy as np
@@ -341,11 +342,46 @@ def align_finite(*arrays: Any) -> Tuple["np.ndarray", ...]:
     return tuple(a[mask] for a in conv)
 
 
+def _parse_iana_timezone_datetime(value: str) -> Optional[datetime]:
+    """Parse a local datetime ending in an IANA zone name into naive UTC."""
+    try:
+        local_text, timezone_name = str(value).strip().rsplit(maxsplit=1)
+    except ValueError:
+        return None
+    if "/" not in timezone_name:
+        return None
+    try:
+        local_zone = ZoneInfo(timezone_name)
+    except ZoneInfoNotFoundError:
+        return None
+    local_time = dateparser.parse(
+        local_text,
+        settings={
+            "RETURN_AS_TIMEZONE_AWARE": False,
+            "PREFER_DAY_OF_MONTH": "first",
+        },
+    )
+    if local_time is None or local_time.tzinfo is not None:
+        return None
+
+    # A named local time at a daylight-saving transition can be nonexistent or
+    # ambiguous. Do not silently select a different instant for either case.
+    fold_zero = local_time.replace(tzinfo=local_zone, fold=0)
+    fold_one = local_time.replace(tzinfo=local_zone, fold=1)
+    if fold_zero.utcoffset() != fold_one.utcoffset():
+        return None
+    utc_time = fold_zero.astimezone(timezone.utc)
+    if utc_time.astimezone(local_zone).replace(tzinfo=None) != local_time:
+        return None
+    return utc_time.replace(tzinfo=None)
+
+
 def _parse_start_datetime(value: str) -> Optional[datetime]:
-    """Parse a date/time string via dateparser into UTC-naive datetime."""
+    """Parse a date/time string, including IANA zone names, into naive UTC."""
     if not value:
         return None
-    parts = str(value).strip().lower().split()
+    text = str(value).strip()
+    parts = text.lower().split()
     weekdays = {
         "monday": 0,
         "tuesday": 1,
@@ -363,6 +399,9 @@ def _parse_start_datetime(value: str) -> Optional[datetime]:
         else:
             days = -((today.weekday() - target_weekday) % 7 or 7)
         return datetime.combine(today + timedelta(days=days), datetime.min.time())
+    named_timezone_datetime = _parse_iana_timezone_datetime(text)
+    if named_timezone_datetime is not None:
+        return named_timezone_datetime
     dt = dateparser.parse(
         value,
         settings={
