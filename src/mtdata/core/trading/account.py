@@ -868,10 +868,13 @@ def trade_account_info(
         broker_trade_allowed = validation._coerce_optional_bool(
             getattr(info, "trade_allowed", None)
         )
+        strict_execution_ready = preflight.get("execution_ready_strict")
+        if strict_execution_ready is None:
+            strict_execution_ready = preflight.get("execution_ready")
         actionable_trade_allowed = bool(
             broker_trade_allowed is True
             and margin_stress.get("status") != "critical"
-            and preflight.get("execution_ready") is not False
+            and strict_execution_ready is True
         )
         login = preflight.get("login")
         if login is None:
@@ -934,7 +937,8 @@ def trade_account_info(
             "terminal_tradeapi_disabled": preflight.get("terminal_tradeapi_disabled"),
             "terminal_connected": preflight.get("terminal_connected"),
             "auto_trading_enabled": preflight.get("auto_trading_enabled"),
-            "execution_ready": preflight.get("execution_ready"),
+            "execution_ready": strict_execution_ready,
+            "execution_ready_relaxed": preflight.get("execution_ready"),
             "execution_ready_strict": preflight.get("execution_ready_strict"),
             "execution_hard_blockers": preflight.get("execution_hard_blockers"),
             "execution_soft_blockers": preflight.get("execution_soft_blockers"),

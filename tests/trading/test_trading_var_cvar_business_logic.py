@@ -33,6 +33,24 @@ def test_position_mark_freshness_fetches_each_symbol_once() -> None:
     assert out["mark_freshness"][1]["positions"] == 1
 
 
+def test_position_mark_freshness_rejects_live_label_for_entry_fallback() -> None:
+    gateway = SimpleNamespace(
+        symbol_info_tick=lambda _symbol: SimpleNamespace(
+            bid=99.0, ask=101.0, time=4_102_444_800
+        )
+    )
+
+    out = _position_mark_freshness(
+        gateway,
+        [SimpleNamespace(symbol="EURUSD", price_current=0.0, price_open=100.0)],
+    )
+
+    assert out["mark_freshness_status"] == "entry_price_fallback"
+    assert out["valuation_basis"] == "entry_price_fallback"
+    assert out["usable_for_live_trading"] is False
+    assert out["entry_price_fallback_positions"] == 1
+
+
 def _symbol_info(**overrides):
     values = {
         "trade_contract_size": 1.0,

@@ -66,6 +66,32 @@ def test_trade_stress_test_offsets_long_and_short_positions():
     assert {item["symbol"] for item in result["mark_freshness"]} == {"EURUSD"}
 
 
+def test_trade_stress_test_labels_entry_price_fallback_as_non_live():
+    gateway = _Gateway()
+    gateway.positions_get = lambda: [
+        SimpleNamespace(
+            ticket=3,
+            symbol="EURUSD",
+            type=0,
+            volume=1.0,
+            price_current=0.0,
+            price_open=1.1,
+        )
+    ]
+    gateway.symbol_info_tick = lambda _symbol: SimpleNamespace(
+        bid=1.0999, ask=1.1001, time=4_102_444_800
+    )
+
+    result = run_trade_stress_test(
+        TradeStressTestRequest(shocks={"EURUSD": -1.0}), gateway=gateway
+    )
+
+    assert result["items"][0]["valuation_basis"] == "entry_price_fallback"
+    assert result["mark_freshness_status"] == "entry_price_fallback"
+    assert result["valuation_basis"] == "entry_price_fallback"
+    assert result["usable_for_live_trading"] is False
+
+
 def test_trade_stress_test_rejects_failed_position_snapshot():
     gateway = _Gateway()
     gateway.positions_get = lambda: None

@@ -34,9 +34,14 @@ def _sanitize_trade_session_section_error(
     if section.get("error") in (None, ""):
         return section, False
 
-    sanitized: Dict[str, Any] = {"error": f"Unable to fetch {label}."}
-    if include_count:
-        sanitized["count"] = 0
+    sanitized: Dict[str, Any] = {
+        "error": f"Unable to fetch {label}.",
+        "available": False,
+        "snapshot_status": "unavailable",
+    }
+    for key in ("error_code", "remediation", "last_error"):
+        if section.get(key) not in (None, ""):
+            sanitized[key] = section[key]
     return sanitized, True
 
 
@@ -175,19 +180,29 @@ def _build_trade_ready(
 
     if not isinstance(quote, dict) or quote.get("error") not in (None, ""):
         blockers.append("quote_unavailable")
-    elif quote.get("usable_for_live_trading") is False:
-        blockers.append("quote_not_live")
-    elif bool(quote.get("data_stale")):
+    elif quote.get("usable_for_live_trading") is not True:
+        blockers.append(
+            "quote_not_live"
+            if quote.get("usable_for_live_trading") is False
+            else "quote_readiness_unknown"
+        )
+    elif quote.get("data_stale") is True:
         blockers.append("quote_stale")
+    elif quote.get("data_stale") is not False:
+        blockers.append("quote_freshness_unknown")
 
     trade_mode_allows_opening = None
-    if isinstance(tradability, dict) and tradability.get("error") in (None, ""):
+    if not isinstance(tradability, dict) or tradability.get("error") not in (None, ""):
+        blockers.append("market_status_unavailable")
+    else:
         trade_mode_allows_opening = tradability.get(
             "trade_mode_allows_opening",
             tradability.get("can_open_new_positions"),
         )
         if trade_mode_allows_opening is False:
             blockers.append("market_not_open_for_new_positions")
+        elif trade_mode_allows_opening is not True:
+            blockers.append("market_opening_status_unknown")
 
     deduped_blockers = list(dict.fromkeys(blockers))
     margin_sufficient = None
@@ -198,6 +213,16 @@ def _build_trade_ready(
         margin_sufficient = None
     result = {
         "execution_preconditions_met": not deduped_blockers,
+        "readiness_status": (
+            "unknown"
+            if any(
+                "unknown" in blocker or "unavailable" in blocker
+                for blocker in deduped_blockers
+            )
+            else "blocked"
+            if deduped_blockers
+            else "ready"
+        ),
         "any_blockers": bool(deduped_blockers),
         "blockers": deduped_blockers,
         "margin_available_positive": margin_sufficient,
@@ -225,10 +250,12 @@ def _trade_session_tradability(symbol: str) -> Dict[str, Any]:
             detail="compact",
             timezone_display="utc",
         )
-    except Exception:
-        return {}
-    if not isinstance(result, dict) or result.get("error"):
-        return {}
+    except Exception as exc:
+        return {"error": f"Unable to fetch market status: {exc}"}
+    if not isinstance(result, dict):
+        return {"error": "Unable to fetch market status: invalid response."}
+    if result.get("error"):
+        return {"error": str(result.get("error"))}
     return {
         key: result[key]
         for key in (
@@ -332,6 +359,7 @@ def _compact_trade_session_context_payload(payload: Dict[str, Any]) -> Dict[str,
             "quote_quality",
             "market_status",
             "market_status_reason",
+            "market_status_error",
             "is_tradable",
             "can_open_new_positions",
             "trade_mode_allows_opening",
@@ -578,7 +606,9 @@ def trade_session_context(request: TradeSessionContextRequest) -> Dict[str, Any]
         has_open = bool(open_res.get("success", False) and open_res.get("count", 0) > 0)
         has_pending = bool(pending_res.get("success", False) and pending_res.get("count", 0) > 0)
 
-        if has_open and has_pending:
+        if open_failed or pending_failed:
+            state = "unknown"
+        elif has_open and has_pending:
             state = "mixed"
         elif has_open:
             state = "open_position"
@@ -607,7 +637,10 @@ def trade_session_context(request: TradeSessionContextRequest) -> Dict[str, Any]
             "quote": quote_res,
             "quote_quality": _build_quote_quality(quote_res),
         }
-        if tradability:
+        if tradability.get("error") not in (None, ""):
+            payload["market_status_error"] = tradability["error"]
+            partial_failure = True
+        elif tradability:
             payload["market_status"] = tradability.get("status")
             payload["market_status_reason"] = tradability.get("reason")
             payload["is_tradable"] = tradability.get("is_tradable")

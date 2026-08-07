@@ -810,6 +810,13 @@ def _modify_pending_order(
             tick = mt5.symbol_info_tick(order.symbol)
             if tick is None:
                 return {"error": f"Failed to get current price for {order.symbol}"}
+            freshness_error = validation._validate_tick_freshness(
+                tick,
+                symbol=order.symbol,
+                max_age_seconds=_CLOSE_TICK_MAX_AGE_SECONDS,
+            )
+            if freshness_error is not None:
+                return freshness_error
             price_inputs, price_inputs_error = validation._normalize_trade_price_inputs(
                 symbol_info=symbol_info,
                 price=price if price is not None else getattr(order, "price_open", None),
@@ -1011,6 +1018,28 @@ def _modify_pending_order(
                         "execution_latency",
                     ],
                 }
+
+            send_tick = mt5.symbol_info_tick(order.symbol)
+            if send_tick is None:
+                return {"error": f"Failed to refresh current price for {order.symbol}"}
+            freshness_error = validation._validate_tick_freshness(
+                send_tick,
+                symbol=order.symbol,
+                max_age_seconds=_CLOSE_TICK_MAX_AGE_SECONDS,
+            )
+            if freshness_error is not None:
+                return freshness_error
+            send_level_error = validation._validate_pending_order_levels(
+                symbol_info=symbol_info,
+                tick=send_tick,
+                order_type_value=order_type_value,
+                price=float(normalized_price),
+                stop_loss=None if request_sl == 0.0 else float(request_sl),
+                take_profit=None if request_tp == 0.0 else float(request_tp),
+                mt5=mt5,
+            )
+            if send_level_error is not None:
+                return send_level_error
 
             result, comment_fallback, last_error = comments._send_order_with_comment_fallback(
                 mt5,
@@ -2006,6 +2035,10 @@ def _resolve_close_dry_run_target(
     ticket: Union[int, str],
     symbol: Optional[str] = None,
     volume: Optional[Union[int, float]] = None,
+    magic: Optional[int] = None,
+    profit_only: bool = False,
+    loss_only: bool = False,
+    close_priority: Optional[str] = None,
     gateway: Optional[MT5TradingGateway] = None,
 ) -> dict:
     """Resolve a close target for dry-run validation without sending trade requests."""
@@ -2029,6 +2062,18 @@ def _resolve_close_dry_run_target(
         require_exact_ticket_match=True,
     )
     if position is not None:
+        magic_filter = validation._safe_int_ticket(magic) if magic is not None else None
+        if (
+            magic_filter is not None
+            and validation._safe_int_ticket(getattr(position, "magic", None))
+            != magic_filter
+        ):
+            return {"error": f"Position {ticket} does not match magic={magic_filter}"}
+        position_profit = validation._safe_float_attr(position, "profit", 0.0)
+        if profit_only and position_profit <= 0.0:
+            return {"error": f"Position {ticket} does not match profit_only=true"}
+        if loss_only and position_profit >= 0.0:
+            return {"error": f"Position {ticket} does not match loss_only=true"}
         position_volume = validation._safe_float_attr(position, "volume") or None
         if volume is not None:
             symbol_info = mt5.symbol_info(getattr(position, "symbol", ""))
@@ -2059,7 +2104,16 @@ def _resolve_close_dry_run_target(
                         "requested_volume": requested_volume,
                         "position_volume": position_volume,
                     }
-        return {
+        preview = _close_positions_dry_run_preview(
+            [position],
+            symbol=symbol,
+            magic=magic_filter,
+            profit_only=profit_only,
+            loss_only=loss_only,
+            close_priority=close_priority,
+            mt5=mt5,
+        )
+        preview.update({
             "success": True,
             "target_scope": "positions",
             "target_kind": "open_position",
@@ -2067,7 +2121,11 @@ def _resolve_close_dry_run_target(
             "target_symbol": getattr(position, "symbol", None),
             "target_volume": position_volume,
             "ticket_resolution": position_resolution,
-        }
+        })
+        if volume is not None:
+            preview["requested_close_volume"] = float(requested_volume)
+            preview["would_send_orders"] = 1
+        return preview
 
     if (
         isinstance(position_resolution, dict)
@@ -2095,6 +2153,20 @@ def _resolve_close_dry_run_target(
         require_exact_ticket_match=True,
     )
     if pending_order is not None:
+        magic_filter = validation._safe_int_ticket(magic) if magic is not None else None
+        if (
+            magic_filter is not None
+            and validation._safe_int_ticket(getattr(pending_order, "magic", None))
+            != magic_filter
+        ):
+            return {"error": f"Pending order {ticket} does not match magic={magic_filter}"}
+        if profit_only or loss_only:
+            return {
+                "error": (
+                    "profit_only and loss_only filters apply only to open positions; "
+                    f"ticket {ticket} is a pending order."
+                )
+            }
         return {
             "success": True,
             "target_scope": "pending_orders",

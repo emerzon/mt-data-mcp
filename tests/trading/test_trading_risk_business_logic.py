@@ -14,6 +14,7 @@ from mtdata.core.trading import trade_risk_analyze as _trade_risk_analyze_tool
 from mtdata.core.trading.requests import TradeRiskAnalyzeRequest
 from mtdata.core.trading.use_cases import (
     _floor_volume_steps,
+    _resolve_live_trade_risk_entry,
     _resolve_trade_risk_direction,
     run_trade_risk_analyze,
 )
@@ -24,6 +25,30 @@ def _unwrap(fn):
     while hasattr(fn, "__wrapped__"):
         fn = fn.__wrapped__
     return fn
+
+
+def test_live_risk_entry_uses_reconciled_stream_quote(monkeypatch) -> None:
+    gateway = SimpleNamespace(
+        COPY_TICKS_ALL=0,
+        symbol_info_tick=lambda _symbol: SimpleNamespace(
+            bid=1.1000, ask=1.1002, time=1_800_000_000
+        ),
+        copy_ticks_range=lambda *_args: [
+            {"bid": 1.09995, "ask": 1.10015, "time": 1_800_000_000}
+        ],
+    )
+    monkeypatch.setattr(
+        "mtdata.core.trading.use_cases.time.time", lambda: 1_800_000_001.0
+    )
+
+    entry, source, context = _resolve_live_trade_risk_entry(
+        gateway=gateway, symbol="EURUSD", direction="long"
+    )
+
+    assert entry == 1.10015
+    assert source.endswith("_tick_ask")
+    assert context["quote_source"] == "mt5.copy_ticks_range"
+    assert context["quote_source_state"] == "reconciled_equal_timestamp_conflict"
 
 
 def trade_risk_analyze(**kwargs):

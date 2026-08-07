@@ -61,6 +61,24 @@ def test_trade_ready_blocks_critical_margin_stress() -> None:
     assert readiness["can_open_new_positions"] is False
 
 
+def test_trade_ready_fails_closed_when_quote_or_market_status_is_unknown() -> None:
+    readiness = _build_trade_ready(
+        {
+            "execution_ready": True,
+            "equity": 1000.0,
+            "margin": 0.0,
+            "margin_free": 1000.0,
+        },
+        {"bid": 1.1, "ask": 1.1002},
+        {"status": "unknown"},
+    )
+
+    assert readiness["execution_preconditions_met"] is False
+    assert readiness["readiness_status"] == "unknown"
+    assert "quote_readiness_unknown" in readiness["blockers"]
+    assert "market_opening_status_unknown" in readiness["blockers"]
+
+
 def test_trade_session_context_compacts_nested_sections_by_default() -> None:
     timezone_meta = {"used": {"tz": "UTC"}}
     ticker_compact = {
@@ -453,10 +471,9 @@ def test_trade_session_context_compact_sanitizes_nested_tool_errors() -> None:
 
     assert out["success"] is True
     assert out["partial_failure"] is True
-    assert out["state"] == "flat"
+    assert out["state"] == "unknown"
     assert out["open_positions"] == {
         "error": "Unable to fetch open positions.",
-        "count": 0,
     }
     assert "SimpleNamespace" not in str(out["open_positions"])
 

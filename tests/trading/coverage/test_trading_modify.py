@@ -97,7 +97,7 @@ def _sym(
 
 
 def _tick(bid=1.10000, ask=1.10020):
-    return SimpleNamespace(bid=bid, ask=ask)
+    return SimpleNamespace(bid=bid, ask=ask, time=4_102_444_800)
 
 
 def _order_result(retcode=10009, deal=1, order=1, volume=0.01, price=1.1,
@@ -512,6 +512,19 @@ class TestModifyPendingOrder:
         assert result["verification_status"] == "verified"
         assert result["applied_price"] == pytest.approx(1.0948)
         assert result["broker_adjusted"] is True
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_rejects_untimestamped_tick_before_pending_modify(self):
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        mt5.orders_get.return_value = [_pending_order()]
+        mt5.symbol_info_tick.return_value = SimpleNamespace(bid=1.1, ask=1.1002)
+        from mtdata.core.trading import _modify_pending_order
+
+        result = _modify_pending_order(ticket=100, price=1.095)
+
+        assert result["tick_age_status"] == "unknown"
+        mt5.order_send.assert_not_called()
 
     @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
     def test_broker_no_changes_retcode_is_pending_modify_success(self):

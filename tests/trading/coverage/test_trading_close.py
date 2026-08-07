@@ -376,6 +376,9 @@ class TestTradeClose:
             "resolved_ticket": 123,
             "target_symbol": "EURUSD",
             "target_volume": 0.1,
+            "preview_ok": True,
+            "matched_count": 1,
+            "market_readiness": {"usable_for_live_trading": True},
         }
 
         out = trade_close(ticket=123, volume=0.05, dry_run=True, __cli_raw=True)
@@ -390,8 +393,19 @@ class TestTradeClose:
         assert out["target_scope"] == "positions"
         assert out["target_kind"] == "open_position"
         assert out["resolved_ticket"] == 123
+        assert out["preview_ok"] is True
+        assert out["matched_count"] == 1
+        assert out["market_readiness"]["usable_for_live_trading"] is True
         assert "realized_pnl" in out["not_estimated"]
-        mock_resolve.assert_called_once_with(ticket=123, symbol=None, volume=0.05)
+        mock_resolve.assert_called_once_with(
+            ticket=123,
+            symbol=None,
+            volume=0.05,
+            magic=None,
+            profit_only=False,
+            loss_only=False,
+            close_priority=None,
+        )
         mock_close.assert_not_called()
         mock_cancel.assert_not_called()
 
@@ -410,7 +424,15 @@ class TestTradeClose:
 
         assert out["error"] == "Ticket 999 not found as position or pending order."
         assert out["checked_scopes"] == ["positions", "pending_orders"]
-        mock_resolve.assert_called_once_with(ticket=999, symbol=None, volume=None)
+        mock_resolve.assert_called_once_with(
+            ticket=999,
+            symbol=None,
+            volume=None,
+            magic=None,
+            profit_only=False,
+            loss_only=False,
+            close_priority=None,
+        )
         mock_close.assert_not_called()
         mock_cancel.assert_not_called()
 

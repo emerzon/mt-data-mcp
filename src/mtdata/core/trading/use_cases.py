@@ -24,6 +24,7 @@ from ...utils.mt5 import (
     _to_mt5_history_epoch_seconds,
     mt5_adapter,
 )
+from ...utils.quote import resolve_quote_tick, tick_value
 from ...utils.time import _format_datetime_second_explicit
 from ..error_envelope import normalize_error_payload
 from ..execution_logging import (
@@ -557,13 +558,22 @@ def _resolve_live_trade_risk_entry(
     direction: Any,
 ) -> tuple[float | None, str | None, Dict[str, Any]]:
     try:
-        tick = gateway.symbol_info_tick(symbol)
+        raw_tick = gateway.symbol_info_tick(symbol)
     except Exception:
         return None, None, {}
-    if tick is None:
+    if raw_tick is None:
         return None, None, {}
+    tick, quote_source = resolve_quote_tick(
+        gateway,
+        symbol,
+        raw_tick,
+        now_epoch=time.time(),
+    )
+    if tick is None:
+        return None, None, quote_source
 
     quote_context = build_trade_quote_context(symbol, tick)
+    quote_context.update(quote_source)
     live_quote = quote_context.get("usable_for_live_trading") is True
     source_prefix = "live_tick" if live_quote else "last_available_tick"
     if not live_quote:
@@ -573,8 +583,8 @@ def _resolve_live_trade_risk_entry(
             "refresh the entry before submitting an order."
         )
 
-    bid = _positive_trade_price(getattr(tick, "bid", None))
-    ask = _positive_trade_price(getattr(tick, "ask", None))
+    bid = _positive_trade_price(tick_value(tick, "bid"))
+    ask = _positive_trade_price(tick_value(tick, "ask"))
     if bid is not None:
         quote_context["bid"] = bid
     if ask is not None:
@@ -978,6 +988,8 @@ def _shape_trade_var_cvar_payload(
             "data_stale",
             "valuation_time",
             "valuation_basis",
+            "valuation_warning",
+            "entry_price_fallback_positions",
             "market_status",
             "market_status_reason",
             "mark_freshness",
@@ -2452,6 +2464,10 @@ def run_trade_close(  # noqa: C901
                 ticket=request.ticket,
                 symbol=request.symbol,
                 volume=request.volume,
+                magic=request.magic,
+                profit_only=request.profit_only,
+                loss_only=request.loss_only,
+                close_priority=request.close_priority,
             )
             if isinstance(target_result, dict) and target_result.get("error"):
                 return _finish(
@@ -2566,6 +2582,15 @@ def run_trade_close(  # noqa: C901
                     "resolved_ticket",
                     "target_symbol",
                     "target_volume",
+                    "matched_count",
+                    "matched_positions",
+                    "total_volume",
+                    "total_profit",
+                    "filters_applied",
+                    "would_send_orders",
+                    "preview_ok",
+                    "market_readiness",
+                    "requested_close_volume",
                 ):
                     value = target_result.get(key)
                     if value is not None:
@@ -4826,8 +4851,10 @@ def run_trade_stress_test(
             warnings_out.append({"symbol": symbol, "warning": "Symbol info unavailable."})
             continue
         current_price = validation._safe_float_attr(position, "price_current", 0.0)
+        valuation_basis = "position_current_price"
         if current_price <= 0.0:
             current_price = validation._safe_float_attr(position, "price_open", 0.0)
+            valuation_basis = "entry_price_fallback"
         volume = validation._safe_float_attr(position, "volume", 0.0)
         tick_size = validation._safe_float_attr(symbol_info, "trade_tick_size", 0.0)
         if tick_size <= 0.0:
@@ -4882,6 +4909,7 @@ def run_trade_stress_test(
             "volume": round(float(volume), 6),
             "shock_pct": round(shock_value, 6),
             "current_price": round(float(current_price), 8),
+            "valuation_basis": valuation_basis,
             "shocked_price": round(float(shocked_price), 8),
             "pnl_impact": round(float(pnl_impact), 2),
         }
@@ -4943,11 +4971,16 @@ def _position_mark_freshness(
 ) -> Dict[str, Any]:
     contexts: List[Dict[str, Any]] = []
     symbol_counts: Dict[str, int] = {}
+    fallback_counts: Dict[str, int] = {}
     for position in positions:
         symbol = str(getattr(position, "symbol", "") or "").strip()
         if not symbol:
             continue
         symbol_counts[symbol] = symbol_counts.get(symbol, 0) + 1
+        current_price = validation._safe_float_attr(position, "price_current", 0.0)
+        open_price = validation._safe_float_attr(position, "price_open", 0.0)
+        if current_price <= 0.0 and open_price > 0.0:
+            fallback_counts[symbol] = fallback_counts.get(symbol, 0) + 1
     for symbol, position_count in symbol_counts.items():
         try:
             tick = gateway.symbol_info_tick(symbol)
@@ -4956,6 +4989,9 @@ def _position_mark_freshness(
         context = build_trade_quote_context(symbol, tick)
         context["symbol"] = symbol
         context["positions"] = int(position_count)
+        if fallback_counts.get(symbol):
+            context["entry_price_fallback_positions"] = fallback_counts[symbol]
+            context["valuation_basis"] = "entry_price_fallback"
         contexts.append(context)
     if not contexts:
         return {
@@ -4971,7 +5007,8 @@ def _position_mark_freshness(
             return float("inf")
 
     oldest = max(contexts, key=_age)
-    live_ready = all(
+    fallback_used = bool(fallback_counts)
+    live_ready = not fallback_used and all(
         item.get("usable_for_live_trading") is True for item in contexts
     )
     stale_values = [item.get("data_stale") for item in contexts]
@@ -4983,15 +5020,31 @@ def _position_mark_freshness(
         else None
     )
     out: Dict[str, Any] = {
-        "mark_freshness_status": "live" if live_ready else "stale_or_unverified",
+        "mark_freshness_status": (
+            "live"
+            if live_ready
+            else "entry_price_fallback"
+            if fallback_used
+            else "stale_or_unverified"
+        ),
         "usable_for_live_trading": live_ready,
         "data_stale": data_stale,
         "valuation_time": oldest.get("quote_time"),
         "valuation_basis": (
-            "live_position_marks" if live_ready else "stale_or_unverified_position_marks"
+            "live_position_marks"
+            if live_ready
+            else "entry_price_fallback"
+            if fallback_used
+            else "stale_or_unverified_position_marks"
         ),
         "mark_freshness": contexts,
     }
+    if fallback_used:
+        out["valuation_warning"] = (
+            "One or more positions were valued from entry price because the current "
+            "position mark was unavailable; results are not live-mark ready."
+        )
+        out["entry_price_fallback_positions"] = sum(fallback_counts.values())
     for key in ("market_status", "market_status_reason"):
         values = [item.get(key) for item in contexts if item.get(key) not in (None, "")]
         if values:
@@ -5255,8 +5308,10 @@ def run_trade_var_cvar_calculate(  # noqa: C901
         if not math.isfinite(contract_size) or contract_size <= 0.0:
             contract_size = 1.0
         mark_price = validation._safe_float_attr(position, "price_current", 0.0)
+        valuation_basis = "position_current_price"
         if mark_price <= 0.0:
             mark_price = validation._safe_float_attr(position, "price_open", 0.0)
+            valuation_basis = "entry_price_fallback"
         if not math.isfinite(mark_price) or mark_price <= 0.0:
             _record_valuation_failure(
                 position,
@@ -5293,6 +5348,7 @@ def run_trade_var_cvar_calculate(  # noqa: C901
                 "side": side,
                 "volume": float(volume),
                 "mark_price": round(float(mark_price), 6),
+                "valuation_basis": valuation_basis,
                 "contract_size": round(float(contract_size), 6),
                 "signed_notional": round(float(signed_notional), 2),
                 "contract_price_product": round(

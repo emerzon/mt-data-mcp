@@ -69,7 +69,9 @@ def mock_mt5():
         trade_tick_value=10.0,
         trade_tick_value_loss=10.0,
     )
-    mt5.symbol_info_tick = lambda symbol: SimpleNamespace(bid=1.1002, ask=1.1004)
+    mt5.symbol_info_tick = lambda symbol: SimpleNamespace(
+        bid=1.1002, ask=1.1004, time=4_102_444_800
+    )
     mt5.orders_get = lambda *args, **kwargs: [
         SimpleNamespace(
             ticket=100,

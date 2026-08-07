@@ -1654,6 +1654,13 @@ def _place_pending_order(
             initial_tick = mt5.symbol_info_tick(symbol)
             if initial_tick is None:
                 return {"error": f"Failed to get current price for {symbol}"}
+            freshness_error = validation._validate_tick_freshness(
+                initial_tick,
+                symbol=symbol,
+                max_age_seconds=_TRADE_TICK_MAX_AGE_SECONDS,
+            )
+            if freshness_error is not None:
+                return freshness_error
 
             deviation_validated, deviation_error = validation._validate_deviation(deviation)
             if deviation_error:
@@ -1688,6 +1695,13 @@ def _place_pending_order(
             live_tick = mt5.symbol_info_tick(symbol) or initial_tick
             if live_tick is None:
                 return {"error": f"Failed to refresh current price for {symbol}"}
+            freshness_error = validation._validate_tick_freshness(
+                live_tick,
+                symbol=symbol,
+                max_age_seconds=_TRADE_TICK_MAX_AGE_SECONDS,
+            )
+            if freshness_error is not None:
+                return freshness_error
             bid = validation._safe_float_attr(live_tick, "bid")
             ask = validation._safe_float_attr(live_tick, "ask")
             price_tol = point * 0.1 if point > 0 else 1e-9
@@ -1771,6 +1785,28 @@ def _place_pending_order(
                 else:
                     request["type_time"] = mt5.ORDER_TIME_SPECIFIED
                     request["expiration"] = normalized_expiration
+
+            send_tick = mt5.symbol_info_tick(symbol)
+            if send_tick is None:
+                return {"error": f"Failed to refresh current price for {symbol}"}
+            freshness_error = validation._validate_tick_freshness(
+                send_tick,
+                symbol=symbol,
+                max_age_seconds=_TRADE_TICK_MAX_AGE_SECONDS,
+            )
+            if freshness_error is not None:
+                return freshness_error
+            send_level_error = validation._validate_pending_order_levels(
+                symbol_info=symbol_info,
+                tick=send_tick,
+                order_type_value=order_type_value,
+                price=float(norm_price),
+                stop_loss=None if norm_sl is None else float(norm_sl),
+                take_profit=None if norm_tp is None else float(norm_tp),
+                mt5=mt5,
+            )
+            if send_level_error is not None:
+                return send_level_error
 
             send_outcome, send_error = _submit_order_request(
                 mt5,
