@@ -417,7 +417,13 @@ class TradeRiskAnalyzeRequest(BaseModel):
 
 
 class TradeVarCvarRequest(BaseModel):
-    symbol: Optional[str] = None
+    symbol: Optional[str] = Field(
+        default=None,
+        description=(
+            "Optional scope: calculate VaR/CVaR for currently open positions in this "
+            "symbol. Omit it for the full open portfolio."
+        ),
+    )
     timeframe: TimeframeLiteral = Field(
         default="H1",
         description="Return interval and one-bar VaR/CVaR holding period.",

@@ -1009,6 +1009,22 @@ class TestResolveParamKwargs:
         )
         assert "denoise_list_methods" in denoise["help"]
 
+    def test_var_cvar_symbol_help_explains_it_requires_open_exposure(self):
+        symbol_param = {
+            "name": "symbol",
+            "type": Optional[str],
+            "required": False,
+            "default": None,
+        }
+        kwargs, _ = _resolve_param_kwargs(
+            symbol_param,
+            None,
+            cmd_name="trade_var_cvar_calculate",
+        )
+
+        assert "currently open positions" in kwargs["help"]
+        assert "full open portfolio" in kwargs["help"]
+
     def test_report_template_choices_are_explicit(self):
         from mtdata.core.report.requests import ReportTemplateLiteral
 

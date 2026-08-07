@@ -110,6 +110,10 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
     ("trade_var_cvar_calculate", "method"): (
         "Tail-risk method: historical (or hist) or parametric (or gaussian/normal)."
     ),
+    ("trade_var_cvar_calculate", "symbol"): (
+        "Optional scope: calculate VaR/CVaR for currently open positions in this "
+        "symbol. Omit it for the full open portfolio."
+    ),
     ("trade_var_cvar_calculate", "transform"): (
         "Return transform: log_return (aliases log_returns/log) or pct "
         "(aliases pct_return/percent/simple_return)."
