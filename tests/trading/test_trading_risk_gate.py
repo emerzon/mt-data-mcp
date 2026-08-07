@@ -38,9 +38,22 @@ def test_margin_level_allows_sufficient():
     assert _evaluate_account_risk_gate(limits, account_info=acct) is None
 
 
-def test_margin_level_no_account_info_passes():
+def test_margin_level_no_account_info_fails_closed():
     limits = AccountRiskLimits(min_margin_level_pct=200.0)
-    assert _evaluate_account_risk_gate(limits, account_info=None) is None
+    result = _evaluate_account_risk_gate(limits, account_info=None)
+
+    assert result is not None
+    assert result["error_code"] == "account_snapshot_unavailable"
+    assert "snapshot is unavailable" in result["violations"][0].lower()
+
+
+def test_floating_loss_without_profit_field_fails_closed():
+    limits = AccountRiskLimits(max_floating_loss=500.0)
+    result = _evaluate_account_risk_gate(limits, account_info=SimpleNamespace())
+
+    assert result is not None
+    assert result["error_code"] == "account_snapshot_incomplete"
+    assert "snapshot is incomplete" in result["violations"][0].lower()
 
 
 def test_margin_level_allows_flat_account_with_zero_margin_level():

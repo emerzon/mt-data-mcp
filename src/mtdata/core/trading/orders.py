@@ -656,7 +656,22 @@ def _assess_order_account_state(
     except Exception:
         account_info = None
     if account_info is None:
-        return None, None, None
+        block = validation.snapshot_unavailable_error(
+            mt5,
+            snapshot="account",
+            context="evaluate the current account execution and margin state",
+        )
+        block["blockers"] = ["account_snapshot_unavailable"]
+        if preflight is not None:
+            block["preflight"] = preflight
+        return (
+            None,
+            {
+                "margin_stress": {"status": "unknown", "reasons": []},
+                "blockers": ["account_snapshot_unavailable"],
+            },
+            block,
+        )
 
     numeric_margin_fields = {
         field: getattr(account_info, field, None)

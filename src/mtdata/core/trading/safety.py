@@ -442,6 +442,21 @@ def _evaluate_account_risk_gate(
         return None
 
     violations: List[str] = []
+    snapshot_error_code: Optional[str] = None
+
+    needs_margin_snapshot = limits.min_margin_level_pct is not None
+    needs_profit_snapshot = limits.max_floating_loss is not None
+    if account_info is None and (needs_margin_snapshot or needs_profit_snapshot):
+        required_checks = []
+        if needs_margin_snapshot:
+            required_checks.append("margin-level")
+        if needs_profit_snapshot:
+            required_checks.append("floating-loss")
+        violations.append(
+            "Account snapshot is unavailable; cannot evaluate configured "
+            f"{' and '.join(required_checks)} limits."
+        )
+        snapshot_error_code = "account_snapshot_unavailable"
 
     if limits.min_margin_level_pct is not None and account_info is not None:
         margin = _safe_float_attr(account_info, "margin")
@@ -450,6 +465,14 @@ def _evaluate_account_risk_gate(
         # That is undefined / N/A, not a distressed level — match trade_account_info.
         if margin is not None and margin <= 0:
             margin_level = None
+        elif margin_level is None or (
+            margin is None and math.isclose(margin_level, 0.0, abs_tol=1e-12)
+        ):
+            violations.append(
+                "Account snapshot is incomplete; cannot evaluate the configured "
+                "margin-level limit."
+            )
+            snapshot_error_code = "account_snapshot_incomplete"
         if (
             margin_level is not None
             and math.isfinite(margin_level)
@@ -462,7 +485,13 @@ def _evaluate_account_risk_gate(
 
     if limits.max_floating_loss is not None and account_info is not None:
         profit = _safe_float_attr(account_info, "profit")
-        if profit is not None and profit < 0 and abs(profit) > limits.max_floating_loss:
+        if profit is None:
+            violations.append(
+                "Account snapshot is incomplete; cannot evaluate the configured "
+                "floating-loss limit."
+            )
+            snapshot_error_code = "account_snapshot_incomplete"
+        elif profit < 0 and abs(profit) > limits.max_floating_loss:
             violations.append(
                 f"Floating loss ${abs(profit):.2f} exceeds the "
                 f"limit of ${limits.max_floating_loss:.2f}."
@@ -478,10 +507,13 @@ def _evaluate_account_risk_gate(
     if not violations:
         return None
 
-    return {
+    result = {
         "error": "Order blocked by account risk gate.",
         "violations": violations,
     }
+    if snapshot_error_code is not None:
+        result["error_code"] = snapshot_error_code
+    return result
 
 
 def _evaluate_symbol_guardrails(
@@ -1155,7 +1187,7 @@ def evaluate_trade_guardrails(
             projected_exposure_lots=projected_total,
         )
         if account_result is not None:
-            return _build_guardrail_block(
+            block = _build_guardrail_block(
                 list(account_result.get("violations") or []),
                 rule="account_risk",
                 context={
@@ -1164,6 +1196,10 @@ def evaluate_trade_guardrails(
                     "projected_exposure_lots": round(projected_total, 4),
                 },
             )
+            error_code = account_result.get("error_code")
+            if error_code is not None:
+                block["error_code"] = error_code
+            return block
 
     if enforce_wallet_risk:
         wallet_result = _evaluate_wallet_risk_limits(

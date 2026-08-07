@@ -205,6 +205,21 @@ def test_order_preflight_blocks_critical_account_margin_before_symbol_lookup():
     gateway.symbol_info.assert_not_called()
 
 
+def test_order_preflight_blocks_when_account_snapshot_is_unavailable():
+    gateway = MagicMock()
+    gateway.build_trade_preflight.return_value = {"execution_ready_strict": True}
+    gateway.account_info.return_value = None
+
+    context, error = _prepare_order_symbol_context(
+        gateway, symbol="EURUSD", volume=0.01
+    )
+
+    assert context is None
+    assert error["error_code"] == "account_snapshot_unavailable"
+    assert error["blockers"] == ["account_snapshot_unavailable"]
+    gateway.symbol_info.assert_not_called()
+
+
 def _critical_margin_gateway(*, margin_mode: int, positions):
     from mtdata.core.trading.gateway import MT5TradingGateway
 
