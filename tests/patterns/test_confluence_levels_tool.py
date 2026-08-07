@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
+from inspect import signature
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -145,6 +146,14 @@ def test_confluence_levels_tool_combines_pivot_sr_and_fibonacci():
             assert decimals <= 5
     assert mock_sr.call_args.kwargs["timeframe"] == "auto"
     assert mock_sr.call_args.kwargs["max_levels"] == 5
+
+
+def test_confluence_volume_profile_tick_window_matches_standalone_default():
+    fn = _get_confluence_fn()
+
+    assert signature(fn).parameters[
+        "volume_profile_max_tick_window_days"
+    ].default == 1
 
 
 def test_pivot_compute_points_defaults_to_daily_timeframe():

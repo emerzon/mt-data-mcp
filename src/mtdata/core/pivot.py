@@ -663,7 +663,7 @@ def confluence_levels(  # noqa: C901
     adx_period: int = 14,
     decay_half_life_bars: Optional[int] = None,
     volume_profile_source: Literal["auto", "ticks", "m1_bars"] = "auto",
-    volume_profile_max_tick_window_days: int = 7,
+    volume_profile_max_tick_window_days: int = 1,
     volume_profile_max_ticks: int = 50_000,
     detail: DetailLiteral = "compact",
     extras: Optional[str] = None,

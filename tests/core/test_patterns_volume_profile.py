@@ -3,6 +3,23 @@ from mtdata.core.patterns_use_cases import PatternsDetectDeps, run_patterns_dete
 
 
 def test_fractal_mode_opt_in_volume_profile_enriches_rows():
+    volume_profile_calls = []
+
+    def compute_volume_profile_payload(**kwargs):
+        volume_profile_calls.append(kwargs)
+        return {
+            "success": True,
+            "price_point": 0.0001,
+            "levels": [
+                {
+                    "level": "POC",
+                    "type": "volume_poc",
+                    "price": 1.0855,
+                    "volume": 10,
+                }
+            ],
+        }
+
     deps = PatternsDetectDeps(
         compact_patterns_payload=lambda *args, **kwargs: {},
         fetch_pattern_data=lambda *args, **kwargs: (_FakeFrame(), None),
@@ -48,18 +65,7 @@ def test_fractal_mode_opt_in_volume_profile_enriches_rows():
         validate_fractal_config=lambda cfg: [],
         validate_harmonic_config=lambda cfg: [],
         summarize_fractal_context=lambda rows: {},
-        compute_volume_profile_payload=lambda **kwargs: {
-            "success": True,
-            "price_point": 0.0001,
-            "levels": [
-                {
-                    "level": "POC",
-                    "type": "volume_poc",
-                    "price": 1.0855,
-                    "volume": 10,
-                }
-            ],
-        },
+        compute_volume_profile_payload=compute_volume_profile_payload,
         annotate_level_confluence=_annotate,
         format_time_minimal=lambda value: str(value),
         to_float_np=lambda value: value,
@@ -76,6 +82,7 @@ def test_fractal_mode_opt_in_volume_profile_enriches_rows():
     )
 
     assert result["volume_profile"]["success"] is True
+    assert volume_profile_calls[0]["max_tick_window_days"] == 1
     assert result["patterns"][0]["volume_profile_confluence"]["level"] == "POC"
     assert result["n_volume_profile_confluences"] == 1
 

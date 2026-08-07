@@ -102,7 +102,7 @@ mtdata-cli confluence_levels EURUSD --min-source-families 2 --max-levels 5 --jso
 | `pivot_method` | — | Restrict pivots to one method (`classic`, `fibonacci`, …). |
 | `volume_weighting` | `off` | Set `auto` to volume-weight the S/R component. |
 | `volume_profile_source` | `auto` | Volume-profile input: `auto`, `ticks`, or `m1_bars`. |
-| `volume_profile_max_tick_window_days` | `7` | Cap the tick window pulled for volume profile. |
+| `volume_profile_max_tick_window_days` | `1` | Cap the raw-tick window, matching `volume_profile_levels`; longer `auto` windows use the disclosed M1 approximation. |
 | `volume_profile_max_ticks` | `50000` | Cap the number of ticks pulled for volume profile. |
 
 Single-family clusters are returned but score lower than multi-family confluence.

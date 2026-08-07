@@ -719,7 +719,7 @@ def run_patterns_detect(  # noqa: C901
                 max_buckets=120,
                 value_area_pct=0.70,
                 reference_price=None,
-                max_tick_window_days=_config_int("volume_profile_max_tick_window_days", 7),
+                max_tick_window_days=_config_int("volume_profile_max_tick_window_days", 1),
                 max_ticks=_config_int("volume_profile_max_ticks", 50_000),
                 max_m1_bars=max(1, int(request.limit) * 60),
                 detail="compact",
