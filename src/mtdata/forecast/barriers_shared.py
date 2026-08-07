@@ -63,6 +63,12 @@ BARRIER_METRIC_BASIS_NOTE = (
     "prob_win_resolved-breakeven_win_rate; "
     "profit_factor=resolved reward/loss; higher is better, positive ev/edge is favorable."
 )
+BROWNIAN_BRIDGE_DUAL_BARRIER_MODEL = "independent_single_barrier_approximation"
+BROWNIAN_BRIDGE_DUAL_BARRIER_WARNING = (
+    "Brownian-bridge TP and SL hits are sampled independently within each "
+    "bar; dual-barrier first-passage ordering is approximate and can overstate "
+    "same-bar ties when barriers are tight."
+)
 
 _RANDOM_SEED_MODULUS = 2**32
 
@@ -723,11 +729,8 @@ def _brownian_bridge_hits(
 ) -> np.ndarray:
     """Single-barrier Brownian bridge intra-step hit detection.
 
-    NOTE: When used for dual-barrier (TP+SL) scoring, TP and SL bridge hits
-    are sampled independently per interval.  This is an approximation — in a
-    true two-barrier first-passage problem the events are joint.  The impact
-    is small for well-separated barriers but may over-count same-step "ties"
-    when barriers are tight relative to per-step volatility.
+    When used for dual-barrier (TP+SL) scoring, callers use independent
+    single-barrier samples. This does not model joint first-passage ordering.
     """
     if not np.isfinite(sigma) or sigma <= 0:
         return np.zeros((log_paths.shape[0], log_paths.shape[1] - 1), dtype=bool)

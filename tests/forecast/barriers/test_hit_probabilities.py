@@ -122,6 +122,14 @@ class TestBarrierHitProbabilities(_BarrierTestBase):
         self.assertEqual(result["method"], "mc_gbm_bb")
         self.assertEqual(result["intra_bar_hit_detection"], "brownian_bridge")
         self.assertTrue(result["bridge_correction"])
+        self.assertEqual(
+            result["bridge_dual_barrier_model"],
+            "independent_single_barrier_approximation",
+        )
+        self.assertFalse(result["bridge_joint_first_passage"])
+        self.assertTrue(
+            any("sampled independently" in item for item in result["warnings"])
+        )
         self.assertFalse(
             any("intra-bar touches" in item for item in result.get("warnings", []))
         )

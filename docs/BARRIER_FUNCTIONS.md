@@ -23,9 +23,12 @@ mtdata-cli forecast_barrier_prob EURUSD --timeframe H1 --horizon 12 \
 Look for `prob_tp_first`, `prob_sl_first`, `prob_no_hit`, and `edge` in the output.
 
 **Defaults**: `--method mc_gbm_bb`, `--horizon 12`, `--direction long`. The
-default uses a Brownian-bridge correction so touches between simulated bar
-closes count. Methods that evaluate only simulated closes report
-`intra_bar_hit_detection: simulated_bar_close` and emit an undercount warning.
+default uses a Brownian-bridge correction so single-barrier touches between
+simulated bar closes count. For a TP/SL pair, the bridge samples each barrier
+independently; `bridge_joint_first_passage: false` marks the resulting
+same-bar ordering as an approximation. Methods that evaluate only simulated
+closes report `intra_bar_hit_detection: simulated_bar_close` and emit an
+undercount warning.
 
 ### 2) Search for “good” TP/SL levels
 
@@ -115,7 +118,11 @@ where:
 **Algorithm**: GBM with Brownian Bridge correction
 
 **Mathematical Model**:
-The Brownian Bridge is a Brownian motion conditioned to return to a specific value at time T. For barrier hitting, it provides more accurate probabilities for short horizons by accounting for the path between endpoints.
+The Brownian Bridge is a Brownian motion conditioned to return to a specific
+value at time T. For a single barrier, it improves short-horizon touch
+estimates by accounting for the path between endpoints. TP and SL bridge hits
+are sampled independently, so it does not provide an exact joint two-barrier
+first-passage ordering.
 
 **Key insight**: If we know the price at time T (from simulation), the probability of hitting a barrier between t and t+Δt is:
 ```
@@ -128,13 +135,13 @@ P(hit | S_t, S_T) = exp(-2 * (B - S_t)(B - S_T) / (σ²Δt))
 3. Detect hits that occur "between" discrete simulation points
 
 **Strengths**:
-- More accurate for short horizons
-- Captures intra-barrier hits
-- Better resolution for tight TP/SL
+- Improves single-barrier touch detection for short horizons
+- Captures single-barrier intra-bar touches
 
 **Weaknesses**:
 - Slightly slower than plain GBM
 - Requires more history for stable σ
+- Tight TP/SL can overstate same-bar ties because their bridge hits are independent
 
 **When to use**:
 - Very short horizons (< 10 bars)

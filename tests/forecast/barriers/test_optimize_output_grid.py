@@ -309,6 +309,14 @@ class TestBarrierOptimizeOutputGrid(_BarrierTestBase):
                 viable_only=False,
             )
         self.assertTrue(result["success"])
+        self.assertEqual(
+            result["bridge_dual_barrier_model"],
+            "independent_single_barrier_approximation",
+        )
+        self.assertFalse(result["bridge_joint_first_passage"])
+        self.assertTrue(
+            any("sampled independently" in item for item in result["warnings"])
+        )
         grid = result.get("grid")
         self.assertTrue(grid)
         for entry in grid:

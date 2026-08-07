@@ -42,6 +42,8 @@ from .barrier_stats import (
 )
 from .barriers_shared import (
     BARRIER_GRID_PRESETS,
+    BROWNIAN_BRIDGE_DUAL_BARRIER_MODEL,
+    BROWNIAN_BRIDGE_DUAL_BARRIER_WARNING,
     DEGENERATE_OBJECTIVE_MIN_RESOLVE,
     LOW_PRACTICAL_WIN_PROB_THRESHOLD,
     _annotate_candidate_metrics,
@@ -3720,6 +3722,11 @@ def forecast_barrier_optimize(  # noqa: C901
                 out["auto_reason"] = auto_reason
         if bb_enabled:
             out["bridge_correction"] = True
+            out["bridge_dual_barrier_model"] = BROWNIAN_BRIDGE_DUAL_BARRIER_MODEL
+            out["bridge_joint_first_passage"] = False
+            warnings_out = list(out.get("warnings") or [])
+            warnings_out.append(BROWNIAN_BRIDGE_DUAL_BARRIER_WARNING)
+            out["warnings"] = warnings_out
         if has_trading_costs:
             out["trading_costs"] = {
                 "cost_per_trade": _safe_float(cost_per_trade),

@@ -33,6 +33,8 @@ from ..utils.time import (
 )
 from ..utils.utils import parse_kv_or_json as _parse_kv_or_json
 from .barriers_shared import (
+    BROWNIAN_BRIDGE_DUAL_BARRIER_MODEL,
+    BROWNIAN_BRIDGE_DUAL_BARRIER_WARNING,
     _auto_barrier_method,
     _binomial_se,
     _binomial_wilson_95,
@@ -691,6 +693,9 @@ def forecast_barrier_hit_probabilities(  # noqa: C901
                 out["auto_reason"] = auto_reason
         if bb_enabled:
             out["bridge_correction"] = True
+            out["bridge_dual_barrier_model"] = BROWNIAN_BRIDGE_DUAL_BARRIER_MODEL
+            out["bridge_joint_first_passage"] = False
+            warnings_out.append(BROWNIAN_BRIDGE_DUAL_BARRIER_WARNING)
         else:
             warnings_out.append(
                 "Barrier hits are evaluated at simulated bar closes; transient "
