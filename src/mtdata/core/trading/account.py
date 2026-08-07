@@ -11,6 +11,7 @@ from ...bootstrap.settings import mt5_config
 from ...utils.coercion import round_finite
 from ...utils.mt5 import (
     MT5ConnectionError,
+    account_currency_from_gateway,
     ensure_mt5_connection_or_raise,
     mt5_adapter,
 )
@@ -33,7 +34,7 @@ from ..output_contract import (
 )
 from . import comments, safety, validation
 from .gateway import create_trading_gateway
-from .positions import _gateway_account_currency, normalize_trade_history_output
+from .positions import normalize_trade_history_output
 from .requests import TradeHistoryRequest, TradeJournalAnalyzeRequest
 from .use_cases import _DEFAULT_TRADE_HISTORY_LOOKBACK_DAYS, run_trade_history
 
@@ -118,7 +119,7 @@ def _run_trade_history_request(request: TradeHistoryRequest) -> Any:
     out = normalize_trade_history_output(
         result,
         request=request,
-        account_currency=_gateway_account_currency(gateway),
+        account_currency=account_currency_from_gateway(gateway),
     )
     if (
         isinstance(out, dict)

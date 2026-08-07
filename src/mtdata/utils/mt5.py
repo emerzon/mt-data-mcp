@@ -17,6 +17,7 @@ from types import SimpleNamespace
 from typing import Any, Dict, Iterator, Optional, Tuple
 
 from ..bootstrap.settings import mt5_config
+from .quote import tick_epoch
 
 logger = logging.getLogger(__name__)
 
@@ -350,8 +351,10 @@ def account_currency_from_gateway(gateway: Any) -> Optional[str]:
         value = getattr(account, "currency", None)
     except Exception:
         return None
-    if isinstance(value, str) and value.strip():
-        return value.strip()
+    if isinstance(value, str):
+        currency = value.strip()
+        if currency and not currency.startswith("<") and len(currency) <= 16:
+            return currency
     return None
 
 
@@ -421,26 +424,6 @@ def clear_mt5_timestamp_mode_cache() -> None:
     _mt5_terminal_timestamp_mode = None
 
 
-def _tick_epoch_seconds(tick: Any) -> Optional[float]:
-    if tick is None:
-        return None
-    for name, divisor in (("time", 1.0), ("time_msc", 1000.0)):
-        try:
-            value = getattr(tick, name)
-        except Exception:
-            try:
-                value = tick[name]
-            except Exception:
-                continue
-        try:
-            epoch = float(value) / divisor
-        except (TypeError, ValueError, OverflowError):
-            continue
-        if math.isfinite(epoch) and epoch > 0.0:
-            return epoch
-    return None
-
-
 def _configured_server_offset_seconds(at_epoch: float) -> int:
     try:
         at_time = datetime.fromtimestamp(float(at_epoch), tz=timezone.utc)
@@ -497,8 +480,8 @@ def _timestamp_mode_from_tick(
     """
     observed_now = float(time.time() if now_epoch is None else now_epoch)
     offset_seconds = _configured_server_offset_seconds(observed_now)
-    tick_epoch = _tick_epoch_seconds(tick)
-    if tick_epoch is None:
+    tick_time = tick_epoch(tick)
+    if tick_time is None:
         return _valid_cached_timestamp_mode(symbol) or _MT5_TIMESTAMP_MODE_NATIVE
     if offset_seconds == 0:
         return _cache_timestamp_mode(
@@ -507,8 +490,8 @@ def _timestamp_mode_from_tick(
             offset_seconds=offset_seconds,
         )
 
-    native_distance = abs(float(tick_epoch) - observed_now)
-    server_distance = abs((float(tick_epoch) - float(offset_seconds)) - observed_now)
+    native_distance = abs(float(tick_time) - observed_now)
+    server_distance = abs((float(tick_time) - float(offset_seconds)) - observed_now)
     tolerance = _MT5_TIMESTAMP_MODE_FRESH_TOLERANCE_SECONDS
     if (
         server_distance <= tolerance
@@ -525,9 +508,9 @@ def _timestamp_mode_from_tick(
             _MT5_TIMESTAMP_MODE_NATIVE,
             offset_seconds=offset_seconds,
         )
-    normalized_tick_epoch = float(tick_epoch) - float(offset_seconds)
+    normalized_tick_epoch = float(tick_time) - float(offset_seconds)
     if (
-        float(tick_epoch) > observed_now + tolerance
+        float(tick_time) > observed_now + tolerance
         and normalized_tick_epoch <= observed_now + tolerance
         and server_distance <= _MT5_TIMESTAMP_MODE_CLOSED_MARKET_MAX_AGE_SECONDS
     ):
@@ -1369,7 +1352,7 @@ def inspect_mt5_time_alignment(
             symbol=symbol,
             now_epoch=now_utc_epoch,
         )
-        raw_tick_epoch = _tick_epoch_seconds(tick)
+        raw_tick_epoch = tick_epoch(tick)
     except Exception:
         raw_tick_epoch = None
 

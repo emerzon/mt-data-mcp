@@ -192,6 +192,25 @@ def test_market_status_symbol_timezone_context_labels_server_clock(monkeypatch) 
     assert context["market_now"] == "2024-01-02T14:00:00+02:00"
 
 
+def test_symbol_tick_snapshot_prefers_millisecond_timestamp() -> None:
+    now_utc = datetime.fromtimestamp(1_001.0, tz=timezone.utc)
+
+    result = market_status_mod._symbol_tick_snapshot(
+        "EURUSD",
+        {
+            "time": 1_000.0,
+            "time_msc": 1_000_750,
+            "bid": 1.1,
+            "ask": 1.1002,
+        },
+        now_utc=now_utc,
+    )
+
+    assert result["last_tick_time"] == "1970-01-01T00:16:40Z"
+    assert result["last_tick_age_seconds"] == 0.25
+    assert result["tick_freshness"] == "live"
+
+
 def test_market_status_blocks_tradability_when_tick_timestamp_is_unsafe(monkeypatch) -> None:
     raw = _unwrap(market_status_mod.market_status)
     fixed_now = datetime(2026, 7, 16, 12, 0, tzinfo=timezone.utc)

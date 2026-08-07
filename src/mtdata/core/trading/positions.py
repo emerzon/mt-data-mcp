@@ -9,6 +9,8 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from ...shared.constants import BROKER_VOLUME_UNIT
 from ...utils.market_metadata import build_tick_freshness_context
+from ...utils.mt5 import account_currency_from_gateway
+from ...utils.quote import tick_epoch
 from ...utils.time import format_epoch_utc
 from ...utils.utils import _normalize_limit
 from .._mcp_instance import mcp
@@ -55,16 +57,10 @@ def _attach_open_position_quote_context(
             continue
         if tick is None:
             continue
-        tick_epoch = getattr(tick, "time_msc", None)
-        try:
-            tick_epoch = float(tick_epoch) / 1000.0 if tick_epoch else None
-        except (TypeError, ValueError):
-            tick_epoch = None
-        if tick_epoch is None:
-            tick_epoch = getattr(tick, "time", None)
+        quote_epoch = tick_epoch(tick)
         freshness = build_tick_freshness_context(
             symbol,
-            tick_epoch=tick_epoch,
+            tick_epoch=quote_epoch,
             now_epoch=current_epoch,
         )
         if not freshness:
@@ -73,7 +69,7 @@ def _attach_open_position_quote_context(
         # tick fetched here is only a freshness check; it does not replace that
         # broker mark.  Do not label the unchanged value as bid or ask.
         item["price_current_basis"] = "broker_price_current"
-        item["quote_time"] = format_epoch_utc(tick_epoch)
+        item["quote_time"] = format_epoch_utc(quote_epoch)
         symbol_info_fn = getattr(gateway, "symbol_info", None)
         if callable(symbol_info_fn):
             try:
@@ -375,20 +371,6 @@ def _attach_open_position_protection_summary(out: Dict[str, Any]) -> None:
             f"{without_either} open position(s) are missing a stop-loss, "
             "take-profit, or both."
         )
-
-
-def _gateway_account_currency(gateway: Any) -> Optional[str]:
-    account_info = getattr(gateway, "account_info", None)
-    if not callable(account_info):
-        return None
-    try:
-        account = account_info()
-    except Exception:
-        return None
-    currency = str(getattr(account, "currency", "") or "").strip()
-    if currency.startswith("<") or len(currency) > 16:
-        return None
-    return currency or None
 
 
 def _normalize_trade_read_output(
@@ -1569,7 +1551,7 @@ def trade_get_open(
             ),
             request=request,
             kind="open_positions",
-            account_currency=_gateway_account_currency(gateway),
+            account_currency=account_currency_from_gateway(gateway),
         )
         _attach_open_position_protection_summary(out)
         _attach_open_position_quote_context(out, gateway)
@@ -1604,7 +1586,7 @@ def trade_get_pending(
             ),
             request=request,
             kind="pending_orders",
-            account_currency=_gateway_account_currency(gateway),
+            account_currency=account_currency_from_gateway(gateway),
         )
 
     return run_logged_operation(

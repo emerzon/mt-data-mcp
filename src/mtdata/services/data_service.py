@@ -89,6 +89,7 @@ from ..utils.mt5 import (
 )
 from ..utils.ohlcv import validate_and_clean_ohlcv_frame
 from ..utils.quote import tick_epoch
+from ..utils.quote import tick_value as _tick_field_value
 
 # Simplify entrypoint and helpers.
 from ..utils.simplify import (
@@ -928,23 +929,6 @@ def _build_rates_df(rates: Any, use_client_tz: bool) -> pd.DataFrame:
     return df
 
 
-def _tick_field_value(tick: Any, name: str) -> Any:
-    if tick is None:
-        return None
-    try:
-        return tick[name]
-    except Exception:
-        pass
-    try:
-        return getattr(tick, name)
-    except Exception:
-        pass
-    try:
-        return tick.get(name)
-    except Exception:
-        return None
-
-
 def _fetch_ticks_range_with_retry(
     symbol: str,
     from_date: datetime,
@@ -1037,10 +1021,7 @@ def _fetch_recent_ticks_backwards(
 
 
 def _tick_epoch_seconds_from_row(tick: Any) -> Optional[float]:
-    time_msc = _finite_or_none(_tick_field_value(tick, "time_msc"))
-    if time_msc is not None and time_msc > 0.0:
-        return time_msc / 1000.0
-    return _finite_or_none(_tick_field_value(tick, "time"))
+    return tick_epoch(tick)
 
 
 def _trim_df_to_target(
@@ -2839,16 +2820,6 @@ def fetch_ticks(  # noqa: C901
                 )
             }
 
-        def _tick_epoch_seconds(tick: Any) -> float:
-            time_msc = _tick_field_value(tick, "time_msc")
-            try:
-                time_msc_value = float(time_msc)
-            except (TypeError, ValueError):
-                time_msc_value = float("nan")
-            if math.isfinite(time_msc_value) and time_msc_value > 0.0:
-                return time_msc_value / 1000.0
-            return float(_tick_field_value(tick, "time"))
-
         # Extract shared tick columns once so summary/stats, simplification,
         # and row rendering can all reuse the same values.
         _epochs: List[float] = []
@@ -2863,7 +2834,10 @@ def fetch_ticks(  # noqa: C901
         trade_events: List[bool] = []
         quote_types: List[str] = []
         for tick in ticks:
-            _epochs.append(_tick_epoch_seconds(tick))
+            tick_time = tick_epoch(tick)
+            if tick_time is None:
+                raise ValueError("tick timestamp unavailable")
+            _epochs.append(tick_time)
             bid_value = _finite_or_none(_tick_field_value(tick, "bid"))
             ask_value = _finite_or_none(_tick_field_value(tick, "ask"))
             bid = float("nan") if bid_value is None else bid_value

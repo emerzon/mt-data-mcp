@@ -1174,6 +1174,29 @@ def test_open_position_quote_summary_does_not_count_recent_quote_as_live() -> No
     }
 
 
+def test_open_position_quote_context_accepts_mapping_ticks_and_prefers_milliseconds() -> None:
+    payload = {"items": [{"symbol": "EURUSD", "side": "BUY"}]}
+    gateway = SimpleNamespace(
+        symbol_info_tick=lambda symbol: {
+            "time": 1_000.0,
+            "time_msc": 1_000_750,
+            "bid": 1.1,
+            "ask": 1.1002,
+        }
+    )
+
+    core_trading_positions._attach_open_position_quote_context(
+        payload,
+        gateway,
+        now_epoch=1_001.0,
+    )
+
+    row = payload["items"][0]
+    assert row["quote_time"] == "1970-01-01T00:16:40Z"
+    assert row["data_age_seconds"] == 0.25
+    assert row["usable_for_live_trading"] is True
+
+
 def test_open_position_quote_context_discloses_contract_notional() -> None:
     payload = {
         "items": [

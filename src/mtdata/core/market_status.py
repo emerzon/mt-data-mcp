@@ -22,7 +22,7 @@ from ..utils.mt5 import (
     resolve_broker_symbol_name,
 )
 from ..utils.mt5_enums import decode_mt5_enum_label
-from ..utils.quote import resolve_quote_tick, tick_value
+from ..utils.quote import resolve_quote_tick, tick_epoch, tick_value
 from ._mcp_instance import mcp
 from .execution_logging import run_logged_operation
 from .mt5_gateway import create_mt5_gateway
@@ -732,16 +732,15 @@ def _symbol_tick_snapshot(
     }
     if source_metadata:
         out.update(source_metadata)
-    tick_time = tick_value(tick, "time")
-    if tick_time is not None:
+    quote_epoch = tick_epoch(tick)
+    if quote_epoch is not None:
         try:
-            tick_epoch = float(tick_time)
             out["last_tick_time"] = _format_utc_iso_z(
-                datetime.fromtimestamp(tick_epoch, tz=timezone.utc)
+                datetime.fromtimestamp(quote_epoch, tz=timezone.utc)
             )
             freshness = build_tick_freshness_context(
                 symbol,
-                tick_epoch=tick_epoch,
+                tick_epoch=quote_epoch,
                 now_epoch=now_utc.timestamp(),
                 item="tick",
                 age_rounder=lambda value: round(value, 3),

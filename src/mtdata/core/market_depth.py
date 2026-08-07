@@ -198,14 +198,6 @@ def _compact_market_ticker_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     return out
 
 
-def _market_ticker_tick_value(tick: Any, field: str) -> Any:
-    return tick_value(tick, field)
-
-
-def _market_ticker_tick_epoch(tick: Any) -> Optional[float]:
-    return tick_epoch(tick)
-
-
 def _market_ticker_refresh_tick(
     gateway: Any,
     symbol: str,
@@ -744,20 +736,22 @@ def market_ticker(  # noqa: C901
             digits = symbol_price_digits(symbol_info)
             point = symbol_price_point(symbol_info) or 0.0
             tick_size = float(getattr(symbol_info, "trade_tick_size", 0.0) or 0.0)
-            tick_value = float(getattr(symbol_info, "trade_tick_value", 0.0) or 0.0)
+            tick_value_money = float(
+                getattr(symbol_info, "trade_tick_value", 0.0) or 0.0
+            )
             price_currency = symbol_price_currency(symbol_info)
             spread_cost_currency = account_currency_from_gateway(mt5_gateway)
             contract_size = _positive_market_ticker_float(
                 getattr(symbol_info, "trade_contract_size", None)
             )
 
-            bid_raw = _market_ticker_tick_value(tick, "bid")
-            ask_raw = _market_ticker_tick_value(tick, "ask")
-            last_raw = _market_ticker_tick_value(tick, "last")
+            bid_raw = tick_value(tick, "bid")
+            ask_raw = tick_value(tick, "ask")
+            last_raw = tick_value(tick, "last")
             bid = float(bid_raw) if bid_raw else None
             ask = float(ask_raw) if ask_raw else None
             last = float(last_raw) if last_raw else None
-            tick_time = _market_ticker_tick_epoch(tick)
+            tick_time = tick_epoch(tick)
             if bid is None and ask is None and last is None and tick_time is None:
                 return _finalize(
                     _market_ticker_error(
@@ -772,7 +766,7 @@ def market_ticker(  # noqa: C901
                         ),
                     )
                 )
-            tick_volume = _market_ticker_tick_value(tick, "volume")
+            tick_volume = tick_value(tick, "volume")
             if tick_volume is not None:
                 try:
                     tick_volume = int(tick_volume)
@@ -818,9 +812,9 @@ def market_ticker(  # noqa: C901
                 spread_points = _round_market_ticker_value(spread_points, digits=4)
                 spread_pips = _round_market_ticker_value(spread_pips, digits=4)
                 spread_pct = _round_market_ticker_value(spread_pct, digits=6)
-                if tick_size > 0 and tick_value > 0 and spread_cost_currency:
+                if tick_size > 0 and tick_value_money > 0 and spread_cost_currency:
                     spread_cost_per_lot = _round_market_ticker_value(
-                        (float(spread_abs) / tick_size) * tick_value,
+                        (float(spread_abs) / tick_size) * tick_value_money,
                         digits=6,
                     )
                     pricing_basis = "per_1_lot_estimate"
