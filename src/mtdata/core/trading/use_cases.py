@@ -1962,12 +1962,12 @@ def run_trade_place(  # noqa: C901
                         for ticket in list(result.get("position_ticket_candidates") or [])
                         if ticket is not None
                     ]
-                    if pos_ticket is not None:
+                    if sl_tp_failed and pos_ticket is not None:
                         critical = (
                             "CRITICAL: Order executed without applied TP/SL protection. "
                             f"Run trade_modify {pos_ticket} now, or close the position."
                         )
-                    elif candidate_tickets:
+                    elif sl_tp_failed and candidate_tickets:
                         candidate_list = ", ".join(str(v) for v in candidate_tickets)
                         critical = (
                             "CRITICAL: Order executed without applied TP/SL protection. "
@@ -1976,17 +1976,24 @@ def run_trade_place(  # noqa: C901
                             "If that fails, run trade_get_open to confirm the live position ticket, "
                             "or close the position."
                         )
-                    else:
+                    elif sl_tp_failed:
                         critical = (
                             "CRITICAL: Order executed without applied TP/SL protection. "
                             "Run trade_get_open to find the live position ticket, then trade_modify it now, "
                             "or close the position."
                         )
+                    else:
+                        critical = (
+                            "CRITICAL: TP/SL attachment was accepted but could not be verified. "
+                            "Confirm the live protection levels before treating this position as protected."
+                        )
                     if critical not in warnings_out:
                         warnings_out.append(critical)
                     if warnings_out:
                         result["warnings"] = warnings_out
-                    should_auto_close = bool(request.auto_close_on_sl_tp_fail)
+                    should_auto_close = sl_tp_failed and bool(
+                        request.auto_close_on_sl_tp_fail
+                    )
                     if should_auto_close:
                         close_ticket = safe_int_ticket(pos_ticket)
                         if close_ticket is None:
@@ -2033,6 +2040,14 @@ def run_trade_place(  # noqa: C901
                                 warnings_out.append(auto_close_warning)
                             result["warnings"] = warnings_out
                             result["success"] = False
+
+                    if sl_tp_unverified:
+                        result.setdefault(
+                            "error",
+                            "Order was executed, but TP/SL protection could not be verified.",
+                        )
+                        result.setdefault("protection_status", "protection_unverified")
+                        result["success"] = False
 
                 if (
                     bool(request.require_sl_tp)
