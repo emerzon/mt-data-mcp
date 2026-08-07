@@ -882,7 +882,6 @@ def analyze_execution_quality(  # noqa: C901
             "order_type_code": order_type_value,
             "hour_utc": datetime.fromtimestamp(fill_epoch, tz=timezone.utc).hour,
         }
-        hour = int(item["hour_utc"])
         item["session"] = market_session_label(
             datetime.fromtimestamp(fill_epoch, tz=timezone.utc),
             session_calendar="fx",
