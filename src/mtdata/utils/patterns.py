@@ -647,43 +647,50 @@ def build_index(
     if not series:
         raise RuntimeError("No symbols had sufficient data to build pattern index")
 
-    # Build windows
-    X_list: List[np.ndarray] = []
-    start_end: List[Tuple[int, int]] = []
-    labels: List[int] = []
+    # Allocate the persistent index arrays once. The source windows are views;
+    # only their scaled float32 representation needs to be materialized.
+    window_counts = [
+        max(0, ser.close.size - (window_size + future_size) + 1)
+        for ser in series
+    ]
+    total_windows = int(sum(window_counts))
+    if total_windows <= 0:
+        raise RuntimeError("Failed to create any windows for the provided symbols")
+    X = np.empty((total_windows, window_size), dtype=np.float32)
+    start_end_idx = np.empty((total_windows, 2), dtype=int)
+    labels_arr = np.empty(total_windows, dtype=int)
+    offset = 0
     for lbl, ser in enumerate(series):
-        n = ser.close.size
-        limit = n - (window_size + future_size) + 1
+        limit = window_counts[lbl]
         if limit <= 0:
             continue
-        # Create sliding indices
         starts = np.arange(limit, dtype=int)
         ends = starts + (window_size - 1)
-        # Gather windows using stride-based indexing
-        idx = starts[:, None] + np.arange(window_size)[None, :]
-        w = ser.close[idx]
+        windows = np.lib.stride_tricks.sliding_window_view(
+            ser.close, window_size
+        )[:limit]
+        target = X[offset : offset + limit]
         # Apply per-row scaling
         sc = (scale or "minmax").lower()
         if sc == "zscore":
-            mu = np.nanmean(w, axis=1, keepdims=True)
-            sd = np.nanstd(w, axis=1, keepdims=True)
+            mu = np.nanmean(windows, axis=1, keepdims=True)
+            sd = np.nanstd(windows, axis=1, keepdims=True)
             sd[sd <= 1e-12] = 1.0
-            X_scaled = ((w - mu) / sd).astype(np.float32)
+            np.subtract(windows, mu, out=target, casting="unsafe")
+            np.divide(target, sd, out=target)
         elif sc == "none":
-            X_scaled = w.astype(np.float32)
+            target[:] = windows
         else:  # minmax
-            mn = np.nanmin(w, axis=1, keepdims=True)
-            mx = np.nanmax(w, axis=1, keepdims=True)
-            rng = (mx - mn)
+            mn = np.nanmin(windows, axis=1, keepdims=True)
+            mx = np.nanmax(windows, axis=1, keepdims=True)
+            rng = mx - mn
             rng[rng <= 1e-12] = 1.0
-            X_scaled = ((w - mn) / rng).astype(np.float32)
-        X_list.append(X_scaled)
-        start_end.extend(list(np.stack([starts, ends], axis=1)))
-        labels.extend([lbl] * starts.size)
-
-    if not X_list:
-        raise RuntimeError("Failed to create any windows for the provided symbols")
-    X = np.vstack(X_list)
+            np.subtract(windows, mn, out=target, casting="unsafe")
+            np.divide(target, rng, out=target)
+        start_end_idx[offset : offset + limit, 0] = starts
+        start_end_idx[offset : offset + limit, 1] = ends
+        labels_arr[offset : offset + limit] = lbl
+        offset += limit
     # Optional dimensionality reduction
     reducer: Optional[_DimReducer] = None
     effective_dimred_method = dimred_method or "none"
@@ -716,9 +723,6 @@ def build_index(
         norms = np.linalg.norm(X, axis=1, keepdims=True)
         norms[norms <= 1e-12] = 1.0
         X = (X / norms).astype(np.float32)
-    start_end_idx = np.asarray(start_end, dtype=int)
-    labels_arr = np.asarray(labels, dtype=int)
-
     eng = (engine or "ckdtree").lower()
     if eng in ("matrix_profile", "mass"):
         tree_obj = None  # search will bypass tree

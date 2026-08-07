@@ -1,6 +1,7 @@
 """PatternIndex accessors/refinement tests not covered by pure scaling helpers."""
 
 import numpy as np
+import pandas as pd
 import pytest
 from scipy.spatial import cKDTree
 
@@ -9,6 +10,7 @@ from mtdata.utils.patterns import (
     _SeriesStore,
     build_index,
 )
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -74,6 +76,44 @@ def _make_index(
 def test_build_index_rejects_too_small_window_size():
     with pytest.raises(ValueError, match="window_size must be at least 5"):
         build_index(["EURUSD"], "H1", window_size=4, future_size=1)
+
+
+@pytest.mark.parametrize("scale", ["minmax", "zscore", "none"])
+def test_build_index_preserves_sliding_window_values(scale):
+    close = np.linspace(100.0, 112.0, 13) ** 1.01
+    history = {
+        "TEST": pd.DataFrame(
+            {"time": np.arange(close.size, dtype=float), "close": close}
+        )
+    }
+
+    index = build_index(
+        ["TEST"],
+        "H1",
+        window_size=5,
+        future_size=2,
+        scale=scale,
+        history_by_symbol=history,
+        drop_last_live=False,
+    )
+
+    expected_windows = np.lib.stride_tricks.sliding_window_view(close, 5)[:7]
+    if scale == "minmax":
+        expected = (expected_windows - expected_windows.min(axis=1, keepdims=True)) / (
+            expected_windows.max(axis=1, keepdims=True)
+            - expected_windows.min(axis=1, keepdims=True)
+        )
+    elif scale == "zscore":
+        expected = (
+            expected_windows - expected_windows.mean(axis=1, keepdims=True)
+        ) / expected_windows.std(axis=1, keepdims=True)
+    else:
+        expected = expected_windows
+
+    np.testing.assert_allclose(index.X, expected.astype(np.float32), rtol=1e-6)
+    np.testing.assert_array_equal(index.start_end_idx[:, 0], np.arange(7))
+    np.testing.assert_array_equal(index.start_end_idx[:, 1], np.arange(4, 11))
+    np.testing.assert_array_equal(index.labels, np.zeros(7, dtype=int))
 
 
 class TestPatternIndexAccessors:
