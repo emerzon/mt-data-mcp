@@ -453,6 +453,60 @@ def test_execution_quality_matches_order_and_computes_markout() -> None:
     )
 
 
+def test_execution_quality_aggregates_partial_fills_by_order() -> None:
+    gateway = FakeGateway()
+    start = _now() - 100
+    gateway.tick_rows = _ticks(100, start=start)
+    gateway.orders = [
+        {
+            "ticket": 10,
+            "type": 0,
+            "price_open": 1.10005,
+            "volume_initial": 1.0,
+            "time_setup_msc": (start + 9) * 1000,
+        }
+    ]
+    gateway.deals = [
+        {
+            "ticket": 20,
+            "order": 10,
+            "symbol": "EURUSD",
+            "type": 0,
+            "volume": 0.4,
+            "price": 1.10008,
+            "time_msc": (start + 10) * 1000,
+        },
+        {
+            "ticket": 21,
+            "order": 10,
+            "symbol": "EURUSD",
+            "type": 0,
+            "volume": 0.6,
+            "price": 1.10009,
+            "time_msc": (start + 11) * 1000,
+        },
+    ]
+
+    result = analyze_execution_quality(
+        TradeExecutionQualityRequest(
+            minutes_back=60,
+            benchmark="order_price",
+            markout_seconds=[1],
+            detail="full",
+        ),
+        gateway,
+    )
+
+    assert result["summary"]["fills"] == 2
+    assert result["summary"]["orders"] == 1
+    assert result["summary"]["partial_orders"] == 0
+    assert result["summary"]["partial_fill_rate"] == 0.0
+    assert result["summary"]["partial_fill_rate_basis"] == (
+        "orders_aggregated_from_deals"
+    )
+    assert [row["deal_fill_ratio"] for row in result["items"]] == [0.4, 0.6]
+
+
 def test_execution_session_clock_tracks_london_new_york_dst_mismatch() -> None:
     winter = datetime(2026, 1, 12, 12, 30, tzinfo=timezone.utc)
     summer = datetime(2026, 7, 13, 12, 30, tzinfo=timezone.utc)
@@ -988,6 +1042,26 @@ def test_relative_strength_ranks_and_reports_breadth() -> None:
     assert result["rank_quality"] == "illustrative_small_universe"
     assert result["score_definition"]["weights"] == [0.4, 0.6]
     assert all("rank_percentile" not in row for row in result["leaders"])
+
+
+def test_relative_strength_limit_caps_total_returned_rankings() -> None:
+    gateway = FakeGateway()
+    result = rank_relative_strength(
+        MarketRelativeStrengthRequest(
+            symbols="EURUSD,GBPUSD,USDJPY",
+            horizons=[5],
+            weights=[1.0],
+            volatility_lookback=30,
+            limit=1,
+        ),
+        gateway,
+    )
+
+    assert result["success"] is True
+    assert result["returned_count"] == 1
+    assert result["applied_limit"] == 1
+    assert len(result["leaders"]) == 1
+    assert result["laggards"] == []
 
 
 def test_relative_strength_rejects_one_symbol_before_fetching_history() -> None:

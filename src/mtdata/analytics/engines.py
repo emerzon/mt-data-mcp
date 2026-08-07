@@ -872,7 +872,7 @@ def analyze_execution_quality(  # noqa: C901
                 "market_fill_latency" if is_market_order else "pending_time_to_fill"
             ),
             "is_market_order": is_market_order,
-            "fill_ratio": min(1.0, volume / initial_volume) if initial_volume > 0 else None,
+            "deal_fill_ratio": min(1.0, volume / initial_volume) if initial_volume > 0 else None,
             "commission": float(deal.get("commission") or 0.0),
             "fee": float(deal.get("fee") or 0.0),
             "commission_fee_per_lot": (float(deal.get("commission") or 0.0) + float(deal.get("fee") or 0.0)) / volume,
@@ -906,6 +906,24 @@ def analyze_execution_quality(  # noqa: C901
     slippages = [float(item["slippage_bps"]) for item in fills]
     market_order_fills = [item for item in fills if item.get("is_market_order")]
     non_market_order_fills = [item for item in fills if not item.get("is_market_order")]
+    order_fill_totals: Dict[Any, Dict[str, float]] = {}
+    for item in fills:
+        order_ticket = item.get("order_ticket")
+        state = order_fill_totals.setdefault(
+            order_ticket,
+            {"filled_volume": 0.0, "initial_volume": 0.0},
+        )
+        state["filled_volume"] += float(item.get("volume") or 0.0)
+        order = order_by_ticket.get(int(order_ticket or 0), {})
+        state["initial_volume"] = max(
+            state["initial_volume"],
+            float(order.get("volume_initial") or item.get("volume") or 0.0),
+        )
+    partial_orders = sum(
+        state["initial_volume"] > 0.0
+        and state["filled_volume"] < state["initial_volume"] * 0.999
+        for state in order_fill_totals.values()
+    )
     summary = {
         "fills": len(fills),
         "orders": len({item["order_ticket"] for item in fills}),
@@ -917,8 +935,11 @@ def analyze_execution_quality(  # noqa: C901
             np.mean([item["price_improved"] for item in fills])
         ) if fills else None,
         "partial_fill_rate": _round_execution_stat(
-            np.mean([(item.get("fill_ratio") or 1.0) < 0.999 for item in fills])
-        ) if fills else None,
+            partial_orders / len(order_fill_totals)
+        ) if order_fill_totals else None,
+        "partial_orders": int(partial_orders),
+        "orders_evaluated_for_partial_fills": len(order_fill_totals),
+        "partial_fill_rate_basis": "orders_aggregated_from_deals",
         "market_fill_latency_ms": _execution_percentiles(
             item["order_to_fill_duration_ms"]
             for item in market_order_fills
@@ -1951,12 +1972,15 @@ def rank_relative_strength(request: MarketRelativeStrengthRequest, gateway: Any)
         "above_sma20": float(np.mean([row["above_sma20"] for row in ordered])) if ordered else None,
         "above_sma50": float(np.mean([row["above_sma50"] for row in ordered])) if ordered else None,
     }
-    leader_count = min(request.limit, (len(ordered) + 1) // 2)
-    laggard_count = min(request.limit, len(ordered) - leader_count)
+    returned_count = min(int(request.limit), len(ordered))
+    leader_count = (returned_count + 1) // 2
+    laggard_count = returned_count - leader_count
     return {
         "success": True,
         "timeframe": request.timeframe,
         "universe_size": len(ordered),
+        "returned_count": returned_count,
+        "applied_limit": int(request.limit),
         "rank_quality": (
             "cross_sectional" if len(ordered) >= 10 else "illustrative_small_universe"
         ),
