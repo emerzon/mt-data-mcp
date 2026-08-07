@@ -177,6 +177,47 @@ def test_screener_view_uses_canonical_ticker_cell_metadata():
     assert result.loc[0, "Ticker"] == "AAL"
 
 
+def test_screener_view_uses_ticker_markup_when_views_move_the_column():
+    soup = BeautifulSoup(
+        """
+        <table class="screener_table">
+          <tr><th>No.</th><th>Company</th><th>Ticker</th><th>P/E</th></tr>
+          <tr>
+            <td>1</td>
+            <td>American Airlines Group Inc</td>
+            <td><a class="company-ticker"><span>AAL</span></a></td>
+            <td>8.4</td>
+          </tr>
+        </table>
+        """,
+        "html.parser",
+    )
+    rows = soup.find("table").find_all("tr")
+
+    class FakeScreener:
+        def _get_table(self, source_rows, frame, num_col_index, table_header, limit=-1):
+            del source_rows, frame, num_col_index, table_header, limit
+            return pd.DataFrame(
+                {
+                    "Ticker": ["American Airlines Group Inc"],
+                    "P/E": [8.4],
+                }
+            )
+
+        def screener_view(self, **kwargs):
+            return self._get_table(rows, None, [], ["Company", "Ticker", "P/E"], kwargs["limit"])
+
+    result, _ = finviz_pagination.run_screener_view(
+        FakeScreener(),
+        limit=1,
+        page=1,
+        screener_max_rows=10,
+        page_limit_max=10,
+    )
+
+    assert result.loc[0, "Ticker"] == "AAL"
+
+
 def test_screen_stocks_uses_bounded_screener_view(monkeypatch):
     class FakeOverview:
         last_kwargs = None

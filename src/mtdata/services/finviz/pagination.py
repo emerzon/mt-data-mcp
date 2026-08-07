@@ -142,6 +142,22 @@ def paginate_finviz_records(
     return rows, total, safe_limit, safe_page, pages
 
 
+def _canonical_ticker_from_row(row: Any) -> Optional[str]:
+    """Read Finviz's ticker marker without assuming a table column layout."""
+    cells = row.find_all("td")
+    for cell in cells:
+        ticker = cell.get("data-boxover-ticker")
+        if ticker:
+            return str(ticker).strip()
+    for cell in cells:
+        ticker_link = cell.find("a", class_="company-ticker")
+        if ticker_link:
+            ticker = ticker_link.get_text(strip=True)
+            if ticker:
+                return str(ticker).strip()
+    return None
+
+
 def run_screener_view(
     screener: Any,
     *,
@@ -184,16 +200,9 @@ def run_screener_view(
         start_index = max(0, len(result) - len(selected_rows))
         ticker_column = list(result.columns).index("Ticker")
         for offset, row in enumerate(selected_rows):
-            cells = row.find_all("td")
-            if len(cells) < 2:
-                continue
-            ticker_cell = cells[1]
-            ticker = ticker_cell.get("data-boxover-ticker")
-            if not ticker:
-                ticker_link = ticker_cell.find("a", class_="company-ticker")
-                ticker = ticker_link.get_text(strip=True) if ticker_link else None
+            ticker = _canonical_ticker_from_row(row)
             if ticker:
-                result.iloc[start_index + offset, ticker_column] = str(ticker).strip()
+                result.iloc[start_index + offset, ticker_column] = ticker
         return result
 
     if callable(original_get_table):
