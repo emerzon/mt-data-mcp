@@ -11,7 +11,7 @@ import pandas as pd
 import pytest
 
 # ---------------------------------------------------------------------------
-# Stub sktime before importing the module under test
+# Sktime stubs installed only while each test runs
 # ---------------------------------------------------------------------------
 
 def _make_module(name, attrs=None):
@@ -73,25 +73,7 @@ _STUBS = {
     "sktime.forecasting.ets": _sktime_forecasting_ets,
 }
 
-_originals = {name: sys.modules.get(name) for name in _STUBS}
-# Capture whether real sktime was already importable before we inject stubs.
-_real_sktime_available = None
-try:
-    import importlib.util as _ilu
-
-    _real_sktime_available = _ilu.find_spec("sktime") is not None
-except Exception:
-    _real_sktime_available = False
-
-for name, mod in _STUBS.items():
-    sys.modules[name] = mod
-
-# Patch _HAS_SKTIME before importing sktime module helpers used by these tests.
 import mtdata.forecast.methods.sktime as _sktime_mod  # noqa: E402
-
-_orig_has_sktime = _sktime_mod._HAS_SKTIME
-_sktime_mod._HAS_SKTIME = True
-
 from mtdata.forecast.interface import ForecastResult  # noqa: E402
 from mtdata.forecast.methods.sktime import (  # noqa: E402
     GenericSktimeMethod,
@@ -101,17 +83,11 @@ from mtdata.forecast.methods.sktime import (  # noqa: E402
 )
 
 
-@pytest.fixture(autouse=True, scope="module")
-def _restore_sys_modules():
-    yield
-    for name, orig in _originals.items():
-        if orig is None:
-            sys.modules.pop(name, None)
-        else:
-            sys.modules[name] = orig
-    # Prefer the pre-stub real availability so later integration tests still see
-    # the installed package, not a leftover False from stub-only import time.
-    _sktime_mod._HAS_SKTIME = bool(_real_sktime_available or _orig_has_sktime)
+@pytest.fixture(autouse=True)
+def _stub_sktime(monkeypatch):
+    for name, module in _STUBS.items():
+        monkeypatch.setitem(sys.modules, name, module)
+    monkeypatch.setattr(_sktime_mod, "_HAS_SKTIME", True)
 
 
 # ===========================================================================
