@@ -516,20 +516,20 @@ def test_resolve_open_position_magic_filter_hedged():
     assert info.get("magic_filter") == 1000
 
 
-def test_resolve_open_position_magic_no_match_falls_through():
-    """If no position matches the magic filter, still resolves via other criteria."""
+def test_resolve_open_position_magic_no_match_returns_none():
+    """An explicit magic number is a hard strategy-ownership filter."""
     all_positions = [
         SimpleNamespace(ticket=100, identifier=100, position_id=None, position=None, order=None, deal=None,
                         symbol="EURUSD", type=0, volume=0.1, magic=1000, time_update_msc=5000),
     ]
     mt5 = _HedgedFakeMt5(all_positions)
 
-    # Magic 9999 doesn't match, but position still found via symbol/side/volume
     pos, ticket, info = positions._resolve_open_position(
         mt5, symbol="EURUSD", side="BUY", volume=0.1, magic=9999,
     )
-    assert pos is not None
-    assert pos.ticket == 100
+    assert pos is None
+    assert ticket is None
+    assert info["magic_filter"] == 9999
 
 
 def test_select_position_candidate_ticket_candidates_disambiguates():

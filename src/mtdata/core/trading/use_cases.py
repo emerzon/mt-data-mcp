@@ -1512,6 +1512,19 @@ def run_trade_place(  # noqa: C901
             )
             if margin_estimate is not None:
                 preview["preview_checks_performed"].append("margin_estimate")
+                if preview.get("margin_sufficient") is False:
+                    validation_payload = preview.get("validation")
+                    if isinstance(validation_payload, dict):
+                        validation_payload["live_submission_eligible"] = False
+                        blockers = validation_payload.setdefault("blockers", [])
+                        if "margin_insufficient" not in blockers:
+                            blockers.append("margin_insufficient")
+                    preview["validation_passed"] = False
+                    preview["preview_ok"] = False
+                    preview["actionability"] = "blocked_by_margin_estimate"
+                    preview["actionability_reason"] = (
+                        "The estimated required margin exceeds current free margin."
+                    )
             else:
                 checks_not_performed = preview.setdefault(
                     "checks_not_performed", []

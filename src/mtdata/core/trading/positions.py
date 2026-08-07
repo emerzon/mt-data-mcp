@@ -1217,13 +1217,11 @@ def _select_position_candidate(
     if symbol is not None or side in {"BUY", "SELL"}:
         candidates = required_filtered
     if magic is not None:
-        magic_filtered = [
+        candidates = [
             pos
             for pos in candidates
             if validation._safe_int_ticket(getattr(pos, "magic", None)) == magic
         ]
-        if magic_filtered:
-            candidates = magic_filtered
     if volume is not None:
         volume_filtered: List[Any] = []
         for pos in candidates:
@@ -1399,14 +1397,17 @@ def _resolve_open_position(
         mt5=mt5,
     )
     if picked is None:
+        diagnostics = {
+            "method": "positions_get(fallback_heuristic)",
+            "candidate_ids": candidate_ids,
+            "matched": False,
+        }
+        if magic is not None:
+            diagnostics["magic_filter"] = magic
         return (
             None,
             None,
-            {
-                "method": "positions_get(fallback_heuristic)",
-                "candidate_ids": candidate_ids,
-                "matched": False,
-            },
+            diagnostics,
         )
     resolved = _resolved_ticket(picked)
     diag = {"method": "positions_get(fallback_heuristic)"}

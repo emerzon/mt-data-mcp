@@ -142,7 +142,7 @@ def test_preview_trade_guardrails_includes_pending_exposure():
     assert preview["guardrail_context"]["projected_exposure_lots"] == 1.6
 
 
-def test_profit_side_stop_is_classified_as_risk_reducing():
+def test_wrong_side_pending_stop_is_classified_as_risk_increasing():
     symbol_info = SimpleNamespace(
         trade_tick_size=0.0001,
         trade_tick_value=10.0,
@@ -157,7 +157,7 @@ def test_profit_side_stop_is_classified_as_risk_reducing():
         existing_stop_loss=1.0780,
         candidate_entry_price=1.0800,
         candidate_stop_loss=1.0810,
-    ) is False
+    ) is True
 
     assert pending_order_risk_increased(
         symbol_info=symbol_info,
@@ -167,7 +167,7 @@ def test_profit_side_stop_is_classified_as_risk_reducing():
         existing_stop_loss=1.0810,
         candidate_entry_price=1.0800,
         candidate_stop_loss=1.0850,
-    ) is False
+    ) is True
 
 
 def test_preview_trade_guardrails_ignores_demo_accounts_by_default():

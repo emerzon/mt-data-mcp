@@ -1343,7 +1343,7 @@ def pending_order_risk_increased(
         entry_price=next_entry,
         stop_loss=next_sl,
         side=side,
-        wrong_side_policy="secured",
+        wrong_side_policy="reject",
     )
     if next_risk is None:
         return next_error in {

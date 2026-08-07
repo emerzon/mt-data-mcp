@@ -447,11 +447,42 @@ def test_trade_place_dry_run_orders_account_quote_and_protection_blockers() -> N
     assert out["blockers"] == [
         "no_free_margin",
         "critical_margin_stress",
+        "margin_insufficient",
         "quote_not_live_ready",
         "invalid_protection_levels",
     ]
     assert out["preview_ok"] is False
     assert out["account_state"]["margin_stress"]["status"] == "critical"
+    mock_market.assert_not_called()
+
+
+def test_trade_place_dry_run_blocks_insufficient_estimated_margin() -> None:
+    with patch("mtdata.core.trading._place_market_order") as mock_market, patch(
+        "mtdata.core.trading.build_trade_place_dry_run_preview",
+        return_value={
+            "quote_context": {"usable_for_live_trading": True},
+            "sl_tp_valid": True,
+            "margin_required": 200.0,
+            "margin_free": 100.0,
+            "margin_sufficient": False,
+        },
+    ):
+        out = trade_place(
+            symbol="EURUSD",
+            volume=0.01,
+            order_type="BUY",
+            stop_loss=1.08,
+            take_profit=1.12,
+            dry_run=True,
+            detail="standard",
+            __cli_raw=True,
+        )
+
+    assert out["preview_ok"] is False
+    assert out["validation_passed"] is False
+    assert out["blockers"] == ["margin_insufficient"]
+    assert out["actionability"] == "blocked_by_margin_estimate"
+    assert out["no_action_reason"] == "dry_run_validation_blocked"
     mock_market.assert_not_called()
 
 
