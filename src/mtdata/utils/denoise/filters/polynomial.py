@@ -90,10 +90,16 @@ def _denoise_stl_series(
         return s
     period = params.get('period')
     if period is None:
-        return s
-    period_val = int(period)
+        raise ValueError("STL denoise requires a 'period' parameter of at least 2.")
+    try:
+        period_val = int(period)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("STL denoise parameter 'period' must be an integer.") from exc
     if period_val < 2 or period_val >= len(x):
-        return s
+        raise ValueError(
+            "STL denoise parameter 'period' must be at least 2 and shorter "
+            "than the input series."
+        )
     seasonal = params.get('seasonal')
     trend = params.get('trend')
     low_pass = params.get('low_pass')

@@ -168,7 +168,7 @@ Split into components and reconstruct smoother parts.
 
 | Method | Description | Parameters |
 |--------|-------------|------------|
-| `stl` | Seasonal-Trend decomposition | `period`, `component` (default `trend`) |
+| `stl` | Seasonal-Trend decomposition | required `period` (at least 2 and shorter than the series), `component` (default `trend`) |
 | `ssa` | Singular Spectrum Analysis | `window` |
 | `vmd` | Variational Mode Decomposition | `k`, `alpha`, `drop_modes` |
 | `wavelet` | Wavelet denoising | `wavelet`, `level` |

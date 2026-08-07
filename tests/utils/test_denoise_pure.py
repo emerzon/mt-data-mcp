@@ -564,11 +564,22 @@ class TestDenoiseSeriesDispatch:
         )
         _check_basic(result.values, N)
 
-    def test_stl_no_period_returns_identity(self):
+    def test_stl_requires_period(self):
         pytest.importorskip("statsmodels")
         s = _make_series(NOISY_SIGNAL)
-        result = denoise_series(s, method="stl", params={}, causality="zero_phase")
-        pd.testing.assert_series_equal(result, s)
+        with pytest.raises(ValueError, match="requires a 'period' parameter"):
+            denoise_series(s, method="stl", params={}, causality="zero_phase")
+
+    def test_stl_rejects_period_outside_input_range(self):
+        pytest.importorskip("statsmodels")
+        s = _make_series(NOISY_SIGNAL)
+        with pytest.raises(ValueError, match="shorter than the input series"):
+            denoise_series(
+                s,
+                method="stl",
+                params={"period": len(s)},
+                causality="zero_phase",
+            )
 
     def test_unknown_method_returns_identity(self):
         s = _make_series(NOISY_SIGNAL)
