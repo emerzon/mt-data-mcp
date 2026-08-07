@@ -670,22 +670,46 @@ def test_run_trade_place_dry_run_reports_guardrail_block(restore_trade_guardrail
     place_pending_order.assert_not_called()
 
 
-def test_run_trade_place_dry_run_is_not_clean_when_wallet_check_is_incomplete(
+def test_run_trade_place_dry_run_evaluates_wallet_risk_with_estimated_fill(
     restore_trade_guardrails,
 ):
     trade_guardrails_config.enabled = True
     trade_guardrails_config.wallet_risk_limits.max_risk_pct_of_equity = 1.0
 
-    with patch(
-        "mtdata.core.trading.use_cases.mt5_adapter.account_info",
-        return_value=SimpleNamespace(trade_mode=2, equity=10_000.0),
+    symbol_info = SimpleNamespace(
+        trade_tick_size=0.0001,
+        trade_tick_value=10.0,
+        trade_tick_value_loss=10.0,
+    )
+    with (
+        patch(
+            "mtdata.core.trading.use_cases.mt5_adapter.account_info",
+            return_value=SimpleNamespace(
+                trade_mode=2,
+                equity=10_000.0,
+                balance=10_000.0,
+                margin_free=9_000.0,
+            ),
+        ),
+        patch(
+            "mtdata.core.trading.use_cases.mt5_adapter.positions_get",
+            return_value=[],
+        ),
+        patch(
+            "mtdata.core.trading.use_cases.mt5_adapter.orders_get",
+            return_value=[],
+        ),
+        patch(
+            "mtdata.core.trading.use_cases.mt5_adapter.symbol_info",
+            return_value=symbol_info,
+        ),
     ):
         result = run_trade_place(
             TradePlaceRequest(
                 symbol="EURUSD",
                 volume=0.1,
                 order_type="BUY",
-                stop_loss=1.09,
+                stop_loss=1.099,
                 take_profit=1.12,
                 dry_run=True,
                 detail="full",
@@ -705,9 +729,9 @@ def test_run_trade_place_dry_run_is_not_clean_when_wallet_check_is_incomplete(
         )
 
     assert result["success"] is True
-    assert result["preview_ok"] is False
-    assert "guardrail_checks_incomplete" in result["blockers"]
-    assert result["guardrails_preview"]["checks_not_performed"] == ["wallet_risk"]
+    assert result["preview_ok"] is True
+    assert "guardrail_checks_incomplete" not in result.get("blockers", [])
+    assert result["guardrails_preview"]["checks_not_performed"] == []
 
 
 def test_run_trade_place_dry_run_ignores_guardrails_for_demo_account(

@@ -1230,10 +1230,13 @@ def preview_trade_guardrails(
     stop_loss: Optional[float] = None,
     deviation: Optional[int] = None,
     side: Optional[str] = None,
+    entry_price: Optional[float] = None,
     account_info: Any = None,
     existing_positions: Optional[List[Any]] = None,
     existing_pending_orders: Optional[List[Any]] = None,
     candidate_is_pending: bool = False,
+    symbol_info: Any = None,
+    symbol_info_resolver: Optional[Callable[[str], Any]] = None,
 ) -> Dict[str, Any]:
     """Produce a dry-run friendly preview of guardrail checks."""
     enabled = _guardrails_active(config)
@@ -1257,6 +1260,19 @@ def preview_trade_guardrails(
             "message": "Trade guardrails are ignored on demo accounts by default.",
         }
 
+    wallet_risk_active = _wallet_limits_active(config.wallet_risk_limits)
+    resolved_symbol_info = symbol_info
+    if wallet_risk_active and resolved_symbol_info is None and symbol_info_resolver:
+        try:
+            resolved_symbol_info = symbol_info_resolver(symbol)
+        except Exception:
+            resolved_symbol_info = None
+    wallet_risk_ready = bool(
+        wallet_risk_active
+        and resolved_symbol_info is not None
+        and entry_price is not None
+        and math.isfinite(float(entry_price))
+    )
     static_result = evaluate_trade_guardrails(
         config,
         symbol=symbol,
@@ -1264,15 +1280,18 @@ def preview_trade_guardrails(
         stop_loss=stop_loss,
         deviation=deviation,
         side=side,
+        entry_price=entry_price,
         account_info=account_info,
         existing_positions=existing_positions,
         existing_pending_orders=existing_pending_orders,
         candidate_is_pending=candidate_is_pending,
+        symbol_info=resolved_symbol_info,
+        symbol_info_resolver=symbol_info_resolver,
         enforce_account_risk=True,
-        enforce_wallet_risk=False,
+        enforce_wallet_risk=wallet_risk_ready,
     )
     checks_not_performed: List[str] = []
-    if _wallet_limits_active(config.wallet_risk_limits):
+    if wallet_risk_active and not wallet_risk_ready:
         checks_not_performed.append("wallet_risk")
     preview = {
         "enabled": True,

@@ -1354,6 +1354,7 @@ def run_trade_place(  # noqa: C901
             normalized_expiration: Any,
             expiration_provided: bool,
             guardrail_preview: Dict[str, Any],
+            order_preview: Optional[Dict[str, Any]] = None,
         ) -> Dict[str, Any]:
             preview_detail = _resolve_trade_place_preview_detail(request)
             validation_scope = "local_preview_plus_estimates"
@@ -1450,6 +1451,8 @@ def run_trade_place(  # noqa: C901
                         ),
                     }
                 )
+            elif isinstance(order_preview, dict):
+                preview.update(order_preview)
             elif callable(build_dry_run_preview):
                 preview.update(
                     build_dry_run_preview(
@@ -1793,12 +1796,26 @@ def run_trade_place(  # noqa: C901
                     )
 
         if bool(request.dry_run):
+            order_preview: Optional[Dict[str, Any]] = None
+            if dry_run_protection_error is None and callable(build_dry_run_preview):
+                order_preview = build_dry_run_preview(
+                    symbol=symbol_norm,
+                    volume=float(request.volume),
+                    order_type=order_type_norm,
+                    pending=is_pending,
+                    price=request.price,
+                    stop_loss=request.stop_loss,
+                    take_profit=request.take_profit,
+                )
+            entry_price = validation.coerce_finite_float(
+                (order_preview or {}).get("estimated_fill_price")
+            )
             guardrail_account_info = _best_effort_trade_guardrail_account_info()
             snapshot_required = guardrails_require_position_snapshot(
                 trade_guardrails_config,
                 account_info=guardrail_account_info,
                 enforce_account_risk=True,
-                enforce_wallet_risk=False,
+                enforce_wallet_risk=True,
             )
             guardrail_positions = (
                 _best_effort_trade_guardrail_positions()
@@ -1820,7 +1837,7 @@ def run_trade_place(  # noqa: C901
                 trade_guardrails_config,
                 account_info=guardrail_account_info,
                 enforce_account_risk=True,
-                enforce_wallet_risk=False,
+                enforce_wallet_risk=True,
             )
             guardrail_pending_orders = (
                 _best_effort_trade_guardrail_pending_orders()
@@ -1845,10 +1862,12 @@ def run_trade_place(  # noqa: C901
                 stop_loss=request.stop_loss,
                 deviation=request.deviation,
                 side=_guardrail_order_side(order_type_norm),
+                entry_price=entry_price,
                 account_info=guardrail_account_info,
                 existing_positions=guardrail_positions,
                 existing_pending_orders=guardrail_pending_orders,
                 candidate_is_pending=is_pending,
+                symbol_info_resolver=mt5_adapter.symbol_info,
             )
             if guardrail_preview.get("blocked"):
                 violations = list(guardrail_preview.get("violations") or [])
@@ -1898,6 +1917,7 @@ def run_trade_place(  # noqa: C901
                     normalized_expiration=normalized_expiration,
                     expiration_provided=expiration_provided,
                     guardrail_preview=guardrail_preview,
+                    order_preview=order_preview,
                 ),
                 order_type=order_type_norm,
                 pending=is_pending,
