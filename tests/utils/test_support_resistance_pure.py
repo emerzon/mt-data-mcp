@@ -391,7 +391,7 @@ def test_compute_support_resistance_measures_levels_from_external_reference_pric
     nearest = result["supports"][0]
     assert nearest["type"] == "support"
     assert nearest["distance_pct"] == pytest.approx(
-        abs(nearest["value"] - 111.1) / 111.1 * 100.0,
+        (nearest["value"] - 111.1) / 111.1 * 100.0,
         abs=1e-6,
     )
 

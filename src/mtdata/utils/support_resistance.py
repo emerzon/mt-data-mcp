@@ -948,7 +948,7 @@ def _format_level(cluster: Dict[str, Any], *, current_price: Optional[float], to
     if current_price is not None and math.isfinite(current_price):
         level_type = "support" if value <= current_price else "resistance"
         distance = value - current_price
-        distance_pct = (abs(distance) / max(abs(current_price), 1e-9)) * 100.0
+        distance_pct = (distance / max(abs(current_price), 1e-9)) * 100.0
 
     metric_weight_sum = float(cluster.get("metric_weight_sum", 0.0))
     avg_bounce_atr = None
@@ -2341,7 +2341,12 @@ def merge_support_resistance_results(  # noqa: C901
                 "a relative 0-to-1 scale"
             ),
         },
-        "units": {"distance_pct": "percentage_points (1.0 = 1%)"},
+        "units": {
+            "distance_pct": (
+                "signed_percentage_points (negative=below_reference, "
+                "positive=above_reference, 1.0=1%)"
+            )
+        },
         "max_levels": int(max_levels_value),
         "max_distance_pct": None if max_distance_value is None else float(max_distance_value),
         "volume_weighting": volume_weighting_mode,
@@ -2837,7 +2842,12 @@ def compute_support_resistance_levels(
                 "a relative 0-to-1 scale"
             ),
         },
-        "units": {"distance_pct": "percentage_points (1.0 = 1%)"},
+        "units": {
+            "distance_pct": (
+                "signed_percentage_points (negative=below_reference, "
+                "positive=above_reference, 1.0=1%)"
+            )
+        },
         "max_levels": int(max_levels_value),
         "max_distance_pct": None if max_distance_value is None else float(max_distance_value),
         "volume_weighting": volume_weighting_mode,
