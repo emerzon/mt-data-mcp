@@ -990,6 +990,11 @@ def test_relative_strength_ranks_and_reports_breadth() -> None:
     assert all("rank_percentile" not in row for row in result["leaders"])
 
 
+def test_relative_strength_rejects_one_symbol_before_fetching_history() -> None:
+    with pytest.raises(ValueError, match="requires at least two comma-separated symbols"):
+        MarketRelativeStrengthRequest(symbols="EURUSD")
+
+
 def test_relative_strength_fetches_external_benchmark_without_ranking_it() -> None:
     gateway = FakeGateway()
     request = MarketRelativeStrengthRequest(

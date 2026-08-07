@@ -263,7 +263,8 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
     ),
     ("market_relative_strength", "symbols"): (
         "Comma- or space-separated MT5 symbols to rank (e.g. EURUSD,GBPUSD "
-        "or EURUSD GBPUSD). Optional with --group."
+        "or EURUSD GBPUSD). Provide at least two symbols, or omit symbols and "
+        "use --group."
     ),
     ("market_scan", "preset"): (
         "Built-in scan preset: oversold, overbought, high-volume, tight-spread, "

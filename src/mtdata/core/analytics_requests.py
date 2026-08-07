@@ -182,6 +182,21 @@ class MarketRelativeStrengthRequest(BaseModel):
 
     @model_validator(mode="after")
     def _ranking(self) -> "MarketRelativeStrengthRequest":
+        explicit_symbols = {
+            item.strip().upper()
+            for item in str(self.symbols or "").split(",")
+            if item.strip()
+        }
+        if len(explicit_symbols) == 1:
+            if self.group:
+                raise ValueError(
+                    "market_relative_strength cannot combine one symbol with group; "
+                    "omit symbols to rank the selected group."
+                )
+            raise ValueError(
+                "market_relative_strength requires at least two comma-separated symbols; "
+                "omit symbols and use group to rank an MT5 group."
+            )
         if len(self.weights) != len(self.horizons):
             raise ValueError("weights must have the same length as horizons")
         pairs = sorted((int(horizon), float(weight)) for horizon, weight in zip(self.horizons, self.weights))
