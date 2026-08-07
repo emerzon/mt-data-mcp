@@ -335,19 +335,24 @@ mtdata-cli forecast_optimize_hints EURUSD --timeframes H1 H4 D1 \
 Heavyweight methods (neural / foundation models, large `mlforecast` runs) can take minutes to fit. mtdata exposes a small task-and-cache layer so those fits happen once and are reused.
 
 ```bash
-# Kick off a background training job
-mtdata-cli forecast_train EURUSD --timeframe H1 --method nhits --horizon 24
+# Start a long-lived CLI session; background tasks run in this process.
+mtdata-cli shell
 
-# Returns: {"task_id": "...", "status": "queued", ...}
+# Then submit and observe the task from that shell.
+forecast_train EURUSD --timeframe H1 --method nhits --horizon 24
+forecast_task_status --task-id <task_id> --json
+forecast_task_wait --task-id <task_id> --timeout-seconds 120 --json
+forecast_task_list --json
 
-# Poll progress
-mtdata-cli forecast_task_status --task-id <task_id> --json
-mtdata-cli forecast_task_wait --task-id <task_id> --timeout-seconds 120 --json
-mtdata-cli forecast_task_list --json
-
-# Cancel if needed
-mtdata-cli forecast_task_cancel --task-id <task_id>
+# Cancel if needed.
+forecast_task_cancel --task-id <task_id>
 ```
+
+One-shot `mtdata-cli forecast_train ...` commands cannot keep an in-process
+worker alive after the command exits. Use `mtdata-cli shell`, an MCP server, or
+the Web API for training tasks. A `forecast_task_wait` deadline returns
+`success: false`, `status: "timeout"`, and preserves the live task state in
+`task_status` so automation does not treat an unfinished model as usable.
 
 Once training completes, the model is persisted under a key derived from method,
 symbol, timeframe, horizon, seasonality, exogenous-input shape, preprocessing, and

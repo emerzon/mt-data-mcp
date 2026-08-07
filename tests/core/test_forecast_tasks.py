@@ -257,6 +257,24 @@ class TestForecastTaskWait:
         assert result["status"] == "completed"
         assert result["wait_timeout_seconds"] == 10.0
 
+    def test_wait_timeout_is_an_unsuccessful_wait_with_task_snapshot(self):
+        from src.mtdata.core.forecast_tasks import forecast_task_wait
+
+        mock_tm = MagicMock()
+        mock_tm.wait_for_status.return_value = _make_task(status="pending")
+
+        with patch(_PATCH_TM, return_value=mock_tm):
+            result = _unwrap(forecast_task_wait)(
+                ForecastTaskWaitRequest(task_id="task-abc", timeout_seconds=10.0)
+            )
+
+        assert result["success"] is False
+        assert result["status"] == "timeout"
+        assert result["task_status"] == "pending"
+        assert result["timeout"] is True
+        assert result["error_code"] == "forecast_task_wait_timeout"
+        assert "remains pending" in result["error"]
+
 
 class TestForecastTaskList:
     def test_lists_tasks(self):
@@ -451,6 +469,7 @@ class TestForecastTrain:
         assert result["success"] is True
         assert result["status"] == "pending"
         assert result["task_id"] == "task-abc"
+        assert "mtdata-cli shell" in result["process_lifetime_warning"]
         mock_tm.submit_forecast_request.assert_called_once()
 
 
