@@ -76,6 +76,9 @@ def test_market_depth_tick_fallback_includes_price_display() -> None:
     assert out["data"]["time"] == "2023-11-14T22:13:20Z"
     assert out["data"]["time_epoch"] == 1700000000
     assert out["units"] == {"volume": "mt5_tick_volume"}
+    assert out["freshness_state"] == "stale"
+    assert out["usable_for_live_trading"] is False
+    assert out["observed_at_epoch"] > 0
     assert isinstance(out.get("query_latency_ms"), float)
 
 
@@ -100,6 +103,30 @@ def test_market_depth_tick_fallback_hides_zero_last_display() -> None:
     assert out["success"] is True
     assert out["data"]["last"] is None
     assert "last_display" not in out["data"]
+
+
+def test_market_depth_tick_fallback_marks_fresh_quote_live_ready() -> None:
+    tick = SimpleNamespace(
+        bid=100.0,
+        ask=100.5,
+        last=100.25,
+        volume=12,
+        time=1_700_000_000,
+    )
+    with patch("mtdata.core.market_depth.mt5") as mt5, patch(
+        "mtdata.core.market_depth.time.time", return_value=1_700_000_005.0
+    ):
+        mt5.symbol_select.return_value = True
+        mt5.symbol_info.return_value = SimpleNamespace(digits=2)
+        mt5.market_book_get.return_value = []
+        mt5.symbol_info_tick.return_value = tick
+
+        out = _raw_market_depth_fetch("BTCUSD")
+
+    assert out["success"] is True
+    assert out["freshness_state"] == "live"
+    assert out["data_age_seconds"] == 5.0
+    assert out["usable_for_live_trading"] is True
 
 
 def test_market_depth_full_depth_includes_price_display() -> None:
@@ -260,6 +287,12 @@ def test_market_depth_tick_fallback_includes_spread_metrics_when_requested() -> 
     assert abs(out["data"]["spread_pct"] - (100.0 / 100.5)) < 1e-12
     assert out["data"]["spread_cost_per_lot"] == 100.0
     assert out["capabilities"]["spread_overlay_applied"] is True
+    assert out["units"]["spread"] == "absolute_price"
+    assert out["units"]["spread_points"] == "broker_points"
+    assert out["units"]["spread_pct"] == "percentage_points (1.0 = 1%)"
+    assert out["units"]["spread_cost_per_lot"] == (
+        "account_currency_per_broker_lot_estimate"
+    )
 
 
 def test_market_depth_compact_mode_fails_fast_without_dom() -> None:
@@ -303,6 +336,8 @@ def test_market_depth_full_depth_includes_spread_metrics_when_requested() -> Non
     assert out["data"]["best_ask"] == 101.0
     assert out["data"]["spread"] == 1.0
     assert out["capabilities"]["spread_overlay_applied"] is True
+    assert out["units"]["spread"] == "absolute_price"
+    assert out["units"]["spread_points"] == "broker_points"
 
 
 def test_market_depth_spread_overlay_skips_all_none_book_prices() -> None:

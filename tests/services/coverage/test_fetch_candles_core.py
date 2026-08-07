@@ -279,6 +279,8 @@ class TestFetchCandlesCore(unittest.TestCase):
         self.assertFalse(row['spread_available'])
         self.assertFalse(result['spread_historical_available'])
         self.assertEqual(result['spread_mode'], 'single_reference')
+        self.assertEqual(result['spread_source'], 'tick_stats')
+        self.assertEqual(result['spread_historical_source'], 'mt5_candle')
         self.assertEqual(result['spread_historical_coverage_pct'], 0.0)
         self.assertEqual(result['spread_missing_count'], 5)
         self.assertEqual(result['units']['spread'], 'absolute_price')
@@ -290,6 +292,11 @@ class TestFetchCandlesCore(unittest.TestCase):
                 'unit': 'price',
                 'source': 'tick_stats',
                 'basis': 'single_reference_not_per_bar_historical',
+                'reference_time': None,
+                'reference_time_epoch': None,
+                'data_age_seconds': None,
+                'freshness_state': 'unknown',
+                'usable_for_live_trading': False,
             },
         )
         spread_warnings = [

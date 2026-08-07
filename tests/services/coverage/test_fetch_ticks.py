@@ -431,6 +431,12 @@ class TestFetchTicks(unittest.TestCase):
         self.assertFalse(result['last_quote']['spread_valid'])
         self.assertEqual(result['last_quote']['spread_basis'], 'quote_snapshot_locked')
         self.assertEqual(result['last_quote']['spread_quality'], 'locked')
+        self.assertFalse(result['usable_for_live_trading'])
+        self.assertEqual(
+            result['usable_for_live_trading_basis'],
+            'quote_age_market_session_and_positive_spread',
+        )
+        self.assertIn('latest_quote_locked', result['execution_blockers'])
         self.assertEqual(result['last_quote']['mid'], 1.1003)
         self.assertEqual(result['last_quote']['spread'], 0.0)
         self.assertIsNone(result['data'][0]['mid'])

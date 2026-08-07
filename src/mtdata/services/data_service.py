@@ -88,6 +88,7 @@ from ..utils.mt5 import (
     symbol_price_point as _symbol_price_point,
 )
 from ..utils.ohlcv import validate_and_clean_ohlcv_frame
+from ..utils.quote import tick_epoch
 
 # Simplify entrypoint and helpers.
 from ..utils.simplify import (
@@ -2265,7 +2266,7 @@ def fetch_candles(  # noqa: C901
         if isinstance(freshness_diagnostics, dict):
             payload["meta"]["diagnostics"]["freshness"] = dict(freshness_diagnostics)
         if include_spread:
-            payload["spread_source"] = "mt5_candle"
+            payload["spread_historical_source"] = "mt5_candle"
             payload["spread_historical_available"] = True
             payload["spread_mode"] = "per_bar"
         if session_gap_warning:
@@ -2388,6 +2389,13 @@ def fetch_candles(  # noqa: C901
             )
             payload["spread_historical_coverage_pct"] = round(coverage_pct, 2)
             payload["spread_missing_count"] = spread_missing_count
+            payload["spread_source"] = (
+                "mt5_candle"
+                if spread_missing_count == 0 and spread_row_count
+                else "mt5_candle_partial"
+                if spread_available_count
+                else "unavailable"
+            )
             if spread_missing_count:
                 payload["spread_mode"] = (
                     "partial_per_bar" if spread_available_count else "unavailable"
@@ -2426,8 +2434,10 @@ def fetch_candles(  # noqa: C901
                             "unit": "price",
                             "source": estimate_source,
                             "basis": "single_reference_not_per_bar_historical",
+                            **_spread_reference_freshness(tick_stats),
                         }
                         payload["spread_mode"] = "single_reference"
+                        payload["spread_source"] = estimate_source
                         payload.setdefault("meta", {}).setdefault("diagnostics", {}).setdefault("spread_estimate", {})["estimated_mean"] = est_mean
                         payload["meta"]["diagnostics"]["spread_estimate"]["source"] = estimate_source
                         payload["meta"]["diagnostics"]["spread_estimate"]["unit"] = "price"
@@ -2446,8 +2456,10 @@ def fetch_candles(  # noqa: C901
                                 "unit": "price",
                                 "source": "live_ticker",
                                 "basis": "single_reference_not_per_bar_historical",
+                                **_live_tick_reference_freshness(symbol),
                             }
                             payload["spread_mode"] = "single_reference"
+                            payload["spread_source"] = "live_ticker"
                             payload.setdefault("meta", {}).setdefault("diagnostics", {}).setdefault("spread_estimate", {})["estimated_mean"] = est_mean
                             payload["meta"]["diagnostics"]["spread_estimate"]["source"] = "live_ticker"
                             payload["meta"]["diagnostics"]["spread_estimate"]["unit"] = "price"
@@ -2492,6 +2504,44 @@ def _live_tick_spread(symbol: str) -> Optional[float]:
         return None
     spread = max(0.0, ask_f - bid_f)
     return spread if spread > 0.0 else None
+
+
+def _spread_reference_freshness(tick_payload: Any) -> Dict[str, Any]:
+    """Extract source-time evidence for a spread reference from tick output."""
+    payload = tick_payload if isinstance(tick_payload, dict) else {}
+    last_quote = payload.get("last_quote")
+    quote = last_quote if isinstance(last_quote, dict) else {}
+    reference_time = quote.get("time") or payload.get("data_as_of")
+    reference_epoch = quote.get("time_epoch") or payload.get("data_as_of_epoch")
+    return {
+        "reference_time": reference_time,
+        "reference_time_epoch": reference_epoch,
+        "data_age_seconds": payload.get("data_age_seconds"),
+        "freshness_state": payload.get("freshness_state") or "unknown",
+        "usable_for_live_trading": payload.get("usable_for_live_trading") is True,
+    }
+
+
+def _live_tick_reference_freshness(symbol: str) -> Dict[str, Any]:
+    try:
+        tick = mt5.symbol_info_tick(symbol)
+    except Exception:
+        tick = None
+    epoch = tick_epoch(tick) if tick is not None else None
+    context = build_tick_freshness_context(
+        symbol,
+        tick_epoch=epoch,
+        now_epoch=time.time(),
+        item="spread reference",
+        age_rounder=lambda value: round(value, 3),
+    )
+    return {
+        "reference_time": _format_time_explicit(epoch) if epoch is not None else None,
+        "reference_time_epoch": epoch,
+        "data_age_seconds": context.get("data_age_seconds"),
+        "freshness_state": context.get("freshness_state") or "unknown",
+        "usable_for_live_trading": context.get("usable_for_live_trading") is True,
+    }
 
 
 def _mt5_tick_flag_value(name: str, default: int) -> int:
@@ -3157,6 +3207,27 @@ def fetch_ticks(  # noqa: C901
                 age_rounder=lambda value: round(value, 3),
             )
             payload.update(freshness_context)
+            if (
+                isinstance(last_quote, dict)
+                and last_quote.get("spread_valid") is not True
+            ):
+                payload["usable_for_live_trading"] = False
+                payload["usable_for_live_trading_basis"] = (
+                    "quote_age_market_session_and_positive_spread"
+                )
+                blockers = list(payload.get("execution_blockers") or [])
+                blocker = f"latest_quote_{last_quote.get('spread_quality') or 'invalid'}"
+                if blocker not in blockers:
+                    blockers.append(blocker)
+                payload["execution_blockers"] = blockers
+                warning = (
+                    "Latest quote is not executable because it lacks a positive "
+                    "two-sided spread."
+                )
+                warnings_list = list(payload.get("warnings") or [])
+                if warning not in warnings_list:
+                    warnings_list.append(warning)
+                payload["warnings"] = warnings_list
 
         def _last_snapshot_quote(frame: pd.DataFrame) -> Dict[str, Any]:
             bid = _finite_or_none(frame["bid"].iloc[-1])

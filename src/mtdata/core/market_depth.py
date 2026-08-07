@@ -54,6 +54,12 @@ _MARKET_DEPTH_BOOK_UNITS = {
     "volume_real": "book_volume_real",
 }
 _MARKET_DEPTH_TICK_UNITS = {"volume": "mt5_tick_volume"}
+_MARKET_DEPTH_SPREAD_UNITS = {
+    "spread": "absolute_price",
+    "spread_points": "broker_points",
+    "spread_pct": "percentage_points (1.0 = 1%)",
+    "spread_cost_per_lot": "account_currency_per_broker_lot_estimate",
+}
 def _round_market_ticker_value(value: Any, *, digits: int) -> Any:
     return round_finite(value, digits, on_invalid="passthrough")
 
@@ -332,7 +338,9 @@ def _market_depth_fetch_impl(symbol: str, spread: bool = False, require_dom: boo
             digits = symbol_price_digits(symbol_info)
             point = symbol_price_point(symbol_info) or 0.0
             tick_size = float(getattr(symbol_info, "trade_tick_size", 0.0) or 0.0)
-            tick_value = float(getattr(symbol_info, "trade_tick_value", 0.0) or 0.0)
+            trade_tick_value = float(
+                getattr(symbol_info, "trade_tick_value", 0.0) or 0.0
+            )
             price_currency = symbol_price_currency(symbol_info)
             spread_cost_currency = account_currency_from_gateway(mt5_gateway)
 
@@ -351,8 +359,8 @@ def _market_depth_fetch_impl(symbol: str, spread: bool = False, require_dom: boo
                 spread_points = (spread_abs / point) if point > 0 else None
                 spread_pct = ((spread_abs / mid) * 100.0) if mid > 0 else None
                 spread_cost_per_lot = None
-                if tick_size > 0 and tick_value > 0 and spread_cost_currency:
-                    spread_cost_per_lot = (spread_abs / tick_size) * tick_value
+                if tick_size > 0 and trade_tick_value > 0 and spread_cost_currency:
+                    spread_cost_per_lot = (spread_abs / tick_size) * trade_tick_value
                 return {
                     "spread": spread_abs,
                     "spread_points": spread_points,
@@ -371,6 +379,51 @@ def _market_depth_fetch_impl(symbol: str, spread: bool = False, require_dom: boo
                     return str(val)
                 except Exception:
                     return None
+
+            def _attach_tick_freshness(
+                payload: Dict[str, Any],
+                tick_value_obj: Any,
+                quote_metadata: Optional[Dict[str, Any]] = None,
+            ) -> None:
+                quote_now = time.time()
+                epoch = tick_epoch(tick_value_obj)
+                payload["observed_at"] = _format_time_second_explicit(quote_now)
+                payload["observed_at_epoch"] = quote_now
+                if quote_metadata:
+                    payload.update(quote_metadata)
+                context = build_tick_freshness_context(
+                    symbol,
+                    tick_epoch=epoch,
+                    now_epoch=quote_now,
+                    item="depth reference tick",
+                    age_rounder=lambda value: round(value, 3),
+                )
+                if context:
+                    payload.update(context)
+                else:
+                    payload.update(
+                        {
+                            "freshness_state": "unknown",
+                            "data_stale": None,
+                            "usable_for_live_trading": False,
+                            "usable_for_live_trading_basis": (
+                                "depth_snapshot_and_reference_tick_freshness"
+                            ),
+                        }
+                    )
+
+                bid = tick_value(tick_value_obj, "bid")
+                ask = tick_value(tick_value_obj, "ask")
+                try:
+                    executable_quote = float(ask) > float(bid) > 0.0
+                except (TypeError, ValueError):
+                    executable_quote = False
+                if not executable_quote:
+                    payload["usable_for_live_trading"] = False
+                    blockers = list(payload.get("execution_blockers") or [])
+                    if "reference_quote_not_executable" not in blockers:
+                        blockers.append("reference_quote_not_executable")
+                    payload["execution_blockers"] = blockers
 
             book_subscription_active = False
             try:
@@ -461,6 +514,7 @@ def _market_depth_fetch_impl(symbol: str, spread: bool = False, require_dom: boo
                     },
                     "units": dict(_MARKET_DEPTH_BOOK_UNITS),
                 }
+
                 if unclassified_orders:
                     out["capabilities"]["unclassified_depth_levels"] = int(
                         len(unclassified_orders)
@@ -489,6 +543,18 @@ def _market_depth_fetch_impl(symbol: str, spread: bool = False, require_dom: boo
                             out["data"]["best_ask"] = best_ask
                             out["data"].update(spread_metrics)
                             out["capabilities"]["spread_overlay_applied"] = True
+                            out["units"].update(_MARKET_DEPTH_SPREAD_UNITS)
+                depth_tick = mt5_gateway.symbol_info_tick(symbol)
+                depth_now = time.time()
+                depth_tick, quote_metadata = resolve_quote_tick(
+                    mt5_gateway,
+                    symbol,
+                    depth_tick,
+                    now_epoch=depth_now,
+                    stale_after_seconds=_MARKET_TICKER_STALE_SECONDS,
+                )
+                _attach_tick_freshness(out, depth_tick, quote_metadata)
+                out["freshness_basis"] = "depth_snapshot_and_reference_tick"
                 out["query_latency_ms"] = round((time.perf_counter() - started) * 1000.0, 3)
                 return out
 
@@ -500,6 +566,14 @@ def _market_depth_fetch_impl(symbol: str, spread: bool = False, require_dom: boo
                     "error": f"DOM not available for {symbol}. Use market_ticker for bid/ask snapshot instead.",
                     "recommended_alternative": "market_ticker",
                 }
+            quote_now = time.time()
+            tick, quote_metadata = resolve_quote_tick(
+                mt5_gateway,
+                symbol,
+                tick,
+                now_epoch=quote_now,
+                stale_after_seconds=_MARKET_TICKER_STALE_SECONDS,
+            )
 
             out = {
                 "success": True,
@@ -518,10 +592,10 @@ def _market_depth_fetch_impl(symbol: str, spread: bool = False, require_dom: boo
                     "fallback_reason": "market_book_get returned no levels",
                 },
                 "data": {
-                    "bid": float(tick.bid) if tick.bid else None,
-                    "ask": float(tick.ask) if tick.ask else None,
-                    "last": float(tick.last) if tick.last else None,
-                    "volume": int(tick.volume) if tick.volume else None,
+                    "bid": float(tick_value(tick, "bid")) if tick_value(tick, "bid") else None,
+                    "ask": float(tick_value(tick, "ask")) if tick_value(tick, "ask") else None,
+                    "last": float(tick_value(tick, "last")) if tick_value(tick, "last") else None,
+                    "volume": int(tick_value(tick, "volume")) if tick_value(tick, "volume") else None,
                     "note": "Full market depth not available, showing current bid/ask snapshot.",
                 },
                 "units": dict(_MARKET_DEPTH_TICK_UNITS),
@@ -534,13 +608,16 @@ def _market_depth_fetch_impl(symbol: str, spread: bool = False, require_dom: boo
                 if spread_metrics is not None:
                     out["data"].update(spread_metrics)
                     out["capabilities"]["spread_overlay_applied"] = True
+                    out["units"].update(_MARKET_DEPTH_SPREAD_UNITS)
             _use_ctz = _use_client_tz()
-            if tick.time and _use_ctz:
-                out["data"]["time"] = _format_time_second_explicit_local(float(tick.time))
-                out["data"]["time_epoch"] = int(float(tick.time))
-            elif tick.time:
-                out["data"]["time"] = _format_time_second_explicit(float(tick.time))
-                out["data"]["time_epoch"] = int(float(tick.time))
+            tick_time = tick_epoch(tick)
+            if tick_time and _use_ctz:
+                out["data"]["time"] = _format_time_second_explicit_local(tick_time)
+                out["data"]["time_epoch"] = tick_time
+            elif tick_time:
+                out["data"]["time"] = _format_time_second_explicit(tick_time)
+                out["data"]["time_epoch"] = tick_time
+            _attach_tick_freshness(out, tick, quote_metadata)
             out["timezone"] = display_timezone_label(
                 use_client_tz=_use_ctz,
                 resolve_client_tz=_resolve_client_tz,
