@@ -13,6 +13,7 @@ import pandas as pd
 from scipy.signal import find_peaks, periodogram
 
 from ..forecast.common import bars_per_year, observed_bars_per_session
+from ..services.data_service import _is_last_bar_forming
 from ..shared.constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
 from ..shared.schema import DetailLiteral, TimeframeLiteral
 from ..shared.symbols import is_probably_crypto_symbol, is_probably_forex_symbol
@@ -30,7 +31,13 @@ from .output_contract import normalize_output_verbosity_detail
 logger = logging.getLogger(__name__)
 
 
-def _fetch_diagnostic_bars(symbol: str, timeframe: str, lookback: int) -> tuple[pd.DataFrame, str | None]:
+def _fetch_diagnostic_bars(
+    symbol: str,
+    timeframe: str,
+    lookback: int,
+    *,
+    include_incomplete: bool = False,
+) -> tuple[pd.DataFrame, str | None]:
     tf = TIMEFRAME_MAP.get(str(timeframe or "").strip().upper())
     if tf is None:
         return pd.DataFrame(), f"Invalid timeframe '{timeframe}'."
@@ -41,7 +48,7 @@ def _fetch_diagnostic_bars(symbol: str, timeframe: str, lookback: int) -> tuple[
         symbol,
         tf,
         datetime.now(timezone.utc),
-        max(2, int(lookback)),
+        max(2, int(lookback)) + (0 if include_incomplete else 1),
     )
     if rates is None or len(rates) == 0:
         return pd.DataFrame(), f"Failed to fetch data for {symbol}."
@@ -53,7 +60,36 @@ def _fetch_diagnostic_bars(symbol: str, timeframe: str, lookback: int) -> tuple[
     if frame.empty or not required.issubset(frame.columns):
         return pd.DataFrame(), "Fetched bars do not contain time and close fields."
     frame = frame.sort_values("time").drop_duplicates("time", keep="last")
-    return frame.tail(max(2, int(lookback))).reset_index(drop=True), None
+    forming = _is_last_bar_forming(frame, timeframe)
+    forming_status = "none_detected"
+    if forming:
+        forming_status = "included" if include_incomplete else "excluded"
+        if not include_incomplete:
+            frame = frame.iloc[:-1]
+    frame = frame.tail(max(2, int(lookback))).reset_index(drop=True)
+    frame.attrs["history_policy"] = (
+        "includes_current_forming_bar" if include_incomplete else "completed_bars_only"
+    )
+    frame.attrs["forming_candle_status"] = forming_status
+    return frame, None
+
+
+def _diagnostic_history_metadata(
+    frame: pd.DataFrame,
+    *,
+    include_incomplete: bool,
+) -> Dict[str, Any]:
+    return {
+        "history_policy": frame.attrs.get(
+            "history_policy",
+            "includes_current_forming_bar"
+            if include_incomplete
+            else "completed_bars_only",
+        ),
+        "forming_candle_status": frame.attrs.get(
+            "forming_candle_status", "not_reported"
+        ),
+    }
 
 
 def _diagnostic_series(frame: pd.DataFrame, target: str) -> pd.Series:
@@ -152,6 +188,7 @@ def stationarity_test(
     tests: str = "adf,kpss,pp",
     trend: Literal["c", "ct"] = "c",
     significance: float = 0.05,
+    include_incomplete: bool = False,
     detail: DetailLiteral = "compact",
 ) -> Dict[str, Any]:
     """Test an MT5 time series for stationarity using ADF, KPSS, and optional PP."""
@@ -169,7 +206,12 @@ def stationarity_test(
         detail_mode = normalize_output_verbosity_detail(detail, default="compact")
         gateway = create_mt5_gateway(adapter=mt5, ensure_connection_impl=ensure_mt5_connection_or_raise)
         gateway.ensure_connection()
-        frame, fetch_error = _fetch_diagnostic_bars(symbol, timeframe, int(lookback))
+        frame, fetch_error = _fetch_diagnostic_bars(
+            symbol,
+            timeframe,
+            int(lookback),
+            include_incomplete=include_incomplete,
+        )
         if fetch_error:
             return {"error": fetch_error}
         try:
@@ -260,6 +302,9 @@ def stationarity_test(
             "tests_completed": len(rows),
             "items": rows,
             "samples": int(len(series)),
+            **_diagnostic_history_metadata(
+                frame, include_incomplete=include_incomplete
+            ),
         }
         if warnings_out:
             out["warnings"] = list(dict.fromkeys(warnings_out))
@@ -290,6 +335,7 @@ def seasonality_detect(
     max_period: Optional[int] = None,
     min_cycles: int = 3,
     top_n: int = 5,
+    include_incomplete: bool = False,
     detail: DetailLiteral = "compact",
 ) -> Dict[str, Any]:
     """Detect dominant seasonal periods using autocorrelation and spectral power."""
@@ -301,7 +347,12 @@ def seasonality_detect(
             return {"error": "min_period >= 2, min_cycles >= 2, and top_n >= 1 are required."}
         gateway = create_mt5_gateway(adapter=mt5, ensure_connection_impl=ensure_mt5_connection_or_raise)
         gateway.ensure_connection()
-        frame, fetch_error = _fetch_diagnostic_bars(symbol, timeframe, int(lookback))
+        frame, fetch_error = _fetch_diagnostic_bars(
+            symbol,
+            timeframe,
+            int(lookback),
+            include_incomplete=include_incomplete,
+        )
         if fetch_error:
             return {"error": fetch_error}
         try:
@@ -386,6 +437,9 @@ def seasonality_detect(
             "count": len(rows),
             "dominant_period_bars": rows[0]["period_bars"] if rows else None,
             "score_formula": "0.55*acf + 0.45*spectral_strength; range 0-1, higher = stronger seasonality",
+            **_diagnostic_history_metadata(
+                frame, include_incomplete=include_incomplete
+            ),
         }
         if rows:
             qualities = [str(row.get("signal_quality") or "") for row in rows]
@@ -458,6 +512,7 @@ def outliers_detect(
     method: Literal["mad", "iqr", "zscore"] = "mad",
     threshold: float = 3.5,
     limit: int = 50,
+    include_incomplete: bool = False,
     detail: DetailLiteral = "compact",
 ) -> Dict[str, Any]:
     """Detect anomalous MT5 bars using robust return, volume, and range scores."""
@@ -480,7 +535,12 @@ def outliers_detect(
             }
         gateway = create_mt5_gateway(adapter=mt5, ensure_connection_impl=ensure_mt5_connection_or_raise)
         gateway.ensure_connection()
-        frame, fetch_error = _fetch_diagnostic_bars(symbol, timeframe, int(lookback))
+        frame, fetch_error = _fetch_diagnostic_bars(
+            symbol,
+            timeframe,
+            int(lookback),
+            include_incomplete=include_incomplete,
+        )
         if fetch_error:
             return {"error": fetch_error}
         close = pd.to_numeric(frame["close"], errors="coerce")
@@ -550,6 +610,9 @@ def outliers_detect(
             "items": rows,
             "count": len(rows),
             "truncated": bool(int((max_scores >= float(threshold)).sum()) > len(rows)),
+            **_diagnostic_history_metadata(
+                frame, include_incomplete=include_incomplete
+            ),
         }
 
     return run_logged_operation(
@@ -571,6 +634,7 @@ def volatility_term_structure(
     horizons: str = "1,5,10,20,60",
     percentiles: str = "10,25,50,75,90",
     annualize: bool = True,
+    include_incomplete: bool = False,
     detail: DetailLiteral = "compact",
 ) -> Dict[str, Any]:
     """Compute current realized volatility and historical cones at multiple horizons."""
@@ -595,7 +659,12 @@ def volatility_term_structure(
             return {"error": "Each horizon must be smaller than lookback."}
         gateway = create_mt5_gateway(adapter=mt5, ensure_connection_impl=ensure_mt5_connection_or_raise)
         gateway.ensure_connection()
-        frame, fetch_error = _fetch_diagnostic_bars(symbol, timeframe, int(lookback))
+        frame, fetch_error = _fetch_diagnostic_bars(
+            symbol,
+            timeframe,
+            int(lookback),
+            include_incomplete=include_incomplete,
+        )
         if fetch_error:
             return {"error": fetch_error}
         close = pd.to_numeric(frame["close"], errors="coerce")
@@ -667,6 +736,9 @@ def volatility_term_structure(
             },
             "cone_methodology": "percentiles of the historical distribution of rolling realized volatility at each horizon; percentile_rank shows where current vol sits in that distribution; short horizons are sampling-noisy and this is not an options implied-volatility term structure",
             "items": rows,
+            **_diagnostic_history_metadata(
+                frame, include_incomplete=include_incomplete
+            ),
             "count": len(rows),
         }
         if annualize:

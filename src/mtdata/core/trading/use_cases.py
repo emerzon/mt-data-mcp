@@ -10,6 +10,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 from ...bootstrap.settings import trade_guardrails_config
+from ...services.data_service import _is_last_bar_forming
 from ...shared.constants import BROKER_VOLUME_UNIT, TIMEFRAME_MAP
 from ...shared.market_units import price_delta_ticks
 from ...shared.result import Err, Ok, Result, to_dict
@@ -967,6 +968,9 @@ def _shape_trade_var_cvar_payload(
             "summary",
             "equity",
             "currency",
+            "history_policy",
+            "forming_candle_status",
+            "forming_candle_status_by_symbol",
             "history_failures",
             "warnings",
             "mark_freshness_status",
@@ -5061,6 +5065,11 @@ def run_trade_var_cvar_calculate(  # noqa: C901
         return _finish({"error": "lookback must be an integer"})
     if lookback < 2:
         return _finish({"error": "lookback must be at least 2"})
+    history_policy = (
+        "includes_current_forming_bar"
+        if request.include_incomplete
+        else "completed_bars_only"
+    )
 
     try:
         min_observations = int(request.min_observations)
@@ -5129,6 +5138,8 @@ def run_trade_var_cvar_calculate(  # noqa: C901
                 f"One {timeframe_value} bar loss on the current position snapshot."
             ),
             "lookback": int(lookback),
+            "history_policy": history_policy,
+            "forming_candle_status": "not_applicable",
             "min_observations": int(min_observations),
             "observations": 0,
             "positions": 0,
@@ -5161,6 +5172,8 @@ def run_trade_var_cvar_calculate(  # noqa: C901
                 "status": "no_open_positions",
                 "message": message,
                 "positions": 0,
+                "history_policy": history_policy,
+                "forming_candle_status": "not_applicable",
             }
         if request.symbol:
             result["scope"] = "symbol"
@@ -5336,11 +5349,28 @@ def run_trade_var_cvar_calculate(  # noqa: C901
         )
 
     return_series: Dict[str, Any] = {}
+    forming_candle_statuses: Dict[str, str] = {}
     for symbol in list(symbol_exposures.keys()):
         try:
-            rates = gateway.copy_rates_from_pos(symbol, mt5_timeframe, 0, lookback)
+            rates = gateway.copy_rates_from_pos(
+                symbol,
+                mt5_timeframe,
+                0,
+                lookback + (0 if request.include_incomplete else 1),
+            )
             if rates is not None:
                 rates = _normalize_times_in_struct(rates)
+                forming = _is_last_bar_forming(rates, timeframe_value)
+                forming_candle_statuses[symbol] = (
+                    "included"
+                    if forming and request.include_incomplete
+                    else "excluded"
+                    if forming
+                    else "none_detected"
+                )
+                if forming and not request.include_incomplete:
+                    rates = rates[:-1]
+                rates = rates[-lookback:]
         except Exception as exc:
             history_failures.append({"symbol": symbol, "error": str(exc)})
             continue
@@ -5503,6 +5533,13 @@ def run_trade_var_cvar_calculate(  # noqa: C901
         for timestamp, value in worst_bars.items()
     ]
 
+    forming_candle_status = (
+        "included"
+        if "included" in forming_candle_statuses.values()
+        else "excluded"
+        if "excluded" in forming_candle_statuses.values()
+        else "none_detected"
+    )
     summary: Dict[str, Any] = {
         "method": method_value,
         "confidence": round(float(confidence_value), 6),
@@ -5519,6 +5556,8 @@ def run_trade_var_cvar_calculate(  # noqa: C901
             f"One {timeframe_value} bar loss on the current position snapshot."
         ),
         "lookback": int(lookback),
+        "history_policy": history_policy,
+        "forming_candle_status": forming_candle_status,
         "min_observations": int(min_observations),
         "observations": int(len(pnl_values)),
         "positions": int(len(position_exposures)),
@@ -5545,6 +5584,9 @@ def run_trade_var_cvar_calculate(  # noqa: C901
     result = {
         "success": True,
         "scope": "symbol" if request.symbol else "portfolio",
+        "history_policy": history_policy,
+        "forming_candle_status": forming_candle_status,
+        "forming_candle_status_by_symbol": forming_candle_statuses,
         "summary": summary,
         "symbol_exposures": symbol_rows,
         "positions": position_exposures,

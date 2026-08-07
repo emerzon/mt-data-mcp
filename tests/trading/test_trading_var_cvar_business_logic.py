@@ -132,6 +132,62 @@ def test_run_trade_var_cvar_calculate_summarizes_open_position_portfolio() -> No
     assert out["usable_for_live_trading"] is False
     assert out["data_stale"] is True
     assert out["valuation_time"] == "1970-01-01T00:00:01Z"
+    assert out["history_policy"] == "completed_bars_only"
+    assert out["forming_candle_status"] == "none_detected"
+
+
+def test_run_trade_var_cvar_excludes_forming_return_by_default(monkeypatch) -> None:
+    position = SimpleNamespace(
+        ticket=21,
+        symbol="EURUSD",
+        type=0,
+        volume=1.0,
+        price_current=100.0,
+        price_open=99.0,
+        profit=1.0,
+    )
+    requested_counts = []
+    gateway = SimpleNamespace(
+        ensure_connection=lambda: None,
+        account_info=lambda: SimpleNamespace(equity=1000.0, currency="USD"),
+        positions_get=lambda symbol=None: [position],
+        symbol_info=lambda symbol: _symbol_info(),
+        symbol_info_tick=lambda symbol: SimpleNamespace(bid=99.0, ask=101.0, time=1),
+        copy_rates_from_pos=lambda symbol, timeframe, start, count: requested_counts.append(count)
+        or [
+            {"time": 1, "close": 100.0},
+            {"time": 2, "close": 95.0},
+            {"time": 3, "close": 105.0},
+            {"time": 4, "close": 90.0},
+            {"time": 5, "close": 110.0},
+            {"time": 6, "close": 1.0},
+        ],
+        POSITION_TYPE_BUY=0,
+        POSITION_TYPE_SELL=1,
+        ORDER_TYPE_BUY=0,
+        ORDER_TYPE_SELL=1,
+    )
+    monkeypatch.setattr(
+        "mtdata.core.trading.use_cases._is_last_bar_forming",
+        lambda *_args, **_kwargs: True,
+    )
+
+    out = run_trade_var_cvar_calculate(
+        TradeVarCvarRequest(
+            lookback=5,
+            confidence=75,
+            transform="pct",
+            min_observations=4,
+            detail="full",
+        ),
+        gateway=gateway,
+    )
+
+    assert requested_counts == [6]
+    assert out["success"] is True
+    assert out["summary"]["observations"] == 4
+    assert out["forming_candle_status"] == "excluded"
+    assert out["worst_observations"][0]["time"] != "1970-01-01T00:00:06Z"
 
 
 def test_run_trade_var_cvar_uses_account_currency_tick_sensitivity() -> None:

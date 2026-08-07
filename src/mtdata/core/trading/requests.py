@@ -429,6 +429,13 @@ class TradeVarCvarRequest(BaseModel):
         description="Return interval and one-bar VaR/CVaR holding period.",
     )
     lookback: int = 500
+    include_incomplete: bool = Field(
+        default=False,
+        description=(
+            "Include the current forming candle in return history. Defaults to false "
+            "so VaR/CVaR uses completed bars only."
+        ),
+    )
     confidence: float = Field(
         0.95,
         description=(
