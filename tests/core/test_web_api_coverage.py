@@ -341,6 +341,14 @@ class TestGetInstruments:
         assert len(res["items"]) == 1
         assert res["items"][0]["symbol"] == "EURUSD"
         assert "name" not in res["items"][0]
+        assert res["count"] == 1
+        assert res["pagination"] == {
+            "total": 1,
+            "returned": 1,
+            "offset": 0,
+            "limit": None,
+            "has_more": False,
+        }
 
     def test_search_filters(self):
         syms = [_make_symbol("EURUSD", "Euro"), _make_symbol("USDJPY", "Yen")]
@@ -362,6 +370,9 @@ class TestGetInstruments:
             resp = _client.get("/api/instruments", params={"limit": 3})
         res = resp.json()
         assert len(res["items"]) == 3
+        assert res["count"] == 3
+        assert res["pagination"]["total"] == 10
+        assert res["pagination"]["has_more"] is True
 
     def test_symbol_exception_skipped(self):
         bad = MagicMock()
@@ -738,7 +749,19 @@ class TestGetHistory:
 
         assert resp.status_code == 200
         assert fetch.call_args.kwargs["allow_stale"] is True
-        assert fetch.call_args.kwargs["indicators"] == "RSI_14"
+        assert fetch.call_args.kwargs["indicators"] == [{"name": "RSI_14"}]
+
+    def test_range_without_limit_uses_range_safety_cap(self):
+        with patch.object(web_api.mt5_connection, "_ensure_connection", return_value=True), \
+             patch("mtdata.core.web_api._fetch_candles_impl", return_value={"data": []}) as fetch, \
+             patch("mtdata.core.web_api.mt5_config"):
+            resp = _client.get(
+                "/api/history",
+                params={"symbol": "EURUSD", "start": "2026-01-01", "end": "2026-01-31"},
+            )
+
+        assert resp.status_code == 200
+        assert fetch.call_args.kwargs["limit"] == 100_000
 
     def test_basic_success(self):
         payload = {"data": [{"time": 1.0, "close": 1.1}], "has_forming_candle": False}
@@ -754,7 +777,7 @@ class TestGetHistory:
         res = resp.json()
         assert res["data"] == [{"time": 1.0, "close": 1.1}]
         assert "last_candle_open" not in res
-        assert "count" not in res
+        assert res["count"] == 1
         assert "candles" not in res
         assert "meta" not in res
         assert res["timestamp_format"] == "iso"
@@ -802,9 +825,9 @@ class TestGetHistory:
             resp = _client.get("/api/history", params={"symbol": "EURUSD", "include_incomplete": "false"})
         res = resp.json()
         assert len(res["data"]) == 2
-        assert res["has_forming_candle"] is True
         assert res["forming_candle_status"] == "included"
-        assert res["forming_candle_included"] is True
+        assert "has_forming_candle" not in res
+        assert "forming_candle_included" not in res
         assert "last_candle_open" not in res
 
     def test_keeps_incomplete_candle_when_flag(self):
@@ -821,7 +844,8 @@ class TestGetHistory:
             resp = _client.get("/api/history", params={"symbol": "EURUSD", "include_incomplete": "true"})
         res = resp.json()
         assert len(res["data"]) == 2
-        assert res["forming_candle_included"] is True
+        assert res["forming_candle_status"] == "included"
+        assert "forming_candle_included" not in res
         assert "last_candle_open" not in res
 
     def test_fetch_exception(self):

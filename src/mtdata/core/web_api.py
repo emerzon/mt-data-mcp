@@ -41,8 +41,8 @@ from .forecast import (
     forecast_volatility_estimate as _forecast_volatility_tool,
 )
 from .forecast_tasks import forecast_models_list as _forecast_models_list_tool
-from .mt5_gateway import create_mt5_gateway, mt5_connection_error
 from .market_depth import market_ticker as _market_ticker_tool
+from .mt5_gateway import create_mt5_gateway, mt5_connection_error
 from .pivot import pivot_compute_points
 from .tool_calling import call_tool_sync_structured, unwrap_tool_callable
 from .web_api_handlers import (
@@ -335,7 +335,15 @@ def get_wavelets() -> Dict[str, Any]:
 def get_history(
     symbol: str = Query(...),
     timeframe: str = Query("H1"),
-    limit: int = Query(20, ge=1, le=20000),
+    limit: Optional[int] = Query(
+        None,
+        ge=1,
+        le=100000,
+        description=(
+            "Maximum bars to return. Defaults to 20 for latest-N queries and "
+            "100,000 for bounded start/end range queries."
+        ),
+    ),
     start: Optional[str] = Query(None),
     end: Optional[str] = Query(None),
     ohlcv: Optional[str] = Query("ohlc"),
@@ -374,6 +382,7 @@ def get_history(
         fetch_candles_impl=_fetch_candles_impl,
         get_denoise_methods=_get_denoise_methods,
         normalize_denoise_spec=_norm_dn,
+        gateway=_web_api_gateway(),
         mt5_config=mt5_config,
     )
 

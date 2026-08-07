@@ -13,6 +13,8 @@ from ..forecast.forecast_methods import get_forecast_methods_payload
 from ..utils.coercion import UNPARSED_BOOL, parse_bool_like
 from ..utils.mt5 import MT5ConnectionError
 from ..utils.support_resistance import compact_support_resistance_payload
+from .data.requests import DataFetchCandlesRequest
+from .data.use_cases import run_data_fetch_candles
 from .error_envelope import build_error_payload, normalize_error_payload
 from .mt5_gateway import create_mt5_gateway
 from .output_contract import (
@@ -269,9 +271,23 @@ def get_instruments_response(
             items.append({"symbol": name, "group": group, "description": desc})
         except Exception:
             continue
+    total = len(items)
     if limit and limit > 0:
-        items = items[: int(limit)]
-    return {"items": items}
+        returned_items = items[: int(limit)]
+    else:
+        returned_items = items
+    returned = len(returned_items)
+    return {
+        "items": returned_items,
+        "count": returned,
+        "pagination": {
+            "total": total,
+            "returned": returned,
+            "offset": 0,
+            "limit": int(limit) if limit and limit > 0 else None,
+            "has_more": returned < total,
+        },
+    }
 
 
 def _compact_forecast_method_definition(method_def: Dict[str, Any]) -> Dict[str, Any]:
@@ -459,7 +475,7 @@ def get_history_response(  # noqa: C901
     *,
     symbol: str,
     timeframe: str,
-    limit: int,
+    limit: Optional[int],
     start: Optional[str],
     end: Optional[str],
     ohlcv: Optional[str],
@@ -475,6 +491,7 @@ def get_history_response(  # noqa: C901
     fetch_candles_impl: Callable[..., Any],
     get_denoise_methods: Callable[[], Any],
     normalize_denoise_spec: Callable[..., Any],
+    gateway: Any,
     mt5_config: Any,
 ) -> Dict[str, Any]:
     _require_mt5_connection()
@@ -594,21 +611,28 @@ def get_history_response(  # noqa: C901
                 _apply_history_denoise_controls(spec_input, controls)
         denoise_spec = normalize_denoise_spec(spec_input, default_when="post_ti")
 
+    request_values: Dict[str, Any] = {
+        "symbol": symbol,
+        "timeframe": timeframe,
+        "start": start,
+        "end": end,
+        "ohlcv": ohlcv,
+        "include_spread": include_spread,
+        "indicators": indicators,
+        "denoise": denoise_spec,
+        "include_incomplete": include_incomplete,
+        "allow_stale": allow_stale,
+        "timestamp_format": timestamp_format,
+        "detail": detail,
+    }
+    if limit is not None:
+        request_values["limit"] = int(limit)
     try:
-        result = fetch_candles_impl(
-            symbol=symbol,
-            timeframe=timeframe,  # type: ignore[arg-type]
-            limit=int(limit),
-            start=start,
-            end=end,
-            ohlcv=ohlcv,
-            include_spread=include_spread,
-            indicators=indicators,
-            denoise=denoise_spec,
-            simplify=None,
-            include_incomplete=include_incomplete,
-            allow_stale=allow_stale,
-            time_as_epoch=str(timestamp_format).strip().lower() != "iso",
+        request = DataFetchCandlesRequest(**request_values)
+        result = run_data_fetch_candles(
+            request,
+            gateway=gateway,
+            fetch_candles_impl=fetch_candles_impl,
         )
     except Exception as exc:
         _raise_history_fetch_error(exc)
