@@ -16,7 +16,7 @@ from .dates import (
     normalize_finviz_dates_in_rows,
     resolve_date_range,
 )
-from .symbols import looks_like_non_equity_symbol
+from .symbols import looks_like_non_equity_symbol, normalize_finviz_equity_symbol
 from .utils import (
     apply_finvizfinance_timeout_patch,
     crypto_day_week_identical,
@@ -34,42 +34,6 @@ logger = logging.getLogger(__name__)
 _FINVIZ_HTTP_TIMEOUT = get_finviz_http_timeout()
 _FINVIZ_SCREENER_MAX_ROWS = get_finviz_screener_max_rows()
 _FINVIZ_PAGE_LIMIT_MAX = get_finviz_page_limit_max()
-
-_MT5_EQUITY_SUFFIXES = {
-    "AMEX",
-    "ARCA",
-    "ASE",
-    "BATS",
-    "NAS",
-    "NASDAQ",
-    "NQ",
-    "NYSE",
-    "NYS",
-    "NYQ",
-    "US",
-}
-
-
-def _normalize_finviz_equity_symbol(symbol: str) -> str:
-    normalized = str(symbol or "").strip().upper()
-    if not normalized:
-        return normalized
-
-    for separator in (".", "_", "-"):
-        if separator not in normalized:
-            continue
-        base, suffix = normalized.split(separator, 1)
-        suffix_token = suffix.split(".", 1)[0].split("_", 1)[0].split("-", 1)[0]
-        if (
-            base
-            and len(base) <= 6
-            and base.replace(".", "").isalnum()
-            and not looks_like_non_equity_symbol(base)
-            and suffix_token in _MT5_EQUITY_SUFFIXES
-        ):
-            return base
-    return normalized
-
 
 def _sanitize_error_message(exc: Exception, *, symbol: str | None = None) -> str:
     """Sanitize exception messages to hide internal implementation details.
@@ -309,7 +273,7 @@ def _load_finviz_attr(module_name: str, attr_name: str) -> Any:
 def _get_finviz_stock_quote(symbol: str) -> tuple[str, Any]:
     _apply_finvizfinance_timeout_patch()
     finvizfinance = _load_finviz_attr("finvizfinance.quote", "finvizfinance")
-    symbol_norm = _normalize_finviz_equity_symbol(symbol)
+    symbol_norm = normalize_finviz_equity_symbol(symbol)
     return symbol_norm, finvizfinance(symbol_norm)
 
 
@@ -445,7 +409,7 @@ def get_stock_fundamentals(symbol: str) -> Dict[str, Any]:
             error_code = "finviz_endpoint_failed"
             message = (
                 f"Finviz fundamentals failed for "
-                f"{_normalize_finviz_equity_symbol(symbol)}. Other Finviz endpoints "
+                f"{normalize_finviz_equity_symbol(symbol)}. Other Finviz endpoints "
                 "may still be available."
             )
             remediation = (
@@ -467,7 +431,7 @@ def get_stock_fundamentals(symbol: str) -> Dict[str, Any]:
             "provider": "finviz",
             "endpoint": "fundamentals",
             "stage": "ticker_fundament",
-            "symbol": _normalize_finviz_equity_symbol(symbol),
+            "symbol": normalize_finviz_equity_symbol(symbol),
         }
 
 

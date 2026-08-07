@@ -31,8 +31,11 @@ from ..services.finviz import (
     get_stock_ratings,
     screen_stocks,
 )
+from ..services.finviz.symbols import (
+    looks_like_non_equity_symbol,
+    normalize_finviz_equity_symbol,
+)
 from ..services.news_text import normalize_news_text
-from ..services.finviz.symbols import looks_like_non_equity_symbol
 from ..shared.schema import DetailLiteral
 from ..shared.symbols import finviz_forex_symbol_to_mt5
 from ._mcp_instance import mcp
@@ -47,21 +50,6 @@ from .output_contract import (
 
 logger = logging.getLogger(__name__)
 
-_FINVIZ_EQUITY_BROKER_SUFFIXES = {
-    "AMEX",
-    "ARCA",
-    "BATS",
-    "L",
-    "NAS",
-    "NASDAQ",
-    "NQ",
-    "NY",
-    "NYSE",
-    "O",
-    "OTC",
-    "TQ",
-    "US",
-}
 _FINVIZ_SCREEN_FILTERS_EXAMPLE = '{"Exchange":"NASDAQ","Sector":"Technology"}'
 _FINVIZ_FUNDAMENTAL_CATEGORIES: Dict[str, tuple[str, ...]] = {
     "summary": (
@@ -187,21 +175,8 @@ def _validate_positive_finviz_limit(
     )
 
 
-def _normalize_finviz_equity_symbol_text(symbol: str) -> str:
-    symbol_norm = str(symbol or "").strip().upper()
-    if "." not in symbol_norm:
-        return symbol_norm
-    base, suffix = symbol_norm.rsplit(".", 1)
-    if (
-        suffix in _FINVIZ_EQUITY_BROKER_SUFFIXES
-        and re.fullmatch(r"[A-Z]{1,6}", base or "") is not None
-    ):
-        return base
-    return symbol_norm
-
-
 def _normalize_equity_symbol(symbol: str, *, tool_name: str) -> tuple[Optional[str], Optional[Dict[str, Any]]]:
-    symbol_norm = _normalize_finviz_equity_symbol_text(symbol)
+    symbol_norm = normalize_finviz_equity_symbol(symbol)
     if not symbol_norm:
         return None, _finviz_error_payload(
             f"{tool_name} requires a symbol.",
