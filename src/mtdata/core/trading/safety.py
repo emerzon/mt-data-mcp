@@ -737,14 +737,12 @@ def _account_uses_netting(account_info: Any) -> bool:
 def _candidate_reduces_existing_net(
     account_info: Any,
     *,
-    candidate_is_pending: bool,
     side: Optional[str],
     net_side: Optional[str],
     net_volume: float,
 ) -> bool:
     return bool(
-        not candidate_is_pending
-        and not _account_uses_hedging(account_info)
+        not _account_uses_hedging(account_info)
         and net_side is not None
         and net_volume > 0
         and side == {"BUY": "SELL", "SELL": "BUY"}.get(net_side)
@@ -759,7 +757,6 @@ def _projected_exposure_lots(
     side: Optional[str],
     volume: Optional[float],
     account_info: Any = None,
-    candidate_is_pending: bool = False,
 ) -> float:
     """Project gross exposure after applying a candidate order.
 
@@ -776,7 +773,7 @@ def _projected_exposure_lots(
         new_volume = 0.0
     if new_volume <= 0 or not math.isfinite(new_volume):
         return existing
-    if candidate_is_pending or _account_uses_hedging(account_info):
+    if _account_uses_hedging(account_info):
         return existing + new_volume
 
     normalized_side = _normalize_side(side)
@@ -945,7 +942,6 @@ def _evaluate_wallet_risk_limits(
     entry_price: Optional[float],
     stop_loss: Optional[float],
     side: Optional[str],
-    candidate_is_pending: bool,
 ) -> Optional[Dict[str, Any]]:
     if not _wallet_limits_active(limits):
         return None
@@ -1013,7 +1009,6 @@ def _evaluate_wallet_risk_limits(
     order_volume = float(volume)
     if _candidate_reduces_existing_net(
         account_info,
-        candidate_is_pending=candidate_is_pending,
         side=normalized_side,
         net_side=net_side,
         net_volume=net_volume,
@@ -1105,7 +1100,6 @@ def evaluate_trade_guardrails(
     account_info: Any = None,
     existing_positions: Optional[List[Any]] = None,
     existing_pending_orders: Optional[List[Any]] = None,
-    candidate_is_pending: bool = False,
     symbol_info: Any = None,
     symbol_info_resolver: Optional[Callable[[str], Any]] = None,
     enforce_symbol_rules: bool = True,
@@ -1179,7 +1173,6 @@ def evaluate_trade_guardrails(
             side=normalized_side,
             volume=volume,
             account_info=account_info,
-            candidate_is_pending=candidate_is_pending,
         )
         account_result = _evaluate_account_risk_gate(
             config.account_risk_limits,
@@ -1214,7 +1207,6 @@ def evaluate_trade_guardrails(
             entry_price=entry_price,
             stop_loss=stop_loss,
             side=normalized_side,
-            candidate_is_pending=candidate_is_pending,
         )
         if wallet_result is not None:
             return wallet_result
@@ -1234,7 +1226,6 @@ def preview_trade_guardrails(
     account_info: Any = None,
     existing_positions: Optional[List[Any]] = None,
     existing_pending_orders: Optional[List[Any]] = None,
-    candidate_is_pending: bool = False,
     symbol_info: Any = None,
     symbol_info_resolver: Optional[Callable[[str], Any]] = None,
 ) -> Dict[str, Any]:
@@ -1284,7 +1275,6 @@ def preview_trade_guardrails(
         account_info=account_info,
         existing_positions=existing_positions,
         existing_pending_orders=existing_pending_orders,
-        candidate_is_pending=candidate_is_pending,
         symbol_info=resolved_symbol_info,
         symbol_info_resolver=symbol_info_resolver,
         enforce_account_risk=True,

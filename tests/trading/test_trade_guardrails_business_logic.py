@@ -15,6 +15,7 @@ from mtdata.core.trading.safety import (
     TradeGuardrailsConfig,
     WalletRiskLimits,
     _estimate_order_risk_currency,
+    _projected_exposure_lots,
     evaluate_trade_guardrails,
     pending_order_risk_increased,
     preview_trade_guardrails,
@@ -135,7 +136,6 @@ def test_preview_trade_guardrails_includes_pending_exposure():
             SimpleNamespace(symbol="EURUSD", type=2, volume_current=1.0)
         ],
         account_info=SimpleNamespace(is_demo=False),
-        candidate_is_pending=True,
     )
 
     assert preview["blocked"] is True
@@ -317,7 +317,6 @@ def test_exposure_cap_counts_existing_and_candidate_pending_orders():
         account_info=SimpleNamespace(is_demo=False, margin=0.0),
         enforce_wallet_risk=False,
         enforce_safety_policy=False,
-        candidate_is_pending=True,
     )
 
     assert block is not None
@@ -392,7 +391,6 @@ def test_wallet_risk_counts_contingent_pending_order_risk():
         ],
         symbol_info=symbol_info,
         symbol_info_resolver=lambda _symbol: symbol_info,
-        candidate_is_pending=True,
     )
 
     assert result is not None
@@ -402,6 +400,21 @@ def test_wallet_risk_counts_contingent_pending_order_risk():
         "candidate_risk": 100.0,
         "portfolio_risk_after": 200.0,
     }
+
+
+def test_netting_pending_reduction_is_not_counted_as_new_exposure():
+    projected = _projected_exposure_lots(
+        existing_positions=[
+            SimpleNamespace(symbol="EURUSD", type=0, volume=5.0),
+        ],
+        existing_pending_orders=[],
+        symbol="EURUSD",
+        side="SELL",
+        volume=5.0,
+        account_info=SimpleNamespace(margin_mode=0),
+    )
+
+    assert projected == 0.0
 
 
 def test_wallet_risk_fails_closed_for_pending_order_without_stop():

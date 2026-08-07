@@ -945,7 +945,6 @@ def _modify_pending_order(
                     symbol_info=symbol_info,
                     symbol_info_resolver=mt5.symbol_info,
                     enforce_symbol_rules=False,
-                    candidate_is_pending=True,
                 )
                 if guardrail_block is not None:
                     guardrail_block["pending_order_ticket"] = resolved_ticket

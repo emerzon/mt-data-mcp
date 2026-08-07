@@ -1866,7 +1866,6 @@ def run_trade_place(  # noqa: C901
                 account_info=guardrail_account_info,
                 existing_positions=guardrail_positions,
                 existing_pending_orders=guardrail_pending_orders,
-                candidate_is_pending=is_pending,
                 symbol_info_resolver=mt5_adapter.symbol_info,
             )
             if guardrail_preview.get("blocked"):

@@ -16,7 +16,6 @@ from . import comments, common, time, validation
 from .gateway import MT5TradingGateway, create_trading_gateway, trading_connection_error
 from .positions import _resolve_open_position
 from .safety import (
-    _account_uses_hedging,
     _account_uses_netting,
     _resolve_existing_symbol_net,
     assess_margin_stress,
@@ -816,7 +815,6 @@ def _evaluate_live_trade_guardrails(
     side: str,
     entry_price: float,
     symbol_info: Any,
-    candidate_is_pending: bool = False,
 ) -> Optional[Dict[str, Any]]:
     if not trade_guardrails_config.is_enabled():
         return None
@@ -844,7 +842,6 @@ def _evaluate_live_trade_guardrails(
         existing_pending_orders=pending_orders,
         symbol_info=symbol_info,
         symbol_info_resolver=mt5.symbol_info,
-        candidate_is_pending=candidate_is_pending,
     )
 
 
@@ -1745,7 +1742,6 @@ def _place_pending_order(
                 side="BUY" if "BUY" in str(t) else "SELL",
                 entry_price=float(norm_price),
                 symbol_info=symbol_info,
-                candidate_is_pending=True,
             )
             if guardrail_block is not None:
                 return guardrail_block
