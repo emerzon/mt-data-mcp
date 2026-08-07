@@ -77,8 +77,9 @@ _MARKETS = {
         "timezone": "Europe/London",
         "open": (8, 0),  # 8:00 AM
         "close": (16, 30),  # 4:30 PM
-        "early_close": None,
+        "early_close": (12, 30),
         "early_close_holidays": [],
+        "early_close_last_business_day_before": ["Christmas Day", "New Year's Day"],
     },
     "XETRA": {
         "name": "Xetra (Frankfurt)",
@@ -333,6 +334,21 @@ def _is_early_close_session(
             for eve_name in market["early_close_eves"]:
                 if eve_name.lower() in tomorrow_holiday.lower():
                     return True
+
+    if market.get("early_close_last_business_day_before"):
+        target_names = market["early_close_last_business_day_before"]
+        for days_ahead in range(1, 8):
+            next_day = session_dt + timedelta(days=days_ahead)
+            next_is_holiday, next_holiday = _is_holiday(country, next_day, exchange)
+            if next_is_holiday and next_holiday:
+                if any(
+                    target.lower() in next_holiday.lower()
+                    for target in target_names
+                ):
+                    return True
+                continue
+            if next_day.weekday() < 5:
+                break
 
     return False
 
@@ -607,6 +623,28 @@ def _get_upcoming_holidays(
                             early_close_time=derived_time,
                             days_away=max(0, days_away - 1),
                         )
+                if any(
+                    name.lower() in holiday_name.lower()
+                    for name in market.get("early_close_last_business_day_before", [])
+                ):
+                    previous_session = event_date - timedelta(days=1)
+                    while previous_session.weekday() >= 5 or _is_holiday(
+                        country,
+                        datetime.combine(previous_session, datetime.min.time()).replace(
+                            tzinfo=ZoneInfo(str(market["timezone"]))
+                        ),
+                        exchange,
+                    )[0]:
+                        previous_session -= timedelta(days=1)
+                    _upsert(
+                        market_id=market_id,
+                        market=market,
+                        event_date=previous_session,
+                        holiday_name=f"Last business day before {holiday_name}",
+                        impact="early_close",
+                        early_close_time=derived_time,
+                        days_away=max(0, (previous_session - now_local.date()).days),
+                    )
         except Exception as exc:
             logger.warning("Failed to get exchange holidays for %s: %s", market_id, exc)
 
@@ -680,27 +718,34 @@ def _symbol_trade_mode_status(gateway: Any, trade_mode: Any) -> Dict[str, Any]:
     if trade_mode in disabled_values or "disabled" in normalized:
         status = "disabled"
         can_open = False
+        is_tradable = False
     elif trade_mode in close_only_values or "close" in normalized:
         status = "close_only"
         can_open = False
+        is_tradable = True
     elif trade_mode in long_only_values or "long" in normalized:
         status = "long_only"
         can_open = True
+        is_tradable = True
     elif trade_mode in short_only_values or "short" in normalized:
         status = "short_only"
         can_open = True
+        is_tradable = True
     elif trade_mode in full_values or "full" in normalized:
         status = "tradable"
         can_open = True
+        is_tradable = True
     else:
         status = "unknown"
         can_open = None
+        is_tradable = None
 
     return {
         "trade_mode": trade_mode,
         "trade_mode_label": label_text or None,
         "status": status,
         "can_open_new_positions": can_open,
+        "is_tradable": is_tradable,
     }
 
 
@@ -987,11 +1032,7 @@ def _check_symbol_market_status(
         _coerce_optional_bool(schedule_status.get("current_time_in_active_session"))
         is True
     )
-    weekend_closed_now = (
-        is_standard_weekend_closure(now_utc)
-        if is_probably_forex_symbol(symbol_name)
-        else now_utc.weekday() >= 5
-    )
+    weekend_closed_now = is_standard_weekend_closure(now_utc)
     tick_available = tick_status.get("tick_available") is True
     if (
         can_open is True
@@ -1022,7 +1063,8 @@ def _check_symbol_market_status(
 
     if reason == "weekend":
         message = (
-            f"{symbol_name}: closed for UTC weekend even though MT5 trade_mode "
+            f"{symbol_name}: closed for the standard Friday 17:00 through Sunday "
+            "17:00 America/New_York weekend window even though MT5 trade_mode "
             "allows opening."
         )
     else:
@@ -1040,8 +1082,8 @@ def _check_symbol_market_status(
         "status_confidence": "heuristic",
         "heuristic_note": _symbol_status_heuristic_note(symbol_name),
         "can_open_new_positions": can_open,
-        "is_tradable": can_open,
-        "is_tradable_confidence": "heuristic",
+        "is_tradable": _coerce_optional_bool(mode_status["is_tradable"]),
+        "is_tradable_confidence": "broker_trade_mode",
         "trade_mode_allows_opening": trade_mode_can_open,
         "trade_mode_label": mode_status.get("trade_mode_label"),
         "tick_freshness": tick_freshness,

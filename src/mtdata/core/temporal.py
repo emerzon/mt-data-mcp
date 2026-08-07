@@ -6,12 +6,13 @@ import numpy as np
 import pandas as pd
 
 from ..shared.constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
-from ..shared.symbols import is_probably_forex_symbol
 from ..shared.schema import DetailLiteral, TimeframeLiteral
+from ..shared.symbols import is_probably_fx_session_symbol
 from ..shared.validators import (
     invalid_timeframe_error,
     unsupported_timeframe_seconds_error,
 )
+from ..utils.coercion import safe_float as _safe_float
 from ..utils.mt5 import (
     MT5ConnectionError,
     _mt5_copy_rates_from,
@@ -21,19 +22,17 @@ from ..utils.mt5 import (
     get_symbol_info_cached,
     mt5,
 )
-from ..utils.time import bar_close_epoch
 from ..utils.sessions import (
-    EQUITY_SESSION_DEFINITION as _SESSION_DEFINITION,
-    FX_SESSION_DEFINITION as _FX_SESSION_DEFINITION,
     market_session_label as _market_session_label,
-    session_boundaries_for_day as _session_boundaries_for_day,
+)
+from ..utils.sessions import (
     session_definition_for_clock as _session_definition_for_clock,
 )
-from ..utils.coercion import safe_float as _safe_float
 from ..utils.time import (
     _format_time_minimal,
     _format_time_minimal_local,
     _resolve_client_tz,
+    bar_close_epoch,
 )
 from ..utils.utils import (
     _parse_end_datetime,
@@ -499,6 +498,8 @@ def _base_temporal_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
             "return_mode",
             "units",
             "timezone",
+            "session_calendar",
+            "session_calendar_source",
             "session_definition",
             "lookback",
             "lookback_source",
@@ -829,6 +830,7 @@ def temporal_analyze(  # noqa: C901
                     context=context,
                 )
             context["group_by"] = group_norm
+            info_before = get_symbol_info_cached(symbol)
             session_calendar_value = str(session_calendar or "auto").strip().lower()
             if session_calendar_value not in {"auto", "fx", "equity"}:
                 return _error_response(
@@ -838,7 +840,11 @@ def temporal_analyze(  # noqa: C901
                 )
             resolved_session_calendar = (
                 "fx"
-                if session_calendar_value == "auto" and is_probably_forex_symbol(symbol)
+                if session_calendar_value == "auto"
+                and is_probably_fx_session_symbol(
+                    symbol,
+                    path=getattr(info_before, "path", None),
+                )
                 else "equity" if session_calendar_value == "auto" else session_calendar_value
             )
             lookback_defaulted = lookback is None
@@ -963,7 +969,6 @@ def temporal_analyze(  # noqa: C901
                     "wraps_midnight": bool(tr_start > tr_end),
                 }
 
-            info_before = get_symbol_info_cached(symbol)
             with _symbol_ready_guard(symbol, info_before=info_before) as (err, _info):
                 if err:
                     return _error_response(err, stage="symbol", context=context)
@@ -1330,7 +1335,9 @@ def temporal_analyze(  # noqa: C901
             if group_norm in {"session", "all"}:
                 payload["session_calendar"] = resolved_session_calendar
                 payload["session_calendar_source"] = (
-                    "symbol_inference" if session_calendar_value == "auto" else "request"
+                    "symbol_and_broker_metadata"
+                    if session_calendar_value == "auto"
+                    else "request"
                 )
                 payload["session_definition"] = _session_definition_for_clock(
                     tz_name,

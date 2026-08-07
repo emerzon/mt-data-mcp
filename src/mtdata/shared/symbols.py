@@ -119,3 +119,25 @@ def is_probably_forex_symbol(
         and normalized[index + 3 : index + 6] in codes
         for index in range(len(normalized) - 5)
     )
+
+
+def is_probably_fx_session_symbol(symbol: Any, *, path: Any = None) -> bool:
+    """Return whether a broker symbol plausibly follows a five-day global session.
+
+    The session calendar is broader than currency-pair syntax: broker metals and
+    index CFDs commonly follow near-24/5 hours and benefit from FX-style Asia,
+    London, and New York buckets.
+    """
+    if is_probably_crypto_symbol(symbol):
+        return False
+    if is_probably_forex_symbol(symbol):
+        return True
+
+    normalized = _alnum_upper(symbol)
+    if normalized.startswith(("XAU", "XAG", "XPT", "XPD")):
+        return True
+    path_text = str(path or "").strip().lower()
+    return any(
+        hint in path_text
+        for hint in ("forex", "metals", "metal", "indices", "index", "commodities")
+    )

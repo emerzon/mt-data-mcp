@@ -108,6 +108,43 @@ class TestUsProductionEarlyCloseCalendar:
         assert "early_close" not in result
 
 
+class TestLseProductionEarlyCloseCalendar:
+    @pytest.mark.parametrize(
+        ("session_time", "expected_date"),
+        [
+            (datetime(2026, 12, 24, 13, 0, tzinfo=ZoneInfo("Europe/London")), "2026-12-29"),
+            (datetime(2028, 12, 22, 13, 0, tzinfo=ZoneInfo("Europe/London")), "2028-12-27"),
+            (datetime(2026, 12, 31, 13, 0, tzinfo=ZoneInfo("Europe/London")), "2027-01-04"),
+        ],
+    )
+    def test_last_business_day_before_christmas_or_new_year_closes_at_1230(
+        self,
+        session_time,
+        expected_date,
+    ):
+        result = ms_mod._check_market_status("LSE", session_time)
+
+        assert result["status"] == "closed"
+        assert result["reason"] == "after_hours"
+        assert result["early_close"] is True
+        assert result["early_close_time"] == "12:30"
+        assert result["next_open"].startswith(expected_date)
+
+    def test_upcoming_holidays_includes_lse_shortened_session(self):
+        upcoming = ms_mod._get_upcoming_holidays(
+            ["LSE"],
+            days_ahead=10,
+            now_utc=datetime(2026, 12, 20, 12, 0, tzinfo=timezone.utc),
+        )
+
+        shortened = next(
+            row
+            for row in upcoming
+            if row["date"] == "2026-12-24" and row["impact"] == "early_close"
+        )
+        assert shortened["early_close_time"] == "12:30"
+
+
 # ---- _check_market_status: day-after early close ----
 
 class TestDayAfterEarlyClose:

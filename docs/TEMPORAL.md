@@ -38,6 +38,12 @@ mtdata-cli temporal_analyze EURUSD --timeframe D1 --group-by month --lookback 10
 | `--return-mode` | `pct` | Return calculation: `pct` (percentage) or `log` (logarithmic) |
 | `--min-bars` | auto for DOW | Exclude grouped rows below this sample count. Explicit values apply to every breakdown under `--group-by all`; automatic filtering applies to its DOW breakdown. |
 
+`auto` uses both symbol syntax and the broker symbol path. Currency pairs,
+metals, and broker-classified index/commodity CFDs use the near-24/5 FX session
+buckets; stock-like symbols use equity sessions. Responses include the resolved
+`session_calendar` and `session_calendar_source`. Set `fx` or `equity`
+explicitly to override inference.
+
 ---
 
 ## Grouping Modes

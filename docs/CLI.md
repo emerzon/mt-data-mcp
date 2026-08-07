@@ -543,6 +543,10 @@ mtdata-cli market_status --symbol EURUSD --json
 mtdata-cli trade_session_context EURUSD --json
 ```
 
+In symbol mode, `is_tradable` reflects the broker trade mode (including
+close-only symbols), while `can_open_new_positions` additionally requires a
+live-ready quote and an active session.
+
 ### Place Orders
 `trade_place` requires `symbol`, `volume`, and `order_type`.
 

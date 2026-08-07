@@ -164,7 +164,7 @@ def test_market_status_symbol_mode_reports_heuristic_status(monkeypatch) -> None
     assert result["data_fetched_at"] == "2024-01-02T12:00:00Z"
     assert result["last_tick_time"] == "2024-01-02T12:00:00Z"
     assert result["is_tradable"] is True
-    assert result["is_tradable_confidence"] == "heuristic"
+    assert result["is_tradable_confidence"] == "broker_trade_mode"
     assert result["market_clock"] == "2024-01-02T12:00:00Z"
     assert result["market_clock_timezone"] == "UTC"
     assert result["authoritative_clock"] in {"server", "utc"}
@@ -211,7 +211,7 @@ def test_symbol_tick_snapshot_prefers_millisecond_timestamp() -> None:
     assert result["tick_freshness"] == "live"
 
 
-def test_market_status_blocks_tradability_when_tick_timestamp_is_unsafe(monkeypatch) -> None:
+def test_market_status_blocks_new_entries_when_tick_timestamp_is_unsafe(monkeypatch) -> None:
     raw = _unwrap(market_status_mod.market_status)
     fixed_now = datetime(2026, 7, 16, 12, 0, tzinfo=timezone.utc)
 
@@ -248,7 +248,7 @@ def test_market_status_blocks_tradability_when_tick_timestamp_is_unsafe(monkeypa
     assert result["status"] == "quote_not_live_ready"
     assert result["trade_mode_allows_opening"] is True
     assert result["can_open_new_positions"] is False
-    assert result["is_tradable"] is False
+    assert result["is_tradable"] is True
     assert result["tick_freshness"] == "clock_skew"
     assert result["freshness_reason"] == "future_timestamp"
     assert result["timestamp_in_future"] is True
@@ -369,9 +369,10 @@ def test_market_status_symbol_mode_handles_bool_like_trade_and_schedule(monkeypa
     monkeypatch.setattr(
         market_status_mod,
         "_symbol_trade_mode_status",
-        lambda gateway, trade_mode: {
-            "can_open_new_positions": BoolLike(),
-            "status": "open",
+            lambda gateway, trade_mode: {
+                "can_open_new_positions": BoolLike(),
+                "is_tradable": BoolLike(),
+                "status": "open",
             "trade_mode_label": "Full",
         },
     )
@@ -462,7 +463,63 @@ def test_market_status_symbol_mode_blocks_weekend_opening(monkeypatch) -> None:
     assert result["reason"] == "weekend"
     assert result["can_open_new_positions"] is False
     assert result["trade_mode_allows_opening"] is True
+    assert result["is_tradable"] is True
     assert "message" not in result
+
+
+def test_market_status_uses_standard_weekend_boundary_for_index_cfd(monkeypatch) -> None:
+    raw = _unwrap(market_status_mod.market_status)
+    fixed_now = datetime(2026, 7, 17, 22, 30, tzinfo=timezone.utc)
+
+    class FixedDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return fixed_now.replace(tzinfo=None) if tz is None else fixed_now.astimezone(tz)
+
+    class Gateway:
+        SYMBOL_TRADE_MODE_FULL = 4
+        SYMBOL_TRADE_MODE_DISABLED = 0
+        SYMBOL_TRADE_MODE_CLOSEONLY = 3
+        SYMBOL_TRADE_MODE_LONGONLY = 1
+        SYMBOL_TRADE_MODE_SHORTONLY = 2
+        TIMEFRAME_M1 = 1
+
+        def ensure_connection(self):
+            return None
+
+        def symbol_info(self, symbol):
+            return SimpleNamespace(name=symbol, visible=True, trade_mode=4)
+
+        def symbol_info_tick(self, symbol):
+            return SimpleNamespace(time=fixed_now.timestamp() - 60, bid=45000.0, ask=45001.0)
+
+        def copy_rates_range(self, symbol, timeframe, start, end):
+            return []
+
+    monkeypatch.setattr(market_status_mod, "datetime", FixedDateTime)
+    monkeypatch.setattr(market_status_mod, "create_mt5_gateway", lambda **kwargs: Gateway())
+
+    result = raw(symbol="US30")
+
+    assert result["status"] == "weekend_closed"
+    assert result["can_open_new_positions"] is False
+    assert result["is_tradable"] is True
+
+
+def test_close_only_symbol_remains_tradable_but_cannot_open() -> None:
+    gateway = SimpleNamespace(
+        SYMBOL_TRADE_MODE_FULL=4,
+        SYMBOL_TRADE_MODE_DISABLED=0,
+        SYMBOL_TRADE_MODE_CLOSEONLY=3,
+        SYMBOL_TRADE_MODE_LONGONLY=1,
+        SYMBOL_TRADE_MODE_SHORTONLY=2,
+    )
+
+    result = market_status_mod._symbol_trade_mode_status(gateway, 3)
+
+    assert result["status"] == "close_only"
+    assert result["can_open_new_positions"] is False
+    assert result["is_tradable"] is True
 
 
 def test_market_status_symbol_mode_allows_crypto_on_weekend(monkeypatch) -> None:
