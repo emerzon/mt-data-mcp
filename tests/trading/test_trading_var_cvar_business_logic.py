@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+import pytest
+
 from mtdata.core.trading.requests import TradeVarCvarRequest
 from mtdata.core.trading.use_cases import (
     _calculate_var_cvar_from_pnl,
@@ -213,10 +215,70 @@ def test_run_trade_var_cvar_rejects_position_without_tick_economics() -> None:
         gateway=gateway,
     )
 
+    assert out["success"] is False
+    assert out["error_code"] == "portfolio_var_incomplete"
     assert out["error"] == (
-        "No usable open positions available for VaR/CVaR calculation."
+        "Portfolio VaR/CVaR requires account-currency valuation for every open "
+        "position; refusing a partial calculation."
     )
-    assert "cannot be included" in out["warnings"][0]["warning"]
+    assert out["valuation_failures"] == [
+        {
+            "ticket": 13,
+            "symbol": "USDJPY",
+            "error": (
+                "Symbol tick value/tick size is unavailable for account-currency "
+                "VaR/CVaR."
+            ),
+        }
+    ]
+
+
+def test_run_trade_var_cvar_rejects_mixed_portfolio_with_unvalued_position() -> None:
+    positions = [
+        SimpleNamespace(
+            ticket=11,
+            symbol="EURUSD",
+            type=0,
+            volume=1.0,
+            price_current=100.0,
+            price_open=99.0,
+            profit=1.0,
+        ),
+        SimpleNamespace(
+            ticket=12,
+            symbol="BROKENCFD",
+            type=0,
+            volume=2.0,
+            price_current=50.0,
+            price_open=49.0,
+            profit=1.0,
+        ),
+    ]
+    gateway = SimpleNamespace(
+        ensure_connection=lambda: None,
+        account_info=lambda: SimpleNamespace(equity=10_000.0, currency="USD"),
+        positions_get=lambda symbol=None: positions,
+        symbol_info=lambda symbol: (
+            _symbol_info()
+            if symbol == "EURUSD"
+            else _symbol_info(trade_tick_size=0.0, trade_tick_value=0.0)
+        ),
+        copy_rates_from_pos=lambda *args: pytest.fail(
+            "history must not be fetched for an incomplete valuation"
+        ),
+        POSITION_TYPE_BUY=0,
+        POSITION_TYPE_SELL=1,
+        ORDER_TYPE_BUY=0,
+        ORDER_TYPE_SELL=1,
+    )
+
+    out = run_trade_var_cvar_calculate(TradeVarCvarRequest(), gateway=gateway)
+
+    assert out["success"] is False
+    assert out["error_code"] == "portfolio_var_incomplete"
+    assert out["omitted_symbols"] == ["BROKENCFD"]
+    assert out["valuation_failures"][0]["ticket"] == 12
+    assert out["valuation_failures"][0]["symbol"] == "BROKENCFD"
 
 
 def test_run_trade_var_cvar_calculate_converts_log_returns_to_price_changes() -> None:

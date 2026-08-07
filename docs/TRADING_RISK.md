@@ -132,9 +132,10 @@ symbol's broker-provided tick value and tick size (`pnl_model` is
 `tick_value_linear_sensitivity`). Positions without usable tick economics are rejected
 rather than mixed into a portfolio in incompatible quote-currency units. The model is
 linearized and does not include gaps, spread changes, swaps, or nonlinear payoff effects.
-Every included symbol must have usable history. The tool returns
+Every open position must have usable account-currency valuation and every
+included symbol must have usable history. The tool returns
 `portfolio_var_incomplete` instead of silently calculating a smaller portfolio
-when any symbol history is unavailable.
+when any position lacks valuation inputs or any symbol history is unavailable.
 
 ---
 

@@ -5190,41 +5190,50 @@ def run_trade_var_cvar_calculate(  # noqa: C901
     mt5_timeframe = TIMEFRAME_MAP[timeframe_value]
     symbol_info_cache: Dict[str, Any] = {}
     history_failures: List[Dict[str, Any]] = []
-    warnings: List[Dict[str, Any]] = []
+    valuation_failures: List[Dict[str, Any]] = []
     position_exposures: List[Dict[str, Any]] = []
     symbol_exposures: Dict[str, Dict[str, Any]] = {}
+
+    def _record_valuation_failure(
+        position: Any,
+        *,
+        symbol: Optional[str],
+        error: str,
+    ) -> None:
+        failure: Dict[str, Any] = {
+            "ticket": getattr(position, "ticket", None),
+            "error": error,
+        }
+        if symbol:
+            failure["symbol"] = symbol
+        valuation_failures.append(failure)
 
     for position in positions:
         symbol = str(getattr(position, "symbol", "") or "").strip()
         if not symbol:
-            warnings.append(
-                {
-                    "ticket": getattr(position, "ticket", None),
-                    "warning": "Position has no symbol",
-                }
+            _record_valuation_failure(
+                position,
+                symbol=None,
+                error="Position has no symbol.",
             )
             continue
         if symbol not in symbol_info_cache:
             symbol_info_cache[symbol] = gateway.symbol_info(symbol)
         symbol_info = symbol_info_cache[symbol]
         if symbol_info is None:
-            warnings.append(
-                {
-                    "ticket": getattr(position, "ticket", None),
-                    "symbol": symbol,
-                    "warning": "Symbol info unavailable",
-                }
+            _record_valuation_failure(
+                position,
+                symbol=symbol,
+                error="Symbol info is unavailable.",
             )
             continue
 
         volume = validation._safe_float_attr(position, "volume", 0.0)
         if not math.isfinite(volume) or volume <= 0.0:
-            warnings.append(
-                {
-                    "ticket": getattr(position, "ticket", None),
-                    "symbol": symbol,
-                    "warning": "Position volume is invalid",
-                }
+            _record_valuation_failure(
+                position,
+                symbol=symbol,
+                error="Position volume is invalid.",
             )
             continue
 
@@ -5237,12 +5246,10 @@ def run_trade_var_cvar_calculate(  # noqa: C901
         if mark_price <= 0.0:
             mark_price = validation._safe_float_attr(position, "price_open", 0.0)
         if not math.isfinite(mark_price) or mark_price <= 0.0:
-            warnings.append(
-                {
-                    "ticket": getattr(position, "ticket", None),
-                    "symbol": symbol,
-                    "warning": "Position mark price is invalid",
-                }
+            _record_valuation_failure(
+                position,
+                symbol=symbol,
+                error="Position mark price is invalid.",
             )
             continue
 
@@ -5255,15 +5262,13 @@ def run_trade_var_cvar_calculate(  # noqa: C901
             symbol_info=symbol_info,
         )
         if account_notional is None:
-            warnings.append(
-                {
-                    "ticket": getattr(position, "ticket", None),
-                    "symbol": symbol,
-                    "warning": (
-                        "Symbol tick value/tick size is unavailable; position "
-                        "cannot be included in account-currency VaR/CVaR."
-                    ),
-                }
+            _record_valuation_failure(
+                position,
+                symbol=symbol,
+                error=(
+                    "Symbol tick value/tick size is unavailable for "
+                    "account-currency VaR/CVaR."
+                ),
             )
             continue
         signed_notional = side_sign * account_notional
@@ -5301,13 +5306,35 @@ def run_trade_var_cvar_calculate(  # noqa: C901
         exposure["gross_notional"] += abs(float(signed_notional))
         exposure["positions"] += 1
 
+    if valuation_failures:
+        return _finish(
+            {
+                "success": False,
+                "error": (
+                    "Portfolio VaR/CVaR requires account-currency valuation for "
+                    "every open position; refusing a partial calculation."
+                ),
+                "error_code": "portfolio_var_incomplete",
+                "scope": "symbol" if request.symbol else "portfolio",
+                "valuation_failures": valuation_failures,
+                "omitted_symbols": sorted(
+                    {
+                        str(item.get("symbol"))
+                        for item in valuation_failures
+                        if item.get("symbol")
+                    }
+                ),
+                "remediation": (
+                    "Restore valid symbol metadata, position volume and mark prices, "
+                    "and positive tick-size/tick-value economics for every position."
+                ),
+            }
+        )
+
     if not position_exposures:
-        result = {
-            "error": "No usable open positions available for VaR/CVaR calculation."
-        }
-        if warnings:
-            result["warnings"] = warnings
-        return _finish(result)
+        return _finish(
+            {"error": "No usable open positions available for VaR/CVaR calculation."}
+        )
 
     return_series: Dict[str, Any] = {}
     for symbol in list(symbol_exposures.keys()):
@@ -5361,8 +5388,6 @@ def run_trade_var_cvar_calculate(  # noqa: C901
         }
         if history_failures:
             result["history_failures"] = history_failures
-        if warnings:
-            result["warnings"] = warnings
         return _finish(result)
 
     valid_symbols = set(return_series)
@@ -5398,8 +5423,6 @@ def run_trade_var_cvar_calculate(  # noqa: C901
         }
         if history_failures:
             result["history_failures"] = history_failures
-        if warnings:
-            result["warnings"] = warnings
         return _finish(result)
 
     exposure_vector = pd.Series(
@@ -5535,8 +5558,6 @@ def run_trade_var_cvar_calculate(  # noqa: C901
         )
     if history_failures:
         result["history_failures"] = history_failures
-    if warnings:
-        result["warnings"] = warnings
     result.update(_position_mark_freshness(gateway, positions))
     return _finish(
         _shape_trade_var_cvar_payload(result, detail=request.detail)
