@@ -150,10 +150,15 @@ class NewsEmbeddingService:
         if query_embedding is None:
             return {}
 
+        item_rows = [(item, format_document_text(item)) for item in items]
+        document_embeddings = self._get_document_embeddings(
+            text for _, text in item_rows
+        )
         scores: dict[str, float] = {}
-        for item in items:
-            document_text = format_document_text(item)
-            document_embedding = self._get_document_embedding(document_text)
+        for item, document_text in item_rows:
+            document_embedding = document_embeddings.get(
+                _normalize_text_key(document_text)
+            )
             if document_embedding is None:
                 continue
             scores[item.dedupe_key()] = _embedding_cosine_similarity(
@@ -202,6 +207,29 @@ class NewsEmbeddingService:
     def _get_document_embedding(self, text: str) -> Optional[tuple[float, ...]]:
         return self._cache_or_compute(self._document_cache, text, mode="document")
 
+    def _get_document_embeddings(
+        self,
+        texts: Iterable[str],
+    ) -> dict[str, tuple[float, ...]]:
+        keys = list(dict.fromkeys(_normalize_text_key(text) for text in texts))
+        resolved: dict[str, tuple[float, ...]] = {}
+        missing: list[str] = []
+        for key in keys:
+            cached = self._document_cache.get(key)
+            if cached is None:
+                missing.append(key)
+                continue
+            self._document_cache.move_to_end(key)
+            resolved[key] = cached
+
+        if missing:
+            vectors = self._encode_document_batch(missing)
+            if vectors is not None:
+                for key, vector in zip(missing, vectors, strict=True):
+                    self._store_cached(self._document_cache, key, vector)
+                    resolved[key] = vector
+        return resolved
+
     def _cache_or_compute(
         self,
         cache: OrderedDict[str, tuple[float, ...]],
@@ -218,13 +246,48 @@ class NewsEmbeddingService:
         vector = self._encode_text(key, mode=mode)
         if vector is None:
             return None
+        self._store_cached(cache, key, vector)
+        return vector
+
+    def _store_cached(
+        self,
+        cache: OrderedDict[str, tuple[float, ...]],
+        key: str,
+        vector: tuple[float, ...],
+    ) -> None:
         cache[key] = vector
         cache.move_to_end(key)
         while self.cache_size >= 0 and len(cache) > self.cache_size > 0:
             cache.popitem(last=False)
         if self.cache_size == 0:
             cache.clear()
-        return vector
+
+    def _encode_document_batch(
+        self,
+        texts: Sequence[str],
+    ) -> Optional[list[tuple[float, ...]]]:
+        model = self._ensure_model()
+        if model is None or not texts:
+            return []
+        try:
+            with _suppress_embedding_library_noise():
+                encoded = model.encode(
+                    list(texts),
+                    normalize_embeddings=True,
+                    show_progress_bar=False,
+                )
+            rows = list(encoded)
+            if len(texts) == 1 and rows and not hasattr(rows[0], "__iter__"):
+                rows = [rows]
+            if len(rows) != len(texts):
+                raise ValueError(
+                    f"backend returned {len(rows)} vectors for {len(texts)} documents"
+                )
+            return [tuple(float(value) for value in row) for row in rows]
+        except Exception as exc:
+            self._load_error = f"encoding failed: {exc}"
+            logger.warning("Failed to encode document embeddings: %s", exc)
+            return None
 
     def _encode_text(self, text: str, *, mode: str) -> Optional[tuple[float, ...]]:
         model = self._ensure_model()

@@ -1,6 +1,7 @@
 """MT5 local news database parser."""
 
 import logging
+import mmap
 import struct
 import subprocess
 from datetime import datetime, timezone
@@ -80,14 +81,15 @@ class MT5NewsParser:
         if not self.filepath.exists():
             raise FileNotFoundError(f"News database not found: {self.filepath}")
             
-        with open(self.filepath, 'rb') as f:
-            data = f.read()
-        
-        # Parse header
-        self._parse_header(data[:self.HEADER_SIZE])
-        
-        # Parse index entries and records
-        self.records = self._parse_records(data)
+        with open(self.filepath, 'rb') as file_handle:
+            file_size = self.filepath.stat().st_size
+            if file_size < self.HEADER_SIZE:
+                self._parse_header(file_handle.read(self.HEADER_SIZE))
+            with mmap.mmap(file_handle.fileno(), 0, access=mmap.ACCESS_READ) as data:
+                # Parse header, index entries, and records without copying the
+                # entire growing database into the Python heap.
+                self._parse_header(data[:self.HEADER_SIZE])
+                self.records = self._parse_records(data)
         
         return self.records
     
@@ -147,7 +149,7 @@ class MT5NewsParser:
             status = "ok"
         return {"status": status, **stats}
     
-    def _parse_records(self, data: bytes) -> List[MT5NewsRecord]:
+    def _parse_records(self, data: Any) -> List[MT5NewsRecord]:
         """Parse all news records from the binary data."""
         records: List[MT5NewsRecord] = []
         seen_keys = set()

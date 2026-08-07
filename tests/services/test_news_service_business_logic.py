@@ -8,6 +8,27 @@ import pytest
 from mtdata.services import news_service as svc
 
 
+def test_parser_memory_maps_database_instead_of_reading_it_whole(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    path = tmp_path / "news.dat"
+    header = bytearray(svc.MT5NewsParser.HEADER_SIZE)
+    header[:4] = svc.struct.pack("<I", svc.MT5NewsParser.HEADER_SIZE)
+    path.write_bytes(bytes(header) + b"record padding" * 20)
+    parser = svc.MT5NewsParser(str(path))
+    observed = {}
+
+    def parse_records(data):
+        observed["is_mmap"] = isinstance(data, svc.mmap.mmap)
+        return []
+
+    monkeypatch.setattr(parser, "_parse_records", parse_records)
+
+    assert parser.parse() == []
+    assert observed == {"is_mmap": True}
+
+
 def _record(timestamp: datetime, subject: str = "Fed preview"):
     return SimpleNamespace(
         timestamp=timestamp,

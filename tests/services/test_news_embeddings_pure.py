@@ -76,14 +76,14 @@ def test_embedding_service_caches_vectors(monkeypatch) -> None:
             self.query_calls = 0
             self.document_calls = 0
 
-        def encode(self, text: str, prompt_name=None, normalize_embeddings=False, show_progress_bar=True):
+        def encode(self, text, prompt_name=None, normalize_embeddings=False, show_progress_bar=True):
             assert normalize_embeddings is True
             assert show_progress_bar is False
             if prompt_name == "query":
                 self.query_calls += 1
                 return [1.0, 0.0]
             self.document_calls += 1
-            return [0.5, 0.5]
+            return [[0.5, 0.5] for _ in text]
 
     service = NewsEmbeddingService()
     fake_model = FakeModel()
@@ -99,6 +99,36 @@ def test_embedding_service_caches_vectors(monkeypatch) -> None:
     assert first == second
     assert fake_model.query_calls == 1
     assert fake_model.document_calls == 1
+
+
+def test_embedding_service_batches_unique_document_cache_misses(monkeypatch) -> None:
+    class FakeModel:
+        def __init__(self) -> None:
+            self.document_batches = []
+
+        def encode(self, text, prompt_name=None, **kwargs):
+            if prompt_name == "query":
+                return [1.0, 0.0]
+            self.document_batches.append(list(text))
+            return [[1.0, float(index)] for index, _ in enumerate(text)]
+
+    service = NewsEmbeddingService()
+    fake_model = FakeModel()
+    monkeypatch.setattr(news_embeddings_config, "enabled", True)
+    monkeypatch.setattr(news_embeddings_config, "cache_size", 8)
+    monkeypatch.setattr(service, "_ensure_model", lambda: fake_model)
+    items = [
+        NewsItem(title=f"Headline {index}", provider="p", source="s")
+        for index in range(3)
+    ]
+
+    first = service.score_documents(_sample_context(), items)
+    second = service.score_documents(_sample_context(), items)
+
+    assert first == second
+    assert len(first) == 3
+    assert len(fake_model.document_batches) == 1
+    assert len(fake_model.document_batches[0]) == 3
 
 
 def test_cosine_similarity_returns_zero_for_mismatched_lengths() -> None:
