@@ -152,21 +152,6 @@ def _build_sl_tp_result(
     return out
 
 
-def _sl_tp_price_tolerance(symbol_info: Any) -> float:
-    price_tol = validation._safe_float_attr(symbol_info, "point")
-    if price_tol is None or not math.isfinite(price_tol) or price_tol <= 0:
-        return 1e-9
-    return float(price_tol)
-
-
-def _position_protection_levels(position: Any) -> tuple[Optional[float], Optional[float]]:
-    sl = validation._safe_float_attr(position, "sl")
-    tp = validation._safe_float_attr(position, "tp")
-    applied_sl = float(sl) if sl is not None and math.isfinite(sl) and sl != 0.0 else None
-    applied_tp = float(tp) if tp is not None and math.isfinite(tp) and tp != 0.0 else None
-    return applied_sl, applied_tp
-
-
 def _evaluate_requested_protection(
     *,
     requested_sl: Optional[float],
@@ -175,7 +160,8 @@ def _evaluate_requested_protection(
     applied_tp: Optional[float],
     symbol_info: Any,
 ) -> tuple[bool, bool, Optional[Dict[str, Dict[str, float]]]]:
-    price_tol = _sl_tp_price_tolerance(symbol_info)
+    point = validation._safe_float_attr(symbol_info, "point", default=0.0) or 0.0
+    price_tol = validation._protection_level_tolerance(point=point)
     all_requested_present = True
     adjustment: Dict[str, Dict[str, float]] = {}
     for label, requested, applied in (
@@ -187,7 +173,11 @@ def _evaluate_requested_protection(
         if applied is None:
             all_requested_present = False
             continue
-        if abs(float(applied) - float(requested)) > price_tol:
+        if not validation._protection_levels_match(
+            float(applied),
+            float(requested),
+            tol=price_tol,
+        ):
             adjustment[label] = {
                 "requested": float(requested),
                 "applied": float(applied),
@@ -327,7 +317,7 @@ def _attach_post_fill_protection(  # noqa: C901
             }
 
         if position_obj is not None and position_ticket is not None:
-            sl_applied, tp_applied = _position_protection_levels(position_obj)
+            sl_applied, tp_applied = validation._position_protection_levels(position_obj)
             initial_confirmed, initial_adjusted, initial_adjustment = (
                 _evaluate_requested_protection(
                     requested_sl=stop_loss,
@@ -406,7 +396,9 @@ def _attach_post_fill_protection(  # noqa: C901
                         ]
                         if exact_positions:
                             pos_after = exact_positions[0]
-                            sl_applied, tp_applied = _position_protection_levels(pos_after)
+                            sl_applied, tp_applied = validation._position_protection_levels(
+                                pos_after
+                            )
                             confirmed, adjusted, adjustment = _evaluate_requested_protection(
                                 requested_sl=stop_loss,
                                 requested_tp=take_profit,

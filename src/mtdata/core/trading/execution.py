@@ -19,36 +19,17 @@ from .safety import (
     pending_order_risk_increased,
 )
 from .time import ExpirationValue
+from .validation import (
+    _normalize_protection_level,
+    _protection_level_tolerance,
+    _protection_levels_match,
+)
 
 logger = logging.getLogger(__name__)
 
 
 def _resolve_position_side(position: Any, mt5: Any) -> Optional[str]:
     return validation._resolve_position_side(position, mt5)
-
-
-def _normalize_protection_level(value: Optional[float], *, tol: float) -> Optional[float]:
-    if value is None:
-        return None
-    try:
-        numeric = float(value)
-    except Exception:
-        return None
-    if not math.isfinite(numeric) or math.isclose(numeric, 0.0, abs_tol=tol):
-        return None
-    return numeric
-
-
-def _protection_levels_match(lhs: Optional[float], rhs: Optional[float], *, tol: float) -> bool:
-    if lhs is None or rhs is None:
-        return lhs is None and rhs is None
-    return math.isclose(float(lhs), float(rhs), abs_tol=tol)
-
-
-def _protection_level_tolerance(*, point: float) -> float:
-    if math.isfinite(point) and point > 0.0:
-        return point * 0.1
-    return 1e-9
 
 
 def _position_matches_any_ticket(position: Any, ticket_values: set[int]) -> bool:

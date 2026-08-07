@@ -38,6 +38,51 @@ _SUPPORTED_ORDER_TYPES = {
 }
 
 
+def _protection_level_tolerance(*, point: float) -> float:
+    """Return the absolute tolerance used for broker SL/TP readbacks."""
+    if math.isfinite(point) and point > 0.0:
+        return float(point) * 0.1
+    return 1e-9
+
+
+def _normalize_protection_level(
+    value: Optional[float], *, tol: float
+) -> Optional[float]:
+    if value is None:
+        return None
+    try:
+        numeric = float(value)
+    except Exception:
+        return None
+    if not math.isfinite(numeric) or math.isclose(
+        numeric,
+        0.0,
+        rel_tol=0.0,
+        abs_tol=tol,
+    ):
+        return None
+    return numeric
+
+
+def _protection_levels_match(
+    lhs: Optional[float], rhs: Optional[float], *, tol: float
+) -> bool:
+    if lhs is None or rhs is None:
+        return lhs is None and rhs is None
+    return math.isclose(float(lhs), float(rhs), rel_tol=0.0, abs_tol=tol)
+
+
+def _position_protection_levels(
+    position: Any,
+) -> tuple[Optional[float], Optional[float]]:
+    sl = _safe_float_attr(position, "sl")
+    tp = _safe_float_attr(position, "tp")
+    return (
+        float(sl) if sl is not None and math.isfinite(sl) and sl != 0.0 else None,
+        float(tp) if tp is not None and math.isfinite(tp) and tp != 0.0 else None,
+    )
+
+
 def _tick_bid_ask(tick: Any) -> Tuple[Optional[float], Optional[float]]:
     """Read finite quotes from MT5 objects, mappings, or structured rows."""
     return (

@@ -43,6 +43,7 @@ _mt5_stub.POSITION_TYPE_BUY = 0
 _mt5_stub.POSITION_TYPE_SELL = 1
 sys.modules["MetaTrader5"] = _mt5_stub
 
+from mtdata.core.trading.orders import _evaluate_requested_protection
 from mtdata.core.trading.time import (
     _server_time_naive_to_mt5_timestamp,
     _to_server_time_naive,
@@ -50,10 +51,12 @@ from mtdata.core.trading.time import (
 from mtdata.core.trading.validation import (
     _candidate_fill_modes,
     _normalize_order_type_input,
+    _normalize_protection_level,
+    _protection_level_tolerance,
+    _protection_levels_match,
     _validate_deviation,
     _validate_volume,
 )
-
 
 # ===================================================================
 # Helpers
@@ -391,6 +394,62 @@ class TestValidateVolume:
         si = SimpleNamespace(volume_min="bad", volume_max="bad", volume_step="bad")
         vol, err = _validate_volume(1.0, si)
         assert err is None and vol == 1.0
+
+
+# ===================================================================
+#  protection readback comparison (pure)
+# ===================================================================
+
+
+def test_protection_tolerance_is_one_tenth_of_broker_point() -> None:
+    assert _protection_level_tolerance(point=0.0001) == pytest.approx(0.00001)
+    assert _protection_level_tolerance(point=0.0) == 1e-9
+
+
+def test_protection_level_matching_uses_only_absolute_tolerance() -> None:
+    tolerance = _protection_level_tolerance(point=0.0001)
+
+    assert _protection_levels_match(1.1, 1.100009, tol=tolerance) is True
+    assert _protection_levels_match(1.1, 1.100011, tol=tolerance) is False
+    assert _protection_levels_match(100_000_000.0, 100_000_000.01, tol=tolerance) is False
+    assert _protection_levels_match(None, None, tol=tolerance) is True
+    assert _protection_levels_match(None, 1.1, tol=tolerance) is False
+
+
+def test_protection_level_normalization_uses_shared_tolerance() -> None:
+    tolerance = _protection_level_tolerance(point=0.0001)
+
+    assert _normalize_protection_level(0.000009, tol=tolerance) is None
+    assert _normalize_protection_level(0.000011, tol=tolerance) == 0.000011
+    assert _normalize_protection_level(float("nan"), tol=tolerance) is None
+
+
+def test_post_fill_protection_reports_adjustment_above_shared_tolerance() -> None:
+    confirmed, adjusted, adjustment = _evaluate_requested_protection(
+        requested_sl=1.1,
+        requested_tp=None,
+        applied_sl=1.10005,
+        applied_tp=None,
+        symbol_info=SimpleNamespace(point=0.0001),
+    )
+
+    assert confirmed is True
+    assert adjusted is True
+    assert adjustment == {"sl": {"requested": 1.1, "applied": 1.10005}}
+
+
+def test_post_fill_protection_ignores_sub_tolerance_noise() -> None:
+    confirmed, adjusted, adjustment = _evaluate_requested_protection(
+        requested_sl=1.1,
+        requested_tp=None,
+        applied_sl=1.100005,
+        applied_tp=None,
+        symbol_info=SimpleNamespace(point=0.0001),
+    )
+
+    assert confirmed is True
+    assert adjusted is False
+    assert adjustment is None
 
 
 # ===================================================================
