@@ -371,6 +371,42 @@ def _fetch_finviz_futures_performance_rows() -> List[Dict[str, Any]]:
     return rows
 
 
+def _parse_stock_fundamentals_from_quote_page(stock: Any) -> Dict[str, Any]:
+    """Parse the current Finviz quote layout when finvizfinance lags it."""
+    soup = getattr(stock, "soup", None)
+    if soup is None:
+        return {}
+
+    fundamentals: Dict[str, Any] = {}
+    company = soup.select_one("h2.quote-header_ticker-wrapper_company")
+    if company is not None:
+        fundamentals["Company"] = company.get_text(" ", strip=True)
+
+    category_keys = {
+        "sec_": "Sector",
+        "ind_": "Industry",
+        "geo_": "Country",
+        "exch_": "Exchange",
+    }
+    for link in soup.select(".quote-header_categories .quote-header_category"):
+        href = str(link.get("href") or "").lower()
+        value = link.get_text(" ", strip=True)
+        if not value:
+            continue
+        for token, key in category_keys.items():
+            if token in href:
+                fundamentals[key] = value
+                break
+
+    for table in soup.select("table.snapshot-table2"):
+        cells = [cell.get_text(" ", strip=True) for cell in table.select("td")]
+        for index in range(0, len(cells) - 1, 2):
+            key = cells[index].strip()
+            if key:
+                fundamentals[key] = cells[index + 1].strip()
+    return fundamentals
+
+
 def get_stock_fundamentals(symbol: str) -> Dict[str, Any]:
     """
     Get fundamental data for a stock symbol.
@@ -379,7 +415,10 @@ def get_stock_fundamentals(symbol: str) -> Dict[str, Any]:
     """
     try:
         symbol_norm, stock = _get_finviz_stock_quote(symbol)
-        fundament = stock.ticker_fundament()
+        try:
+            fundament = stock.ticker_fundament()
+        except AttributeError:
+            fundament = _parse_stock_fundamentals_from_quote_page(stock)
         if fundament is None:
             return {
                 "success": False,

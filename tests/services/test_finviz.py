@@ -57,6 +57,54 @@ class TestFinvizService:
         assert result["fundamentals"]["P/E"] == "28.5"
 
     @patch('finvizfinance.quote.finvizfinance')
+    def test_get_stock_fundamentals_falls_back_for_current_quote_layout(
+        self, mock_finviz
+    ):
+        from bs4 import BeautifulSoup
+
+        from mtdata.services.finviz import get_stock_fundamentals
+
+        mock_stock = MagicMock()
+        mock_stock.ticker_fundament.side_effect = AttributeError(
+            "'NoneType' object has no attribute 'find_all'"
+        )
+        mock_stock.soup = BeautifulSoup(
+            """
+            <h2 class="quote-header_ticker-wrapper_company">Apple Inc</h2>
+            <div class="quote-header_categories">
+              <a class="quote-header_category" href="screener?v=111&f=sec_technology">Technology</a>
+              <a class="quote-header_category" href="screener?v=111&f=ind_consumerelectronics">Consumer Electronics</a>
+              <a class="quote-header_category" href="screener?v=111&f=geo_usa">USA</a>
+              <a class="quote-header_category" href="screener?v=111&f=cap_mega">Mega</a>
+              <a class="quote-header_category" href="screener?v=111&f=exch_nasd">NASD</a>
+            </div>
+            <table class="snapshot-table2"><tr>
+              <td>P/E</td><td>35.79</td><td>Market Cap</td><td>4557.32B</td>
+            </tr></table>
+            <table class="snapshot-table2"><tr>
+              <td>EPS (ttm)</td><td>8.72</td><td>RSI (14)</td><td>62.10</td>
+            </tr></table>
+            """,
+            "html.parser",
+        )
+        mock_finviz.return_value = mock_stock
+
+        result = get_stock_fundamentals("AAPL")
+
+        assert result["success"] is True
+        assert result["fundamentals"] == {
+            "Company": "Apple Inc",
+            "Sector": "Technology",
+            "Industry": "Consumer Electronics",
+            "Country": "USA",
+            "Exchange": "NASD",
+            "P/E": "35.79",
+            "Market Cap": "4557.32B",
+            "EPS (ttm)": "8.72",
+            "RSI (14)": "62.10",
+        }
+
+    @patch('finvizfinance.quote.finvizfinance')
     def test_get_stock_fundamentals_error(self, mock_finviz):
         """Test fundamentals fetch with error."""
         from mtdata.services.finviz import get_stock_fundamentals
