@@ -36,7 +36,7 @@ def test_price_direction_uses_terminal_move_not_path_shape():
     )
 
     assert terminal == (1.0, 1, 1)
-    assert path == (1.0, 1, 1)
+    assert path == (0.5, 2, 2)
 
 
 def test_price_direction_separates_wrong_terminal_call_from_matching_path():
@@ -48,6 +48,18 @@ def test_price_direction_separates_wrong_terminal_call_from_matching_path():
     )
 
     assert terminal == (0.0, 1, 1)
+    assert path == (0.5, 2, 2)
+
+
+def test_price_direction_scores_the_entry_to_first_bar_move():
+    terminal, path = _forecast_direction_metrics(
+        [105.0],
+        [104.0],
+        entry_price=100.0,
+        target_mode="price",
+    )
+
+    assert terminal == (1.0, 1, 1)
     assert path == (1.0, 1, 1)
 
 

@@ -390,8 +390,12 @@ def _forecast_direction_metrics(
     else:
         terminal_forecast = float(forecast_arr[-1] - entry_price)
         terminal_actual = float(actual_arr[-1] - entry_price)
-        path_forecast = np.sign(np.diff(forecast_arr))
-        path_actual = np.sign(np.diff(actual_arr))
+        path_forecast = np.sign(
+            np.diff(np.concatenate(([entry_price], forecast_arr)))
+        )
+        path_actual = np.sign(
+            np.diff(np.concatenate(([entry_price], actual_arr)))
+        )
 
     terminal = _directional_accuracy_from_signs(
         [np.sign(terminal_forecast)],
