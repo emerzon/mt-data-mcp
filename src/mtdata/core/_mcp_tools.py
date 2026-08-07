@@ -790,6 +790,8 @@ def _select_output_fields(value: Any, fields: Any) -> Any:
                 value,
                 tuple(part for part in requested_field.split(".") if part),
             )
+        elif requested_field in value:
+            filtered, matched = {requested_field: value[requested_field]}, True
         else:
             filtered, matched = _filter_output_fields(
                 value,
