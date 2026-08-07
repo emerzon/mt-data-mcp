@@ -12,7 +12,7 @@ from ..utils.barriers import (
 from ..utils.barriers import (
     build_barrier_kwargs_from as _build_barrier_kwargs_from,
 )
-from ..utils.barriers import get_tick_size as _get_pip_size
+from ..utils.barriers import get_tick_size as _get_tick_size
 from ..utils.barriers import (
     normalize_same_bar_policy,
     validate_barrier_unit_family_exclusivity,
@@ -80,7 +80,7 @@ def _triple_barrier_sample_row(
     tp_times: List[Optional[str]],
     sl_times: List[Optional[str]],
     direction_value: str,
-    pip_size: float,
+    tick_size: float,
     barrier_kwargs: Dict[str, Any],
     price_digits: int = 0,
     same_bar_flags: Optional[List[bool]] = None,
@@ -106,7 +106,7 @@ def _triple_barrier_sample_row(
             tp_price, sl_price = _resolve_barrier_prices(
                 price=entry_price,
                 direction=direction_value,
-                pip_size=pip_size,
+                tick_size=tick_size,
                 adjust_inverted=False,
                 **barrier_kwargs,
             )
@@ -137,7 +137,7 @@ def _build_triple_barrier_outputs(
     horizon: int,
     label_on: str,
     direction_value: str,
-    pip_size: float,
+    tick_size: float,
     barrier_kwargs: Dict[str, Any],
     same_bar_policy: str = "sl_first",
 ) -> tuple[
@@ -169,7 +169,7 @@ def _build_triple_barrier_outputs(
         tp_price, sl_price = _resolve_barrier_prices(
             price=price,
             direction=direction_value,
-            pip_size=pip_size,
+            tick_size=tick_size,
             adjust_inverted=False,
             **barrier_kwargs,
         )
@@ -434,7 +434,7 @@ def labels_triple_barrier(
             lows = df["low"].astype(float).to_numpy() if "low" in df.columns else None
             times = df["time"].astype(float).to_numpy()
 
-            pip_size = _get_pip_size(symbol)
+            tick_size = _get_tick_size(symbol)
 
             N = len(closes)
             barrier_kwargs = _build_barrier_kwargs_from(barrier_values)
@@ -454,7 +454,7 @@ def labels_triple_barrier(
             sample_tp, sample_sl = _resolve_barrier_prices(
                 price=sample_entry_price,
                 direction=direction_value,
-                pip_size=pip_size,
+                tick_size=tick_size,
                 adjust_inverted=False,
                 **barrier_kwargs,
             )
@@ -556,7 +556,7 @@ def labels_triple_barrier(
                 horizon=horizon_bars,
                 label_on=label_on,
                 direction_value=direction_value,
-                pip_size=pip_size,
+                tick_size=tick_size,
                 barrier_kwargs=barrier_kwargs,
                 same_bar_policy=same_bar_policy_value,
             )
@@ -825,7 +825,7 @@ def labels_triple_barrier(
                             sl_times=sl_times,
                             same_bar_flags=same_bar_flags,
                             direction_value=direction_value,
-                            pip_size=pip_size,
+                            tick_size=tick_size,
                             barrier_kwargs=barrier_kwargs,
                             price_digits=price_digits,
                         )

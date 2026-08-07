@@ -8,7 +8,7 @@ import numpy as np
 from ..shared.constants import TIMEFRAME_SECONDS
 from ..shared.market_units import forex_pip_size
 from ..shared.schema import DenoiseSpec, TimeframeLiteral
-from ..utils.barriers import get_tick_size as _get_pip_size
+from ..utils.barriers import get_tick_size as _get_tick_size
 from ..utils.barriers import (
     normalize_same_bar_policy,
     normalize_trade_direction,
@@ -128,7 +128,7 @@ class _BarrierEvaluationContext:
     mode_val: str
     dir_long: bool
     last_price: float
-    pip_size: float
+    tick_size: float
     rr_min_val: Optional[float]
     rr_max_val: Optional[float]
     has_trading_costs: bool
@@ -328,7 +328,7 @@ def _candidate_barrier_prices(
     tp_price, sl_price = resolve_barrier_prices(
         price=context.last_price,
         direction="long" if context.dir_long else "short",
-        pip_size=context.pip_size,
+        tick_size=context.tick_size,
         **barrier_kwargs,
     )
     if tp_price is None or sl_price is None:
@@ -420,11 +420,11 @@ def _unresolved_terminal_pnl(
         pnl_pct = (terminal_prices - context.last_price) / context.last_price * 100.0
         if not context.dir_long:
             pnl_pct = -pnl_pct
-    elif context.pip_size and context.pip_size > 0:
-        pnl_pips = (terminal_prices - context.last_price) / context.pip_size
+    elif context.tick_size and context.tick_size > 0:
+        pnl_ticks = (terminal_prices - context.last_price) / context.tick_size
         if not context.dir_long:
-            pnl_pips = -pnl_pips
-        pnl_pct = pnl_pips
+            pnl_ticks = -pnl_ticks
+        pnl_pct = pnl_ticks
     else:
         return 0.0
     return float(np.mean(pnl_pct))
@@ -509,7 +509,7 @@ def _evaluate_barrier_candidate(
         risk=risk,
         direction="long" if context.dir_long else "short",
         mode=context.mode_val,  # type: ignore[arg-type]
-        pip_size=context.pip_size,
+        tick_size=context.tick_size,
         cost_per_trade=(context.ev_deduct_cost if context.has_trading_costs else 0.0),
         same_bar_policy=context.same_bar_policy,  # type: ignore[arg-type]
         gap_aware_stops=context.gap_aware_stops,
@@ -588,7 +588,7 @@ def _evaluate_barrier_candidate(
     unit_to_return = (
         0.01
         if context.mode_val == 'pct'
-        else float(context.pip_size) / float(context.last_price)
+        else float(context.tick_size) / float(context.last_price)
     )
     path_returns = (
         payoffs.net if context.has_trading_costs else payoffs.gross
@@ -1538,8 +1538,8 @@ def forecast_barrier_optimize(  # noqa: C901
         )
         price_precision = _symbol_price_precision(symbol)
 
-        pip_size = _get_pip_size(symbol)
-        if mode_val == 'ticks' and (pip_size is None or pip_size <= 0):
+        tick_size = _get_tick_size(symbol)
+        if mode_val == 'ticks' and (tick_size is None or tick_size <= 0):
             return {"error": "Tick size unavailable for this symbol; use mode='pct' or provide absolute barriers."}
 
         base_col = 'close'
@@ -1592,7 +1592,7 @@ def forecast_barrier_optimize(  # noqa: C901
         slippage_pips_val = _cost_param_float('slippage_pips')
         slippage_bps_val = _cost_param_float('slippage_bps')
         slippage_pct_val = _cost_param_float('slippage_pct') + slippage_bps_val / 100.0
-        cost_pip_size = _cost_pip_size(symbol, pip_size, price_precision)
+        cost_pip_size = _cost_pip_size(symbol, tick_size, price_precision)
         if (
             spread_pips_val > 0.0 or slippage_pips_val > 0.0
         ) and cost_pip_size is None:
@@ -1604,7 +1604,7 @@ def forecast_barrier_optimize(  # noqa: C901
             }
 
         if mode_val == 'pct':
-            # pips → pct points:  pips * pip_size / price * 100
+            # Conventional FX pips → pct points.
             pip_to_pct = (
                 float(cost_pip_size) / last_price * 100.0
                 if cost_pip_size and last_price > 0
@@ -1615,15 +1615,15 @@ def forecast_barrier_optimize(  # noqa: C901
             cost_commission = commission_pct_val
         else:
             # Convert all costs to the tick units used by barrier metrics.
-            pct_to_pips = (last_price / float(pip_size) / 100.0) if (pip_size and pip_size > 0 and last_price > 0) else 0.0
+            pct_to_ticks = (last_price / float(tick_size) / 100.0) if (tick_size and tick_size > 0 and last_price > 0) else 0.0
             pips_to_ticks = (
-                float(cost_pip_size) / float(pip_size)
-                if cost_pip_size and pip_size and pip_size > 0
+                float(cost_pip_size) / float(tick_size)
+                if cost_pip_size and tick_size and tick_size > 0
                 else 0.0
             )
-            cost_spread = spread_pips_val * pips_to_ticks + spread_pct_val * pct_to_pips
-            cost_slippage = slippage_pips_val * pips_to_ticks + slippage_pct_val * pct_to_pips
-            cost_commission = commission_pct_val * pct_to_pips
+            cost_spread = spread_pips_val * pips_to_ticks + spread_pct_val * pct_to_ticks
+            cost_slippage = slippage_pips_val * pips_to_ticks + slippage_pct_val * pct_to_ticks
+            cost_commission = commission_pct_val * pct_to_ticks
         dir_long = (direction_norm == 'long')
 
         # Costs are applied symmetrically to net payoffs for both directions.
@@ -1638,7 +1638,7 @@ def forecast_barrier_optimize(  # noqa: C901
         if mode_val == 'pct':
             min_barrier_absolute = float(params_dict.get('min_barrier_pct', 0.0) or 0.0)
         else:
-            min_barrier_absolute = float(params_dict.get('min_barrier_pips', 0.0) or 0.0)
+            min_barrier_absolute = float(params_dict.get('min_barrier_ticks', 0.0) or 0.0)
         # Minimum barrier distance must exceed total round-trip cost (spread +
         # slippage + commission), not just spread — otherwise setups that are
         # structurally negative-EV after slippage/commission can slip through.
@@ -2448,7 +2448,7 @@ def forecast_barrier_optimize(  # noqa: C901
             if mode_val == 'pct':
                 _add_fixed(base_candidates, cfg['tp_min'], cfg['tp_max'], int(cfg['tp_steps']), cfg['sl_min'], cfg['sl_max'], int(cfg['sl_steps']))
             else:
-                scale = (float(last_price) / float(pip_size)) / 100.0
+                scale = (float(last_price) / float(tick_size)) / 100.0
                 _add_fixed(base_candidates, cfg['tp_min'] * scale, cfg['tp_max'] * scale, int(cfg['tp_steps']), cfg['sl_min'] * scale, cfg['sl_max'] * scale, int(cfg['sl_steps']))
         
         elif grid_style_val == 'volatility':
@@ -2470,7 +2470,7 @@ def forecast_barrier_optimize(  # noqa: C901
                 _add_fixed(base_candidates, tp_start, tp_end, vol_steps_val, sl_start, sl_start * vol_sl_multiplier_val, vol_sl_steps_val)
             else:
                 # Convert volatility to ticks and apply the tick floor.
-                vol_ticks = (vol_pct / 100.0) * (last_price / float(pip_size))
+                vol_ticks = (vol_pct / 100.0) * (last_price / float(tick_size))
                 tp_start = max(vol_floor_ticks_val, vol_ticks * vol_min_mult_val)
                 tp_end = max(tp_start * 1.1, vol_ticks * vol_max_mult_val)
                 sl_start = max(vol_floor_ticks_val, vol_ticks * vol_min_mult_val * 0.8)
@@ -2496,7 +2496,7 @@ def forecast_barrier_optimize(  # noqa: C901
             mode_val=mode_val,
             dir_long=dir_long,
             last_price=float(last_price),
-            pip_size=float(pip_size),
+            tick_size=float(tick_size),
             rr_min_val=rr_min_val,
             rr_max_val=rr_max_val,
             has_trading_costs=has_trading_costs,
@@ -2618,7 +2618,7 @@ def forecast_barrier_optimize(  # noqa: C901
                 risk=risk,
                 direction="long" if dir_long else "short",
                 mode=mode_val,  # type: ignore[arg-type]
-                pip_size=float(pip_size),
+                tick_size=float(tick_size),
                 cost_per_trade=(cost_per_trade if has_trading_costs else 0.0),
                 same_bar_policy=same_bar_policy_value,
                 gap_aware_stops=eval_context.gap_aware_stops,
@@ -2632,7 +2632,7 @@ def forecast_barrier_optimize(  # noqa: C901
             unit_to_return = (
                 0.01
                 if mode_val == 'pct'
-                else float(pip_size) / float(last_price)
+                else float(tick_size) / float(last_price)
             )
             path_utility = np.log1p(
                 np.maximum(path_payoff * unit_to_return, -0.999999)
@@ -3288,7 +3288,7 @@ def forecast_barrier_optimize(  # noqa: C901
                             risk=float(best.get('sl', 0.0)),
                             direction=direction_norm,
                             mode=mode_val,
-                            pip_size=float(pip_size),
+                            tick_size=float(tick_size),
                             cost_per_trade=float(cost_per_trade),
                             same_bar_policy=same_bar_policy_value,
                             gap_aware_stops=eval_context.gap_aware_stops,

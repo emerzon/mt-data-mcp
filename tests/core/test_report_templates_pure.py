@@ -1560,7 +1560,7 @@ class TestTemplateScalping:
     @patch(f"{_SCALP_MODULE}.build_report_with_market")
     @patch(f"{_SCALP_MODULE}.market_snapshot")
     @patch(f"{_SCALP_MODULE}.merge_params")
-    @patch(f"{_SCALP_MODULE}._get_pip_size", return_value=0.01)
+    @patch(f"{_SCALP_MODULE}._get_tick_size", return_value=0.01)
     def test_scalping_returns_report(self, mock_pip, mock_merge, mock_snap, mock_build):
         mock_merge.return_value = {"timeframe": "M5", "mode": "ticks"}
         mock_snap.return_value = {"bid": 1.2345, "ask": 1.2347, "spread_ticks": 20}
@@ -1583,7 +1583,7 @@ class TestTemplateScalping:
     @patch(f"{_SCALP_MODULE}.build_report_with_market")
     @patch(f"{_SCALP_MODULE}.market_snapshot")
     @patch(f"{_SCALP_MODULE}.merge_params")
-    @patch(f"{_SCALP_MODULE}._get_pip_size", return_value=0.00001)
+    @patch(f"{_SCALP_MODULE}._get_tick_size", return_value=0.00001)
     def test_scalping_preserves_user_barriers(self, mock_pip, mock_merge, mock_snap, mock_build):
         mock_merge.return_value = {"mode": "ticks", "tp_min": 7.0}
         mock_snap.return_value = {"bid": 1.2345, "ask": 1.2347, "spread_ticks": 20}
@@ -1597,7 +1597,7 @@ class TestTemplateScalping:
     @patch(f"{_SCALP_MODULE}.build_report_with_market")
     @patch(f"{_SCALP_MODULE}.market_snapshot")
     @patch(f"{_SCALP_MODULE}.merge_params")
-    @patch(f"{_SCALP_MODULE}._get_pip_size", return_value=0.01)
+    @patch(f"{_SCALP_MODULE}._get_tick_size", return_value=0.01)
     def test_scalping_default_timeframe_m5(self, mock_pip, mock_merge, mock_snap, mock_build):
         mock_merge.return_value = {"mode": "ticks"}
         mock_snap.return_value = {"bid": 1.23, "ask": 1.24}
@@ -1615,7 +1615,7 @@ class TestTemplateScalping:
     @patch(f"{_SCALP_MODULE}.build_report_with_market")
     @patch(f"{_SCALP_MODULE}.market_snapshot")
     @patch(f"{_SCALP_MODULE}.merge_params")
-    @patch(f"{_SCALP_MODULE}._get_pip_size", return_value=1.0)
+    @patch(f"{_SCALP_MODULE}._get_tick_size", return_value=1.0)
     def test_scalping_high_price_adjusts_pip_levels(self, mock_pip, mock_merge, mock_snap, mock_build):
         mock_merge.return_value = {"mode": "ticks"}
         mock_snap.return_value = {
@@ -1631,7 +1631,7 @@ class TestTemplateScalping:
     @patch(f"{_SCALP_MODULE}.build_report_with_market")
     @patch(f"{_SCALP_MODULE}.market_snapshot")
     @patch(f"{_SCALP_MODULE}.merge_params")
-    @patch(f"{_SCALP_MODULE}._get_pip_size", return_value=0.01)
+    @patch(f"{_SCALP_MODULE}._get_tick_size", return_value=0.01)
     def test_scalping_pct_mode_no_adjustment(self, mock_pip, mock_merge, mock_snap, mock_build):
         mock_merge.return_value = {"mode": "pct"}
         mock_snap.return_value = {"bid": 1.23, "ask": 1.24}
@@ -1645,7 +1645,7 @@ class TestTemplateScalping:
     @patch(f"{_SCALP_MODULE}.build_report_with_market")
     @patch(f"{_SCALP_MODULE}.market_snapshot")
     @patch(f"{_SCALP_MODULE}.merge_params")
-    @patch(f"{_SCALP_MODULE}._get_pip_size", return_value=0.01)
+    @patch(f"{_SCALP_MODULE}._get_tick_size", return_value=0.01)
     def test_scalping_snapshot_error_still_runs(self, mock_pip, mock_merge, mock_snap, mock_build):
         mock_merge.return_value = {"mode": "ticks"}
         mock_snap.return_value = {"error": "MT5 offline"}
@@ -1659,7 +1659,7 @@ class TestTemplateScalping:
     @patch(f"{_SCALP_MODULE}.build_report_with_market")
     @patch(f"{_SCALP_MODULE}.market_snapshot")
     @patch(f"{_SCALP_MODULE}.merge_params")
-    @patch(f"{_SCALP_MODULE}._get_pip_size", return_value=1.0)
+    @patch(f"{_SCALP_MODULE}._get_tick_size", return_value=1.0)
     def test_scalping_no_spread_ticks_uses_price_based(self, mock_pip, mock_merge, mock_snap, mock_build):
         mock_merge.return_value = {"mode": "ticks"}
         mock_snap.return_value = {"bid": 2000.0, "ask": 2001.0}

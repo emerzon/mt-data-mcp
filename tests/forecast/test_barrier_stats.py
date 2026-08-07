@@ -34,7 +34,7 @@ _BARRIER_OPT_ROOT = "mtdata.forecast.barriers_optimization"
 class _BarrierOptimizationPatchMixin:
     def _start_barrier_optimization_patchers(self) -> None:
         self._barrier_patchers = [
-            patch(f"{_BARRIER_OPT_ROOT}._get_pip_size", return_value=0.0001),
+            patch(f"{_BARRIER_OPT_ROOT}._get_tick_size", return_value=0.0001),
             patch(f"{_BARRIER_OPT_ROOT}._fetch_history"),
         ]
         self._barrier_patchers[0].start()

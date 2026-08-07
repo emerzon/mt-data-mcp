@@ -1,6 +1,9 @@
 """Tests for utils/barriers.py — pure barrier math without MT5."""
+from inspect import signature
+
 import pytest
 
+from mtdata.utils import barriers as barrier_utils
 from mtdata.utils.barriers import (
     barrier_prices_are_valid,
     build_barrier_kwargs,
@@ -10,6 +13,14 @@ from mtdata.utils.barriers import (
     resolve_barrier_prices,
     resolve_same_bar_probabilities,
 )
+
+
+def test_barrier_api_exposes_ticks_without_a_misleading_pip_alias():
+    parameters = signature(resolve_barrier_prices).parameters
+
+    assert "tick_size" in parameters
+    assert "pip_size" not in parameters
+    assert not hasattr(barrier_utils, "get_pip_size")
 
 
 @pytest.mark.parametrize(
@@ -46,7 +57,7 @@ class TestResolveBarrierPrices:
 
     def test_long_negative_sl_pct_is_distance_below_entry(self):
         tp, sl = resolve_barrier_prices(
-            price=1.16026, direction="long", tp_pct=2.0, sl_pct=-2.0, pip_size=0.00001,
+            price=1.16026, direction="long", tp_pct=2.0, sl_pct=-2.0, tick_size=0.00001,
         )
         assert tp == 1.18347
         assert sl == 1.13705
@@ -57,7 +68,7 @@ class TestResolveBarrierPrices:
             direction="long",
             tp_pct=0.37,
             sl_pct=0.37,
-            pip_size=0.0001,
+            tick_size=0.0001,
         )
 
         assert tp == 1.1041
@@ -80,7 +91,7 @@ class TestResolveBarrierPrices:
     def test_long_ticks(self):
         tp, sl = resolve_barrier_prices(
             price=1.10000, direction="long",
-            tp_ticks=50.0, sl_ticks=30.0, pip_size=0.00010,
+            tp_ticks=50.0, sl_ticks=30.0, tick_size=0.00010,
         )
         assert tp == pytest.approx(1.10500)
         assert sl == pytest.approx(1.09700)
@@ -88,7 +99,7 @@ class TestResolveBarrierPrices:
     def test_negative_ticks_are_treated_as_distances(self):
         tp, sl = resolve_barrier_prices(
             price=1.10000, direction="long",
-            tp_ticks=-50.0, sl_ticks=-30.0, pip_size=0.00010,
+            tp_ticks=-50.0, sl_ticks=-30.0, tick_size=0.00010,
         )
         assert tp == pytest.approx(1.10500)
         assert sl == pytest.approx(1.09700)
@@ -96,7 +107,7 @@ class TestResolveBarrierPrices:
     def test_short_ticks(self):
         tp, sl = resolve_barrier_prices(
             price=1.10000, direction="short",
-            tp_ticks=50.0, sl_ticks=30.0, pip_size=0.00010,
+            tp_ticks=50.0, sl_ticks=30.0, tick_size=0.00010,
         )
         assert tp == pytest.approx(1.09500)
         assert sl == pytest.approx(1.10300)
@@ -107,7 +118,7 @@ class TestResolveBarrierPrices:
             direction="long",
             tp_ticks=50.0,
             sl_ticks=30.0,
-            pip_size=0.00010,
+            tick_size=0.00010,
         )
         assert tp == pytest.approx(1.10500)
         assert sl == pytest.approx(1.09700)
@@ -132,7 +143,7 @@ class TestResolveBarrierPrices:
         tp, sl = resolve_barrier_prices(
             price=100.0, direction="long",
             tp_abs=99.0, sl_abs=101.0,  # inverted
-            pip_size=0.01,
+            tick_size=0.01,
             adjust_inverted=True,
         )
         assert tp > 100.0
@@ -143,14 +154,14 @@ class TestResolveBarrierPrices:
         tp, sl = resolve_barrier_prices(
             price=100.0, direction="short",
             tp_abs=101.0, sl_abs=99.0,  # inverted
-            pip_size=0.01,
+            tick_size=0.01,
             adjust_inverted=True,
         )
         assert tp < 100.0
         assert sl > 100.0
 
-    def test_adjust_inverted_no_pip_size(self):
-        """Inverted barriers with no pip_size still get corrected via fallback."""
+    def test_adjust_inverted_no_tick_size(self):
+        """Inverted barriers with no tick_size still get corrected via fallback."""
         tp, sl = resolve_barrier_prices(
             price=100.0, direction="long",
             tp_abs=99.0, sl_abs=101.0,

@@ -55,7 +55,7 @@ class TestUnresolvedTerminalPnl(unittest.TestCase):
         mode="ticks",
         dir_long=True,
         last_price=1.1000,
-        pip_size=0.0001,
+        tick_size=0.0001,
         same_bar_policy="sl_first",
     ):
         from mtdata.forecast.barriers_optimization import _BarrierEvaluationContext
@@ -63,7 +63,7 @@ class TestUnresolvedTerminalPnl(unittest.TestCase):
             mode_val=mode,
             dir_long=dir_long,
             last_price=last_price,
-            pip_size=pip_size,
+            tick_size=tick_size,
             rr_min_val=None,
             rr_max_val=None,
             has_trading_costs=False,
@@ -76,20 +76,20 @@ class TestUnresolvedTerminalPnl(unittest.TestCase):
             same_bar_policy=same_bar_policy,
         )
 
-    def test_unresolved_terminal_pnl_long_pips(self):
-        """Unresolved long paths that drift up give positive PnL in pips."""
+    def test_unresolved_terminal_pnl_long_ticks(self):
+        """Unresolved long paths that drift up give positive PnL in ticks."""
         from mtdata.forecast.barriers_optimization import _unresolved_terminal_pnl
-        ctx = self._make_context(last_price=1.1000, pip_size=0.0001, dir_long=True)
+        ctx = self._make_context(last_price=1.1000, tick_size=0.0001, dir_long=True)
         paths = np.full((5, 10), 1.1010)
         mask = np.ones(5, dtype=bool)
         pnl = _unresolved_terminal_pnl(paths, mask, context=ctx)
         self.assertAlmostEqual(pnl, 10.0, places=1)
 
-    def test_unresolved_terminal_pnl_short_pips(self):
-        """Unresolved short paths that drift down give positive PnL in pips."""
+    def test_unresolved_terminal_pnl_short_ticks(self):
+        """Unresolved short paths that drift down give positive PnL in ticks."""
         from mtdata.forecast.barriers_optimization import _unresolved_terminal_pnl
-        ctx = self._make_context(last_price=1.1000, pip_size=0.0001, dir_long=False)
-        paths = np.full((5, 10), 1.0990)  # Price dropped 10 pips
+        ctx = self._make_context(last_price=1.1000, tick_size=0.0001, dir_long=False)
+        paths = np.full((5, 10), 1.0990)  # Price dropped 10 ticks
         mask = np.ones(5, dtype=bool)
         pnl = _unresolved_terminal_pnl(paths, mask, context=ctx)
         self.assertAlmostEqual(pnl, 10.0, places=1)
@@ -118,7 +118,7 @@ class TestUnresolvedTerminalPnl(unittest.TestCase):
             _BarrierBridgeInputs,
             _evaluate_barrier_candidate,
         )
-        ctx = self._make_context(last_price=1.1000, pip_size=0.0001, dir_long=True)
+        ctx = self._make_context(last_price=1.1000, tick_size=0.0001, dir_long=True)
         bridge = _BarrierBridgeInputs(enabled=False, sigma=0.0, log_paths=None, uniform_tp=None, uniform_sl=None)
         paths = np.full((100, 10), 1.1000)
         result, is_invalid = _evaluate_barrier_candidate(
@@ -144,7 +144,7 @@ class TestUnresolvedTerminalPnl(unittest.TestCase):
             _evaluate_barrier_candidate,
         )
 
-        ctx = self._make_context(last_price=1.1000, pip_size=0.0001, dir_long=True)
+        ctx = self._make_context(last_price=1.1000, tick_size=0.0001, dir_long=True)
         bridge = _BarrierBridgeInputs(
             enabled=False,
             sigma=0.0,
@@ -176,7 +176,7 @@ class TestUnresolvedTerminalPnl(unittest.TestCase):
 
         ctx = self._make_context(
             last_price=1.1000,
-            pip_size=0.0001,
+            tick_size=0.0001,
             dir_long=True,
             same_bar_policy="neutral",
         )
@@ -205,6 +205,7 @@ class TestUnresolvedTerminalPnl(unittest.TestCase):
 
     def test_max_prob_no_hit_does_not_count_neutral_same_bar_ties(self):
         from dataclasses import replace
+
         from mtdata.forecast.barriers_optimization import (
             _BarrierBridgeInputs,
             _evaluate_barrier_candidate,
@@ -243,7 +244,7 @@ class TestUnresolvedTerminalPnl(unittest.TestCase):
             _evaluate_barrier_candidate,
         )
 
-        ctx = self._make_context(last_price=1.1000, pip_size=0.0001, dir_long=True)
+        ctx = self._make_context(last_price=1.1000, tick_size=0.0001, dir_long=True)
         bridge = _BarrierBridgeInputs(enabled=False, sigma=0.0, log_paths=None, uniform_tp=None, uniform_sl=None)
 
         result, is_invalid = _evaluate_barrier_candidate(
@@ -259,6 +260,7 @@ class TestUnresolvedTerminalPnl(unittest.TestCase):
 
     def test_gap_aware_stops_use_adverse_crossing_price(self):
         from dataclasses import replace
+
         from mtdata.forecast.barriers_optimization import (
             _BarrierBridgeInputs,
             _evaluate_barrier_candidate,
@@ -267,7 +269,7 @@ class TestUnresolvedTerminalPnl(unittest.TestCase):
         base_context = self._make_context(
             mode="pct",
             last_price=100.0,
-            pip_size=0.01,
+            tick_size=0.01,
         )
         bridge = _BarrierBridgeInputs(False, 0.0, None, None, None)
         paths = np.array([[95.0]])
@@ -301,7 +303,7 @@ class TestCandidateBarrierGeometry(unittest.TestCase):
             mode_val="pct",
             dir_long=dir_long,
             last_price=last_price,
-            pip_size=0.0001,
+            tick_size=0.0001,
             rr_min_val=None,
             rr_max_val=None,
             has_trading_costs=False,
@@ -314,7 +316,9 @@ class TestCandidateBarrierGeometry(unittest.TestCase):
         )
 
     def test_rejects_non_positive_or_non_finite_anchor_price(self):
-        from mtdata.forecast.barriers_optimization import _candidate_barrier_geometry_is_valid
+        from mtdata.forecast.barriers_optimization import (
+            _candidate_barrier_geometry_is_valid,
+        )
 
         for last_price in (0.0, -1.0, float("nan"), float("inf")):
             ctx = self._make_context(last_price=last_price)

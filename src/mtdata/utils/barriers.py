@@ -141,11 +141,6 @@ def get_tick_size(symbol: str, symbol_info: Optional[Any] = None) -> Optional[fl
         return None
 
 
-def get_pip_size(symbol: str, symbol_info: Optional[Any] = None) -> Optional[float]:
-    """Compatibility alias for :func:`get_tick_size`; this is not an FX pip size."""
-    return get_tick_size(symbol, symbol_info=symbol_info)
-
-
 def resolve_barrier_prices(  # noqa: C901
     *,
     price: float,
@@ -156,12 +151,12 @@ def resolve_barrier_prices(  # noqa: C901
     sl_pct: Optional[float] = None,
     tp_ticks: Optional[float] = None,
     sl_ticks: Optional[float] = None,
-    pip_size: Optional[float] = None,
+    tick_size: Optional[float] = None,
     adjust_inverted: bool = False,
 ) -> Tuple[Optional[float], Optional[float]]:
     """Resolve TP/SL barrier prices from absolute, percentage, or tick offsets.
 
-    ``pip_size`` is the legacy parameter name for the executable tick increment.
+    ``tick_size`` is the symbol's executable price increment.
 
     By default, barriers that end up on the wrong side of ``price`` for the
     given direction return ``(None, None)`` so callers can reject invalid
@@ -192,12 +187,12 @@ def resolve_barrier_prices(  # noqa: C901
                 tp_price = price_val * (1.0 + tp_distance)
             else:
                 tp_price = price_val * (1.0 - tp_distance)
-        elif p_tp is not None and pip_size is not None and pip_size > 0:
+        elif p_tp is not None and tick_size is not None and tick_size > 0:
             tp_ticks_distance = abs(p_tp)
             if dir_long:
-                tp_price = price_val + tp_ticks_distance * pip_size
+                tp_price = price_val + tp_ticks_distance * tick_size
             else:
-                tp_price = price_val - tp_ticks_distance * pip_size
+                tp_price = price_val - tp_ticks_distance * tick_size
 
     if sl_price is None:
         if r_sl is not None:
@@ -206,19 +201,19 @@ def resolve_barrier_prices(  # noqa: C901
                 sl_price = price_val * (1.0 - sl_distance)
             else:
                 sl_price = price_val * (1.0 + sl_distance)
-        elif p_sl is not None and pip_size is not None and pip_size > 0:
+        elif p_sl is not None and tick_size is not None and tick_size > 0:
             sl_ticks_distance = abs(p_sl)
             if dir_long:
-                sl_price = price_val - sl_ticks_distance * pip_size
+                sl_price = price_val - sl_ticks_distance * tick_size
             else:
-                sl_price = price_val + sl_ticks_distance * pip_size
+                sl_price = price_val + sl_ticks_distance * tick_size
 
     if tp_price is None or sl_price is None:
         return None, None
     if not math.isfinite(tp_price) or not math.isfinite(sl_price):
         return None, None
 
-    tick_increment = coerce_finite_float(pip_size)
+    tick_increment = coerce_finite_float(tick_size)
     if tick_increment is not None and tick_increment > 0.0:
         tp_price = snap_to_increment(tp_price, tick_increment)
         sl_price = snap_to_increment(sl_price, tick_increment)
@@ -228,7 +223,7 @@ def resolve_barrier_prices(  # noqa: C901
     if adjust_inverted:
         step: float
         try:
-            step = float(pip_size) if pip_size is not None else float("nan")
+            step = float(tick_size) if tick_size is not None else float("nan")
         except Exception:
             step = float("nan")
         if not math.isfinite(step) or step <= 0:

@@ -107,7 +107,7 @@ def barrier_path_payoffs(
     risk: float,
     direction: Literal["long", "short"],
     mode: Literal["pct", "ticks"],
-    pip_size: float,
+    tick_size: float,
     cost_per_trade: float,
     same_bar_policy: Literal["sl_first", "tp_first", "neutral"],
     gap_aware_stops: bool = False,
@@ -129,7 +129,7 @@ def barrier_path_payoffs(
         if mode == "pct":
             observed_loss = signed_move / float(entry_price) * 100.0
         else:
-            observed_loss = signed_move / float(pip_size)
+            observed_loss = signed_move / float(tick_size)
         realized_loss[rows] = np.maximum(float(risk), observed_loss)
     gross[outcomes.losses] = -realized_loss[outcomes.losses]
 
@@ -152,7 +152,7 @@ def barrier_path_payoffs(
     if mode == "pct":
         terminal = signed_terminal_move / float(entry_price) * 100.0
     else:
-        terminal = signed_terminal_move / float(pip_size)
+        terminal = signed_terminal_move / float(tick_size)
     terminal_unresolved = np.where(outcomes.unresolved, terminal, 0.0)
     gross[outcomes.unresolved] = terminal[outcomes.unresolved]
 

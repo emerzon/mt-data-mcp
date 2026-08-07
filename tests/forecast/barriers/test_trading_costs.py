@@ -114,7 +114,7 @@ class TestBarrierTradingCosts(_BarrierTestBase):
         dates = pd.date_range(start="2023-01-01", periods=500, freq="h")
         self._set_barrier_history(pd.DataFrame({"time": dates, "close": 1.1}))
 
-        with patch(f"{_BARRIER_OPT_ROOT}._get_pip_size", return_value=0.00001), patch(
+        with patch(f"{_BARRIER_OPT_ROOT}._get_tick_size", return_value=0.00001), patch(
             f"{_BARRIER_OPT_ROOT}._symbol_price_precision",
             return_value=5,
         ):

@@ -1,6 +1,6 @@
 """Shared test helpers for barriers tests.
 
-Provides ``_BarrierModulePatchMixin`` (patches _fetch_history and _get_pip_size)
+Provides ``_BarrierModulePatchMixin`` (patches _fetch_history and _get_tick_size)
 and ``_BarrierTestBase`` (adds a standard trending-price history setup used by
 most barrier test classes).
 """
@@ -16,12 +16,12 @@ _BARRIER_OPT_ROOT = "mtdata.forecast.barriers_optimization"
 
 
 class _BarrierModulePatchMixin:
-    """Patch _fetch_history and _get_pip_size in both barrier modules."""
+    """Patch _fetch_history and _get_tick_size in both barrier modules."""
 
     def _start_barrier_module_patchers(self) -> None:
         self._barrier_patchers = [
-            patch(f"{_BARRIER_PROB_ROOT}._get_pip_size", return_value=0.0001),
-            patch(f"{_BARRIER_OPT_ROOT}._get_pip_size", return_value=0.0001),
+            patch(f"{_BARRIER_PROB_ROOT}._get_tick_size", return_value=0.0001),
+            patch(f"{_BARRIER_OPT_ROOT}._get_tick_size", return_value=0.0001),
             patch(f"{_BARRIER_PROB_ROOT}._fetch_history"),
             patch(f"{_BARRIER_OPT_ROOT}._fetch_history"),
         ]

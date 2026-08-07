@@ -9,7 +9,7 @@ from ..shared.validators import unsupported_timeframe_seconds_error
 from ..utils.barriers import (
     barrier_prices_are_valid as _barrier_prices_are_valid,
 )
-from ..utils.barriers import get_tick_size as _get_pip_size
+from ..utils.barriers import get_tick_size as _get_tick_size
 from ..utils.barriers import (
     normalize_same_bar_policy,
     normalize_trade_direction,
@@ -179,7 +179,7 @@ def forecast_barrier_hit_probabilities(  # noqa: C901
             return {"error": price_error}
         if price_warning:
             warnings_out.append(price_warning)
-        pip_size = _get_pip_size(symbol)
+        tick_size = _get_tick_size(symbol)
 
         abs_side_error = _abs_barrier_side_error(
             price=last_price, direction=direction_norm, tp_abs=tp_abs, sl_abs=sl_abs
@@ -198,7 +198,7 @@ def forecast_barrier_hit_probabilities(  # noqa: C901
             sl_pct=barrier_values.get("sl_pct"),
             tp_ticks=barrier_values.get("tp_ticks"),
             sl_ticks=barrier_values.get("sl_ticks"),
-            pip_size=pip_size,
+            tick_size=tick_size,
         )
 
         if tp_price is None or sl_price is None:

@@ -550,7 +550,7 @@ class TestApplyMarketGates:
 
 class TestMarketSnapshot:
     @patch("mtdata.core.report.utils.get_symbol_info_cached", return_value=SimpleNamespace(point=0.00001, digits=5))
-    @patch("mtdata.core.report.utils._get_pip_size", return_value=0.00001)
+    @patch("mtdata.core.report.utils._get_tick_size", return_value=0.00001)
     def test_spread_pips_uses_true_pip_units(self, mock_pip, mock_symbol_info):
         with patch(
             "mtdata.core.market_depth.market_depth_fetch",
@@ -569,7 +569,7 @@ class TestMarketSnapshot:
         assert snap["pip_size"] == pytest.approx(0.0001)
 
     @patch("mtdata.core.report.utils.get_symbol_info_cached", return_value=SimpleNamespace(point=0.1, digits=1))
-    @patch("mtdata.core.report.utils._get_pip_size", return_value=0.5)
+    @patch("mtdata.core.report.utils._get_tick_size", return_value=0.5)
     def test_spread_pips_are_omitted_for_non_forex_symbols(self, mock_pip, mock_symbol_info):
         with patch(
             "mtdata.core.market_depth.market_depth_fetch",

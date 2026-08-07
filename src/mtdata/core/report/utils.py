@@ -4,7 +4,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from ...shared.constants import TIME_DISPLAY_FORMAT
 from ...shared.market_units import forex_pip_size
-from ...utils.barriers import get_tick_size as _get_pip_size
+from ...utils.barriers import get_tick_size as _get_tick_size
 from ...utils.mt5 import get_symbol_info_cached
 from ..tool_calling import call_tool_sync_structured
 from .shared import (
@@ -480,7 +480,7 @@ def market_snapshot(symbol: str, timezone: str = 'UTC') -> Dict[str, Any]:
                 except Exception:
                     total_sell_vol = None
         info = get_symbol_info_cached(symbol)
-        tick_size = _get_pip_size(symbol, symbol_info=info)
+        tick_size = _get_tick_size(symbol, symbol_info=info)
         point_size = None
         digits = None
         if info is not None:
