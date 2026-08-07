@@ -27,17 +27,21 @@ def _adaptive_lms_filter(
     else:
         w = np.full(k, 1.0 / float(k), dtype=float)
     y = x.copy()
+    x_vec = np.empty(k + int(use_bias), dtype=float)
+    if use_bias:
+        x_vec[0] = 1.0
     for t in range(k, n):
         if use_bias:
-            x_vec = np.concatenate(([1.0], x[t - k : t][::-1]))
+            x_vec[1:] = x[t - k : t][::-1]
         else:
-            x_vec = x[t - k : t][::-1]
+            x_vec[:] = x[t - k : t][::-1]
         y_hat = float(np.dot(w, x_vec))
         y[t] = y_hat
         err = x[t] - y_hat
         denom = float(np.dot(x_vec, x_vec)) + float(eps)
         step = mu_val / denom
-        w = (1.0 - leak_val) * w + step * err * x_vec
+        w *= 1.0 - leak_val
+        w += step * err * x_vec
     return y
 
 
@@ -85,11 +89,14 @@ def _adaptive_rls_filter(
         w = np.full(k, 1.0 / float(k), dtype=float)
         p = (1.0 / delta_val) * np.eye(k, dtype=float)
     y = x.copy()
+    x_vec = np.empty(k + int(use_bias), dtype=float)
+    if use_bias:
+        x_vec[0] = 1.0
     for t in range(k, n):
         if use_bias:
-            x_vec = np.concatenate(([1.0], x[t - k : t][::-1]))
+            x_vec[1:] = x[t - k : t][::-1]
         else:
-            x_vec = x[t - k : t][::-1]
+            x_vec[:] = x[t - k : t][::-1]
         px = p @ x_vec
         denom = lam_val + float(np.dot(x_vec, px))
         if denom <= 0:
@@ -99,8 +106,12 @@ def _adaptive_rls_filter(
         y_hat = float(np.dot(w, x_vec))
         y[t] = y_hat
         err = x[t] - y_hat
-        w = w + k_gain * err
-        p = (p - np.outer(k_gain, x_vec) @ p) / lam_val
+        w += k_gain * err
+        # ``outer(k_gain, x_vec) @ p`` creates two dense temporaries and
+        # performs a cubic matrix multiply. Associate the rank-one update as
+        # ``outer(k_gain, x_vec @ p)`` instead.
+        p -= np.outer(k_gain, x_vec @ p)
+        p /= lam_val
     return y
 
 
