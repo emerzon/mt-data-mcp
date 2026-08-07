@@ -650,6 +650,7 @@ def _run_candle_boundary_only(
     max_wait_seconds = request.max_wait_seconds
     if max_wait_seconds is not None and float(preview["sleep_seconds"]) > float(max_wait_seconds):
         preview["success"] = False
+        preview["completed"] = False
         preview["status"] = "wait_budget_exceeded"
         preview["error_code"] = "wait_budget_exceeded"
         preview["error"] = (
@@ -696,6 +697,7 @@ def _run_candle_boundary_only(
         None if request.max_wait_seconds is None else float(request.max_wait_seconds)
     )
     payload["success"] = True
+    payload["completed"] = True
     if identity_payload:
         payload.update(identity_payload)
     started_at_value = _normalize_optional_utc_datetime(payload.get("started_at_utc"))
@@ -2557,10 +2559,13 @@ def _build_wait_result(
     elapsed_seconds = max(0.0, (observed_at_utc - started_at_utc).total_seconds())
     matched_event = _with_wait_event_identity(matched_event)
     timed_out = status == "timeout"
+    matched = status in {"matched", "already_satisfied"}
+    boundary_only = status == "boundary_reached" and not watch_for_payload
     result = {
-        "success": not timed_out,
+        "success": matched or boundary_only,
+        "completed": not timed_out,
         "status": status,
-        "matched": status in {"matched", "already_satisfied"},
+        "matched": matched,
         "event": matched_event["type"] if matched_event is not None else None,
         "matched_event": matched_event,
         "boundary_event": boundary_event,
@@ -2587,6 +2592,15 @@ def _build_wait_result(
                 "error_code": "wait_event_timeout",
                 "error": (
                     "Wait timed out before a watched event or boundary was observed."
+                ),
+            }
+        )
+    elif status == "boundary_reached" and not boundary_only:
+        result.update(
+            {
+                "error_code": "wait_event_boundary_reached",
+                "error": (
+                    "A wait boundary was reached before any watched event matched."
                 ),
             }
         )

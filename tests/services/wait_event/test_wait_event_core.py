@@ -252,7 +252,10 @@ class DisconnectingGateway(SequenceGateway):
 def test_wait_event_tool_exposes_minimal_public_contract(monkeypatch) -> None:
     def _mock_run_wait_event(request, gateway):
         return {
-            "success": True,
+            "success": False,
+            "completed": True,
+            "error_code": "wait_event_boundary_reached",
+            "error": "A wait boundary was reached before any watched event matched.",
             "symbol": request.symbol,
             "timeframe": request.timeframe,
             "status": "boundary_reached",
@@ -324,7 +327,9 @@ def test_wait_event_tool_exposes_minimal_public_contract(monkeypatch) -> None:
     raw = getattr(core_data.wait_event, "__wrapped__", core_data.wait_event)
     result = raw(symbol="BTCUSD", timeframe="M1")
 
-    assert result["success"] is True
+    assert result["success"] is False
+    assert result["completed"] is True
+    assert result["error_code"] == "wait_event_boundary_reached"
     assert result["symbol"] == "BTCUSD"
     assert result["boundary_event"] == {
         "type": "candle_close",
@@ -333,7 +338,7 @@ def test_wait_event_tool_exposes_minimal_public_contract(monkeypatch) -> None:
     assert result["bid"] == 1.2345
     assert result["ask"] == 1.2347
     assert result["observed_at_utc"] == "2026-04-06T02:01:01+00:00"
-    assert "matched" not in result
+    assert result["matched"] is False
     assert "event" not in result
     assert "criteria" not in result
     assert "started_at_utc" not in result
@@ -374,6 +379,7 @@ def test_wait_event_tool_accepts_simple_event_names(monkeypatch) -> None:
         captured["request"] = request
         return {
             "success": True,
+            "completed": True,
             "status": "pending",
             "matched": False,
             "event": None,
@@ -400,6 +406,7 @@ def test_wait_event_tool_accepts_simple_event_names(monkeypatch) -> None:
 
     request = captured["request"]
     assert result["success"] is True
+    assert result["completed"] is True
     assert request.watch_for[0].type == "order_filled"
     assert request.end_on[0].type == "candle_close"
     assert result["criteria"]["watch_for_inferred"] is False
@@ -457,6 +464,7 @@ def test_wait_event_tool_routes_candle_close_watch_for_to_end_on(monkeypatch) ->
         boundary_timeframe = request.end_on[0].timeframe or request.timeframe
         return {
             "success": True,
+            "completed": True,
             "status": "boundary_reached",
             "matched": False,
             "event": None,
@@ -550,6 +558,7 @@ def test_wait_event_tool_compact_result_preserves_boundary_closed_candle() -> No
             "range": 0.2,
         },
     }
+    assert result["matched"] is False
 
 
 def test_wait_event_compact_timeout_omits_inferred_event_catalog() -> None:
@@ -678,7 +687,7 @@ def test_wait_event_tool_compacts_matched_event_by_default(monkeypatch) -> None:
     assert result["bid"] == 100.01
     assert result["ask"] == 100.03
     assert result["observed_at_utc"] == "2026-04-06T02:00:30+00:00"
-    assert "matched" not in result
+    assert result["matched"] is True
     assert "event" not in result
     assert "criteria" not in result
     assert "started_at_utc" not in result
@@ -825,6 +834,8 @@ def test_run_wait_event_infers_candle_boundary_from_request_timeframe(monkeypatc
     )
 
     assert result["status"] == "completed"
+    assert result["success"] is True
+    assert result["completed"] is True
     assert result["event"] == "candle_close"
     assert result["symbol"] == "EURUSD"
     assert result["boundary_event"]["type"] == "candle_close"
@@ -906,6 +917,10 @@ def test_run_wait_event_uses_timeframe_as_boundary_when_watchers_are_inferred(mo
     )
 
     assert result["status"] == "boundary_reached"
+    assert result["success"] is False
+    assert result["completed"] is True
+    assert result["matched"] is False
+    assert result["error_code"] == "wait_event_boundary_reached"
     assert result["boundary_event"]["type"] == "candle_close"
     assert result["boundary_event"]["timeframe"] == "M1"
     assert result["bid"] == 1.205
@@ -1166,6 +1181,10 @@ def test_run_wait_event_stops_on_candle_boundary_when_no_watch_event(monkeypatch
     )
 
     assert result["status"] == "boundary_reached"
+    assert result["success"] is False
+    assert result["completed"] is True
+    assert result["matched"] is False
+    assert result["error_code"] == "wait_event_boundary_reached"
     assert result["boundary_event"]["type"] == "candle_close"
     assert result["boundary_event"]["closed_candle"]["symbol"] == "EURUSD"
     assert result["boundary_event"]["closed_candle"]["direction"] == "bearish"
@@ -1216,6 +1235,10 @@ def test_run_wait_event_respects_boundary_when_live_state_changes_after_overslee
     )
 
     assert result["status"] == "boundary_reached"
+    assert result["success"] is False
+    assert result["completed"] is True
+    assert result["matched"] is False
+    assert result["error_code"] == "wait_event_boundary_reached"
     assert result["matched_event"] is None
     assert result["boundary_event"]["type"] == "candle_close"
 
@@ -1244,6 +1267,10 @@ def test_run_wait_event_waits_across_pytz_dst_gap(monkeypatch) -> None:
     )
 
     assert result["status"] == "boundary_reached"
+    assert result["success"] is False
+    assert result["completed"] is True
+    assert result["matched"] is False
+    assert result["error_code"] == "wait_event_boundary_reached"
     assert result["boundary_event"]["type"] == "candle_close"
     assert result["boundary_event"]["next_candle_close_utc"] == "2026-03-29T01:00:00+00:00"
     assert result["elapsed_seconds"] == 361.0

@@ -387,7 +387,6 @@ def _compact_wait_event_public_result(
         return out
 
     for key in (
-        "matched",
         "event",
         "criteria",
         "timeframe",
@@ -662,9 +661,15 @@ def wait_event(
 
     `max_wait_seconds` defaults to 15 seconds on the public tool surface so
     interactive and agent calls have a short timebox. Set it to null to use no
-    timeout, or raise it explicitly for longer long-lived transport waits. A
-    timeout is a failed wait (`success=false`, `error_code=wait_event_timeout`)
-    and produces a nonzero CLI exit status. A candle boundary already known to
+    timeout, or raise it explicitly for longer long-lived transport waits.
+    A timeout is a failed wait (`success=false`, `error_code=wait_event_timeout`)
+    and produces a nonzero CLI exit status. When watchers are active, reaching
+    an `end_on` boundary before a match is also a failed wait
+    (`success=false`, `matched=false`,
+    `error_code=wait_event_boundary_reached`); `completed=true` distinguishes
+    that terminal boundary from a timeout. A boundary-only wait
+    (`watch_for=[]` or `wait_next_bar=true`) succeeds when its boundary is
+    reached. A candle boundary already known to
     be beyond the budget returns `error_code=wait_budget_exceeded` immediately,
     with no event, because no boundary was observed.
     Set `poll_interval_seconds` to tune polling cadence; omit it to use the
