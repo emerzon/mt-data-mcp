@@ -41,7 +41,7 @@ def test_trim_df_to_target_includes_entire_date_only_end() -> None:
     assert out["close"].tolist() == [1.0, 2.0]
 
 
-def test_trim_df_to_target_requires_bar_close_before_historical_end() -> None:
+def test_trim_df_to_target_uses_bar_open_time_for_historical_end() -> None:
     df = pd.DataFrame(
         {
             "__epoch": [
@@ -60,8 +60,24 @@ def test_trim_df_to_target_requires_bar_close_before_historical_end() -> None:
     )
 
     assert out["__epoch"].tolist() == [
-        pd.Timestamp("2025-01-01 11:00", tz="UTC").timestamp()
+        pd.Timestamp("2025-01-01 11:00", tz="UTC").timestamp(),
+        pd.Timestamp("2025-01-01 12:00", tz="UTC").timestamp(),
     ]
+
+
+def test_trim_df_to_target_includes_bar_opening_at_equal_bounds() -> None:
+    epoch = pd.Timestamp("2025-01-01 12:00", tz="UTC").timestamp()
+    df = pd.DataFrame({"__epoch": [epoch], "close": [1.1]})
+
+    out = data_service._trim_df_to_target(
+        df,
+        "2025-01-01 12:00",
+        "2025-01-01 12:00",
+        candles=100,
+        timeframe="H1",
+    )
+
+    assert out["__epoch"].tolist() == [epoch]
 
 
 def test_fetch_rates_with_warmup_uses_utc_epoch_seconds_for_end_ts() -> None:
