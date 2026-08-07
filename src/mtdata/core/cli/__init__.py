@@ -1,10 +1,12 @@
 """Lightweight command-line entry point."""
 
+import json
 import sys
 from difflib import get_close_matches
 from importlib import metadata as importlib_metadata
 from typing import Optional, Sequence
 
+from ..error_envelope import build_error_payload
 from .catalog import available_command_names, format_root_help
 
 
@@ -39,9 +41,17 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         if suggestions:
             message += f". Did you mean: {', '.join(suggestions)}?"
         if "--json" in effective_argv:
-            import json
-
-            print(json.dumps({"success": False, "error": message, "error_code": "cli_unknown_command"}))
+            print(
+                json.dumps(
+                    build_error_payload(
+                        message,
+                        code="cli_unknown_command",
+                        operation="cli",
+                        remediation=f"Run '{program} --help' to list commands.",
+                        documentation="docs/CLI.md",
+                    )
+                )
+            )
         else:
             print(message, file=sys.stderr)
             print(f"Run '{program} --help' to list commands.", file=sys.stderr)

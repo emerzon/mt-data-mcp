@@ -90,6 +90,10 @@ _COMMAND_REQUIRED_OPTIONS: set[tuple[str, str]] = {
     ("trade_place", "order_type"),
 }
 
+_PRESERVE_OMITTED_DEFAULT_PARAMS: set[tuple[str, str]] = {
+    ("data_fetch_candles", "limit"),
+}
+
 _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
     ("correlation_matrix", "method"): "Correlation coefficient: pearson or spearman.",
     ("correlation_matrix", "transform"): (
@@ -764,7 +768,10 @@ def resolve_param_kwargs(
             kwargs["type"] = str
 
     if not param["required"] and not (param["type"] is bool and param["default"] is None):
-        kwargs["default"] = param["default"]
+        if (str(cmd_name or ""), str(param["name"])) in _PRESERVE_OMITTED_DEFAULT_PARAMS:
+            kwargs["default"] = argparse.SUPPRESS
+        else:
+            kwargs["default"] = param["default"]
 
     choice_override_key = (str(cmd_name or ""), str(param["name"]))
     choice_override = _COMMAND_PARAM_CHOICE_OVERRIDES.get(choice_override_key)
@@ -779,7 +786,7 @@ def resolve_param_kwargs(
     return kwargs, is_mapping_type
 
 
-def add_dynamic_arguments(
+def add_dynamic_arguments(  # noqa: C901
     parser: Any,
     param_info: Dict[str, Any],
     *,
@@ -830,7 +837,40 @@ def add_dynamic_arguments(
             and (str(cmd_name or ""), str(param["name"])) in _OPTIONAL_FIRST_POSITIONAL_PARAMS
         )
 
-        if param["required"] and param == param_info["params"][0]:
+        required_symbol_alias = (
+            param["required"]
+            and param == param_info["params"][0]
+            and str(param["name"]) in {"symbol", "symbols"}
+        )
+        if required_symbol_alias:
+            positional_kwargs = {
+                k: v
+                for k, v in kwargs.items()
+                if k in ("help", "type", "choices", "metavar")
+            }
+            positional_kwargs["nargs"] = (
+                "*"
+                if (
+                    str(cmd_name or "") in _MULTI_VALUE_SYMBOL_POSITIONAL_COMMANDS
+                    and str(param["name"]) == "symbols"
+                )
+                else "?"
+            )
+            positional_kwargs["default"] = argparse.SUPPRESS
+            positional_kwargs["help"] = (
+                f"{positional_kwargs.get('help') or param['name']} (required)"
+            )
+            parser.add_argument(param["name"], **positional_kwargs)
+            option_kwargs = dict(kwargs)
+            option_kwargs["default"] = argparse.SUPPRESS
+            option_kwargs["required"] = False
+            if option_flags:
+                parser.add_argument(*option_flags, **option_kwargs)
+            if hidden_option_flags:
+                hidden_option_kwargs = dict(option_kwargs)
+                hidden_option_kwargs["help"] = argparse.SUPPRESS
+                parser.add_argument(*hidden_option_flags, **hidden_option_kwargs)
+        elif param["required"] and param == param_info["params"][0]:
             positional_kwargs = {k: v for k, v in kwargs.items() if k in ("help", "type", "choices", "metavar")}
             if (
                 str(cmd_name or "") in _MULTI_VALUE_SYMBOL_POSITIONAL_COMMANDS

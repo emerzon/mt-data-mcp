@@ -646,6 +646,7 @@ _FIELD_SELECTION_META_KEYS = frozenset(
         "count",
         "total",
         "truncated",
+        "pagination",
     }
 )
 

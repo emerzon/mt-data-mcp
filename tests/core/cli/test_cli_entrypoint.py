@@ -59,6 +59,22 @@ def test_unknown_command_path_does_not_import_cli_api(capsys):
     assert "market_ticker" in capsys.readouterr().err
 
 
+def test_unknown_command_json_uses_standard_error_envelope(capsys):
+    from mtdata.core.cli import main
+
+    with patch.dict("sys.modules", {"mtdata.core.cli.api": None}):
+        status = main(["no-such-command", "--json"])
+
+    payload = json.loads(capsys.readouterr().out)
+    assert status == 2
+    assert payload["success"] is False
+    assert payload["error_code"] == "cli_unknown_command"
+    assert payload["operation"] == "cli"
+    assert payload["request_id"]
+    assert payload["remediation"]
+    assert payload["documentation"] == "docs/CLI.md"
+
+
 def test_shell_reuses_process_and_runs_entered_commands(monkeypatch):
     from mtdata.core.cli import api
 

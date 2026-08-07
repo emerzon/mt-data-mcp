@@ -51,7 +51,6 @@ from mtdata.core.cli.api import (
     main,
 )
 
-
 # ========================================================================
 # main()
 # ========================================================================
@@ -994,7 +993,7 @@ class TestMain:
         assert "command-level --timeframe overrides it" in out
 
     @patch("mtdata.core.cli.api.discover_tools")
-    def test_help_hides_duplicate_symbol_option_for_required_first_arg(
+    def test_help_exposes_equivalent_symbol_option_for_required_first_arg(
         self, mock_discover, capsys
     ):
         mock_fn = MagicMock(return_value={"success": True})
@@ -1024,7 +1023,24 @@ class TestMain:
         out = capsys.readouterr().out
         assert "positional arguments:" in out
         assert "symbol" in out
-        assert "--symbol" not in out
+        assert "--symbol" in out
+
+    @patch("mtdata.core.cli.api.discover_tools")
+    def test_required_symbol_accepts_flag_form(self, mock_discover):
+        def market_ticker(symbol: str, **_kwargs):
+            return {"success": True, "symbol": symbol}
+
+        mock_discover.return_value = {
+            "market_ticker": {
+                "func": market_ticker,
+                "meta": {"description": "Get ticker"},
+            }
+        }
+
+        with patch("sys.argv", ["cli.py", "market_ticker", "--symbol", "EURUSD"]):
+            status = main()
+
+        assert status == 0
 
     @patch("mtdata.core.cli.api.discover_tools")
     def test_trade_history_days_alias_converts_to_minutes(self, mock_discover):
@@ -1439,7 +1455,7 @@ class TestForecastGenerateIntegration:
         assert call_kwargs["fields"] == "forecast,method"
 
     @patch("mtdata.core.cli.api.discover_tools")
-    def test_forecast_generate_rejects_symbol_flag_alias(self, mock_discover):
+    def test_forecast_generate_accepts_symbol_flag_alias(self, mock_discover):
         mock_fn = MagicMock(return_value={"forecast": [1.0, 2.0]})
         mock_fn.__module__ = "mtdata.core.server"
         mock_fn.__name__ = "forecast_generate"
@@ -1451,12 +1467,53 @@ class TestForecastGenerateIntegration:
                 "meta": {"description": "Generate forecasts"},
             },
         }
+        with patch(
+            "sys.argv", ["cli.py", "forecast_generate", "--symbol", "BTCUSD"]
+        ):
+            result = main()
+        assert result == 0
+        assert mock_fn.call_args.kwargs["request"].symbol == "BTCUSD"
+
+    @patch("mtdata.core.cli.api.discover_tools")
+    def test_forecast_generate_rejects_malformed_params(self, mock_discover):
+        mock_fn = MagicMock(return_value={"forecast": [1.0]})
+        mock_fn.__module__ = "mtdata.core.server"
+        mock_fn.__name__ = "forecast_generate"
+        mock_fn.__doc__ = "Generate forecasts."
+        mock_discover.return_value = {
+            "forecast_generate": {"func": mock_fn, "meta": {"description": "Forecast"}}
+        }
+
         with (
-            patch("sys.argv", ["cli.py", "forecast_generate", "--symbol", "BTCUSD"]),
-            pytest.raises(SystemExit) as exc_info,
+            patch(
+                "sys.argv",
+                ["cli.py", "forecast_generate", "EURUSD", "--params", "bad"],
+            ),
+            pytest.raises(SystemExit, match="2"),
         ):
             main()
-        assert exc_info.value.code == 2
+
+        mock_fn.assert_not_called()
+
+    @patch("mtdata.core.cli.api.discover_tools")
+    def test_forecast_generate_rejects_unknown_set_section(self, mock_discover):
+        mock_fn = MagicMock(return_value={"forecast": [1.0]})
+        mock_fn.__module__ = "mtdata.core.server"
+        mock_fn.__name__ = "forecast_generate"
+        mock_fn.__doc__ = "Generate forecasts."
+        mock_discover.return_value = {
+            "forecast_generate": {"func": mock_fn, "meta": {"description": "Forecast"}}
+        }
+
+        with (
+            patch(
+                "sys.argv",
+                ["cli.py", "forecast_generate", "EURUSD", "--set", "bogus.foo=1"],
+            ),
+            pytest.raises(SystemExit, match="2"),
+        ):
+            main()
+
         mock_fn.assert_not_called()
 
     @patch("mtdata.core.cli.api.discover_tools")
@@ -1886,6 +1943,7 @@ class TestEdgeCases:
 
     def test_render_cli_result_selects_requested_fields(self, capsys):
         from argparse import Namespace
+
         from mtdata.core.cli.api import _render_cli_result
 
         _render_cli_result(
@@ -1964,6 +2022,24 @@ class TestEdgeCases:
         cmd_fn(args)
         call_kwargs = mock_fn.call_args[1]
         assert call_kwargs["simplify"]["method"] == "lttb"
+
+    def test_ranged_candle_command_preserves_omitted_limit(self):
+        mock_fn = MagicMock(return_value={"success": True})
+        func_info = {
+            "func": mock_fn,
+            "params": [
+                {
+                    "name": "limit",
+                    "type": int,
+                    "required": False,
+                    "default": 200,
+                }
+            ],
+        }
+        cmd_fn = create_command_function(func_info, cmd_name="data_fetch_candles")
+
+        assert cmd_fn(argparse.Namespace(json=False, verbose=False)) == 0
+        assert "limit" not in mock_fn.call_args.kwargs
 
     def test_extract_help_query_no_args(self):
         assert _extract_help_query([]) is None

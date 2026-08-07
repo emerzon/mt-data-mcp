@@ -395,6 +395,14 @@ def create_command_function(  # noqa: C901
             return 1
         for param in func_info["params"]:
             param_name = param["name"]
+            if (
+                cmd_name == "data_fetch_candles"
+                and param_name == "limit"
+                and not hasattr(args, param_name)
+            ):
+                # Preserve omission so the request model can distinguish a ranged
+                # query from a count-based query and select its ranged default.
+                continue
             arg_value = getattr(args, param_name, param["default"])
 
             if (

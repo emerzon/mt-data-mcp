@@ -77,3 +77,19 @@ def test_output_fields_still_projects_bare_fields_from_row_collections() -> None
         "symbol": "EURUSD",
         "data": [{"close": 1.1}, {"close": 1.2}],
     }
+
+
+def test_output_fields_preserves_pagination_metadata() -> None:
+    payload = {
+        "success": True,
+        "tools": [{"name": "forecast_generate", "description": "Forecast"}],
+        "pagination": {"offset": 0, "limit": 1, "returned": 1, "total": 8},
+    }
+
+    result = _select_output_fields(payload, "name")
+
+    assert result == {
+        "success": True,
+        "tools": [{"name": "forecast_generate"}],
+        "pagination": {"offset": 0, "limit": 1, "returned": 1, "total": 8},
+    }

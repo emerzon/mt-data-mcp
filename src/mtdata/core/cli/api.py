@@ -867,7 +867,15 @@ def _add_forecast_generate_args(cmd_parser: argparse.ArgumentParser) -> None:
 
     cmd_parser.add_argument(
         "symbol",
+        nargs="?",
+        default=argparse.SUPPRESS,
         help=_PARAM_HINTS["symbol"],
+    )
+    cmd_parser.add_argument(
+        "--symbol",
+        dest="symbol",
+        default=argparse.SUPPRESS,
+        help="Symbol name. Equivalent to the SYMBOL positional argument.",
     )
 
     group_method = cmd_parser.add_argument_group("Method")
@@ -1545,7 +1553,7 @@ def _print_extended_help(functions: Dict[str, ToolInfo], query: str) -> None:
         print("")
 
 
-def main():
+def main():  # noqa: C901
     """Main CLI entry point with dynamic parameter discovery"""
     raw_argv = sys.argv[1:]
     if raw_argv in (["--version"], ["-V"]):
@@ -1723,10 +1731,32 @@ def main():
         _add_forecast_generate_args(cmd_parser)
 
         def _forecast_generate_cmd(args):
+            if not hasattr(args, "symbol") or not str(args.symbol or "").strip():
+                cmd_parser.error("Missing required argument: symbol.")
             try:
                 overrides = _parse_set_overrides(args.set_overrides)
             except ValueError as exc:
                 cmd_parser.error(str(exc))
+            allowed_override_sections = {"method", "denoise", "features", "dimred", "target"}
+            unknown_sections = sorted(set(overrides) - allowed_override_sections)
+            if unknown_sections:
+                cmd_parser.error(
+                    f"Unknown --set section(s): {', '.join(unknown_sections)}. "
+                    "Use one of: method, denoise, features, dimred, target."
+                )
+
+            def _parse_mapping_value(value, *, option_name):
+                if not isinstance(value, str):
+                    return value
+                if not value.strip():
+                    return None
+                parsed = _parse_kv_string(value)
+                if parsed is None:
+                    cmd_parser.error(
+                        f"Invalid --{option_name.replace('_', '-')} value. "
+                        "Use JSON object syntax or key=value pairs."
+                    )
+                return parsed
 
             params_raw = _resolve_forecast_typed_cli_value(
                 args.params,
@@ -1759,11 +1789,7 @@ def main():
                 parser=cmd_parser,
             )
 
-            params = (
-                _parse_kv_string(params_raw)
-                if isinstance(params_raw, str)
-                else params_raw
-            )
+            params = _parse_mapping_value(params_raw, option_name="params")
 
             denoise = None
             if isinstance(denoise_raw, dict):
@@ -1771,24 +1797,13 @@ def main():
             elif denoise_raw:
                 denoise = {"method": str(denoise_raw).strip()}
                 if str(denoise_raw).strip().startswith("{"):
-                    parsed = _parse_kv_string(str(denoise_raw))
-                    denoise = parsed if parsed is not None else denoise
+                    denoise = _parse_mapping_value(denoise_raw, option_name="denoise")
 
-            features = (
-                _parse_kv_string(features_raw)
-                if isinstance(features_raw, str)
-                else features_raw
+            features = _parse_mapping_value(features_raw, option_name="features")
+            dimred_params = _parse_mapping_value(
+                dimred_params_raw, option_name="dimred_params"
             )
-            dimred_params = (
-                _parse_kv_string(dimred_params_raw)
-                if isinstance(dimred_params_raw, str)
-                else dimred_params_raw
-            )
-            target_spec = (
-                _parse_kv_string(target_spec_raw)
-                if isinstance(target_spec_raw, str)
-                else target_spec_raw
-            )
+            target_spec = _parse_mapping_value(target_spec_raw, option_name="target_spec")
 
             # --set overrides (sections: method/denoise/features/dimred/target)
             params = _merge_dict(params, overrides.get("method"))
