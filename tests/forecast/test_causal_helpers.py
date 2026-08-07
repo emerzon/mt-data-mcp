@@ -21,6 +21,7 @@ from mtdata.core.causal import (
     _parse_symbols,
     _rank_correlation_pairs,
     _standardize_frame,
+    _transform_aligned_pair,
     _transform_cointegration_frame,
     _transform_frame,
 )
@@ -140,6 +141,7 @@ def test_rank_correlation_pairs_rounds_statistical_estimates() -> None:
         frame,
         ["A", "B"],
         method="pearson",
+        transform="level",
         window_bars=6,
         min_overlap=2,
     )
@@ -208,6 +210,20 @@ class TestTransformFrame:
         assert result.loc[1, "B"] == pytest.approx(0.1)
         assert result.loc[4, "A"] == pytest.approx(0.1)
         assert result.loc[4, "B"] == pytest.approx(0.1)
+
+    def test_pair_transform_uses_shared_observation_predecessor(self):
+        frame = pd.DataFrame(
+            {
+                "A": pd.Series([100.0, 110.0, 121.0], index=[0, 2, 4]),
+                "B": pd.Series([50.0, 55.0, 60.5], index=[0, 1, 4]),
+            }
+        )
+
+        result = _transform_aligned_pair(frame, "A", "B", "pct")
+
+        assert list(result.index) == [4]
+        assert result.loc[4, "A"] == pytest.approx(0.21)
+        assert result.loc[4, "B"] == pytest.approx(0.21)
 
 
 class TestStandardizeFrame:

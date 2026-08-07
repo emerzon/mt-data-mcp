@@ -685,6 +685,19 @@ def _build_pairwise_frame(
     return pd.concat(aligned_map, axis=1, join="outer").sort_index()
 
 
+def _transform_aligned_pair(
+    frame: pd.DataFrame,
+    left: str,
+    right: str,
+    transform: str,
+) -> pd.DataFrame:
+    """Align a raw price pair before deriving pairwise transformed values."""
+    raw_pair = frame[[left, right]].dropna(how="any")
+    if raw_pair.empty:
+        return raw_pair
+    return _transform_frame(raw_pair, transform).dropna(how="any")
+
+
 def _format_sample_time(value: Any) -> str:
     timestamp = pd.Timestamp(value)
     if timestamp.tzinfo is not None:
@@ -802,6 +815,7 @@ def _rank_correlation_pairs(
     symbols: List[str],
     *,
     method: str,
+    transform: str,
     window_bars: int,
     min_overlap: int,
     inference_supported: bool = True,
@@ -820,7 +834,7 @@ def _rank_correlation_pairs(
         for right in symbols[idx + 1 :]:
             if right not in frame.columns:
                 continue
-            subset_all = frame[[left, right]].dropna(how="any")
+            subset_all = _transform_aligned_pair(frame, left, right, transform)
             overlap_rows = int(len(subset_all))
             pair_overlaps[f"{left}-{right}"] = overlap_rows
             if overlap_rows < min_overlap:
@@ -1605,6 +1619,8 @@ def causal_discover_signals(  # noqa: C901
         limit: Optional maximum number of returned causal rows.
         window_bars: Maximum overlapping transformed samples analysed per pair
             after applying any time window.
+            Raw price pairs are aligned before return-style transforms so each
+            paired observation covers the same interval for both symbols.
         start: Optional UTC-compatible start date/time for the analysis window.
         end: Optional UTC-compatible end date/time; end-only anchors recent history.
         max_lag: Maximum lag order for tests (>=1).
@@ -1930,11 +1946,12 @@ def causal_discover_signals(  # noqa: C901
             for cause in transformed.columns:
                 if effect == cause:
                     continue
-                subset = (
-                    transformed[[effect, cause]]
-                    .dropna(how="any")
-                    .tail(int(window_bars))
-                )
+                subset = _transform_aligned_pair(
+                    frame,
+                    str(effect),
+                    str(cause),
+                    transform_value,
+                ).tail(int(window_bars))
                 if normalize and not subset.empty:
                     subset = _standardize_frame(subset).dropna(how="any")
                 if len(subset) <= max_lag + 2:
@@ -2516,9 +2533,10 @@ def correlation_matrix(  # noqa: C901
             )
 
         rows, pair_overlaps, skipped = _rank_correlation_pairs(
-            transformed,
+            frame,
             symbols_used,
             method=method_value,
+            transform=transform_value,
             window_bars=int(window_bars),
             min_overlap=int(min_overlap),
             inference_supported=transform_value in {"log_return", "pct", "diff"},
@@ -2761,8 +2779,12 @@ def cross_correlation(  # noqa: C901
                 details=errors,
             )
         frame = _build_pairwise_frame(series_map, symbol_list)
-        transformed = _transform_frame(frame, transform_value)
-        aligned = transformed[symbol_list].dropna(how="any").tail(int(window_bars))
+        aligned = _transform_aligned_pair(
+            frame,
+            symbol_list[0],
+            symbol_list[1],
+            transform_value,
+        ).tail(int(window_bars))
         if len(aligned) < int(min_overlap):
             return _causal_error(
                 f"Only {len(aligned)} overlapping samples are available; min_overlap={min_overlap}.",
