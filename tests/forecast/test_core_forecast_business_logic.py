@@ -2081,11 +2081,11 @@ def test_forecast_list_library_models_and_list_methods(monkeypatch):
                 "statsforecast": ["sf_autoarima", "sf_theta", "sf_ets", "sf_naive"],
             },
             "methods": [
-                {"method": "theta", "available": True, "description": "Theta.", "params": [], "requires": []},
-                {"method": "sf_autoarima", "available": True, "description": "A", "params": [], "requires": []},
-                {"method": "sf_theta", "available": True, "description": "B", "params": [], "requires": []},
-                {"method": "sf_ets", "available": False, "description": "C", "params": [], "requires": []},
-                {"method": "sf_naive", "available": True, "description": "D", "params": [], "requires": []},
+                {"method": "theta", "available": True, "description": "Theta.", "params": [], "requires": [], "supports_training": False},
+                {"method": "sf_autoarima", "available": True, "description": "A", "params": [], "requires": [], "supports_training": True},
+                {"method": "sf_theta", "available": True, "description": "B", "params": [], "requires": [], "supports_training": True},
+                {"method": "sf_ets", "available": False, "description": "C", "params": [], "requires": [], "supports_training": True},
+                {"method": "sf_naive", "available": True, "description": "D", "params": [], "requires": [], "supports_training": True},
             ],
         },
     )
@@ -2119,6 +2119,18 @@ def test_forecast_list_library_models_and_list_methods(monkeypatch):
     assert "filters" not in ci_only
     assert ci_only["methods"]
     assert all(row.get("supports_ci") is True for row in ci_only["methods"])
+    trainable_auto = _unwrap(cf.forecast_list_methods)(supports_training=True)
+    assert [row["method"] for row in trainable_auto["methods"]] == [
+        "sf_autoarima",
+        "sf_naive",
+        "sf_theta",
+    ]
+    assert trainable_auto["profile"] == "all"
+    assert trainable_auto["profile_auto_expanded"] == {
+        "requested": "quickstart",
+        "effective": "all",
+        "reason": "supports_training=true searches the complete method catalog.",
+    }
     no_ci = _unwrap(cf.forecast_list_methods)(supports_ci=False, show_unavailable=True, profile="all")
     assert "filters" not in no_ci
     assert all(row.get("supports_ci") is False for row in no_ci["methods"])

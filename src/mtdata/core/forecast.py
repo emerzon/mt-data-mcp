@@ -919,7 +919,8 @@ def forecast_list_methods(
     Compact output is the default. Standard adds descriptions, capability
     details, and related volatility methods; full adds parameter documentation.
     The default quickstart profile returns a small native baseline set. Use
-    profile='all' for the full available catalog.
+    profile='all' for the full available catalog. An explicit
+    supports_training=True filter searches the full catalog automatically.
     """
     search_term_value = str(search_term or "").strip() or None
     return _run_forecast_operation(
@@ -1755,10 +1756,17 @@ def _forecast_list_methods_impl(  # noqa: C901
         search_value = str(search or "").strip().lower()
         category_filter_value = str(category or "").strip().lower()
         library_value = str(library or "").strip().lower()
-        profile_value = str(profile or "quickstart").strip().lower()
-        if profile_value not in _FORECAST_METHOD_PROFILES:
+        requested_profile_value = str(profile or "quickstart").strip().lower()
+        if requested_profile_value not in _FORECAST_METHOD_PROFILES:
             return {"error": "Invalid profile. Use all, quickstart, or core."}
+        profile_value = requested_profile_value
         profile_methods = _FORECAST_METHOD_PROFILES[profile_value]
+        profile_auto_expanded = bool(
+            supports_training is True and profile_methods is not None
+        )
+        if profile_auto_expanded:
+            profile_value = "all"
+            profile_methods = None
         supported_libraries = {
             "native",
             "statsforecast",
@@ -1933,6 +1941,12 @@ def _forecast_list_methods_impl(  # noqa: C901
                 "profile": profile_value,
                 "show_unavailable": bool(show_unavailable),
             }
+            if profile_auto_expanded:
+                out_full["profile_auto_expanded"] = {
+                    "requested": requested_profile_value,
+                    "effective": "all",
+                    "reason": "supports_training=true searches the complete method catalog.",
+                }
             if profile_methods is not None:
                 profile_hidden_count = _profile_methods_hidden_count(methods_full)
                 if profile_hidden_count > 0:
@@ -2080,6 +2094,13 @@ def _forecast_list_methods_impl(  # noqa: C901
                     "mtdata-cli forecast_generate SYMBOL --method mc_gbm",
                     "mtdata-cli forecast_volatility_estimate SYMBOL --method ewma",
                 ]
+        if profile_auto_expanded:
+            out["profile"] = "all"
+            out["profile_auto_expanded"] = {
+                "requested": requested_profile_value,
+                "effective": "all",
+                "reason": "supports_training=true searches the complete method catalog.",
+            }
         if truncation_reason:
             out["truncation_reason"] = truncation_reason
         return out

@@ -94,6 +94,14 @@ def _default_error_guidance(
         return dict(_ERROR_GUIDANCE[code_text])
     if code_text.endswith("_connection_error"):
         return dict(_ERROR_GUIDANCE["mt5_connection_error"])
+    if operation_text == "forecast_train":
+        return {
+            "remediation": (
+                "Choose a trainable method with forecast_list_methods "
+                "--supports-training true, then retry forecast_train."
+            ),
+            "related_tools": ["forecast_list_methods"],
+        }
     if operation_text.startswith("forecast_") or code_text.startswith("forecast_"):
         return {
             "remediation": (

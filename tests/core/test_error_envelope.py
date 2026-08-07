@@ -31,6 +31,20 @@ def test_build_error_payload_keeps_explicit_guidance():
     assert out["example"].endswith("--method theta")
 
 
+def test_forecast_train_errors_point_to_trainable_method_discovery():
+    out = build_error_payload(
+        "Method 'ets' does not support separate training.",
+        code="tool_error",
+        operation="forecast_train",
+    )
+
+    assert out["remediation"] == (
+        "Choose a trainable method with forecast_list_methods "
+        "--supports-training true, then retry forecast_train."
+    )
+    assert out["related_tools"] == ["forecast_list_methods"]
+
+
 def test_normalize_error_payload_adds_symbol_lookup_guidance():
     out = normalize_error_payload(
         {
