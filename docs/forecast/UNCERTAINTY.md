@@ -38,14 +38,23 @@ mtdata-cli forecast_generate EURUSD --timeframe H1 --horizon 12 \
 **Output includes:**
 ```json
 {
-  "forecast": [...],
-  "lower": [...],
-  "upper": [...]
+  "uncertainty": {
+    "status": "available",
+    "mode": "interval",
+    "alpha": 0.1,
+    "intervals": [
+      {"time": "2026-01-01T18:00Z", "forecast": 1.1755, "low": 1.1740, "high": 1.1770}
+    ]
+  }
 }
 ```
 
 **Interpretation:**
-- "If model assumptions hold, the true value will fall between `lower` and `upper` about 90% (or 95%) of the time."
+- Each `uncertainty.intervals[]` row is a forecast step. `low` and `high` are the
+  model interval bounds for that row (price or return, matching the requested
+  quantity).
+- If model assumptions hold, the true value will fall between `low` and `high`
+  about 90% (or 95%) of the time.
 
 **Caution:** Financial markets have fat tails. Model CIs often underestimate extreme moves.
 
@@ -88,18 +97,24 @@ mtdata-cli forecast_conformal_intervals EURUSD --timeframe H1 \
 
 ```json
 {
-  "forecast": [1.1755, 1.1756, ...],
-  "lower_price": [1.1740, 1.1738, ...],
-  "upper_price": [1.1770, 1.1774, ...],
+  "forecast": [
+    {"time": "2026-01-01T18:00Z", "value": 1.1755, "lower": 1.1740, "upper": 1.1770}
+  ],
   "conformal": {
-    "per_step_q": [0.0005, 0.0008, ...]
+    "interval_method": "rolling_residual_quantiles",
+    "coverage_target": 0.95,
+    "empirical_coverage": 0.92
   }
 }
 ```
 
 **Interpretation:**
-- `lower_price` / `upper_price`: Empirically calibrated bounds
+- Each `forecast[]` row has its point `value` and empirically calibrated
+  `lower` / `upper` price bounds.
 - With the default alpha, the empirical target coverage is 95%. This is a calibration target, not a finite-sample guarantee.
+
+Use `--detail full` when you need the raw `lower_price` / `upper_price` arrays
+or calibration diagnostics such as `conformal.per_step_q` and per-step coverage.
 
 ### When to Use
 - When you don't trust model-based intervals
@@ -179,8 +194,8 @@ Use conformal intervals instead of model CIs:
 # Get conformal intervals
 mtdata-cli forecast_conformal_intervals EURUSD --horizon 12 --ci-alpha 0.1
 
-# Use lower_price as stop-loss floor
-# Size position so max loss (if lower_price is hit) is within risk budget
+# Use the first forecast row's lower value as a stop-loss floor
+# Size position so max loss (if that lower bound is hit) is within risk budget
 ```
 
 ### Validating Signal Quality
