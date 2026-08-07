@@ -306,6 +306,17 @@ class ForecastMethod(ABC):
         return False
 
     @property
+    def supports_live_model_update(self) -> bool:
+        """Whether a stored artifact can safely incorporate newer history.
+
+        A trainable method may support a persisted train → predict lifecycle
+        without being able to advance a fitted artifact to a newer series.  The
+        forecast engine uses this capability to distinguish safe live reuse from
+        historical exact-anchor prediction.
+        """
+        return False
+
+    @property
     def train_supports_cancel(self) -> bool:
         """Whether ``train()`` checks a cooperative cancellation token."""
         return False

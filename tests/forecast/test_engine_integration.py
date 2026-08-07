@@ -44,8 +44,10 @@ class _StubTrainable(ForecastMethod):
         *,
         category: str = "heavy",
         predict_result: Optional[ForecastResult] = None,
+        live_model_update: bool = False,
     ):
         self._category = category
+        self._live_model_update = live_model_update
         self._predict_result = predict_result or ForecastResult(
             forecast=np.array([10.0, 11.0, 12.0]),
             ci_values=(np.array([9.0, 10.0, 11.0]), np.array([11.0, 12.0, 13.0])),
@@ -56,6 +58,10 @@ class _StubTrainable(ForecastMethod):
     @property
     def supports_training(self) -> bool:
         return True
+
+    @property
+    def supports_live_model_update(self) -> bool:
+        return self._live_model_update
 
     @property
     def training_category(self) -> str:
@@ -704,6 +710,41 @@ class TestRunRegisteredForecastMethodIntegration:
         forecast_arr, ci, metadata = result
         np.testing.assert_array_equal(forecast_arr, np.array([10.0, 11.0, 12.0]))
         assert metadata["model_info"]["source"] == "model_store"
+
+    def test_live_refreshable_method_reuses_recent_stored_artifact(self):
+        stub = _StubTrainable(live_model_update=True)
+
+        class FakeReg:
+            @staticmethod
+            def get(name):
+                return stub
+
+        kwargs = _common_call_kwargs()
+        current_anchor = float(kwargs["df"]["time"].iloc[-1])
+        handle = TrainedModelHandle(
+            model_id="stub_trainable/EURUSD_H1/abc",
+            method="stub_trainable",
+            data_scope="EURUSD_H1",
+            params_hash="abc",
+            created_at=1000.0,
+            metadata={
+                "training_context": {
+                    "training_end_epoch": current_anchor - 3600.0,
+                }
+            },
+        )
+        mock_store = MagicMock()
+        mock_store.find.return_value = handle
+        mock_store.load_bytes.return_value = b"artifact"
+
+        with patch.object(fe, "ForecastRegistry", FakeReg), patch(
+            _PATCH_MODEL_STORE, mock_store
+        ):
+            _forecast, _ci, metadata = fe._run_registered_forecast_method(**kwargs)
+
+        assert metadata["model_info"]["source"] == "model_store"
+        assert metadata["model_info"]["reuse_policy"] == "live_latest_artifact"
+        assert metadata["model_info"]["model_staleness_bars"] == 1.0
 
     def test_async_mode_heavy_method_raises_async_started(self):
         """Heavy method with async_mode=True and no stored model → _AsyncTrainingStarted."""

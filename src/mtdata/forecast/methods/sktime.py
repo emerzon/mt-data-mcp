@@ -47,6 +47,10 @@ class SktimeMethod(ForecastMethod):
         return True
 
     @property
+    def supports_live_model_update(self) -> bool:
+        return True
+
+    @property
     def training_category(self):
         return "fast"
 
@@ -124,6 +128,44 @@ class SktimeMethod(ForecastMethod):
             raise RuntimeError(_SKTIME_IMPORT_ERROR)
 
         estimator = model  # deserialized sktime estimator
+        y = series.copy()
+        if not isinstance(y.index, pd.RangeIndex) and getattr(y.index, "freq", None) is None:
+            try:
+                y.index.freq = pd.infer_freq(y.index)
+            except Exception:
+                pass
+        if not isinstance(y.index, pd.RangeIndex) and getattr(y.index, "freq", None) is None:
+            y = y.reset_index(drop=True)
+
+        cutoff = getattr(estimator, "cutoff", None)
+        if cutoff is None:
+            raise RuntimeError("Stored sktime model does not expose a training cutoff for live refresh.")
+        if isinstance(cutoff, (pd.Index, np.ndarray, list, tuple)):
+            if len(cutoff) == 0:
+                raise RuntimeError(
+                    "Stored sktime model does not expose a usable training cutoff for live refresh."
+                )
+            cutoff = cutoff[-1]
+        try:
+            new_y = y.loc[y.index > cutoff]
+        except Exception as exc:
+            raise RuntimeError("Stored sktime model cutoff is incompatible with live history.") from exc
+        if len(new_y):
+            X_update = kwargs.get("exog_used")
+            if X_update is None:
+                X_update = params.get("exog_used")
+            if isinstance(X_update, np.ndarray):
+                X_update = pd.DataFrame(X_update, index=y.index)
+            if isinstance(X_update, pd.DataFrame):
+                try:
+                    X_update = X_update.loc[new_y.index]
+                except (KeyError, TypeError, ValueError) as exc:
+                    raise RuntimeError(
+                        "Stored sktime model cannot align live exogenous history for refresh."
+                    ) from exc
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                estimator.update(y=new_y, X=X_update, update_params=False)
         fh = np.arange(1, horizon + 1)
 
         X_future = kwargs.get('exog_future')

@@ -1171,12 +1171,16 @@ def _run_registered_forecast_method(
             params_hash = expected_params_hash
 
         model_rejection: Dict[str, Any] = {}
+        live_model_update = (
+            as_of is None
+            and bool(getattr(forecaster, "supports_live_model_update", False))
+        )
         stored_result = _try_predict_with_stored_model(
             forecaster, method_l, data_scope, params_hash,
             target_series, horizon, seasonality,
             method_params, future_exog, call_kwargs,
             float(df["time"].iloc[-1]),
-            require_exact_anchor=True,
+            require_exact_anchor=not live_model_update,
             timeframe_seconds=TIMEFRAME_SECONDS.get(str(timeframe)),
             max_staleness_bars=max(1, int(seasonality)),
             rejection=model_rejection,
@@ -1192,10 +1196,14 @@ def _run_registered_forecast_method(
                         f" Trained anchor={model_rejection['trained_anchor_epoch']}; "
                         f"requested anchor={model_rejection.get('requested_anchor_epoch')}."
                     )
+                anchor_policy = (
+                    "Historical forecasts and methods without live history refresh "
+                    "require an exact training anchor; live forecasts reject artifacts "
+                    "trained after the request."
+                )
                 raise ValueError(
                     f"Model with ID '{requested_model_id}' exists but was rejected: "
-                    f"{reason}.{anchor_detail} Historical forecasts require an exact "
-                    "training anchor; live forecasts reject artifacts trained after the request."
+                    f"{reason}.{anchor_detail} {anchor_policy}"
                 )
             raise ValueError(
                 f"Model with ID '{requested_model_id}' was not found in the model store. "

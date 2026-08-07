@@ -95,6 +95,10 @@ class MLForecastMethod(ForecastMethod):
         return True
 
     @property
+    def supports_live_model_update(self) -> bool:
+        return True
+
+    @property
     def training_category(self):
         return "fast"
 
@@ -174,13 +178,25 @@ class MLForecastMethod(ForecastMethod):
         if exog_future_arr is None:
             exog_future_arr = exog_future if exog_future is not None else p.get('exog_future')
 
-        _, _, Xf_df = _create_training_dataframes(series.values, horizon, None, exog_future_arr)
+        exog_used = kwargs.get("exog_used")
+        if exog_used is None:
+            exog_used = p.get("exog_used")
+        Y_df, X_df, Xf_df = _create_training_dataframes(
+            series.values,
+            horizon,
+            exog_used,
+            exog_future_arr,
+        )
 
         mlf = model  # deserialized MLForecast object
+        predict_kwargs = {
+            "h": int(horizon),
+            "new_df": _mlforecast_train_frame(Y_df, X_df),
+        }
         if Xf_df is not None:
-            Yf = mlf.predict(h=int(horizon), X_df=Xf_df)
+            Yf = mlf.predict(X_df=Xf_df, **predict_kwargs)
         else:
-            Yf = mlf.predict(h=int(horizon))
+            Yf = mlf.predict(**predict_kwargs)
 
         Yf = Yf[Yf['unique_id'] == 'ts']
         f_vals = _extract_forecast_values(Yf, horizon, self.name)
