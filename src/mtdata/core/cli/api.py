@@ -346,6 +346,15 @@ def _normalize_cli_argv_aliases(
             break
         if token_text in functions:
             break
+
+    confluence_index = _find_command_index(normalized, "confluence_levels")
+    if confluence_index is not None:
+        for index in range(confluence_index + 1, len(normalized)):
+            token = str(normalized[index])
+            if token == "--timeframe":
+                normalized[index] = "--pivot-timeframe"
+            elif token.startswith("--timeframe="):
+                normalized[index] = "--pivot-timeframe=" + token.split("=", 1)[1]
     return normalized
 
 

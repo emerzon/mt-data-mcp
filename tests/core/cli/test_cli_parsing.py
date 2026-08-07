@@ -1445,6 +1445,31 @@ class TestNormalizeCliArgvAliases:
 
         assert out == ["--help", "trade_place"]
 
+    def test_maps_confluence_command_timeframe_to_pivot_timeframe(self):
+        functions = {"confluence_levels": {"func": lambda: None}}
+
+        out = _normalize_cli_argv_aliases(
+            ["confluence_levels", "EURUSD", "--timeframe", "H1"],
+            functions,
+        )
+
+        assert out == [
+            "confluence_levels",
+            "EURUSD",
+            "--pivot-timeframe",
+            "H1",
+        ]
+
+    def test_keeps_global_confluence_timeframe_for_global_override(self):
+        functions = {"confluence_levels": {"func": lambda: None}}
+
+        out = _normalize_cli_argv_aliases(
+            ["--timeframe=H1", "confluence_levels", "EURUSD"],
+            functions,
+        )
+
+        assert out == ["--timeframe=H1", "confluence_levels", "EURUSD"]
+
 
 # ========================================================================
 # _example_value
