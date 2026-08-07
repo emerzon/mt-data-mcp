@@ -11,12 +11,12 @@ def test_get_bool_env_uses_default_when_unset_or_invalid(monkeypatch, caplog) ->
 
 
 def test_get_bool_env_accepts_project_truthy_values(monkeypatch) -> None:
-    for value in ("1", "true", "YES", "on"):
+    for value in ("1", "true", "YES", "y", "on"):
         monkeypatch.setenv("MTDATA_TEST_BOOL", value)
         assert get_bool_env("MTDATA_TEST_BOOL") is True
 
 
 def test_get_bool_env_accepts_project_false_values(monkeypatch) -> None:
-    for value in ("0", "false", "NO", "off"):
+    for value in ("0", "false", "NO", "n", "off"):
         monkeypatch.setenv("MTDATA_TEST_BOOL", value)
         assert get_bool_env("MTDATA_TEST_BOOL", default=True) is False

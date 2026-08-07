@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import logging
-import math
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 from ..shared.schema import DetailLiteral, TimeframeLiteral
+from ..utils.coercion import coerce_finite_float as _coerce_float
 from ..utils.market_metadata import build_tick_freshness_context
 from ..utils.time import format_datetime_utc
 from ._mcp_instance import mcp
@@ -309,16 +309,6 @@ def _snapshot_summary(
     if failed_sections:
         parts.append("failed=" + ",".join(failed_sections))
     return "; ".join(parts) + "."
-
-
-def _coerce_float(value: Any) -> Optional[float]:
-    try:
-        out = float(value)
-    except Exception:
-        return None
-    if not math.isfinite(out):
-        return None
-    return out
 
 
 def _first_level_value(levels: Any) -> Any:

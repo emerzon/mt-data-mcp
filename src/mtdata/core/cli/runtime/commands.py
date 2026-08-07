@@ -4,6 +4,7 @@ from typing import Any, Callable, Dict, List, Literal, Optional, Tuple, get_args
 
 from pydantic import ValidationError
 
+from ....utils.coercion import split_top_level_csv
 from ...error_envelope import build_error_payload
 from ...output_contract import normalize_output_extras
 
@@ -37,41 +38,10 @@ def normalize_cli_list_value(value: Any) -> Any:  # noqa: C901
         s = str(text or "").strip()
         if not s:
             return []
-        parts: List[str] = []
-        current: List[str] = []
-        depth = 0
-        in_quote: Optional[str] = None
-        for ch in s:
-            if in_quote:
-                current.append(ch)
-                if ch == in_quote:
-                    in_quote = None
-                continue
-            if ch in ('"', "'"):
-                in_quote = ch
-                current.append(ch)
-                continue
-            if ch in "([{":
-                depth += 1
-                current.append(ch)
-                continue
-            if ch in ")]}":
-                depth = max(0, depth - 1)
-                current.append(ch)
-                continue
-            if ch == "," and depth == 0:
-                token = "".join(current).strip()
-                if token:
-                    parts.append(token)
-                current = []
-                continue
-            current.append(ch)
-        token = "".join(current).strip()
-        if token:
-            parts.append(token)
+        parts = split_top_level_csv(s)
         if len(parts) > 1:
             return parts
-        return [token for token in s.split() if token]
+        return [part for part in s.split() if part]
 
     def _add_text_tokens(text: str) -> None:
         s = str(text or "").strip()

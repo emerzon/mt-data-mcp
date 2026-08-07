@@ -1690,6 +1690,11 @@ class TestNormalizeCliListValue:
     def test_string_comma_separated(self):
         assert _normalize_cli_list_value("a,b,c") == ["a", "b", "c"]
 
+    def test_nested_commas_are_not_split(self):
+        assert _normalize_cli_list_value(
+            'rsi(14),macd(12,26,9),label="fast,slow"'
+        ) == ["rsi(14)", "macd(12,26,9)", 'label="fast,slow"']
+
     def test_string_space_separated(self):
         assert _normalize_cli_list_value("a b c") == ["a", "b", "c"]
 

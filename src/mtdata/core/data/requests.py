@@ -22,7 +22,7 @@ from ...shared.schema import (
     normalize_required_symbol,
     reject_removed_field,
 )
-from ...utils.coercion import coerce_finite_float
+from ...utils.coercion import coerce_finite_float, split_top_level_csv
 from ..output_contract import normalize_output_detail
 
 _INDICATOR_FORMAT_HELP = (
@@ -41,42 +41,7 @@ DATA_FETCH_TICKS_MAX_LIMIT = 10_000
 
 
 def _split_indicator_tokens(spec: str) -> List[str]:
-    text = str(spec or "").strip()
-    if not text:
-        return []
-    parts: List[str] = []
-    current: List[str] = []
-    depth = 0
-    in_quote: Optional[str] = None
-    for ch in text:
-        if in_quote:
-            current.append(ch)
-            if ch == in_quote:
-                in_quote = None
-            continue
-        if ch in ('"', "'"):
-            in_quote = ch
-            current.append(ch)
-            continue
-        if ch in "([{":
-            depth += 1
-            current.append(ch)
-            continue
-        if ch in ")]}":
-            depth = max(0, depth - 1)
-            current.append(ch)
-            continue
-        if ch == "," and depth == 0:
-            token = "".join(current).strip()
-            if token:
-                parts.append(token)
-            current = []
-            continue
-        current.append(ch)
-    token = "".join(current).strip()
-    if token:
-        parts.append(token)
-    return parts
+    return split_top_level_csv(spec)
 
 
 def _looks_like_indicator_token_start(token: str) -> bool:

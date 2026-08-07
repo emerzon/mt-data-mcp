@@ -34,6 +34,7 @@ from pydantic import BaseModel, ValidationError
 from ...bootstrap.settings import load_environment
 from ...bootstrap.tools import bootstrap_tools, cli_tool_module_names
 from ...forecast.requests import ForecastGenerateRequest
+from ...utils.coercion import UNPARSED_BOOL, parse_bool_like
 from .._mcp_instance import mcp
 from .._mcp_tools import _get_pydantic_model_fields, _select_output_fields
 from .._mcp_tools import get_tool_registry as get_registered_tools
@@ -809,13 +810,9 @@ def _forecast_generate_typed_value_epilog() -> str:
 
 
 def _parse_cli_bool(value: Any) -> bool:
-    if isinstance(value, bool):
-        return value
-    text = str(value).strip().lower()
-    if text in {"1", "true", "yes", "y", "on"}:
-        return True
-    if text in {"0", "false", "no", "n", "off"}:
-        return False
+    parsed = parse_bool_like(value)
+    if parsed is not UNPARSED_BOOL:
+        return bool(parsed)
     raise argparse.ArgumentTypeError("expected true or false")
 
 

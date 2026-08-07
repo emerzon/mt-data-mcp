@@ -3,6 +3,7 @@ from mtdata.utils.coercion import (
     is_explicit_false,
     parse_bool_like,
     round_finite,
+    split_top_level_csv,
 )
 
 
@@ -19,6 +20,19 @@ def test_parse_bool_like_distinguishes_null_and_unrecognized_values():
     assert parse_bool_like([], allow_none=True) is UNPARSED_BOOL
     assert parse_bool_like(None, allow_none=True) is None
     assert parse_bool_like("null", allow_none=True) is None
+
+
+def test_split_top_level_csv_preserves_nested_and_quoted_commas() -> None:
+    assert split_top_level_csv(
+        'rsi(14),macd(12,26,9),label="fast,slow",bands[1,2]'
+    ) == [
+        "rsi(14)",
+        "macd(12,26,9)",
+        'label="fast,slow"',
+        "bands[1,2]",
+    ]
+    assert split_top_level_csv(" a, ,b ") == ["a", "b"]
+    assert split_top_level_csv("") == []
 
 
 def test_is_explicit_false_distinguishes_missing_from_falsey_values():
