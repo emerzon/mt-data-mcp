@@ -57,7 +57,14 @@ def _latest_stream_tick(gateway: Any, symbol: str, *, now_epoch: float) -> Any:
         return None
     if not candidates:
         return None
-    return max(candidates, key=lambda row: float(tick_epoch(row) or 0.0))
+    # CopyTicksRange returns ticks from oldest to newest.  Several updates can
+    # share a millisecond, so preserve that ordering when timestamps tie: max()
+    # alone would retain the first (stale) row with the newest timestamp.
+    _, latest_tick = max(
+        enumerate(candidates),
+        key=lambda item: (float(tick_epoch(item[1]) or 0.0), item[0]),
+    )
+    return latest_tick
 
 
 def _quote_pair(tick: Any) -> tuple[Optional[float], Optional[float]]:

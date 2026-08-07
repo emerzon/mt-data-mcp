@@ -1081,7 +1081,6 @@ def _normalize_market_ticker_payload(  # noqa: C901
             "spread_valid",
             "spread_quality",
             "quote_source_state",
-            "quote_source_conflict",
         ]
         if not _is_empty_value(payload.get("spread")):
             compact_keys.append("spread")

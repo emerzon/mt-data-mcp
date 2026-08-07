@@ -146,7 +146,6 @@ def _compact_market_ticker_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
         "warning",
         "quote_source",
         "quote_source_state",
-        "quote_source_conflict",
         "quote_refresh_attempted",
         "spread_valid",
         "spread_quality",

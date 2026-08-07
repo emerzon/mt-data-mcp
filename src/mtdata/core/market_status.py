@@ -1118,7 +1118,6 @@ def _check_symbol_market_status(
             "timestamp_warning",
             "quote_source",
             "quote_source_state",
-            "quote_source_conflict",
         ):
             if key in tick_status:
                 result[key] = tick_status[key]
