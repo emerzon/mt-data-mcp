@@ -501,8 +501,27 @@ def _reduce_feature_frame(
     *,
     reducer_factory: ReducerFactory = _create_dimred_reducer,
 ) -> Tuple[pd.DataFrame, Dict[str, Any]]:
+    reduced, _, info = _reduce_feature_frames(
+        X,
+        None,
+        dimred_method,
+        dimred_params,
+        reducer_factory=reducer_factory,
+    )
+    return reduced, info
+
+
+def _reduce_feature_frames(
+    X: pd.DataFrame,
+    future_row: Optional[pd.DataFrame],
+    dimred_method: Optional[str],
+    dimred_params: Optional[Dict[str, Any]],
+    *,
+    reducer_factory: ReducerFactory = _create_dimred_reducer,
+) -> Tuple[pd.DataFrame, Optional[pd.DataFrame], Dict[str, Any]]:
+    """Fit a reducer on training rows and transform the latest observed row."""
     if not dimred_method or len(X.columns) <= 1:
-        return X, {}
+        return X, future_row, {}
 
     X_num = X.apply(pd.to_numeric, errors="coerce")
     X_num = X_num.replace([np.inf, -np.inf], np.nan)
@@ -513,6 +532,26 @@ def _reduce_feature_frame(
     try:
         reducer, meta = reducer_factory(dimred_method, dimred_params)
         arr = np.asarray(reducer.fit_transform(X_num.to_numpy(dtype=float)), dtype=float)
+        future_arr = None
+        if future_row is not None:
+            supports_transform = getattr(reducer, "supports_transform", None)
+            if callable(supports_transform) and not bool(supports_transform()):
+                raise ValueError(
+                    "the reducer cannot transform the latest observed feature row; "
+                    "choose an out-of-sample reducer such as pca, svd, or umap"
+                )
+            transform = getattr(reducer, "transform", None)
+            if not callable(transform):
+                raise ValueError(
+                    "the reducer does not expose transform() for the latest "
+                    "observed feature row"
+                )
+            future_num = future_row.apply(pd.to_numeric, errors="coerce")
+            future_num = future_num.replace([np.inf, -np.inf], np.nan)
+            future_num = future_num.ffill().fillna(0.0)
+            future_arr = np.asarray(
+                transform(future_num.to_numpy(dtype=float)), dtype=float
+            )
     except Exception as exc:
         raise ValueError(
             f"Requested dimensionality reduction '{dimred_method}' failed: {exc}"
@@ -520,6 +559,8 @@ def _reduce_feature_frame(
 
     if arr.ndim == 1:
         arr = arr.reshape(-1, 1)
+    if future_arr is not None and future_arr.ndim == 1:
+        future_arr = future_arr.reshape(1, -1)
     prefix = str(dimred_method).lower().strip() or "dimred"
     cols = [f"{prefix}_{idx}" for idx in range(arr.shape[1])]
     info: Dict[str, Any] = {
@@ -530,7 +571,12 @@ def _reduce_feature_frame(
         info["dimred_params"] = meta
     elif dimred_params is not None:
         info["dimred_params"] = dimred_params
-    return pd.DataFrame(arr, index=X.index, columns=cols), info
+    reduced_future = (
+        pd.DataFrame(future_arr, index=future_row.index, columns=cols)
+        if future_arr is not None and future_row is not None
+        else None
+    )
+    return pd.DataFrame(arr, index=X.index, columns=cols), reduced_future, info
 
 
 def _apply_dimensionality_reduction(
@@ -592,11 +638,14 @@ def prepare_features(
         # Market-derived features are finalized with their target bar. Shift
         # them so each training row contains only information known before its
         # target was observed.
-        X_df = df[selected_cols].copy().shift(1).ffill().fillna(0.0)
+        observed_df = df[selected_cols].copy().ffill().fillna(0.0)
+        latest_observed = observed_df.iloc[[-1]]
+        X_df = observed_df.shift(1).ffill().fillna(0.0)
         dr_method = fcfg.get("dimred_method") or dimred_method
         dr_params = fcfg.get("dimred_params") or dimred_params
-        X_df, reduce_info = _reduce_feature_frame(
+        X_df, latest_observed, reduce_info = _reduce_feature_frames(
             X_df,
+            latest_observed,
             dr_method,
             dr_params,
             reducer_factory=reducer_factory,
@@ -615,7 +664,7 @@ def prepare_features(
                     "'carry_forward' for horizons above one; otherwise provide "
                     "only known future calendar covariates."
                 )
-            last_row = exog_train_arr[-1]
+            last_row = latest_observed.to_numpy(dtype=float)[-1]
             exog_future_arr = np.tile(last_row.reshape(1, -1), (int(horizon), 1))
             feat_info["observed_feature_lag_bars"] = 1
             feat_info["observed_future_policy"] = (

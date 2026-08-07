@@ -577,6 +577,60 @@ class TestPrepareFeatures:
         assert tr is not None
         assert tf.shape[0] == 3
 
+    def test_observed_future_uses_latest_unshifted_value(self):
+        df = pd.DataFrame(
+            {
+                "time": [1.0, 2.0, 3.0],
+                "close": [1.0, 2.0, 3.0],
+                "open": [10.0, 20.0, 30.0],
+            }
+        )
+
+        tr, tf, info = prepare_features(
+            df,
+            {"include": ["open"], "observed_future_policy": "carry_forward"},
+            [4.0, 5.0],
+            2,
+            parse_kv_or_json=lambda value: value,
+        )
+
+        assert tr[:, 0].tolist() == [0.0, 10.0, 20.0]
+        assert tf[:, 0].tolist() == [30.0, 30.0]
+        assert info["observed_feature_lag_bars"] == 1
+
+    def test_observed_future_transforms_latest_value_with_fitted_reducer(self):
+        class _Reducer:
+            def fit_transform(self, values):
+                return values[:, :1]
+
+            def transform(self, values):
+                return values[:, :1]
+
+        df = pd.DataFrame(
+            {
+                "time": [1.0, 2.0, 3.0],
+                "close": [1.0, 2.0, 3.0],
+                "open": [10.0, 20.0, 30.0],
+                "high": [11.0, 21.0, 31.0],
+            }
+        )
+
+        tr, tf, _ = prepare_features(
+            df,
+            {
+                "include": ["open", "high"],
+                "observed_future_policy": "carry_forward",
+                "dimred_method": "capture",
+            },
+            [4.0, 5.0],
+            2,
+            parse_kv_or_json=lambda value: value,
+            reducer_factory=lambda _method, _params: (_Reducer(), {}),
+        )
+
+        assert tr[:, 0].tolist() == [0.0, 10.0, 20.0]
+        assert tf[:, 0].tolist() == [30.0, 30.0]
+
     def test_calendar_only_no_cols(self):
         """Lines 587-588, 593-594: only calendar features, no include cols."""
         df = _make_df(20)
