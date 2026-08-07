@@ -8,13 +8,13 @@ from mtdata.utils.minimal_output import (
     _headers_from_dicts,
     _quote_key,
     _stringify_for_toon_value,
-    _stringify_scalar,
 )
 from mtdata.utils.minimal_output_toon import (
     _column_decimals,
     _quote_if_needed,
     _stringify_cell,
     _stringify_for_toon,
+    _stringify_scalar,
 )
 
 

@@ -7,19 +7,19 @@ from mtdata.utils.minimal_output import (
     _encode_expanded_array,
     _format_to_toon,
     _is_empty_value,
-    _is_scalar_value,
     _normalize_forecast_payload,
     _normalize_market_status_payload,
     _normalize_market_ticker_payload,
     _normalize_trade_payload,
     _normalize_trade_table_payload,
     _normalize_triple_barrier_payload,
-    _stringify_scalar,
     format_result_minimal,
 )
 from mtdata.utils.minimal_output_toon import (
     _encode_inline_array,
+    _is_scalar_value,
     _stringify_cell,
+    _stringify_scalar,
     format_table_toon,
 )
 
