@@ -45,6 +45,19 @@ def test_forecast_train_errors_point_to_trainable_method_discovery():
     assert out["related_tools"] == ["forecast_list_methods"]
 
 
+def test_generic_method_errors_use_the_failing_operation_help():
+    out = build_error_payload(
+        "Invalid method. Valid options: pearson, spearman",
+        code="invalid_method",
+        operation="correlation_matrix",
+    )
+
+    assert out["remediation"] == (
+        "Use this operation's --help and choose one of the listed method values."
+    )
+    assert "related_tools" not in out
+
+
 def test_normalize_error_payload_adds_symbol_lookup_guidance():
     out = normalize_error_payload(
         {

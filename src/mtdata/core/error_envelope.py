@@ -18,18 +18,6 @@ _ERROR_GUIDANCE: Dict[str, Dict[str, Any]] = {
         ),
         "related_tools": ["symbols_list"],
     },
-    "unsupported_method": {
-        "remediation": "Run forecast_list_methods and choose an available method.",
-        "related_tools": ["forecast_list_methods"],
-    },
-    "invalid_method": {
-        "remediation": "Run forecast_list_methods and choose an available method.",
-        "related_tools": ["forecast_list_methods"],
-    },
-    "method_unavailable": {
-        "remediation": "Run forecast_list_methods and choose an available method.",
-        "related_tools": ["forecast_list_methods"],
-    },
     "dependency_missing": {
         "remediation": (
             "Install the optional dependency group required by this method, then retry."
@@ -77,6 +65,9 @@ _GENERIC_ERROR_CODES = {
     "tool_error",
     "unknown_error",
 }
+_METHOD_ERROR_CODES = frozenset(
+    {"invalid_method", "unsupported_method", "method_unavailable"}
+)
 
 
 def new_request_id() -> str:
@@ -94,6 +85,12 @@ def _default_error_guidance(
         return dict(_ERROR_GUIDANCE[code_text])
     if code_text.endswith("_connection_error"):
         return dict(_ERROR_GUIDANCE["mt5_connection_error"])
+    if code_text in _METHOD_ERROR_CODES:
+        return {
+            "remediation": (
+                "Use this operation's --help and choose one of the listed method values."
+            )
+        }
     if operation_text == "forecast_train":
         return {
             "remediation": (
