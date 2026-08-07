@@ -1254,12 +1254,22 @@ def _normalize_candle_spread_columns(
         df.rename(columns={"spread": "spread_points"}, inplace=True)
     if "spread_points" not in df.columns:
         return
+    spread_points = pd.to_numeric(df["spread_points"], errors="coerce")
+    spread_available = spread_points.notna() & spread_points.gt(0.0)
+    df["spread_available"] = spread_available
+    df["spread_points"] = spread_points.astype(object).where(
+        spread_available,
+        None,
+    )
     if "spread_points" not in headers:
         headers.append("spread_points")
+    if "spread_available" not in headers:
+        headers.append("spread_available")
     if price_point is None or price_point <= 0.0:
         return
-    df["spread"] = pd.to_numeric(df["spread_points"], errors="coerce") * float(
-        price_point
+    df["spread"] = (spread_points * float(price_point)).astype(object).where(
+        spread_available,
+        None,
     )
     if "spread" not in headers:
         headers.insert(headers.index("spread_points"), "spread")
@@ -2359,74 +2369,34 @@ def fetch_candles(  # noqa: C901
         # If include_spread requested but spread data is missing or all zero, try fallback estimate from recent ticks.
         if include_spread:
             data_rows = payload.get("data", []) or []
-            has_spread_values = False
-            spread_all_zero = True
-            spread_value_count = 0
-            spread_zero_count = 0
-            spread_indices: List[int] = []
-            try:
-                spread_indices = [
-                    headers.index(field)
-                    for field in ("spread", "spread_points")
-                    if field in headers
-                ]
-            except Exception:
-                spread_indices = []
+            spread_row_count = len(data_rows)
+            spread_available_count = 0
             for row in data_rows:
                 if isinstance(row, dict):
-                    spread_value = row.get("spread_points", row.get("spread"))
-                    if spread_value is not None:
-                        has_spread_values = True
-                        spread_value_count += 1
-                        try:
-                            if float(spread_value) == 0.0:
-                                spread_zero_count += 1
-                            else:
-                                spread_all_zero = False
-                        except Exception:
-                            has_spread_values = True
-                            spread_all_zero = False
-                elif isinstance(row, (list, tuple)):
-                    for spread_idx in spread_indices:
-                        if spread_idx >= len(row):
-                            continue
-                        val = row[spread_idx]
-                        if val is not None:
-                            has_spread_values = True
-                            spread_value_count += 1
-                            try:
-                                if float(val) == 0.0:
-                                    spread_zero_count += 1
-                                else:
-                                    spread_all_zero = False
-                            except Exception:
-                                has_spread_values = True
-                                spread_all_zero = False
-                        break
-            spread_mostly_zero = (
-                has_spread_values
-                and spread_value_count >= 3
-                and spread_zero_count / float(spread_value_count) >= 0.75
+                    if row.get("spread_available") is True:
+                        spread_available_count += 1
+
+            spread_missing_count = max(0, spread_row_count - spread_available_count)
+            coverage_pct = (
+                (spread_available_count / float(spread_row_count)) * 100.0
+                if spread_row_count
+                else 0.0
             )
-            if not has_spread_values or spread_all_zero or spread_mostly_zero:
-                data_rows = _remove_unavailable_spread_from_candle_rows(
-                    data_rows,
-                    spread_indices=spread_indices,
+            payload["spread_historical_available"] = bool(
+                spread_row_count and spread_missing_count == 0
+            )
+            payload["spread_historical_coverage_pct"] = round(coverage_pct, 2)
+            payload["spread_missing_count"] = spread_missing_count
+            if spread_missing_count:
+                payload["spread_mode"] = (
+                    "partial_per_bar" if spread_available_count else "unavailable"
                 )
-                payload["data"] = data_rows
-                payload["spread_historical_available"] = False
-                payload["spread_mode"] = "unavailable"
-                payload.pop("spread_source", None)
-                units = payload.get("units")
-                if isinstance(units, dict):
-                    units.pop("spread", None)
-                    units.pop("spread_points", None)
-                    if not units:
-                        payload.pop("units", None)
-                if spread_mostly_zero and not spread_all_zero:
-                    payload.setdefault("meta", {}).setdefault("diagnostics", {}).setdefault(
-                        "spread_estimate", {}
-                    )["native_spread_quality"] = "mostly_zero"
+                payload.setdefault("warnings", []).append(
+                    "Historical candle spread is unavailable for "
+                    f"{spread_missing_count} of {spread_row_count} row(s); those "
+                    "spread values are null and must not be treated as zero cost."
+                )
+            if spread_available_count == 0:
                 try:
                     tick_stats = fetch_ticks(symbol, limit=5000, format="stats")
                     spread_stats = tick_stats.get("stats", {}).get("spread")
@@ -2521,25 +2491,6 @@ def _live_tick_spread(symbol: str) -> Optional[float]:
         return None
     spread = max(0.0, ask_f - bid_f)
     return spread if spread > 0.0 else None
-
-
-def _remove_unavailable_spread_from_candle_rows(
-    data_rows: list[Any],
-    *,
-    spread_indices: list[int],
-) -> list[Any]:
-    for i, row in enumerate(data_rows):
-        if isinstance(row, dict):
-            row.pop("spread", None)
-            row.pop("spread_points", None)
-            row.pop("spread_source", None)
-        else:
-            row_list = list(row)
-            for spread_idx in spread_indices:
-                if spread_idx < len(row_list):
-                    row_list[spread_idx] = None
-            data_rows[i] = row_list
-    return data_rows
 
 
 def _mt5_tick_flag_value(name: str, default: int) -> int:

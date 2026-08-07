@@ -227,18 +227,27 @@ class TestFetchCandlesCore(unittest.TestCase):
         result = fetch_candles('EURUSD', limit=5, ohlcv='C', include_spread=True)
         self.assertTrue(result.get('success'))
         row_keys = list(result['data'][0].keys())
-        self.assertEqual(row_keys, ['time', 'close', 'spread', 'spread_points'])
+        self.assertEqual(
+            row_keys,
+            ['time', 'close', 'spread', 'spread_points', 'spread_available'],
+        )
         self.assertEqual(result['data'][0]['spread'], 0.00001)
         self.assertEqual(result['data'][0]['spread_points'], 1)
+        self.assertTrue(result['data'][0]['spread_available'])
         self.assertEqual(result['units']['spread'], 'absolute_price')
         self.assertEqual(result['units']['spread_points'], 'broker_points')
         self.assertEqual(result['spread_source'], 'mt5_candle')
         self.assertEqual(result['spread_mode'], 'per_bar')
+        self.assertEqual(result['spread_historical_coverage_pct'], 100.0)
+        self.assertEqual(result['spread_missing_count'], 0)
 
     @patch(f'{_DS}.fetch_ticks')
     @patch(_MT5_CONFIG)
     @patch(_RATES_FROM)
-    @patch(_CACHED_INFO, return_value=MagicMock())
+    @patch(
+        _CACHED_INFO,
+        return_value=SimpleNamespace(digits=5, point=0.00001),
+    )
     @patch(_RESOLVE_CTZ, return_value=None)
     @patch(_ESTIMATE_WARMUP, return_value=0)
     @patch(_GUARD, _mock_symbol_guard)
@@ -265,11 +274,15 @@ class TestFetchCandlesCore(unittest.TestCase):
 
         self.assertTrue(result.get('success'))
         row = result['data'][0]
-        self.assertNotIn('spread', row)
+        self.assertIsNone(row['spread'])
+        self.assertIsNone(row['spread_points'])
+        self.assertFalse(row['spread_available'])
         self.assertFalse(result['spread_historical_available'])
         self.assertEqual(result['spread_mode'], 'single_reference')
-        self.assertNotIn('spread', result.get('units', {}))
-        self.assertNotIn('spread_points', result.get('units', {}))
+        self.assertEqual(result['spread_historical_coverage_pct'], 0.0)
+        self.assertEqual(result['spread_missing_count'], 5)
+        self.assertEqual(result['units']['spread'], 'absolute_price')
+        self.assertEqual(result['units']['spread_points'], 'broker_points')
         self.assertEqual(
             result['spread_reference'],
             {
@@ -284,6 +297,48 @@ class TestFetchCandlesCore(unittest.TestCase):
             if 'include_spread requested' in item
         ]
         self.assertEqual(len(spread_warnings), 1)
+
+    @patch(_MT5_CONFIG)
+    @patch(_RATES_FROM)
+    @patch(
+        _CACHED_INFO,
+        return_value=SimpleNamespace(digits=5, point=0.00001),
+    )
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_ESTIMATE_WARMUP, return_value=0)
+    @patch(_GUARD, _mock_symbol_guard)
+    def test_mixed_historical_spread_marks_only_zero_rows_unavailable(
+        self,
+        mock_warmup,
+        mock_ctz,
+        mock_info,
+        mock_from,
+        mock_cfg,
+    ):
+        mock_cfg.get_time_offset_seconds.return_value = 0
+        rates = _make_rates(10)
+        for index, row in enumerate(rates):
+            if index % 2:
+                row['spread'] = 0
+        mock_from.return_value = rates
+
+        result = fetch_candles('EURUSD', limit=5, ohlcv='C', include_spread=True)
+
+        self.assertTrue(result.get('success'))
+        self.assertFalse(result['spread_historical_available'])
+        self.assertEqual(result['spread_mode'], 'partial_per_bar')
+        self.assertGreater(result['spread_historical_coverage_pct'], 0.0)
+        self.assertLess(result['spread_historical_coverage_pct'], 100.0)
+        self.assertGreater(result['spread_missing_count'], 0)
+        self.assertLess(result['spread_missing_count'], len(result['data']))
+        unavailable_rows = [
+            row for row in result['data'] if not row['spread_available']
+        ]
+        self.assertTrue(unavailable_rows)
+        self.assertTrue(all(row['spread'] is None for row in unavailable_rows))
+        self.assertTrue(
+            all(row['spread_points'] is None for row in unavailable_rows)
+        )
 
     @patch(_MT5_CONFIG)
     @patch(_RATES_FROM)
