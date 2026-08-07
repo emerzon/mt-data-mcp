@@ -138,6 +138,33 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
         "arima, theta, or ensemble. Run forecast_list_methods with "
         "--detail standard --search-term NAME to browse the full namespace."
     ),
+    ("volatility_term_structure", "horizons"): (
+        "Comma-separated realized-volatility horizons in bars, for example 1,5,20."
+    ),
+    ("market_relative_strength", "horizons"): (
+        "Comma-separated ranking horizons in bars; values align one-to-one with --weights."
+    ),
+    ("market_relative_strength", "weights"): (
+        "Comma-separated non-negative ranking weights matching --horizons; normalized "
+        "to sum to 1."
+    ),
+    ("market_relative_strength", "limit"): "Max ranked symbols to return.",
+    ("options_chain", "limit"): "Max option contracts to return.",
+    ("options_heston_calibrate", "valuation_date"): (
+        "Valuation date in YYYY-MM-DD format; omit for today's date."
+    ),
+    ("volume_profile_levels", "limit"): (
+        "Historical bar count for a timeframe-based profile; requires --timeframe."
+    ),
+    ("outliers_detect", "limit"): "Max anomalous bars to return.",
+    ("temporal_analyze", "limit"): (
+        "Max grouped time buckets to return; pagination only, not the analysis window."
+    ),
+    ("temporal_analyze", "session_calendar"): "Session calendar: auto, fx, or equity.",
+    ("seasonality_detect", "max_period"): (
+        "Maximum candidate seasonal period in bars; defaults from available samples and "
+        "--min-cycles."
+    ),
     ("causal_discover_signals", "symbols"): (
         "Comma-separated MT5 symbols (e.g. EURUSD,GBPUSD); one symbol auto-expands "
         "to its MT5 group. Optional with --group."

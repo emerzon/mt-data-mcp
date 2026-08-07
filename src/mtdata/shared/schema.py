@@ -76,7 +76,7 @@ def reject_removed_field(values: Any, *, field_name: str, replacement: str) -> A
 PARAM_HINTS = {
     **PARAMETER_HELP,
     "direction": "Trade direction (long/short).",
-    "limit": "Max rows/bars to return.",
+    "limit": "Maximum count; see command help for what is counted.",
     "offset": "Rows to skip before returning paginated results.",
     "start": "Start time (dateparser).",
     "end": "End time (dateparser).",

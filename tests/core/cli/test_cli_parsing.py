@@ -846,6 +846,32 @@ class TestParseKvString:
 
 
 class TestResolveParamKwargs:
+    @pytest.mark.parametrize(
+        ("command", "parameter", "expected"),
+        [
+            ("volatility_term_structure", "horizons", "horizons in bars"),
+            ("market_relative_strength", "weights", "matching --horizons"),
+            ("market_relative_strength", "limit", "ranked symbols"),
+            ("options_chain", "limit", "option contracts"),
+            ("volume_profile_levels", "limit", "Historical bar count"),
+            ("outliers_detect", "limit", "anomalous bars"),
+            ("temporal_analyze", "limit", "time buckets"),
+            ("temporal_analyze", "session_calendar", "auto, fx, or equity"),
+            ("options_heston_calibrate", "valuation_date", "YYYY-MM-DD"),
+            ("seasonality_detect", "max_period", "period in bars"),
+        ],
+    )
+    def test_command_help_explains_reported_units_and_objects(
+        self, command, parameter, expected
+    ):
+        kwargs, _ = _resolve_param_kwargs(
+            {"name": parameter, "type": str, "required": False, "default": None},
+            None,
+            cmd_name=command,
+        )
+
+        assert expected in kwargs["help"]
+
     def test_basic_str_param(self):
         param = {"name": "symbol", "type": str, "required": True, "default": None}
         kwargs, is_mapping = _resolve_param_kwargs(param, None)
@@ -1102,7 +1128,7 @@ class TestResolveParamKwargs:
         param = {"name": "method", "type": str, "required": False, "default": None}
         kwargs, _ = _resolve_param_kwargs(param, None, cmd_name="correlation_matrix")
 
-        assert kwargs["help"] == "Method/algorithm for this tool."
+        assert kwargs["help"] == "Correlation coefficient: pearson or spearman."
         assert "forecast_list_methods" not in kwargs["help"]
 
     def test_common_analysis_params_have_specific_help(self):
@@ -1142,7 +1168,7 @@ class TestResolveParamKwargs:
             cmd_name="regime_detect",
         )
 
-        assert "Preprocessing transform" in transform_kwargs["help"]
+        assert "Price transform" in transform_kwargs["help"]
         assert transform_kwargs["help"] != "transform parameter"
         assert "Minimum bars a detected regime must span" in min_regime_kwargs["help"]
         assert min_regime_kwargs["help"] != "min_regime_bars parameter"
