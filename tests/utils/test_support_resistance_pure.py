@@ -5,6 +5,7 @@ import pandas as pd
 import pytest
 
 from mtdata.utils.support_resistance import (
+    _analyze_cluster_state,
     _build_fibonacci_level,
     _build_zone_overlap,
     _collect_support_resistance_warnings,
@@ -840,6 +841,35 @@ def test_adaptive_settings_excludes_recent_window_from_baseline():
     assert result["baseline_atr_pct"] == pytest.approx(0.01)
     assert result["current_atr_pct"] == pytest.approx(0.03)
     assert result["volatility_ratio"] == pytest.approx(3.0)
+
+
+def test_cluster_break_analysis_groups_contiguous_breaches():
+    cluster = {
+        "support_episodes": 1,
+        "resistance_episodes": 0,
+        "zone_low": 99.0,
+        "zone_high": 101.0,
+        "zone_width_atr": 2.0,
+        "tests": [{"type": "support", "index": 0}],
+        "score_base": 10.0,
+    }
+    closes = np.asarray([100.0, 98.0, 97.0, 99.5, 98.5, np.nan, 100.0])
+    epochs = [float(index) for index in range(len(closes))]
+
+    _analyze_cluster_state(
+        cluster,
+        closes=closes,
+        epochs=epochs,
+        tolerance_pct=0.001,
+    )
+
+    assert cluster["decisive_break_count"] == 2
+    assert cluster["first_break_index"] == 1
+    assert cluster["last_break_index"] == 4
+    assert cluster["first_break_time"] == 1.0
+    assert cluster["last_break_time"] == 4.0
+    assert cluster["avg_breach_atr"] == pytest.approx(1.25)
+    assert cluster["status"] == "broken"
 
 
 def test_episode_counting_keeps_raw_touches_secondary_to_distinct_tests():
