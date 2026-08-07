@@ -61,7 +61,7 @@ Fast, dependency-free references and solid intraday baselines.
 | `naive` | — | Last value carried forward |
 | `drift` | — | Last value plus average drift |
 | `seasonal_naive` | requires `seasonality` | Repeats the last seasonal cycle |
-| `theta` | `alpha=0.2` | Robust, fast general-purpose baseline |
+| `theta` | — (no user-settable method parameters) | Robust, fast general-purpose baseline; fitted alpha is reported in `params_used` |
 | `fourier_ols` | `terms=auto` (≈`min(3, m/2)`), `trend=true` | OLS on Fourier terms; good for periodic series |
 
 ```bash

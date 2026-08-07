@@ -364,9 +364,9 @@ def _build_pattern_response(
     detail: PatternsDetailLiteral = "compact",
 ) -> Dict[str, Any]:
     """Build the response dict for pattern detection results."""
-    # Harmonic detectors report completed Fibonacci structures only. Treat
-    # those completions as the mode's primary findings instead of applying the
-    # forming-only visibility policy used by lifecycle-aware detectors.
+    # Harmonic candidates have both forming and completed lifecycle states.
+    # Treat both as the mode's primary findings rather than applying the
+    # forming-only visibility policy used by the other detectors.
     include_completed = bool(include_completed or str(mode).lower() == "harmonic")
     # Filter patterns based on include_completed
     filtered = _visible_pattern_rows(patterns, include_completed=include_completed)
@@ -1424,8 +1424,8 @@ def patterns_detect(
     
     include_completed : bool, optional (default=False)
         Include completed structures alongside forming results. Harmonic mode
-        always returns its completed structures because it has no forming
-        lifecycle output.
+        returns both forming and completed candidates because both are its
+        primary findings.
     
     Returns:
     --------

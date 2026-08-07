@@ -38,7 +38,9 @@ def extract_rolling_features(
     Args:
         series: 1D numpy array of time series values.
         window_size: Size of the rolling window.
-        minimal: If True, use EfficientFCParameters to limit to low-compute features.
+        minimal: If True, use mtdata's small hand-picked set of dynamic and
+            distributional features. If False, use tsfresh's broader
+            EfficientFCParameters set.
 
     Returns:
         DataFrame where each row corresponds to the features of the window ending at that index.

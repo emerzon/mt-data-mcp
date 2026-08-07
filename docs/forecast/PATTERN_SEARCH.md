@@ -69,11 +69,11 @@ mtdata-cli patterns_detect EURUSD --timeframe H1 --mode classic --limit 500
 
 Fibonacci-ratio patterns built from alternating pivot legs.
 
-The harmonic detector reports completed XABCD/ABCD structures rather than
-forming candidates. These completions are the primary harmonic findings and
-are therefore returned even when the shared `--include-completed` flag is
-false. That flag continues to control historical visibility for lifecycle-aware
-classic, Elliott, and fractal modes.
+The harmonic detector reports both forming and completed XABCD/ABCD candidates.
+Those lifecycle states are both primary harmonic findings and are therefore
+returned even when the shared `--include-completed` flag is false. That flag
+continues to control historical visibility for classic, Elliott, and fractal
+modes.
 
 ```bash
 mtdata-cli patterns_detect EURUSD --timeframe H1 --mode harmonic --limit 500
