@@ -275,6 +275,11 @@ def _build_triple_barrier_outputs(
             hold.append(tp_offset)
             tp_times.append(_format_time_minimal(times[idx + tp_offset]))
             sl_times.append(_format_time_minimal(times[idx + sl_offset]))
+        elif is_same_bar and same_bar_policy == "sl_first":
+            labels.append(-1)
+            hold.append(sl_offset)
+            tp_times.append(_format_time_minimal(times[idx + tp_offset]))
+            sl_times.append(_format_time_minimal(times[idx + sl_offset]))
         elif sl_offset > 0 and (tp_offset < 0 or sl_offset <= tp_offset):
             labels.append(-1)
             hold.append(sl_offset)

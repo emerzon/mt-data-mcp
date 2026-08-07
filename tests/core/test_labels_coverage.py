@@ -732,7 +732,7 @@ class TestLabelsTripleBarrier:
         assert result["success"] is True
         assert result["labels"][0] == -1
         assert result["holding_bars"][0] == 1
-        assert result["tp_time"][0] is None
+        assert result["tp_time"][0] == "1970-01-01T01:00Z"
         assert result["sl_time"][0] == "1970-01-01T01:00Z"
         assert result["same_bar"][0] is True
 
