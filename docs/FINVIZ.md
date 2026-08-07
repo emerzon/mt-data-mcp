@@ -285,7 +285,7 @@ mtdata-cli finviz_calendar --start 2026-03-01 --end 2026-03-15 --json
 |-----------|---------|-------------|
 | `--calendar` | `economic` | `economic`, `earnings`, or `dividends` |
 | `--impact` | (all) | Economic only: `low`, `medium`, `high` |
-| `--start` | (optional) | Start date `YYYY-MM-DD` |
+| `--start` | current New York date | Start date `YYYY-MM-DD`; omitted ranges anchor to `America/New_York`, independent of host timezone. |
 | `--end` | (optional) | End date `YYYY-MM-DD` |
 | `--limit` | 20 | Max events |
 | `--page` | 1 | Pagination page |
@@ -295,6 +295,9 @@ Economic calendar data is based on Finviz JSON API fields: `date`, `event`,
 `previous`, `category`, `reference`, and `referenceDate` when present. The
 `finviz_calendar` tool presents these as normalized keys, including `symbol`
 for Finviz `ticker` and `reference_date` for `referenceDate`.
+Root output includes `date_from`, `date_to`, and `calendar_timezone` so defaulted
+calendar ranges remain explicit. Event timestamps use the separate root
+`timezone` field.
 
 ### `finviz_earnings`
 

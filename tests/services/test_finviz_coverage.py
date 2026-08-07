@@ -69,9 +69,18 @@ class TestComputeScreenerFetchLimit:
 # ---------------------------------------------------------------------------
 
 class TestResolveDateRange:
-    def test_defaults(self):
-        d_from, d_to = svc._resolve_date_range(date_from=None, date_to=None, default_days=7)
-        assert d_from == datetime.date.today().isoformat()
+    def test_defaults_use_new_york_calendar_date(self):
+        with patch(
+            "mtdata.services.finviz.dates._finviz_market_date",
+            return_value=datetime.date(2026, 1, 1),
+        ):
+            d_from, d_to = svc._resolve_date_range(
+                date_from=None,
+                date_to=None,
+                default_days=7,
+            )
+        assert d_from == "2026-01-01"
+        assert d_to == "2026-01-08"
 
     def test_explicit_range(self):
         d_from, d_to = svc._resolve_date_range(date_from="2024-06-01", date_to="2024-06-15", default_days=7)
@@ -120,6 +129,18 @@ class TestAlignToMondayIfWeekend:
             svc._align_to_next_monday_if_weekend("2024-06-09T12:34:56junk")
 
 class TestDatesModuleIsoParsing:
+    def test_market_date_uses_new_york_before_utc_midnight(self):
+        now_utc = datetime.datetime(
+            2026,
+            1,
+            2,
+            2,
+            0,
+            tzinfo=datetime.timezone.utc,
+        )
+
+        assert finviz_dates._finviz_market_date(now_utc) == datetime.date(2026, 1, 1)
+
     def test_normalize_finviz_date_string_accepts_iso_datetime(self):
         assert finviz_dates.normalize_finviz_date_string("2024-06-09T12:34:56Z") == "2024-06-09"
 
@@ -235,4 +256,3 @@ class TestFetchFinvizCalendarPaged:
         mock_get.return_value = mock_resp
         with pytest.raises(TypeError, match="missing items"):
             svc._fetch_finviz_calendar_paged(kind="earnings", date_from="2024-06-01", date_to="2024-06-07", page=1, page_size=50)
-

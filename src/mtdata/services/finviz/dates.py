@@ -1,6 +1,18 @@
 """Date normalization utilities for Finviz service."""
 import datetime
 from typing import Any, Dict, List, Optional
+from zoneinfo import ZoneInfo
+
+FINVIZ_CALENDAR_TIMEZONE = "America/New_York"
+_FINVIZ_CALENDAR_TZ = ZoneInfo(FINVIZ_CALENDAR_TIMEZONE)
+
+
+def _finviz_market_date(now: Optional[datetime.datetime] = None) -> datetime.date:
+    """Return the current Finviz calendar date in US Eastern time."""
+    current = now or datetime.datetime.now(datetime.timezone.utc)
+    if current.tzinfo is None:
+        current = current.replace(tzinfo=datetime.timezone.utc)
+    return current.astimezone(_FINVIZ_CALENDAR_TZ).date()
 
 
 def parse_iso_date_input(value: Any, *, field_name: str) -> datetime.date:
@@ -80,7 +92,7 @@ def resolve_date_range(
 ) -> tuple[str, str]:
     """Resolve an ISO date range for Finviz API calls.
 
-    Defaults: ``date_from`` to today when omitted; ``date_to`` to
+    Defaults: ``date_from`` to the current America/New_York date when omitted; ``date_to`` to
     ``date_from + default_days`` when omitted. Requires ``date_from`` when
     ``date_to`` is provided, and enforces ``date_to >= date_from``.
     """
@@ -91,7 +103,7 @@ def resolve_date_range(
         df = parse_iso_date_input(date_from, field_name="date_from")
         from_str = df.isoformat()
     else:
-        df = datetime.date.today()
+        df = _finviz_market_date()
         from_str = df.isoformat()
 
     if date_to:
@@ -123,6 +135,7 @@ def align_to_next_monday_if_weekend(date_from: str) -> str:
 
 
 __all__ = [
+    "FINVIZ_CALENDAR_TIMEZONE",
     "parse_iso_date_input",
     "normalize_finviz_date_string",
     "normalize_finviz_dates_in_rows",

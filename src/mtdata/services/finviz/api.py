@@ -12,6 +12,7 @@ from .client import (
     get_finviz_screener_max_rows,
 )
 from .dates import (
+    FINVIZ_CALENDAR_TIMEZONE,
     align_to_next_monday_if_weekend,
     normalize_finviz_dates_in_rows,
     resolve_date_range,
@@ -977,6 +978,7 @@ def get_economic_calendar(
             "impact": impact_norm,
             "dateFrom": date_from,
             "dateTo": date_to,
+            "calendarTimezone": FINVIZ_CALENDAR_TIMEZONE,
             "count": len(items_list),
             "total": total,
             "page": safe_page,
@@ -1019,6 +1021,7 @@ def get_earnings_calendar_api(
             "calendar": "earnings",
             "dateFrom": date_from,
             "dateTo": date_to,
+            "calendarTimezone": FINVIZ_CALENDAR_TIMEZONE,
             "count": len(items),
             "total": total,
             "page": int(payload.get("page") or safe_page),
@@ -1060,6 +1063,7 @@ def get_dividends_calendar_api(
             "calendar": "dividends",
             "dateFrom": date_from,
             "dateTo": date_to,
+            "calendarTimezone": FINVIZ_CALENDAR_TIMEZONE,
             "count": len(items),
             "total": total,
             "page": int(payload.get("page") or safe_page),

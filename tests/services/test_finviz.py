@@ -526,6 +526,7 @@ class TestFinvizService:
 
         assert result["success"] is True
         assert result["source"] == "finviz_api"
+        assert result["calendarTimezone"] == "America/New_York"
         assert result["count"] == 2
         assert result["total"] == 2
         assert len(result["items"]) == 2
@@ -636,6 +637,7 @@ class TestFinvizService:
         assert result["calendar"] == "earnings"
         assert result["dateFrom"] == "2026-01-05"
         assert result["dateTo"] == "2026-01-12"
+        assert result["calendarTimezone"] == "America/New_York"
         assert result["count"] == 1
         assert result["total"] == 1
         assert len(result["items"]) == 1
@@ -679,6 +681,7 @@ class TestFinvizService:
         assert result["calendar"] == "dividends"
         assert result["dateFrom"] == "2026-01-05"
         assert result["dateTo"] == "2026-01-12"
+        assert result["calendarTimezone"] == "America/New_York"
         assert result["count"] == 1
         assert result["total"] == 1
         assert len(result["items"]) == 1
@@ -2404,6 +2407,7 @@ class TestFinvizTools:
 
         service_result = {
             "success": True,
+            "calendarTimezone": "America/New_York",
             "items": [
                 {
                     "ticker": "UNITEDSTANONFAR",
@@ -2436,6 +2440,7 @@ class TestFinvizTools:
             }
         ]
         assert result["timezone"] == "UTC"
+        assert result["calendar_timezone"] == "America/New_York"
         assert "symbol" not in result["items"][0]
 
     def test_finviz_dividend_calendar_labels_amounts_and_yield_units(self):
