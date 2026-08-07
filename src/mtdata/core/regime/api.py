@@ -54,6 +54,40 @@ from .smoothing import (
 
 logger = logging.getLogger(__name__)
 
+
+def _rolling_prefix_std(values: np.ndarray, lookback: int) -> np.ndarray:
+    """Return the legacy inclusive rolling standard deviation without Python loops."""
+    array = np.asarray(values, dtype=float)
+    ends = np.arange(1, array.size + 1, dtype=int)
+    starts = np.maximum(0, ends - (int(lookback) + 1))
+    counts = ends - starts
+    cumulative = np.concatenate(([0.0], np.cumsum(array)))
+    cumulative_squares = np.concatenate(([0.0], np.cumsum(array**2)))
+    means = (cumulative[ends] - cumulative[starts]) / counts
+    variances = (
+        (cumulative_squares[ends] - cumulative_squares[starts]) / counts
+        - means**2
+    )
+    return np.sqrt(np.maximum(variances, 0.0))
+
+
+def _rolling_band_energy(bands: List[np.ndarray], window: int) -> np.ndarray:
+    """Compute leading-partial rolling mean-square energy for each band."""
+    if not bands:
+        return np.empty((0, 0), dtype=float)
+    n_bars = len(bands[0])
+    energy_matrix = np.zeros((n_bars, len(bands)), dtype=float)
+    window_ends = np.arange(1, n_bars + 1, dtype=int)
+    window_starts = np.maximum(0, window_ends - int(window))
+    window_lengths = window_ends - window_starts
+    for band_index, band in enumerate(bands):
+        squared = np.asarray(band, dtype=float) ** 2
+        cumulative = np.concatenate(([0.0], np.cumsum(squared)))
+        energy_matrix[:, band_index] = (
+            cumulative[window_ends] - cumulative[window_starts]
+        ) / window_lengths
+    return energy_matrix
+
 _PELT_DIRECTION_T_STAT_THRESHOLD = 1.96
 _ENSEMBLE_STATE_METHODS = frozenset(
     {"hmm", "gmm", "ms_ar", "clustering", "wavelet"}
@@ -2600,9 +2634,9 @@ def regime_detect(  # noqa: C901
                     window = 5
 
                 # Rolling standard deviation of returns
-                rolling_vol = np.array(
-                    [np.std(x[max(0, i - window) : i + 1]) for i in range(len(x))]
-                )
+                # The historical implementation used ``i - window`` as the
+                # inclusive start, so preserve its window + 1 observations.
+                rolling_vol = _rolling_prefix_std(x, window)
                 rolling_vol = rolling_vol[np.isfinite(rolling_vol) & (rolling_vol > 0)]
 
                 if len(rolling_vol) > 10:
@@ -3210,15 +3244,7 @@ def regime_detect(  # noqa: C901
             # Compute rolling energy (variance) for each band
             n_bars = len(x)
             n_bands = len(bands)
-            energy_matrix = np.zeros((n_bars, n_bands))
-            for bi, band in enumerate(bands):
-                sq = band**2
-                # Cumulative sum for fast rolling mean
-                cs = np.concatenate([[0.0], np.cumsum(sq)])
-                for t in range(n_bars):
-                    lo = max(0, t - energy_window + 1)
-                    hi = t + 1
-                    energy_matrix[t, bi] = (cs[hi] - cs[lo]) / max(1, hi - lo)
+            energy_matrix = _rolling_band_energy(bands, energy_window)
 
             # Normalize energy rows to proportions (energy distribution across scales)
             row_sums = energy_matrix.sum(axis=1, keepdims=True)
