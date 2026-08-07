@@ -9,6 +9,7 @@ from typing import Any, Dict, Optional
 
 from ..shared.schema import DetailLiteral, TimeframeLiteral
 from ..utils.market_metadata import build_tick_freshness_context
+from ..utils.time import format_datetime_utc
 from ._mcp_instance import mcp
 from .error_envelope import build_error_payload
 from .execution_logging import run_logged_operation
@@ -99,11 +100,8 @@ def _compact_quote(quote: Any, *, detail: str = "compact") -> Any:
         if display_time not in (None, ""):
             normalized_quote["time"] = display_time
         else:
-            normalized_quote["time"] = (
+            normalized_quote["time"] = format_datetime_utc(
                 datetime.fromtimestamp(float(raw_time), tz=timezone.utc)
-                .replace(microsecond=0)
-                .isoformat()
-                .replace("+00:00", "Z")
             )
     elif display_time not in (None, "") and raw_time in (None, ""):
         normalized_quote["time"] = display_time
@@ -171,11 +169,8 @@ def _revalidate_snapshot_quote(
 
 
 def _utc_iso_text(epoch_seconds: float) -> str:
-    return (
+    return format_datetime_utc(
         datetime.fromtimestamp(float(epoch_seconds), tz=timezone.utc)
-        .replace(microsecond=0)
-        .isoformat()
-        .replace("+00:00", "Z")
     )
 
 
@@ -793,12 +788,7 @@ def market_snapshot(
         }
         health = _snapshot_health(symbol, selected, section_payloads)
         assembled_at_dt = datetime.now(timezone.utc)
-        assembled_at = (
-            assembled_at_dt
-            .replace(microsecond=0)
-            .isoformat()
-            .replace("+00:00", "Z")
-        )
+        assembled_at = format_datetime_utc(assembled_at_dt)
         quote_warning = _revalidate_snapshot_quote(
             section_payloads,
             symbol=symbol,

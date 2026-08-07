@@ -1,7 +1,11 @@
 from datetime import datetime, timedelta, timezone
 
 import mtdata.utils.time as time_utils
-from mtdata.utils.time import format_epoch_utc, format_relative_time
+from mtdata.utils.time import (
+    format_datetime_utc,
+    format_epoch_utc,
+    format_relative_time,
+)
 
 
 def test_format_epoch_utc_uses_second_resolution() -> None:
@@ -11,6 +15,28 @@ def test_format_epoch_utc_uses_second_resolution() -> None:
 def test_format_epoch_utc_rejects_invalid_values() -> None:
     assert format_epoch_utc(None) is None
     assert format_epoch_utc("not-an-epoch") is None
+
+
+def test_format_datetime_utc_normalizes_offsets_and_resolution() -> None:
+    local_value = datetime(
+        2026,
+        8,
+        7,
+        8,
+        30,
+        15,
+        123456,
+        tzinfo=timezone(timedelta(hours=-5)),
+    )
+
+    assert format_datetime_utc(local_value) == "2026-08-07T13:30:15Z"
+    assert (
+        format_datetime_utc(local_value, timespec="microseconds")
+        == "2026-08-07T13:30:15.123456Z"
+    )
+    assert format_datetime_utc(local_value.replace(tzinfo=None)) == (
+        "2026-08-07T08:30:15Z"
+    )
 
 
 def test_client_local_formatters_share_resolved_timezone(monkeypatch) -> None:

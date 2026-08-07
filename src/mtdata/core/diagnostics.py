@@ -23,6 +23,7 @@ from ..utils.mt5 import (
     ensure_mt5_connection_or_raise,
     mt5,
 )
+from ..utils.time import format_datetime_utc
 from ._mcp_instance import mcp
 from .execution_logging import run_logged_operation
 from .mt5_gateway import create_mt5_gateway
@@ -578,7 +579,10 @@ def outliers_detect(
             }
             raw_score = float(bar["_score"])
             item: Dict[str, Any] = {
-                "time": datetime.fromtimestamp(float(bar["time"]), tz=timezone.utc).isoformat().replace("+00:00", "Z"),
+                "time": format_datetime_utc(
+                    datetime.fromtimestamp(float(bar["time"]), tz=timezone.utc),
+                    timespec="auto",
+                ),
                 "score": round(raw_score if math.isfinite(raw_score) else float(threshold), 4),
                 "fields": [
                     field

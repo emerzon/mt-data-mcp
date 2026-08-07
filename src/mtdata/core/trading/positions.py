@@ -11,7 +11,7 @@ from ...shared.constants import BROKER_VOLUME_UNIT
 from ...utils.market_metadata import build_tick_freshness_context
 from ...utils.mt5 import account_currency_from_gateway
 from ...utils.quote import tick_epoch
-from ...utils.time import format_epoch_utc
+from ...utils.time import format_datetime_utc, format_epoch_utc
 from ...utils.utils import _normalize_limit
 from .._mcp_instance import mcp
 from ..execution_logging import run_logged_operation
@@ -388,9 +388,7 @@ def _normalize_trade_read_output(
         "items": [],
     }
     if kind in ("open_positions", "pending_orders"):
-        out["as_of"] = (
-            datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
-        )
+        out["as_of"] = format_datetime_utc(datetime.now(timezone.utc))
     if kind == "trade_history":
         filters_applied = _trade_history_filters_applied(request)
         if filters_applied:

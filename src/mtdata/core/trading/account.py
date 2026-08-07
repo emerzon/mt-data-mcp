@@ -20,6 +20,8 @@ from ...utils.time import (
     _format_time_minimal,
     _format_time_minimal_local,
     _use_client_tz,
+    format_datetime_utc,
+    format_epoch_utc,
 )
 from ...utils.utils import (
     _normalize_limit,
@@ -769,12 +771,7 @@ def _trade_account_iso_from_epoch(value: Any, *, milliseconds: bool = False) -> 
     if milliseconds or epoch > 10_000_000_000:
         epoch /= 1000.0
     try:
-        return (
-            datetime.fromtimestamp(epoch, tz=timezone.utc)
-            .replace(microsecond=0)
-            .isoformat()
-            .replace("+00:00", "Z")
-        )
+        return format_epoch_utc(epoch)
     except Exception:
         return None
 
@@ -896,12 +893,7 @@ def trade_account_info(
             pass
 
         retrieved_dt = datetime.now(timezone.utc).replace(microsecond=0)
-        retrieved_at = (
-            retrieved_dt
-            .replace(microsecond=0)
-            .isoformat()
-            .replace("+00:00", "Z")
-        )
+        retrieved_at = format_datetime_utc(retrieved_dt)
         payload = {
             "success": True,
             "source": "mt5_account_snapshot",

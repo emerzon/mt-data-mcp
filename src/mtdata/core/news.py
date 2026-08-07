@@ -8,7 +8,7 @@ from typing import Any, Dict, Optional
 
 from ..services.unified_news import fetch_unified_news
 from ..shared.schema import DetailLiteral
-from ..utils.time import format_relative_time
+from ..utils.time import format_datetime_utc, format_relative_time
 from ._mcp_instance import mcp
 from .execution_logging import run_logged_operation
 from .output_contract import normalize_output_verbosity_detail
@@ -110,16 +110,11 @@ def _news_iso_utc(value: Any) -> Any:
     published_at = _news_datetime_utc(value)
     if published_at is None:
         return value
-    return published_at.isoformat().replace("+00:00", "Z")
+    return format_datetime_utc(published_at, timespec="auto")
 
 
 def _news_data_fetched_at() -> str:
-    return (
-        datetime.now(timezone.utc)
-        .replace(microsecond=0)
-        .isoformat()
-        .replace("+00:00", "Z")
-    )
+    return format_datetime_utc(datetime.now(timezone.utc))
 
 
 def _news_compact_time_field(

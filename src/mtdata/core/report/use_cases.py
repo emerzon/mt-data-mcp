@@ -7,6 +7,7 @@ import warnings
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
+from ...utils.time import format_datetime_utc
 from ..execution_logging import log_operation_exception, run_logged_operation
 from ..output_contract import normalize_output_detail
 from .requests import ReportGenerateRequest
@@ -101,7 +102,7 @@ def _parse_report_timestamp(value: Any) -> datetime | None:
 
 
 def _format_report_timestamp(value: datetime) -> str:
-    return value.astimezone(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+    return format_datetime_utc(value)
 
 
 _REPORT_TIMESTAMP_KEYS = frozenset(

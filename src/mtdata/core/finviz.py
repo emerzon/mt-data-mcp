@@ -38,6 +38,7 @@ from ..services.finviz.symbols import (
 from ..services.news_text import normalize_news_text
 from ..shared.schema import DetailLiteral
 from ..shared.symbols import finviz_forex_symbol_to_mt5
+from ..utils.time import format_datetime_utc
 from ._mcp_instance import mcp
 from .error_envelope import build_error_payload
 from .execution_logging import run_logged_operation
@@ -216,12 +217,7 @@ def _require_equity_symbol(
 
 
 def _finviz_data_fetched_at() -> str:
-    return (
-        datetime.now(timezone.utc)
-        .replace(microsecond=0)
-        .isoformat()
-        .replace("+00:00", "Z")
-    )
+    return format_datetime_utc(datetime.now(timezone.utc))
 
 
 def _attach_finviz_fetch_timestamp(payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -2159,9 +2155,7 @@ def _normalize_finviz_economic_calendar_time(item: Dict[str, Any]) -> Dict[str, 
     normalized["local_time"] = local_dt.replace(microsecond=0).isoformat()
     normalized["local_timezone"] = _FINVIZ_CALENDAR_LOCAL_TIMEZONE
     utc_time = parsed.astimezone(timezone.utc)
-    normalized["date"] = (
-        utc_time.replace(microsecond=0).isoformat().replace("+00:00", "Z")
-    )
+    normalized["date"] = format_datetime_utc(utc_time)
     return normalized
 
 
@@ -2175,12 +2169,7 @@ def _normalize_finviz_earnings_calendar_time(item: Dict[str, Any]) -> Dict[str, 
     if parsed is None:
         return normalized
     local_dt = parsed.astimezone(_FINVIZ_CALENDAR_LOCAL_TZ)
-    utc_text = (
-        parsed.astimezone(timezone.utc)
-        .replace(microsecond=0)
-        .isoformat()
-        .replace("+00:00", "Z")
-    )
+    utc_text = format_datetime_utc(parsed)
     normalized["earnings_date"] = utc_text
     normalized["date"] = utc_text
     normalized["local_time"] = local_dt.replace(microsecond=0).isoformat()

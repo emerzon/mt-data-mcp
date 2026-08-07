@@ -30,7 +30,7 @@ from ..utils.freshness import (
 from ..utils.market_metadata import build_tick_freshness_context
 from ..utils.sessions import market_session_label, session_definition_for_clock
 from ..utils.tick_flags import mt5_trade_event_mask
-from ..utils.time import format_epoch_utc
+from ..utils.time import format_datetime_utc, format_epoch_utc
 
 
 def _mapping(row: Any) -> Dict[str, Any]:
@@ -1257,8 +1257,8 @@ def _observed_spread_bps(
             False,
             {
                 "basis": "tick_window",
-                "start": from_dt.isoformat().replace("+00:00", "Z"),
-                "end": to_dt.isoformat().replace("+00:00", "Z"),
+                "start": format_datetime_utc(from_dt, timespec="auto"),
+                "end": format_datetime_utc(to_dt, timespec="auto"),
                 "observations": int(len(valid)),
             },
         )
@@ -1268,8 +1268,8 @@ def _observed_spread_bps(
         False,
         {
             "basis": "tick_window",
-            "start": from_dt.isoformat().replace("+00:00", "Z"),
-            "end": to_dt.isoformat().replace("+00:00", "Z"),
+            "start": format_datetime_utc(from_dt, timespec="auto"),
+            "end": format_datetime_utc(to_dt, timespec="auto"),
             "observations": 0,
         },
     )

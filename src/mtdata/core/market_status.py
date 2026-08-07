@@ -23,6 +23,7 @@ from ..utils.mt5 import (
 )
 from ..utils.mt5_enums import decode_mt5_enum_label
 from ..utils.quote import resolve_quote_tick, tick_epoch, tick_value
+from ..utils.time import format_datetime_utc
 from ._mcp_instance import mcp
 from .execution_logging import run_logged_operation
 from .mt5_gateway import create_mt5_gateway
@@ -205,17 +206,6 @@ def _coerce_optional_bool(value: Any) -> Optional[bool]:
         return None
 
 
-def _format_utc_iso_z(dt: datetime) -> str:
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
-    return (
-        dt.astimezone(timezone.utc)
-        .replace(microsecond=0)
-        .isoformat()
-        .replace("+00:00", "Z")
-    )
-
-
 def _format_local_iso(dt: datetime) -> str:
     return dt.replace(second=0, microsecond=0).isoformat()
 
@@ -257,7 +247,7 @@ def _format_market_time(value: Any, display: str) -> Any:
         return value
     if dt.tzinfo is None:
         return value
-    return _format_utc_iso_z(dt)
+    return format_datetime_utc(dt)
 
 
 def _apply_market_timezone_display(
@@ -269,7 +259,7 @@ def _apply_market_timezone_display(
     if display != "utc":
         return status
     out = dict(status)
-    out["display_time"] = _format_utc_iso_z(now_local)
+    out["display_time"] = format_datetime_utc(now_local)
     for key in ("next_open", "next_close"):
         if key in out:
             out[key] = _format_market_time(out[key], display)
@@ -735,7 +725,7 @@ def _symbol_tick_snapshot(
     quote_epoch = tick_epoch(tick)
     if quote_epoch is not None:
         try:
-            out["last_tick_time"] = _format_utc_iso_z(
+            out["last_tick_time"] = format_datetime_utc(
                 datetime.fromtimestamp(quote_epoch, tz=timezone.utc)
             )
             freshness = build_tick_freshness_context(
@@ -924,18 +914,18 @@ def _symbol_market_now(
 ) -> tuple[str, str, str]:
     display_mode = str(display or "server").strip().lower()
     if display_mode == "utc":
-        return "utc", "UTC", _format_utc_iso_z(now_utc)
+        return "utc", "UTC", format_datetime_utc(now_utc)
     if display_mode == "local":
         client_tzinfo, client_label = _runtime_meta_tzinfo(client)
         if client_tzinfo is not None:
             market_now = now_utc.astimezone(client_tzinfo).replace(microsecond=0).isoformat()
             return "client", client_label or "local", market_now
-        return "utc", "UTC", _format_utc_iso_z(now_utc)
+        return "utc", "UTC", format_datetime_utc(now_utc)
     server_tzinfo, server_label = _runtime_meta_tzinfo(server, allow_offset=True)
     if server_tzinfo is not None:
         market_now = now_utc.astimezone(server_tzinfo).replace(microsecond=0).isoformat()
         return "server", server_label or "server", market_now
-    return "utc", "UTC", _format_utc_iso_z(now_utc)
+    return "utc", "UTC", format_datetime_utc(now_utc)
 
 
 def _check_symbol_market_status(
@@ -1070,7 +1060,7 @@ def _check_symbol_market_status(
             "inferred_24_7": schedule_status.get("inferred_24_7"),
         },
         "message": message,
-        "data_fetched_at": _format_utc_iso_z(now_utc),
+        "data_fetched_at": format_datetime_utc(now_utc),
         "timezone": "UTC",
         "timezone_context": _symbol_market_status_timezone_context(
             timezone_display,
@@ -1455,7 +1445,7 @@ def market_status(
                 "This no-symbol view covers major equity exchanges only; pass a "
                 "broker symbol for MT5 tradability and quote-freshness status."
             ),
-            "data_fetched_at": _format_utc_iso_z(now_utc),
+            "data_fetched_at": format_datetime_utc(now_utc),
             "timezone": "UTC",
             "day_of_week": now_utc.strftime("%A"),
             "region": region or "all",

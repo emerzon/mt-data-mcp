@@ -39,12 +39,13 @@ from ..utils.support_resistance import (
     merge_support_resistance_results,
     standard_support_resistance_payload,
 )
-from ..utils.time import bar_close_epoch
 from ..utils.time import (
     _format_time_minimal,
     _format_time_minimal_local,
     _resolve_client_tz,
     _use_client_tz,
+    bar_close_epoch,
+    format_datetime_utc,
 )
 from ..utils.utils import _positive_float_attr
 from ._mcp_instance import mcp
@@ -842,7 +843,7 @@ def confluence_levels(  # noqa: C901
             payload["reference_price_source"] = reference_price_source
             if reference_price_source == "live_tick":
                 payload["reference_quote_as_of"] = (
-                    datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+                    format_datetime_utc(datetime.now(timezone.utc))
                 )
             else:
                 payload.setdefault("warnings", []).append(

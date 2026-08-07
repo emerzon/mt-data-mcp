@@ -74,14 +74,22 @@ def format_epoch_utc(value: Any) -> Optional[str]:
     """Format epoch seconds as second-resolution RFC 3339 UTC."""
     try:
         timestamp = float(value)
-        return (
-            datetime.fromtimestamp(timestamp, timezone.utc)
-            .replace(microsecond=0)
-            .isoformat()
-            .replace("+00:00", "Z")
+        return format_datetime_utc(
+            datetime.fromtimestamp(timestamp, timezone.utc),
+            timespec="seconds",
         )
     except (OSError, OverflowError, TypeError, ValueError):
         return None
+
+
+def format_datetime_utc(value: datetime, *, timespec: str = "seconds") -> str:
+    """Format a datetime as RFC 3339 UTC, treating naive values as UTC."""
+    resolved = (
+        value.replace(tzinfo=timezone.utc)
+        if value.tzinfo is None
+        else value.astimezone(timezone.utc)
+    )
+    return resolved.isoformat(timespec=timespec).replace("+00:00", "Z")
 
 
 def format_relative_time(value: datetime, *, now: Optional[datetime] = None) -> str:

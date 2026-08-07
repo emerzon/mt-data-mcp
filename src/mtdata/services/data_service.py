@@ -105,6 +105,7 @@ from ..utils.time import (
     _format_time_explicit_local,
     _resolve_client_tz,
     bar_close_epoch,
+    format_datetime_utc,
     format_epoch_utc,
 )
 from ..utils.utils import (
@@ -816,7 +817,7 @@ def _format_resolved_query_bound(value: datetime) -> str:
         else value.astimezone(dt_timezone.utc)
     )
     timespec = "microseconds" if resolved.microsecond else "seconds"
-    return resolved.isoformat(timespec=timespec).replace("+00:00", "Z")
+    return format_datetime_utc(resolved, timespec=timespec)
 
 
 def _future_start_error(
