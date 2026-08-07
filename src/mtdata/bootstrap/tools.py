@@ -106,11 +106,15 @@ def bootstrap_tools(module_names: Optional[Iterable[str]] = None) -> tuple[Modul
     unknown = [name for name in requested if name not in TOOL_MODULE_NAMES]
     if unknown:
         raise ValueError(f"Unknown tool bootstrap module(s): {', '.join(unknown)}")
+    imported_any = False
     for name in requested:
         if name not in _BOOTSTRAPPED_MODULES:
             _BOOTSTRAPPED_MODULES[name] = import_module(name)
+            imported_any = True
 
-    # This is intentionally repeatable: warm-shell calls can import another
-    # module later, whose newly registered tools still need shared schemas.
-    attach_schemas_to_tools(mcp, get_shared_enum_lists())
+    # A warm shell may load another module later. That import triggers one new
+    # attachment pass for the expanded registry; repeated calls over the same
+    # module set do not need to deep-copy every schema again.
+    if imported_any:
+        attach_schemas_to_tools(mcp, get_shared_enum_lists())
     return tuple(_BOOTSTRAPPED_MODULES[name] for name in requested)
