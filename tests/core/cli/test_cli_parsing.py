@@ -76,7 +76,7 @@ def test_non_bar_commands_do_not_receive_global_timeframe() -> None:
     }.issubset(cli_api._TIMEFRAMELESS_GLOBAL_COMMANDS)
 
 
-def test_required_symbol_is_not_bracketed_in_help() -> None:
+def test_required_symbol_help_shows_positional_and_flag_forms() -> None:
     from mtdata.core.cli import api as cli_api
 
     def sample_tool(symbol: str) -> None:
@@ -93,7 +93,7 @@ def test_required_symbol_is_not_bracketed_in_help() -> None:
     )
 
     help_text = parser.format_help()
-    assert "usage: mtdata-cli sample_tool [-h] symbol" in help_text
+    assert "usage: mtdata-cli sample_tool [-h] [--symbol SYMBOL] [symbol]" in help_text
     assert "Trading symbol (e.g. EURUSD). (required)" in help_text
 
 
@@ -232,12 +232,11 @@ class TestAddForecastGenerateArgs:
         assert args.detail == "compact"
         assert args.print_config is True
 
-    def test_symbol_is_required_and_has_no_flag_alias(self):
+    def test_symbol_accepts_flag_alias(self):
         parser = argparse.ArgumentParser()
         _add_forecast_generate_args(parser)
-        with pytest.raises(SystemExit) as exc_info:
-            parser.parse_args(["--symbol", "GBPUSD"])
-        assert exc_info.value.code == 2
+        args = parser.parse_args(["--symbol", "GBPUSD"])
+        assert args.symbol == "GBPUSD"
 
     def test_detail_accepts_summary(self):
         parser = argparse.ArgumentParser()
@@ -515,7 +514,7 @@ class TestAddDynamicArguments:
         assert "--set" in help_text
         assert "--params-params" not in help_text
 
-    def test_first_required_param_rejects_flag_alias(self):
+    def test_first_required_param_accepts_flag_alias(self):
         parser = argparse.ArgumentParser()
         func_info = {
             "params": [
@@ -524,11 +523,11 @@ class TestAddDynamicArguments:
             ]
         }
         add_dynamic_arguments(parser, func_info)
-        with pytest.raises(SystemExit) as exc_info:
-            parser.parse_args(["--symbol", "EURUSD", "--count", "20"])
-        assert exc_info.value.code == 2
+        args = parser.parse_args(["--symbol", "EURUSD", "--count", "20"])
+        assert args.symbol == "EURUSD"
+        assert args.count == 20
 
-    def test_first_required_param_has_only_positional_action(self):
+    def test_first_required_param_has_positional_and_flag_actions(self):
         parser = argparse.ArgumentParser()
         func_info = {
             "params": [
@@ -539,8 +538,9 @@ class TestAddDynamicArguments:
         symbol_actions = [
             action for action in parser._actions if action.dest == "symbol"
         ]
-        assert len(symbol_actions) == 1
-        assert symbol_actions[0].option_strings == []
+        assert len(symbol_actions) == 2
+        assert any(action.option_strings == [] for action in symbol_actions)
+        assert any(action.option_strings == ["--symbol"] for action in symbol_actions)
 
     def test_single_word_flag_is_not_duplicated(self):
         parser = argparse.ArgumentParser()
