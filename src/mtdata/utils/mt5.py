@@ -1166,14 +1166,15 @@ def _compact_symbol_name(value: Any) -> str:
     return "".join(ch for ch in str(value or "").upper() if ch.isalnum())
 
 
-def resolve_broker_symbol_name(symbol: str) -> str:
+def resolve_broker_symbol_name(symbol: str, *, gateway: Any = None) -> str:
     query = str(symbol or "").strip()
     if not query:
         return query
+    symbol_source = gateway if gateway is not None else mt5
     try:
         names = [
             str(getattr(info, "name", "") or "").strip()
-            for info in (mt5.symbols_get() or [])
+            for info in (symbol_source.symbols_get() or [])
         ]
     except Exception:
         return query

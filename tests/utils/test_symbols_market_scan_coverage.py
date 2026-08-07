@@ -75,7 +75,7 @@ def test_market_scan_spread_cost_uses_account_currency() -> None:
     assert row["bid"] == 170.0
     assert row["ask"] == 170.01
     assert row["mid"] == 170.005
-    assert row["quote_as_of"] == "1970-01-01T00:00Z"
+    assert row["quote_as_of"] is None
     assert row["spread_cost_per_lot"] == pytest.approx(7.5)
     assert row["spread_cost_currency"] == "USD"
 
@@ -360,6 +360,53 @@ def test_market_scan_default_limit_is_concise():
     from mtdata.core.symbols import market_scan
 
     assert signature(_unwrap(market_scan)).parameters["limit"].default == 10
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "message"),
+    [
+        ({"limit": 0}, "limit must be a positive integer"),
+        ({"max_spread_pct": -0.1}, "max_spread_pct must be"),
+        ({"min_tick_volume": -1}, "min_tick_volume must be"),
+        ({"rsi_below": 101}, "rsi_below must be"),
+        ({"rsi_above": -1}, "rsi_above must be"),
+    ],
+)
+def test_market_scan_rejects_invalid_constraints_before_mt5(kwargs, message):
+    from mtdata.core import symbols as symbols_mod
+
+    with patch.object(symbols_mod, "create_mt5_gateway") as create_gateway:
+        result = _unwrap(symbols_mod.market_scan)(**kwargs)
+
+    assert result["success"] is False
+    assert result["error_code"] == "invalid_input"
+    assert message in result["error"]
+    create_gateway.assert_not_called()
+
+
+def test_market_scan_spread_row_reconciles_newer_stream_quote() -> None:
+    from mtdata.core.symbols import _build_market_scan_spread_row
+
+    symbol = _make_symbol("EURUSD", digits=4)
+    gateway = SimpleNamespace(
+        COPY_TICKS_ALL=0,
+        symbol_info_tick=lambda _symbol: SimpleNamespace(
+            bid=1.1000, ask=1.1002, time=1_700_000_000.0
+        ),
+        copy_ticks_range=lambda *_args: [
+            {"bid": 1.1010, "ask": 1.1012, "time": 1_700_000_010.0}
+        ],
+        last_error=lambda: None,
+    )
+
+    with patch("mtdata.core.symbols.time.time", return_value=1_700_000_011.0):
+        row, error = _build_market_scan_spread_row(symbol, gateway)
+
+    assert error is None
+    assert row["bid"] == 1.101
+    assert row["ask"] == 1.1012
+    assert row["quote_source"] == "mt5.copy_ticks_range"
+    assert row["quote_source_state"] == "refreshed_from_tick_stream"
 
 
 @patch("mtdata.core.symbols.time.time", return_value=10_000.0)

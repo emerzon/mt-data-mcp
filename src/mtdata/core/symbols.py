@@ -34,9 +34,15 @@ from ..utils.mt5 import (
     account_currency_from_gateway,
     ensure_mt5_connection_or_raise,
     mt5,
+    resolve_broker_symbol_name,
 )
 from ..utils.mt5_enums import decode_mt5_bitmask_labels, decode_mt5_enum_label
-from ..utils.quote import _quote_pair_quality
+from ..utils.quote import (
+    _quote_pair_quality,
+    resolve_quote_tick,
+    tick_epoch,
+    tick_value,
+)
 from ..utils.symbol import (
     _extract_group_path as _extract_group_path_util,
 )
@@ -1351,7 +1357,11 @@ def symbols_describe(  # noqa: C901
                 ensure_connection_impl=ensure_mt5_connection_or_raise,
             )
             mt5_gateway.ensure_connection()
-            symbol_info = mt5_gateway.symbol_info(symbol)
+            resolved_symbol = resolve_broker_symbol_name(
+                symbol,
+                gateway=mt5_gateway,
+            )
+            symbol_info = mt5_gateway.symbol_info(resolved_symbol)
             if symbol_info is None:
                 suggestions = _find_symbol_suggestions(mt5_gateway, symbol)
                 details: Dict[str, Any] = {
@@ -1507,6 +1517,8 @@ def symbols_describe(  # noqa: C901
                 "timezone": _client_timezone_label(client_tz),
                 "details": symbol_data,
             }
+            if resolved_symbol != str(symbol or "").strip():
+                payload["symbol_input"] = str(symbol)
             warning = symbol_data.get("currency_base_warning")
             if warning not in (None, ""):
                 payload["warnings"] = [warning]
@@ -1749,13 +1761,20 @@ def _build_market_scan_spread_row(
     *,
     spread_cost_currency: Optional[str] = None,
 ) -> tuple[Optional[Dict[str, Any]], Optional[str]]:
-    tick = mt5_gateway.symbol_info_tick(symbol.name)
+    raw_tick = mt5_gateway.symbol_info_tick(symbol.name)
+    tick, quote_source = resolve_quote_tick(
+        mt5_gateway,
+        symbol.name,
+        raw_tick,
+        now_epoch=time.time(),
+        stale_after_seconds=_MARKET_SCAN_STALE_QUOTE_SECONDS,
+    )
     if tick is None:
         return None, f"Failed to get tick data: {mt5_gateway.last_error()}"
 
-    bid = _market_scan_float(getattr(tick, "bid", None))
-    ask = _market_scan_float(getattr(tick, "ask", None))
-    tick_time = _market_scan_float(getattr(tick, "time", None))
+    bid = _market_scan_float(tick_value(tick, "bid"))
+    ask = _market_scan_float(tick_value(tick, "ask"))
+    tick_time = tick_epoch(tick)
     spread_quality = _quote_pair_quality(tick)
     if spread_quality == "one_sided" or bid is None or ask is None:
         return None, "Bid/ask quote is unavailable."
@@ -1765,7 +1784,9 @@ def _build_market_scan_spread_row(
 
     point = _market_scan_float(getattr(symbol, "point", 0.0)) or 0.0
     tick_size = _market_scan_float(getattr(symbol, "trade_tick_size", 0.0)) or 0.0
-    tick_value = _market_scan_float(getattr(symbol, "trade_tick_value", 0.0)) or 0.0
+    trade_tick_value = (
+        _market_scan_float(getattr(symbol, "trade_tick_value", 0.0)) or 0.0
+    )
     digits = max(0, int(getattr(symbol, "digits", 0) or 0))
 
     spread_abs = float(ask - bid)
@@ -1780,8 +1801,8 @@ def _build_market_scan_spread_row(
     spread_pct = ((spread_abs / mid) * 100.0) if mid > 0 else None
     spread_cost_per_lot = None
     pricing_basis = "quote_only"
-    if tick_size > 0 and tick_value > 0 and spread_cost_currency:
-        spread_cost_per_lot = (spread_abs / tick_size) * tick_value
+    if tick_size > 0 and trade_tick_value > 0 and spread_cost_currency:
+        spread_cost_per_lot = (spread_abs / tick_size) * trade_tick_value
         pricing_basis = "per_1_lot_estimate"
 
     quote_freshness = _market_scan_quote_freshness_fields(
@@ -1810,6 +1831,7 @@ def _build_market_scan_spread_row(
             "quote_as_of": (
                 _format_time_explicit(tick_time) if tick_time is not None else None
             ),
+            **quote_source,
             **quote_freshness,
             "spread": _market_scan_round(spread_abs, digits=digits),
             "spread_points": _market_scan_points(spread_points),
@@ -3655,6 +3677,72 @@ def market_scan(  # noqa: C901
                     request=request,
                 )
 
+            if limit is None:
+                limit_value = 10
+            else:
+                try:
+                    limit_value = int(limit)
+                except Exception:
+                    limit_value = 0
+                if limit_value <= 0:
+                    return _market_scan_error(
+                        "limit must be a positive integer.",
+                        code="invalid_input",
+                        request=request,
+                    )
+            request["limit"] = limit_value
+            try:
+                offset_value = int(offset or 0)
+            except Exception:
+                return _market_scan_error(
+                    "offset must be a non-negative integer.",
+                    code="invalid_input",
+                    request=request,
+                )
+            if offset_value < 0:
+                return _market_scan_error(
+                    "offset must be >= 0.",
+                    code="invalid_input",
+                    request=request,
+                )
+            request["offset"] = offset_value
+
+            for filter_name, filter_value in (
+                ("max_spread_pct", max_spread_pct),
+                ("rsi_below", rsi_below),
+                ("rsi_above", rsi_above),
+            ):
+                if filter_value is None:
+                    continue
+                numeric = _market_scan_float(filter_value)
+                invalid = numeric is None
+                if filter_name == "max_spread_pct":
+                    invalid = invalid or numeric < 0.0
+                else:
+                    invalid = invalid or not 0.0 <= numeric <= 100.0
+                if invalid:
+                    expected = (
+                        "a non-negative percentage"
+                        if filter_name == "max_spread_pct"
+                        else "between 0 and 100"
+                    )
+                    return _market_scan_error(
+                        f"{filter_name} must be {expected}.",
+                        code="invalid_input",
+                        request=request,
+                    )
+            if min_tick_volume is not None:
+                try:
+                    min_tick_volume_value = int(min_tick_volume)
+                except Exception:
+                    min_tick_volume_value = -1
+                if min_tick_volume_value < 0:
+                    return _market_scan_error(
+                        "min_tick_volume must be a non-negative integer.",
+                        code="invalid_input",
+                        request=request,
+                    )
+
             include_rsi = (
                 detail_mode != "compact"
                 or rank_by_value == "rsi"
@@ -3696,23 +3784,6 @@ def market_scan(  # noqa: C901
                     request=request,
                 )
 
-            limit_value = _normalize_limit(limit) or 10
-            request["limit"] = limit_value
-            try:
-                offset_value = int(offset or 0)
-            except Exception:
-                return _market_scan_error(
-                    "offset must be a non-negative integer.",
-                    code="invalid_input",
-                    request=request,
-                )
-            if offset_value < 0:
-                return _market_scan_error(
-                    "offset must be >= 0.",
-                    code="invalid_input",
-                    request=request,
-                )
-            request["offset"] = offset_value
             if selection_meta.get("symbols_input") is not None:
                 request["symbols_input"] = selection_meta.get("symbols_input")
             request["scope"] = selection_meta.get("scope")

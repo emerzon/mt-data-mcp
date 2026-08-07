@@ -122,6 +122,9 @@ def test_market_status_symbol_mode_reports_heuristic_status(monkeypatch) -> None
                 trade_mode=4,
             )
 
+        def symbols_get(self):
+            return [SimpleNamespace(name="EURUSD")]
+
         def symbol_info_tick(self, symbol: str):
             assert symbol == "EURUSD"
             return SimpleNamespace(time=now_epoch, bid=1.1, ask=1.2)
@@ -139,10 +142,11 @@ def test_market_status_symbol_mode_reports_heuristic_status(monkeypatch) -> None
         lambda **kwargs: GatewayWithEmptySchedule(),
     )
 
-    result = raw(symbol="eurusd", timezone_display="utc")
+    result = raw(symbol="EUR/USD", timezone_display="utc")
 
     assert result["mode"] == "symbol"
     assert result["symbol"] == "EURUSD"
+    assert result["symbol_input"] == "EUR/USD"
     assert result["timezone"] == "UTC"
     assert result["status"] == "probably_open"
     assert result["status_source"] == "trade_mode_and_tick_freshness"

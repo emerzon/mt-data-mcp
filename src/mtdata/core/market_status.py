@@ -19,6 +19,7 @@ from ..utils.mt5 import (
     MT5ConnectionError,
     _normalize_times_in_struct,
     ensure_mt5_connection_or_raise,
+    resolve_broker_symbol_name,
 )
 from ..utils.mt5_enums import decode_mt5_enum_label
 from ..utils.quote import resolve_quote_tick, tick_value
@@ -945,8 +946,8 @@ def _check_symbol_market_status(
     timezone_display: str = "server",
     gateway: Any = None,
 ) -> Dict[str, Any]:
-    symbol_name = str(symbol or "").strip().upper()
-    if not symbol_name:
+    symbol_input = str(symbol or "").strip()
+    if not symbol_input:
         return {"error": "symbol cannot be empty."}
 
     mt5_gateway = gateway if gateway is not None else create_mt5_gateway(
@@ -956,6 +957,11 @@ def _check_symbol_market_status(
         mt5_gateway.ensure_connection()
     except MT5ConnectionError as exc:
         return {"error": str(exc)}
+
+    symbol_name = resolve_broker_symbol_name(
+        symbol_input.upper(),
+        gateway=mt5_gateway,
+    )
 
     info = mt5_gateway.symbol_info(symbol_name)
     if info is None:
@@ -1072,6 +1078,8 @@ def _check_symbol_market_status(
             now_utc=now_utc,
         ),
     }
+    if symbol_name != symbol_input:
+        result["symbol_input"] = symbol_input
     if reason:
         result["reason"] = reason
     if detail == "full":

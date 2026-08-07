@@ -2,6 +2,7 @@
 
 Covers lines 20-199 by mocking MT5.
 """
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -733,6 +734,24 @@ class TestSymbolsDescribe:
         sd = res["details"]
         assert sd.get("digits") == 5
         assert "spread" not in sd  # excluded
+
+    @patch(f"{_MT5}.symbols_get")
+    @patch(f"{_MT5}.symbol_info")
+    def test_describe_resolves_punctuated_broker_symbol(
+        self, mock_info, mock_symbols_get
+    ):
+        info = MagicMock()
+        info.__dir__ = lambda self: ["name", "digits"]
+        info.name = "EURUSD"
+        info.digits = 5
+        mock_info.return_value = info
+        mock_symbols_get.return_value = [SimpleNamespace(name="EURUSD")]
+
+        result = _get_symbols_describe()("EUR/USD")
+
+        mock_info.assert_called_once_with("EURUSD")
+        assert result["symbol"] == "EURUSD"
+        assert result["symbol_input"] == "EUR/USD"
 
     @patch(f"{_MT5}.symbol_info")
     def test_skip_none_values(self, mock_info):
