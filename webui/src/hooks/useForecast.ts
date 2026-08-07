@@ -155,7 +155,7 @@ export function useSupportResistance(symbol: string, timeframe: string, limit: n
       setError(null)
       const data = await getSupportResistance({
         symbol,
-        timeframe: 'auto',
+        timeframe,
         lookback: limit,
       })
       const parsed = [
