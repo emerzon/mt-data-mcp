@@ -19,7 +19,12 @@ from ..utils.utils import (
     _parse_start_datetime,
     _positive_float_attr,
 )
-from ..utils.volume_profile import VolumeProfileConfig, compute_volume_profile
+from ..utils.volume_profile import (
+    VolumeProfileConfig,
+    VolumeProfilePriceSourceLiteral,
+    VolumeProfileVolumeSourceLiteral,
+    compute_volume_profile,
+)
 from ._mcp_instance import mcp
 from .execution_logging import run_logged_operation
 from .mt5_gateway import create_mt5_gateway
@@ -28,15 +33,6 @@ from .output_contract import normalize_output_extras
 logger = logging.getLogger(__name__)
 
 VolumeProfileSourceLiteral = Literal["auto", "ticks", "m1_bars"]
-VolumeProfilePriceSourceLiteral = Literal["mid", "last", "bid", "ask"]
-VolumeProfileVolumeSourceLiteral = Literal[
-    "auto",
-    "real_volume",
-    "tick_volume",
-    "volume_real",
-    "volume",
-    "tick_count",
-]
 
 _DEFAULT_MAX_TICK_WINDOW_DAYS = 1
 _DEFAULT_MAX_TICKS = 50_000

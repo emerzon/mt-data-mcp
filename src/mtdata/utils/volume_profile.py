@@ -3,26 +3,39 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 from decimal import ROUND_FLOOR, Decimal, localcontext
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import (
+    Any,
+    Dict,
+    Iterable,
+    List,
+    Literal,
+    Optional,
+    Sequence,
+    Tuple,
+    get_args,
+)
 
 from .coercion import round_finite
 from .tick_flags import is_mt5_trade_event
 
-_PRICE_SOURCES = {"mid", "last", "bid", "ask"}
-_VOLUME_SOURCES = {
+VolumeProfilePriceSourceLiteral = Literal["mid", "last", "bid", "ask"]
+VolumeProfileVolumeSourceLiteral = Literal[
     "auto",
     "real_volume",
     "tick_volume",
     "volume_real",
     "volume",
     "tick_count",
-}
+]
+
+_PRICE_SOURCES = frozenset(get_args(VolumeProfilePriceSourceLiteral))
+_VOLUME_SOURCES = frozenset(get_args(VolumeProfileVolumeSourceLiteral))
 
 
 @dataclass
 class VolumeProfileConfig:
-    price_source: str = "mid"
-    volume_source: str = "auto"
+    price_source: VolumeProfilePriceSourceLiteral = "mid"
+    volume_source: VolumeProfileVolumeSourceLiteral = "auto"
     bucket_size: Optional[float] = None
     bucket_points: Optional[float] = None
     bucket_count: Optional[int] = None

@@ -1,9 +1,30 @@
+from typing import get_args
+
 from mtdata.utils.volume_profile import (
     VolumeProfileConfig,
+    VolumeProfilePriceSourceLiteral,
+    VolumeProfileVolumeSourceLiteral,
     _bucket_prices,
     annotate_level_confluence,
     compute_volume_profile,
 )
+
+
+def test_volume_profile_source_literals_define_validation_options() -> None:
+    assert set(get_args(VolumeProfilePriceSourceLiteral)) == {
+        "mid",
+        "last",
+        "bid",
+        "ask",
+    }
+    assert set(get_args(VolumeProfileVolumeSourceLiteral)) == {
+        "auto",
+        "real_volume",
+        "tick_volume",
+        "volume_real",
+        "volume",
+        "tick_count",
+    }
 
 
 def test_bucket_edges_use_same_decimal_grid_as_bucket_index() -> None:
