@@ -83,12 +83,16 @@ def compute_pivot_method_levels(
             "S2": pivot - range_value,
         }
     elif name == "demark":
-        if close < open_:
-            x_value = high + 2 * low + close
-        elif close > open_:
-            x_value = 2 * high + low + close
-        else:
+        # MT5 price inputs are quantized to the symbol's point. Treat values
+        # within half a point as a doji so binary floating-point residue does
+        # not select a directional DeMark branch.
+        point_tolerance = 0.5 * 10.0 ** (-max(0, int(digits)))
+        if math.isclose(close, open_, rel_tol=0.0, abs_tol=point_tolerance):
             x_value = high + low + 2 * close
+        elif close < open_:
+            x_value = high + 2 * low + close
+        else:
+            x_value = 2 * high + low + close
         pivot = x_value / 4.0
         levels_raw = {
             "PP": pivot,

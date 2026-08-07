@@ -675,6 +675,22 @@ class TestPivotMethods:
         X = H + L + 2 * C
         assert abs(m["demark"]["PP"] - X / 4.0) < 1e-6
 
+    def test_demark_uses_doji_branch_for_same_tick_float_residue(self):
+        high, low, open_price = 1.2, 1.0, 1.1
+        close_price = 1.10000000001
+        result = compute_pivot_method_levels(
+            "demark",
+            open_price=open_price,
+            high_price=high,
+            low_price=low,
+            close_price=close_price,
+            digits=10,
+        )
+
+        expected_x = high + low + 2 * close_price
+        assert result is not None
+        assert result["pivot"] == round(expected_x / 4.0, 10)
+
 
 class TestPivotNanPrices:
 
