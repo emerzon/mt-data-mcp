@@ -4,13 +4,18 @@ from typing import Any, Callable, Dict, Optional
 
 from ...shared.output_precision import resolve_output_precision
 from ...utils.coercion import round_finite
-from ...utils.minimal_output import _is_empty_value
-from ...utils.minimal_output import format_result_minimal as _shared_minimal
+from ...utils.minimal_output import (
+    _is_empty_value,
+)
+from ...utils.minimal_output import (
+    format_result_minimal as _shared_minimal,
+)
 from ..output_contract import apply_output_verbosity
 from ..output_serialization import json_default as _json_default
 from ..output_serialization import sanitize_json as _sanitize_json
-from ..runtime_metadata import build_runtime_timezone_meta
-from ..trading.context import _compact_trade_session_items as _shared_compact_trade_session_items
+from ..trading.context import (
+    _compact_trade_session_items as _shared_compact_trade_session_items,
+)
 
 CLI_FORMAT_TOON = "toon"
 CLI_FORMAT_JSON = "json"
@@ -79,10 +84,6 @@ def _format_result_for_cli(
         )
     except TypeError:
         return _format_result_minimal(prepared, verbose=verbose)
-
-
-def _build_cli_timezone_meta(result: Any) -> Dict[str, Any]:
-    return build_runtime_timezone_meta(result)
 
 
 def _prune_compact_runtime_meta(result: Any) -> Any:

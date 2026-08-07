@@ -169,10 +169,6 @@ def _format_number_full(num: float) -> str:
     return "0.0" if text == "-0.0" else text
 
 
-def _minify_number(num: float) -> str:
-    return format_number(num)
-
-
 def _stringify_nonfinite_number(num: float) -> str:
     if math.isnan(num):
         return "nan"

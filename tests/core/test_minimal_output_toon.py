@@ -5,16 +5,13 @@ import pytest
 
 from mtdata.utils.minimal_output import (
     _encode_tabular,
-    _format_complex_value,
     _headers_from_dicts,
-    _indent_text,
     _quote_key,
     _stringify_for_toon_value,
     _stringify_scalar,
 )
 from mtdata.utils.minimal_output_toon import (
     _column_decimals,
-    _minify_number,
     _quote_if_needed,
     _stringify_cell,
     _stringify_for_toon,
@@ -32,19 +29,6 @@ class TestStringifyCell:
         result = _stringify_cell({"a": None, "b": 1})
         assert "a=" not in result
         assert "b=" in result
-
-
-class TestIndentText:
-    @pytest.mark.parametrize(
-        ("text", "indent", "expected"),
-        [
-            ("hello", "  ", "  hello"),
-            ("a\nb", "  ", "  a\n  b"),
-            ("x", ">>", ">>x"),
-        ],
-    )
-    def test_indent_variants(self, text, indent, expected):
-        assert _indent_text(text, indent=indent) == expected
 
 
 class TestQuoteIfNeeded:
@@ -172,21 +156,6 @@ class TestStringifyForToonValue:
     def test_list_uses_compact_scalar_joining(self):
         result = _stringify_for_toon_value([1, 2, 3], None, ",")
         assert result == '"1|2|3"'
-
-
-class TestFormatComplexValue:
-    def test_list_of_dicts(self):
-        result = _format_complex_value([{"a": 1}, {"a": 2}])
-        assert "a" in result
-
-    def test_nested_dict_with_multiline(self):
-        result = _format_complex_value({"outer": {"a": 1, "b": 2}})
-        assert "outer:" in result
-
-    def test_empty_values_skipped(self):
-        result = _format_complex_value({"a": None, "b": 1})
-        assert "a:" not in result
-        assert "b: 1" in result
 
 
 class TestEncodeTabularNestedCells:

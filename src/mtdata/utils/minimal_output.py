@@ -20,52 +20,10 @@ from .minimal_output_toon import (
     _format_to_toon,
     _headers_from_dicts,
     _is_empty_value,
-    _is_scalar_value,
     _quote_always,
     _quote_key,
     _stringify_for_toon_value,
-    _stringify_scalar,
 )
-
-
-def _indent_text(text: str, indent: str = "  ") -> str:
-    return "\n".join(
-        f"{indent}{line}" if line else indent.rstrip() for line in text.splitlines()
-    )
-
-
-def _format_complex_value(value: Any) -> str:
-    if _is_scalar_value(value):
-        return _stringify_scalar(value)
-    if isinstance(value, list):
-        values = [v for v in value if not _is_empty_value(v)]
-        if not values:
-            return ""
-        if all(isinstance(v, dict) for v in values):
-            headers = _headers_from_dicts(values)
-            return _encode_tabular("data", headers, values, indent=0) if headers else ""
-        if all(_is_scalar_value(v) for v in values):
-            return ", ".join(_stringify_scalar(v) for v in values)
-        parts = []
-        for entry in values:
-            formatted = _format_complex_value(entry)
-            if formatted:
-                parts.append(formatted)
-        return "\n".join(parts)
-    if isinstance(value, dict):
-        lines = []
-        for key, subvalue in value.items():
-            if _is_empty_value(subvalue):
-                continue
-            formatted = _format_complex_value(subvalue)
-            if not formatted:
-                continue
-            if "\n" in formatted:
-                lines.append(f"{key}:\n{_indent_text(formatted)}")
-            else:
-                lines.append(f"{key}: {formatted}")
-        return "\n".join(lines)
-    return _stringify_scalar(value)
 
 
 def _suppress_duplicate_collection_data(payload: Dict[str, Any]) -> Dict[str, Any]:

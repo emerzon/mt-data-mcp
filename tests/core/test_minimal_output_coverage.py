@@ -5,7 +5,6 @@ from mtdata.utils.minimal_output import (
     _build_forecast_meta,
     _compact_forecast_ci,
     _encode_expanded_array,
-    _format_complex_value,
     _format_to_toon,
     _is_empty_value,
     _is_scalar_value,
@@ -1495,20 +1494,6 @@ class TestFormatResultMinimal:
         assert "preview_scope_summary" not in result
         assert "actionability_reason" not in result
         assert "warnings" not in result
-
-
-class TestFormatComplexValue:
-    def test_dict(self):
-        result = _format_complex_value({"key": "val"})
-        assert "key" in result
-
-    def test_list(self):
-        result = _format_complex_value([1, 2, 3])
-        assert len(result) > 0
-
-    def test_scalar(self):
-        result = _format_complex_value(42)
-        assert "42" in result
 
 
 @pytest.mark.parametrize(

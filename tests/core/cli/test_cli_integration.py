@@ -1916,12 +1916,6 @@ class TestEdgeCases:
         result = _json_default(b"\xff\xfe")
         assert isinstance(result, str)
 
-    def test_build_cli_timezone_meta_local_tz(self):
-        from mtdata.core.cli.formatting import _build_cli_timezone_meta
-        result = _build_cli_timezone_meta({})
-        assert "local" not in result
-        assert result["utc"]["tz"] == "UTC"
-
     def test_attach_cli_meta_with_none_cmd(self):
         from mtdata.core.cli.api import _attach_cli_meta
         r = {"data": 1}
