@@ -912,6 +912,7 @@ class TestSymbolsTopMarkets:
         assert result["ranking"] == "highest_tick_volume"
         assert result["rank_by"] == "tick_volume"
         assert result["rank_by_input"] is None
+        mock_tick.assert_not_called()
 
     @patch("mtdata.core.symbols._extract_group_path_util", side_effect=lambda s: s.path)
     @patch("mtdata.core.symbols._mt5_copy_rates_from_pos")
@@ -1528,6 +1529,30 @@ class TestMarketScan:
             "Showing 1 of 3 symbols matching the requested market scan filters."
         )
         assert result["meta"]["request"]["offset"] == 1
+
+    @patch("mtdata.core.symbols._mt5_copy_rates_from_pos")
+    @patch("mtdata.core.symbols.mt5.symbol_info_tick")
+    @patch("mtdata.core.symbols.mt5.symbols_get")
+    def test_market_scan_rejects_oversized_candidate_set_before_evaluation(
+        self,
+        mock_symbols_get,
+        mock_tick,
+        mock_rates,
+    ):
+        mock_symbols_get.return_value = [
+            _make_symbol(f"SYM{index:04d}")
+            for index in range(251)
+        ]
+
+        result = _get_market_scan()(limit=5)
+
+        assert result["error_code"] == "candidate_universe_too_large"
+        assert result["meta"]["stats"] == {
+            "candidate_count": 251,
+            "candidate_cap": 250,
+        }
+        mock_tick.assert_not_called()
+        mock_rates.assert_not_called()
 
     @patch("mtdata.core.symbols._extract_group_path_util", side_effect=lambda s: s.path)
     @patch("mtdata.core.symbols._mt5_copy_rates_from_pos")

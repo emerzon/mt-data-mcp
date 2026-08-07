@@ -83,6 +83,7 @@ def _clean_broker_text(value: Any) -> Any:
 _MARKET_SCAN_STALE_BAR_SECONDS = 7 * 24 * 60 * 60
 _MARKET_SCAN_STALE_QUOTE_SECONDS = QUOTE_STALE_SECONDS
 _TOP_MARKETS_MAX_CANDIDATES = 250
+_MARKET_SCAN_MAX_CANDIDATES = _TOP_MARKETS_MAX_CANDIDATES
 _FOREX_SEARCH_PAIR_PRIORITY = {
     pair: idx
     for idx, pair in enumerate(
@@ -3040,7 +3041,11 @@ def symbols_top_markets(  # noqa: C901
                 ensure_connection_impl=ensure_mt5_connection_or_raise,
             )
             mt5_gateway.ensure_connection()
-            spread_cost_currency = account_currency_from_gateway(mt5_gateway)
+            spread_cost_currency = (
+                account_currency_from_gateway(mt5_gateway)
+                if rank_kind != "volume"
+                else None
+            )
 
             raw_symbols = mt5_gateway.symbols_get()
             if raw_symbols is None:
@@ -3133,7 +3138,7 @@ def symbols_top_markets(  # noqa: C901
                 symbol_name = str(getattr(symbol, "name", "") or "")
 
                 spread_row = None
-                if rank_kind in {"all", "spread"} or needs_bar_data:
+                if rank_kind != "volume":
                     spread_row, spread_error = _build_market_scan_spread_row(
                         symbol,
                         mt5_gateway,
@@ -3796,6 +3801,20 @@ def market_scan(  # noqa: C901
                 request["requested_symbols"] = selection_meta.get("requested_symbols")
             if selection_meta.get("missing_symbols") is not None:
                 request["missing_symbols"] = selection_meta.get("missing_symbols")
+            if len(selected_symbols) > _MARKET_SCAN_MAX_CANDIDATES:
+                return _market_scan_error(
+                    (
+                        f"The filtered universe contains {len(selected_symbols)} candidates, "
+                        f"above the safe synchronous cap of {_MARKET_SCAN_MAX_CANDIDATES}. "
+                        "Narrow the exact scan with symbols or group."
+                    ),
+                    code="candidate_universe_too_large",
+                    request=request,
+                    stats={
+                        "candidate_count": len(selected_symbols),
+                        "candidate_cap": _MARKET_SCAN_MAX_CANDIDATES,
+                    },
+                )
             started_at = time.perf_counter()
             matched_rows: List[Dict[str, Any]] = []
             skipped_examples: List[Dict[str, str]] = []
