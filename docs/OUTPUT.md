@@ -1,6 +1,11 @@
 # Response and output contract
 
-One of mtdata’s strengths: **CLI, [MCP](GLOSSARY.md#mcp-model-context-protocol), and Web API share the same payload meaning**. Transports only change presentation ([TOON](GLOSSARY.md#toon) vs JSON, HTTP status), not the underlying data model. This page is the reference for that model — success/error envelope, `detail`, `extras`, field selection, and pagination.
+CLI and [MCP](GLOSSARY.md#mcp-model-context-protocol) expose the canonical tool
+payloads described here. The Web API preserves the same domain semantics for
+the endpoints it exposes, but is a focused, UI-oriented subset and may return
+a more compact representation; see [WEB_API.md](WEB_API.md). This page is the
+reference for the canonical model — success/error envelope, `detail`, `extras`,
+field selection, and pagination.
 
 Presentation flags and exit codes: [CLI.md](CLI.md#output-contract).
 
@@ -33,14 +38,14 @@ Successful tool responses are JSON objects that carry a `success` flag plus the 
 
 | Value | Meaning |
 |-------|---------|
-| `compact` | **Default.** Essential fields only — the slim, token-efficient shape used for TOON output. |
-| `standard` | Adds moderate context to each row/section (e.g. `tools_list` includes per-parameter summaries). |
-| `summary` | A condensed summary form for tools that support it. |
-| `full` | Everything `compact` returns **plus** runtime metadata and verbose-only sections. |
+| `compact` | **Default.** Essential fields only — the slim, token-efficient shared shape used for TOON output. |
+| `standard` | Shared stripping is the same as `compact`; an individual tool may provide a distinct standard shape. |
+| `summary` | Shared stripping is the same as `compact`; an individual tool may provide a distinct summary shape. |
+| `full` | Retains runtime metadata and verbose-only sections that the shared compact strip removes. |
 
 Notes:
 - `detail` changes verbosity **within** the sections a tool already returns; it does **not** add new analysis. (For example, `market_snapshot` uses a separate `sections` parameter to choose analysis modules. Its compact/summary envelope reports `sections_summarized`, while standard/full reports `sections_embedded`.)
-- Not every tool distinguishes all four levels; unsupported values resolve to the nearest supported shape (`compact` or `full`).
+- The shared output layer has two retention modes: `full`, and the compact strip used by `compact`, `standard`, and `summary`. Tools can independently distinguish the accepted values in their own payloads.
 - Requesting any [extras](#richer-sections-extras) automatically shapes the response as `full`.
 
 ---
