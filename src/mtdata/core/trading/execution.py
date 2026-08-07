@@ -222,7 +222,9 @@ def _evaluate_position_modify_guardrails(
     candidate_stop_loss: Optional[float],
 ) -> Optional[Dict[str, Any]]:
     position_volume = validation._safe_float_attr(position, "volume")
-    entry_price = validation._safe_float_attr(position, "price_open")
+    entry_price = validation._safe_float_attr(position, "price_current")
+    if entry_price is None or not math.isfinite(float(entry_price)) or entry_price <= 0.0:
+        entry_price = validation._safe_float_attr(position, "price_open")
     if not trade_guardrails_config.is_enabled() or position_volume is None:
         return None
     current_has_stop = bool(

@@ -9,7 +9,11 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from mtdata.bootstrap.settings import trade_guardrails_config
-from mtdata.core.trading.execution import _modify_pending_order, _modify_position
+from mtdata.core.trading.execution import (
+    _evaluate_position_modify_guardrails,
+    _modify_pending_order,
+    _modify_position,
+)
 from mtdata.core.trading.gateway import (
     create_trading_gateway as create_real_trading_gateway,
 )
@@ -331,3 +335,42 @@ def test_modify_position_allows_tighter_stop_loss(
 
     assert result["success"] is True
     assert result["position_ticket"] == 200
+
+
+def test_position_modify_wallet_risk_uses_current_mark(
+    restore_trade_guardrails,
+    patch_gateway,
+):
+    trade_guardrails_config.enabled = True
+    captured: dict[str, object] = {}
+    position = SimpleNamespace(
+        ticket=200,
+        symbol="EURUSD",
+        price_open=1.1000,
+        price_current=1.1100,
+        volume=1.0,
+    )
+
+    with (
+        patch(
+            "mtdata.core.trading.execution.load_guardrail_book_snapshots",
+            return_value=([], [], None),
+        ),
+        patch(
+            "mtdata.core.trading.execution.evaluate_trade_guardrails",
+            side_effect=lambda *_args, **kwargs: captured.update(kwargs) or None,
+        ),
+    ):
+        result = _evaluate_position_modify_guardrails(
+            patch_gateway,
+            position=position,
+            resolved_ticket=200,
+            requested_ticket=200,
+            side="BUY",
+            symbol_info=patch_gateway.symbol_info("EURUSD"),
+            current_stop_loss=1.1080,
+            candidate_stop_loss=1.1050,
+        )
+
+    assert result is None
+    assert captured["entry_price"] == pytest.approx(1.1100)
