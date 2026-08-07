@@ -1,4 +1,5 @@
 from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -17,6 +18,7 @@ class _IndexedTick:
         ({"time": 100.0, "time_msc": 100_250}, 100.25),
         (SimpleNamespace(time=100.0, time_msc=0), 100.0),
         (_IndexedTick(), 100.25),
+        (MagicMock(time=100.0), 100.0),
         ({"time": float("nan"), "time_msc": None}, None),
     ],
 )

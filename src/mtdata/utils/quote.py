@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 from datetime import datetime, timedelta, timezone
+from numbers import Real
 from typing import Any, Dict, Optional
 
 from .freshness import QUOTE_STALE_SECONDS, standard_weekend_window
@@ -12,24 +13,30 @@ def tick_value(tick: Any, field: str) -> Any:
     if isinstance(tick, dict):
         return tick.get(field)
     try:
-        return tick[field]
+        value = tick[field]
+        if type(value).__module__ != "unittest.mock":
+            return value
     except Exception:
-        return getattr(tick, field, None)
+        pass
+    return getattr(tick, field, None)
 
 
 def tick_epoch(tick: Any) -> Optional[float]:
-    time_msc = tick_value(tick, "time_msc")
-    try:
-        epoch = float(time_msc) / 1000.0
-        if math.isfinite(epoch) and epoch > 0.0:
-            return epoch
-    except (TypeError, ValueError):
-        pass
-    try:
-        epoch = float(tick_value(tick, "time"))
-    except (TypeError, ValueError):
-        return None
-    return epoch if math.isfinite(epoch) and epoch > 0.0 else None
+    def _number(value: Any) -> Optional[float]:
+        # Mock placeholders and arbitrary objects may implement ``__float__``;
+        # accepting them can turn a missing attribute into a plausible epoch.
+        if isinstance(value, bool) or not isinstance(value, (Real, str)):
+            return None
+        try:
+            number = float(value)
+        except (TypeError, ValueError, OverflowError):
+            return None
+        return number if math.isfinite(number) and number > 0.0 else None
+
+    time_msc = _number(tick_value(tick, "time_msc"))
+    if time_msc is not None:
+        return time_msc / 1000.0
+    return _number(tick_value(tick, "time"))
 
 
 def compute_spread_metrics(
