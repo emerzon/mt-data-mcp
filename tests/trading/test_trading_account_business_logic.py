@@ -1139,7 +1139,7 @@ def test_open_position_quote_context_discloses_basis_and_staleness() -> None:
     )
 
     row = payload["items"][0]
-    assert row["price_current_basis"] == "ask"
+    assert row["price_current_basis"] == "broker_price_current"
     assert row["quote_time"].endswith("Z")
     assert row["data_age_seconds"] == 600.0
     assert row["data_stale"] is True

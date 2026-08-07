@@ -69,8 +69,10 @@ def _attach_open_position_quote_context(
         )
         if not freshness:
             continue
-        side = str(item.get("side") or "").strip().upper()
-        item["price_current_basis"] = "ask" if side == "SELL" else "bid" if side == "BUY" else "broker_mark"
+        # ``price_current`` is supplied by the broker's position snapshot.  The
+        # tick fetched here is only a freshness check; it does not replace that
+        # broker mark.  Do not label the unchanged value as bid or ask.
+        item["price_current_basis"] = "broker_price_current"
         item["quote_time"] = format_epoch_utc(tick_epoch)
         symbol_info_fn = getattr(gateway, "symbol_info", None)
         if callable(symbol_info_fn):
