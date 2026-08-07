@@ -11,7 +11,7 @@ from typing import Any, Callable, Dict, List, Optional, TypedDict, Union
 from ...bootstrap.settings import mt5_config, trade_guardrails_config
 from ...shared.market_units import forex_points_per_pip
 from ...utils.coercion import round_finite
-from ...utils.quote import resolve_quote_tick, tick_value
+from ...utils.quote import compute_spread_metrics, resolve_quote_tick, tick_value
 from . import comments, common, time, validation
 from .gateway import MT5TradingGateway, create_trading_gateway, trading_connection_error
 from .positions import _resolve_open_position
@@ -1072,6 +1072,18 @@ def build_trade_place_dry_run_preview(
     side = "BUY" if str(order_type).upper().startswith("BUY") else "SELL"
     order_type_value = _order_type_constant(mt5, order_type)
     entry_price = float(price) if pending and price not in (None, 0) else (ask if side == "BUY" else bid)
+    points_per_pip = forex_points_per_pip(
+        symbol,
+        path=str(getattr(symbol_info, "path", "") or ""),
+        point=point,
+        digits=digits,
+    )
+    spread_metrics = compute_spread_metrics(
+        bid,
+        ask,
+        point=point,
+        points_per_pip=points_per_pip,
+    )
 
     quote_context = common.build_trade_quote_context(
         symbol,
@@ -1079,6 +1091,12 @@ def build_trade_place_dry_run_preview(
         now_epoch=quote_now,
     )
     quote_context.update(quote_source)
+    if spread_metrics["spread_valid"] is not True:
+        quote_context["usable_for_live_trading"] = False
+        quote_context["usable_for_live_trading_basis"] = (
+            "quote_age_market_session_and_positive_spread"
+        )
+        quote_context["quote_quality"] = spread_metrics["spread_quality"]
     out: Dict[str, Any] = {
         "bid": _round_preview_price(bid, digits=digits),
         "ask": _round_preview_price(ask, digits=digits),
@@ -1093,19 +1111,12 @@ def build_trade_place_dry_run_preview(
         out["entry_price"] = _round_preview_price(entry_price, digits=digits)
 
     if point > 0:
-        spread_price = ask - bid
-        out["spread_points"] = round(spread_price / point, 2)
-        points_per_pip = forex_points_per_pip(
-            symbol,
-            path=str(getattr(symbol_info, "path", "") or ""),
-            point=point,
-            digits=digits,
-        )
-        if points_per_pip:
-            out["spread_pips"] = round(out["spread_points"] / points_per_pip, 2)
-        midpoint = (ask + bid) / 2.0
-        if midpoint:
-            out["spread_pct"] = round((spread_price / midpoint) * 100.0, 6)
+        if spread_metrics["spread_points"] is not None:
+            out["spread_points"] = round(spread_metrics["spread_points"], 2)
+        if spread_metrics["spread_pips"] is not None:
+            out["spread_pips"] = round(spread_metrics["spread_pips"], 2)
+        if spread_metrics["spread_pct"] is not None:
+            out["spread_pct"] = round(spread_metrics["spread_pct"], 6)
         broker_distance = validation._broker_distance_metadata(symbol_info)
         out["min_distance_points"] = int(broker_distance["min_distance_points"])
 

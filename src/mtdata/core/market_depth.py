@@ -28,7 +28,12 @@ from ..utils.mt5 import (
     symbol_price_digits,
     symbol_price_point,
 )
-from ..utils.quote import resolve_quote_tick, tick_epoch, tick_value
+from ..utils.quote import (
+    compute_spread_metrics,
+    resolve_quote_tick,
+    tick_epoch,
+    tick_value,
+)
 from ..utils.symbol import match_symbol_infos
 from ..utils.time import (
     _format_time_second_explicit,
@@ -337,28 +342,25 @@ def _market_depth_fetch_impl(symbol: str, spread: bool = False, require_dom: boo
             spread_cost_currency = account_currency_from_gateway(mt5_gateway)
 
             def _compute_spread_metrics(bid: Any, ask: Any) -> Dict[str, Any] | None:
-                try:
-                    bid_f = float(bid)
-                    ask_f = float(ask)
-                except Exception:
+                metrics = compute_spread_metrics(
+                    bid,
+                    ask,
+                    point=point,
+                    tick_size=tick_size,
+                    tick_value_money=trade_tick_value,
+                    account_currency=spread_cost_currency,
+                )
+                if metrics["spread"] is None:
                     return None
-                if not (math.isfinite(bid_f) and math.isfinite(ask_f)):
-                    return None
-                spread_abs = float(ask_f - bid_f)
-                if spread_abs < 0:
-                    return None
-                mid = (ask_f + bid_f) / 2.0
-                spread_points = (spread_abs / point) if point > 0 else None
-                spread_pct = ((spread_abs / mid) * 100.0) if mid > 0 else None
-                spread_cost_per_lot = None
-                if tick_size > 0 and trade_tick_value > 0 and spread_cost_currency:
-                    spread_cost_per_lot = (spread_abs / tick_size) * trade_tick_value
                 return {
-                    "spread": spread_abs,
-                    "spread_points": spread_points,
-                    "spread_pct": spread_pct,
-                    "spread_cost_per_lot": spread_cost_per_lot,
-                    "pricing_basis": "per_1_lot_estimate" if spread_cost_per_lot is not None else "quote_only",
+                    key: metrics[key]
+                    for key in (
+                        "spread",
+                        "spread_points",
+                        "spread_pct",
+                        "spread_cost_per_lot",
+                        "pricing_basis",
+                    )
                 }
 
             def _price_display(value: Any) -> Any:
@@ -773,51 +775,40 @@ def market_ticker(  # noqa: C901
                 except (TypeError, ValueError, OverflowError):
                     tick_volume = None
 
-            spread_abs = None
-            spread_points = None
-            spread_pct = None
-            spread_pips = None
-            mid = None
-            spread_cost_per_lot = None
-            pricing_basis = "quote_only"
-            spread_valid = bool(bid is not None and ask is not None and ask > bid)
-            spread_quality = (
-                "two_sided"
-                if spread_valid
-                else "locked"
-                if bid is not None and ask is not None and ask == bid
-                else "inverted"
-                if bid is not None and ask is not None and ask < bid
-                else "one_sided"
+            points_per_pip = _market_ticker_points_per_pip(
+                symbol_info,
+                symbol=resolved_symbol,
+                point=point,
+                digits=digits,
             )
-            if bid is not None and ask is not None and ask >= bid:
-                spread_abs = float(ask - bid)
-                mid = (ask + bid) / 2.0
-                spread_points = (spread_abs / point) if point > 0 else None
-                points_per_pip = _market_ticker_points_per_pip(
-                    symbol_info,
-                    symbol=resolved_symbol,
-                    point=point,
-                    digits=digits,
-                )
-                spread_pips = (
-                    spread_points / points_per_pip
-                    if spread_points is not None
-                    and points_per_pip is not None
-                    and points_per_pip > 0
-                    else None
-                )
-                spread_pct = ((spread_abs / mid) * 100.0) if mid > 0 else None
-                spread_abs = _round_market_ticker_value(spread_abs, digits=digits)
-                spread_points = _round_market_ticker_value(spread_points, digits=4)
-                spread_pips = _round_market_ticker_value(spread_pips, digits=4)
-                spread_pct = _round_market_ticker_value(spread_pct, digits=6)
-                if tick_size > 0 and tick_value_money > 0 and spread_cost_currency:
-                    spread_cost_per_lot = _round_market_ticker_value(
-                        (float(spread_abs) / tick_size) * tick_value_money,
-                        digits=6,
-                    )
-                    pricing_basis = "per_1_lot_estimate"
+            spread_metrics = compute_spread_metrics(
+                bid,
+                ask,
+                point=point,
+                points_per_pip=points_per_pip,
+                tick_size=tick_size,
+                tick_value_money=tick_value_money,
+                account_currency=spread_cost_currency,
+            )
+            mid = spread_metrics["mid"]
+            spread_abs = _round_market_ticker_value(
+                spread_metrics["spread"], digits=digits
+            )
+            spread_points = _round_market_ticker_value(
+                spread_metrics["spread_points"], digits=4
+            )
+            spread_pips = _round_market_ticker_value(
+                spread_metrics["spread_pips"], digits=4
+            )
+            spread_pct = _round_market_ticker_value(
+                spread_metrics["spread_pct"], digits=6
+            )
+            spread_cost_per_lot = _round_market_ticker_value(
+                spread_metrics["spread_cost_per_lot"], digits=6
+            )
+            spread_valid = spread_metrics["spread_valid"]
+            spread_quality = spread_metrics["spread_quality"]
+            pricing_basis = spread_metrics["pricing_basis"]
 
             _use_ctz = _use_client_tz()
 

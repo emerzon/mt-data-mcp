@@ -38,7 +38,7 @@ from ..utils.mt5 import (
 )
 from ..utils.mt5_enums import decode_mt5_bitmask_labels, decode_mt5_enum_label
 from ..utils.quote import (
-    _quote_pair_quality,
+    compute_spread_metrics,
     resolve_quote_tick,
     tick_epoch,
     tick_value,
@@ -1775,13 +1775,6 @@ def _build_market_scan_spread_row(
     bid = _market_scan_float(tick_value(tick, "bid"))
     ask = _market_scan_float(tick_value(tick, "ask"))
     tick_time = tick_epoch(tick)
-    spread_quality = _quote_pair_quality(tick)
-    if spread_quality == "one_sided" or bid is None or ask is None:
-        return None, "Bid/ask quote is unavailable."
-    if spread_quality == "inverted" or ask < bid:
-        return None, "Bid/ask quote is invalid."
-    spread_valid = spread_quality == "two_sided"
-
     point = _market_scan_float(getattr(symbol, "point", 0.0)) or 0.0
     tick_size = _market_scan_float(getattr(symbol, "trade_tick_size", 0.0)) or 0.0
     trade_tick_value = (
@@ -1789,21 +1782,29 @@ def _build_market_scan_spread_row(
     )
     digits = max(0, int(getattr(symbol, "digits", 0) or 0))
 
-    spread_abs = float(ask - bid)
-    mid = (ask + bid) / 2.0
-    spread_points = (spread_abs / point) if point > 0 else None
     points_per_pip = _market_scan_points_per_pip(symbol, point=point, digits=digits)
-    spread_pips = (
-        (spread_points / points_per_pip)
-        if spread_points is not None and points_per_pip is not None and points_per_pip > 0
-        else None
+    spread_metrics = compute_spread_metrics(
+        bid,
+        ask,
+        point=point,
+        points_per_pip=points_per_pip,
+        tick_size=tick_size,
+        tick_value_money=trade_tick_value,
+        account_currency=spread_cost_currency,
     )
-    spread_pct = ((spread_abs / mid) * 100.0) if mid > 0 else None
-    spread_cost_per_lot = None
-    pricing_basis = "quote_only"
-    if tick_size > 0 and trade_tick_value > 0 and spread_cost_currency:
-        spread_cost_per_lot = (spread_abs / tick_size) * trade_tick_value
-        pricing_basis = "per_1_lot_estimate"
+    spread_quality = spread_metrics["spread_quality"]
+    if spread_quality == "one_sided":
+        return None, "Bid/ask quote is unavailable."
+    if spread_quality == "inverted":
+        return None, "Bid/ask quote is invalid."
+    spread_valid = spread_metrics["spread_valid"]
+    spread_abs = spread_metrics["spread"]
+    mid = spread_metrics["mid"]
+    spread_points = spread_metrics["spread_points"]
+    spread_pips = spread_metrics["spread_pips"]
+    spread_pct = spread_metrics["spread_pct"]
+    spread_cost_per_lot = spread_metrics["spread_cost_per_lot"]
+    pricing_basis = spread_metrics["pricing_basis"]
 
     quote_freshness = _market_scan_quote_freshness_fields(
         tick_time,

@@ -534,6 +534,48 @@ def test_build_trade_place_dry_run_preview_uses_live_quote_and_margin():
     adapter.order_calc_margin.assert_called_once_with(0, "EURUSD", 0.1, 1.1001)
 
 
+def test_trade_preview_does_not_emit_negative_metrics_for_inverted_quote():
+    now = datetime(2026, 7, 15, 12, 0, tzinfo=timezone.utc).timestamp()
+    gateway = MagicMock()
+    gateway.adapter = SimpleNamespace(
+        ORDER_TYPE_BUY=0,
+        order_calc_margin=MagicMock(return_value=10.0),
+    )
+    gateway.ORDER_TYPE_BUY = 0
+    gateway.symbol_info.return_value = SimpleNamespace(
+        visible=True,
+        volume_min=0.01,
+        volume_max=100.0,
+        volume_step=0.01,
+        point=0.0001,
+        digits=4,
+        trade_stops_level=0,
+        trade_freeze_level=0,
+    )
+    gateway.symbol_info_tick.return_value = SimpleNamespace(
+        bid=1.1002,
+        ask=1.1,
+        time=now,
+    )
+
+    with patch("mtdata.core.trading.orders._stdlib_time.time", return_value=now):
+        result = build_trade_place_dry_run_preview(
+            symbol="EURUSD",
+            volume=0.1,
+            order_type="BUY",
+            pending=False,
+            price=None,
+            stop_loss=None,
+            take_profit=None,
+            gateway=gateway,
+        )
+
+    assert "spread_points" not in result
+    assert "spread_pips" not in result
+    assert "spread_pct" not in result
+    assert result["quote_context"]["usable_for_live_trading"] is False
+
+
 def test_build_trade_place_dry_run_preview_exposes_account_blockers():
     adapter = SimpleNamespace(
         ORDER_TYPE_BUY=0,

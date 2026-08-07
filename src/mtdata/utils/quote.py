@@ -32,6 +32,85 @@ def tick_epoch(tick: Any) -> Optional[float]:
     return epoch if math.isfinite(epoch) and epoch > 0.0 else None
 
 
+def compute_spread_metrics(
+    bid: Any,
+    ask: Any,
+    *,
+    point: Any = None,
+    points_per_pip: Any = None,
+    tick_size: Any = None,
+    tick_value_money: Any = None,
+    account_currency: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Return unrounded spread measurements and a canonical quote-quality label."""
+
+    def _positive(value: Any) -> Optional[float]:
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            return None
+        return number if math.isfinite(number) and number > 0.0 else None
+
+    bid_value = _positive(bid)
+    ask_value = _positive(ask)
+    if bid_value is None or ask_value is None:
+        quality = "one_sided"
+    elif ask_value < bid_value:
+        quality = "inverted"
+    elif ask_value == bid_value:
+        quality = "locked"
+    else:
+        quality = "two_sided"
+
+    out: Dict[str, Any] = {
+        "mid": None,
+        "spread": None,
+        "spread_points": None,
+        "spread_pips": None,
+        "spread_pct": None,
+        "spread_cost_per_lot": None,
+        "spread_valid": quality == "two_sided",
+        "spread_quality": quality,
+        "pricing_basis": "quote_only",
+    }
+    if quality not in {"two_sided", "locked"}:
+        return out
+
+    spread = float(ask_value - bid_value)
+    mid = float((ask_value + bid_value) / 2.0)
+    point_value = _positive(point)
+    pip_points = _positive(points_per_pip)
+    tick_size_value = _positive(tick_size)
+    tick_money_value = _positive(tick_value_money)
+    spread_points = spread / point_value if point_value is not None else None
+    spread_pips = (
+        spread_points / pip_points
+        if spread_points is not None and pip_points is not None
+        else None
+    )
+    spread_cost = (
+        (spread / tick_size_value) * tick_money_value
+        if tick_size_value is not None
+        and tick_money_value is not None
+        and account_currency
+        else None
+    )
+    out.update(
+        {
+            "mid": mid,
+            "spread": spread,
+            "spread_points": spread_points,
+            "spread_pips": spread_pips,
+            "spread_pct": (spread / mid) * 100.0,
+            "spread_cost_per_lot": spread_cost,
+            "pricing_basis": (
+                "per_1_lot_estimate" if spread_cost is not None else "quote_only"
+            ),
+        }
+    )
+    return out
+
+
 def _latest_stream_tick(gateway: Any, symbol: str, *, now_epoch: float) -> Any:
     end = datetime.fromtimestamp(now_epoch, tz=timezone.utc) + timedelta(seconds=5)
     start = end - timedelta(minutes=15, seconds=5)
