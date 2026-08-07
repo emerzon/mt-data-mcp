@@ -137,10 +137,13 @@ mtdata-cli forecast_barrier_prob EURUSD --timeframe H1 --horizon 12 \
 Use triple‑barrier labels offline for signal evaluation and meta‑models.
 
 ```bash
-mtdata-cli labels_triple_barrier EURUSD --timeframe H1 --limit 2000 \
+mtdata-cli labels_triple_barrier EURUSD --timeframe H1 --lookback 2000 \
   --horizon 12 --tp-pct 0.4 --sl-pct 0.8 --label-on high_low \
-  --lookback 300 --json
+  --detail full --json
 ```
+
+`--lookback` controls the labeled history; `--limit` only caps the compact or
+standard sample, while `--detail full` returns the complete labeled series.
 
 - Compute in‑sample precision/recall for your entry rules; adjust thresholds (edge, cp_prob, RSI, EMA alignment) to reach desired trade quality.
 

@@ -1244,10 +1244,10 @@ class TestResolveParamKwargs:
             cmd_name="labels_triple_barrier",
         )
 
-        assert "fetched for labeling" in limit_kwargs["help"]
-        assert "not an output row limit" in limit_kwargs["help"]
-        assert "Recent labeled entries" in lookback_kwargs["help"]
-        assert "limit controls fetched history" in lookback_kwargs["help"]
+        assert "sampled rows" in limit_kwargs["help"]
+        assert "full returns the complete labeled series" in limit_kwargs["help"]
+        assert "labeled entries to calculate" in lookback_kwargs["help"]
+        assert "lookback plus horizon" in lookback_kwargs["help"]
 
     def test_patterns_engine_help_names_mode_scope(self):
         kwargs, _ = _resolve_param_kwargs(

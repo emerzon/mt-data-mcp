@@ -285,12 +285,12 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
         "summary, or full."
     ),
     ("labels_triple_barrier", "limit"): (
-        "Historical bars fetched for labeling; not an output row limit. "
-        "Too-small values are raised to cover lookback plus horizon."
+        "Maximum sampled rows for compact/standard output; compact is capped at "
+        "10 and full returns the complete labeled series."
     ),
     ("labels_triple_barrier", "lookback"): (
-        "Recent labeled entries used for compact/summary stats and samples; "
-        "limit controls fetched history."
+        "Number of labeled entries to calculate; the tool fetches lookback plus "
+        "horizon bars."
     ),
     ("market_scan", "limit"): "Max matching symbols to return.",
     ("market_depth_fetch", "require_dom"): "Fail if DOM is unavailable instead of falling back to a quote snapshot.",

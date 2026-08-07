@@ -283,6 +283,7 @@ class TestLabelsTripleBarrier:
             horizon=3,
             label_on="close",
             detail="full",
+            limit=1,
         )
 
         assert result["success"] is True
@@ -293,6 +294,7 @@ class TestLabelsTripleBarrier:
         }
         assert len(result["labels"]) == 8
         assert len(result["entries"]) == 8
+        assert result["sample_limit"] == 1
         assert any("1 invalid or non-positive price" in msg for msg in result["warnings"])
 
     @patch(f"{_LABELS_MOD}._get_pip_size", return_value=0.0001)
