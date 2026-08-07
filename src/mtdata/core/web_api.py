@@ -6,7 +6,7 @@ import hmac
 import logging
 from functools import lru_cache
 from importlib.util import find_spec as _find_spec
-from typing import Any, Dict, Literal, Optional
+from typing import Annotated, Any, Dict, Literal, Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -333,35 +333,49 @@ def get_wavelets() -> Dict[str, Any]:
 
 @api_router.get("/history")
 def get_history(
-    symbol: str = Query(...),
-    timeframe: str = Query("H1"),
-    limit: Optional[int] = Query(
-        None,
-        ge=1,
-        le=100000,
-        description=(
-            "Maximum bars to return. Defaults to 20 for latest-N queries and "
-            "100,000 for bounded start/end range queries."
+    symbol: Annotated[str, Query()],
+    timeframe: Annotated[str, Query()] = "H1",
+    limit: Annotated[
+        Optional[int],
+        Query(
+            ge=1,
+            le=100000,
+            description=(
+                "Maximum bars to return. Defaults to 20 for latest-N queries and "
+                "100,000 for bounded start/end range queries."
+            ),
         ),
-    ),
-    start: Optional[str] = Query(None),
-    end: Optional[str] = Query(None),
-    ohlcv: Optional[str] = Query("ohlc"),
-    include_spread: bool = Query(
-        False,
-        description="Append historical candle spread to each row.",
-    ),
-    include_incomplete: bool = Query(False, description="Include the latest forming candle."),
-    allow_stale: bool = Query(False, description="Return data even when freshness checks fail."),
-    indicators: Optional[str] = Query(
-        None,
-        description="Indicator specification forwarded to data_fetch_candles.",
-    ),
+    ] = None,
+    start: Annotated[Optional[str], Query()] = None,
+    end: Annotated[Optional[str], Query()] = None,
+    ohlcv: Annotated[Optional[str], Query()] = "ohlc",
+    include_spread: Annotated[
+        bool,
+        Query(description="Append historical candle spread to each row."),
+    ] = False,
+    include_incomplete: Annotated[
+        bool,
+        Query(description="Include the latest forming candle."),
+    ] = False,
+    allow_stale: Annotated[
+        bool,
+        Query(description="Return data even when freshness checks fail."),
+    ] = False,
+    indicators: Annotated[
+        Optional[str],
+        Query(description="Indicator specification forwarded to data_fetch_candles."),
+    ] = None,
     timestamp_format: Literal["epoch", "iso"] = "iso",
     detail: DetailLiteral = "compact",
     extras: Optional[str] = None,
-    denoise_method: Optional[str] = Query(None, description="Denoise method name; if set, returns extra *_dn columns."),
-    denoise_params: Optional[str] = Query(None, description="JSON or k=v list of denoise params."),
+    denoise_method: Annotated[
+        Optional[str],
+        Query(description="Denoise method name; if set, returns extra *_dn columns."),
+    ] = None,
+    denoise_params: Annotated[
+        Optional[str],
+        Query(description="JSON or k=v list of denoise params."),
+    ] = None,
 ) -> Dict[str, Any]:
     return _get_history_response(
         symbol=symbol,

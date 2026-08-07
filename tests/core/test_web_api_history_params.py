@@ -13,7 +13,7 @@ def test_history_timestamp_format_defaults_to_iso() -> None:
     assert parameter.default == "iso"
 
 
-def test_history_uses_start_end_ohlcv_and_preserves_canonical_forming_candle() -> None:
+def test_history_uses_start_end_ohlcv_and_preserves_canonical_compact_shape() -> None:
     payload = {
         "success": True,
         "data": [
@@ -38,13 +38,14 @@ def test_history_uses_start_end_ohlcv_and_preserves_canonical_forming_candle() -
             include_incomplete=False,
         )
 
-    # Web API preserves the canonical candles payload; forming-bar policy is
-    # owned by data_fetch_candles via the forwarded include_incomplete flag.
+    # Web API preserves the canonical compact candles payload. The status is
+    # retained when a forming bar exists, while redundant booleans are omitted.
     assert len(res["data"]) == 3
+    assert res["count"] == 3
     assert "candles" not in res
-    assert res["has_forming_candle"] is True
+    assert "has_forming_candle" not in res
     assert res["forming_candle_status"] == "included"
-    assert res["forming_candle_included"] is True
+    assert "forming_candle_included" not in res
     assert "last_candle_open" not in res
     kwargs = mock_fetch.call_args.kwargs
     assert kwargs["start"] == "2025-01-01 00:00"
