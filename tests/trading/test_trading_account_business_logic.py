@@ -22,6 +22,33 @@ def _unwrap(fn):
     return fn
 
 
+def test_lookup_trade_ticket_history_marks_closed_ticket_as_success(monkeypatch) -> None:
+    responses = iter(
+        [
+            {
+                "items": [
+                    {
+                        "symbol": "EURUSD",
+                        "type": "Buy",
+                        "time": "2026-08-06T12:00:00Z",
+                    }
+                ]
+            }
+        ]
+    )
+    monkeypatch.setattr(
+        core_trading_account,
+        "_run_trade_history_request",
+        lambda _request: next(responses),
+    )
+
+    result = core_trading_account.lookup_trade_ticket_history(123)
+
+    assert result is not None
+    assert result["success"] is True
+    assert result["no_action"] is True
+
+
 def test_trade_account_info_includes_execution_preflight_fields() -> None:
     mt5 = MagicMock()
     prev = sys.modules.get("MetaTrader5")

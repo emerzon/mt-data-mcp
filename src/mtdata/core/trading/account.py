@@ -708,6 +708,7 @@ def lookup_trade_ticket_history(ticket: Any) -> Optional[Dict[str, Any]]:
             message += f" ({reason_label})"
         message += ". No action taken."
         return {
+            "success": True,
             "message": message,
             "no_action": True,
             "checked_scopes": ["positions", "pending_orders", "history_deals"],
@@ -736,6 +737,7 @@ def lookup_trade_ticket_history(ticket: Any) -> Optional[Dict[str, Any]]:
             message += f" at {time_label}"
         message += ". No action taken."
         return {
+            "success": True,
             "message": message,
             "no_action": True,
             "checked_scopes": ["positions", "pending_orders", "history_orders"],
