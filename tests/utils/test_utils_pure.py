@@ -319,7 +319,7 @@ class TestFormatNumericRowsFromDf:
         rows = _format_numeric_rows_from_df(df, ["time", "flag"])
         assert rows[0][1] == "true"
 
-    def test_numeric_mode_preserves_types_and_normalizes_non_finite_values(self):
+    def test_numeric_mode_preserves_types_and_non_finite_sentinels(self):
         df = pd.DataFrame(
             {
                 "time": [1, 2],
@@ -336,7 +336,7 @@ class TestFormatNumericRowsFromDf:
             stringify=False,
         )
 
-        assert rows == [
-            [1, 1.25, 3, True, None],
-            [2, None, 4, False, None],
-        ]
+        assert rows[0][:4] == [1, 1.25, 3, True]
+        assert rows[1][:4] == [2, np.inf, 4, False]
+        assert np.isnan(rows[0][4])
+        assert np.isnan(rows[1][4])

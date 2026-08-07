@@ -217,12 +217,9 @@ def _format_numeric_rows_from_df(
 ) -> List[List[Any]]:
     if not stringify:
         # Public numeric row modes do not need adaptive display decimals. Keep
-        # the conversion columnar and normalize non-JSON numeric sentinels
-        # before materializing the final Python rows.
-        object_frame = df.loc[:, headers].astype(object)
-        object_frame = object_frame.replace([np.inf, -np.inf], None)
-        object_frame = object_frame.where(pd.notna(object_frame), None)
-        return object_frame.to_numpy(dtype=object).tolist()
+        # the conversion columnar while preserving NaN/Inf sentinels used by
+        # indicator bands and internal callers.
+        return df.loc[:, headers].to_numpy(dtype=object).tolist()
 
     # Precompute per-column decimals to trim numeric noise without losing precision.
     col_decimals: Dict[str, int] = {}
