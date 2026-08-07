@@ -76,6 +76,31 @@ def test_trading_connection_error_returns_stage1_envelope():
     assert out["request_id"]
 
 
+def test_trading_gateway_always_exposes_retcode_and_preflight_helpers():
+    adapter = SimpleNamespace(
+        TRADE_RETCODE_DONE=10009,
+        account_info=lambda: SimpleNamespace(
+            trade_allowed=True,
+            trade_expert=True,
+            trade_mode=2,
+        ),
+        terminal_info=lambda: SimpleNamespace(
+            trade_allowed=True,
+            tradeapi_disabled=False,
+            connected=True,
+        ),
+    )
+    gateway = create_trading_gateway(
+        adapter=adapter,
+        ensure_connection_impl=lambda: None,
+    )
+
+    assert gateway.retcode_name(10009) == "TRADE_RETCODE_DONE"
+    preflight = gateway.build_trade_preflight()
+    assert preflight["execution_ready"] is True
+    assert preflight["execution_ready_strict"] is True
+
+
 def test_mt5_gateway_exposes_explicit_adapter_methods():
     calls = []
 

@@ -984,7 +984,7 @@ class TestClosePositions:
         mt5.symbol_info_tick.return_value = _tick(bid=1.05000, ask=1.05010)
 
         gw = create_trading_gateway(
-            adapter=mt5, include_retcode_name=True,
+            adapter=mt5,
             ensure_connection_impl=lambda: None,
         )
         fill_modes = [mt5.ORDER_FILLING_IOC]
@@ -1028,7 +1028,7 @@ class TestClosePositions:
         ]
 
         gw = create_trading_gateway(
-            adapter=mt5, include_retcode_name=True,
+            adapter=mt5,
             ensure_connection_impl=lambda: None,
         )
 
@@ -1064,7 +1064,7 @@ class TestClosePositions:
         mt5.last_error.return_value = (10006, "No tick")
 
         gw = create_trading_gateway(
-            adapter=mt5, include_retcode_name=True,
+            adapter=mt5,
             ensure_connection_impl=lambda: None,
         )
         fill_modes = [1]
@@ -1093,7 +1093,6 @@ class TestClosePositions:
         )
         gw = create_trading_gateway(
             adapter=mt5,
-            include_retcode_name=True,
             ensure_connection_impl=lambda: None,
         )
 
@@ -1123,7 +1122,7 @@ class TestClosePositions:
         )
 
         gw = create_trading_gateway(
-            adapter=mt5, include_retcode_name=True,
+            adapter=mt5,
             ensure_connection_impl=lambda: None,
         )
 
@@ -1150,7 +1149,7 @@ class TestClosePositions:
         position = SimpleNamespace(ticket=42, symbol="EURUSD", volume=0.1, magic=100)
 
         gw = create_trading_gateway(
-            adapter=mt5, include_retcode_name=True,
+            adapter=mt5,
             ensure_connection_impl=lambda: None,
         )
         fill_modes = [1]

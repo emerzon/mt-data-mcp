@@ -98,7 +98,6 @@ def _utc_epoch_identity(value: Any) -> float:
 
 def _run_trade_history_request(request: TradeHistoryRequest) -> Any:
     gateway = create_trading_gateway(
-        include_trade_preflight=True,
         adapter=mt5_adapter,
         ensure_connection_impl=ensure_mt5_connection_or_raise,
     )
@@ -841,7 +840,6 @@ def trade_account_info(
         requested_mode = contract.detail
 
         mt5 = create_trading_gateway(
-            include_trade_preflight=True,
             adapter=mt5_adapter,
             ensure_connection_impl=ensure_mt5_connection_or_raise,
         )

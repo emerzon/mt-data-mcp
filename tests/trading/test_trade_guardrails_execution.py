@@ -100,12 +100,11 @@ def mock_mt5():
 
 @pytest.fixture
 def patch_gateway(mock_mt5):
-    def _build_gateway(*, gateway=None, include_retcode_name=False, **_kwargs):
+    def _build_gateway(*, gateway=None, **_kwargs):
         if gateway is not None:
             return gateway
         return create_real_trading_gateway(
             adapter=mock_mt5,
-            include_retcode_name=include_retcode_name,
             ensure_connection_impl=lambda: None,
         )
 

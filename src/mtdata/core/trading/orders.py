@@ -627,8 +627,6 @@ def _prepare_order_gateway(
 ) -> tuple[Optional[MT5TradingGateway], Optional[Dict[str, Any]]]:
     mt5 = create_trading_gateway(
         gateway=gateway,
-        include_trade_preflight=True,
-        include_retcode_name=True,
     )
     connection_error = trading_connection_error(mt5)
     if connection_error is not None:
@@ -857,13 +855,6 @@ def _order_result_value(result: Any, field: str) -> Any:
         return None
 
 
-def _order_retcode_name(mt5: Any, retcode: Any) -> Optional[str]:
-    try:
-        return mt5.retcode_name(retcode)
-    except Exception:
-        return common._retcode_name(mt5, retcode)
-
-
 def _meaningful_last_error(value: Any) -> Any:
     """Drop MT5's success sentinel when an order result itself is a failure."""
     if value is None:
@@ -926,7 +917,7 @@ def _submit_order_request(
         failure = {
             "error": error_message,
             "retcode": retcode,
-            "retcode_name": _order_retcode_name(mt5, retcode),
+            "retcode_name": mt5.retcode_name(retcode),
             "comment": _order_result_value(result, "comment"),
             "request_id": _order_result_value(result, "request_id"),
             "fill_mode_attempts": fill_mode_attempts,
@@ -1571,7 +1562,7 @@ def _place_market_order(  # noqa: C901
                 "success": execution_status == "complete",
                 "execution_status": execution_status,
                 "retcode": retcode,
-                "retcode_name": _order_retcode_name(mt5, retcode),
+                "retcode_name": mt5.retcode_name(retcode),
                 "deal": _order_result_value(result, "deal"),
                 "order": _order_result_value(result, "order"),
                 "volume": _order_result_value(result, "volume"),
@@ -1825,7 +1816,7 @@ def _place_pending_order(
                 "execution_status": "complete" if pending_created else submission_status,
                 "submission_status": submission_status,
                 "retcode": retcode,
-                "retcode_name": _order_retcode_name(mt5, retcode),
+                "retcode_name": mt5.retcode_name(retcode),
                 "deal": _order_result_value(result, "deal"),
                 "order": _order_result_value(result, "order"),
                 "volume": _order_result_value(result, "volume"),

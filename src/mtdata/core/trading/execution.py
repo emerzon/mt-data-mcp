@@ -438,7 +438,6 @@ def _modify_position(
     """Internal helper to modify a position by ticket."""
     mt5 = create_trading_gateway(
         gateway=gateway,
-        include_retcode_name=True,
     )
 
     connection_error = trading_connection_error(mt5)
@@ -764,7 +763,6 @@ def _modify_pending_order(
     """Internal helper to modify a pending order by ticket."""
     mt5 = create_trading_gateway(
         gateway=gateway,
-        include_retcode_name=True,
     )
 
     connection_error = trading_connection_error(mt5)
@@ -1694,7 +1692,6 @@ def _close_positions(  # noqa: C901
     """Internal helper to close open positions."""
     mt5 = create_trading_gateway(
         gateway=gateway,
-        include_retcode_name=True,
     )
 
     connection_error = trading_connection_error(mt5)
@@ -2025,7 +2022,6 @@ def _resolve_close_dry_run_target(
     """Resolve a close target for dry-run validation without sending trade requests."""
     mt5 = create_trading_gateway(
         gateway=gateway,
-        include_retcode_name=True,
     )
 
     connection_error = trading_connection_error(mt5)
@@ -2185,7 +2181,6 @@ def _cancel_pending(
     """Internal helper to cancel pending orders."""
     mt5 = create_trading_gateway(
         gateway=gateway,
-        include_retcode_name=True,
     )
 
     connection_error = trading_connection_error(mt5)
