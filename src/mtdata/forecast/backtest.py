@@ -1933,7 +1933,9 @@ def forecast_backtest(  # noqa: C901
                         pm = params_map.get(method)
                         if pm is None:
                             pm = params
-                        anchor_history = df.iloc[: idx + 1].copy()
+                        # The forecast boundary takes its own defensive copy.
+                        # Keep this anchor as a view so each evaluation copies once.
+                        anchor_history = df.iloc[: idx + 1]
                         if execution_contract is None:
                             execution_contract = ForecastExecutionContract(
                                 data_preparation=data_contract,

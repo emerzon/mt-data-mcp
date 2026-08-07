@@ -215,6 +215,10 @@ class TestForecastBacktest:
                     "as_of": kwargs.get("as_of"),
                     "prefetched_len": len(prefetched) if prefetched is not None else None,
                     "prefetched_last_time": float(prefetched["time"].iloc[-1]) if prefetched is not None else None,
+                    "shares_source_memory": np.shares_memory(
+                        prefetched["close"].to_numpy(),
+                        df["close"].to_numpy(),
+                    ),
                 }
             )
             return {"forecast_price": [101.0] * 12}
@@ -235,11 +239,13 @@ class TestForecastBacktest:
                 "as_of": _format_time_minimal(float(df["time"].iloc[474])),
                 "prefetched_len": 475,
                 "prefetched_last_time": float(df["time"].iloc[474]),
+                "shares_source_memory": True,
             },
             {
                 "as_of": _format_time_minimal(float(df["time"].iloc[487])),
                 "prefetched_len": 488,
                 "prefetched_last_time": float(df["time"].iloc[487]),
+                "shares_source_memory": True,
             },
         ]
 
