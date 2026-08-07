@@ -31,6 +31,20 @@ _HIDDEN_OPTIONAL_FIRST_POSITIONAL_FLAGS: set[tuple[str, str]] = {
 }
 
 _COMMAND_PARAM_CHOICE_OVERRIDES: Dict[tuple[str, str], list[str]] = {
+    ("correlation_matrix", "method"): ["pearson", "spearman"],
+    (
+        "correlation_matrix",
+        "transform",
+    ): ["log_return", "pct", "diff", "level", "log_level"],
+    ("cross_correlation", "method"): ["pearson", "spearman"],
+    (
+        "cross_correlation",
+        "transform",
+    ): ["log_return", "pct", "diff", "level", "log_level"],
+    (
+        "trade_var_cvar_calculate",
+        "method",
+    ): ["historical", "hist", "parametric", "gaussian", "normal"],
     (
         "forecast_barrier_optimize",
         "method",
@@ -77,6 +91,29 @@ _COMMAND_REQUIRED_OPTIONS: set[tuple[str, str]] = {
 }
 
 _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
+    ("correlation_matrix", "method"): "Correlation coefficient: pearson or spearman.",
+    ("correlation_matrix", "transform"): (
+        "Price transform: log_return, pct, diff, level, or log_level."
+    ),
+    ("cross_correlation", "method"): "Correlation coefficient: pearson or spearman.",
+    ("cross_correlation", "transform"): (
+        "Price transform: log_return, pct, diff, level, or log_level."
+    ),
+    ("stationarity_test", "tests"): (
+        "Comma-separated stationarity tests: adf, kpss, pp. "
+        "Example: --tests adf,kpss."
+    ),
+    ("denoise_describe", "method"): (
+        "Denoise method to describe. Run denoise_list_methods to list methods "
+        "available in this installation."
+    ),
+    ("trade_var_cvar_calculate", "method"): (
+        "Tail-risk method: historical (or hist) or parametric (or gaussian/normal)."
+    ),
+    ("trade_var_cvar_calculate", "transform"): (
+        "Return transform: log_return (aliases log_returns/log) or pct "
+        "(aliases pct_return/percent/simple_return)."
+    ),
     ("data_fetch_candles", "indicators"): "Technical indicators. On PowerShell, quote parenthesized specs such as --indicators \"rsi(14)\", or use shell-safe rsi_14 / sma=20 syntax. JSON arrays like '[{\"name\":\"rsi\",\"params\":[14]}]' and named params like rsi(length=14) also work. Use params syntax, not sma,20.",
     ("indicators_list", "trading_style"): "Filter indicators by common trading workflow: intraday, swing, or position.",
     ("trade_place", "magic"): "MT5 magic number: integer strategy/order identifier used to group EA or strategy trades. Defaults to configured order_magic when omitted.",

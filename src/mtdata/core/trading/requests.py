@@ -430,8 +430,20 @@ class TradeVarCvarRequest(BaseModel):
             "or a percentage such as 95. Values must resolve to 0 < confidence < 1."
         ),
     )
-    method: str = "historical"
-    transform: str = "log_return"
+    method: str = Field(
+        default="historical",
+        description=(
+            "Tail-risk method: historical (or hist) or parametric "
+            "(or gaussian/normal)."
+        ),
+    )
+    transform: str = Field(
+        default="log_return",
+        description=(
+            "Return transform: log_return (aliases log_returns/log) or pct "
+            "(aliases pct_return/percent/simple_return)."
+        ),
+    )
     min_observations: int = 50
     detail: DetailLiteral = Field(
         default="compact",

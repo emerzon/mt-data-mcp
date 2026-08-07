@@ -934,6 +934,81 @@ class TestResolveParamKwargs:
         ]
         assert "fractals" not in kwargs["choices"]
 
+    def test_static_method_and_transform_choices_are_exposed_per_command(self):
+        method_param = {
+            "name": "method",
+            "type": str,
+            "required": False,
+            "default": "pearson",
+        }
+        correlation, _ = _resolve_param_kwargs(
+            method_param,
+            None,
+            cmd_name="correlation_matrix",
+        )
+        assert correlation["choices"] == ["pearson", "spearman"]
+        assert correlation["type"]("SPEARMAN") == "spearman"
+
+        var_method, _ = _resolve_param_kwargs(
+            method_param,
+            None,
+            cmd_name="trade_var_cvar_calculate",
+        )
+        assert var_method["choices"] == [
+            "historical",
+            "hist",
+            "parametric",
+            "gaussian",
+            "normal",
+        ]
+
+        transform_param = {
+            "name": "transform",
+            "type": str,
+            "required": False,
+            "default": "log_return",
+        }
+        transform, _ = _resolve_param_kwargs(
+            transform_param,
+            None,
+            cmd_name="cross_correlation",
+        )
+        assert transform["choices"] == [
+            "log_return",
+            "pct",
+            "diff",
+            "level",
+            "log_level",
+        ]
+
+    def test_dynamic_and_comma_composed_choices_explain_discovery_in_help(self):
+        tests_param = {
+            "name": "tests",
+            "type": str,
+            "required": False,
+            "default": "adf,kpss,pp",
+        }
+        stationarity, _ = _resolve_param_kwargs(
+            tests_param,
+            None,
+            cmd_name="stationarity_test",
+        )
+        assert "adf, kpss, pp" in stationarity["help"]
+        assert "choices" not in stationarity
+
+        method_param = {
+            "name": "method",
+            "type": str,
+            "required": True,
+            "default": None,
+        }
+        denoise, _ = _resolve_param_kwargs(
+            method_param,
+            None,
+            cmd_name="denoise_describe",
+        )
+        assert "denoise_list_methods" in denoise["help"]
+
     def test_report_template_choices_are_explicit(self):
         from mtdata.core.report.requests import ReportTemplateLiteral
 

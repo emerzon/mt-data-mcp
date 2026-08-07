@@ -169,7 +169,10 @@ def denoise_list_methods(
 
 @mcp.tool()
 def denoise_describe(method: str) -> Dict[str, Any]:
-    """Describe one denoise method and its supported options."""
+    """Describe one denoise method and its supported options.
+
+    Use ``denoise_list_methods`` to browse method names available in this install.
+    """
 
     def _run() -> Dict[str, Any]:
         wanted = str(method or "").strip().lower()
