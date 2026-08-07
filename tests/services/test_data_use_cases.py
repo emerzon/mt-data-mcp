@@ -270,6 +270,7 @@ def test_run_data_fetch_candles_compact_omits_default_metadata():
         "symbol": "EURUSD",
         "timeframe": "H1",
         "count": 5,
+        "limit_satisfied": True,
         "data": [],
     }
 
@@ -1064,6 +1065,8 @@ def test_run_data_fetch_candles_compact_keeps_anomaly_metadata():
             "candles": 4,
             "candles_requested": 5,
             "candles_excluded": 1,
+            "time_basis": "utc",
+            "timestamp_mode": "native_utc",
             "candle_counts": {
                 "requested": 5,
                 "returned": 4,
@@ -1098,6 +1101,9 @@ def test_run_data_fetch_candles_compact_keeps_anomaly_metadata():
     assert result["symbol"] == "EURUSD"
     assert result["timeframe"] == "H1"
     assert "candles_requested" not in result
+    assert result["limit_satisfied"] is False
+    assert result["time_basis"] == "utc"
+    assert result["timestamp_mode"] == "native_utc"
 
 
 def test_compact_indicator_candles_disclose_warmup_history() -> None:

@@ -73,7 +73,10 @@ MT5_SERVER_TZ=Europe/Athens
 
 ## Time metadata
 
-Request the `metadata` extra to inspect the contract:
+Compact candle responses retain the thin time contract (`time_basis` and
+`timestamp_mode`) plus `limit_satisfied`, so callers can detect a short
+response without requesting verbose diagnostics. Request the `metadata` extra
+to inspect the full normalization contract:
 
 ```bash
 mtdata-cli data_fetch_candles EURUSD --timeframe H1 --limit 5 --extras metadata --json

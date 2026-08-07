@@ -543,6 +543,17 @@ def _compact_candles_payload(
 ) -> Dict[str, Any]:
     compact = dict(result)
     public_diagnostics = _public_candle_diagnostics(result)
+    try:
+        requested_count = int(result["candles_requested"])
+        returned_count = int(compact["count"])
+    except (KeyError, TypeError, ValueError):
+        pass
+    else:
+        if requested_count >= 0 and returned_count >= 0:
+            # Compact responses omit the detailed exclusion breakdown, but a
+            # caller must still be able to distinguish a complete response
+            # from one shortened by the source, filters, or a forming bar.
+            compact["limit_satisfied"] = returned_count >= requested_count
     for key in (
         "candles_requested",
         "candle_counts",
@@ -554,9 +565,7 @@ def _compact_candles_payload(
         "bar_time_convention",
         "meta",
         "raw_time_basis",
-        "time_basis",
         "time_normalization",
-        "timestamp_mode",
         "broker_server_tz",
         "broker_utc_offset_seconds",
         "timezone_note",
