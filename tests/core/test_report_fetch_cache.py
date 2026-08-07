@@ -197,7 +197,7 @@ class TestAttachMultiTimeframesCacheThreading:
     """attach_multi_timeframes should thread _fetch_cache to context_for_tf."""
 
     def test_shared_cache_prevents_duplicate_fetches(self, monkeypatch):
-        """Calling attach_multi_timeframes + fallback with same cache => no dupes."""
+        """Repeated timeframe collection with the same cache avoids duplicate fetches."""
         fetched_tfs = []
 
         def _tracking_fetch(**kwargs):
@@ -221,7 +221,7 @@ class TestAttachMultiTimeframesCacheThreading:
         )
         first_pass_count = len(fetched_tfs)
 
-        # Second pass: simulate fallback calling context_for_tf for same TFs
+        # A repeated consumer can reuse the same cached timeframe snapshots.
         for tf in ["M15", "H4", "D1"]:
             context_for_tf("EURUSD", tf, None, limit=200, tail=30, _fetch_cache=cache)
 

@@ -390,8 +390,7 @@ def template_basic(  # noqa: C901
         'sections': {},
     }
 
-    # Request-scoped cache: avoids re-fetching the same (symbol, timeframe)
-    # across attach_multi_timeframes and the fallback MTF block.
+    # Request-scoped cache avoids re-fetching the same symbol/timeframe.
     _fetch_cache: Dict = {}
 
     # Context
@@ -489,86 +488,29 @@ def template_basic(  # noqa: C901
                 'timezone': piv.get('timezone'),
             }
 
-    if contexts_multi_enabled or pivot_multi_enabled:
-        try:
-            attach_multi_timeframes(
-                report,
-                symbol,
-                denoise,
-                extra_timeframes=(
-                    ['M15','H1','H4','D1'] if contexts_multi_enabled else []
-                ),
-                pivot_timeframes=(
-                    ['H4','D1']
-                    if pivot_multi_enabled and not bounded_window
-                    else []
-                ),
-                context_indicators=indicators,
-                start=start,
-                end=end,
-                _fetch_cache=_fetch_cache,
-            )
-        except Exception:
-            pass
+    if pivot_multi_enabled and bounded_window:
+        report['sections']['pivot_multi'] = _current_only_section_omission(
+            'pivot_multi', start=start, end=end
+        )
 
-
-    # Fallback: if MTF sections missing, build minimal ones inline
-    try:
-        secs = report.setdefault('sections', {})
-        if contexts_multi_enabled and 'contexts_multi' not in secs:
-            from ..report.utils import _extract_base_timeframe, context_for_tf
-            base_tf = _extract_base_timeframe(report)
-            tf_list = ['M15','H1','H4','D1']
-            ctxs: Dict[str, Any] = {}
-            for tf_i in tf_list:
-                if base_tf and tf_i.upper() == base_tf:
-                    continue
-                snap = context_for_tf(
-                    symbol,
-                    tf_i,
-                    denoise,
-                    limit=200,
-                    start=start,
-                    end=end,
-                    tail=30,
-                    indicators=indicators,
-                    _fetch_cache=_fetch_cache,
-                )
-                if snap and any(v is not None for v in snap.values()):
-                    ctxs[tf_i] = snap
-            if ctxs:
-                secs['contexts_multi'] = ctxs
-        if pivot_multi_enabled and bounded_window:
-            secs['pivot_multi'] = _current_only_section_omission(
-                'pivot_multi', start=start, end=end
-            )
-        elif pivot_multi_enabled and 'pivot_multi' not in secs:
-            from ..pivot import pivot_compute_points as _compute_pivot_points
-            pivs: Dict[str, Any] = {}
-            pivot_sec = secs.get('pivot')
-            base_tf = None
-            if isinstance(pivot_sec, dict) and pivot_sec.get('timeframe'):
-                base_tf = str(pivot_sec.get('timeframe')).upper()
-            for tfp in ['H4','D1']:
-                tfp_upper = str(tfp).upper()
-                if base_tf and tfp_upper == base_tf:
-                    continue
-                res = _get_raw_result(_compute_pivot_points, symbol=symbol, timeframe=tfp)
-                if isinstance(res, dict) and not res.get('error'):
-                    pivs[tfp] = {
-                        'levels': res.get('levels'),
-                        'methods': res.get('methods'),
-                        'period': res.get('period'),
-                        'timeframe': tfp,
-                        'calculation_basis': res.get('calculation_basis'),
-                        'timezone': res.get('timezone'),
-                    }
-            if pivs:
-                if base_tf:
-                    pivs['__base_timeframe__'] = base_tf
-                secs['pivot_multi'] = pivs
-    except Exception:
-        pass
+    if contexts_multi_enabled or (pivot_multi_enabled and not bounded_window):
+        attach_multi_timeframes(
+            report,
+            symbol,
+            denoise,
+            extra_timeframes=(
+                ['M15','H1','H4','D1'] if contexts_multi_enabled else []
+            ),
+            pivot_timeframes=(
+                ['H4','D1']
+                if pivot_multi_enabled and not bounded_window
+                else []
+            ),
+            context_indicators=indicators,
+            start=start,
+            end=end,
+            _fetch_cache=_fetch_cache,
+        )
 
     # Volatility (EWMA)
     from ..forecast import forecast_volatility_estimate
