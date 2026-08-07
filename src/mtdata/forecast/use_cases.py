@@ -971,6 +971,95 @@ def _forecast_generate_volatility_rows(
     return [row]
 
 
+_ANALOG_COMPACT_COMPONENT_KEYS = (
+    "timeframe",
+    "role",
+    "status",
+    "n_paths",
+    "component_weight",
+    "reason",
+)
+_ANALOG_COMPACT_METRIC_KEYS = (
+    "n_paths",
+    "effective_paths",
+    "spread",
+    "weighted",
+)
+_ANALOG_VERBOSE_METADATA_KEYS = frozenset(
+    {
+        "analogs",
+        "component_status",
+        "ensemble_metrics",
+        "timeframe_diagnostics",
+    }
+)
+
+
+def _compact_analog_metadata(metadata: Any) -> Dict[str, Any]:
+    """Keep the decision-facing analog diagnostics without repeated detail blobs."""
+    if not isinstance(metadata, dict):
+        return {}
+
+    compact: Dict[str, Any] = {}
+    statuses = metadata.get("component_status")
+    if isinstance(statuses, list):
+        compact_statuses: List[Dict[str, Any]] = []
+        for status in statuses:
+            if not isinstance(status, dict):
+                continue
+            row = {
+                key: status[key]
+                for key in _ANALOG_COMPACT_COMPONENT_KEYS
+                if status.get(key) not in (None, "", [], {})
+            }
+            if row:
+                compact_statuses.append(row)
+        if compact_statuses:
+            compact["component_status"] = compact_statuses
+
+    metrics = metadata.get("ensemble_metrics")
+    if isinstance(metrics, dict):
+        compact_metrics = {
+            key: metrics[key]
+            for key in _ANALOG_COMPACT_METRIC_KEYS
+            if metrics.get(key) not in (None, "", [], {})
+        }
+        score_summary = metrics.get("score_summary")
+        if isinstance(score_summary, dict):
+            compact_scores = {
+                key: score_summary[key]
+                for key in ("best", "median")
+                if score_summary.get(key) is not None
+            }
+            if compact_scores:
+                compact_metrics["score_summary"] = compact_scores
+        quality_gate = metrics.get("quality_gate")
+        if isinstance(quality_gate, dict):
+            compact_quality_gate = {
+                key: quality_gate[key]
+                for key in ("status", "failed_check")
+                if quality_gate.get(key) not in (None, "", [], {})
+            }
+            if compact_quality_gate:
+                compact_metrics["quality_gate"] = compact_quality_gate
+        if compact_metrics:
+            compact["ensemble_metrics"] = compact_metrics
+    return compact
+
+
+def _compact_ensemble_metadata(metadata: Any) -> Dict[str, Any]:
+    """Project nested ensemble metadata while applying analog's compact contract."""
+    if not isinstance(metadata, dict):
+        return {}
+    compact = {
+        key: value
+        for key, value in metadata.items()
+        if key not in _ANALOG_VERBOSE_METADATA_KEYS
+    }
+    compact.update(_compact_analog_metadata(metadata))
+    return compact
+
+
 def _apply_forecast_generate_detail(
     payload: Dict[str, Any],
     request: ForecastGenerateRequest,
@@ -1182,6 +1271,11 @@ def _apply_forecast_generate_detail(
             "ci_available",
             "diagnostics",
             "params_used",
+            "analogs",
+            "component_status",
+            "ensemble_metrics",
+            "timeframe_diagnostics",
+            "ensemble",
             "detail",
         }:
             continue
@@ -1192,6 +1286,10 @@ def _apply_forecast_generate_detail(
         if key == "denoise_applied" and value is False:
             continue
         compact[key] = value
+    compact.update(_compact_analog_metadata(payload))
+    ensemble = _compact_ensemble_metadata(payload.get("ensemble"))
+    if ensemble:
+        compact["ensemble"] = ensemble
     return compact
 
 

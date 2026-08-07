@@ -1080,6 +1080,121 @@ def test_forecast_generate_compact_return_keeps_price_path_with_labeled_ci():
     assert "forecast_return" not in out
 
 
+def test_forecast_generate_compact_projects_analog_diagnostics():
+    metadata = {
+        "component_status": [
+            {
+                "timeframe": "H1",
+                "role": "primary",
+                "status": "contributed",
+                "n_paths": 12,
+                "component_weight": 1.0,
+                "diagnostic": {
+                    "window_size": 64,
+                    "search_depth": 5000,
+                    "ensemble_metrics": {"effective_paths": 8.6},
+                },
+            }
+        ],
+        "analogs": [{"values": [1.01, 1.02], "meta": {"score": 0.2}}],
+        "ensemble_metrics": {
+            "n_paths": 12,
+            "effective_paths": 8.6,
+            "spread": 0.003,
+            "weighted": True,
+            "score_summary": {"best": 0.1, "median": 0.2, "worst": 0.9},
+            "quality_gate": {
+                "status": "passed",
+                "ensemble": {"total_paths": 12, "effective_paths": 8.6},
+            },
+        },
+        "timeframe_diagnostics": {"H1": {"window_size": 64}},
+    }
+    payload = {
+        "success": True,
+        "method": "analog",
+        "horizon": 2,
+        "quantity": "price",
+        "forecast_time": ["t1", "t2"],
+        "forecast_price": [1.01, 1.02],
+        **metadata,
+    }
+    compact = forecast_use_cases._apply_forecast_generate_detail(
+        payload,
+        ForecastGenerateRequest(symbol="EURUSD", timeframe="H1", method="analog", horizon=2),
+    )
+
+    assert "analogs" not in compact
+    assert "timeframe_diagnostics" not in compact
+    assert compact["component_status"] == [
+        {
+            "timeframe": "H1",
+            "role": "primary",
+            "status": "contributed",
+            "n_paths": 12,
+            "component_weight": 1.0,
+        }
+    ]
+    assert compact["ensemble_metrics"] == {
+        "n_paths": 12,
+        "effective_paths": 8.6,
+        "spread": 0.003,
+        "weighted": True,
+        "score_summary": {"best": 0.1, "median": 0.2},
+        "quality_gate": {"status": "passed"},
+    }
+
+    standard = forecast_use_cases._apply_forecast_generate_detail(
+        payload,
+        ForecastGenerateRequest(
+            symbol="EURUSD",
+            timeframe="H1",
+            method="analog",
+            horizon=2,
+            detail="standard",
+        ),
+    )
+    assert standard["analogs"] == metadata["analogs"]
+    assert standard["timeframe_diagnostics"] == metadata["timeframe_diagnostics"]
+
+
+def test_forecast_generate_compact_projects_nested_ensemble_analog_metadata():
+    out = forecast_use_cases._apply_forecast_generate_detail(
+        {
+            "success": True,
+            "method": "ensemble",
+            "horizon": 1,
+            "quantity": "price",
+            "forecast_time": ["t1"],
+            "forecast_price": [1.01],
+            "ensemble": {
+                "methods": ["analog", "theta"],
+                "analogs": [{"values": [1.01]}],
+                "component_status": [
+                    {
+                        "timeframe": "H1",
+                        "role": "primary",
+                        "status": "contributed",
+                        "n_paths": 3,
+                        "diagnostic": {"window_size": 64},
+                    }
+                ],
+                "ensemble_metrics": {"n_paths": 3, "effective_paths": 2.5},
+                "timeframe_diagnostics": {"H1": {"window_size": 64}},
+            },
+        },
+        ForecastGenerateRequest(symbol="EURUSD", timeframe="H1", method="ensemble", horizon=1),
+    )
+
+    assert out["ensemble"] == {
+        "methods": ["analog", "theta"],
+        "component_status": [
+            {"timeframe": "H1", "role": "primary", "status": "contributed", "n_paths": 3}
+        ],
+        "ensemble_metrics": {"n_paths": 3, "effective_paths": 2.5},
+    }
+
+
 def test_forecast_generate_standard_preserves_full_arrays(monkeypatch):
     raw = _unwrap(cf.forecast_generate)
     monkeypatch.setattr(

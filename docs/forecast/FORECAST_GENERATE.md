@@ -25,6 +25,11 @@ the predicted **bar close**. `bar_state` is `forming` when that target bar is
 already in progress, `future` before it opens, and `closed` when its wall-clock
 interval has elapsed. This is independent of the closed-bars-only input policy.
 
+For `analog` forecasts, compact output retains concise `component_status` and
+`ensemble_metrics` summaries. Raw analog paths, per-timeframe diagnostics, and
+component diagnostic blobs are available with `--detail standard`, `--detail full`,
+or `--extras diagnostics`.
+
 ---
 
 ## Parameters
