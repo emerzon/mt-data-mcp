@@ -5,13 +5,16 @@ import pandas as pd
 import pytest
 
 from mtdata.patterns.harmonic import (
-    HarmonicDetectorConfig,
-    _SwingPoint,
+    _OXABC_SPECS,
     _XABCD_SPECS,
+    HarmonicDetectorConfig,
+    _candidate_results,
     _ratio_abs_tolerance,
-    _score_ratio,
+    _ratios_oxabc,
     _ratios_xabcd,
+    _score_ratio,
     _score_spec,
+    _SwingPoint,
     detect_harmonic_patterns,
     validate_harmonic_detector_config,
 )
@@ -65,6 +68,38 @@ def test_cypher_rejects_bc_ab_fit_without_xa_extension() -> None:
     assert ratios["abc"] == pytest.approx(1.3)
     assert ratios["xca"] == pytest.approx(1.15)
     assert _score_spec(ratios, _XABCD_SPECS["cypher"], cfg) is None
+
+
+def test_shark_uses_its_oxabc_geometry() -> None:
+    points = [
+        _SwingPoint(0, "low", 100.0),
+        _SwingPoint(1, "high", 200.0),
+        _SwingPoint(2, "low", 150.0),
+        _SwingPoint(3, "high", 210.0),
+        _SwingPoint(4, "low", 102.0),
+    ]
+    cfg = HarmonicDetectorConfig(min_confidence=0.3)
+    ratios = _ratios_oxabc(points)
+
+    assert "shark" not in _XABCD_SPECS
+    assert ratios is not None
+    assert ratios["oxa"] == pytest.approx(0.5)
+    assert ratios["xab"] == pytest.approx(1.2)
+    assert ratios["abc"] == pytest.approx(1.8)
+    assert ratios["xc_ox"] == pytest.approx(0.98)
+    assert _score_spec(ratios, _OXABC_SPECS["shark"], cfg) is not None
+
+    results = _candidate_results(
+        points,
+        [_OXABC_SPECS["shark"]],
+        np.arange(10),
+        10,
+        cfg,
+    )
+
+    assert len(results) == 1
+    assert results[0].details["pivot_labels"] == list("OXABC")
+    assert results[0].details["expected_ratios"]["xc_ox"] == [0.886, 1.13]
 
 
 def _harmonic_sample_df() -> pd.DataFrame:

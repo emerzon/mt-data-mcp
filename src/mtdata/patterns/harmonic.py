@@ -169,17 +169,6 @@ _XABCD_SPECS: Dict[str, _PatternSpec] = {
             "xad": (1.618, 1.618),
         },
     ),
-    "shark": _PatternSpec(
-        "shark",
-        "Shark",
-        "XABCD",
-        {
-            "xab": (0.382, 0.618),
-            "abc": (1.13, 1.618),
-            "bcd": (1.618, 2.24),
-            "xad": (0.886, 1.13),
-        },
-    ),
     "cypher": _PatternSpec(
         "cypher",
         "Cypher",
@@ -198,6 +187,20 @@ _XABCD_SPECS: Dict[str, _PatternSpec] = {
             "xab": (1.13, 1.618),
             "abc": (1.618, 2.24),
             "bcd": (0.5, 0.5),
+        },
+    ),
+}
+
+_OXABC_SPECS: Dict[str, _PatternSpec] = {
+    "shark": _PatternSpec(
+        "shark",
+        "Shark",
+        "OXABC",
+        {
+            "oxa": (0.382, 0.886),
+            "xab": (1.13, 1.618),
+            "abc": (1.618, 2.24),
+            "xc_ox": (0.886, 1.13),
         },
     ),
 }
@@ -386,6 +389,22 @@ def _ratios_xabcd(points: List[_SwingPoint]) -> Optional[Dict[str, float]]:
     return ratios
 
 
+def _ratios_oxabc(points: List[_SwingPoint]) -> Optional[Dict[str, float]]:
+    o, x, a, b, c = [float(p.price) for p in points]
+    ox = abs(x - o)
+    xa = abs(a - x)
+    ab = abs(b - a)
+    bc = abs(c - b)
+    if not all(_finite_positive(value) for value in (ox, xa, ab, bc)):
+        return None
+    return {
+        "oxa": xa / ox,
+        "xab": ab / xa,
+        "abc": bc / ab,
+        "xc_ox": abs(c - x) / ox,
+    }
+
+
 def _ratios_abcd(points: List[_SwingPoint]) -> Optional[Dict[str, float]]:
     a, b, c, d = [float(p.price) for p in points]
     ab = abs(b - a)
@@ -462,6 +481,25 @@ def _projection_values(
 ) -> List[float]:
     values: List[float] = []
     prices = [float(p.price) for p in points]
+    if spec.family == "OXABC":
+        o, x, a, b, _ = prices
+        ox = abs(x - o)
+        ab = abs(b - a)
+        for key, bounds in spec.ratios.items():
+            if key not in {"xc_ox", "abc"}:
+                continue
+            ratio_values = [float(bounds[0])]
+            if abs(float(bounds[1]) - float(bounds[0])) > 1e-12:
+                ratio_values.append(float(bounds[1]))
+            for ratio in ratio_values:
+                projection: Optional[float] = None
+                if key == "xc_ox" and _finite_positive(ox):
+                    projection = x - ratio * ox if bullish else x + ratio * ox
+                elif key == "abc" and _finite_positive(ab):
+                    projection = b - ratio * ab if bullish else b + ratio * ab
+                if projection is not None and np.isfinite(float(projection)):
+                    values.append(float(projection))
+        return values
     if spec.family == "XABCD":
         x, a, b, c, _ = prices
         xa = abs(a - x)
@@ -545,7 +583,12 @@ def _build_result(
     bullish = points[-1].kind == "low"
     bias = "bullish" if bullish else "bearish"
     direction_label = "Bullish" if bullish else "Bearish"
-    pivot_labels = list("XABCD") if spec.family == "XABCD" else list("ABCD")
+    if spec.family == "XABCD":
+        pivot_labels = list("XABCD")
+    elif spec.family == "OXABC":
+        pivot_labels = list("OXABC")
+    else:
+        pivot_labels = list("ABCD")
     pivot_indexes = {label: int(point.index) for label, point in zip(pivot_labels, points)}
     pivot_prices = {label: float(point.price) for label, point in zip(pivot_labels, points)}
     entry = float(points[-1].price)
@@ -554,13 +597,13 @@ def _build_result(
     prz_low = float(min(prz_values))
     prz_high = float(max(prz_values))
     prz_mid = float((prz_low + prz_high) / 2.0)
-    bars_since_d = int(max(0, (n_bars - 1) - int(points[-1].index)))
+    bars_since_completion = int(max(0, (n_bars - 1) - int(points[-1].index)))
     confirmation_bars = max(1, int(cfg.min_distance))
-    terminal_pivot_confirmed = bars_since_d >= confirmation_bars
+    terminal_pivot_confirmed = bars_since_completion >= confirmation_bars
     status = "completed" if terminal_pivot_confirmed else "forming"
     available_at_index = int(points[-1].index) + confirmation_bars
     completion_freshness = (
-        "recent" if bars_since_d <= int(cfg.recent_bars) else "historical"
+        "recent" if bars_since_completion <= int(cfg.recent_bars) else "historical"
     )
 
     details: Dict[str, Any] = {
@@ -583,7 +626,7 @@ def _build_result(
         "target_price_1": float(target_1),
         "target_price_2": float(target_2),
         "invalidation_price": float(invalidation),
-        "bars_since_completion_pivot": int(bars_since_d),
+        "bars_since_completion_pivot": int(bars_since_completion),
         "completion_freshness": completion_freshness,
         "terminal_pivot_confirmed": terminal_pivot_confirmed,
         "confirmation_bars_required": confirmation_bars,
@@ -613,12 +656,18 @@ def _candidate_results(
     n_bars: int,
     cfg: HarmonicDetectorConfig,
 ) -> List[HarmonicPatternResult]:
-    ratios = _ratios_xabcd(points) if len(points) == 5 else _ratios_abcd(points)
-    if ratios is None:
-        return []
+    ratios_by_family: Dict[str, Optional[Dict[str, float]]] = {}
+    if len(points) == 5:
+        ratios_by_family["XABCD"] = _ratios_xabcd(points)
+        ratios_by_family["OXABC"] = _ratios_oxabc(points)
+    elif len(points) == 4:
+        ratios_by_family["ABCD"] = _ratios_abcd(points)
     bullish = points[-1].kind == "low"
     out: List[HarmonicPatternResult] = []
     for spec in specs:
+        ratios = ratios_by_family.get(spec.family)
+        if ratios is None:
+            continue
         scored = _score_spec(ratios, spec, cfg)
         if scored is None:
             continue
@@ -683,14 +732,23 @@ def detect_harmonic_patterns(
 
     enabled = set(_normalized_pattern_types(cfg))
     xabcd_specs = [spec for key, spec in _XABCD_SPECS.items() if key in enabled]
+    oxabc_specs = [spec for key, spec in _OXABC_SPECS.items() if key in enabled]
     abcd_specs = [_ABCD_SPEC] if "abcd" in enabled else []
 
     results: List[HarmonicPatternResult] = []
     max_age = int(getattr(cfg, "max_pattern_age_bars", 0))
     for start in range(0, max(0, len(swings) - 4)):
         window = swings[start : start + 5]
-        if len(window) == 5 and xabcd_specs:
-            results.extend(_candidate_results(window, xabcd_specs, t, n_bars, cfg))
+        if len(window) == 5 and (xabcd_specs or oxabc_specs):
+            results.extend(
+                _candidate_results(
+                    window,
+                    xabcd_specs + oxabc_specs,
+                    t,
+                    n_bars,
+                    cfg,
+                )
+            )
     for start in range(0, max(0, len(swings) - 3)):
         window = swings[start : start + 4]
         if len(window) == 4 and abcd_specs:
