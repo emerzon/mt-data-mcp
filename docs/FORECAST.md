@@ -67,7 +67,7 @@ Full per-method keys, defaults, and dependencies: [forecast/METHODS.md](forecast
 | **Simulation** | `mc_gbm`, `hmm_mc` | Risk sizing, barrier analysis |
 | **Ensemble** | `ensemble` | Combine multiple models |
 
-**Ensemble note:** `ensemble` supports advanced modes (`average`, `bma`, `stacking`). See [forecast/FORECAST_GENERATE.md](forecast/FORECAST_GENERATE.md) for parameters and examples.
+**Ensemble note:** `ensemble` supports advanced modes (`average`, `rmse_weighted`, `stacking`). See [forecast/FORECAST_GENERATE.md](forecast/FORECAST_GENERATE.md) for parameters and examples.
 
 ---
 

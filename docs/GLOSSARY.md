@@ -155,7 +155,7 @@ mtdata-cli forecast_generate EURUSD --timeframe H1 --horizon 24 \
 **In mtdata:** `forecast_list_methods --json` shows what your install can run. See [FORECAST.md](FORECAST.md) and [forecast/METHODS.md](forecast/METHODS.md).
 
 ### Ensemble (forecast)
-Combines several methods (average, Bayesian model averaging-style, stacking, …) so no single model owns the call. Useful when methods disagree or you want robustness over one hero model.
+Combines several methods (average, RMSE-weighted, stacking, …) so no single model owns the call. Useful when methods disagree or you want robustness over one hero model.
 
 **In mtdata:** `--method ensemble` on forecast tools; see [forecast/FORECAST_GENERATE.md](forecast/FORECAST_GENERATE.md).
 

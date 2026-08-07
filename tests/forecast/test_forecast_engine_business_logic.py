@@ -1637,7 +1637,7 @@ def test_forecast_engine_ensemble_paths(monkeypatch):
         timeframe="H1",
         method="ensemble",
         horizon=2,
-        params={"methods": "naive,theta", "weights": "1,3", "mode": "bma"},
+        params={"methods": "naive,theta", "weights": "1,3", "mode": "average"},
         prefetched_df=_df(20),
     )
     assert out["success"] is True
@@ -1655,5 +1655,5 @@ def test_forecast_engine_ensemble_paths(monkeypatch):
         params={"methods": "naive,theta"},
         prefetched_df=_df(20),
     )
-    assert out["error"] == "Ensemble failed: no component forecasts"
+    assert "requested component forecasts were not all available" in out["error"]
 

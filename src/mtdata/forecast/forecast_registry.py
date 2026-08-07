@@ -389,10 +389,10 @@ def _ensemble_metadata() -> Dict[str, Any]:
         "category": "ensemble",
         "available": True,
         "requires": [],
-        "description": "Adaptive ensemble with averaging, Bayesian model averaging, or stacking.",
+        "description": "Adaptive ensemble with averaging, RMSE weighting, or stacking.",
         "params": [
             {"name": "methods", "type": "list", "description": "Methods to ensemble (default: naive,theta,fourier_ols)"},
-            {"name": "mode", "type": "str", "description": "average|bma|stacking (default: average)"},
+            {"name": "mode", "type": "str", "description": "average|rmse_weighted|stacking (default: average)"},
             {"name": "weights", "type": "list", "description": "Manual weights when mode=average"},
             {"name": "cv_points", "type": "int", "description": "Walk-forward anchors for weighting (default: 2*len(methods))"},
             {"name": "min_train_size", "type": "int", "description": "Minimum history per CV anchor (default: max(30, horizon*3))"},

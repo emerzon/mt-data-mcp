@@ -32,7 +32,7 @@ ComponentDispatchFn = Callable[
 ]
 
 
-def _stabilized_bma_weights(rmse: np.ndarray) -> Optional[np.ndarray]:
+def _stabilized_rmse_weights(rmse: np.ndarray) -> Optional[np.ndarray]:
     rmse_arr = np.asarray(rmse, dtype=float).reshape(-1)
     if rmse_arr.size == 0 or not np.all(np.isfinite(rmse_arr)):
         return None
@@ -194,11 +194,11 @@ def _prepare_ensemble_cv_default(
 
 @ForecastRegistry.register("ensemble")
 class EnsembleMethod(ForecastMethod):
-    """Adaptive ensemble with averaging, Bayesian model averaging, or stacking."""
+    """Adaptive ensemble with averaging, RMSE weighting, or stacking."""
 
     PARAMS: List[Dict[str, Any]] = [
         {"name": "methods", "type": "list", "description": "Methods to ensemble (default: naive,theta,fourier_ols)"},
-        {"name": "mode", "type": "str", "description": "average|bma|stacking (default: average)"},
+        {"name": "mode", "type": "str", "description": "average|rmse_weighted|stacking (default: average)"},
         {"name": "weights", "type": "list", "description": "Manual weights when mode=average"},
         {"name": "cv_points", "type": "int", "description": "Walk-forward anchors for weighting (default: 2*len(methods))"},
         {"name": "min_train_size", "type": "int", "description": "Minimum history per CV anchor (default: max(30, horizon*3))"},
@@ -330,7 +330,12 @@ class EnsembleMethod(ForecastMethod):
 
         params_in = params.get('method_params') if isinstance(params.get('method_params'), dict) else {}
         params_map = {str(k).lower(): (v if isinstance(v, dict) else {}) for k, v in params_in.items()}
-        mode = str(params.get('mode', 'average')).lower()
+        mode = str(params.get('mode', 'average')).lower().strip()
+        valid_modes = {"average", "rmse_weighted", "stacking"}
+        if mode not in valid_modes:
+            raise ValueError(
+                "Ensemble mode must be one of: average, rmse_weighted, stacking"
+            )
         cv_points = int(params.get('cv_points', max(6, len(base_methods) * 2)))
         min_train = int(params.get('min_train_size', max(30, horizon * 3)))
         expose_components = bool(params.get('expose_components', True))
@@ -358,13 +363,12 @@ class EnsembleMethod(ForecastMethod):
         if params_map:
             params_used['method_params'] = params_map
 
-        effective_mode = mode
         rmse = None
         ensemble_intercept = 0.0
         coeffs = None
         stacking_weight_semantics = None
         cv_rows = 0
-        if mode in ('bma', 'stacking'):
+        if mode in ('rmse_weighted', 'stacking'):
             prepare_kwargs: Dict[str, Any] = {}
             try:
                 if "failure_sink" in inspect.signature(prepare_cv).parameters:
@@ -385,41 +389,49 @@ class EnsembleMethod(ForecastMethod):
             cv_valid_per_method = np.sum(np.isfinite(X_cv), axis=0) if X_cv.size else np.zeros(len(base_methods))
             ensemble_meta['cv_valid_per_method'] = cv_valid_per_method.astype(int).tolist()
             ensemble_meta['cv_total_rows'] = cv_rows
-            if X_cv.shape[0] >= max(3, len(base_methods)):
-                if mode == 'bma':
-                    errors = X_cv - y_cv[:, None]
-                    rmse = np.full(len(base_methods), np.nan, dtype=float)
-                    valid_rmse_columns = np.any(np.isfinite(errors), axis=0)
-                    if np.any(valid_rmse_columns):
-                        with np.errstate(invalid='ignore'):
-                            rmse[valid_rmse_columns] = np.sqrt(
-                                np.nanmean(np.square(errors[:, valid_rmse_columns]), axis=0)
-                            )
-                    valid_bma_mask = np.isfinite(rmse) & (cv_valid_per_method >= 3)
-                    if np.any(valid_bma_mask):
-                        valid_weights = _stabilized_bma_weights(rmse[valid_bma_mask])
-                        if valid_weights is not None:
-                            weights_vec = np.zeros(len(base_methods), dtype=float)
-                            weights_vec[valid_bma_mask] = valid_weights
-                        else:
-                            effective_mode = 'average'
-                    else:
-                        effective_mode = 'average'
-                else:
-                    # Stacking requires fully populated rows
-                    complete_mask = np.all(np.isfinite(X_cv), axis=1)
-                    X_clean = X_cv[complete_mask]
-                    y_clean = y_cv[complete_mask]
-                    if X_clean.shape[0] >= max(3, len(base_methods)):
-                        X_aug = np.column_stack([np.ones(X_clean.shape[0]), X_clean])
-                        beta, *_ = np.linalg.lstsq(X_aug, y_clean, rcond=None)
-                        ensemble_intercept = float(beta[0])
-                        coeffs = beta[1:]
-                        effective_mode = 'stacking'
-                    else:
-                        effective_mode = 'average'
+            required_rows = max(3, len(base_methods))
+            if X_cv.shape[0] < required_rows:
+                raise ValueError(
+                    f"Ensemble mode '{mode}' requires at least {required_rows} "
+                    f"cross-validation rows; received {X_cv.shape[0]}"
+                )
+            if mode == 'rmse_weighted':
+                errors = X_cv - y_cv[:, None]
+                rmse = np.full(len(base_methods), np.nan, dtype=float)
+                valid_rmse_columns = np.any(np.isfinite(errors), axis=0)
+                if np.any(valid_rmse_columns):
+                    with np.errstate(invalid='ignore'):
+                        rmse[valid_rmse_columns] = np.sqrt(
+                            np.nanmean(np.square(errors[:, valid_rmse_columns]), axis=0)
+                        )
+                valid_rmse_mask = np.isfinite(rmse) & (cv_valid_per_method >= 3)
+                if not np.all(valid_rmse_mask):
+                    invalid_methods = [
+                        method_name
+                        for method_name, valid in zip(base_methods, valid_rmse_mask)
+                        if not valid
+                    ]
+                    raise ValueError(
+                        "RMSE-weighted ensemble lacks sufficient valid CV forecasts "
+                        "for: " + ", ".join(invalid_methods)
+                    )
+                weights_vec = _stabilized_rmse_weights(rmse)
+                if weights_vec is None:
+                    raise ValueError("RMSE-weighted ensemble could not derive finite weights")
             else:
-                effective_mode = 'average'
+                complete_mask = np.all(np.isfinite(X_cv), axis=1)
+                X_clean = X_cv[complete_mask]
+                y_clean = y_cv[complete_mask]
+                if X_clean.shape[0] < required_rows:
+                    raise ValueError(
+                        "Stacking requires at least "
+                        f"{required_rows} complete cross-validation rows; "
+                        f"received {X_clean.shape[0]}"
+                    )
+                X_aug = np.column_stack([np.ones(X_clean.shape[0]), X_clean])
+                beta, *_ = np.linalg.lstsq(X_aug, y_clean, rcond=None)
+                ensemble_intercept = float(beta[0])
+                coeffs = beta[1:]
 
         component_methods: List[str] = []
         component_forecasts: List[np.ndarray] = []
@@ -465,18 +477,19 @@ class EnsembleMethod(ForecastMethod):
             if method_params:
                 component_params_applied[method_name] = method_params
 
+        if component_failures:
+            failure_summary = "; ".join(
+                f"{item.get('method')}: {item.get('error')}"
+                for item in component_failures
+            )
+            raise ValueError(
+                "Ensemble failed because requested component forecasts were not "
+                f"all available: {failure_summary}"
+            )
         if not component_forecasts:
             raise ValueError("Ensemble failed: no component forecasts")
 
-        if len(component_methods) != len(base_methods):
-            keep_idx = [base_methods.index(method_name) for method_name in component_methods]
-            if effective_mode == 'stacking' and coeffs is not None:
-                coeffs = coeffs[keep_idx]
-            elif weights_vec is not None:
-                weights_vec = weights_vec[keep_idx]
-            base_methods = component_methods
-
-        if effective_mode != 'stacking':
+        if mode != 'stacking':
             total = float(np.sum(weights_vec)) if weights_vec is not None else 0.0
             if weights_vec is None or total <= 0:
                 weights_vec = np.full(len(base_methods), 1.0 / len(base_methods))
@@ -487,8 +500,7 @@ class EnsembleMethod(ForecastMethod):
                 combined = combined + float(weight) * forecast
         else:
             if coeffs is None or coeffs.size != len(base_methods):
-                coeffs = np.full(len(base_methods), 1.0 / len(base_methods))
-                ensemble_intercept = 0.0
+                raise ValueError("Stacking did not produce one coefficient per component")
             combined = np.full_like(component_forecasts[0], ensemble_intercept, dtype=float)
             for weight, forecast in zip(coeffs, component_forecasts):
                 combined = combined + float(weight) * forecast
@@ -501,28 +513,20 @@ class EnsembleMethod(ForecastMethod):
                 stacking_weight_semantics = 'raw_coefficients'
 
         ensemble_meta.update({
-            'mode_used': effective_mode,
+            'mode_used': mode,
             'methods': list(base_methods),
             'cv_points_used': cv_rows,
             'weights': [float(w) for w in (weights_vec.tolist() if isinstance(weights_vec, np.ndarray) else weights_vec)],
         })
-        params_used['mode_used'] = effective_mode
-        if effective_mode != mode:
-            ensemble_meta['mode_downgraded'] = effective_mode
-            ensemble_meta['warnings'] = [
-                f"Requested ensemble mode '{mode}' could not be fitted; "
-                f"used '{effective_mode}' instead"
-            ]
+        params_used['mode_used'] = mode
         if rmse is not None:
             ensemble_meta['cv_rmse'] = [float(value) for value in rmse.tolist()]
-        if effective_mode == 'stacking':
+        if mode == 'stacking':
             ensemble_meta['intercept'] = float(ensemble_intercept)
             ensemble_meta['coefficients'] = [float(value) for value in coeffs.tolist()]
             ensemble_meta['weight_semantics'] = stacking_weight_semantics
         if cv_failures:
             ensemble_meta['cv_failures'] = cv_failures
-        if component_failures:
-            ensemble_meta['component_failures'] = component_failures
         if component_params_applied:
             ensemble_meta['params_applied'] = component_params_applied
         if expose_components:

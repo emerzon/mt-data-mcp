@@ -277,7 +277,7 @@ def _calculate_lookback_bars(method_l: str, horizon: int, lookback: Optional[int
     if method_l == 'ensemble':
         p = dict(params or {})
         mode = str(p.get('mode', 'average')).lower().strip()
-        if mode in ('bma', 'stacking'):
+        if mode in ('rmse_weighted', 'stacking'):
             methods = p.get('methods')
             if isinstance(methods, str):
                 method_count = len(

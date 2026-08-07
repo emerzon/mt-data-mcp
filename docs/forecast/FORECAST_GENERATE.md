@@ -232,7 +232,7 @@ mtdata-cli forecast_generate EURUSD --library mlforecast --method LGBMRegressor
 | Model | Description | Example Params |
 |-------|-------------|----------------|
 | `analog` | Historical pattern matching | `window_size=64 top_k=20` |
-| `ensemble` | Combine multiple methods | `{"methods":["theta","naive"],"mode":"bma"}` |
+| `ensemble` | Combine multiple methods | `{"methods":["theta","naive"],"mode":"rmse_weighted"}` |
 
 ### Foundation
 
@@ -285,9 +285,9 @@ mtdata-cli forecast_generate EURUSD --timeframe H1 --horizon 12 \
 
 `ensemble` combines multiple base methods. Common `--params` keys:
 - `methods` (list): component methods to run
-- `mode` (str): `average`, `bma`, or `stacking`
+- `mode` (str): `average`, `rmse_weighted`, or `stacking`
 - `weights` (list): manual weights (only used when `mode=average`)
-- `cv_points` (int): walk-forward anchors used for `bma`/`stacking` weighting
+- `cv_points` (int): walk-forward anchors used for `rmse_weighted`/`stacking` weighting
 - `method_params` (dict): per-method parameter overrides
 - `expose_components` (bool): include component forecasts in the JSON output
 
@@ -295,9 +295,9 @@ mtdata-cli forecast_generate EURUSD --timeframe H1 --horizon 12 \
 mtdata-cli forecast_generate EURUSD --timeframe H1 --horizon 12 \
   --method ensemble --params '{"methods":["theta","naive","arima"],"mode":"average"}'
 
-# Bayesian model averaging (weights inferred from walk-forward CV)
+# RMSE-weighted blend (weights inferred from walk-forward CV)
 mtdata-cli forecast_generate EURUSD --timeframe H1 --horizon 12 \
-  --method ensemble --params '{"methods":["theta","naive","fourier_ols"],"mode":"bma","cv_points":12}'
+  --method ensemble --params '{"methods":["theta","naive","fourier_ols"],"mode":"rmse_weighted","cv_points":12}'
 ```
 
 ---

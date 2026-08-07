@@ -11,7 +11,7 @@ from mtdata.forecast.interface import ForecastCallContext
 from mtdata.forecast.methods import ensemble as em
 
 
-def test_ensemble_bma_weights_remain_non_degenerate():
+def test_ensemble_rmse_weights_remain_non_degenerate():
     series = pd.Series(np.linspace(1.0, 20.0, 20))
     method = em.EnsembleMethod()
 
@@ -35,7 +35,7 @@ def test_ensemble_bma_weights_remain_non_degenerate():
         series,
         horizon=2,
         seasonality=1,
-        params={"methods": ["naive", "theta"], "mode": "bma"},
+        params={"methods": ["naive", "theta"], "mode": "rmse_weighted"},
         ensemble_dispatch_method=dispatch,
         prepare_ensemble_cv=prepare_cv,
         get_available_methods=lambda: ("naive", "theta"),
@@ -46,7 +46,7 @@ def test_ensemble_bma_weights_remain_non_degenerate():
     assert weights[1] > 0.05
 
 
-def test_ensemble_bma_keeps_valid_members_when_some_cv_rmse_are_invalid():
+def test_ensemble_rmse_weighting_requires_cv_for_every_member():
     series = pd.Series(np.linspace(1.0, 20.0, 20))
     method = em.EnsembleMethod()
 
@@ -67,22 +67,19 @@ def test_ensemble_bma_keeps_valid_members_when_some_cv_rmse_are_invalid():
         y_cv = np.array([1.0, 2.0, 3.0], dtype=float)
         return X_cv, y_cv
 
-    out = method.forecast(
-        series,
-        horizon=2,
-        seasonality=1,
-        params={"methods": ["naive", "theta"], "mode": "bma"},
-        ensemble_dispatch_method=dispatch,
-        prepare_ensemble_cv=prepare_cv,
-        get_available_methods=lambda: ("naive", "theta"),
-    )
-
-    assert out.metadata["mode_used"] == "bma"
-    assert out.metadata["weights"] == pytest.approx([1.0, 0.0])
-    assert np.allclose(out.forecast, [10.0, 20.0])
+    with pytest.raises(ValueError, match="theta"):
+        method.forecast(
+            series,
+            horizon=2,
+            seasonality=1,
+            params={"methods": ["naive", "theta"], "mode": "rmse_weighted"},
+            ensemble_dispatch_method=dispatch,
+            prepare_ensemble_cv=prepare_cv,
+            get_available_methods=lambda: ("naive", "theta"),
+        )
 
 
-def test_ensemble_reports_component_failures():
+def test_ensemble_rejects_component_failures():
     series = pd.Series(np.linspace(1.0, 20.0, 20))
     method = em.EnsembleMethod()
 
@@ -96,18 +93,15 @@ def test_ensemble_reports_component_failures():
 
     dispatch = Dispatch()
 
-    out = method.forecast(
-        series,
-        horizon=2,
-        seasonality=1,
-        params={"methods": ["naive", "bad"], "mode": "average"},
-        ensemble_dispatch_method=dispatch,
-        get_available_methods=lambda: ("naive", "bad"),
-    )
-
-    assert np.allclose(out.forecast, [5.0, 6.0])
-    assert out.metadata["component_failures"][0]["method"] == "bad"
-    assert out.metadata["component_failures"][0]["error"] == "boom"
+    with pytest.raises(ValueError, match="bad: boom"):
+        method.forecast(
+            series,
+            horizon=2,
+            seasonality=1,
+            params={"methods": ["naive", "bad"], "mode": "average"},
+            ensemble_dispatch_method=dispatch,
+            get_available_methods=lambda: ("naive", "bad"),
+        )
 
 
 def test_ensemble_stacking_reports_normalized_weights_and_raw_coefficients():
@@ -178,7 +172,7 @@ def test_ensemble_stacking_falls_back_to_raw_coefficients_for_non_positive_sum()
     assert out.metadata["intercept"] == 0.5
 
 
-def test_ensemble_reports_component_failures_from_dispatch_exceptions():
+def test_ensemble_rejects_component_dispatch_exceptions():
     series = pd.Series(np.linspace(1.0, 20.0, 20))
     method = em.EnsembleMethod()
 
@@ -187,19 +181,15 @@ def test_ensemble_reports_component_failures_from_dispatch_exceptions():
             raise RuntimeError("boom")
         return np.array([5.0, 6.0], dtype=float)
 
-    out = method.forecast(
-        series,
-        horizon=2,
-        seasonality=1,
-        params={"methods": ["naive", "bad"], "mode": "average"},
-        ensemble_dispatch_method=dispatch,
-        get_available_methods=lambda: ("naive", "bad"),
-    )
-
-    assert np.allclose(out.forecast, [5.0, 6.0])
-    assert out.metadata["component_failures"][0]["method"] == "bad"
-    assert out.metadata["component_failures"][0]["error"] == "boom"
-    assert out.metadata["component_failures"][0]["error_type"] == "RuntimeError"
+    with pytest.raises(ValueError, match="bad: boom"):
+        method.forecast(
+            series,
+            horizon=2,
+            seasonality=1,
+            params={"methods": ["naive", "bad"], "mode": "average"},
+            ensemble_dispatch_method=dispatch,
+            get_available_methods=lambda: ("naive", "bad"),
+        )
 
 
 def test_ensemble_prepare_forecast_call_injects_engine_helpers():
@@ -268,21 +258,30 @@ def test_ensemble_rejects_unavailable_requested_components():
         )
 
 
-def test_ensemble_discloses_adaptive_mode_downgrade():
+def test_ensemble_rejects_insufficient_cv_instead_of_downgrading():
     method = em.EnsembleMethod()
-    out = method.forecast(
-        pd.Series(np.linspace(1.0, 20.0, 20)),
-        horizon=2,
-        seasonality=1,
-        params={"methods": ["naive", "theta"], "mode": "bma"},
-        ensemble_dispatch_method=lambda *_args: np.array([1.0, 2.0]),
-        prepare_ensemble_cv=lambda *_args: (np.empty((0, 2)), np.empty((0,))),
-        get_available_methods=lambda: ("naive", "theta"),
-    )
+    with pytest.raises(ValueError, match="requires at least 3"):
+        method.forecast(
+            pd.Series(np.linspace(1.0, 20.0, 20)),
+            horizon=2,
+            seasonality=1,
+            params={"methods": ["naive", "theta"], "mode": "rmse_weighted"},
+            ensemble_dispatch_method=lambda *_args: np.array([1.0, 2.0]),
+            prepare_ensemble_cv=lambda *_args: (np.empty((0, 2)), np.empty((0,))),
+            get_available_methods=lambda: ("naive", "theta"),
+        )
 
-    assert out.metadata["mode_used"] == "average"
-    assert out.metadata["mode_downgraded"] == "average"
-    assert "could not be fitted" in out.metadata["warnings"][0]
+
+def test_ensemble_rejects_removed_bma_mode():
+    method = em.EnsembleMethod()
+    with pytest.raises(ValueError, match="rmse_weighted"):
+        method.forecast(
+            pd.Series(np.linspace(1.0, 20.0, 20)),
+            horizon=2,
+            seasonality=1,
+            params={"methods": ["naive", "theta"], "mode": "bma"},
+            get_available_methods=lambda: ("naive", "theta"),
+        )
 
 
 def test_ensemble_params_applied_metadata():
