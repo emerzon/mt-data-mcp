@@ -175,7 +175,7 @@ PARAM_HINTS = {
     "auto_close_on_sl_tp_fail": "If a filled market order cannot attach TP/SL, immediately try to close the unprotected position. Defaults to true.",
     "ticket": "Ticket/order ID.",
     "expiration": "Expiration time/date. For trade orders accepts a dateparser string, UTC epoch seconds, or GTC token; for option tools accepts YYYY-MM-DD.",
-    "idempotency_key": "Optional in-process dedupe key for retrying the same request.",
+    "idempotency_key": "Optional durable SQLite dedupe key for retrying the same request. Completed outcomes persist across processes and restarts for the configured TTL (24 hours by default).",
     "dry_run": "Preview the action without applying changes.",
     "check_only": "Return sample sufficiency/status checks without running the full analysis.",
     "profit_only": "Close only profitable positions when true.",

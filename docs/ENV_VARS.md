@@ -31,18 +31,20 @@ MT5_TIMEOUT=30
 ## Timezone
 
 MT5 documents UTC request datetimes and returned epochs. mtdata also supports
-broker terminals that expose server-clock epochs: it detects that mode from a
-fresh tick and uses the broker setting below to normalize request bounds and
-results at the adapter boundary. Public payload timestamps remain UTC.
+broker terminals that expose server-clock epochs: configure the broker setting
+below so a fresh tick can verify that mode and the adapter can normalize request
+bounds and results. Public payload timestamps remain UTC after normalization.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `MT5_SERVER_TZ` | — | IANA timezone used for broker session/calendar boundaries and detected server-clock conversion (e.g. `Europe/Athens`). Handles DST automatically. |
+| `MT5_SERVER_TZ` | — | IANA timezone used for broker session/calendar boundaries and server-clock recognition/conversion (e.g. `Europe/Athens`). Handles DST automatically. |
 | `MT5_TIME_OFFSET_MINUTES` | `0` | Fixed broker offset from UTC in minutes. A non-zero value overrides `MT5_SERVER_TZ`. |
 | `MT5_CLIENT_TZ` / `CLIENT_TZ` | auto-detect | IANA timezone of the local machine. `CLIENT_TZ` takes precedence if both are set. |
 
 Configure these when broker-local boundaries matter or when the terminal uses
-broker server-clock epochs. Timestamp-mode detection is automatic.
+broker server-clock epochs. Detection verifies a configured offset; without
+one, mtdata follows MT5's native-UTC contract rather than inferring a clock
+offset from a potentially stale tick.
 Prefer `MT5_SERVER_TZ` because it adjusts for DST. Use
 `MT5_TIME_OFFSET_MINUTES` only when you know a fixed session offset, and avoid
 setting both unless you intentionally want the fixed offset to win.
@@ -235,10 +237,9 @@ Notes:
   trailed stops still reserve the equity that would be lost from the current
   account state. If the position snapshot is unavailable, snapshot-dependent
   guardrails block the action.
-- Wallet-risk guardrails reserve open-position risk and the candidate order's
-  risk. Other pending orders are not reserved by this execution gate; inspect
-  contingent pending risk with `trade_risk_analyze` before submitting multiple
-  simultaneous entries.
+- Wallet-risk guardrails reserve risk from open positions, existing pending
+  orders, and the candidate order. They fail closed when any of those records
+  lacks a quantifiable stop-loss or valid broker tick metadata.
 - Leave any variable unset to disable only that rule.
 - `trade_modify` guardrails apply only to pending-order changes and position SL changes that increase risk; close/reduce flows stay allowed.
 
