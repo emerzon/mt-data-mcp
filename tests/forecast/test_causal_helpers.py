@@ -419,8 +419,8 @@ class TestFormatSummary:
             {"effect": "EURUSD", "cause": "USDJPY", "lag": 2, "p_value": 0.20, "samples": 100},
         ]
         result = _format_summary(rows, ["EURUSD", "GBPUSD", "USDJPY"], "log_return", 0.05)
-        assert "causal" in result
-        assert "no-link" in result
+        assert "granger-predictive-link" in result
+        assert "no-granger-link" in result
         assert "EURUSD <- GBPUSD" in result
 
     def test_group_hint(self):

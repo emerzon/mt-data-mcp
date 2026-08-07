@@ -1,4 +1,4 @@
-"""Causal signal discovery tools."""
+"""Predictive lead/lag discovery tools."""
 
 from __future__ import annotations
 
@@ -17,7 +17,6 @@ import pandas as pd
 
 from ..shared.constants import TIME_DISPLAY_FORMAT, TIMEFRAME_MAP, TIMEFRAME_SECONDS
 from ..shared.schema import DetailLiteral, TimeframeLiteral
-from ..utils.time import bar_close_epoch
 from ..utils.mt5 import (
     _ensure_symbol_ready,
     _mt5_copy_rates_from,
@@ -31,6 +30,7 @@ from ..utils.symbol import (
 from ..utils.symbol import (
     _normalize_group_path_query,
 )
+from ..utils.time import bar_close_epoch
 from ..utils.utils import _parse_end_datetime, _parse_start_datetime
 from ._mcp_instance import mcp
 from .execution_logging import run_logged_operation
@@ -1374,12 +1374,12 @@ def _format_summary(
     group_hint: str | None = None,
 ) -> str:
     if not rows:
-        return "No valid pairings available for causal discovery."
+        return "No valid pairings available for Granger predictive-link discovery."
     rows_sorted = sorted(
         rows, key=lambda item: (item["p_value"], item["effect"], item["cause"])
     )
     header = [
-        f"Causal signal discovery (transform={transform}, alpha={alpha:.4f})",
+        f"Granger predictive-link discovery (transform={transform}, alpha={alpha:.4f})",
         f"Symbols analysed: {', '.join(symbols)}",
         "",
         "Effect <- Cause | Lag | p-value | Samples | Conclusion",
@@ -1389,7 +1389,11 @@ def _format_summary(
         header.insert(1, f"Group: {group_hint}")
     lines = header
     for row in rows_sorted:
-        conclusion = "causal" if row["p_value"] < alpha else "no-link"
+        conclusion = (
+            "granger-predictive-link"
+            if row["p_value"] < alpha
+            else "no-granger-link"
+        )
         lines.append(
             f"{row['effect']} <- {row['cause']} | {row['lag']} | {row['p_value']:.4f} | {row['samples']} | {conclusion}"
         )
@@ -1401,7 +1405,10 @@ def _format_summary(
         "Displayed p-values use Bonferroni correction across tested lags and "
         "all successfully tested directed pairs."
     )
-    lines.append("Results are pairwise and do not imply full causal graphs.")
+    lines.append(
+        "Results are pairwise predictive lag associations; they do not establish "
+        "structural or economic causality."
+    )
     return "\n".join(lines)
 
 
@@ -1608,7 +1615,7 @@ def causal_discover_signals(  # noqa: C901
     normalize: bool = True,
     detail: DetailLiteral = "compact",
 ) -> Dict[str, Any]:
-    """Run Granger-style causal discovery on MT5 symbols.
+    """Discover pairwise Granger predictive links between MT5 symbols.
 
     Args:
         symbols: Comma-separated MT5 symbols; provide one symbol to auto-expand
@@ -1624,7 +1631,7 @@ def causal_discover_signals(  # noqa: C901
         start: Optional UTC-compatible start date/time for the analysis window.
         end: Optional UTC-compatible end date/time; end-only anchors recent history.
         max_lag: Maximum lag order for tests (>=1).
-        significance: Family-wise alpha level for reporting causal links after
+        significance: Family-wise alpha level for reporting Granger predictive links after
             Bonferroni correction across tested lags and directed pairs.
         include_incomplete: Include the current forming candle. Defaults to false
             so statistical tests use completed bars only.
@@ -2168,7 +2175,7 @@ def causal_discover_signals(  # noqa: C901
                 meta,
                 legends={
                     "transform": _TRANSFORM_LEGEND,
-                    "note_p_value": "Lower p-values indicate stronger evidence of causality. Values < significance threshold indicate significant Granger-causal relationship.",
+                    "note_p_value": "Lower p-values indicate stronger evidence that lagged 'cause' values improve prediction of 'effect'. Values below the significance threshold identify a Granger predictive link, not structural or economic causality.",
                     "note_lag": "Optimal lag order (bars) at which past values of 'cause' best predict current 'effect'",
                     "note_p_value_correction": "Displayed p-values use Bonferroni correction across tested lags and all successfully tested directed pairs.",
                 },
@@ -2183,11 +2190,11 @@ def causal_discover_signals(  # noqa: C901
         if not rows_sorted:
             out["result"] = "no_tests_run"
             out["message"] = (
-                "No causal relationships detected (insufficient data or all tests failed)."
+                "No Granger predictive links tested (insufficient data or all tests failed)."
             )
         elif not significant_rows:
             out["message"] = (
-                "No statistically significant causal links detected at the selected threshold."
+                "No statistically significant Granger predictive links detected at the selected threshold."
             )
             near_threshold = min(1.0, float(significance) * 2.0)
             near_misses = [

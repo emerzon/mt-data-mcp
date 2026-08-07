@@ -1,4 +1,4 @@
-# Causal signal discovery
+# Granger predictive-link discovery
 
 Explore **who might lead whom** across symbols with pairwise Granger-style tests on recent MT5 closes. This is **exploratory feature discovery** for watchlists — not a claim of true economic causality.
 
@@ -155,7 +155,7 @@ The tool returns a plain-text table:
 Effect <- Cause | Lag | p-value | Samples | Conclusion
 ```
 
-- **Conclusion** is `causal` when the globally Bonferroni-adjusted `p-value < significance`, otherwise `no-link`.
+- **Conclusion** is `granger-predictive-link` when the globally Bonferroni-adjusted `p-value < significance`, otherwise `no-granger-link`. This is evidence of incremental lagged predictability, not structural or economic causality.
 - **Lag** is the best-performing lag for the pair under the selected test statistic.
 
 Tip: `--json` returns the structured payload instead of default TOON text.

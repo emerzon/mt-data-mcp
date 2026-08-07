@@ -314,7 +314,7 @@ class TestFormatSummary:
     def test_no_link(self):
         rows = [{"effect": "B", "cause": "A", "lag": 1, "p_value": 0.99, "samples": 50}]
         text = _format_summary(rows, ["A", "B"], "log_return", 0.05)
-        assert "no-link" in text
+        assert "no-granger-link" in text
 
     def test_group_hint(self):
         rows = [{"effect": "B", "cause": "A", "lag": 1, "p_value": 0.02, "samples": 80}]
@@ -820,7 +820,7 @@ class TestCausalDiscoverSignals:
             "significant_links": 0,
         }
         assert result["message"] == (
-            "No statistically significant causal links detected at the selected threshold."
+            "No statistically significant Granger predictive links detected at the selected threshold."
         )
 
     @patch("statsmodels.tsa.stattools.grangercausalitytests")
