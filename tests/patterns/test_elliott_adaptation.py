@@ -82,6 +82,8 @@ def test_selector_is_bounded_and_enforces_safety_margin() -> None:
     df = _market_frame(noise=0.0001)
     resolved = _resolve(df)
 
+    assert resolved.diagnostics["causality"] == "causal_filters_terminal_selection"
+    assert resolved.diagnostics["selection_scope"] == "trailing_calibration_window"
     metrics = resolved.diagnostics["candidate_metrics"]
     selected = resolved.diagnostics["selected_filter"]
     assert len(metrics) == 6

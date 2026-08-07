@@ -26,8 +26,10 @@ class ElliottWaveConfig:
 
     Structural scoring is based on hard-rule validity and Fibonacci-template
     fit. The optional GMM classifier is diagnostic-only. When scale_mode is
-    "auto", request-scoped causal calibration selects market-relative ZigZag
-    scales and may conservatively smooth the close-based pivot signal.
+    "auto", request-scoped trailing-window calibration selects market-relative
+    ZigZag scales and may conservatively smooth the close-based pivot signal.
+    Its filters are causal, but its terminal selection is not a walk-forward
+    historical backtest.
     """
 
     # Pivot detection controls (used by analysis and threshold scans)

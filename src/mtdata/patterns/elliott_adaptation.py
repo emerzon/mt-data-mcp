@@ -1,4 +1,4 @@
-"""Deterministic, causal market adaptation for Elliott pivot detection."""
+"""Deterministic Elliott pivot adaptation with causal filters."""
 
 from __future__ import annotations
 
@@ -287,12 +287,16 @@ def resolve_elliott_adaptation(
     external_denoise_applied: bool = False,
     fallback_threshold_pct: float = 0.5,
 ) -> ElliottAdaptation:
-    """Resolve automatic signal and scan pairs without using future bars."""
+    """Resolve automatic signal and scan pairs using terminal calibration."""
     raw = np.asarray(close, dtype=float)
     n = int(raw.size)
     diagnostics: Dict[str, Any] = {
         "mode": str(scale_mode),
-        "causality": "causal_walk_forward",
+        # Candidate filters are causal, but their winner is chosen from the
+        # trailing calibration window and then applied to this full request.
+        # This is not a walk-forward historical selection procedure.
+        "causality": "causal_filters_terminal_selection",
+        "selection_scope": "trailing_calibration_window",
         "calibration_bars": int(min(n, max(1, adaptive_window_bars))),
     }
     invalid_prices = not np.all(np.isfinite(raw)) or np.any(raw <= 0.0)
