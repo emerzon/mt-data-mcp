@@ -1099,7 +1099,14 @@ def _builtin_signal(close: pd.Series, candidate: StrategyCandidate) -> pd.Series
         else:
             a = close.ewm(span=fast, adjust=False, min_periods=fast).mean()
             b = close.ewm(span=slow, adjust=False, min_periods=slow).mean()
-        return pd.Series(np.where(a > b, 1.0, np.where(a < b, -1.0, 0.0)), index=close.index).where(a.notna() & b.notna())
+        valid = a.notna() & b.notna()
+        previous_valid = valid.shift(1, fill_value=False)
+        crossed_above = valid & previous_valid & (a > b) & (a.shift(1) <= b.shift(1))
+        crossed_below = valid & previous_valid & (a < b) & (a.shift(1) >= b.shift(1))
+        return pd.Series(
+            np.where(crossed_above, 1.0, np.where(crossed_below, -1.0, 0.0)),
+            index=close.index,
+        ).where(valid)
     length = int(params.get("rsi_length", 14))
     oversold = float(params.get("oversold", 30.0))
     overbought = float(params.get("overbought", 70.0))
@@ -1107,7 +1114,22 @@ def _builtin_signal(close: pd.Series, candidate: StrategyCandidate) -> pd.Series
     gain = delta.clip(lower=0).ewm(alpha=1 / length, adjust=False, min_periods=length).mean()
     loss = (-delta.clip(upper=0)).ewm(alpha=1 / length, adjust=False, min_periods=length).mean()
     rsi = 100 - 100 / (1 + gain / loss.replace(0, np.nan))
-    return pd.Series(np.where(rsi < oversold, 1.0, np.where(rsi > overbought, -1.0, 0.0)), index=close.index).where(rsi.notna())
+    valid = rsi.notna()
+    previous = rsi.shift(1)
+    entered_oversold = valid & previous.notna() & (rsi < oversold) & (previous >= oversold)
+    entered_overbought = valid & previous.notna() & (rsi > overbought) & (previous <= overbought)
+    return pd.Series(
+        np.where(entered_oversold, 1.0, np.where(entered_overbought, -1.0, 0.0)),
+        index=close.index,
+    ).where(valid)
+
+
+def _candidate_signal_definition(candidate: StrategyCandidate) -> str:
+    if candidate.type == "forecast_threshold":
+        return "forecast_threshold_anchor"
+    if candidate.strategy in {"sma_cross", "ema_cross"}:
+        return "cross_event"
+    return "zone_entry_event"
 
 
 _MAX_FORECAST_SIGNAL_ANCHORS = 200
@@ -1319,6 +1341,7 @@ def validate_strategies(  # noqa: C901
     )
     results = []
     for candidate in request.candidates:
+        signal_definition = _candidate_signal_definition(candidate)
         signal = _builtin_signal(df["close"], candidate) if candidate.type == "builtin_strategy" else _forecast_signal(df, candidate, request.symbol, request.timeframe)
         candidate_fold_windows = fold_windows
         candidate_embargo_intervals = embargo_intervals
@@ -1350,7 +1373,12 @@ def validate_strategies(  # noqa: C901
             same_bar_policy,
         )
         if len(indices) < request.n_splits * 5:
-            results.append({"id": candidate.id, "evaluation_status": "insufficient_data", "trades": int(len(indices))})
+            results.append({
+                "id": candidate.id,
+                "evaluation_status": "insufficient_data",
+                "signal_definition": signal_definition,
+                "trades": int(len(indices)),
+            })
             continue
         fold_rows = []
         skipped_folds: List[Dict[str, Any]] = []
@@ -1419,7 +1447,12 @@ def validate_strategies(  # noqa: C901
             })
         arr = np.asarray(all_net, dtype=float)
         if not len(arr):
-            results.append({"id": candidate.id, "evaluation_status": "insufficient_data", "trades": 0})
+            results.append({
+                "id": candidate.id,
+                "evaluation_status": "insufficient_data",
+                "signal_definition": signal_definition,
+                "trades": 0,
+            })
             continue
         equity = np.cumprod(1.0 + np.clip(arr, -0.999, None))
         peaks = np.maximum.accumulate(equity)
@@ -1470,6 +1503,7 @@ def validate_strategies(  # noqa: C901
             "id": candidate.id,
             "type": candidate.type,
             "evaluation_status": "complete",
+            "signal_definition": signal_definition,
             "trades": int(len(arr)),
             "net_expectancy": float(np.mean(arr)),
             "expectancy_ci_95": expectancy_ci,

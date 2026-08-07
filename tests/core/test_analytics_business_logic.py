@@ -10,6 +10,7 @@ import pytest
 
 from mtdata.analytics.engines import (
     _barrier_returns,
+    _builtin_signal,
     _classify_trade_sides,
     _execution_duration_display,
     _execution_percentiles,
@@ -26,9 +27,50 @@ from mtdata.core.analytics_requests import (
     MarketMicrostructureRequest,
     MarketRelativeStrengthRequest,
     PortfolioRiskDecomposeRequest,
+    StrategyCandidate,
     StrategyValidateRequest,
     TradeExecutionQualityRequest,
 )
+
+
+@pytest.mark.parametrize(
+    ("strategy", "expected"),
+    [
+        ("sma_cross", [0.0, 0.0, 1.0, 0.0, -1.0]),
+        ("ema_cross", [0.0, 0.0, 1.0, -1.0, 0.0]),
+    ],
+)
+def test_builtin_ma_cross_signals_only_on_cross_events(
+    strategy: str,
+    expected: list[float],
+) -> None:
+    close = pd.Series([3.0, 2.0, 1.0, 2.0, 3.0, 2.0, 1.0])
+    candidate = StrategyCandidate(
+        id="cross",
+        type="builtin_strategy",
+        strategy=strategy,
+        params={"fast_period": 2, "slow_period": 3},
+    )
+
+    signal = _builtin_signal(close, candidate)
+
+    assert signal.iloc[:2].isna().all()
+    assert signal.iloc[2:].tolist() == expected
+
+
+def test_builtin_rsi_reversion_signals_only_on_zone_entry() -> None:
+    close = pd.Series([100.0, 90.0, 80.0, 90.0, 100.0, 90.0, 80.0])
+    candidate = StrategyCandidate(
+        id="rsi",
+        type="builtin_strategy",
+        strategy="rsi_reversion",
+        params={"rsi_length": 2, "oversold": 40, "overbought": 60},
+    )
+
+    signal = _builtin_signal(close, candidate)
+
+    assert signal.iloc[:2].isna().all()
+    assert signal.iloc[2:].tolist() == [0.0, 0.0, -1.0, 1.0, 0.0]
 from mtdata.utils.sessions import market_session_label
 
 
@@ -717,6 +759,7 @@ def test_strategy_validation_returns_walk_forward_oos_metrics() -> None:
     assert result["rankings"][0]["trades"] > 0
     assert result["rankings"][0]["evaluation_status"] == "complete"
     candidate = result["rankings"][0]
+    assert candidate["signal_definition"] == "cross_event"
     assert "calibration" not in candidate
     assert "direction_base_rate_stability" in candidate
     if candidate["sharpe"] is not None:

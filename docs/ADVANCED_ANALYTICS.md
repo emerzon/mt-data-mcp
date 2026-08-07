@@ -59,6 +59,12 @@ mtdata-cli strategy_validate EURUSD --timeframe H1 --lookback 3000 \
 Candidate parameters are fixed before validation; this tool does not optimize
 and validate on the same sample.
 
+Built-in `sma_cross` and `ema_cross` candidates enter only on fast/slow moving-
+average cross events; `rsi_reversion` enters only when RSI crosses into an
+oversold or overbought zone. Flat bars do not create periodic re-entries.
+Each ranking exposes this contract in `signal_definition` (`cross_event`,
+`zone_entry_event`, or `forecast_threshold_anchor`).
+
 Forecast-threshold candidates execute at most the latest 200 eligible forecast
 anchors to keep validation bounded. Their folds partition that computed signal
 window rather than empty earlier history. Each candidate reports signal range,
