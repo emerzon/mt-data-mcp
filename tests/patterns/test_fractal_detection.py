@@ -1,6 +1,18 @@
+from typing import get_args, get_type_hints
+
 import pandas as pd
 
-from mtdata.patterns.fractal import FractalDetectorConfig, detect_fractal_patterns
+from mtdata.patterns.fractal import (
+    FractalDetectorConfig,
+    FractalPatternResult,
+    detect_fractal_patterns,
+)
+
+
+def test_fractal_status_annotation_matches_runtime_lifecycle():
+    status_type = get_type_hints(FractalPatternResult)["status"]
+
+    assert set(get_args(status_type)) == {"active", "broken"}
 
 
 def _fractal_breakout_frame(close_breakout: bool = True) -> pd.DataFrame:

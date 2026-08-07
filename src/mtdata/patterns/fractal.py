@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 import numpy as np
 import pandas as pd
@@ -24,7 +24,7 @@ class FractalDetectorConfig:
 @dataclass
 class FractalPatternResult(PatternResultBase):
     name: str
-    status: str  # "forming" | "completed"
+    status: Literal["active", "broken"]
     direction: str
     price: float
     details: Dict[str, Any] = field(default_factory=dict)
