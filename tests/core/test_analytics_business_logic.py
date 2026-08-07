@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import math
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 import numpy as np
@@ -331,9 +331,11 @@ def test_microstructure_uses_completed_session_window_when_weekend_is_closed(
     monkeypatch,
 ) -> None:
     gateway = FakeGateway()
-    rows = _ticks(30)
+    completed_end = datetime(2026, 7, 31, 21, tzinfo=timezone.utc)
+    completed_start = completed_end - timedelta(minutes=60)
+    rows = _ticks(30, start=int(completed_start.timestamp()))
     gateway.copy_ticks_range = lambda _symbol, start, _end, _flags: (
-        rows if start.weekday() == 4 else []
+        rows if start == completed_start else []
     )
     monkeypatch.setattr(
         "mtdata.analytics.engines.closed_session_context",
@@ -346,7 +348,7 @@ def test_microstructure_uses_completed_session_window_when_weekend_is_closed(
     monkeypatch.setattr(
         "mtdata.analytics.engines.standard_weekend_window",
         lambda _now: (
-            datetime(2026, 7, 31, 21, tzinfo=timezone.utc),
+            completed_end,
             datetime(2026, 8, 2, 21, tzinfo=timezone.utc),
         ),
     )
