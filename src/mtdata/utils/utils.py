@@ -215,6 +215,15 @@ def _format_numeric_rows_from_df(
     *,
     stringify: bool = True,
 ) -> List[List[Any]]:
+    if not stringify:
+        # Public numeric row modes do not need adaptive display decimals. Keep
+        # the conversion columnar and normalize non-JSON numeric sentinels
+        # before materializing the final Python rows.
+        object_frame = df.loc[:, headers].astype(object)
+        object_frame = object_frame.replace([np.inf, -np.inf], None)
+        object_frame = object_frame.where(pd.notna(object_frame), None)
+        return object_frame.to_numpy(dtype=object).tolist()
+
     # Precompute per-column decimals to trim numeric noise without losing precision.
     col_decimals: Dict[str, int] = {}
     for col in headers:
@@ -249,21 +258,13 @@ def _format_numeric_rows_from_df(
                 if not math.isfinite(num):
                     out_row.append(format_number(num) if stringify else num)
                     continue
-                if not stringify:
-                    if isinstance(val, int) and not isinstance(val, bool):
-                        out_row.append(int(val))
-                    elif float(num).is_integer() and not isinstance(val, float):
-                        out_row.append(int(num))
-                    else:
-                        out_row.append(num)
+                decimals = col_decimals.get(col)
+                if decimals is None:
+                    out_row.append(format_number(num))
                 else:
-                    decimals = col_decimals.get(col)
-                    if decimals is None:
-                        out_row.append(format_number(num))
-                    else:
-                        out_row.append(format_float(num, decimals))
+                    out_row.append(format_float(num, decimals))
             else:
-                out_row.append(str(val) if stringify else val)
+                out_row.append(str(val))
         out_rows.append(out_row)
     return out_rows
 

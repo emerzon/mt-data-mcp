@@ -2556,10 +2556,13 @@ def _json_safe_payload(value: Any) -> Any:
         return [_json_safe_payload(item) for item in value]
     if isinstance(value, tuple):
         return [_json_safe_payload(item) for item in value]
+    if value is None or isinstance(value, (bool, str, bytes)):
+        return value
     if isinstance(value, Real) and not isinstance(value, bool):
         number = float(value)
         if not math.isfinite(number):
             return None
+        return value
     try:
         if pd.isna(value) and not isinstance(value, (str, bytes)):
             return None

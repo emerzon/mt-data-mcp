@@ -318,3 +318,25 @@ class TestFormatNumericRowsFromDf:
         df = pd.DataFrame({"time": [0], "flag": [True]})
         rows = _format_numeric_rows_from_df(df, ["time", "flag"])
         assert rows[0][1] == "true"
+
+    def test_numeric_mode_preserves_types_and_normalizes_non_finite_values(self):
+        df = pd.DataFrame(
+            {
+                "time": [1, 2],
+                "price": [1.25, np.inf],
+                "count": [3, 4],
+                "flag": [True, False],
+                "missing": [np.nan, None],
+            }
+        )
+
+        rows = _format_numeric_rows_from_df(
+            df,
+            ["time", "price", "count", "flag", "missing"],
+            stringify=False,
+        )
+
+        assert rows == [
+            [1, 1.25, 3, True, None],
+            [2, None, 4, False, None],
+        ]
