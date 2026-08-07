@@ -36,6 +36,7 @@ from ..utils.mt5 import (
     mt5,
 )
 from ..utils.mt5_enums import decode_mt5_bitmask_labels, decode_mt5_enum_label
+from ..utils.quote import _quote_pair_quality
 from ..utils.symbol import (
     _extract_group_path as _extract_group_path_util,
 )
@@ -1755,10 +1756,12 @@ def _build_market_scan_spread_row(
     bid = _market_scan_float(getattr(tick, "bid", None))
     ask = _market_scan_float(getattr(tick, "ask", None))
     tick_time = _market_scan_float(getattr(tick, "time", None))
-    if bid is None or ask is None:
+    spread_quality = _quote_pair_quality(tick)
+    if spread_quality == "one_sided" or bid is None or ask is None:
         return None, "Bid/ask quote is unavailable."
-    if ask < bid:
+    if spread_quality == "inverted" or ask < bid:
         return None, "Bid/ask quote is invalid."
+    spread_valid = spread_quality == "two_sided"
 
     point = _market_scan_float(getattr(symbol, "point", 0.0)) or 0.0
     tick_size = _market_scan_float(getattr(symbol, "trade_tick_size", 0.0)) or 0.0
@@ -1781,6 +1784,23 @@ def _build_market_scan_spread_row(
         spread_cost_per_lot = (spread_abs / tick_size) * tick_value
         pricing_basis = "per_1_lot_estimate"
 
+    quote_freshness = _market_scan_quote_freshness_fields(
+        tick_time,
+        symbol=symbol.name,
+    )
+    if not spread_valid:
+        quality_warning = "Locked quote (bid equals ask) is not usable for live trading."
+        existing_warning = quote_freshness.get("warning")
+        quote_freshness["warning"] = (
+            f"{existing_warning} {quality_warning}"
+            if existing_warning
+            else quality_warning
+        )
+        quote_freshness["usable_for_live_trading"] = False
+        quote_freshness["usable_for_live_trading_basis"] = (
+            "quote_age_market_session_and_positive_spread"
+        )
+
     row = _market_scan_base_row(symbol)
     row.update(
         {
@@ -1790,12 +1810,14 @@ def _build_market_scan_spread_row(
             "quote_as_of": (
                 _format_time_explicit(tick_time) if tick_time is not None else None
             ),
-            **_market_scan_quote_freshness_fields(tick_time, symbol=symbol.name),
+            **quote_freshness,
             "spread": _market_scan_round(spread_abs, digits=digits),
             "spread_points": _market_scan_points(spread_points),
             "spread_pips": _market_scan_round(spread_pips, digits=4),
             "spread_pct": _market_scan_round(spread_pct, digits=6),
             "spread_cost_per_lot": _market_scan_round(spread_cost_per_lot, digits=6),
+            "spread_valid": spread_valid,
+            "spread_quality": spread_quality,
             "pricing_basis": pricing_basis,
         }
     )
@@ -2208,6 +2230,9 @@ _TOP_MARKETS_COMPACT_BASE_HEADERS = [
     "time",
     "data_stale",
     "freshness",
+    "spread_valid",
+    "spread_quality",
+    "usable_for_live_trading",
 ]
 
 _TOP_MARKETS_COMPACT_SPREAD_HEADERS = [
@@ -2266,6 +2291,9 @@ _TOP_MARKETS_FULL_BASE_HEADERS = [
     "timestamp_warning",
     "freshness",
     "warning",
+    "spread_valid",
+    "spread_quality",
+    "usable_for_live_trading",
 ]
 
 _TOP_MARKETS_FULL_SPREAD_HEADERS = [
@@ -2755,7 +2783,11 @@ def _market_scan_row_matches_filters(
         return False
     if max_gap_pct is not None and (gap_pct is None or gap_pct > float(max_gap_pct)):
         return False
-    if max_spread_pct is not None and (spread_pct is None or spread_pct > float(max_spread_pct)):
+    if max_spread_pct is not None and (
+        row.get("spread_valid") is not True
+        or spread_pct is None
+        or spread_pct > float(max_spread_pct)
+    ):
         return False
     if min_tick_volume is not None and (tick_volume is None or tick_volume < int(min_tick_volume)):
         return False
@@ -2806,6 +2838,7 @@ def _market_scan_sort_rows(
 
     rows.sort(
         key=lambda row: (
+            rank_by == "spread_pct" and row.get("spread_valid") is not True,
             bool(row.get("bar_stale")),
             row.get(rank_by) is None,
             (
@@ -2910,7 +2943,8 @@ def symbols_top_markets(  # noqa: C901
     bar on `timeframe`. Uses compact leaderboard rows by default. Set
     `detail="full"` for the expanded row shape and collection metadata. Use
     `market_scan` instead when you need explicit symbol inputs, RSI/SMA filters,
-    or a single flat scanner table.
+    or a single flat scanner table. Locked or invalid quotes are marked unsafe
+    and rank after valid two-sided quotes in spread leaderboards.
     """
 
     detail_mode = normalize_output_verbosity_detail(detail, default="compact")
@@ -3137,6 +3171,7 @@ def symbols_top_markets(  # noqa: C901
 
             spread_rows.sort(
                 key=lambda row: (
+                    row.get("spread_valid") is not True,
                     bool(row.get("data_stale")),
                     row.get("spread_pct") is None,
                     row.get("spread_pct") if row.get("spread_pct") is not None else float("inf"),
@@ -3202,7 +3237,7 @@ def symbols_top_markets(  # noqa: C901
                 if returned_count < int(limit_value):
                     fields["note"] = (
                         f"Requested {int(limit_value)} rows but only "
-                        f"{available_count} symbols had usable {metric_name} data "
+                        f"{available_count} symbols provided {metric_name} data "
                         f"in the {universe_value} universe."
                     )
                 return fields
@@ -3427,7 +3462,8 @@ def market_scan(  # noqa: C901
     for compatibility. Broad scans use the visible universe; `universe="all"`
     must be combined with `symbols` or `group` to avoid unbounded hidden-symbol
     activation. Use `symbols_top_markets` for a quick all-market overview with
-    separate spread, volume, and mover leaderboards.
+    separate spread, volume, and mover leaderboards. Locked or invalid quotes
+    are marked unsafe and cannot satisfy a maximum-spread filter.
     """
 
     detail_mode = normalize_output_verbosity_detail(detail, default="compact")
@@ -3816,6 +3852,8 @@ def market_scan(  # noqa: C901
                 "quote_warning",
                 "quote_freshness",
                 "quote_usable_for_live_trading",
+                "spread_valid",
+                "spread_quality",
                 "bar_age_seconds",
                 "bar_freshness_anchor",
                 "bar_freshness_metric",
@@ -3860,6 +3898,9 @@ def market_scan(  # noqa: C901
                 "quote_freshness_reason",
                 "quote_timestamp_in_future",
                 "quote_timestamp_warning",
+                "quote_usable_for_live_trading",
+                "spread_valid",
+                "spread_quality",
                 "bar_stale",
                 "bar_market_status",
                 "bar_market_status_reason",

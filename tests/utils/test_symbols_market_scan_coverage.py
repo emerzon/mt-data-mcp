@@ -80,6 +80,110 @@ def test_market_scan_spread_cost_uses_account_currency() -> None:
     assert row["spread_cost_currency"] == "USD"
 
 
+def test_market_scan_locked_quote_is_explicitly_unsafe() -> None:
+    from mtdata.core.symbols import _build_market_scan_spread_row
+
+    symbol = _make_symbol("XRPUSD", path="Crypto", point=0.0001, digits=4)
+    gateway = SimpleNamespace(
+        symbol_info_tick=lambda _symbol: SimpleNamespace(
+            bid=1.0333,
+            ask=1.0333,
+            time=1_700_000_000.0,
+        ),
+        last_error=lambda: None,
+    )
+
+    with patch("mtdata.core.symbols.time.time", return_value=1_700_000_001.0):
+        row, error = _build_market_scan_spread_row(symbol, gateway)
+
+    assert error is None
+    assert row["spread"] == 0.0
+    assert row["spread_valid"] is False
+    assert row["spread_quality"] == "locked"
+    assert row["usable_for_live_trading"] is False
+    assert "Locked quote" in row["warning"]
+
+
+@patch("mtdata.core.symbols._extract_group_path_util", side_effect=lambda s: s.path)
+@patch("mtdata.core.symbols.mt5.symbol_info_tick")
+@patch("mtdata.core.symbols.mt5.symbols_get")
+def test_top_markets_ranks_locked_quotes_after_valid_spreads(
+    mock_symbols_get,
+    mock_tick,
+    mock_group,
+) -> None:
+    mock_symbols_get.return_value = [
+        _make_symbol("LOCKED", path="Crypto"),
+        _make_symbol("VALID", path="Crypto"),
+    ]
+    mock_tick.side_effect = lambda symbol: {
+        "LOCKED": _make_tick(bid=1.0, ask=1.0),
+        "VALID": _make_tick(bid=1.0, ask=1.0005),
+    }[symbol]
+
+    result = _get_symbols_top_markets()(rank_by="spread", limit=2)
+
+    assert [row["symbol"] for row in result["data"]] == ["VALID", "LOCKED"]
+    locked = result["data"][1]
+    assert locked["spread_valid"] is False
+    assert locked["spread_quality"] == "locked"
+    assert locked["usable_for_live_trading"] is False
+    assert result["unsafe_quote_rows"] == 1
+
+
+@patch("mtdata.core.symbols._extract_group_path_util", side_effect=lambda s: s.path)
+@patch("mtdata.core.symbols._mt5_copy_rates_from_pos")
+@patch("mtdata.core.symbols.mt5.symbol_info_tick")
+@patch("mtdata.core.symbols.mt5.symbols_get")
+def test_market_scan_ranks_locked_quotes_after_valid_spreads(
+    mock_symbols_get,
+    mock_tick,
+    mock_rates,
+    mock_group,
+) -> None:
+    now = 1_700_010_800.0
+    mock_symbols_get.return_value = [
+        _make_symbol("LOCKED", path="Crypto"),
+        _make_symbol("VALID", path="Crypto"),
+    ]
+    mock_tick.side_effect = lambda symbol: {
+        "LOCKED": SimpleNamespace(bid=1.0, ask=1.0, time=now - 1.0),
+        "VALID": SimpleNamespace(bid=1.0, ask=1.0005, time=now - 1.0),
+    }[symbol]
+    rates = [
+        {"time": now - (3 * 3600), "open": 1.0, "close": 1.0, "tick_volume": 10, "real_volume": 0},
+        {"time": now - (2 * 3600), "open": 1.0, "close": 1.01, "tick_volume": 11, "real_volume": 0},
+        {"time": now - 3600, "open": 1.01, "close": 1.02, "tick_volume": 12, "real_volume": 0},
+    ]
+    mock_rates.return_value = rates
+
+    with patch("mtdata.core.symbols.time.time", return_value=now):
+        result = _get_market_scan()(
+            rank_by="spread",
+            timeframe="H1",
+            lookback=3,
+            limit=2,
+        )
+
+    assert [row["symbol"] for row in result["data"]] == ["VALID", "LOCKED"]
+    locked = result["data"][1]
+    assert locked["spread_valid"] is False
+    assert locked["spread_quality"] == "locked"
+    assert locked["quote_usable_for_live_trading"] is False
+    assert result["unsafe_quote_rows"] == 1
+
+    with patch("mtdata.core.symbols.time.time", return_value=now):
+        tight_only = _get_market_scan()(
+            rank_by="spread",
+            timeframe="H1",
+            lookback=3,
+            max_spread_pct=0.1,
+            limit=2,
+        )
+
+    assert [row["symbol"] for row in tight_only["data"]] == ["VALID"]
+
+
 def test_market_scan_freshness_uses_broker_crypto_category_on_weekends() -> None:
     from mtdata.core.symbols import _market_scan_freshness_fields
 
@@ -703,7 +807,7 @@ class TestSymbolsTopMarkets:
         assert "returned_count" not in result
         assert result["universe_size"] == 2
         assert result["available_count"] == 2
-        assert "only 2 symbols had usable spread data" in result["note"]
+        assert "only 2 symbols provided spread data" in result["note"]
         assert [row["symbol"] for row in result["data"]] == ["EURUSD", "XAUUSD"]
         assert list(result["data"][0].keys()) == [
             "symbol",
@@ -714,6 +818,9 @@ class TestSymbolsTopMarkets:
             "time",
             "data_stale",
             "freshness",
+            "spread_valid",
+            "spread_quality",
+            "usable_for_live_trading",
             "quote_as_of",
             "bid",
             "ask",
@@ -844,6 +951,9 @@ class TestSymbolsTopMarkets:
             "time",
             "data_stale",
             "freshness",
+            "spread_valid",
+            "spread_quality",
+            "usable_for_live_trading",
             "quote_as_of",
             "bid",
             "ask",
