@@ -1,5 +1,4 @@
 import traceback
-from datetime import datetime, timezone
 from typing import Any, Dict, List, Literal, Optional
 
 import numpy as np
@@ -20,17 +19,6 @@ from ..utils.barriers import (
 from ..utils.barriers import (
     resolve_barrier_prices as _resolve_barrier_prices,
 )
-from ..utils.freshness import (
-    closed_session_context,
-    format_age_seconds,
-    format_freshness_label,
-)
-from ..utils.market_metadata import build_tick_freshness_context
-from ..utils.time import (
-    _format_time_minimal,
-    _format_time_minimal_local,
-    _use_client_tz,
-)
 from ..utils.utils import parse_kv_or_json as _parse_kv_or_json
 from .barriers_shared import (
     BROWNIAN_BRIDGE_DUAL_BARRIER_MODEL,
@@ -40,6 +28,8 @@ from .barriers_shared import (
     _binomial_wilson_95,
     _brownian_bridge_hits,
     _get_live_reference_price,
+    _history_freshness_context,
+    _live_reference_time_context,
     _resolve_reference_prices,
     _scale_price_paths_to_reference,
     _stable_barrier_seed,
@@ -58,144 +48,6 @@ from .monte_carlo import simulate_gbm_mc as _simulate_gbm_mc
 from .monte_carlo import simulate_heston_mc as _simulate_heston_mc
 from .monte_carlo import simulate_hmm_mc as _simulate_hmm_mc
 from .monte_carlo import simulate_jump_diffusion_mc as _simulate_jump_diffusion_mc
-
-
-def _format_barrier_epoch(epoch: float) -> str:
-    formatter = _format_time_minimal_local if _use_client_tz() else _format_time_minimal
-    return formatter(float(epoch))
-
-
-def _coerce_epoch(value: Any) -> Optional[float]:
-    try:
-        epoch = float(value)
-    except Exception:
-        return None
-    if not np.isfinite(epoch) or epoch <= 0.0:
-        return None
-    if epoch > 10_000_000_000:
-        epoch /= 1000.0
-    return epoch
-
-
-def _history_freshness_context(
-    df: Any,
-    timeframe: str,
-    *,
-    symbol: Optional[str] = None,
-    now_epoch: Optional[float] = None,
-) -> Dict[str, Any]:
-    out: Dict[str, Any] = {"history_bars_used": int(len(df))}
-    try:
-        last_epoch = _coerce_epoch(df["time"].iloc[-1])
-    except Exception:
-        last_epoch = None
-    if last_epoch is None:
-        return out
-
-    if now_epoch is None:
-        now_epoch = datetime.now(timezone.utc).timestamp()
-    timeframe_seconds = max(1, int(TIMEFRAME_SECONDS.get(timeframe, 0) or 0))
-    completed_bar_end = last_epoch + timeframe_seconds
-    age_seconds = max(0, int(round(now_epoch - completed_bar_end)))
-    stale_after = timeframe_seconds
-    data_stale = age_seconds > stale_after if stale_after > 0 else None
-    age_text = format_age_seconds(age_seconds)
-    out.update(
-        {
-            "history_last_bar_open": _format_barrier_epoch(last_epoch),
-            "history_last_bar_open_epoch": float(last_epoch),
-            "data_as_of": _format_barrier_epoch(completed_bar_end),
-            "data_as_of_epoch": float(completed_bar_end),
-            "data_freshness_seconds": age_seconds,
-            "data_stale": data_stale,
-            "stale_after_seconds": stale_after,
-            "freshness_basis": "last_completed_bar_end",
-            "input_bar_policy": "closed_bars_only",
-        }
-    )
-    closed_session = closed_session_context(
-        symbol,
-        now_epoch=now_epoch,
-        item="data",
-        data_age_seconds=age_seconds,
-    )
-    if closed_session:
-        out.update(closed_session)
-    history_policy_ok = not bool(out.get("data_stale")) and not bool(closed_session)
-    out["history_policy_ok"] = history_policy_ok
-    freshness = format_freshness_label(
-        data_stale=out.get("data_stale"),
-        market_status=(
-            out.get("market_status")
-            if out.get("freshness_policy_relaxed") is not False
-            else None
-        ),
-        market_status_reason=(
-            out.get("market_status_reason")
-            if out.get("freshness_policy_relaxed") is not False
-            else None
-        ),
-        age_seconds=age_seconds,
-        age_text=age_text,
-        item="data",
-    )
-    if freshness:
-        out["freshness"] = freshness
-    return out
-
-
-def _live_reference_time_context(
-    symbol: str,
-    timeframe: str,
-    *,
-    now_epoch: Optional[float] = None,
-) -> Dict[str, Any]:
-    try:
-        from ..utils.mt5 import mt5 as _mt5
-    except Exception:
-        return {}
-    try:
-        tick = _mt5.symbol_info_tick(symbol)
-    except Exception:
-        tick = None
-    if tick is None:
-        return {}
-
-    epoch = _coerce_epoch(getattr(tick, "time_msc", None))
-    if epoch is None:
-        epoch = _coerce_epoch(getattr(tick, "time", None))
-    if epoch is None:
-        return {}
-
-    if now_epoch is None:
-        now_epoch = datetime.now(timezone.utc).timestamp()
-    freshness = build_tick_freshness_context(
-        symbol,
-        tick_epoch=epoch,
-        now_epoch=now_epoch,
-        item="reference price",
-        age_rounder=lambda value: max(0, int(round(value))),
-    )
-    age_seconds = freshness.get("data_age_seconds")
-    out = {
-        "reference_price_time": _format_barrier_epoch(epoch),
-        "reference_price_time_epoch": float(epoch),
-        "reference_price_age_seconds": age_seconds,
-        "reference_price_age": format_age_seconds(age_seconds),
-        "reference_price_stale": freshness.get("data_stale"),
-        "reference_freshness_state": freshness.get("freshness_state"),
-        "reference_live_max_age_seconds": freshness.get("live_max_age_seconds"),
-        "reference_usable_for_live": freshness.get("usable_for_live_trading"),
-    }
-    for key in (
-        "market_status",
-        "market_status_reason",
-        "market_status_source",
-        "freshness_policy_relaxed",
-    ):
-        if freshness.get(key) is not None:
-            out[key] = freshness[key]
-    return out
 
 
 def _abs_barrier_side_error(

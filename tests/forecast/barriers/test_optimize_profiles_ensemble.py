@@ -318,7 +318,9 @@ class TestBarrierOptimizeProfilesEnsemble(_BarrierTestBase):
         self._set_flat_history(1.0, bars=200)
         paths = self._sample_paths()
         with patch(f'{_BARRIER_OPT_ROOT}._simulate_gbm_mc') as mock_sim, \
-             patch(f'{_BARRIER_OPT_ROOT}._get_live_reference_price', return_value=(1.2345, "live_tick_bid")):
+             patch(f'{_BARRIER_OPT_ROOT}._get_live_reference_price', return_value=(1.2345, "live_tick_bid")), \
+             patch(f'{_BARRIER_OPT_ROOT}._history_freshness_context', return_value={"history_policy_ok": True}), \
+             patch(f'{_BARRIER_OPT_ROOT}._live_reference_time_context', return_value={"reference_usable_for_live": True, "reference_price_stale": False}):
             mock_sim.return_value = {"price_paths": paths}
             result = forecast_barrier_optimize(
                 symbol="EURUSD",
@@ -344,6 +346,40 @@ class TestBarrierOptimizeProfilesEnsemble(_BarrierTestBase):
         self.assertIsInstance(best, dict)
         self.assertEqual(best["tp_price"], 1.2283)
         self.assertEqual(best["sl_price"], 1.2407)
+        self.assertTrue(result["usable_for_live_trading"])
+
+    def test_forecast_barrier_optimize_blocks_stale_live_reference(self):
+        self._set_flat_history(1.0, bars=200)
+        paths = self._sample_paths()
+        with patch(f'{_BARRIER_OPT_ROOT}._simulate_gbm_mc') as mock_sim, \
+             patch(f'{_BARRIER_OPT_ROOT}._get_live_reference_price', return_value=(1.2345, "live_tick_bid")), \
+             patch(f'{_BARRIER_OPT_ROOT}._history_freshness_context', return_value={"history_policy_ok": True}), \
+             patch(f'{_BARRIER_OPT_ROOT}._live_reference_time_context', return_value={"reference_usable_for_live": False, "reference_price_stale": True}):
+            mock_sim.return_value = {"price_paths": paths}
+            result = forecast_barrier_optimize(
+                symbol="EURUSD",
+                timeframe="H1",
+                horizon=4,
+                method="mc_gbm",
+                direction="short",
+                mode="pct",
+                tp_min=0.5,
+                tp_max=0.5,
+                tp_steps=1,
+                sl_min=0.5,
+                sl_max=0.5,
+                sl_steps=1,
+                return_grid=True,
+                viable_only=False,
+            )
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["last_price_source"], "last_tick_bid")
+        self.assertFalse(result["usable_for_live_trading"])
+        self.assertFalse(result["trade_gate_passed"])
+        self.assertFalse(result["tradable"])
+        self.assertTrue(result["no_action"])
+        self.assertIn("reference_quote_not_live", result["execution_blockers"])
 
     def test_forecast_barrier_optimize_default_seed_is_stable_across_live_ticks(self):
         self._set_flat_history(1.0, bars=200)

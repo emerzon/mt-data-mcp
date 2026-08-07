@@ -47,6 +47,7 @@ from .barriers_shared import (
     DEGENERATE_OBJECTIVE_MIN_RESOLVE,
     LOW_PRACTICAL_WIN_PROB_THRESHOLD,
     _annotate_candidate_metrics,
+    _apply_barrier_freshness_contract,
     _auto_barrier_method,
     _binomial_se,
     _binomial_wilson_95,
@@ -56,7 +57,9 @@ from .barriers_shared import (
     _candidate_is_viable,
     _candidate_status_reason,
     _get_live_reference_price,
+    _history_freshness_context,
     _least_negative_ref,
+    _live_reference_time_context,
     _resolve_reference_prices,
     _safe_float,
     _scale_price_paths_to_reference,
@@ -1509,6 +1512,11 @@ def forecast_barrier_optimize(  # noqa: C901
             df = _fetch_history(symbol, timeframe, need, as_of=None)
         if len(df) < 10:
             return {"error": "Insufficient history for simulation"}
+        freshness_context = _history_freshness_context(
+            df,
+            timeframe,
+            symbol=symbol,
+        )
         use_live_price_raw = params_dict.get('use_live_price', params_dict.get('live_price', True))
         if isinstance(use_live_price_raw, str):
             use_live_price = use_live_price_raw.strip().lower() not in {"0", "false", "no", "off"}
@@ -1523,6 +1531,11 @@ def forecast_barrier_optimize(  # noqa: C901
         )
         if price_error:
             return {"error": price_error}
+        reference_context = (
+            _live_reference_time_context(symbol, timeframe)
+            if str(last_price_source or "").startswith("live_tick")
+            else {}
+        )
         price_precision = _symbol_price_precision(symbol)
 
         pip_size = _get_pip_size(symbol)
@@ -2162,6 +2175,12 @@ def forecast_barrier_optimize(  # noqa: C901
                 out,
                 mathematically_viable=bool(viable),
                 trade_gate_passed=actionability_payload.get("trade_gate_passed"),
+            )
+            _apply_barrier_freshness_contract(
+                out,
+                history_context=freshness_context,
+                reference_context=reference_context,
+                last_price_source=last_price_source,
             )
             return _finalize_barrier_output(
                 out,
@@ -3707,6 +3726,12 @@ def forecast_barrier_optimize(  # noqa: C901
             out,
             mathematically_viable=bool(viable),
             trade_gate_passed=actionability_payload.get("trade_gate_passed"),
+        )
+        _apply_barrier_freshness_contract(
+            out,
+            history_context=freshness_context,
+            reference_context=reference_context,
+            last_price_source=last_price_source,
         )
         if invalid_barrier_candidates > 0:
             out["barrier_sanity_filtered"] = int(invalid_barrier_candidates)

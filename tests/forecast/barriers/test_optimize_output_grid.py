@@ -376,9 +376,10 @@ class TestBarrierOptimizeOutputGrid(_BarrierTestBase):
         self.assertEqual(result.get("status"), "ok")
         self.assertFalse(result.get("no_candidates"))
         self.assertTrue(result.get("viable"))
-        self.assertFalse(result.get("no_action"))
-        self.assertTrue(result.get("trade_gate_passed"))
-        self.assertEqual(result.get("actionability"), "actionable")
+        self.assertTrue(result.get("no_action"))
+        self.assertFalse(result.get("trade_gate_passed"))
+        self.assertFalse(result.get("tradable"))
+        self.assertIn("live_reference_quote_not_used", result["execution_blockers"])
         self.assertNotIn("ev_edge_conflict", result)
         best = result["best"]
         self.assertAlmostEqual(best["prob_win"], 1.0, places=7)
