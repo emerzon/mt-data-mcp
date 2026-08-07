@@ -2389,62 +2389,27 @@ def fetch_candles(  # noqa: C901
                 )
             if spread_available_count == 0:
                 try:
-                    tick_stats = fetch_ticks(symbol, limit=5000, format="stats")
-                    spread_stats = tick_stats.get("stats", {}).get("spread")
-                    est_mean = None
-                    if isinstance(spread_stats, dict):
-                        est_mean = spread_stats.get("mean") or spread_stats.get("median") or spread_stats.get("first")
-                    estimate_source = "tick_stats"
-                    live_spread = _live_tick_spread(symbol)
-                    if est_mean is not None:
-                        est_mean = float(est_mean)
-                        if live_spread is not None and live_spread > 0.0:
-                            diff_ratio = abs(float(live_spread) - est_mean) / max(float(live_spread), abs(est_mean), 1e-12)
-                            payload.setdefault("meta", {}).setdefault("diagnostics", {}).setdefault("spread_estimate", {})["live_spread"] = live_spread
-                            payload["meta"]["diagnostics"]["spread_estimate"]["live_diff_ratio"] = diff_ratio
-                            if diff_ratio > 0.5:
-                                est_mean = float(live_spread)
-                                estimate_source = "live_ticker_crosscheck"
-                                payload["spread_accuracy"] = "tick_stats_replaced_by_live"
+                    live_spread, reference_freshness = _live_tick_spread_reference(symbol)
+                    if live_spread is not None:
+                        estimate = float(live_spread)
                         payload.setdefault("warnings", []).append(
-                            "include_spread requested but per-bar spread unavailable; a single "
-                            f"reference spread from {estimate_source} ({est_mean:g}) is returned "
+                            "include_spread requested but historical per-bar spread is "
+                            "unavailable; a single current live ticker reference "
+                            f"({estimate:g}) is returned "
                             "at payload level and is not per-bar historical spread."
                         )
                         payload["spread_reference"] = {
-                            "value": est_mean,
+                            "value": estimate,
                             "unit": "price",
-                            "source": estimate_source,
+                            "source": "live_ticker",
                             "basis": "single_reference_not_per_bar_historical",
-                            **_spread_reference_freshness(tick_stats),
+                            **reference_freshness,
                         }
                         payload["spread_mode"] = "single_reference"
-                        payload["spread_source"] = estimate_source
-                        payload.setdefault("meta", {}).setdefault("diagnostics", {}).setdefault("spread_estimate", {})["estimated_mean"] = est_mean
-                        payload["meta"]["diagnostics"]["spread_estimate"]["source"] = estimate_source
+                        payload["spread_source"] = "live_ticker"
+                        payload.setdefault("meta", {}).setdefault("diagnostics", {}).setdefault("spread_estimate", {})["estimated_mean"] = estimate
+                        payload["meta"]["diagnostics"]["spread_estimate"]["source"] = "live_ticker"
                         payload["meta"]["diagnostics"]["spread_estimate"]["unit"] = "price"
-                        payload["meta"]["diagnostics"]["spread_estimate"]["tick_stats"] = spread_stats
-                    else:
-                        # Fallback to live ticker
-                        if live_spread is not None:
-                            est_mean = float(live_spread)
-                            payload.setdefault("warnings", []).append(
-                                "include_spread requested but spread unavailable; "
-                                f"current live ticker spread ({est_mean:g}) is returned at payload "
-                                "level and is not per-bar historical spread."
-                            )
-                            payload["spread_reference"] = {
-                                "value": est_mean,
-                                "unit": "price",
-                                "source": "live_ticker",
-                                "basis": "single_reference_not_per_bar_historical",
-                                **_live_tick_reference_freshness(symbol),
-                            }
-                            payload["spread_mode"] = "single_reference"
-                            payload["spread_source"] = "live_ticker"
-                            payload.setdefault("meta", {}).setdefault("diagnostics", {}).setdefault("spread_estimate", {})["estimated_mean"] = est_mean
-                            payload["meta"]["diagnostics"]["spread_estimate"]["source"] = "live_ticker"
-                            payload["meta"]["diagnostics"]["spread_estimate"]["unit"] = "price"
                 except Exception:
                     payload.setdefault("warnings", []).append("include_spread requested but spread unavailable; no fallback available.")
                 if payload.get("spread_mode") == "unavailable" and not any(
@@ -2470,7 +2435,9 @@ def fetch_candles(  # noqa: C901
         }
 
 
-def _live_tick_spread(symbol: str) -> Optional[float]:
+def _live_tick_spread_reference(
+    symbol: str,
+) -> Tuple[Optional[float], Dict[str, Any]]:
     try:
         tick = mt5.symbol_info_tick(symbol)
     except Exception:
@@ -2481,34 +2448,13 @@ def _live_tick_spread(symbol: str) -> Optional[float]:
         bid_f = float(bid)
         ask_f = float(ask)
     except Exception:
-        return None
-    if not math.isfinite(bid_f) or not math.isfinite(ask_f):
-        return None
-    spread = max(0.0, ask_f - bid_f)
-    return spread if spread > 0.0 else None
-
-
-def _spread_reference_freshness(tick_payload: Any) -> Dict[str, Any]:
-    """Extract source-time evidence for a spread reference from tick output."""
-    payload = tick_payload if isinstance(tick_payload, dict) else {}
-    last_quote = payload.get("last_quote")
-    quote = last_quote if isinstance(last_quote, dict) else {}
-    reference_time = quote.get("time") or payload.get("data_as_of")
-    reference_epoch = quote.get("time_epoch") or payload.get("data_as_of_epoch")
-    return {
-        "reference_time": reference_time,
-        "reference_time_epoch": reference_epoch,
-        "data_age_seconds": payload.get("data_age_seconds"),
-        "freshness_state": payload.get("freshness_state") or "unknown",
-        "usable_for_live_trading": payload.get("usable_for_live_trading") is True,
-    }
-
-
-def _live_tick_reference_freshness(symbol: str) -> Dict[str, Any]:
-    try:
-        tick = mt5.symbol_info_tick(symbol)
-    except Exception:
-        tick = None
+        spread = None
+    else:
+        spread = (
+            ask_f - bid_f
+            if math.isfinite(bid_f) and math.isfinite(ask_f) and ask_f > bid_f
+            else None
+        )
     epoch = tick_epoch(tick) if tick is not None else None
     context = build_tick_freshness_context(
         symbol,
@@ -2517,13 +2463,14 @@ def _live_tick_reference_freshness(symbol: str) -> Dict[str, Any]:
         item="spread reference",
         age_rounder=lambda value: round(value, 3),
     )
-    return {
+    freshness = {
         "reference_time": _format_time_explicit(epoch) if epoch is not None else None,
         "reference_time_epoch": epoch,
         "data_age_seconds": context.get("data_age_seconds"),
         "freshness_state": context.get("freshness_state") or "unknown",
         "usable_for_live_trading": context.get("usable_for_live_trading") is True,
     }
+    return spread, freshness
 
 
 def _mt5_tick_flag_value(name: str, default: int) -> int:

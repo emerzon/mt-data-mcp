@@ -241,6 +241,19 @@ class TestFetchCandlesCore(unittest.TestCase):
         self.assertEqual(result['spread_historical_coverage_pct'], 100.0)
         self.assertEqual(result['spread_missing_count'], 0)
 
+    @patch(
+        f'{_DS}._live_tick_spread_reference',
+        return_value=(
+            0.00009,
+            {
+                'reference_time': None,
+                'reference_time_epoch': None,
+                'data_age_seconds': None,
+                'freshness_state': 'unknown',
+                'usable_for_live_trading': False,
+            },
+        ),
+    )
     @patch(f'{_DS}.fetch_ticks')
     @patch(_MT5_CONFIG)
     @patch(_RATES_FROM)
@@ -259,17 +272,10 @@ class TestFetchCandlesCore(unittest.TestCase):
         mock_from,
         mock_cfg,
         mock_fetch_ticks,
+        mock_live_spread,
     ):
         mock_cfg.get_time_offset_seconds.return_value = 0
         mock_from.return_value = _make_rates(10, spread=0)
-        mock_fetch_ticks.return_value = {
-            'stats': {
-                'spread': {
-                    'mean': 0.00009,
-                },
-            },
-        }
-
         result = fetch_candles('EURUSD', limit=5, ohlcv='C', include_spread=True)
 
         self.assertTrue(result.get('success'))
@@ -279,7 +285,7 @@ class TestFetchCandlesCore(unittest.TestCase):
         self.assertFalse(row['spread_available'])
         self.assertFalse(result['spread_historical_available'])
         self.assertEqual(result['spread_mode'], 'single_reference')
-        self.assertEqual(result['spread_source'], 'tick_stats')
+        self.assertEqual(result['spread_source'], 'live_ticker')
         self.assertEqual(result['spread_historical_source'], 'mt5_candle')
         self.assertEqual(result['spread_historical_coverage_pct'], 0.0)
         self.assertEqual(result['spread_missing_count'], 5)
@@ -290,7 +296,7 @@ class TestFetchCandlesCore(unittest.TestCase):
             {
                 'value': 0.00009,
                 'unit': 'price',
-                'source': 'tick_stats',
+                'source': 'live_ticker',
                 'basis': 'single_reference_not_per_bar_historical',
                 'reference_time': None,
                 'reference_time_epoch': None,
@@ -304,6 +310,8 @@ class TestFetchCandlesCore(unittest.TestCase):
             if 'include_spread requested' in item
         ]
         self.assertEqual(len(spread_warnings), 1)
+        mock_live_spread.assert_called_once_with('EURUSD')
+        mock_fetch_ticks.assert_not_called()
 
     @patch(_MT5_CONFIG)
     @patch(_RATES_FROM)
