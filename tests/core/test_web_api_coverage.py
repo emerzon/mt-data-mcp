@@ -892,6 +892,7 @@ class TestGetHistory:
             })
         assert resp.status_code == 200
         mock_norm.assert_called_once()
+        assert mock_norm.call_args.kwargs["default_when"] == "pre_ti"
 
     def test_denoise_kv_params_fallback(self):
         payload = {"data": [{"time": 1.0}]}

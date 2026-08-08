@@ -712,7 +712,6 @@ def _slim_projected_candles_payload(payload: Dict[str, Any]) -> None:
         payload.pop("spread_unavailable", None)
     _filter_candle_units_to_projected_fields(payload, projected_fields)
     if not bool(payload.get("forming_candle_included")):
-        payload.pop("forming_candle_status", None)
         payload.pop("has_forming_candle", None)
         payload.pop("forming_candle_included", None)
         payload.pop("forming_candle_skipped", None)

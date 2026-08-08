@@ -609,7 +609,7 @@ def get_history_response(  # noqa: C901
                 }
                 spec_input["params"] = params_dict
                 _apply_history_denoise_controls(spec_input, controls)
-        denoise_spec = normalize_denoise_spec(spec_input, default_when="post_ti")
+        denoise_spec = normalize_denoise_spec(spec_input, default_when="pre_ti")
 
     request_values: Dict[str, Any] = {
         "symbol": symbol,

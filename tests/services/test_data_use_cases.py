@@ -1195,6 +1195,32 @@ def test_run_data_fetch_candles_standard_keeps_forming_booleans():
     assert result["forming_candle_skipped"] is True
 
 
+def test_projected_compact_candles_keep_skipped_forming_status():
+    request = DataFetchCandlesRequest(symbol="EURUSD", timeframe="H1", limit=5)
+
+    result = run_data_fetch_candles(
+        request,
+        gateway=SimpleNamespace(ensure_connection=lambda: None),
+        fetch_candles_impl=lambda **kwargs: {
+            "success": True,
+            "symbol": "EURUSD",
+            "timeframe": "H1",
+            "candles": 4,
+            "has_forming_candle": True,
+            "forming_candle_status": "skipped",
+            "forming_candle_included": False,
+            "forming_candle_skipped": True,
+            "ohlcv_filter_applied": True,
+            "data": [{"time": 1.0, "close": 1.1}],
+        },
+    )
+
+    assert result["forming_candle_status"] == "skipped"
+    assert "has_forming_candle" not in result
+    assert "forming_candle_included" not in result
+    assert "forming_candle_skipped" not in result
+
+
 def test_run_data_fetch_candles_full_omits_zero_exclusion_categories():
     request = DataFetchCandlesRequest(
         symbol="EURUSD",
