@@ -7,8 +7,9 @@ import {
   getWavelets,
   searchInstruments,
 } from '../../api/client'
+import { chartDenoiseFromMethod } from '../../lib/denoiseSpec'
 import { loadJSON } from '../../lib/storage'
-import type { DenoiseSpecUI } from '../../types'
+import type { DenoiseMethodInfo, DenoiseSpecUI } from '../../types'
 import { ChevronDown } from './toolbarIcons'
 
 function useDismissiblePanel(onClose: () => void) {
@@ -286,7 +287,8 @@ function DenoiseDropdown({
       onChange(undefined)
       return
     }
-    onChange({ method, params: {} })
+    const meta = methods.find((item: DenoiseMethodInfo) => item.method === method)
+    onChange(chartDenoiseFromMethod(method, meta, value))
   }
 
   return (

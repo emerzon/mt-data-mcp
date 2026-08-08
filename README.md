@@ -101,7 +101,9 @@ For method-level detail, see [docs/FORECAST.md](docs/FORECAST.md) and [docs/fore
 |---------|-------------|----------|
 | **CLI** | `mtdata-cli` | Scripts, exploration, copy-paste workflows |
 | **MCP** | `mtdata-stdio` / `mtdata-sse` / `mtdata-streamable-http` | Agent tool use (Claude, Cursor, custom clients) |
-| **Web** | `mtdata-webapi` | Local UI and HTTP integrations |
+| **Web UI + API** | `mtdata-webapi` | Chart workspace at `/app`, REST for apps and notebooks |
+
+All three are first-class delivery surfaces. Pick CLI, MCP, or Web UI for the same research stack.
 
 ---
 
@@ -132,6 +134,24 @@ mtdata-cli data_fetch_candles EURUSD --timeframe H1 --limit 50
 # Baseline forecast
 mtdata-cli forecast_generate EURUSD --timeframe H1 --horizon 12 --method theta
 ```
+
+### Web UI (chart workspace)
+
+One path: build the SPA once, start the API, open the UI.
+
+```bash
+# Web extra if you installed lean core only
+pip install -e ".[web]"
+
+# Production frontend (once per checkout / after UI changes)
+cd webui && npm install && npm run build && cd ..
+
+# Start API + UI
+mtdata-webapi
+# → open http://127.0.0.1:8000/app/
+```
+
+If `webui/dist` is missing, the API still starts and `/app` returns a clear enablement page (build steps above). Live UI development: `cd webui && npm run dev` (proxies `/api` to `:8000`). Details: [Web API](docs/WEB_API.md) · [Setup](docs/SETUP.md).
 
 Keep the first session **read-only** unless you are on a demo account and intentionally testing trading.
 

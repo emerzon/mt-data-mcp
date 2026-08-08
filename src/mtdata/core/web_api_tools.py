@@ -1,0 +1,364 @@
+"""Web API bridge for MCP tool catalog listing and safe generic invoke."""
+
+from __future__ import annotations
+
+import inspect
+import logging
+from typing import Any, Callable, Dict, List, Optional, Sequence
+
+from fastapi import HTTPException
+from pydantic import BaseModel
+
+from ._mcp_tools import (
+    _tool_catalog_parameters,
+    get_tool_functions,
+    registered_tool_catalog,
+)
+from .cli.runtime.commands import LIVE_TRADE_MUTATION_TOOLS, LIVE_TRADE_MUTATION_WARNING
+from .error_envelope import build_error_payload
+from .tool_calling import call_tool_sync_structured, unwrap_tool_callable
+
+logger = logging.getLogger(__name__)
+
+# Account / store mutations that must never be one-click unguarded from the SPA.
+MUTATING_TOOLS: frozenset[str] = frozenset(
+    {
+        *LIVE_TRADE_MUTATION_TOOLS,
+        "forecast_models_delete",
+        "forecast_models_cleanup",
+        "forecast_task_cancel",
+        "forecast_task_cancel_all",
+    }
+)
+
+# High-traffic research tools with dedicated chart-workspace UX.
+DEDICATED_UI_TOOLS: dict[str, str] = {
+    "data_fetch_candles": "chart-workspace/history",
+    "market_ticker": "chart-workspace/live-quotes",
+    "pivot_compute_points": "chart-workspace/pivot-overlay",
+    "support_resistance_levels": "chart-workspace/sr-overlay",
+    "denoise_list_methods": "chart-workspace/denoise-modal",
+    "denoise_describe": "chart-workspace/denoise-modal",
+    "forecast_generate": "forecast-panel/price",
+    "forecast_volatility_estimate": "forecast-panel/volatility",
+    "forecast_backtest_run": "forecast-panel/backtest",
+    "forecast_list_methods": "forecast-panel/methods",
+    "forecast_models_list": "forecast-panel/models-browser",
+    "tools_list": "tools-runner/catalog",
+}
+
+# Product rationale for tools that stay out of the generic invoke path.
+# (Empty by default: mutations are gated, not omitted.)
+INTENTIONAL_OMIT_TOOLS: dict[str, str] = {}
+
+
+def ensure_tools_bootstrapped() -> None:
+    """Load the full MCP tool surface once for catalog/invoke endpoints."""
+    from ..bootstrap.tools import bootstrap_tools
+
+    bootstrap_tools()
+
+
+def classify_tool_surface(name: str) -> str:
+    """Return dedicated_ui | generic_runner | intentional_omit."""
+    key = str(name or "").strip()
+    if key in INTENTIONAL_OMIT_TOOLS:
+        return "intentional_omit"
+    if key in DEDICATED_UI_TOOLS:
+        return "dedicated_ui"
+    return "generic_runner"
+
+
+def tool_requires_confirmation(name: str) -> bool:
+    return str(name or "").strip() in MUTATING_TOOLS
+
+
+def tool_safety_meta(name: str) -> Dict[str, Any]:
+    key = str(name or "").strip()
+    meta: Dict[str, Any] = {
+        "requires_confirmation": tool_requires_confirmation(key),
+        "is_live_trade_mutation": key in LIVE_TRADE_MUTATION_TOOLS,
+        "surface": classify_tool_surface(key),
+    }
+    if key in DEDICATED_UI_TOOLS:
+        meta["dedicated_path"] = DEDICATED_UI_TOOLS[key]
+    if key in INTENTIONAL_OMIT_TOOLS:
+        meta["omit_rationale"] = INTENTIONAL_OMIT_TOOLS[key]
+    if key in LIVE_TRADE_MUTATION_TOOLS:
+        meta["warning"] = LIVE_TRADE_MUTATION_WARNING
+    elif key in MUTATING_TOOLS:
+        meta["warning"] = (
+            "This tool mutates stored state (models/tasks). "
+            "Confirm explicitly before running."
+        )
+    return meta
+
+
+def _annotation_label(annotation: Any) -> str:
+    if annotation is inspect.Parameter.empty:
+        return "any"
+    if isinstance(annotation, type):
+        return annotation.__name__
+    text = str(annotation)
+    text = text.replace("typing.", "").replace("NoneType", "None")
+    return text
+
+
+def build_parameter_fields(func: Any) -> List[Dict[str, Any]]:
+    """Build UI-friendly parameter field descriptors from a tool callable."""
+    target = unwrap_tool_callable(func)
+    try:
+        signature = inspect.signature(target)
+    except Exception:
+        return []
+
+    params = list(signature.parameters.values())
+    fields: List[Dict[str, Any]] = []
+
+    if len(params) == 1:
+        annotation = params[0].annotation
+        try:
+            if inspect.isclass(annotation) and issubclass(annotation, BaseModel):
+                for name, field in annotation.model_fields.items():
+                    required = field.is_required()
+                    default = None if required else field.default
+                    if default is not None and str(type(default).__name__) == "PydanticUndefinedType":
+                        default = None
+                    fields.append(
+                        {
+                            "name": name,
+                            "required": required,
+                            "default": default if default is not None and default is not ... else None,
+                            "type": _annotation_label(field.annotation),
+                            "description": str(field.description or "") or None,
+                        }
+                    )
+                return fields
+        except Exception:
+            pass
+
+    for param in params:
+        if param.name.startswith("__"):
+            continue
+        required = param.default is inspect.Parameter.empty
+        default = None if required else param.default
+        fields.append(
+            {
+                "name": param.name,
+                "required": required,
+                "default": default,
+                "type": _annotation_label(param.annotation),
+                "description": None,
+            }
+        )
+    return fields
+
+
+def _enrich_catalog_row(row: Dict[str, Any], *, include_fields: bool = False) -> Dict[str, Any]:
+    name = str(row.get("name") or "")
+    out = dict(row)
+    out["surface"] = classify_tool_surface(name)
+    out["safety"] = tool_safety_meta(name)
+    if include_fields:
+        funcs = get_tool_functions()
+        fn = funcs.get(name)
+        if fn is not None:
+            out["fields"] = build_parameter_fields(fn)
+        elif name == "market_depth_fetch":
+            # Gated tool may appear in catalog without a live function.
+            out["fields"] = [
+                {"name": "symbol", "required": True, "default": None, "type": "str", "description": None},
+                {"name": "spread", "required": False, "default": None, "type": "any", "description": None},
+                {"name": "require_dom", "required": False, "default": None, "type": "bool", "description": None},
+            ]
+        else:
+            out["fields"] = []
+    return out
+
+
+def list_tools_for_webapi(
+    *,
+    category: Optional[str] = None,
+    search: Optional[str] = None,
+    detail: str = "standard",
+    include_fields: bool = False,
+) -> Dict[str, Any]:
+    ensure_tools_bootstrapped()
+    catalog = registered_tool_catalog(detail=detail if detail in {"compact", "standard", "full"} else "standard")
+    tools = catalog.get("tools") if isinstance(catalog, dict) else []
+    if not isinstance(tools, list):
+        tools = []
+
+    category_filter = str(category or "").strip().lower()
+    search_filter = str(search or "").strip().lower()
+    enriched: List[Dict[str, Any]] = []
+    for row in tools:
+        if not isinstance(row, dict):
+            continue
+        name = str(row.get("name") or "")
+        if category_filter and str(row.get("category") or "").strip().lower() != category_filter:
+            continue
+        if search_filter:
+            hay = " ".join(
+                str(row.get(k) or "") for k in ("name", "category", "description")
+            ).lower()
+            if search_filter not in hay:
+                continue
+        enriched.append(_enrich_catalog_row(row, include_fields=include_fields))
+
+    categories: Dict[str, List[str]] = {}
+    for row in enriched:
+        categories.setdefault(str(row.get("category") or "other"), []).append(str(row.get("name") or ""))
+
+    surfaces = {"dedicated_ui": 0, "generic_runner": 0, "intentional_omit": 0}
+    for row in enriched:
+        surfaces[str(row.get("surface") or "generic_runner")] = surfaces.get(
+            str(row.get("surface") or "generic_runner"), 0
+        ) + 1
+
+    return {
+        "success": True,
+        "detail": catalog.get("detail") if isinstance(catalog, dict) else detail,
+        "count": len(enriched),
+        "categories": categories,
+        "surfaces": surfaces,
+        "tools": enriched,
+    }
+
+
+def get_tool_for_webapi(tool_name: str) -> Dict[str, Any]:
+    ensure_tools_bootstrapped()
+    name = str(tool_name or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="tool_name is required")
+
+    catalog = registered_tool_catalog(detail="full")
+    tools = catalog.get("tools") if isinstance(catalog, dict) else []
+    match = None
+    if isinstance(tools, list):
+        for row in tools:
+            if isinstance(row, dict) and str(row.get("name") or "") == name:
+                match = row
+                break
+    if match is None:
+        raise HTTPException(status_code=404, detail=f"Unknown tool: {name}")
+
+    enriched = _enrich_catalog_row(match, include_fields=True)
+    # Prefer full required/optional map when fields empty
+    if not enriched.get("fields"):
+        funcs = get_tool_functions()
+        fn = funcs.get(name)
+        if fn is not None:
+            params = _tool_catalog_parameters(fn)
+            enriched["parameters"] = params
+    return {"success": True, "tool": enriched}
+
+
+def invoke_tool_for_webapi(
+    tool_name: str,
+    *,
+    arguments: Optional[Dict[str, Any]] = None,
+    confirm: bool = False,
+) -> Dict[str, Any]:
+    ensure_tools_bootstrapped()
+    name = str(tool_name or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="tool_name is required")
+
+    if name in INTENTIONAL_OMIT_TOOLS:
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "error": f"Tool {name} is not available from the Web UI.",
+                "rationale": INTENTIONAL_OMIT_TOOLS[name],
+            },
+        )
+
+    if tool_requires_confirmation(name) and not confirm:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error": f"Tool {name} requires explicit confirmation.",
+                "requires_confirmation": True,
+                "safety": tool_safety_meta(name),
+                "hint": "Re-submit with confirm=true after reviewing parameters.",
+            },
+        )
+
+    funcs = get_tool_functions()
+    fn = funcs.get(name)
+    if fn is None:
+        # market_depth_fetch may be registered only when env-enabled
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "error": f"Tool {name} is not registered or is disabled.",
+                "safety": tool_safety_meta(name),
+            },
+        )
+
+    args = dict(arguments or {})
+    # Strip UI-only keys if callers leak them
+    args.pop("confirm", None)
+    args.pop("__confirm", None)
+
+    try:
+        result = call_tool_sync_structured(fn, **args)
+    except TypeError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "error": f"Invalid parameters for {name}: {exc}",
+                "code": "tool_param_error",
+            },
+        ) from exc
+    except Exception as exc:
+        logger.exception("Web API tool invoke failed for %s", name)
+        payload = build_error_payload(str(exc), code="tool_invoke_failed", operation=name)
+        raise HTTPException(status_code=400, detail=payload) from exc
+
+    return {
+        "success": True,
+        "tool": name,
+        "surface": classify_tool_surface(name),
+        "result": result,
+    }
+
+
+def coverage_inventory_rows() -> List[Dict[str, Any]]:
+    """Build complete inventory rows for docs/tests (includes gated tools)."""
+    ensure_tools_bootstrapped()
+    catalog = registered_tool_catalog(detail="compact")
+    tools = catalog.get("tools") if isinstance(catalog, dict) else []
+    rows: List[Dict[str, Any]] = []
+    if isinstance(tools, list):
+        for row in tools:
+            if not isinstance(row, dict):
+                continue
+            name = str(row.get("name") or "")
+            if not name:
+                continue
+            surface = classify_tool_surface(name)
+            entry: Dict[str, Any] = {
+                "name": name,
+                "category": row.get("category"),
+                "description": row.get("description"),
+                "surface": surface,
+                "frontend": (
+                    DEDICATED_UI_TOOLS.get(name)
+                    if surface == "dedicated_ui"
+                    else (
+                        INTENTIONAL_OMIT_TOOLS.get(name)
+                        if surface == "intentional_omit"
+                        else "tools-runner/generic"
+                    )
+                ),
+                "requires_confirmation": tool_requires_confirmation(name),
+            }
+            if name == "market_depth_fetch":
+                entry["gated"] = True
+                entry["enable_env"] = row.get("enable_env") or "MTDATA_ENABLE_MARKET_DEPTH_FETCH"
+                entry["enabled"] = row.get("enabled")
+            rows.append(entry)
+    rows.sort(key=lambda r: str(r.get("name") or ""))
+    return rows

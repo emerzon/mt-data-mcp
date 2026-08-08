@@ -1,6 +1,6 @@
 # Web API
 
-Local HTTP access to mtdata for dashboards, notebooks, scripts, and apps — plus an optional React UI after you build `webui/`. Same research strengths as the CLI; **smaller surface** than full CLI/MCP (if a tool is missing here, use those instead).
+Local HTTP access to mtdata for dashboards, notebooks, scripts, and apps — and the **bundled chart workspace** served at `/app`. Peer delivery surface to CLI and MCP (same research stack; **smaller HTTP surface** than full CLI/MCP — if a tool is missing here, use those instead).
 
 **Base URL:** `http://localhost:8000` (default)
 
@@ -14,23 +14,31 @@ Local HTTP access to mtdata for dashboards, notebooks, scripts, and apps — plu
 
 ## Quick start
 
-Start the local server:
+### Start API → open UI
+
+Build the production SPA once (Node is only required for this step, not at runtime):
 
 ```bash
+cd webui
+npm install
+npm run build
+cd ..
 mtdata-webapi
 ```
 
-Check health and fetch a small candle sample:
+Then open the chart workspace:
+
+```text
+http://127.0.0.1:8000/app/
+```
+
+The Python package does not ship generated `webui/dist/` assets. Without a build, REST stays available and `/app` returns a deliberate enablement page (HTML or JSON) with the same commands — not a silent skip or bare framework 404. Override the dist path with `WEBUI_DIST_DIR` if needed.
+
+### API smoke checks
 
 ```bash
 curl http://127.0.0.1:8000/api/v1/health
 curl "http://127.0.0.1:8000/api/v1/history?symbol=EURUSD&timeframe=H1&limit=50"
-```
-
-Open the bundled UI after building `webui/dist/`:
-
-```text
-http://127.0.0.1:8000/app
 ```
 
 ## Authentication
@@ -74,8 +82,8 @@ Same liveness payload as `/`.
 #### `GET /ready`
 Readiness probe. Returns HTTP 200 when the API can establish an MT5 connection and HTTP 503 when MT5 is unavailable. Also available at `GET /api/ready` and `GET /api/v1/ready`.
 
-#### `GET /app`
-Serves the built Web UI (if `webui/dist/` exists).
+#### `GET /app` · `GET /app/`
+Serves the production chart workspace when `webui/dist/index.html` exists (or `WEBUI_DIST_DIR`). Asset URLs use the `/app/` base. If the dist is missing, responds with HTTP 503 and a professional enablement page (HTML by default; JSON when `Accept: application/json`) describing `npm run build` and restart.
 
 #### `GET /api/health`
 API liveness check. Also available at `GET /api/v1/health`.
@@ -224,6 +232,27 @@ Generate volatility forecasts.
   "denoise": null
 }
 ```
+
+#### `GET /api/tools`
+List registered MCP tools for the Web UI runner (bootstraps the full tool surface).
+
+- **Query Params:** `category`, `search`, `detail` (`compact`|`standard`|`full`), `include_fields` (bool)
+- **Response:** tools with `surface` (`dedicated_ui`|`generic_runner`|`intentional_omit`) and `safety` metadata (confirm flags, warnings)
+
+#### `GET /api/tools/{tool_name}`
+Return one tool with parameter field descriptors for the form runner.
+
+#### `POST /api/tools/{tool_name}/invoke`
+Invoke a registered tool.
+
+```json
+{
+  "arguments": { "symbol": "EURUSD", "timeframe": "H1" },
+  "confirm": false
+}
+```
+
+Live trade mutations (`trade_place`, `trade_modify`, `trade_close`) and destructive model/task tools require `"confirm": true`. See [WEBUI_TOOL_COVERAGE.md](WEBUI_TOOL_COVERAGE.md).
 
 #### `POST /api/backtest`
 Run a rolling-origin backtest.

@@ -147,3 +147,13 @@ class BacktestBody(BaseModel):
             trade_threshold=self.trade_threshold,
             detail=_request_detail(self.detail, self.extras),
         )
+
+
+class ToolInvokeBody(BaseModel):
+    """Generic MCP tool invocation from the Web UI tool runner."""
+
+    arguments: Dict[str, Any] = Field(default_factory=dict)
+    confirm: bool = Field(
+        False,
+        description="Required true for live trade mutations and destructive model/task tools.",
+    )

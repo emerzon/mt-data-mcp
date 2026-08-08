@@ -1,0 +1,343 @@
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
+import { getErrorMessage, getTool, invokeTool, listTools } from '../api/client'
+import {
+  defaultParamValues,
+  filterToolCatalog,
+  formatToolResult,
+  humanizeIdentifier,
+  shapeInvokeArguments,
+  toolIsRunnable,
+  uniqueCategories,
+  type ToolCatalogEntry,
+  type ToolParamValues,
+} from '../lib/toolCatalog'
+import { forecastPanelPlacementClass, type LayoutBreakpoint } from '../lib/layout'
+import { useEscapeKey } from '../lib/useEscapeKey'
+
+type Props = {
+  open: boolean
+  onClose: () => void
+  layoutBreakpoint?: LayoutBreakpoint
+  /** Prefill symbol into forms that expose a symbol field */
+  symbol?: string
+  timeframe?: string
+}
+
+export function ToolsRunnerPanel({
+  open,
+  onClose,
+  layoutBreakpoint = 'desktop',
+  symbol = '',
+  timeframe = 'H1',
+}: Props) {
+  const [search, setSearch] = useState('')
+  const [category, setCategory] = useState('')
+  const [selectedName, setSelectedName] = useState<string | null>(null)
+  const [values, setValues] = useState<ToolParamValues>({})
+  const [confirm, setConfirm] = useState(false)
+  const [isRunning, setIsRunning] = useState(false)
+  const [runError, setRunError] = useState<string | null>(null)
+  const [resultText, setResultText] = useState<string | null>(null)
+
+  useEscapeKey(open, onClose)
+
+  const catalogQuery = useQuery({
+    queryKey: ['tools-catalog'],
+    queryFn: ({ signal }) => listTools({}, signal),
+    enabled: open,
+    staleTime: 60_000,
+  })
+
+  const tools = catalogQuery.data?.tools ?? []
+  const categories = useMemo(() => uniqueCategories(tools), [tools])
+  const filtered = useMemo(
+    () => filterToolCatalog(tools, { search, category }),
+    [tools, search, category]
+  )
+
+  const detailQuery = useQuery({
+    queryKey: ['tool-detail', selectedName],
+    queryFn: ({ signal }) => getTool(selectedName!, signal),
+    enabled: open && !!selectedName,
+    staleTime: 30_000,
+  })
+
+  const selected: ToolCatalogEntry | null = detailQuery.data?.tool ?? null
+  const fields = selected?.fields ?? []
+
+  useEffect(() => {
+    if (!selected?.name) return
+    const next = defaultParamValues(selected.fields)
+    if (symbol && 'symbol' in next && !next.symbol) next.symbol = symbol
+    if (timeframe && 'timeframe' in next && !next.timeframe) next.timeframe = timeframe
+    setValues(next)
+    setConfirm(false)
+    setRunError(null)
+    setResultText(null)
+  }, [selected?.name, selected?.fields, symbol, timeframe])
+
+  const onSelect = useCallback((name: string) => {
+    setSelectedName(name)
+    setRunError(null)
+    setResultText(null)
+  }, [])
+
+  const run = useCallback(async () => {
+    if (!selected?.name || !toolIsRunnable(selected)) return
+    setIsRunning(true)
+    setRunError(null)
+    setResultText(null)
+    try {
+      const argumentsPayload = shapeInvokeArguments(fields, values)
+      const response = await invokeTool(selected.name, {
+        arguments: argumentsPayload,
+        confirm,
+      })
+      setResultText(formatToolResult(response.result ?? response))
+    } catch (error) {
+      setRunError(getErrorMessage(error))
+    } finally {
+      setIsRunning(false)
+    }
+  }, [selected, fields, values, confirm])
+
+  if (!open) return null
+
+  const panelClass = forecastPanelPlacementClass(layoutBreakpoint)
+  const needsConfirm = Boolean(selected?.safety?.requires_confirmation)
+  const runnable = toolIsRunnable(selected)
+
+  return (
+    <>
+      {layoutBreakpoint === 'mobile' && (
+        <button
+          type="button"
+          className="fixed inset-0 z-20 bg-slate-950/50"
+          aria-label="Dismiss tools panel"
+          onClick={onClose}
+        />
+      )}
+      <div
+        className={`${panelClass} animate-slide-in-right`}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Tools runner"
+        data-tools-runner
+      >
+        {layoutBreakpoint === 'mobile' && (
+          <div className="flex justify-center pt-2 pb-1" aria-hidden>
+            <div className="h-1 w-10 rounded-full bg-slate-700" />
+          </div>
+        )}
+
+        <div className="flex items-center justify-between px-4 py-3 border-b border-slate-800 shrink-0">
+          <div>
+            <h2 className="text-sm font-semibold text-slate-100">All tools</h2>
+            <p className="text-[11px] text-slate-500">
+              {catalogQuery.data?.count ?? tools.length} registered · schema-driven runner
+            </p>
+          </div>
+          <button
+            type="button"
+            className="text-slate-400 hover:text-slate-200 p-2 min-h-9 min-w-9"
+            onClick={onClose}
+            aria-label="Close tools panel"
+          >
+            ×
+          </button>
+        </div>
+
+        <div className="flex-1 min-h-0 flex flex-col md:flex-row overflow-hidden">
+          <div className="md:w-2/5 border-b md:border-b-0 md:border-r border-slate-800 flex flex-col min-h-0 max-h-[40vh] md:max-h-none">
+            <div className="p-3 space-y-2 shrink-0">
+              <input
+                className="w-full bg-slate-800 text-slate-200 text-sm rounded-lg px-3 py-2 border border-slate-700"
+                placeholder="Search tools…"
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                aria-label="Search tools"
+              />
+              <select
+                className="w-full bg-slate-800 text-slate-200 text-xs rounded-lg px-2 py-1.5 border border-slate-700"
+                value={category}
+                onChange={(event) => setCategory(event.target.value)}
+                aria-label="Filter by category"
+              >
+                <option value="">All categories</option>
+                {categories.map((item) => (
+                  <option key={item} value={item}>
+                    {humanizeIdentifier(item)}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex-1 overflow-y-auto min-h-0">
+              {catalogQuery.isLoading && (
+                <p className="px-3 py-2 text-xs text-slate-500">Loading catalog…</p>
+              )}
+              {catalogQuery.error && (
+                <p className="px-3 py-2 text-xs text-rose-300">{getErrorMessage(catalogQuery.error)}</p>
+              )}
+              {!catalogQuery.isLoading && filtered.length === 0 && (
+                <p className="px-3 py-2 text-xs text-slate-500">No tools match this filter.</p>
+              )}
+              <ul className="pb-2">
+                {filtered.map((tool) => {
+                  const active = tool.name === selectedName
+                  return (
+                    <li key={tool.name}>
+                      <button
+                        type="button"
+                        className={`w-full text-left px-3 py-2 text-xs border-l-2 ${
+                          active
+                            ? 'bg-slate-800/80 border-sky-500 text-sky-200'
+                            : 'border-transparent text-slate-300 hover:bg-slate-800/50'
+                        }`}
+                        onClick={() => onSelect(tool.name)}
+                      >
+                        <div className="font-medium truncate">{tool.name}</div>
+                        <div className="text-[10px] text-slate-500 truncate">
+                          {tool.category}
+                          {tool.surface === 'dedicated_ui' ? ' · dedicated UI' : ''}
+                          {tool.safety?.requires_confirmation ? ' · confirm' : ''}
+                          {tool.enabled === false ? ' · disabled' : ''}
+                        </div>
+                      </button>
+                    </li>
+                  )
+                })}
+              </ul>
+            </div>
+          </div>
+
+          <div className="flex-1 overflow-y-auto p-4 space-y-3 min-h-0">
+            {!selectedName && (
+              <div className="text-sm text-slate-400">
+                Select a tool to configure parameters and run it against the live Web API.
+              </div>
+            )}
+
+            {selectedName && detailQuery.isLoading && (
+              <p className="text-xs text-slate-500">Loading parameter schema…</p>
+            )}
+
+            {detailQuery.error && (
+              <div className="text-sm text-rose-300 bg-rose-950/40 border border-rose-900 rounded-lg px-3 py-2">
+                {getErrorMessage(detailQuery.error)}
+              </div>
+            )}
+
+            {selected && (
+              <>
+                <div>
+                  <h3 className="text-sm font-semibold text-slate-100">{selected.name}</h3>
+                  {selected.description && (
+                    <p className="text-xs text-slate-400 mt-1">{selected.description}</p>
+                  )}
+                  <div className="mt-2 flex flex-wrap gap-1.5 text-[10px]">
+                    <span className="badge badge-info">{selected.category || 'tool'}</span>
+                    <span className="badge badge-info">{selected.surface || 'generic_runner'}</span>
+                    {selected.safety?.dedicated_path && (
+                      <span className="badge badge-success" title="Also available as dedicated UI">
+                        UI: {selected.safety.dedicated_path}
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {selected.safety?.warning && (
+                  <div
+                    className="text-xs text-amber-200 bg-amber-950/40 border border-amber-800 rounded-lg px-3 py-2"
+                    role="alert"
+                  >
+                    {selected.safety.warning}
+                  </div>
+                )}
+
+                {selected.enabled === false && (
+                  <div className="text-xs text-slate-400 bg-slate-900 border border-slate-700 rounded-lg px-3 py-2">
+                    Disabled
+                    {selected.enable_env ? ` (set ${selected.enable_env}=1)` : ''}.
+                    {selected.why_disabled ? ` ${selected.why_disabled}` : ''}
+                  </div>
+                )}
+
+                <div className="space-y-2">
+                  <div className="text-xs font-medium text-slate-300">Parameters</div>
+                  {fields.length === 0 && (
+                    <p className="text-xs text-slate-500">
+                      No parameters required — run with an empty argument set.
+                    </p>
+                  )}
+                  {fields.map((field) => (
+                    <label key={field.name} className="block text-[11px] text-slate-500">
+                      <span className="flex items-center gap-1">
+                        {humanizeIdentifier(field.name)}
+                        {field.required && <span className="text-rose-400">*</span>}
+                        {field.type && <span className="text-slate-600">· {field.type}</span>}
+                      </span>
+                      {field.description && (
+                        <span className="block text-[10px] text-slate-600 mb-0.5">{field.description}</span>
+                      )}
+                      <input
+                        className="mt-0.5 w-full bg-slate-800 text-slate-200 text-xs rounded px-2 py-1.5 border border-slate-700"
+                        value={values[field.name] ?? ''}
+                        onChange={(event) =>
+                          setValues((prev) => ({ ...prev, [field.name]: event.target.value }))
+                        }
+                        placeholder={field.default !== undefined && field.default !== null ? String(field.default) : ''}
+                        disabled={!runnable || isRunning}
+                      />
+                    </label>
+                  ))}
+                </div>
+
+                {needsConfirm && (
+                  <label className="flex items-start gap-2 text-xs text-amber-200 bg-amber-950/30 border border-amber-900 rounded-lg px-3 py-2">
+                    <input
+                      type="checkbox"
+                      className="mt-0.5"
+                      checked={confirm}
+                      onChange={(event) => setConfirm(event.target.checked)}
+                      disabled={isRunning}
+                    />
+                    <span>
+                      I understand this tool can mutate trading or stored state, and I confirm running
+                      it with the parameters above.
+                    </span>
+                  </label>
+                )}
+
+                <button
+                  type="button"
+                  className="w-full bg-sky-600 hover:bg-sky-500 text-white text-sm font-medium py-2 rounded-lg disabled:opacity-50"
+                  disabled={!runnable || isRunning || (needsConfirm && !confirm)}
+                  onClick={() => void run()}
+                >
+                  {isRunning ? 'Running…' : needsConfirm ? 'Run with confirmation' : 'Run tool'}
+                </button>
+
+                {runError && (
+                  <div className="text-sm text-rose-300 bg-rose-950/40 border border-rose-900 rounded-lg px-3 py-2 whitespace-pre-wrap break-words">
+                    {runError}
+                  </div>
+                )}
+
+                {resultText !== null && (
+                  <div className="space-y-1">
+                    <div className="text-xs font-medium text-emerald-300">Result</div>
+                    <pre className="text-[11px] text-slate-200 bg-slate-950 border border-slate-800 rounded-lg p-3 overflow-auto max-h-72 whitespace-pre-wrap break-words">
+                      {resultText}
+                    </pre>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+    </>
+  )
+}

@@ -327,18 +327,35 @@ After editable install, these entry points are available:
 }
 ```
 
-### Web API
+### Web UI + API
+
+The Web UI is a first-class delivery surface alongside CLI and MCP: start the API and open the chart workspace.
 
 ```bash
+# Once per checkout (or after UI source changes)
+cd webui
+npm install
+npm run build
+cd ..
+
+# Requires the web extra if you installed lean core only: pip install -e ".[web]"
 mtdata-webapi
 ```
 
-Starts a FastAPI server.
+Then open:
 
-- Health check: `http://localhost:8000/health`
-- API base paths: `http://localhost:8000/api` and `http://localhost:8000/api/v1`
-- React UI after `cd webui && npm install && npm run build`:
-  `http://localhost:8000/app`
+- **Chart workspace:** `http://127.0.0.1:8000/app/`
+- Health check: `http://127.0.0.1:8000/health`
+- API base paths: `http://127.0.0.1:8000/api` and `http://127.0.0.1:8000/api/v1`
+
+Frontend package scripts (from `webui/`):
+
+| Script | Purpose |
+|--------|---------|
+| `npm run build` | Production SPA → `webui/dist/` (`base` `/app/`) |
+| `npm run typecheck` | TypeScript check (`tsc --noEmit`) |
+| `npm test` | Unit tests for pure client logic |
+| `npm run dev` | Vite dev server on `:5173` (proxies `/api` → `:8000`) |
 
 Web UI / API configuration:
 - `WEBAPI_HOST` (default `127.0.0.1`)
@@ -346,11 +363,13 @@ Web UI / API configuration:
 - `WEBAPI_ALLOW_REMOTE=1` to permit a non-loopback bind
 - `WEBAPI_AUTH_TOKEN` to require `Authorization: Bearer <token>` or `X-API-Key: <token>` on API requests
 - `CORS_ORIGINS` with explicit origins only (wildcard `*` is rejected when credentials are enabled)
-- `WEBUI_DIST_DIR` to override the built UI directory
+- `WEBUI_DIST_DIR` to override the built UI directory (default `webui/dist`)
 
 The Python package does not ship generated `webui/dist/` assets. Without a
-production build, the REST API remains available and `/app` is not mounted; use
-`npm run dev` for frontend development or `npm run build` before deployment.
+production build, the REST API remains available and `/app` returns an explicit
+enablement page (build steps above) instead of a silent skip. Node is only
+required to build or develop the SPA — not to run `mtdata-webapi` when `dist/`
+is already present.
 
 See [WEB_API.md](WEB_API.md) for endpoint details.
 

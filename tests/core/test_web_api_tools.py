@@ -1,0 +1,108 @@
+"""Tests for Web API MCP tool catalog + invoke bridge."""
+
+from __future__ import annotations
+
+from unittest.mock import patch
+
+import pytest
+from fastapi import HTTPException
+from fastapi.testclient import TestClient
+
+from mtdata.core import web_api
+from mtdata.core.web_api_tools import (
+    DEDICATED_UI_TOOLS,
+    MUTATING_TOOLS,
+    classify_tool_surface,
+    coverage_inventory_rows,
+    invoke_tool_for_webapi,
+    list_tools_for_webapi,
+    tool_requires_confirmation,
+)
+
+
+class TestToolClassification:
+    def test_dedicated_and_generic_and_confirm(self):
+        assert classify_tool_surface("forecast_generate") == "dedicated_ui"
+        assert classify_tool_surface("regime_detect") == "generic_runner"
+        assert tool_requires_confirmation("trade_place") is True
+        assert tool_requires_confirmation("tools_list") is False
+        assert "trade_place" in MUTATING_TOOLS
+        assert "forecast_generate" in DEDICATED_UI_TOOLS
+
+    def test_inventory_covers_registry(self):
+        rows = coverage_inventory_rows()
+        names = {row["name"] for row in rows}
+        assert "tools_list" in names
+        assert "trade_place" in names
+        assert "market_depth_fetch" in names  # gated but listed
+        assert len(rows) >= 91
+        # zero unlisted surface values
+        for row in rows:
+            assert row["surface"] in {"dedicated_ui", "generic_runner", "intentional_omit"}
+
+
+class TestListAndInvoke:
+    def test_list_tools_includes_surface_meta(self):
+        payload = list_tools_for_webapi(search="tools_list")
+        assert payload["count"] >= 1
+        tool = payload["tools"][0]
+        assert tool["name"] == "tools_list"
+        assert tool["surface"] == "dedicated_ui"
+        assert "safety" in tool
+
+    def test_invoke_tools_list(self):
+        result = invoke_tool_for_webapi(
+            "tools_list",
+            arguments={"limit": 2, "detail": "compact"},
+        )
+        assert result["success"] is True
+        assert result["tool"] == "tools_list"
+        inner = result["result"]
+        assert isinstance(inner, dict)
+        assert inner.get("count") == 2
+
+    def test_mutation_requires_confirm(self):
+        with pytest.raises(HTTPException) as exc:
+            invoke_tool_for_webapi("trade_place", arguments={"symbol": "EURUSD"}, confirm=False)
+        assert exc.value.status_code == 400
+        detail = exc.value.detail
+        assert isinstance(detail, dict)
+        assert detail.get("requires_confirmation") is True
+
+
+class TestWebApiRoutes:
+    def setup_method(self):
+        self.client = TestClient(web_api.app)
+
+    def test_get_tools_route(self):
+        res = self.client.get("/api/v1/tools", params={"search": "tools_list"})
+        assert res.status_code == 200
+        body = res.json()
+        assert body["count"] >= 1
+        assert any(t["name"] == "tools_list" for t in body["tools"])
+
+    def test_get_tool_detail_route(self):
+        res = self.client.get("/api/v1/tools/tools_list")
+        assert res.status_code == 200
+        body = res.json()
+        assert body["tool"]["name"] == "tools_list"
+        assert isinstance(body["tool"].get("fields"), list)
+
+    def test_invoke_route(self):
+        res = self.client.post(
+            "/api/v1/tools/tools_list/invoke",
+            json={"arguments": {"limit": 1, "detail": "compact"}, "confirm": False},
+        )
+        assert res.status_code == 200
+        body = res.json()
+        assert body["success"] is True
+        assert body["result"]["count"] == 1
+
+    def test_invoke_trade_without_confirm_blocked(self):
+        res = self.client.post(
+            "/api/v1/tools/trade_place/invoke",
+            json={"arguments": {"symbol": "EURUSD"}, "confirm": False},
+        )
+        assert res.status_code == 400
+        detail = res.json()["detail"]
+        assert detail["requires_confirmation"] is True

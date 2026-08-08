@@ -20,6 +20,16 @@ import type {
 import { loadJSON, saveJSON } from '../lib/storage'
 import { tfSeconds } from '../lib/timeframes'
 import { formatDateTime } from '../lib/utils'
+import {
+  DEFAULT_PIVOT_METHOD,
+  DEFAULT_SR_CONTROLS,
+  buildPivotQuery,
+  buildSupportResistanceQuery,
+  normalizePivotMethod,
+  normalizeSrControls,
+  type PivotMethod,
+  type SupportResistanceControls,
+} from '../lib/overlayParams'
 
 // ============================================================================
 // Chart Data Hook
@@ -77,44 +87,67 @@ export function useForecastMethods() {
 export function usePivotLevels(symbol: string, timeframe: string) {
   const [levels, setLevels] = useState<PivotLevel[] | null>(null)
   const [meta, setMeta] = useState<{ method: string; period?: { start?: string; end?: string } } | null>(null)
+  const [method, setMethodState] = useState<PivotMethod>(DEFAULT_PIVOT_METHOD)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const levelsRef = useRef(levels)
+  levelsRef.current = levels
+
+  const fetchLevels = useCallback(
+    async (nextMethod: PivotMethod) => {
+      if (!symbol) return
+      try {
+        setIsLoading(true)
+        setError(null)
+        const query = buildPivotQuery(symbol, timeframe, nextMethod)
+        const data = await getPivots(query)
+        const parsed = (data.levels || [])
+          .map((row) => ({ level: String(row.level), value: Number(row.value) }))
+          .filter((row) => Number.isFinite(row.value))
+
+        if (!parsed.length) {
+          setError('No pivot levels returned')
+          setLevels(null)
+          setMeta(null)
+          return
+        }
+
+        setLevels(parsed)
+        setMeta({ method: data.method ?? nextMethod, period: data.period })
+      } catch (err) {
+        setError(getErrorMessage(err))
+        setLevels(null)
+        setMeta(null)
+      } finally {
+        setIsLoading(false)
+      }
+    },
+    [symbol, timeframe]
+  )
 
   const toggle = useCallback(async () => {
     if (!symbol) return
 
-    if (levels) {
+    if (levelsRef.current) {
       setLevels(null)
       setMeta(null)
       setError(null)
       return
     }
 
-    try {
-      setIsLoading(true)
-      setError(null)
-      const data = await getPivots({ symbol, timeframe, method: 'classic' })
-      const parsed = (data.levels || [])
-        .map(row => ({ level: String(row.level), value: Number(row.value) }))
-        .filter(row => Number.isFinite(row.value))
+    await fetchLevels(method)
+  }, [symbol, method, fetchLevels])
 
-      if (!parsed.length) {
-        setError('No pivot levels returned')
-        setLevels(null)
-        setMeta(null)
-        return
+  const setMethod = useCallback(
+    async (next: string) => {
+      const normalized = normalizePivotMethod(next)
+      setMethodState(normalized)
+      if (levelsRef.current) {
+        await fetchLevels(normalized)
       }
-
-      setLevels(parsed)
-      setMeta({ method: data.method ?? 'classic', period: data.period })
-    } catch (err) {
-      setError(getErrorMessage(err))
-      setLevels(null)
-      setMeta(null)
-    } finally {
-      setIsLoading(false)
-    }
-  }, [symbol, timeframe, levels])
+    },
+    [fetchLevels]
+  )
 
   const reset = useCallback(() => {
     setLevels(null)
@@ -122,69 +155,91 @@ export function usePivotLevels(symbol: string, timeframe: string) {
     setError(null)
   }, [])
 
-  return { levels, meta, isLoading, error, toggle, reset }
+  return { levels, meta, method, setMethod, isLoading, error, toggle, reset }
 }
 
 // ============================================================================
 // Support/Resistance Hook
 // ============================================================================
 
-export function useSupportResistance(symbol: string, timeframe: string, limit: number) {
+export function useSupportResistance(symbol: string, timeframe: string, _limit: number) {
   const [levels, setLevels] = useState<SupportResistanceLevel[] | null>(null)
   const [meta, setMeta] = useState<{
     method: string
     tolerance_pct: number
     min_touches: number
+    lookback?: number
     window?: { start?: string | null; end?: string | null }
   } | null>(null)
+  const [controls, setControlsState] = useState<SupportResistanceControls>(DEFAULT_SR_CONTROLS)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const levelsRef = useRef(levels)
+  levelsRef.current = levels
+  const controlsRef = useRef(controls)
+  controlsRef.current = controls
+
+  const fetchLevels = useCallback(
+    async (nextControls: SupportResistanceControls) => {
+      if (!symbol) return
+      try {
+        setIsLoading(true)
+        setError(null)
+        const query = buildSupportResistanceQuery(symbol, timeframe, nextControls)
+        const data = await getSupportResistance(query)
+        const parsed = [...(data.supports || []), ...(data.resistances || [])].filter((row) =>
+          Number.isFinite(row?.value)
+        )
+
+        if (!parsed.length) {
+          setError('No support/resistance levels detected')
+          setLevels(null)
+          setMeta(null)
+          return
+        }
+
+        setLevels(parsed)
+        setMeta({
+          method: data.method ?? 'swing',
+          tolerance_pct: data.tolerance_pct ?? nextControls.tolerance_pct,
+          min_touches: data.min_touches ?? nextControls.min_touches,
+          lookback: data.lookback ?? nextControls.lookback,
+          window: data.scan_window,
+        })
+      } catch (err) {
+        setError(getErrorMessage(err))
+        setLevels(null)
+        setMeta(null)
+      } finally {
+        setIsLoading(false)
+      }
+    },
+    [symbol, timeframe]
+  )
 
   const toggle = useCallback(async () => {
     if (!symbol) return
 
-    if (levels) {
+    if (levelsRef.current) {
       setLevels(null)
       setMeta(null)
       setError(null)
       return
     }
 
-    try {
-      setIsLoading(true)
-      setError(null)
-      const data = await getSupportResistance({
-        symbol,
-        timeframe,
-        lookback: limit,
-      })
-      const parsed = [
-        ...(data.supports || []),
-        ...(data.resistances || []),
-      ].filter(row => Number.isFinite(row?.value))
+    await fetchLevels(controlsRef.current)
+  }, [symbol, fetchLevels])
 
-      if (!parsed.length) {
-        setError('No support/resistance levels detected')
-        setLevels(null)
-        setMeta(null)
-        return
+  const setControls = useCallback(
+    async (partial: Partial<SupportResistanceControls>) => {
+      const next = normalizeSrControls({ ...controlsRef.current, ...partial })
+      setControlsState(next)
+      if (levelsRef.current) {
+        await fetchLevels(next)
       }
-
-      setLevels(parsed)
-      setMeta({
-        method: data.method ?? 'swing',
-        tolerance_pct: data.tolerance_pct ?? 0,
-        min_touches: data.min_touches ?? 2,
-        window: data.scan_window,
-      })
-    } catch (err) {
-      setError(getErrorMessage(err))
-      setLevels(null)
-      setMeta(null)
-    } finally {
-      setIsLoading(false)
-    }
-  }, [symbol, timeframe, limit, levels])
+    },
+    [fetchLevels]
+  )
 
   const reset = useCallback(() => {
     setLevels(null)
@@ -192,7 +247,7 @@ export function useSupportResistance(symbol: string, timeframe: string, limit: n
     setError(null)
   }, [])
 
-  return { levels, meta, isLoading, error, toggle, reset }
+  return { levels, meta, controls, setControls, isLoading, error, toggle, reset }
 }
 
 // ============================================================================

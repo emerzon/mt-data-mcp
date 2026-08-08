@@ -127,3 +127,72 @@ def test_history_labels_explicit_epoch_timestamps_as_utc_seconds() -> None:
     assert res["timestamp_format"] == "epoch"
     assert res["timestamp_unit"] == "unix_seconds_utc"
     assert mock_fetch.call_args.kwargs["time_as_epoch"] is True
+
+
+def test_history_non_causal_denoise_without_opt_in_returns_400() -> None:
+    """l1_trend (and peers) must not 500 when causality opt-in is missing."""
+    from fastapi import HTTPException
+
+    with patch.object(web_api.mt5_connection, "_ensure_connection", return_value=True), patch(
+        "mtdata.core.web_api._get_denoise_methods",
+        return_value={
+            "methods": [
+                {
+                    "method": "l1_trend",
+                    "available": True,
+                    "requires": "",
+                }
+            ]
+        },
+    ), patch("mtdata.core.web_api._fetch_candles_impl") as mock_fetch:
+        try:
+            web_api.get_history(
+                symbol="BTCUSD",
+                timeframe="H1",
+                limit=10,
+                denoise_method="l1_trend",
+                denoise_params='{"params":{}}',
+            )
+            raised = None
+        except HTTPException as exc:
+            raised = exc
+
+    assert raised is not None
+    assert raised.status_code == 400
+    detail = raised.detail
+    assert isinstance(detail, dict)
+    assert detail.get("code") == "denoise_non_causal_requires_opt_in" or (
+        isinstance(detail.get("error"), str)
+        and "zero-phase" in detail["error"].lower()
+    ) or (
+        isinstance(detail, dict)
+        and "zero-phase" in str(detail).lower()
+    )
+    mock_fetch.assert_not_called()
+
+
+def test_history_non_causal_denoise_with_zero_phase_reaches_fetch() -> None:
+    payload = {
+        "success": True,
+        "data": [{"time": 1735689600.0, "close": 1.1, "close_dn": 1.05}],
+    }
+    with patch.object(web_api.mt5_connection, "_ensure_connection", return_value=True), patch(
+        "mtdata.core.web_api._get_denoise_methods",
+        return_value={"methods": [{"method": "l1_trend", "available": True, "requires": ""}]},
+    ), patch(
+        "mtdata.core.web_api._fetch_candles_impl",
+        return_value=payload,
+    ) as mock_fetch:
+        res = web_api.get_history(
+            symbol="BTCUSD",
+            timeframe="H1",
+            limit=10,
+            denoise_method="l1_trend",
+            denoise_params='{"params":{},"causality":"zero_phase"}',
+            timestamp_format="epoch",
+        )
+
+    assert res["data"][0]["close_dn"] == 1.05
+    denoise = mock_fetch.call_args.kwargs.get("denoise") or mock_fetch.call_args.kwargs
+    # denoise may be nested in request path via use case; assert fetch was invoked
+    mock_fetch.assert_called_once()

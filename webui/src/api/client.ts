@@ -10,6 +10,8 @@ import type {
   DimredMethodsMeta,
   WaveletsResponse,
   SktimeEstimatorsResponse,
+  ModelsResponse,
+  ReadyResponse,
   ForecastPayload,
   VolatilityPayload,
   PivotResponse,
@@ -20,6 +22,7 @@ import type {
   BacktestBody,
   BacktestResult,
 } from '../types'
+import type { ToolCatalogEntry } from '../lib/toolCatalog'
 
 // Use environment variable or default to empty (same origin)
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -134,7 +137,11 @@ export async function getHistory(params: HistoryParams, signal?: AbortSignal): P
     if (dn.params) extras.params = dn.params
     if (dn.columns) extras.columns = dn.columns
     if (dn.when) extras.when = dn.when
-    if (dn.causality) extras.causality = dn.causality
+    // Always forward causality when present so non-causal methods (l1_trend, etc.)
+    // can opt into zero_phase; omit only when unset (server chooses causal default).
+    if (dn.causality === 'zero_phase' || dn.causality === 'causal') {
+      extras.causality = dn.causality
+    }
     if (typeof dn.keep_original === 'boolean') extras.keep_original = dn.keep_original
     if (Object.keys(extras).length) {
       query.denoise_params = JSON.stringify(extras)
@@ -187,6 +194,18 @@ export async function getSktimeEstimators(): Promise<SktimeEstimatorsResponse> {
   return data
 }
 
+export async function getModels(method?: string, signal?: AbortSignal): Promise<ModelsResponse> {
+  const { data } = await api.get<ModelsResponse>(apiPath('/models'), {
+    params: method ? { method } : undefined,
+    signal,
+  })
+  return {
+    ...data,
+    models: Array.isArray(data?.models) ? data.models : [],
+    count: typeof data?.count === 'number' ? data.count : Array.isArray(data?.models) ? data.models.length : 0,
+  }
+}
+
 // ============================================================================
 // Forecasting
 // ============================================================================
@@ -213,7 +232,7 @@ export async function runBacktest(body: BacktestBody): Promise<BacktestResult> {
 export type PivotParams = {
   symbol: string
   timeframe: string
-  method?: 'classic' | 'fibonacci' | 'camarilla' | 'woodie' | 'demark'
+  method?: 'classic' | 'fibonacci' | 'woodie' | 'camarilla' | 'demark'
 }
 
 export async function getPivots(params: PivotParams): Promise<PivotResponse> {
@@ -243,10 +262,99 @@ export async function getSupportResistance(
 }
 
 // ============================================================================
-// Health Check
+// Health / Readiness
 // ============================================================================
 
-export async function healthCheck(): Promise<{ service: string; status: string }> {
-  const { data } = await api.get<{ service: string; status: string }>(apiPath('/health'))
+export async function healthCheck(signal?: AbortSignal): Promise<{ service: string; status: string }> {
+  const { data } = await api.get<{ service: string; status: string }>(apiPath('/health'), { signal })
+  return data
+}
+
+/**
+ * MT5 readiness probe. Resolves with the JSON body even on HTTP 503 so the UI
+ * can show a non-blocking "not ready" state without treating it as a hard crash.
+ */
+export async function readyCheck(signal?: AbortSignal): Promise<{ ok: boolean; payload: ReadyResponse }> {
+  try {
+    const { data, status } = await api.get<ReadyResponse>(apiPath('/ready'), {
+      signal,
+      validateStatus: () => true,
+    })
+    const payload = data && typeof data === 'object' ? data : {}
+    const ok = status >= 200 && status < 300
+    return { ok, payload }
+  } catch (error) {
+    return {
+      ok: false,
+      payload: { status: 'error', message: getErrorMessage(error) },
+    }
+  }
+}
+
+// ============================================================================
+// MCP tool catalog + generic invoke
+// ============================================================================
+
+export type ToolsListResponse = {
+  success?: boolean
+  count?: number
+  categories?: Record<string, string[]>
+  surfaces?: Record<string, number>
+  tools: ToolCatalogEntry[]
+}
+
+export type ToolDetailResponse = {
+  success?: boolean
+  tool: ToolCatalogEntry
+}
+
+export type ToolInvokeResponse = {
+  success?: boolean
+  tool?: string
+  surface?: string
+  result?: unknown
+}
+
+export async function listTools(
+  params?: { category?: string; search?: string; include_fields?: boolean },
+  signal?: AbortSignal
+): Promise<ToolsListResponse> {
+  const { data } = await api.get<ToolsListResponse>(apiPath('/tools'), {
+    params: {
+      detail: 'standard',
+      category: params?.category || undefined,
+      search: params?.search || undefined,
+      include_fields: params?.include_fields || undefined,
+    },
+    signal,
+  })
+  return {
+    ...data,
+    tools: Array.isArray(data?.tools) ? data.tools : [],
+    count: typeof data?.count === 'number' ? data.count : Array.isArray(data?.tools) ? data.tools.length : 0,
+  }
+}
+
+export async function getTool(toolName: string, signal?: AbortSignal): Promise<ToolDetailResponse> {
+  const { data } = await api.get<ToolDetailResponse>(apiPath(`/tools/${encodeURIComponent(toolName)}`), {
+    signal,
+  })
+  return {
+    ...data,
+    tool: data?.tool ?? { name: toolName },
+  }
+}
+
+export async function invokeTool(
+  toolName: string,
+  body: { arguments?: Record<string, unknown>; confirm?: boolean }
+): Promise<ToolInvokeResponse> {
+  const { data } = await api.post<ToolInvokeResponse>(
+    apiPath(`/tools/${encodeURIComponent(toolName)}/invoke`),
+    {
+      arguments: body.arguments ?? {},
+      confirm: Boolean(body.confirm),
+    }
+  )
   return data
 }

@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import { getDenoiseMethods, getWavelets } from '../api/client'
 import type { DenoiseSpecUI, ParamDef } from '../types'
 import { coerce } from '../lib/utils'
+import { useEscapeKey } from '../lib/useEscapeKey'
 
 type Props = {
   open: boolean
@@ -25,6 +26,7 @@ export function DenoiseModal({ open, title = 'Configure Denoising', value, onClo
   const [causality, setCausality] = useState<'zero_phase' | 'causal'>(value?.causality || 'zero_phase')
   const [keepOriginal, setKeepOriginal] = useState<boolean>(value?.keep_original ?? true)
   const [showAdvanced, setShowAdvanced] = useState<boolean>(false)
+  useEscapeKey(open, onClose)
 
   const paramDefs: ParamDef[] = useMemo(
     () => methods.find(m => m.method === method)?.params || [],
@@ -82,11 +84,22 @@ export function DenoiseModal({ open, title = 'Configure Denoising', value, onClo
   }
 
   return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm">
-      <div className="panel w-[640px] max-h-[90vh] overflow-y-auto p-5 space-y-4 shadow-2xl">
+    <div
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-950/80 backdrop-blur-sm p-0 sm:p-4"
+      role="presentation"
+      onClick={(event) => {
+        if (event.target === event.currentTarget) onClose()
+      }}
+    >
+      <div
+        className="panel w-full sm:w-[640px] max-w-[100vw] max-h-[min(90vh,100%)] overflow-y-auto p-4 sm:p-5 space-y-4 shadow-2xl rounded-t-xl sm:rounded-lg"
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+      >
         <div className="flex justify-between items-center">
           <h2 className="text-lg font-semibold text-slate-200">{title}</h2>
-          <button className="btn bg-slate-700 hover:bg-slate-600" onClick={onClose}>
+          <button className="btn bg-slate-700 hover:bg-slate-600" onClick={onClose} aria-label="Close">
             ×
           </button>
         </div>

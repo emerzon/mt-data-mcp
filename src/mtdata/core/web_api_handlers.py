@@ -11,6 +11,7 @@ from fastapi import HTTPException
 from ..forecast.exceptions import ForecastError
 from ..forecast.forecast_methods import get_forecast_methods_payload
 from ..utils.coercion import UNPARSED_BOOL, parse_bool_like
+from ..utils.denoise import DenoiseCausalityError
 from ..utils.mt5 import MT5ConnectionError
 from ..utils.support_resistance import compact_support_resistance_payload
 from .data.requests import DataFetchCandlesRequest
@@ -609,7 +610,29 @@ def get_history_response(  # noqa: C901
                 }
                 spec_input["params"] = params_dict
                 _apply_history_denoise_controls(spec_input, controls)
-        denoise_spec = normalize_denoise_spec(spec_input, default_when="pre_ti")
+        try:
+            denoise_spec = normalize_denoise_spec(spec_input, default_when="pre_ti")
+        except DenoiseCausalityError as exc:
+            # Non-causal filters (e.g. l1_trend) require explicit zero_phase opt-in.
+            # Surface as a client error, not an unhandled 500.
+            raise _http_error(
+                400,
+                (
+                    f"Denoise method '{exc.method}' requires explicit zero-phase "
+                    "opt-in because it uses future bars."
+                ),
+                code="denoise_non_causal_requires_opt_in",
+                operation="get_history",
+                details={
+                    "method": exc.method,
+                    "required_causality": "zero_phase",
+                    "uses_future_bars": True,
+                    "remediation": (
+                        "Pass denoise_params causality=zero_phase for retrospective "
+                        "chart analysis, or choose a causal denoise method."
+                    ),
+                },
+            ) from exc
 
     request_values: Dict[str, Any] = {
         "symbol": symbol,

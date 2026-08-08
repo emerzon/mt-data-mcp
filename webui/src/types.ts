@@ -273,6 +273,14 @@ export type DenoiseMethodInfo = {
   requires?: string
   description: string
   params: ParamDef[]
+  supports_causal?: boolean
+  requires_causality_opt_in?: boolean
+  supports?: { causality?: string[] }
+  defaults?: {
+    causality?: 'zero_phase' | 'causal'
+    when?: 'pre_ti' | 'post_ti'
+    keep_original?: boolean
+  }
 }
 
 export type DenoiseMethodsMeta = {
@@ -306,6 +314,35 @@ export type SktimeEstimatorsResponse = {
   available: boolean
   estimators: SktimeEstimator[]
   error?: string
+}
+
+export type StoredModelInfo = {
+  id?: string
+  model_id?: string
+  method?: string
+  symbol?: string
+  timeframe?: string
+  created_at?: string
+  updated_at?: string
+  path?: string
+  [key: string]: unknown
+}
+
+export type ModelsResponse = {
+  success?: boolean
+  detail?: string
+  count?: number
+  models: StoredModelInfo[]
+}
+
+export type ReadyResponse = {
+  status?: string
+  ready?: boolean
+  service?: string
+  detail?: string
+  message?: string
+  mt5?: { connected?: boolean; error?: string }
+  [key: string]: unknown
 }
 
 // ============================================================================

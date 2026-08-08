@@ -276,8 +276,9 @@ class TestWebApiRuntimeHelpers:
         runtime = WebApiRuntimeSettings(webui_directory="missing-dist")
         runtime_app = create_web_api_app(settings=runtime)
         with caplog.at_level("WARNING"):
-            mount_webui(runtime_app, settings=runtime)
-        assert any("Skipping Web UI mount" in record.message for record in caplog.records)
+            result = mount_webui(runtime_app, settings=runtime)
+        assert result.mounted is False
+        assert any("Web UI dist not found" in record.message for record in caplog.records)
 
 
 class TestWebApiHandlers:

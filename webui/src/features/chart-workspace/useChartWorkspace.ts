@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { getErrorMessage, getHistory, getTick } from '../../api/client'
 import { useChartOverlays, usePivotLevels, useSupportResistance } from '../../hooks/useForecast'
+import { ensureChartDenoiseCausality } from '../../lib/denoiseSpec'
 import { loadJSON, saveJSON } from '../../lib/storage'
 import { toUtcSec } from '../../lib/time'
 import { chartWorkspaceLivePollMs, tfSeconds } from '../../lib/timeframes'
@@ -42,7 +43,14 @@ export function useChartWorkspace() {
   const srState = useSupportResistance(symbol, timeframe, QUERY_LIMIT)
   const livePollMs = chartWorkspaceLivePollMs(timeframe)
 
-  const { data: histDataResponse, error: historyError, refetch, isFetching } = useQuery({
+  const {
+    data: histDataResponse,
+    error: historyError,
+    refetch,
+    isFetching,
+    isLoading: isHistoryLoading,
+    isFetched: isHistoryFetched,
+  } = useQuery({
     queryKey: ['hist', symbol, timeframe, QUERY_LIMIT, end, JSON.stringify(chartDenoise || {}), isLive],
     queryFn: ({ signal }) =>
       getHistory({
@@ -82,7 +90,11 @@ export function useChartWorkspace() {
       return
     }
     const saved = loadJSON<DenoiseSpecUI | undefined>(`chart_dn:${symbol}:${timeframe}`)
-    setChartDenoise(saved || undefined)
+    const normalized = ensureChartDenoiseCausality(saved || undefined)
+    setChartDenoise(normalized)
+    if (normalized && (!saved?.causality || saved.causality !== normalized.causality)) {
+      saveJSON(`chart_dn:${symbol}:${timeframe}`, normalized)
+    }
   }, [symbol, timeframe])
 
   const bars = useMemo(() => {
@@ -210,13 +222,14 @@ export function useChartWorkspace() {
 
   const handleDenoiseChange = useCallback(
     (denoise?: DenoiseSpecUI) => {
-      setChartDenoise(denoise)
+      const normalized = ensureChartDenoiseCausality(denoise)
+      setChartDenoise(normalized)
       setExtraHistory([])
       setHistoryPageError(null)
       setForecastOverlays([])
       setMetrics(null)
       if (symbol && timeframe) {
-        saveJSON(`chart_dn:${symbol}:${timeframe}`, denoise)
+        saveJSON(`chart_dn:${symbol}:${timeframe}`, normalized)
       }
     },
     [symbol, timeframe]
@@ -448,9 +461,16 @@ export function useChartWorkspace() {
     priceLines,
     metrics,
     pivotLevels: pivotState.levels,
+    pivotMethod: pivotState.method,
+    pivotsLoading: pivotState.isLoading,
     srLevels: srState.levels,
+    srControls: srState.controls,
+    srLoading: srState.isLoading,
     isFetching,
     isLoadingMore,
+    /** True until the primary history query has settled at least once for the current key. */
+    isInitialHistoryLoading: !!symbol && (isHistoryLoading || (!isHistoryFetched && isFetching)),
+    historyErrorMessage: historyError ? getErrorMessage(historyError) : null,
     workspaceErrors,
     earliest,
     setTimezoneMode,
@@ -461,7 +481,9 @@ export function useChartWorkspace() {
     handleDenoiseChange,
     handleForecastResult,
     handlePivotToggle: pivotState.toggle,
+    handlePivotMethodChange: pivotState.setMethod,
     handleSRToggle: srState.toggle,
+    handleSrControlsChange: srState.setControls,
     reload: () => {
       setEnd(undefined)
       setExtraHistory([])

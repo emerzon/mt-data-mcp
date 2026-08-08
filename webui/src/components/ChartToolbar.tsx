@@ -1,5 +1,11 @@
+import { useState } from 'react'
 import type { DenoiseSpecUI } from '../types'
+import type { PivotMethod, SupportResistanceControls } from '../lib/overlayParams'
+import { toolbarUsesOverflowMenu, type LayoutBreakpoint } from '../lib/layout'
+import { useEscapeKey } from '../lib/useEscapeKey'
 import { ApiAuthControl } from './ApiAuthControl'
+import { ConnectionStatus } from './ConnectionStatus'
+import { OverlayControls } from './OverlayControls'
 import { PivotIcon, RefreshIcon, SRIcon } from '../features/chart-workspace/toolbarIcons'
 import {
   DenoiseSelector,
@@ -31,6 +37,7 @@ type Props = {
   onToggleSR: () => void
   onDenoiseChange: (value?: DenoiseSpecUI) => void
   onOpenForecast: () => void
+  onOpenTools: () => void
   onToggleBid: () => void
   onToggleAsk: () => void
   onToggleLast: () => void
@@ -39,6 +46,13 @@ type Props = {
   displayTimeZone: string
   onTimezoneChange: (value: 'utc' | 'local' | 'server') => void
   onAuthChange: () => void
+  layoutBreakpoint: LayoutBreakpoint
+  pivotMethod: PivotMethod
+  onPivotMethodChange: (method: string) => void
+  pivotsLoading?: boolean
+  srControls: SupportResistanceControls
+  onSrControlsChange: (partial: Partial<SupportResistanceControls>) => void
+  srLoading?: boolean
 }
 
 export function ChartToolbar({
@@ -62,6 +76,7 @@ export function ChartToolbar({
   onToggleSR,
   onDenoiseChange,
   onOpenForecast,
+  onOpenTools,
   onToggleBid,
   onToggleAsk,
   onToggleLast,
@@ -70,24 +85,96 @@ export function ChartToolbar({
   displayTimeZone,
   onTimezoneChange,
   onAuthChange,
+  layoutBreakpoint,
+  pivotMethod,
+  onPivotMethodChange,
+  pivotsLoading,
+  srControls,
+  onSrControlsChange,
+  srLoading,
 }: Props) {
+  const overflow = toolbarUsesOverflowMenu(layoutBreakpoint)
+  const [moreOpen, setMoreOpen] = useState(false)
+  useEscapeKey(moreOpen, () => setMoreOpen(false))
+
+  const analysisGroup = (
+    <>
+      <ApiAuthControl onChange={onAuthChange} />
+      <div className="w-px h-5 bg-slate-700 hidden sm:block" />
+      {!overflow && (
+        <>
+          <button
+            className={`toolbar-btn ${hasPivots ? 'text-amber-400' : ''}`}
+            onClick={onTogglePivots}
+            disabled={!symbol || pivotsLoading}
+            title="Toggle pivot levels"
+            aria-pressed={hasPivots}
+          >
+            <PivotIcon />
+          </button>
+          <button
+            className={`toolbar-btn ${hasSR ? 'text-emerald-400' : ''}`}
+            onClick={onToggleSR}
+            disabled={!symbol || srLoading}
+            title="Toggle support/resistance"
+            aria-pressed={hasSR}
+          >
+            <SRIcon />
+          </button>
+        </>
+      )}
+      <OverlayControls
+        disabled={!symbol}
+        pivotMethod={pivotMethod}
+        onPivotMethodChange={onPivotMethodChange}
+        hasPivots={hasPivots}
+        onTogglePivots={onTogglePivots}
+        pivotsLoading={pivotsLoading}
+        srControls={srControls}
+        onSrControlsChange={onSrControlsChange}
+        hasSR={hasSR}
+        onToggleSR={onToggleSR}
+        srLoading={srLoading}
+      />
+      <div className="w-px h-5 bg-slate-700 hidden sm:block" />
+      <PriceLinesSelector
+        showBid={showBid}
+        showAsk={showAsk}
+        showLast={showLast}
+        isLive={isLive}
+        disabled={!symbol}
+        onToggleBid={onToggleBid}
+        onToggleAsk={onToggleAsk}
+        onToggleLast={onToggleLast}
+        onToggleLive={onToggleLive}
+      />
+      <div className="w-px h-5 bg-slate-700 hidden sm:block" />
+      <DenoiseSelector value={denoise} disabled={!symbol} onChange={onDenoiseChange} />
+    </>
+  )
+
   return (
-    <div className="absolute top-3 left-3 right-3 z-20 flex items-start gap-2">
-      <div className="flex items-center gap-1 bg-slate-900/95 backdrop-blur-sm rounded-lg border border-slate-800 p-1">
+    <div className="absolute top-2 left-2 right-2 z-20 flex flex-wrap items-start gap-2 pointer-events-none [&>*]:pointer-events-auto">
+      <div className="flex flex-wrap items-center gap-1 bg-slate-900/95 backdrop-blur-sm rounded-lg border border-slate-800 p-1 max-w-full">
         <SymbolSelector value={symbol} onChange={onSymbolChange} />
         <div className="w-px h-5 bg-slate-700" />
         <TimezoneSelector value={timezoneMode} onChange={onTimezoneChange} />
         <div className="w-px h-5 bg-slate-700" />
         <TimeframeSelector value={timeframe} onChange={onTimeframeChange} />
         <div className="w-px h-5 bg-slate-700" />
-        <button className="toolbar-btn" onClick={onReload} disabled={!symbol || isLoading} title="Reload data">
+        <button
+          className="toolbar-btn min-h-9 min-w-9 justify-center"
+          onClick={onReload}
+          disabled={!symbol || isLoading}
+          title="Reload data"
+        >
           <RefreshIcon className={isLoading ? 'animate-spin' : ''} />
         </button>
       </div>
 
-      <div className="flex-1" />
+      <div className="flex-1 min-w-[0.5rem]" />
 
-      {symbol && (
+      {symbol && layoutBreakpoint === 'desktop' && (
         <div className="bg-slate-900/95 backdrop-blur-sm rounded-lg border border-slate-800 px-3 py-1.5 text-xs text-slate-400">
           {barsCount} bars
           {displayAnchor !== undefined && (
@@ -101,50 +188,56 @@ export function ChartToolbar({
         </div>
       )}
 
-      <div className="flex items-center gap-2">
-        <div className="flex items-center gap-1 bg-slate-900/95 backdrop-blur-sm rounded-lg border border-slate-800 p-1">
-          <ApiAuthControl onChange={onAuthChange} />
-          <div className="w-px h-5 bg-slate-700" />
-          <button
-            className={`toolbar-btn ${hasPivots ? 'text-amber-400' : ''}`}
-            onClick={onTogglePivots}
-            disabled={!symbol}
-            title="Toggle pivot levels"
-          >
-            <PivotIcon />
-          </button>
-          <button
-            className={`toolbar-btn ${hasSR ? 'text-emerald-400' : ''}`}
-            onClick={onToggleSR}
-            disabled={!symbol}
-            title="Toggle support/resistance"
-          >
-            <SRIcon />
-          </button>
-          <div className="w-px h-5 bg-slate-700" />
-          <PriceLinesSelector
-            showBid={showBid}
-            showAsk={showAsk}
-            showLast={showLast}
-            isLive={isLive}
-            disabled={!symbol}
-            onToggleBid={onToggleBid}
-            onToggleAsk={onToggleAsk}
-            onToggleLast={onToggleLast}
-            onToggleLive={onToggleLive}
-          />
-          <div className="w-px h-5 bg-slate-700" />
-          <DenoiseSelector value={denoise} disabled={!symbol} onChange={onDenoiseChange} />
-        </div>
+      <div className="flex flex-wrap items-center gap-2 ml-auto">
+        <ConnectionStatus />
+
+        {overflow ? (
+          <div className="relative">
+            <button
+              type="button"
+              className="toolbar-btn bg-slate-900/95 border border-slate-800 rounded-lg min-h-9 px-3"
+              onClick={() => setMoreOpen((value) => !value)}
+              aria-expanded={moreOpen}
+            >
+              More
+            </button>
+            {moreOpen && (
+              <div className="absolute top-full right-0 mt-1 flex flex-wrap items-center gap-1 bg-slate-900 border border-slate-700 rounded-lg shadow-xl p-2 z-50 max-w-[min(24rem,calc(100vw-1rem))]">
+                {analysisGroup}
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="flex flex-wrap items-center gap-1 bg-slate-900/95 backdrop-blur-sm rounded-lg border border-slate-800 p-1">
+            {analysisGroup}
+          </div>
+        )}
 
         <button
-          className="bg-sky-600 hover:bg-sky-500 text-white text-sm font-medium px-4 py-1.5 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          type="button"
+          className="bg-slate-800 hover:bg-slate-700 text-slate-100 text-sm font-medium px-3 py-2 min-h-9 rounded-lg border border-slate-700 transition-colors"
+          onClick={onOpenTools}
+          title="Browse and run all backend tools"
+        >
+          Tools
+        </button>
+        <button
+          className="bg-sky-600 hover:bg-sky-500 text-white text-sm font-medium px-3 sm:px-4 py-2 min-h-9 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           onClick={onOpenForecast}
           disabled={!symbol}
         >
           Forecast
         </button>
       </div>
+
+      {symbol && layoutBreakpoint !== 'desktop' && displayAnchor !== undefined && (
+        <div className="w-full bg-slate-900/95 backdrop-blur-sm rounded-lg border border-slate-800 px-3 py-1.5 text-xs text-amber-400">
+          Anchor: {formatEpochTime(displayAnchor, displayTimeZone)}
+          <button className="ml-2 text-slate-500 hover:text-slate-300" onClick={onClearAnchor}>
+            Clear
+          </button>
+        </div>
+      )}
     </div>
   )
 }

@@ -87,12 +87,21 @@ from .web_api_handlers import (
 from .web_api_handlers import (
     post_forecast_volatility_response as _post_forecast_volatility_response,
 )
-from .web_api_models import BacktestBody, ForecastPriceBody, ForecastVolBody
+from .web_api_models import BacktestBody, ForecastPriceBody, ForecastVolBody, ToolInvokeBody
 from .web_api_runtime import (
     SafeJSONResponse,
     create_web_api_app,
     mount_webui,
     run_webapi,
+)
+from .web_api_tools import (
+    get_tool_for_webapi as _get_tool_for_webapi,
+)
+from .web_api_tools import (
+    invoke_tool_for_webapi as _invoke_tool_for_webapi,
+)
+from .web_api_tools import (
+    list_tools_for_webapi as _list_tools_for_webapi,
 )
 
 API_PREFIXES = ("/api", "/api/v1")
@@ -489,6 +498,38 @@ def health() -> Dict[str, Any]:
 def ready() -> SafeJSONResponse:
     payload, status_code = _readiness_payload()
     return SafeJSONResponse(status_code=status_code, content=payload)
+
+
+@api_router.get("/tools")
+def list_tools(
+    category: Optional[str] = Query(None),
+    search: Optional[str] = Query(None),
+    detail: str = Query("standard"),
+    include_fields: bool = Query(False),
+) -> Dict[str, Any]:
+    """List MCP tools with surface classification for the Web UI runner."""
+    return _list_tools_for_webapi(
+        category=category,
+        search=search,
+        detail=detail,
+        include_fields=include_fields,
+    )
+
+
+@api_router.get("/tools/{tool_name}")
+def get_tool(tool_name: str) -> Dict[str, Any]:
+    """Return one tool with parameter field descriptors for the form runner."""
+    return _get_tool_for_webapi(tool_name)
+
+
+@api_router.post("/tools/{tool_name}/invoke")
+def invoke_tool(tool_name: str, body: ToolInvokeBody) -> Dict[str, Any]:
+    """Invoke a registered MCP tool. Mutating tools require body.confirm=true."""
+    return _invoke_tool_for_webapi(
+        tool_name,
+        arguments=body.arguments,
+        confirm=bool(body.confirm),
+    )
 
 
 @app.get("/health")
