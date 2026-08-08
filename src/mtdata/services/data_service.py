@@ -1293,6 +1293,7 @@ def _append_denoise_application(
     default_keep_original: bool,
     added_columns: List[str],
     overwritten_columns: List[str],
+    ohlc_geometry_repaired: int = 0,
 ) -> None:
     if not added_columns and not overwritten_columns:
         return
@@ -1300,18 +1301,19 @@ def _append_denoise_application(
         denoise_meta = dict(source_spec or {})
         columns = denoise_meta.get('columns', 'close')
         keep_original = bool(denoise_meta.get('keep_original', default_keep_original))
-        denoise_apps.append(
-            {
-                'method': str(denoise_meta.get('method', 'none')).lower(),
-                'when': str(denoise_meta.get('when', default_when)).lower(),
-                'causality': str(denoise_meta.get('causality', default_causality)),
-                'keep_original': keep_original,
-                'columns': columns,
-                'params': denoise_meta.get('params') or {},
-                'added_columns': added_columns,
-                'overwrote_columns': overwritten_columns,
-            }
-        )
+        application = {
+            'method': str(denoise_meta.get('method', 'none')).lower(),
+            'when': str(denoise_meta.get('when', default_when)).lower(),
+            'causality': str(denoise_meta.get('causality', default_causality)),
+            'keep_original': keep_original,
+            'columns': columns,
+            'params': denoise_meta.get('params') or {},
+            'added_columns': added_columns,
+            'overwrote_columns': overwritten_columns,
+        }
+        if ohlc_geometry_repaired > 0:
+            application['ohlc_geometry_repaired'] = int(ohlc_geometry_repaired)
+        denoise_apps.append(application)
     except Exception:
         pass
 
@@ -1352,6 +1354,11 @@ def _apply_pre_ti_denoise(
             if isinstance(last_application, dict)
             else []
         )
+        ohlc_geometry_repaired = (
+            int(last_application.get("ohlc_geometry_repaired") or 0)
+            if isinstance(last_application, dict)
+            else 0
+        )
         _extend_unique_headers(headers, added_columns)
         _append_denoise_application(
             denoise_apps,
@@ -1361,6 +1368,7 @@ def _apply_pre_ti_denoise(
             default_keep_original=True,
             added_columns=added_columns,
             overwritten_columns=overwritten_columns,
+            ohlc_geometry_repaired=ohlc_geometry_repaired,
         )
 
 
@@ -1469,6 +1477,11 @@ def _apply_post_ti_denoise(
             if isinstance(last_application, dict)
             else []
         )
+        ohlc_geometry_repaired = (
+            int(last_application.get("ohlc_geometry_repaired") or 0)
+            if isinstance(last_application, dict)
+            else 0
+        )
         _extend_unique_headers(headers, added_columns)
         _append_denoise_application(
             denoise_apps,
@@ -1478,6 +1491,7 @@ def _apply_post_ti_denoise(
             default_keep_original=True,
             added_columns=added_columns,
             overwritten_columns=overwritten_columns,
+            ohlc_geometry_repaired=ohlc_geometry_repaired,
         )
 
 
@@ -1642,7 +1656,14 @@ def _public_simplify_meta(meta: Any) -> Optional[Dict[str, Any]]:
     if not isinstance(meta, dict):
         return None
     out: Dict[str, Any] = {}
-    for key in ("method", "mode", "points", "ratio"):
+    for key in (
+        "method",
+        "mode",
+        "points",
+        "ratio",
+        "non_ohlc_numeric_aggregation",
+        "segment_mean_columns",
+    ):
         value = meta.get(key)
         if value is not None:
             out[key] = value
@@ -2258,15 +2279,28 @@ def fetch_candles(  # noqa: C901
             payload["simplified"] = True
             payload["simplify"] = _public_simplify_meta(simplify_meta) or {"applied": True}
             simplify_method = str(simplify_meta.get("method") or "").strip().lower()
+            simplify_mode = str(simplify_meta.get("mode") or "").strip().lower()
+            segment_mean_columns = list(simplify_meta.get("segment_mean_columns") or [])
             simplify_reduced_rows = int(original_rows) > int(len(df))
-            if simplify_reduced_rows and simplify_method in {"lttb", "rdp", "pla", "apca"}:
+            visualization_only = simplify_method in {"lttb", "rdp", "pla", "apca"}
+            approximate_derived_values = bool(
+                simplify_mode == "approximate" and segment_mean_columns
+            )
+            if simplify_reduced_rows and (visualization_only or approximate_derived_values):
                 payload["series_type"] = "downsampled_visualization"
                 payload["equal_interval"] = False
                 payload["analysis_compatible"] = False
-                payload.setdefault("warnings", []).append(
-                    "Simplified candle rows are visualization samples with irregular time gaps; "
-                    "do not use them as equal-interval OHLC input for indicators or forecasts."
-                )
+                if approximate_derived_values:
+                    payload.setdefault("warnings", []).append(
+                        "Approximate simplification reports non-OHLC numeric columns as "
+                        "segment means, not recomputed analytical values; do not use them "
+                        "for indicator thresholds or forecasts."
+                    )
+                else:
+                    payload.setdefault("warnings", []).append(
+                        "Simplified candle rows are visualization samples with irregular time gaps; "
+                        "do not use them as equal-interval OHLC input for indicators or forecasts."
+                    )
         # Attach denoise applications metadata if any
         if denoise_apps:
             payload['denoise'] = {'applications': denoise_apps}

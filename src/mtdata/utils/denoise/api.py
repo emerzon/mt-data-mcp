@@ -335,6 +335,52 @@ def denoise_series(
     return _run_denoise_handler(s, handler, params, causality)
 
 
+def _repair_denoised_ohlc_geometry(
+    df: pd.DataFrame,
+    *,
+    added_columns: List[str],
+    overwritten_columns: List[str],
+    suffix: str,
+) -> int:
+    """Restore candle inequalities after independently filtering OHLC columns."""
+    ohlc = ("open", "high", "low", "close")
+    if any(column in overwritten_columns for column in ohlc):
+        columns = {name: name for name in ohlc}
+    else:
+        columns = {name: f"{name}{suffix}" for name in ohlc}
+        if not all(column in added_columns for column in columns.values()):
+            return 0
+    if not all(column in df.columns for column in columns.values()):
+        return 0
+
+    values = pd.DataFrame(
+        {
+            name: pd.to_numeric(df[column], errors="coerce")
+            for name, column in columns.items()
+        },
+        index=df.index,
+    )
+    repaired_high = values.max(axis=1, skipna=True)
+    repaired_low = values.min(axis=1, skipna=True)
+    current_high = values["high"].to_numpy(dtype=float)
+    current_low = values["low"].to_numpy(dtype=float)
+    next_high = repaired_high.to_numpy(dtype=float)
+    next_low = repaired_low.to_numpy(dtype=float)
+    changed = ~(
+        np.isclose(current_high, next_high, equal_nan=True)
+        & np.isclose(current_low, next_low, equal_nan=True)
+    )
+    repaired_count = int(np.count_nonzero(changed))
+    if repaired_count <= 0:
+        return 0
+
+    high_column = columns["high"]
+    low_column = columns["low"]
+    df[high_column] = repaired_high.where(repaired_high.notna(), df[high_column])
+    df[low_column] = repaired_low.where(repaired_low.notna(), df[low_column])
+    return repaired_count
+
+
 def apply_denoise(
     df: pd.DataFrame,
     spec: Optional[Dict[str, Any]],
@@ -452,6 +498,18 @@ def apply_denoise(
             else f"Denoise method '{method}' did not produce any output."
         )
         raise ValueError(reason)
+    repaired_count = _repair_denoised_ohlc_geometry(
+        df,
+        added_columns=added_cols,
+        overwritten_columns=overwritten_cols,
+        suffix=suffix,
+    )
+    if repaired_count:
+        df.attrs["denoise_last_application"]["ohlc_geometry_repaired"] = repaired_count
+        _append_denoise_warning(
+            df,
+            f"Repaired OHLC geometry on {repaired_count} denoised candle rows.",
+        )
     return added_cols
 
 

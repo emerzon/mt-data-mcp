@@ -470,6 +470,20 @@ class TestSimplifyDataframeRowsExt:
         )
         assert meta is not None
 
+    def test_approximate_mode_labels_non_ohlc_segment_means(self):
+        df = _make_df(80)
+        df["RSI_14"] = np.linspace(20.0, 80.0, len(df))
+
+        out, meta = _simplify_dataframe_rows_ext(
+            df,
+            ["time", "close", "RSI_14"],
+            {"mode": "approximate", "method": "lttb", "points": 10},
+        )
+
+        assert len(out) < len(df)
+        assert meta["non_ohlc_numeric_aggregation"] == "segment_mean"
+        assert meta["segment_mean_columns"] == ["RSI_14"]
+
 
 # ===== _simplify_dataframe_rows (main dispatcher) =====
 

@@ -709,6 +709,43 @@ class TestApplyDenoise:
         for col in ("open_dn", "high_dn", "low_dn", "close_dn", "volume_dn"):
             assert col in added
 
+    def test_overwritten_ohlc_geometry_is_repaired(self, monkeypatch):
+        df = pd.DataFrame(
+            {
+                "open": [10.0, 11.0, 12.0],
+                "high": [12.0, 13.0, 14.0],
+                "low": [9.0, 10.0, 11.0],
+                "close": [11.0, 12.0, 13.0],
+            }
+        )
+        outputs = iter(
+            [
+                df["open"].copy(),
+                df["high"] - 10.0,
+                df["low"] + 10.0,
+                df["close"].copy(),
+            ]
+        )
+        monkeypatch.setattr(
+            denoise_api,
+            "_run_denoise_handler",
+            lambda *_args, **_kwargs: next(outputs),
+        )
+
+        apply_denoise(
+            df,
+            {"method": "ema", "columns": "ohlc", "keep_original": False},
+            default_when="pre_ti",
+        )
+
+        assert (df["high"] >= df[["open", "close"]].max(axis=1)).all()
+        assert (df["low"] <= df[["open", "close"]].min(axis=1)).all()
+        assert df.attrs["denoise_last_application"]["ohlc_geometry_repaired"] == 3
+        assert any(
+            "Repaired OHLC geometry" in warning
+            for warning in df.attrs["denoise_warnings"]
+        )
+
     def test_custom_suffix(self):
         df = self._make_df()
         spec = {"method": "sma", "params": {"window": 5}, "columns": ["close"], "keep_original": True, "suffix": "_smooth"}

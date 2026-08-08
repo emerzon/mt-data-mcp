@@ -700,6 +700,23 @@ def _handle_approximate_mode(
         epochs.tolist(), values.tolist(), spec
     )
     columns = list(df.columns)
+    specialized = {
+        "time",
+        "__epoch",
+        "open",
+        "high",
+        "low",
+        "close",
+        "tick_volume",
+        "real_volume",
+        "volume",
+    }
+    segment_mean_columns = [
+        str(column)
+        for column in columns
+        if column not in specialized
+        and pd.to_numeric(df[column], errors="coerce").notna().any()
+    ]
     rows = []
     for position, start in enumerate(idxs):
         stop = idxs[position + 1] if position + 1 < len(idxs) else original_count
@@ -720,6 +737,9 @@ def _handle_approximate_mode(
         "breakpoints": int(len(idxs)),
     }
     meta.update(params)
+    if segment_mean_columns:
+        meta["non_ohlc_numeric_aggregation"] = "segment_mean"
+        meta["segment_mean_columns"] = segment_mean_columns
     return out.reset_index(drop=True), meta
 
 
