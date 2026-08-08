@@ -55,6 +55,13 @@ Larger geometric patterns formed over multiple bars.
 mtdata-cli patterns_detect EURUSD --timeframe H1 --mode classic --limit 500
 ```
 
+The default classic detector evaluates patterns at the right edge of the input
+window and excludes pivots that do not yet have the configured right-hand
+confirmation gap. Results report `available_at_index`, `available_at_time`,
+`pivot_confirmation_bars`, and `detection_scope`. Set
+`config.scan_historical=true` to run the slower causal prefix scan when you need
+older patterns labeled at their first detection window.
+
 **Patterns detected:**
 | Pattern | Description |
 |---------|-------------|

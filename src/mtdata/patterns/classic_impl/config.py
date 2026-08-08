@@ -30,7 +30,7 @@ class ClassicDetectorConfig:
     # General
     max_bars: int = 1500
     min_input_bars: int = 100
-    scan_historical: bool = False  # run prefix scan to find older right-edge patterns
+    scan_historical: bool = False  # causally scan prefixes to recover older patterns
     scan_step_bars: int = 10  # prefix step when historical scan is enabled
     scan_min_prefix_bars: int = 120  # minimum prefix size used for historical scans
     scan_dedupe_overlap: float = 0.8  # overlap ratio used to merge repeated prefix hits
