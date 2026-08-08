@@ -3277,6 +3277,11 @@ def test_forecast_barrier_prob_compact_omits_confidence_diagnostics():
         "prob_tp_first_ci95": {"low": 0.5, "high": 0.6},
         "prob_sl_first_ci95": {"low": 0.25, "high": 0.35},
         "prob_no_hit_ci95": {"low": 0.1, "high": 0.2},
+        "intra_bar_hit_detection": "brownian_bridge",
+        "bridge_correction": True,
+        "bridge_dual_barrier_model": "independent_single_barrier_approximation",
+        "bridge_joint_first_passage": False,
+        "same_bar_policy": "random",
     }
 
     out = forecast_use_cases._apply_barrier_prob_detail(
@@ -3294,6 +3299,13 @@ def test_forecast_barrier_prob_compact_omits_confidence_diagnostics():
     assert "prob_tp_first_se" not in out
     assert "prob_sl_first_se" not in out
     assert "prob_no_hit_se" not in out
+    assert out["intra_bar_hit_detection"] == "brownian_bridge"
+    assert out["bridge_correction"] is True
+    assert out["bridge_dual_barrier_model"] == (
+        "independent_single_barrier_approximation"
+    )
+    assert out["bridge_joint_first_passage"] is False
+    assert out["same_bar_policy"] == "random"
 
 
 def test_forecast_barrier_prob_compact_uses_reference_price_context():
