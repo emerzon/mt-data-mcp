@@ -13,6 +13,7 @@ from .common import build_trade_quote_context
 from .gateway import MT5TradingGateway, create_trading_gateway, trading_connection_error
 from .positions import _resolve_open_position, _resolve_pending_order
 from .safety import (
+    _build_guardrail_block,
     _resolve_pending_order_side,
     evaluate_trade_guardrails,
     load_guardrail_book_snapshots,
@@ -232,6 +233,15 @@ def _evaluate_position_modify_guardrails(
     )
     if not risk_increased and not (stop_loss_required and not candidate_has_stop):
         return None
+    if stop_loss_required and not candidate_has_stop:
+        block = _build_guardrail_block(
+            ["Configured trading safety requires a stop-loss."],
+            rule="safety_policy",
+            context={"symbol": position.symbol, "side": side},
+        )
+        block["position_ticket"] = resolved_ticket
+        block["ticket_requested"] = requested_ticket
+        return block
 
     try:
         account_info = mt5.account_info()
@@ -262,6 +272,7 @@ def _evaluate_position_modify_guardrails(
         symbol_info=symbol_info,
         symbol_info_resolver=mt5.symbol_info,
         enforce_symbol_rules=False,
+        enforce_safety_policy=False,
     )
     if guardrail_block is not None:
         guardrail_block["position_ticket"] = resolved_ticket

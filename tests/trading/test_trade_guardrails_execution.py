@@ -375,3 +375,37 @@ def test_position_modify_wallet_risk_uses_current_mark(
 
     assert result is None
     assert captured["entry_price"] == pytest.approx(1.1100)
+    assert captured["enforce_safety_policy"] is False
+
+
+def test_position_modify_does_not_apply_reduce_only_policy(
+    restore_trade_guardrails,
+    patch_gateway,
+):
+    trade_guardrails_config.enabled = True
+    trade_guardrails_config.ignore_on_demo = False
+    trade_guardrails_config.safety_policy.reduce_only = True
+    position = SimpleNamespace(
+        ticket=200,
+        symbol="EURUSD",
+        price_open=1.1000,
+        price_current=1.1100,
+        volume=1.0,
+    )
+
+    with patch(
+        "mtdata.core.trading.execution.load_guardrail_book_snapshots",
+        return_value=([], [], None),
+    ):
+        result = _evaluate_position_modify_guardrails(
+            patch_gateway,
+            position=position,
+            resolved_ticket=200,
+            requested_ticket=200,
+            side="BUY",
+            symbol_info=patch_gateway.symbol_info("EURUSD"),
+            current_stop_loss=1.1080,
+            candidate_stop_loss=1.1050,
+        )
+
+    assert result is None

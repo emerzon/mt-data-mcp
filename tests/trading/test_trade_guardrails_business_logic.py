@@ -230,7 +230,11 @@ def test_exposure_cap_allows_reducing_opposite_side_order():
         side="SELL",
         existing_positions=existing,
         account_info=SimpleNamespace(
-            is_demo=False, margin_level=500.0, profit=0.0, margin=100.0
+            is_demo=False,
+            margin_mode=0,
+            margin_level=500.0,
+            profit=0.0,
+            margin=100.0,
         ),
         enforce_wallet_risk=False,
         enforce_safety_policy=False,
@@ -289,6 +293,28 @@ def test_exposure_cap_counts_opposite_order_on_hedging_account():
 
     assert block is not None
     assert block["guardrail_rule"] == "account_risk"
+    assert block["guardrail_context"]["projected_exposure_lots"] == 2.0
+
+
+def test_exposure_cap_counts_opposite_order_when_margin_mode_is_unknown():
+    from mtdata.core.trading.safety import AccountRiskLimits
+
+    block = evaluate_trade_guardrails(
+        TradeGuardrailsConfig(
+            enabled=True,
+            account_risk_limits=AccountRiskLimits(max_total_exposure_lots=1.5),
+            ignore_on_demo=False,
+        ),
+        symbol="EURUSD",
+        volume=1.0,
+        side="SELL",
+        existing_positions=[SimpleNamespace(symbol="EURUSD", type=0, volume=1.0)],
+        account_info=SimpleNamespace(is_demo=False, margin_level=500.0),
+        enforce_wallet_risk=False,
+        enforce_safety_policy=False,
+    )
+
+    assert block is not None
     assert block["guardrail_context"]["projected_exposure_lots"] == 2.0
 
 
@@ -524,6 +550,7 @@ def test_wallet_risk_adds_opposite_order_risk_on_hedging_account():
             type=0,
             volume=1.0,
             price_open=100.0,
+            price_current=100.0,
             sl=0.0 + 0.01,
         )
     ]
@@ -544,6 +571,43 @@ def test_wallet_risk_adds_opposite_order_risk_on_hedging_account():
 
     assert result is not None
     assert result["guardrail_rule"] == "wallet_risk"
+    assert result["guardrail_context"] == {
+        "symbol": "EURUSD",
+        "candidate_risk": 100.0,
+        "portfolio_risk_after": 200.0,
+    }
+
+
+def test_wallet_risk_rejects_wrong_side_candidate_stop_loss():
+    config = TradeGuardrailsConfig(
+        enabled=True,
+        ignore_on_demo=False,
+        wallet_risk_limits=WalletRiskLimits(max_risk_pct_of_equity=10.0),
+    )
+    symbol_info = SimpleNamespace(
+        trade_tick_size=1.0,
+        trade_tick_value=1.0,
+        trade_tick_value_loss=1.0,
+    )
+
+    result = evaluate_trade_guardrails(
+        config,
+        symbol="EURUSD",
+        volume=1.0,
+        stop_loss=110.0,
+        side="BUY",
+        entry_price=100.0,
+        account_info=SimpleNamespace(equity=10000.0),
+        existing_positions=[],
+        symbol_info=symbol_info,
+        symbol_info_resolver=lambda _symbol: symbol_info,
+        enforce_account_risk=False,
+        enforce_safety_policy=False,
+    )
+
+    assert result is not None
+    assert result["guardrail_rule"] == "wallet_risk"
+    assert "stop_loss_wrong_side" in result["violations"][0]
 
 
 def test_evaluate_trade_guardrails_allows_demo_account_by_default():
@@ -861,6 +925,23 @@ def test_reduce_only_blocks_trade_place_on_hedging_account():
 
     assert result is not None
     assert "trade_close" in result["violations"][0]
+
+
+def test_reduce_only_blocks_trade_place_when_margin_mode_is_unknown():
+    config = TradeGuardrailsConfig(enabled=True, ignore_on_demo=False)
+    config.safety_policy.reduce_only = True
+
+    result = evaluate_trade_guardrails(
+        config,
+        symbol="EURUSD",
+        volume=0.25,
+        side="SELL",
+        account_info=SimpleNamespace(trade_mode=1),
+        existing_positions=[SimpleNamespace(symbol="EURUSD", type=0, volume=0.5)],
+    )
+
+    assert result is not None
+    assert result["error_code"] == "margin_mode_unknown"
 
 
 def test_run_trade_place_live_ignores_static_guardrails_for_demo_account(

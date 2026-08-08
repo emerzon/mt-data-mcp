@@ -742,7 +742,7 @@ def _candidate_reduces_existing_net(
     net_volume: float,
 ) -> bool:
     return bool(
-        not _account_uses_hedging(account_info)
+        _account_uses_netting(account_info)
         and net_side is not None
         and net_volume > 0
         and side == {"BUY": "SELL", "SELL": "BUY"}.get(net_side)
@@ -773,7 +773,7 @@ def _projected_exposure_lots(
         new_volume = 0.0
     if new_volume <= 0 or not math.isfinite(new_volume):
         return existing
-    if _account_uses_hedging(account_info):
+    if not _account_uses_netting(account_info):
         return existing + new_volume
 
     normalized_side = _normalize_side(side)
@@ -993,7 +993,7 @@ def _evaluate_wallet_risk_limits(
         entry_price=float(entry_price),
         stop_loss=float(stop_loss),
         side=normalized_side,
-        wrong_side_policy="secured",
+        wrong_side_policy="reject",
     )
     if candidate_risk is None:
         return _build_guardrail_block(
@@ -1139,16 +1139,20 @@ def evaluate_trade_guardrails(
         if (
             config.safety_policy is not None
             and config.safety_policy.reduce_only
-            and _account_uses_hedging(account_info)
+            and not _account_uses_netting(account_info)
         ):
-            return _build_guardrail_block(
+            block = _build_guardrail_block(
                 [
-                    "Reduce-only trade_place is unavailable on hedging accounts; "
-                    "use trade_close with a position ticket."
+                    "Reduce-only trade_place requires a verified netting account; "
+                    "use trade_close with a position ticket on hedging accounts, "
+                    "or refresh account information when margin mode is unavailable."
                 ],
                 rule="safety_policy",
                 context={"symbol": normalized_symbol, "side": normalized_side},
             )
+            if not _account_uses_hedging(account_info):
+                block["error_code"] = "margin_mode_unknown"
+            return block
         safety_result = _evaluate_safety_policy(
             config.safety_policy,
             volume=volume,
