@@ -1116,6 +1116,21 @@ def _consolidate_payload(  # noqa: C901
             "method": payload.get("method"),
             "success": True,
         }
+        if (
+            isinstance(params_used, dict)
+            and params_used.get("model_fit_scope") == "full_window"
+        ):
+            threshold_scope = params_used.get("threshold_scope")
+            new_payload["historical_labels_are_retrospective"] = True
+            new_payload["historical_label_scope"] = (
+                "retrospective_full_window_fit_and_percentile_thresholds"
+                if threshold_scope == "full_window_percentiles"
+                else "retrospective_full_window_model_fit"
+            )
+            new_payload["point_in_time_guidance"] = (
+                "Use rolling as_of calls when evaluating historical labels as "
+                "live strategy inputs."
+            )
         for state_count_key in ("requested_n_states", "effective_n_states"):
             if state_count_key in payload:
                 new_payload[state_count_key] = payload[state_count_key]

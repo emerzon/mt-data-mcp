@@ -50,6 +50,9 @@ argmax can temporarily differ from the confirmed state during that delay;
 Model parameters are still fitted on the requested analysis window, and canonical
 state IDs are ordered by full-window state means. Historical canonical IDs are
 therefore retrospective labels; use rolling `as_of` calls for point-in-time tests.
+Compact and full responses preserve this distinction in
+`historical_labels_are_retrospective`, `historical_label_scope`, and
+`point_in_time_guidance`.
 
 Return direction labels use one shared statistical rule across state models,
 BOCPD, and PELT: bullish or bearish requires the estimated mean to be at least
@@ -280,6 +283,7 @@ Canonical fields for successful compact/full JSON responses:
 | `regimes` | all compact/full methods | Uses `start`, `end`, `bars`, and `regime_confidence` consistently where regime confidence applies. |
 | `regime_info` | state/rule methods | Describes regime labels and statistics. Clustering labels are derived from return/volatility when available instead of opaque `regime_N` names. |
 | `reliability` | all methods | Always includes `confidence`, `reliability_label`, and `source`; method-specific diagnostics may add more fields. |
+| `historical_label_scope` | full-window fitted methods | Marks historical labels as retrospective; use `point_in_time_guidance` for rolling `as_of` evaluation. |
 | `warnings` | as needed | Explains accepted parameters that do not apply to the selected method. |
 
 `current_regime.regime_confidence` and `regimes[].regime_confidence` are the canonical regime-confidence keys. Reliability diagnostics keep their own `reliability.confidence` field.
@@ -374,8 +378,9 @@ volatility, then bins that path into ordered volatility tiers. By default the
 cut points are percentiles of the full analysis window, so labels such as
 `low_vol` and `high_vol` are relative within that run and can change when the
 window changes. With two states, `params.vol_threshold` selects an explicit
-absolute cut point instead. The output reports `threshold_scope` and
-`volatility_thresholds` in `params_used`.
+absolute cut point instead. Full output reports `threshold_scope` and
+`volatility_thresholds` in `params_used`; compact and full output preserve the
+retrospective classification contract in `historical_label_scope`.
 
 This method is not a Markov-switching GARCH model and does not estimate latent
 regime dynamics. AIC, BIC, and log likelihood are exposed as `model_fit`

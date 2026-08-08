@@ -346,6 +346,61 @@ class TestConsolidatePayload:
         assert "not observed" in result["regime_info"][1]["note"]
         assert "not necessarily the fraction" in result["regime_info"][1]["weight_note"]
 
+    @pytest.mark.parametrize(
+        ("method", "threshold_scope", "expected_scope"),
+        [
+            ("hmm", None, "retrospective_full_window_model_fit"),
+            ("ms_ar", None, "retrospective_full_window_model_fit"),
+            (
+                "garch",
+                "full_window_percentiles",
+                "retrospective_full_window_fit_and_percentile_thresholds",
+            ),
+        ],
+    )
+    def test_compact_discloses_retrospective_historical_labels(
+        self,
+        method,
+        threshold_scope,
+        expected_scope,
+    ):
+        params_used = {"model_fit_scope": "full_window"}
+        if threshold_scope is not None:
+            params_used["threshold_scope"] = threshold_scope
+        payload = {
+            "symbol": "EURUSD",
+            "timeframe": "H1",
+            "method": method,
+            "target": "return",
+            "success": True,
+            "times": ["T1", "T2"],
+            "state": [0, 1],
+            "state_probabilities": [[1.0, 0.0], [0.0, 1.0]],
+            "params_used": params_used,
+        }
+
+        result = _consolidate_payload(payload, method, "compact")
+
+        assert result["historical_labels_are_retrospective"] is True
+        assert result["historical_label_scope"] == expected_scope
+        assert "rolling as_of" in result["point_in_time_guidance"]
+
+    def test_compact_omits_retrospective_disclosure_for_online_labels(self):
+        payload = {
+            "symbol": "EURUSD",
+            "timeframe": "H1",
+            "method": "bocpd",
+            "success": True,
+            "times": ["T1", "T2"],
+            "cp_prob": [0.1, 0.2],
+            "params_used": {"model_fit_scope": "online"},
+        }
+
+        result = _consolidate_payload(payload, "bocpd", "compact")
+
+        assert "historical_labels_are_retrospective" not in result
+        assert "historical_label_scope" not in result
+
     def test_hmm_price_target_uses_price_level_metadata(self):
         payload = {
             "symbol": "EURUSD",
