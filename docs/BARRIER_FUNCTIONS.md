@@ -20,7 +20,9 @@ mtdata-cli forecast_barrier_prob EURUSD --timeframe H1 --horizon 12 \
   --direction long --tp-pct 0.40 --sl-pct 0.60 --json
 ```
 
-Look for `prob_tp_first`, `prob_sl_first`, `prob_no_hit`, and `edge` in the output.
+Look for `prob_tp_first`, `prob_sl_first`, `prob_no_hit`, and
+`probability_edge` in the output. The optimizer uses `edge` for its scored
+objective; the single-pair probability response does not alias that field.
 
 **Defaults**: `--method mc_gbm_bb`, `--horizon 12`, `--direction long`. The
 default uses a Brownian-bridge correction so single-barrier touches between
@@ -1022,7 +1024,7 @@ done
 
 ## Output Interpretation
 
-### Single Barrier Query
+### TP/SL Probability Query
 
 ```json
 {
@@ -1031,7 +1033,7 @@ done
   "prob_tp_first": 0.62,
   "prob_sl_first": 0.28,
   "prob_no_hit": 0.10,
-  "edge": 0.34,
+  "probability_edge": 0.34,
   "time_to_tp_bars": {"mean": 6.2, "median": 5.0},
   "time_to_sl_bars": {"mean": 4.8, "median": 4.0}
 }
@@ -1041,8 +1043,9 @@ done
 - `prob_tp_first = 0.62`: 62% chance TP hits first
 - `prob_sl_first = 0.28`: 28% chance SL hits first
 - `prob_no_hit = 0.10`: 10% chance neither hits
-- `edge = 0.34`: 34% advantage (TP prob - SL prob)
-- **Decision**: Good trade if edge > 0 and you have edge after costs
+- `probability_edge = 0.34`: 34 percentage-point probability bias (TP prob - SL prob)
+- **Decision**: A positive value favors TP-first outcomes, but is not expected
+  value and does not account for payoff asymmetry or trading costs
 
 ---
 
@@ -1184,7 +1187,7 @@ for H in 6 12 24 48; do
   mtdata-cli forecast_barrier_prob \
     EURUSD --timeframe H1 --horizon $H \
     --method hmm_mc --tp-pct 0.5 --sl-pct 0.3 \
-    --json | jq '{horizon: .horizon, edge: .edge, prob_resolve: (.prob_tp_first + .prob_sl_first)}'
+    --json | jq '{horizon: .horizon, probability_edge: .probability_edge, prob_resolve: (.prob_tp_first + .prob_sl_first)}'
 done
 ```
 
@@ -1239,7 +1242,7 @@ for METHOD in mc_gbm hmm_mc bootstrap; do
   echo "Method: $METHOD"
   mtdata-cli forecast_barrier_prob EURUSD --timeframe H1 --horizon 12 \
     --method $METHOD --tp-pct 0.5 --sl-pct 0.3 \
-    --json | jq '{method: .method, edge: .edge, prob_resolve: (.prob_tp_first + .prob_sl_first)}'
+    --json | jq '{method: .method, probability_edge: .probability_edge, prob_resolve: (.prob_tp_first + .prob_sl_first)}'
 done
 ```
 
@@ -1298,7 +1301,7 @@ If optimizing:
 
 Validate:
   → Check prob_no_hit < 0.2
-  → Check edge > 0
+  → Check probability_edge > 0 for probability responses, or best.edge > 0 for optimizer responses
   → Check median time fits your style
   → Run cross-validation across methods
 ```
