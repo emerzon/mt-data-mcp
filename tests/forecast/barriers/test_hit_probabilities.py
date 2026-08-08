@@ -376,6 +376,26 @@ class TestBarrierHitProbabilities(_BarrierTestBase):
         self.assertIn("prob_hit", result)
         self.assertEqual(result["last_price_source"], "candle_close")
 
+    def test_closed_form_discloses_denoise_failure(self):
+        with patch(
+            "mtdata.utils.denoise.apply_denoise",
+            side_effect=ValueError("invalid filter setup"),
+        ):
+            result = forecast_barrier_closed_form(
+                symbol="EURUSD",
+                timeframe="H1",
+                horizon=10,
+                direction="long",
+                barrier=1.2,
+                denoise={"method": "ema"},
+            )
+
+        self.assertTrue(result["success"])
+        self.assertFalse(result["denoise_applied"])
+        self.assertEqual(result["denoise_status"], "failed")
+        self.assertEqual(result["denoise_error"], "invalid filter setup")
+        self.assertIn("using raw close prices", result["warnings"][0])
+
     def test_gbm_single_barrier_upcross_prob_returns_one_when_barrier_below_start(self):
         self.assertAlmostEqual(
             gbm_single_barrier_upcross_prob(

@@ -621,14 +621,23 @@ def forecast_barrier_closed_form(
             symbol=symbol,
         )
         base_col = 'close'
+        denoise_applied = False
+        denoise_error: Optional[str] = None
         if denoise:
             try:
                 from ..utils.denoise import apply_denoise as apply_denoise_util
                 added = apply_denoise_util(df, denoise, default_when='pre_ti')
                 if f"{base_col}_dn" in added:
                     base_col = f"{base_col}_dn"
-            except Exception:
-                pass
+                last_application = df.attrs.get("denoise_last_application")
+                overwritten = (
+                    list(last_application.get("overwrote_columns") or [])
+                    if isinstance(last_application, dict)
+                    else []
+                )
+                denoise_applied = bool(added or overwritten)
+            except Exception as exc:
+                denoise_error = str(exc)
         prices = np.asarray(df[base_col].astype(float).to_numpy(), dtype=float)
         prices = prices[np.isfinite(prices)]
         if prices.size < 5:
@@ -685,6 +694,21 @@ def forecast_barrier_closed_form(
             "prob_hit": float(prob),
         }
         result.update(freshness_context)
+        if denoise:
+            result["denoise_applied"] = denoise_applied
+            result["denoise_status"] = (
+                "applied"
+                if denoise_applied
+                else "failed"
+                if denoise_error is not None
+                else "skipped"
+            )
+            if denoise_error is not None:
+                result["denoise_error"] = denoise_error
+                result["warnings"] = [
+                    "Denoise request failed; using raw close prices instead: "
+                    f"{denoise_error}"
+                ]
         if freshness_context.get("data_as_of"):
             result["reference_price_time"] = freshness_context.get("data_as_of")
             result["reference_price_time_epoch"] = freshness_context.get("data_as_of_epoch")
