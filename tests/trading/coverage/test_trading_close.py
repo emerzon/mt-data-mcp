@@ -811,6 +811,38 @@ class TestClosePositions:
         assert mt5.order_send.call_count == 1
 
     @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_partial_close_does_not_resubmit_after_ambiguous_comment_fallback(self):
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        mt5.positions_get.return_value = [_position(ticket=77, volume=1.0)]
+        mt5.symbol_info.return_value = SimpleNamespace(
+            volume_min=0.01,
+            volume_step=0.01,
+        )
+        mt5.symbol_info_tick.return_value = _tick()
+        mt5.order_send.side_effect = [
+            _order_result(retcode=10013, comment="Invalid comment"),
+            None,
+            _order_result(volume=0.5),
+        ]
+        mt5.last_error.side_effect = [(0, ""), (1, "IPC timeout")]
+        from mtdata.core.trading import _close_positions
+
+        result = _close_positions(
+            ticket=77,
+            volume=0.5,
+            comment="broker-rejected",
+        )
+
+        assert result["error"] == "Failed to send close order"
+        assert result["comment_fallback"]["ambiguous"] is True
+        assert mt5.order_send.call_count == 2
+        assert all(
+            call.args[0]["volume"] == pytest.approx(0.5)
+            for call in mt5.order_send.call_args_list
+        )
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
     def test_close_retries_only_after_invalid_fill(self):
         mt5 = sys.modules["MetaTrader5"]
         self._setup_mt5(mt5)

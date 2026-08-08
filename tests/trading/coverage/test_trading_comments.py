@@ -52,7 +52,6 @@ from mtdata.core.trading.time import (
     _normalize_pending_expiration,
 )
 
-
 # ===================================================================
 # Helpers
 # ===================================================================
@@ -191,6 +190,86 @@ class TestNormalizeCloseTradeComment:
         assert returned is None
         assert fallback is None
         assert mt5.order_send.call_count == 1
+
+    def test_comment_fallback_stops_when_secondary_send_returns_none(self):
+        mt5 = MagicMock()
+        mt5.TRADE_RETCODE_DONE = 10009
+        rejected = SimpleNamespace(retcode=10013, comment="Invalid comment")
+        would_be_done = SimpleNamespace(retcode=10009, comment="done")
+        mt5.order_send.side_effect = [rejected, None, would_be_done]
+        mt5.last_error.side_effect = [(0, ""), (1, "IPC timeout")]
+
+        returned, fallback, last_error = _send_order_with_comment_fallback(
+            mt5,
+            {"comment": "strategy_EURUSD"},
+        )
+
+        assert returned is None
+        assert fallback["error_code"] == "order_send_ambiguous"
+        assert fallback["ambiguous"] is True
+        assert fallback["strategies"] == ["minimal"]
+        assert last_error == (1, "IPC timeout")
+        assert mt5.order_send.call_count == 2
+
+    def test_comment_fallback_stops_when_secondary_send_times_out(self):
+        mt5 = MagicMock()
+        mt5.TRADE_RETCODE_DONE = 10009
+        mt5.TRADE_RETCODE_TIMEOUT = 10012
+        rejected = SimpleNamespace(retcode=10013, comment="Invalid comment")
+        timed_out = SimpleNamespace(retcode=10012, comment="Timeout")
+        would_be_done = SimpleNamespace(retcode=10009, comment="done")
+        mt5.order_send.side_effect = [rejected, timed_out, would_be_done]
+        mt5.last_error.return_value = (1, 'Invalid "comment" argument')
+
+        returned, fallback, _last_error = _send_order_with_comment_fallback(
+            mt5,
+            {"comment": "strategy_EURUSD"},
+        )
+
+        assert returned is timed_out
+        assert fallback["error_code"] == "order_send_ambiguous"
+        assert fallback["ambiguous"] is True
+        assert fallback["strategies"] == ["minimal"]
+        assert mt5.order_send.call_count == 2
+
+    def test_comment_fallback_stops_after_unrelated_secondary_rejection(self):
+        mt5 = MagicMock()
+        mt5.TRADE_RETCODE_DONE = 10009
+        rejected = SimpleNamespace(retcode=10013, comment="Invalid comment")
+        invalid_stops = SimpleNamespace(retcode=10016, comment="Invalid stops")
+        would_be_done = SimpleNamespace(retcode=10009, comment="done")
+        mt5.order_send.side_effect = [rejected, invalid_stops, would_be_done]
+        mt5.last_error.return_value = (1, 'Invalid "comment" argument')
+
+        returned, fallback, _last_error = _send_order_with_comment_fallback(
+            mt5,
+            {"comment": "strategy_EURUSD"},
+        )
+
+        assert returned is invalid_stops
+        assert fallback["used"] is False
+        assert fallback["strategies"] == ["minimal"]
+        assert "ambiguous" not in fallback
+        assert mt5.order_send.call_count == 2
+
+    def test_comment_fallback_advances_after_fresh_comment_rejection(self):
+        mt5 = MagicMock()
+        mt5.TRADE_RETCODE_DONE = 10009
+        rejected = SimpleNamespace(retcode=10013, comment="Invalid comment")
+        minimal_rejected = SimpleNamespace(retcode=10013, comment="Invalid comment")
+        accepted = SimpleNamespace(retcode=10009, comment="done")
+        mt5.order_send.side_effect = [rejected, minimal_rejected, accepted]
+        mt5.last_error.return_value = (0, "")
+
+        returned, fallback, _last_error = _send_order_with_comment_fallback(
+            mt5,
+            {"comment": "strategy_EURUSD"},
+        )
+
+        assert returned is accepted
+        assert fallback["used"] is True
+        assert fallback["strategy"] == "none"
+        assert mt5.order_send.call_count == 3
 
     def test_invalid_comment_text_ignores_none_result(self):
         assert _invalid_comment_error_text(None, (1, 'Invalid "comment" argument')) is None

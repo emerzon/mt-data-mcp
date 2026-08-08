@@ -179,12 +179,32 @@ def _send_order_with_comment_fallback(mt5: Any, request: Dict[str, Any]) -> tupl
         fallback_requests.append(("none", req_nocomment))
 
     strategies = [strategy for strategy, _req in fallback_requests]
+    attempted_strategies = []
     for strategy, alt_request in fallback_requests:
+        attempted_strategies.append(strategy)
         alt_result = mt5.order_send(alt_request)
         alt_last_error = validation._safe_last_error(mt5)
-        if alt_result is not None and validation._retcode_is_accepted(
+        fallback_info = {
+            "used": False,
+            "attempted": True,
+            "strategies": list(attempted_strategies),
+            "invalid_comment_error": invalid_comment,
+        }
+        if alt_result is None:
+            fallback_info.update(
+                {
+                    "strategy": strategy,
+                    "request": alt_request,
+                    "error_code": "order_send_ambiguous",
+                    "ambiguous": True,
+                }
+            )
+            return alt_result, fallback_info, alt_last_error
+
+        alt_retcode = getattr(alt_result, "retcode", None)
+        if validation._retcode_is_accepted(
             mt5,
-            getattr(alt_result, "retcode", None),
+            alt_retcode,
         ):
             return (
                 alt_result,
@@ -196,6 +216,27 @@ def _send_order_with_comment_fallback(mt5: Any, request: Dict[str, Any]) -> tupl
                 },
                 alt_last_error,
             )
+
+        if alt_retcode == validation._safe_int_attr(
+            mt5,
+            "TRADE_RETCODE_TIMEOUT",
+            10012,
+        ):
+            fallback_info.update(
+                {
+                    "strategy": strategy,
+                    "request": alt_request,
+                    "error_code": "order_send_ambiguous",
+                    "ambiguous": True,
+                }
+            )
+            return alt_result, fallback_info, alt_last_error
+
+        # Another live request is safe only after the current TradeResult
+        # explicitly rejects its comment. Do not trust sticky last_error text
+        # from the rejection that armed fallback in the first place.
+        if _invalid_comment_error_text(alt_result) is None:
+            return alt_result, fallback_info, alt_last_error
 
     return (
         result,
