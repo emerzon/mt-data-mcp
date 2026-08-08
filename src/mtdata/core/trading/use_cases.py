@@ -2039,9 +2039,7 @@ def run_trade_place(  # noqa: C901
                         warnings_out.append(critical)
                     if warnings_out:
                         result["warnings"] = warnings_out
-                    should_auto_close = sl_tp_failed and bool(
-                        request.auto_close_on_sl_tp_fail
-                    )
+                    should_auto_close = bool(request.auto_close_on_sl_tp_fail)
                     if should_auto_close:
                         close_ticket = safe_int_ticket(pos_ticket)
                         if close_ticket is None:
@@ -2083,7 +2081,10 @@ def run_trade_place(  # noqa: C901
                             result["success"] = False
                         else:
                             warnings_out = _coerce_warning_list(result.get("warnings"))
-                            auto_close_warning = "AUTO-CLOSE FAILED: position remains unprotected; close immediately."
+                            auto_close_warning = (
+                                "AUTO-CLOSE FAILED: position protection remains unresolved; "
+                                "reconcile and close immediately."
+                            )
                             if auto_close_warning not in warnings_out:
                                 warnings_out.append(auto_close_warning)
                             result["warnings"] = warnings_out
@@ -2094,6 +2095,7 @@ def run_trade_place(  # noqa: C901
                             "error",
                             "Order was executed, but TP/SL protection could not be verified.",
                         )
+                        result.setdefault("error_code", "protection_not_verified")
                         result.setdefault("protection_status", "protection_unverified")
                         result["success"] = False
 
@@ -2109,6 +2111,11 @@ def run_trade_place(  # noqa: C901
                         else "Order was executed, but TP/SL protection could not be verified."
                     )
                     result["require_sl_tp"] = bool(request.require_sl_tp)
+                    result["error_code"] = (
+                        "protection_not_applied"
+                        if sl_tp_failed
+                        else "protection_not_verified"
+                    )
                     result["success"] = False
                     result["protection_status"] = (
                         result.get("protection_status")

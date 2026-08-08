@@ -708,7 +708,7 @@ def test_trade_place_preserves_scalar_warning_on_unprotected_market_fill() -> No
     assert any("CRITICAL" in str(w) for w in out.get("warnings", []))
 
 
-def test_trade_place_does_not_auto_close_unverified_market_fill() -> None:
+def test_trade_place_auto_closes_unverified_market_fill() -> None:
     with patch(
         "mtdata.core.trading._place_market_order",
         return_value={
@@ -718,7 +718,10 @@ def test_trade_place_does_not_auto_close_unverified_market_fill() -> None:
             "protection_status": "protection_unverified",
             "position_ticket_candidates": [456],
         },
-    ), patch("mtdata.core.trading._close_positions") as mock_close:
+    ), patch(
+        "mtdata.core.trading._close_positions",
+        return_value={"success": True, "closed_count": 1},
+    ) as mock_close:
         out = trade_place(
             symbol="BTCUSD",
             volume=0.03,
@@ -729,9 +732,15 @@ def test_trade_place_does_not_auto_close_unverified_market_fill() -> None:
             dry_run=False,
             __cli_raw=True,
         )
-    mock_close.assert_not_called()
+    mock_close.assert_called_once_with(
+        ticket=456,
+        volume=0.03,
+        comment="AUTO-CLOSE: TP/SL protection unresolved",
+        deviation=20,
+    )
     assert out.get("error") == "Order was executed, but TP/SL protection could not be verified."
-    assert out.get("protection_status") == "protection_unverified"
+    assert out.get("error_code") == "protection_not_verified"
+    assert out.get("protection_status") == "auto_closed_after_sl_tp_fail"
     assert "verify protection" in out.get("warnings", [])
     assert any("could not be verified" in warning.lower() for warning in out.get("warnings", [])), out
 
@@ -762,9 +771,9 @@ def test_trade_place_treats_unknown_protection_status_as_unverified() -> None:
             __cli_raw=True,
         )
 
-    mock_close.assert_not_called()
+    mock_close.assert_called_once()
     assert out["success"] is False
-    assert out["protection_status"] == "protection_unverified"
+    assert out["protection_status"] == "auto_closed_after_sl_tp_fail"
     assert out["error"] == (
         "Order was executed, but TP/SL protection could not be verified."
     )
