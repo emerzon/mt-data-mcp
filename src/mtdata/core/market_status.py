@@ -1025,6 +1025,7 @@ def _check_symbol_market_status(
 
     trade_mode_can_open = _coerce_optional_bool(mode_status["can_open_new_positions"])
     can_open = trade_mode_can_open
+    live_ready = _coerce_optional_bool(tick_status.get("usable_for_live_trading"))
     tick_freshness = tick_status.get("tick_freshness")
     reason = None
     is_crypto_symbol = is_probably_crypto_symbol(symbol_name)
@@ -1033,7 +1034,6 @@ def _check_symbol_market_status(
         is True
     )
     weekend_closed_now = is_standard_weekend_closure(now_utc)
-    tick_available = tick_status.get("tick_available") is True
     if (
         can_open is True
         and weekend_closed_now
@@ -1043,16 +1043,11 @@ def _check_symbol_market_status(
         open_state = "weekend_closed"
         can_open = False
         reason = "weekend"
-    elif can_open is True and tick_status.get("data_stale") is True:
+    elif can_open is True and live_ready is not True:
         open_state = "quote_not_live_ready"
         can_open = False
-        reason = str(tick_status.get("freshness_reason") or "stale_quote")
-    elif can_open is True and tick_freshness in {"live", "recent"}:
-        open_state = "probably_open"
-    elif can_open is True and recent_schedule_allows_now and tick_available:
-        # Recent M1 candles show this hour is an active session (e.g. weekend-trading
-        # metals). Treat as open even when weekend freshness policy labels the tick
-        # as a closed-session snapshot rather than "fresh".
+        reason = str(tick_status.get("freshness_reason") or "quote_not_live_ready")
+    elif can_open is True and tick_freshness == "live":
         open_state = "probably_open"
     elif can_open is True:
         open_state = "trade_mode_allows_opening"
@@ -1226,6 +1221,8 @@ def _compact_symbol_market_status(row: Dict[str, Any], *, detail: str) -> Dict[s
         "is_tradable",
         "is_tradable_confidence",
         "can_open_new_positions",
+        "trade_mode_allows_opening",
+        "usable_for_live_trading",
         "tick_freshness",
         "market_clock",
         "market_clock_timezone",

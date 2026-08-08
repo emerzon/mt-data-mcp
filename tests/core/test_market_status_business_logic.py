@@ -557,10 +557,10 @@ def test_market_status_symbol_mode_allows_crypto_on_weekend(monkeypatch) -> None
 
     result = raw(symbol="BTCUSD")
 
-    assert result["status"] == "probably_open"
-    assert result["can_open_new_positions"] is True
+    assert result["status"] == "quote_not_live_ready"
+    assert result["can_open_new_positions"] is False
     assert result["trade_mode_allows_opening"] is True
-    assert "reason" not in result
+    assert result["usable_for_live_trading"] is False
     assert result["tick_freshness"] == "recent"
     assert "FX weekly sessions" not in result["heuristic_note"]
 
@@ -595,8 +595,9 @@ def test_market_status_symbol_mode_allows_fx_after_sunday_open(monkeypatch) -> N
 
     result = raw(symbol="EURUSD")
 
-    assert result["status"] == "probably_open"
-    assert result["can_open_new_positions"] is True
+    assert result["status"] == "quote_not_live_ready"
+    assert result["can_open_new_positions"] is False
+    assert result["trade_mode_allows_opening"] is True
 
 
 def test_market_status_symbol_mode_uses_recent_candles_for_weekend_session(
@@ -644,15 +645,16 @@ def test_market_status_symbol_mode_uses_recent_candles_for_weekend_session(
 
     result = raw(symbol="XAUUSD", detail="full")
 
-    assert result["status"] == "probably_open"
-    assert result["can_open_new_positions"] is True
+    assert result["status"] == "quote_not_live_ready"
+    assert result["can_open_new_positions"] is False
+    assert result["trade_mode_allows_opening"] is True
     assert result["current_time_in_recent_session"] is True
     assert result["trades_on_weekends"] is True
     assert result["schedule_source"] == "recent_m1_candles"
     assert result["inferred_schedule"]["active_hours_utc"] == {
         "saturday": ["03:00-04:00"]
     }
-    assert "reason" not in result
+    assert result["reason"] == "market_closed"
 
 
 def test_recent_sunday_reopen_is_not_classified_as_weekend_trading() -> None:
