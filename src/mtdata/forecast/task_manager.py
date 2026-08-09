@@ -573,6 +573,20 @@ class TaskManager:
                 error_text = f"Training worker exited with code {process.exitcode}."
             else:
                 error_text = "Training worker exited without reporting a terminal status."
+        with self._lock:
+            task = self._tasks.get(task_id)
+            method_name = task.method if task is not None else "unknown"
+            data_scope = task.data_scope if task is not None else "unknown"
+        logger.error(
+            "event=forecast_training_worker_died task_id=%s method=%s "
+            "data_scope=%s pid=%s exitcode=%s error=%s",
+            task_id,
+            method_name,
+            data_scope,
+            getattr(process, "pid", None),
+            getattr(process, "exitcode", None),
+            " ".join(str(error_text).split())[:500],
+        )
         self._mutate_task(
             task_id,
             status="failed",
@@ -925,10 +939,22 @@ class TaskManager:
             completed_at = float(raw_completed_at) if raw_completed_at is not None else now
             result_payload = event.get("result")
             if not isinstance(result_payload, dict):
+                error_text = (
+                    "Malformed completion event from worker: expected result object, "
+                    f"got {type(result_payload).__name__}."
+                )
+                logger.error(
+                    "event=forecast_training_failed worker=heavy task_id=%s "
+                    "method=%s data_scope=%s error=%s",
+                    task_id,
+                    spec.method_name,
+                    spec.data_scope,
+                    error_text,
+                )
                 self._mutate_task(
                     task_id,
                     status="failed",
-                    error=f"Malformed completion event from worker: expected result object, got {type(result_payload).__name__}.",
+                    error=error_text,
                     completed_at=completed_at,
                     heartbeat_at=heartbeat_at,
                 )
@@ -941,10 +967,19 @@ class TaskManager:
                 created_at=completed_at,
             )
             if handle is None:
+                error_text = "Malformed completion event from worker: missing model handle."
+                logger.error(
+                    "event=forecast_training_failed worker=heavy task_id=%s "
+                    "method=%s data_scope=%s error=%s",
+                    task_id,
+                    spec.method_name,
+                    spec.data_scope,
+                    error_text,
+                )
                 self._mutate_task(
                     task_id,
                     status="failed",
-                    error="Malformed completion event from worker: missing model handle.",
+                    error=error_text,
                     completed_at=completed_at,
                     heartbeat_at=heartbeat_at,
                 )
@@ -968,10 +1003,19 @@ class TaskManager:
             )
             return True
         if event_type == "failed":
+            error_text = str(event.get("error") or "Training failed")
+            logger.error(
+                "event=forecast_training_failed worker=heavy task_id=%s "
+                "method=%s data_scope=%s error=%s",
+                task_id,
+                spec.method_name,
+                spec.data_scope,
+                " ".join(error_text.split())[:500],
+            )
             self._mutate_task(
                 task_id,
                 status="failed",
-                error=str(event.get("error") or "Training failed"),
+                error=error_text,
                 completed_at=float(event.get("completed_at")) if event.get("completed_at") is not None else now,
                 heartbeat_at=heartbeat_at,
             )

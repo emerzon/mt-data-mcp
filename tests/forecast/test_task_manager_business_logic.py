@@ -39,6 +39,39 @@ class _TaskManagerBusinessLogicCase(unittest.TestCase):
 
 
 class TestTaskManagerHeavyRuntime(_TaskManagerBusinessLogicCase):
+    def test_failed_worker_event_is_logged_with_task_context(self):
+        task = self.tm._create_task("heavy", "EURUSD_H1", "hash-1")
+        self.tm._mutate_task(task.task_id, status="running")
+
+        with self.assertLogs("mtdata.forecast.task_manager", level="ERROR") as logs:
+            terminal = self.tm._handle_process_event(
+                task.task_id,
+                _make_spec(),
+                {"type": "failed", "error": "disk full\nwhile saving"},
+            )
+
+        self.assertTrue(terminal)
+        output = "\n".join(logs.output)
+        self.assertIn("event=forecast_training_failed", output)
+        self.assertIn(f"task_id={task.task_id}", output)
+        self.assertIn("method=heavy", output)
+        self.assertIn("data_scope=EURUSD_H1", output)
+        self.assertIn("error=disk full while saving", output)
+
+    def test_dead_worker_is_logged_with_process_context(self):
+        task = self.tm._create_task("heavy", "EURUSD_H1", "hash-1")
+        self.tm._mutate_task(task.task_id, status="running")
+        process = SimpleNamespace(pid=4321, exitcode=-9)
+
+        with self.assertLogs("mtdata.forecast.task_manager", level="ERROR") as logs:
+            self.tm._finalize_dead_process(task.task_id, process)
+
+        output = "\n".join(logs.output)
+        self.assertIn("event=forecast_training_worker_died", output)
+        self.assertIn("pid=4321", output)
+        self.assertIn("exitcode=-9", output)
+        self.assertIn("Training worker exited with code -9", output)
+
     def test_handle_process_event_marks_malformed_completion_failed(self):
         task = self.tm._create_task("heavy", "EURUSD_H1", "hash-1")
         self.tm._mutate_task(
