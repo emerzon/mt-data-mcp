@@ -14,19 +14,13 @@ from .api import (
     normalize_denoise_spec,
     resolve_denoise_base_col,
 )
-from .base import (
-    _series_like,
-    get_filter,
-    list_filters,
-    register_filter,
-)
+from .base import get_filter, list_filters, register_filter
 
 __all__ = [
     "DenoiseCausalityError",
     "register_filter",
     "get_filter",
     "list_filters",
-    "_series_like",
     "denoise_series",
     "apply_denoise",
     "consume_denoise_warnings",
