@@ -95,16 +95,37 @@ def _append_all_output_extras(extras: list[str]) -> None:
 
 def _strip_verbose_only_fields(value: Any) -> Any:
     if isinstance(value, dict):
-        out = {}
+        out = None
         for key, subvalue in value.items():
             if str(key) in _VERBOSE_ONLY_KEYS:
+                if out is None:
+                    out = dict(value)
+                out.pop(key, None)
                 continue
-            out[key] = _strip_verbose_only_fields(subvalue)
-        return out
+            stripped = _strip_verbose_only_fields(subvalue)
+            if stripped is not subvalue:
+                if out is None:
+                    out = dict(value)
+                out[key] = stripped
+        return value if out is None else out
     if isinstance(value, list):
-        return [_strip_verbose_only_fields(item) for item in value]
+        out = None
+        for index, item in enumerate(value):
+            stripped = _strip_verbose_only_fields(item)
+            if stripped is not item:
+                if out is None:
+                    out = list(value)
+                out[index] = stripped
+        return value if out is None else out
     if isinstance(value, tuple):
-        return tuple(_strip_verbose_only_fields(item) for item in value)
+        out = None
+        for index, item in enumerate(value):
+            stripped = _strip_verbose_only_fields(item)
+            if stripped is not item:
+                if out is None:
+                    out = list(value)
+                out[index] = stripped
+        return value if out is None else tuple(out)
     return value
 
 
@@ -365,20 +386,24 @@ def attach_collection_contract(
         if collection is None:
             return None
         data = out.get("data")
-        if data == collection:
+        if data is collection or data == collection:
             return "data"
         if isinstance(data, dict):
             table = data.get("table")
-            if isinstance(table, dict) and table.get("rows") == collection:
-                return "data.table.rows"
-            if data.get("items") == collection:
+            if isinstance(table, dict):
+                table_rows = table.get("rows")
+                if table_rows is collection or table_rows == collection:
+                    return "data.table.rows"
+            items = data.get("items")
+            if items is collection or items == collection:
                 return "data.items"
         return None
 
     def _existing_group_source(collection: Any) -> Optional[str]:
         if collection is None:
             return None
-        if out.get("results") == collection:
+        results = out.get("results")
+        if results is collection or results == collection:
             return "results"
         return None
 
