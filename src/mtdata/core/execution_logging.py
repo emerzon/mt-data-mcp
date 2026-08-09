@@ -126,9 +126,6 @@ def run_logged_operation(
             **fields,
         )
         return result
-    finally:
-        if not _ACTIVE_OPERATIONS.get():
-            _run_post_operation_cleanup(logger, operation=operation)
 
 
 def _elapsed_ms(started_at: float) -> float:
@@ -157,15 +154,6 @@ def _pop_operation(operation: str) -> Optional[str]:
             _ACTIVE_OPERATIONS.set(stack[:idx] + stack[idx + 1 :])
             return parent
     return None
-
-
-def _run_post_operation_cleanup(logger: logging.Logger, *, operation: str) -> None:
-    try:
-        from ..forecast.gpu_runtime import cleanup_forecast_gpu_runtime
-
-        cleanup_forecast_gpu_runtime(clear_model_cache=True)
-    except Exception as exc:
-        logger.debug("post-operation cleanup failed for %s: %s", operation, exc)
 
 
 def _format_fields(fields: dict[str, Any]) -> str:
