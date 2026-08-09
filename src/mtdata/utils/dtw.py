@@ -1,9 +1,18 @@
 from __future__ import annotations
 
+from functools import lru_cache
 from math import sqrt
 from typing import Optional
 
 import numpy as np
+
+
+@lru_cache(maxsize=1)
+def _get_ts_dtw():
+    """Load tslearn's DTW implementation only when a caller requests it."""
+    from tslearn.metrics import dtw as _ts_dtw  # type: ignore
+
+    return _ts_dtw
 
 
 def dtw_distance(

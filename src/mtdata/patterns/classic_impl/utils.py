@@ -6,8 +6,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 
-from ...utils.dtw import dtw_distance
-from ...utils.patterns import _get_ts_dtw
+from ...utils.dtw import _get_ts_dtw, dtw_distance
 from ...utils.utils import to_float_np
 from ..common import (
     PatternResultBase,

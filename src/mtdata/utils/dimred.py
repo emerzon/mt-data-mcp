@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from functools import lru_cache
+from importlib import import_module
+from importlib.util import find_spec
 from typing import Any, Dict, Optional, Tuple
 
 import numpy as np
@@ -22,57 +25,34 @@ class _SkModelMixin:
     def fit_transform(self, X: np.ndarray, y: Optional[np.ndarray] = None) -> np.ndarray:  # type: ignore[override]
         return np.asarray(self._model.fit_transform(X), dtype=np.float32)
 
-# Optional imports guarded for lightweight base install
-try:  # scikit-learn PCA
-    from sklearn.decomposition import PCA as _SKPCA  # type: ignore
-except Exception:
-    _SKPCA = None
+@lru_cache(maxsize=None)
+def _optional_dependency(module_name: str, attribute: Optional[str] = None) -> Any:
+    """Import an optional backend on first use and cache its resolved object."""
+    try:
+        module = import_module(module_name)
+        return getattr(module, attribute) if attribute else module
+    except Exception:
+        return None
 
-try:  # scikit-learn TruncatedSVD, KernelPCA, SparsePCA
-    from sklearn.decomposition import KernelPCA as _SKKPCA  # type: ignore
-    from sklearn.decomposition import SparsePCA as _SKSparsePCA  # type: ignore
-    from sklearn.decomposition import TruncatedSVD as _SKSVD  # type: ignore
-except Exception:
-    _SKSVD = None
-    _SKSparsePCA = None
-    _SKKPCA = None
 
-try:  # scikit-learn Linear Discriminant Analysis (supervised)
-    from sklearn.discriminant_analysis import (
-        LinearDiscriminantAnalysis as _SKLDA,  # type: ignore
-    )
-except Exception:
-    _SKLDA = None
+@lru_cache(maxsize=None)
+def _dependency_available(module_name: str) -> bool:
+    """Probe package metadata without importing an optional runtime."""
+    try:
+        return find_spec(module_name) is not None
+    except (ImportError, AttributeError, ValueError):
+        return False
 
-try:  # scikit-learn Isomap
-    from sklearn.manifold import Isomap as _SKIsomap  # type: ignore
-except Exception:
-    _SKIsomap = None
 
-try:  # scikit-learn Spectral Embedding (Laplacian Eigenmaps)
-    from sklearn.manifold import SpectralEmbedding as _SKSpectral  # type: ignore
-except Exception:
-    _SKSpectral = None
-
-try:  # UMAP
-    from umap import UMAP as _UMAP  # type: ignore
-except Exception:
-    _UMAP = None
-
-try:  # t-SNE (note: sklearn TSNE has no transform for new samples)
-    from sklearn.manifold import TSNE as _SKTSNE  # type: ignore
-except Exception:
-    _SKTSNE = None
-
-try:  # Diffusion Maps (optional pydiffmap)
-    from pydiffmap import diffusion_map as _DMap  # type: ignore
-except Exception:
-    _DMap = None
-
-try:  # DREAMS-CNE (Contrastive Neighbor Embeddings with DREAMS regularizer)
-    import cne as _CNE  # type: ignore
-except Exception:
-    _CNE = None
+def _require_dependency(
+    module_name: str,
+    attribute: Optional[str],
+    unavailable_message: str,
+) -> Any:
+    dependency = _optional_dependency(module_name, attribute)
+    if dependency is None:
+        raise RuntimeError(unavailable_message)
+    return dependency
 
 
 class DimReducer:
@@ -113,10 +93,17 @@ class PCAReducer(_SkModelMixin, DimReducer):
     name = "pca"
 
     def __init__(self, n_components: int) -> None:
-        if _SKPCA is None:
-            raise RuntimeError("scikit-learn not available; cannot use PCA")
+        model_cls = _require_dependency(
+            "sklearn.decomposition",
+            "PCA",
+            "scikit-learn not available; cannot use PCA",
+        )
         self.n_components = int(max(1, n_components))
-        self._model = _SKPCA(n_components=self.n_components, svd_solver="auto", whiten=False)
+        self._model = model_cls(
+            n_components=self.n_components,
+            svd_solver="auto",
+            whiten=False,
+        )
 
     def info(self) -> Dict[str, Any]:
         return {"method": self.name, "n_components": int(self.n_components)}
@@ -126,10 +113,13 @@ class SVDReducer(_SkModelMixin, DimReducer):
     name = "svd"
 
     def __init__(self, n_components: int) -> None:
-        if _SKSVD is None:
-            raise RuntimeError("scikit-learn not available; cannot use TruncatedSVD")
+        model_cls = _require_dependency(
+            "sklearn.decomposition",
+            "TruncatedSVD",
+            "scikit-learn not available; cannot use TruncatedSVD",
+        )
         self.n_components = int(max(1, n_components))
-        self._model = _SKSVD(n_components=self.n_components)
+        self._model = model_cls(n_components=self.n_components)
 
     def info(self) -> Dict[str, Any]:
         return {"method": self.name, "n_components": int(self.n_components)}
@@ -139,11 +129,14 @@ class SparsePCAReducer(_SkModelMixin, DimReducer):
     name = "spca"
 
     def __init__(self, n_components: int = 2, alpha: float = 1.0) -> None:
-        if _SKSparsePCA is None:
-            raise RuntimeError("scikit-learn not available; cannot use SparsePCA")
+        model_cls = _require_dependency(
+            "sklearn.decomposition",
+            "SparsePCA",
+            "scikit-learn not available; cannot use SparsePCA",
+        )
         self.n_components = int(max(1, n_components))
         self.alpha = float(alpha)
-        self._model = _SKSparsePCA(n_components=self.n_components, alpha=self.alpha)
+        self._model = model_cls(n_components=self.n_components, alpha=self.alpha)
 
     def info(self) -> Dict[str, Any]:
         return {"method": self.name, "n_components": int(self.n_components), "alpha": float(self.alpha)}
@@ -153,14 +146,17 @@ class KPCAReducer(_SkModelMixin, DimReducer):
     name = "kpca"
 
     def __init__(self, n_components: int = 2, kernel: str = "rbf", gamma: Optional[float] = None, degree: int = 3, coef0: float = 1.0) -> None:
-        if _SKKPCA is None:
-            raise RuntimeError("scikit-learn not available; cannot use KernelPCA")
+        model_cls = _require_dependency(
+            "sklearn.decomposition",
+            "KernelPCA",
+            "scikit-learn not available; cannot use KernelPCA",
+        )
         self.n_components = int(max(1, n_components))
         self.kernel = str(kernel)
         self.gamma = None if gamma is None else float(gamma)
         self.degree = int(degree)
         self.coef0 = float(coef0)
-        self._model = _SKKPCA(n_components=self.n_components, kernel=self.kernel, gamma=self.gamma, degree=self.degree, coef0=self.coef0, fit_inverse_transform=False)
+        self._model = model_cls(n_components=self.n_components, kernel=self.kernel, gamma=self.gamma, degree=self.degree, coef0=self.coef0, fit_inverse_transform=False)
 
     def info(self) -> Dict[str, Any]:
         return {
@@ -177,11 +173,17 @@ class LaplacianReducer(DimReducer):
     name = "laplacian"
 
     def __init__(self, n_components: int = 2, n_neighbors: int = 10) -> None:
-        if _SKSpectral is None:
-            raise RuntimeError("scikit-learn not available; cannot use SpectralEmbedding")
+        model_cls = _require_dependency(
+            "sklearn.manifold",
+            "SpectralEmbedding",
+            "scikit-learn not available; cannot use SpectralEmbedding",
+        )
         self.n_components = int(max(1, n_components))
         self.n_neighbors = int(max(1, n_neighbors))
-        self._model = _SKSpectral(n_components=self.n_components, n_neighbors=self.n_neighbors)
+        self._model = model_cls(
+            n_components=self.n_components,
+            n_neighbors=self.n_neighbors,
+        )
 
     def supports_transform(self) -> bool:
         return False
@@ -204,8 +206,11 @@ class DiffusionMapsReducer(DimReducer):
     name = "diffusion"
 
     def __init__(self, n_components: int = 2, alpha: float = 0.5, epsilon: Optional[float] = None, k: Optional[int] = None) -> None:
-        if _DMap is None:
-            raise RuntimeError("pydiffmap not available; `pip install pydiffmap` to use diffusion maps")
+        dmap_module = _require_dependency(
+            "pydiffmap",
+            "diffusion_map",
+            "pydiffmap not available; `pip install pydiffmap` to use diffusion maps",
+        )
         self.n_components = int(max(1, n_components))
         self.alpha = float(alpha)
         self.epsilon = None if epsilon is None else float(epsilon)
@@ -217,7 +222,7 @@ class DiffusionMapsReducer(DimReducer):
             kwargs["epsilon"] = self.epsilon
         if self.k is not None:
             kwargs["k"] = self.k
-        self._model = _DMap.DiffusionMap(n_evecs=self.n_components, **kwargs)
+        self._model = dmap_module.DiffusionMap(n_evecs=self.n_components, **kwargs)
 
     def fit(self, X: np.ndarray, y: Optional[np.ndarray] = None) -> "DiffusionMapsReducer":
         # Fit is equivalent to computing eigenvectors on training data
@@ -254,11 +259,17 @@ class IsomapReducer(_SkModelMixin, DimReducer):
     name = "isomap"
 
     def __init__(self, n_components: int = 2, n_neighbors: int = 5) -> None:
-        if _SKIsomap is None:
-            raise RuntimeError("scikit-learn not available; cannot use Isomap")
+        model_cls = _require_dependency(
+            "sklearn.manifold",
+            "Isomap",
+            "scikit-learn not available; cannot use Isomap",
+        )
         self.n_components = int(max(1, n_components))
         self.n_neighbors = int(max(1, n_neighbors))
-        self._model = _SKIsomap(n_neighbors=self.n_neighbors, n_components=self.n_components)
+        self._model = model_cls(
+            n_neighbors=self.n_neighbors,
+            n_components=self.n_components,
+        )
 
     def info(self) -> Dict[str, Any]:
         return {"method": self.name, "n_components": int(self.n_components), "n_neighbors": int(self.n_neighbors)}
@@ -268,12 +279,19 @@ class UMAPReducer(_SkModelMixin, DimReducer):
     name = "umap"
 
     def __init__(self, n_components: int = 2, n_neighbors: int = 15, min_dist: float = 0.1) -> None:
-        if _UMAP is None:
-            raise RuntimeError("umap-learn not available; `pip install umap-learn`")
+        model_cls = _require_dependency(
+            "umap",
+            "UMAP",
+            "umap-learn not available; `pip install umap-learn`",
+        )
         self.n_components = int(max(1, n_components))
         self.n_neighbors = int(max(1, n_neighbors))
         self.min_dist = float(min_dist)
-        self._model = _UMAP(n_components=self.n_components, n_neighbors=self.n_neighbors, min_dist=self.min_dist)
+        self._model = model_cls(
+            n_components=self.n_components,
+            n_neighbors=self.n_neighbors,
+            min_dist=self.min_dist,
+        )
 
     def info(self) -> Dict[str, Any]:
         return {"method": self.name, "n_components": int(self.n_components), "n_neighbors": int(self.n_neighbors), "min_dist": float(self.min_dist)}
@@ -283,16 +301,19 @@ class TSNEReducer(DimReducer):
     name = "tsne"
 
     def __init__(self, n_components: int = 2, perplexity: float = 30.0, learning_rate: float = 200.0, n_iter: int = 1000) -> None:
-        if _SKTSNE is None:
-            raise RuntimeError("scikit-learn not available; cannot use TSNE")
+        model_cls = _require_dependency(
+            "sklearn.manifold",
+            "TSNE",
+            "scikit-learn not available; cannot use TSNE",
+        )
         self.n_components = int(max(1, n_components))
         self.perplexity = float(perplexity)
         self.learning_rate = float(learning_rate)
         self.n_iter = int(max(250, n_iter))
         import inspect
-        _tsne_params = inspect.signature(_SKTSNE).parameters
+        _tsne_params = inspect.signature(model_cls).parameters
         iter_kwarg = "max_iter" if "max_iter" in _tsne_params else "n_iter"
-        self._model = _SKTSNE(n_components=self.n_components, perplexity=self.perplexity, learning_rate=self.learning_rate, init="pca", **{iter_kwarg: self.n_iter})
+        self._model = model_cls(n_components=self.n_components, perplexity=self.perplexity, learning_rate=self.learning_rate, init="pca", **{iter_kwarg: self.n_iter})
 
     def supports_transform(self) -> bool:
         # sklearn TSNE does not support transforming new samples
@@ -341,8 +362,11 @@ class DreamsCNEReducer(DimReducer):
         reg_embedding: Optional[np.ndarray] = None,
         seed: int = 0,
     ) -> None:
-        if _CNE is None:
-            raise RuntimeError("DREAMS-CNE not available; `pip install git+https://github.com/berenslab/DREAMS-CNE@tp` and its deps")
+        self._cne_module = _require_dependency(
+            "cne",
+            None,
+            "DREAMS-CNE not available; `pip install git+https://github.com/berenslab/DREAMS-CNE@tp` and its deps",
+        )
         self.n_components = int(max(1, n_components))
         self.k = int(max(1, k))
         self.negative_samples = int(max(1, negative_samples))
@@ -394,7 +418,7 @@ class DreamsCNEReducer(DimReducer):
         )
         if self.regularizer and reg_emb is not None:
             kwargs["reg_embedding"] = np.asarray(reg_emb, dtype=np.float32)
-        self._embedder = _CNE.CNE(
+        self._embedder = self._cne_module.CNE(
             k=self.k,
             parametric=self.parametric,
             decoder=False,
@@ -499,8 +523,6 @@ def create_reducer(method: Optional[str], params: Optional[Dict[str, Any]] = Non
         r = DiffusionMapsReducer(n_components=n, alpha=alpha, epsilon=eps, k=k)
         return r, r.info()
     if m == "dreams_cne":
-        if _CNE is None:
-            raise RuntimeError("DREAMS-CNE not available; install from source")
         # Map common params with sane defaults
         n = int(p.get("n_components", 2))
         k = int(p.get("k", 15))
@@ -528,8 +550,6 @@ def create_reducer(method: Optional[str], params: Optional[Dict[str, Any]] = Non
         )
         return r, r.info()
     if m == "dreams_cne_fast":
-        if _CNE is None:
-            raise RuntimeError("DREAMS-CNE not available; install from source")
         # Tuned for speed on moderate index sizes
         n = int(p.get("n_components", 2))
         r = DreamsCNEReducer(
@@ -556,8 +576,11 @@ def create_reducer(method: Optional[str], params: Optional[Dict[str, Any]] = Non
     if m == "lda":
         # LDA is supervised and requires class labels (y) to fit;
         # pattern_search does not provide labels, so we error out here with guidance.
-        if _SKLDA is None:
-            raise RuntimeError("scikit-learn not available; cannot use LDA")
+        _require_dependency(
+            "sklearn.discriminant_analysis",
+            "LinearDiscriminantAnalysis",
+            "scikit-learn not available; cannot use LDA",
+        )
         raise RuntimeError("LDA is supervised and requires labels; not supported for unsupervised pattern search")
     if m == "deep_diffusion_maps":
         # Placeholder for research implementations
@@ -571,20 +594,22 @@ def create_reducer(method: Optional[str], params: Optional[Dict[str, Any]] = Non
 
 def list_dimred_methods() -> Dict[str, Dict[str, Any]]:
     """Return available dimension reduction methods and availability flags."""
+    sklearn_available = _dependency_available("sklearn")
+    cne_available = _dependency_available("cne")
     out: Dict[str, Dict[str, Any]] = {
         "none": {"available": True, "description": "No reduction; pass-through."},
-        "pca": {"available": _SKPCA is not None, "description": "Principal Component Analysis (sklearn)."},
-        "svd": {"available": _SKSVD is not None, "description": "Truncated SVD (sklearn)."},
-        "spca": {"available": _SKSparsePCA is not None, "description": "Sparse PCA (sklearn)."},
-        "kpca": {"available": _SKKPCA is not None, "description": "Kernel PCA (sklearn)."},
-        "isomap": {"available": _SKIsomap is not None, "description": "Isomap manifold learning (sklearn)."},
-        "laplacian": {"available": _SKSpectral is not None, "description": "Laplacian Eigenmaps / Spectral Embedding (sklearn)."},
-        "umap": {"available": _UMAP is not None, "description": "UMAP dimensionality reduction (umap-learn)."},
-        "diffusion": {"available": _DMap is not None, "description": "Diffusion Maps (pydiffmap)."},
-        "tsne": {"available": _SKTSNE is not None, "description": "t-SNE (sklearn); no transform for new samples."},
-        "lda": {"available": _SKLDA is not None, "description": "Linear Discriminant Analysis (supervised; requires labels)."},
-        "dreams_cne": {"available": _CNE is not None, "description": "DREAMS-CNE (parametric supports transform; heavy Torch training)."},
-        "dreams_cne_fast": {"available": _CNE is not None, "description": "DREAMS-CNE with faster defaults (smaller k/epochs/batch)."},
+        "pca": {"available": sklearn_available, "description": "Principal Component Analysis (sklearn)."},
+        "svd": {"available": sklearn_available, "description": "Truncated SVD (sklearn)."},
+        "spca": {"available": sklearn_available, "description": "Sparse PCA (sklearn)."},
+        "kpca": {"available": sklearn_available, "description": "Kernel PCA (sklearn)."},
+        "isomap": {"available": sklearn_available, "description": "Isomap manifold learning (sklearn)."},
+        "laplacian": {"available": sklearn_available, "description": "Laplacian Eigenmaps / Spectral Embedding (sklearn)."},
+        "umap": {"available": _dependency_available("umap"), "description": "UMAP dimensionality reduction (umap-learn)."},
+        "diffusion": {"available": _dependency_available("pydiffmap"), "description": "Diffusion Maps (pydiffmap)."},
+        "tsne": {"available": sklearn_available, "description": "t-SNE (sklearn); no transform for new samples."},
+        "lda": {"available": sklearn_available, "description": "Linear Discriminant Analysis (supervised; requires labels)."},
+        "dreams_cne": {"available": cne_available, "description": "DREAMS-CNE (parametric supports transform; heavy Torch training)."},
+        "dreams_cne_fast": {"available": cne_available, "description": "DREAMS-CNE with faster defaults (smaller k/epochs/batch)."},
         "deep_diffusion_maps": {"available": False, "description": "Deep Diffusion Maps (research; plugin required)."},
         "dreams": {"available": False, "description": "DREAMS (Across Multiple Scales) (research; plugin required)."},
         "pcc": {"available": False, "description": "Preserving Clusters and Correlations (research; plugin required)."},

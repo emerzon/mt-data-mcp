@@ -6,7 +6,6 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
-import stumpy as _stumpy
 from scipy.signal import correlate
 from scipy.spatial import cKDTree
 
@@ -29,17 +28,21 @@ from .denoise import (
 )
 from .dimred import DimReducer as _DimReducer
 from .dimred import create_reducer as _create_reducer
-from .dtw import dtw_distance
+from .dtw import _get_ts_dtw, dtw_distance
 from .mt5 import _mt5_copy_rates_from, _rates_to_df
 from .time import bar_close_epoch
 from .utils import align_finite
 
 
 @lru_cache(maxsize=1)
-def _get_ts_dtw():
-    from tslearn.metrics import dtw as _ts_dtw  # type: ignore
-
-    return _ts_dtw
+def _get_stumpy():
+    try:
+        import stumpy  # type: ignore
+    except ImportError as exc:
+        raise RuntimeError(
+            "matrix-profile search requires 'stumpy'; install the core dependencies"
+        ) from exc
+    return stumpy
 
 
 @lru_cache(maxsize=1)
@@ -79,7 +82,7 @@ def _mass_distance_profile(query: np.ndarray, series: np.ndarray, *, eps: float 
     q_std = float(np.std(q))
     if q_std <= eps:
         return np.full(max(n - m + 1, 0), np.inf, dtype=float)
-    profile = np.asarray(_stumpy.mass(q, s), dtype=float)
+    profile = np.asarray(_get_stumpy().mass(q, s), dtype=float)
     profile[~np.isfinite(profile)] = np.inf
     return profile
 
@@ -207,10 +210,13 @@ class PatternIndex:
                 continue
 
             if self.engine == "matrix_profile":
-                if _stumpy is None:
-                    raise RuntimeError("matrix_profile engine requested but 'stumpy' is not installed")
                 # AB-join: distances from every subsequence in series_slice to the query subsequence
-                mp = _stumpy.stump(series_slice.astype(float), m, T_B=q.astype(float), ignore_trivial=False)
+                mp = _get_stumpy().stump(
+                    series_slice.astype(float),
+                    m,
+                    T_B=q.astype(float),
+                    ignore_trivial=False,
+                )
                 profile = np.asarray(mp[:, 0], dtype=float)
             else:
                 profile = _mass_distance_profile(q, series_slice)

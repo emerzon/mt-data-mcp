@@ -2,12 +2,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from functools import partial
-from typing import Any, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
-from sklearn.mixture import GaussianMixture
-from sklearn.preprocessing import StandardScaler
+
+if TYPE_CHECKING:
+    from sklearn.mixture import GaussianMixture
+    from sklearn.preprocessing import StandardScaler
 
 from ..utils.utils import to_float_np
 from .common import PatternResultBase
@@ -752,6 +754,9 @@ def _classify_waves(
         return np.array([]), None, None, None, None
 
     try:
+        from sklearn.mixture import GaussianMixture
+        from sklearn.preprocessing import StandardScaler
+
         feature_std = np.nanstd(features, axis=0)
         if (
             not np.all(np.isfinite(feature_std))
