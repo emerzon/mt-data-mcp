@@ -180,6 +180,15 @@ List available dimensionality reduction methods (PCA, UMAP, t-SNE, etc.) with pa
 #### `GET /api/methods`
 List available forecasting models and their requirements.
 
+#### `GET /api/models`
+List trained model artifacts currently available in the model store.
+
+- **Query Params:** `method` (optional method-name filter), `extras` (optional
+  comma-separated output extras such as `metadata`, or `all`)
+- **Default response:** compact model rows plus `count`, `detail`, and
+  `success`; request metadata extras for storage paths, timestamps, TTL, and
+  artifact-size diagnostics.
+
 #### `GET /api/volatility/methods`
 List available volatility models and their requirements.
 
