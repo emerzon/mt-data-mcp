@@ -192,6 +192,8 @@ def test_ensure_registry_loaded_reraises_non_optional_import_errors(monkeypatch)
 
 
 def test_get_forecast_methods_data_assembles_categories_and_skips_broken(monkeypatch):
+    fr._cached_forecast_methods_snapshot.cache_clear()
+
     class GoodMethod:
         """Good method summary."""
 
@@ -234,6 +236,7 @@ def test_get_forecast_methods_data_assembles_categories_and_skips_broken(monkeyp
     monkeypatch.setattr(fr, "_check_requirements", fake_check_requirements)
 
     data = fr.get_forecast_methods_data()
+    fr._cached_forecast_methods_snapshot.cache_clear()
     methods = {m["method"]: m for m in data["methods"]}
 
     assert data["total"] == 3
