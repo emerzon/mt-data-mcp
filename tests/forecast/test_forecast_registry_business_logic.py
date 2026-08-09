@@ -286,11 +286,14 @@ def test_get_forecast_method_availability_snapshot_reuses_shared_snapshot_builde
             {"classic": ["theta"]},
         ),
     )
-
-    assert fr.get_forecast_method_availability_snapshot() == {
-        "theta": True,
-        "timesfm": False,
-    }
+    fr._cached_forecast_methods_snapshot.cache_clear()
+    try:
+        assert fr.get_forecast_method_availability_snapshot() == {
+            "theta": True,
+            "timesfm": False,
+        }
+    finally:
+        fr._cached_forecast_methods_snapshot.cache_clear()
 
 
 def test_register_rejects_duplicate_name_with_different_class():
@@ -311,6 +314,45 @@ def test_register_rejects_duplicate_name_with_different_class():
                 pass
     finally:
         fr.ForecastRegistry._methods.pop(unique, None)
+        fr._cached_forecast_methods_snapshot.cache_clear()
+
+
+def test_method_metadata_snapshot_is_cached_and_registration_invalidates(monkeypatch):
+    constructions = 0
+
+    class FirstMethod:
+        supports_features = {"price": True}
+        required_packages = []
+        PARAMS = []
+        category = "test"
+        supports_training = False
+        training_category = "instant"
+
+        def __init__(self):
+            nonlocal constructions
+            constructions += 1
+
+    class SecondMethod(FirstMethod):
+        pass
+
+    monkeypatch.setattr(fr, "_ensure_registry_loaded", lambda: None)
+    monkeypatch.setattr(fr.ForecastRegistry, "_methods", {"first": FirstMethod})
+    fr._cached_forecast_methods_snapshot.cache_clear()
+    try:
+        first = fr.get_forecast_methods_data()
+        first["methods"][0]["method"] = "mutated-by-caller"
+        second = fr.get_forecast_methods_data()
+
+        assert constructions == 1
+        assert second["methods"][0]["method"] == "first"
+
+        fr.ForecastRegistry.register("second")(SecondMethod)
+        refreshed = fr.get_forecast_methods_data()
+
+        assert constructions == 3
+        assert [row["method"] for row in refreshed["methods"]] == ["first", "second"]
+    finally:
+        fr._cached_forecast_methods_snapshot.cache_clear()
 
 
 def test_chronos_aliases_report_distinct_names():
