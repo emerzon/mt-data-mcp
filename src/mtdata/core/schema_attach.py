@@ -52,44 +52,31 @@ _TRADE_PLACE_STRING_ORDER_TYPES = [
 _SchemaPatcher = Callable[[Dict[str, Any]], None]
 
 
-def _safe_schema_op(operation: str, func, default=None):
-    try:
-        return func()
-    except Exception as exc:
-        logger.debug("schema_attach operation=%s skipped: %s", operation, exc)
-        return default
-
-
 def server_shared_defs(shared_enums: Dict[str, Any]) -> Dict[str, Any]:
     """Build server-level $defs based on provided enum lists (avoids circular imports)."""
-    defs: Dict[str, Any] = {}
-
-    def _build_defs() -> None:
-        defs.update({
-            "OhlcvChar": {"type": "string", "enum": ["O", "H", "L", "C", "V"], "description": "OHLCV column code"},
-            "DenoiseMethod": {"type": "string", "enum": list(shared_enums.get("DENOISE_METHODS", []))},
-            "SimplifyMode": {"type": "string", "enum": list(shared_enums.get("SIMPLIFY_MODES", []))},
-            "SimplifyMethod": {"type": "string", "enum": list(shared_enums.get("SIMPLIFY_METHODS", []))},
-            "EncodeSchema": {"type": "string", "enum": ["envelope", "delta"]},
-            "SymbolicSchema": {"type": "string", "enum": ["sax"]},
-            "PivotMethod": {"type": "string", "enum": list(shared_enums.get("PIVOT_METHODS", []))},
-            "ForecastMethod": {"type": "string", "enum": list(shared_enums.get("FORECAST_METHODS", []))},
-            "QuantitySpec": {"type": "string", "enum": ["price", "return", "volatility"]},
-            "VolatilityMethod": {"type": "string", "enum": [
-                "ewma", "parkinson", "gk", "rs", "yang_zhang", "rolling_std",
-                "garch", "egarch", "gjr_garch",
-                "arima", "sarima", "ets", "theta",
-            ]},
-            "WhenSpec": {"type": "string", "enum": ["pre_ti", "post_ti"]},
-            "CausalitySpec": {"type": "string", "enum": ["causal", "zero_phase"]},
-            "TargetSpec": {"type": "string", "enum": ["price", "return"]},
-        })
-        if shared_enums.get("CATEGORY_CHOICES"):
-            defs["IndicatorCategory"] = {"type": "string", "enum": list(shared_enums["CATEGORY_CHOICES"])}
-        if shared_enums.get("INDICATOR_NAME_CHOICES"):
-            defs["IndicatorName"] = {"type": "string", "enum": list(shared_enums["INDICATOR_NAME_CHOICES"])}
-
-    _safe_schema_op("server_shared_defs", _build_defs)
+    defs: Dict[str, Any] = {
+        "OhlcvChar": {"type": "string", "enum": ["O", "H", "L", "C", "V"], "description": "OHLCV column code"},
+        "DenoiseMethod": {"type": "string", "enum": list(shared_enums.get("DENOISE_METHODS", []))},
+        "SimplifyMode": {"type": "string", "enum": list(shared_enums.get("SIMPLIFY_MODES", []))},
+        "SimplifyMethod": {"type": "string", "enum": list(shared_enums.get("SIMPLIFY_METHODS", []))},
+        "EncodeSchema": {"type": "string", "enum": ["envelope", "delta"]},
+        "SymbolicSchema": {"type": "string", "enum": ["sax"]},
+        "PivotMethod": {"type": "string", "enum": list(shared_enums.get("PIVOT_METHODS", []))},
+        "ForecastMethod": {"type": "string", "enum": list(shared_enums.get("FORECAST_METHODS", []))},
+        "QuantitySpec": {"type": "string", "enum": ["price", "return", "volatility"]},
+        "VolatilityMethod": {"type": "string", "enum": [
+            "ewma", "parkinson", "gk", "rs", "yang_zhang", "rolling_std",
+            "garch", "egarch", "gjr_garch",
+            "arima", "sarima", "ets", "theta",
+        ]},
+        "WhenSpec": {"type": "string", "enum": ["pre_ti", "post_ti"]},
+        "CausalitySpec": {"type": "string", "enum": ["causal", "zero_phase"]},
+        "TargetSpec": {"type": "string", "enum": ["price", "return"]},
+    }
+    if shared_enums.get("CATEGORY_CHOICES"):
+        defs["IndicatorCategory"] = {"type": "string", "enum": list(shared_enums["CATEGORY_CHOICES"])}
+    if shared_enums.get("INDICATOR_NAME_CHOICES"):
+        defs["IndicatorName"] = {"type": "string", "enum": list(shared_enums["INDICATOR_NAME_CHOICES"])}
     return defs
 
 
@@ -473,6 +460,26 @@ def _prune_unused_defs(schema: Dict[str, Any]) -> Dict[str, Any]:
     return schema
 
 
+def _validate_local_def_refs(schema: Dict[str, Any]) -> None:
+    """Reject schemas containing unresolved or empty local ``$defs`` references."""
+    refs: set[str] = set()
+    _collect_schema_refs(schema, refs, skip_defs=False)
+    if not refs:
+        return
+    defs = schema.get("$defs")
+    definitions = defs if isinstance(defs, dict) else {}
+    invalid = sorted(
+        name
+        for name in refs
+        if not isinstance(definitions.get(name), dict) or not definitions[name]
+    )
+    if invalid:
+        raise ValueError(
+            "Schema contains unresolved or empty local $defs references: "
+            + ", ".join(invalid)
+        )
+
+
 def _build_internal_schema(public_schema: Dict[str, Any]) -> Dict[str, Any]:
     internal_schema: Dict[str, Any] = {
         "parameters": copy.deepcopy({k: v for k, v in public_schema.items() if k != "$defs"})
@@ -506,6 +513,7 @@ def _attach_schema_to_tool(
         patcher(public_schema)
     _enforce_public_output_contract(public_schema)
     public_schema = _prune_unused_defs(_compact_schema_shape(public_schema))
+    _validate_local_def_refs(public_schema)
     internal_schema = _build_internal_schema(public_schema)
     concise_description = _summarize_description(
         str(getattr(manager_tool, "description", None) or info.get("doc") or "")
@@ -532,8 +540,8 @@ def attach_schemas_to_tools(mcp: Any, shared_enums: Dict[str, Any]) -> None:
         manager_tools = dict(_iter_manager_tools(mcp))
         shared_defs = server_shared_defs(shared_enums)
     except Exception as exc:
-        logger.error("schema attachment initialization failed: %s", exc)
-        return
+        logger.exception("schema attachment initialization failed")
+        raise RuntimeError("schema attachment initialization failed") from exc
 
     attached = 0
     failed = 0

@@ -1249,6 +1249,8 @@ class TestMcpToolSchemas:
         from mcp import ClientSession
         from mcp.client.stdio import StdioServerParameters, stdio_client
 
+        from mtdata.core import schema_attach
+
         async def _run() -> dict[str, dict]:
             server = StdioServerParameters(
                 command=sys.executable,
@@ -1271,6 +1273,7 @@ class TestMcpToolSchemas:
             props = schema.get("properties") or {}
             assert props["json"]["type"] == "boolean", name
             assert "extras" in props, name
+            schema_attach._validate_local_def_refs(schema)
 
     def test_wait_event_list_tools_schema_omits_legacy_varargs(self):
         from mcp import ClientSession

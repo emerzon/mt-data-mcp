@@ -3,6 +3,8 @@ from __future__ import annotations
 from copy import deepcopy
 from types import SimpleNamespace
 
+import pytest
+
 from mtdata.core import schema_attach as schema_attach_mod
 from mtdata.shared.parameter_contracts import (
     OUTPUT_EXTRAS,
@@ -60,6 +62,36 @@ def test_schema_attachment_failure_is_isolated_per_tool(monkeypatch, caplog) -> 
     assert calls == ["bad", "good"]
     assert "schema attachment failed for tool bad" in caplog.text
     assert "attached=1 failed=1" in caplog.text
+
+
+def test_server_shared_defs_rejects_malformed_enum_metadata() -> None:
+    with pytest.raises(TypeError):
+        schema_attach_mod.server_shared_defs({"DENOISE_METHODS": None})
+
+
+def test_schema_attachment_initialization_failure_is_fatal(monkeypatch) -> None:
+    monkeypatch.setattr(schema_attach_mod, "get_mcp_registry", lambda _mcp: {})
+    monkeypatch.setattr(schema_attach_mod, "_iter_manager_tools", lambda _mcp: [])
+    monkeypatch.setattr(
+        schema_attach_mod,
+        "server_shared_defs",
+        lambda _enums: (_ for _ in ()).throw(TypeError("malformed enums")),
+    )
+
+    with pytest.raises(RuntimeError, match="schema attachment initialization failed"):
+        schema_attach_mod.attach_schemas_to_tools(object(), {})
+
+
+def test_schema_validation_rejects_unresolved_local_defs() -> None:
+    with pytest.raises(ValueError, match="MissingDefinition"):
+        schema_attach_mod._validate_local_def_refs(
+            {
+                "type": "object",
+                "properties": {
+                    "method": {"$ref": "#/$defs/MissingDefinition"},
+                },
+            }
+        )
 
 
 def test_attach_schemas_to_tools_patches_forecast_generate(monkeypatch) -> None:
