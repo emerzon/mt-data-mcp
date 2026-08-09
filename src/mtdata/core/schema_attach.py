@@ -201,13 +201,6 @@ def _patch_forecast_barrier_prob_schema(schema: Dict[str, Any]) -> None:
     }
 
 
-def _patch_labels_triple_barrier_schema(schema: Dict[str, Any]) -> None:
-    # TP/SL unit-family exclusivity is already enforced by runtime validation.
-    # The MCP/OpenAI tool-schema subset rejects top-level allOf/anyOf/not
-    # combinators on input objects, so keep this attached schema flat.
-    return
-
-
 def _patch_forecast_barrier_optimize_schema(schema: Dict[str, Any]) -> None:
     params, _required_params = _schema_params(schema)
     if "method" not in params:
@@ -272,7 +265,6 @@ _TOOL_SCHEMA_PATCHERS: Dict[str, tuple[_SchemaPatcher, ...]] = {
     "data_fetch_candles": (_patch_data_fetch_candles_schema,),
     "data_fetch_ticks": (_patch_data_fetch_ticks_schema,),
     "forecast_barrier_prob": (_patch_forecast_barrier_prob_schema,),
-    "labels_triple_barrier": (_patch_labels_triple_barrier_schema,),
     "forecast_barrier_optimize": (_patch_forecast_barrier_optimize_schema,),
     "trade_place": (_patch_trade_place_schema,),
     "wait_event": (_patch_wait_event_schema,),
