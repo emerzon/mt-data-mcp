@@ -39,6 +39,37 @@ jobs:
       - name: Run backend tests
         run: python -m pytest tests
 
+  foundation-smoke:
+    name: Foundation forecast smoke (real Torch)
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    env:
+      HF_HUB_DISABLE_TELEMETRY: "1"
+      HF_HUB_DISABLE_PROGRESS_BARS: "1"
+      TOKENIZERS_PARALLELISM: "false"
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Python 3.14
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+          cache: pip
+
+      - name: Install foundation forecast dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[forecast-foundation]" pytest
+
+      - name: Verify real foundation packages
+        run: python -c "import chronos, torch; print(f'torch={torch.__version__} chronos={chronos.__version__}')"
+
+      - name: Run real foundation inference smoke
+        run: python -m pytest tests/forecast/test_foundation_real_smoke.py -q
+
   frontend:
     name: Frontend checks
     runs-on: ubuntu-latest
