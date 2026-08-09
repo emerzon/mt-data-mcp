@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from importlib import metadata as importlib_metadata
 from pathlib import Path
 from typing import Any
 
@@ -20,6 +21,14 @@ logger = logging.getLogger(__name__)
 
 WEBUI_MOUNT_PATH = "/app"
 _MISSING_UI_STATUS = 503
+_PACKAGE_DISTRIBUTION = "mtdata-mcp-server"
+
+
+def _package_version() -> str:
+    try:
+        return importlib_metadata.version(_PACKAGE_DISTRIBUTION)
+    except importlib_metadata.PackageNotFoundError:
+        return "0+unknown"
 
 
 class SafeJSONResponse(JSONResponse):
@@ -41,7 +50,11 @@ class WebUiMountResult:
 def create_web_api_app(settings: WebApiRuntimeSettings | None = None) -> FastAPI:
     """Create the shared FastAPI app with configured CORS middleware."""
     runtime = settings or load_web_api_runtime_settings()
-    app = FastAPI(title="mtdata-webui", version="0.1.0", default_response_class=SafeJSONResponse)
+    app = FastAPI(
+        title="mtdata-webui",
+        version=_package_version(),
+        default_response_class=SafeJSONResponse,
+    )
     origins = list(runtime.cors_origins)
     if not origins:
         origins = ["http://127.0.0.1:5173", "http://localhost:5173"]

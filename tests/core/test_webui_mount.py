@@ -3,17 +3,36 @@
 from __future__ import annotations
 
 from pathlib import Path
+from importlib.metadata import version
+from unittest.mock import patch
 
 import pytest
 from fastapi.testclient import TestClient
 
 from mtdata.bootstrap.runtime import WebApiRuntimeSettings
 from mtdata.core.web_api_runtime import (
+    _package_version,
     create_web_api_app,
     missing_webui_payload,
     mount_webui,
     resolve_webui_dist,
 )
+
+
+def test_web_api_version_comes_from_installed_package_metadata():
+    app = create_web_api_app(settings=WebApiRuntimeSettings())
+
+    assert app.version == version("mtdata-mcp-server")
+
+
+def test_package_version_has_deterministic_source_checkout_fallback():
+    from importlib.metadata import PackageNotFoundError
+
+    with patch(
+        "mtdata.core.web_api_runtime.importlib_metadata.version",
+        side_effect=PackageNotFoundError,
+    ):
+        assert _package_version() == "0+unknown"
 
 
 def test_resolve_webui_dist_requires_index_html(tmp_path: Path):
