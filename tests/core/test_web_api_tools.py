@@ -9,6 +9,9 @@ from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
 from mtdata.core import web_api
+from mtdata.forecast.exceptions import ForecastError
+from mtdata.utils.denoise import DenoiseCausalityError
+from mtdata.utils.mt5 import MT5ConnectionError
 from mtdata.core.web_api_tools import (
     DEDICATED_UI_TOOLS,
     MUTATING_TOOLS,
@@ -68,6 +71,43 @@ class TestListAndInvoke:
         detail = exc.value.detail
         assert isinstance(detail, dict)
         assert detail.get("requires_confirmation") is True
+
+    @pytest.mark.parametrize(
+        ("error", "status_code", "error_code"),
+        [
+            (TypeError("unexpected keyword"), 422, "tool_param_error"),
+            (ValueError("bad interval"), 422, "tool_param_error"),
+            (ForecastError("forecast rejected"), 400, "tool_domain_error"),
+            (DenoiseCausalityError("future leak"), 400, "tool_domain_error"),
+            (
+                MT5ConnectionError("terminal unavailable"),
+                503,
+                "mt5_connection_error",
+            ),
+            (RuntimeError("secret internal detail"), 500, "tool_invoke_internal_error"),
+        ],
+    )
+    def test_invoke_classifies_tool_exceptions(
+        self, error, status_code, error_code
+    ):
+        with (
+            patch("mtdata.core.web_api_tools.ensure_tools_bootstrapped"),
+            patch(
+                "mtdata.core.web_api_tools.get_tool_functions",
+                return_value={"demo": lambda: None},
+            ),
+            patch(
+                "mtdata.core.web_api_tools.call_tool_sync_structured",
+                side_effect=error,
+            ),
+            pytest.raises(HTTPException) as exc,
+        ):
+            invoke_tool_for_webapi("demo")
+
+        assert exc.value.status_code == status_code
+        assert exc.value.detail["error_code"] == error_code
+        if status_code == 500:
+            assert "secret internal detail" not in exc.value.detail["error"]
 
 
 class TestWebApiRoutes:

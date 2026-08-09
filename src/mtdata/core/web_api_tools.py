@@ -7,8 +7,11 @@ import logging
 from typing import Any, Callable, Dict, List, Optional, Sequence
 
 from fastapi import HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
+from ..forecast.exceptions import ForecastError
+from ..utils.denoise import DenoiseCausalityError
+from ..utils.mt5 import MT5ConnectionError
 from ._mcp_tools import (
     _tool_catalog_parameters,
     get_tool_functions,
@@ -304,18 +307,39 @@ def invoke_tool_for_webapi(
 
     try:
         result = call_tool_sync_structured(fn, **args)
-    except TypeError as exc:
+    except DenoiseCausalityError as exc:
+        payload = build_error_payload(
+            str(exc), code="tool_domain_error", operation=name
+        )
+        raise HTTPException(status_code=400, detail=payload) from exc
+    except (TypeError, ValueError, ValidationError) as exc:
+        payload = build_error_payload(
+            f"Invalid parameters for {name}: {exc}",
+            code="tool_param_error",
+            operation=name,
+        )
         raise HTTPException(
             status_code=422,
-            detail={
-                "error": f"Invalid parameters for {name}: {exc}",
-                "code": "tool_param_error",
-            },
+            detail=payload,
         ) from exc
+    except MT5ConnectionError as exc:
+        payload = build_error_payload(
+            str(exc), code="mt5_connection_error", operation=name
+        )
+        raise HTTPException(status_code=503, detail=payload) from exc
+    except ForecastError as exc:
+        payload = build_error_payload(
+            str(exc), code="tool_domain_error", operation=name
+        )
+        raise HTTPException(status_code=400, detail=payload) from exc
     except Exception as exc:
         logger.exception("Web API tool invoke failed for %s", name)
-        payload = build_error_payload(str(exc), code="tool_invoke_failed", operation=name)
-        raise HTTPException(status_code=400, detail=payload) from exc
+        payload = build_error_payload(
+            "Tool invocation failed.",
+            code="tool_invoke_internal_error",
+            operation=name,
+        )
+        raise HTTPException(status_code=500, detail=payload) from exc
 
     return {
         "success": True,
