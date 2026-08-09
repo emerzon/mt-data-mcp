@@ -25,6 +25,31 @@ def now_utc_iso() -> str:
     return datetime.now(timezone.utc).strftime(TIME_DISPLAY_FORMAT)
 
 
+_CURRENT_ONLY_OMISSION_REASON = "current_only_section_omitted"
+
+
+def is_bounded_report_window(start: Any, end: Any) -> bool:
+    return start not in (None, "") or end not in (None, "")
+
+
+def current_only_section_omission(
+    section: str,
+    *,
+    start: Any,
+    end: Any,
+) -> Dict[str, Any]:
+    return {
+        "status": "omitted",
+        "reason": _CURRENT_ONLY_OMISSION_REASON,
+        "section": section,
+        "requested_window": {"start": start, "end": end},
+        "message": (
+            f"{section} was omitted because it cannot currently honor the "
+            "report's bounded market window."
+        ),
+    }
+
+
 _REPORT_FORECAST_FIELDS = (
     "forecast",
     "forecast_summary",
@@ -884,13 +909,28 @@ def attach_market_and_timeframes(
 ) -> Dict[str, Any]:
     market_enabled = report_section_enabled(params, 'market')
     gates_enabled = report_section_enabled(params, 'execution_gates')
+    start = (params or {}).get('start')
+    end = (params or {}).get('end')
     snap: Dict[str, Any] = {}
     if market_enabled or gates_enabled:
-        snap = snapshot if snapshot is not None else market_snapshot(symbol)
-        report.setdefault('sections', {})['market'] = snap
-        gates = apply_market_gates(snap if isinstance(snap, dict) else {}, params or {})
-        if gates:
-            report['sections']['execution_gates'] = gates
+        sections = report.setdefault('sections', {})
+        if is_bounded_report_window(start, end):
+            if market_enabled:
+                sections['market'] = current_only_section_omission(
+                    'market', start=start, end=end
+                )
+            if gates_enabled:
+                sections['execution_gates'] = current_only_section_omission(
+                    'execution_gates', start=start, end=end
+                )
+        else:
+            snap = snapshot if snapshot is not None else market_snapshot(symbol)
+            sections['market'] = snap
+            gates = apply_market_gates(
+                snap if isinstance(snap, dict) else {}, params or {}
+            )
+            if gates:
+                sections['execution_gates'] = gates
     attach_report_timeframes(
         report,
         symbol,

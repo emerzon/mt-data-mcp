@@ -7,11 +7,13 @@ from ..report.utils import (
     adapt_forecast_payload_for_report,
     attach_candle_freshness_diagnostics,
     attach_multi_timeframes,
+    current_only_section_omission as _current_only_section_omission,
     extract_report_forecast_values,
     now_utc_iso,
     parse_table_tail,
     pick_best_forecast_method,
     report_section_enabled,
+    is_bounded_report_window as _is_bounded_report_window,
     resolve_report_context_indicators,
     summarize_barrier_grid,
 )
@@ -29,31 +31,6 @@ _TREND_COMPACT_LEGEND: Dict[str, str] = {
     "input_resolution": "Input spacing used by bar-window calculations.",
     "data_quality": "Missing-input summary when close/high/low values were imputed for trend calculations.",
 }
-
-_CURRENT_ONLY_OMISSION_REASON = "current_only_section_omitted"
-
-
-def _is_bounded_report_window(start: Any, end: Any) -> bool:
-    return start not in (None, "") or end not in (None, "")
-
-
-def _current_only_section_omission(
-    section: str,
-    *,
-    start: Any,
-    end: Any,
-) -> Dict[str, Any]:
-    return {
-        "status": "omitted",
-        "reason": _CURRENT_ONLY_OMISSION_REASON,
-        "section": section,
-        "requested_window": {"start": start, "end": end},
-        "message": (
-            f"{section} was omitted because it cannot currently honor the "
-            "report's bounded market window."
-        ),
-    }
-
 
 def _get_raw_result(
     func: Any,

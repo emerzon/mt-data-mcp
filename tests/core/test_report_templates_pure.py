@@ -1559,6 +1559,27 @@ _COMMON_MODULE = "mtdata.core.report_templates.common"
 class TestTemplateScalping:
     @patch(f"{_SCALP_MODULE}.build_report_with_market")
     @patch(f"{_SCALP_MODULE}.market_snapshot")
+    @patch(f"{_SCALP_MODULE}._get_tick_size")
+    def test_bounded_scalping_skips_live_market_calls(
+        self, mock_tick_size, mock_snapshot, mock_build
+    ):
+        mock_build.return_value = {"meta": {}, "sections": {}}
+
+        from mtdata.core.report_templates.scalping import template_scalping
+
+        template_scalping(
+            "EURUSD",
+            8,
+            None,
+            {"start": "2024-01-01", "end": "2024-01-31"},
+        )
+
+        mock_snapshot.assert_not_called()
+        mock_tick_size.assert_not_called()
+        assert mock_build.call_args.kwargs["snapshot"] == {}
+
+    @patch(f"{_SCALP_MODULE}.build_report_with_market")
+    @patch(f"{_SCALP_MODULE}.market_snapshot")
     @patch(f"{_SCALP_MODULE}.merge_params")
     @patch(f"{_SCALP_MODULE}._get_tick_size", return_value=0.01)
     def test_scalping_returns_report(self, mock_pip, mock_merge, mock_snap, mock_build):

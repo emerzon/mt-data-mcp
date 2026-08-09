@@ -23,6 +23,7 @@ from mtdata.core.report.utils import (
     _indicator_key_variants,
     apply_market_gates,
     attach_candle_freshness_diagnostics,
+    attach_market_and_timeframes,
     attach_multi_timeframes,
     context_for_tf,
     extract_candle_freshness_diagnostics,
@@ -67,6 +68,49 @@ class TestNowUtcIso:
 )
 def test_normalize_report_methods_accepts_documented_input_shapes(value, expected):
     assert normalize_report_methods(value) == expected
+
+
+def test_bounded_market_sections_are_omitted_without_live_snapshot():
+    report = {"sections": {}}
+    with (
+        patch("mtdata.core.report.utils.market_snapshot") as snapshot,
+        patch("mtdata.core.report.utils.attach_report_timeframes"),
+    ):
+        result = attach_market_and_timeframes(
+            report,
+            "EURUSD",
+            None,
+            {"start": "2024-01-01", "end": "2024-01-31"},
+            default_extra=[],
+        )
+
+    assert result == {}
+    snapshot.assert_not_called()
+    assert report["sections"]["market"]["reason"] == "current_only_section_omitted"
+    assert (
+        report["sections"]["execution_gates"]["reason"]
+        == "current_only_section_omitted"
+    )
+
+
+def test_unbounded_market_sections_still_use_live_snapshot():
+    report = {"sections": {}}
+    live = {"bid": 1.1, "ask": 1.2, "spread_ticks": 2.0}
+    with (
+        patch("mtdata.core.report.utils.market_snapshot", return_value=live) as snapshot,
+        patch("mtdata.core.report.utils.attach_report_timeframes"),
+    ):
+        result = attach_market_and_timeframes(
+            report,
+            "EURUSD",
+            None,
+            {},
+            default_extra=[],
+        )
+
+    assert result == live
+    snapshot.assert_called_once_with("EURUSD")
+    assert report["sections"]["market"] == live
 
 
 # ---------------------------------------------------------------------------
