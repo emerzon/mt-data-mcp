@@ -5,9 +5,15 @@ import pandas as pd
 
 from ...utils.denoise import normalize_denoise_spec as _normalize_denoise_spec
 from ...utils.mt5 import _mt5_epoch_to_utc
-from ...utils.patterns import build_index
 from ..interface import ForecastCallContext, ForecastMethod, ForecastResult
 from ..forecast_registry import ForecastRegistry
+
+
+def build_index(*args: Any, **kwargs: Any) -> Any:
+    """Load pattern-search dependencies only when analog search is executed."""
+    from ...utils.patterns import build_index as _build_index
+
+    return _build_index(*args, **kwargs)
 
 
 def _weighted_quantile(values: np.ndarray, weights: np.ndarray, quantile: float) -> float:

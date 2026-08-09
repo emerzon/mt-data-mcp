@@ -1,6 +1,39 @@
+import json
+import subprocess
+import sys
+
 import pytest
 
 from mtdata.forecast import forecast_registry as fr
+
+
+def test_method_discovery_does_not_import_analog_search_stack():
+    code = """
+import json
+import sys
+from mtdata.forecast.forecast_registry import get_forecast_methods_data
+
+data = get_forecast_methods_data()
+print(json.dumps({
+    "total": data["total"],
+    "patterns": "mtdata.utils.patterns" in sys.modules,
+    "dimred": "mtdata.utils.dimred" in sys.modules,
+    "umap": "umap" in sys.modules,
+}))
+"""
+    completed = subprocess.run(
+        [sys.executable, "-c", code],
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=20,
+    )
+    result = json.loads(completed.stdout.strip().splitlines()[-1])
+
+    assert result["total"] >= 70
+    assert result["patterns"] is False
+    assert result["dimred"] is False
+    assert result["umap"] is False
 
 
 def test_package_availability_failures_are_isolated(monkeypatch) -> None:
