@@ -3,6 +3,7 @@
 import logging
 
 from .._mcp_instance import mcp
+from ..error_envelope import new_request_id
 from ..execution_logging import run_logged_operation
 from . import time, validation
 from .account import (
@@ -55,10 +56,14 @@ def trade_place(request: TradePlaceRequest) -> dict:
       retention window. The SQLite store is shared across restarts and workers.
       Reusing a key with the same payload replays the prior outcome instead of
       sending another order; changed payloads require a new key.
+    - Responses include a correlation_id shared with execution logs. Idempotent
+      replays also identify the original invocation.
     """
+    correlation_id = new_request_id()
     return run_logged_operation(
         logger,
         operation="trade_place",
+        correlation_id=correlation_id,
         symbol=request.symbol,
         order_type=request.order_type,
         volume=request.volume,
@@ -72,6 +77,7 @@ def trade_place(request: TradePlaceRequest) -> dict:
             close_positions=_close_positions,
             safe_int_ticket=validation._safe_int_ticket,
             build_dry_run_preview=build_trade_place_dry_run_preview,
+            correlation_id=correlation_id,
         ),
     )
 
@@ -88,16 +94,20 @@ def trade_modify(request: TradeModifyRequest) -> dict:
     Optional idempotency_key values suppress duplicate retries for the same
     payload using a durable SQLite store with a configurable 24-hour retention
     window. This does not provide broker-side idempotency.
+    Responses include a correlation_id shared with execution logs.
     """
+    correlation_id = new_request_id()
     return run_logged_operation(
         logger,
         operation="trade_modify",
+        correlation_id=correlation_id,
         ticket=request.ticket,
         func=lambda: run_trade_modify(
             request,
             normalize_pending_expiration=time._normalize_pending_expiration,
             modify_pending_order=_modify_pending_order,
             modify_position=_modify_position,
+            correlation_id=correlation_id,
         ),
     )
 
@@ -112,10 +122,13 @@ def trade_close(request: TradeCloseRequest) -> dict:
     `volume` is invalid without `ticket`.
     Defaults to preview mode. Set `dry_run=false` explicitly to send a live
     close/cancel request.
+    Responses include a correlation_id shared with execution logs.
     """
+    correlation_id = new_request_id()
     return run_logged_operation(
         logger,
         operation="trade_close",
+        correlation_id=correlation_id,
         ticket=request.ticket,
         symbol=request.symbol,
         func=lambda: run_trade_close(
@@ -124,5 +137,6 @@ def trade_close(request: TradeCloseRequest) -> dict:
             cancel_pending=_cancel_pending,
             lookup_ticket_history=lookup_trade_ticket_history,
             resolve_close_target=_resolve_close_dry_run_target,
+            correlation_id=correlation_id,
         ),
     )

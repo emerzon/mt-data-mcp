@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import sys
 from unittest.mock import patch
 
@@ -117,7 +118,9 @@ def test_trade_place_routes_prefixed_market_order_type() -> None:
             dry_run=False,
             __cli_raw=True,
         )
-        assert out == {"ok": True, "success": True}
+        assert out["ok"] is True
+        assert out["success"] is True
+        assert re.fullmatch(r"[0-9a-f]{12}", out["correlation_id"])
         assert mock_market.call_args.kwargs["order_type"] == "BUY"
 
 
@@ -170,7 +173,9 @@ def test_trade_place_blank_expiration_keeps_market_routing() -> None:
             dry_run=False,
             __cli_raw=True,
         )
-        assert out == {"ok": True, "success": True}
+        assert out["ok"] is True
+        assert out["success"] is True
+        assert re.fullmatch(r"[0-9a-f]{12}", out["correlation_id"])
         mock_market.assert_called_once()
         mock_pending.assert_not_called()
 

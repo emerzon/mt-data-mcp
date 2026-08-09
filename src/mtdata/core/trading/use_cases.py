@@ -261,6 +261,7 @@ def _standardize_trade_operation_payload(
     *,
     operation: str,
     default_error_code: str,
+    request_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     if not isinstance(result, dict):
         return result
@@ -268,11 +269,68 @@ def _standardize_trade_operation_payload(
         return normalize_error_payload(
             result,
             default_code=default_error_code,
+            request_id=request_id,
             operation=operation,
         )
     out = dict(result)
     out.setdefault("success", True)
     return out
+
+
+def _attach_trade_correlation(
+    result: Dict[str, Any],
+    *,
+    correlation_id: Optional[str],
+) -> Dict[str, Any]:
+    """Attach the invocation ID and link an idempotent replay to its source."""
+    correlation_value = str(correlation_id or "").strip()
+    if not correlation_value or not isinstance(result, dict):
+        return result
+    out = dict(result)
+    out["correlation_id"] = correlation_value
+    original_outcome = out.get("original_outcome")
+    if isinstance(original_outcome, dict):
+        original_correlation_id = str(
+            original_outcome.get("correlation_id") or ""
+        ).strip()
+        if original_correlation_id:
+            out["original_correlation_id"] = original_correlation_id
+    return out
+
+
+def _log_trade_correlation(
+    *,
+    operation: str,
+    result: Dict[str, Any],
+) -> None:
+    """Log bounded identifiers that join an invocation to its MT5 result."""
+    correlation_id = str(result.get("correlation_id") or "").strip()
+    if not correlation_id:
+        return
+    fields = [f"correlation_id={correlation_id}"]
+    original_correlation_id = str(
+        result.get("original_correlation_id") or ""
+    ).strip()
+    if original_correlation_id:
+        fields.append(f"original_correlation_id={original_correlation_id}")
+
+    original_outcome = result.get("original_outcome")
+    identifier_source = (
+        original_outcome if isinstance(original_outcome, dict) else result
+    )
+    mt5_request_id = identifier_source.get("request_id")
+    if isinstance(mt5_request_id, int) and not isinstance(mt5_request_id, bool):
+        fields.append(f"mt5_request_id={mt5_request_id}")
+    for key in ("order", "deal", "position_ticket", "ticket"):
+        value = identifier_source.get(key)
+        if value not in (None, "", 0, "0"):
+            fields.append(f"{key}={value}")
+    idempotency_key = result.get("idempotency_key")
+    if idempotency_key not in (None, ""):
+        fields.append(f"idempotency_key={idempotency_key}")
+    if result.get("duplicate") is True:
+        fields.append("duplicate=True")
+    logger.debug("event=trade_result operation=%s %s", operation, " ".join(fields))
 
 
 def _sl_tp_result_details(result: Dict[str, Any]) -> tuple[bool, str]:
@@ -1300,6 +1358,7 @@ def run_trade_place(  # noqa: C901
     safe_int_ticket: Any,
     build_dry_run_preview: Any = None,
     idempotency_store: Optional[TradeIdempotencyStore] = _TRADE_IDEMPOTENCY_STORE,
+    correlation_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     started_at = time.perf_counter()
     missing: List[str] = []
@@ -1314,6 +1373,7 @@ def run_trade_place(  # noqa: C901
     log_operation_start(
         logger,
         operation="trade_place",
+        correlation_id=correlation_id,
         symbol=symbol_norm or None,
         requested_order_type=request.order_type,
     )
@@ -1329,8 +1389,10 @@ def run_trade_place(  # noqa: C901
             result,
             operation="trade_place",
             default_error_code="trade_place_error",
+            request_id=correlation_id,
         )
         result = _annotate_idempotency_scope(result, idempotency_key, idempotency_store)
+        result = _attach_trade_correlation(result, correlation_id=correlation_id)
         if not idempotency_consumed:
             if _record_or_release_idempotency(
                 idempotency_store,
@@ -1339,11 +1401,13 @@ def run_trade_place(  # noqa: C901
                 request_signature=idempotency_signature,
             ):
                 idempotency_consumed = True
+        _log_trade_correlation(operation="trade_place", result=result)
         log_operation_finish(
             logger,
             operation="trade_place",
             started_at=started_at,
             success=infer_result_success(result),
+            correlation_id=correlation_id,
             symbol=symbol_norm or None,
             order_type=order_type,
             pending=pending,
@@ -2168,6 +2232,7 @@ def run_trade_modify(
     modify_pending_order: Any,
     modify_position: Any,
     idempotency_store: Optional[TradeIdempotencyStore] = _TRADE_IDEMPOTENCY_STORE,
+    correlation_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     started_at = time.perf_counter()
     idempotency_key = _normalize_idempotency_key(getattr(request, "idempotency_key", None))
@@ -2180,6 +2245,7 @@ def run_trade_modify(
     log_operation_start(
         logger,
         operation="trade_modify",
+        correlation_id=correlation_id,
         ticket=request.ticket,
         dry_run=request.dry_run,
     )
@@ -2190,7 +2256,15 @@ def run_trade_modify(
         pending: Optional[bool] = None,
     ) -> Dict[str, Any]:
         nonlocal idempotency_consumed
+        if correlation_id and str(result.get("error") or "").strip():
+            result = normalize_error_payload(
+                result,
+                default_code="trade_modify_error",
+                request_id=correlation_id,
+                operation="trade_modify",
+            )
         result = _annotate_idempotency_scope(result, idempotency_key, idempotency_store)
+        result = _attach_trade_correlation(result, correlation_id=correlation_id)
         if not idempotency_consumed:
             if _record_or_release_idempotency(
                 idempotency_store,
@@ -2199,11 +2273,13 @@ def run_trade_modify(
                 request_signature=idempotency_signature,
             ):
                 idempotency_consumed = True
+        _log_trade_correlation(operation="trade_modify", result=result)
         log_operation_finish(
             logger,
             operation="trade_modify",
             started_at=started_at,
             success=infer_result_success(result),
+            correlation_id=correlation_id,
             ticket=request.ticket,
             pending=pending,
             dry_run=request.dry_run,
@@ -2316,11 +2392,13 @@ def run_trade_close(  # noqa: C901
     cancel_pending: Any,
     lookup_ticket_history: Any = None,
     resolve_close_target: Any = None,
+    correlation_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     started_at = time.perf_counter()
     log_operation_start(
         logger,
         operation="trade_close",
+        correlation_id=correlation_id,
         ticket=request.ticket,
         close_all=request.close_all,
         symbol=request.symbol,
@@ -2341,13 +2419,17 @@ def run_trade_close(  # noqa: C901
             result = normalize_error_payload(
                 result,
                 default_code="trade_close_error",
+                request_id=correlation_id,
                 operation="trade_close",
             )
+        result = _attach_trade_correlation(result, correlation_id=correlation_id)
+        _log_trade_correlation(operation="trade_close", result=result)
         log_operation_finish(
             logger,
             operation="trade_close",
             started_at=started_at,
             success=infer_result_success(result),
+            correlation_id=correlation_id,
             ticket=request.ticket,
             close_all=request.close_all,
             symbol=request.symbol,
