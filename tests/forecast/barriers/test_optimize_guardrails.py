@@ -7,9 +7,10 @@ from unittest.mock import patch
 
 import numpy as np
 
-from ._helpers import _BarrierTestBase, _BARRIER_PROB_ROOT, _BARRIER_OPT_ROOT
 from mtdata.forecast.barriers_optimization import forecast_barrier_optimize
 from mtdata.forecast.barriers_probabilities import forecast_barrier_hit_probabilities
+
+from ._helpers import _BARRIER_OPT_ROOT, _BARRIER_PROB_ROOT, _BarrierTestBase
 
 
 class TestBarrierOptimizeGuardrails(_BarrierTestBase):

@@ -224,7 +224,7 @@ def _compact_trade_session_items(
     )
 
 
-def _normalize_trade_session_context_cli_payload(
+def _normalize_trade_session_context_cli_payload(  # noqa: C901
     result: Any,
     *,
     verbose: bool,

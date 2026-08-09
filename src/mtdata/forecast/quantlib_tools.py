@@ -414,7 +414,7 @@ def _heston_pricing_assumptions(
     return assumptions
 
 
-def calibrate_heston_quantlib_from_options(
+def calibrate_heston_quantlib_from_options(  # noqa: C901
     *,
     symbol: str,
     expiration: Optional[str] = None,

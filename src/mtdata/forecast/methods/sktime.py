@@ -8,8 +8,14 @@ import numpy as np
 import pandas as pd
 
 from ..common import build_ci_diagnostics as _build_ci_diagnostics
-from ..interface import CancelToken, ForecastMethod, ForecastResult, ProgressReporter, TrainResult
 from ..forecast_registry import ForecastRegistry
+from ..interface import (
+    CancelToken,
+    ForecastMethod,
+    ForecastResult,
+    ProgressReporter,
+    TrainResult,
+)
 
 try:
     import importlib.util as _importlib_util
@@ -113,7 +119,7 @@ class SktimeMethod(ForecastMethod):
             params_used={"seasonality": seasonality, **params},
         )
 
-    def predict_with_model(
+    def predict_with_model(  # noqa: C901
         self,
         model,
         series: pd.Series,

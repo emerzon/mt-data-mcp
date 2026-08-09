@@ -116,5 +116,4 @@ def test_generic_statsforecast_get_model_wraps_constructor_type_errors(monkeypat
 
 
 def test_statsforecast_legacy_wrapper_removed():
-    with pytest.raises(AttributeError):
-        getattr(sfm, "forecast_statsforecast")
+    assert not hasattr(sfm, "forecast_statsforecast")

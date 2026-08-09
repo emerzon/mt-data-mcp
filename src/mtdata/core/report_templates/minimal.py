@@ -5,8 +5,8 @@ from typing import Any, Dict, Optional
 from ...shared.schema import DenoiseSpec
 from ..report.utils import (
     adapt_forecast_payload_for_report,
-    now_utc_iso,
     normalize_report_methods,
+    now_utc_iso,
     parse_table_tail,
     report_section_enabled,
     resolve_report_context_indicators,

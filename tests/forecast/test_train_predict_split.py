@@ -14,7 +14,6 @@ from mtdata.forecast.interface import (
     TrainResult,
 )
 
-
 # ── Concrete test doubles ─────────────────────────────────────────────
 
 class _TrainableDummy(ForecastMethod):

@@ -7,8 +7,8 @@ via genetic algorithms, supporting multi-dimensional search over timeframes, met
 method parameters, and optional feature indicators.
 """
 
-from typing import Any, Dict, List, Optional, Tuple
 import math
+from typing import Any, Dict, List, Optional, Tuple
 
 
 def scale_metric_to_01(value: Optional[float], vmin: float = 0.0, vmax: float = 1.0) -> float:
@@ -231,7 +231,7 @@ def extract_method_params_from_genotype(
     method_space = method_spaces.get(method, {})
 
     params: Dict[str, Any] = {}
-    for param_name, param_spec in method_space.items():
+    for param_name, _param_spec in method_space.items():
         if param_name in genotype:
             params[param_name] = genotype[param_name]
 

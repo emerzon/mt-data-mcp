@@ -2,16 +2,14 @@
 
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timezone
+from typing import Any, Dict
 from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pandas as pd
 import pytest
-
-from datetime import datetime, timezone
-from typing import Any, Dict
-from concurrent.futures import ThreadPoolExecutor
-
 
 # ── _infer_stock_pattern_confidence ──────────────────────────────────────
 

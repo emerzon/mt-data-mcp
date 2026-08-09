@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import inspect
 import logging
-from typing import Any, Callable, Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Optional
 
 from fastapi import HTTPException
 from pydantic import BaseModel, ValidationError
@@ -198,7 +198,6 @@ def list_tools_for_webapi(
     for row in tools:
         if not isinstance(row, dict):
             continue
-        name = str(row.get("name") or "")
         if category_filter and str(row.get("category") or "").strip().lower() != category_filter:
             continue
         if search_filter:

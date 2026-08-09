@@ -1615,7 +1615,7 @@ def _place_market_order(  # noqa: C901
         return _place_market_order()
 
 
-def _place_pending_order(
+def _place_pending_order(  # noqa: C901
     symbol: str,
     volume: float,
     order_type: OrderTypeInput,
@@ -1633,7 +1633,7 @@ def _place_pending_order(
     if connection_error is not None:
         return connection_error
 
-    def _place_pending_order():
+    def _place_pending_order():  # noqa: C901
         try:
             order_context, order_context_error = _prepare_order_symbol_context(
                 mt5,

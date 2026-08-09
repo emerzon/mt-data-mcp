@@ -1,14 +1,12 @@
 """Tests for pattern engine management and selection."""
 
+from datetime import datetime, timezone
+from typing import Any, Dict
 from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pandas as pd
 import pytest
-
-from datetime import datetime, timezone
-from typing import Any, Dict
-
 
 # ---------------------------------------------------------------------------
 # Helpers to build mock data

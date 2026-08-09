@@ -463,7 +463,9 @@ def merge_params(base: Optional[Dict[str, Any]], extra: Dict[str, Any], override
     return p
 
 
-def market_snapshot(symbol: str, timezone: str = 'UTC') -> Dict[str, Any]:
+def market_snapshot(  # noqa: C901
+    symbol: str, timezone: str = 'UTC'
+) -> Dict[str, Any]:
     try:
         from ..market_depth import market_depth_fetch as _fetch_market_depth
         dom = call_tool_sync_structured(

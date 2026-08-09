@@ -340,7 +340,9 @@ def _tick_frame(gateway: Any, symbol: str, start: datetime, end: datetime, max_t
     return df.reset_index(drop=True), truncated
 
 
-def analyze_microstructure(request: MarketMicrostructureRequest, gateway: Any) -> Dict[str, Any]:
+def analyze_microstructure(  # noqa: C901
+    request: MarketMicrostructureRequest, gateway: Any
+) -> Dict[str, Any]:
     start, end = _window(request.start, request.end, request.minutes_back)
     df, truncated = _tick_frame(gateway, request.symbol, start, end, request.max_ticks)
     completed_session_context = None

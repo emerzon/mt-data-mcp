@@ -8,15 +8,20 @@ Covers:
 import unittest
 from unittest.mock import MagicMock, patch
 
-from ._helpers import (
-    _mock_symbol_guard,
-    _make_rates,
-    _DS, _GUARD, _RATES_FROM,
-    _CACHED_INFO, _RESOLVE_CTZ,
-    _ESTIMATE_WARMUP, _SIMPLIFY_EXT, _MT5_CONFIG,
-)
-
 from mtdata.services.data_service import fetch_candles
+
+from ._helpers import (
+    _CACHED_INFO,
+    _DS,
+    _ESTIMATE_WARMUP,
+    _GUARD,
+    _MT5_CONFIG,
+    _RATES_FROM,
+    _RESOLVE_CTZ,
+    _SIMPLIFY_EXT,
+    _make_rates,
+    _mock_symbol_guard,
+)
 
 
 class TestFetchCandlesAdvanced(unittest.TestCase):

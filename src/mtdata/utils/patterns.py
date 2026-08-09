@@ -18,7 +18,6 @@ except Exception:
 # Dimensionality reduction abstraction
 # Reuse existing MT5 helpers and denoise utilities
 from ..shared.constants import TIMEFRAME_MAP
-from .dtw import dtw_distance
 from .denoise import (
     denoise_series as apply_denoise_series,
 )
@@ -30,6 +29,7 @@ from .denoise import (
 )
 from .dimred import DimReducer as _DimReducer
 from .dimred import create_reducer as _create_reducer
+from .dtw import dtw_distance
 from .mt5 import _mt5_copy_rates_from, _rates_to_df
 from .time import bar_close_epoch
 from .utils import align_finite

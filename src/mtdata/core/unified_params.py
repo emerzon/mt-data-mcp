@@ -7,9 +7,9 @@ This module provides global parameters that work across all functions.
 import argparse
 from typing import Optional
 
+from ..shared.constants import DEFAULT_TIMEFRAME
 from ..shared.output_precision import PRECISION_CHOICES
 from ..shared.parameter_contracts import OUTPUT_EXTRAS_HELP, PARAMETER_HELP
-from ..shared.constants import DEFAULT_TIMEFRAME
 
 
 def add_global_args_to_parser(

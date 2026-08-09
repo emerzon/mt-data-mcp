@@ -1,7 +1,7 @@
+import logging
 import math
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-import logging
 from typing import Any, List, Literal, Optional, Tuple
 
 import numpy as np
@@ -310,7 +310,7 @@ def _crosses_weekend(start_epoch: float, end_epoch: float) -> bool:
     return end_dt.weekday() >= 5
 
 
-def data_quality_warnings(
+def data_quality_warnings(  # noqa: C901
     df: Any,
     *,
     symbol: Optional[str] = None,

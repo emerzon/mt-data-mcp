@@ -7,8 +7,8 @@ import numpy as np
 import pandas as pd
 from statsmodels.tsa.forecasting.theta import ThetaModel
 
-from ..interface import ForecastMethod, ForecastResult
 from ..forecast_registry import ForecastRegistry
+from ..interface import ForecastMethod, ForecastResult
 
 
 class ClassicalMethod(ForecastMethod):

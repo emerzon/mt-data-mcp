@@ -4,7 +4,7 @@ from typing import Annotated, Any, Dict, List, Literal, Optional, TypeAlias
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-from ..shared.schema import DetailLiteral, DenoiseSpec, TimeframeLiteral
+from ..shared.schema import DenoiseSpec, DetailLiteral, TimeframeLiteral
 
 ContractOwner = Literal["data_preparation", "forecast_model", "strategy", "evaluation"]
 RequestSurface = Literal[

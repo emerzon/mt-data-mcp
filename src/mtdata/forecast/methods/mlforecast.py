@@ -8,8 +8,14 @@ from typing import Any, Dict, List, Optional
 
 import pandas as pd
 
-from ..interface import CancelToken, ForecastMethod, ForecastResult, ProgressReporter, TrainResult
 from ..forecast_registry import ForecastRegistry
+from ..interface import (
+    CancelToken,
+    ForecastMethod,
+    ForecastResult,
+    ProgressReporter,
+    TrainResult,
+)
 
 _GENERIC_MLFORECAST_ALLOWED_MODELS = {
     "catboost.CatBoostRegressor",

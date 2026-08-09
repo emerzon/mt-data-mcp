@@ -317,7 +317,7 @@ def _skipped_entry_warning(
 
 
 @mcp.tool()
-def labels_triple_barrier(
+def labels_triple_barrier(  # noqa: C901
     symbol: str,
     timeframe: TimeframeLiteral = "H1",
     limit: int = _DEFAULT_LABEL_LIMIT,
@@ -353,7 +353,7 @@ def labels_triple_barrier(
     Outputs label: +1 (TP first), -1 (SL first), 0 (neither by horizon), and holding_bars until decision.
     """
 
-    def _run() -> Dict[str, Any]:
+    def _run() -> Dict[str, Any]:  # noqa: C901
         try:
             mt5_gateway = create_mt5_gateway(
                 ensure_connection_impl=ensure_mt5_connection_or_raise

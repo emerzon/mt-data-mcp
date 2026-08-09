@@ -87,7 +87,12 @@ from .web_api_handlers import (
 from .web_api_handlers import (
     post_forecast_volatility_response as _post_forecast_volatility_response,
 )
-from .web_api_models import BacktestBody, ForecastPriceBody, ForecastVolBody, ToolInvokeBody
+from .web_api_models import (
+    BacktestBody,
+    ForecastPriceBody,
+    ForecastVolBody,
+    ToolInvokeBody,
+)
 from .web_api_runtime import (
     SafeJSONResponse,
     create_web_api_app,

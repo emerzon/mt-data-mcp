@@ -1,7 +1,7 @@
 from typing import Any, Dict, Optional
 
-from ..report.utils import merge_params
 from ...shared.schema import DenoiseSpec
+from ..report.utils import merge_params
 from .common import build_report_with_timeframes
 
 

@@ -241,7 +241,9 @@ def validate_denoise_spec(denoise: Optional[DenoiseSpec]) -> List[str]:
     method = ""
     method_supports: Dict[str, Any] = {}
     try:
-        from ..utils.denoise import get_denoise_methods_data as _get_denoise_methods_data
+        from ..utils.denoise import (
+            get_denoise_methods_data as _get_denoise_methods_data,
+        )
 
         methods_data = _get_denoise_methods_data()
         methods = methods_data.get("methods") if isinstance(methods_data, dict) else None

@@ -590,6 +590,7 @@ class TestForecastBacktest:
 
 def test_performance_metrics_include_sortino_and_profit_factor():
     import numpy as np
+
     from mtdata.forecast.backtest import _compute_performance_metrics
     np.random.seed(1)
     returns = list(np.random.normal(0.001, 0.02, 60))

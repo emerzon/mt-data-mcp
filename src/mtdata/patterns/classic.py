@@ -6,7 +6,6 @@ from typing import Any, Dict, List, Optional
 import numpy as np
 import pandas as pd
 
-from .common import interval_overlap_ratio, prepare_ohlc_pattern_inputs
 from .classic_impl.config import (
     ClassicDetectorConfig,
     ClassicPatternResult,
@@ -30,6 +29,7 @@ from .classic_impl.utils import (
     _calibrate_confidence,
     _detect_pivots_close,
 )
+from .common import interval_overlap_ratio, prepare_ohlc_pattern_inputs
 
 __all__ = [
     "ClassicDetectorConfig",

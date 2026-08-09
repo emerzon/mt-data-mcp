@@ -11,8 +11,9 @@ from unittest.mock import patch
 import numpy as np
 import pandas as pd
 
-from ._helpers import _BarrierTestBase, _BARRIER_PROB_ROOT, _BARRIER_OPT_ROOT
 from mtdata.forecast.barriers_optimization import forecast_barrier_optimize
+
+from ._helpers import _BARRIER_OPT_ROOT, _BARRIER_PROB_ROOT, _BarrierTestBase
 
 
 class TestBarrierOptimizeBasic(_BarrierTestBase):

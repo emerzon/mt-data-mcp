@@ -163,23 +163,23 @@ for name, mod in _NON_TORCH_STUBS.items():
     sys.modules[name] = mod
 
 # Now import the module under test
-from mtdata.forecast.interface import ForecastResult
 import mtdata.forecast.methods.pretrained as pretrained_module
+from mtdata.forecast.interface import ForecastResult
 from mtdata.forecast.methods.pretrained import (
     ChronosBoltMethod,
     PretrainedMethod,
     TimesFMMethod,
-    _extract_chronos2_predict_df_output,
     _build_chronos_inputs,
     _ensure_chronos2_history_df,
+    _extract_chronos2_predict_df_output,
     _is_chronos2_pipeline,
     _load_chronos_pipeline,
     _resolve_chronos2_multivariate_columns,
+    _resolve_chronos_device_map,
+    _resolve_chronos_model_defaults,
+    _stringify_exception_chain,
     _unwrap_chronos_predict,
     _unwrap_chronos_quantiles,
-    _resolve_chronos_model_defaults,
-    _resolve_chronos_device_map,
-    _stringify_exception_chain,
 )
 
 # ---------------------------------------------------------------------------

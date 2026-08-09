@@ -12,13 +12,13 @@ import pandas as pd
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../src")))
 
 import mtdata.forecast.methods.monte_carlo  # noqa: F401
+from mtdata.forecast.forecast_registry import ForecastRegistry
 from mtdata.forecast.monte_carlo import (
     estimate_transition_matrix_from_gamma,
     simulate_garch_mc,
     simulate_gbm_mc,
     simulate_markov_chain,
 )
-from mtdata.forecast.forecast_registry import ForecastRegistry
 
 
 class TestMonteCarloSimulationCoherence(unittest.TestCase):

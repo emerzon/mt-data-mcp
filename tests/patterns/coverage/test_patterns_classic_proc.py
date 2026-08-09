@@ -1,12 +1,11 @@
 """Tests for classic pattern processing and enrichment."""
 
-import numpy as np
-import pandas as pd
-import pytest
-
 from datetime import datetime, timezone
 from typing import Any, Dict
 
+import numpy as np
+import pandas as pd
+import pytest
 
 # ---------------------------------------------------------------------------
 # Helpers to build mock data

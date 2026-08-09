@@ -9,9 +9,6 @@ from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
 from mtdata.core import web_api
-from mtdata.forecast.exceptions import ForecastError
-from mtdata.utils.denoise import DenoiseCausalityError
-from mtdata.utils.mt5 import MT5ConnectionError
 from mtdata.core.web_api_tools import (
     DEDICATED_UI_TOOLS,
     MUTATING_TOOLS,
@@ -21,6 +18,9 @@ from mtdata.core.web_api_tools import (
     list_tools_for_webapi,
     tool_requires_confirmation,
 )
+from mtdata.forecast.exceptions import ForecastError
+from mtdata.utils.denoise import DenoiseCausalityError
+from mtdata.utils.mt5 import MT5ConnectionError
 
 
 class TestToolClassification:

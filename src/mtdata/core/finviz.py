@@ -614,7 +614,7 @@ def _finviz_screen_units_for_rows(rows: Any) -> Dict[str, str]:
     return units
 
 
-def _normalize_finviz_market_payload(
+def _normalize_finviz_market_payload(  # noqa: C901
     result: Dict[str, Any],
     *,
     rows_key: str,

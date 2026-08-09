@@ -438,7 +438,7 @@ def _count_done_results(mt5: Any, results: List[Dict[str, Any]]) -> int:
     return success_count
 
 
-def _modify_position(
+def _modify_position(  # noqa: C901
     ticket: Union[int, str],
     stop_loss: Optional[Union[int, float]] = None,
     take_profit: Optional[Union[int, float]] = None,
@@ -761,7 +761,7 @@ def _modify_position(
     return _modify_position()
 
 
-def _modify_pending_order(
+def _modify_pending_order(  # noqa: C901
     ticket: Union[int, str],
     price: Optional[Union[int, float]] = None,
     stop_loss: Optional[Union[int, float]] = None,
@@ -780,7 +780,7 @@ def _modify_pending_order(
     if connection_error is not None:
         return connection_error
 
-    def _modify_pending_order():
+    def _modify_pending_order():  # noqa: C901
         try:
             ticket_id = int(ticket)
             order, resolved_ticket, ticket_resolution = _resolve_pending_order(
@@ -1200,7 +1200,7 @@ def _modify_pending_order(
 _CLOSE_TICK_MAX_AGE_SECONDS = 10.0
 
 
-def _execute_single_close(
+def _execute_single_close(  # noqa: C901
     mt5: Any,
     position: Any,
     *,
@@ -2181,7 +2181,7 @@ def _resolve_close_dry_run_target(
     }
 
 
-def _cancel_pending(
+def _cancel_pending(  # noqa: C901
     ticket: Optional[Union[int, str]] = None,
     symbol: Optional[str] = None,
     magic: Optional[int] = None,
@@ -2198,7 +2198,7 @@ def _cancel_pending(
     if connection_error is not None:
         return connection_error
 
-    def _cancel_pending():
+    def _cancel_pending():  # noqa: C901
         try:
             magic_filter = (
                 validation._safe_int_ticket(magic) if magic is not None else None

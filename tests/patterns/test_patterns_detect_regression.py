@@ -18,7 +18,10 @@ import numpy as np
 import pandas as pd
 
 from mtdata.patterns.classic import _postprocess_classic_results
-from mtdata.patterns.classic_impl.config import ClassicDetectorConfig, ClassicPatternResult
+from mtdata.patterns.classic_impl.config import (
+    ClassicDetectorConfig,
+    ClassicPatternResult,
+)
 
 
 class TestFormingConfidenceCap(TestCase):

@@ -262,4 +262,4 @@ def _install_mcp_bearer_auth(mcp: Any, token: str) -> None:
             wrapped += 1
     if wrapped == 0:
         raise RuntimeError("FastMCP exposes no HTTP app factory to protect.")
-    setattr(mcp, "_mtdata_auth_installed", True)
+    mcp._mtdata_auth_installed = True

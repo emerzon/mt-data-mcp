@@ -6,9 +6,9 @@ import numpy as np
 import pandas as pd
 
 from ..patterns.common import interval_overlap_ratio as _interval_overlap_ratio
+from ..utils.coercion import safe_float as _safe_float
 from ..utils.regime_heuristics import infer_market_regime
 from ..utils.time import _format_time_minimal
-from ..utils.coercion import safe_float as _safe_float
 from ..utils.utils import to_float_np as __to_float_np
 
 _STOCK_PATTERN_CODE_TO_NAME = {
@@ -544,7 +544,7 @@ def _compact_elliott_adaptation(value: Any) -> Any:
     }
 
 
-def _compact_patterns_payload(
+def _compact_patterns_payload(  # noqa: C901
     payload: Dict[str, Any],
     *,
     preview_limit: int = 8,

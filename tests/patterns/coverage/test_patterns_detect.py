@@ -11,9 +11,9 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 import pandas as pd
 import pytest
+from pydantic import ValidationError
 
 from mtdata.core.patterns_requests import PatternsDetectRequest
-from pydantic import ValidationError
 
 # ---------------------------------------------------------------------------
 # Helpers to build mock data

@@ -4,7 +4,6 @@ from types import SimpleNamespace
 
 import pytest
 
-
 # ── pattern status helpers ─────────────────────────────────────────────────
 
 class TestPatternStatusHelpers:

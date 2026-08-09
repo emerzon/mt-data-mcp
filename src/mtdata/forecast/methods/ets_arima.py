@@ -7,8 +7,8 @@ import numpy as np
 import pandas as pd
 
 from ..common import build_ci_diagnostics as _build_ci_diagnostics
-from ..interface import ForecastMethod, ForecastResult
 from ..forecast_registry import ForecastRegistry
+from ..interface import ForecastMethod, ForecastResult
 
 try:
     from statsmodels.tsa.holtwinters import ExponentialSmoothing as _ETS

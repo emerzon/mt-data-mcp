@@ -12,7 +12,6 @@ import pandas as pd
 
 from ..services.data_service import _is_last_bar_forming
 from ..shared.constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
-from ..utils.time import bar_close_epoch
 from ..shared.symbols import (
     FOREX_CURRENCY_CODES,
     is_probably_crypto_symbol,

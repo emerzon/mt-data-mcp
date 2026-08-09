@@ -1060,7 +1060,7 @@ def _compact_ensemble_metadata(metadata: Any) -> Dict[str, Any]:
     return compact
 
 
-def _apply_forecast_generate_detail(
+def _apply_forecast_generate_detail(  # noqa: C901
     payload: Dict[str, Any],
     request: ForecastGenerateRequest,
 ) -> Dict[str, Any]:
@@ -2225,7 +2225,7 @@ def _resolve_sktime_forecaster(method: str) -> Optional[Tuple[str, str]]:
     return None
 
 
-def run_forecast_generate(
+def run_forecast_generate(  # noqa: C901
     request: ForecastGenerateRequest,
     *,
     forecast_impl: Any = _forecast_impl,

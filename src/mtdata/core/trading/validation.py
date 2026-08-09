@@ -338,7 +338,7 @@ def _time_sort_key(obj: Any, fields: tuple[str, ...]) -> float:
 def _resolve_position_side(position: Any, mt5: Any = None) -> Optional[str]:
     """Resolve an MT5 position type to ``BUY`` or ``SELL``."""
     try:
-        raw_type = getattr(position, "type")
+        raw_type = position.type
     except Exception:
         return None
 

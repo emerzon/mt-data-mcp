@@ -106,8 +106,14 @@ class CandlestickRuntime:
             ):
                 from ..utils.mt5 import (
                     _mt5_copy_rates_from as copy_rates_from,
+                )
+                from ..utils.mt5 import (
                     _mt5_copy_rates_range as copy_rates_range,
+                )
+                from ..utils.mt5 import (
                     _rates_to_df as rates_to_df,
+                )
+                from ..utils.mt5 import (
                     _symbol_ready_guard as symbol_ready_guard,
                 )
 

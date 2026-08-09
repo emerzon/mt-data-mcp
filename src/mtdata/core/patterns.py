@@ -118,7 +118,7 @@ def _should_drop_last_pattern_bar(
     )
 
 
-def _fetch_pattern_data(
+def _fetch_pattern_data(  # noqa: C901
     symbol: str,
     timeframe: str,
     limit: int,
@@ -351,7 +351,7 @@ def _patterns_detect_deps() -> PatternsDetectDeps:
     )
 
 
-def _build_pattern_response(
+def _build_pattern_response(  # noqa: C901
     symbol: str,
     timeframe: str,
     limit: int,

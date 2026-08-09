@@ -5,8 +5,8 @@ import pandas as pd
 
 from ...utils.denoise import normalize_denoise_spec as _normalize_denoise_spec
 from ...utils.mt5 import _mt5_epoch_to_utc
-from ..interface import ForecastCallContext, ForecastMethod, ForecastResult
 from ..forecast_registry import ForecastRegistry
+from ..interface import ForecastCallContext, ForecastMethod, ForecastResult
 
 
 def build_index(*args: Any, **kwargs: Any) -> Any:

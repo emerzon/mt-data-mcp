@@ -7,15 +7,19 @@ from ..report.utils import (
     adapt_forecast_payload_for_report,
     attach_candle_freshness_diagnostics,
     attach_multi_timeframes,
-    current_only_section_omission as _current_only_section_omission,
     extract_report_forecast_values,
     now_utc_iso,
     parse_table_tail,
     pick_best_forecast_method,
     report_section_enabled,
-    is_bounded_report_window as _is_bounded_report_window,
     resolve_report_context_indicators,
     summarize_barrier_grid,
+)
+from ..report.utils import (
+    current_only_section_omission as _current_only_section_omission,
+)
+from ..report.utils import (
+    is_bounded_report_window as _is_bounded_report_window,
 )
 from ..tool_calling import call_tool_sync_structured
 

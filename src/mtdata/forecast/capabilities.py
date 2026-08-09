@@ -4,9 +4,8 @@ import importlib
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from .exceptions import ForecastError
-from .forecast_registry import get_forecast_methods_data
+from .forecast_registry import ForecastRegistry, get_forecast_methods_data
 from .interface import ForecastCapabilityDescriptor
-from .forecast_registry import ForecastRegistry
 
 _PRETRAINED_METHODS = {"chronos2", "chronos_bolt", "timesfm"}
 

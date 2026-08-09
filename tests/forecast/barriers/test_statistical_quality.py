@@ -7,7 +7,6 @@ from unittest.mock import patch
 
 import numpy as np
 
-from ._helpers import _BarrierModulePatchMixin, _BarrierTestBase, _BARRIER_PROB_ROOT, _BARRIER_OPT_ROOT
 from mtdata.forecast.barriers_optimization import forecast_barrier_optimize
 from mtdata.forecast.barriers_probabilities import (
     forecast_barrier_closed_form,
@@ -18,6 +17,12 @@ from mtdata.forecast.barriers_shared import (
     _sort_candidate_results,
 )
 
+from ._helpers import (
+    _BARRIER_OPT_ROOT,
+    _BARRIER_PROB_ROOT,
+    _BarrierModulePatchMixin,
+    _BarrierTestBase,
+)
 
 # ---------------------------------------------------------------------------
 # Statistical significance (T1.2)
