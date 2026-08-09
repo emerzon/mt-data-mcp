@@ -330,6 +330,7 @@ After editable install, these entry points are available:
 ### Web UI + API
 
 The Web UI is a first-class delivery surface alongside CLI and MCP: start the API and open the chart workspace.
+Building or developing the SPA requires Node.js 22.12 or newer.
 
 ```bash
 # Once per checkout (or after UI source changes)

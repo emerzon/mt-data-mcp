@@ -16,7 +16,7 @@ Local HTTP access to mtdata for dashboards, notebooks, scripts, and apps — and
 
 ### Start API → open UI
 
-Build the production SPA once (Node is only required for this step, not at runtime):
+Build the production SPA once with Node.js 22.12 or newer (Node is only required for this step, not at runtime):
 
 ```bash
 cd webui
