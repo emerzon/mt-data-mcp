@@ -7,6 +7,9 @@ from .patterns_requests import PatternsDetectRequest
 from .patterns_support import (
     _build_highlights,
     _compact_all_mode_payload,
+    _config_bool,
+    _config_float,
+    _config_int,
     _dedupe_repeated_regime_context,
     _elliott_completed_preview,
     _elliott_hidden_completed_note,
@@ -430,32 +433,6 @@ def run_patterns_detect(  # noqa: C901
                 **fetch_kwargs,
             )
 
-    def _config_bool(name: str, default: bool = False) -> bool:
-        if not isinstance(request.config, dict) or name not in request.config:
-            return default
-        value = request.config.get(name)
-        if isinstance(value, bool):
-            return value
-        if value is None:
-            return default
-        return str(value).strip().lower() in {"1", "true", "yes", "on"}
-
-    def _config_int(name: str, default: int) -> int:
-        if not isinstance(request.config, dict) or name not in request.config:
-            return default
-        try:
-            return int(request.config.get(name))
-        except Exception:
-            return default
-
-    def _config_float(name: str, default: float) -> float:
-        if not isinstance(request.config, dict) or name not in request.config:
-            return default
-        try:
-            return float(request.config.get(name))
-        except Exception:
-            return default
-
     if mode_value == "candlestick":
         tf_single = tf_norm or "H1"
         last_n_bars_val: Optional[int] = None
@@ -700,7 +677,7 @@ def run_patterns_detect(  # noqa: C901
         fractal_context = deps.summarize_fractal_context(visible_rows)
         if fractal_context:
             resp.update(fractal_context)
-        if _config_bool("volume_profile", False):
+        if _config_bool(request.config, "volume_profile", False):
             vp_source = (
                 str((request.config or {}).get("volume_profile_source") or "auto")
                 .strip()
@@ -719,8 +696,12 @@ def run_patterns_detect(  # noqa: C901
                 max_buckets=120,
                 value_area_pct=0.70,
                 reference_price=None,
-                max_tick_window_days=_config_int("volume_profile_max_tick_window_days", 1),
-                max_ticks=_config_int("volume_profile_max_ticks", 50_000),
+                max_tick_window_days=_config_int(
+                    request.config, "volume_profile_max_tick_window_days", 1
+                ),
+                max_ticks=_config_int(
+                    request.config, "volume_profile_max_ticks", 50_000
+                ),
                 max_m1_bars=max(1, int(request.limit) * 60),
                 detail="compact",
             )
@@ -729,7 +710,9 @@ def run_patterns_detect(  # noqa: C901
                 enriched_rows = deps.annotate_level_confluence(
                     resp.get("patterns") or [],
                     vp_payload.get("levels") or [],
-                    tolerance_points=_config_float("volume_profile_tolerance_points", 25.0),
+                    tolerance_points=_config_float(
+                        request.config, "volume_profile_tolerance_points", 25.0
+                    ),
                     price_point=vp_payload.get("price_point") or vp_payload.get("bucket_size"),
                     price_key="level_price",
                 )
