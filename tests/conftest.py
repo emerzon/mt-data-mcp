@@ -22,7 +22,36 @@ for _path in (str(_SRC), str(_ROOT)):
 
 
 def _make_mt5_stub() -> MagicMock:
-    return MagicMock(name="MetaTrader5")
+    stub = MagicMock(name="MetaTrader5")
+    # Model a disconnected terminal by default. Tests that exercise a live MT5
+    # path must configure the methods they rely on instead of inheriting truthy
+    # MagicMock return values that cannot occur at the adapter boundary.
+    stub.initialize.return_value = False
+    stub.login.return_value = False
+    stub.shutdown.return_value = None
+    stub.last_error.return_value = (1, "MetaTrader5 test stub is not configured")
+    stub.account_info.return_value = None
+    stub.terminal_info.return_value = None
+    stub.version.return_value = None
+    stub.symbol_info.return_value = None
+    stub.symbol_info_tick.return_value = None
+    stub.symbols_get.return_value = ()
+    stub.symbol_select.return_value = False
+    stub.positions_get.return_value = ()
+    stub.orders_get.return_value = ()
+    stub.history_orders_get.return_value = ()
+    stub.history_deals_get.return_value = ()
+    stub.copy_rates_from.return_value = None
+    stub.copy_rates_from_pos.return_value = None
+    stub.copy_rates_range.return_value = None
+    stub.copy_ticks_from.return_value = None
+    stub.copy_ticks_range.return_value = None
+    stub.market_book_add.return_value = False
+    stub.market_book_get.return_value = None
+    stub.market_book_release.return_value = False
+    stub.order_check.return_value = None
+    stub.order_send.return_value = None
+    return stub
 
 
 _DEFAULT_MT5_STUB = sys.modules.setdefault("MetaTrader5", _make_mt5_stub())
