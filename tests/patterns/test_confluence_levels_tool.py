@@ -111,6 +111,7 @@ def test_confluence_levels_tool_combines_pivot_sr_and_fibonacci():
          _mock_symbol_guard(), \
          patch("mtdata.core.pivot.mt5.symbol_info_tick", return_value=_make_tick()), \
          patch("mtdata.core.pivot._mt5_copy_rates_from", return_value=rates), \
+         patch("mtdata.core.pivot.compute_volume_profile_payload", return_value={"success": False}), \
          patch("mtdata.core.pivot.compute_support_resistance_payload", return_value=sr_payload) as mock_sr:
         result = fn(
             "EURUSD",

@@ -34,6 +34,11 @@ def patterns_detect(**kwargs):
     return core_patterns.patterns_detect(request=request, __cli_raw=raw_output)
 
 
+@pytest.fixture(autouse=True)
+def _mock_patterns_mt5_connection(monkeypatch):
+    monkeypatch.setattr(core_patterns, "ensure_mt5_connection_or_raise", lambda: None)
+
+
 def test_data_quality_uses_tick_volume_when_real_volume_is_structural_zero():
     df = pd.DataFrame(
         {
