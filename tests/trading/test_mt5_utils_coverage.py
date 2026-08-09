@@ -448,7 +448,7 @@ class TestMT5Connection:
         assert conn.is_connected() is False
 
     @patch("mtdata.utils.mt5.mt5_config")
-    def test_ensure_connection_with_credentials_success(self, cfg):
+    def test_ensure_connection_with_credentials_success(self, cfg, caplog):
         conn = MT5Connection()
         _mt5_mock.terminal_info.return_value = None
         cfg.has_credentials.return_value = True
@@ -458,11 +458,14 @@ class TestMT5Connection:
         _mt5_mock.initialize.reset_mock(side_effect=True)
         _mt5_mock.initialize.return_value = True
         _mt5_mock.account_info.return_value = MagicMock(login=12345, server="Demo")
+        caplog.set_level("DEBUG", logger="mtdata.utils.mt5")
         assert conn._ensure_connection() is True
         assert conn.connected is True
+        assert "12345" not in caplog.text
+        assert "Connected to the configured MT5 account" in caplog.text
 
     @patch("mtdata.utils.mt5.mt5_config")
-    def test_ensure_connection_cred_fail_does_not_fallback_to_current_terminal(self, cfg):
+    def test_ensure_connection_cred_fail_does_not_fallback_to_current_terminal(self, cfg, caplog):
         conn = MT5Connection()
         _mt5_mock.terminal_info.return_value = None
         cfg.has_credentials.return_value = True
@@ -471,16 +474,19 @@ class TestMT5Connection:
         cfg.get_server.return_value = "Demo"
         _mt5_mock.initialize.reset_mock(side_effect=True)
         _mt5_mock.initialize.return_value = False
-        _mt5_mock.last_error.return_value = (-1, "err")
+        _mt5_mock.last_error.return_value = (-1, "account 12345 rejected")
         assert conn._ensure_connection() is False
         _mt5_mock.initialize.assert_called_once_with(
             login=12345,
             password="pass",
             server="Demo",
         )
+        assert "error_code=-1" in caplog.text
+        assert "12345" not in caplog.text
+        assert "rejected" not in caplog.text
 
     @patch("mtdata.utils.mt5.mt5_config")
-    def test_ensure_connection_credential_account_mismatch_fails(self, cfg):
+    def test_ensure_connection_credential_account_mismatch_fails(self, cfg, caplog):
         conn = MT5Connection()
         _mt5_mock.terminal_info.return_value = None
         cfg.has_credentials.return_value = True
@@ -493,6 +499,9 @@ class TestMT5Connection:
         _mt5_mock.account_info.return_value = MagicMock(login=67890, server="Demo")
         assert conn._ensure_connection() is False
         _mt5_mock.shutdown.assert_called()
+        assert "does not match the configured account" in caplog.text
+        assert "12345" not in caplog.text
+        assert "67890" not in caplog.text
 
     @patch("mtdata.utils.mt5.mt5_config")
     def test_ensure_connection_no_cred_success(self, cfg):
@@ -539,7 +548,7 @@ class TestMT5Connection:
         assert conn._connection_identity == (67890, "Demo-B")
 
     @patch("mtdata.utils.mt5.mt5_config")
-    def test_ensure_connection_rejects_mid_session_account_switch(self, cfg):
+    def test_ensure_connection_rejects_mid_session_account_switch(self, cfg, caplog):
         conn = MT5Connection()
         conn.connected = True
         conn._connection_identity = (12345, "Demo-A")
@@ -555,6 +564,9 @@ class TestMT5Connection:
         assert conn.connected is False
         assert conn._connection_identity is None
         _mt5_mock.shutdown.assert_called_once_with()
+        assert "no longer matches the configured account" in caplog.text
+        assert "12345" not in caplog.text
+        assert "67890" not in caplog.text
 
     @patch("mtdata.utils.mt5.mt5_config")
     def test_ensure_connection_no_cred_fail(self, cfg):
@@ -566,11 +578,14 @@ class TestMT5Connection:
         assert conn._ensure_connection() is False
 
     @patch("mtdata.utils.mt5.mt5_config")
-    def test_ensure_connection_exception(self, cfg):
+    def test_ensure_connection_exception(self, cfg, caplog):
         conn = MT5Connection()
         _mt5_mock.terminal_info.return_value = None
-        cfg.has_credentials.side_effect = Exception("boom")
+        cfg.has_credentials.side_effect = RuntimeError("account 12345 rejected")
         assert conn._ensure_connection() is False
+        assert "exception_type=RuntimeError" in caplog.text
+        assert "12345" not in caplog.text
+        assert "rejected" not in caplog.text
 
     def test_disconnect_when_connected(self):
         conn = MT5Connection()

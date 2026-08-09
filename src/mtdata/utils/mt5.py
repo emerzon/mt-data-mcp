@@ -37,6 +37,18 @@ class MT5ConnectionError(RuntimeError):
     """Raised when the MT5 adapter cannot establish a usable connection."""
 
 
+def _safe_mt5_error_code(error: Any) -> str:
+    """Return the diagnostic code from ``last_error`` without logging its text."""
+    if (
+        isinstance(error, (tuple, list))
+        and error
+        and isinstance(error[0], int)
+        and not isinstance(error[0], bool)
+    ):
+        return str(error[0])
+    return "unknown"
+
+
 def _data_ready_timing() -> tuple[float, float]:
     """Load symbol-readiness timing constants lazily to avoid import cycles."""
     try:
@@ -1044,8 +1056,8 @@ class MT5Connection:
                     )
                 ):
                     logger.error(
-                        "Connected MT5 account changed: configured login "
-                        f"{configured_login}; connected_login={connected_login}. "
+                        "Connected MT5 account changed and no longer matches the "
+                        "configured account. "
                         "Refusing to continue on a different account."
                     )
                     try:
@@ -1065,15 +1077,15 @@ class MT5Connection:
                     server = mt5_config.get_server()
                     if not mt5.initialize(login=login, password=password, server=server):
                         logger.error(
-                            "Failed to initialize MT5 with configured credentials: "
-                            f"{mt5.last_error()}"
+                            "Failed to initialize MT5 with configured credentials "
+                            "(error_code=%s)",
+                            _safe_mt5_error_code(mt5.last_error()),
                         )
                         return False
                     connected_login, _connected_server = self._read_connection_identity()
                     if connected_login is None or int(connected_login) != int(login):
                         logger.error(
-                            "Connected MT5 account does not match configured login "
-                            f"{login}; connected_login={connected_login}."
+                            "Connected MT5 account does not match the configured account."
                         )
                         try:
                             mt5.shutdown()
@@ -1081,18 +1093,24 @@ class MT5Connection:
                             pass
                         return False
                     else:
-                        logger.debug(f"Connected to MT5 with account {login}")
+                        logger.debug("Connected to the configured MT5 account")
                 else:
                     if not mt5.initialize():
-                        logger.error(f"Failed to initialize MT5: {mt5.last_error()}")
+                        logger.error(
+                            "Failed to initialize MT5 (error_code=%s)",
+                            _safe_mt5_error_code(mt5.last_error()),
+                        )
                         return False
                     else:
                         logger.debug("Connected to MT5 using terminal's current login")
                 self.connected = True
                 self._refresh_connection_identity()
                 return True
-            except Exception as e:
-                logger.error(f"Error connecting to MT5: {e}")
+            except Exception as exc:
+                logger.error(
+                    "Error connecting to MT5 (exception_type=%s)",
+                    type(exc).__name__,
+                )
                 return False
 
     def disconnect(self):
