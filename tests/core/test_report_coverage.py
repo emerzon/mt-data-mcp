@@ -278,6 +278,38 @@ def test_run_report_generate_logs_finish_event(caplog):
     )
 
 
+def test_run_report_generate_scopes_volatility_rate_cache():
+    from mtdata.core.report.requests import ReportGenerateRequest
+    from mtdata.core.report.use_cases import run_report_generate
+    from mtdata.forecast import volatility
+
+    cache_states = []
+
+    def basic_template(*args, **kwargs):
+        cache_states.append(volatility._RATES_CACHE.get() is not None)
+        return {"sections": _make_full_sections(), "diagnostics": {}}
+
+    with (
+        patch("mtdata.core.report_templates.template_basic", basic_template, create=True),
+        patch("mtdata.core.report_templates.template_minimal", basic_template, create=True),
+        patch("mtdata.core.report_templates.template_advanced", basic_template, create=True),
+        patch("mtdata.core.report_templates.template_scalping", basic_template, create=True),
+        patch("mtdata.core.report_templates.template_intraday", basic_template, create=True),
+        patch("mtdata.core.report_templates.template_swing", basic_template, create=True),
+        patch("mtdata.core.report_templates.template_position", basic_template, create=True),
+    ):
+        run_report_generate(
+            ReportGenerateRequest(symbol="EURUSD"),
+            format_number=lambda value: str(value),
+            get_indicator_value=lambda payload, key: payload.get(key),
+            report_error_payload=lambda message: {"error": str(message)},
+            append_diagnostic_warning=lambda report, message: None,
+        )
+
+    assert cache_states == [True]
+    assert volatility._RATES_CACHE.get() is None
+
+
 def test_report_generate_returns_connection_error_payload(monkeypatch):
     from mtdata.core import report as report_mod
 

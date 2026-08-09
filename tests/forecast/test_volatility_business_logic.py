@@ -48,6 +48,62 @@ def _session_rates(days: int = 40, bars_per_day: int = 7):
     return rates
 
 
+def test_volatility_rates_cache_reuses_superset_only_within_scope(monkeypatch):
+    source = _rates(120)
+    fetch_counts = []
+    monkeypatch.setattr(vol, "_ensure_symbol_ready", lambda _symbol: None)
+    monkeypatch.setattr(
+        vol.mt5, "symbol_info", lambda _symbol: SimpleNamespace(visible=True)
+    )
+    monkeypatch.setattr(
+        vol.mt5,
+        "symbol_info_tick",
+        lambda _symbol: SimpleNamespace(time=source[-1]["time"]),
+    )
+
+    def fetch(_symbol, _timeframe, _end, count):
+        fetch_counts.append(count)
+        return source[-count:]
+
+    monkeypatch.setattr(vol, "_mt5_copy_rates_from", fetch)
+
+    with vol.volatility_rates_cache():
+        large, large_error = vol._fetch_mt5_rates_guarded(
+            "EURUSD", 60, 100, timeframe="H1"
+        )
+        small, small_error = vol._fetch_mt5_rates_guarded(
+            "EURUSD", 60, 20, timeframe="H1"
+        )
+
+    outside, outside_error = vol._fetch_mt5_rates_guarded(
+        "EURUSD", 60, 20, timeframe="H1"
+    )
+
+    assert large_error is small_error is outside_error is None
+    assert len(large) == 100
+    assert len(small) == len(outside) == 20
+    assert fetch_counts == [100, 20]
+
+
+def test_volatility_rates_cache_preserves_invalid_window_validation(monkeypatch):
+    monkeypatch.setattr(
+        vol, "_mt5_copy_rates_from", lambda *args: pytest.fail("unexpected fetch")
+    )
+
+    with vol.volatility_rates_cache():
+        rates, error = vol._fetch_mt5_rates_guarded(
+            "EURUSD",
+            60,
+            20,
+            as_of="2024-01-31",
+            start="2024-01-01",
+            timeframe="H1",
+        )
+
+    assert rates is None
+    assert error == "as_of cannot be combined with start/end."
+
+
 def test_volatility_metadata_and_helper_functions(monkeypatch):
     monkeypatch.setattr(vol, "_ARCH_AVAILABLE", False)
     methods = vol.get_volatility_methods_data()["methods"]

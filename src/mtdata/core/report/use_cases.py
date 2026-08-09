@@ -4,6 +4,7 @@ import logging
 import math
 import time
 import warnings
+from contextlib import nullcontext
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
@@ -1051,7 +1052,15 @@ def run_report_generate(  # noqa: C901
                 eff_horizon = default_horizon.get(name, 12)
 
             captured_warnings: List[str] = []
-            with warnings.catch_warnings(record=True) as warning_records:
+            volatility_context: Any = nullcontext()
+            if "volatility" in section_plan["execution"]:
+                from ...forecast.volatility import volatility_rates_cache
+
+                volatility_context = volatility_rates_cache()
+            with (
+                volatility_context,
+                warnings.catch_warnings(record=True) as warning_records,
+            ):
                 warnings.simplefilter("always")
                 if name == "basic":
                     rep = _t_basic(request.symbol, eff_horizon, request.denoise, params)

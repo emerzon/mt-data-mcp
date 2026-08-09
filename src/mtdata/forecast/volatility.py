@@ -1,7 +1,9 @@
 import difflib
 import math
+from contextlib import contextmanager
+from contextvars import ContextVar
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Dict, Iterator, List, Literal, Optional
 
 import numpy as np
 import pandas as pd
@@ -62,6 +64,23 @@ _VOLATILITY_METHOD_CONCEPT_HINTS = {
     "standard_deviation": "rolling_std",
     "stddev": "rolling_std",
 }
+
+_RATES_CACHE: ContextVar[
+    Optional[Dict[tuple[Any, ...], tuple[int, Any]]]
+] = ContextVar("mtdata_volatility_rates_cache", default=None)
+
+
+@contextmanager
+def volatility_rates_cache() -> Iterator[None]:
+    """Reuse candle supersets within one explicit volatility workload."""
+    if _RATES_CACHE.get() is not None:
+        yield
+        return
+    token = _RATES_CACHE.set({})
+    try:
+        yield
+    finally:
+        _RATES_CACHE.reset(token)
 
 
 # Optional availability flags (match server discovery)
@@ -742,6 +761,29 @@ def _fetch_mt5_rates_guarded(
 ) -> tuple[Optional[Any], Optional[str]]:
     if as_of and (start or end):
         return None, "as_of cannot be combined with start/end."
+    requested_count = int(count)
+    cache = _RATES_CACHE.get()
+    cache_key = (
+        str(symbol),
+        str(mt5_timeframe),
+        str(as_of or ""),
+        str(start or ""),
+        str(end or ""),
+        str(timeframe or ""),
+    )
+    if cache is not None:
+        cached = cache.get(cache_key)
+        if cached is not None and cached[0] >= requested_count:
+            cached_rates = cached[1]
+            if len(cached_rates) > requested_count:
+                cached_rates = cached_rates[-requested_count:]
+            return cached_rates, None
+
+    def _remember(rates: Any) -> Any:
+        if cache is not None and rates is not None:
+            cache[cache_key] = (requested_count, rates)
+        return rates
+
     info_before = mt5.symbol_info(symbol)
     was_visible = bool(info_before.visible) if info_before is not None else None
     try:
@@ -760,16 +802,20 @@ def _fetch_mt5_rates_guarded(
             return None, "start must be before or equal to end."
         if start_dt is not None:
             rates = _mt5_copy_rates_range(symbol, mt5_timeframe, start_dt, end_dt)
-            if rates is not None and len(rates) > int(count):
-                rates = rates[-int(count):]
-            return rates, None
+            if rates is not None and len(rates) > requested_count:
+                rates = rates[-requested_count:]
+            return _remember(rates), None
         if end_dt is not None:
-            return _mt5_copy_rates_from(symbol, mt5_timeframe, end_dt, count), None
+            return _remember(
+                _mt5_copy_rates_from(symbol, mt5_timeframe, end_dt, requested_count)
+            ), None
         if as_of:
             to_dt = _parse_start_datetime(as_of)
             if not to_dt:
                 return None, "Invalid as_of time."
-            return _mt5_copy_rates_from(symbol, mt5_timeframe, to_dt, count), None
+            return _remember(
+                _mt5_copy_rates_from(symbol, mt5_timeframe, to_dt, requested_count)
+            ), None
 
         tick = mt5.symbol_info_tick(symbol)
         if tick is not None and getattr(tick, "time", None):
@@ -777,8 +823,10 @@ def _fetch_mt5_rates_guarded(
             server_now_dt = datetime.fromtimestamp(t_utc, tz=timezone.utc)
         else:
             server_now_dt = datetime.now(timezone.utc)
-        rates = _mt5_copy_rates_from(symbol, mt5_timeframe, server_now_dt, count)
-        return rates, None
+        rates = _mt5_copy_rates_from(
+            symbol, mt5_timeframe, server_now_dt, requested_count
+        )
+        return _remember(rates), None
     finally:
         if was_visible is False:
             try:
