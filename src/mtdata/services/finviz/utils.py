@@ -79,46 +79,6 @@ def crypto_price_display(value: Any) -> Optional[str]:
     return f"{num:.{decimals}f}"
 
 
-def load_finviz_attr(module_name: str, attr_name: str) -> Any:
-    """Safely load an attribute from a finvizfinance module."""
-    try:
-        import importlib
-        mod = importlib.import_module(f"finvizfinance.{module_name}")
-        return getattr(mod, attr_name)
-    except Exception:
-        return None
-
-
-def get_finviz_stock_quote(symbol: str) -> tuple[str, Any]:
-    """Get a finvizfinance Stock quote object with normalized symbol."""
-    try:
-        import finvizfinance.quote as _fv_quote
-    except Exception as e:
-        raise RuntimeError(f"finvizfinance not installed: {e}")
-    normalized = str(symbol or "").upper().strip()
-    if not normalized:
-        raise ValueError("Symbol is required")
-    return normalized, _fv_quote.Stock(normalized)
-
-
-def build_finviz_screener(view: str) -> Any:
-    """Build a finvizfinance screener for the given view."""
-    try:
-        import finvizfinance.screener as _fv_screener
-    except Exception as e:
-        raise RuntimeError(f"finvizfinance not installed: {e}")
-    view_map: Dict[str, str] = {
-        "overview": "Overview",
-        "valuation": "Valuation",
-        "financial": "Financial",
-        "ownership": "Ownership",
-        "performance": "Performance",
-        "technical": "Technical",
-    }
-    screener_view = view_map.get(str(view or "").lower().strip(), "Overview")
-    return _fv_screener.Screener(view=screener_view)
-
-
 def apply_finvizfinance_timeout_patch() -> None:
     """Apply the configured timeout to finvizfinance's HTTP helper."""
     try:
@@ -137,8 +97,5 @@ __all__ = [
     "values_equivalent",
     "crypto_day_week_identical",
     "crypto_price_display",
-    "load_finviz_attr",
-    "get_finviz_stock_quote",
-    "build_finviz_screener",
     "apply_finvizfinance_timeout_patch",
 ]
