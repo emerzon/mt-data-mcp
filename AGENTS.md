@@ -131,12 +131,12 @@ cd webui && npm run build                 # Production frontend bundle
 - Naming: `test_*.py` files, `test_*` functions.
 - **Mock MT5**: Always mock/stub MT5 interactions unless explicitly testing integration. `conftest.py` handles `sys.modules` stubbing for MT5 and torch.
 - File suffixes signal scope: `_pure` (unit), `_business_logic` (logic), `_coverage` (comprehensive), `_extended` (integration).
-- No CI pipeline. No coverage gate. Manual test runs only.
+- GitHub Actions runs the backend test suite plus frontend tests, type-checking, and production build on pushes and pull requests. No coverage gate.
 
 ## NOTES
 
 - **Windows required**: MT5 only runs on Windows. macOS/Linux users connect remotely via MCP/Web API.
 - **Python 3.14 only**: Pinned in `pyproject.toml`. Notable ceilings: `numpy<2.5`, `pandas<3`, `scikit-learn<1.8`, `transformers<6`, `statsforecast<2`, `ruptures<1.1`.
 - **Large files**: Core has the most complexity. Forecast methods and utils also heavy.
-- **No CI/CD**: No GitHub Actions, Makefile, Docker, or pre-commit hooks. All builds/tests are manual.
+- **CI**: `.github/workflows/ci.yml` verifies the Windows/Python backend and Linux/Node frontend. There is no deployment workflow, Makefile, Docker setup, or pre-commit hook.
 - **CORS**: Web API has `allow_credentials=True` with permissive CORS in dev (see `web_api_runtime.py`).
