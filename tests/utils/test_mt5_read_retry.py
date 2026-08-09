@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import threading
 import time
 from unittest.mock import MagicMock, patch
@@ -39,6 +40,44 @@ class TestMt5ReadWithRetry:
 
         assert result == [4, 5]
         connection._ensure_connection.assert_called_once_with()
+
+    def test_reconnect_logs_share_structured_read_context(self, caplog):
+        fn = MagicMock(side_effect=[None, [4, 5]])
+        connection = MagicMock(connected=True)
+        connection.is_connected.return_value = False
+        connection._ensure_connection.return_value = True
+
+        with (
+            patch.object(mt5_mod, "mt5_connection", connection),
+            patch.object(mt5_mod, "_MT5_READ_BASE_DELAY", 0.001),
+            caplog.at_level("WARNING", logger="mtdata.utils.mt5"),
+        ):
+            result = mt5_mod._mt5_read_with_retry(
+                fn,
+                max_retries=1,
+                operation="copy_rates_from",
+                symbol="EURUSD",
+            )
+
+        assert result == [4, 5]
+        reconnect = next(
+            record.message
+            for record in caplog.records
+            if "event=mt5_read_reconnect " in record.message
+        )
+        retry = next(
+            record.message
+            for record in caplog.records
+            if "event=mt5_read_retry " in record.message
+        )
+        reconnect_id = re.search(r"read_id=([0-9a-f]{12})", reconnect)
+        retry_id = re.search(r"read_id=([0-9a-f]{12})", retry)
+        assert reconnect_id is not None
+        assert retry_id is not None
+        assert reconnect_id.group(1) == retry_id.group(1)
+        assert "operation=copy_rates_from" in reconnect
+        assert "symbol=EURUSD" in reconnect
+        assert "attempt=1 max_attempts=2" in retry
 
     def test_does_not_reinitialize_when_session_remains_connected(self):
         fn = MagicMock(side_effect=[None, [4, 5]])

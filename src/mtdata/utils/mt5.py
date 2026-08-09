@@ -15,6 +15,7 @@ from datetime import datetime, timedelta, timezone
 from functools import lru_cache
 from types import SimpleNamespace
 from typing import Any, Dict, Iterator, Optional, Tuple
+from uuid import uuid4
 
 from ..bootstrap.settings import mt5_config
 from .quote import tick_epoch
@@ -915,7 +916,14 @@ def _enforce_read_spacing() -> None:
     _mt5_last_read_ts = time.monotonic()
 
 
-def _recover_dropped_read_connection() -> bool:
+def _recover_dropped_read_connection(
+    *,
+    read_id: Optional[str] = None,
+    operation: Optional[str] = None,
+    symbol: Optional[str] = None,
+    attempt: Optional[int] = None,
+    max_attempts: Optional[int] = None,
+) -> bool:
     """Reconnect a session that was established before an MT5 read failed."""
     connection = globals().get("mt5_connection")
     if connection is None or not bool(getattr(connection, "connected", False)):
@@ -923,14 +931,37 @@ def _recover_dropped_read_connection() -> bool:
     try:
         if connection.is_connected():
             return False
-        logger.warning("MT5 session disconnected during a read; reconnecting before retry")
+        logger.warning(
+            "event=mt5_read_reconnect read_id=%s operation=%s symbol=%s "
+            "attempt=%s max_attempts=%s",
+            read_id,
+            operation,
+            symbol,
+            attempt,
+            max_attempts,
+        )
         return bool(connection._ensure_connection())
     except Exception as exc:
-        logger.warning("MT5 read reconnect attempt failed: %s", exc)
+        logger.warning(
+            "event=mt5_read_reconnect_failed read_id=%s operation=%s symbol=%s "
+            "attempt=%s max_attempts=%s error=%s",
+            read_id,
+            operation,
+            symbol,
+            attempt,
+            max_attempts,
+            exc,
+        )
         return False
 
 
-def _mt5_read_with_retry(fn, *args, max_retries: int = _MT5_READ_MAX_RETRIES):
+def _mt5_read_with_retry(
+    fn,
+    *args,
+    max_retries: int = _MT5_READ_MAX_RETRIES,
+    operation: Optional[str] = None,
+    symbol: Optional[str] = None,
+):
     """Execute a read-only MT5 operation with bounded retry and backoff.
 
     Only for **idempotent** read calls (``copy_rates_*``, ``copy_ticks_*``).
@@ -939,55 +970,118 @@ def _mt5_read_with_retry(fn, *args, max_retries: int = _MT5_READ_MAX_RETRIES):
 
     Returns the first non-``None`` result, or ``None`` if all attempts fail.
     """
-    for attempt in range(max_retries + 1):
+    max_attempts = max_retries + 1
+    operation_name = str(operation or getattr(fn, "__name__", "mt5_read"))
+    read_id: Optional[str] = None
+    for attempt in range(max_attempts):
         with _mt5_lock:
             _enforce_read_spacing()
             result = fn(*args)
         if result is not None:
             return result
         if attempt < max_retries:
-            _recover_dropped_read_connection()
+            if read_id is None:
+                read_id = uuid4().hex[:12]
+            attempt_number = attempt + 1
+            _recover_dropped_read_connection(
+                read_id=read_id,
+                operation=operation_name,
+                symbol=symbol,
+                attempt=attempt_number,
+                max_attempts=max_attempts,
+            )
             delay = _MT5_READ_BASE_DELAY * (2 ** attempt)
             logger.warning(
-                "MT5 read returned None (attempt %d/%d), retrying in %.1fs",
-                attempt + 1, max_retries + 1, delay,
+                "event=mt5_read_retry read_id=%s operation=%s symbol=%s "
+                "attempt=%d max_attempts=%d delay_seconds=%.1f",
+                read_id,
+                operation_name,
+                symbol,
+                attempt_number,
+                max_attempts,
+                delay,
             )
             time.sleep(delay)
+    if read_id is None:
+        read_id = uuid4().hex[:12]
     logger.warning(
-        "MT5 read exhausted %d attempt(s) — returning None",
-        max_retries + 1,
+        "event=mt5_read_exhausted read_id=%s operation=%s symbol=%s attempts=%d",
+        read_id,
+        operation_name,
+        symbol,
+        max_attempts,
     )
     return None
 
 
 def _mt5_copy_rates_from(symbol: str, timeframe, to_dt_utc: datetime, count: int):
     dt_srv = _to_server_query_dt(to_dt_utc)
-    data = _mt5_read_with_retry(mt5.copy_rates_from, symbol, timeframe, dt_srv, count)
+    data = _mt5_read_with_retry(
+        mt5.copy_rates_from,
+        symbol,
+        timeframe,
+        dt_srv,
+        count,
+        operation="copy_rates_from",
+        symbol=symbol,
+    )
     return _normalize_times_in_struct(data)
 
 
 def _mt5_copy_rates_range(symbol: str, timeframe, from_dt_utc: datetime, to_dt_utc: datetime):
     dt_from = _to_server_query_dt(from_dt_utc)
     dt_to = _to_server_query_dt(to_dt_utc)
-    data = _mt5_read_with_retry(mt5.copy_rates_range, symbol, timeframe, dt_from, dt_to)
+    data = _mt5_read_with_retry(
+        mt5.copy_rates_range,
+        symbol,
+        timeframe,
+        dt_from,
+        dt_to,
+        operation="copy_rates_range",
+        symbol=symbol,
+    )
     return _normalize_times_in_struct(data)
 
 
 def _mt5_copy_ticks_from(symbol: str, from_dt_utc: datetime, count: int, flags: int):
     dt_from = _to_server_query_dt(from_dt_utc)
-    data = _mt5_read_with_retry(mt5.copy_ticks_from, symbol, dt_from, count, flags)
+    data = _mt5_read_with_retry(
+        mt5.copy_ticks_from,
+        symbol,
+        dt_from,
+        count,
+        flags,
+        operation="copy_ticks_from",
+        symbol=symbol,
+    )
     return _normalize_times_in_struct(data)
 
 
 def _mt5_copy_rates_from_pos(symbol: str, timeframe, start_pos: int, count: int):
-    data = _mt5_read_with_retry(mt5.copy_rates_from_pos, symbol, timeframe, start_pos, count)
+    data = _mt5_read_with_retry(
+        mt5.copy_rates_from_pos,
+        symbol,
+        timeframe,
+        start_pos,
+        count,
+        operation="copy_rates_from_pos",
+        symbol=symbol,
+    )
     return _normalize_times_in_struct(data)
 
 
 def _mt5_copy_ticks_range(symbol: str, from_dt_utc: datetime, to_dt_utc: datetime, flags: int):
     dt_from = _to_server_query_dt(from_dt_utc)
     dt_to = _to_server_query_dt(to_dt_utc)
-    data = _mt5_read_with_retry(mt5.copy_ticks_range, symbol, dt_from, dt_to, flags)
+    data = _mt5_read_with_retry(
+        mt5.copy_ticks_range,
+        symbol,
+        dt_from,
+        dt_to,
+        flags,
+        operation="copy_ticks_range",
+        symbol=symbol,
+    )
     return _normalize_times_in_struct(data)
 
 
