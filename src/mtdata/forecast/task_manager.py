@@ -24,16 +24,16 @@ _LIVE_TASK_MANAGERS: weakref.WeakSet = weakref.WeakSet()
 import numpy as np
 import pandas as pd
 
+from .forecast_registry import ForecastRegistry
 from .interface import (
     CancelToken,
     ForecastMethod,
+    TrainedModelHandle,
     TrainingCancelledError,
     TrainingProgress,
-    TrainedModelHandle,
 )
 from .job_store import JobRecord, JobStore
 from .model_store import ModelStore
-from .forecast_registry import ForecastRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -222,11 +222,13 @@ def _job_record_to_task(record: JobRecord) -> TrainingTask:
 
 
 def _ensure_training_methods_registered() -> None:
-    from .methods import ets_arima  # noqa: F401
-    from .methods import mlforecast  # noqa: F401
-    from .methods import neural  # noqa: F401
-    from .methods import sktime  # noqa: F401
-    from .methods import statsforecast  # noqa: F401
+    from .methods import (
+        ets_arima,  # noqa: F401
+        mlforecast,  # noqa: F401
+        neural,  # noqa: F401
+        sktime,  # noqa: F401
+        statsforecast,  # noqa: F401
+    )
 
 
 def _prepare_spec_inputs(spec: _TrainingSpec) -> Dict[str, Any]:
@@ -1022,7 +1024,9 @@ class TaskManager:
             return True
         return False
 
-    def _run_heavy_task(self, task_id: str, spec: _TrainingSpec, timeout_seconds: float) -> None:
+    def _run_heavy_task(  # noqa: C901
+        self, task_id: str, spec: _TrainingSpec, timeout_seconds: float
+    ) -> None:
         event_queue = self._mp_context.Queue()
         cancel_event = self._mp_context.Event()
         process = self._mp_context.Process(
@@ -1402,7 +1406,7 @@ def _atexit_stop_heavy_processes() -> None:
         try:
             with manager._lock:
                 controls = list(manager._process_controls.items())
-            for task_id, control in controls:
+            for _task_id, control in controls:
                 try:
                     control.cancel_event.set()
                     process = control.process

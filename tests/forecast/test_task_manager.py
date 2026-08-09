@@ -12,10 +12,21 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 import pandas as pd
 
-from mtdata.forecast.interface import ForecastMethod, ForecastResult, TrainedModelHandle, TrainingProgress, TrainResult
+from mtdata.forecast.interface import (
+    ForecastMethod,
+    ForecastResult,
+    TrainedModelHandle,
+    TrainingProgress,
+    TrainResult,
+)
 from mtdata.forecast.job_store import JobRecord, JobStore
 from mtdata.forecast.model_store import ModelStore
-from mtdata.forecast.task_manager import TaskManager, TrainingTask, _TrainingSpec, _snapshot
+from mtdata.forecast.task_manager import (
+    TaskManager,
+    TrainingTask,
+    _snapshot,
+    _TrainingSpec,
+)
 
 
 def _make_series(n: int = 100) -> pd.Series:
