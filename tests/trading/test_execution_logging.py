@@ -26,6 +26,50 @@ def test_run_logged_operation_logs_finish_event(caplog):
     )
 
 
+def test_structured_failure_logs_warning_with_actionable_fields(caplog):
+    with caplog.at_level(logging.WARNING, logger="mtdata.test.exec"):
+        result = run_logged_operation(
+            logging.getLogger("mtdata.test.exec"),
+            operation="trade_place",
+            symbol="EURUSD",
+            func=lambda: {
+                "success": False,
+                "error": "Broker rejected order\nrequest",
+                "error_code": "order_rejected",
+                "retcode": 10016,
+                "retcode_name": "TRADE_RETCODE_INVALID_STOPS",
+            },
+        )
+
+    assert result["success"] is False
+    record = next(
+        record
+        for record in caplog.records
+        if "event=finish operation=trade_place success=False" in record.message
+    )
+    assert record.levelno == logging.WARNING
+    assert "error=Broker rejected order request" in record.message
+    assert "error_code=order_rejected" in record.message
+    assert "retcode=10016" in record.message
+    assert "retcode_name=TRADE_RETCODE_INVALID_STOPS" in record.message
+
+
+def test_successful_operation_remains_debug_only(caplog):
+    with caplog.at_level(logging.DEBUG, logger="mtdata.test.exec"):
+        run_logged_operation(
+            logging.getLogger("mtdata.test.exec"),
+            operation="sample_op",
+            func=lambda: {"success": True},
+        )
+
+    record = next(
+        record
+        for record in caplog.records
+        if "event=finish operation=sample_op success=True" in record.message
+    )
+    assert record.levelno == logging.DEBUG
+
+
 def test_run_logged_operation_logs_exception_and_reraises(caplog):
     with caplog.at_level(logging.ERROR, logger="mtdata.test.exec"), pytest.raises(RuntimeError, match="boom"):
         run_logged_operation(

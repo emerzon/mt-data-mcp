@@ -66,7 +66,8 @@ def log_operation_finish(
     parent_operation = _pop_operation(operation)
     if parent_operation == str(operation):
         return
-    logger.debug(
+    log = logger.debug if success else logger.warning
+    log(
         "event=finish operation=%s success=%s duration_ms=%.3f %s",
         operation,
         bool(success),
@@ -118,12 +119,16 @@ def run_logged_operation(
         raise
     else:
         success_value = infer_result_success(result) if success_eval is None else bool(success_eval(result))
+        finish_fields = dict(fields)
+        if not success_value:
+            for key, value in _failure_log_fields(result).items():
+                finish_fields.setdefault(key, value)
         log_operation_finish(
             logger,
             operation=operation,
             started_at=started_at,
             success=success_value,
-            **fields,
+            **finish_fields,
         )
         return result
 
@@ -154,6 +159,44 @@ def _pop_operation(operation: str) -> Optional[str]:
             _ACTIVE_OPERATIONS.set(stack[:idx] + stack[idx + 1 :])
             return parent
     return None
+
+
+def _failure_log_fields(result: Any) -> dict[str, Any]:
+    """Extract bounded, non-payload diagnostics from a structured failure."""
+    try:
+        from ..shared.result import Err
+    except Exception:  # pragma: no cover - package always ships shared.result
+        Err = ()  # type: ignore[assignment,misc]
+
+    if isinstance(result, Err):
+        source: dict[str, Any] = {
+            "error": result.message,
+            "error_code": result.code,
+            **result.details,
+        }
+    elif isinstance(result, dict):
+        source = result
+    elif isinstance(result, list):
+        source = next(
+            (
+                item
+                for item in result
+                if isinstance(item, dict) and not infer_result_success(item)
+            ),
+            {},
+        )
+    else:
+        return {}
+
+    fields: dict[str, Any] = {}
+    for key in ("error", "error_code", "code", "retcode", "retcode_name", "ambiguous"):
+        value = source.get(key)
+        if value in (None, ""):
+            continue
+        if isinstance(value, str):
+            value = " ".join(value.split())[:300]
+        fields[key] = value
+    return fields
 
 
 def _format_fields(fields: dict[str, Any]) -> str:
