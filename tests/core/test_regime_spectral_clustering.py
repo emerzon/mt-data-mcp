@@ -12,7 +12,13 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from mtdata.core.regime import api as regime_mod
 from mtdata.core.regime import regime_detect
+
+
+@pytest.fixture(autouse=True)
+def _skip_mt5_connection(monkeypatch):
+    monkeypatch.setattr(regime_mod, "ensure_mt5_connection_or_raise", lambda: None)
 
 
 def _mock_fetch_history(symbol: str, timeframe: str, limit: int, as_of=None) -> pd.DataFrame:
