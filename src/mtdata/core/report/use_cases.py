@@ -1658,6 +1658,37 @@ def run_report_generate(  # noqa: C901
                     sections_with_issues["omitted"] = omitted_section_names
                 if sections_with_issues:
                     rep["sections_with_issues"] = sections_with_issues
+                if partial_section_names or error_section_names:
+                    error_summaries: List[str] = []
+                    status_details = sections_status.get("details")
+                    if isinstance(status_details, dict):
+                        for section_name in [
+                            *partial_section_names,
+                            *error_section_names,
+                        ]:
+                            detail = status_details.get(section_name)
+                            errors = detail.get("errors") if isinstance(detail, dict) else None
+                            if not isinstance(errors, list):
+                                continue
+                            for error_item in errors[:2]:
+                                message = (
+                                    error_item.get("message")
+                                    if isinstance(error_item, dict)
+                                    else error_item
+                                )
+                                text = " ".join(str(message or "").split())[:200]
+                                if text:
+                                    error_summaries.append(f"{section_name}:{text}")
+                    logger.warning(
+                        "event=report_sections_degraded operation=report_generate "
+                        "symbol=%s template=%s partial_sections=%s "
+                        "error_sections=%s errors=%s",
+                        request.symbol,
+                        template_name,
+                        ",".join(partial_section_names) or "-",
+                        ",".join(error_section_names) or "-",
+                        " | ".join(error_summaries)[:600] or "-",
+                    )
                 rep["overall_assessment"] = _build_overall_report_assessment(rep)
                 rep["executive_summary"] = _build_report_executive_summary(
                     rep,

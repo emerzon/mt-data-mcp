@@ -310,6 +310,44 @@ def test_run_report_generate_scopes_volatility_rate_cache():
     assert volatility._RATES_CACHE.get() is None
 
 
+def test_run_report_generate_warns_once_for_degraded_sections(caplog):
+    from mtdata.core.report.requests import ReportGenerateRequest
+    from mtdata.core.report.use_cases import run_report_generate
+
+    sections = _make_full_sections()
+    sections["backtest"] = {"error": "model artifact disappeared"}
+    basic_template = MagicMock(
+        return_value={"sections": sections, "diagnostics": {}}
+    )
+    with (
+        patch("mtdata.core.report_templates.template_basic", basic_template, create=True),
+        patch("mtdata.core.report_templates.template_minimal", basic_template, create=True),
+        patch("mtdata.core.report_templates.template_advanced", basic_template, create=True),
+        patch("mtdata.core.report_templates.template_scalping", basic_template, create=True),
+        patch("mtdata.core.report_templates.template_intraday", basic_template, create=True),
+        patch("mtdata.core.report_templates.template_swing", basic_template, create=True),
+        patch("mtdata.core.report_templates.template_position", basic_template, create=True),
+        caplog.at_level(logging.WARNING, logger="mtdata.core.report.use_cases"),
+    ):
+        result = run_report_generate(
+            ReportGenerateRequest(symbol="EURUSD", detail="full"),
+            format_number=lambda value: str(value),
+            get_indicator_value=lambda payload, key: payload.get(key),
+            report_error_payload=lambda message: {"error": str(message)},
+            append_diagnostic_warning=lambda report, message: None,
+        )
+
+    assert result["section_run_status"] == "partial"
+    records = [
+        record
+        for record in caplog.records
+        if "event=report_sections_degraded" in record.message
+    ]
+    assert len(records) == 1
+    assert "error_sections=backtest" in records[0].message
+    assert "backtest:model artifact disappeared" in records[0].message
+
+
 def test_report_generate_returns_connection_error_payload(monkeypatch):
     from mtdata.core import report as report_mod
 
