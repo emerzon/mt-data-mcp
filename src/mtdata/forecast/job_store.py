@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import sqlite3
 import threading
@@ -11,6 +12,8 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Iterator, List, Literal, Optional
+
+logger = logging.getLogger(__name__)
 
 JobStatus = Literal["pending", "running", "completed", "failed", "cancelled"]
 
@@ -52,7 +55,20 @@ class JobStore:
         self._path = Path(path) if path else Path(_env_db_path())
         self._path.parent.mkdir(parents=True, exist_ok=True)
         self._lock = threading.Lock()
-        self._init_db()
+        try:
+            self._init_db()
+        except sqlite3.DatabaseError as exc:
+            if not self._is_corruption_error(exc):
+                raise
+            quarantined = self._quarantine_corrupt_database()
+            logger.warning(
+                "Forecast job database was corrupt and has been quarantined; "
+                "path=%s quarantined=%s error=%s",
+                self._path,
+                ",".join(str(path) for path in quarantined),
+                exc,
+            )
+            self._init_db()
 
     @property
     def path(self) -> Path:
@@ -108,7 +124,45 @@ class JobStore:
                 ON jobs(status, created_at DESC)
                 """
             )
+            integrity_row = conn.execute("PRAGMA quick_check").fetchone()
+            integrity_result = str(integrity_row[0]) if integrity_row else "missing result"
+            if integrity_result.lower() != "ok":
+                raise sqlite3.DatabaseError(
+                    f"database corruption detected by quick_check: {integrity_result}"
+                )
             conn.commit()
+
+    @staticmethod
+    def _is_corruption_error(exc: sqlite3.DatabaseError) -> bool:
+        error_code = getattr(exc, "sqlite_errorcode", None)
+        if isinstance(error_code, int):
+            primary_code = error_code & 0xFF
+            if primary_code in {sqlite3.SQLITE_CORRUPT, sqlite3.SQLITE_NOTADB}:
+                return True
+        message = str(exc).strip().lower()
+        return any(
+            marker in message
+            for marker in (
+                "file is not a database",
+                "database disk image is malformed",
+                "database corruption detected",
+            )
+        )
+
+    def _quarantine_corrupt_database(self) -> List[Path]:
+        suffix = f".corrupt-{time.time_ns()}"
+        quarantined: List[Path] = []
+        for source in (
+            self._path,
+            Path(f"{self._path}-wal"),
+            Path(f"{self._path}-shm"),
+        ):
+            if not source.exists():
+                continue
+            destination = source.with_name(f"{source.name}{suffix}")
+            source.replace(destination)
+            quarantined.append(destination)
+        return quarantined
 
     @staticmethod
     def _encode(payload: Optional[Dict[str, Any]]) -> Optional[str]:
