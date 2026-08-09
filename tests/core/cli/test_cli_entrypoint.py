@@ -213,11 +213,11 @@ def test_noninteractive_shell_frames_pretty_json_as_ndjson(monkeypatch, capsys):
 def test_static_command_catalog_matches_registered_tools():
     from mtdata.bootstrap.tools import bootstrap_tools
     from mtdata.core.cli.api import discover_tools
-    from mtdata.core.cli.catalog import CLI_COMMAND_NAMES
+    from mtdata.core.cli.catalog import available_command_names
 
     bootstrap_tools()
 
-    assert set(CLI_COMMAND_NAMES) == set(discover_tools())
+    assert set(available_command_names()) == set(discover_tools())
 
 
 def test_shell_is_registered_and_has_help(monkeypatch, capsys):
