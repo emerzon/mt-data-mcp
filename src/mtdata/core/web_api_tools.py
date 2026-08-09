@@ -13,6 +13,8 @@ from ..forecast.exceptions import ForecastError
 from ..utils.denoise import DenoiseCausalityError
 from ..utils.mt5 import MT5ConnectionError
 from ._mcp_tools import (
+    _prepare_public_tool_call,
+    _shape_public_tool_output,
     _tool_catalog_parameters,
     get_tool_functions,
     registered_tool_catalog,
@@ -107,6 +109,30 @@ def _annotation_label(annotation: Any) -> str:
     return text
 
 
+def _append_output_control_fields(fields: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Advertise structured-output controls accepted by generic invoke."""
+    names = {str(field.get("name") or "") for field in fields}
+    out = list(fields)
+    controls = (
+        {
+            "name": "extras",
+            "required": False,
+            "default": None,
+            "type": "str | list[str] | None",
+            "description": "Richer output sections such as metadata, diagnostics, or guidance.",
+        },
+        {
+            "name": "fields",
+            "required": False,
+            "default": None,
+            "type": "str | list[str] | None",
+            "description": "Output fields to keep, as names or dotted paths.",
+        },
+    )
+    out.extend(control for control in controls if control["name"] not in names)
+    return out
+
+
 def build_parameter_fields(func: Any) -> List[Dict[str, Any]]:
     """Build UI-friendly parameter field descriptors from a tool callable."""
     target = unwrap_tool_callable(func)
@@ -136,7 +162,7 @@ def build_parameter_fields(func: Any) -> List[Dict[str, Any]]:
                             "description": str(field.description or "") or None,
                         }
                     )
-                return fields
+                return _append_output_control_fields(fields)
         except Exception:
             pass
 
@@ -154,7 +180,7 @@ def build_parameter_fields(func: Any) -> List[Dict[str, Any]]:
                 "description": None,
             }
         )
-    return fields
+    return _append_output_control_fields(fields)
 
 
 def _enrich_catalog_row(row: Dict[str, Any], *, include_fields: bool = False) -> Dict[str, Any]:
@@ -303,9 +329,27 @@ def invoke_tool_for_webapi(
     # Strip UI-only keys if callers leak them
     args.pop("confirm", None)
     args.pop("__confirm", None)
+    # The HTTP surface is always structured JSON; consume presentation-only
+    # parameters here instead of leaking them into the raw domain callable.
+    args.pop("json", None)
+    extras = args.pop("extras", None)
+    fields = args.pop("fields", None)
 
     try:
-        result = call_tool_sync_structured(fn, **args)
+        target = unwrap_tool_callable(fn)
+        contract_state = _prepare_public_tool_call(
+            target,
+            args,
+            json_output=True,
+            extras=extras,
+        )
+        result = call_tool_sync_structured(target, **args)
+        result = _shape_public_tool_output(
+            result,
+            tool_name=name,
+            contract_state=contract_state,
+            fields=fields,
+        )
     except DenoiseCausalityError as exc:
         payload = build_error_payload(
             str(exc), code="tool_domain_error", operation=name

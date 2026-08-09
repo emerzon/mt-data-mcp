@@ -256,10 +256,20 @@ Invoke a registered tool.
 
 ```json
 {
-  "arguments": { "symbol": "EURUSD", "timeframe": "H1" },
+  "arguments": {
+    "symbol": "EURUSD",
+    "timeframe": "H1",
+    "extras": "metadata,guidance",
+    "fields": "symbol,summary"
+  },
   "confirm": false
 }
 ```
+
+Generic invocation uses the shared structured-output contract. Output is compact
+by default; `extras` requests richer sections and `guidance` adds related-tool
+suggestions when the tool defines them. `fields` accepts comma-separated names
+or dotted paths and keeps the standard envelope fields alongside each match.
 
 Live trade mutations (`trade_place`, `trade_modify`, `trade_close`) and destructive model/task tools require `"confirm": true`. See [WEBUI_TOOL_COVERAGE.md](WEBUI_TOOL_COVERAGE.md).
 

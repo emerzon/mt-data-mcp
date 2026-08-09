@@ -27,6 +27,7 @@ from .error_envelope import (
     normalize_error_payload,
 )
 from .output_contract import (
+    OutputContractState,
     apply_output_verbosity,
     attach_success_guidance,
     normalize_output_extras,
@@ -862,6 +863,68 @@ def _update_supplied_request_model_field(
     return False
 
 
+def _prepare_public_tool_call(
+    func: Any,
+    kwargs: Dict[str, Any],
+    *,
+    json_output: Any = False,
+    extras: Any = None,
+) -> OutputContractState:
+    """Apply shared public output arguments before invoking a raw tool callable."""
+    normalized_extras = normalize_output_extras(extras)
+    if normalized_extras and _callable_exposes_kwarg(func, "extras"):
+        # Preserve tool-local section semantics (for example an extras request
+        # that intentionally removes a row cap).
+        if not _update_supplied_request_model_field(
+            func, kwargs, "extras", normalized_extras
+        ):
+            kwargs["extras"] = normalized_extras
+    if (
+        normalized_extras
+        and "detail" not in kwargs
+        and _callable_exposes_kwarg(func, "detail")
+    ):
+        if not _update_supplied_request_model_field(func, kwargs, "detail", "full"):
+            kwargs["detail"] = "full"
+    _coerce_kwargs_for_callable(func, kwargs)
+    return resolve_output_contract(
+        kwargs,
+        json=json_output,
+        extras=normalized_extras,
+    )
+
+
+def _shape_public_tool_output(
+    result: Any,
+    *,
+    tool_name: str,
+    contract_state: OutputContractState,
+    fields: Any = None,
+) -> Any:
+    """Apply shared structured-output shaping used by public transports."""
+    if not isinstance(result, dict):
+        return result
+    public_out = result
+    if tool_name.strip().lower() == "news":
+        from .news import normalize_news_output
+
+        public_out = normalize_news_output(
+            public_out,
+            detail=contract_state.detail,
+        )
+    if "guidance" in contract_state.extras:
+        public_out = attach_success_guidance(
+            public_out,
+            tool_name=tool_name,
+        )
+    public_out = apply_output_verbosity(
+        public_out,
+        tool_name=tool_name,
+        detail=contract_state.shape_detail,
+    )
+    return _select_output_fields(public_out, fields)
+
+
 def _recording_tool_decorator(*dargs, **dkwargs):  # type: ignore[override]  # noqa: C901
     if _ORIG_TOOL_DECORATOR is None:
         def _noop(func):
@@ -916,24 +979,11 @@ def _recording_tool_decorator(*dargs, **dkwargs):  # type: ignore[override]  # n
             contract_state = resolve_output_contract({}, json=json_output)
 
             try:
-                normalized_extras = normalize_output_extras(extras)
-                if normalized_extras and _callable_exposes_kwarg(func, "extras"):
-                    # Preserve tool-local section semantics (for example an
-                    # extras request that intentionally removes a row cap).
-                    if not _update_supplied_request_model_field(
-                        func, kw, "extras", normalized_extras
-                    ):
-                        kw["extras"] = normalized_extras
-                if normalized_extras and "detail" not in kw and _callable_exposes_kwarg(func, "detail"):
-                    if not _update_supplied_request_model_field(
-                        func, kw, "detail", "full"
-                    ):
-                        kw["detail"] = "full"
-                _coerce_kwargs_for_callable(func, kw)
-                contract_state = resolve_output_contract(
+                contract_state = _prepare_public_tool_call(
+                    func,
                     kw,
-                    json=json_output,
-                    extras=normalized_extras,
+                    json_output=json_output,
+                    extras=extras,
                 )
                 if "denoise" in kw:
                     from ..utils.denoise import (
@@ -985,26 +1035,12 @@ def _recording_tool_decorator(*dargs, **dkwargs):  # type: ignore[override]  # n
                 return out
 
             fname = getattr(func, "__name__", "")
-            public_out = out
-            if isinstance(public_out, dict):
-                if fname.strip().lower() == "news":
-                    from .news import normalize_news_output
-
-                    public_out = normalize_news_output(
-                        public_out,
-                        detail=contract_state.detail,
-                    )
-                if "guidance" in contract_state.extras:
-                    public_out = attach_success_guidance(
-                        public_out,
-                        tool_name=fname,
-                    )
-                public_out = apply_output_verbosity(
-                    public_out,
-                    tool_name=fname,
-                    detail=contract_state.shape_detail,
-                )
-                public_out = _select_output_fields(public_out, fields)
+            public_out = _shape_public_tool_output(
+                out,
+                tool_name=fname,
+                contract_state=contract_state,
+                fields=fields,
+            )
 
             if contract_state.json:
                 return public_out

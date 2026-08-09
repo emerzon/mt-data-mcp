@@ -9,6 +9,7 @@ from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
 from mtdata.core import web_api
+from mtdata.core.report.requests import ReportGenerateRequest
 from mtdata.core.web_api_tools import (
     DEDICATED_UI_TOOLS,
     MUTATING_TOOLS,
@@ -63,6 +64,114 @@ class TestListAndInvoke:
         inner = result["result"]
         assert isinstance(inner, dict)
         assert inner.get("count") == 2
+
+    def test_invoke_applies_public_output_contract_to_request_model(self):
+        def report_generate(request: ReportGenerateRequest):
+            return {
+                "success": True,
+                "symbol": request.symbol,
+                "detail_seen": request.detail,
+                "meta": {"domain": {"template": request.template}},
+                "diagnostics": {"source": "test"},
+            }
+
+        with (
+            patch("mtdata.core.web_api_tools.ensure_tools_bootstrapped"),
+            patch(
+                "mtdata.core.web_api_tools.get_tool_functions",
+                return_value={"report_generate": report_generate},
+            ),
+        ):
+            compact = invoke_tool_for_webapi(
+                "report_generate",
+                arguments={"symbol": "EURUSD", "template": "minimal"},
+            )
+            rich = invoke_tool_for_webapi(
+                "report_generate",
+                arguments={
+                    "symbol": "EURUSD",
+                    "template": "minimal",
+                    "extras": "metadata",
+                },
+            )
+
+        assert compact["result"]["detail_seen"] == "compact"
+        assert "meta" not in compact["result"]
+        assert "diagnostics" not in compact["result"]
+        assert rich["result"]["detail_seen"] == "full"
+        assert rich["result"]["meta"]["domain"]["template"] == "minimal"
+        assert rich["result"]["diagnostics"] == {"source": "test"}
+
+    def test_invoke_adds_guidance_only_when_requested(self):
+        def market_ticker(detail: str = "compact"):
+            return {
+                "success": True,
+                "detail_seen": detail,
+                "meta": {"domain": {"symbol": "EURUSD"}},
+            }
+
+        with (
+            patch("mtdata.core.web_api_tools.ensure_tools_bootstrapped"),
+            patch(
+                "mtdata.core.web_api_tools.get_tool_functions",
+                return_value={"market_ticker": market_ticker},
+            ),
+        ):
+            compact = invoke_tool_for_webapi("market_ticker")
+            guided = invoke_tool_for_webapi(
+                "market_ticker",
+                arguments={"extras": "guidance"},
+            )
+
+        assert "related_tools" not in compact["result"]
+        assert "meta" not in compact["result"]
+        assert guided["result"]["detail_seen"] == "full"
+        assert guided["result"]["related_tools"]
+        assert "meta" in guided["result"]
+
+    def test_invoke_applies_field_selection(self):
+        def demo():
+            return {
+                "success": True,
+                "symbol": "EURUSD",
+                "bid": 1.1,
+                "ask": 1.2,
+            }
+
+        with (
+            patch("mtdata.core.web_api_tools.ensure_tools_bootstrapped"),
+            patch(
+                "mtdata.core.web_api_tools.get_tool_functions",
+                return_value={"demo": demo},
+            ),
+        ):
+            result = invoke_tool_for_webapi(
+                "demo",
+                arguments={"fields": "bid"},
+            )
+
+        assert result["result"] == {
+            "success": True,
+            "symbol": "EURUSD",
+            "bid": 1.1,
+        }
+
+    def test_invoke_rejects_invalid_extras(self):
+        with (
+            patch("mtdata.core.web_api_tools.ensure_tools_bootstrapped"),
+            patch(
+                "mtdata.core.web_api_tools.get_tool_functions",
+                return_value={"demo": lambda: {"success": True}},
+            ),
+            pytest.raises(HTTPException) as exc,
+        ):
+            invoke_tool_for_webapi(
+                "demo",
+                arguments={"extras": "not-a-real-extra"},
+            )
+
+        assert exc.value.status_code == 422
+        assert exc.value.detail["error_code"] == "tool_param_error"
 
     def test_mutation_requires_confirm(self):
         with pytest.raises(HTTPException) as exc:
@@ -127,6 +236,8 @@ class TestWebApiRoutes:
         body = res.json()
         assert body["tool"]["name"] == "tools_list"
         assert isinstance(body["tool"].get("fields"), list)
+        field_names = {field["name"] for field in body["tool"]["fields"]}
+        assert {"extras", "fields"}.issubset(field_names)
 
     def test_invoke_route(self):
         res = self.client.post(
