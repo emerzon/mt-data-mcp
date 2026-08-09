@@ -28,6 +28,7 @@ class TestToolClassification:
     def test_dedicated_and_generic_and_confirm(self):
         assert classify_tool_surface("forecast_generate") == "dedicated_ui"
         assert classify_tool_surface("regime_detect") == "generic_runner"
+        assert classify_tool_surface("forecast_tune_optuna") == "intentional_omit"
         assert tool_requires_confirmation("trade_place") is True
         assert tool_requires_confirmation("tools_list") is False
         assert "trade_place" in MUTATING_TOOLS
@@ -180,6 +181,14 @@ class TestListAndInvoke:
         detail = exc.value.detail
         assert isinstance(detail, dict)
         assert detail.get("requires_confirmation") is True
+
+    @pytest.mark.parametrize("tool_name", ["forecast_tune_genetic", "forecast_tune_optuna"])
+    def test_long_running_tuning_is_omitted_from_sync_invoke(self, tool_name):
+        with pytest.raises(HTTPException) as exc:
+            invoke_tool_for_webapi(tool_name)
+
+        assert exc.value.status_code == 403
+        assert exc.value.detail["rationale"].startswith("Long-running optimization")
 
     @pytest.mark.parametrize(
         ("error", "status_code", "error_code"),

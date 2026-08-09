@@ -52,9 +52,17 @@ DEDICATED_UI_TOOLS: dict[str, str] = {
     "tools_list": "tools-runner/catalog",
 }
 
-# Product rationale for tools that stay out of the generic invoke path.
-# (Empty by default: mutations are gated, not omitted.)
-INTENTIONAL_OMIT_TOOLS: dict[str, str] = {}
+# Product rationale for tools that stay out of the synchronous generic invoke path.
+INTENTIONAL_OMIT_TOOLS: dict[str, str] = {
+    "forecast_tune_genetic": (
+        "Long-running optimization has no HTTP progress or cancellation contract. "
+        "Run it through CLI or MCP instead."
+    ),
+    "forecast_tune_optuna": (
+        "Long-running optimization has no HTTP progress or cancellation contract. "
+        "Run it through CLI or MCP instead."
+    ),
+}
 
 
 def ensure_tools_bootstrapped() -> None:

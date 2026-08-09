@@ -45,8 +45,8 @@ Every backend MCP/bootstrap tool classified for the SPA.
 | `forecast_task_status` | forecast | generic_runner | tools-runner/generic | no |  |
 | `forecast_task_wait` | forecast | generic_runner | tools-runner/generic | no |  |
 | `forecast_train` | forecast | generic_runner | tools-runner/generic | no |  |
-| `forecast_tune_genetic` | forecast | generic_runner | tools-runner/generic | no |  |
-| `forecast_tune_optuna` | forecast | generic_runner | tools-runner/generic | no |  |
+| `forecast_tune_genetic` | forecast | intentional_omit | Long-running optimization has no HTTP progress or cancellation contract. Run it through CLI or MCP instead. | no |  |
+| `forecast_tune_optuna` | forecast | intentional_omit | Long-running optimization has no HTTP progress or cancellation contract. Run it through CLI or MCP instead. | no |  |
 | `forecast_volatility_estimate` | forecast | dedicated_ui | forecast-panel/volatility | no |  |
 | `indicators_describe` | methods | generic_runner | tools-runner/generic | no |  |
 | `indicators_list` | methods | generic_runner | tools-runner/generic | no |  |
@@ -101,7 +101,7 @@ Every backend MCP/bootstrap tool classified for the SPA.
 
 - **dedicated_ui** — primary path is a specialized chart/research control; also runnable via Tools runner.
 - **generic_runner** — discoverable and invocable from the SPA Tools runner (schema-driven form).
-- **intentional_omit** — not invocable from SPA (must include rationale). Currently none; mutations use confirm gates instead.
+- **intentional_omit** — visible with a rationale but not invocable from the SPA. Long-running tuning remains available through CLI/MCP; mutations use confirm gates instead.
 
 **Total tools in inventory:** 92 (includes env-gated market_depth_fetch even when disabled).
 

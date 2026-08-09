@@ -271,6 +271,11 @@ by default; `extras` requests richer sections and `guidance` adds related-tool
 suggestions when the tool defines them. `fields` accepts comma-separated names
 or dotted paths and keeps the standard envelope fields alongside each match.
 
+`forecast_tune_genetic` and `forecast_tune_optuna` are cataloged as
+`intentional_omit`: tuning can run longer than an HTTP request and the generic
+runner has no progress or cancellation contract. Run those tools through CLI or
+MCP instead.
+
 Live trade mutations (`trade_place`, `trade_modify`, `trade_close`) and destructive model/task tools require `"confirm": true`. See [WEBUI_TOOL_COVERAGE.md](WEBUI_TOOL_COVERAGE.md).
 
 #### `POST /api/backtest`
