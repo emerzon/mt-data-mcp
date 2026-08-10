@@ -21,6 +21,7 @@ from mtdata.core.trading.orders import (
     _TRADE_DECISION_LOCK,
     _evaluate_live_trade_guardrails,
     _place_market_order,
+    _place_pending_order,
 )
 
 
@@ -167,6 +168,43 @@ def test_trade_guardrails_block_failed_pending_order_snapshot(
     assert result["guardrail_blocked"] is True
     assert result["error_code"] == "orders_snapshot_unavailable"
     assert result["guardrail_rule"] == "snapshot_integrity"
+
+
+@pytest.mark.parametrize(
+    ("place_order", "kwargs"),
+    [
+        (_place_market_order, {"order_type": "BUY", "stop_loss": 1.09}),
+        (
+            _place_pending_order,
+            {"order_type": "BUY_LIMIT", "price": 1.09, "stop_loss": 1.08},
+        ),
+    ],
+)
+def test_live_order_entry_points_block_wallet_risk_before_order_send(
+    restore_trade_guardrails,
+    patch_gateway,
+    place_order,
+    kwargs,
+):
+    trade_guardrails_config.enabled = True
+    trade_guardrails_config.ignore_on_demo = False
+    trade_guardrails_config.wallet_risk_limits.max_risk_pct_of_equity = 0.1
+    patch_gateway.order_send = MagicMock()
+    gateway = create_real_trading_gateway(
+        adapter=patch_gateway,
+        ensure_connection_impl=lambda: None,
+    )
+
+    result = place_order(
+        "EURUSD",
+        100.0,
+        gateway=gateway,
+        **kwargs,
+    )
+
+    assert result["guardrail_blocked"] is True
+    assert result["guardrail_rule"] == "wallet_risk"
+    patch_gateway.order_send.assert_not_called()
 
 
 def test_market_order_decision_is_serialized_across_threads():

@@ -277,6 +277,41 @@ def _standardize_trade_operation_payload(
     return out
 
 
+def _attach_live_guardrail_status(
+    result: Dict[str, Any],
+    *,
+    dry_run: bool,
+) -> Dict[str, Any]:
+    """Make the configured safety state explicit on submitted trade outcomes."""
+    if dry_run or not isinstance(result, dict):
+        return result
+    if not (
+        infer_result_success(result)
+        or result.get("ambiguous") is True
+        or result.get("error_code") == "order_send_ambiguous"
+    ):
+        return result
+    out = dict(result)
+    enabled = bool(trade_guardrails_config.is_enabled())
+    out["guardrails_enabled"] = enabled
+    if enabled:
+        return out
+    warning = (
+        "Live trade submitted without configured trade guardrails. Set "
+        "MTDATA_TRADE_GUARDRAILS_ENABLED=1 and configure symbol, volume, or "
+        "risk limits to enable pre-trade protection."
+    )
+    warnings_out = (
+        [str(item).strip() for item in out.get("warnings", []) if str(item).strip()]
+        if isinstance(out.get("warnings"), list)
+        else []
+    )
+    if warning not in warnings_out:
+        warnings_out.append(warning)
+    out["warnings"] = warnings_out
+    return out
+
+
 def _attach_trade_correlation(
     result: Dict[str, Any],
     *,
@@ -330,7 +365,7 @@ def _log_trade_correlation(
         fields.append(f"idempotency_key={idempotency_key}")
     if result.get("duplicate") is True:
         fields.append("duplicate=True")
-    logger.debug("event=trade_result operation=%s %s", operation, " ".join(fields))
+    logger.info("event=trade_result operation=%s %s", operation, " ".join(fields))
 
 
 def _sl_tp_result_details(result: Dict[str, Any]) -> tuple[bool, str]:
@@ -1391,6 +1426,7 @@ def run_trade_place(  # noqa: C901
             default_error_code="trade_place_error",
             request_id=correlation_id,
         )
+        result = _attach_live_guardrail_status(result, dry_run=request.dry_run)
         result = _annotate_idempotency_scope(result, idempotency_key, idempotency_store)
         result = _attach_trade_correlation(result, correlation_id=correlation_id)
         if not idempotency_consumed:
@@ -2263,6 +2299,7 @@ def run_trade_modify(
                 request_id=correlation_id,
                 operation="trade_modify",
             )
+        result = _attach_live_guardrail_status(result, dry_run=request.dry_run)
         result = _annotate_idempotency_scope(result, idempotency_key, idempotency_store)
         result = _attach_trade_correlation(result, correlation_id=correlation_id)
         if not idempotency_consumed:

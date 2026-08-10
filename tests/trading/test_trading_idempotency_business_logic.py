@@ -90,6 +90,12 @@ def test_run_trade_place_replays_duplicate_result_without_resending():
     assert first == {
         "success": True,
         "order_id": 7,
+        "guardrails_enabled": False,
+        "warnings": [
+            "Live trade submitted without configured trade guardrails. Set "
+            "MTDATA_TRADE_GUARDRAILS_ENABLED=1 and configure symbol, volume, or "
+            "risk limits to enable pre-trade protection."
+        ],
         "idempotency_key": "place-1",
         "idempotency_scope": "process_memory",
         "idempotency_durable": False,
@@ -221,6 +227,12 @@ def test_run_trade_modify_replays_duplicate_result_without_resending():
     assert first == {
         "success": True,
         "ticket": 123,
+        "guardrails_enabled": False,
+        "warnings": [
+            "Live trade submitted without configured trade guardrails. Set "
+            "MTDATA_TRADE_GUARDRAILS_ENABLED=1 and configure symbol, volume, or "
+            "risk limits to enable pre-trade protection."
+        ],
         "idempotency_key": "modify-1",
         "idempotency_scope": "process_memory",
         "idempotency_durable": False,

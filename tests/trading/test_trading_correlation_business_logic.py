@@ -75,7 +75,7 @@ def test_trade_place_replay_links_current_original_and_mt5_ids(caplog):
     )
     kwargs = _place_kwargs(place_market_order=place_market_order, store=store)
 
-    with caplog.at_level("DEBUG", logger="mtdata.core.trading.use_cases"):
+    with caplog.at_level("INFO", logger="mtdata.core.trading.use_cases"):
         first = run_trade_place(request, correlation_id="first-call", **kwargs)
         replay = run_trade_place(request, correlation_id="retry-call", **kwargs)
 
@@ -108,7 +108,7 @@ def test_trade_modify_success_includes_correlation_and_mt5_log(caplog):
         return_value={"success": True, "ticket": 123, "request_id": 654}
     )
 
-    with caplog.at_level("DEBUG", logger="mtdata.core.trading.use_cases"):
+    with caplog.at_level("INFO", logger="mtdata.core.trading.use_cases"):
         result = run_trade_modify(
             request,
             normalize_pending_expiration=lambda value: (value, False),
@@ -132,7 +132,7 @@ def test_trade_modify_success_includes_correlation_and_mt5_log(caplog):
 def test_trade_close_validation_error_uses_correlation_as_request_id(caplog):
     request = TradeCloseRequest(profit_only=True, loss_only=True)
 
-    with caplog.at_level("DEBUG", logger="mtdata.core.trading.use_cases"):
+    with caplog.at_level("INFO", logger="mtdata.core.trading.use_cases"):
         result = run_trade_close(
             request,
             close_positions=MagicMock(),
