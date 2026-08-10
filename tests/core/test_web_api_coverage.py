@@ -1381,6 +1381,8 @@ class TestPostForecastPrice:
                 "denoise": {"method": "wavelet"}, "features": {"rsi": {}},
                 "dimred_method": "pca", "dimred_params": {"n": 3},
                 "target_spec": {"col": "close"},
+                "async_mode": True,
+                "model_id": "arima/GBPUSD_D1/model-hash",
             })
         request = mock_fc.call_args.args[0]
         assert request.symbol == "GBPUSD"
@@ -1391,6 +1393,27 @@ class TestPostForecastPrice:
         assert request.dimred_method == "pca"
         assert request.target_spec == {"col": "close"}
         assert request.params == {"order": [1, 1, 1]}
+        assert request.async_mode is True
+        assert request.model_id == "arima/GBPUSD_D1/model-hash"
+
+    def test_async_training_submission_returns_accepted(self):
+        result = {"success": True, "status": "pending", "task_id": "task-123"}
+        with patch(
+            "mtdata.core.web_api._run_forecast_generate_impl",
+            return_value=result,
+        ) as forecast_impl:
+            resp = _client.post(
+                "/api/v1/forecast/price",
+                json={
+                    "symbol": "EURUSD",
+                    "method": "nhits",
+                    "async_mode": True,
+                },
+            )
+
+        assert resp.status_code == 202
+        assert resp.json() == result
+        assert forecast_impl.call_args.args[0].async_mode is True
 
     def test_removed_target_is_rejected(self):
         with patch("mtdata.core.web_api._run_forecast_generate_impl", return_value={}) as mock_fc:

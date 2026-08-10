@@ -479,9 +479,20 @@ def get_tick(
     )
 
 
-@api_router.post("/forecast/price")
-def post_forecast_price(body: ForecastPriceBody) -> Dict[str, Any]:
-    return _post_forecast_price_response(body=body, forecast_generate_use_case=_run_forecast_generate_impl)
+@api_router.post("/forecast/price", response_model=None)
+def post_forecast_price(body: ForecastPriceBody) -> Dict[str, Any] | SafeJSONResponse:
+    result = _post_forecast_price_response(
+        body=body,
+        forecast_generate_use_case=_run_forecast_generate_impl,
+    )
+    if (
+        body.async_mode
+        and isinstance(result, dict)
+        and result.get("status") == "pending"
+        and result.get("task_id")
+    ):
+        return SafeJSONResponse(status_code=202, content=result)
+    return result
 
 
 @api_router.post("/forecast/volatility")
