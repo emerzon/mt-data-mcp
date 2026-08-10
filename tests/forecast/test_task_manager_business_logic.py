@@ -8,7 +8,13 @@ from unittest.mock import MagicMock, patch
 
 from mtdata.forecast.job_store import JobStore
 from mtdata.forecast.model_store import ModelStore
-from mtdata.forecast.task_manager import TaskManager, _TrainingSpec
+from mtdata.forecast.task_manager import (
+    TaskManager,
+    _configured_task_ttl_seconds,
+    _format_worker_exit,
+    _process_training_entry,
+    _TrainingSpec,
+)
 
 
 def _make_spec() -> _TrainingSpec:
@@ -70,7 +76,83 @@ class TestTaskManagerHeavyRuntime(_TaskManagerBusinessLogicCase):
         self.assertIn("event=forecast_training_worker_died", output)
         self.assertIn("pid=4321", output)
         self.assertIn("exitcode=-9", output)
-        self.assertIn("Training worker exited with code -9", output)
+        expected = "Windows status" if os.name == "nt" else "SIGKILL"
+        self.assertIn(expected, output)
+
+    def test_dead_worker_includes_persisted_diagnostic_tail(self):
+        task = self.tm._create_task("heavy", "EURUSD_H1", "hash-1")
+        self.tm._mutate_task(task.task_id, status="running")
+        diagnostic_path = os.path.join(self._tmpdir, "worker.log")
+        with open(diagnostic_path, "w", encoding="utf-8") as stream:
+            stream.write("native fault in model kernel")
+
+        self.tm._finalize_dead_process(
+            task.task_id,
+            SimpleNamespace(pid=4321, exitcode=-11),
+            diagnostic_path=diagnostic_path,
+        )
+
+        status = self.tm.get_status(task.task_id)
+        self.assertIsNotNone(status)
+        self.assertIn("Worker diagnostic tail", status.error)
+        self.assertIn("native fault in model kernel", status.error)
+
+    def test_failed_worker_event_persists_bounded_traceback(self):
+        task = self.tm._create_task("heavy", "EURUSD_H1", "hash-1")
+        self.tm._mutate_task(task.task_id, status="running")
+
+        terminal = self.tm._handle_process_event(
+            task.task_id,
+            _make_spec(),
+            {
+                "type": "failed",
+                "error": "bad scale",
+                "exception_type": "ValueError",
+                "traceback": "Traceback: model.py line 42",
+            },
+        )
+
+        status = self.tm.get_status(task.task_id)
+        self.assertTrue(terminal)
+        self.assertIsNotNone(status)
+        self.assertIn("ValueError: bad scale", status.error)
+        self.assertIn("model.py line 42", status.error)
+
+    def test_worker_exit_format_explains_posix_signals_and_windows_status(self):
+        self.assertIn("SIGKILL", _format_worker_exit(-9, platform_name="posix"))
+        self.assertIn("out-of-memory", _format_worker_exit(-9, platform_name="posix"))
+        self.assertIn("0xC0000005", _format_worker_exit(-1073741819, platform_name="nt"))
+        self.assertIn("access violation", _format_worker_exit(-1073741819, platform_name="nt"))
+
+    def test_task_retention_is_configurable(self):
+        with patch.dict(os.environ, {"MTDATA_FORECAST_TASK_TTL_SECONDS": "7200"}):
+            self.assertEqual(_configured_task_ttl_seconds(), 7200.0)
+
+    def test_process_entry_emits_python_traceback_and_captures_it(self):
+        events = []
+        event_queue = SimpleNamespace(put=events.append)
+        cancel_event = SimpleNamespace(is_set=lambda: False)
+        diagnostic_path = os.path.join(self._tmpdir, "python-failure.log")
+
+        with patch(
+            "mtdata.forecast.task_manager._execute_training_spec",
+            side_effect=ValueError("bad training scale"),
+        ):
+            _process_training_entry(
+                _make_spec(),
+                "task-python-failure",
+                self._tmpdir,
+                event_queue,
+                cancel_event,
+                60.0,
+                diagnostic_path,
+            )
+
+        failed_event = next(event for event in events if event["type"] == "failed")
+        self.assertEqual(failed_event["exception_type"], "ValueError")
+        self.assertIn("bad training scale", failed_event["traceback"])
+        with open(diagnostic_path, encoding="utf-8") as stream:
+            self.assertIn("bad training scale", stream.read())
 
     def test_handle_process_event_marks_malformed_completion_failed(self):
         task = self.tm._create_task("heavy", "EURUSD_H1", "hash-1")

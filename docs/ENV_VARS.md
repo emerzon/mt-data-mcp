@@ -183,6 +183,7 @@ Concurrency caps and on-disk cache used by `forecast_train` / `forecast_task_*` 
 | `MTDATA_FORECAST_HEARTBEAT_SECONDS` | `2` | Heartbeat interval used by heavy-process training jobs. Values below 0.5 seconds are clamped. |
 | `MTDATA_FORECAST_CANCEL_GRACE_SECONDS` | `3` | Grace period after cancellation before a still-running heavy worker is terminated. Values below 0.1 seconds are clamped. |
 | `MTDATA_FORECAST_SWEEPER_SECONDS` | `60` | Interval for cleaning completed task records and expired model artifacts. Values below 5 seconds are clamped. |
+| `MTDATA_FORECAST_TASK_TTL_SECONDS` | `86400` | Retention for terminal task records, including bounded failure diagnostics. Values below 60 seconds are clamped. |
 | `MTDATA_MODEL_STORE` | `~/.mtdata/models` | Root directory used by the model store. Trained models are keyed by `method/data_scope/params_hash`. |
 | `MTDATA_MODEL_TTL_DAYS` | `7` | Cached model idle expiry in days since last use. Idle models are evicted on access; frequently used models do not expire by age. |
 
@@ -339,6 +340,7 @@ A starter template with all sections. Uncomment and fill in what you need.
 # MTDATA_FORECAST_HEARTBEAT_SECONDS=2
 # MTDATA_FORECAST_CANCEL_GRACE_SECONDS=3
 # MTDATA_FORECAST_SWEEPER_SECONDS=60
+# MTDATA_FORECAST_TASK_TTL_SECONDS=86400
 # MTDATA_MODEL_STORE=~/.mtdata/models
 # MTDATA_MODEL_TTL_DAYS=7
 

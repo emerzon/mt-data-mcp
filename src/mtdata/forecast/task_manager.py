@@ -4,17 +4,22 @@ from __future__ import annotations
 
 import atexit
 import copy
+import faulthandler
 import logging
 import multiprocessing as mp
 import os
 import queue
+import signal
 import sqlite3
 import threading
 import time
+import traceback
 import uuid
 import weakref
 from concurrent.futures import Future, ThreadPoolExecutor
+from contextlib import contextmanager, redirect_stderr
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional
 
 # Keep weak refs so atexit can terminate orphaned heavy training processes on
@@ -42,7 +47,8 @@ TaskKind = Literal["prepared", "forecast_request"]
 
 _MAX_WORKERS_DEFAULT = 4
 _HEAVY_WORKERS_DEFAULT = 1
-_TASK_TTL_DEFAULT = 3600.0
+_TASK_TTL_DEFAULT = 86400.0
+_TRAINING_DIAGNOSTIC_LIMIT = 16_000
 _SWEEPER_INTERVAL_DEFAULT = 60.0
 _HEARTBEAT_INTERVAL_DEFAULT = 2.0
 _CANCEL_GRACE_SECONDS_DEFAULT = 3.0
@@ -54,6 +60,135 @@ _TIMEOUT_DEFAULTS = {
 }
 _TERMINAL_STATUSES = frozenset({"completed", "failed", "cancelled"})
 _PROCESS_QUEUE_EXCEPTIONS = (BrokenPipeError, EOFError, OSError, ValueError)
+_WINDOWS_EXIT_CODES = {
+    0xC0000005: "access violation",
+    0xC0000017: "insufficient memory",
+    0xC0000135: "missing dependency",
+    0xC0000409: "stack buffer overrun or fast-fail termination",
+}
+_POSIX_SIGNAL_NAMES = {
+    6: "SIGABRT",
+    7: "SIGBUS",
+    8: "SIGFPE",
+    9: "SIGKILL",
+    11: "SIGSEGV",
+    15: "SIGTERM",
+}
+
+
+def _configured_task_ttl_seconds() -> float:
+    raw = os.environ.get("MTDATA_FORECAST_TASK_TTL_SECONDS", _TASK_TTL_DEFAULT)
+    try:
+        return max(60.0, float(raw))
+    except (TypeError, ValueError):
+        logger.warning(
+            "Invalid MTDATA_FORECAST_TASK_TTL_SECONDS=%r; using %.0f seconds",
+            raw,
+            _TASK_TTL_DEFAULT,
+        )
+        return _TASK_TTL_DEFAULT
+
+
+def _bounded_training_diagnostic(value: Any) -> str:
+    text = str(value or "").strip()
+    if len(text) <= _TRAINING_DIAGNOSTIC_LIMIT:
+        return text
+    marker = "\n... training diagnostic truncated ...\n"
+    keep = _TRAINING_DIAGNOSTIC_LIMIT - len(marker)
+    return marker + text[-keep:]
+
+
+def _format_worker_exit(exitcode: Optional[int], *, platform_name: Optional[str] = None) -> str:
+    if exitcode in (None, 0):
+        return "Training worker exited without reporting a terminal status."
+    platform = platform_name or os.name
+    if platform != "nt" and exitcode < 0:
+        signal_number = -exitcode
+        signal_name = _POSIX_SIGNAL_NAMES.get(signal_number)
+        if signal_name is None:
+            try:
+                signal_name = signal.Signals(signal_number).name
+            except ValueError:
+                signal_name = f"signal {signal_number}"
+        guidance = " Check OS/container logs for the termination cause."
+        if signal_name == "SIGKILL":
+            guidance = (
+                " This may indicate an OS/container out-of-memory kill or forced "
+                "termination; check system and container logs."
+            )
+        elif signal_name == "SIGSEGV":
+            guidance = " This indicates a native-code crash; inspect the captured fault output."
+        return (
+            f"Training worker terminated by {signal_name} "
+            f"(signal {signal_number}, exit code {exitcode}).{guidance}"
+        )
+    if platform == "nt":
+        if 0 < exitcode <= 255:
+            return f"Training worker exited with code {exitcode}."
+        unsigned_code = exitcode & 0xFFFFFFFF
+        description = _WINDOWS_EXIT_CODES.get(unsigned_code)
+        suffix = f" ({description})" if description else ""
+        return (
+            f"Training worker exited with Windows status 0x{unsigned_code:08X}{suffix} "
+            f"(exit code {exitcode})."
+        )
+    return f"Training worker exited with code {exitcode}."
+
+
+def _read_training_diagnostic_tail(path: str | Path) -> str:
+    try:
+        with Path(path).open("rb") as stream:
+            stream.seek(0, os.SEEK_END)
+            size = stream.tell()
+            stream.seek(max(0, size - (_TRAINING_DIAGNOSTIC_LIMIT * 2)))
+            return _bounded_training_diagnostic(
+                stream.read().decode("utf-8", errors="replace")
+            )
+    except OSError:
+        return ""
+
+
+def _remove_training_diagnostic(path: str | Path) -> None:
+    target = Path(path)
+    try:
+        target.unlink(missing_ok=True)
+        target.parent.rmdir()
+    except OSError:
+        if target.exists():
+            logger.debug("Failed to remove training diagnostic file %s", path, exc_info=True)
+
+
+@contextmanager
+def _capture_training_diagnostics(path: str | Path, spec: "_TrainingSpec", task_id: str):
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with target.open("w", encoding="utf-8", buffering=1) as stream:
+        stream.write(
+            f"task_id={task_id} method={spec.method_name} "
+            f"data_scope={spec.data_scope} params_hash={spec.params_hash}\n"
+        )
+        handler = logging.StreamHandler(stream)
+        handler.setLevel(logging.WARNING)
+        handler.setFormatter(logging.Formatter("%(levelname)s %(name)s: %(message)s"))
+        root_logger = logging.getLogger()
+        root_logger.addHandler(handler)
+        was_fault_handler_enabled = faulthandler.is_enabled()
+        try:
+            try:
+                faulthandler.enable(file=stream, all_threads=True)
+            except (OSError, RuntimeError):
+                pass
+            with redirect_stderr(stream):
+                yield stream
+        finally:
+            root_logger.removeHandler(handler)
+            try:
+                if was_fault_handler_enabled:
+                    faulthandler.enable(all_threads=True)
+                else:
+                    faulthandler.disable()
+            except (OSError, RuntimeError):
+                pass
 
 
 @dataclass
@@ -319,6 +454,7 @@ def _process_training_entry(
     event_queue: Any,
     cancel_event: Any,
     heartbeat_interval: float,
+    diagnostic_path: str,
 ) -> None:
     token = CancelToken(cancel_event.is_set)
     heartbeat_stop = threading.Event()
@@ -336,37 +472,42 @@ def _process_training_entry(
             "progress": _serialize_progress(progress),
         })
 
-    try:
-        handle = _execute_training_spec(
-            spec,
-            store_root=store_root,
-            progress_callback=_on_progress,
-            cancel_token=token,
-            source_task_id=task_id,
-        )
-        event_queue.put({
-            "type": "completed",
-            "heartbeat_at": time.time(),
-            "completed_at": time.time(),
-            "result": _serialize_result(handle),
-        })
-    except TrainingCancelledError as exc:
-        event_queue.put({
-            "type": "cancelled",
-            "heartbeat_at": time.time(),
-            "completed_at": time.time(),
-            "error": str(exc),
-        })
-    except BaseException as exc:
-        event_queue.put({
-            "type": "failed",
-            "heartbeat_at": time.time(),
-            "completed_at": time.time(),
-            "error": str(exc),
-        })
-    finally:
-        heartbeat_stop.set()
-        heartbeat_thread.join(timeout=1.0)
+    with _capture_training_diagnostics(diagnostic_path, spec, task_id) as diagnostic_stream:
+        try:
+            handle = _execute_training_spec(
+                spec,
+                store_root=store_root,
+                progress_callback=_on_progress,
+                cancel_token=token,
+                source_task_id=task_id,
+            )
+            event_queue.put({
+                "type": "completed",
+                "heartbeat_at": time.time(),
+                "completed_at": time.time(),
+                "result": _serialize_result(handle),
+            })
+        except TrainingCancelledError as exc:
+            event_queue.put({
+                "type": "cancelled",
+                "heartbeat_at": time.time(),
+                "completed_at": time.time(),
+                "error": str(exc),
+            })
+        except BaseException as exc:
+            traceback_text = traceback.format_exc()
+            diagnostic_stream.write(traceback_text)
+            event_queue.put({
+                "type": "failed",
+                "heartbeat_at": time.time(),
+                "completed_at": time.time(),
+                "error": str(exc),
+                "exception_type": type(exc).__name__,
+                "traceback": _bounded_training_diagnostic(traceback_text),
+            })
+        finally:
+            heartbeat_stop.set()
+            heartbeat_thread.join(timeout=1.0)
 
 
 class TaskManager:
@@ -397,13 +538,14 @@ class TaskManager:
         self._lock = threading.Lock()
         self._store = store
         self._job_store = job_store if job_store is not None else JobStore()
+        self._task_ttl_seconds = _configured_task_ttl_seconds()
         self._shutdown = False
         self._sweeper_stop = threading.Event()
         self._sweeper = threading.Thread(target=self._sweeper_loop, name="forecast-task-sweeper", daemon=True)
 
         # One-shot CLI processes usually exit before the periodic sweeper's first
         # pass, so expire old terminal rows synchronously before restoring state.
-        self._job_store.cleanup_completed(_TASK_TTL_DEFAULT)
+        self._job_store.cleanup_completed(self._task_ttl_seconds)
         self._recover_persisted_tasks()
         self._sweeper.start()
         _LIVE_TASK_MANAGERS.add(self)
@@ -555,6 +697,7 @@ class TaskManager:
         process: mp.Process,
         *,
         error_text: Optional[str] = None,
+        diagnostic_path: Optional[str | Path] = None,
     ) -> None:
         status, cancel_requested = self._task_state(task_id)
         if status is None or status in _TERMINAL_STATUSES:
@@ -571,10 +714,13 @@ class TaskManager:
             )
             return
         if error_text is None:
-            if process.exitcode not in (0, None):
-                error_text = f"Training worker exited with code {process.exitcode}."
-            else:
-                error_text = "Training worker exited without reporting a terminal status."
+            error_text = _format_worker_exit(getattr(process, "exitcode", None))
+        if diagnostic_path is not None:
+            diagnostic_tail = _read_training_diagnostic_tail(diagnostic_path)
+            if diagnostic_tail:
+                error_text = _bounded_training_diagnostic(
+                    f"{error_text}\nWorker diagnostic tail:\n{diagnostic_tail}"
+                )
         with self._lock:
             task = self._tasks.get(task_id)
             method_name = task.method if task is not None else "unknown"
@@ -1005,7 +1151,14 @@ class TaskManager:
             )
             return True
         if event_type == "failed":
-            error_text = str(event.get("error") or "Training failed")
+            message = str(event.get("error") or "Training failed")
+            exception_type = str(event.get("exception_type") or "").strip()
+            traceback_text = _bounded_training_diagnostic(event.get("traceback"))
+            error_text = f"{exception_type}: {message}" if exception_type else message
+            if traceback_text:
+                error_text = _bounded_training_diagnostic(
+                    f"{error_text}\nWorker traceback:\n{traceback_text}"
+                )
             logger.error(
                 "event=forecast_training_failed worker=heavy task_id=%s "
                 "method=%s data_scope=%s error=%s",
@@ -1029,9 +1182,19 @@ class TaskManager:
     ) -> None:
         event_queue = self._mp_context.Queue()
         cancel_event = self._mp_context.Event()
+        diagnostic_path = self.store.root / ".task-diagnostics" / f"{task_id}.log"
+        diagnostic_path.parent.mkdir(parents=True, exist_ok=True)
         process = self._mp_context.Process(
             target=_process_training_entry,
-            args=(spec, task_id, str(self.store.root), event_queue, cancel_event, self._heartbeat_interval()),
+            args=(
+                spec,
+                task_id,
+                str(self.store.root),
+                event_queue,
+                cancel_event,
+                self._heartbeat_interval(),
+                str(diagnostic_path),
+            ),
             daemon=True,
         )
         process.start()
@@ -1122,14 +1285,24 @@ class TaskManager:
                             )
                     terminal = self._drain_process_events(task_id, spec, event_queue) or terminal
                     if not terminal and not self._task_is_terminal(task_id):
-                        self._finalize_dead_process(task_id, process, error_text=queue_error)
+                        self._finalize_dead_process(
+                            task_id,
+                            process,
+                            error_text=queue_error,
+                            diagnostic_path=diagnostic_path,
+                        )
                         terminal = True
                     break
 
                 if not process.is_alive():
                     terminal = self._drain_process_events(task_id, spec, event_queue) or terminal
                     if not terminal and not self._task_is_terminal(task_id):
-                        self._finalize_dead_process(task_id, process, error_text=queue_error)
+                        self._finalize_dead_process(
+                            task_id,
+                            process,
+                            error_text=queue_error,
+                            diagnostic_path=diagnostic_path,
+                        )
                     break
 
                 if terminal:
@@ -1155,6 +1328,7 @@ class TaskManager:
                     join_thread()
             except Exception:
                 pass
+            _remove_training_diagnostic(diagnostic_path)
 
     def get_status(self, task_id: str) -> Optional[TrainingTask]:
         persisted = self._job_store.get(task_id)
@@ -1295,7 +1469,9 @@ class TaskManager:
             "status": "cancelling" if cancel_requested else "not_cancelled",
         }
 
-    def cleanup_completed(self, max_age_seconds: float = _TASK_TTL_DEFAULT) -> int:
+    def cleanup_completed(self, max_age_seconds: Optional[float] = None) -> int:
+        if max_age_seconds is None:
+            max_age_seconds = self._task_ttl_seconds
         removed_ids = set(self._job_store.cleanup_completed(max_age_seconds))
         cutoff = time.time() - max_age_seconds
         with self._lock:

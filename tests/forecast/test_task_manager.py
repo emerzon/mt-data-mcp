@@ -118,8 +118,8 @@ class TestTaskManagerBasic(_TaskManagerTestCase):
             data_scope="EURUSD_H1",
             params_hash="old",
             status="completed",
-            completed_at=time.time() - 7200.0,
-            created_at=time.time() - 7300.0,
+            completed_at=time.time() - 90000.0,
+            created_at=time.time() - 90100.0,
         )
         self._job_store.upsert(old_completed)
 

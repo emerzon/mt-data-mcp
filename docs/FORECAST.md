@@ -379,6 +379,7 @@ Configuration (see [ENV_VARS.md](ENV_VARS.md#async-training--model-store)):
 - `MTDATA_FORECAST_JOBS_DB` — durable SQLite task registry (default `~/.mtdata/forecast/jobs.sqlite`).
 - `MTDATA_TRAIN_TIMEOUT_*_SECONDS` — per-category training timeouts for `instant`, `fast`, `moderate`, and `heavy` methods.
 - `MTDATA_FORECAST_HEARTBEAT_SECONDS`, `MTDATA_FORECAST_CANCEL_GRACE_SECONDS`, `MTDATA_FORECAST_SWEEPER_SECONDS` — task liveness, cancellation, and cleanup tuning.
+- `MTDATA_FORECAST_TASK_TTL_SECONDS` — retention for terminal task records and bounded failure diagnostics (default `86400`, or 24 hours).
 - `MTDATA_MODEL_STORE` — root directory for cached models (default `~/.mtdata/models`).
 - `MTDATA_MODEL_TTL_DAYS` — cache idle expiry in days since last use (default `7`); this is not a maximum model age.
 
@@ -391,6 +392,12 @@ Unexpected exceptions in an isolated forecast child are logged at `ERROR` with
 a bounded child traceback and captured stdout/stderr tails. These diagnostics
 are kept in server logs rather than returned to API callers, because they can
 contain local paths or dependency details.
+
+Heavy background workers retain Python tracebacks and captured stderr/fault
+output in the failed task's bounded `error` field. Signal exits are translated
+to names on POSIX and native status codes on Windows. `SIGKILL` can indicate an
+OOM kill or an explicit forced termination, so system/container logs remain the
+authoritative way to distinguish those causes.
 
 ---
 
