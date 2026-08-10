@@ -47,6 +47,8 @@ _FORECAST_PROCESS_ISOLATION_ENV = "MTDATA_FORECAST_PROCESS_ISOLATION"
 _FORECAST_PROCESS_TIMEOUT_ENV = "MTDATA_FORECAST_PROCESS_TIMEOUT_SECONDS"
 _FORECAST_PROCESS_CHILD_ENV = "MTDATA_FORECAST_PROCESS_CHILD"
 _FORECAST_PROCESS_ISOLATION_DEFAULT = "gpu"
+_FORECAST_CHILD_TRACEBACK_LIMIT = 12_000
+_FORECAST_CHILD_OUTPUT_LIMIT = 4_000
 _FORECAST_LIBRARY_MODELS_COMPACT_LIMIT = 20
 _FORECAST_ISOLATABLE_OPERATIONS = frozenset(
     {
@@ -310,6 +312,18 @@ def _send_forecast_process_message(channel: Any, message: Dict[str, Any]) -> Non
     raise RuntimeError("Invalid forecast child result channel")
 
 
+def _bounded_diagnostic(value: Any, *, limit: int, tail_only: bool = False) -> str:
+    text = str(value or "").strip()
+    if len(text) <= limit:
+        return text
+    marker = "\n... diagnostic truncated ...\n"
+    if tail_only:
+        return marker + text[-max(1, limit - len(marker)) :]
+    head_size = max(1, (limit - len(marker)) // 2)
+    tail_size = max(1, limit - len(marker) - head_size)
+    return text[:head_size] + marker + text[-tail_size:]
+
+
 @contextmanager
 def _suppress_forecast_child_side_output():
     stdout_buffer = io.StringIO()
@@ -332,7 +346,7 @@ def _suppress_forecast_child_side_output():
     try:
         logging.disable(logging.CRITICAL)
         with redirect_stdout(stdout_buffer), redirect_stderr(stderr_buffer):
-            yield
+            yield stdout_buffer, stderr_buffer
     finally:
         logging.disable(previous_disable)
         for key in env_updates:
@@ -348,7 +362,7 @@ def _suppress_forecast_child_side_output():
 
 def _forecast_process_entry(operation: str, payload: Dict[str, Any], result_channel: Any) -> None:
     os.environ[_FORECAST_PROCESS_CHILD_ENV] = "1"
-    with _suppress_forecast_child_side_output():
+    with _suppress_forecast_child_side_output() as (stdout_buffer, stderr_buffer):
         try:
             result = _run_forecast_payload_direct(operation, payload)
         except ForecastError as exc:
@@ -366,7 +380,20 @@ def _forecast_process_entry(operation: str, payload: Dict[str, Any], result_chan
                     "status": "exception",
                     "type": type(exc).__name__,
                     "message": str(exc),
-                    "traceback": traceback.format_exc(),
+                    "traceback": _bounded_diagnostic(
+                        traceback.format_exc(),
+                        limit=_FORECAST_CHILD_TRACEBACK_LIMIT,
+                    ),
+                    "stdout_tail": _bounded_diagnostic(
+                        stdout_buffer.getvalue(),
+                        limit=_FORECAST_CHILD_OUTPUT_LIMIT,
+                        tail_only=True,
+                    ),
+                    "stderr_tail": _bounded_diagnostic(
+                        stderr_buffer.getvalue(),
+                        limit=_FORECAST_CHILD_OUTPUT_LIMIT,
+                        tail_only=True,
+                    ),
                 },
             )
         else:
@@ -576,13 +603,41 @@ def _run_forecast_payload_in_process(operation: str, payload: Dict[str, Any]) ->
     if status == "forecast_error":
         raise ForecastError(str(message.get("message") or "Forecast child process failed"))
     if status == "exception":
-        tb = str(message.get("traceback") or "")
-        if tb:
-            logger.debug("Forecast child traceback for %s:\n%s", operation, tb)
-        exc_type = str(message.get("type") or "RuntimeError")
-        exc_message = str(message.get("message") or "Forecast child process failed")
-        raise RuntimeError(f"{operation} child process failed with {exc_type}: {exc_message}")
+        _raise_forecast_child_exception(operation, message)
     raise RuntimeError(f"{operation} child process returned an invalid status: {status or '<missing>'}")
+
+
+def _raise_forecast_child_exception(operation: str, message: Dict[str, Any]) -> None:
+    """Log bounded child diagnostics at the default-visible error level."""
+    exc_type = str(message.get("type") or "RuntimeError")
+    exc_message = str(message.get("message") or "Forecast child process failed")
+    traceback_text = _bounded_diagnostic(
+        message.get("traceback"),
+        limit=_FORECAST_CHILD_TRACEBACK_LIMIT,
+    )
+    if traceback_text:
+        logger.error(
+            "Forecast child traceback operation=%s type=%s:\n%s",
+            operation,
+            exc_type,
+            traceback_text,
+        )
+    for stream_name in ("stderr", "stdout"):
+        output = _bounded_diagnostic(
+            message.get(f"{stream_name}_tail"),
+            limit=_FORECAST_CHILD_OUTPUT_LIMIT,
+            tail_only=True,
+        )
+        if output:
+            logger.error(
+                "Forecast child %s tail operation=%s:\n%s",
+                stream_name,
+                operation,
+                output,
+            )
+    raise RuntimeError(
+        f"{operation} child process failed with {exc_type}: {exc_message}"
+    )
 
 
 def _lazy_module(module_name: str):

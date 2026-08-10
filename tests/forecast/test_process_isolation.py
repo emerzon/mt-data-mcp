@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import logging
+import sys
 import warnings
+
+import pytest
 
 from mtdata.core import forecast as core_forecast
 from mtdata.forecast import gpu_runtime
@@ -169,6 +173,8 @@ def test_child_entry_returns_ok_message(monkeypatch):
 
 def test_child_entry_returns_exception_message(monkeypatch):
     def fail(operation, payload):
+        print("child progress marker")
+        print("child warning marker", file=sys.stderr)
         raise RuntimeError("boom")
 
     monkeypatch.setattr(core_forecast, "_run_forecast_payload_direct", fail)
@@ -179,3 +185,40 @@ def test_child_entry_returns_exception_message(monkeypatch):
     assert queue.messages[0]["status"] == "exception"
     assert queue.messages[0]["type"] == "RuntimeError"
     assert queue.messages[0]["message"] == "boom"
+    assert queue.messages[0]["stdout_tail"] == "child progress marker"
+    assert queue.messages[0]["stderr_tail"] == "child warning marker"
+    assert "raise RuntimeError(\"boom\")" in queue.messages[0]["traceback"]
+
+
+def test_child_exception_traceback_is_error_visible(caplog):
+    message = {
+        "status": "exception",
+        "type": "ValueError",
+        "message": "bad scale",
+        "traceback": "Traceback from child.py, line 42",
+        "stderr_tail": "model setup warning",
+    }
+
+    with (
+        caplog.at_level(logging.ERROR, logger=core_forecast.__name__),
+        pytest.raises(RuntimeError, match="failed with ValueError: bad scale"),
+    ):
+        core_forecast._raise_forecast_child_exception("forecast_generate", message)
+
+    assert any(
+        record.levelno == logging.ERROR
+        and "Traceback from child.py, line 42" in record.message
+        for record in caplog.records
+    )
+    assert any("model setup warning" in record.message for record in caplog.records)
+
+
+def test_child_diagnostics_are_bounded_at_both_ends():
+    diagnostic = "HEAD" + ("x" * 20_000) + "TAIL"
+
+    bounded = core_forecast._bounded_diagnostic(diagnostic, limit=100)
+
+    assert len(bounded) == 100
+    assert bounded.startswith("HEAD")
+    assert bounded.endswith("TAIL")
+    assert "diagnostic truncated" in bounded

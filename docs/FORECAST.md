@@ -387,6 +387,11 @@ called with `async_mode=true`; the response includes a `task_id` to poll with
 `forecast_task_status`. Without `async_mode`, it performs the same train,
 persist, and predict lifecycle synchronously.
 
+Unexpected exceptions in an isolated forecast child are logged at `ERROR` with
+a bounded child traceback and captured stdout/stderr tails. These diagnostics
+are kept in server logs rather than returned to API callers, because they can
+contain local paths or dependency details.
+
 ---
 
 ## Quick Reference
