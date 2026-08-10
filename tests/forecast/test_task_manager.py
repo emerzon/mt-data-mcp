@@ -102,11 +102,36 @@ class _TaskManagerTestCase(unittest.TestCase):
 
 class TestSnapshot(unittest.TestCase):
     def test_snapshot_returns_copy(self):
-        task = TrainingTask(task_id="x", method="m", data_scope="s", params_hash="h")
+        task = TrainingTask(
+            task_id="x",
+            method="m",
+            data_scope="s",
+            params_hash="h",
+            progress=TrainingProgress(
+                step=1,
+                total_steps=2,
+                metrics={"loss": 0.5},
+            ),
+            result=TrainedModelHandle(
+                model_id="m/s/h",
+                method="m",
+                data_scope="s",
+                params_hash="h",
+                created_at=1.0,
+                metadata={"nested": {"value": 1}},
+                store_metadata={"labels": ["stable"]},
+            ),
+        )
         snap = _snapshot(task)
         self.assertEqual(snap.task_id, "x")
         snap.status = "failed"
+        snap.progress.metrics["loss"] = 1.0
+        snap.result.metadata["nested"]["value"] = 2
+        snap.result.store_metadata["labels"].append("mutated")
         self.assertEqual(task.status, "pending")
+        self.assertEqual(task.progress.metrics, {"loss": 0.5})
+        self.assertEqual(task.result.metadata, {"nested": {"value": 1}})
+        self.assertEqual(task.result.store_metadata, {"labels": ["stable"]})
 
 
 class TestTaskManagerBasic(_TaskManagerTestCase):

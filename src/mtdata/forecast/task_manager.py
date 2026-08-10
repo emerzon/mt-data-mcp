@@ -235,7 +235,7 @@ class _HeavyProcessControl:
 
 
 def _snapshot(task: TrainingTask) -> TrainingTask:
-    return copy.copy(task)
+    return copy.deepcopy(task)
 
 
 def _serialize_progress(progress: Optional[TrainingProgress]) -> Optional[Dict[str, Any]]:
