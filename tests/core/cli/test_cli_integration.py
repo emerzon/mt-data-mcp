@@ -1297,6 +1297,32 @@ class TestMain:
         err = capsys.readouterr().err
         assert "Traceback" in err or "Error" in err
 
+    @patch("mtdata.core.cli.api.discover_tools")
+    def test_forecast_train_rejects_one_shot_process(
+        self, mock_discover, capsys
+    ):
+        invoked = []
+
+        def forecast_train(symbol: str):
+            invoked.append(symbol)
+            return {"status": "pending", "task_id": "task-1"}
+
+        mock_discover.return_value = {
+            "forecast_train": {
+                "func": forecast_train,
+                "meta": {"description": "Train a forecast model"},
+            },
+        }
+
+        with patch("sys.argv", ["cli.py", "forecast_train", "EURUSD", "--json"]):
+            result = main()
+
+        payload = json.loads(capsys.readouterr().out)
+        assert result == 1
+        assert payload["error_code"] == "cli_background_process_required"
+        assert payload["operation"] == "forecast_train"
+        assert invoked == []
+
 
 # ========================================================================
 # Forecast generate custom parser integration
@@ -1330,6 +1356,58 @@ class TestForecastGenerateIntegration:
         assert request.detail == "compact"
         assert request.ci_alpha == 0.05
         assert call_kwargs["__cli_raw"] is True
+
+    @patch("mtdata.core.cli.api.discover_tools")
+    def test_forecast_generate_rejects_async_mode_in_one_shot_process(
+        self, mock_discover, capsys
+    ):
+        mock_fn = MagicMock(return_value={"status": "pending", "task_id": "task-1"})
+        mock_fn.__name__ = "forecast_generate"
+        mock_fn.__doc__ = "Generate forecasts."
+        mock_discover.return_value = {
+            "forecast_generate": {
+                "func": mock_fn,
+                "meta": {"description": "Generate forecasts"},
+            },
+        }
+
+        with patch(
+            "sys.argv",
+            ["cli.py", "forecast_generate", "EURUSD", "--async-mode", "--json"],
+        ):
+            result = main()
+
+        payload = json.loads(capsys.readouterr().out)
+        assert result == 1
+        assert payload["error_code"] == "cli_background_process_required"
+        assert payload["operation"] == "forecast_generate"
+        mock_fn.assert_not_called()
+
+    @patch("mtdata.core.cli.api.discover_tools")
+    def test_forecast_generate_allows_async_mode_in_shell_process(
+        self, mock_discover
+    ):
+        mock_fn = MagicMock(return_value={"status": "pending", "task_id": "task-1"})
+        mock_fn.__name__ = "forecast_generate"
+        mock_fn.__doc__ = "Generate forecasts."
+        mock_discover.return_value = {
+            "forecast_generate": {
+                "func": mock_fn,
+                "meta": {"description": "Generate forecasts"},
+            },
+        }
+
+        with (
+            patch("mtdata.core.cli.api._SHELL_SESSION_DEPTH", 1),
+            patch(
+                "sys.argv",
+                ["cli.py", "forecast_generate", "EURUSD", "--async-mode"],
+            ),
+        ):
+            result = main()
+
+        assert result == 0
+        assert mock_fn.call_args.kwargs["request"].async_mode is True
 
     @patch("mtdata.core.cli.api.discover_tools")
     def test_forecast_generate_missing_symbol_is_usage_error(

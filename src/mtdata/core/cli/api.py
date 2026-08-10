@@ -203,6 +203,11 @@ ToolInfo = Dict[str, Any]
 
 CLI_PROGRAM = "mtdata-cli"
 PACKAGE_NAME = "mtdata"
+_SHELL_SESSION_DEPTH = 0
+_BACKGROUND_COMMAND_REMEDIATION = (
+    "Use 'mtdata-cli shell', an MCP server, or the Web API so the training "
+    "worker remains alive."
+)
 
 
 def _read_local_project_version() -> Optional[str]:
@@ -1042,7 +1047,7 @@ def create_command_function(
     func_info, cmd_name: str = "", cmd_parser: Optional[argparse.ArgumentParser] = None
 ):
     """Create a command function that calls the MCP function dynamically"""
-    return _create_command_function_impl(
+    command_func = _create_command_function_impl(
         func_info,
         cmd_name=cmd_name,
         render_cli_result=_render_cli_result,
@@ -1053,6 +1058,25 @@ def create_command_function(
         is_typed_dict_type=_is_typed_dict_type,
         invoke_tool_function=_invoke_cli_tool_function,
     )
+    if cmd_name != "forecast_train":
+        return command_func
+
+    def _forecast_train_cmd(args: Any) -> int:
+        if _SHELL_SESSION_DEPTH <= 0:
+            return _render_cli_result_status(
+                build_error_payload(
+                    "Background forecast training cannot run in a one-shot CLI process.",
+                    code="cli_background_process_required",
+                    operation=cmd_name,
+                    remediation=_BACKGROUND_COMMAND_REMEDIATION,
+                    documentation="docs/FORECAST.md#background-training--model-store",
+                ),
+                args=args,
+                cmd_name=cmd_name,
+            )
+        return command_func(args)
+
+    return _forecast_train_cmd
 
 
 def _type_name(t):
@@ -1850,6 +1874,19 @@ def main():  # noqa: C901
                     _write_cli_text(config_output)
                 return 0
 
+            if request.async_mode and _SHELL_SESSION_DEPTH <= 0:
+                return _render_cli_result_status(
+                    build_error_payload(
+                        "Asynchronous forecast generation cannot run in a one-shot CLI process.",
+                        code="cli_background_process_required",
+                        operation="forecast_generate",
+                        remediation=_BACKGROUND_COMMAND_REMEDIATION,
+                        documentation="docs/FORECAST.md#background-training--model-store",
+                    ),
+                    args=args,
+                    cmd_name="forecast_generate",
+                )
+
             out = _invoke_cli_tool_function(
                 func,
                 args=args,
@@ -1964,11 +2001,14 @@ def _write_shell_batch_record(record: Dict[str, Any]) -> None:
 
 def run_shell(*, interactive: bool = True) -> int:
     """Run repeated CLI commands while reusing the initialized Python process."""
+    global _SHELL_SESSION_DEPTH
+
     if interactive:
         print("mtdata-cli shell (type 'exit' or 'quit' to stop)")
     original_argv = list(sys.argv)
     overall_status = 0
     line_number = 0
+    _SHELL_SESSION_DEPTH += 1
     try:
         while True:
             if interactive:
@@ -2043,6 +2083,7 @@ def run_shell(*, interactive: bool = True) -> int:
                 # warmed shell alive for the next command.
                 continue
     finally:
+        _SHELL_SESSION_DEPTH -= 1
         sys.argv = original_argv
 
 

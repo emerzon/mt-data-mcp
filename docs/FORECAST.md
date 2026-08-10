@@ -348,9 +348,11 @@ forecast_task_list --json
 forecast_task_cancel --task-id <task_id>
 ```
 
-One-shot `mtdata-cli forecast_train ...` commands cannot keep an in-process
-worker alive after the command exits. Use `mtdata-cli shell`, an MCP server, or
-the Web API for training tasks. A `forecast_task_wait` deadline returns
+One-shot `mtdata-cli forecast_train ...` and
+`mtdata-cli forecast_generate ... --async-mode true` commands are rejected: they
+cannot keep an in-process worker alive after the command exits. Use
+`mtdata-cli shell`, an MCP server, or the Web API for training tasks. A
+`forecast_task_wait` deadline returns
 `success: false`, `status: "timeout"`, and preserves the live task state in
 `task_status` so automation does not treat an unfinished model as usable.
 
