@@ -417,7 +417,21 @@ def _load_indicator_doc_choices(
     return categories, []
 
 
-_CATEGORY_CHOICES, _INDICATOR_NAME_CHOICES = _load_indicator_doc_choices()
+# pandas-ta-classic categories are part of this public request contract. Keep
+# the small, stable vocabulary local so importing shared schemas does not import
+# pandas and the full indicator registry on every CLI/server process start.
+_CATEGORY_CHOICES = [
+    "candles",
+    "cycles",
+    "momentum",
+    "overlap",
+    "performance",
+    "statistics",
+    "trend",
+    "volatility",
+    "volume",
+]
+_INDICATOR_NAME_CHOICES: List[str] = []
 
 if _CATEGORY_CHOICES:
     # Create a Literal type alias dynamically
