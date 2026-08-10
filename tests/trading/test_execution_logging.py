@@ -8,6 +8,7 @@ from mtdata.core.execution_logging import (
     log_operation_start,
     run_logged_operation,
 )
+from mtdata.core.request_context import request_id_scope
 
 
 def test_run_logged_operation_logs_finish_event(caplog):
@@ -23,6 +24,24 @@ def test_run_logged_operation_logs_finish_event(caplog):
     assert any(
         "event=finish operation=sample_op success=True" in record.message
         for record in caplog.records
+    )
+
+
+def test_request_context_is_added_to_operation_logs(caplog):
+    with (
+        request_id_scope("web-request-42"),
+        caplog.at_level(logging.DEBUG, logger="mtdata.test.exec"),
+    ):
+        run_logged_operation(
+            logging.getLogger("mtdata.test.exec"),
+            operation="sample_op",
+            func=lambda: {"success": True},
+        )
+
+    assert any(
+        "request_id=web-request-42" in record.message
+        for record in caplog.records
+        if "operation=sample_op" in record.message
     )
 
 

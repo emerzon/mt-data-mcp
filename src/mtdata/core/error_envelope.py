@@ -6,6 +6,8 @@ import logging
 from typing import Any, Dict, Optional
 from uuid import uuid4
 
+from .request_context import current_request_id
+
 _ERROR_GUIDANCE: Dict[str, Dict[str, Any]] = {
     "mt5_connection_error": {
         "remediation": "Ensure MetaTrader 5 is running, logged in, and reachable.",
@@ -71,7 +73,7 @@ _METHOD_ERROR_CODES = frozenset(
 
 
 def new_request_id() -> str:
-    return uuid4().hex[:12]
+    return current_request_id() or uuid4().hex[:12]
 
 
 def _default_error_guidance(

@@ -16,6 +16,7 @@ from starlette.staticfiles import StaticFiles
 
 from ..bootstrap.runtime import WebApiRuntimeSettings, load_web_api_runtime_settings
 from .output_serialization import sanitize_json
+from .request_context import normalize_request_id, request_id_scope
 
 logger = logging.getLogger(__name__)
 
@@ -69,6 +70,19 @@ def create_web_api_app(settings: WebApiRuntimeSettings | None = None) -> FastAPI
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    @app.middleware("http")
+    async def attach_request_id(request: Request, call_next: Any) -> Response:
+        request_id = normalize_request_id(request.headers.get("x-request-id"))
+        if request_id is None:
+            from .error_envelope import new_request_id
+
+            request_id = new_request_id()
+        with request_id_scope(request_id):
+            response = await call_next(request)
+        response.headers["X-Request-ID"] = request_id
+        return response
+
     return app
 
 

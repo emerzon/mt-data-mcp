@@ -1,4 +1,5 @@
 from mtdata.core.error_envelope import build_error_payload, normalize_error_payload
+from mtdata.core.request_context import request_id_scope
 
 
 def test_build_error_payload_adds_common_remediation():
@@ -12,6 +13,13 @@ def test_build_error_payload_adds_common_remediation():
     assert out["request_id"] == "req123"
     assert "MetaTrader 5 is running" in out["remediation"]
     assert out["related_tools"] == ["symbols_list"]
+
+
+def test_build_error_payload_uses_bound_request_id():
+    with request_id_scope("bound-request-7"):
+        out = build_error_payload("broken", code="test_error")
+
+    assert out["request_id"] == "bound-request-7"
 
 
 def test_build_error_payload_keeps_explicit_guidance():

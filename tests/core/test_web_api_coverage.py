@@ -280,6 +280,47 @@ class TestWebApiRuntimeHelpers:
         assert result.mounted is False
         assert any("Web UI dist not found" in record.message for record in caplog.records)
 
+    def test_request_id_is_shared_by_header_and_error_envelope(self):
+        from mtdata.core.error_envelope import build_error_payload
+
+        runtime_app = create_web_api_app(
+            settings=WebApiRuntimeSettings(cors_origins=("http://localhost",))
+        )
+
+        @runtime_app.get("/failure")
+        def failure():
+            return build_error_payload(
+                "broken",
+                code="test_failure",
+                operation="test_request",
+            )
+
+        response = TestClient(runtime_app).get(
+            "/failure",
+            headers={"X-Request-ID": "client-request_42"},
+        )
+
+        assert response.headers["X-Request-ID"] == "client-request_42"
+        assert response.json()["request_id"] == "client-request_42"
+
+    def test_invalid_request_id_is_replaced(self):
+        runtime_app = create_web_api_app(
+            settings=WebApiRuntimeSettings(cors_origins=("http://localhost",))
+        )
+
+        @runtime_app.get("/ok")
+        def ok():
+            return {"success": True}
+
+        response = TestClient(runtime_app).get(
+            "/ok",
+            headers={"X-Request-ID": "unsafe request value"},
+        )
+
+        assert response.status_code == 200
+        assert response.headers["X-Request-ID"] != "unsafe request value"
+        assert len(response.headers["X-Request-ID"]) == 12
+
 
 class TestWebApiHandlers:
     def test_require_mt5_connection_uses_503_for_mt5_outage(self):

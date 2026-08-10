@@ -7,6 +7,8 @@ import time
 from contextvars import ContextVar
 from typing import Any, Callable, Optional, TypeVar
 
+from .request_context import current_request_id
+
 ResultT = TypeVar("ResultT")
 
 _ACTIVE_OPERATIONS: ContextVar[tuple[str, ...]] = ContextVar(
@@ -200,6 +202,9 @@ def _failure_log_fields(result: Any) -> dict[str, Any]:
 
 
 def _format_fields(fields: dict[str, Any]) -> str:
+    request_id = current_request_id()
+    if request_id and "request_id" not in fields:
+        fields = {"request_id": request_id, **fields}
     parts: list[str] = []
     for key, value in fields.items():
         if value is None:

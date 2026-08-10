@@ -69,6 +69,11 @@ Security checklist for remote access:
 
 Responses are JSON. Most endpoints return compact, UI-oriented payloads rather than the full CLI/MCP output contract. For richer historical rows or method diagnostics, prefer the CLI with `--json` and `--extras`.
 
+Every response includes `X-Request-ID`. Clients may supply a log-safe identifier
+in the same request header (1–128 letters, digits, `.`, `_`, `:`, or `-`); the
+server otherwise generates one. Error envelopes and request-scoped operation
+logs use that same identifier so a failed HTTP call can be traced end to end.
+
 ## Endpoints
 
 ### Health / UI
