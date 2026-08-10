@@ -80,6 +80,8 @@ def test_strategy_backtest_sma_cross_generates_long_trade(monkeypatch):
         "trades_observed": 1,
     }
     assert "equity_curve" not in out
+    assert all("_entry_idx" not in trade for trade in out["trades"])
+    assert all("_exit_idx" not in trade for trade in out["trades"])
     assert "drawdown_periods" not in out
     assert "monthly_breakdown" not in out
     assert "trade_distribution" not in out

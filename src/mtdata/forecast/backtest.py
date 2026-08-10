@@ -954,6 +954,8 @@ def _build_strategy_trade(
     if return_after_known_costs <= -0.999:
         return_after_known_costs = -0.999
     return {
+        "_entry_idx": int(entry_idx),
+        "_exit_idx": int(exit_idx),
         "direction": _strategy_signal_label(float(direction)),
         "entry_time": _format_time_minimal(float(entry_time)),
         "exit_time": _format_time_minimal(float(exit_time)),
@@ -974,6 +976,8 @@ def _public_strategy_trade(
     cost_model_complete: bool,
 ) -> Dict[str, Any]:
     out = dict(trade)
+    out.pop("_entry_idx", None)
+    out.pop("_exit_idx", None)
     if cost_model_complete:
         out["return_net"] = out.pop("return_after_known_costs", None)
     return out
@@ -1260,15 +1264,11 @@ def strategy_backtest(  # noqa: C901
             for trade in trades
             if trade.get("return_after_known_costs") is not None
         ]
-        entry_indices = []
-        for trade in trades:
-            entry_time_text = str(trade.get("entry_time") or "")
-            try:
-                entry_idx = next(i for i, ts in enumerate(times) if _format_time_minimal(float(ts)) == entry_time_text)
-            except Exception:
-                entry_idx = None
-            if entry_idx is not None:
-                entry_indices.append(entry_idx)
+        entry_indices = [
+            int(trade["_entry_idx"])
+            for trade in trades
+            if trade.get("_entry_idx") is not None
+        ]
         trade_spacing = None
         if len(entry_indices) > 1:
             trade_spacing = int(np.median(np.diff(entry_indices)))
@@ -1519,13 +1519,9 @@ def strategy_backtest(  # noqa: C901
                 cumulative_net = 1.0
                 trade_exit_times = {}
                 for i, trade in enumerate(trades):
-                    exit_time_str = str(trade.get("exit_time") or "")
-                    if exit_time_str:
-                        try:
-                            exit_idx = next(j for j, ts in enumerate(times) if _format_time_minimal(float(ts)) == exit_time_str)
-                            trade_exit_times[exit_idx] = i
-                        except Exception:
-                            pass
+                    exit_idx = trade.get("_exit_idx")
+                    if exit_idx is not None:
+                        trade_exit_times[int(exit_idx)] = i
                 
                 for idx in sorted(trade_exit_times.keys()):
                     trade_idx = trade_exit_times[idx]
