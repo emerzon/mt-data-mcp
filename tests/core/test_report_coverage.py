@@ -13,6 +13,32 @@ from pydantic import ValidationError
 from mtdata.utils.mt5 import MT5ConnectionError
 
 
+def test_barrier_best_summary_keeps_text_and_structured_fields_aligned():
+    from mtdata.core.report.use_cases import _build_barrier_best_summary
+
+    details, entry = _build_barrier_best_summary(
+        {
+            "tp": 1.234,
+            "sl": 0.456,
+            "ev": 0.25,
+            "edge": 0.1,
+            "edge_vs_breakeven": -0.2,
+        },
+        direction="long",
+        include_direction_field=True,
+        format_number=str,
+    )
+
+    assert details[:3] == ["dir=long", "tp=1.23%", "sl=0.46%"]
+    assert entry["direction"] == "long"
+    assert entry["tp_pct"] == 1.23
+    assert entry["sl_pct"] == 0.46
+    assert entry["probability_edge"] == 0.1
+    assert entry["edge_vs_breakeven"] == -0.2
+    assert entry["ev_edge_conflict"] is True
+    assert "ev_edge_conflict=true" in details
+
+
 def test_sections_status_preserves_intentional_omissions():
     from mtdata.core.report.use_cases import _build_sections_status
 

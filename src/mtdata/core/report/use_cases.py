@@ -6,7 +6,7 @@ import time
 import warnings
 from contextlib import nullcontext
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from ...utils.time import format_datetime_utc
 from ..execution_logging import log_operation_exception, run_logged_operation
@@ -428,6 +428,79 @@ def _round_compact_summary_value(value: Any, *, significant_digits: int = 6) -> 
             for item in value
         ]
     return value
+
+
+def _build_barrier_best_summary(
+    best: Dict[str, Any],
+    *,
+    direction: Any = None,
+    include_direction_field: bool = False,
+    format_number: Callable[[Any], str],
+) -> tuple[List[str], Dict[str, Any]]:
+    """Build matching text and structured summaries for one barrier candidate."""
+    details: List[str] = []
+    entry: Dict[str, Any] = {}
+    if direction:
+        direction_text = str(direction)
+        details.append(f"dir={direction_text}")
+        if include_direction_field:
+            entry["direction"] = direction_text
+
+    metrics = (
+        ("tp", "tp_pct", "tp", "tp_pct", "%"),
+        ("sl", "sl_pct", "sl", "sl_pct", "%"),
+        ("ev", "ev", "ev", "ev", ""),
+        ("edge", "edge", "probability_edge", "probability_edge", ""),
+        (
+            "edge_vs_breakeven",
+            "edge_vs_breakeven",
+            "edge_vs_breakeven",
+            "edge_vs_breakeven",
+            "",
+        ),
+    )
+    for source_key, metric_name, detail_key, output_key, suffix in metrics:
+        value = best.get(source_key)
+        if value is None:
+            continue
+        rounded = _round_report_barrier_metric(metric_name, value)
+        details.append(f"{detail_key}={format_number(rounded)}{suffix}")
+        entry[output_key] = rounded
+
+    ev = best.get("ev")
+    edge_vs_breakeven = best.get("edge_vs_breakeven")
+    conflict_metric = (
+        "edge_vs_breakeven" if edge_vs_breakeven is not None else "edge"
+    )
+    conflict_value = (
+        edge_vs_breakeven
+        if edge_vs_breakeven is not None
+        else best.get("edge")
+    )
+    try:
+        if ev is not None and conflict_value is not None:
+            ev_num = float(ev)
+            edge_num = float(conflict_value)
+            if (ev_num > 0 and edge_num < 0) or (
+                ev_num < 0 and edge_num > 0
+            ):
+                reason = f"ev and {conflict_metric} have opposite signs"
+                details.extend(
+                    (
+                        "ev_edge_conflict=true",
+                        f"ev_edge_conflict_reason={reason}",
+                    )
+                )
+                entry.update(
+                    {
+                        "ev_edge_conflict": True,
+                        "conflict_reason": reason,
+                        "trading_note": _BARRIER_EV_EDGE_CONFLICT_NOTE,
+                    }
+                )
+    except Exception:
+        pass
+    return details, entry
 
 
 def _compact_summary_structured(value: Any) -> Any:
@@ -1447,55 +1520,11 @@ def run_report_generate(  # noqa: C901
                         best = sub.get("best") if isinstance(sub, dict) else None
                         if not best:
                             continue
-                        tp = best.get("tp")
-                        sl = best.get("sl")
-                        ev = best.get("ev")
-                        edge = best.get("edge")
-                        edge_vs_breakeven = best.get("edge_vs_breakeven")
-                        details: List[str] = [f"dir={dname}"]
-                        barrier_entry: Dict[str, Any] = {}
-                        if tp is not None:
-                            tp_out = _round_report_barrier_metric("tp_pct", tp)
-                            details.append(f"tp={format_number(tp_out)}%")
-                            barrier_entry["tp_pct"] = tp_out
-                        if sl is not None:
-                            sl_out = _round_report_barrier_metric("sl_pct", sl)
-                            details.append(f"sl={format_number(sl_out)}%")
-                            barrier_entry["sl_pct"] = sl_out
-                        if ev is not None:
-                            ev_out = _round_report_barrier_metric("ev", ev)
-                            details.append(f"ev={format_number(ev_out)}")
-                            barrier_entry["ev"] = ev_out
-                        if edge is not None:
-                            edge_out = _round_report_barrier_metric("edge", edge)
-                            details.append(f"probability_edge={format_number(edge_out)}")
-                            barrier_entry["probability_edge"] = edge_out
-                        if edge_vs_breakeven is not None:
-                            edge_be_out = _round_report_barrier_metric(
-                                "edge_vs_breakeven",
-                                edge_vs_breakeven,
-                            )
-                            details.append(
-                                f"edge_vs_breakeven={format_number(edge_be_out)}"
-                            )
-                            barrier_entry["edge_vs_breakeven"] = edge_be_out
-                        try:
-                            conflict_metric = (
-                                "edge_vs_breakeven" if edge_vs_breakeven is not None else "edge"
-                            )
-                            conflict_value = edge_vs_breakeven if edge_vs_breakeven is not None else edge
-                            if ev is not None and conflict_value is not None:
-                                ev_num = float(ev)
-                                edge_num = float(conflict_value)
-                                if (ev_num > 0 and edge_num < 0) or (ev_num < 0 and edge_num > 0):
-                                    reason = f"ev and {conflict_metric} have opposite signs"
-                                    details.append("ev_edge_conflict=true")
-                                    details.append(f"ev_edge_conflict_reason={reason}")
-                                    barrier_entry["ev_edge_conflict"] = True
-                                    barrier_entry["conflict_reason"] = reason
-                                    barrier_entry["trading_note"] = _BARRIER_EV_EDGE_CONFLICT_NOTE
-                        except Exception:
-                            pass
+                        details, barrier_entry = _build_barrier_best_summary(
+                            best,
+                            direction=dname,
+                            format_number=format_number,
+                        )
                         if details:
                             summ.append("barrier best " + " ".join(details))
                         if barrier_entry:
@@ -1507,58 +1536,12 @@ def run_report_generate(  # noqa: C901
                     best = bar.get("best") if isinstance(bar, dict) else None
                     direction = bar.get("direction") if isinstance(bar, dict) else None
                     if best:
-                        tp = best.get("tp")
-                        sl = best.get("sl")
-                        ev = best.get("ev")
-                        edge = best.get("edge")
-                        edge_vs_breakeven = best.get("edge_vs_breakeven")
-                        details: List[str] = []
-                        barrier_entry: Dict[str, Any] = {}
-                        if direction:
-                            details.append(f"dir={str(direction)}")
-                            barrier_entry["direction"] = str(direction)
-                        if tp is not None:
-                            tp_out = _round_report_barrier_metric("tp_pct", tp)
-                            details.append(f"tp={format_number(tp_out)}%")
-                            barrier_entry["tp_pct"] = tp_out
-                        if sl is not None:
-                            sl_out = _round_report_barrier_metric("sl_pct", sl)
-                            details.append(f"sl={format_number(sl_out)}%")
-                            barrier_entry["sl_pct"] = sl_out
-                        if ev is not None:
-                            ev_out = _round_report_barrier_metric("ev", ev)
-                            details.append(f"ev={format_number(ev_out)}")
-                            barrier_entry["ev"] = ev_out
-                        if edge is not None:
-                            edge_out = _round_report_barrier_metric("edge", edge)
-                            details.append(f"probability_edge={format_number(edge_out)}")
-                            barrier_entry["probability_edge"] = edge_out
-                        if edge_vs_breakeven is not None:
-                            edge_be_out = _round_report_barrier_metric(
-                                "edge_vs_breakeven",
-                                edge_vs_breakeven,
-                            )
-                            details.append(
-                                f"edge_vs_breakeven={format_number(edge_be_out)}"
-                            )
-                            barrier_entry["edge_vs_breakeven"] = edge_be_out
-                        try:
-                            conflict_metric = (
-                                "edge_vs_breakeven" if edge_vs_breakeven is not None else "edge"
-                            )
-                            conflict_value = edge_vs_breakeven if edge_vs_breakeven is not None else edge
-                            if ev is not None and conflict_value is not None:
-                                ev_num = float(ev)
-                                edge_num = float(conflict_value)
-                                if (ev_num > 0 and edge_num < 0) or (ev_num < 0 and edge_num > 0):
-                                    reason = f"ev and {conflict_metric} have opposite signs"
-                                    details.append("ev_edge_conflict=true")
-                                    details.append(f"ev_edge_conflict_reason={reason}")
-                                    barrier_entry["ev_edge_conflict"] = True
-                                    barrier_entry["conflict_reason"] = reason
-                                    barrier_entry["trading_note"] = _BARRIER_EV_EDGE_CONFLICT_NOTE
-                        except Exception:
-                            pass
+                        details, barrier_entry = _build_barrier_best_summary(
+                            best,
+                            direction=direction,
+                            include_direction_field=True,
+                            format_number=format_number,
+                        )
                         if details:
                             summ.append("barrier best " + " ".join(details))
                         if barrier_entry:
