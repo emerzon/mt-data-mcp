@@ -21,7 +21,11 @@ def _make_module(name, attrs=None):
     return mod
 
 
-class _FakeForecaster:
+class _FakeBaseForecaster:
+    """Minimal stand-in for sktime.forecasting.base.BaseForecaster."""
+
+
+class _FakeForecaster(_FakeBaseForecaster):
     """Mock sktime forecaster that supports fit/predict/predict_interval."""
     def __init__(self, **kw):
         self._kw = kw
@@ -61,6 +65,10 @@ class _FakeAutoETS(_FakeForecaster):
 # Build sktime stub modules
 _sktime = _make_module("sktime")
 _sktime_forecasting = _make_module("sktime.forecasting")
+_sktime_forecasting_base = _make_module(
+    "sktime.forecasting.base",
+    {"BaseForecaster": _FakeBaseForecaster},
+)
 _sktime_forecasting_theta = _make_module("sktime.forecasting.theta", {"ThetaForecaster": _FakeThetaForecaster})
 _sktime_forecasting_naive = _make_module("sktime.forecasting.naive", {"NaiveForecaster": _FakeNaiveForecaster})
 _sktime_forecasting_ets = _make_module("sktime.forecasting.ets", {"AutoETS": _FakeAutoETS})
@@ -68,6 +76,7 @@ _sktime_forecasting_ets = _make_module("sktime.forecasting.ets", {"AutoETS": _Fa
 _STUBS = {
     "sktime": _sktime,
     "sktime.forecasting": _sktime_forecasting,
+    "sktime.forecasting.base": _sktime_forecasting_base,
     "sktime.forecasting.theta": _sktime_forecasting_theta,
     "sktime.forecasting.naive": _sktime_forecasting_naive,
     "sktime.forecasting.ets": _sktime_forecasting_ets,
@@ -143,12 +152,12 @@ class TestGenericSktimeGetEstimator:
 
     def test_invalid_estimator_path(self):
         m = GenericSktimeMethod()
-        with pytest.raises(ValueError, match="Could not import"):
+        with pytest.raises(ValueError, match="must be inside sktime.forecasting"):
             m._get_estimator(12, {"estimator": "nonexistent.module.Class"})
 
     def test_bad_rsplit(self):
         m = GenericSktimeMethod()
-        with pytest.raises(ValueError, match="Could not import"):
+        with pytest.raises(ValueError, match="must be inside sktime.forecasting"):
             m._get_estimator(12, {"estimator": "NoDotsHere"})
 
 
