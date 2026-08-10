@@ -1576,6 +1576,78 @@ class TestMainEntryPoints:
         mock_mcp.run.assert_not_called()
 
 
+class TestMcpHttpProbes:
+    def test_fastmcp_http_apps_include_probe_routes(self):
+        from mtdata.core import server
+
+        for app in (server.mcp.sse_app(), server.mcp.streamable_http_app()):
+            paths = {getattr(route, "path", None) for route in app.routes}
+            assert {"/live", "/ready"} <= paths
+
+    def test_readiness_payload_reports_connected(self):
+        from mtdata.core import server
+
+        with patch.object(server, "mt5_connection_error", return_value=None):
+            payload, status_code = server._mcp_readiness_payload()
+
+        assert status_code == 200
+        assert payload == {
+            "service": "mtdata-mcp",
+            "status": "ok",
+            "ready": True,
+            "components": {"mt5_connection": {"status": "ok"}},
+        }
+
+    def test_readiness_payload_reports_mt5_outage_without_error_details(self):
+        from mtdata.core import server
+
+        connection_error = {
+            "error": "terminal path and account details",
+            "error_code": "mt5_connection_error",
+            "remediation": "secret remediation context",
+        }
+        with patch.object(
+            server,
+            "mt5_connection_error",
+            return_value=connection_error,
+        ):
+            payload, status_code = server._mcp_readiness_payload()
+
+        assert status_code == 503
+        assert payload["ready"] is False
+        assert payload["components"]["mt5_connection"] == {
+            "status": "error",
+            "error_code": "mt5_connection_error",
+        }
+
+    def test_prefixed_sse_keeps_probes_at_server_root(self):
+        from starlette.testclient import TestClient
+
+        from mtdata.bootstrap.runtime import McpRuntimeSettings
+        from mtdata.core import server
+
+        captured = {}
+
+        def capture_app(app, **_kwargs):
+            captured["app"] = app
+
+        runtime = McpRuntimeSettings(transport="sse", mount_path="/mtdata")
+        with (
+            patch.object(server.mcp, "sse_app", return_value=MagicMock()),
+            patch("uvicorn.run", side_effect=capture_app),
+        ):
+            server._run_prefixed_sse(runtime)
+
+        with (
+            patch.object(server, "mt5_connection_error", return_value=None),
+            TestClient(captured["app"]) as client,
+        ):
+            assert client.get("/live").status_code == 200
+            ready = client.get("/ready")
+
+        assert ready.status_code == 200
+        assert ready.json()["ready"] is True
+
 # ── mcp instance ──────────────────────────────────────────────────────────
 
 class TestMcpInstance:

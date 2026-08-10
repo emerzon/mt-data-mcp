@@ -21,7 +21,12 @@ If the Web API is involved, also check:
 ```bash
 mtdata-webapi
 curl http://127.0.0.1:8000/api/v1/health
+curl http://127.0.0.1:8000/api/v1/ready
 ```
+
+`/health` confirms that the Web API process responds; `/ready` also checks the
+MT5 connection. For `mtdata-sse` or `mtdata-streamable-http`, use `/live` for
+process liveness and `/ready` for MT5 readiness.
 
 Keep the first troubleshooting pass read-only. Do not use `trade_place`, `trade_modify`, or `trade_close` while diagnosing setup issues unless you are intentionally testing on a demo account.
 

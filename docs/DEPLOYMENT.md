@@ -158,9 +158,16 @@ Remove later with `nssm stop mtdata-sse` then `nssm remove mtdata-sse confirm`.
 |---------|-------|------------------|
 | `mtdata-webapi` | `GET http://<host>:<port>/health` | `{"service":"mtdata-webui","status":"ok"}` |
 | `mtdata-webapi` | `GET http://<host>:<port>/ready` | `200` when MT5 is reachable; non-`200` otherwise |
-| `mtdata-sse` | `GET http://<host>:<port>/sse` | An open, streaming SSE connection |
+| `mtdata-sse` | `GET http://<host>:<port>/live` | `200` while the MCP process can serve HTTP requests |
+| `mtdata-sse` | `GET http://<host>:<port>/ready` | `200` when MT5 is reachable; `503` otherwise |
+| `mtdata-streamable-http` | `GET http://<host>:<port>/live` | `200` while the MCP process can serve HTTP requests |
+| `mtdata-streamable-http` | `GET http://<host>:<port>/ready` | `200` when MT5 is reachable; `503` otherwise |
 
-`/health` and `/ready` are also served under `/api` and `/api/v1`. Use `/ready` (not `/health`) if you want the probe to fail when the MT5 terminal is down. Point your task/service monitor or an external uptime check at these URLs.
+The Web API's `/health` and `/ready` routes are also served under `/api` and
+`/api/v1`. Use `/ready` when a probe should fail with the MT5 terminal down;
+use `/health` (Web API) or `/live` (MCP HTTP transports) for process liveness.
+MCP probes remain at the server root when `FASTMCP_MOUNT_PATH` moves the MCP
+protocol endpoint.
 
 ---
 

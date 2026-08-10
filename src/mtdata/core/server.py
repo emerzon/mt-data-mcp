@@ -3,7 +3,7 @@
 import atexit
 import logging
 import os
-from typing import Literal, Optional, cast
+from typing import Any, Literal, Optional, cast
 
 from ..bootstrap.runtime import (
     McpRuntimeSettings,
@@ -15,17 +15,73 @@ from ..bootstrap.tools import bootstrap_tools
 from ..shared.constants import SERVICE_NAME
 from ..utils.mt5 import mt5_connection
 from ._mcp_instance import mcp
+from .mt5_gateway import mt5_connection_error
+
+
+def _mcp_readiness_payload() -> tuple[dict[str, Any], int]:
+    """Return MCP readiness without invoking a user-facing tool."""
+    connection_error = mt5_connection_error()
+    if connection_error is None:
+        return (
+            {
+                "service": "mtdata-mcp",
+                "status": "ok",
+                "ready": True,
+                "components": {"mt5_connection": {"status": "ok"}},
+            },
+            200,
+        )
+    return (
+        {
+            "service": "mtdata-mcp",
+            "status": "degraded",
+            "ready": False,
+            "components": {
+                "mt5_connection": {
+                    "status": "error",
+                    "error_code": "mt5_connection_error",
+                }
+            },
+        },
+        503,
+    )
+
+
+@mcp.custom_route("/live", methods=["GET"], include_in_schema=False)
+async def _mcp_live(_request: Any):
+    """Report whether the MCP HTTP process can serve requests."""
+    from starlette.responses import JSONResponse
+
+    return JSONResponse({"service": "mtdata-mcp", "status": "ok"})
+
+
+@mcp.custom_route("/ready", methods=["GET"], include_in_schema=False)
+async def _mcp_ready(_request: Any):
+    """Report whether the MCP process can establish its MT5 dependency."""
+    from starlette.concurrency import run_in_threadpool
+    from starlette.responses import JSONResponse
+
+    payload, status_code = await run_in_threadpool(_mcp_readiness_payload)
+    return JSONResponse(payload, status_code=status_code)
 
 
 def _run_prefixed_sse(runtime: McpRuntimeSettings) -> None:
     """Mount the SSE app so advertised and routed message URLs agree."""
     import uvicorn
     from starlette.applications import Starlette
-    from starlette.routing import Mount
+    from starlette.routing import Mount, Route
 
     prefix = "/" + runtime.mount_path.strip("/")
     inner = mcp.sse_app(mount_path=prefix)
-    app = Starlette(routes=[Mount(prefix, app=inner)])
+    # Custom FastMCP routes live inside ``inner``. Keep standard probe paths at
+    # the server root even when the MCP protocol itself has a mount prefix.
+    app = Starlette(
+        routes=[
+            Route("/live", endpoint=_mcp_live, methods=["GET"]),
+            Route("/ready", endpoint=_mcp_ready, methods=["GET"]),
+            Mount(prefix, app=inner),
+        ]
+    )
     uvicorn.run(
         app,
         host=runtime.host,
@@ -97,6 +153,13 @@ def main(
             getattr(settings, 'host', '127.0.0.1'),
             getattr(settings, 'port', 8000),
             getattr(settings, 'streamable_http_path', runtime.mount_path),
+        )
+
+    if transport_name in {"sse", "streamable-http"} and settings is not None:
+        logger.info(
+            "MCP probes available at http://%s:%s/live and /ready",
+            getattr(settings, 'host', '127.0.0.1'),
+            getattr(settings, 'port', 8000),
         )
 
     run_fn = getattr(mcp, 'run', None)
