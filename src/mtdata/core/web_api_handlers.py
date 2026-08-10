@@ -904,86 +904,85 @@ def get_tick_response(
     return apply_output_verbosity(result, detail=detail, tool_name="market_ticker")
 
 
-def post_forecast_price_response(*, body: ForecastPriceBody, forecast_generate_use_case: Callable[..., Any]) -> Dict[str, Any]:
+def _post_use_case_response(
+    *,
+    body: Any,
+    use_case: Callable[..., Any],
+    operation: str,
+    domain_error_code: str,
+    mt5_error_code: str,
+    internal_error_code: str,
+    internal_message: str,
+    result_error_code: str,
+) -> Dict[str, Any]:
     try:
-        result = forecast_generate_use_case(body.to_domain_request())
+        result = use_case(body.to_domain_request())
     except HTTPException:
         raise
     except ForecastError as exc:
-        raise _http_error(400, str(exc), code="forecast_error", operation="post_forecast_price")
+        raise _http_error(
+            400,
+            str(exc),
+            code=domain_error_code,
+            operation=operation,
+        )
     except MT5ConnectionError as exc:
         raise _http_error(
             503,
             str(exc),
-            code="forecast_mt5_unavailable",
-            operation="post_forecast_price",
+            code=mt5_error_code,
+            operation=operation,
         )
     except Exception:
         _raise_internal_handler_error(
-            operation="post_forecast_price",
-            code="forecast_internal_error",
-            message="Forecast computation failed.",
+            operation=operation,
+            code=internal_error_code,
+            message=internal_message,
         )
     if isinstance(result, dict) and result.get("error"):
         raise _http_error(
             _http_status_for_error(result),
             result,
-            code="forecast_tool_error",
-            operation="post_forecast_price",
+            code=result_error_code,
+            operation=operation,
         )
     return result
+
+
+def post_forecast_price_response(*, body: ForecastPriceBody, forecast_generate_use_case: Callable[..., Any]) -> Dict[str, Any]:
+    return _post_use_case_response(
+        body=body,
+        use_case=forecast_generate_use_case,
+        operation="post_forecast_price",
+        domain_error_code="forecast_error",
+        mt5_error_code="forecast_mt5_unavailable",
+        internal_error_code="forecast_internal_error",
+        internal_message="Forecast computation failed.",
+        result_error_code="forecast_tool_error",
+    )
 
 
 def post_forecast_volatility_response(*, body: ForecastVolBody, forecast_vol_impl: Callable[..., Any]) -> Dict[str, Any]:
-    try:
-        result = forecast_vol_impl(body.to_domain_request())
-    except HTTPException:
-        raise
-    except ForecastError as exc:
-        raise _http_error(400, str(exc), code="forecast_volatility_error", operation="post_forecast_volatility")
-    except MT5ConnectionError as exc:
-        raise _http_error(
-            503,
-            str(exc),
-            code="forecast_volatility_mt5_unavailable",
-            operation="post_forecast_volatility",
-        )
-    except Exception:
-        _raise_internal_handler_error(
-            operation="post_forecast_volatility",
-            code="forecast_volatility_internal_error",
-            message="Forecast volatility computation failed.",
-        )
-    if isinstance(result, dict) and result.get("error"):
-        raise _http_error(
-            _http_status_for_error(result),
-            result,
-            code="forecast_volatility_error",
-            operation="post_forecast_volatility",
-        )
-    return result
+    return _post_use_case_response(
+        body=body,
+        use_case=forecast_vol_impl,
+        operation="post_forecast_volatility",
+        domain_error_code="forecast_volatility_error",
+        mt5_error_code="forecast_volatility_mt5_unavailable",
+        internal_error_code="forecast_volatility_internal_error",
+        internal_message="Forecast volatility computation failed.",
+        result_error_code="forecast_volatility_error",
+    )
 
 
 def post_backtest_response(*, body: BacktestBody, backtest_use_case: Callable[..., Any]) -> Dict[str, Any]:
-    try:
-        result = backtest_use_case(body.to_domain_request())
-    except HTTPException:
-        raise
-    except ForecastError as exc:
-        raise _http_error(400, str(exc), code="backtest_error", operation="post_backtest")
-    except MT5ConnectionError as exc:
-        raise _http_error(503, str(exc), code="backtest_mt5_unavailable", operation="post_backtest")
-    except Exception:
-        _raise_internal_handler_error(
-            operation="post_backtest",
-            code="backtest_internal_error",
-            message="Backtest computation failed.",
-        )
-    if isinstance(result, dict) and result.get("error"):
-        raise _http_error(
-            _http_status_for_error(result),
-            result,
-            code="backtest_error",
-            operation="post_backtest",
-        )
-    return result
+    return _post_use_case_response(
+        body=body,
+        use_case=backtest_use_case,
+        operation="post_backtest",
+        domain_error_code="backtest_error",
+        mt5_error_code="backtest_mt5_unavailable",
+        internal_error_code="backtest_internal_error",
+        internal_message="Backtest computation failed.",
+        result_error_code="backtest_error",
+    )
