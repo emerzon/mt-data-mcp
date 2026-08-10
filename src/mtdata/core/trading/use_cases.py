@@ -479,6 +479,23 @@ def _should_persist_idempotency_outcome(result: Any) -> bool:
         return True
     if infer_result_success(result):
         return True
+    for count_key in ("closed_count", "cancelled_count"):
+        try:
+            if int(result.get(count_key) or 0) > 0:
+                return True
+        except (TypeError, ValueError):
+            pass
+    nested_results = result.get("results")
+    if isinstance(nested_results, list):
+        for nested in nested_results:
+            if not isinstance(nested, dict):
+                continue
+            if (
+                nested.get("ambiguous") is True
+                or nested.get("error_code") == "order_send_ambiguous"
+                or infer_result_success(nested)
+            ):
+                return True
     for key in (
         "deal",
         "order",
@@ -2422,7 +2439,7 @@ def run_trade_modify(
             )
 
 
-def run_trade_close(  # noqa: C901
+def _run_trade_close_once(  # noqa: C901
     request: TradeCloseRequest,
     *,
     close_positions: Any,
@@ -2460,7 +2477,6 @@ def run_trade_close(  # noqa: C901
                 operation="trade_close",
             )
         result = _attach_trade_correlation(result, correlation_id=correlation_id)
-        _log_trade_correlation(operation="trade_close", result=result)
         log_operation_finish(
             logger,
             operation="trade_close",
@@ -2899,6 +2915,94 @@ def run_trade_close(  # noqa: C901
                 )
             return _finish(pending_result, scope="pending_orders")
     return _finish(position_result, scope="positions")
+
+
+def run_trade_close(
+    request: TradeCloseRequest,
+    *,
+    close_positions: Any,
+    cancel_pending: Any,
+    lookup_ticket_history: Any = None,
+    resolve_close_target: Any = None,
+    idempotency_store: Optional[TradeIdempotencyStore] = _TRADE_IDEMPOTENCY_STORE,
+    correlation_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Run a close/cancel operation with the shared durable dedupe lifecycle."""
+    idempotency_key = _normalize_idempotency_key(
+        getattr(request, "idempotency_key", None)
+    )
+    idempotency_signature = (
+        _build_trade_request_signature(request)
+        if idempotency_key is not None
+        else None
+    )
+    duplicate_result, idempotency_reserved = _begin_trade_idempotency(
+        idempotency_store=idempotency_store,
+        key=idempotency_key,
+        request_signature=idempotency_signature,
+    )
+    idempotency_consumed = False
+    if duplicate_result is not None:
+        started_at = time.perf_counter()
+        log_operation_start(
+            logger,
+            operation="trade_close",
+            correlation_id=correlation_id,
+            ticket=request.ticket,
+            duplicate=True,
+        )
+        result = _annotate_idempotency_scope(
+            duplicate_result,
+            idempotency_key,
+            idempotency_store,
+        )
+        result = _attach_trade_correlation(result, correlation_id=correlation_id)
+        _log_trade_correlation(operation="trade_close", result=result)
+        log_operation_finish(
+            logger,
+            operation="trade_close",
+            started_at=started_at,
+            success=infer_result_success(result),
+            correlation_id=correlation_id,
+            ticket=request.ticket,
+            duplicate=True,
+        )
+        return result
+
+    try:
+        result = _run_trade_close_once(
+            request,
+            close_positions=close_positions,
+            cancel_pending=cancel_pending,
+            lookup_ticket_history=lookup_ticket_history,
+            resolve_close_target=resolve_close_target,
+            correlation_id=correlation_id,
+        )
+        result = _annotate_idempotency_scope(
+            result,
+            idempotency_key,
+            idempotency_store,
+        )
+        if _record_or_release_idempotency(
+            idempotency_store,
+            idempotency_key,
+            result,
+            request_signature=idempotency_signature,
+        ):
+            idempotency_consumed = True
+        _log_trade_correlation(operation="trade_close", result=result)
+        return result
+    finally:
+        if (
+            idempotency_reserved
+            and not idempotency_consumed
+            and idempotency_store is not None
+            and idempotency_key is not None
+        ):
+            idempotency_store.release(
+                idempotency_key,
+                request_signature=idempotency_signature,
+            )
 
 
 def run_trade_history(  # noqa: C901

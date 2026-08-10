@@ -376,6 +376,49 @@ def test_modify_position_allows_tighter_stop_loss(
     assert result["position_ticket"] == 200
 
 
+def test_modify_position_marks_missing_broker_response_ambiguous(
+    restore_trade_guardrails,
+    patch_gateway,
+):
+    position = SimpleNamespace(
+        ticket=200,
+        symbol="EURUSD",
+        price_open=1.1000,
+        sl=1.0990,
+        tp=1.1200,
+        type=patch_gateway.POSITION_TYPE_BUY,
+        volume=1.0,
+        magic=123,
+    )
+    patch_gateway.positions_get = lambda *args, **kwargs: [position]
+    patch_gateway.order_send = MagicMock(return_value=None)
+    patch_gateway.last_error = lambda: (1, "timeout")
+
+    result = _modify_position(ticket=200, stop_loss=1.0995)
+
+    assert result["error_code"] == "order_send_ambiguous"
+    assert result["ambiguous"] is True
+    assert result["position_ticket"] == 200
+
+
+def test_modify_pending_marks_missing_broker_response_ambiguous(
+    restore_trade_guardrails,
+    patch_gateway,
+):
+    patch_gateway.order_send = MagicMock(return_value=None)
+    patch_gateway.last_error = lambda: (1, "timeout")
+
+    result = _modify_pending_order(
+        ticket=100,
+        price=1.1000,
+        stop_loss=1.0995,
+    )
+
+    assert result["error_code"] == "order_send_ambiguous"
+    assert result["ambiguous"] is True
+    assert result["pending_order_ticket"] == 100
+
+
 def test_position_modify_wallet_risk_uses_current_mark(
     restore_trade_guardrails,
     patch_gateway,

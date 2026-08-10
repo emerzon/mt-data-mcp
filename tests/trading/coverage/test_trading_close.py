@@ -805,7 +805,9 @@ class TestClosePositions:
         from mtdata.core.trading import _close_positions
         result = _close_positions(ticket=77)
         assert result["ticket"] == 77
-        assert result["error"] == "Failed to send close order"
+        assert "outcome is unknown" in result["error"]
+        assert result["error_code"] == "order_send_ambiguous"
+        assert result["ambiguous"] is True
         assert isinstance(result.get("attempts"), list)
         assert len(result.get("attempts") or []) == 1
         assert mt5.order_send.call_count == 1
@@ -834,7 +836,9 @@ class TestClosePositions:
             comment="broker-rejected",
         )
 
-        assert result["error"] == "Failed to send close order"
+        assert "outcome is unknown" in result["error"]
+        assert result["error_code"] == "order_send_ambiguous"
+        assert result["ambiguous"] is True
         assert result["comment_fallback"]["ambiguous"] is True
         assert mt5.order_send.call_count == 2
         assert all(

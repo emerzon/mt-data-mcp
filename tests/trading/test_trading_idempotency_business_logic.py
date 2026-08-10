@@ -2,8 +2,16 @@ import threading
 from unittest.mock import MagicMock
 
 from mtdata.core.trading.idempotency import IdempotencyStore, SQLiteIdempotencyStore
-from mtdata.core.trading.requests import TradeModifyRequest, TradePlaceRequest
-from mtdata.core.trading.use_cases import run_trade_modify, run_trade_place
+from mtdata.core.trading.requests import (
+    TradeCloseRequest,
+    TradeModifyRequest,
+    TradePlaceRequest,
+)
+from mtdata.core.trading.use_cases import (
+    run_trade_close,
+    run_trade_modify,
+    run_trade_place,
+)
 
 
 def test_run_trade_place_idempotency_does_not_sticky_cache_connection_errors():
@@ -242,6 +250,123 @@ def test_run_trade_modify_replays_duplicate_result_without_resending():
     assert second["original_outcome"] == first
     modify_position.assert_called_once()
     modify_pending_order.assert_not_called()
+
+
+def test_run_trade_modify_persists_ambiguous_broker_outcome() -> None:
+    store = IdempotencyStore()
+    modify_position = MagicMock(
+        return_value={
+            "error": "Position modification outcome is unknown",
+            "error_code": "order_send_ambiguous",
+            "ambiguous": True,
+            "position_ticket": 123,
+        }
+    )
+    request = TradeModifyRequest(
+        ticket=123,
+        stop_loss=1.0,
+        idempotency_key="modify-ambiguous",
+        dry_run=False,
+    )
+    kwargs = {
+        "normalize_pending_expiration": lambda value: (value, False),
+        "modify_pending_order": MagicMock(),
+        "modify_position": modify_position,
+        "idempotency_store": store,
+    }
+
+    first = run_trade_modify(request, **kwargs)
+    second = run_trade_modify(request, **kwargs)
+
+    assert first["ambiguous"] is True
+    assert first["guardrails_enabled"] is False
+    assert second["duplicate"] is True
+    assert second["original_outcome"]["error_code"] == "order_send_ambiguous"
+    modify_position.assert_called_once()
+
+
+def test_run_trade_close_replays_success_without_resending() -> None:
+    store = IdempotencyStore()
+    close_positions = MagicMock(
+        return_value={"success": True, "ticket": 123, "deal": 456}
+    )
+    request = TradeCloseRequest(
+        ticket=123,
+        idempotency_key="close-1",
+        dry_run=False,
+    )
+    kwargs = {
+        "close_positions": close_positions,
+        "cancel_pending": MagicMock(),
+        "idempotency_store": store,
+    }
+
+    first = run_trade_close(request, **kwargs)
+    second = run_trade_close(request, **kwargs)
+
+    assert first["idempotency_key"] == "close-1"
+    assert second["duplicate"] is True
+    assert second["original_outcome"] == first
+    close_positions.assert_called_once()
+
+
+def test_run_trade_close_persists_ambiguous_broker_outcome() -> None:
+    store = IdempotencyStore()
+    close_positions = MagicMock(
+        return_value={
+            "ticket": 123,
+            "error": "Close outcome is unknown",
+            "error_code": "order_send_ambiguous",
+            "ambiguous": True,
+        }
+    )
+    request = TradeCloseRequest(
+        ticket=123,
+        idempotency_key="close-ambiguous",
+        dry_run=False,
+    )
+    kwargs = {
+        "close_positions": close_positions,
+        "cancel_pending": MagicMock(),
+        "idempotency_store": store,
+    }
+
+    first = run_trade_close(request, **kwargs)
+    second = run_trade_close(request, **kwargs)
+
+    assert first["ambiguous"] is True
+    assert second["duplicate"] is True
+    assert second["original_outcome"]["error_code"] == "order_send_ambiguous"
+    close_positions.assert_called_once()
+
+
+def test_run_trade_close_releases_preflight_failure_for_retry() -> None:
+    store = IdempotencyStore()
+    close_positions = MagicMock(
+        side_effect=[
+            {"error": "Position 123 not found"},
+            {"success": True, "ticket": 123, "deal": 456},
+        ]
+    )
+    cancel_pending = MagicMock(return_value={"error": "Pending order 123 not found"})
+    request = TradeCloseRequest(
+        ticket=123,
+        idempotency_key="close-retry",
+        dry_run=False,
+    )
+    kwargs = {
+        "close_positions": close_positions,
+        "cancel_pending": cancel_pending,
+        "idempotency_store": store,
+    }
+
+    first = run_trade_close(request, **kwargs)
+    second = run_trade_close(request, **kwargs)
+
+    assert first["success"] is False
+    assert second["success"] is True
+    assert second.get("duplicate") is not True
+    assert close_positions.call_count == 2
 
 
 def test_run_trade_place_replays_inflight_duplicate_after_first_request_finishes():

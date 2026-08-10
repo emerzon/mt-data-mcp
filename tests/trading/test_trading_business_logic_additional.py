@@ -272,7 +272,10 @@ def test_run_trade_place_logs_finish_event(caplog):
             safe_int_ticket=lambda value: value,
         )
 
-    assert result == {"success": True, "order_id": 7}
+    assert result["success"] is True
+    assert result["order_id"] == 7
+    assert result["guardrails_enabled"] is False
+    assert any("without configured trade guardrails" in warning for warning in result["warnings"])
     assert any(
         "event=finish operation=trade_place success=True" in record.message
         for record in caplog.records
@@ -302,7 +305,9 @@ def test_run_trade_place_ignores_gtc_for_market_buy_sell_without_price():
         safe_int_ticket=lambda value: value,
     )
 
-    assert result == {"success": True, "path": "market"}
+    assert result["success"] is True
+    assert result["path"] == "market"
+    assert result["guardrails_enabled"] is False
     place_market_order.assert_called_once()
     place_pending_order.assert_not_called()
 

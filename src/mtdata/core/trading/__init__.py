@@ -122,6 +122,8 @@ def trade_close(request: TradeCloseRequest) -> dict:
     `volume` is invalid without `ticket`.
     Defaults to preview mode. Set `dry_run=false` explicitly to send a live
     close/cancel request.
+    Optional `idempotency_key` values durably suppress duplicate retries for
+    the same close/cancel payload, including ambiguous broker responses.
     Responses include a correlation_id shared with execution logs.
     """
     correlation_id = new_request_id()

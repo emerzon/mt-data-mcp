@@ -455,7 +455,7 @@ def _modify_position(  # noqa: C901
     if connection_error is not None:
         return connection_error
 
-    def _modify_position():
+    def _modify_position():  # noqa: C901
         try:
             ticket_id = int(ticket)
             position, resolved_ticket, ticket_resolution = _resolve_open_position(
@@ -614,7 +614,21 @@ def _modify_position(  # noqa: C901
                 request,
             )
             if result is None:
-                return {"error": "Failed to modify position", "last_error": last_error}
+                out = {
+                    "error": (
+                        "Position modification outcome is unknown; the broker may "
+                        "have applied the requested SL/TP changes. Confirm the live "
+                        "position before retrying."
+                    ),
+                    "error_code": "order_send_ambiguous",
+                    "ambiguous": True,
+                    "position_ticket": resolved_ticket,
+                    "ticket_requested": ticket_id,
+                    "last_error": last_error,
+                }
+                if isinstance(comment_fallback, dict):
+                    out["comment_fallback"] = comment_fallback
+                return out
 
             result_retcode = getattr(result, "retcode", None)
             no_change_code = validation._safe_int_attr(mt5, "TRADE_RETCODE_NO_CHANGES", 10025)
@@ -1036,7 +1050,18 @@ def _modify_pending_order(  # noqa: C901
                 request,
             )
             if result is None:
-                out = {"error": "Failed to modify pending order", "last_error": last_error}
+                out = {
+                    "error": (
+                        "Pending-order modification outcome is unknown; the broker "
+                        "may have applied the requested changes. Confirm the live "
+                        "order before retrying."
+                    ),
+                    "error_code": "order_send_ambiguous",
+                    "ambiguous": True,
+                    "pending_order_ticket": resolved_ticket,
+                    "ticket_requested": ticket_id,
+                    "last_error": last_error,
+                }
                 if isinstance(comment_fallback, dict):
                     out["comment_fallback"] = comment_fallback
                 return out
@@ -1393,6 +1418,18 @@ def _execute_single_close(  # noqa: C901
             "attempts": attempts,
             "last_error": last_send_error,
         }
+        if result is None and attempts:
+            fail_result.update(
+                {
+                    "error": (
+                        "Close outcome is unknown; the broker may have already "
+                        "closed the requested position. Confirm live positions "
+                        "before retrying."
+                    ),
+                    "error_code": "order_send_ambiguous",
+                    "ambiguous": True,
+                }
+            )
         if isinstance(close_comment_fallback, dict):
             fail_result["comment_fallback"] = close_comment_fallback
         return fail_result
@@ -2304,7 +2341,13 @@ def _cancel_pending(  # noqa: C901
                 if result is None:
                     result_entry = {
                         "ticket": order.ticket,
-                        "error": "Failed to send cancel order",
+                        "error": (
+                            "Cancel outcome is unknown; the broker may have already "
+                            "cancelled the pending order. Confirm live pending orders "
+                            "before retrying."
+                        ),
+                        "error_code": "order_send_ambiguous",
+                        "ambiguous": True,
                         "last_error": last_error,
                     }
                     if isinstance(comment_fallback, dict):

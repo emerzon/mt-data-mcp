@@ -221,6 +221,14 @@ class TradeCloseRequest(BaseModel):
     )
     comment: Optional[str] = None
     deviation: int = Field(default=20, ge=0)
+    idempotency_key: Optional[str] = Field(
+        default=None,
+        description=(
+            "Optional durable dedupe key with a configurable 24-hour TTL. "
+            "Reusing the same key with the same payload replays the prior "
+            "close/cancel outcome instead of sending another broker request."
+        ),
+    )
 
 
 class TradeHistoryRequest(_SideNormalizedRequest):
