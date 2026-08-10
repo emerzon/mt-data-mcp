@@ -367,6 +367,12 @@ history refresh retrain instead of forecasting from a stale cutoff. Historical
 `as_of` calls always require the artifact's exact training anchor to prevent
 look-ahead reuse.
 
+Default pickle-based model artifacts use a versioned envelope that records the
+Python, mtdata, and observed scientific-library versions. Compatibility is
+checked before unpickling. Legacy or runtime-mismatched artifacts are rejected
+and retrained through the normal cache-miss path; custom method-owned artifact
+formats remain responsible for their own compatibility checks.
+
 ```bash
 mtdata-cli forecast_models_list --json
 mtdata-cli forecast_models_delete --model-id "nhits/EURUSD_H1/abc123"

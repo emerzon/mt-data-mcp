@@ -53,7 +53,7 @@ from .forecast_validation import (
     attach_denoise_causality_disclosure,
     format_invalid_method_error,
 )
-from .interface import ForecastCallContext
+from .interface import ArtifactCompatibilityError, ForecastCallContext
 
 if TYPE_CHECKING:
     from .interface import ForecastMethod
@@ -1001,6 +1001,21 @@ def _try_predict_with_stored_model(  # noqa: C901
                     metadata["warnings"] = warnings
         metadata['model_info'] = model_info
         return res.forecast, res.ci_values, metadata
+    except ArtifactCompatibilityError as exc:
+        logger.warning(
+            "Stored model rejected for %s/%s: %s",
+            method_l,
+            data_scope,
+            exc,
+        )
+        if rejection is not None:
+            rejection.update(
+                {
+                    "reason": "artifact_runtime_incompatible",
+                    "message": str(exc),
+                }
+            )
+        return None
     except Exception as exc:
         logger.debug("Model store predict failed for %s/%s: %s", method_l, data_scope, exc)
         return None

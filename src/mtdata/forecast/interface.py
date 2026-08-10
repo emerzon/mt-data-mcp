@@ -1,10 +1,172 @@
+import json
+import struct
+import sys
 import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from importlib import metadata as importlib_metadata
 from typing import Any, Callable, Dict, List, Literal, Optional, Tuple
 
 import numpy as np
 import pandas as pd
+
+_ARTIFACT_ENVELOPE_MAGIC = b"MTDATA-ARTIFACT\x00"
+_ARTIFACT_FORMAT_VERSION = 2
+_ARTIFACT_HEADER_LIMIT = 64 * 1024
+_ARTIFACT_DEPENDENCY_DISTRIBUTIONS = {
+    "lightgbm": "lightgbm",
+    "mlforecast": "mlforecast",
+    "neuralforecast": "neuralforecast",
+    "numpy": "numpy",
+    "pandas": "pandas",
+    "scipy": "scipy",
+    "sklearn": "scikit-learn",
+    "sktime": "sktime",
+    "statsforecast": "statsforecast",
+    "statsmodels": "statsmodels",
+    "torch": "torch",
+    "transformers": "transformers",
+}
+_APPLICATION_DISTRIBUTION = "mtdata-mcp-server"
+
+
+class ArtifactCompatibilityError(ValueError):
+    """Raised before deserialization when a stored artifact is incompatible."""
+
+
+def _python_runtime_version() -> str:
+    return f"{sys.version_info.major}.{sys.version_info.minor}"
+
+
+def _distribution_version(name: str) -> Optional[str]:
+    try:
+        return importlib_metadata.version(name)
+    except importlib_metadata.PackageNotFoundError:
+        return None
+
+
+def _artifact_dependency_roots(artifact: Any) -> set[str]:
+    roots: set[str] = set()
+    seen: set[int] = set()
+    stack: List[tuple[Any, int]] = [(artifact, 0)]
+    while stack and len(seen) < 512:
+        value, depth = stack.pop()
+        value_id = id(value)
+        if value_id in seen:
+            continue
+        seen.add(value_id)
+        module_name = str(type(value).__module__ or "").split(".", 1)[0]
+        if module_name in _ARTIFACT_DEPENDENCY_DISTRIBUTIONS:
+            roots.add(module_name)
+        if depth >= 4:
+            continue
+        if isinstance(value, dict):
+            children = value.values()
+        elif isinstance(value, (list, tuple, set, frozenset)):
+            children = value
+        else:
+            try:
+                children = vars(value).values()
+            except (TypeError, AttributeError):
+                continue
+        stack.extend((child, depth + 1) for child in children)
+    return roots
+
+
+def _artifact_runtime_header(artifact: Any) -> Dict[str, Any]:
+    dependencies: Dict[str, str] = {}
+    for module_root in sorted(_artifact_dependency_roots(artifact)):
+        distribution = _ARTIFACT_DEPENDENCY_DISTRIBUTIONS[module_root]
+        version = _distribution_version(distribution)
+        if version is not None:
+            dependencies[distribution] = version
+    return {
+        "format_version": _ARTIFACT_FORMAT_VERSION,
+        "python": _python_runtime_version(),
+        "application": _distribution_version(_APPLICATION_DISTRIBUTION),
+        "dependencies": dependencies,
+    }
+
+
+def _validate_artifact_runtime_header(header: Dict[str, Any]) -> None:
+    if header.get("format_version") != _ARTIFACT_FORMAT_VERSION:
+        raise ArtifactCompatibilityError(
+            "Stored model uses an unsupported artifact format; retrain it with "
+            "the current mtdata runtime."
+        )
+    mismatches: List[str] = []
+    stored_python = str(header.get("python") or "")
+    current_python = _python_runtime_version()
+    if stored_python != current_python:
+        mismatches.append(f"python {stored_python or '<missing>'} != {current_python}")
+    stored_application = header.get("application")
+    current_application = _distribution_version(_APPLICATION_DISTRIBUTION)
+    if (
+        stored_application
+        and current_application
+        and str(stored_application) != current_application
+    ):
+        mismatches.append(
+            f"{_APPLICATION_DISTRIBUTION} {stored_application} != {current_application}"
+        )
+    dependencies = header.get("dependencies")
+    if not isinstance(dependencies, dict):
+        mismatches.append("dependency fingerprint is missing")
+    else:
+        for distribution, stored_version in sorted(dependencies.items()):
+            current_version = _distribution_version(str(distribution))
+            if current_version != str(stored_version):
+                mismatches.append(
+                    f"{distribution} {stored_version} != {current_version or '<missing>'}"
+                )
+    if mismatches:
+        raise ArtifactCompatibilityError(
+            "Stored model runtime is incompatible ("
+            + "; ".join(mismatches)
+            + "); retrain it before prediction."
+        )
+
+
+def _pack_artifact_envelope(artifact: Any, pickle_payload: bytes) -> bytes:
+    header_bytes = json.dumps(
+        _artifact_runtime_header(artifact),
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return (
+        _ARTIFACT_ENVELOPE_MAGIC
+        + struct.pack(">I", len(header_bytes))
+        + header_bytes
+        + pickle_payload
+    )
+
+
+def _unpack_artifact_envelope(data: bytes) -> bytes:
+    if not data.startswith(_ARTIFACT_ENVELOPE_MAGIC):
+        raise ArtifactCompatibilityError(
+            "Stored model is an unversioned legacy artifact; retrain it with the "
+            "current mtdata runtime."
+        )
+    length_start = len(_ARTIFACT_ENVELOPE_MAGIC)
+    length_end = length_start + 4
+    if len(data) < length_end:
+        raise ArtifactCompatibilityError("Stored model artifact header is truncated.")
+    header_length = struct.unpack(">I", data[length_start:length_end])[0]
+    if header_length <= 0 or header_length > _ARTIFACT_HEADER_LIMIT:
+        raise ArtifactCompatibilityError("Stored model artifact header length is invalid.")
+    payload_start = length_end + header_length
+    if payload_start >= len(data):
+        raise ArtifactCompatibilityError("Stored model artifact payload is truncated.")
+    try:
+        header = json.loads(data[length_end:payload_start].decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ArtifactCompatibilityError(
+            "Stored model artifact header is unreadable."
+        ) from exc
+    if not isinstance(header, dict):
+        raise ArtifactCompatibilityError("Stored model artifact header is invalid.")
+    _validate_artifact_runtime_header(header)
+    return data[payload_start:]
 
 
 @dataclass
@@ -378,19 +540,24 @@ class ForecastMethod(ABC):
     def serialize_artifact(self, artifact: Any) -> bytes:
         """Serialize a trained model artifact to bytes.
 
-        Default uses pickle.  Override for framework-specific formats
-        (e.g. ``torch.save`` for neural models).
+        Default wraps pickle in a versioned runtime-compatibility envelope.
+        Override both serialization methods for framework-specific formats.
         """
         import pickle
-        return pickle.dumps(artifact, protocol=pickle.HIGHEST_PROTOCOL)
+
+        payload = pickle.dumps(artifact, protocol=pickle.HIGHEST_PROTOCOL)
+        return _pack_artifact_envelope(artifact, payload)
 
     def deserialize_artifact(self, data: bytes) -> Any:
         """Deserialize bytes produced by :meth:`serialize_artifact`.
 
-        Default uses pickle.  Override to match :meth:`serialize_artifact`.
+        Runtime compatibility is checked before pickle is invoked. Override to
+        match :meth:`serialize_artifact` for method-owned formats.
         """
         import pickle
-        return pickle.loads(data)  # noqa: S301
+
+        payload = _unpack_artifact_envelope(data)
+        return pickle.loads(payload)  # noqa: S301
 
     def training_fingerprint(
         self,

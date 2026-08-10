@@ -19,6 +19,7 @@ import pytest
 
 import src.mtdata.forecast.forecast_engine as fe
 from src.mtdata.forecast.interface import (
+    ArtifactCompatibilityError,
     ForecastMethod,
     ForecastResult,
     TrainedModelHandle,
@@ -392,6 +393,47 @@ class TestTryPredictWithStoredModel:
             )
 
         assert result is None
+        mock_store.mark_used.assert_not_called()
+
+    def test_incompatible_artifact_is_visible_and_rejected(self, caplog):
+        stub = _StubTrainable()
+        stub.deserialize_artifact = MagicMock(
+            side_effect=ArtifactCompatibilityError("numpy version changed")
+        )
+        handle = TrainedModelHandle(
+            model_id="stub_trainable/EURUSD_H1/abc123",
+            method="stub_trainable",
+            data_scope="EURUSD_H1",
+            params_hash="abc123",
+            created_at=1000.0,
+        )
+        mock_store = MagicMock()
+        mock_store.find.return_value = handle
+        mock_store.load_bytes.return_value = b"incompatible"
+        rejection = {}
+
+        with (
+            patch(_PATCH_MODEL_STORE, mock_store),
+            caplog.at_level("WARNING", logger=fe.__name__),
+        ):
+            result = fe._try_predict_with_stored_model(
+                stub,
+                "stub_trainable",
+                "EURUSD_H1",
+                "abc123",
+                _sample_series(),
+                3,
+                24,
+                {},
+                None,
+                {},
+                rejection=rejection,
+            )
+
+        assert result is None
+        assert rejection["reason"] == "artifact_runtime_incompatible"
+        assert "numpy version changed" in rejection["message"]
+        assert "Stored model rejected" in caplog.text
         mock_store.mark_used.assert_not_called()
 
     def test_surfaces_legacy_compatibility_warning_when_model_exists(self):

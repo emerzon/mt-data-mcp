@@ -1,12 +1,15 @@
 """Tests for the train/predict interface extensions in ForecastMethod."""
 
+import pickle
 import unittest
 from typing import Any, Dict, List, Optional
+from unittest.mock import patch
 
 import numpy as np
 import pandas as pd
 
 from mtdata.forecast.interface import (
+    ArtifactCompatibilityError,
     ForecastMethod,
     ForecastResult,
     TrainedModelHandle,
@@ -191,6 +194,53 @@ class TestTrainPredictLifecycle(unittest.TestCase):
         artifact = m.deserialize_artifact(result.artifact_bytes)
         self.assertIn("weights", artifact)
         np.testing.assert_array_equal(artifact["weights"], np.zeros(3))
+
+    def test_default_artifact_is_versioned_not_raw_pickle(self):
+        method = _TrainableDummy()
+        artifact = {"weights": np.zeros(2)}
+
+        serialized = method.serialize_artifact(artifact)
+
+        self.assertTrue(serialized.startswith(b"MTDATA-ARTIFACT\x00"))
+        self.assertNotEqual(serialized, pickle.dumps(artifact))
+
+    def test_legacy_unversioned_pickle_is_rejected_before_unpickling(self):
+        method = _TrainableDummy()
+        legacy = pickle.dumps({"weights": np.zeros(2)})
+
+        with (
+            patch.object(pickle, "loads") as pickle_loads,
+            self.assertRaisesRegex(
+                ArtifactCompatibilityError,
+                "unversioned legacy artifact",
+            ),
+        ):
+            method.deserialize_artifact(legacy)
+
+        pickle_loads.assert_not_called()
+
+    def test_runtime_version_mismatch_is_rejected_before_unpickling(self):
+        method = _TrainableDummy()
+        with patch(
+            "mtdata.forecast.interface._distribution_version",
+            return_value="saved-version",
+        ):
+            serialized = method.serialize_artifact({"weights": np.zeros(2)})
+
+        with (
+            patch(
+                "mtdata.forecast.interface._distribution_version",
+                return_value="current-version",
+            ),
+            patch.object(pickle, "loads") as pickle_loads,
+            self.assertRaisesRegex(
+                ArtifactCompatibilityError,
+                "runtime is incompatible",
+            ),
+        ):
+            method.deserialize_artifact(serialized)
+
+        pickle_loads.assert_not_called()
 
     def test_predict_with_model_uses_model(self):
         m = _TrainableDummy()
