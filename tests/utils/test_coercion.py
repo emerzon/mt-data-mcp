@@ -1,8 +1,10 @@
 from mtdata.utils.coercion import (
     UNPARSED_BOOL,
+    coerce_finite_float,
     is_explicit_false,
     parse_bool_like,
     round_finite,
+    safe_float,
     split_top_level_csv,
 )
 
@@ -53,3 +55,27 @@ def test_round_finite_rounds_and_rejects_invalid_values():
     assert round_finite(float("nan"), 2) is None
     assert round_finite("x", 2, on_invalid="passthrough") == "x"
     assert round_finite(1.23456, -3) == 1.0
+
+
+def test_coerce_finite_float_accepts_numeric_and_string_values() -> None:
+    class StringFloat:
+        def __float__(self) -> float:
+            raise TypeError
+
+        def __str__(self) -> str:
+            return "2.75"
+
+    assert coerce_finite_float(3) == 3.0
+    assert coerce_finite_float(" 1.25 ") == 1.25
+    assert coerce_finite_float(StringFloat()) == 2.75
+
+
+def test_coerce_finite_float_rejects_missing_invalid_and_non_finite_values() -> None:
+    for value in (None, "not-a-number", float("nan"), float("inf"), "-inf"):
+        assert coerce_finite_float(value) is None
+
+
+def test_safe_float_uses_default_only_when_coercion_fails() -> None:
+    assert safe_float("4.5", default=9.0) == 4.5
+    assert safe_float("invalid", default=9.0) == 9.0
+    assert safe_float(float("nan")) is None
