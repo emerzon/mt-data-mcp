@@ -245,7 +245,7 @@ Candle responses echo the resolved instants and bound modes in `query_applied`.
 | `market_ticker` | Get current bid/ask/spread snapshot |
 | `market_snapshot` | Unified pre-trade snapshot (quote, levels, patterns; optional regime/forecast sections) |
 | `market_status` | Get market trading hours and session status |
-| `wait_event` | **Blocking:** wait up to 15 seconds by default for a market event; set an explicit longer timeout on persistent transports |
+| `wait_event` | **Blocking:** wait for events using exactly one stopping mode: the next `timeframe` boundary or `max_wait_seconds` duration |
 
 ### Forecasting
 | Command | Description |

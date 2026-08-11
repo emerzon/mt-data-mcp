@@ -446,7 +446,6 @@ def test_wait_event_explicit_watch_does_not_add_an_implicit_boundary(
     raw = getattr(core_data.wait_event, "__wrapped__", core_data.wait_event)
     result = raw(
         symbol="EURUSD",
-        timeframe="M1",
         watch_for=[{"type": "order_filled", "symbol": "EURUSD"}],
         max_wait_seconds=300,
         detail="full",

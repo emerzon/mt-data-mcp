@@ -630,10 +630,10 @@ def data_fetch_ticks(
 @mcp.tool()
 def wait_event(
     symbol: Optional[str] = None,
-    timeframe: TimeframeLiteral = "M1",
+    timeframe: Optional[TimeframeLiteral] = None,
     wait_next_bar: bool = False,
     watch_tick_count_spike: bool = True,
-    max_wait_seconds: Optional[float] = 15.0,
+    max_wait_seconds: Optional[float] = None,
     poll_interval_seconds: Optional[float] = None,
     watch_for: Optional[List[Dict[str, Any]]] = None,
     end_on: Optional[List[Dict[str, Any]]] = None,
@@ -641,8 +641,9 @@ def wait_event(
 ) -> Dict[str, Any]:
     """BLOCKING: Wait for watch events until a match, boundary, or timeout.
 
-    Defaults to M1 for faster event polling; set `timeframe="H1"` for hourly
-    candle/event boundaries.
+    Provide exactly one wait mode: set `timeframe` to stop at the next candle
+    boundary, or set `max_wait_seconds` to stop after a fixed duration. Combining
+    both modes, or omitting both, is invalid.
 
     Set `wait_next_bar=true` for the common shortcut: wait only for the next
     candle close on `timeframe` and skip inferred market/account watchers.
@@ -657,11 +658,10 @@ def wait_event(
 
     `symbol` is required when `watch_for` is omitted and the tool is inferring
     its default watcher set. For boundary-only waits, pass `watch_for=[]` and
-    rely on `timeframe` or explicit `end_on` candle-close events.
+    set `timeframe`; `end_on` can customize the candle-close boundaries.
 
-    `max_wait_seconds` defaults to 15 seconds on the public tool surface so
-    interactive and agent calls have a short timebox. Set it to null to use no
-    timeout, or raise it explicitly for longer long-lived transport waits.
+    `max_wait_seconds` selects duration mode and must be omitted when
+    `timeframe` is set.
     A timeout is a failed wait (`success=false`, `error_code=wait_event_timeout`)
     and produces a nonzero CLI exit status. When watchers are active, reaching
     an `end_on` boundary before a match is also a failed wait
@@ -682,8 +682,9 @@ def wait_event(
     includes a best-effort `closed_candle` snapshot with OHLCV and basic
     range/body/wick stats for the candle that just closed.
 
-    Example: `end_on=[{"type": "candle_close", "timeframe": "H1"}]` or
-    `watch_for=[{"type": "order_filled", "symbol": "EURUSD"}]`.
+    Example: `timeframe="H1", end_on=[{"type": "candle_close",
+    "timeframe": "H1"}]` or `max_wait_seconds=30,
+    watch_for=[{"type": "order_filled", "symbol": "EURUSD"}]`.
 
     Advanced callers can pass explicit `watch_for` and `end_on` event specs to
     use the richer wait-event engine directly. When explicit `watch_for` is
@@ -707,6 +708,13 @@ def wait_event(
         )
     explicit_watch_for = normalized_watch_for is not None or bool(wait_next_bar)
     explicit_end_on = normalized_end_on is not None
+    wait_mode_error: Optional[str] = None
+    if (timeframe is None) == (max_wait_seconds is None):
+        wait_mode_error = (
+            "Provide exactly one of timeframe or max_wait_seconds, not both."
+        )
+    elif wait_next_bar and timeframe is None:
+        wait_mode_error = "wait_next_bar requires timeframe mode."
     symbol_error: Optional[str] = None
     spec_error = watch_for_error or end_on_error
     if symbol_value is None and not explicit_watch_for:
@@ -721,11 +729,20 @@ def wait_event(
                 "error_code": "wait_event_invalid_watch_spec",
                 "hint": _WAIT_EVENT_SPEC_HINT,
             }
+        if wait_mode_error is not None:
+            return {
+                "error": wait_mode_error,
+                "error_code": "wait_event_invalid_request",
+                "hint": (
+                    "Set timeframe for a candle-boundary wait or "
+                    "max_wait_seconds for a duration wait."
+                ),
+            }
         if symbol_error is not None:
             return {"error": symbol_error}
-        request_kwargs: Dict[str, Any] = {
-            "timeframe": timeframe,
-        }
+        request_kwargs: Dict[str, Any] = {}
+        if timeframe is not None:
+            request_kwargs["timeframe"] = timeframe
         if symbol_value is not None:
             request_kwargs["symbol"] = symbol_value
         request_kwargs["max_wait_seconds"] = max_wait_seconds
@@ -733,7 +750,9 @@ def wait_event(
             request_kwargs["poll_interval_seconds"] = poll_interval_seconds
         if normalized_end_on is not None:
             request_kwargs["end_on"] = list(normalized_end_on)
-        elif normalized_watch_for is None or wait_next_bar:
+        elif timeframe is not None and (
+            normalized_watch_for is None or wait_next_bar
+        ):
             request_kwargs["end_on"] = [
                 {"type": "candle_close", "timeframe": timeframe},
             ]
@@ -745,7 +764,7 @@ def wait_event(
                 if normalized_watch_for is not None
                 else _build_default_wait_event_watchers(
                     symbol=symbol_value,
-                    timeframe=timeframe,
+                    timeframe=timeframe or "M1",
                     watch_tick_count_spike=watch_tick_count_spike,
                 )
             )
