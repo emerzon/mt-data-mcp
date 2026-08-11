@@ -33,6 +33,7 @@ from .output_contract import (
     normalize_output_extras,
     resolve_output_contract,
 )
+from .request_context import ensure_request_id_scope
 
 _ORIG_TOOL_DECORATOR: Any = None
 _REGISTRY_UNSET = object()
@@ -967,8 +968,7 @@ def _recording_tool_decorator(*dargs, **dkwargs):  # type: ignore[override]  # n
             to_methods_availability_toon as _fmt_methods,
         )
 
-        @_wraps(func)
-        def _wrapped(*a, **kw):
+        def _invoke_wrapped(*a, **kw):
             raw_output = kw.pop("__cli_raw", False)
             precision = kw.pop("precision", None)
             json_output = kw.pop("json", False)
@@ -1064,6 +1064,11 @@ def _recording_tool_decorator(*dargs, **dkwargs):  # type: ignore[override]  # n
                 )
             except Exception:
                 return str(out) if out is not None else ""
+
+        @_wraps(func)
+        def _wrapped(*a, **kw):
+            with ensure_request_id_scope():
+                return _invoke_wrapped(*a, **kw)
 
         try:
             cleaned = _sanitize_annotations(func)

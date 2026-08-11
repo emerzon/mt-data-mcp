@@ -6,6 +6,7 @@ import re
 from contextlib import contextmanager
 from contextvars import ContextVar
 from typing import Iterator, Optional
+from uuid import uuid4
 
 _REQUEST_ID_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}\Z")
 _REQUEST_ID: ContextVar[Optional[str]] = ContextVar(
@@ -38,3 +39,14 @@ def request_id_scope(request_id: str) -> Iterator[str]:
         yield normalized
     finally:
         _REQUEST_ID.reset(token)
+
+
+@contextmanager
+def ensure_request_id_scope() -> Iterator[str]:
+    """Reuse the active request identifier or bind one for this invocation."""
+    existing = current_request_id()
+    if existing is not None:
+        yield existing
+        return
+    with request_id_scope(uuid4().hex[:12]) as generated:
+        yield generated

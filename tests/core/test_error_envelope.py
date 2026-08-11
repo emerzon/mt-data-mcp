@@ -1,5 +1,9 @@
 from mtdata.core.error_envelope import build_error_payload, normalize_error_payload
-from mtdata.core.request_context import request_id_scope
+from mtdata.core.request_context import (
+    current_request_id,
+    ensure_request_id_scope,
+    request_id_scope,
+)
 
 
 def test_build_error_payload_adds_common_remediation():
@@ -20,6 +24,23 @@ def test_build_error_payload_uses_bound_request_id():
         out = build_error_payload("broken", code="test_error")
 
     assert out["request_id"] == "bound-request-7"
+
+
+def test_ensure_request_id_scope_generates_and_cleans_up_identifier():
+    assert current_request_id() is None
+
+    with ensure_request_id_scope() as request_id:
+        assert len(request_id) == 12
+        assert current_request_id() == request_id
+
+    assert current_request_id() is None
+
+
+def test_ensure_request_id_scope_preserves_transport_identifier():
+    with request_id_scope("transport-request-9"):
+        with ensure_request_id_scope() as request_id:
+            assert request_id == "transport-request-9"
+            assert current_request_id() == request_id
 
 
 def test_build_error_payload_keeps_explicit_guidance():

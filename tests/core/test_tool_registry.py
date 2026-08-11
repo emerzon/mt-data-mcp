@@ -1,7 +1,13 @@
 """Regression test: verify every MCP tool is registered after bootstrap."""
 
+import asyncio
+import re
+
 from mtdata.bootstrap.tools import bootstrap_tools, mcp
 from mtdata.core._mcp_tools import registered_tool_catalog
+from mtdata.core.cli.api import _invoke_cli_tool_function
+from mtdata.core.error_envelope import build_error_payload
+from mtdata.core.request_context import current_request_id
 from mtdata.core.tools import tools_list
 
 EXPECTED_TOOL_NAMES = frozenset(
@@ -116,6 +122,64 @@ def test_tool_count_matches_snapshot():
     assert not missing, f"Tools disappeared: {sorted(missing)}"
     assert not extra, f"New tools not in snapshot (update EXPECTED_TOOL_NAMES): {sorted(extra)}"
     assert len(registered) == len(expected)
+
+
+def _finish_request_id(caplog):
+    finish = next(
+        record.message
+        for record in caplog.records
+        if "event=finish operation=tools_list success=True" in record.message
+    )
+    match = re.search(r"\brequest_id=([a-f0-9]{12})\b", finish)
+    assert match is not None
+    return match.group(1)
+
+
+def test_mcp_tool_invocation_binds_request_id_to_operation_logs(caplog):
+    async_wrapper = getattr(tools_list, "_mcp_async_wrapper", None)
+    assert callable(async_wrapper)
+
+    with caplog.at_level("DEBUG", logger="mtdata.core.tools"):
+        result = asyncio.run(async_wrapper(json=True, limit=1))
+
+    assert result["success"] is True
+    assert _finish_request_id(caplog)
+    assert current_request_id() is None
+
+
+def test_cli_tool_invocation_binds_request_id_to_operation_logs(caplog):
+    with caplog.at_level("DEBUG", logger="mtdata.core.cli.api"):
+        result = _invoke_cli_tool_function(
+            tools_list,
+            args=None,
+            cmd_name="tools_list",
+            kwargs={"json": True, "limit": 1},
+        )
+
+    assert result["success"] is True
+    assert _finish_request_id(caplog)
+    assert current_request_id() is None
+
+
+def test_cli_error_envelope_matches_transport_log_request_id(caplog):
+    def fail():
+        return build_error_payload("broken", code="test_error")
+
+    with caplog.at_level("WARNING", logger="mtdata.core.cli.api"):
+        result = _invoke_cli_tool_function(
+            fail,
+            args=None,
+            cmd_name="failure_probe",
+            kwargs={},
+        )
+
+    finish = next(
+        record.message
+        for record in caplog.records
+        if "event=finish operation=failure_probe success=False" in record.message
+    )
+    assert f"request_id={result['request_id']}" in finish
+    assert current_request_id() is None
 
 
 def test_tool_public_schemas_match_mcp_top_level_subset():

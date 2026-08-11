@@ -6,6 +6,7 @@ Automatically discovers function parameters and creates CLI arguments
 import argparse
 import difflib
 import json
+import logging
 import os
 import shlex
 import sys
@@ -39,7 +40,9 @@ from .._mcp_instance import mcp
 from .._mcp_tools import _get_pydantic_model_fields, _select_output_fields
 from .._mcp_tools import get_tool_registry as get_registered_tools
 from ..error_envelope import build_error_payload
+from ..execution_logging import infer_result_success
 from ..output_contract import resolve_output_contract
+from ..request_context import ensure_request_id_scope
 from .formatting import (
     _attach_cli_meta,
     _format_result_for_cli,
@@ -105,6 +108,8 @@ from .runtime.commands import (
     parse_set_overrides as _parse_set_overrides_impl,
 )
 
+logger = logging.getLogger(__name__)
+
 
 class _CLIHelpFormatter(
     argparse.RawDescriptionHelpFormatter,
@@ -133,10 +138,26 @@ def _is_typed_dict_type(value: Any) -> bool:
 def _invoke_cli_tool_function(
     func: Any, *, args: Any, cmd_name: str, kwargs: Dict[str, Any]
 ) -> Any:
-    del cmd_name
-    with _capture_runtime_warnings() as warning_records:
-        with _suppress_cli_side_output(enabled=True):
-            result = func(**kwargs)
+    with ensure_request_id_scope() as request_id:
+        try:
+            with _capture_runtime_warnings() as warning_records:
+                with _suppress_cli_side_output(enabled=True):
+                    result = func(**kwargs)
+        except Exception:
+            logger.exception(
+                "transport=cli event=error operation=%s request_id=%s",
+                cmd_name,
+                request_id,
+            )
+            raise
+        success = infer_result_success(result)
+        log = logger.debug if success else logger.warning
+        log(
+            "transport=cli event=finish operation=%s success=%s request_id=%s",
+            cmd_name,
+            success,
+            request_id,
+        )
 
     warning_texts: List[str] = []
     seen: set[str] = set()
