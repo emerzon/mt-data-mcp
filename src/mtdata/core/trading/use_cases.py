@@ -3067,20 +3067,32 @@ def run_trade_history(  # noqa: C901
     def _get_history():  # noqa: C901
         try:
             use_client_tz_value = use_client_tz()
+            client_tz_resolved = False
+            client_tz_lookup_failed = False
+            client_tz_obj: Any = None
+
+            def _resolve_client_timezone() -> tuple[Any, bool]:
+                nonlocal client_tz_lookup_failed, client_tz_obj, client_tz_resolved
+                if not client_tz_resolved:
+                    client_tz_resolved = True
+                    try:
+                        client_tz_obj = mt5_config.get_client_tz()
+                    except Exception:
+                        client_tz_lookup_failed = True
+                return client_tz_obj, client_tz_lookup_failed
 
             def _format_trade_history_timestamp(epoch_seconds: float) -> str:
                 if use_client_tz_value:
-                    try:
-                        tz_obj = mt5_config.get_client_tz()
-                        if tz_obj is not None:
-                            return _format_datetime_second_explicit(
-                                datetime.fromtimestamp(
-                                    epoch_seconds,
-                                    tz=timezone.utc,
-                                ).astimezone(tz_obj)
-                            )
-                    except Exception:
+                    client_timezone, lookup_failed = _resolve_client_timezone()
+                    if lookup_failed:
                         return format_time_minimal_local(epoch_seconds)
+                    if client_timezone is not None:
+                        return _format_datetime_second_explicit(
+                            datetime.fromtimestamp(
+                                epoch_seconds,
+                                tz=timezone.utc,
+                            ).astimezone(client_timezone)
+                        )
                 return _format_datetime_second_explicit(
                     datetime.fromtimestamp(epoch_seconds, tz=timezone.utc)
                 )
@@ -3494,13 +3506,13 @@ def run_trade_history(  # noqa: C901
             )
             timezone_label = "UTC"
             if use_client_tz_value:
-                try:
-                    tz_obj = mt5_config.get_client_tz()
+                tz_obj, lookup_failed = _resolve_client_timezone()
+                if lookup_failed:
+                    timezone_label = "client_local"
+                else:
                     timezone_label = str(
                         getattr(tz_obj, "zone", None) or tz_obj or "client_local"
                     )
-                except Exception:
-                    timezone_label = "client_local"
             for row in records:
                 if isinstance(row, dict):
                     row["timezone"] = timezone_label

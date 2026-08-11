@@ -886,6 +886,38 @@ def test_run_trade_history_logs_finish_event(caplog) -> None:
     )
 
 
+def test_run_trade_history_resolves_client_timezone_once_per_request() -> None:
+    Deal = namedtuple("Deal", ["ticket", "time", "symbol"])
+    gateway = SimpleNamespace(
+        ensure_connection=lambda: None,
+        history_deals_get=lambda from_dt, to_dt, symbol=None: [
+            Deal(ticket=1, time=1700000000, symbol="EURUSD"),
+            Deal(ticket=2, time=1700000060, symbol="EURUSD"),
+        ],
+    )
+    mt5_config = SimpleNamespace(get_client_tz=MagicMock(return_value=timezone.utc))
+
+    out = run_trade_history(
+        TradeHistoryRequest(history_kind="deals"),
+        gateway=gateway,
+        use_client_tz=lambda: True,
+        format_time_minimal=lambda ts: f"t{int(ts)}",
+        format_time_minimal_local=lambda ts: f"lt{int(ts)}",
+        mt5_epoch_to_utc=lambda ts: ts,
+        parse_end_datetime=lambda value: None,
+        parse_start_datetime=lambda value: None,
+        normalize_limit=lambda value: value,
+        comment_row_metadata=lambda comment: {},
+        normalize_ticket_filter=lambda value, name: (None, None),
+        normalize_minutes_back=lambda value: (None, None),
+        decode_mt5_enum_label=lambda gateway, value, prefix=None: None,
+        mt5_config=mt5_config,
+    )
+
+    assert len(out) == 2
+    mt5_config.get_client_tz.assert_called_once_with()
+
+
 def test_trade_history_filters_deals_by_position_ticket() -> None:
     mt5, prev = _install_mock_mt5()
     Deal = namedtuple("Deal", ["ticket", "time", "symbol", "position_id"])
