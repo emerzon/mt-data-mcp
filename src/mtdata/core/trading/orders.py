@@ -338,8 +338,18 @@ def _attach_post_fill_protection(  # noqa: C901
                     "action": mt5.TRADE_ACTION_SLTP,
                     "symbol": symbol,
                     "position": position_ticket,
-                    "sl": 0.0 if stop_loss is None else float(stop_loss),
-                    "tp": 0.0 if take_profit is None else float(take_profit),
+                    "sl": (
+                        0.0
+                        if stop_loss is None and sl_applied is None
+                        else float(sl_applied if stop_loss is None else stop_loss)
+                    ),
+                    "tp": (
+                        0.0
+                        if take_profit is None and tp_applied is None
+                        else float(
+                            tp_applied if take_profit is None else take_profit
+                        )
+                    ),
                     "comment": comments._normalize_trade_comment(
                         comment,
                         default=request_comment,

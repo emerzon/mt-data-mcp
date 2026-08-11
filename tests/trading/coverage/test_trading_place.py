@@ -613,6 +613,52 @@ class TestPlaceMarketOrder:
         assert mt5.order_send.call_count == 2
 
     @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_sl_follow_up_preserves_existing_take_profit(self):
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        mt5.order_send.side_effect = [_order_result(), _order_result()]
+        mt5.positions_get.side_effect = [
+            [_position(sl=0.0, tp=1.12)],
+            [_position(sl=1.09, tp=1.12)],
+        ]
+        from mtdata.core.trading import _place_market_order
+
+        result = _place_market_order(
+            "EURUSD",
+            0.01,
+            "BUY",
+            stop_loss=1.09,
+        )
+
+        modify_request = mt5.order_send.call_args_list[1].args[0]
+        assert modify_request["sl"] == pytest.approx(1.09)
+        assert modify_request["tp"] == pytest.approx(1.12)
+        assert (result.get("sl_tp_result") or {}).get("status") == "applied"
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
+    def test_tp_follow_up_preserves_existing_stop_loss(self):
+        mt5 = sys.modules["MetaTrader5"]
+        self._setup_mt5(mt5)
+        mt5.order_send.side_effect = [_order_result(), _order_result()]
+        mt5.positions_get.side_effect = [
+            [_position(sl=1.09, tp=0.0)],
+            [_position(sl=1.09, tp=1.12)],
+        ]
+        from mtdata.core.trading import _place_market_order
+
+        result = _place_market_order(
+            "EURUSD",
+            0.01,
+            "BUY",
+            take_profit=1.12,
+        )
+
+        modify_request = mt5.order_send.call_args_list[1].args[0]
+        assert modify_request["sl"] == pytest.approx(1.09)
+        assert modify_request["tp"] == pytest.approx(1.12)
+        assert (result.get("sl_tp_result") or {}).get("status") == "applied"
+
+    @patch.dict("sys.modules", {"MetaTrader5": MagicMock()})
     def test_sl_tp_follow_up_does_not_retry_ambiguous_none(self):
         mt5 = sys.modules["MetaTrader5"]
         self._setup_mt5(mt5)
