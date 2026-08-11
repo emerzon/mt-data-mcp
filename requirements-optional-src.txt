@@ -1,13 +1,12 @@
-# Optional native accelerator that still requires a source build on Python 3.14.
+# Native accelerator helper for lean installs on Python 3.14.
 #
-# This package is intentionally kept out of requirements.txt because the
-# validated full stack stays on package-index releases with broad wheel
-# coverage. On Python 3.14, pip must build hnswlib from source.
+# The full [all] stack includes this package. Use this helper when the lean
+# package is installed and only the HNSW pattern-search accelerator is wanted.
+# PyPI does not publish a Windows/cp314 wheel, so pip builds it from source.
 #
 # Windows prerequisites:
 # - hnswlib: Visual Studio Build Tools 2022 with the Desktop development with C++ workload
 #
-# This accelerator is opt-in and is not part of the project's supported
-# default Python 3.14 environment.
+# This source build is validated on Windows with the toolchain above.
 
 hnswlib==0.8.0

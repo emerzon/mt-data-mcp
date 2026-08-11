@@ -4,7 +4,7 @@ Get mtdata installed, talking to MetaTrader 5, and through a **safe first workfl
 
 You do not need every optional dependency on day one. Start lean, confirm candles work, then add forecasting or web extras as you need them.
 
-**Related:** [README](../README.md) · [Env vars](ENV_VARS.md) · [CLI](CLI.md) · [Troubleshooting](TROUBLESHOOTING.md)
+**Related:** [README](../README.md) · [Dependency migration](DEPENDENCY_MIGRATION.md) · [Env vars](ENV_VARS.md) · [CLI](CLI.md) · [Troubleshooting](TROUBLESHOOTING.md)
 
 ---
 
@@ -17,7 +17,7 @@ You do not need every optional dependency on day one. Start lean, confirm candle
 | **OS** | Windows (required for MT5) |
 | **Python** | **3.14** |
 | **MetaTrader 5** | Installed, running, and logged in (demo recommended) |
-| **Build tools** | Visual Studio Build Tools 2022 with **Desktop development with C++** for the full install, Git-backed extras, and optional native builds |
+| **Build tools** | Visual Studio Build Tools 2022 with **Desktop development with C++** (`hmmlearn` and full-stack `hnswlib` are source-built on Python 3.14) |
 
 ## Recommended first run
 
@@ -35,7 +35,8 @@ You do not need every optional dependency on day one. Start lean, confirm candle
 | Full research stack used by most docs | `pip install -r requirements.txt` |
 | Web API / UI backend only | `pip install -e .[web]` |
 | Heavy forecast extras | `pip install -e .[forecast-classical]` and/or `pip install -e .[forecast-foundation]` |
-| Git-backed experiments (TimesFM, etc.) | Install that extra only when you need it |
+| TimesFM | `pip install -e .[forecast-timesfm]` (PyPI release) |
+| Git/manual experiments (`stock-pattern`, `ycnbc`) | Install only when needed |
 
 ---
 
@@ -69,7 +70,7 @@ For the validated research/web environment used in local development and most do
 pip install -r requirements.txt
 ```
 
-This path intentionally stays on package-index releases. Git-backed add-ons such as TimesFM, `stock-pattern`, and `ycnbc` stay opt-in so the default install does not depend on Git checkouts.
+This path intentionally stays on package-index releases. TimesFM 2.0.2 is now included from PyPI; Git/manual add-ons such as `stock-pattern` and `ycnbc` stay opt-in so the default install does not depend on Git checkouts.
 NeuralForecast-based models are also kept out of this default path: on Windows Python 3.14, `neuralforecast` cannot resolve because its required `ray` dependency does not publish Windows wheels for 3.14 (Ray has cp314 wheels for Linux/macOS only). Treat `nhits`, `tft`, `patchtst`, and `nbeatsx` as manual/nonstandard setup.
 
 ### 4. Optional Dependencies
@@ -82,12 +83,14 @@ The base package is intentionally lean. Install extras as needed:
   `pip install -e .[forecast-classical]`
 - Foundation-model forecasting (Chronos / Chronos-Bolt):
   `pip install -e .[forecast-foundation]`
-- TimesFM (Git-backed):
+- TimesFM (PyPI):
   `pip install -e .[forecast-timesfm]`
 - Web API:
   `pip install -e .[web]`
 - Dimensionality reduction (UMAP):
   `pip install -e .[dimred-ext]`
+- HNSW pattern-search accelerator (source build):
+  `pip install -e .[pattern-search-hnsw]`
 - Experimental pattern engines (Git-backed, requires manual install):
   `pip install -e .[patterns-ext]` (Note: stock-pattern requires manual copy to site-packages; see below)
 - News embeddings (semantic reranking):
@@ -106,19 +109,19 @@ Feature notes:
 - Dimred UMAP (Web UI / analysis): `umap-learn` via `pip install -e .[dimred-ext]` (also included in `[all]`)
 - Foundation models:
   - Chronos (`chronos2`, `chronos_bolt`): `chronos-forecasting`, `torch`
-  - TimesFM (`timesfm`): `timesfm`, `torch` (install with `pip install -e .[forecast-timesfm]`; Git-backed extra)
-  - GluonTS / Lag-Llama are not shipped in mtdata (stack conflicts with the supported Python 3.14 scientific deps)
-- Forecasting libraries: `statsforecast` (1.x only on this runtime), `sktime`, `mlforecast` (plus `lightgbm` for GBMs)
+  - TimesFM (`timesfm`): `timesfm>=2.0.2`, `torch` (install with `pip install -e .[forecast-timesfm]`; also included in `[all]`)
+  - GluonTS 0.17 now resolves on Python 3.14, but mtdata has no GluonTS/Lag-Llama adapter; those methods are not shipped
+- Forecasting libraries: `statsforecast>=2.1.1`, `sktime>=1.1.0`, `mlforecast` (plus `lightgbm` for GBMs)
 - Volatility (GARCH/ARCH): `arch`
 - Simplification accelerator: `tsdownsample` is included in the full package-index install path (`requirements.txt` / `[all]`; pin `>=0.1.5.1`) and remains optional for lean installs
-- Optional pattern-search accelerator omitted from the default Python 3.14 install: `hnswlib` (see the opt-in helper file `requirements-optional-src.txt` below)
+- Pattern-search accelerator: `hnswlib` is included in `[all]`; lean installs can use `[pattern-search-hnsw]` or the helper file below
 - Barrier option pricing & Heston calibration: `QuantLib`
 - Bayesian hyperparameter optimization: `optuna`
 - Neural network forecasters (`nhits`, `tft`, `patchtst`, `nbeatsx`): manual/nonstandard setup only; not included in `requirements.txt` or a package extra (blocked on Windows 3.14 by missing `ray` wheels)
 
-### 5. Optional Native Accelerator Source-Build Path
+### 5. HNSW Source-Build Path for Lean Installs
 
-Use this only if you explicitly want the extra accelerator that is omitted from the validated default Python 3.14 stack:
+The full `[all]` stack already includes this accelerator. Use the dedicated extra or helper when starting from a lean install:
 
 - `hnswlib` for the `hnsw` analog-search engine
 
@@ -130,11 +133,12 @@ pip install -r requirements-optional-src.txt
 
 Notes:
 
-- This path is opt-in and not part of the project's supported default Python 3.14 environment.
+- This source-build path is validated on Windows/Python 3.14 with Visual Studio Build Tools 2022.
 - On Python 3.14, pip builds `hnswlib` from source because a compatible Windows wheel is unavailable.
 - `hnswlib` is a C++ extension build. On Windows, install Visual Studio Build Tools 2022 with the **Desktop development with C++** workload first.
 - If you only want this accelerator, install it directly instead of the helper file:
   - `pip install hnswlib==0.8.0`
+  - `pip install -e .[pattern-search-hnsw]`
 - If you want the LTTB simplification accelerator without the full `[all]` extra, install it directly with `pip install "tsdownsample>=0.1.5.1"`.
 
 Tip: `mtdata-cli forecast_list_methods --json` shows `available` and `requires` per method.

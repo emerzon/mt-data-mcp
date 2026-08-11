@@ -136,7 +136,7 @@ pip install -e ".[dimred-ext]"         # For UMAP dimred (Web UI / analysis); or
 pip install QuantLib                   # For barrier option pricing & Heston calibration
 pip install optuna                     # For Bayesian hyperparameter tuning
 pip install neuralforecast torch       # For neural models; fails on Windows Python 3.14 (no ray win/cp314 wheel)
-pip install -e .[forecast-timesfm]     # From the repo root; installs the TimesFM Git-backed extra
+pip install -e .[forecast-timesfm]     # From the repo root; installs TimesFM 2.x from PyPI
 ```
 
 ### "Import error" or "Module not found"
@@ -328,7 +328,7 @@ MTDATA_CLI_DEBUG=1 mtdata-cli forecast_generate EURUSD --horizon 12
 
 ### Git-backed Extra Fails to Install
 
-**Symptom:** `pip install -e .[forecast-timesfm]`, `pip install -e .[patterns-ext]`, or `pip install -e .[news-ycnbc]` fails during clone/build on Windows.
+**Symptom:** `pip install -e .[patterns-ext]` or `pip install -e .[news-ycnbc]` fails during clone/build on Windows.
 
 **Solution:**
 1. Install Visual Studio Build Tools 2022 with the **Desktop development with C++** workload.
@@ -339,12 +339,11 @@ MTDATA_CLI_DEBUG=1 mtdata-cli forecast_generate EURUSD --horizon 12
    ```
 4. From the repository root, retry only the extra you need:
    ```bash
-   pip install -e .[forecast-timesfm]
    pip install -e .[patterns-ext]
    pip install -e .[news-ycnbc]
    ```
 
-If a Git-backed extra still fails, leave it out and use the rest of mtdata without that integration. For pretrained forecasts, `chronos2` and `chronos_bolt` remain available from the stable install path.
+If a Git-backed extra still fails, leave it out and use the rest of mtdata without that integration. TimesFM, `chronos2`, and `chronos_bolt` are available from package-index install paths.
 
 ### Optional hnswlib Source Build Fails
 

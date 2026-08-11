@@ -109,7 +109,7 @@ All three are first-class delivery surfaces. Pick CLI, MCP, or Web UI for the sa
 
 ## Quick start
 
-**Prerequisites:** Windows + Python 3.14 + MetaTrader 5 installed and running (demo recommended). For the full research stack, install Visual Studio Build Tools 2022 with **Desktop development with C++**.
+**Prerequisites:** Windows + Python 3.14 + MetaTrader 5 installed and running (demo recommended). Install Visual Studio Build Tools 2022 with **Desktop development with C++** because Python 3.14 currently source-builds `hmmlearn`; the full stack also source-builds `hnswlib`.
 
 ```bash
 # Optional: isolate the environment
@@ -163,7 +163,7 @@ Keep the first session **read-only** unless you are on a demo account and intent
 | Full docs-aligned stack | `pip install -r requirements.txt` |
 | Web only | `pip install -e .[web]` |
 | Classical / foundation forecast extras | `pip install -e .[forecast-classical]` / `pip install -e .[forecast-foundation]` |
-| Git-backed add-ons (TimesFM, etc.) | See [docs/SETUP.md](docs/SETUP.md) |
+| TimesFM / Git-manual add-ons | See [docs/SETUP.md](docs/SETUP.md) |
 
 Dependency caveats (NeuralForecast optional installs, Python 3.14 exclusions, optional native accelerators) live in **[Setup](docs/SETUP.md)** so this page stays focused on getting you productive.
 

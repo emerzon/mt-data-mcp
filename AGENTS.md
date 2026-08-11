@@ -99,18 +99,20 @@ Request flow: `entry point → load_environment() → bootstrap_tools() → mcp.
 |-------|---------|-------------|
 | Core | Always installed | MetaTrader5, fastmcp, pandas, numpy, scipy, scikit-learn, matplotlib, finvizfinance |
 | forecast-classical | Classical/ML models | arch, statsforecast, sktime, mlforecast, optuna, QuantLib, lightgbm |
-| forecast-foundation | Deep learning models | torch, chronos-forecasting, transformers, timesfm |
-| patterns-ext | External pattern lib | stock-pattern (git dep) |
+| forecast-foundation | Deep learning models | torch, chronos-forecasting, transformers |
+| forecast-timesfm | TimesFM foundation model | timesfm, torch |
+| pattern-search-hnsw | HNSW pattern-search accelerator | hnswlib (Windows source build) |
+| patterns-ext | External pattern lib | stock-pattern (manual Git source; not package-installable) |
 | web | Web UI backend | fastapi, uvicorn |
 | dimred-ext | Optional UMAP | umap-learn |
-| all | Everything (package index) | Union of above + tsdownsample, sentence-transformers, umap-learn |
+| all | Package-index full stack | Forecast models + TimesFM, hnswlib, web, embeddings, and UMAP |
 
-**Still out of the default 3.14 stack**:
-- `hnswlib` — no Windows/cp314 wheels; opt-in source build via `requirements-optional-src.txt`
+**Remaining compatibility caveats**:
+- `hnswlib` — no Windows/cp314 wheel, but the MSVC source build is validated and included in `[all]`; lean installs use `[pattern-search-hnsw]`
 - `neuralforecast` — blocked on Windows 3.14 by missing `ray` wheels (Ray publishes cp314 for Linux/macOS only)
-- gluonts / Lag-Llama — dependency conflicts with the current scientific stack; not shipped
-- `statsforecast` 2.x / `ruptures` 1.1+ / `pandas` 3 — deferred (wheels / `requires_python` / major migration)
-- `scikit-learn` 1.8+ — blocked by sktime’s `scikit-learn<1.8` pin (through 1.0.x)
+- GluonTS 0.17 resolves on Python 3.14, but GluonTS / Lag-Llama adapters are not implemented or shipped
+- `ruptures` 1.1+ / `pandas` 3 — deferred (`requires_python` / upstream dependency caps)
+- `scikit-learn` 1.8+ — blocked by sktime’s `scikit-learn<1.8` pin (through 1.1.x)
 - `numpy` 2.5+ — blocked by numba 0.66 / sktime (`numpy<2.5`)
 
 ## COMMANDS
@@ -136,7 +138,7 @@ cd webui && npm run build                 # Production frontend bundle
 ## NOTES
 
 - **Windows required**: MT5 only runs on Windows. macOS/Linux users connect remotely via MCP/Web API.
-- **Python 3.14 only**: Pinned in `pyproject.toml`. Notable ceilings: `numpy<2.5`, `pandas<3`, `scikit-learn<1.8`, `transformers<6`, `statsforecast<2`, `ruptures<1.1`.
+- **Python 3.14 only**: Pinned in `pyproject.toml`. Notable ceilings: `numpy<2.5`, `pandas<3`, `scikit-learn<1.8`, `transformers<6`, `statsforecast<3`, `ruptures<1.1`.
 - **Large files**: Core has the most complexity. Forecast methods and utils also heavy.
 - **CI**: `.github/workflows/ci.yml` verifies the Windows/Python backend and Linux/Node frontend. There is no deployment workflow, Makefile, Docker setup, or pre-commit hook.
 - **CORS**: Web API has `allow_credentials=True` with permissive CORS in dev (see `web_api_runtime.py`).

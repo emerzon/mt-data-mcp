@@ -1,4 +1,13 @@
-import { createChart, IChartApi, ISeriesApi, LineStyle, Time, IPriceLine } from 'lightweight-charts'
+import {
+  CandlestickSeries,
+  createChart,
+  IChartApi,
+  IPriceLine,
+  ISeriesApi,
+  LineSeries,
+  LineStyle,
+  Time,
+} from 'lightweight-charts'
 import { useEffect, useRef } from 'react'
 import type { HistoryBar, ChartOverlay } from '../types'
 
@@ -88,7 +97,7 @@ export function OHLCChart({
       },
     })
 
-    const series = chart.addCandlestickSeries({
+    const series = chart.addSeries(CandlestickSeries, {
       upColor: '#22c55e',
       downColor: '#ef4444',
       borderVisible: false,
@@ -183,7 +192,7 @@ export function OHLCChart({
           ? LineStyle.Dotted
           : LineStyle.Solid
 
-      const series = chart.addLineSeries({
+      const series = chart.addSeries(LineSeries, {
         color: ov.color || '#60a5fa',
         lineWidth: (ov.lineWidth ?? 2) as 1 | 2 | 3 | 4,
         lineStyle: style,
@@ -265,7 +274,7 @@ export function OHLCChart({
     const maxHigh = Math.max(...data.map(d => d.high))
     const center = (minLow + maxHigh) / 2
 
-    const s = chart.addCandlestickSeries({
+    const s = chart.addSeries(CandlestickSeries, {
       upColor: '#facc15',
       downColor: '#facc15',
       borderVisible: false,

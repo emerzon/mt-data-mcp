@@ -164,7 +164,7 @@ Foundation models pre-trained on large time series datasets.
 
 On the supported Python 3.14 install path:
 - `chronos2` and `chronos_bolt` are part of the package-index install path
-- `timesfm` remains a Git-backed extra
+- `timesfm` uses the package-index 2.x release via its dedicated extra
 
 ```bash
 mtdata-cli forecast_generate EURUSD --library pretrained --method chronos2

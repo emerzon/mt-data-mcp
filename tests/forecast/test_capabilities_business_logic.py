@@ -65,4 +65,4 @@ def test_pretrained_capabilities_include_registry_backed_read_surface_metadata()
     assert "amazon/chronos-2" in by_method["chronos2"]["notes"]
     assert "amazon/chronos-bolt-base" in by_method["chronos_bolt"]["notes"]
     assert by_method["timesfm"]["requires"] == ["timesfm", "torch"]
-    assert "GitHub" in by_method["timesfm"]["notes"]
+    assert "PyPI" in by_method["timesfm"]["notes"]

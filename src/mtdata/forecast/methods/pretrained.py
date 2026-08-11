@@ -1015,7 +1015,7 @@ def _load_timesfm_checkpoint(wrapper: Any, params: Dict[str, Any]) -> Optional[s
 @ForecastRegistry.register("timesfm")
 class TimesFMMethod(PretrainedMethod):
     CAPABILITY_REQUIRES = ("timesfm", "torch")
-    CAPABILITY_NOTES = "Uses timesfm 2.x (GitHub) API with the TimesFM 2.5 PyTorch checkpoint."
+    CAPABILITY_NOTES = "Uses the TimesFM 2.x PyPI API with the TimesFM 2.5 PyTorch checkpoint."
     PARAMS: List[Dict[str, Any]] = [
         {"name": "device", "type": "str|null", "description": "Compute device (cpu/cuda)."},
         {"name": "model_class", "type": "str|null", "description": "TimesFM torch class name override."},
@@ -1163,7 +1163,7 @@ class TimesFMMethod(PretrainedMethod):
         if _Cls is None or not callable(_Cls):
             raise RuntimeError(
                 "timesfm installed but no torch pipeline class was found. "
-                "Install the GitHub version (timesfm==2.x) and ensure torch is installed."
+                "Install timesfm[torch]>=2.0.2 and ensure a compatible torch is installed."
             )
 
         _mdl = None

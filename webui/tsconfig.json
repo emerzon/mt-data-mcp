@@ -6,6 +6,7 @@
     "module": "ESNext",
     "skipLibCheck": true,
     "moduleResolution": "Bundler",
+    "types": ["vite/client", "node"],
     "resolveJsonModule": true,
     "isolatedModules": true,
     "noEmit": true,
@@ -14,4 +15,3 @@
   },
   "include": ["src"]
 }
-
