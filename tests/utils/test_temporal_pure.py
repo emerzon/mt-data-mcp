@@ -123,7 +123,11 @@ _P = "mtdata.core.temporal."
 class TestErrorResponse:
     def test_basic(self):
         r = _error_response("bad input", "validate")
-        assert r == {"error": "bad input", "stage": "validate"}
+        assert r == {
+            "success": False,
+            "error": "bad input",
+            "stage": "validate",
+        }
 
     def test_with_context(self):
         ctx = {"symbol": "EURUSD"}
@@ -158,7 +162,15 @@ class TestErrorResponse:
 
     def test_all_optional_params(self):
         r = _error_response("msg", "stg", context={"a": 1}, details="d", bars=5, filters={"f": 1})
-        assert set(r.keys()) == {"error", "stage", "context", "details", "bars", "filters"}
+        assert set(r.keys()) == {
+            "success",
+            "error",
+            "stage",
+            "context",
+            "details",
+            "bars",
+            "filters",
+        }
 
 
 # ===================================================================
