@@ -1349,7 +1349,19 @@ class TestGetDenoiseMethodsData:
 
     def test_schema_version(self):
         data = get_denoise_methods_data()
-        assert data["schema_version"] == 1
+        assert data["schema_version"] == 2
+
+    def test_auto_numeric_params_expose_union_contract(self):
+        data = get_denoise_methods_data()
+        methods = {entry["method"]: entry for entry in data["methods"]}
+        process_var = next(
+            param
+            for param in methods["kalman"]["params"]
+            if param["name"] == "process_var"
+        )
+
+        assert process_var["type"] == "number_or_auto"
+        assert process_var["allowed_special_values"] == ["auto"]
 
     def test_reports_method_specific_causality_support(self):
         data = get_denoise_methods_data()

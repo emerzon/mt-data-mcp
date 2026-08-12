@@ -84,7 +84,7 @@ def test_denoise_list_methods_compact_reports_hidden_catalog_hint(monkeypatch):
     assert result["list_all_hint"] == "Pass limit=35 to list every method."
 
 
-def test_denoise_list_methods_full_keeps_complete_catalog(monkeypatch):
+def test_denoise_list_methods_full_respects_limit(monkeypatch):
     rows = [
         {
             "method": "kalman",
@@ -104,7 +104,7 @@ def test_denoise_list_methods_full_keeps_complete_catalog(monkeypatch):
         "total": 1,
         "returned": 1,
         "offset": 0,
-        "limit": None,
+        "limit": 1,
         "has_more": False,
         "more_available": 0,
     }

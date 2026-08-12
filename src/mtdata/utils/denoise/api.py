@@ -642,14 +642,24 @@ def get_denoise_methods_data() -> Dict[str, Any]:
         return "any"
 
     def _param_defs(defaults: Dict[str, Any]) -> List[Dict[str, Any]]:
-        return [
-            {
+        definitions: List[Dict[str, Any]] = []
+        for name, default in defaults.items():
+            definition = {
                 "name": name,
                 "type": _param_type(default),
                 "default": deepcopy(default),
             }
-            for name, default in defaults.items()
-        ]
+            if isinstance(default, str) and default.strip().lower() == "auto":
+                definition["type"] = (
+                    "integer_or_auto" if name == "max_imfs" else "number_or_auto"
+                )
+                definition["accepted_types"] = [
+                    "integer" if name == "max_imfs" else "number",
+                    "string",
+                ]
+                definition["allowed_special_values"] = ["auto"]
+            definitions.append(definition)
+        return definitions
 
     def _has_auto_param(value: Any) -> bool:
         if isinstance(value, str):
@@ -701,7 +711,7 @@ def get_denoise_methods_data() -> Dict[str, Any]:
             "defaults": method_defaults,
         })
 
-    return {"success": True, "schema_version": 1, "methods": methods}
+    return {"success": True, "schema_version": 2, "methods": methods}
 
 
 def denoise_list_methods() -> Dict[str, Any]:

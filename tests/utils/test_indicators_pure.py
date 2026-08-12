@@ -164,6 +164,37 @@ class TestInferDefaultsFromDoc:
         infer_defaults_from_doc("ema", doc, params)
         assert params[0]["default"] == 99
 
+    def test_parameter_names_are_line_anchored(self):
+        params = [{"name": "d"}, {"name": "c"}, {"name": "length"}]
+        doc = """Indicator description mentions default factor of 4.236.
+        length (int): Period. Default: 14
+        d (int): Smoothing. Default: 3
+        c (float): Multiplier. Default: 1
+        """
+
+        infer_defaults_from_doc("indicator", doc, params)
+
+        assert params == [
+            {"name": "d", "default": 3},
+            {"name": "c", "default": 1},
+            {"name": "length", "default": 14},
+        ]
+
+    def test_wrapped_parameter_description_keeps_default(self):
+        params = [{"name": "talib"}, {"name": "offset"}]
+        doc = """Args:
+        talib (bool): If TA Lib is installed, returns the TA Lib
+            version. Default: True
+        offset (int): Bars to offset. Default: 0
+        """
+
+        infer_defaults_from_doc("stoch", doc, params)
+
+        assert params == [
+            {"name": "talib", "default": True},
+            {"name": "offset", "default": 0},
+        ]
+
 
 class TestParseTiSpecs:
     def test_empty_string(self):

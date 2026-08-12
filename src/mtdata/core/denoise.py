@@ -87,27 +87,16 @@ def denoise_list_methods(
             causality=causality,
             core_only=core_only,
         )
-        if detail_mode == "full":
-            pagination = build_pagination_meta(
-                total=len(methods),
-                returned=len(methods),
-                offset=0,
-                limit=None,
+        limit_value = int(limit)
+        if limit_value < 1:
+            return build_error_payload(
+                "limit must be at least 1.",
+                code="denoise_invalid_limit",
+                operation="denoise_list_methods",
             )
-            return {
-                "success": True,
-                "detail": detail_mode,
-                "available_only": bool(available_only),
-                "causality": str(causality).strip().lower() if causality else None,
-                "core_only": bool(core_only),
-                "count": len(methods),
-                "pagination": pagination,
-                "methods": methods,
-            }
-        limit_value = max(1, int(limit or _DENOISE_METHOD_DEFAULT_LIMIT))
         visible = methods[:limit_value]
         hidden = max(0, len(methods) - len(visible))
-        compact_mode = detail_mode != "standard"
+        compact_mode = detail_mode == "compact"
         method_rows = (
             [
                 {
@@ -125,7 +114,11 @@ def denoise_list_methods(
                 for row in visible
             ]
             if compact_mode
-            else [_summary_denoise_method(row) for row in visible]
+            else (
+                [_summary_denoise_method(row) for row in visible]
+                if detail_mode == "standard"
+                else visible
+            )
         )
         columns = [
             "method",

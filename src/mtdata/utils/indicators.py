@@ -143,17 +143,44 @@ def infer_defaults_from_doc(func_name: str, doc_text: str, params: List[Dict[str
                     for p in params:
                         if p.get('name') == k and 'default' not in p:
                             p['default'] = default_value
+    body_lines = text.splitlines()
     for p in params:
         if 'default' in p:
             continue
         k = p.get('name')
         if not k:
             continue
-        m = re.search(rf"{re.escape(k)}[^\n]*?(?:Default|default)\s*:?\s*({_DEFAULT_TOKEN_RE})", text)
-        if m:
-            default_value = _parse_doc_default_value(m.group(1))
+        parameter_header = re.compile(
+            rf"^(?:[-*]\s*)?`?{re.escape(str(k))}`?"
+            rf"(?:\s*\([^)]*\))?\s*:",
+            flags=re.IGNORECASE,
+        )
+        any_parameter_header = re.compile(
+            r"^(?:[-*]\s*)?`?[A-Za-z_][A-Za-z0-9_]*`?"
+            r"(?:\s*\([^)]*\))?\s*:"
+        )
+        for index, line in enumerate(body_lines):
+            if not parameter_header.search(line.strip()):
+                continue
+            block = [line.strip()]
+            for continuation in body_lines[index + 1 :]:
+                stripped = continuation.strip()
+                if any_parameter_header.search(stripped):
+                    break
+                if re.fullmatch(r"[A-Za-z][A-Za-z ]*:", stripped):
+                    break
+                block.append(stripped)
+            match = re.search(
+                rf"\bdefault\s*:?\s*({_DEFAULT_TOKEN_RE})",
+                " ".join(block),
+                flags=re.IGNORECASE,
+            )
+            if not match:
+                break
+            default_value = _parse_doc_default_value(match.group(1))
             if default_value is not _DEFAULT_MISSING:
                 p['default'] = default_value
+            break
 
 
 @lru_cache(maxsize=2)
