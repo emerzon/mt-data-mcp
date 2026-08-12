@@ -619,27 +619,22 @@ def _fetch_rates_with_warmup(  # noqa: C901
         )
         expected_end_ts = _utc_epoch_seconds(to_date)
         requested_rows = max(1, candles + warmup_bars + extra_bars)
-        bounded_span_seconds = max(
-            seconds_per_bar * requested_rows * 2,
-            seconds_per_bar * requested_rows + 7 * 24 * 60 * 60,
-        )
-        # Avoid constructing a timedelta that would move ``to_date`` before
-        # datetime.min.  This is reachable for the 100,000-row range safety
-        # budget on W1/MN1 even when the requested range itself is tiny.
         available_span_seconds = max(
             0.0,
             float((to_date - from_date_internal).total_seconds()),
         )
-        provider_from_date = (
-            from_date_internal
-            if bounded_span_seconds >= available_span_seconds
-            else to_date - timedelta(seconds=bounded_span_seconds)
+        initial_span_seconds = min(
+            available_span_seconds,
+            max(
+                seconds_per_bar * requested_rows * 2,
+                seconds_per_bar * requested_rows + 7 * 24 * 60 * 60,
+            ),
         )
         if diagnostics is not None:
             diagnostics["range_fetch"] = {
-                "provider_bounded": provider_from_date > from_date_internal,
+                "provider_bounded": False,
                 "provider_start": _format_time_explicit(
-                    _utc_epoch_seconds(provider_from_date)
+                    _utc_epoch_seconds(from_date_internal)
                 ),
                 "requested_start": _format_time_explicit(
                     _utc_epoch_seconds(from_date)
@@ -648,12 +643,42 @@ def _fetch_rates_with_warmup(  # noqa: C901
             }
 
         def _fetch():
-            return _mt5_copy_rates_range(
-                symbol,
-                mt5_timeframe,
-                provider_from_date,
+            candidate_end = min(
                 to_date,
+                from_date_internal + timedelta(seconds=initial_span_seconds),
             )
+            result = None
+            for _ in range(20):
+                result = _mt5_copy_rates_range(
+                    symbol,
+                    mt5_timeframe,
+                    from_date_internal,
+                    candidate_end,
+                )
+                if result is None:
+                    return None
+                qualifying = sum(
+                    float(row["time"]) >= _utc_epoch_seconds(from_date)
+                    for row in result
+                )
+                if qualifying >= candles + extra_bars or candidate_end >= to_date:
+                    if diagnostics is not None:
+                        diagnostics["range_fetch"]["provider_end"] = (
+                            _format_time_explicit(_utc_epoch_seconds(candidate_end))
+                        )
+                        diagnostics["range_fetch"]["provider_end_bounded"] = (
+                            candidate_end < to_date
+                        )
+                    return result
+                elapsed = max(
+                    seconds_per_bar,
+                    (candidate_end - from_date_internal).total_seconds(),
+                )
+                candidate_end = min(
+                    to_date,
+                    from_date_internal + timedelta(seconds=elapsed * 2),
+                )
+            return result
 
     elif start_datetime:
         from_date, from_date_error = _parse_fetch_datetime_arg(start_datetime)

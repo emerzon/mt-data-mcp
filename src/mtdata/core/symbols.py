@@ -1715,6 +1715,11 @@ def symbols_describe(  # noqa: C901
                     )
                 )
                 symbol_data.update(quote_source)
+                if isinstance(symbol_data.get("quote_source_conflict"), dict):
+                    symbol_data["usable_for_live_trading"] = False
+                    symbol_data["usable_for_live_trading_basis"] = (
+                        "quote_age_market_session_spread_and_source_agreement"
+                    )
 
             price_change_value = (
                 _market_scan_float(symbol_data.get("price_change"))
@@ -2089,6 +2094,11 @@ def _build_market_scan_spread_row(
             "pricing_basis": pricing_basis,
         }
     )
+    if isinstance(row.get("quote_source_conflict"), dict):
+        row["usable_for_live_trading"] = False
+        row["usable_for_live_trading_basis"] = (
+            "quote_age_market_session_spread_and_source_agreement"
+        )
     if spread_cost_per_lot is not None and spread_cost_currency:
         row["spread_cost_currency"] = spread_cost_currency
     return row, None

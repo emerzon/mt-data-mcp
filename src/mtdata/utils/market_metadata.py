@@ -106,19 +106,11 @@ def build_tick_freshness_context(
     )
     data_stale = age_seconds > threshold or timestamp_in_future
 
-    if timestamp_ahead_of_wall_clock:
-        rounded_magnitude = (
-            age_rounder(future_skew_seconds)
-            if age_rounder is not None
-            else round(future_skew_seconds, 3)
-        )
-        rounded_age = -abs(float(rounded_magnitude))
-    else:
-        rounded_age = (
-            age_rounder(age_seconds)
-            if age_rounder is not None
-            else round(age_seconds, 3)
-        )
+    rounded_age = (
+        age_rounder(age_seconds)
+        if age_rounder is not None
+        else round(age_seconds, 3)
+    )
     stale_after: int | float
     if float(threshold).is_integer():
         stale_after = int(threshold)

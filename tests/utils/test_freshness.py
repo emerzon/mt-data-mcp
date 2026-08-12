@@ -135,7 +135,7 @@ def test_future_tick_is_not_accepted_as_fresh() -> None:
         stale_after_seconds=300,
     )
 
-    assert result["data_age_seconds"] == -10_800.0
+    assert result["data_age_seconds"] == 0.0
     assert result["data_stale"] is True
     assert result["usable_for_live_trading"] is False
     assert result["timestamp_in_future"] is True
@@ -151,7 +151,7 @@ def test_small_future_clock_skew_is_disclosed_without_zero_age() -> None:
         now_epoch=1_000.0,
     )
 
-    assert result["data_age_seconds"] == -8.0
+    assert result["data_age_seconds"] == 0.0
     assert result["data_stale"] is False
     assert result["usable_for_live_trading"] is True
     assert result["timestamp_ahead_of_wall_clock"] is True

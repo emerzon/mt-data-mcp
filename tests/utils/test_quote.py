@@ -7,6 +7,7 @@ from mtdata.utils.mt5 import account_currency_from_gateway
 from mtdata.utils.quote import (
     canonical_quote_midpoint,
     compute_spread_metrics,
+    resolve_quote_tick,
     tick_epoch,
     tick_value,
 )
@@ -115,3 +116,33 @@ def test_account_currency_from_gateway_handles_unavailable_account() -> None:
         raise RuntimeError("terminal disconnected")
 
     assert account_currency_from_gateway(SimpleNamespace(account_info=unavailable)) is None
+
+
+def test_resolve_quote_tick_ignores_sub_point_equal_timestamp_noise() -> None:
+    now = 1_700_000_100.0
+    cached = SimpleNamespace(
+        bid=3981.46,
+        ask=3981.57,
+        time_msc=(now - 1.0) * 1000,
+    )
+    streamed = {
+        "bid": 3981.465,
+        "ask": 3981.575,
+        "time_msc": (now - 1.0) * 1000,
+    }
+    gateway = SimpleNamespace(
+        COPY_TICKS_ALL=0,
+        symbol_info=lambda _symbol: SimpleNamespace(point=0.01),
+        copy_ticks_range=lambda *_args: [streamed],
+    )
+
+    selected, metadata = resolve_quote_tick(
+        gateway,
+        "XAUUSD",
+        cached,
+        now_epoch=now,
+    )
+
+    assert selected is cached
+    assert metadata["quote_source_state"] == "reconciled_within_point"
+    assert "quote_source_conflict" not in metadata

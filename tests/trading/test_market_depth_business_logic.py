@@ -748,6 +748,7 @@ def test_market_ticker_keeps_positive_cached_quote_over_locked_stream_conflict()
     stream_tick = {
         "bid": 1.15310,
         "ask": 1.15310,
+        "flags": 2,
         "time": now - 1.0,
         "time_msc": (now - 1.0) * 1000.0,
     }
@@ -770,11 +771,9 @@ def test_market_ticker_keeps_positive_cached_quote_over_locked_stream_conflict()
     assert out["bid"] == 1.15304
     assert out["ask"] == 1.15326
     assert out["quote_source"] == "mt5.symbol_info_tick"
-    assert out["quote_source_state"] == "reconciled_equal_timestamp_conflict"
-    assert out["quote_source_conflict"]["selected_source"] == "mt5.symbol_info_tick"
-    assert out["quote_source_conflict"]["max_disagreement_points"] == 16.0
-    assert out["usable_for_live_trading"] is False
-    assert "quote_source_conflict" in out["warning"]
+    assert out["quote_source_state"] == "reconciled_one_sided_update"
+    assert "quote_source_conflict" not in out
+    assert out["usable_for_live_trading"] is True
     assert out["spread_valid"] is True
     assert out["spread_quality"] == "two_sided"
 
@@ -861,7 +860,7 @@ def test_market_ticker_compact_explains_unrefreshable_future_tick() -> None:
     assert out["freshness"] == "clock skew, tick timestamp 10s ahead of wall clock"
     assert out["freshness_state"] == "clock_skew"
     assert out["freshness_reason"] == "future_timestamp"
-    assert out["data_age_seconds"] == -10.0
+    assert out["data_age_seconds"] == 0.0
     assert out["timestamp_ahead_of_wall_clock"] is True
     assert out["timestamp_skew_tolerance_seconds"] == 10
     assert out["timestamp_in_future"] is True

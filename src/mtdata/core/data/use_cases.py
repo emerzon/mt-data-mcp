@@ -84,6 +84,9 @@ _COMPACT_TICK_TOP_LEVEL_FIELDS = (
     "simplified",
     "simplify",
     "query_applied",
+    "data_quality",
+    "last_unavailable",
+    "warnings",
 )
 
 _ANALYSIS_CANDLE_DEFAULT_LIMIT = 100
@@ -1459,10 +1462,10 @@ def _compact_tick_row(
         midpoint = canonical_quote_midpoint(bid, ask)
         if midpoint is not None:
             compact["mid"] = midpoint
-    elif last_spread is not None and bid is not None:
+    elif last_spread is not None and bid is not None and ask is None:
         compact["mid"] = round(bid + (last_spread / 2.0), 10)
         compact["mid_inferred"] = True
-    elif last_spread is not None and ask is not None:
+    elif last_spread is not None and ask is not None and bid is None:
         compact["mid"] = round(ask - (last_spread / 2.0), 10)
         compact["mid_inferred"] = True
     last = _tick_row_price(row.get("last"))

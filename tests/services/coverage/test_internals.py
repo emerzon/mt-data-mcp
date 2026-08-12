@@ -249,13 +249,13 @@ class TestFetchRatesWithWarmup(unittest.TestCase):
 
     @patch(_RATES_RANGE)
     @patch(_PARSE_START)
-    def test_long_range_clamps_provider_window_to_row_budget(
+    def test_long_range_preserves_requested_start_while_bounding_provider_end(
         self, mock_parse, mock_range
     ):
         requested_start = datetime(2010, 1, 1, tzinfo=_UTC)
         requested_end = datetime(2026, 1, 1, tzinfo=_UTC)
         mock_parse.side_effect = [requested_start, requested_end]
-        mock_range.return_value = _make_rates(2, base_ts=requested_end.timestamp())
+        mock_range.return_value = _make_rates(3, base_ts=requested_end.timestamp())
         diagnostics = {}
 
         result, err = _fetch_rates_with_warmup(
@@ -266,9 +266,10 @@ class TestFetchRatesWithWarmup(unittest.TestCase):
         self.assertIsNone(err)
         self.assertIsNotNone(result)
         provider_start = mock_range.call_args.args[2]
-        self.assertGreater(provider_start, requested_start)
+        self.assertLessEqual(provider_start, requested_start)
         self.assertLess(provider_start, requested_end)
-        self.assertTrue(diagnostics["range_fetch"]["provider_bounded"])
+        self.assertFalse(diagnostics["range_fetch"]["provider_bounded"])
+        self.assertTrue(diagnostics["range_fetch"]["provider_end_bounded"])
         self.assertEqual(diagnostics["range_fetch"]["provider_row_budget"], 3)
 
     @patch(_RATES_RANGE)

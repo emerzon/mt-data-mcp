@@ -1685,6 +1685,22 @@ def test_run_data_fetch_ticks_compact_prunes_row_diagnostics():
         "volume_fields": ["volume", "volume_real"],
         "quote_completeness_pct": 50.0,
         "quality": "partial_quotes=1/2; last=unavailable",
+        "data_quality": {
+            "incomplete_quote_ticks": 1,
+            "complete_ticks": 1,
+            "incomplete_ticks": 1,
+            "total_ticks": 2,
+            "incomplete_quote_ratio": 0.5,
+            "spread_ticks_excluded": 1,
+            "warning_ratio": 0.5,
+            "quote_type_counts": {"bid_ask": 1, "bid_only": 1},
+            "incomplete_quote_status": "warning",
+        },
+        "last_unavailable": True,
+        "warnings": [
+            "Some tick snapshots omitted a bid or ask value.",
+            "Broker tick data did not provide a usable last price; last is null.",
+        ],
         "requested_limit": 2,
         "limit_reached": True,
         "source": {"provider": "mt5", "context_available": False},
@@ -1822,8 +1838,34 @@ def test_run_data_fetch_ticks_compact_summarizes_quality_without_verbose_warning
     assert result["data"][3]["mid"] == 1.10006
     assert result["data"][4]["mid"] == 1.10007
     assert result["data"][4]["mid_inferred"] is True
-    assert "data_quality" not in result
-    assert "warnings" not in result
+    assert result["data_quality"]["incomplete_quote_status"] == "warning"
+    assert result["last_unavailable"] is True
+    assert len(result["warnings"]) == 2
+
+
+def test_run_data_fetch_ticks_compact_does_not_infer_mid_outside_locked_quote():
+    result = run_data_fetch_ticks(
+        DataFetchTicksRequest(symbol="EURUSD", limit=2, detail="compact"),
+        gateway=SimpleNamespace(ensure_connection=lambda: None),
+        fetch_ticks_impl=lambda **_kwargs: {
+            "success": True,
+            "symbol": "EURUSD",
+            "count": 2,
+            "data": [
+                {"time": "t1", "bid": 1.1, "ask": 1.1002},
+                {
+                    "time": "t2",
+                    "bid": 1.1001,
+                    "ask": 1.1001,
+                    "flags_decoded": ["bid"],
+                },
+            ],
+        },
+    )
+
+    assert result["data"][1]["bid"] == result["data"][1]["ask"]
+    assert "mid" not in result["data"][1]
+    assert "mid_inferred" not in result["data"][1]
 
 
 def test_data_fetch_candles_logs_finish_event(monkeypatch, caplog):

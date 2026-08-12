@@ -210,6 +210,51 @@ def _quote_pair_quality_rank(tick: Any) -> int:
     ]
 
 
+def _symbol_point(gateway: Any, symbol: str) -> Optional[float]:
+    try:
+        info = gateway.symbol_info(symbol)
+        point = getattr(info, "point", None)
+        value = float(point) if isinstance(point, (Real, str)) else None
+    except (AttributeError, TypeError, ValueError):
+        return None
+    return value if value is not None and math.isfinite(value) and value > 0.0 else None
+
+
+def _is_one_sided_quote_update(gateway: Any, tick: Any) -> bool:
+    try:
+        raw_flags = tick_value(tick, "flags")
+        flags = int(raw_flags) if isinstance(raw_flags, (Real, str)) else 0
+    except (TypeError, ValueError):
+        return False
+    try:
+        bid_flag = int(getattr(gateway, "TICK_FLAG_BID", 2) or 2)
+    except (TypeError, ValueError):
+        bid_flag = 2
+    try:
+        ask_flag = int(getattr(gateway, "TICK_FLAG_ASK", 4) or 4)
+    except (TypeError, ValueError):
+        ask_flag = 4
+    return bool(flags & bid_flag) != bool(flags & ask_flag)
+
+
+def _quote_pairs_agree(
+    left: Any,
+    right: Any,
+    *,
+    point: Optional[float],
+) -> bool:
+    left_pair = _quote_pair(left)
+    right_pair = _quote_pair(right)
+    if left_pair == right_pair:
+        return True
+    if point is None or any(value is None for value in (*left_pair, *right_pair)):
+        return False
+    return all(
+        abs(float(left_value) - float(right_value)) < point
+        for left_value, right_value in zip(left_pair, right_pair, strict=True)
+    )
+
+
 def resolve_quote_tick(
     gateway: Any,
     symbol: str,
@@ -258,7 +303,20 @@ def resolve_quote_tick(
     )
     stream_live_ready = stream_freshness.get("usable_for_live_trading") is True
     same_epoch = raw_epoch is not None and abs(stream_epoch - raw_epoch) <= 0.001
-    quote_conflict = same_epoch and _quote_pair(raw_tick) != _quote_pair(stream_tick)
+    pairs_differ = _quote_pair(raw_tick) != _quote_pair(stream_tick)
+    point = _symbol_point(gateway, symbol)
+    one_sided_stream_update = same_epoch and _is_one_sided_quote_update(
+        gateway, stream_tick
+    )
+    within_point = same_epoch and _quote_pairs_agree(
+        raw_tick,
+        stream_tick,
+        point=point,
+    )
+    benign_reconciliation = pairs_differ and (
+        one_sided_stream_update or within_point
+    )
+    quote_conflict = same_epoch and pairs_differ and not benign_reconciliation
     use_stream_for_conflict = quote_conflict and (
         _quote_pair_quality_rank(stream_tick) >= _quote_pair_quality_rank(raw_tick)
     )
@@ -281,6 +339,10 @@ def resolve_quote_tick(
         metadata["quote_source_state"] = (
             "reconciled_equal_timestamp_conflict"
             if quote_conflict
+            else "reconciled_one_sided_update"
+            if one_sided_stream_update and pairs_differ
+            else "reconciled_within_point"
+            if within_point and pairs_differ
             else ("current" if raw_live_ready else "unverified_stale")
         )
         metadata["stream_tick_time_epoch"] = stream_epoch
