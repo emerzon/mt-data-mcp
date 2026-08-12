@@ -2681,8 +2681,15 @@ def _build_wait_result(
         "success": matched or successful_boundary,
         "completed": not timed_out,
         "status": status,
+        "timed_out": timed_out,
+        "wait_mode": (
+            "duration"
+            if request.max_wait_seconds is not None
+            else "timeframe_boundary"
+        ),
         "matched": matched,
         "event": matched_event["type"] if matched_event is not None else None,
+        "events": [matched_event] if matched_event is not None else [],
         "matched_event": matched_event,
         "boundary_event": boundary_event,
         "started_at_utc": started_at_utc.isoformat(),
@@ -2713,6 +2720,28 @@ def _build_wait_result(
                 "error": (
                     "Wait timed out before a watched event or boundary was observed."
                 ),
+                "remediation": (
+                    "Retry the same wait or increase max_wait_seconds for a "
+                    "longer duration wait."
+                ),
+                "details": {
+                    "mode": (
+                        "duration"
+                        if request.max_wait_seconds is not None
+                        else "timeframe_boundary"
+                    ),
+                    "watch_for": [
+                        item.get("type")
+                        for item in watch_for_payload
+                        if isinstance(item, dict) and item.get("type")
+                    ],
+                    "elapsed_seconds": round(elapsed_seconds, 6),
+                    "requested_wait_seconds": (
+                        None
+                        if request.max_wait_seconds is None
+                        else float(request.max_wait_seconds)
+                    ),
+                },
             }
         )
     elif status == "boundary_reached" and not successful_boundary:

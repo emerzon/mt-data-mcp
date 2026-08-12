@@ -617,9 +617,20 @@ def test_wait_event_compact_timeout_omits_inferred_event_catalog() -> None:
     assert result["status"] == "timeout"
     assert result["success"] is False
     assert result["error_code"] == "wait_event_timeout"
+    assert result["timed_out"] is True
+    assert result["events"] == []
+    assert result["wait_mode"] == "duration"
     assert result["waited_seconds"] == 2.003
     assert result["next_poll_hint"] == "retry after 0.5s"
     assert "events_monitored" not in result
+    assert result["details"] == {
+        "mode": "duration",
+        "watch_for": ["order_created", "position_opened", "volume_spike"],
+        "watch_for_inferred": True,
+        "elapsed_seconds": 2.003,
+        "requested_wait_seconds": 2.0,
+    }
+    assert "increase max_wait_seconds" in result["remediation"]
 
 
 def test_wait_event_compact_timeout_keeps_explicit_watch_types() -> None:

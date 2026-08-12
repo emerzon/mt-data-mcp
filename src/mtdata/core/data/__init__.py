@@ -510,6 +510,10 @@ def _compact_wait_event_public_result(
 
     if status == "timeout":
         out["timeout"] = True
+        out["timed_out"] = True
+        out["events"] = []
+        mode = "duration" if max_wait_seconds is not None else "timeframe_boundary"
+        out["wait_mode"] = mode
         if elapsed_seconds is not None:
             out["waited_seconds"] = elapsed_seconds
         if max_wait_seconds is not None:
@@ -524,6 +528,18 @@ def _compact_wait_event_public_result(
         )
         if monitored_types:
             out["events_monitored"] = monitored_types
+        watcher_types = list(out.get("watcher_types") or [])
+        out["details"] = {
+            "mode": mode,
+            "watch_for": watcher_types,
+            "watch_for_inferred": not explicit_watch_for,
+            "elapsed_seconds": elapsed_seconds,
+            "requested_wait_seconds": max_wait_seconds,
+        }
+        out.setdefault(
+            "remediation",
+            "Retry the same wait or increase max_wait_seconds for a longer duration wait.",
+        )
     else:
         wait_policy = {
             key: value
@@ -740,8 +756,11 @@ def wait_event(
     `timeframe` or `end_on` is set. Explicit `end_on` timeframes must match the
     top-level `timeframe`.
     A timeout is a failed wait (`success=false`, `error_code=wait_event_timeout`)
-    and produces a nonzero CLI exit status. For singular waits with active
-    watchers, reaching an `end_on` boundary before a match is also a failed wait
+    and produces a nonzero CLI exit status. Timeout responses set
+    `timed_out=true`, return `events=[]`, identify `wait_mode`, and include the
+    requested/elapsed timing context plus a retry remediation. For singular
+    waits with active watchers, reaching an `end_on` boundary before a match is
+    also a failed wait
     (`success=false`, `matched=false`,
     `error_code=wait_event_boundary_reached`); `completed=true` distinguishes
     that terminal boundary from a timeout. Basket boundaries complete
