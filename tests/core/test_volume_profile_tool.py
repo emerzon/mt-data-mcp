@@ -358,6 +358,55 @@ def test_tick_cap_is_disclosed_as_truncation(monkeypatch):
     assert "does not represent the full requested window" in result["coverage_note"]
 
 
+def test_tick_profile_discloses_partial_observed_window(monkeypatch):
+    monkeypatch.setattr(
+        vp,
+        "create_mt5_gateway",
+        lambda **_: SimpleNamespace(ensure_connection=lambda: None),
+    )
+    monkeypatch.setattr(
+        vp,
+        "_symbol_ready_guard",
+        lambda symbol: _Guard(None, SimpleNamespace(point=0.0001, digits=5)),
+    )
+    monkeypatch.setattr(
+        vp,
+        "fetch_ticks",
+        lambda **_: {
+            "limit_reached": False,
+            "data": [
+                {"time": "2026-01-01T12:00:00Z", "bid": 1.0, "ask": 1.1},
+                {"time": "2026-01-01T23:00:00Z", "bid": 1.1, "ask": 1.2},
+            ],
+        },
+    )
+
+    result = vp.compute_volume_profile_payload(
+        symbol="EURUSD",
+        start="2026-01-01T00:00:00Z",
+        end="2026-01-02T00:00:00Z",
+        source="ticks",
+        bucket_size=0.1,
+        detail="compact",
+    )
+
+    assert result["requested_window"] == {
+        "start": "2026-01-01T00:00:00Z",
+        "end": "2026-01-02T00:00:00Z",
+    }
+    assert result["window"] == {
+        "start": "2026-01-01T12:00:00Z",
+        "end": "2026-01-01T23:00:00Z",
+    }
+    assert result["truncated"] is True
+    assert result["truncation_reason"] == "incomplete_tick_window"
+    assert result["volume_profile_accuracy"] == "tick_partial_window"
+    assert result["data_quality"] == {
+        "status": "partial",
+        "reason": "incomplete_tick_window",
+    }
+
+
 def test_compute_volume_profile_payload_auto_falls_back_on_low_tick_mid_coverage(monkeypatch):
     monkeypatch.setattr(vp, "create_mt5_gateway", lambda **_: SimpleNamespace(ensure_connection=lambda: None))
     monkeypatch.setattr(

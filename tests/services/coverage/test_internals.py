@@ -22,6 +22,7 @@ from mtdata.services.data_service import (
     _compact_tick_summary,
     _fetch_rates_with_warmup,
     _fetch_recent_ticks_backwards,
+    _fetch_ticks_forward,
     _trim_df_to_target,
 )
 
@@ -95,6 +96,26 @@ def test_recent_tick_chunks_overlap_without_duplicate_boundary_ticks(monkeypatch
 
     assert calls[1][1] == calls[0][0] == boundary
     assert [row["time_msc"] for row in result].count(int(boundary.timestamp() * 1000)) == 1
+
+
+def test_forward_tick_filter_treats_naive_query_bounds_as_utc(monkeypatch) -> None:
+    start = datetime(2026, 1, 1, 12, 0)
+    end = datetime(2026, 1, 1, 13, 0)
+    tick_epoch = start.replace(tzinfo=timezone.utc).timestamp() + 60.0
+
+    monkeypatch.setattr(
+        "mtdata.services.data_service._fetch_ticks_range_with_retry",
+        lambda symbol, from_date, to_date: [{"time": tick_epoch}],
+    )
+
+    result = _fetch_ticks_forward(
+        "EURUSD",
+        from_date=start,
+        to_date=end,
+        limit=1,
+    )
+
+    assert result == [{"time": tick_epoch}]
 
 
 def test_candle_freshness_diagnostics_rounds_machine_age() -> None:

@@ -1783,8 +1783,9 @@ def test_data_fetch_ticks_request_defaults_to_compact_detail():
 
 
 def test_data_fetch_ticks_request_rejects_excessive_limit():
-    with pytest.raises(ValidationError, match="less than or equal to 10000"):
-        DataFetchTicksRequest(symbol="EURUSD", limit=10_001)
+    assert DataFetchTicksRequest(symbol="EURUSD", limit=50_000).limit == 50_000
+    with pytest.raises(ValidationError, match="less than or equal to 50000"):
+        DataFetchTicksRequest(symbol="EURUSD", limit=50_001)
 
 
 @pytest.mark.parametrize("raw_detail", ["stats", "rows"])

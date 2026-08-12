@@ -436,6 +436,7 @@ def _profile_detail_payload(profile: Dict[str, Any], detail: str) -> Dict[str, A
         "is_synthetic",
         "source_note",
         "window",
+        "requested_window",
         "price_source",
         "volume_kind",
         "bucket_size",
@@ -685,6 +686,10 @@ def compute_volume_profile_payload(
         fallback_start=resolved_start,
         fallback_end=resolved_end,
     )
+    profile["requested_window"] = {
+        "start": _format_window_timestamp(resolved_start),
+        "end": _format_window_timestamp(resolved_end),
+    }
     profile["diagnostics"] = {
         **(selected.get("diagnostics") or {}),
         **(profile.get("diagnostics") or {}),
@@ -708,6 +713,54 @@ def compute_volume_profile_payload(
             f"Profile uses only the latest {tick_rows} ticks because max_ticks="
             f"{max_ticks_value} was reached; it does not represent the full requested window."
         )
+    elif str(selected.get("source") or "").lower() == "ticks":
+        requested_start = _parse_start_datetime(resolved_start) if resolved_start else None
+        requested_end = _parse_end_datetime(resolved_end) if resolved_end else None
+        observed_start = _parse_start_datetime(profile["window"].get("start"))
+        observed_end = _parse_end_datetime(profile["window"].get("end"))
+        if all(
+            value is not None
+            for value in (requested_start, requested_end, observed_start, observed_end)
+        ):
+            assert requested_start is not None
+            assert requested_end is not None
+            assert observed_start is not None
+            assert observed_end is not None
+            requested_seconds = max(
+                0.0,
+                float((requested_end - requested_start).total_seconds()),
+            )
+            start_gap = max(
+                0.0,
+                float((observed_start - requested_start).total_seconds()),
+            )
+            end_gap = max(
+                0.0,
+                float((requested_end - observed_end).total_seconds()),
+            )
+            gap_tolerance = max(300.0, requested_seconds * 0.05)
+            profile["diagnostics"].update(
+                {
+                    "requested_window_seconds": round(requested_seconds, 3),
+                    "observed_start_gap_seconds": round(start_gap, 3),
+                    "observed_end_gap_seconds": round(end_gap, 3),
+                    "window_gap_tolerance_seconds": round(gap_tolerance, 3),
+                }
+            )
+            if start_gap > gap_tolerance or end_gap > gap_tolerance:
+                profile["truncated"] = True
+                profile["truncation_reason"] = "incomplete_tick_window"
+                profile["volume_profile_accuracy"] = "tick_partial_window"
+                profile["volume_source_quality"] = "partial_raw_ticks"
+                profile["data_quality"] = {
+                    "status": "partial",
+                    "reason": "incomplete_tick_window",
+                }
+                profile["coverage_note"] = (
+                    "Raw ticks do not cover the requested profile window within "
+                    f"the {round(gap_tolerance, 3)} second tolerance; POC and value "
+                    "area describe only the observed window."
+                )
     fetch_payload = selected.get("fetch_payload")
     profile.update(
         _profile_freshness_meta(

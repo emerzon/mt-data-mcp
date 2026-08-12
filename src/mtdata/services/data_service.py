@@ -984,7 +984,7 @@ def _fetch_recent_ticks_backwards(
             saw_response = True
             candidate_rows = list(ticks_candidate)
             if overlaps_newer_range and candidate_rows:
-                boundary_epoch = float(cursor_end.timestamp())
+                boundary_epoch = float(_utc_epoch_seconds(cursor_end))
                 candidate_rows = [
                     tick
                     for tick in candidate_rows
@@ -1049,7 +1049,7 @@ def _fetch_ticks_forward(
         )
         if ticks_candidate is not None:
             saw_response = True
-            boundary_epoch = float(cursor_start.timestamp())
+            boundary_epoch = float(_utc_epoch_seconds(cursor_start))
             candidate_rows = [
                 tick
                 for tick in list(ticks_candidate)
