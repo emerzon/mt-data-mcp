@@ -48,9 +48,16 @@ Closed-market and stale-quote previews also complete successfully, but retain
 Compact output always retains these gate fields and the broker-validation
 limitations; `guardrails_preview` remains a standard/full-detail section.
 
-**What a dry run *does* check:** required fields, order-type validity, market-vs-pending routing, and a guardrails preview.
+**What a dry run *does* check:** required fields, order-type validity,
+market-vs-pending routing, an indicative margin estimate when MT5 exposes one,
+and a guardrails preview. For pending orders, `margin_required_when_filled` is
+calculated with the corresponding active BUY/SELL action at the requested entry
+price; `margin_estimate_basis` records that assumption.
 
-**What a dry run *cannot* check** (only a live send confirms these): final broker acceptance, live price-distance/stops rules, margin and funds, fillability, and SL/TP attachment after a market fill. Treat a clean preview as necessary, not sufficient.
+**What a dry run *cannot* check** (only a live send confirms these): final broker
+acceptance, live price-distance/stops rules, the final margin reservation and
+funds decision, fillability, and SL/TP attachment after a market fill. Treat a
+clean preview as necessary, not sufficient.
 
 ---
 

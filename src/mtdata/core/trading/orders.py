@@ -1172,16 +1172,30 @@ def build_trade_place_dry_run_preview(
         if validation_error is not None:
             out["sl_tp_error"] = validation_error.get("error")
 
-    out.update(
-        _margin_preview_fields(
-            mt5,
-            order_type_value=order_type_value,
-            symbol=symbol,
-            volume=float(volume_validated),
-            entry_price=float(entry_price),
-            account_info=account_info,
-        )
+    # MT5's margin calculator accepts the active BUY/SELL action, even when
+    # previewing a pending order.  Passing BUY_LIMIT/SELL_STOP constants can
+    # produce a misleading zero on some brokers.
+    margin_action_value = _order_type_constant(mt5, side)
+    margin_fields = _margin_preview_fields(
+        mt5,
+        order_type_value=margin_action_value,
+        symbol=symbol,
+        volume=float(volume_validated),
+        entry_price=float(entry_price),
+        account_info=account_info,
     )
+    if margin_fields:
+        margin_fields["margin_action"] = side
+        margin_fields["margin_estimate_basis"] = (
+            "pending_fill_side_at_entry_price"
+            if pending
+            else "market_fill_side_at_estimated_price"
+        )
+        if pending and "margin_required" in margin_fields:
+            margin_fields["margin_required_when_filled"] = margin_fields[
+                "margin_required"
+            ]
+    out.update(margin_fields)
     return {key: value for key, value in out.items() if value is not None}
 
 

@@ -526,10 +526,80 @@ def test_build_trade_place_dry_run_preview_uses_live_quote_and_margin():
     assert result["margin_required"] == 123.45
     assert result["margin_free"] == 1000.0
     assert result["margin_sufficient"] is True
+    assert result["margin_action"] == "BUY"
+    assert result["margin_estimate_basis"] == "market_fill_side_at_estimated_price"
     assert result["quote_context"]["usable_for_live_trading"] is True
     assert result["quote_context"]["freshness_state"] == "live"
     assert result["quote_context"]["quote_timezone"] == "UTC"
     adapter.order_calc_margin.assert_called_once_with(0, "EURUSD", 0.1, 1.1001)
+
+
+@pytest.mark.parametrize(
+    ("order_type", "entry_price", "expected_action"),
+    [
+        ("BUY_LIMIT", 1.099, 0),
+        ("BUY_STOP", 1.101, 0),
+        ("SELL_LIMIT", 1.101, 1),
+        ("SELL_STOP", 1.099, 1),
+    ],
+)
+def test_pending_margin_preview_uses_fill_side_action(
+    order_type,
+    entry_price,
+    expected_action,
+):
+    order_calc_margin = MagicMock(return_value=220.0)
+    gateway = MagicMock()
+    gateway.adapter = SimpleNamespace(order_calc_margin=order_calc_margin)
+    gateway.ORDER_TYPE_BUY = 0
+    gateway.ORDER_TYPE_SELL = 1
+    gateway.ORDER_TYPE_BUY_LIMIT = 2
+    gateway.ORDER_TYPE_SELL_LIMIT = 3
+    gateway.ORDER_TYPE_BUY_STOP = 4
+    gateway.ORDER_TYPE_SELL_STOP = 5
+    gateway.symbol_info.return_value = SimpleNamespace(
+        visible=True,
+        volume_min=0.01,
+        volume_max=100.0,
+        volume_step=0.01,
+        point=0.0001,
+        digits=4,
+        trade_stops_level=0,
+        trade_freeze_level=0,
+    )
+    now = datetime(2026, 7, 15, 12, 0, tzinfo=timezone.utc).timestamp()
+    gateway.symbol_info_tick.return_value = SimpleNamespace(
+        bid=1.0999,
+        ask=1.1001,
+        time=now,
+    )
+    gateway.account_info.return_value = SimpleNamespace(margin_free=100.0)
+
+    with patch("mtdata.core.trading.orders._stdlib_time.time", return_value=now):
+        result = build_trade_place_dry_run_preview(
+            symbol="EURUSD",
+            volume=0.1,
+            order_type=order_type,
+            pending=True,
+            price=entry_price,
+            stop_loss=None,
+            take_profit=None,
+            gateway=gateway,
+        )
+
+    order_calc_margin.assert_called_once_with(
+        expected_action,
+        "EURUSD",
+        0.1,
+        entry_price,
+    )
+    assert result["margin_required"] == 220.0
+    assert result["margin_required_when_filled"] == 220.0
+    assert result["margin_sufficient"] is False
+    assert result["margin_action"] == (
+        "BUY" if order_type.startswith("BUY") else "SELL"
+    )
+    assert result["margin_estimate_basis"] == "pending_fill_side_at_entry_price"
 
 
 def test_trade_preview_does_not_emit_negative_metrics_for_inverted_quote():
