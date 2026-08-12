@@ -227,6 +227,80 @@ def test_confluence_volume_profile_tick_window_matches_standalone_default():
     assert signature(fn).parameters[
         "volume_profile_max_tick_window_days"
     ].default == 1
+    assert signature(fn).parameters["volume_profile_source"].default == "off"
+    assert signature(fn).parameters["volume_profile_max_m1_bars"].default == 20_000
+
+
+def test_confluence_default_skips_volume_profile_work():
+    fn = _get_confluence_fn()
+    gateway = type("Gateway", (), {"ensure_connection": lambda self: None})()
+    rates = np.array([_make_rate(time_=100.0), _make_rate(time_=200.0)])
+    sr_payload = {
+        "success": True,
+        "symbol": "EURUSD",
+        "timeframe": "D1",
+        "current_price": 1.0852,
+        "levels": [],
+        "fibonacci": {"levels": []},
+    }
+
+    with (
+        patch("mtdata.core.pivot.create_mt5_gateway", return_value=gateway),
+        patch("mtdata.core.pivot.TIMEFRAME_MAP", {"D1": 1}),
+        patch("mtdata.core.pivot.TIMEFRAME_SECONDS", {"D1": 86400}),
+        _mock_symbol_guard(),
+        patch("mtdata.core.pivot.mt5.symbol_info_tick", return_value=_make_tick()),
+        patch("mtdata.core.pivot._mt5_copy_rates_from", return_value=rates),
+        patch("mtdata.core.pivot.compute_support_resistance_payload", return_value=sr_payload),
+        patch("mtdata.core.pivot.compute_volume_profile_payload") as profile,
+    ):
+        result = fn("EURUSD")
+
+    profile.assert_not_called()
+    assert result["volume_profile_status"] == {
+        "enabled": False,
+        "requested_source": "off",
+        "max_m1_bars": 20_000,
+        "effective_max_m1_bars": 20_000,
+        "status": "disabled",
+    }
+
+
+def test_confluence_honors_explicit_volume_profile_m1_cap():
+    fn = _get_confluence_fn()
+    gateway = type("Gateway", (), {"ensure_connection": lambda self: None})()
+    rates = np.array([_make_rate(time_=100.0), _make_rate(time_=200.0)])
+    sr_payload = {
+        "success": True,
+        "symbol": "EURUSD",
+        "timeframe": "D1",
+        "current_price": 1.0852,
+        "levels": [],
+        "fibonacci": {"levels": []},
+    }
+
+    with (
+        patch("mtdata.core.pivot.create_mt5_gateway", return_value=gateway),
+        patch("mtdata.core.pivot.TIMEFRAME_MAP", {"D1": 1}),
+        patch("mtdata.core.pivot.TIMEFRAME_SECONDS", {"D1": 86400}),
+        _mock_symbol_guard(),
+        patch("mtdata.core.pivot.mt5.symbol_info_tick", return_value=_make_tick()),
+        patch("mtdata.core.pivot._mt5_copy_rates_from", return_value=rates),
+        patch("mtdata.core.pivot.compute_support_resistance_payload", return_value=sr_payload),
+        patch(
+            "mtdata.core.pivot.compute_volume_profile_payload",
+            return_value={"success": True, "source": "m1_bars", "levels": []},
+        ) as profile,
+    ):
+        result = fn(
+            "EURUSD",
+            volume_profile_source="auto",
+            volume_profile_max_m1_bars=5_000,
+        )
+
+    assert profile.call_args.kwargs["max_m1_bars"] == 5_000
+    assert result["volume_profile_status"]["effective_max_m1_bars"] == 5_000
+    assert result["volume_profile_status"]["status"] == "available"
 
 
 def test_pivot_compute_points_defaults_to_daily_timeframe():

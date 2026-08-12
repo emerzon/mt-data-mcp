@@ -667,9 +667,10 @@ def confluence_levels(  # noqa: C901
     reaction_bars: Annotated[int, Field(ge=1)] = 6,
     adx_period: Annotated[int, Field(ge=2)] = 14,
     decay_half_life_bars: Annotated[Optional[int], Field(gt=0)] = None,
-    volume_profile_source: Literal["auto", "ticks", "m1_bars"] = "auto",
+    volume_profile_source: Literal["off", "auto", "ticks", "m1_bars"] = "off",
     volume_profile_max_tick_window_days: Annotated[int, Field(ge=1)] = 1,
     volume_profile_max_ticks: Annotated[int, Field(ge=1)] = 50_000,
+    volume_profile_max_m1_bars: Annotated[int, Field(ge=1)] = 20_000,
     detail: Literal["compact", "standard", "full"] = "compact",
 ) -> Dict[str, Any]:
     """Find nearby high-probability price zones where multiple level methods agree.
@@ -824,29 +825,36 @@ def confluence_levels(  # noqa: C901
             if detail_value in {"summary"}:
                 detail_value = "compact"
             volume_profile_payload: Optional[Dict[str, Any]]
-            vp_timeframe, max_m1_bars = _confluence_volume_profile_window(
+            vp_timeframe, derived_max_m1_bars = _confluence_volume_profile_window(
                 sr_tf,
                 int(lookback),
             )
-            volume_profile_payload = compute_volume_profile_payload(
-                symbol=symbol,
-                start=start,
-                end=end,
-                timeframe=vp_timeframe,
-                limit=int(lookback),
-                source=volume_profile_source,
-                price_source="mid",
-                volume_source="auto",
-                bucket_points=None,
-                bucket_count=80,
-                max_buckets=120,
-                value_area_pct=0.70,
-                reference_price=float(reference_price),
-                max_tick_window_days=int(volume_profile_max_tick_window_days),
-                max_ticks=int(volume_profile_max_ticks),
-                max_m1_bars=max_m1_bars,
-                detail="compact",
+            effective_max_m1_bars = min(
+                int(derived_max_m1_bars),
+                int(volume_profile_max_m1_bars),
             )
+            if str(volume_profile_source).lower() == "off":
+                volume_profile_payload = None
+            else:
+                volume_profile_payload = compute_volume_profile_payload(
+                    symbol=symbol,
+                    start=start,
+                    end=end,
+                    timeframe=vp_timeframe,
+                    limit=int(lookback),
+                    source=volume_profile_source,
+                    price_source="mid",
+                    volume_source="auto",
+                    bucket_points=None,
+                    bucket_count=80,
+                    max_buckets=120,
+                    value_area_pct=0.70,
+                    reference_price=float(reference_price),
+                    max_tick_window_days=int(volume_profile_max_tick_window_days),
+                    max_ticks=int(volume_profile_max_ticks),
+                    max_m1_bars=effective_max_m1_bars,
+                    detail="compact",
+                )
 
             payload = build_level_confluence_payload(
                 symbol=symbol,
@@ -865,6 +873,21 @@ def confluence_levels(  # noqa: C901
                 volume_profile_payload=volume_profile_payload,
             )
             payload["reference_price_source"] = reference_price_source
+            payload["volume_profile_status"] = {
+                "enabled": str(volume_profile_source).lower() != "off",
+                "requested_source": str(volume_profile_source).lower(),
+                "max_m1_bars": int(volume_profile_max_m1_bars),
+                "effective_max_m1_bars": int(effective_max_m1_bars),
+                "status": (
+                    "disabled"
+                    if volume_profile_payload is None
+                    else (
+                        "available"
+                        if volume_profile_payload.get("success")
+                        else "unavailable"
+                    )
+                ),
+            }
             if reference_price_source == "live_tick":
                 payload["reference_quote_as_of"] = (
                     format_datetime_utc(datetime.now(timezone.utc))
@@ -954,6 +977,7 @@ def confluence_levels(  # noqa: C901
         volume_profile_source=volume_profile_source,
         volume_profile_max_tick_window_days=volume_profile_max_tick_window_days,
         volume_profile_max_ticks=volume_profile_max_ticks,
+        volume_profile_max_m1_bars=volume_profile_max_m1_bars,
         detail=detail,
         func=_run,
     )
