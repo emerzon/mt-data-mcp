@@ -3,7 +3,7 @@ from __future__ import annotations
 import importlib
 from collections import namedtuple
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import call, patch
 
 import pytest
 
@@ -41,6 +41,9 @@ def _tool_catalog_row(name: str) -> dict:
 @pytest.fixture(autouse=True)
 def _enable_market_depth(monkeypatch) -> None:
     monkeypatch.setenv("MTDATA_ENABLE_MARKET_DEPTH_FETCH", "1")
+    monkeypatch.setattr(
+        market_depth_mod, "ensure_mt5_connection_or_raise", lambda: None
+    )
 
 
 def test_market_depth_tick_fallback_includes_price_display() -> None:
@@ -447,6 +450,32 @@ def test_market_ticker_uses_canonical_broker_symbol_case() -> None:
     assert out["symbol"] == "QQQ"
     mt5.symbol_select.assert_called_once_with("QQQ", True)
     mt5.symbol_info_tick.assert_called_once_with("QQQ")
+
+
+def test_market_ticker_restores_hidden_symbol_visibility() -> None:
+    tick = SimpleNamespace(
+        bid=100.0, ask=100.1, last=100.05, volume=1, time=1700000000
+    )
+    with patch("mtdata.core.market_depth.mt5") as mt5:
+        mt5.symbol_select.return_value = True
+        mt5.symbol_info.return_value = SimpleNamespace(
+            visible=False,
+            digits=2,
+            point=0.01,
+            trade_tick_size=0.01,
+            trade_tick_value=1.0,
+            currency_profit="USD",
+            trade_contract_size=1.0,
+        )
+        mt5.symbol_info_tick.return_value = tick
+
+        out = _raw_market_ticker("HIDDEN", detail="compact")
+
+    assert out["success"] is True
+    assert mt5.symbol_select.call_args_list == [
+        call("HIDDEN", True),
+        call("HIDDEN", False),
+    ]
 
 
 def test_market_ticker_compact_detail_omits_verbose_fields() -> None:

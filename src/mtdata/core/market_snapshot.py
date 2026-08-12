@@ -259,12 +259,27 @@ def _snapshot_health(
         for name in failed
         if (text := _section_error_text(sections.get(name)))
     }
+    section_errors: Dict[str, Dict[str, Any]] = {}
+    for name in failed:
+        section = sections.get(name)
+        summary: Dict[str, Any] = {
+            "reason": errors.get(name) or "section failed",
+        }
+        if isinstance(section, dict):
+            if section.get("error_code") not in (None, ""):
+                summary["error_code"] = section["error_code"]
+            if section.get("remediation") not in (None, ""):
+                summary["remediation"] = section["remediation"]
+        section_errors[name] = summary
     invalid_symbol = any(
         _looks_like_invalid_symbol_error(message, symbol)
         for message in errors.values()
     )
 
-    health: Dict[str, Any] = {"failed_sections": failed}
+    health: Dict[str, Any] = {
+        "failed_sections": failed,
+        "section_errors": section_errors,
+    }
     if invalid_symbol:
         health.update(
             {

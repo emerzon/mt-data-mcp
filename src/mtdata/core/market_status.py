@@ -262,11 +262,15 @@ def _apply_market_timezone_display(
     if target_tz is None:
         target_tz = timezone.utc
     out = dict(status)
-    out["display_time"] = (
+    exchange_local_time = out.get("local_time")
+    display_time = (
         format_datetime_utc(now_local)
         if display == "utc"
         else now_local.astimezone(target_tz).replace(microsecond=0).isoformat()
     )
+    out["exchange_local_time"] = exchange_local_time
+    out["local_time"] = display_time
+    out["display_time"] = display_time
     out["display_timezone"] = (
         "UTC" if display == "utc" else server_label or "UTC"
     )
@@ -1353,9 +1357,10 @@ def market_status(
             - `name`: Full market name
             - `status`: "open", "closed", "pre_market", "lunch_break"
             - `reason`: Reason if closed ("weekend", "holiday", "after_hours")
-            - `local_time`: Current time in market's timezone (ISO 8601)
-            - `display_time`: Current display time (ISO 8601) when
-              `timezone_display="utc"`
+            - `local_time`: Current time in the requested display timezone
+            - `exchange_local_time`: Current time in the market's own timezone
+              when the requested display timezone differs
+            - `display_time`: Alias of `local_time` for explicit display modes
             - `message`: Human-readable status in `detail="full"`
             - `next_open` / `next_close`: ISO timestamp of next event
             - `minutes_until_open` / `minutes_until_close`: Minutes until the

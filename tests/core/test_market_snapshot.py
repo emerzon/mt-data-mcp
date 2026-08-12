@@ -165,7 +165,11 @@ def test_snapshot_symbol_preflight_classifies_missing_symbol() -> None:
 def test_market_snapshot_marks_partial_section_failure(monkeypatch):
     def fake_call_section(name, symbol, timeframe, horizon, detail):
         if name == "levels":
-            return {"error": "levels unavailable"}
+            return {
+                "error": "levels unavailable",
+                "error_code": "insufficient_history",
+                "remediation": "Request a shorter lookback.",
+            }
         if name == "quote":
             return {"success": True, "symbol": symbol, "mid": 1.1}
         return {"success": True, "n_patterns": 0, "highlights": []}
@@ -177,6 +181,13 @@ def test_market_snapshot_marks_partial_section_failure(monkeypatch):
     assert result["success"] is True
     assert result["partial_failure"] is True
     assert result["failed_sections"] == ["levels"]
+    assert result["section_errors"] == {
+        "levels": {
+            "reason": "levels unavailable",
+            "error_code": "insufficient_history",
+            "remediation": "Request a shorter lookback.",
+        }
+    }
     assert "error" not in result
     assert result["summary"] == "EURUSD snapshot; mid=1.1; failed=levels."
 

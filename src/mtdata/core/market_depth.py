@@ -675,6 +675,8 @@ def market_ticker(  # noqa: C901
     detail_mode = normalize_output_verbosity_detail(detail, default="compact")
 
     def _run() -> Dict[str, Any]:  # noqa: C901
+        restore_symbol: Optional[str] = None
+
         def _finalize(payload: Dict[str, Any]) -> Dict[str, Any]:
             return ensure_common_meta(payload, tool_name="market_ticker")
 
@@ -686,11 +688,19 @@ def market_ticker(  # noqa: C901
             mt5_gateway.ensure_connection()
             resolved_symbol = resolve_broker_symbol_name(symbol)
             started = time.perf_counter()
+            info_before = mt5_gateway.symbol_info(resolved_symbol)
+            was_visible = (
+                bool(getattr(info_before, "visible", True))
+                if info_before is not None
+                else None
+            )
             if not mt5_gateway.symbol_select(resolved_symbol, True):
                 suggestions = _market_ticker_symbol_suggestions(mt5_gateway, symbol)
                 return _finalize(
                     _market_ticker_error(
-                        _describe_symbol_select_error(resolved_symbol, mt5_gateway.last_error()),
+                        _describe_symbol_select_error(
+                            resolved_symbol, mt5_gateway.last_error()
+                        ),
                         code="symbol_not_found",
                         remediation=(
                             f"Verify the broker symbol name with symbols_list(search_term='{symbol}') "
@@ -699,6 +709,8 @@ def market_ticker(  # noqa: C901
                         details={"symbol": symbol, "did_you_mean": suggestions},
                     )
                 )
+            if was_visible is False:
+                restore_symbol = resolved_symbol
 
             symbol_info = mt5_gateway.symbol_info(resolved_symbol)
             if symbol_info is None:
@@ -1059,6 +1071,12 @@ def market_ticker(  # noqa: C901
                     remediation="Retry after checking the MT5 terminal and symbol availability.",
                 )
             )
+        finally:
+            if restore_symbol is not None:
+                try:
+                    mt5.symbol_select(restore_symbol, False)
+                except Exception:
+                    pass
 
     return run_logged_operation(
         logger,
