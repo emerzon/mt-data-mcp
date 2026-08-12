@@ -255,8 +255,8 @@ class TestParseWeekday:
     def test_numeric_strings(self, val, expected):
         assert _parse_weekday(val) == expected
 
-    def test_7_maps_to_6(self):
-        assert _parse_weekday("7") == 6
+    def test_7_is_out_of_range(self):
+        assert _parse_weekday("7") is None
 
     def test_out_of_range_numeric(self):
         assert _parse_weekday("8") is None
@@ -720,11 +720,11 @@ class TestTemporalAnalyze:
 
         assert r.get("success") is True
         assert [group["group"] for group in r["groups"]] == [
+            0,
             1,
             2,
             3,
             4,
-            5,
         ]
         assert [group["group_label"] for group in r["groups"]] == [
             "Mon",
@@ -742,7 +742,7 @@ class TestTemporalAnalyze:
         }
         assert r["excluded_groups"] == [
             {
-                "group": 7,
+                "group": 6,
                 "group_label": "Sun",
                 "bars": 5,
                 "min_bars": 12,
@@ -760,9 +760,24 @@ class TestTemporalAnalyze:
         )
 
         assert r.get("success") is True
-        assert 7 in [group["group"] for group in r["groups"]]
+        assert 6 in [group["group"] for group in r["groups"]]
         assert "Sun" in [group["group_label"] for group in r["groups"]]
         assert "excluded_groups" not in r
+
+    @_apply_analyze_patches
+    def test_weekday_group_codes_round_trip_as_filters(self, mock_fetch, *_):
+        result = self._call(
+            mock_fetch,
+            rates=_make_weekday_heavy_rates(),
+            group_by="dow",
+            min_bars=0,
+        )
+
+        assert [row["group"] for row in result["groups"]] == [0, 1, 2, 3, 4, 6]
+        labels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+        for row in result["groups"]:
+            assert _parse_weekday(str(row["group"])) == row["group"]
+            assert labels[row["group"]] == row["group_label"]
 
     @_apply_analyze_patches
     def test_min_bars_excludes_every_sparse_group(self, mock_fetch, *_):
@@ -882,7 +897,7 @@ class TestTemporalAnalyze:
             "session",
         ]
         assert all("breakdown" in group for group in r["groups"])
-        assert r["groups"][0]["breakdown"][0]["group"] == 1
+        assert r["groups"][0]["breakdown"][0]["group"] == 0
         assert r["groups"][0]["breakdown"][0]["group_label"] == "Mon"
         assert r["groups"][1]["breakdown"][0]["group"] == 0
         assert r["groups"][1]["breakdown"][0]["group_label"] == "00:00"

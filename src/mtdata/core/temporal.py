@@ -187,7 +187,6 @@ def _parse_weekday(value: Optional[str]) -> Optional[int]:
         minimum=0,
         maximum=6,
         mapping=mapping,
-        numeric_aliases={7: 6},
     )
 
 
@@ -1182,7 +1181,7 @@ def temporal_analyze(  # noqa: C901
                     row = _stats_for_group(grp, volume_col)
                     if dimension == "dow":
                         key_int = int(key)
-                        row["group"] = key_int + 1
+                        row["group"] = key_int
                         row["group_label"] = (
                             _DOW_LABELS[key_int] if 0 <= key_int <= 6 else str(key)
                         )
