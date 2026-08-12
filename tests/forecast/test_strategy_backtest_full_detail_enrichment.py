@@ -30,6 +30,36 @@ def test_trade_return_bucket_treats_noise_as_breakeven():
     assert forecast_backtest._trade_return_bucket(-1e-6) == "losing"
 
 
+def test_drawdown_periods_are_consolidated_episodes():
+    curve = [
+        {"time": "2026-01-01T00:00Z", "equity": 1.10},
+        {"time": "2026-01-01T01:00Z", "equity": 1.05},
+        {"time": "2026-01-01T02:00Z", "equity": 1.00},
+        {"time": "2026-01-01T03:00Z", "equity": 1.11},
+        {"time": "2026-01-01T04:00Z", "equity": 1.08},
+        {"time": "2026-01-01T05:00Z", "equity": 1.07},
+    ]
+
+    episodes = forecast_backtest._drawdown_episodes(curve)
+
+    assert len(episodes) == 2
+    assert episodes[0] == {
+        "start": "2026-01-01T00:00Z",
+        "trough_time": "2026-01-01T02:00Z",
+        "end": "2026-01-01T03:00Z",
+        "max_depth": pytest.approx(1.00 / 1.10 - 1.0),
+        "duration_observations": 3,
+        "duration_seconds": 10_800.0,
+        "recovered": True,
+    }
+    assert episodes[1]["start"] == "2026-01-01T03:00Z"
+    assert episodes[1]["trough_time"] == "2026-01-01T05:00Z"
+    assert episodes[1]["end"] == "2026-01-01T05:00Z"
+    assert episodes[1]["max_depth"] == pytest.approx(1.07 / 1.11 - 1.0)
+    assert episodes[1]["duration_observations"] == 2
+    assert episodes[1]["recovered"] is False
+
+
 def test_strategy_backtest_full_detail_includes_equity_curve(monkeypatch):
     """Full detail mode should include equity curve data."""
     monkeypatch.setattr(
@@ -149,6 +179,7 @@ def test_strategy_backtest_compact_excludes_analytical_detail(monkeypatch):
         fast_period=2,
         slow_period=3,
         detail="compact",
+        cost_model="historical_bar_spread",
     )
 
     assert out["success"] is True

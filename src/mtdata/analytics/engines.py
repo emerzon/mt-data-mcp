@@ -1620,7 +1620,7 @@ def _observed_spread_bps(
         return (
             float(request.spread_bps),
             "explicit",
-            request.cost_model == "fixed",
+            True,
             {"basis": "request"},
         )
     now = datetime.now(timezone.utc)
@@ -1635,7 +1635,7 @@ def _observed_spread_bps(
         return (
             float(np.median(valid["spread"] / valid["mid"] * 10_000.0)),
             source,
-            False,
+            True,
             {
                 "basis": "tick_window",
                 "start": format_datetime_utc(from_dt, timespec="auto"),
@@ -1738,6 +1738,13 @@ def validate_strategies(  # noqa: C901
                 else None
             ),
         }
+        valid_signal_values = signal.iloc[valid_signal_bars].to_numpy(dtype=float)
+        signal_counts = {
+            "long": int(np.sum(valid_signal_values > 0.0)),
+            "short": int(np.sum(valid_signal_values < 0.0)),
+            "neutral": int(np.sum(valid_signal_values == 0.0)),
+            "non_finite_or_unavailable": int(len(signal) - len(valid_signal_bars)),
+        }
         if candidate.type == "forecast_threshold" and len(valid_signal_bars):
             candidate_fold_windows, candidate_embargo_intervals = _walk_forward_windows(
                 int(valid_signal_bars[0]),
@@ -1755,11 +1762,21 @@ def validate_strategies(  # noqa: C901
             same_bar_policy,
         )
         if len(indices) < request.n_splits * 5:
+            if not len(valid_signal_bars):
+                insufficient_reason = "forecast_unavailable_for_all_anchors"
+            elif signal_counts["long"] + signal_counts["short"] == 0:
+                insufficient_reason = "threshold_not_crossed"
+            else:
+                insufficient_reason = "too_few_non_overlapping_trades"
             results.append({
                 "id": candidate.id,
                 "evaluation_status": "insufficient_data",
                 "signal_definition": signal_definition,
                 "trades": int(len(indices)),
+                "minimum_trades_required": int(request.n_splits * 5),
+                "insufficient_data_reason": insufficient_reason,
+                "signal_coverage": signal_coverage,
+                "signal_counts": signal_counts,
             })
             continue
         fold_rows = []
@@ -1834,6 +1851,11 @@ def validate_strategies(  # noqa: C901
                 "evaluation_status": "insufficient_data",
                 "signal_definition": signal_definition,
                 "trades": 0,
+                "minimum_trades_required": int(request.n_splits * 5),
+                "insufficient_data_reason": "no_evaluable_oos_folds",
+                "signal_coverage": signal_coverage,
+                "signal_counts": signal_counts,
+                "skipped_folds": skipped_folds,
             })
             continue
         equity = np.cumprod(1.0 + np.clip(arr, -0.999, None))
@@ -1956,9 +1978,14 @@ def validate_strategies(  # noqa: C901
             "minimum_positive_fold_share": float(request.min_positive_fold_share),
         }
     ranked = sorted(results, key=lambda item: (item.get("net_expectancy") is None, -(item.get("net_expectancy") or -1e9)))
-    warnings_out = [] if complete else [
-        "A tick-window spread proxy was used; commission and slippage remain the explicit request values."
-    ]
+    warnings_out = (
+        [
+            "Transaction costs use a tick-window spread proxy; commission and "
+            "slippage remain the explicit request values."
+        ]
+        if spread_source.startswith("mt5_tick_median")
+        else []
+    )
     for item in results:
         folds_evaluated = int(item.get("folds_evaluated") or 0)
         if item.get("evaluation_status") == "complete" and folds_evaluated < request.n_splits:

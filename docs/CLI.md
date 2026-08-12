@@ -524,15 +524,19 @@ mtdata-cli strategy_backtest EURUSD --timeframe H1 --strategy sma_cross \
 mtdata-cli strategy_backtest EURUSD --timeframe H1 --strategy rsi_reversion \
   --rsi-length 14 --oversold 30 --overbought 70 --position-mode long_only --json
 
-# Historical MT5 bar spread is the default cost model. For a controlled constant:
+# Auto uses historical MT5 bar spreads and falls back to the current quote proxy.
+# For a controlled constant:
 mtdata-cli strategy_backtest EURUSD --cost-model fixed --spread-bps 1.2 --json
 ```
 
-Net returns and derived performance metrics are reported only when every trade has
-a spread cost. If historical spread data cannot price every trade, the response
-keeps gross results, labels the partial result `return_after_known_costs`, reports
-the priced-trade coverage, and marks performance metrics unavailable. Use an
-explicit fixed spread when a complete, comparable net result is required.
+The default `auto` model prices from historical spreads where available and
+uses a disclosed current two-sided quote as a constant fallback for missing
+samples. Select `historical_bar_spread` for strict historical-only pricing or
+`fixed` with an explicit spread for controlled comparisons. Annualized strategy
+metrics use the full evaluation duration, require at least 30 trades, and return
+compact `sample_guidance` when the lookback produces too few trades. Full-detail
+`drawdown_periods` are consolidated peak-to-recovery episodes rather than one
+row per underwater observation.
 
 ### Analyze Risk
 ```bash

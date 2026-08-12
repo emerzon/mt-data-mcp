@@ -131,7 +131,7 @@ def _compact_strategy_backtest_result(result: Dict[str, Any]) -> Dict[str, Any]:
     out = dict(result)
     out.pop("detail", None)
     out.pop("parameters", None)
-    out.pop("warning", None)
+    sample_warning = out.pop("warning", None)
     last_signal = out.pop("last_signal", None)
     if isinstance(last_signal, dict):
         historical = dict(last_signal)
@@ -161,6 +161,18 @@ def _compact_strategy_backtest_result(result: Dict[str, Any]) -> Dict[str, Any]:
             summary_out.pop("metrics_reliability", None)
         summary_out.pop("trades_observed", None)
         out["summary"] = summary_out
+        if (
+            summary_out.get("sample_status") == "insufficient_trades"
+            and sample_warning
+        ):
+            out["sample_guidance"] = {
+                "code": "insufficient_trades",
+                "message": str(sample_warning),
+                "recommended_action": (
+                    "Increase lookback or adjust strategy parameters until the "
+                    "reported trade count reaches minimum_trades."
+                ),
+            }
     metrics = out.get("metrics")
     if isinstance(metrics, dict):
         metrics_out = dict(metrics)
@@ -414,6 +426,7 @@ def _compute_performance_metrics(
     trade_spacing_bars: Optional[int] = None,
     symbol: Optional[str] = None,
     observed_times: Any = None,
+    evaluation_bars: Optional[int] = None,
 ) -> Dict[str, Any]:
     """Compute portfolio-level performance statistics from per-trade returns."""
 
@@ -429,8 +442,18 @@ def _compute_performance_metrics(
             if trade_spacing_bars is not None
             else max(1, int(horizon))
         )
+        evaluation_years = (
+            float(evaluation_bars) / annualization_bars
+            if evaluation_bars is not None
+            and int(evaluation_bars) > 0
+            and math.isfinite(annualization_bars)
+            and annualization_bars > 0
+            else None
+        )
         trades_per_year = (
-            float(annualization_bars / cadence)
+            0.0
+            if evaluation_years is not None
+            else float(annualization_bars / cadence)
             if math.isfinite(annualization_bars)
             else float("nan")
         )
@@ -457,6 +480,13 @@ def _compute_performance_metrics(
             "trades_per_year": trades_per_year,
             "bars_per_year": annualization_bars,
             "annualization_basis": annualization_basis,
+            "annualization_method": (
+                "evaluation_duration"
+                if evaluation_years is not None
+                else "trade_cadence"
+            ),
+            "evaluation_bars": evaluation_bars,
+            "evaluation_years": evaluation_years,
             "trades_observed": 0,
             "winning_trades": 0,
             "losing_trades": 0,
@@ -483,7 +513,21 @@ def _compute_performance_metrics(
     metrics: Dict[str, Any] = {}
 
     cadence = max(1, int(trade_spacing_bars)) if trade_spacing_bars is not None else max(1, int(horizon))
-    trades_per_year = float(annualization_bars / cadence) if math.isfinite(annualization_bars) else float('nan')
+    evaluation_years = (
+        float(evaluation_bars) / annualization_bars
+        if evaluation_bars is not None
+        and int(evaluation_bars) > 0
+        and math.isfinite(annualization_bars)
+        and annualization_bars > 0
+        else None
+    )
+    trades_per_year = (
+        float(arr.size / evaluation_years)
+        if evaluation_years is not None and evaluation_years > 0
+        else float(annualization_bars / cadence)
+        if math.isfinite(annualization_bars)
+        else float("nan")
+    )
 
     avg_return = float(np.mean(arr))
     winning_trades = int(np.sum(arr > 0.0))
@@ -534,7 +578,13 @@ def _compute_performance_metrics(
     gross_loss = float(arr[arr < 0.0].sum()) if arr.size > 0 else 0.0
     profit_factor = float(gross_profit / abs(gross_loss)) if gross_loss < 0.0 else float('nan')
 
-    years = float(arr.size / trades_per_year) if math.isfinite(trades_per_year) and trades_per_year > 0 else float('nan')
+    years = (
+        float(evaluation_years)
+        if evaluation_years is not None
+        else float(arr.size / trades_per_year)
+        if math.isfinite(trades_per_year) and trades_per_year > 0
+        else float("nan")
+    )
     annual_return = float('nan')
     if (
         enough_trades
@@ -586,6 +636,13 @@ def _compute_performance_metrics(
         "trades_per_year": trades_per_year,
         "bars_per_year": annualization_bars,
         "annualization_basis": annualization_basis,
+        "annualization_method": (
+            "evaluation_duration"
+            if evaluation_years is not None
+            else "trade_cadence"
+        ),
+        "evaluation_bars": evaluation_bars,
+        "evaluation_years": evaluation_years,
         "trades_observed": int(arr.size),
         "winning_trades": winning_trades,
         "losing_trades": losing_trades,
@@ -942,6 +999,7 @@ def _build_strategy_trade(
     slippage_bps: float,
     spread_bps: float,
     spread_cost_available: bool,
+    spread_cost_source: str,
     exit_reason: str,
 ) -> Dict[str, Any]:
     gross_return = float(direction) * ((float(exit_price) - float(entry_price)) / float(entry_price))
@@ -967,6 +1025,7 @@ def _build_strategy_trade(
         "exit_reason": exit_reason,
         "spread_cost_bps": float(abs(spread_bps) or 0.0),
         "spread_cost_status": "included" if spread_cost_available else "missing",
+        "spread_cost_source": spread_cost_source,
         "slippage_cost_bps": 2.0 * float(abs(slippage_bps) or 0.0),
         "return_gross": gross_return,
         "return_after_known_costs": return_after_known_costs,
@@ -1055,6 +1114,113 @@ def _historical_trade_spread_bps(
     return (spread_price / execution_price) * 10000.0
 
 
+def _current_spread_proxy_bps(symbol: str) -> Tuple[Optional[float], Dict[str, Any]]:
+    """Return a disclosed current two-sided spread proxy in basis points."""
+    try:
+        tick = mt5.symbol_info_tick(symbol)
+        bid = float(getattr(tick, "bid", 0.0) or 0.0)
+        ask = float(getattr(tick, "ask", 0.0) or 0.0)
+        tick_time = getattr(tick, "time", None)
+    except Exception:
+        tick = None
+        bid = 0.0
+        ask = 0.0
+        tick_time = None
+    mid = (bid + ask) / 2.0
+    if (
+        tick is None
+        or not math.isfinite(bid)
+        or not math.isfinite(ask)
+        or ask <= bid
+        or mid <= 0.0
+    ):
+        return None, {
+            "source": "mt5_symbol_info_tick",
+            "status": "unavailable",
+            "reason": "current_two_sided_quote_unavailable",
+        }
+    return float((ask - bid) / mid * 10000.0), {
+        "source": "mt5_symbol_info_tick",
+        "status": "available",
+        "bid": bid,
+        "ask": ask,
+        "time_epoch": float(tick_time) if tick_time is not None else None,
+        "application": "constant_proxy_for_missing_historical_spreads",
+    }
+
+
+def _drawdown_episodes(
+    equity_curve: List[Dict[str, Any]],
+    *,
+    material_threshold: float = 0.0001,
+) -> List[Dict[str, Any]]:
+    """Consolidate pointwise underwater equity into non-overlapping episodes."""
+    if not equity_curve:
+        return []
+
+    def _duration_seconds(start: Any, end: Any) -> Optional[float]:
+        try:
+            start_ts = pd.Timestamp(str(start))
+            end_ts = pd.Timestamp(str(end))
+            return max(0.0, float((end_ts - start_ts).total_seconds()))
+        except Exception:
+            return None
+
+    peak_equity = 1.0
+    peak_time = equity_curve[0].get("time")
+    active: Optional[Dict[str, Any]] = None
+    episodes: List[Dict[str, Any]] = []
+
+    for point in equity_curve:
+        try:
+            equity = float(point.get("equity"))
+        except (TypeError, ValueError):
+            continue
+        if not math.isfinite(equity):
+            continue
+        point_time = point.get("time")
+
+        if active is None:
+            if equity >= peak_equity:
+                peak_equity = equity
+                peak_time = point_time
+                continue
+            depth = equity / max(peak_equity, 1e-10) - 1.0
+            if depth <= -abs(float(material_threshold)):
+                active = {
+                    "start": peak_time,
+                    "trough_time": point_time,
+                    "end": point_time,
+                    "max_depth": depth,
+                    "duration_observations": 1,
+                    "recovered": False,
+                }
+            continue
+
+        active["duration_observations"] += 1
+        active["end"] = point_time
+        depth = equity / max(peak_equity, 1e-10) - 1.0
+        if depth < float(active["max_depth"]):
+            active["max_depth"] = depth
+            active["trough_time"] = point_time
+        if equity >= peak_equity:
+            active["recovered"] = True
+            active["duration_seconds"] = _duration_seconds(
+                active.get("start"), point_time
+            )
+            episodes.append(active)
+            active = None
+            peak_equity = equity
+            peak_time = point_time
+
+    if active is not None:
+        active["duration_seconds"] = _duration_seconds(
+            active.get("start"), active.get("end")
+        )
+        episodes.append(active)
+    return episodes
+
+
 def strategy_backtest(  # noqa: C901
     symbol: str,
     timeframe: TimeframeLiteral = "H1",
@@ -1070,7 +1236,7 @@ def strategy_backtest(  # noqa: C901
     oversold: float = 30.0,
     overbought: float = 70.0,
     max_hold_bars: Optional[int] = None,
-    cost_model: Literal["historical_bar_spread", "fixed"] = "historical_bar_spread",
+    cost_model: Literal["auto", "historical_bar_spread", "fixed"] = "auto",
     spread_bps: Optional[float] = None,
     slippage_bps: float = 1.0,
 ) -> Dict[str, Any]:
@@ -1109,12 +1275,12 @@ def strategy_backtest(  # noqa: C901
             return {"error": "fast_period must be less than slow_period"}
         if float(oversold) >= float(overbought):
             return {"error": "oversold must be less than overbought"}
-        cost_model_value = str(cost_model or "historical_bar_spread").strip().lower()
-        if cost_model_value not in {"historical_bar_spread", "fixed"}:
+        cost_model_value = str(cost_model or "auto").strip().lower()
+        if cost_model_value not in {"auto", "historical_bar_spread", "fixed"}:
             return {
-                "error": "cost_model must be 'historical_bar_spread' or 'fixed'"
+                "error": "cost_model must be 'auto', 'historical_bar_spread', or 'fixed'"
             }
-        if cost_model_value == "historical_bar_spread" and spread_bps is not None:
+        if cost_model_value in {"auto", "historical_bar_spread"} and spread_bps is not None:
             return {
                 "error": "spread_bps is only valid with cost_model='fixed'"
             }
@@ -1212,9 +1378,15 @@ def strategy_backtest(  # noqa: C901
 
         historical_spread_prices: Optional[np.ndarray] = None
         historical_spread_coverage = 0.0
-        if cost_model_value == "historical_bar_spread":
+        current_spread_proxy_bps: Optional[float] = None
+        current_spread_proxy: Dict[str, Any] = {}
+        if cost_model_value in {"auto", "historical_bar_spread"}:
             historical_spread_prices, historical_spread_coverage = (
                 _historical_bar_spread_prices(symbol, df)
+            )
+        if cost_model_value == "auto" and historical_spread_coverage < 1.0:
+            current_spread_proxy_bps, current_spread_proxy = (
+                _current_spread_proxy_bps(symbol)
             )
 
         signal_series, diagnostics, signal_warmup = _build_strategy_signal_series(
@@ -1248,11 +1420,40 @@ def strategy_backtest(  # noqa: C901
         trades: List[Dict[str, Any]] = []
         observed_spread_costs: List[float] = []
         missing_spread_costs = 0
+        historical_spread_trade_count = 0
+        proxy_spread_trade_count = 0
         current_direction = 0
         max_hold_reentry_block = 0
         entry_idx = None
         entry_time = None
         entry_price = None
+
+        def _trade_spread_cost(
+            *,
+            direction: int,
+            trade_entry_idx: int,
+            trade_exit_idx: int,
+            trade_entry_price: float,
+            trade_exit_price: float,
+        ) -> Tuple[Optional[float], str]:
+            nonlocal historical_spread_trade_count, proxy_spread_trade_count
+            if cost_model_value == "fixed" and spread_bps is not None:
+                return fixed_spread_bps, "explicit_fixed"
+            historical_cost = _historical_trade_spread_bps(
+                direction=direction,
+                entry_idx=trade_entry_idx,
+                exit_idx=trade_exit_idx,
+                entry_price=trade_entry_price,
+                exit_price=trade_exit_price,
+                spread_prices=historical_spread_prices,
+            )
+            if historical_cost is not None:
+                historical_spread_trade_count += 1
+                return historical_cost, "mt5_historical_bar_spread"
+            if cost_model_value == "auto" and current_spread_proxy_bps is not None:
+                proxy_spread_trade_count += 1
+                return current_spread_proxy_bps, "mt5_current_spread_proxy"
+            return None, "unavailable"
 
         def _execution_price(bar_idx: int) -> Optional[float]:
             if bar_idx < 0 or bar_idx >= len(opens):
@@ -1302,17 +1503,12 @@ def strategy_backtest(  # noqa: C901
             )
             exited_direction = current_direction
 
-            trade_spread_bps = (
-                fixed_spread_bps
-                if cost_model_value == "fixed" and spread_bps is not None
-                else _historical_trade_spread_bps(
-                    direction=current_direction,
-                    entry_idx=int(entry_idx),
-                    exit_idx=action_idx,
-                    entry_price=float(entry_price),
-                    exit_price=float(action_price),
-                    spread_prices=historical_spread_prices,
-                )
+            trade_spread_bps, trade_spread_source = _trade_spread_cost(
+                direction=current_direction,
+                trade_entry_idx=int(entry_idx),
+                trade_exit_idx=action_idx,
+                trade_entry_price=float(entry_price),
+                trade_exit_price=float(action_price),
             )
             spread_cost_available = trade_spread_bps is not None
             if not spread_cost_available:
@@ -1332,6 +1528,7 @@ def strategy_backtest(  # noqa: C901
                     slippage_bps=float(slippage_bps),
                     spread_bps=float(trade_spread_bps),
                     spread_cost_available=spread_cost_available,
+                    spread_cost_source=trade_spread_source,
                     exit_reason=exit_reason,
                 )
             )
@@ -1353,17 +1550,12 @@ def strategy_backtest(  # noqa: C901
             final_exit_price = float(closes[final_exit_idx])
             if not math.isfinite(final_exit_price) or final_exit_price <= 0.0:
                 final_exit_price = _execution_price(final_exit_idx) or float(entry_price)
-            trade_spread_bps = (
-                fixed_spread_bps
-                if cost_model_value == "fixed" and spread_bps is not None
-                else _historical_trade_spread_bps(
-                    direction=current_direction,
-                    entry_idx=int(entry_idx),
-                    exit_idx=int(final_exit_idx),
-                    entry_price=float(entry_price),
-                    exit_price=float(final_exit_price),
-                    spread_prices=historical_spread_prices,
-                )
+            trade_spread_bps, trade_spread_source = _trade_spread_cost(
+                direction=current_direction,
+                trade_entry_idx=int(entry_idx),
+                trade_exit_idx=int(final_exit_idx),
+                trade_entry_price=float(entry_price),
+                trade_exit_price=float(final_exit_price),
             )
             spread_cost_available = trade_spread_bps is not None
             if not spread_cost_available:
@@ -1383,6 +1575,7 @@ def strategy_backtest(  # noqa: C901
                     slippage_bps=float(slippage_bps),
                     spread_bps=float(trade_spread_bps),
                     spread_cost_available=spread_cost_available,
+                    spread_cost_source=trade_spread_source,
                     exit_reason="end_of_data",
                 )
             )
@@ -1400,6 +1593,16 @@ def strategy_backtest(  # noqa: C901
         trade_spacing = None
         if len(entry_indices) > 1:
             trade_spacing = int(np.median(np.diff(entry_indices)))
+        bars_used = (
+            int(evaluation_bars)
+            if evaluation_bars is not None
+            else int(lookback)
+        )
+        evaluation_times = (
+            times[int(evaluation_start_idx) :]
+            if evaluation_start_idx is not None
+            else times[-int(bars_used) :]
+        )
 
         metrics = _compute_performance_metrics(
             trade_returns,
@@ -1408,7 +1611,8 @@ def strategy_backtest(  # noqa: C901
             float(slippage_bps),
             trade_spacing_bars=trade_spacing,
             symbol=symbol,
-            observed_times=times,
+            observed_times=evaluation_times,
+            evaluation_bars=bars_used,
         ) if trade_returns else {}
         if detail_mode == "compact" and metrics:
             metrics = _compact_metrics_payload(metrics)
@@ -1458,11 +1662,6 @@ def strategy_backtest(  # noqa: C901
             _params["start"] = start
         if end is not None:
             _params["end"] = end
-        bars_used = (
-            int(evaluation_bars)
-            if evaluation_bars is not None
-            else int(lookback)
-        )
         signal_bars = max(0, (len(df) - 1) - int(start_signal_idx))
         warmup_history_bars = (
             int(evaluation_start_idx)
@@ -1479,22 +1678,31 @@ def strategy_backtest(  # noqa: C901
             if observed_spread_costs
             else None
         )
-        cost_model_complete = (
-            cost_model_value == "fixed" and spread_bps is not None
-        ) or (
-            cost_model_value == "historical_bar_spread"
-            and historical_spread_prices is not None
-            and missing_spread_costs == 0
+        cost_input_available = bool(
+            (cost_model_value == "fixed" and spread_bps is not None)
+            or historical_spread_prices is not None
+            or (cost_model_value == "auto" and current_spread_proxy_bps is not None)
         )
-        spread_source = (
-            "explicit"
-            if cost_model_value == "fixed" and spread_bps is not None
-            else (
-                "mt5_historical_bar_spread"
-                if historical_spread_prices is not None
-                else "unavailable"
-            )
+        cost_model_complete = bool(
+            cost_input_available and missing_spread_costs == 0
         )
+        if cost_model_value == "fixed":
+            spread_source = "explicit"
+            effective_cost_model = "fixed"
+        elif proxy_spread_trade_count and historical_spread_trade_count:
+            spread_source = "mt5_historical_bars_with_current_quote_fallback"
+            effective_cost_model = "historical_bar_spread_with_current_spread_proxy"
+        elif proxy_spread_trade_count or (
+            not trades and current_spread_proxy_bps is not None
+        ):
+            spread_source = "mt5_current_spread_proxy"
+            effective_cost_model = "current_spread_proxy"
+        elif historical_spread_trade_count or historical_spread_prices is not None:
+            spread_source = "mt5_historical_bar_spread"
+            effective_cost_model = "historical_bar_spread"
+        else:
+            spread_source = "unavailable"
+            effective_cost_model = cost_model_value
         reported_spread_cost_bps = (
             fixed_spread_bps
             if cost_model_value == "fixed" and spread_bps is not None
@@ -1564,10 +1772,13 @@ def strategy_backtest(  # noqa: C901
                 else "incomplete_transaction_costs"
             ),
             "cost_model": {
-                "type": cost_model_value,
+                "type": effective_cost_model,
+                "requested_type": cost_model_value,
                 "spread_bps_round_trip": reported_spread_cost_bps,
                 "spread_source": spread_source,
                 "spread_observations": priced_trade_count,
+                "historical_priced_trades": historical_spread_trade_count,
+                "proxy_priced_trades": proxy_spread_trade_count,
                 "unpriced_trades": int(missing_spread_costs),
                 "priced_trade_coverage_pct": priced_trade_coverage_pct,
                 "slippage_bps_per_side": float(slippage_bps),
@@ -1620,7 +1831,7 @@ def strategy_backtest(  # noqa: C901
                 "time": _format_time_minimal(float(times[last_idx])),
             },
         }
-        if cost_model_value == "historical_bar_spread":
+        if cost_model_value in {"auto", "historical_bar_spread"}:
             result["cost_model"]["historical_spread_coverage_pct"] = round(
                 float(priced_trade_coverage_pct), 2
             ) if priced_trade_coverage_pct is not None else None
@@ -1631,11 +1842,23 @@ def strategy_backtest(  # noqa: C901
                 result["cost_model"]["historical_spread_status"] = (
                     "unavailable_zero_or_missing_samples"
                 )
+        if proxy_spread_trade_count or (
+            cost_model_value == "auto" and current_spread_proxy_bps is not None
+        ):
+            result["cost_model"]["fallback"] = {
+                **current_spread_proxy,
+                "spread_bps_round_trip": current_spread_proxy_bps,
+                "trades_priced": proxy_spread_trade_count,
+            }
+            result.setdefault("warnings", []).append(
+                "Historical spread was unavailable for one or more trades; the "
+                "disclosed current two-sided quote spread was applied as a constant proxy."
+            )
         if not cost_model_complete:
             spread_warning = (
                 " Historical zero spread samples are treated as unavailable, not as "
                 "frictionless execution."
-                if cost_model_value == "historical_bar_spread"
+                if cost_model_value in {"auto", "historical_bar_spread"}
                 and historical_spread_prices is None
                 else ""
             )
@@ -1657,6 +1880,20 @@ def strategy_backtest(  # noqa: C901
             result["summary"]["metrics_reliability_reasons"] = [
                 "incomplete_transaction_costs"
             ]
+            if cost_model_value == "auto" and trades and not known_cost_return_available:
+                result.update(
+                    {
+                        "success": False,
+                        "error_code": "strategy_backtest_cost_model_unavailable",
+                        "error": (
+                            "Neither historical bar spreads nor a current two-sided "
+                            "spread proxy could price the simulated trades."
+                        ),
+                        "remediation": (
+                            "Retry with cost_model='fixed' and an explicit spread_bps value."
+                        ),
+                    }
+                )
         sample_notice = metrics.get("sample_notice") if isinstance(metrics, dict) else None
         if isinstance(sample_notice, dict):
             trades_observed = sample_notice.get("trades_observed")
@@ -1719,29 +1956,7 @@ def strategy_backtest(  # noqa: C901
                 if equity_curve:
                     result["equity_curve"] = equity_curve
                 
-                # Calculate drawdown periods
-                drawdown_periods = []
-                if equity_curve and len(equity_curve) > 1:
-                    peak_equity = 1.0
-                    for point in equity_curve:
-                        if point["equity"] > peak_equity:
-                            peak_equity = point["equity"]
-                    
-                    current_peak = 1.0
-                    current_peak_time = equity_curve[0]["time"] if equity_curve else None
-                    for point in equity_curve:
-                        if point["equity"] > current_peak:
-                            current_peak = point["equity"]
-                            current_peak_time = point["time"]
-                        else:
-                            dd_depth = (point["equity"] - current_peak) / max(current_peak, 1e-10)
-                            if dd_depth < -0.0001:  # Only report material drawdowns
-                                drawdown_periods.append({
-                                    "start": current_peak_time,
-                                    "end": point["time"],
-                                    "depth": dd_depth,
-                                })
-                
+                drawdown_periods = _drawdown_episodes(equity_curve)
                 if drawdown_periods:
                     result["drawdown_periods"] = drawdown_periods
                 

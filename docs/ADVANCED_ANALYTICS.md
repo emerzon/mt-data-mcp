@@ -75,6 +75,13 @@ window rather than empty earlier history. Each candidate reports signal range,
 requested/evaluated folds, skipped-fold reasons, and fold coverage; incomplete
 coverage cannot receive a positive evidence classification.
 
+The default `current_spread_proxy` is complete when its tick window contains a
+valid priced spread; `cost_model.complete` describes cost availability, not
+whether the source was fixed. The cost block retains the proxy source and
+observation window. An insufficient forecast-threshold candidate reports the
+required trade count, computed-anchor coverage, long/short/neutral counts, and
+a reason distinguishing unavailable forecasts from an uncrossed threshold.
+
 Same-bar TP/SL touches default to `sl_first` and are echoed in the result.
 
 ## Portfolio risk decomposition

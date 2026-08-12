@@ -260,7 +260,14 @@ class StrategyBacktestRequest(_PublicForecastRequest):
     symbol: str
     timeframe: TimeframeLiteral = "H1"
     strategy: Literal["sma_cross", "ema_cross", "rsi_reversion"] = "sma_cross"
-    lookback: int = Field(500, ge=5)
+    lookback: int = Field(
+        500,
+        ge=5,
+        description=(
+            "Historical evaluation bars. Annualized metrics require at least 30 "
+            "simulated trades; increase lookback when sample_status is insufficient_trades."
+        ),
+    )
     start: Optional[str] = None
     end: Optional[str] = None
     detail: DetailLiteral = "compact"
@@ -271,11 +278,12 @@ class StrategyBacktestRequest(_PublicForecastRequest):
     oversold: float = Field(30.0, gt=0.0, lt=100.0)
     overbought: float = Field(70.0, gt=0.0, lt=100.0)
     max_hold_bars: Optional[int] = Field(None, ge=1)
-    cost_model: Literal["historical_bar_spread", "fixed"] = Field(
-        "historical_bar_spread",
+    cost_model: Literal["auto", "historical_bar_spread", "fixed"] = Field(
+        "auto",
         description=(
-            "Transaction-cost spread source. Use fixed with an explicit spread_bps "
-            "when the broker does not populate historical candle spreads."
+            "Transaction-cost spread source. Auto uses historical bar spreads and "
+            "falls back to the disclosed current two-sided quote proxy. Historical "
+            "bar spread is strict; fixed requires an explicit spread_bps."
         ),
     )
     spread_bps: Optional[float] = Field(
@@ -291,7 +299,7 @@ class StrategyBacktestRequest(_PublicForecastRequest):
             raise ValueError("fast_period must be less than slow_period")
         if self.oversold >= self.overbought:
             raise ValueError("oversold must be less than overbought")
-        if self.cost_model == "historical_bar_spread" and self.spread_bps is not None:
+        if self.cost_model in {"auto", "historical_bar_spread"} and self.spread_bps is not None:
             raise ValueError("spread_bps is only valid with cost_model='fixed'")
         if self.cost_model == "fixed" and self.spread_bps is None:
             raise ValueError("spread_bps is required with cost_model='fixed'")

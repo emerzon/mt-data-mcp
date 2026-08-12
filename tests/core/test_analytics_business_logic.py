@@ -17,6 +17,7 @@ from mtdata.analytics.engines import (
     _execution_duration_display,
     _execution_percentiles,
     _filtered_historical_returns,
+    _observed_spread_bps,
     _portfolio_mark_context,
     _tick_frame,
     analyze_execution_quality,
@@ -1224,7 +1225,7 @@ def test_strategy_validation_returns_walk_forward_oos_metrics() -> None:
         assert fold["test_end_bar"] + request.barrier.horizon <= fold["test_window_end_bar"]
 
 
-def test_strategy_validation_proxy_cannot_receive_positive_classification(
+def test_strategy_validation_priced_proxy_can_receive_positive_classification(
     monkeypatch,
 ) -> None:
     gateway = FakeGateway()
@@ -1263,10 +1264,10 @@ def test_strategy_validation_proxy_cannot_receive_positive_classification(
     result = validate_strategies(request, gateway)
     evidence = result["rankings"][0]["evidence"]
 
-    assert result["cost_model"]["complete"] is False
-    assert evidence["criteria"]["cost_model_complete"] is False
-    assert evidence["provisional_positive_before_complete_costs"] is True
-    assert evidence["classification"] == "inconclusive"
+    assert result["cost_model"]["complete"] is True
+    assert evidence["criteria"]["cost_model_complete"] is True
+    assert evidence["provisional_positive_before_complete_costs"] is False
+    assert evidence["classification"] == "positive"
 
 
 def test_strategy_validation_fixed_model_requires_explicit_spread() -> None:
@@ -1282,6 +1283,27 @@ def test_strategy_validation_fixed_model_requires_explicit_spread() -> None:
             ],
             cost_model="fixed",
         )
+
+
+def test_strategy_validation_explicit_spread_is_complete_under_proxy_selector() -> None:
+    request = StrategyValidateRequest(
+        symbol="EURUSD",
+        candidates=[
+            {
+                "id": "cross",
+                "type": "builtin_strategy",
+                "strategy": "sma_cross",
+            }
+        ],
+        spread_bps=1.25,
+    )
+
+    spread, source, complete, window = _observed_spread_bps(request, FakeGateway())
+
+    assert spread == 1.25
+    assert source == "explicit"
+    assert complete is True
+    assert window == {"basis": "request"}
 
 
 def test_strategy_barrier_entry_uses_next_bar_open_after_gap() -> None:
@@ -1420,6 +1442,49 @@ def test_forecast_strategy_folds_cover_computed_signal_window(monkeypatch) -> No
     assert candidate["fold_coverage"] == 1.0
     assert candidate["evidence"]["criteria"]["all_requested_folds_evaluated"] is True
     assert result["validation"]["forecast_signal_anchor_limit"] == 200
+
+
+def test_forecast_strategy_insufficient_data_explains_threshold_coverage(
+    monkeypatch,
+) -> None:
+    gateway = FakeGateway()
+    monkeypatch.setattr(
+        "mtdata.forecast.forecast.execute_forecast",
+        lambda **_kwargs: {"expected_return": 0.0},
+    )
+    request = StrategyValidateRequest(
+        symbol="EURUSD",
+        lookback=400,
+        candidates=[
+            {
+                "id": "forecast",
+                "type": "forecast_threshold",
+                "method": "naive",
+                "params": {"lookback": 20},
+                "horizon": 1,
+                "long_above": 0.01,
+                "short_below": -0.01,
+            }
+        ],
+        barrier={"horizon": 1, "tp_pct": 0.15, "sl_pct": 0.15},
+        n_splits=2,
+        cost_model="fixed",
+        spread_bps=1.0,
+        bootstrap_samples=100,
+        detail="full",
+    )
+
+    result = validate_strategies(request, gateway)
+    candidate = result["rankings"][0]
+
+    assert candidate["evaluation_status"] == "insufficient_data"
+    assert candidate["insufficient_data_reason"] == "threshold_not_crossed"
+    assert candidate["minimum_trades_required"] == 10
+    assert candidate["signal_coverage"]["anchors_computed"] == 200
+    assert candidate["signal_counts"]["long"] == 0
+    assert candidate["signal_counts"]["short"] == 0
+    assert candidate["signal_counts"]["neutral"] == 200
+    assert candidate["signal_counts"]["non_finite_or_unavailable"] > 0
 
 
 def test_portfolio_risk_marks_empty_position_book() -> None:

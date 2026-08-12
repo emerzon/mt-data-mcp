@@ -53,6 +53,7 @@ def test_strategy_backtest_sma_cross_generates_long_trade(monkeypatch):
         fast_period=2,
         slow_period=3,
         detail="full",
+        cost_model="historical_bar_spread",
     )
 
     assert out["success"] is True
@@ -86,7 +87,7 @@ def test_strategy_backtest_sma_cross_generates_long_trade(monkeypatch):
     assert "trade_distribution" not in out
 
 
-def test_strategy_backtest_uses_historical_bar_spread_by_default(monkeypatch):
+def test_strategy_backtest_auto_prefers_historical_bar_spread(monkeypatch):
     history = _history_from_closes(
         [1.0, 1.0, 1.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0],
         spread_points=10.0,
@@ -107,6 +108,7 @@ def test_strategy_backtest_uses_historical_bar_spread_by_default(monkeypatch):
     )
 
     assert historical["cost_model"]["type"] == "historical_bar_spread"
+    assert historical["cost_model"]["requested_type"] == "auto"
     assert historical["cost_model"]["spread_source"] == "mt5_historical_bar_spread"
     assert historical["cost_model"]["historical_spread_coverage_pct"] == 100.0
     assert historical["cost_model"]["spread_observations"] == 1
@@ -121,7 +123,7 @@ def test_strategy_backtest_uses_historical_bar_spread_by_default(monkeypatch):
     assert "return_after_known_costs" not in historical["trades"][0]
 
 
-def test_strategy_backtest_rejects_zero_historical_spread_samples(monkeypatch):
+def test_strategy_backtest_strict_historical_rejects_zero_spread_samples(monkeypatch):
     history = _history_from_closes(
         [1.0, 1.0, 1.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0],
         spread_points=0.0,
@@ -134,7 +136,12 @@ def test_strategy_backtest_rejects_zero_historical_spread_samples(monkeypatch):
     )
 
     out = forecast_backtest.strategy_backtest(
-        symbol="EURUSD", lookback=8, fast_period=2, slow_period=3, detail="full"
+        symbol="EURUSD",
+        lookback=8,
+        fast_period=2,
+        slow_period=3,
+        detail="full",
+        cost_model="historical_bar_spread",
     )
 
     assert out["cost_model"]["spread_source"] == "unavailable"
@@ -149,6 +156,48 @@ def test_strategy_backtest_rejects_zero_historical_spread_samples(monkeypatch):
     assert out["summary"]["costs_complete"] is False
     assert out["summary"]["cost_coverage_pct"] == 0.0
     assert out["metrics"]["metrics_available"] is False
+
+
+def test_strategy_backtest_auto_falls_back_to_current_spread_proxy(monkeypatch):
+    history = _history_from_closes(
+        [1.0, 1.0, 1.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0],
+        spread_points=0.0,
+    )
+    monkeypatch.setattr(forecast_backtest, "_fetch_history", lambda *args, **kwargs: history)
+    monkeypatch.setattr(
+        forecast_backtest.mt5,
+        "symbol_info",
+        lambda _symbol: type("Info", (), {"point": 0.0001})(),
+    )
+    monkeypatch.setattr(
+        forecast_backtest.mt5,
+        "symbol_info_tick",
+        lambda _symbol: type(
+            "Tick",
+            (),
+            {"bid": 1.1000, "ask": 1.1002, "time": 1_800_000_000},
+        )(),
+    )
+
+    out = forecast_backtest.strategy_backtest(
+        symbol="EURUSD",
+        lookback=8,
+        fast_period=2,
+        slow_period=3,
+        detail="full",
+    )
+
+    assert out["success"] is True
+    assert out["result_status"] == "complete"
+    assert out["cost_model"]["requested_type"] == "auto"
+    assert out["cost_model"]["type"] == "current_spread_proxy"
+    assert out["cost_model"]["spread_source"] == "mt5_current_spread_proxy"
+    assert out["cost_model"]["proxy_priced_trades"] == 1
+    assert out["cost_model"]["complete"] is True
+    assert out["cost_model"]["fallback"]["trades_priced"] == 1
+    assert out["trades"][0]["spread_cost_source"] == "mt5_current_spread_proxy"
+    assert out["summary"]["net_return"] is not None
+    assert out["metrics"].get("metrics_available") is not False
 
 
 def test_strategy_backtest_includes_first_valid_warmup_signal(monkeypatch):
@@ -168,6 +217,7 @@ def test_strategy_backtest_includes_first_valid_warmup_signal(monkeypatch):
         fast_period=2,
         slow_period=3,
         detail="full",
+        cost_model="historical_bar_spread",
         position_mode="long_short",
     )
 
@@ -192,6 +242,7 @@ def test_strategy_backtest_compact_mode_excludes_trades(monkeypatch):
         fast_period=2,
         slow_period=3,
         detail="compact",
+        cost_model="historical_bar_spread",
     )
 
     assert out["success"] is True
@@ -204,9 +255,12 @@ def test_strategy_backtest_compact_mode_excludes_trades(monkeypatch):
     assert out["price_basis"] == "mt5_bid_ohlc"
     assert out["cost_model"] == {
         "type": "historical_bar_spread",
+        "requested_type": "historical_bar_spread",
         "spread_bps_round_trip": None,
         "spread_source": "unavailable",
         "spread_observations": 0,
+        "historical_priced_trades": 0,
+        "proxy_priced_trades": 0,
         "unpriced_trades": 1,
         "priced_trade_coverage_pct": 0.0,
         "slippage_bps_per_side": 1.0,
@@ -217,7 +271,7 @@ def test_strategy_backtest_compact_mode_excludes_trades(monkeypatch):
     }
     assert "costs are unavailable" in out["warnings"][0]
     assert StrategyBacktestRequest(symbol="EURUSD").slippage_bps == 1.0
-    assert StrategyBacktestRequest(symbol="EURUSD").cost_model == "historical_bar_spread"
+    assert StrategyBacktestRequest(symbol="EURUSD").cost_model == "auto"
     assert out["signal_status"] == "not_actionable"
     assert "last_signal" not in out
     assert out["last_historical_signal"]["signal_status"] == "historical_observation_only"
@@ -243,6 +297,31 @@ def test_strategy_backtest_compact_mode_excludes_trades(monkeypatch):
     assert len(out["units"]) < len(forecast_backtest._backtest_units())
     assert "trades" not in out, "compact mode should not include trades array"
     assert "trade_sample" not in out
+
+
+def test_strategy_backtest_compact_explains_low_trade_sample(monkeypatch):
+    monkeypatch.setattr(
+        forecast_backtest,
+        "_fetch_history",
+        lambda *args, **kwargs: _history_from_closes(
+            [1.0, 1.0, 1.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0]
+        ),
+    )
+
+    out = forecast_backtest.strategy_backtest(
+        symbol="EURUSD",
+        lookback=8,
+        fast_period=2,
+        slow_period=3,
+        detail="compact",
+        cost_model="fixed",
+        spread_bps=1.0,
+    )
+
+    assert out["summary"]["sample_status"] == "insufficient_trades"
+    assert out["summary"]["minimum_trades"] == 30
+    assert out["sample_guidance"]["code"] == "insufficient_trades"
+    assert "Increase lookback" in out["sample_guidance"]["recommended_action"]
 
 
 def test_strategy_backtest_uses_date_range_when_provided(monkeypatch):
@@ -275,6 +354,7 @@ def test_strategy_backtest_uses_date_range_when_provided(monkeypatch):
         fast_period=2,
         slow_period=5,
         detail="full",
+        cost_model="historical_bar_spread",
     )
 
     assert out["success"] is True

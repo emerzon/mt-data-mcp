@@ -291,6 +291,27 @@ class TestAnnualizationCadence:
         # With spacing=20 > horizon=12, trades_per_year should be lower
         assert m_spaced["trades_per_year"] < m_horizon["trades_per_year"]
 
+    def test_strategy_metrics_use_full_evaluation_duration(self):
+        returns = [0.001] * 40
+
+        metrics = _compute_performance_metrics(
+            returns,
+            "H1",
+            1,
+            0.0,
+            trade_spacing_bars=3,
+            symbol="EURUSD",
+            evaluation_bars=5_000,
+        )
+
+        evaluation_years = 5_000 / 6_240.0
+        expected_annual_return = (1.001**40) ** (1.0 / evaluation_years) - 1.0
+        assert metrics["annualization_method"] == "evaluation_duration"
+        assert metrics["evaluation_bars"] == 5_000
+        assert metrics["evaluation_years"] == pytest.approx(evaluation_years)
+        assert metrics["trades_per_year"] == pytest.approx(40 / evaluation_years)
+        assert metrics["annual_return"] == pytest.approx(expected_annual_return)
+
     def test_metrics_trade_spacing_none_uses_horizon(self):
         """Default (no spacing) falls back to horizon."""
         rets = list(np.random.default_rng(42).normal(0.001, 0.01, 50))

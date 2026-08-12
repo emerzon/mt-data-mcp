@@ -140,8 +140,9 @@ class StrategyValidateRequest(BaseModel):
     cost_model: Literal["current_spread_proxy", "fixed"] = Field(
         "current_spread_proxy",
         description=(
-            "Transaction-cost spread source. Fixed requires an explicit spread_bps "
-            "and is the complete-cost validation path."
+            "Transaction-cost spread source. A successfully observed tick-window "
+            "proxy is a complete priced-spread assumption; fixed requires an "
+            "explicit spread_bps."
         ),
     )
     spread_bps: Optional[float] = Field(
