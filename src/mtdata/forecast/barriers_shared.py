@@ -793,8 +793,10 @@ def _history_freshness_context(
     """Describe whether the model's latest completed bar is execution-current."""
     out: Dict[str, Any] = {"history_bars_used": int(len(df))}
     try:
+        first_epoch = _coerce_epoch(df["time"].iloc[0])
         last_epoch = _coerce_epoch(df["time"].iloc[-1])
     except Exception:
+        first_epoch = None
         last_epoch = None
     if last_epoch is None:
         out["history_policy_ok"] = False
@@ -819,8 +821,17 @@ def _history_freshness_context(
             "stale_after_seconds": stale_after,
             "freshness_basis": "last_completed_bar_end",
             "input_bar_policy": "closed_bars_only",
+            "timezone": "UTC",
         }
     )
+    if first_epoch is not None:
+        out["history_window"] = {
+            "start": _format_barrier_epoch(first_epoch),
+            "end": _format_barrier_epoch(completed_bar_end),
+            "bars_used": int(len(df)),
+            "timezone": "UTC",
+            "input_bar_policy": "closed_bars_only",
+        }
     closed_session = closed_session_context(
         symbol,
         now_epoch=now_epoch,

@@ -1752,6 +1752,31 @@ def test_forecast_tune_detail_compacts_history_tail():
     assert "history_tail_count" not in full
 
 
+def test_forecast_tuning_propagates_historical_anchor_and_discloses_window():
+    captured = {}
+
+    def fake_genetic(**kwargs):
+        captured.update(kwargs)
+        return {"success": True, "history_count": 1}
+
+    result = forecast_use_cases.run_forecast_tune_genetic(
+        ForecastTuneGeneticRequest(
+            symbol="EURUSD",
+            methods=["theta"],
+            as_of="2025-12-31T21:00:00Z",
+        ),
+        genetic_search_impl=fake_genetic,
+    )
+
+    assert captured["as_of"] == "2025-12-31T21:00:00Z"
+    assert result["analysis_time_window"] == {
+        "as_of": "2025-12-31T21:00:00Z",
+        "timezone": "UTC",
+        "input_bar_policy": "closed_bars_only",
+        "reference_policy": "historical_candle_close",
+    }
+
+
 def test_forecast_tuning_resolves_direction_costs_and_sample_requirements():
     captured = {}
 
@@ -2159,7 +2184,7 @@ def test_forecast_list_library_models_and_list_methods(monkeypatch):
         },
     )
     compact_repeated_description = _unwrap(cf.forecast_list_methods)()
-    assert compact_repeated_description["profile"] == "quickstart"
+    assert "profile" not in compact_repeated_description
     assert "description" not in compact_repeated_description["methods"][0]
 
     monkeypatch.setattr(
@@ -2222,12 +2247,8 @@ def test_forecast_list_library_models_and_list_methods(monkeypatch):
         "sf_naive",
         "sf_theta",
     ]
-    assert trainable_auto["profile"] == "all"
-    assert trainable_auto["profile_auto_expanded"] == {
-        "requested": "quickstart",
-        "effective": "all",
-        "reason": "supports_training=true searches the complete method catalog.",
-    }
+    assert "profile" not in trainable_auto
+    assert "profile_auto_expanded" not in trainable_auto
     no_ci = _unwrap(cf.forecast_list_methods)(supports_ci=False, show_unavailable=True, profile="all")
     assert "filters" not in no_ci
     assert all(row.get("supports_ci") is False for row in no_ci["methods"])
@@ -3571,7 +3592,7 @@ def test_forecast_tune_optuna_routing(monkeypatch):
     assert out["compute_cost"] == {
         "unit": "rolling_backtests",
         "estimated": 200,
-        "drivers": "n_trials*steps*methods",
+        "drivers": "n_trials*steps (method sampled once per trial)",
     }
     assert captured["method"] is None
     assert captured["methods"] == ["theta"]

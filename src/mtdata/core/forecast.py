@@ -124,34 +124,40 @@ def _positive_int(value: Any, default: int) -> int:
     return parsed if parsed > 0 else default
 
 
-def _value_count(value: Any, default: int = 1) -> int:
-    if isinstance(value, (list, tuple, set)):
-        return max(1, len(value))
-    if value in (None, "", {}):
-        return default
-    return 1
-
-
 def _forecast_compute_cost(operation: str, payload: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
     if operation not in _FORECAST_HEAVY_OPERATIONS:
         return None
     data = dict(payload or {})
     steps = _positive_int(data.get("steps"), 5)
-    method_count = _value_count(data.get("methods") or data.get("method"), 1)
     if operation == "forecast_tune_optuna":
         trials = _positive_int(data.get("n_trials"), 40)
         return {
             "unit": "rolling_backtests",
-            "estimated": trials * steps * method_count,
-            "drivers": "n_trials*steps*methods",
+            "estimated": trials * steps,
+            "drivers": "n_trials*steps (method sampled once per trial)",
         }
-    population = _positive_int(data.get("population"), 8 if operation == "forecast_optimize_hints" else 12)
+    population = max(
+        2,
+        _positive_int(
+            data.get("population"),
+            8 if operation == "forecast_optimize_hints" else 12,
+        ),
+    )
     generations = _positive_int(data.get("generations"), 5 if operation == "forecast_optimize_hints" else 10)
-    timeframes = _value_count(data.get("timeframes") or data.get("timeframe"), 4 if operation == "forecast_optimize_hints" else 1)
+    evaluations = (
+        population + generations * max(0, population - 2)
+        if operation == "forecast_optimize_hints"
+        else population * generations
+    )
     return {
         "unit": "rolling_backtests",
-        "estimated": population * generations * steps * method_count * timeframes,
-        "drivers": "population*generations*steps*methods*timeframes",
+        "estimated": evaluations * steps,
+        "drivers": (
+            "(population+generations*(population-2))*steps "
+            "(method/timeframe sampled once per candidate)"
+            if operation == "forecast_optimize_hints"
+            else "population*generations*steps (method sampled once per candidate)"
+        ),
     }
 
 
@@ -166,6 +172,17 @@ def _attach_forecast_compute_hint(
         return result
     out = dict(result)
     out.setdefault("compute_intensity", "high")
+    actual_evaluations = result.get("history_count")
+    if operation == "forecast_optimize_hints":
+        summary = result.get("search_summary")
+        if isinstance(summary, dict):
+            actual_evaluations = summary.get("total_evaluations")
+    if isinstance(actual_evaluations, int):
+        cost = dict(cost)
+        cost["actual"] = int(actual_evaluations) * _positive_int(
+            dict(payload or {}).get("steps"),
+            5,
+        )
     out.setdefault("compute_cost", cost)
     return out
 
@@ -468,7 +485,7 @@ def _run_forecast_payload_direct(operation: str, payload: Dict[str, Any]) -> Dic
             library=payload.get("library"),
             supports_ci=payload.get("supports_ci"),
             supports_training=payload.get("supports_training"),
-            profile=payload.get("profile", "quickstart"),
+            profile=payload.get("profile", "all"),
             show_unavailable=bool(payload.get("show_unavailable", False)),
         )
 
@@ -986,16 +1003,15 @@ def forecast_list_methods(
     ] = None,
     supports_ci: Optional[bool] = None,
     supports_training: Optional[bool] = None,
-    profile: Literal["quickstart", "core", "all"] = "quickstart",
+    profile: Literal["quickstart", "core", "all"] = "all",
     show_unavailable: bool = False,
 ) -> Dict[str, Any]:
     """List forecast methods and availability.
 
     Compact output is the default. Standard adds descriptions, capability
     details, and related volatility methods; full adds parameter documentation.
-    The default quickstart profile returns a small native baseline set. Use
-    profile='all' for the full available catalog. An explicit
-    supports_training=True filter searches the full catalog automatically.
+    The default ``all`` profile returns the full available catalog. Use
+    profile='quickstart' for a small native baseline set.
     """
     search_term_value = str(search_term or "").strip() or None
     return _run_forecast_operation(
@@ -1841,7 +1857,7 @@ def _forecast_list_methods_impl(  # noqa: C901
     library: Optional[str] = None,
     supports_ci: Optional[bool] = None,
     supports_training: Optional[bool] = None,
-    profile: str = "quickstart",
+    profile: str = "all",
     show_unavailable: bool = False,
 ) -> Dict[str, Any]:
     try:
@@ -1857,7 +1873,7 @@ def _forecast_list_methods_impl(  # noqa: C901
         search_value = str(search or "").strip().lower()
         category_filter_value = str(category or "").strip().lower()
         library_value = str(library or "").strip().lower()
-        requested_profile_value = str(profile or "quickstart").strip().lower()
+        requested_profile_value = str(profile or "all").strip().lower()
         if requested_profile_value not in _FORECAST_METHOD_PROFILES:
             return {"error": "Invalid profile. Use all, quickstart, or core."}
         profile_value = requested_profile_value

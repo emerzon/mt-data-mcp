@@ -13,6 +13,7 @@ import pandas as pd
 from ..bootstrap.settings import mt5_config
 from ..shared.constants import SANITY_BARS_TOLERANCE, TIMEFRAME_MAP, TIMEFRAME_SECONDS
 from ..shared.schema import DenoiseSpec, ForecastMethodLiteral, TimeframeLiteral
+from ..shared.symbols import is_probably_crypto_symbol
 from ..shared.validators import (
     invalid_timeframe_error,
     unsupported_timeframe_seconds_error,
@@ -268,11 +269,11 @@ def _calculate_lookback_bars(method_l: str, horizon: int, lookback: Optional[int
         # 3. the active query window at the end of the series
         analog_history_bars = search_depth + (2 * window_size) + int(horizon) - 1
         if lookback is not None and lookback > 0:
-            return max(int(lookback) + 2, analog_history_bars)
+            return max(int(lookback), analog_history_bars)
         return max(100, analog_history_bars)
 
     if lookback is not None and lookback > 0:
-        return int(lookback) + 2
+        return int(lookback)
 
     if method_l == 'ensemble':
         p = dict(params or {})
@@ -316,6 +317,8 @@ def _resolve_history_context(
     """Return the source DataFrame, active base column, and denoise spec used."""
     if prefetched_df is not None:
         df = prefetched_df.copy()
+        if cap_explicit_range and (start or end) and len(df) > int(need):
+            df = df.iloc[-int(need):].reset_index(drop=True)
         base_col = prefetched_base_col or ('close_dn' if 'close_dn' in df.columns else 'close')
         dn_spec_used = None
         if prefetched_denoise_spec:
@@ -1577,7 +1580,11 @@ def _format_forecast_output(
         "direction_threshold_pct": float(round(direction_threshold_pct, 6)),
         "direction_threshold_basis": direction_threshold_basis,
         "calendar_treatment": (
-            "broker_calendar_boundaries"
+            "broker_calendar_boundaries_and_forex_weekend_skipped"
+            if calendar_timeframe and uses_standard_weekend_projection(symbol, tf_secs)
+            else "broker_calendar_boundaries_continuous_crypto"
+            if calendar_timeframe and is_probably_crypto_symbol(symbol)
+            else "calendar_estimate_session_schedule_unknown"
             if calendar_timeframe
             else (
                 "forex_weekend_skipped"
@@ -1592,13 +1599,16 @@ def _format_forecast_output(
             f"{horizon} trading bars forecast; {skipped_bars} "
             f"{str(timeframe or '').upper() or 'timeframe'} bars skipped (weekend)."
         )
-    elif not uses_standard_weekend_projection(symbol, tf_secs):
+    elif (
+        not uses_standard_weekend_projection(symbol, tf_secs)
+        and not is_probably_crypto_symbol(symbol)
+    ):
         weekend_bars = _count_weekend_forecast_times(forecast_times)
         if weekend_bars:
             result.setdefault("warnings", []).append(
                 f"{weekend_bars} of {horizon} forecast timestamps fall on a weekend; "
-                "weekends are not skipped for this symbol (continuous calendar). "
-                "Confirm the instrument trades during those periods."
+                "the broker session schedule is unavailable, so calendar-timeframe "
+                "targets are estimates and may not correspond to tradable bars."
             )
 
     # Choose which arrays to expose. Custom targets retain their own semantic
@@ -1812,6 +1822,7 @@ def forecast_engine(  # noqa: C901
                 prefetched_base_col=prefetched_base_col,
                 prefetched_denoise_spec=prefetched_denoise_spec,
                 denoise=denoise,
+                cap_explicit_range=lookback is not None,
             )
         except ValueError as ex:
             return {"error": str(ex)}

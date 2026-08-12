@@ -57,3 +57,28 @@ def test_backtest_requests_reject_invalid_slippage(value) -> None:
         ForecastBacktestRequest(symbol="EURUSD", slippage_bps=value)
     with pytest.raises(ValidationError, match="slippage_bps"):
         StrategyBacktestRequest(symbol="EURUSD", slippage_bps=value)
+
+
+@pytest.mark.parametrize(
+    "factory",
+    [
+        lambda **kwargs: ForecastConformalIntervalsRequest(symbol="EURUSD", **kwargs),
+        lambda **kwargs: ForecastTuneGeneticRequest(symbol="EURUSD", **kwargs),
+        lambda **kwargs: ForecastTuneOptunaRequest(symbol="EURUSD", **kwargs),
+        lambda **kwargs: ForecastBarrierProbRequest(
+            symbol="EURUSD",
+            barrier={
+                "kind": "tp_sl",
+                "unit": "pct",
+                "take_profit": 0.5,
+                "stop_loss": 0.5,
+            },
+            **kwargs,
+        ),
+        lambda **kwargs: ForecastOptimizeHintsRequest(symbol="EURUSD", **kwargs),
+        lambda **kwargs: ForecastBarrierOptimizeRequest(symbol="EURUSD", **kwargs),
+    ],
+)
+def test_replayable_analytics_reject_mixed_point_and_range_windows(factory) -> None:
+    with pytest.raises(ValidationError, match="as_of cannot be combined"):
+        factory(as_of="2026-01-01", start="2025-01-01")

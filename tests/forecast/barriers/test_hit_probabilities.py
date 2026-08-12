@@ -107,6 +107,32 @@ class TestBarrierHitProbabilities(_BarrierTestBase):
         self.assertEqual(result["intra_bar_hit_detection"], "simulated_bar_close")
         self.assertTrue(any("intra-bar touches" in item for item in result["warnings"]))
 
+    def test_historical_anchor_uses_candle_close_instead_of_live_tick(self):
+        with patch(
+            f'{_BARRIER_PROB_ROOT}._get_live_reference_price'
+        ) as live_reference:
+            result = forecast_barrier_hit_probabilities(
+                symbol="EURUSD",
+                timeframe="H1",
+                horizon=4,
+                method="mc_gbm",
+                direction="long",
+                tp_pct=0.5,
+                sl_pct=0.5,
+                params={"n_sims": 20},
+                as_of="2023-01-20T00:00:00Z",
+            )
+
+        self.mock_fetch_history_prob.assert_called_with(
+            "EURUSD",
+            "H1",
+            2000,
+            as_of="2023-01-20T00:00:00Z",
+        )
+        live_reference.assert_not_called()
+        self.assertTrue(result["success"])
+        self.assertEqual(result["last_price_source"], "candle_close")
+
     def test_default_method_counts_intrabar_touches(self):
         result = forecast_barrier_hit_probabilities(
             symbol="EURUSD",

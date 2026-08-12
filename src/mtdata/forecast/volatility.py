@@ -11,6 +11,7 @@ import pandas as pd
 from ..services.data_service import _is_last_bar_forming
 from ..shared.constants import SANITY_BARS_TOLERANCE, TIMEFRAME_MAP, TIMEFRAME_SECONDS
 from ..shared.schema import DenoiseSpec, DetailLiteral, TimeframeLiteral
+from ..shared.symbols import is_probably_crypto_symbol
 from ..shared.validators import (
     invalid_timeframe_error,
     unsupported_timeframe_seconds_error,
@@ -549,7 +550,11 @@ def _volatility_input_context(
                 4,
             ),
             "calendar_policy": (
-                "broker_calendar_boundaries"
+                "broker_calendar_boundaries_and_forex_weekend_skipped"
+                if calendar_timeframe and uses_standard_weekend_projection(symbol, tf_secs)
+                else "broker_calendar_boundaries_continuous_crypto"
+                if calendar_timeframe and is_probably_crypto_symbol(symbol)
+                else "calendar_estimate_session_schedule_unknown"
                 if calendar_timeframe
                 else (
                     "forex_weekend_skipped"

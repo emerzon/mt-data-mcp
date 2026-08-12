@@ -2643,6 +2643,51 @@ def run_strategy_backtest(
     return result
 
 
+def _analysis_time_kwargs(request: Any) -> Dict[str, Any]:
+    return {
+        key: value
+        for key, value in {
+            "as_of": getattr(request, "as_of", None),
+            "start": getattr(request, "start", None),
+            "end": getattr(request, "end", None),
+        }.items()
+        if value not in (None, "")
+    }
+
+
+def _attach_analysis_time_window(
+    result: Dict[str, Any],
+    request: Any,
+) -> Dict[str, Any]:
+    """Disclose the historical cutoff/range used by replayable analytics."""
+    values = {
+        "as_of": getattr(request, "as_of", None),
+        "start": getattr(request, "start", None),
+        "end": getattr(request, "end", None),
+    }
+    if not any(value not in (None, "") for value in values.values()):
+        return result
+    out = dict(result)
+    out["analysis_time_window"] = {
+        key: value for key, value in values.items() if value not in (None, "")
+    }
+    window = out["analysis_time_window"]
+    data_window = out.get("data_window")
+    if not isinstance(data_window, dict):
+        data_window = out.get("history_window")
+    if isinstance(data_window, dict):
+        if data_window.get("start") is not None:
+            window["effective_start"] = data_window.get("start")
+        if data_window.get("end") is not None:
+            window["effective_end"] = data_window.get("end")
+    elif out.get("data_as_of") is not None:
+        window["effective_end"] = out.get("data_as_of")
+    window["timezone"] = "UTC"
+    window["input_bar_policy"] = "closed_bars_only"
+    window["reference_policy"] = "historical_candle_close"
+    return out
+
+
 def run_forecast_conformal_intervals(
     request: ForecastConformalIntervalsRequest,
     *,
@@ -2674,6 +2719,7 @@ def run_forecast_conformal_intervals(
             horizon=int(request.horizon),
             steps=int(request.steps),
             spacing=int(request.spacing),
+            **_analysis_time_kwargs(request),
             methods=[str(request.method)],
             denoise=request.denoise,
             params_per_method={str(request.method): dict(request.params or {})},
@@ -2727,6 +2773,7 @@ def run_forecast_conformal_intervals(
             horizon=int(request.horizon),
             params=request.params,
             denoise=request.denoise,
+            **_analysis_time_kwargs(request),
         ))
         yhat = out.get("forecast_price") or []
         if not yhat:
@@ -2766,6 +2813,7 @@ def run_forecast_conformal_intervals(
         result["confidence_level"] = round(1.0 - float(request.ci_alpha), 6)
         result["ci_status"] = "available"
         result["ci_available"] = True
+        result = _attach_analysis_time_window(result, request)
         alpha_warning = _conformal_alpha_warning(request.ci_alpha)
         warnings_out = result.get("warnings")
         if isinstance(warnings_out, list):
@@ -3108,6 +3156,7 @@ def run_forecast_tune_genetic(
             horizon=int(request.horizon),
             steps=int(request.steps),
             spacing=int(request.spacing),
+            **_analysis_time_kwargs(request),
             search_space=search_space,
             metric=str(request.metric),
             mode=resolve_tuning_mode(str(request.metric), str(request.mode)),
@@ -3139,6 +3188,7 @@ def run_forecast_tune_genetic(
         slippage_bps=request.slippage_bps,
         trade_threshold=request.trade_threshold,
     )
+    result = _attach_analysis_time_window(result, request)
     result = _apply_tuning_detail(result, request.detail)
     log_operation_finish(
         logger,
@@ -3233,6 +3283,7 @@ def run_forecast_tune_optuna(
             horizon=int(request.horizon),
             steps=int(request.steps),
             spacing=int(request.spacing),
+            **_analysis_time_kwargs(request),
             search_space=search_space,
             metric=str(request.metric),
             mode=resolve_tuning_mode(str(request.metric), str(request.mode)),
@@ -3267,6 +3318,7 @@ def run_forecast_tune_optuna(
         slippage_bps=request.slippage_bps,
         trade_threshold=request.trade_threshold,
     )
+    result = _attach_analysis_time_window(result, request)
     result = _apply_tuning_detail(result, request.detail)
     log_operation_finish(
         logger,
@@ -3383,9 +3435,11 @@ def run_forecast_barrier_prob(
                 **barrier_kwargs,
                 params=request.params,
                 denoise=request.denoise,
+                **_analysis_time_kwargs(request),
             )
             if isinstance(result, dict):
                 result = _annotate_price_currency(result, request.symbol)
+            result = _attach_analysis_time_window(result, request)
             result = _apply_barrier_prob_detail(result, request)
             log_operation_finish(
                 logger,
@@ -3423,9 +3477,11 @@ def run_forecast_barrier_prob(
                 mu=request.mu,
                 sigma=request.sigma,
                 denoise=request.denoise,
+                **_analysis_time_kwargs(request),
             )
             if isinstance(result, dict):
                 result = _annotate_price_currency(result, request.symbol)
+            result = _attach_analysis_time_window(result, request)
             result = _apply_barrier_prob_detail(result, request)
             log_operation_finish(
                 logger,
@@ -3554,6 +3610,7 @@ def run_forecast_barrier_optimize(
             sl_steps=None,
             params=params_norm,
             denoise=request.denoise,
+            **_analysis_time_kwargs(request),
             objective=request.objective,
             return_grid=return_grid_value,
             top_k=request.top_k,
@@ -3598,6 +3655,7 @@ def run_forecast_barrier_optimize(
                 _round_barrier_optimize_payload(dict(result))
             )
             result["detail"] = detail_value
+            result = _attach_analysis_time_window(result, request)
             if detail_value != "full":
                 result.pop("last_price", None)
                 result.pop("last_price_close", None)
@@ -3733,6 +3791,7 @@ def run_forecast_optimize_hints(
             horizon=int(request.horizon),
             steps=int(request.steps),
             spacing=int(request.spacing),
+            **_analysis_time_kwargs(request),
             fitness_metric=str(request.fitness_metric or 'composite'),
             fitness_weights=request.fitness_weights,
             population=int(request.population),
@@ -3767,6 +3826,7 @@ def run_forecast_optimize_hints(
         slippage_bps=request.slippage_bps,
         trade_threshold=request.trade_threshold,
     )
+    result = _attach_analysis_time_window(result, request)
     result = _apply_tuning_detail(result, request.detail)
     log_operation_finish(
         logger,

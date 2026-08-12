@@ -417,10 +417,10 @@ def is_standard_weekend_closed_epoch(epoch: Any) -> bool:
 
 
 def uses_standard_weekend_projection(symbol: Optional[str], tf_secs: int) -> bool:
-    """Return whether intraday forecasts should skip the standard FX weekend."""
-    return (
-        is_probably_forex_symbol(symbol, currency_codes=FOREX_CURRENCY_CODES)
-        and int(tf_secs) < TIMEFRAME_SECONDS.get("D1", 86400)
+    """Return whether forecasts should skip the standard FX weekend."""
+    return is_probably_forex_symbol(
+        symbol,
+        currency_codes=FOREX_CURRENCY_CODES,
     )
 
 
@@ -448,6 +448,8 @@ def next_times_from_last(
         current = base
         for _ in range(int(horizon)):
             current = bar_close_epoch(current, normalized_timeframe)
+            if skip_weekends and is_standard_weekend_closed_epoch(current):
+                current = _next_standard_weekend_open_epoch(current)
             out.append(current)
         return out
     if not skip_weekends:
@@ -1112,7 +1114,49 @@ def fetch_history(
             df = df.iloc[:-1]
         if not start and len(df) > need:
             df = df.iloc[-int(need):]
-    return df.reset_index(drop=True)
+    df = df.reset_index(drop=True)
+    spacing = _history_spacing_quality(df, timeframe=timeframe)
+    if spacing is not None and not spacing["spacing_matches_timeframe"]:
+        raise RuntimeError(
+            "Observed candle cadence does not match the requested timeframe: "
+            f"requested_bar_seconds={spacing['requested_bar_seconds']}, "
+            f"observed_median_bar_seconds={spacing['observed_median_bar_seconds']}, "
+            f"matching_interval_pct={spacing['matching_interval_pct']}. "
+            "The broker returned materially coarser history; retry with the "
+            "observed timeframe or verify the symbol/timeframe feed."
+        )
+    return df
+
+
+def _history_spacing_quality(
+    df: pd.DataFrame,
+    *,
+    timeframe: str,
+) -> Optional[Dict[str, Any]]:
+    """Detect a strongly coarser provider cadence before forecast calculations."""
+    expected = float(TIMEFRAME_SECONDS.get(str(timeframe).upper(), 0) or 0)
+    if expected <= 0 or "time" not in df.columns or len(df) < 6:
+        return None
+    epochs = pd.to_numeric(df["time"], errors="coerce")
+    diffs = epochs.diff().dropna()
+    diffs = diffs[diffs > 0]
+    if len(diffs) < 5:
+        return None
+    median_seconds = float(diffs.median())
+    matching_pct = round(
+        float(diffs.between(expected * 0.75, expected * 1.5).mean()) * 100.0,
+        2,
+    )
+    matches = not (
+        median_seconds > expected * 1.5 and matching_pct < 20.0
+    )
+    return {
+        "requested_bar_seconds": int(expected),
+        "observed_median_bar_seconds": round(median_seconds, 3),
+        "matching_interval_pct": matching_pct,
+        "intervals_checked": int(len(diffs)),
+        "spacing_matches_timeframe": matches,
+    }
 
 
 def future_as_of_error(

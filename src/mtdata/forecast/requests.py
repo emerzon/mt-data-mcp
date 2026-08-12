@@ -290,6 +290,9 @@ class ForecastConformalIntervalsRequest(_PublicForecastRequest):
     timeframe: TimeframeLiteral = "H1"
     method: str = "theta"
     horizon: int = Field(12, ge=1, le=MAX_FORECAST_HORIZON)
+    as_of: Optional[str] = None
+    start: Optional[str] = None
+    end: Optional[str] = None
     steps: int = Field(
         50,
         ge=1,
@@ -314,6 +317,7 @@ class ForecastConformalIntervalsRequest(_PublicForecastRequest):
 
     @model_validator(mode="after")
     def _validate_spacing(self) -> "ForecastConformalIntervalsRequest":
+        validate_as_of_time_window(self.as_of, self.start, self.end)
         if self.steps > 1 and self.spacing < self.horizon:
             raise ValueError(
                 "spacing must be greater than or equal to horizon when steps > 1 "
@@ -331,6 +335,9 @@ class ForecastTuneGeneticRequest(_PublicForecastRequest):
         json_schema_extra={"uniqueItems": True},
     )
     horizon: int = Field(12, ge=1, le=MAX_FORECAST_HORIZON, description="Bars forecast after each tuning backtest anchor.")
+    as_of: Optional[str] = None
+    start: Optional[str] = None
+    end: Optional[str] = None
     steps: int = Field(5, ge=1, le=MAX_BACKTEST_STEPS, description="Number of rolling-origin backtest anchors per trial.")
     spacing: int = Field(20, ge=1, le=MAX_BACKTEST_SPACING, description="Bars between consecutive tuning backtest anchors.")
     search_space: Optional[Dict[str, Any]] = None
@@ -367,6 +374,11 @@ class ForecastTuneGeneticRequest(_PublicForecastRequest):
             raise ValueError("methods must contain unique method names")
         return normalized
 
+    @model_validator(mode="after")
+    def _validate_time_window(self) -> "ForecastTuneGeneticRequest":
+        validate_as_of_time_window(self.as_of, self.start, self.end)
+        return self
+
 
 class ForecastTuneOptunaRequest(_PublicForecastRequest):
     symbol: str
@@ -377,6 +389,9 @@ class ForecastTuneOptunaRequest(_PublicForecastRequest):
         json_schema_extra={"uniqueItems": True},
     )
     horizon: int = Field(12, ge=1, le=MAX_FORECAST_HORIZON, description="Bars forecast after each tuning backtest anchor.")
+    as_of: Optional[str] = None
+    start: Optional[str] = None
+    end: Optional[str] = None
     steps: int = Field(5, ge=1, le=MAX_BACKTEST_STEPS, description="Number of rolling-origin backtest anchors per trial.")
     spacing: int = Field(20, ge=1, le=MAX_BACKTEST_SPACING, description="Bars between consecutive tuning backtest anchors.")
     search_space: Optional[Dict[str, Any]] = None
@@ -416,6 +431,11 @@ class ForecastTuneOptunaRequest(_PublicForecastRequest):
             raise ValueError("methods must contain unique method names")
         return normalized
 
+    @model_validator(mode="after")
+    def _validate_time_window(self) -> "ForecastTuneOptunaRequest":
+        validate_as_of_time_window(self.as_of, self.start, self.end)
+        return self
+
 
 class ForecastBarrierProbRequest(_PublicForecastRequest):
     model_config = {"populate_by_name": True, "extra": "forbid"}
@@ -423,6 +443,9 @@ class ForecastBarrierProbRequest(_PublicForecastRequest):
     symbol: str
     timeframe: TimeframeLiteral = "H1"
     horizon: int = Field(12, ge=1, le=MAX_FORECAST_HORIZON)
+    as_of: Optional[str] = None
+    start: Optional[str] = None
+    end: Optional[str] = None
     method: Literal[
         "auto", "bootstrap", "garch", "heston", "hmm_mc", "jump_diffusion",
         "mc_gbm", "mc_gbm_bb", "closed_form"
@@ -456,6 +479,7 @@ class ForecastBarrierProbRequest(_PublicForecastRequest):
 
     @model_validator(mode="after")
     def _validate_barrier_kind(self) -> "ForecastBarrierProbRequest":
+        validate_as_of_time_window(self.as_of, self.start, self.end)
         if self.method == "closed_form" and not isinstance(self.barrier, SinglePriceBarrierSpec):
             raise ValueError("closed_form requires barrier.kind='single_price'")
         if self.method != "closed_form" and not isinstance(
@@ -515,6 +539,9 @@ class ForecastOptimizeHintsRequest(_PublicForecastRequest):
     )
     methods: Optional[List[str]] = None
     horizon: int = Field(12, ge=1, le=MAX_FORECAST_HORIZON, description="Bars forecast after each optimization backtest anchor.")
+    as_of: Optional[str] = None
+    start: Optional[str] = None
+    end: Optional[str] = None
     steps: int = Field(5, ge=1, le=MAX_BACKTEST_STEPS, description="Number of rolling-origin backtest anchors per candidate.")
     spacing: int = Field(20, ge=1, le=MAX_BACKTEST_SPACING, description="Bars between consecutive optimization backtest anchors.")
     population: int = Field(8, ge=1, le=100)
@@ -555,6 +582,11 @@ class ForecastOptimizeHintsRequest(_PublicForecastRequest):
             raise ValueError("timeframes must contain unique values")
         return value
 
+    @model_validator(mode="after")
+    def _validate_time_window(self) -> "ForecastOptimizeHintsRequest":
+        validate_as_of_time_window(self.as_of, self.start, self.end)
+        return self
+
 
 class ForecastBarrierOptimizeRequest(_PublicForecastRequest):
     model_config = {"populate_by_name": True, "extra": "forbid"}
@@ -562,6 +594,9 @@ class ForecastBarrierOptimizeRequest(_PublicForecastRequest):
     symbol: str
     timeframe: TimeframeLiteral = "H1"
     horizon: int = Field(12, ge=1, le=MAX_FORECAST_HORIZON)
+    as_of: Optional[str] = None
+    start: Optional[str] = None
+    end: Optional[str] = None
     method: Literal[
         "auto", "bootstrap", "garch", "heston", "hmm_mc", "jump_diffusion",
         "mc_gbm", "mc_gbm_bb", "ensemble"
@@ -600,6 +635,11 @@ class ForecastBarrierOptimizeRequest(_PublicForecastRequest):
     @classmethod
     def _normalize_direction(cls, value: Optional[str]) -> Optional[str]:
         return normalize_trade_direction_alias(value)
+
+    @model_validator(mode="after")
+    def _validate_time_window(self) -> "ForecastBarrierOptimizeRequest":
+        validate_as_of_time_window(self.as_of, self.start, self.end)
+        return self
 
 
 class ForecastVolatilityEstimateRequest(_PublicForecastRequest):

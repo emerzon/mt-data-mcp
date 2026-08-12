@@ -1029,6 +1029,9 @@ def forecast_barrier_optimize(  # noqa: C901
     sl_steps: Optional[int] = None,
     params: Optional[Dict[str, Any]] = None,
     denoise: Optional[DenoiseSpec] = None,
+    as_of: Optional[str] = None,
+    start: Optional[str] = None,
+    end: Optional[str] = None,
     objective: Literal[
         'edge',
         'prob_tp_first',
@@ -1509,7 +1512,10 @@ def forecast_barrier_optimize(  # noqa: C901
                 df = _prefetched_history
         else:
             need = int(max(2000, horizon_val + 100))
-            df = _fetch_history(symbol, timeframe, need, as_of=None)
+            history_kwargs: Dict[str, Any] = {"as_of": as_of}
+            if not as_of and (start or end):
+                history_kwargs.update({"start": start, "end": end})
+            df = _fetch_history(symbol, timeframe, need, **history_kwargs)
         if len(df) < 10:
             return {"error": "Insufficient history for simulation"}
         freshness_context = _history_freshness_context(
@@ -1522,6 +1528,8 @@ def forecast_barrier_optimize(  # noqa: C901
             use_live_price = use_live_price_raw.strip().lower() not in {"0", "false", "no", "off"}
         else:
             use_live_price = bool(use_live_price_raw)
+        if as_of or start or end:
+            use_live_price = False
         last_price_close, last_price, last_price_source, _price_warning, price_error = _resolve_reference_prices(
             df['close'].astype(float).to_numpy(),
             symbol=symbol,

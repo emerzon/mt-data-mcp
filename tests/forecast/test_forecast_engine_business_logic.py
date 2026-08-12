@@ -89,7 +89,7 @@ def test_ensemble_adaptive_lookback_covers_requested_cv_window():
         },
     ) == 364
 
-    assert fe._calculate_lookback_bars("theta", horizon=4, lookback=10, seasonality=24, timeframe="H1") == 12
+    assert fe._calculate_lookback_bars("theta", horizon=4, lookback=10, seasonality=24, timeframe="H1") == 10
     assert fe._calculate_lookback_bars("analog", horizon=4, lookback=None, seasonality=24, timeframe="H1") == 5131
     assert fe._calculate_lookback_bars(
         "analog", horizon=4, lookback=None, seasonality=24, timeframe="H1", params={"window_size": 256}
@@ -104,7 +104,33 @@ def test_ensemble_adaptive_lookback_covers_requested_cv_window():
         seasonality=24,
         timeframe="H1",
         params={"window_size": 64, "search_depth": 500},
-    ) == 6002
+    ) == 6000
+
+
+def test_explicit_range_is_capped_to_requested_lookback_for_prefetched_history():
+    frame = pd.DataFrame(
+        {
+            "time": np.arange(20, dtype=float),
+            "close": np.arange(20, dtype=float) + 100.0,
+        }
+    )
+
+    resolved, _, _ = fe._resolve_history_context(
+        symbol="EURUSD",
+        timeframe="H1",
+        need=10,
+        as_of=None,
+        start="2026-01-01",
+        end="2026-01-31",
+        prefetched_df=frame,
+        prefetched_base_col="close",
+        prefetched_denoise_spec=None,
+        denoise=None,
+        cap_explicit_range=True,
+    )
+
+    assert len(resolved) == 10
+    assert resolved["close"].tolist() == list(np.arange(10, 20) + 100.0)
     assert fe._calculate_lookback_bars("seasonal_naive", horizon=4, lookback=None, seasonality=12, timeframe="H1") == 36
     assert fe._calculate_lookback_bars("fourier_ols", horizon=4, lookback=None, seasonality=24, timeframe="H1") >= 300
 

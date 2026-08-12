@@ -131,6 +131,28 @@ def test_fetch_history_validates_inputs_and_symbol_readiness(monkeypatch):
         fc.fetch_history("EURUSD", "BAD", need=5)
 
 
+def test_fetch_history_rejects_materially_coarser_provider_cadence(monkeypatch):
+    monkeypatch.setattr(fc, "TIMEFRAME_MAP", {"H1": 1})
+    monkeypatch.setattr(fc, "_ensure_symbol_ready", lambda _symbol: None)
+    monkeypatch.setattr(
+        fc,
+        "get_symbol_info_cached",
+        lambda _symbol: SimpleNamespace(visible=True),
+    )
+    monkeypatch.setattr(fc.mt5, "last_error", lambda: (1, "err"))
+    monkeypatch.setattr(
+        fc,
+        "_mt5_copy_rates_from_pos",
+        lambda symbol, tf, start, count: [
+            {"time": index * 86400.0, "open": float(index)}
+            for index in range(8)
+        ],
+    )
+
+    with pytest.raises(RuntimeError, match="observed_median_bar_seconds=86400.0"):
+        fc.fetch_history("EURUSD", "H1", need=8, drop_last_live=False)
+
+
 def test_fetch_history_as_of_and_drop_last_live_paths(monkeypatch):
     monkeypatch.setattr(fc, "TIMEFRAME_MAP", {"H1": 1})
     monkeypatch.setattr(fc, "_ensure_symbol_ready", lambda _symbol: None)

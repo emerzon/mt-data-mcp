@@ -1712,6 +1712,7 @@ def forecast_backtest(  # noqa: C901
     horizon: int = 12,
     steps: int = 5,
     spacing: int = 20,
+    as_of: Optional[str] = None,
     start: Optional[str] = None,
     end: Optional[str] = None,
     methods: Optional[List[str]] = None,
@@ -1769,8 +1770,8 @@ def forecast_backtest(  # noqa: C901
         else:
             need = int(steps) * int(spacing) + int(horizon) + 400
         try:
-            history_kwargs = {"as_of": None}
-            if start or end:
+            history_kwargs = {"as_of": as_of}
+            if not as_of and (start or end):
                 history_kwargs.update({"start": start, "end": end})
             df = _fetch_history(symbol, timeframe, int(need), **history_kwargs)
         except Exception as ex:

@@ -338,6 +338,9 @@ def _eval_candidate(
     horizon: int,
     steps: int,
     spacing: int,
+    as_of: Optional[str] = None,
+    start: Optional[str] = None,
+    end: Optional[str] = None,
     candidate_params: Dict[str, Any],
     metric: Metric,
     mode: str,
@@ -363,6 +366,9 @@ def _eval_candidate(
         horizon=int(horizon),
         steps=int(steps),
         spacing=int(spacing),
+        as_of=as_of,
+        start=start,
+        end=end,
         methods=[sel_method],
         params_per_method={sel_method: cand_only},
         denoise=denoise,
@@ -558,6 +564,9 @@ def optuna_search_forecast_params(  # noqa: C901
     horizon: int = 12,
     steps: int = 5,
     spacing: int = 20,
+    as_of: Optional[str] = None,
+    start: Optional[str] = None,
+    end: Optional[str] = None,
     search_space: Optional[Dict[str, Any]] = None,
     metric: Metric = 'avg_rmse',
     mode: str = 'auto',
@@ -693,6 +702,9 @@ def optuna_search_forecast_params(  # noqa: C901
             horizon=horizon,
             steps=steps,
             spacing=spacing,
+            as_of=as_of,
+            start=start,
+            end=end,
             candidate_params=cand,
             metric=metric,
             mode=mode_val,
@@ -833,6 +845,9 @@ def genetic_search_forecast_params(  # noqa: C901
     horizon: int = 12,
     steps: int = 5,
     spacing: int = 20,
+    as_of: Optional[str] = None,
+    start: Optional[str] = None,
+    end: Optional[str] = None,
     search_space: Optional[Dict[str, Any]] = None,
     metric: Metric = 'avg_rmse',
     mode: str = 'auto',
@@ -875,8 +890,9 @@ def genetic_search_forecast_params(  # noqa: C901
     has_method_gene = (not method_scoped) and ('method' in raw) and str(raw['method'].get('type', 'categorical')).lower() == 'categorical' if 'method' in raw and isinstance(raw['method'], dict) else False
 
     # Initialize population
+    population_size = max(2, int(population))
     pop: List[Dict[str, Any]] = []
-    for _ in range(max(2, int(population))):
+    for _ in range(population_size):
         cand: Dict[str, Any] = {}
         # Choose method if searching across methods
         sel_method = None
@@ -917,6 +933,9 @@ def genetic_search_forecast_params(  # noqa: C901
                 horizon=horizon,
                 steps=steps,
                 spacing=spacing,
+                as_of=as_of,
+                start=start,
+                end=end,
                 candidate_params=cand,
                 metric=metric,
                 mode=mode,
@@ -994,7 +1013,8 @@ def genetic_search_forecast_params(  # noqa: C901
             "error_code": "no_successful_trials",
             "metric": metric,
             "mode": mode,
-            "population": int(population),
+            "population": population_size,
+            "population_requested": int(population),
             "generations": int(generations),
             "history_count": len(history),
             "failure_causes": _failure_causes(history),
@@ -1008,7 +1028,8 @@ def genetic_search_forecast_params(  # noqa: C901
         "metric": metric,
         "units": _tuning_units(metric),
         "mode": mode,
-        "population": int(population),
+        "population": population_size,
+        "population_requested": int(population),
         "generations": int(generations),
         "history_count": len(history),
     }
@@ -1042,6 +1063,9 @@ def genetic_search_optimize_hints(  # noqa: C901
     horizon: int = 12,
     steps: int = 5,
     spacing: int = 20,
+    as_of: Optional[str] = None,
+    start: Optional[str] = None,
+    end: Optional[str] = None,
     search_space: Optional[Dict[str, Any]] = None,
     fitness_metric: str = "composite",
     fitness_weights: Optional[Dict[str, float]] = None,
@@ -1103,6 +1127,7 @@ def genetic_search_optimize_hints(  # noqa: C901
         'avg_directional_accuracy',
     }
     metric_mode = 'max' if fitness_metric in maximize_metrics else 'min'
+    evaluations_attempted = 0
 
     # Build search space if not provided
     if search_space is None:
@@ -1169,6 +1194,8 @@ def genetic_search_optimize_hints(  # noqa: C901
         return mutant
 
     def _evaluate(individual: Dict[str, Any]) -> Tuple[float, Dict[str, Any]]:
+        nonlocal evaluations_attempted
+        evaluations_attempted += 1
         tf = str(individual.get('timeframe', 'H1'))
         method = str(individual.get('method', 'theta'))
         params = {k: v for k, v in individual.items() if k not in ('timeframe', 'method')}
@@ -1181,6 +1208,9 @@ def genetic_search_optimize_hints(  # noqa: C901
             horizon=horizon,
             steps=steps,
             spacing=spacing,
+            as_of=as_of,
+            start=start,
+            end=end,
             candidate_params={'method': method, **params},
             metric=fitness_metric if fitness_metric != 'composite' else 'avg_rmse',
             mode=metric_mode,
@@ -1313,9 +1343,11 @@ def genetic_search_optimize_hints(  # noqa: C901
             'hints': [],
             'search_summary': {
                 'symbol': symbol,
-                'population': int(population),
+                'population': population_size,
+                'population_requested': int(population),
                 'generations': int(generations),
                 'fitness_metric': fitness_metric,
+                'total_evaluations': evaluations_attempted,
             },
         }
     top_configs: List[Dict[str, Any]] = []
@@ -1385,7 +1417,8 @@ def genetic_search_optimize_hints(  # noqa: C901
         'hints': top_configs,
         'search_summary': {
             'symbol': symbol,
-            'population': int(population),
+            'population': population_size,
+            'population_requested': int(population),
             'generations': int(generations),
             'elapsed_seconds': round(elapsed, 2),
             'fitness_metric': fitness_metric,
@@ -1397,7 +1430,7 @@ def genetic_search_optimize_hints(  # noqa: C901
             'history_score_direction': 'lower_is_better_internal_objective',
             'timeframes_searched': list(tf_choices),
             'methods_searched': list(method_choices),
-            'total_evaluations': int(population) * int(generations),
+            'total_evaluations': evaluations_attempted,
             'unique_configs_returned': len(top_configs),
             'duplicate_results_filtered': int(duplicate_results_filtered),
         },

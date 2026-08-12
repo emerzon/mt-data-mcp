@@ -51,8 +51,8 @@ Availability depends on extras you installed:
 - Supported foundation options on the Python 3.14 path include Chronos, Chronos-Bolt, and TimesFM (TimesFM via opt-in extra).
 - NeuralForecast methods (`nhits`, `tft`, `patchtst`, `nbeatsx`) need a manual `neuralforecast` + `torch` setup. On Windows Python 3.14 they do not resolve because `ray` (a NeuralForecast dependency) has no Windows cp314 wheels.
 - Always trust `forecast_list_methods --json` over static docs for what runs locally.
-- `--supports-training true` searches the full catalog automatically, even though
-  the unfiltered default is the smaller quickstart profile.
+- The unfiltered default returns the full catalog. Use `--profile quickstart`
+  when you only want the small native baseline set.
 
 Full per-method keys, defaults, and dependencies: [forecast/METHODS.md](forecast/METHODS.md).
 
@@ -238,6 +238,12 @@ mtdata-cli forecast_backtest_run EURUSD --timeframe H1 --horizon 12 \
 
 See **[BACKTESTING.md](forecast/BACKTESTING.md)** for complete guide including parameter optimization.
 
+Replayable analytics use the same time-window contract as point forecasts.
+`forecast_conformal_intervals`, both tuning tools, `forecast_optimize_hints`, and
+the barrier probability/optimization tools accept either `--as-of` or a
+`--start`/`--end` range. Historical runs use the final eligible candle close as
+their reference and report `analysis_time_window`; they never mix in a live tick.
+
 ---
 
 ## Adding Features
@@ -340,12 +346,13 @@ mtdata-cli shell
 
 # Then submit and observe the task from that shell.
 forecast_train EURUSD --timeframe H1 --method nhits --horizon 24
-forecast_task_status --task-id <task_id> --json
-forecast_task_wait --task-id <task_id> --timeout-seconds 120 --json
+forecast_task_status <task_id> --json
+forecast_task_wait <task_id> --timeout-seconds 120 --json
 forecast_task_list --json
 
 # Cancel if needed.
-forecast_task_cancel --task-id <task_id>
+forecast_task_cancel <task_id>
+forecast_task_cancel_all --dry-run false  # pending and running tasks
 ```
 
 One-shot `mtdata-cli forecast_train ...`, stdin shell batches, and
@@ -384,7 +391,7 @@ Configuration (see [ENV_VARS.md](ENV_VARS.md#async-training--model-store)):
 - `MTDATA_HEAVY_LIMIT` — concurrent heavyweight (neural / foundation) jobs (default `1`).
 - `MTDATA_FORECAST_JOBS_DB` — durable SQLite task registry (default `~/.mtdata/forecast/jobs.sqlite`).
 - `MTDATA_TRAIN_TIMEOUT_*_SECONDS` — per-category training timeouts for `instant`, `fast`, `moderate`, and `heavy` methods.
-- `MTDATA_FORECAST_HEARTBEAT_SECONDS`, `MTDATA_FORECAST_CANCEL_GRACE_SECONDS`, `MTDATA_FORECAST_SWEEPER_SECONDS` — task liveness, cancellation, and cleanup tuning.
+- `MTDATA_FORECAST_HEARTBEAT_SECONDS`, `MTDATA_FORECAST_ORPHAN_STALE_SECONDS`, `MTDATA_FORECAST_CANCEL_GRACE_SECONDS`, `MTDATA_FORECAST_SWEEPER_SECONDS` — task liveness, orphan recovery, cancellation, and cleanup tuning.
 - `MTDATA_FORECAST_TASK_TTL_SECONDS` — retention for terminal task records and bounded failure diagnostics (default `86400`, or 24 hours).
 - `MTDATA_MODEL_STORE` — root directory for cached models (default `~/.mtdata/models`).
 - `MTDATA_MODEL_TTL_DAYS` — cache idle expiry in days since last use (default `7`); this is not a maximum model age.

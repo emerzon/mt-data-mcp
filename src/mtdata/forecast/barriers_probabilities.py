@@ -114,6 +114,9 @@ def forecast_barrier_hit_probabilities(  # noqa: C901
     sl_ticks: Optional[float] = None,
     params: Optional[Dict[str, Any]] = None,
     denoise: Optional[DenoiseSpec] = None,
+    as_of: Optional[str] = None,
+    start: Optional[str] = None,
+    end: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Monte Carlo barrier analysis: TP/SL hit probabilities within `horizon` bars.
 
@@ -160,7 +163,10 @@ def forecast_barrier_hit_probabilities(  # noqa: C901
             return {"error": str(exc)}
         # Fetch enough history for calibration
         need = int(max(2000, horizon_val + 100))
-        df = _fetch_history(symbol, timeframe, need, as_of=None)
+        history_kwargs: Dict[str, Any] = {"as_of": as_of}
+        if not as_of and (start or end):
+            history_kwargs.update({"start": start, "end": end})
+        df = _fetch_history(symbol, timeframe, need, **history_kwargs)
         if len(df) < 10:
             return {"error": "Insufficient history for simulation"}
         freshness_context = _history_freshness_context(
@@ -173,9 +179,11 @@ def forecast_barrier_hit_probabilities(  # noqa: C901
             df['close'].astype(float).to_numpy(),
             symbol=symbol,
             direction=direction_norm,
-            use_live_price=True,
+            use_live_price=not bool(as_of or start or end),
             live_price_getter=_get_live_reference_price,
         )
+        if as_of or start or end:
+            last_price_source = "candle_close"
         if price_error:
             return {"error": price_error}
         if price_warning:
@@ -601,6 +609,9 @@ def forecast_barrier_closed_form(
     mu: Optional[float] = None,
     sigma: Optional[float] = None,
     denoise: Optional[DenoiseSpec] = None,
+    as_of: Optional[str] = None,
+    start: Optional[str] = None,
+    end: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Closed-form single-barrier hit probability for GBM within horizon.
 
@@ -613,7 +624,10 @@ def forecast_barrier_closed_form(
         if direction_error:
             return {"error": direction_error}
         need = int(max(2000, horizon + 100))
-        df = _fetch_history(symbol, timeframe, need, as_of=None)
+        history_kwargs: Dict[str, Any] = {"as_of": as_of}
+        if not as_of and (start or end):
+            history_kwargs.update({"start": start, "end": end})
+        df = _fetch_history(symbol, timeframe, need, **history_kwargs)
         if len(df) < 10:
             return {"error": "Insufficient history"}
         freshness_context = _history_freshness_context(

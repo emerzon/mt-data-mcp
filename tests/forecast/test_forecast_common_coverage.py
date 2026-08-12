@@ -346,6 +346,21 @@ class TestNextTimesFromLast:
             "2026-05-25 00:00",
         ]
 
+    def test_daily_forex_projection_skips_weekend(self):
+        last_epoch = pd.Timestamp("2026-08-05 21:00", tz="UTC").timestamp()
+        result = next_times_from_last(
+            last_epoch,
+            86400,
+            3,
+            skip_weekends=True,
+            timeframe="D1",
+        )
+
+        assert [
+            pd.Timestamp(epoch, unit="s", tz="UTC").strftime("%Y-%m-%d %H:%M")
+            for epoch in result
+        ] == ["2026-08-06 21:00", "2026-08-09 21:00", "2026-08-10 21:00"]
+
     def test_monthly_projection_uses_calendar_boundaries(self):
         last_epoch = pd.Timestamp("2025-01-01", tz="UTC").timestamp()
         with patch(
@@ -550,7 +565,7 @@ class TestNormalizeWeights:
 # ===================================================================
 class TestCalculateLookbackBars:
     def test_explicit_lookback(self):
-        assert _calculate_lookback_bars("theta", 12, 500, 24, "H1") == 502
+        assert _calculate_lookback_bars("theta", 12, 500, 24, "H1") == 500
 
     def test_analog(self):
         result = _calculate_lookback_bars("analog", 12, None, 24, "H1")
