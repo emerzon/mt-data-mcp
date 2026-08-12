@@ -1083,6 +1083,7 @@ class TestFinvizTools:
         assert result["detail"] == "compact"
         assert result["data_limitations"] == {
             "performance_periods": ["day"],
+            "contract_identity": "expiry_exchange_and_roll_basis_unavailable",
             "price": "not_available_from_source",
         }
         assert result["price_source"] == "finviz_delayed"
@@ -1091,12 +1092,15 @@ class TestFinvizTools:
         assert result["data_delayed"] is True
         assert result["delay_minutes_min"] == 15
         assert result["delay_minutes_max"] == 20
-        assert "delayed web data" in result["warnings"][0]
+        assert "generic provider series" in result["warnings"][0]
+        assert "symbols_list" in result["warnings"][0]
         assert result["items"] == [
             {
                 "symbol": "NQ",
                 "name": "Nasdaq 100",
                 "perf_day_pct": 0.8,
+                "contract_identity_status": "unavailable",
+                "series_basis": "provider_generic_root_unknown",
             }
         ]
 
@@ -1136,7 +1140,13 @@ class TestFinvizTools:
         assert result["detail"] == "full"
         assert result["data_fetched_at"].endswith("Z")
         assert result["items"] == [
-            {"symbol": "NQ", "name": "Nasdaq 100", "perf_day_pct": 0.8}
+            {
+                "symbol": "NQ",
+                "name": "Nasdaq 100",
+                "perf_day_pct": 0.8,
+                "contract_identity_status": "unavailable",
+                "series_basis": "provider_generic_root_unknown",
+            }
         ]
         assert result["performance_format"] == "percentage_points"
         assert result["units"] == {
@@ -1204,6 +1214,8 @@ class TestFinvizTools:
 
         mock_get_fundamentals.assert_called_once_with("AAPL")
         assert result["symbol"] == "AAPL"
+        assert result["requested_symbol"] == "AAPL.NAS"
+        assert result["finviz_ticker"] == "AAPL"
 
     @patch("mtdata.core.finviz.get_stock_description")
     def test_finviz_description_normalizes_equity_symbols(self, mock_get_description):
@@ -1339,6 +1351,11 @@ class TestFinvizTools:
         assert result["freshness"] == "finviz_delayed"
         assert "freshness_basis" not in result
         assert result["data_fetched_at"].endswith("Z")
+        assert result["observation_time_status"] == "provider_timestamp_unavailable"
+        assert result["estimated_observation_window"]["basis"] == (
+            "fetch_time_minus_assumed_provider_delay"
+        )
+        assert "transport time" in result["observation_time_note"]
         assert result["fundamentals"]["price_source"] == "finviz_delayed"
         assert result["fundamentals"]["data_delayed"] is True
         assert result["fundamentals"]["delay_minutes_min"] == 15
@@ -1825,14 +1842,20 @@ class TestFinvizTools:
 
         item = result["items"][0]
         assert item["symbol"] == "APLM"
-        assert item["return_on_assets"] == "-1.365"
-        assert item["return_on_equity"] == "-3.8"
+        assert item["return_on_assets"] == -136.5
+        assert item["return_on_equity"] == -380.0
         assert item["return_on_invested_capital"] is None
         assert item["current_ratio"] == "0.97"
         assert item["debt_to_equity"] is None
         assert item["gross_margin"] is None
-        assert item["operating_margin"] == "-3.04"
-        assert item["profit_margin"] == "-3.67"
+        assert item["operating_margin"] == -304.0
+        assert item["profit_margin"] == -367.0
+        assert result["units"]["return_on_assets"] == (
+            "percentage_points (1.0 = 1%)"
+        )
+        assert result["units"]["operating_margin"] == (
+            "percentage_points (1.0 = 1%)"
+        )
         assert "curr_r" not in item
 
     @patch("mtdata.core.finviz.get_earnings_calendar")
@@ -1866,6 +1889,8 @@ class TestFinvizTools:
 
         mock_get_earnings.assert_called_once_with(period="This Week", limit=10, page=1)
         assert result["detail"] == "compact"
+        assert result["calendar_order"] == "period_start_ascending"
+        assert result["includes_elapsed_dates"] is True
         assert result["pagination"]["more_available"] == 11
         assert result["items"] == [
             {
@@ -1954,6 +1979,28 @@ class TestFinvizTools:
             view="overview"
         )
         assert result["success"] is True
+
+    @patch("mtdata.core.finviz.screen_stocks")
+    def test_finviz_screen_reports_effective_provider_limit(self, mock_screen):
+        from mtdata.core.finviz import finviz_screen
+
+        mock_screen.return_value = {
+            "success": True,
+            "count": 1,
+            "limit": 500,
+            "page": 2,
+            "total": 700,
+            "has_more": False,
+            "stocks": [{"Ticker": "AAPL", "Price": "200.00"}],
+        }
+
+        raw = getattr(finviz_screen, "__wrapped__", finviz_screen)
+        result = raw(limit=501, page=2)
+
+        assert result["requested_limit"] == 501
+        assert result["pagination"]["limit"] == 500
+        assert result["pagination"]["offset"] == 500
+        assert "capped from 501 to 500" in result["warnings"][0]
 
     def test_finviz_screen_tool_invalid_json(self):
         """Test finviz_screen tool with invalid JSON."""
@@ -2173,6 +2220,25 @@ class TestFinvizTools:
         assert result["units"]["sma200_distance_pct"] == (
             "percentage_points (1.0 = 1%)"
         )
+
+    def test_finviz_screen_normalizes_roic_and_declares_units(self):
+        from mtdata.core.finviz import (
+            _canonicalize_finviz_market_row,
+            _finviz_screen_units_for_rows,
+        )
+
+        string_row = _canonicalize_finviz_market_row(
+            {"symbol": "NVDA", "return_on_invested_capital": "77.17%"}
+        )
+        fraction_row = _canonicalize_finviz_market_row(
+            {"symbol": "NVDA", "return_on_invested_capital": 0.7717}
+        )
+
+        assert string_row["return_on_invested_capital"] == 77.17
+        assert fraction_row["return_on_invested_capital"] == 77.17
+        assert _finviz_screen_units_for_rows([string_row])[
+            "return_on_invested_capital"
+        ] == "percentage_points (1.0 = 1%)"
 
     @patch('mtdata.core.finviz.screen_stocks')
     def test_finviz_screen_compact_uses_valuation_fields(self, mock_screen):

@@ -308,7 +308,10 @@ were excluded and paginate the filtered collection.
 
 ### `finviz_earnings`
 
-Get upcoming earnings announcements.
+Get a period-based earnings calendar ordered from the beginning of the selected
+week or month. `this-week` and `this-month` include elapsed dates; use
+`finviz_calendar --calendar earnings --start ... --end ...` for an explicit
+upcoming date range.
 
 ```bash
 mtdata-cli finviz_earnings --period this-week --json

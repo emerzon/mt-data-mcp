@@ -225,7 +225,39 @@ def _attach_finviz_fetch_timestamp(payload: Dict[str, Any]) -> Dict[str, Any]:
     if "error" in payload or payload.get("success") is False:
         return payload
     out = dict(payload)
-    out.setdefault("data_fetched_at", _finviz_data_fetched_at())
+    fetched_at = datetime.now(timezone.utc)
+    out.setdefault("data_fetched_at", format_datetime_utc(fetched_at))
+    rows = out.get("items")
+    delayed_values = bool(
+        out.get("data_delayed") is True
+        or out.get("price_source") == _FINVIZ_DELAYED_FRESHNESS
+        or out.get("freshness") == _FINVIZ_DELAYED_FRESHNESS
+        or (
+            isinstance(rows, list)
+            and any(
+                isinstance(row, dict) and row.get("data_delayed") is True
+                for row in rows
+            )
+        )
+    )
+    if delayed_values:
+        out.setdefault("observation_time_status", "provider_timestamp_unavailable")
+        out.setdefault(
+            "estimated_observation_window",
+            {
+                "earliest": format_datetime_utc(
+                    fetched_at - timedelta(minutes=_FINVIZ_DELAY_MINUTES_MAX)
+                ),
+                "latest": format_datetime_utc(
+                    fetched_at - timedelta(minutes=_FINVIZ_DELAY_MINUTES_MIN)
+                ),
+                "basis": "fetch_time_minus_assumed_provider_delay",
+            },
+        )
+        out.setdefault(
+            "observation_time_note",
+            "data_fetched_at is transport time, not the provider observation time.",
+        )
     return out
 
 
@@ -310,6 +342,8 @@ _FINVIZ_SCREEN_COMPACT_FIELDS_BY_VIEW = {
         "gross_margin",
         "return_on_assets",
         "return_on_equity",
+        "return_on_investment",
+        "return_on_invested_capital",
         "current_ratio",
         "debt_to_equity",
     ),
@@ -351,6 +385,8 @@ _FINVIZ_SCREEN_FRACTION_PERCENT_FIELDS = frozenset(
         "gross_margin",
         "return_on_assets",
         "return_on_equity",
+        "return_on_investment",
+        "return_on_invested_capital",
         "insider_own",
         "insider_trans",
         "inst_own",
@@ -395,8 +431,9 @@ _FINVIZ_FOREX_DELAYED_PRICE_WARNING = (
     "use market_ticker before order placement."
 )
 _FINVIZ_FUTURES_DELAYED_WARNING = (
-    "Finviz futures performance rows are delayed web data, not executable MT5 "
-    "quotes; use market_ticker before order placement."
+    "Finviz futures rows are delayed generic provider series with unknown "
+    "contract and roll identity. Use symbols_list to choose a broker contract, "
+    "then market_ticker before order placement."
 )
 _FINVIZ_USD_PRICE_CURRENCY = "USD"
 _FINVIZ_CALENDAR_LOCAL_TIMEZONE = "America/New_York"
@@ -527,6 +564,10 @@ def _compact_finviz_market_row(row: Dict[str, Any], *, rows_key: str) -> Dict[st
     }
     if compact.get("perf_week_basis") and "perf_week_pct" in out:
         out["perf_week_basis"] = compact["perf_week_basis"]
+    if rows_key == "futures":
+        for field in ("contract_identity_status", "series_basis"):
+            if compact.get(field) not in (None, ""):
+                out[field] = compact[field]
     return out
 
 
@@ -667,7 +708,12 @@ def _normalize_finviz_market_payload(  # noqa: C901
                     for row in normalized_rows
                     if str(row.get("symbol") or "").upper() == symbol_filter_norm
                 ]
-    limit_value = _coerce_finviz_limit(limit, default=len(normalized_rows))
+    requested_limit = _coerce_finviz_limit(limit, default=len(normalized_rows))
+    effective_limit = _coerce_finviz_limit(
+        result.get("limit"),
+        default=requested_limit,
+    )
+    limit_value = min(requested_limit, effective_limit)
     limited_rows = normalized_rows[:limit_value]
     if detail_mode != "full" and rows_key in {"pairs", "coins", "futures"}:
         output_rows = [
@@ -692,6 +738,12 @@ def _normalize_finviz_market_payload(  # noqa: C901
     out["count"] = len(output_rows)
     if symbol_filter_norm is not None:
         out["symbol"] = symbol_filter_norm
+    if effective_limit != requested_limit:
+        out["requested_limit"] = requested_limit
+        _append_finviz_warning(
+            out,
+            f"limit was capped from {requested_limit} to {effective_limit} by the Finviz provider adapter.",
+        )
     available = len(normalized_rows)
     pagination_total = out.get("total") if rows_key == "stocks" else available
     pagination_lower_bound = (
@@ -734,6 +786,10 @@ def _normalize_finviz_market_payload(  # noqa: C901
             f"No Finviz forex row matched symbol {symbol_filter_norm}.",
         )
     if rows_key == "futures":
+        for row in output_rows:
+            if isinstance(row, dict):
+                row.setdefault("contract_identity_status", "unavailable")
+                row.setdefault("series_basis", "provider_generic_root_unknown")
         _attach_finviz_delayed_root_metadata(out)
         _append_finviz_warning(out, _FINVIZ_FUTURES_DELAYED_WARNING)
     if rows_key in {"pairs", "coins", "futures"}:
@@ -749,6 +805,9 @@ def _normalize_finviz_market_payload(  # noqa: C901
         if rows_key == "pairs" and has_price:
             limitations["price"] = "delayed_web_quote_not_executable"
         if rows_key == "futures":
+            limitations["contract_identity"] = (
+                "expiry_exchange_and_roll_basis_unavailable"
+            )
             if not has_price:
                 limitations["price"] = "not_available_from_source"
         if limitations:
@@ -2133,9 +2192,11 @@ def _normalize_finviz_earnings_rows(
         ZoneInfo("America/New_York")
     ).date()
     period_window = _finviz_earnings_period_window(period_key, reference)
-    for row in normalized:
+    for index, row in enumerate(normalized):
         if not isinstance(row, dict):
             continue
+        row = _canonicalize_finviz_market_row(row)
+        normalized[index] = row
         if row.get("price") not in (None, ""):
             row.update(_mark_finviz_delayed_price(row))
         earnings_text = str(row.get("earnings") or "").strip().lower()
@@ -2374,9 +2435,8 @@ def _compact_finviz_earnings_items(items: Any) -> List[Any]:
         }
         if "change" in row:
             row["change_pct"] = row.pop("change")
-        change_pct = _finviz_percent_value(row.get("change_pct"))
-        if change_pct is not None:
-            row["change_pct"] = change_pct
+        elif item.get("change_pct") not in (None, ""):
+            row["change_pct"] = item["change_pct"]
         if "market_cap" in row:
             market_cap_formatted = _format_finviz_large_number(row.get("market_cap"))
             if market_cap_formatted:
@@ -3293,7 +3353,9 @@ def finviz_fundamentals(
     Parameters
     ----------
     symbol : str
-        Stock ticker symbol (e.g., AAPL, MSFT, GOOGL)
+        US stock ticker or broker-style equity symbol (for example AAPL or
+        AAPL.NAS). The response distinguishes the requested symbol from the
+        normalized Finviz ticker.
     
     Returns
     -------
@@ -3314,12 +3376,16 @@ def finviz_fundamentals(
         if error is not None:
             return error
         result = get_stock_fundamentals(symbol_norm)
-        return _filter_finviz_fundamentals_payload(
+        result = _filter_finviz_fundamentals_payload(
             result,
             detail=detail,
             category=category,
             fields=fields,
         )
+        if isinstance(result, dict):
+            result["requested_symbol"] = str(symbol)
+            result["finviz_ticker"] = symbol_norm
+        return result
 
     return _run_logged_tool(
         "finviz_fundamentals",
@@ -4090,7 +4156,7 @@ def finviz_earnings(
     detail: DetailLiteral = "compact",  # type: ignore
 ) -> Dict[str, Any]:
     """
-    Get the quick upcoming earnings calendar from Finviz.
+    Get the period-based earnings calendar from Finviz.
     
     This is the period-based price/volume earnings view. Use
     `finviz_calendar(calendar="earnings")` when you need date-range EPS/sales
@@ -4100,6 +4166,8 @@ def finviz_earnings(
     ----------
     period : str
         Calendar period: this-week, next-week, previous-week, or this-month.
+        Rows are ordered from the start of the selected period and can include
+        elapsed dates for this-week and this-month.
     limit : int
         Max items per page (default 10)
     page : int
@@ -4195,7 +4263,12 @@ def finviz_earnings(
             "truncated": bool(result.get("truncated")),
             "calendar_reference_date": reference_date.isoformat(),
             "calendar_timezone": "America/New_York",
+            "calendar_order": "period_start_ascending",
+            "includes_elapsed_dates": period_key in {"this-week", "this-month"},
         }
+        units = _finviz_screen_units_for_rows(output_items)
+        if units:
+            out["units"] = units
         if any(
             isinstance(item, dict) and item.get("data_delayed") is True
             for item in output_items
@@ -4218,10 +4291,17 @@ def finviz_earnings(
             result.get("has_more")
             or (pages not in (None, "") and page_value < int(pages))
         )
+        effective_limit = int(result.get("limit") or limit)
+        if effective_limit != int(limit):
+            out["requested_limit"] = int(limit)
+            _append_finviz_warning(
+                out,
+                f"limit was capped from {int(limit)} to {effective_limit} by the Finviz provider adapter.",
+            )
         _apply_finviz_pagination_contract(
             out,
             returned=len(output_items),
-            limit=limit,
+            limit=effective_limit,
             page=page_value,
             total=result.get("total"),
             total_lower_bound=result.get("total_lower_bound"),
