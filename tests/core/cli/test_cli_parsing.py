@@ -1405,7 +1405,7 @@ class TestResolveParamKwargs:
             ("data_fetch_candles", "limit", "default: 20"),
             ("data_fetch_ticks", "limit", "maximum 50000"),
             ("market_status", "symbol", "static major-equity-exchange calendar"),
-            ("forecast_task_cancel_all", "status_filter", "pending or running"),
+            ("forecast_task_cancel_all", "status_filter", "all, pending, or running"),
             ("trade_journal_analyze", "limit", "realized exit deals"),
             ("trade_execution_quality", "minutes_back", "30 days"),
             ("trade_execution_quality", "limit", "eligible fills"),

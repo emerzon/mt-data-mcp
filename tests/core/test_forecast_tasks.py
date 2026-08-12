@@ -10,6 +10,7 @@ import pytest
 
 from src.mtdata.core.forecast_tasks import (
     ForecastModelsDeleteRequest,
+    ForecastTaskCancelAllRequest,
     ForecastTaskCancelRequest,
     ForecastTaskStatusRequest,
     ForecastTaskWaitRequest,
@@ -264,6 +265,33 @@ class TestForecastTaskCancel:
         assert isinstance(result.get("request_id"), str)
         assert "message" not in result
 
+    def test_cancel_all_defaults_to_pending_and_running(self):
+        from src.mtdata.core.forecast_tasks import forecast_task_cancel_all
+
+        mock_tm = MagicMock()
+        mock_tm.list_tasks.return_value = [
+            _make_task("pending", status="pending"),
+            _make_task("running", status="running"),
+            _make_task("done", status="completed"),
+        ]
+        mock_tm.cancel.side_effect = lambda task_id: {
+            "task_id": task_id,
+            "cancel_requested": True,
+            "status": "cancelling",
+        }
+
+        with patch(_PATCH_TM, return_value=mock_tm):
+            result = _unwrap(forecast_task_cancel_all)(
+                ForecastTaskCancelAllRequest(dry_run=False)
+            )
+
+        mock_tm.list_tasks.assert_called_once_with(status=None)
+        assert result["status_filter"] == "all"
+        assert result["matched"] == 2
+        assert result["cancelled"] == 2
+        assert result["matched_by_status"] == {"pending": 1, "running": 1}
+        assert result["cancelled_by_status"] == {"pending": 1, "running": 1}
+
 
 class TestForecastTaskWait:
     def test_wait_returns_latest_status(self):
@@ -332,10 +360,14 @@ class TestForecastTaskList:
 
         assert result["success"] is True
         assert result["count"] == 2
-        assert result["total_count"] == 2
-        assert result["limit"] == 50
-        assert result["offset"] == 0
-        assert result["has_more"] is False
+        assert result["pagination"] == {
+            "total": 2,
+            "returned": 2,
+            "offset": 0,
+            "limit": 50,
+            "has_more": False,
+            "more_available": 0,
+        }
         assert result["summary"] == {"running": 1, "completed": 1}
         assert "filters" not in result
         assert "status_counts" not in result["runtime"]["queue"]
@@ -362,10 +394,14 @@ class TestForecastTaskList:
             result = _unwrap(forecast_task_list)(limit=1, offset=1)
 
         assert result["count"] == 1
-        assert result["total_count"] == 3
-        assert result["limit"] == 1
-        assert result["offset"] == 1
-        assert result["has_more"] is True
+        assert result["pagination"] == {
+            "total": 3,
+            "returned": 1,
+            "offset": 1,
+            "limit": 1,
+            "has_more": True,
+            "more_available": 1,
+        }
         assert [task["task_id"] for task in result["tasks"]] == ["t2"]
 
     @pytest.mark.parametrize(
@@ -443,8 +479,8 @@ class TestForecastModels:
         assert result["success"] is True
         assert result["row_key"] == "models"
         assert result["count"] == 2
-        assert result["total_count"] == 2
-        assert result["has_more"] is False
+        assert result["pagination"]["total"] == 2
+        assert result["pagination"]["has_more"] is False
         assert result["models"][0]["model_id"] == "nhits/EURUSD_H1/a"
         mock_store.describe_model.assert_not_called()
 
@@ -461,9 +497,9 @@ class TestForecastModels:
         with patch(_PATCH_STORE, return_value=mock_store):
             result = _unwrap(forecast_models_list)(limit=2, offset=1)
 
-        assert result["total_count"] == 4
+        assert result["pagination"]["total"] == 4
         assert result["count"] == 2
-        assert result["has_more"] is True
+        assert result["pagination"]["has_more"] is True
         assert [row["model_id"] for row in result["models"]] == ["m/S1/h", "m/S2/h"]
 
     def test_delete_existing(self):

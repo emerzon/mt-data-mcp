@@ -117,6 +117,29 @@ class TestJobStore(unittest.TestCase):
         self.assertEqual(loaded.status, "failed")
         self.assertEqual(loaded.error, "recovered")
 
+    def test_mark_stale_active_job_failed_rechecks_heartbeat(self):
+        now = time.time()
+        self.store.upsert(
+            JobRecord(
+                task_id="active-task",
+                method="nhits",
+                data_scope="EURUSD_H1",
+                params_hash="hash-1",
+                status="running",
+                created_at=now - 60.0,
+                heartbeat_at=now,
+            )
+        )
+
+        updated = self.store.mark_stale_active_job_failed(
+            "active-task",
+            "orphaned",
+            stale_before=now - 30.0,
+        )
+
+        self.assertFalse(updated)
+        self.assertEqual(self.store.get("active-task").status, "running")
+
 
 if __name__ == "__main__":
     unittest.main()

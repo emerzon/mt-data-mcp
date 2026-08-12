@@ -728,7 +728,7 @@ class TestTaskManagerPersistence(unittest.TestCase):
             tm_restarted.shutdown(wait=True)
 
     def test_incomplete_persisted_tasks_marked_failed_on_recovery(self):
-        created_at = time.time() - 5.0
+        created_at = time.time() - 60.0
         self._job_store.upsert(
             JobRecord(
                 task_id="orphaned-task",
@@ -748,6 +748,51 @@ class TestTaskManagerPersistence(unittest.TestCase):
             self.assertIsNotNone(recovered)
             self.assertEqual(recovered.status, "failed")
             self.assertIn("orphaned", recovered.error)
+        finally:
+            tm.shutdown(wait=True)
+
+    def test_fresh_persisted_task_is_preserved_on_recovery(self):
+        created_at = time.time()
+        self._job_store.upsert(
+            JobRecord(
+                task_id="fresh-task",
+                method="fake",
+                data_scope="EURUSD_H1",
+                params_hash="fresh",
+                status="running",
+                created_at=created_at,
+                heartbeat_at=created_at,
+            )
+        )
+
+        tm = TaskManager(max_workers=1, store=self._store, job_store=self._job_store)
+        try:
+            recovered = tm.get_status("fresh-task")
+            self.assertIsNotNone(recovered)
+            self.assertEqual(recovered.status, "running")
+        finally:
+            tm.shutdown(wait=True)
+
+    def test_live_worker_pid_is_preserved_despite_stale_heartbeat(self):
+        created_at = time.time() - 60.0
+        self._job_store.upsert(
+            JobRecord(
+                task_id="live-task",
+                method="fake",
+                data_scope="EURUSD_H1",
+                params_hash="live",
+                status="running",
+                created_at=created_at,
+                heartbeat_at=created_at,
+                pid=os.getpid(),
+            )
+        )
+
+        tm = TaskManager(max_workers=1, store=self._store, job_store=self._job_store)
+        try:
+            recovered = tm.get_status("live-task")
+            self.assertIsNotNone(recovered)
+            self.assertEqual(recovered.status, "running")
         finally:
             tm.shutdown(wait=True)
 

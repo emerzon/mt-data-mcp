@@ -22,6 +22,7 @@ from ..utils.time import format_epoch_utc
 from ._mcp_instance import mcp
 from .error_envelope import build_error_payload
 from .execution_logging import run_logged_operation
+from .output_contract import build_pagination_meta
 
 logger = logging.getLogger(__name__)
 
@@ -82,9 +83,9 @@ class ForecastTaskCancelRequest(BaseModel):
 
 
 class ForecastTaskCancelAllRequest(BaseModel):
-    status_filter: Literal["pending", "running"] = Field(
-        "running",
-        description="Task status to cancel. Defaults to running; use pending to cancel queued tasks.",
+    status_filter: Literal["all", "pending", "running"] = Field(
+        "all",
+        description="Active task status to cancel. Defaults to all pending and running tasks.",
     )
     method: Optional[str] = Field(None, description="Optional method filter.")
     data_scope: Optional[str] = Field(None, description="Optional data_scope filter such as EURUSD_H1.")
@@ -674,17 +675,18 @@ def forecast_task_cancel(request: ForecastTaskCancelRequest) -> Dict[str, Any]:
 def forecast_task_cancel_all(request: ForecastTaskCancelAllRequest) -> Dict[str, Any]:
     """Preview or cancel matching non-terminal forecast training tasks."""
     def _execute() -> Dict[str, Any]:
-        status_value = str(request.status_filter or "running").strip().lower()
-        if status_value not in {"pending", "running"}:
+        status_value = str(request.status_filter or "all").strip().lower()
+        if status_value not in {"all", "pending", "running"}:
             return build_error_payload(
-                "forecast_task_cancel_all only supports status_filter=pending or running.",
+                "forecast_task_cancel_all supports status_filter=all, pending, or running.",
                 code="forecast_task_cancel_all_invalid_status",
                 operation="forecast_task_cancel_all",
             )
         tm = _get_task_manager()
         tasks = [
             task
-            for task in tm.list_tasks(status=status_value)
+            for task in tm.list_tasks(status=None if status_value == "all" else status_value)
+            if task.status in {"pending", "running"}
             if _task_matches_filters(
                 task,
                 method=request.method,
@@ -710,6 +712,18 @@ def forecast_task_cancel_all(request: ForecastTaskCancelAllRequest) -> Dict[str,
                 result = tm.cancel(task.task_id)
                 if result.get("cancel_requested"):
                     cancelled.append(result)
+        cancelled_ids = {str(result.get("task_id")) for result in cancelled}
+        matched_by_status = {
+            candidate: sum(task.status == candidate for task in tasks)
+            for candidate in ("pending", "running")
+        }
+        cancelled_by_status = {
+            candidate: sum(
+                task.status == candidate and task.task_id in cancelled_ids
+                for task in tasks
+            )
+            for candidate in ("pending", "running")
+        }
         return {
             "success": True,
             "dry_run": bool(request.dry_run),
@@ -719,6 +733,8 @@ def forecast_task_cancel_all(request: ForecastTaskCancelAllRequest) -> Dict[str,
             "since_minutes": request.since_minutes,
             "matched": len(matches),
             "cancelled": len(cancelled),
+            "matched_by_status": matched_by_status,
+            "cancelled_by_status": cancelled_by_status,
             "tasks": matches,
             "results": cancelled,
         }
@@ -839,10 +855,12 @@ def forecast_task_list(
             "success": True,
             "detail": detail_mode,
             "count": len(items),
-            "total_count": int(total_count),
-            "limit": int(limit),
-            "offset": int(offset),
-            "has_more": bool(int(offset) + len(items) < total_count),
+            "pagination": build_pagination_meta(
+                total=total_count,
+                returned=len(items),
+                limit=int(limit),
+                offset=int(offset),
+            ),
             "summary": summary,
             "tasks": items,
             "row_key": "tasks",
@@ -925,10 +943,12 @@ def forecast_models_list(
             "success": True,
             "detail": detail_mode,
             "count": len(items),
-            "total_count": total_count,
-            "limit": int(limit),
-            "offset": int(offset),
-            "has_more": bool(int(offset) + len(items) < total_count),
+            "pagination": build_pagination_meta(
+                total=total_count,
+                returned=len(items),
+                limit=int(limit),
+                offset=int(offset),
+            ),
             "models": items,
             "row_key": "models",
             "expired_models_hidden": max(0, len(all_handles) - len(handles)),

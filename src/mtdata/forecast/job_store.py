@@ -324,3 +324,29 @@ class JobStore:
             )
             conn.commit()
         return cur.rowcount
+
+    def mark_stale_active_job_failed(
+        self,
+        task_id: str,
+        error: str,
+        *,
+        stale_before: float,
+    ) -> bool:
+        """Fail one active job only if its persisted heartbeat is still stale."""
+        now = time.time()
+        with self._lock, self._connect() as conn:
+            cur = conn.execute(
+                """
+                UPDATE jobs
+                SET status = 'failed',
+                    error = ?,
+                    heartbeat_at = COALESCE(heartbeat_at, ?),
+                    completed_at = COALESCE(completed_at, ?)
+                WHERE task_id = ?
+                  AND status IN ('pending', 'running')
+                  AND COALESCE(heartbeat_at, created_at) < ?
+                """,
+                (error, now, now, task_id, float(stale_before)),
+            )
+            conn.commit()
+        return cur.rowcount > 0

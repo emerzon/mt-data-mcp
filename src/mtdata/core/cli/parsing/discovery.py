@@ -115,7 +115,7 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
         "connected broker book."
     ),
     ("forecast_task_cancel_all", "status_filter"): (
-        "Cancelable task status: pending or running."
+        "Cancelable task status: all, pending, or running. Defaults to all active tasks."
     ),
     ("indicators_list", "trading_style"): "Filter indicators by common trading workflow: intraday, swing, or position.",
     ("trade_place", "magic"): "MT5 magic number: integer strategy/order identifier used to group EA or strategy trades. Defaults to configured order_magic when omitted.",

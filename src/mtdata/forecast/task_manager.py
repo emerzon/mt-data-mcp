@@ -51,6 +51,7 @@ _TASK_TTL_DEFAULT = 86400.0
 _TRAINING_DIAGNOSTIC_LIMIT = 16_000
 _SWEEPER_INTERVAL_DEFAULT = 60.0
 _HEARTBEAT_INTERVAL_DEFAULT = 2.0
+_ORPHAN_STALE_SECONDS_DEFAULT = 30.0
 _CANCEL_GRACE_SECONDS_DEFAULT = 3.0
 _TIMEOUT_DEFAULTS = {
     "instant": 30.0,
@@ -87,6 +88,38 @@ def _configured_task_ttl_seconds() -> float:
             _TASK_TTL_DEFAULT,
         )
         return _TASK_TTL_DEFAULT
+
+
+def _configured_orphan_stale_seconds() -> float:
+    raw = os.environ.get(
+        "MTDATA_FORECAST_ORPHAN_STALE_SECONDS",
+        _ORPHAN_STALE_SECONDS_DEFAULT,
+    )
+    try:
+        return max(5.0, float(raw))
+    except (TypeError, ValueError):
+        logger.warning(
+            "Invalid MTDATA_FORECAST_ORPHAN_STALE_SECONDS=%r; using %.0f seconds",
+            raw,
+            _ORPHAN_STALE_SECONDS_DEFAULT,
+        )
+        return _ORPHAN_STALE_SECONDS_DEFAULT
+
+
+def _pid_is_alive(pid: Optional[int]) -> bool:
+    if pid is None or int(pid) <= 0:
+        return False
+    if int(pid) == os.getpid():
+        return True
+    try:
+        os.kill(int(pid), 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    except OSError:
+        return False
+    return True
 
 
 def _bounded_training_diagnostic(value: Any) -> str:
@@ -744,10 +777,24 @@ class TaskManager:
         )
 
     def _recover_persisted_tasks(self) -> None:
-        stale = self._job_store.mark_active_jobs_failed(
-            "Task registry recovered after process restart; in-flight task was orphaned.",
-        )
         persisted = self._job_store.list_jobs()
+        stale_before = time.time() - _configured_orphan_stale_seconds()
+        stale = 0
+        for record in persisted:
+            if record.status not in {"pending", "running"}:
+                continue
+            last_seen = record.heartbeat_at or record.created_at
+            if last_seen >= stale_before or _pid_is_alive(record.pid):
+                continue
+            stale += int(
+                self._job_store.mark_stale_active_job_failed(
+                    record.task_id,
+                    "Task registry recovered after process restart; in-flight task was orphaned.",
+                    stale_before=stale_before,
+                )
+            )
+        if stale:
+            persisted = self._job_store.list_jobs()
         with self._lock:
             for task in (_job_record_to_task(record) for record in persisted):
                 self._cache_task(task)
