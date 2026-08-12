@@ -229,7 +229,7 @@ class TestFetchCandlesCore(unittest.TestCase):
         row_keys = list(result['data'][0].keys())
         self.assertEqual(
             row_keys,
-            ['time', 'close', 'spread', 'spread_points', 'spread_available'],
+            ['time', 'close', 'spread', 'spread_points', 'spread_available', 'bar_state'],
         )
         self.assertEqual(result['data'][0]['spread'], 0.00001)
         self.assertEqual(result['data'][0]['spread_points'], 1)
@@ -439,6 +439,8 @@ class TestFetchCandlesCore(unittest.TestCase):
         self.assertFalse(result['forming_candle_skipped'])
         self.assertEqual(len(result['data']), 5)
         self.assertNotIn('is_forming', result['data'][-1])
+        self.assertTrue(all(row['bar_state'] == 'closed' for row in result['data'][:-1]))
+        self.assertEqual(result['data'][-1]['bar_state'], 'forming')
 
     @patch(_MT5_CONFIG)
     @patch(_RATES_FROM)
@@ -960,6 +962,59 @@ class TestFetchCandlesCore(unittest.TestCase):
                 'end_bound': 'inclusive_instant',
             },
         )
+
+    @patch(_MT5_CONFIG)
+    @patch(_RATES_RANGE)
+    @patch(_CACHED_INFO, return_value=MagicMock())
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_ESTIMATE_WARMUP, return_value=0)
+    @patch(_GUARD, _mock_symbol_guard)
+    def test_coarser_history_is_flagged_as_timeframe_mismatch(
+        self, mock_warmup, mock_ctz, mock_info, mock_range, mock_cfg
+    ):
+        mock_cfg.get_time_offset_seconds.return_value = 0
+        base = datetime(1990, 1, 4, 22, tzinfo=_UTC).timestamp()
+        mock_range.return_value = _make_rates(4, base_ts=base, step=86_400)
+
+        result = fetch_candles(
+            'EURUSD',
+            timeframe='H1',
+            limit=10,
+            start='1990-01-01',
+            end='1990-01-05',
+        )
+
+        self.assertTrue(result['success'])
+        self.assertTrue(result['timeframe_spacing_mismatch'])
+        self.assertFalse(result['bar_spacing']['spacing_matches_timeframe'])
+        self.assertEqual(result['bar_spacing']['observed_median_bar_seconds'], 86_400)
+        self.assertTrue(any('does not match' in warning for warning in result['warnings']))
+
+    @patch(_MT5_CONFIG)
+    @patch(_RATES_RANGE)
+    @patch(_CACHED_INFO, return_value=MagicMock())
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_ESTIMATE_WARMUP, return_value=0)
+    @patch(_GUARD, _mock_symbol_guard)
+    def test_daily_rows_include_broker_trading_day(
+        self, mock_warmup, mock_ctz, mock_info, mock_range, mock_cfg
+    ):
+        mock_cfg.get_time_offset_seconds.return_value = 0
+        mock_cfg.get_server_tz.return_value = ZoneInfo('Europe/Nicosia')
+        bar_open = datetime(2026, 8, 5, 21, tzinfo=_UTC).timestamp()
+        mock_range.return_value = _make_rates(2, base_ts=bar_open, step=86_400)
+
+        result = fetch_candles(
+            'EURUSD',
+            timeframe='D1',
+            limit=10,
+            start='2026-08-04',
+            end='2026-08-06',
+        )
+
+        self.assertEqual(result['data'][-1]['broker_trading_day'], '2026-08-06')
+        self.assertEqual(result['data'][-1]['broker_session_date'], '2026-08-06')
+        self.assertEqual(result['broker_timezone'], 'Europe/Nicosia')
 
     @patch(_MT5_CONFIG)
     @patch(_RATES_RANGE)

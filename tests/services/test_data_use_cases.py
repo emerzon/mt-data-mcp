@@ -546,7 +546,7 @@ def test_run_data_fetch_candles_range_applies_limit_cap():
         },
     )
 
-    assert result["data"] == rows[-2:]
+    assert result["data"] == rows[:2]
     assert result["count"] == 2
     assert "candles" not in result
     assert result["available_count"] == 5
@@ -554,12 +554,12 @@ def test_run_data_fetch_candles_range_applies_limit_cap():
     assert result["truncated"] is True
     assert result["truncation"] == {
         "reason": "limit",
-        "retained": "last",
+        "retained": "first",
         "excluded_count": 3,
     }
-    assert result["data_window"] == {"start": "t3", "end": "t4"}
+    assert result["data_window"] == {"start": "t0", "end": "t1"}
     assert result["warnings"] == [
-        "Fetched range contained 5 bars; returned the latest 2 because limit=2."
+        "Fetched range contained 5 bars; returned the earliest 2 because limit=2."
     ]
     assert result["query_type"] == "historical"
 
@@ -592,6 +592,9 @@ def test_run_data_fetch_candles_range_does_not_use_latest_default_limit():
     assert result["data"] == rows
     assert result["count"] == 25
     assert "truncated" not in result
+    assert result["range_complete"] is True
+    assert result["safety_limit"] == 100_000
+    assert "requested_limit" not in result
 
 
 def test_run_data_fetch_candles_normalizes_count_metadata():
@@ -626,7 +629,7 @@ def test_run_data_fetch_candles_normalizes_count_metadata():
     assert result["requested_limit"] == 2
     assert "candles" not in result
     assert "returned_count" not in result
-    assert result["data_window"] == {"start": "t3", "end": "t4"}
+    assert result["data_window"] == {"start": "t0", "end": "t1"}
 
 
 def test_run_data_fetch_candles_compact_keeps_spread_estimate_without_meta():

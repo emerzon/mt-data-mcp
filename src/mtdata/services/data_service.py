@@ -1021,6 +1021,64 @@ def _fetch_recent_ticks_backwards(
     return None
 
 
+def _fetch_ticks_forward(
+    symbol: str,
+    *,
+    from_date: datetime,
+    to_date: datetime,
+    limit: int,
+) -> Any:
+    """Fetch the earliest ticks from an inclusive start without loading a huge range."""
+    if limit <= 0 or from_date > to_date:
+        return []
+    from_is_aware = from_date.tzinfo is not None and from_date.utcoffset() is not None
+    to_is_aware = to_date.tzinfo is not None and to_date.utcoffset() is not None
+    if from_is_aware != to_is_aware:
+        to_date = to_date.replace(tzinfo=from_date.tzinfo if from_is_aware else None)
+
+    cursor_start = from_date
+    chunk_seconds = 3600.0
+    saw_response = False
+    collected: List[Any] = []
+    while cursor_start <= to_date and len(collected) < limit:
+        cursor_end = min(to_date, cursor_start + timedelta(seconds=chunk_seconds))
+        ticks_candidate = _fetch_ticks_range_with_retry(
+            symbol,
+            cursor_start,
+            cursor_end,
+        )
+        if ticks_candidate is not None:
+            saw_response = True
+            boundary_epoch = float(cursor_start.timestamp())
+            candidate_rows = [
+                tick
+                for tick in list(ticks_candidate)
+                if (
+                    (tick_epoch_value := _tick_epoch_seconds_from_row(tick)) is None
+                    or tick_epoch_value >= boundary_epoch
+                )
+            ]
+            collected.extend(candidate_rows)
+            if len(collected) >= limit:
+                break
+        if cursor_end >= to_date:
+            break
+        # Exclude the already queried boundary on the next chunk while retaining
+        # sub-second tick precision.
+        cursor_start = cursor_end + timedelta(microseconds=1)
+        if not collected:
+            chunk_seconds = min(chunk_seconds * 2.0, 7 * 86_400.0)
+
+    if collected:
+        collected.sort(
+            key=lambda tick: _tick_epoch_seconds_from_row(tick) or float("-inf")
+        )
+        return collected[:limit]
+    if saw_response:
+        return []
+    return None
+
+
 def _tick_epoch_seconds_from_row(tick: Any) -> Optional[float]:
     return tick_epoch(tick)
 
@@ -1570,6 +1628,36 @@ def _collect_session_gaps(
     return session_gaps, None
 
 
+def _candle_spacing_quality(
+    df: pd.DataFrame,
+    *,
+    timeframe: TimeframeLiteral,
+) -> Optional[Dict[str, Any]]:
+    """Describe whether the dominant spacing resembles the requested timeframe."""
+    expected = float(TIMEFRAME_SECONDS.get(timeframe, 0) or 0)
+    if expected <= 0 or "__epoch" not in df.columns or len(df) < 4:
+        return None
+    epochs = pd.to_numeric(df["__epoch"], errors="coerce")
+    diffs = epochs.diff().dropna()
+    diffs = diffs[diffs > 0]
+    if len(diffs) < 3:
+        return None
+    median_seconds = float(diffs.median())
+    matching = diffs.between(expected * 0.75, expected * 1.5)
+    matching_pct = round(float(matching.mean()) * 100.0, 2)
+    spacing_matches = not (
+        median_seconds > expected * 1.5 and matching_pct < 20.0
+    )
+    return {
+        "requested_bar_seconds": expected,
+        "observed_median_bar_seconds": round(median_seconds, 3),
+        "intervals_checked": int(len(diffs)),
+        "matching_interval_pct": matching_pct,
+        "spacing_matches_timeframe": spacing_matches,
+        "status": "ok" if spacing_matches else "timeframe_mismatch",
+    }
+
+
 def _annotate_candle_gap_rows(
     payload: Dict[str, Any],
     session_gaps: List[Dict[str, Any]],
@@ -2003,6 +2091,7 @@ def fetch_candles(  # noqa: C901
         # Detect large time discontinuities (e.g., closed session windows) and
         # surface them explicitly so users can interpret forecast/analysis gaps.
         session_gaps, session_gap_warning = _collect_session_gaps(df, timeframe=timeframe, use_client_tz=_use_ctz)
+        spacing_quality = _candle_spacing_quality(df, timeframe=timeframe)
         expected_bar_seconds = float(TIMEFRAME_SECONDS.get(timeframe, 0) or 0)
 
         # Reformat time consistently across rows for display, unless caller
@@ -2076,6 +2165,43 @@ def fetch_candles(  # noqa: C901
             forming_candle_status = "detected"
         else:
             forming_candle_status = "none"
+        data_rows = payload.get("data")
+        if isinstance(data_rows, list):
+            for index, row in enumerate(data_rows):
+                if not isinstance(row, dict):
+                    continue
+                is_forming_row = bool(
+                    forming_candle_included and index == len(data_rows) - 1
+                )
+                row["bar_state"] = "forming" if is_forming_row else "closed"
+            if forming_candle_included and ti_added_cols:
+                payload["indicator_uses_incomplete_bar"] = True
+
+            if str(timeframe).upper() in {"D1", "W1", "MN1"}:
+                broker_tz = mt5_config.get_server_tz()
+                if broker_tz is not None and "__epoch" in df.columns:
+                    for row, epoch_value in zip(
+                        data_rows,
+                        df["__epoch"].tolist(),
+                        strict=False,
+                    ):
+                        if not isinstance(row, dict):
+                            continue
+                        try:
+                            session_date = datetime.fromtimestamp(
+                                float(epoch_value),
+                                tz=broker_tz,
+                            ).date().isoformat()
+                        except Exception:
+                            continue
+                        row["broker_session_date"] = session_date
+                        if str(timeframe).upper() == "D1":
+                            row["broker_trading_day"] = session_date
+                    payload["broker_timezone"] = (
+                        getattr(broker_tz, "zone", None)
+                        or getattr(broker_tz, "key", None)
+                        or str(broker_tz)
+                    )
         remaining_after_forming = max(0, candles_excluded - incomplete_candles_skipped)
         indicator_excluded = min(int(indicator_rows_dropped), remaining_after_forming)
         remaining_after_indicator = max(0, remaining_after_forming - indicator_excluded)
@@ -2175,6 +2301,15 @@ def fetch_candles(  # noqa: C901
                 },
             },
         })
+        if spacing_quality is not None:
+            payload["bar_spacing"] = spacing_quality
+            if not bool(spacing_quality.get("spacing_matches_timeframe")):
+                payload["timeframe_spacing_mismatch"] = True
+                payload.setdefault("warnings", []).append(
+                    "Observed candle spacing does not match the requested "
+                    f"{timeframe} timeframe; treat this history as partial or "
+                    "coarser broker data."
+                )
         if broker_time_check_result is not None:
             payload["meta"]["diagnostics"]["mt5_time_alignment"] = (
                 dict(broker_time_check_result)
@@ -2655,6 +2790,7 @@ def _compact_tick_summary(out: Dict[str, Any]) -> Dict[str, Any]:
         "history_window_truncated",
         "history_window_limit_days",
         "history_window_floor",
+        "query_applied",
         "warnings",
     ):
         if out.get(key) is not None:
@@ -2748,11 +2884,12 @@ def fetch_ticks(  # noqa: C901
                     max_lookback_days = max(max(1, int(TICKS_LOOKBACK_DAYS)), 30)
                     history_window_floor = to_date - timedelta(days=max_lookback_days)
                     history_window_truncated = from_date < history_window_floor
-                    ticks = _fetch_recent_ticks_backwards(
+                    effective_from_date = max(from_date, history_window_floor)
+                    ticks = _fetch_ticks_forward(
                         symbol,
+                        from_date=effective_from_date,
                         to_date=to_date,
                         limit=effective_limit,
-                        min_from_date=from_date,
                     )
                 else:
                     max_lookback_days = max(max(1, int(TICKS_LOOKBACK_DAYS)), 30)
@@ -2763,11 +2900,12 @@ def fetch_ticks(  # noqa: C901
                         days=max_lookback_days
                     )
                     history_window_truncated = from_date < history_window_floor
-                    ticks = _fetch_recent_ticks_backwards(
+                    effective_from_date = max(from_date, history_window_floor)
+                    ticks = _fetch_ticks_forward(
                         symbol,
+                        from_date=effective_from_date,
                         to_date=history_to_date,
                         limit=effective_limit,
-                        min_from_date=from_date,
                     )
             else:
                 # End-only requests are historical backward queries anchored
@@ -3124,6 +3262,27 @@ def fetch_ticks(  # noqa: C901
 
         def _add_tick_context_fields(payload: Dict[str, Any]) -> None:
             payload["spread_statistics_basis"] = "coherent_bid_ask_updates"
+            if start or end:
+                query_applied: Dict[str, Any] = {
+                    "mode": "historical",
+                    "limit": int(effective_limit),
+                    "limit_anchor": "start" if start else "end",
+                    "selection": "first_n" if start else "last_n",
+                    "order": "ascending",
+                }
+                if start:
+                    query_applied["start"] = str(start)
+                if end:
+                    query_applied["end"] = str(end)
+                payload["query_applied"] = query_applied
+            else:
+                payload["query_applied"] = {
+                    "mode": "latest",
+                    "limit": int(effective_limit),
+                    "limit_anchor": "latest",
+                    "selection": "last_n",
+                    "order": "ascending",
+                }
             if history_window_truncated:
                 payload["history_window_truncated"] = True
                 payload["history_window_limit_days"] = max(

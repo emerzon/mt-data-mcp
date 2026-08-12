@@ -369,7 +369,9 @@ class DataFetchCandlesRequest(_DetailNormalizedRequest):
         DATA_FETCH_CANDLES_DEFAULT_LIMIT,
         ge=1,
         description=(
-            "Number of most-recent completed bars to return (default "
+            "Maximum bars to return. Unbounded and end-only queries select the "
+            "latest bars; any query with start selects the earliest bars at or "
+            "after start (default "
             f"{DATA_FETCH_CANDLES_DEFAULT_LIMIT}, kept small for compact output). "
             "For start/end range queries, an omitted limit uses a 100,000-bar "
             "safety cap; set limit explicitly to request a smaller range page. "
@@ -466,8 +468,9 @@ class DataFetchTicksRequest(_DetailNormalizedRequest):
         ge=1,
         le=DATA_FETCH_TICKS_MAX_LIMIT,
         description=(
-            "Max ticks to return (default "
-            f"{DATA_FETCH_TICKS_DEFAULT_LIMIT}, a recent snapshot). The response "
+            "Max ticks to return. Unbounded and end-only queries select the latest "
+            "ticks; any query with start selects the earliest ticks at or after "
+            f"start (default {DATA_FETCH_TICKS_DEFAULT_LIMIT}, a recent snapshot). The response "
             "echoes requested_limit and sets limit_reached=true when the cap is hit; "
             "this does not assert that another page exists. "
             f"Maximum {DATA_FETCH_TICKS_MAX_LIMIT} per request."

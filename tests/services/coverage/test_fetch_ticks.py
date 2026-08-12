@@ -644,7 +644,7 @@ class TestFetchTicks(unittest.TestCase):
     @patch(_RESOLVE_CTZ, return_value=None)
     @patch(_GUARD, _mock_symbol_guard)
     @patch(_PARSE_START)
-    def test_start_only_returns_latest_ticks_since_start(self, mock_parse, mock_ctz, mock_info, mock_range):
+    def test_start_only_returns_earliest_ticks_since_start(self, mock_parse, mock_ctz, mock_info, mock_range):
         now = datetime.now(timezone.utc)
         mock_parse.return_value = now - timedelta(days=2)
 
@@ -666,7 +666,9 @@ class TestFetchTicks(unittest.TestCase):
         self.assertTrue(result.get('success'))
         self.assertEqual(result['count'], 5)
         bids = [row['bid'] for row in result['data']]
-        self.assertEqual(bids, [1.2002, 1.3, 1.3001, 1.3002, 1.3003])
+        self.assertEqual(bids, [1.2, 1.2001, 1.2002, 1.3, 1.3001])
+        self.assertEqual(result['query_applied']['limit_anchor'], 'start')
+        self.assertEqual(result['query_applied']['selection'], 'first_n')
 
     @patch(_TICKS_RANGE)
     @patch(_CACHED_INFO, return_value=MagicMock())

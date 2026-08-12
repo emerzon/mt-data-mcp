@@ -74,8 +74,11 @@ MT5_SERVER_TZ=Europe/Athens
 ## Time metadata
 
 Compact candle responses retain the thin time contract (`time_basis` and
-`timestamp_mode`) plus `limit_satisfied`, so callers can detect a short
-response without requesting verbose diagnostics. Request the `metadata` extra
+`timestamp_mode`). Latest-N queries expose `limit_satisfied`; historical
+ranges expose `range_complete`, `limit_reached`, and a `query_applied` block
+that states whether the limit was anchored at the start or end. An omitted
+range limit is reported as `safety_limit`, not as a user-requested count.
+Request full detail
 to inspect the full normalization contract:
 
 ```bash
@@ -89,6 +92,11 @@ contract and report `raw_time_basis=mt5_utc_epoch`,
 `raw_time_basis=mt5_server_clock_epoch`,
 `time_normalization=server_clock_to_utc`, and `timestamp_mode=server_clock`.
 The public timestamp values are UTC in both cases.
+
+MT5 stamps candles at bar open. Daily, weekly, and monthly candle rows also
+include `broker_session_date`; D1 rows include `broker_trading_day`. These
+labels use the configured broker timezone and disambiguate sessions whose UTC
+open falls on the preceding calendar date.
 
 ---
 

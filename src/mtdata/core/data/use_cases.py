@@ -78,6 +78,7 @@ _COMPACT_TICK_TOP_LEVEL_FIELDS = (
     "note",
     "simplified",
     "simplify",
+    "query_applied",
 )
 
 _ANALYSIS_CANDLE_DEFAULT_LIMIT = 100
@@ -211,12 +212,25 @@ def _run_data_fetch_candles_impl(
     result = _normalize_candle_query_error(result, request=request)
     detail_mode = str(request.detail or "compact").strip().lower()
     if isinstance(result, dict):
+        limit_explicit = "limit" in getattr(request, "model_fields_set", set())
+        applied_limit = (
+            effective_limit if effective_limit is not None else request.limit
+        )
         if bool(getattr(request, "explain_indicators", False)):
             _attach_indicator_explanations(result)
         _apply_range_limit_cap(
             result,
-            limit=effective_limit if effective_limit is not None else request.limit,
+            limit=applied_limit,
+            limit_explicit=limit_explicit,
+            start=request.start,
+            end=request.end,
         )
+        if request.start or request.end:
+            _normalize_range_limit_contract(
+                result,
+                effective_limit=applied_limit,
+                limit_explicit=limit_explicit,
+            )
         _normalize_candle_count_field(result)
         _prune_zero_candle_exclusions(result)
         if detail_mode == "compact":
@@ -456,7 +470,14 @@ def _attach_indicator_explanations(result: Dict[str, Any]) -> None:
         result["indicator_explanations"] = explanations
 
 
-def _apply_range_limit_cap(result: Dict[str, Any], *, limit: int) -> None:
+def _apply_range_limit_cap(
+    result: Dict[str, Any],
+    *,
+    limit: int,
+    limit_explicit: bool,
+    start: Optional[str],
+    end: Optional[str],
+) -> None:
     data = result.get("data")
     if not isinstance(data, list):
         return
@@ -465,6 +486,20 @@ def _apply_range_limit_cap(result: Dict[str, Any], *, limit: int) -> None:
     query = diagnostics.get("query") if isinstance(diagnostics, dict) else None
     if not isinstance(query, dict) or query.get("mode") != "range":
         return
+    query_applied = result.get("query_applied")
+    if not isinstance(query_applied, dict):
+        query_applied = {}
+        result["query_applied"] = query_applied
+    query_applied.setdefault("mode", "range")
+    if start not in (None, ""):
+        query_applied.setdefault("start", str(start))
+    if end not in (None, ""):
+        query_applied.setdefault("end", str(end))
+    start_anchored = start not in (None, "")
+    query_applied["limit_anchor"] = "start" if start_anchored else "end"
+    query_applied["selection"] = "first_n" if start_anchored else "last_n"
+    query_applied["order"] = "ascending"
+    query_applied["limit_source"] = "user" if limit_explicit else "safety_cap"
     try:
         limit_value = max(1, int(limit))
     except Exception:
@@ -472,22 +507,31 @@ def _apply_range_limit_cap(result: Dict[str, Any], *, limit: int) -> None:
     available = len(data)
     provider_bounded = bool(query.get("provider_bounded"))
     if available <= limit_value and not provider_bounded:
+        result["range_complete"] = True
         return
 
-    retained = data[-limit_value:] if available > limit_value else data
+    retained = (
+        data[:limit_value]
+        if start_anchored and available > limit_value
+        else data[-limit_value:]
+        if available > limit_value
+        else data
+    )
     result["data"] = retained
     result["count"] = len(retained)
     result["limit_applied"] = limit_value
     result["truncated"] = True
     result["truncation"] = {
         "reason": "limit",
-        "retained": "last",
+        "retained": "first" if start_anchored else "last",
     }
+    result["range_complete"] = False
     if available > limit_value:
         result["available_count"] = available
         result["truncation"]["excluded_count"] = available - len(retained)
+        retained_label = "earliest" if start_anchored else "latest"
         warning = (
-            f"Fetched range contained {available} bars; returned the latest "
+            f"Fetched range contained {available} bars; returned the {retained_label} "
             f"{len(retained)} because limit={limit_value}."
         )
     else:
@@ -521,6 +565,36 @@ def _apply_range_limit_cap(result: Dict[str, Any], *, limit: int) -> None:
     query["returned_rows_after_limit"] = len(retained)
 
 
+def _normalize_range_limit_contract(
+    result: Dict[str, Any],
+    *,
+    effective_limit: int,
+    limit_explicit: bool,
+) -> None:
+    query_applied = result.get("query_applied")
+    if not isinstance(query_applied, dict):
+        return
+    result["limit_explicit"] = bool(limit_explicit)
+    if limit_explicit:
+        return
+    result.pop("requested_limit", None)
+    result.pop("candles_requested", None)
+    result["safety_limit"] = int(effective_limit)
+    query_applied.pop("limit", None)
+    query_applied["safety_limit"] = int(effective_limit)
+    candle_counts = result.get("candle_counts")
+    if isinstance(candle_counts, dict):
+        candle_counts.pop("requested", None)
+        excluded = candle_counts.get("excluded")
+        if isinstance(excluded, dict):
+            excluded.pop("window_or_source_shortfall", None)
+            excluded["total"] = sum(
+                int(value)
+                for key, value in excluded.items()
+                if key != "total" and isinstance(value, int) and value > 0
+            )
+
+
 def _normalize_candle_count_field(result: Dict[str, Any]) -> None:
     candles_value = result.pop("candles", None)
     if "count" not in result and candles_value is not None:
@@ -549,7 +623,15 @@ def _compact_candles_payload(
     except (KeyError, TypeError, ValueError):
         pass
     else:
-        if requested_count >= 0 and returned_count >= 0:
+        query_applied = result.get("query_applied")
+        is_range = (
+            isinstance(query_applied, dict)
+            and query_applied.get("mode") == "range"
+        )
+        if is_range and requested_count >= 0 and returned_count >= 0:
+            compact["limit_reached"] = returned_count >= requested_count
+            compact["range_complete"] = bool(result.get("range_complete", False))
+        elif requested_count >= 0 and returned_count >= 0:
             # Compact responses omit the detailed exclusion breakdown, but a
             # caller must still be able to distinguish a complete response
             # from one shortened by the source, filters, or a forming bar.
@@ -815,6 +897,9 @@ def _summary_candles_payload(result: Dict[str, Any]) -> Dict[str, Any]:
                     "real_volume",
                     "spread",
                     "spread_points",
+                    "bar_state",
+                    "broker_session_date",
+                    "broker_trading_day",
                 )
                 if key in latest
             }
