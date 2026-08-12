@@ -102,13 +102,13 @@ def test_screen_pagination_uses_unknown_total_lower_bound() -> None:
     )
 
     assert result["pagination"] == {
-        "total": 6,
+        "total": None,
+        "total_lower_bound": 6,
         "returned": 5,
         "offset": 0,
         "limit": 5,
         "has_more": True,
-        "more_available": 1,
-        "total_is_lower_bound": True,
+        "more_available": None,
     }
 
 
@@ -246,13 +246,13 @@ class TestFinvizEarningsOutputContract:
 
         assert result["success"] is True
         assert result["pagination"] == {
-            "total": 3,
+            "total": None,
+            "total_lower_bound": 3,
             "returned": 2,
             "offset": 0,
             "limit": 2,
             "has_more": True,
-            "more_available": 1,
-            "total_is_lower_bound": True,
+            "more_available": None,
         }
         assert not {
             "omitted_item_count",
@@ -304,16 +304,28 @@ class TestFinvizCalendarOutputContract:
             "dateFrom": "2026-01-05",
             "dateTo": "2026-01-12",
             "total": 3,
-            "page": 2,
-            "pages": 3,
+            "page": 1,
+            "pages": 1,
             "items": [
+                {
+                    "date": "2026-01-05T13:30:00",
+                    "event": "Retail Sales",
+                    "importance": 2,
+                    "ticker": "USD",
+                },
                 {
                     "date": "2026-01-06T13:30:00",
                     "event": "CPI",
                     "importance": 3,
                     "ticker": "USD",
                     "referenceDate": "2025-12",
-                }
+                },
+                {
+                    "date": "2026-01-07T13:30:00",
+                    "event": "Employment",
+                    "importance": 3,
+                    "ticker": "USD",
+                },
             ],
         }
 
@@ -345,6 +357,7 @@ class TestFinvizCalendarOutputContract:
                 "impact": "high",
                 "country": "United States",
                 "country_code": "US",
+                "country_attribution": "inferred",
                 "reference_date": "2025-12",
             }
         ]
@@ -397,6 +410,69 @@ class TestFinvizCalendarOutputContract:
         )
 
     @patch("mtdata.core.finviz.get_economic_calendar")
+    def test_calendar_maps_known_us_indicator_ids_before_country_filter(self, mock_get):
+        mock_get.return_value = {
+            "success": True,
+            "items": [
+                {"symbol": symbol, "event": symbol, "date": "2099-01-02T08:30:00"}
+                for symbol in ("CPIYOY", "RSTAMOM", "CONCCONF")
+            ],
+        }
+
+        result = _unwrap(finviz_calendar)(
+            country="US",
+            upcoming=False,
+            limit=10,
+        )
+
+        assert result["count"] == 3
+        assert {item["country_code"] for item in result["items"]} == {"US"}
+        assert {item["country_attribution"] for item in result["items"]} == {
+            "inferred"
+        }
+        assert result["pagination"]["total"] == 3
+
+    @patch("mtdata.core.finviz.get_economic_calendar")
+    def test_calendar_default_limit_selects_nearest_upcoming_events(self, mock_get):
+        mock_get.return_value = {
+            "success": True,
+            "items": [
+                {"symbol": "USD", "event": "Past", "date": "2000-01-01T08:30:00"},
+                {"symbol": "USD", "event": "Later", "date": "2099-01-02T08:30:00"},
+                {"symbol": "USD", "event": "Next", "date": "2099-01-01T08:30:00"},
+            ],
+        }
+
+        result = _unwrap(finviz_calendar)(limit=1)
+
+        assert [item["event"] for item in result["items"]] == ["Next"]
+        assert result["upcoming_only"] is True
+        assert result["pagination"] == {
+            "total": 2,
+            "returned": 1,
+            "offset": 0,
+            "limit": 1,
+            "has_more": True,
+            "more_available": 1,
+        }
+
+    @patch("mtdata.core.finviz.get_economic_calendar")
+    def test_calendar_reports_unknown_country_rows_excluded_by_filter(self, mock_get):
+        mock_get.return_value = {
+            "success": True,
+            "items": [
+                {"symbol": "USD", "event": "Known", "date": "2099-01-01T08:30:00"},
+                {"symbol": "OPAQUE", "event": "Unknown", "date": "2099-01-01T09:00:00"},
+            ],
+        }
+
+        result = _unwrap(finviz_calendar)(country="US", upcoming=False)
+
+        assert [item["event"] for item in result["items"]] == ["Known"]
+        assert result["unclassified_events_count"] == 1
+        assert "unknown country attribution" in result["warnings"][0]
+
+    @patch("mtdata.core.finviz.get_economic_calendar")
     def test_calendar_compact_drops_internal_fields(self, mock_get):
         mock_get.return_value = {
             "success": True,
@@ -417,12 +493,13 @@ class TestFinvizCalendarOutputContract:
             ],
         }
 
-        result = _unwrap(finviz_calendar)(limit=1)
+        result = _unwrap(finviz_calendar)(limit=1, upcoming=False)
 
         assert result["items"] == [
             {
                 "country": "United States",
                 "country_code": "US",
+                "country_attribution": "inferred",
                 "event": "Fed Cook Speech",
                 "category": "Interest Rate",
                 "date": "2026-05-08T09:45:00Z",
@@ -453,7 +530,7 @@ class TestFinvizCalendarOutputContract:
             ],
         }
 
-        result = _unwrap(finviz_calendar)(currency="USD")
+        result = _unwrap(finviz_calendar)(currency="USD", upcoming=False)
 
         assert result["country_filter"] == "US"
         assert result["count"] == 1
@@ -466,6 +543,7 @@ class TestFinvizCalendarOutputContract:
                 "impact": "high",
                 "country": "United States",
                 "country_code": "US",
+                "country_attribution": "inferred",
             }
         ]
 
@@ -484,7 +562,11 @@ class TestFinvizCalendarOutputContract:
             ],
         }
 
-        result = _unwrap(finviz_calendar)(limit=1, detail="full")
+        result = _unwrap(finviz_calendar)(
+            limit=1,
+            detail="full",
+            upcoming=False,
+        )
 
         assert result["items"] == [
             {
@@ -497,6 +579,7 @@ class TestFinvizCalendarOutputContract:
                 "country": "United States",
                 "country_code": "US",
                 "country_inferred": True,
+                "country_attribution": "inferred",
             }
         ]
 
@@ -574,6 +657,7 @@ class TestFinvizInsiderActivityOutputContract:
             "transaction": "Sale",
             "shares": "10",
             "value_usd": "1000",
+            "transaction_class": "executed_sale",
         }
         assert "sec_form_4" not in result["items"][0]
         assert "sec_form_4_link" not in result["items"][0]
@@ -640,6 +724,7 @@ class TestFinvizInsiderOutputContract:
             "transaction": "Sale",
             "shares": "1534",
             "value_usd": "421850",
+            "transaction_class": "executed_sale",
         }
         assert result["summary"]["sell_transactions"] == 3
         assert result["pagination"]["returned"] == 4
@@ -760,12 +845,43 @@ class TestFinvizProgressiveDisclosure:
         rows = [{"Date": f"2026-01-0{i}", "Rating": "Buy"} for i in range(1, 6)]
         mock_get.return_value = {"success": True, "symbol": "AAPL", "ratings": rows}
 
-        result = _unwrap(finviz_ratings)("AAPL", detail="full")
+        result = _unwrap(finviz_ratings)("AAPL", detail="full", limit=5)
 
         assert result["detail"] == "full"
         assert result["count"] == 5
         assert result["pagination"]["returned"] == 5
         assert result["pagination"]["more_available"] == 0
+
+    @patch("mtdata.core.finviz.get_stock_ratings")
+    def test_ratings_full_detail_honors_limit(self, mock_get):
+        rows = [{"Date": f"2026-01-0{i}", "Rating": "Buy"} for i in range(1, 6)]
+        mock_get.return_value = {"success": True, "symbol": "AAPL", "ratings": rows}
+
+        result = _unwrap(finviz_ratings)("AAPL", detail="full", limit=1)
+
+        assert result["count"] == 1
+        assert result["pagination"]["returned"] == 1
+        assert result["pagination"]["more_available"] == 4
+
+    @patch("mtdata.core.finviz.get_stock_insider_trades")
+    def test_insider_proposed_sales_are_not_counted_as_executed(self, mock_get):
+        mock_get.return_value = {
+            "success": True,
+            "symbol": "AAPL",
+            "insider_trades": [
+                {"Transaction": "Proposed Sale", "Owner": "A"},
+                {"Transaction": "Sale", "Owner": "B"},
+            ],
+        }
+
+        result = _unwrap(finviz_insider)("AAPL", detail="compact")
+
+        assert result["summary"]["sell_transactions"] == 1
+        assert result["summary"]["proposed_sale_transactions"] == 1
+        assert [item["transaction_class"] for item in result["items"]] == [
+            "proposed_sale",
+            "executed_sale",
+        ]
 
     @patch("mtdata.core.finviz.get_stock_ratings")
     def test_ratings_normalizes_mixed_date_formats(self, mock_get):

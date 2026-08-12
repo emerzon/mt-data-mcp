@@ -96,13 +96,18 @@ List-style tools return a normalized pagination block so you can page determinis
 
 | Field | Meaning |
 |-------|---------|
-| `total` | Total rows available before paging |
+| `total` | Exact rows available before paging, or `null` when the provider cannot determine it |
+| `total_lower_bound` | Present only when `total` is unknown; minimum rows known to exist |
 | `returned` | Rows in this response |
 | `offset` | Zero-based start index of this page |
 | `limit` | Page size requested (`null` when unbounded) |
 | `has_more` | `true` when more rows remain after this page |
-| `more_available` | Count of rows remaining after this page |
-| `total_is_lower_bound` | Present and `true` when a bounded provider fetch cannot know the exact total |
+| `more_available` | Exact count of rows remaining, or `null` when `total` is unknown |
+
+When a bounded provider can only prove that another row exists, `total` and
+`more_available` remain `null`; `total_lower_bound` and `has_more` carry the
+available evidence without presenting a page-size-dependent estimate as an
+exact universe count.
 
 The `pagination` object is authoritative and is the only pagination
 representation in canonical payloads. Root-level `total_count`, `offset`,

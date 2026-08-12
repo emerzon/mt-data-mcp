@@ -331,6 +331,22 @@ def _apply_news_limit(
     )
 
     bucket_truncation: Dict[str, bool] = {}
+    reserved_upcoming: list[Any] = []
+    original_upcoming_count = 0
+    if limit is not None and not remaining_offset:
+        upcoming = out.get("upcoming_events")
+        if isinstance(upcoming, list) and upcoming:
+            # Reserve one imminent event, then retain the established bucket
+            # ordering for the remaining global capacity.
+            original_upcoming_count = len(upcoming)
+            reserved_upcoming = upcoming[:1]
+            out["upcoming_events"] = upcoming[1:]
+            remaining = max(0, int(remaining or 0) - 1)
+            total_candidates = 1
+            returned = 1
+            bucket_keys = tuple(
+                key for key in _NEWS_BUCKET_KEYS if key != "upcoming_events"
+            ) + ("upcoming_events",)
     for key in bucket_keys:
         value = out.get(key)
         if isinstance(value, list):
@@ -369,6 +385,17 @@ def _apply_news_limit(
                 out[key] = value
             if original_len == len(value) and not bucket_skipped:
                 bucket_truncation.setdefault(key, False)
+    if reserved_upcoming:
+        selected_upcoming = out.get("upcoming_events")
+        if not isinstance(selected_upcoming, list):
+            selected_upcoming = []
+        out["upcoming_events"] = reserved_upcoming + selected_upcoming
+        count_key = _NEWS_BUCKET_COUNT_KEYS["upcoming_events"]
+        if count_key in out:
+            out[count_key] = len(out["upcoming_events"])
+        bucket_truncation["upcoming_events"] = bool(
+            len(out["upcoming_events"]) < original_upcoming_count
+        )
     out["total_candidates"] = total_candidates
     out["returned"] = returned
     out["truncated"] = truncated
@@ -457,8 +484,10 @@ def news(
         when possible, while `full` preserves the richer source, matching, and
         item metadata payloads.
     limit : int, optional
-        Maximum items to return. With `symbol`, this caps `related_news` only
-        and omits general buckets; without `symbol`, it caps across all buckets.
+        Global maximum across buckets. When available, one upcoming scheduled
+        event is reserved before the established symbol-related, general,
+        impact, recent-event, and market-context priority order, so a small cap
+        does not hide every imminent release.
     limit_per_bucket : int, optional
         Maximum number of items to return per news bucket. Compact symbol news
         defaults to five items per bucket; pass this value to override it.

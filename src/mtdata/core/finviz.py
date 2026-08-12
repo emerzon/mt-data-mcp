@@ -864,22 +864,29 @@ def _apply_finviz_pagination_contract(
     except (TypeError, ValueError):
         lower_bound = None
 
-    total_is_lower_bound = exact_total is None
     if exact_total is not None:
-        pagination_total = exact_total
+        pagination = build_pagination_meta(
+            total=exact_total,
+            returned=returned_value,
+            offset=offset_value,
+            limit=limit_value,
+        )
     else:
         minimum_total = offset_value + returned_value + (1 if has_more else 0)
-        pagination_total = max(lower_bound or 0, minimum_total)
+        lower_bound_value = max(lower_bound or 0, minimum_total)
+        pagination = {
+            "total": None,
+            "total_lower_bound": lower_bound_value,
+            "returned": returned_value,
+            "offset": offset_value,
+            "limit": limit_value,
+            "has_more": bool(has_more),
+            "more_available": None,
+        }
 
     for field in _FINVIZ_FLAT_PAGINATION_FIELDS:
         out.pop(field, None)
-    out["pagination"] = build_pagination_meta(
-        total=pagination_total,
-        returned=returned_value,
-        offset=offset_value,
-        limit=limit_value,
-        total_is_lower_bound=total_is_lower_bound,
-    )
+    out["pagination"] = pagination
     return out
 
 
@@ -1486,6 +1493,22 @@ def _normalize_finviz_news_item(
     return out
 
 
+def _finviz_news_item_has_symbol_evidence(item: Any, symbol: str) -> bool:
+    if not isinstance(item, dict):
+        return False
+    symbol_text = str(symbol or "").strip()
+    title = str(item.get("title") or "")
+    if not symbol_text or not title:
+        return False
+    return bool(
+        re.search(
+            rf"(?<![A-Za-z0-9]){re.escape(symbol_text)}(?![A-Za-z0-9])",
+            title,
+            flags=re.IGNORECASE,
+        )
+    )
+
+
 def _normalize_finviz_news_payload(
     result: Dict[str, Any],
     *,
@@ -1843,6 +1866,7 @@ _FINVIZ_CALENDAR_COMPACT_FIELDS = (
     "symbol",
     "country",
     "country_code",
+    "country_attribution",
     "event",
     "category",
     "date",
@@ -2390,6 +2414,13 @@ _FINVIZ_CALENDAR_EVENT_COUNTRY_KEYWORDS = (
     ("FOMC", "United States", "US"),
     ("FED ", "United States", "US"),
 )
+_FINVIZ_CALENDAR_SOURCE_ID_COUNTRIES = {
+    # Finviz uses indicator identifiers rather than ISO/currency prefixes for
+    # several US releases. Keep these exact mappings auditable and conservative.
+    "CPIYOY": ("United States", "US"),
+    "RSTAMOM": ("United States", "US"),
+    "CONCCONF": ("United States", "US"),
+}
 _FINVIZ_CALENDAR_CURRENCY_TO_COUNTRY_CODE = {
     "USD": "US",
     "EUR": "EU",
@@ -2439,6 +2470,9 @@ def _infer_finviz_calendar_country(item: Dict[str, Any]) -> tuple[Any, Any]:
 
     source_id = str(item.get("symbol") or item.get("source_id") or "").strip()
     compact_source = re.sub(r"[^A-Za-z]", "", source_id).upper()
+    exact_country = _FINVIZ_CALENDAR_SOURCE_ID_COUNTRIES.get(compact_source)
+    if exact_country is not None:
+        return exact_country
     for prefix, country, code in _FINVIZ_CALENDAR_COUNTRY_PREFIXES:
         if compact_source.startswith(prefix):
             return country, code
@@ -2519,7 +2553,34 @@ def _enrich_finviz_calendar_country(item: Dict[str, Any]) -> Dict[str, Any]:
         had_country or had_country_code
     ):
         normalized["country_inferred"] = True
+        normalized["country_attribution"] = "inferred"
+    elif had_country or had_country_code:
+        normalized["country_attribution"] = "provider"
+    else:
+        normalized["country_attribution"] = "unknown"
     return normalized
+
+
+def _finviz_calendar_item_is_upcoming(
+    item: Dict[str, Any],
+    *,
+    now: Optional[datetime] = None,
+) -> bool:
+    if item.get("actual") not in (None, ""):
+        return False
+    raw_date = item.get("date") or item.get("earnings_date")
+    if raw_date in (None, ""):
+        return False
+    try:
+        event_time = datetime.fromisoformat(str(raw_date).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return False
+    if event_time.tzinfo is None:
+        event_time = event_time.replace(tzinfo=timezone.utc)
+    reference = now or datetime.now(timezone.utc)
+    if reference.tzinfo is None:
+        reference = reference.replace(tzinfo=timezone.utc)
+    return event_time.astimezone(timezone.utc) >= reference.astimezone(timezone.utc)
 
 
 def _normalize_finviz_calendar_payload(
@@ -2528,6 +2589,8 @@ def _normalize_finviz_calendar_payload(
     detail: str = "compact",
     calendar_type: str = "economic",
     country_code_filter: Optional[str] = None,
+    upcoming_only: bool = False,
+    source_is_unpaged: bool = False,
     limit: int = 20,
     page: int = 1,
 ) -> Dict[str, Any]:
@@ -2538,12 +2601,22 @@ def _normalize_finviz_calendar_payload(
     for key, value in result.items():
         normalized_key = _normalize_finviz_output_key(key)
         out[normalized_key] = value
+    filtered_total: Optional[int] = None
+    source_complete = True
     if isinstance(out.get("items"), list):
-        normalized_items = [
-            _enrich_finviz_calendar_country(item)
-            for item in _normalize_finviz_output_rows(out["items"])
-        ]
+        source_item_count = len(out["items"])
+        try:
+            source_total = int(result.get("total"))
+        except (TypeError, ValueError):
+            source_total = source_item_count
+        source_complete = source_total <= source_item_count
         calendar_mode = str(calendar_type or "economic").strip().lower()
+        normalized_items = _normalize_finviz_output_rows(out["items"])
+        if calendar_mode == "economic":
+            normalized_items = [
+                _enrich_finviz_calendar_country(item)
+                for item in normalized_items
+            ]
         if calendar_mode == "dividends":
             normalized_items = [
                 _normalize_finviz_dividend_item(item)
@@ -2574,11 +2647,42 @@ def _normalize_finviz_calendar_payload(
                 for item in normalized_items
             ]
         if country_code_filter:
+            unclassified_count = sum(
+                1
+                for item in normalized_items
+                if not str(item.get("country_code") or "").strip()
+            )
             normalized_items = [
                 item
                 for item in normalized_items
                 if str(item.get("country_code") or "").upper()
                 == str(country_code_filter).upper()
+            ]
+            if unclassified_count:
+                out["unclassified_events_count"] = int(unclassified_count)
+                warnings_out = list(out.get("warnings") or [])
+                warnings_out.append(
+                    f"{unclassified_count} event(s) had unknown country attribution "
+                    "and were excluded by the country/currency filter."
+                )
+                out["warnings"] = warnings_out
+        if upcoming_only and calendar_mode == "economic":
+            normalized_items = [
+                item
+                for item in normalized_items
+                if isinstance(item, dict)
+                and _finviz_calendar_item_is_upcoming(item)
+            ]
+            normalized_items.sort(
+                key=lambda item: str(item.get("date") or item.get("earnings_date") or "")
+            )
+        filtered_total = len(normalized_items)
+        if source_is_unpaged:
+            page_value = max(1, int(page or 1))
+            limit_value = max(1, int(limit))
+            offset_value = (page_value - 1) * limit_value
+            normalized_items = normalized_items[
+                offset_value : offset_value + limit_value
             ]
         if detail_mode == "full":
             out["items"] = normalized_items
@@ -2607,6 +2711,9 @@ def _normalize_finviz_calendar_payload(
                 out["hint"] = "Relax impact, country, currency, start, or end filters."
     if country_code_filter:
         out["country_filter"] = str(country_code_filter).upper()
+    if upcoming_only:
+        out["upcoming_only"] = True
+        out["sort"] = "scheduled_time_ascending"
     if str(calendar_type or "economic").strip().lower() in {"economic", "earnings"}:
         out["timezone"] = "UTC"
     else:
@@ -2629,19 +2736,30 @@ def _normalize_finviz_calendar_payload(
             "eps_estimate": "listing_currency_per_share",
             "eps_actual": "listing_currency_per_share",
         }
-    page_value = int(result.get("page") or page or 1)
-    pages = result.get("pages")
-    has_more = bool(
-        result.get("has_more")
-        or (pages not in (None, "") and page_value < int(pages))
-    )
+    page_value = int(page if source_is_unpaged else result.get("page") or page or 1)
+    if source_is_unpaged:
+        offset_value = (max(1, page_value) - 1) * max(1, int(limit))
+        has_more = bool(
+            (filtered_total is not None and offset_value + len(out.get("items") or []) < filtered_total)
+            or not source_complete
+        )
+        pagination_total = filtered_total if source_complete else None
+        pagination_lower_bound = filtered_total
+    else:
+        pages = result.get("pages")
+        has_more = bool(
+            result.get("has_more")
+            or (pages not in (None, "") and page_value < int(pages))
+        )
+        pagination_total = result.get("total")
+        pagination_lower_bound = result.get("total_lower_bound")
     _apply_finviz_pagination_contract(
         out,
         returned=len(out.get("items") or []),
         limit=limit,
         page=page_value,
-        total=result.get("total"),
-        total_lower_bound=result.get("total_lower_bound"),
+        total=pagination_total,
+        total_lower_bound=pagination_lower_bound,
         has_more=has_more,
     )
     out.pop("omitted_item_count", None)
@@ -2668,6 +2786,34 @@ def _transaction_text(row: Dict[str, Any]) -> str:
         if "transaction" in str(key).lower() or "trade" in str(key).lower()
     ]
     return " ".join(parts).lower()
+
+
+def _insider_transaction_class(row: Dict[str, Any]) -> str:
+    text = re.sub(r"\s+", " ", _transaction_text(row)).strip()
+    if "proposed sale" in text or "planned sale" in text:
+        return "proposed_sale"
+    if "purchase" in text or re.search(r"\bbuy\b", text):
+        return "purchase"
+    if re.search(r"\b(?:sale|sell|sold)\b", text):
+        return "executed_sale"
+    if "exercise" in text:
+        return "option_exercise"
+    return "other"
+
+
+def _insider_transaction_counts(rows: List[Any]) -> Dict[str, int]:
+    classes = [
+        _insider_transaction_class(row)
+        for row in rows
+        if isinstance(row, dict)
+    ]
+    return {
+        "buy_transactions": classes.count("purchase"),
+        "sell_transactions": classes.count("executed_sale"),
+        "proposed_sale_transactions": classes.count("proposed_sale"),
+        "option_exercise_transactions": classes.count("option_exercise"),
+        "other_transactions": classes.count("other"),
+    }
 
 
 def _coerce_finviz_number(value: Any) -> float:
@@ -2726,7 +2872,9 @@ def _compact_finviz_insider_row(row: Dict[str, Any], *, include_symbol: bool) ->
         "shares",
         "value_usd",
     )
-    return {field: normalized[field] for field in fields if field in normalized}
+    out = {field: normalized[field] for field in fields if field in normalized}
+    out["transaction_class"] = _insider_transaction_class(normalized)
+    return out
 
 
 def _normalize_finviz_insider_rows(rows: Any) -> List[Any]:
@@ -2780,16 +2928,10 @@ def _compact_finviz_insider_payload(
         _compact_finviz_insider_row(row, include_symbol=False)
         for row in normalized_rows
     ]
-    transaction_texts = [_transaction_text(row) for row in normalized_rows if isinstance(row, dict)]
-    buys = sum(1 for text in transaction_texts if "buy" in text or "purchase" in text)
-    sells = sum(1 for text in transaction_texts if "sell" in text or "sale" in text)
     out["items"] = compact_rows
     out["row_key"] = "items"
     out["count"] = len(compact_rows)
-    out["summary"] = {
-        "buy_transactions": buys,
-        "sell_transactions": sells,
-    }
+    out["summary"] = _insider_transaction_counts(normalized_rows)
     out["hint"] = (
         "Single-symbol insider trades; use finviz_insider_activity for "
         "market-wide scans."
@@ -2852,17 +2994,11 @@ def _compact_finviz_insider_activity_payload(
             continue
         compact_rows.append(_compact_finviz_insider_row(row, include_symbol=True))
 
-    transaction_texts = [
-        _transaction_text(row) for row in normalized_rows if isinstance(row, dict)
-    ]
-    buys = sum(1 for text in transaction_texts if "buy" in text or "purchase" in text)
-    sells = sum(1 for text in transaction_texts if "sell" in text or "sale" in text)
     out["items"] = compact_rows
     out["row_key"] = "items"
     out["count"] = len(compact_rows)
     out["summary"] = {
-        "buy_transactions": buys,
-        "sell_transactions": sells,
+        **_insider_transaction_counts(normalized_rows),
         "top_symbols": _summarize_insider_activity_tickers(normalized_rows),
     }
     out["hint"] = "Market-wide insider activity; use finviz_insider SYMBOL for one ticker."
@@ -3309,13 +3445,30 @@ def finviz_news(
         )
         if error is not None:
             return error
-        return _normalize_finviz_news_payload(
+        payload = _normalize_finviz_news_payload(
             get_stock_news(symbol_norm, limit=limit, page=page),
             detail=detail,
-            kind="direct_symbol",
+            kind="provider_associated",
             limit=limit,
             page=page,
         )
+        payload["provider_context_symbol"] = symbol_norm
+        payload["relevance_basis"] = "finviz_ticker_page_association_unverified"
+        payload["relevance_note"] = (
+            "Rows may cover peers, suppliers, industries, or macro topics. Use news "
+            "for symbol-evidence relevance filtering."
+        )
+        for item in payload.get("items") or []:
+            if not isinstance(item, dict):
+                continue
+            if _finviz_news_item_has_symbol_evidence(item, symbol_norm):
+                item["kind"] = "direct_symbol"
+                item["relevance_basis"] = "headline_symbol_token"
+            else:
+                item["relevance_basis"] = (
+                    "finviz_ticker_page_association_unverified"
+                )
+        return payload
 
     return _run_logged_tool("finviz_news", fields, _run)
 
@@ -3404,12 +3557,10 @@ def finviz_ratings(
         )
         if error is not None:
             return error
-        detail_value = detail
-        limit_value: Optional[int] = None if detail == "full" else int(limit)
         return _compact_finviz_ratings_payload(
             get_stock_ratings(symbol_norm),
-            detail=detail_value,
-            limit=limit_value,
+            detail=detail,
+            limit=int(limit),
         )
 
     return _run_logged_tool(
@@ -3805,6 +3956,7 @@ def finviz_calendar(
     currency: Optional[str] = None,
     start: Optional[str] = None,
     end: Optional[str] = None,
+    upcoming: Optional[bool] = None,
     limit: Annotated[int, Field(ge=1)] = 20,
     page: Annotated[int, Field(ge=1)] = 1,
     detail: DetailLiteral = "compact",  # type: ignore
@@ -3830,8 +3982,11 @@ def finviz_calendar(
         Start date in ISO format: YYYY-MM-DD.
     end : str, optional
         End date in ISO format: YYYY-MM-DD.
+    upcoming : bool, optional
+        Economic only: keep unreleased future events. Defaults to true for the
+        live default window and false when start or end is supplied.
     limit : int
-        Max events per page (default 20)
+        Max upcoming or date-range events per page, sorted by scheduled time.
     page : int
         Page number for pagination (default 1)
     detail : str
@@ -3849,6 +4004,7 @@ def finviz_calendar(
         "currency": currency,
         "start": start,
         "end": end,
+        "upcoming": upcoming,
         "limit": limit,
         "page": page,
         "detail": detail,
@@ -3859,6 +4015,11 @@ def finviz_calendar(
         end_value = str(end or "").strip() or None
 
         cal = (calendar or "economic").strip().lower()
+        upcoming_only = (
+            bool(upcoming)
+            if upcoming is not None
+            else cal == "economic" and start_value is None and end_value is None
+        )
 
         country_filter, filter_error = _resolve_finviz_calendar_country_filter(
             country=country,
@@ -3870,19 +4031,23 @@ def finviz_calendar(
             return {
                 "error": "country/currency filters are only supported for economic calendar."
             }
+        if cal != "economic" and upcoming is not None:
+            return {"error": "upcoming is only supported for economic calendar."}
 
         if cal == "economic":
             return _normalize_finviz_calendar_payload(
                 get_economic_calendar(
                     impact=impact,
-                    limit=limit,
-                    page=page,
+                    limit=500,
+                    page=1,
                     date_from=start_value,
                     date_to=end_value,
                 ),
                 detail=detail,
                 calendar_type=cal,
                 country_code_filter=country_filter,
+                upcoming_only=upcoming_only,
+                source_is_unpaged=True,
                 limit=limit,
                 page=page,
             )

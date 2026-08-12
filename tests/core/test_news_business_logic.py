@@ -93,10 +93,10 @@ def test_news_tool_limits_globally_without_changing_default(monkeypatch) -> None
 
     assert len(unlimited["general_news"]) == 2
     assert limited["related_news"] == [{"title": "r1"}, {"title": "r2"}]
-    assert limited["general_news"] == [{"title": "g1"}]
-    assert limited["row_keys"] == ["related_news", "general_news"]
+    assert limited["upcoming_events"] == [{"title": "u1"}]
+    assert limited["row_keys"] == ["related_news", "upcoming_events"]
+    assert "general_news" not in limited
     assert "impact_news" not in limited
-    assert "upcoming_events" not in limited
     assert "recent_events" not in limited
     assert limited["total_candidates"] == 10
     assert limited["returned"] == 3
@@ -121,16 +121,17 @@ def test_news_tool_symbol_limit_is_a_global_row_cap(monkeypatch) -> None:
 
     limited = raw(symbol="EURUSD", limit=2)
 
-    assert limited["related_news"] == [{"title": "r1"}, {"title": "r2"}]
-    assert limited["row_keys"] == ["related_news"]
+    assert limited["related_news"] == [{"title": "r1"}]
+    assert limited["upcoming_events"] == [{"title": "u1"}]
+    assert limited["row_keys"] == ["related_news", "upcoming_events"]
     assert "general_news" not in limited
     assert "impact_news" not in limited
-    assert "upcoming_events" not in limited
     assert "recent_events" not in limited
     assert limited["total_candidates"] == 8
     assert limited["returned"] == 2
     assert limited["limit_scope"] == "global"
     assert limited["bucket_truncation"]["related_news"] is True
+    assert limited["bucket_truncation"]["upcoming_events"] is False
     assert limited["truncated"] is True
     assert limited["has_more"] is True
 
@@ -180,10 +181,14 @@ def test_news_tool_fx_symbol_limit_keeps_useful_general_buckets(monkeypatch) -> 
     limited = raw(symbol="EURUSD", limit=3)
 
     assert limited["related_news"] == [{"title": "r1"}]
-    assert limited["general_news"] == [{"title": "g1"}, {"title": "g2"}]
-    assert limited["row_keys"] == ["related_news", "general_news"]
+    assert limited["general_news"] == [{"title": "g1"}]
+    assert limited["upcoming_events"] == [{"title": "u1"}]
+    assert limited["row_keys"] == [
+        "related_news",
+        "general_news",
+        "upcoming_events",
+    ]
     assert "impact_news" not in limited
-    assert "upcoming_events" not in limited
     assert "recent_events" not in limited
     assert "market_context" not in limited
     assert limited["total_candidates"] == 6

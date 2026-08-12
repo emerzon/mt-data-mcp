@@ -445,7 +445,6 @@ def build_pagination_meta(
     returned: int,
     offset: int = 0,
     limit: Optional[int] = None,
-    total_is_lower_bound: bool = False,
 ) -> dict[str, Any]:
     """Build normalized pagination metadata for list-style tool outputs."""
     total_value = max(0, int(total or 0))
@@ -461,8 +460,6 @@ def build_pagination_meta(
         "has_more": more_available > 0,
         "more_available": more_available,
     }
-    if total_is_lower_bound:
-        pagination["total_is_lower_bound"] = True
     return pagination
 
 

@@ -2302,7 +2302,9 @@ class TestFinvizTools:
 
         assert result["items"] == [{"symbol": "AAPL", "market_cap": "3.0T"}]
         assert "available_count" not in result
-        assert result["pagination"]["more_available"] == 1
+        assert result["pagination"]["total"] is None
+        assert result["pagination"]["total_lower_bound"] == 2
+        assert result["pagination"]["more_available"] is None
         assert result["detail"] == "full"
         assert result["meta"]["tool"] == "finviz_screen"
 
@@ -2428,7 +2430,7 @@ class TestFinvizTools:
         assert result["success"] is True
         mock_calendar.assert_called_once_with(
             impact=None,
-            limit=20,
+            limit=500,
             page=1,
             date_from="2026-01-05",
             date_to="2026-01-12",
@@ -2460,12 +2462,13 @@ class TestFinvizTools:
                 return_value=service_result,
             ),
         ):
-            result = finviz_calendar.__wrapped__()
+            result = finviz_calendar.__wrapped__(upcoming=False)
 
         assert result["items"] == [
             {
                 "country": "United States",
                 "country_code": "US",
+                "country_attribution": "inferred",
                 "event": "Nonfarm Payrolls",
                 "category": "Employment",
                 "date": "2026-01-04T13:30:00Z",

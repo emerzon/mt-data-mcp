@@ -80,8 +80,11 @@ def test_finviz_news_normalizes_stock_results_to_single_items_array() -> None:
     assert out["items"][0]["title"] == "Apple launches new chips"
     assert out["items"][0]["source"] == "Reuters"
     assert out["items"][0]["published_at"] == "2026-04-18T04:00:00+00:00"
-    assert out["items"][0]["kind"] == "direct_symbol"
+    assert out["items"][0]["kind"] == "provider_associated"
     assert out["items"][0]["content_type"] == "news"
+    assert out["provider_context_symbol"] == "AAPL"
+    assert out["relevance_basis"] == "finviz_ticker_page_association_unverified"
+    assert "peers" in out["relevance_note"]
     assert out["detail"] == "compact"
     assert "tool_scope" not in out
     assert "preferred_tool" not in out
@@ -121,6 +124,33 @@ def test_finviz_news_repairs_mojibake_titles() -> None:
         out = raw(symbol="HPE", limit=5, page=1)
 
     assert out["items"][0]["title"] == "HPE\u2019s stock soars"
+
+
+def test_finviz_news_promotes_only_explicit_symbol_evidence() -> None:
+    raw = _unwrap(finviz_news)
+    service_result = {
+        "success": True,
+        "symbol": "AAPL",
+        "total": 2,
+        "page": 1,
+        "pages": 1,
+        "news": [
+            {"Title": "AAPL launches new chips", "Source": "Reuters"},
+            {"Title": "Alphabet cloud margins expand", "Source": "Reuters"},
+        ],
+    }
+
+    with patch("mtdata.core.finviz.get_stock_news", return_value=service_result):
+        out = raw(symbol="AAPL", limit=2, page=1)
+
+    assert [item["kind"] for item in out["items"]] == [
+        "direct_symbol",
+        "provider_associated",
+    ]
+    assert [item["relevance_basis"] for item in out["items"]] == [
+        "headline_symbol_token",
+        "finviz_ticker_page_association_unverified",
+    ]
 
 
 def test_finviz_news_corrects_future_naive_meridiem_loss() -> None:

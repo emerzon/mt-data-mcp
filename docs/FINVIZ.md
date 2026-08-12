@@ -94,7 +94,11 @@ mtdata-cli finviz_news NVDA --limit 10 --json
 | `--page` | 1 | Pagination page |
 
 Stock-specific responses use a normalized `items` list with `title`, `source`,
-`published_at`, and `url`. Finviz tools may accept one-based `--page` inputs,
+`published_at`, and `url`. Ticker-page membership is reported as
+`provider_associated`; only an explicit ticker token in the headline is labeled
+`direct_symbol`. The response includes the provider context and relevance basis
+because ticker pages can also contain peer, industry, and macro stories.
+Finviz tools may accept one-based `--page` inputs,
 but responses use the shared offset-based `pagination` object documented in
 [OUTPUT.md](OUTPUT.md#pagination); flat provider `page`/`pages` fields are not
 emitted.
@@ -287,7 +291,8 @@ mtdata-cli finviz_calendar --start 2026-03-01 --end 2026-03-15 --json
 | `--impact` | (all) | Economic only: `low`, `medium`, `high` |
 | `--start` | current New York date | Start date `YYYY-MM-DD`; omitted ranges anchor to `America/New_York`, independent of host timezone. |
 | `--end` | (optional) | End date `YYYY-MM-DD` |
-| `--limit` | 20 | Max events |
+| `--upcoming` | live default | Economic only: include unreleased future events; defaults on when no explicit date range is supplied and off for explicit ranges. |
+| `--limit` | 20 | Max events after country and upcoming filters, ordered by scheduled time |
 | `--page` | 1 | Pagination page |
 
 Economic calendar data is based on Finviz JSON API fields: `date`, `event`,
@@ -297,7 +302,9 @@ Economic calendar data is based on Finviz JSON API fields: `date`, `event`,
 for Finviz `ticker` and `reference_date` for `referenceDate`.
 Root output includes `date_from`, `date_to`, and `calendar_timezone` so defaulted
 calendar ranges remain explicit. Event timestamps use the separate root
-`timezone` field.
+`timezone` field. Economic rows also include `country_attribution` (`provider`,
+`inferred`, or `unknown`); country-filtered responses warn when unknown rows
+were excluded and paginate the filtered collection.
 
 ### `finviz_earnings`
 

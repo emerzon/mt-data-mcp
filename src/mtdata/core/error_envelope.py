@@ -83,6 +83,17 @@ def _default_error_guidance(
 ) -> Dict[str, Any]:
     code_text = str(code or "").strip().lower()
     operation_text = str(operation or "").strip().lower()
+    if code_text in {"symbol_not_found", "finviz_symbol_not_found"} and (
+        operation_text.startswith("finviz_")
+        or code_text == "finviz_symbol_not_found"
+    ):
+        return {
+            "remediation": (
+                "Verify the standard US equity ticker used by Finviz; do not use "
+                "an MT5 broker suffix. Use finviz_screen to discover provider tickers."
+            ),
+            "related_tools": ["finviz_screen"],
+        }
     if code_text in _ERROR_GUIDANCE:
         return dict(_ERROR_GUIDANCE[code_text])
     if code_text.endswith("_connection_error"):

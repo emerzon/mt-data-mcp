@@ -101,6 +101,20 @@ def test_normalize_error_payload_adds_symbol_lookup_guidance():
     assert out["related_tools"] == ["symbols_list"]
 
 
+def test_finviz_symbol_errors_use_provider_specific_discovery_guidance():
+    out = normalize_error_payload(
+        {
+            "error": "Symbol not found",
+            "error_code": "finviz_symbol_not_found",
+        },
+        operation="finviz_news",
+    )
+
+    assert "standard US equity ticker" in out["remediation"]
+    assert "MT5 broker suffix" in out["remediation"]
+    assert out["related_tools"] == ["finviz_screen"]
+
+
 def test_normalize_error_payload_preserves_specific_code_from_warnings():
     out = normalize_error_payload(
         {
