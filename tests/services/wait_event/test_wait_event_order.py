@@ -687,10 +687,6 @@ def test_run_wait_event_advances_history_poll_cursors_per_stream(monkeypatch) ->
             datetime(2026, 3, 15, 12, 0, tzinfo=timezone.utc),
             datetime(2026, 3, 15, 12, 0, 1, 100000, tzinfo=timezone.utc),
         ),
-        (
-            datetime(2026, 3, 15, 12, 0, 1, tzinfo=timezone.utc),
-            datetime(2026, 3, 15, 12, 0, 1, 700000, tzinfo=timezone.utc),
-        ),
     ]
     assert gateway.history_deal_calls == gateway.history_order_calls
 

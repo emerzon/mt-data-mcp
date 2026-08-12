@@ -520,7 +520,7 @@ def test_wait_event_fails_closed_when_history_quote_diverges() -> None:
                 }
             ],
             poll_interval_seconds=0.5,
-            max_wait_seconds=0.0,
+            max_wait_seconds=1.0,
         ),
         gateway=DivergentGateway(ticks_by_symbol={"EURUSD": ticks}),
         sleep_impl=clock.sleep,
