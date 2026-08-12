@@ -3,6 +3,20 @@ from types import SimpleNamespace
 from mtdata.core import volume_profile as vp
 
 
+def _completed_hour_bars(start: vp.datetime, count: int) -> dict:
+    return {
+        "data": [
+            {
+                "time": (
+                    start.replace(tzinfo=vp.timezone.utc) + vp.timedelta(hours=index)
+                ).timestamp(),
+                "close": 1.1,
+            }
+            for index in range(count)
+        ]
+    }
+
+
 def test_profile_detail_compacts_value_area_bucket_indexes() -> None:
     profile = {
         "success": True,
@@ -522,6 +536,11 @@ def test_compute_volume_profile_payload_derives_window_from_timeframe_limit(monk
         }
 
     monkeypatch.setattr(vp, "fetch_ticks", fake_fetch_ticks)
+    monkeypatch.setattr(
+        vp,
+        "fetch_candles",
+        lambda **_: _completed_hour_bars(vp.datetime(2026, 1, 1), 24),
+    )
 
     result = vp.compute_volume_profile_payload(
         symbol="EURUSD",
@@ -538,8 +557,7 @@ def test_compute_volume_profile_payload_derives_window_from_timeframe_limit(monk
         "end": "2026-01-02T00:00:00Z",
     }
     assert captured["start"] is None
-    assert captured["end"] == "2026-01-02 00:00:00"
-    assert captured["end"] == "2026-01-02 00:00:00"
+    assert captured["end"] == "2026-01-02T00:00:00Z"
 
 
 def test_compute_volume_profile_payload_defaults_timeframe_limit(monkeypatch):
@@ -570,6 +588,14 @@ def test_compute_volume_profile_payload_defaults_timeframe_limit(monkeypatch):
         }
 
     monkeypatch.setattr(vp, "fetch_ticks", fake_fetch_ticks)
+    monkeypatch.setattr(
+        vp,
+        "fetch_candles",
+        lambda **_: _completed_hour_bars(
+            vp.datetime(2025, 12, 24, 16),
+            200,
+        ),
+    )
 
     result = vp.compute_volume_profile_payload(
         symbol="EURUSD",
@@ -585,8 +611,108 @@ def test_compute_volume_profile_payload_defaults_timeframe_limit(monkeypatch):
         "end": "2026-01-02T00:00:00Z",
     }
     assert captured["start"] is None
-    assert captured["end"] == "2026-01-02 00:00:00"
-    assert captured["end"] == "2026-01-02 00:00:00"
+    assert captured["end"] == "2026-01-02T00:00:00Z"
+
+
+def test_volume_profile_bar_window_skips_weekend_clock_hours(monkeypatch):
+    captured_m1 = {}
+    opens = [
+        vp.datetime(2026, 1, 9, 20, tzinfo=vp.timezone.utc),
+        vp.datetime(2026, 1, 9, 21, tzinfo=vp.timezone.utc),
+        vp.datetime(2026, 1, 11, 22, tzinfo=vp.timezone.utc),
+        vp.datetime(2026, 1, 11, 23, tzinfo=vp.timezone.utc),
+    ]
+    monkeypatch.setattr(
+        vp,
+        "create_mt5_gateway",
+        lambda **_: SimpleNamespace(ensure_connection=lambda: None),
+    )
+    monkeypatch.setattr(
+        vp,
+        "_symbol_ready_guard",
+        lambda symbol: _Guard(None, SimpleNamespace(point=0.0001, digits=5)),
+    )
+
+    def fake_fetch_candles(**kwargs):
+        if kwargs["timeframe"] == "H1":
+            return {
+                "data": [
+                    {"time": opened.timestamp(), "close": 1.1}
+                    for opened in opens
+                ]
+            }
+        captured_m1.update(kwargs)
+        return {
+            "data": [
+                {
+                    "time": "2026-01-11T23:00:00Z",
+                    "open": 1.1,
+                    "high": 1.101,
+                    "low": 1.099,
+                    "close": 1.1,
+                    "tick_volume": 10,
+                    "real_volume": 0,
+                }
+            ]
+        }
+
+    monkeypatch.setattr(vp, "fetch_candles", fake_fetch_candles)
+
+    result = vp.compute_volume_profile_payload(
+        symbol="EURUSD",
+        end="2026-01-12T00:00:00Z",
+        timeframe="H1",
+        limit=4,
+        source="m1_bars",
+        bucket_size=0.0001,
+        detail="full",
+    )
+
+    assert result["success"] is True
+    assert result["requested_window"] == {
+        "start": "2026-01-09T20:00:00Z",
+        "end": "2026-01-12T00:00:00Z",
+    }
+    assert result["bar_window"] == {
+        "timeframe": "H1",
+        "requested_bars": 4,
+        "resolved_bars": 4,
+        "first_bar_open": "2026-01-09T20:00:00Z",
+        "last_bar_close": "2026-01-12T00:00:00Z",
+        "boundary_basis": "actual_completed_timeframe_bars",
+    }
+    assert captured_m1["start"] == "2026-01-09T20:00:00Z"
+    assert captured_m1["end"] == "2026-01-12T00:00:00Z"
+
+
+def test_volume_profile_rejects_insufficient_completed_bar_history(monkeypatch):
+    monkeypatch.setattr(
+        vp,
+        "create_mt5_gateway",
+        lambda **_: SimpleNamespace(ensure_connection=lambda: None),
+    )
+    monkeypatch.setattr(
+        vp,
+        "_symbol_ready_guard",
+        lambda symbol: _Guard(None, SimpleNamespace(point=0.0001, digits=5)),
+    )
+    monkeypatch.setattr(
+        vp,
+        "fetch_candles",
+        lambda **_: _completed_hour_bars(vp.datetime(2026, 1, 1), 2),
+    )
+
+    result = vp.compute_volume_profile_payload(
+        symbol="EURUSD",
+        end="2026-01-02T00:00:00Z",
+        timeframe="H1",
+        limit=4,
+        source="m1_bars",
+    )
+
+    assert result["error_code"] == "volume_profile_insufficient_bar_history"
+    assert result["requested_bars"] == 4
+    assert result["available_bars"] == 2
 
 
 def test_compute_volume_profile_payload_invalid_limit_suggests_default() -> None:

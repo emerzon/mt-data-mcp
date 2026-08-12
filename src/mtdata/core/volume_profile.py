@@ -13,7 +13,7 @@ from ..utils.mt5 import (
     _symbol_ready_guard,
     ensure_mt5_connection_or_raise,
 )
-from ..utils.time import _format_datetime_explicit
+from ..utils.time import _format_datetime_explicit, bar_close_epoch
 from ..utils.utils import (
     _parse_end_datetime,
     _parse_start_datetime,
@@ -74,7 +74,7 @@ def _resolve_profile_window(
     end: Optional[str],
     timeframe: Optional[str],
     limit: Optional[int],
-) -> Dict[str, Optional[str]]:
+) -> Dict[str, Any]:
     if start:
         return {"start": start, "end": end}
     if timeframe is None and limit is None:
@@ -111,10 +111,90 @@ def _resolve_profile_window(
     if end and end_dt is None:
         return {"error": f"Could not parse end datetime {end!r}"}
     assert end_dt is not None
-    start_dt = end_dt - timedelta(seconds=int(seconds) * bars)
     return {
-        "start": start_dt.isoformat(sep=" ", timespec="seconds"),
+        "start": None,
         "end": end if end else end_dt.isoformat(sep=" ", timespec="seconds"),
+        "requested_bars": bars,
+    }
+
+
+def _resolve_profile_bar_window(
+    *,
+    symbol: str,
+    timeframe: str,
+    bars: int,
+    end: Optional[str],
+) -> Dict[str, Any]:
+    payload = fetch_candles(
+        symbol=symbol,
+        timeframe=timeframe,  # type: ignore[arg-type]
+        limit=max(1, int(bars)),
+        start=None,
+        end=end,
+        ohlcv="close",
+        time_as_epoch=True,
+        include_incomplete=False,
+        allow_stale=True,
+    )
+    if payload.get("error"):
+        return {
+            "error": (
+                "Could not resolve the volume-profile bar window: "
+                f"{payload.get('error')}"
+            ),
+            "error_code": "volume_profile_bar_window_failed",
+        }
+
+    end_dt = _parse_end_datetime(end) if end else _utc_now_naive()
+    if end_dt is None:
+        return {"error": f"Could not parse end datetime {end!r}"}
+    end_epoch = _profile_datetime_epoch(end_dt)
+    assert end_epoch is not None
+
+    resolved_bars: list[tuple[float, float]] = []
+    for row in _table_rows(payload):
+        if not isinstance(row, dict):
+            continue
+        raw_time = row.get("time")
+        try:
+            open_epoch = float(raw_time)
+        except (TypeError, ValueError):
+            parsed = _parse_start_datetime(str(raw_time or ""))
+            parsed_epoch = _profile_datetime_epoch(parsed)
+            if parsed_epoch is None:
+                continue
+            open_epoch = parsed_epoch
+        try:
+            close_epoch = bar_close_epoch(open_epoch, timeframe)
+        except (TypeError, ValueError):
+            continue
+        if close_epoch <= end_epoch + 0.001:
+            resolved_bars.append((open_epoch, close_epoch))
+
+    resolved_bars.sort(key=lambda item: item[0])
+    if len(resolved_bars) < int(bars):
+        return {
+            "error": (
+                f"Only {len(resolved_bars)} completed {timeframe} bars are "
+                f"available; {int(bars)} are required for the requested profile."
+            ),
+            "error_code": "volume_profile_insufficient_bar_history",
+            "requested_bars": int(bars),
+            "available_bars": len(resolved_bars),
+        }
+
+    selected = resolved_bars[-int(bars) :]
+    return {
+        "start": _format_window_timestamp(selected[0][0]),
+        "end": _format_window_timestamp(selected[-1][1]),
+        "bar_window": {
+            "timeframe": timeframe,
+            "requested_bars": int(bars),
+            "resolved_bars": len(selected),
+            "first_bar_open": _format_window_timestamp(selected[0][0]),
+            "last_bar_close": _format_window_timestamp(selected[-1][1]),
+            "boundary_basis": "actual_completed_timeframe_bars",
+        },
     }
 
 
@@ -485,6 +565,7 @@ def _profile_detail_payload(profile: Dict[str, Any], detail: str) -> Dict[str, A
         "source_note",
         "window",
         "requested_window",
+        "bar_window",
         "price_source",
         "volume_kind",
         "bucket_size",
@@ -684,12 +765,27 @@ def compute_volume_profile_payload(
         return {"error": window["error"]}
     resolved_start = window.get("start")
     resolved_end = window.get("end")
+    bar_window: Optional[Dict[str, Any]] = None
     create_mt5_gateway(ensure_connection_impl=ensure_mt5_connection_or_raise).ensure_connection()
     with _symbol_ready_guard(symbol) as (err, info):
         if err:
             return {"error": err}
         price_digits = _positive_int_attr(info, "digits")
         price_point = _positive_float_attr(info, "point", "trade_tick_size")
+        requested_bars = window.get("requested_bars")
+        if requested_bars is not None and timeframe is not None:
+            resolved_bar_window = _resolve_profile_bar_window(
+                symbol=symbol,
+                timeframe=str(timeframe),
+                bars=int(requested_bars),
+                end=resolved_end,
+            )
+            if resolved_bar_window.get("error"):
+                return resolved_bar_window
+            resolved_start = resolved_bar_window.get("start")
+            resolved_end = resolved_bar_window.get("end")
+            if isinstance(resolved_bar_window.get("bar_window"), dict):
+                bar_window = dict(resolved_bar_window["bar_window"])
     selected = _select_profile_rows(
         symbol=symbol,
         start=resolved_start,
@@ -738,6 +834,8 @@ def compute_volume_profile_payload(
         "start": _format_window_timestamp(resolved_start),
         "end": _format_window_timestamp(resolved_end),
     }
+    if bar_window is not None:
+        profile["bar_window"] = bar_window
     profile["diagnostics"] = {
         **(selected.get("diagnostics") or {}),
         **(profile.get("diagnostics") or {}),
@@ -814,7 +912,9 @@ def compute_volume_profile_payload(
         _profile_freshness_meta(
             fetch_payload,
             data_as_of=profile["window"].get("end"),
-            historical_query=start is not None or end is not None,
+            historical_query=(
+                start is not None or end is not None or bar_window is not None
+            ),
         )
     )
     profile["units"] = _profile_units(profile)

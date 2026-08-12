@@ -134,8 +134,8 @@ mtdata-cli volume_profile_levels EURUSD --timeframe H1 --limit 168 \
 | Parameter | Default | Description |
 |-----------|---------|-------------|
 | `start` / `end` | — | Calendar window for the profile. |
-| `timeframe` | — | When set without `limit`, the window defaults to 200 bars. |
-| `limit` | — | Bars to include when deriving the window from `timeframe`. |
+| `timeframe` | — | When set without `limit`, the window defaults to the latest 200 completed bars. |
+| `limit` | — | Completed `timeframe` bars to include. The window follows actual market bars, so closures and weekend gaps do not consume the limit. |
 | `source` | `auto` | `auto` uses bounded ticks for short windows and M1 bars for larger ones; force with `ticks` or `m1_bars`. |
 | `price_source` | `mid` | Price used per tick: `mid`, `last`, `bid`, or `ask`. `mid` is the safe FX default because tick `last` is often unavailable. |
 | `volume_source` | `auto` | `auto`, candle `real_volume`/`tick_volume`, tick-snapshot `volume_real`/`volume`, or `tick_count`. Snapshot volume is counted only on MT5 trade-change flags. |
@@ -147,7 +147,9 @@ mtdata-cli volume_profile_levels EURUSD --timeframe H1 --limit 168 \
 | `max_ticks` | `50000` | Cap the number of ticks pulled. |
 | `max_m1_bars` | `20000` | Cap the M1 bars pulled in approximation mode. |
 
-**Output:** `poc`, `vah`, `val`, and a `value_area` summary. `profile_source` and
+**Output:** `poc`, `vah`, `val`, and a `value_area` summary. Timeframe-derived
+queries also include `bar_window` with the resolved first open and last close.
+`profile_source` and
 `volume_profile_accuracy` always identify whether `auto` used ticks or the M1
 approximation. `--detail full` adds the full `levels`
 histogram. To request a week of ticks, explicitly set
