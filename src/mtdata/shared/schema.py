@@ -292,7 +292,7 @@ PARAM_HINTS = {
     "mutation_rate": "Genetic mutation probability (0-1).",
     "seed": "Random seed for reproducibility.",
     "trade_threshold": "Trade threshold for backtests.",
-    "slippage_bps": "Backtest slippage per fill side in basis points (strategy default: 1.0).",
+    "slippage_bps": "Backtest slippage per fill side in basis points; see the command-specific default.",
     "objective": "Optimization objective.",
     "return_grid": "Include full grid results in output.",
     "candidate_filter": "Barrier candidates to return: all, viable, or tradable.",

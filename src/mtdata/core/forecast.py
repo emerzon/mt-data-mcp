@@ -663,8 +663,9 @@ def _forecast_impl(**kwargs):
 
 def _forecast_backtest_impl(**kwargs):
     module = _forecast_backtest_module()
-    func = getattr(module, "execute_forecast_backtest", module.forecast_backtest)
-    return func(**kwargs)
+    # Backtest domain failures carry per-method diagnostics in their result
+    # payload. Preserve that structured contract at public boundaries.
+    return module.forecast_backtest(**kwargs)
 
 
 def _strategy_backtest_impl(**kwargs):

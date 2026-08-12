@@ -1911,7 +1911,7 @@ def _compact_backtest_units(
     }
 
 
-def _compact_backtest_result(result: Dict[str, Any]) -> Dict[str, Any]:
+def _compact_backtest_result(result: Dict[str, Any]) -> Dict[str, Any]:  # noqa: C901
     raw_results = result.get("results")
     if not isinstance(raw_results, dict):
         return result
@@ -1989,6 +1989,18 @@ def _compact_backtest_result(result: Dict[str, Any]) -> Dict[str, Any]:
         ):
             if key in method_payload:
                 method_out[key] = _compact_metric(key, method_payload[key])
+        failure_error = method_payload.get("error")
+        failure_code = method_payload.get("error_code")
+        if not failure_error and isinstance(details, list):
+            for detail_row in details:
+                if isinstance(detail_row, dict) and detail_row.get("error"):
+                    failure_error = detail_row.get("error")
+                    failure_code = failure_code or detail_row.get("error_code")
+                    break
+        if failure_error:
+            method_out["error"] = str(failure_error)
+            if failure_code:
+                method_out["error_code"] = str(failure_code)
         metrics_reason = str(method_out.get("metrics_reason") or "").strip()
         metrics_unavailable = _is_explicit_false(method_out.get("metrics_available"))
         if metrics_unavailable and metrics_reason:
@@ -2051,10 +2063,9 @@ def _compact_backtest_result(result: Dict[str, Any]) -> Dict[str, Any]:
         ranked_methods.append(ranked_row)
 
     compact_out = dict(result)
-    compact_out.pop("results", None)
     compact_out.pop("request", None)
     compact_out.pop("resolved_request", None)
-    compact_out.pop("detail", None)
+    compact_out["detail"] = "compact"
     compact_units = _compact_backtest_units(
         compact_out.get("units"),
         ranked_methods,
@@ -2063,8 +2074,17 @@ def _compact_backtest_result(result: Dict[str, Any]) -> Dict[str, Any]:
         compact_out["units"] = compact_units
     else:
         compact_out.pop("units", None)
-    if compact_out.get("slippage_bps") in (0, 0.0, None):
-        compact_out.pop("slippage_bps", None)
+    slippage_bps = float(compact_out.get("slippage_bps") or 0.0)
+    compact_out["slippage_bps"] = slippage_bps
+    compact_out["cost_assumptions"] = {
+        "score_basis": (
+            "net_of_configured_slippage"
+            if slippage_bps > 0.0
+            else "gross_before_execution_costs"
+        ),
+        "slippage_bps_per_side": slippage_bps,
+        "spread_and_commission": "not_modeled",
+    }
     if compact_out.get("trade_threshold") in (0, 0.0, None):
         compact_out.pop("trade_threshold", None)
     compact_out["methods_total"] = methods_total
@@ -2083,7 +2103,33 @@ def _compact_backtest_result(result: Dict[str, Any]) -> Dict[str, Any]:
         {key: value for key, value in row.items() if key != "_sort_metric" and value is not None}
         for row in ranked_methods
     ]
+    compact_out["results"] = {
+        str(row.get("method")): {
+            key: value
+            for key, value in row.items()
+            if key not in {"method", "_sort_metric"} and value is not None
+        }
+        for row in ranked_methods
+    }
     return compact_out
+
+
+def _attach_backtest_collection_contract(result: Dict[str, Any]) -> Dict[str, Any]:
+    """Keep method summaries and counters stable across every detail level."""
+    compact = _compact_backtest_result(result)
+    out = dict(result)
+    for key in (
+        "ranked_methods",
+        "methods_total",
+        "methods_succeeded",
+        "methods_failed",
+        "failed_methods",
+        "cost_assumptions",
+    ):
+        if key in compact:
+            out[key] = compact[key]
+    out["slippage_bps"] = float(result.get("slippage_bps") or 0.0)
+    return out
 
 
 @lru_cache(maxsize=1)
@@ -2523,8 +2569,8 @@ def run_forecast_backtest(
     requested_detail = _requested_detail_label(request.detail)
     if str(request.detail or "compact").strip().lower() == "compact":
         return _compact_backtest_result(result)
-    if isinstance(result, dict) and not result.get("error"):
-        result = dict(result)
+    if isinstance(result, dict):
+        result = _attach_backtest_collection_contract(result)
         result["detail"] = requested_detail
     return result
 

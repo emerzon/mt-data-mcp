@@ -1312,7 +1312,21 @@ def test_run_forecast_backtest_strips_per_anchor_details_in_compact_mode():
     assert result["success"] is True
     assert "request" not in result
     assert "resolved_request" not in result
-    assert "results" not in result
+    assert result["results"] == {
+        "theta": {
+            "avg_mae": 1.0,
+            "details_count": 1,
+            "metrics_reliability": "low",
+            "metrics_reliability_reason": "low_sample",
+            "sample_notice": {
+                "code": "annualization_suppressed_low_sample",
+                "trades_observed": 1,
+                "minimum_trades": 30,
+            },
+        }
+    }
+    assert result["slippage_bps"] == 0.0
+    assert result["cost_assumptions"]["score_basis"] == "gross_before_execution_costs"
     assert result["units"] == {
         "forecast_error": "price",
         "avg_mae": "price",
@@ -1321,6 +1335,48 @@ def test_run_forecast_backtest_strips_per_anchor_details_in_compact_mode():
     assert result["ranked_methods"][0]["method"] == "theta"
     assert result["ranked_methods"][0]["details_count"] == 1
     assert "metrics" not in result["ranked_methods"][0]
+
+
+def test_run_forecast_backtest_keeps_collection_contract_and_failure_diagnostics():
+    payload = {
+        "success": False,
+        "error": "No requested forecast method produced a successful backtest observation.",
+        "error_code": "forecast_backtest_no_successful_methods",
+        "slippage_bps": 0.0,
+        "results": {
+            "not_a_method": {
+                "success": False,
+                "successful_tests": 0,
+                "num_tests": 1,
+                "details": [
+                    {
+                        "success": False,
+                        "error": "Invalid method: not_a_method",
+                    }
+                ],
+                "metrics_available": False,
+                "metrics_reason": "no_successful_tests",
+            }
+        },
+    }
+
+    compact = forecast_use_cases.run_forecast_backtest(
+        ForecastBacktestRequest(symbol="EURUSD", methods=["not_a_method"]),
+        backtest_impl=lambda **kwargs: payload,
+    )
+    full = forecast_use_cases.run_forecast_backtest(
+        ForecastBacktestRequest(
+            symbol="EURUSD", methods=["not_a_method"], detail="full"
+        ),
+        backtest_impl=lambda **kwargs: payload,
+    )
+
+    for result in (compact, full):
+        assert result["error_code"] == "forecast_backtest_no_successful_methods"
+        assert result["methods_total"] == 1
+        assert result["methods_failed"] == 1
+        assert result["ranked_methods"][0]["error"] == "Invalid method: not_a_method"
+        assert isinstance(result["results"], dict)
 
 
 def test_run_forecast_backtest_compact_keeps_kelly_metrics():
