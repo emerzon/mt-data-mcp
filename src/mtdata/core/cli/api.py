@@ -263,9 +263,10 @@ ToolInfo = Dict[str, Any]
 CLI_PROGRAM = "mtdata-cli"
 PACKAGE_NAME = "mtdata"
 _SHELL_SESSION_DEPTH = 0
+_INTERACTIVE_SHELL_SESSION_DEPTH = 0
 _BACKGROUND_COMMAND_REMEDIATION = (
-    "Use 'mtdata-cli shell', an MCP server, or the Web API so the training "
-    "worker remains alive."
+    "Use an interactive 'mtdata-cli shell', an MCP server, or the Web API so "
+    "the training worker remains alive. Stdin shell batches cannot retain workers."
 )
 
 
@@ -1154,7 +1155,7 @@ def create_command_function(
         return command_func
 
     def _forecast_train_cmd(args: Any) -> int:
-        if _SHELL_SESSION_DEPTH <= 0:
+        if _INTERACTIVE_SHELL_SESSION_DEPTH <= 0:
             return _render_cli_result_status(
                 build_error_payload(
                     "Background forecast training cannot run in a one-shot CLI process.",
@@ -1989,7 +1990,7 @@ def main():  # noqa: C901
                     _write_cli_text(config_output)
                 return 0
 
-            if request.async_mode and _SHELL_SESSION_DEPTH <= 0:
+            if request.async_mode and _INTERACTIVE_SHELL_SESSION_DEPTH <= 0:
                 return _render_cli_result_status(
                     build_error_payload(
                         "Asynchronous forecast generation cannot run in a one-shot CLI process.",
@@ -2154,7 +2155,7 @@ def run_shell(
     *, interactive: bool = True, inherited_argv: Optional[Sequence[str]] = None
 ) -> int:
     """Run repeated CLI commands while reusing the initialized Python process."""
-    global _SHELL_SESSION_DEPTH
+    global _INTERACTIVE_SHELL_SESSION_DEPTH, _SHELL_SESSION_DEPTH
 
     if interactive:
         print("mtdata-cli shell (type 'exit' or 'quit' to stop)")
@@ -2163,6 +2164,8 @@ def run_shell(
     overall_status = 0
     line_number = 0
     _SHELL_SESSION_DEPTH += 1
+    if interactive:
+        _INTERACTIVE_SHELL_SESSION_DEPTH += 1
     try:
         while True:
             if interactive:
@@ -2238,6 +2241,8 @@ def run_shell(
                 # warmed shell alive for the next command.
                 continue
     finally:
+        if interactive:
+            _INTERACTIVE_SHELL_SESSION_DEPTH -= 1
         _SHELL_SESSION_DEPTH -= 1
         sys.argv = original_argv
 

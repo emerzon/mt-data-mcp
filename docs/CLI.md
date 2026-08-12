@@ -25,9 +25,10 @@ operations shared across interfaces. Default text presentation is
 [TOON](GLOSSARY.md#toon); use `--json` for machines.
 
 Background training is rejected by one-shot CLI processes because their workers
-would be terminated as soon as the command returned. Run `forecast_train` or
-`forecast_generate --async-mode true` inside `mtdata-cli shell`, through MCP, or
-through the Web API.
+would be terminated as soon as the command returned. Stdin shell batches are
+also rejected because the batch process exits at end-of-input. Run
+`forecast_train` or `forecast_generate --async-mode true` inside an interactive
+`mtdata-cli shell`, through MCP, or through the Web API.
 
 Stuck on an acronym in output (BOCPD, Kelly, CVaR, …)? See the [glossary quick find](GLOSSARY.md#quick-find).
 

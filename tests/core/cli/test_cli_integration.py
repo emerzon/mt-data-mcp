@@ -5,6 +5,7 @@ Tests main entry point, command execution, and end-to-end CLI workflows.
 
 import argparse
 import copy
+import io
 import json
 import logging
 import sys
@@ -1362,7 +1363,7 @@ class TestMain:
     ):
         invoked = []
 
-        def forecast_train(symbol: str):
+        def forecast_train(symbol: str, **_kwargs):
             invoked.append(symbol)
             return {"status": "pending", "task_id": "task-1"}
 
@@ -1381,6 +1382,65 @@ class TestMain:
         assert payload["error_code"] == "cli_background_process_required"
         assert payload["operation"] == "forecast_train"
         assert invoked == []
+
+    @patch("mtdata.core.cli.api.discover_tools")
+    def test_forecast_train_rejects_stdin_shell_batch(
+        self, mock_discover, monkeypatch, capsys
+    ):
+        from mtdata.core.cli import api
+
+        invoked = []
+
+        def forecast_train(symbol: str):
+            invoked.append(symbol)
+            return {"status": "pending", "task_id": "task-1"}
+
+        mock_discover.return_value = {
+            "forecast_train": {
+                "func": forecast_train,
+                "meta": {"description": "Train a forecast model"},
+            },
+        }
+        monkeypatch.setattr(
+            api.sys,
+            "stdin",
+            io.StringIO("forecast_train EURUSD --json\n"),
+        )
+
+        status = api.run_shell(interactive=False)
+
+        assert status == 1
+        record = json.loads(capsys.readouterr().out)
+        assert record["result"]["error_code"] == "cli_background_process_required"
+        assert "Stdin shell batches" in record["result"]["remediation"]
+        assert invoked == []
+
+    @patch("mtdata.core.cli.api.discover_tools")
+    def test_forecast_train_is_allowed_in_interactive_shell(
+        self, mock_discover, monkeypatch, capsys
+    ):
+        from mtdata.core.cli import api
+
+        invoked = []
+        commands = iter(["forecast_train EURUSD --json", "exit"])
+
+        def forecast_train(symbol: str, **_kwargs):
+            invoked.append(symbol)
+            return {"success": True, "status": "pending", "task_id": "task-1"}
+
+        mock_discover.return_value = {
+            "forecast_train": {
+                "func": forecast_train,
+                "meta": {"description": "Train a forecast model"},
+            },
+        }
+        monkeypatch.setattr("builtins.input", lambda _prompt: next(commands))
+
+        status = api.run_shell(interactive=True)
+
+        assert status == 0
+        assert invoked == ["EURUSD"]
+        assert '"status": "pending"' in capsys.readouterr().out
 
 
 # ========================================================================
@@ -1487,6 +1547,7 @@ class TestForecastGenerateIntegration:
 
         with (
             patch("mtdata.core.cli.api._SHELL_SESSION_DEPTH", 1),
+            patch("mtdata.core.cli.api._INTERACTIVE_SHELL_SESSION_DEPTH", 1),
             patch(
                 "sys.argv",
                 ["cli.py", "forecast_generate", "EURUSD", "--async-mode"],

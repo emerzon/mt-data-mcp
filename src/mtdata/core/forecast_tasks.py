@@ -390,6 +390,23 @@ def _compact_task_runtime(runtime: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def _is_orphaned_task_error(value: Any) -> bool:
+    text = str(value or "").strip().lower()
+    return "process restart" in text and "orphaned" in text
+
+
+def _attach_task_failure_guidance(payload: Dict[str, Any], error: Any) -> None:
+    if not _is_orphaned_task_error(error):
+        return
+    payload["error_code"] = "forecast_task_orphaned"
+    payload["failure_reason"] = "submitting_process_terminated"
+    payload["remediation"] = (
+        "Resubmit from an interactive mtdata-cli shell, an MCP server, or the Web "
+        "API and keep that process running until the task reaches a terminal status."
+    )
+    payload["related_tools"] = ["forecast_train", "forecast_task_wait"]
+
+
 def _task_status_payload(
     task: Any,
     *,
@@ -437,6 +454,7 @@ def _task_status_payload(
 
     if task.status == "failed" and task.error:
         payload["error"] = task.error
+        _attach_task_failure_guidance(payload, task.error)
 
     if detail == "full":
         if runtime:
@@ -492,6 +510,7 @@ def _task_list_item_payload(
             payload["produced_model_ids"] = [task.result.model_id]
     if task.error:
         payload["error"] = task.error
+        _attach_task_failure_guidance(payload, task.error)
 
     if detail == "full":
         _attach_time_field(payload, "completed_at", completed_at, detail=detail)
@@ -567,8 +586,9 @@ def forecast_train(request: ForecastTrainRequest) -> Dict[str, Any]:
         )
         payload["process_lifetime_warning"] = (
             "Tasks run in the submitting process. For CLI use, submit and poll from "
-            "mtdata-cli shell; MCP and Web API servers remain active while running. "
-            "A one-shot mtdata-cli command exits and cannot retain a queued task."
+            "an interactive mtdata-cli shell; MCP and Web API servers remain active "
+            "while running. One-shot commands and stdin shell batches cannot retain "
+            "a queued task."
         )
         return payload
 

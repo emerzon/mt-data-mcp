@@ -200,6 +200,28 @@ class TestForecastTaskStatus:
         assert result["task_id"] == "missing"
         assert isinstance(result.get("request_id"), str)
 
+    def test_orphaned_task_reports_process_lifecycle_remediation(self):
+        from src.mtdata.core.forecast_tasks import forecast_task_status
+
+        mock_tm = MagicMock()
+        mock_tm.get_status.return_value = _make_task(
+            status="failed",
+            error=(
+                "Task registry recovered after process restart; in-flight task "
+                "was orphaned."
+            ),
+        )
+
+        with patch(_PATCH_TM, return_value=mock_tm):
+            result = _unwrap(forecast_task_status)(
+                ForecastTaskStatusRequest(task_id="task-abc")
+            )
+
+        assert result["error_code"] == "forecast_task_orphaned"
+        assert result["failure_reason"] == "submitting_process_terminated"
+        assert "interactive mtdata-cli shell" in result["remediation"]
+        assert "forecast_list_methods" not in result["related_tools"]
+
 
 class TestForecastTaskCancel:
     def test_successful_cancel(self):
