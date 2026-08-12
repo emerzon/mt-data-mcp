@@ -498,6 +498,7 @@ def _volatility_input_context(
     *,
     symbol: str,
     timeframe: str,
+    observed_timeframe: Optional[str] = None,
     returns_used: int,
     live_window: bool,
     horizon: int = 1,
@@ -511,6 +512,7 @@ def _volatility_input_context(
     except (TypeError, ValueError):
         return {}
 
+    observation_timeframe = str(observed_timeframe or timeframe)
     out: Dict[str, Any] = {
         "data_as_of": _format_time_minimal(last_epoch),
         "data_window": {
@@ -521,6 +523,8 @@ def _volatility_input_context(
             "input_bar_policy": "closed_bars_only",
         },
     }
+    if observation_timeframe != str(timeframe):
+        out["data_window"]["observed_timeframe"] = observation_timeframe
     tf_secs = int(TIMEFRAME_SECONDS.get(timeframe, 0) or 0)
     forecast_epochs = (
         next_times_from_last(
@@ -563,15 +567,17 @@ def _volatility_input_context(
                 )
             ),
         }
+        if observation_timeframe != str(timeframe):
+            out["forecast_window"]["timeframe"] = str(timeframe)
     if not live_window:
         return out
 
     if now_epoch is None:
         now_epoch = datetime.now(timezone.utc).timestamp()
-    completed_at = bar_close_epoch(last_epoch, timeframe)
+    completed_at = bar_close_epoch(last_epoch, observation_timeframe)
     age_seconds = max(0, int(round(float(now_epoch) - completed_at)))
     stale_after = int(
-        max(1, int(TIMEFRAME_SECONDS.get(timeframe, 0) or 0))
+        max(1, int(TIMEFRAME_SECONDS.get(observation_timeframe, 0) or 0))
         * max(1, int(SANITY_BARS_TOLERANCE))
     )
     out.update(
@@ -584,6 +590,8 @@ def _volatility_input_context(
             "last_observation_close_time": _format_time_minimal(completed_at),
         }
     )
+    if observation_timeframe != str(timeframe):
+        out["freshness_timeframe"] = observation_timeframe
     closed_session = closed_session_context(
         symbol,
         now_epoch=now_epoch,
@@ -639,7 +647,8 @@ def _finalize_volatility_with_context(
         _volatility_input_context(
             df,
             symbol=symbol,
-            timeframe=data_timeframe or timeframe,
+            timeframe=timeframe,
+            observed_timeframe=data_timeframe,
             returns_used=returns_used,
             live_window=live_window,
             horizon=int(payload.get("horizon", 1) or 1),
@@ -1238,6 +1247,23 @@ def forecast_volatility(  # noqa: C901
                     endog = pd.Series(y.astype(float))
                     model = _SARIMAX(endog, order=(ord_p,ord_d,ord_q), seasonal_order=seas, enforce_stationarity=True, enforce_invertibility=True)
                     res = model.fit(method='lbfgs', disp=False, maxiter=100)
+                    fit_details = getattr(res, "mle_retvals", None)
+                    if (
+                        isinstance(fit_details, dict)
+                        and fit_details.get("converged") is False
+                    ):
+                        return {
+                            "success": False,
+                            "error": (
+                                f"{method_l.upper()} maximum-likelihood fit did not converge; "
+                                "no volatility forecast was returned. Adjust the order or use "
+                                "a more stable volatility method."
+                            ),
+                            "error_code": "fit_nonconvergence",
+                            "fit_status": "failed",
+                            "converged": False,
+                            "method": method_l,
+                        }
                     yhat = res.get_forecast(steps=fh).predicted_mean.to_numpy()
                 except Exception as ex:
                     return {"error": f"SARIMAX error: {ex}"}

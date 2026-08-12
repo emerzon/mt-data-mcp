@@ -1536,6 +1536,26 @@ class TestArimaSarima:
                                         proxy="squared_return")
                 assert "error" in r and "SARIMAX" in r["error"]
 
+    def test_arima_nonconvergence_returns_structured_failure(self):
+        model = self._mock_sarimax()
+        model.fit.return_value.mle_retvals = {"converged": False}
+        with _mock_env():
+            with patch.object(vol_mod, "_SM_SARIMAX_AVAILABLE", True), \
+                 patch.object(vol_mod, "_SARIMAX", return_value=model):
+                result = forecast_volatility(
+                    "EURUSD",
+                    "H1",
+                    5,
+                    method="arima",
+                    proxy="squared_return",
+                )
+
+        assert result["success"] is False
+        assert result["error_code"] == "fit_nonconvergence"
+        assert result["fit_status"] == "failed"
+        assert result["converged"] is False
+        assert "volatility_forecast" not in result
+
     def test_sarima_seasonal(self):
         """Lines 455-459: SARIMA with seasonal order."""
         model = self._mock_sarimax()
@@ -1760,6 +1780,21 @@ class TestHarRvBlock:
                 r["volatility_horizon"] * math.sqrt(expected_bpy / 5)
             )
             assert "beta" in r["params_used"]
+            assert r["data_window"]["observed_timeframe"] == "M5"
+            assert r["forecast_window"]["timeframe"] == "H1"
+            assert r["forecast_window"]["step_seconds"] == 3600
+            assert r["freshness_timeframe"] == "M5"
+
+    def test_daily_request_uses_daily_forecast_window(self):
+        with _mock_env(rates_side_effect=self._har_rv_side_effect()):
+            result = forecast_volatility("AAPL.NAS", "D1", 5, method="har_rv")
+
+        assert result["success"] is True
+        assert result["data_window"]["observed_timeframe"] == "M5"
+        assert result["forecast_window"]["timeframe"] == "D1"
+        assert result["forecast_window"]["bars"] == 5
+        assert result["forecast_window"]["step_seconds"] is None
+        assert result["freshness_timeframe"] == "M5"
 
     def test_session_limited_horizon_uses_observed_session_density(self):
         with _mock_env(rates_side_effect=self._har_rv_side_effect()), patch(
