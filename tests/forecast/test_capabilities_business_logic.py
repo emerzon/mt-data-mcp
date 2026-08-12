@@ -54,6 +54,25 @@ def test_library_capabilities_use_standardized_schema_for_dynamic_models(monkeyp
     assert "unavailable at runtime" in sktime_caps[0]["notes"]
 
 
+def test_sktime_capabilities_reflect_declared_missing_dependencies(monkeypatch):
+    monkeypatch.setattr(
+        caps,
+        "_sktime_dependency_status",
+        lambda _path: (False, ("pmdarima",), ("pmdarima",)),
+    )
+
+    rows = caps.get_library_capabilities(
+        "sktime",
+        discover_sktime_forecasters=lambda: {
+            "arima": ("ARIMA", "sktime.forecasting.arima._pmdarima.ARIMA"),
+        },
+    )
+
+    assert rows[0]["available"] is False
+    assert rows[0]["requires"] == ["pmdarima"]
+    assert "pmdarima" in rows[0]["notes"]
+
+
 def test_pretrained_capabilities_include_registry_backed_read_surface_metadata():
     rows = caps.get_library_capabilities("pretrained")
 

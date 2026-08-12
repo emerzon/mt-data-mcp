@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import importlib
+import warnings
+from functools import lru_cache
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from .exceptions import ForecastError
@@ -309,6 +311,13 @@ def _sktime_capabilities(
         if capability_id in seen:
             continue
         seen.add(capability_id)
+        available, requirements, missing = _sktime_dependency_status(dotted_path)
+        notes = (
+            "Prediction intervals are requested through the sktime adapter; "
+            "individual estimators may report them unavailable at runtime."
+        )
+        if missing:
+            notes = "Unavailable because optional dependencies are missing: " + ", ".join(missing)
         descriptor = ForecastCapabilityDescriptor(
             capability_id=capability_id,
             method=class_name,
@@ -319,20 +328,65 @@ def _sktime_capabilities(
             display_name=class_name,
             category="sktime",
             description=f"sktime forecaster {class_name}.",
-            available=True,
+            available=available,
+            requires=requirements,
             supports={"price": True, "return": True, "volatility": True, "ci": True},
             aliases=(class_name,),
             selector_key="estimator",
             selector_value=dotted_path,
             selector_mode="dotted_path",
             source="library_discovery",
-            notes=(
-                "Prediction intervals are requested through the sktime adapter; "
-                "individual estimators may report them unavailable at runtime."
-            ),
+            notes=notes,
         )
         capabilities.append(descriptor.to_record())
     return capabilities
+
+
+@lru_cache(maxsize=512)
+def _sktime_dependency_status(
+    dotted_path: str,
+) -> Tuple[bool, Tuple[str, ...], Tuple[str, ...]]:
+    """Read an sktime estimator's declared soft dependencies and preflight them."""
+    module_name, separator, class_name = str(dotted_path).rpartition(".")
+    if not separator:
+        return False, (), (str(dotted_path),)
+    try:
+        estimator_class = getattr(importlib.import_module(module_name), class_name)
+    except Exception:
+        return False, (), (module_name,)
+
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            raw_requirements = estimator_class.get_class_tag(
+                "python_dependencies", None
+            )
+    except Exception:
+        raw_requirements = None
+
+    if raw_requirements in (None, "", [], ()):
+        requirements: Tuple[str, ...] = ()
+    elif isinstance(raw_requirements, str):
+        requirements = (raw_requirements,)
+    else:
+        requirements = tuple(
+            str(requirement)
+            for requirement in raw_requirements
+            if str(requirement).strip()
+        )
+
+    missing: List[str] = []
+    try:
+        from sktime.utils.dependencies import _check_soft_dependencies
+
+        for requirement in requirements:
+            if not _check_soft_dependencies(requirement, severity="none"):
+                missing.append(requirement)
+    except Exception:
+        # A broken dependency checker means availability cannot be established
+        # safely; do not claim the estimator is runnable.
+        missing.extend(requirements or ("sktime_dependency_check",))
+    return not missing, requirements, tuple(missing)
 
 
 def _pretrained_capabilities() -> List[Dict[str, Any]]:

@@ -2585,6 +2585,8 @@ def test_forecast_list_library_models_derives_pretrained_models_from_capabilitie
         {
             "method": "custom_pretrained",
             "available": True,
+            "requires": ["pkg-a", "pkg-b"],
+            "notes": "registry-backed note",
         }
     ]
 

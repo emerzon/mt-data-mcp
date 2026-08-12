@@ -1642,6 +1642,12 @@ def _forecast_library_model_rows(capabilities: Any) -> List[Dict[str, Any]]:
             library = execution.get("library")
             if library is not None:
                 row["library"] = library
+        requires = capability.get("requires")
+        if isinstance(requires, list) and requires:
+            row["requires"] = [str(requirement) for requirement in requires]
+        notes = str(capability.get("notes") or "").strip()
+        if notes:
+            row["notes"] = notes
         rows.append(row)
     return rows
 
@@ -1675,6 +1681,8 @@ def _compact_forecast_library_model_rows(
             compact.pop("model", None)
         if str(compact.get("library") or "").strip().lower() == library:
             compact.pop("library", None)
+        compact.pop("requires", None)
+        compact.pop("notes", None)
         compact_rows.append(compact)
     return compact_rows
 
