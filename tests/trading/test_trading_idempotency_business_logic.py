@@ -364,6 +364,7 @@ def test_run_trade_close_releases_preflight_failure_for_retry() -> None:
     second = run_trade_close(request, **kwargs)
 
     assert first["success"] is False
+    assert first["error_code"] == "ticket_not_found"
     assert second["success"] is True
     assert second.get("duplicate") is not True
     assert close_positions.call_count == 2

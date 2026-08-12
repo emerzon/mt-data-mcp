@@ -484,6 +484,10 @@ def _should_persist_idempotency_outcome(result: Any) -> bool:
         return True
     if infer_result_success(result):
         return True
+    if result.get("error_code") == "ticket_not_found":
+        # The ticket is request context, not evidence of a broker-side effect.
+        # Keep the reservation retryable in case terminal state was stale.
+        return False
     for count_key in ("closed_count", "cancelled_count"):
         try:
             if int(result.get(count_key) or 0) > 0:
