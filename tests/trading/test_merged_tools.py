@@ -504,7 +504,10 @@ class TestMergedTools(unittest.TestCase):
         from src.mtdata.core.trading.requests import TradeCloseRequest
 
         # Test cancel by ticket
-        trade_close(request=TradeCloseRequest(ticket=456), __cli_raw=True)
+        trade_close(
+            request=TradeCloseRequest(ticket=456, target="pending"),
+            __cli_raw=True,
+        )
         self.mt5.orders_get.assert_any_call(ticket=456)
 
         # Live bulk close requires confirm_close_all=true
@@ -512,6 +515,7 @@ class TestMergedTools(unittest.TestCase):
         trade_close(
             request=TradeCloseRequest(
                 symbol="EURUSD",
+                target="pending",
                 close_all=True,
                 confirm_close_all=True,
             ),
@@ -522,7 +526,11 @@ class TestMergedTools(unittest.TestCase):
         # Test cancel all
         self.mt5.orders_get.reset_mock()
         trade_close(
-            request=TradeCloseRequest(close_all=True, confirm_close_all=True),
+            request=TradeCloseRequest(
+                target="pending",
+                close_all=True,
+                confirm_close_all=True,
+            ),
             __cli_raw=True,
         )
         self.mt5.orders_get.assert_any_call()

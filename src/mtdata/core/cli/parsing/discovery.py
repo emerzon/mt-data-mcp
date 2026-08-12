@@ -121,7 +121,7 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
     ("trade_place", "magic"): "MT5 magic number: integer strategy/order identifier used to group EA or strategy trades. Defaults to configured order_magic when omitted.",
     ("trade_get_open", "magic"): "MT5 magic number filter for positions from one strategy or EA. Omit for all magic numbers.",
     ("trade_get_pending", "magic"): "MT5 magic number filter for pending orders from one strategy or EA. Omit for all magic numbers.",
-    ("trade_close", "magic"): "MT5 magic number filter when closing matching positions. Omit for all magic numbers.",
+    ("trade_close", "magic"): "Standalone strategy scope for matching objects in the selected target class. Omit for all magic numbers.",
     ("wait_event", "magic"): "MT5 magic number filter for account events from one strategy or EA. Omit for all magic numbers.",
     ("finviz_screen", "filters"): "Filter key=value pairs, operator aliases like beta_under=1, Finviz shorthand, or JSON object. Examples: 'country=USA,marketcap=mega', 'pe_under=15,beta_under=1', 'cap_largeover,exch_nyse', '{\"Exchange\":\"NASDAQ\",\"Sector\":\"Technology\"}'. Common keys include Exchange, Index, Sector, Industry, Country, Market Cap., P/E, Dividend Yield, RSI (14), Average Volume, and Price.",
     ("finviz_screen", "limit"): "Max screener results to return on this page.",
@@ -382,7 +382,14 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
         "by candidate_limit until candidate_page.has_more is false."
     ),
     ("trade_close", "close_all"): (
-        "Close all matching open positions instead of a single ticket."
+        "Select the whole account when ticket, symbol, and magic are omitted."
+    ),
+    ("trade_close", "target"): (
+        "Object class: positions, pending, or all_exposure. The default positions "
+        "target never cancels pending orders."
+    ),
+    ("trade_close", "confirm_close_all"): (
+        "Confirm any live ticketless bulk operation, including symbol and magic scopes."
     ),
     ("trade_close", "dry_run"): (
         "Preview the close request without sending it to the broker."

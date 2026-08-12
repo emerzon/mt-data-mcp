@@ -112,10 +112,14 @@ def trade_modify(request: TradeModifyRequest) -> dict:
 
 @mcp.tool()
 def trade_close(request: TradeCloseRequest) -> dict:
-    """Close positions or cancel pending orders.
+    """Close positions, cancel pending orders, or flatten both object classes.
 
-    `ticket` closes a specific position or pending order.
-    Any bulk close requires `close_all=true`.
+    `target=positions` (default) never cancels pending orders.
+    `target=pending` only cancels pending orders.
+    `target=all_exposure` closes positions and cancels pending orders as separate
+    legs; it is valid only for a bulk symbol, magic, or account scope.
+    `magic` is a standalone bulk selector. Use `close_all=true` only to select
+    the whole account when ticket, symbol, and magic are omitted.
     Set `volume` only to partially close a specific open position by ticket.
     `volume` is invalid without `ticket`.
     Defaults to preview mode. Set `dry_run=false` explicitly to send a live
@@ -131,6 +135,7 @@ def trade_close(request: TradeCloseRequest) -> dict:
         correlation_id=correlation_id,
         ticket=request.ticket,
         symbol=request.symbol,
+        target=request.target,
         func=lambda: run_trade_close(
             request,
             close_positions=_close_positions,

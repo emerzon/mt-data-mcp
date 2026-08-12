@@ -2059,6 +2059,7 @@ def _close_positions(  # noqa: C901
 def _resolve_close_dry_run_target(
     *,
     ticket: Union[int, str],
+    target: str = "positions",
     symbol: Optional[str] = None,
     volume: Optional[Union[int, float]] = None,
     magic: Optional[int] = None,
@@ -2079,13 +2080,20 @@ def _resolve_close_dry_run_target(
     requested_ticket = validation._safe_int_ticket(ticket)
     if requested_ticket is None:
         return {"error": f"Invalid ticket {ticket!r}"}
+    target_value = str(target or "positions").strip().lower()
+    if target_value not in {"positions", "pending"}:
+        return {"error": f"Unsupported ticket target {target!r}"}
 
-    position, resolved_ticket, position_resolution = _resolve_open_position(
-        mt5,
-        ticket_candidates=[requested_ticket],
-        symbol=symbol,
-        require_exact_ticket_match=True,
-    )
+    position = None
+    resolved_ticket = None
+    position_resolution = None
+    if target_value == "positions":
+        position, resolved_ticket, position_resolution = _resolve_open_position(
+            mt5,
+            ticket_candidates=[requested_ticket],
+            symbol=symbol,
+            require_exact_ticket_match=True,
+        )
     if position is not None:
         magic_filter = validation._safe_int_ticket(magic) if magic is not None else None
         if (
@@ -2171,6 +2179,15 @@ def _resolve_close_dry_run_target(
             "checked_scopes": ["positions"],
         }
 
+    if target_value == "positions":
+        return {
+            "error_code": "ticket_not_found",
+            "error": f"Position {ticket} not found.",
+            "ticket": requested_ticket,
+            "checked_scopes": ["positions"],
+            "suggestion": "Use trade_get_open to find an active position ticket.",
+        }
+
     pending_order, resolved_ticket, pending_resolution = _resolve_pending_order(
         mt5,
         ticket_candidates=[requested_ticket],
@@ -2214,12 +2231,12 @@ def _resolve_close_dry_run_target(
 
     return {
         "error_code": "ticket_not_found",
-        "error": f"Ticket {ticket} not found as position or pending order.",
+        "error": f"Pending order {ticket} not found.",
         "ticket": requested_ticket,
-        "checked_scopes": ["positions", "pending_orders"],
+        "checked_scopes": ["pending_orders"],
         "suggestion": (
-            "Use trade_get_open or trade_get_pending to find an active ticket "
-            "before retrying trade_close."
+            "Use trade_get_pending to find an active pending-order ticket "
+            "before retrying trade_close with target=pending."
         ),
     }
 

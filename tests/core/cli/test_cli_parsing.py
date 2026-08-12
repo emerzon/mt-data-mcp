@@ -1447,6 +1447,11 @@ class TestResolveParamKwargs:
             None,
             cmd_name="trade_close",
         )
+        close_target_kwargs, _ = _resolve_param_kwargs(
+            {"name": "target", "type": str, "required": False, "default": "positions"},
+            None,
+            cmd_name="trade_close",
+        )
         close_dry_run_kwargs, _ = _resolve_param_kwargs(
             {"name": "dry_run", "type": bool, "required": False, "default": True},
             None,
@@ -1466,7 +1471,8 @@ class TestResolveParamKwargs:
         assert "without sending it to the broker" in place_dry_run_kwargs["help"]
         assert "require_sl_tp parameter" != require_sl_tp_kwargs["help"]
         assert "stop_loss and take_profit" in require_sl_tp_kwargs["help"]
-        assert "Close all matching open positions" in close_all_kwargs["help"]
+        assert "whole account" in close_all_kwargs["help"]
+        assert "never cancels pending orders" in close_target_kwargs["help"]
         assert close_dry_run_kwargs["default"] is True
         assert "dedupe key" in modify_key_kwargs["help"]
 

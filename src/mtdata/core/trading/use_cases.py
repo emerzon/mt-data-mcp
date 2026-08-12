@@ -2444,6 +2444,7 @@ def _run_trade_close_once(  # noqa: C901
         operation="trade_close",
         correlation_id=correlation_id,
         ticket=request.ticket,
+        target=request.target,
         close_all=request.close_all,
         symbol=request.symbol,
         volume=request.volume,
@@ -2463,6 +2464,10 @@ def _run_trade_close_once(  # noqa: C901
             error_text = str(result.get("error") or "").strip().lower()
             if request.ticket is not None and (
                 "not found as position or pending order" in error_text
+                or (
+                    error_text.startswith(("position ", "pending order "))
+                    and " not found" in error_text
+                )
                 or (
                     request.volume is not None
                     and error_text.startswith("position ")
@@ -2485,6 +2490,7 @@ def _run_trade_close_once(  # noqa: C901
             success=infer_result_success(result),
             correlation_id=correlation_id,
             ticket=request.ticket,
+            target=request.target,
             close_all=request.close_all,
             symbol=request.symbol,
             volume=request.volume,
@@ -2509,7 +2515,76 @@ def _run_trade_close_once(  # noqa: C901
         out["no_action"] = True
         return out
 
+    def _leg_count(result: Any, *keys: str) -> int:
+        if not isinstance(result, dict):
+            return 0
+        for key in keys:
+            try:
+                if result.get(key) is not None:
+                    return max(0, int(result[key]))
+            except (TypeError, ValueError):
+                continue
+        return 0
+
+    def _combine_exposure_legs(
+        position_result: Dict[str, Any],
+        pending_result: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        position_error = str(position_result.get("error") or "").strip()
+        pending_error = str(pending_result.get("error") or "").strip()
+        closed_count = _leg_count(
+            position_result,
+            "matched_count" if request.dry_run else "closed_count",
+            "closed_count",
+        )
+        cancelled_count = _leg_count(
+            pending_result,
+            "matched_pending_count" if request.dry_run else "cancelled_count",
+            "cancelled_count",
+        )
+        failed_legs = [
+            name
+            for name, error in (
+                ("positions", position_error),
+                ("pending_orders", pending_error),
+            )
+            if error
+        ]
+        out: Dict[str, Any] = {
+            "success": not failed_legs,
+            "target": "all_exposure",
+            "dry_run": request.dry_run,
+            "closed_count": closed_count,
+            "cancelled_count": cancelled_count,
+            "closed_positions": position_result,
+            "cancelled_pending_orders": pending_result,
+            "leg_status": {
+                "positions": "error" if position_error else "ok",
+                "pending_orders": "error" if pending_error else "ok",
+            },
+            "partial_failure": len(failed_legs) == 1,
+            "failed_legs": failed_legs,
+        }
+        if request.dry_run:
+            out["would_send_orders"] = closed_count
+            out["would_cancel_pending_orders"] = cancelled_count
+            out["actionability"] = "preview_only"
+        if not failed_legs and closed_count == 0 and cancelled_count == 0:
+            out["no_action"] = True
+            out["message"] = "No matching open positions or pending orders."
+        elif failed_legs:
+            out["error_code"] = (
+                "all_exposure_partial_failure"
+                if len(failed_legs) == 1
+                else "all_exposure_failed"
+            )
+            out["error"] = "All-exposure operation failed for: " + ", ".join(
+                failed_legs
+            )
+        return out
+
     magic_kwargs = {"magic": request.magic} if request.magic is not None else {}
+    target = request.target
 
     if request.profit_only and request.loss_only:
         return _finish(
@@ -2518,6 +2593,14 @@ def _run_trade_close_once(  # noqa: C901
         )
 
     if request.volume is not None:
+        if target != "positions":
+            return _finish(
+                {
+                    "error": "volume is valid only with target=positions.",
+                    "error_code": "invalid_close_target_options",
+                },
+                scope=target,
+            )
         if request.ticket is None:
             return _finish(
                 {
@@ -2538,6 +2621,27 @@ def _run_trade_close_once(  # noqa: C901
                 scope="positions",
             )
 
+    if target != "positions" and (request.profit_only or request.loss_only):
+        return _finish(
+            {
+                "error": "pnl_filter is valid only with target=positions.",
+                "error_code": "invalid_close_target_options",
+            },
+            scope=target,
+        )
+
+    if request.ticket is not None and target == "all_exposure":
+        return _finish(
+            {
+                "error": (
+                    "target=all_exposure requires a bulk symbol, magic, or "
+                    "account scope; it cannot be combined with ticket."
+                ),
+                "error_code": "invalid_close_target_options",
+            },
+            scope="ticket",
+        )
+
     if request.ticket is not None and request.close_all:
         return _finish(
             {
@@ -2550,21 +2654,26 @@ def _run_trade_close_once(  # noqa: C901
             scope="ticket",
         )
 
-    if request.close_all and not request.dry_run and not request.confirm_close_all:
+    bulk_selector = bool(request.symbol is not None or request.magic is not None)
+    bulk_request = request.ticket is None and bool(
+        request.close_all or bulk_selector
+    )
+    if bulk_request and not request.dry_run and not request.confirm_close_all:
         return _finish(
             {
                 "error": (
-                    "Live close_all requires explicit confirmation. Re-run with "
+                    "A live bulk operation requires explicit confirmation. Re-run with "
                     "dry_run=true to preview, or pass confirm_close_all=true to "
-                    "execute the bulk close."
+                    "execute the selected target and scope."
                 ),
                 "error_code": "CONFIRMATION_REQUIRED",
-                "close_all": True,
+                "close_all": request.close_all,
+                "target": target,
                 "dry_run": False,
                 "required_confirmation": "confirm_close_all=true",
                 "alternatives": [
-                    "Pass dry_run=true to preview matching positions",
-                    "Pass ticket=<ticket_number> to close a specific position",
+                    "Pass dry_run=true to preview matching objects",
+                    "Pass ticket=<ticket_number> for a specific target object",
                     "Pass confirm_close_all=true only after reviewing exposure",
                 ],
             },
@@ -2575,39 +2684,45 @@ def _run_trade_close_once(  # noqa: C901
         request.ticket is None
         and request.symbol is None
         and not request.close_all
-        and not request.profit_only
-        and not request.loss_only
+        and request.magic is None
         and request.dry_run
     ):
         return _finish(
             {
                 "error": (
                     "Close preview requires an explicit scope: specify ticket=<ticket>, "
-                    "symbol=<symbol>, or close_all=true."
+                    "symbol=<symbol>, magic=<number>, or close_all=true."
                 ),
                 "error_code": "CLOSE_SCOPE_REQUIRED",
                 "alternatives": [
                     "Use ticket=<ticket_number> to preview a specific close",
                     "Use symbol=<symbol> to preview positions for one symbol",
-                    "Pass close_all=true to preview all matching positions",
+                    "Use magic=<number> to preview one strategy's matching objects",
+                    "Pass close_all=true to preview the selected target account-wide",
                 ],
             },
             scope="request",
         )
 
-    if request.ticket is None and not request.close_all and not request.dry_run:
+    if (
+        request.ticket is None
+        and request.symbol is None
+        and request.magic is None
+        and not request.close_all
+        and not request.dry_run
+    ):
         return _finish(
             {
                 "error": (
                     "Bulk close requires explicit confirmation: pass close_all=true "
-                    "to close all matching positions, or specify ticket=<ticket>."
+                    "for an account-wide operation, or specify ticket, symbol, or magic."
                 ),
                 "error_code": "CONFIRMATION_REQUIRED",
                 "suggestion": "Review matching positions before closing (irreversible action).",
                 "alternatives": [
-                    "Use ticket=<ticket_number> to close a specific position",
-                    "First use trade_get_open to view matching positions",
-                    "Then pass close_all=true to proceed with bulk close",
+                    "Use ticket=<ticket_number> for one target object",
+                    "Use symbol=<symbol> or magic=<number> for a bounded bulk scope",
+                    "Use close_all=true for the selected target account-wide",
                 ],
             },
             scope="bulk_confirmation",
@@ -2618,6 +2733,7 @@ def _run_trade_close_once(  # noqa: C901
         if request.ticket is not None and resolve_close_target is not None:
             target_result = resolve_close_target(
                 ticket=request.ticket,
+                target=target,
                 symbol=request.symbol,
                 volume=request.volume,
                 magic=request.magic,
@@ -2634,17 +2750,23 @@ def _run_trade_close_once(  # noqa: C901
         scope = (
             "ticket"
             if request.ticket is not None
-            else "symbol"
+            else f"symbol_{target}"
             if request.symbol is not None
-            else "positions"
+            else target
         )
         operation = (
             "partial_close_position"
             if request.volume is not None
-            else "close_or_cancel_ticket"
+            else f"{target}_ticket"
             if request.ticket is not None
+            else "flatten_all_exposure"
+            if target == "all_exposure"
+            else "cancel_symbol_pending_orders"
+            if request.symbol is not None and target == "pending"
             else "close_symbol_positions"
             if request.symbol is not None
+            else "cancel_all_pending_orders"
+            if target == "pending"
             else "close_all_positions"
         )
         preview: Dict[str, Any] = {
@@ -2654,7 +2776,7 @@ def _run_trade_close_once(  # noqa: C901
             "operation": operation,
             "scope": scope,
             "would_send_order": False,
-            "would_cancel_pending_order": False,
+            "would_cancel_pending_order": target == "pending",
             "preview_scope_summary": (
                 "Routing and request validation only; no close or cancel request was sent to MT5."
             ),
@@ -2672,64 +2794,71 @@ def _run_trade_close_once(  # noqa: C901
             ],
         }
         if request.ticket is None:
-            position_preview = close_positions(
-                symbol=request.symbol,
-                **magic_kwargs,
-                volume=None,
-                profit_only=request.profit_only,
-                loss_only=request.loss_only,
-                close_priority=request.close_priority,
-                comment=request.comment,
-                deviation=request.deviation,
-                dry_run=True,
-            )
-            if isinstance(position_preview, dict):
-                if position_preview.get("error"):
-                    preview["position_preview_error"] = position_preview.get("error")
-                elif "matched_count" in position_preview:
-                    for key in (
-                        "matched_count",
-                        "matched_positions",
-                        "total_volume",
-                        "total_profit",
-                        "filters_applied",
-                        "would_send_orders",
-                        "preview_ok",
-                        "market_readiness",
-                    ):
-                        if key in position_preview:
-                            preview[key] = position_preview[key]
-                else:
-                    preview["matched_count"] = 0
-                    preview["matched_positions"] = []
-                    message = position_preview.get("message")
-                    if message not in (None, ""):
-                        preview["message"] = message
-            if int(preview.get("matched_count") or 0) == 0:
+            position_preview: Dict[str, Any] = {}
+            pending_preview: Dict[str, Any] = {}
+            if target in {"positions", "all_exposure"}:
+                position_preview = close_positions(
+                    symbol=request.symbol,
+                    **magic_kwargs,
+                    volume=None,
+                    profit_only=request.profit_only,
+                    loss_only=request.loss_only,
+                    close_priority=request.close_priority,
+                    comment=request.comment,
+                    deviation=request.deviation,
+                    dry_run=True,
+                )
+            if target in {"pending", "all_exposure"}:
                 pending_preview = cancel_pending(
                     symbol=request.symbol,
                     **magic_kwargs,
                     comment=request.comment,
                     dry_run=True,
                 )
-                if isinstance(pending_preview, dict):
-                    if pending_preview.get("error"):
-                        preview["pending_preview_error"] = pending_preview.get("error")
-                    elif "matched_pending_count" in pending_preview:
-                        for key in (
-                            "matched_pending_count",
-                            "matched_pending_orders",
-                            "would_cancel_pending_orders",
-                        ):
-                            if key in pending_preview:
-                                preview[key] = pending_preview[key]
-                    else:
-                        preview["matched_pending_count"] = 0
-                        preview["matched_pending_orders"] = []
+            if target == "all_exposure":
+                combined = _combine_exposure_legs(
+                    position_preview,
+                    pending_preview,
+                )
+                combined.update(
+                    {
+                        "operation": operation,
+                        "scope": scope,
+                        "symbol": request.symbol,
+                        "magic": request.magic,
+                        "close_all": request.close_all,
+                    }
+                )
+                return _finish(
+                    {key: value for key, value in combined.items() if value is not None},
+                    scope=scope,
+                )
+            selected_preview = (
+                pending_preview if target == "pending" else position_preview
+            )
+            if isinstance(selected_preview, dict):
+                if selected_preview.get("error"):
+                    return _finish(selected_preview, scope=target)
+                for key in (
+                    "matched_count",
+                    "matched_positions",
+                    "total_volume",
+                    "total_profit",
+                    "filters_applied",
+                    "would_send_orders",
+                    "preview_ok",
+                    "market_readiness",
+                    "matched_pending_count",
+                    "matched_pending_orders",
+                    "would_cancel_pending_orders",
+                    "message",
+                ):
+                    if key in selected_preview:
+                        preview[key] = selected_preview[key]
         if request.ticket is not None:
             preview["ticket"] = request.ticket
             preview["ticket_resolution"] = (
-                "Would try an open position first, then a pending order if no position matches."
+                f"Would target only {target}; no object-class fallback is performed."
             )
             if isinstance(target_result, dict):
                 for key in (
@@ -2755,6 +2884,7 @@ def _run_trade_close_once(  # noqa: C901
             preview["symbol"] = request.symbol
         if request.magic is not None:
             preview["magic"] = request.magic
+        preview["target"] = target
         if request.volume is not None:
             preview["volume"] = request.volume
             preview["ticket_resolution"] = (
@@ -2773,6 +2903,40 @@ def _run_trade_close_once(  # noqa: C901
         if request.deviation != 20:
             preview["deviation"] = request.deviation
         return _finish(preview, scope=scope)
+
+    if target == "pending":
+        pending_result = cancel_pending(
+            ticket=request.ticket,
+            symbol=request.symbol,
+            **magic_kwargs,
+            comment=request.comment,
+        )
+        if isinstance(pending_result, dict):
+            message = str(pending_result.get("message") or "").strip().lower()
+            if message.startswith("no pending orders"):
+                pending_result = _with_no_action(pending_result)
+        return _finish(pending_result, scope="pending_orders")
+
+    if target == "all_exposure":
+        position_result = close_positions(
+            symbol=request.symbol,
+            **magic_kwargs,
+            volume=None,
+            profit_only=False,
+            loss_only=False,
+            close_priority=request.close_priority,
+            comment=request.comment,
+            deviation=request.deviation,
+        )
+        pending_result = cancel_pending(
+            symbol=request.symbol,
+            **magic_kwargs,
+            comment=request.comment,
+        )
+        return _finish(
+            _combine_exposure_legs(position_result, pending_result),
+            scope="all_exposure",
+        )
 
     if request.profit_only or request.loss_only:
         result = close_positions(
@@ -2828,39 +2992,27 @@ def _run_trade_close_once(  # noqa: C901
             isinstance(position_result, dict)
             and position_result.get("error") == f"Position {request.ticket} not found"
         ):
-            pending_result = cancel_pending(
-                ticket=request.ticket,
-                symbol=request.symbol,
-                **magic_kwargs,
-                comment=request.comment,
+            history_result = None
+            if lookup_ticket_history is not None:
+                try:
+                    history_result = lookup_ticket_history(request.ticket)
+                except Exception:
+                    history_result = None
+            if isinstance(history_result, dict) and history_result:
+                return _finish(history_result, scope="history")
+            return _finish(
+                {
+                    "error_code": "ticket_not_found",
+                    "error": f"Position {request.ticket} not found.",
+                    "ticket": request.ticket,
+                    "checked_scopes": ["positions"],
+                    "suggestion": (
+                        "Use trade_get_open to find an active position ticket, or "
+                        "set target=pending to cancel a pending-order ticket."
+                    ),
+                },
+                scope="positions",
             )
-            if (
-                isinstance(pending_result, dict)
-                and pending_result.get("error")
-                == f"Pending order {request.ticket} not found"
-            ):
-                history_result = None
-                if lookup_ticket_history is not None:
-                    try:
-                        history_result = lookup_ticket_history(request.ticket)
-                    except Exception:
-                        history_result = None
-                if isinstance(history_result, dict) and history_result:
-                    return _finish(history_result, scope="history")
-                return _finish(
-                    {
-                        "error_code": "ticket_not_found",
-                        "error": f"Ticket {request.ticket} not found as position or pending order.",
-                        "ticket": request.ticket,
-                        "checked_scopes": ["positions", "pending_orders"],
-                        "suggestion": (
-                            "Use trade_get_open or trade_get_pending to find an active "
-                            "ticket before retrying trade_close."
-                        ),
-                    },
-                    scope="ticket",
-                )
-            return _finish(pending_result, scope="pending_orders")
         return _finish(position_result, scope="positions")
 
     if request.symbol is not None:
@@ -2877,24 +3029,7 @@ def _run_trade_close_once(  # noqa: C901
         if isinstance(position_result, dict):
             msg = str(position_result.get("message", "")).strip().lower()
             if msg.startswith("no open positions for ") or msg == "no positions matched criteria":
-                pending_result = cancel_pending(
-                    symbol=request.symbol,
-                    **magic_kwargs,
-                    comment=request.comment,
-                )
-                if isinstance(pending_result, dict):
-                    pending_msg = str(pending_result.get("message", "")).strip().lower()
-                    if (
-                        pending_msg.startswith("no pending orders for ")
-                        or pending_msg == "no pending orders matched criteria"
-                    ):
-                        return _finish(
-                            _with_no_action(
-                                message=f"No open positions or pending orders for {request.symbol}"
-                            ),
-                            scope="symbol",
-                        )
-                return _finish(pending_result, scope="pending_orders")
+                return _finish(_with_no_action(position_result), scope="positions")
         return _finish(position_result, scope="positions")
 
     position_result = close_positions(
@@ -2909,20 +3044,7 @@ def _run_trade_close_once(  # noqa: C901
     if isinstance(position_result, dict):
         msg = str(position_result.get("message", "")).strip().lower()
         if msg in {"no open positions", "no positions matched criteria"}:
-            pending_result = cancel_pending(
-                **magic_kwargs,
-                comment=request.comment,
-            )
-            if (
-                isinstance(pending_result, dict)
-                and str(pending_result.get("message", "")).strip().lower()
-                in {"no pending orders", "no pending orders matched criteria"}
-            ):
-                return _finish(
-                    _with_no_action(message="No open positions or pending orders"),
-                    scope="all",
-                )
-            return _finish(pending_result, scope="pending_orders")
+            return _finish(_with_no_action(position_result), scope="positions")
     return _finish(position_result, scope="positions")
 
 

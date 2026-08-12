@@ -297,7 +297,30 @@ class TestTradeClose:
         out = _resolve_close_dry_run_target(ticket=999, gateway=gateway)
 
         assert "not found" in out["error"]
-        assert out["checked_scopes"] == ["positions", "pending_orders"]
+        assert out["checked_scopes"] == ["positions"]
+        adapter.orders_get.assert_not_called()
+
+    def test_dry_run_pending_target_queries_orders_only(self):
+        adapter = MagicMock()
+        adapter.orders_get.return_value = [
+            _pending_order(ticket=456, symbol="EURUSD")
+        ]
+        gateway = MT5TradingGateway(
+            adapter=adapter,
+            ensure_connection_impl=lambda: None,
+        )
+
+        out = _resolve_close_dry_run_target(
+            ticket=456,
+            target="pending",
+            gateway=gateway,
+        )
+
+        assert out["success"] is True
+        assert out["target_scope"] == "pending_orders"
+        assert out["target_kind"] == "pending_order"
+        assert out["resolved_ticket"] == 456
+        adapter.positions_get.assert_not_called()
 
     @patch("mtdata.core.trading._cancel_pending")
     @patch("mtdata.core.trading._close_positions")
@@ -317,26 +340,27 @@ class TestTradeClose:
 
     @patch("mtdata.core.trading._cancel_pending")
     @patch("mtdata.core.trading._close_positions")
-    def test_ticket_falls_back_to_cancel_pending(self, mock_close, mock_cancel):
-        mock_close.return_value = {"error": "Position 123 not found"}
+    def test_ticket_pending_target_only_cancels_pending(self, mock_close, mock_cancel):
         mock_cancel.return_value = {"cancelled_count": 1}
-        out = trade_close(ticket=123, dry_run=False, __cli_raw=True)
-        mock_close.assert_called_once()
+        out = trade_close(
+            ticket=123,
+            target="pending",
+            dry_run=False,
+            __cli_raw=True,
+        )
+        mock_close.assert_not_called()
         mock_cancel.assert_called_once_with(ticket=123, symbol=None, comment=None)
         assert out["cancelled_count"] == 1
 
     @patch("mtdata.core.trading._cancel_pending")
     @patch("mtdata.core.trading._close_positions")
-    def test_ticket_missing_reports_both_scopes(self, mock_close, mock_cancel):
+    def test_position_ticket_missing_reports_position_scope_only(self, mock_close, mock_cancel):
         mock_close.return_value = {"error": "Position 123 not found"}
-        mock_cancel.return_value = {"error": "Pending order 123 not found"}
-        result = _unwrap_mcp(trade_close(ticket=123, dry_run=False))
-        if isinstance(result, dict):
-            assert "position or pending order" in str(result.get("error", "")).lower()
-            assert result.get("checked_scopes") == ["positions", "pending_orders"]
-        else:
-            assert "position or pending order" in result.lower()
-            assert "pending_orders" in result.lower()
+        result = trade_close(ticket=123, dry_run=False, __cli_raw=True)
+
+        assert result["error"] == "Position 123 not found."
+        assert result["checked_scopes"] == ["positions"]
+        mock_cancel.assert_not_called()
 
     @patch("mtdata.core.trading._cancel_pending")
     @patch("mtdata.core.trading._close_positions")
@@ -399,6 +423,7 @@ class TestTradeClose:
         assert "realized_pnl" in out["not_estimated"]
         mock_resolve.assert_called_once_with(
             ticket=123,
+            target="positions",
             symbol=None,
             volume=0.05,
             magic=None,
@@ -416,18 +441,19 @@ class TestTradeClose:
         self, mock_close, mock_cancel, mock_resolve
     ):
         mock_resolve.return_value = {
-            "error": "Ticket 999 not found as position or pending order.",
-            "checked_scopes": ["positions", "pending_orders"],
+            "error": "Position 999 not found.",
+            "checked_scopes": ["positions"],
         }
 
         out = trade_close(ticket=999, dry_run=True, __cli_raw=True)
 
-        assert out["error"] == "Ticket 999 not found as position or pending order."
+        assert out["error"] == "Position 999 not found."
         assert out["error_code"] == "ticket_not_found"
         assert out["ticket"] == 999
-        assert out["checked_scopes"] == ["positions", "pending_orders"]
+        assert out["checked_scopes"] == ["positions"]
         mock_resolve.assert_called_once_with(
             ticket=999,
+            target="positions",
             symbol=None,
             volume=None,
             magic=None,
@@ -467,11 +493,10 @@ class TestTradeClose:
         out = _unwrap_mcp(trade_close(symbol="EURUSD", dry_run=False))
         if isinstance(out, dict):
             error = str(out.get("error", "")).lower()
-            assert "bulk close requires explicit confirmation" in error
-            assert "close_all=true" in error
-            assert "ticket=<ticket>" in error
+            assert "live bulk operation requires explicit confirmation" in error
+            assert "confirm_close_all=true" in error
         else:
-            assert "bulk close requires explicit confirmation" in out.lower()
+            assert "live bulk operation requires explicit confirmation" in out.lower()
         mock_close.assert_not_called()
         mock_cancel.assert_not_called()
 
@@ -517,11 +542,7 @@ class TestTradeClose:
             deviation=20,
             dry_run=True,
         )
-        mock_cancel.assert_called_once_with(
-            symbol="EURUSD",
-            comment=None,
-            dry_run=True,
-        )
+        mock_cancel.assert_not_called()
 
     @patch("mtdata.core.trading._cancel_pending")
     @patch("mtdata.core.trading._close_positions")
@@ -536,7 +557,50 @@ class TestTradeClose:
 
     @patch("mtdata.core.trading._cancel_pending")
     @patch("mtdata.core.trading._close_positions")
-    def test_symbol_no_open_or_pending_marks_no_action(self, mock_close, mock_cancel):
+    def test_all_exposure_rejects_ticket_scope(self, mock_close, mock_cancel):
+        out = trade_close(
+            ticket=123,
+            target="all_exposure",
+            dry_run=True,
+            __cli_raw=True,
+        )
+
+        assert out["success"] is False
+        assert out["error_code"] == "invalid_close_target_options"
+        assert "bulk symbol, magic, or account scope" in out["error"]
+        mock_close.assert_not_called()
+        mock_cancel.assert_not_called()
+
+    @patch("mtdata.core.trading._cancel_pending")
+    @patch("mtdata.core.trading._close_positions")
+    def test_pending_target_rejects_position_only_filters(
+        self,
+        mock_close,
+        mock_cancel,
+    ):
+        volume_out = trade_close(
+            ticket=123,
+            target="pending",
+            volume=0.01,
+            dry_run=True,
+            __cli_raw=True,
+        )
+        pnl_out = trade_close(
+            magic=3001,
+            target="pending",
+            pnl_filter="profit",
+            dry_run=True,
+            __cli_raw=True,
+        )
+
+        assert volume_out["error"] == "volume is valid only with target=positions."
+        assert pnl_out["error"] == "pnl_filter is valid only with target=positions."
+        mock_close.assert_not_called()
+        mock_cancel.assert_not_called()
+
+    @patch("mtdata.core.trading._cancel_pending")
+    @patch("mtdata.core.trading._close_positions")
+    def test_symbol_positions_only_no_match_marks_no_action(self, mock_close, mock_cancel):
         mock_close.return_value = {"message": "No open positions for EURUSD"}
         mock_cancel.return_value = {"message": "No pending orders for EURUSD"}
         out = _unwrap_mcp(
@@ -548,30 +612,153 @@ class TestTradeClose:
             )
         )
         if isinstance(out, dict):
-            assert out.get("message") == "No open positions or pending orders for EURUSD"
+            assert out.get("message") == "No open positions for EURUSD"
             assert out.get("no_action") is True
         else:
-            assert "No open positions or pending orders for EURUSD" in out
+            assert "No open positions for EURUSD" in out
             assert "no_action" in out.lower()
         mock_close.assert_called_once()
-        mock_cancel.assert_called_once_with(symbol="EURUSD", comment=None)
+        mock_cancel.assert_not_called()
 
     @patch("mtdata.core.trading._cancel_pending")
     @patch("mtdata.core.trading._close_positions")
-    def test_global_no_open_or_pending_marks_no_action(self, mock_close, mock_cancel):
+    def test_global_positions_only_no_match_marks_no_action(self, mock_close, mock_cancel):
         mock_close.return_value = {"message": "No open positions"}
         mock_cancel.return_value = {"message": "No pending orders"}
         out = _unwrap_mcp(
             trade_close(close_all=True, confirm_close_all=True, dry_run=False)
         )
         if isinstance(out, dict):
-            assert out.get("message") == "No open positions or pending orders"
+            assert out.get("message") == "No open positions"
             assert out.get("no_action") is True
         else:
-            assert "No open positions or pending orders" in out
+            assert "No open positions" in out
             assert "no_action" in out.lower()
         mock_close.assert_called_once()
-        mock_cancel.assert_called_once_with(comment=None)
+        mock_cancel.assert_not_called()
+
+    @patch("mtdata.core.trading._cancel_pending")
+    @patch("mtdata.core.trading._close_positions")
+    def test_all_exposure_live_runs_both_legs_for_mixed_book(
+        self,
+        mock_close,
+        mock_cancel,
+    ):
+        mock_close.return_value = {
+            "success": True,
+            "closed_count": 2,
+            "results": [{"ticket": 11}, {"ticket": 12}],
+        }
+        mock_cancel.return_value = {
+            "success": True,
+            "cancelled_count": 1,
+            "results": [{"ticket": 21}],
+        }
+
+        out = trade_close(
+            symbol="EURUSD",
+            target="all_exposure",
+            confirm_close_all=True,
+            dry_run=False,
+            __cli_raw=True,
+        )
+
+        assert out["success"] is True
+        assert out["target"] == "all_exposure"
+        assert out["closed_count"] == 2
+        assert out["cancelled_count"] == 1
+        assert out["closed_positions"]["results"] == [
+            {"ticket": 11},
+            {"ticket": 12},
+        ]
+        assert out["cancelled_pending_orders"]["results"] == [{"ticket": 21}]
+        assert out["leg_status"] == {
+            "positions": "ok",
+            "pending_orders": "ok",
+        }
+        mock_close.assert_called_once()
+        mock_cancel.assert_called_once_with(symbol="EURUSD", comment=None)
+
+    @patch("mtdata.core.trading._cancel_pending")
+    @patch("mtdata.core.trading._close_positions")
+    def test_all_exposure_surfaces_per_leg_partial_failure(
+        self,
+        mock_close,
+        mock_cancel,
+    ):
+        mock_close.return_value = {"error": "position close rejected"}
+        mock_cancel.return_value = {"success": True, "cancelled_count": 1}
+
+        out = trade_close(
+            magic=3001,
+            target="all_exposure",
+            confirm_close_all=True,
+            dry_run=False,
+            __cli_raw=True,
+        )
+
+        assert out["success"] is False
+        assert out["error_code"] == "all_exposure_partial_failure"
+        assert out["partial_failure"] is True
+        assert out["failed_legs"] == ["positions"]
+        assert out["leg_status"]["pending_orders"] == "ok"
+        assert out["cancelled_count"] == 1
+        assert out["closed_positions"]["error"] == "position close rejected"
+        assert mock_close.call_args.kwargs["magic"] == 3001
+        assert mock_cancel.call_args.kwargs["magic"] == 3001
+
+    @patch("mtdata.core.trading._cancel_pending")
+    @patch("mtdata.core.trading._close_positions")
+    def test_magic_is_a_standalone_positions_preview_scope(
+        self,
+        mock_close,
+        mock_cancel,
+    ):
+        mock_close.return_value = {
+            "success": True,
+            "matched_count": 2,
+            "matched_positions": [
+                {"ticket": 11, "magic": 3001},
+                {"ticket": 12, "magic": 3001},
+            ],
+        }
+
+        out = trade_close(magic=3001, dry_run=True, __cli_raw=True)
+
+        assert out["success"] is True
+        assert out["target"] == "positions"
+        assert out["matched_count"] == 2
+        assert {row["magic"] for row in out["matched_positions"]} == {3001}
+        assert mock_close.call_args.kwargs["magic"] == 3001
+        mock_cancel.assert_not_called()
+
+    @patch("mtdata.core.trading._cancel_pending")
+    @patch("mtdata.core.trading._close_positions")
+    def test_all_exposure_dry_run_previews_both_legs(
+        self,
+        mock_close,
+        mock_cancel,
+    ):
+        mock_close.return_value = {"success": True, "matched_count": 2}
+        mock_cancel.return_value = {
+            "success": True,
+            "matched_pending_count": 1,
+        }
+
+        out = trade_close(
+            symbol="EURUSD",
+            target="all_exposure",
+            dry_run=True,
+            __cli_raw=True,
+        )
+
+        assert out["success"] is True
+        assert out["would_send_orders"] == 2
+        assert out["would_cancel_pending_orders"] == 1
+        assert out["closed_positions"]["matched_count"] == 2
+        assert out["cancelled_pending_orders"]["matched_pending_count"] == 1
+        mock_close.assert_called_once()
+        mock_cancel.assert_called_once()
 
 
 # ===================================================================

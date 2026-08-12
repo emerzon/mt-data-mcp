@@ -189,9 +189,14 @@ def test_run_trade_close_uses_history_lookup_when_ticket_is_already_closed():
     lookup_ticket_history.assert_called_once_with(123)
 
 
-def test_run_trade_close_passes_magic_filter_to_close_and_cancel_paths():
-    request = TradeCloseRequest(ticket=123, magic=987, dry_run=False)
-    close_positions = MagicMock(return_value={"error": "Position 123 not found"})
+def test_run_trade_close_passes_magic_filter_to_all_exposure_legs():
+    request = TradeCloseRequest(
+        magic=987,
+        target="all_exposure",
+        confirm_close_all=True,
+        dry_run=False,
+    )
+    close_positions = MagicMock(return_value={"closed_count": 1})
     cancel_pending = MagicMock(return_value={"cancelled_count": 1})
 
     result = run_trade_close(
@@ -200,6 +205,8 @@ def test_run_trade_close_passes_magic_filter_to_close_and_cancel_paths():
         cancel_pending=cancel_pending,
     )
 
+    assert result["success"] is True
+    assert result["closed_count"] == 1
     assert result["cancelled_count"] == 1
     close_positions.assert_called_once()
     cancel_pending.assert_called_once()

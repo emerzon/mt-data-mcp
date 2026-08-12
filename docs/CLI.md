@@ -50,7 +50,7 @@ Stuck on an acronym in output (BOCPD, Kelly, CVaR, …)? See the [glossary quick
 | `forecast_*`, `regime_detect`, `patterns_detect` | `trade_modify` |
 | `report_generate`, `trade_risk_analyze`, `trade_get_*` | `trade_close` |
 
-`trade_place`, `trade_modify`, and `trade_close` default to **preview mode** (`dry_run=true`). Set `--dry-run false` explicitly for a live request. Bulk closes still require `--close-all` and explicit confirmation. Booleans on the CLI are `true` / `false`.
+`trade_place`, `trade_modify`, and `trade_close` default to **preview mode** (`dry_run=true`). Set `--dry-run false` explicitly for a live request. Ticketless bulk closes require `--confirm-close-all true`; `--close-all` is needed only for an account-wide scope without a symbol or magic filter. Booleans on the CLI are `true` / `false`.
 
 Full runbook: [TRADING_SAFETY.md](TRADING_SAFETY.md).
 
@@ -592,7 +592,9 @@ mtdata-cli trade_place BTCUSD --volume 0.01 --order-type BUY \
 | `--auto-close-on-sl-tp-fail` | `trade_place` | If SL/TP attachment fails after a market fill, try to close the unprotected position. |
 | `--expiration` | `trade_place`, `trade_modify` | Expiration time for pending orders (`dateparser`, UTC epoch seconds, or `GTC`). |
 | `--idempotency-key` | `trade_place`, `trade_modify` | Durable dedupe key shared by CLI and server processes within the configured retention window. |
-| `--close-all` | `trade_close` | Close all matching positions instead of one ticket. |
+| `--target` | `trade_close` | Select `positions` (default), `pending`, or `all_exposure`. |
+| `--close-all` | `trade_close` | Select the whole account when ticket, symbol, and magic are omitted. |
+| `--confirm-close-all` | `trade_close` | Confirm any ticketless live bulk operation. |
 | `--pnl-filter` | `trade_close`, `trade_get_open` | Filter positions by `all`, `profit`, or `loss`. |
 | `--close-priority` | `trade_close` | When multiple positions match, close `loss_first`, `profit_first`, or `largest_first`. |
 
@@ -605,16 +607,20 @@ both the current `correlation_id` and the original invocation's
 For account-level safety, configure trade guardrails in [ENV_VARS.md](ENV_VARS.md#trade-guardrails) before moving from preview to live execution.
 
 ### Close or Modify Positions
-Use exact tickets whenever possible. `trade_close` defaults to preview mode;
-set `--dry-run false` explicitly only when you intend a live close:
+Use exact tickets whenever possible. `trade_close` defaults to the `positions`
+target and preview mode; set `--dry-run false` explicitly only when you intend a
+live close:
 
 ```bash
 mtdata-cli trade_get_open --json
 mtdata-cli trade_modify --ticket 123456789 --stop-loss 60500 --take-profit 62500
 mtdata-cli trade_close --ticket 123456789 --volume 0.05 --dry-run true
+mtdata-cli trade_close --ticket 987654321 --target pending --dry-run false
 ```
 
-Be especially careful with `trade_close --close-all`; it targets every matching open position.
+`trade_close` never falls back between positions and pending orders. Use
+`--target all_exposure` only for a symbol, magic, or account-wide bulk scope; its
+response reports the position-close and pending-cancel legs separately.
 
 ### Review Trade Journal
 ```bash

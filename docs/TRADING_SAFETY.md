@@ -134,16 +134,19 @@ Guardrails apply to `trade_modify` only for pending-order changes and SL changes
 
 ## `trade_close`
 
-Closes one position, a filtered set, or all — with an extra confirmation for bulk closes.
+`trade_close` acts on one explicit object class. It closes positions by default,
+cancels pending orders only with `--target pending`, and flattens both classes
+with `--target all_exposure`. There is no automatic position-to-order fallback.
 
 | Flag | Default | Notes |
 |------|---------|-------|
-| `--ticket` | — | Close a single position |
+| `--ticket` | — | Act on one ticket in the selected target class |
+| `--target` | `positions` | `positions`, `pending`, or `all_exposure` (bulk scopes only) |
 | `--volume` | — | Partial-close size (validated against broker step) |
 | `--symbol` | — | Restrict closes to a symbol |
 | `--magic` | — | Restrict closes to a magic number |
-| `--close-all` | `false` | Close every matching position |
-| `--confirm-close-all` | `false` | **Required** when `--close-all` is set and not a dry run |
+| `--close-all` | `false` | Select the whole account when ticket, symbol, and magic are omitted |
+| `--confirm-close-all` | `false` | **Required** for any ticketless live bulk operation |
 | `--pnl-filter` | `all` | Close all matches, only winners (`profit`), or only losers (`loss`) |
 | `--close-priority` | — | `loss_first`, `profit_first`, or `largest_first` |
 | `--deviation` | `20` | Max slippage in points |
@@ -153,11 +156,22 @@ Closes one position, a filtered set, or all — with an extra confirmation for b
 # Preview a partial close of one ticket
 mtdata-cli trade_close --ticket 123456789 --volume 0.05 --dry-run true
 
-# Close ALL positions — requires the explicit confirmation flag when live
+# Cancel one pending order; default target=positions would not cancel it
+mtdata-cli trade_close --ticket 987654321 --target pending --dry-run false
+
+# Close all positions account-wide
 mtdata-cli trade_close --close-all --confirm-close-all true --dry-run false
+
+# Close positions and cancel pending orders for one strategy
+mtdata-cli trade_close --magic 3001 --target all_exposure \
+  --confirm-close-all true --dry-run false
 ```
 
-There is no separate "confirm" token for `trade_place`/`trade_modify`; the only extra safety gate is `--confirm-close-all` for bulk closes.
+For `all_exposure`, the response keeps `closed_positions` and
+`cancelled_pending_orders` as separate result legs and reports partial failures;
+one failed leg does not prevent the other from being attempted. There is no
+separate "confirm" token for `trade_place`/`trade_modify`; the extra
+`--confirm-close-all` gate applies to every ticketless live bulk close.
 
 ---
 

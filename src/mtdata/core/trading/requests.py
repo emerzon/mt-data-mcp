@@ -188,13 +188,24 @@ class TradeCloseRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     ticket: Optional[Union[int, str]] = None
+    target: Literal["positions", "pending", "all_exposure"] = Field(
+        default="positions",
+        description=(
+            "Object class to act on. positions closes open positions only; "
+            "pending cancels pending orders only; all_exposure independently "
+            "runs both legs and reports partial failures."
+        ),
+    )
     detail: DetailLiteral = Field(
         default="compact",
         description="Response detail level for close previews and result payloads.",
     )
     close_all: bool = Field(
         default=False,
-        description="Close all matching open positions instead of a single ticket.",
+        description=(
+            "Select the whole account when ticket, symbol, and magic are omitted. "
+            "Symbol or magic already defines a matching bulk scope."
+        ),
     )
     symbol: Optional[str] = None
     magic: Optional[int] = Field(default=None, description=MAGIC_NUMBER_DESCRIPTION)
@@ -207,15 +218,15 @@ class TradeCloseRequest(BaseModel):
         default=True,
         description=(
             "Preview the close request without sending it to the broker. Defaults "
-            "to true; set dry_run=false explicitly to close a live position or "
-            "order."
+            "to true; set dry_run=false explicitly to close positions or cancel "
+            "pending orders selected by target."
         ),
     )
     confirm_close_all: bool = Field(
         default=False,
         description=(
-            "Required with close_all=true and dry_run=false to execute a live "
-            "bulk close."
+            "Required for any ticketless live bulk operation, including symbol- "
+            "or magic-scoped requests and target=all_exposure."
         ),
     )
     pnl_filter: Literal["all", "profit", "loss"] = Field(
