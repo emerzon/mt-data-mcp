@@ -18,7 +18,7 @@ OUTPUT_EXTRA_FULL_ALIASES: Final[frozenset[str]] = frozenset(
         "all",
     }
 )
-PUBLIC_OUTPUT_PARAMS: Final[frozenset[str]] = frozenset({"json", "extras", "fields"})
+PUBLIC_OUTPUT_PARAMS: Final[frozenset[str]] = frozenset({"json", "output_fields"})
 OUTPUT_EXTRAS_HELP: Final[str] = (
     "Comma-separated richer output sections such as "
     f"{', '.join(sorted(OUTPUT_EXTRAS))}. Use "
@@ -69,8 +69,7 @@ PARAMETER_HELP: Final[dict[str, str]] = {
     "max_median_time": "Maximum median time-to-barrier estimate in bars.",
     "output_mode": "Barrier optimization output shape.",
     "json": "Return structured JSON instead of default TOON text.",
-    "extras": OUTPUT_EXTRAS_HELP,
-    "fields": (
+    "output_fields": (
         "Comma-separated output fields to keep; preserves essential top-level "
         "metadata and matching nested row fields."
     ),

@@ -27,7 +27,10 @@ from mtdata.core.trading.requests import (
     TradePlaceRequest,
     TradeRiskAnalyzeRequest,
 )
-from mtdata.forecast.requests import ForecastGenerateRequest
+from mtdata.forecast.requests import (
+    ForecastBarrierOptimizeRequest,
+    ForecastGenerateRequest,
+)
 
 # ---------------------------------------------------------------------------
 # Fixture: ensure the cli module is importable with heavy deps mocked
@@ -291,13 +294,11 @@ class TestAddDynamicArguments:
 
     def test_trade_place_marks_volume_and_order_type_required(self):
         parser = argparse.ArgumentParser()
-        func_info = {
-            "params": [
-                {"name": "symbol", "type": str, "required": False, "default": None},
-                {"name": "volume", "type": float, "required": False, "default": None},
-                {"name": "order_type", "type": str, "required": False, "default": None},
-            ]
-        }
+
+        def tool(request: TradePlaceRequest):
+            pass
+
+        func_info = get_function_info(tool)
         add_dynamic_arguments(parser, func_info, cmd_name="trade_place")
 
         with pytest.raises(SystemExit):
@@ -666,8 +667,6 @@ class TestAddDynamicArguments:
             ("options_barrier_price", "barrier", "knock-in/knock-out"),
             ("strategy_validate", "candidates", "builtin_strategy"),
             ("strategy_validate", "barrier", "triple-barrier"),
-            ("forecast_barrier_prob", "tp_pct", "0.1 means 0.1%"),
-            ("labels_triple_barrier", "sl_pct", "0.1 means 0.1%"),
         ],
     )
     def test_specialized_barrier_help_is_domain_specific(
@@ -807,10 +806,11 @@ class TestAddDynamicArguments:
         assert args.detail == "summary"
 
     def test_trading_order_commands_expose_canonical_detail(self):
-        for cmd_name, model_type, argv in (
+        for cmd_name, model_type, detail_value, argv in (
             (
                 "trade_place",
                 TradePlaceRequest,
+                "standard",
                 [
                     "EURUSD",
                     "--volume",
@@ -818,11 +818,11 @@ class TestAddDynamicArguments:
                     "--order-type",
                     "BUY",
                     "--detail",
-                    "summary",
+                    "standard",
                 ],
             ),
-            ("trade_modify", TradeModifyRequest, ["123", "--detail", "summary"]),
-            ("trade_close", TradeCloseRequest, ["--detail", "summary"]),
+            ("trade_modify", TradeModifyRequest, "summary", ["123", "--detail", "summary"]),
+            ("trade_close", TradeCloseRequest, "summary", ["--detail", "summary"]),
         ):
             parser = argparse.ArgumentParser()
 
@@ -836,7 +836,7 @@ class TestAddDynamicArguments:
             assert any(action.dest == "detail" for action in parser._actions)
             assert not any(action.dest == "preview_detail" for action in parser._actions)
             args = parser.parse_args(argv)
-            assert args.detail == "summary"
+            assert args.detail == detail_value
 
     def test_partial_flag_prefix_is_rejected_when_abbrev_disabled(self, capsys):
         parser = argparse.ArgumentParser(allow_abbrev=False)
@@ -986,25 +986,25 @@ class TestResolveParamKwargs:
     def test_patterns_mode_choices_are_explicit(self):
         param = {
             "name": "mode",
-            "type": str,
+            "type": PatternsDetectRequest.model_fields["mode"].annotation,
             "required": False,
             "default": "candlestick",
         }
         kwargs, _ = _resolve_param_kwargs(param, None, cmd_name="patterns_detect")
         assert kwargs["choices"] == [
-            "all",
             "candlestick",
             "classic",
             "harmonic",
             "fractal",
             "elliott",
+            "all",
         ]
         assert "fractals" not in kwargs["choices"]
 
     def test_static_method_and_transform_choices_are_exposed_per_command(self):
         method_param = {
             "name": "method",
-            "type": str,
+            "type": Literal["pearson", "spearman"],
             "required": False,
             "default": "pearson",
         }
@@ -1017,21 +1017,18 @@ class TestResolveParamKwargs:
         assert correlation["type"]("SPEARMAN") == "spearman"
 
         var_method, _ = _resolve_param_kwargs(
-            method_param,
+            {**method_param, "type": Literal["historical", "parametric"]},
             None,
             cmd_name="trade_var_cvar_calculate",
         )
         assert var_method["choices"] == [
             "historical",
-            "hist",
             "parametric",
-            "gaussian",
-            "normal",
         ]
 
         transform_param = {
             "name": "transform",
-            "type": str,
+            "type": Literal["log_return", "pct", "diff", "level", "log_level"],
             "required": False,
             "default": "log_return",
         }
@@ -1558,19 +1555,25 @@ class TestResolveParamKwargs:
         assert '"lag":3' in kwargs["help"]
 
     def test_forecast_barrier_optimize_method_has_cli_choices(self):
-        param = {"name": "method", "type": str, "required": False, "default": "auto"}
+        param = {
+            "name": "method",
+            "type": ForecastBarrierOptimizeRequest.model_fields["method"].annotation,
+            "required": False,
+            "default": "auto",
+        }
         kwargs, _ = _resolve_param_kwargs(
             param, None, cmd_name="forecast_barrier_optimize"
         )
         assert kwargs["choices"] == [
+            "auto",
+            "bootstrap",
+            "garch",
+            "heston",
+            "hmm_mc",
+            "jump_diffusion",
             "mc_gbm",
             "mc_gbm_bb",
-            "hmm_mc",
-            "garch",
-            "bootstrap",
-            "heston",
-            "jump_diffusion",
-            "auto",
+            "ensemble",
         ]
         assert "Barrier simulation method" in kwargs["help"]
 

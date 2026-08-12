@@ -280,7 +280,7 @@ Three tools are available for automated tuning and configuration search:
 Evolutionary search through parameter space. Good for discrete/mixed search spaces.
 
 ```bash
-mtdata-cli forecast_tune_genetic EURUSD --method theta --horizon 12 \
+mtdata-cli forecast_tune_genetic EURUSD --methods theta --horizon 12 \
   --metric avg_rmse --mode min --population 20 --generations 10
 ```
 
@@ -291,7 +291,7 @@ See [BACKTESTING.md](forecast/BACKTESTING.md) for full parameters and examples.
 Bayesian optimization with TPE, CMA-ES, or random sampling. Supports early stopping (pruning), parallel trials, and persistent study storage.
 
 ```bash
-mtdata-cli forecast_tune_optuna EURUSD --method theta --horizon 12 \
+mtdata-cli forecast_tune_optuna EURUSD --methods theta --horizon 12 \
   --metric avg_rmse --mode min --n-trials 40 --sampler tpe --json
 ```
 
@@ -417,8 +417,8 @@ authoritative way to distinguish those causes.
 | Monte Carlo | `mtdata-cli forecast_generate EURUSD --method mc_gbm --params "n_sims=2000"` |
 | Backtest | `mtdata-cli forecast_backtest_run EURUSD --methods "theta analog" --steps 20` |
 | Conformal intervals | `mtdata-cli forecast_conformal_intervals EURUSD --method theta --horizon 12` |
-| Tune (genetic) | `mtdata-cli forecast_tune_genetic EURUSD --method theta --metric avg_rmse` |
-| Tune (Optuna) | `mtdata-cli forecast_tune_optuna EURUSD --method theta --metric avg_rmse --n-trials 40` |
+| Tune (genetic) | `mtdata-cli forecast_tune_genetic EURUSD --methods theta --metric avg_rmse` |
+| Tune (Optuna) | `mtdata-cli forecast_tune_optuna EURUSD --methods theta --metric avg_rmse --n-trials 40` |
 
 ---
 

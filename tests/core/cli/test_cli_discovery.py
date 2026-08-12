@@ -931,7 +931,7 @@ class TestCreateCommandFunction:
         args = argparse.Namespace(symbol="EURUSD", limit=-5, json=False, verbose=False)
         status = cmd_fn(args)
         assert status == 1
-        assert "limit must be greater than 0." in capsys.readouterr().out
+        assert "limit: Input should be greater than or equal to 1" in capsys.readouterr().out
         mock_fn.assert_not_called()
 
     def test_trade_stress_test_invalid_shocks_has_json_remediation(self, capsys):

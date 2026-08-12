@@ -18,12 +18,16 @@ def test_market_status_tool_supports_detail_contract() -> None:
     raw = _unwrap(market_status_mod.market_status)
     params = list(signature(raw).parameters.values())
 
-    assert [param.name for param in params] == ["symbol", "region", "timezone_display", "detail", "extras"]
+    assert [param.name for param in params] == [
+        "symbol",
+        "region",
+        "timezone_display",
+        "detail",
+    ]
     assert params[0].default is None
     assert params[1].default == "all"
     assert params[2].default == "auto"
     assert params[3].default == "compact"
-    assert params[4].default is None
 
 
 def test_market_status_timezone_display_utc_converts_market_times(monkeypatch) -> None:
@@ -959,7 +963,7 @@ def test_normalize_market_status_output_compact_hides_messages_and_holidays() ->
     assert full["markets"][0]["message"] == "NYSE: Open"
 
 
-def test_normalize_market_status_output_metadata_extra_keeps_holidays() -> None:
+def test_normalize_market_status_output_full_detail_keeps_holidays() -> None:
     payload = {
         "success": True,
         "message": "human summary",
@@ -968,16 +972,15 @@ def test_normalize_market_status_output_metadata_extra_keeps_holidays() -> None:
         "upcoming_holidays_count": 1,
     }
 
-    compact = market_status_mod.normalize_market_status_output(
+    full = market_status_mod.normalize_market_status_output(
         payload,
-        detail="compact",
-        extras="metadata",
+        detail="full",
     )
 
-    assert "message" not in compact
-    assert "message" not in compact["markets"][0]
-    assert compact["upcoming_holidays"] == payload["upcoming_holidays"]
-    assert compact["upcoming_holidays_count"] == 1
+    assert full["message"] == "human summary"
+    assert full["markets"][0]["message"] == "NYSE: Open"
+    assert full["upcoming_holidays"] == payload["upcoming_holidays"]
+    assert full["upcoming_holidays_count"] == 1
 
 
 def test_normalize_market_status_output_handles_payload_without_markets() -> None:

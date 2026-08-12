@@ -8,6 +8,7 @@ from pydantic import (
     AfterValidator,
     BaseModel,
     BeforeValidator,
+    ConfigDict,
     Field,
     field_validator,
     model_validator,
@@ -352,6 +353,8 @@ SimplifySpecInput = Annotated[
 
 
 class _DetailNormalizedRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     @field_validator("detail", mode="before", check_fields=False)
     @classmethod
     def _normalize_detail(cls, value: Any) -> str:
@@ -364,6 +367,7 @@ class DataFetchCandlesRequest(_DetailNormalizedRequest):
     detail: DetailLiteral = "compact"
     limit: int = Field(
         DATA_FETCH_CANDLES_DEFAULT_LIMIT,
+        ge=1,
         description=(
             "Number of most-recent completed bars to return (default "
             f"{DATA_FETCH_CANDLES_DEFAULT_LIMIT}, kept small for compact output). "
@@ -459,6 +463,8 @@ class DataFetchTicksRequest(_DetailNormalizedRequest):
     symbol: str
     limit: int = Field(
         DATA_FETCH_TICKS_DEFAULT_LIMIT,
+        ge=1,
+        le=DATA_FETCH_TICKS_MAX_LIMIT,
         description=(
             "Max ticks to return (default "
             f"{DATA_FETCH_TICKS_DEFAULT_LIMIT}, a recent snapshot). The response "
@@ -491,7 +497,7 @@ class DataFetchTicksRequest(_DetailNormalizedRequest):
     @classmethod
     def _reject_removed_output(cls, values: Any) -> Any:
         values = reject_removed_field(values, field_name="output", replacement="json")
-        return reject_removed_field(values, field_name="output_mode", replacement="extras")
+        return reject_removed_field(values, field_name="output_mode", replacement="detail")
 
     @field_validator("limit")
     @classmethod
@@ -505,9 +511,11 @@ class DataFetchTicksRequest(_DetailNormalizedRequest):
 
 
 class WaitCandleRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     timeframe: TimeframeLiteral = "H1"
-    buffer_seconds: float = 1.0
-    max_wait_seconds: Optional[float] = 3600.0
+    buffer_seconds: float = Field(1.0, ge=0.0)
+    max_wait_seconds: Optional[float] = Field(3600.0, ge=0.0)
 
     @field_validator("buffer_seconds")
     @classmethod
@@ -521,8 +529,10 @@ class WaitCandleRequest(BaseModel):
 
 
 class WaitEventWindow(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     kind: Literal["minutes", "ticks"] = "minutes"
-    value: float = 5.0
+    value: float = Field(5.0, gt=0.0)
 
     @field_validator("value")
     @classmethod
@@ -531,6 +541,8 @@ class WaitEventWindow(BaseModel):
 
 
 class _WaitAccountEventBase(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     symbol: Optional[str] = None
     order_ticket: Optional[int] = None
     position_ticket: Optional[int] = None
@@ -549,9 +561,11 @@ class _WaitAccountEventBase(BaseModel):
 
 
 class CandleCloseEventSpec(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     type: Literal["candle_close"] = "candle_close"
     timeframe: Optional[TimeframeLiteral] = None
-    buffer_seconds: Optional[float] = None
+    buffer_seconds: Optional[float] = Field(None, ge=0.0)
 
     @field_validator("buffer_seconds")
     @classmethod
@@ -588,13 +602,15 @@ class SlHitEventSpec(_WaitAccountEventBase):
 
 
 class _WaitMarketStatEventBase(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     symbol: Optional[str] = None
     window: WaitEventWindow = Field(default_factory=WaitEventWindow)
     baseline_window: WaitEventWindow = Field(
         default_factory=lambda: WaitEventWindow(kind="minutes", value=60.0)
     )
     threshold_mode: Literal["ratio_to_baseline", "zscore"] = "ratio_to_baseline"
-    threshold_value: float = 2.0
+    threshold_value: float = Field(2.0, gt=0.0)
 
     @field_validator("threshold_value")
     @classmethod
@@ -626,7 +642,7 @@ class SpreadSpikeEventSpec(_WaitMarketStatEventBase):
 
 class TickCountDroughtEventSpec(_WaitMarketStatEventBase):
     type: Literal["tick_count_drought"] = "tick_count_drought"
-    threshold_value: float = 0.5
+    threshold_value: float = Field(0.5, gt=0.0)
 
 class RangeExpansionEventSpec(_WaitMarketStatEventBase):
     type: Literal["range_expansion"] = "range_expansion"
@@ -634,12 +650,14 @@ class RangeExpansionEventSpec(_WaitMarketStatEventBase):
 
 
 class PriceTouchLevelEventSpec(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     type: Literal["price_touch_level"] = "price_touch_level"
     symbol: Optional[str] = None
     level: float
     price_source: Literal["auto", "bid", "ask", "mid", "last"] = "auto"
     direction: Literal["up", "down", "either"] = "either"
-    tolerance: float = 0.0
+    tolerance: float = Field(0.0, ge=0.0)
 
     @field_validator("tolerance")
     @classmethod
@@ -648,13 +666,15 @@ class PriceTouchLevelEventSpec(BaseModel):
 
 
 class PriceBreakLevelEventSpec(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     type: Literal["price_break_level"] = "price_break_level"
     symbol: Optional[str] = None
     level: float
     price_source: Literal["auto", "bid", "ask", "mid", "last"] = "auto"
     direction: Literal["up", "down", "either"] = "either"
-    tolerance: float = 0.0
-    confirm_ticks: int = 1
+    tolerance: float = Field(0.0, ge=0.0)
+    confirm_ticks: int = Field(1, ge=1)
 
     @field_validator("tolerance")
     @classmethod
@@ -670,6 +690,8 @@ class PriceBreakLevelEventSpec(BaseModel):
 
 
 class PriceEnterZoneEventSpec(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     type: Literal["price_enter_zone"] = "price_enter_zone"
     symbol: Optional[str] = None
     lower: float
@@ -686,7 +708,7 @@ class PriceEnterZoneEventSpec(BaseModel):
 
 class PendingNearFillEventSpec(_WaitAccountEventBase):
     type: Literal["pending_near_fill"] = "pending_near_fill"
-    distance: float = 0.0
+    distance: float = Field(0.0, ge=0.0)
     price_source: Literal["auto", "bid", "ask", "mid", "last"] = "auto"
 
     @field_validator("distance")
@@ -697,7 +719,7 @@ class PendingNearFillEventSpec(_WaitAccountEventBase):
 
 class StopThreatEventSpec(_WaitAccountEventBase):
     type: Literal["stop_threat"] = "stop_threat"
-    distance: float = 0.0
+    distance: float = Field(0.0, ge=0.0)
     price_source: Literal["auto", "bid", "ask", "mid", "last"] = "auto"
 
     @field_validator("distance")
@@ -735,7 +757,7 @@ WAIT_EVENT_MAX_SYMBOLS = 12
 
 
 class WaitEventRequest(BaseModel):
-    model_config = {"extra": "forbid"}
+    model_config = ConfigDict(extra="forbid")
 
     watch_for: Optional[List[WaitWatchEventSpec]] = Field(
         default=None,
@@ -756,6 +778,7 @@ class WaitEventRequest(BaseModel):
         default=None,
         min_length=1,
         max_length=WAIT_EVENT_MAX_SYMBOLS,
+        json_schema_extra={"uniqueItems": True},
         description=(
             "Basket symbols to monitor and include in candle-boundary statistics. "
             "Cannot be combined with symbol."
@@ -766,9 +789,9 @@ class WaitEventRequest(BaseModel):
     position_ticket: Optional[int] = None
     magic: Optional[int] = Field(default=None, description=_MAGIC_NUMBER_DESCRIPTION)
     side: Optional[Literal["buy", "sell"]] = None
-    buffer_seconds: float = 1.0
-    poll_interval_seconds: float = 0.5
-    max_wait_seconds: Optional[float] = None
+    buffer_seconds: float = Field(1.0, ge=0.0)
+    poll_interval_seconds: float = Field(0.5, ge=_WAIT_EVENT_MIN_POLL_INTERVAL_SECONDS)
+    max_wait_seconds: Optional[float] = Field(None, ge=0.0)
     accept_preexisting: bool = False
 
     @field_validator("symbols")

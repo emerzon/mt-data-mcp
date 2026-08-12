@@ -146,33 +146,23 @@ class TestPydanticModels:
             horizon=5, lookback=200, ci_alpha=0.1,
             quantity="return",
             denoise={"method": "wavelet"}, features={"rsi": {}},
-            dimred_method="pca", dimred_params={"n_components": 3},
+            dimred={"method": "pca", "params": {"n_components": 3}},
             target_spec={"col": "close"},
         )
         assert body.symbol == "GBPUSD"
         assert body.quantity == "return"
-        assert body.dimred_method == "pca"
+        assert body.dimred is not None
+        assert body.dimred.method == "pca"
 
     def test_forecast_bodies_accept_detail(self):
         assert ForecastPriceBody(symbol="EURUSD", detail="summary").to_domain_request().detail == "summary"
         assert ForecastVolBody(symbol="EURUSD", detail="standard").to_domain_request().detail == "standard"
         assert BacktestBody(symbol="EURUSD", detail="full").to_domain_request().detail == "full"
 
-    def test_extras_still_request_full_detail(self):
-        body = ForecastPriceBody(symbol="EURUSD", detail="summary", extras="metadata")
-        assert body.to_domain_request().detail == "full"
-
-    @pytest.mark.parametrize("extras", [[], ""])
-    def test_empty_extras_do_not_override_explicit_detail(self, extras):
-        assert ForecastPriceBody(
-            symbol="EURUSD", detail="full", extras=extras
-        ).to_domain_request().detail == "full"
-        assert ForecastVolBody(
-            symbol="EURUSD", detail="full", extras=extras
-        ).to_domain_request().detail == "full"
-        assert BacktestBody(
-            symbol="EURUSD", detail="full", extras=extras
-        ).to_domain_request().detail == "full"
+    @pytest.mark.parametrize("body_type", [ForecastPriceBody, ForecastVolBody, BacktestBody])
+    def test_forecast_bodies_reject_removed_extras(self, body_type):
+        with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+            body_type(symbol="EURUSD", extras="metadata")
 
     def test_forecast_price_body_rejects_removed_target(self):
         with pytest.raises(ValidationError):
@@ -438,17 +428,17 @@ class TestGetMethods:
     def test_returns_methods(self):
         data = {"methods": [{"method": "theta", "available": True, "requires": []}]}
         with patch("mtdata.core.web_api._get_methods_impl", return_value=data):
-            res = web_api.get_methods(extras="metadata")
+            res = web_api.get_methods(detail="full")
         assert res["methods"][0]["method"] == "theta"
 
     def test_returns_empty_on_none(self):
         with patch("mtdata.core.web_api._get_methods_impl", return_value=None):
-            res = web_api.get_methods(extras="metadata")
+            res = web_api.get_methods(detail="full")
         assert res == {"methods": []}
 
     def test_returns_empty_on_no_methods_key(self):
         with patch("mtdata.core.web_api._get_methods_impl", return_value={"other": 1}):
-            res = web_api.get_methods(extras="metadata")
+            res = web_api.get_methods(detail="full")
         assert res == {"methods": []}
 
     def test_uses_shared_snapshot_backed_methods_payload(self):
@@ -479,7 +469,7 @@ class TestGetMethods:
                 ]
             },
         ):
-            res = web_api.get_methods(extras="metadata")
+            res = web_api.get_methods(detail="full")
         assert res["methods"] == [
             {
                 "method": "timesfm",
@@ -503,7 +493,7 @@ class TestGetMethods:
             "mtdata.core.web_api_handlers.get_forecast_methods_payload",
             side_effect=RuntimeError("boom"),
         ):
-            res = web_api.get_methods(extras="metadata")
+            res = web_api.get_methods(detail="full")
         assert res == data
 
     def test_default_compact_filters_snapshot_metadata(self):
@@ -562,12 +552,12 @@ class TestGetMethods:
             "mtdata.core.web_api_handlers.get_forecast_methods_payload",
             return_value=enriched,
         ):
-            resp = _client.get("/api/methods", params={"extras": "metadata"})
+            resp = _client.get("/api/methods", params={"detail": "full"})
         assert resp.status_code == 200
         assert resp.json() == enriched
 
-    def test_rejects_invalid_methods_extras_query(self):
-        resp = _client.get("/api/methods", params={"extras": "not_a_section"})
+    def test_rejects_invalid_methods_detail_query(self):
+        resp = _client.get("/api/methods", params={"detail": "not_a_level"})
         assert resp.status_code == 422
 
 
@@ -588,7 +578,7 @@ class TestGetModels:
         assert resp.status_code == 200
         assert resp.json() == data
 
-    def test_passes_method_and_extras_to_models_impl(self):
+    def test_passes_method_and_detail_to_models_impl(self):
         data = {
             "success": True,
             "detail": "full",
@@ -602,19 +592,19 @@ class TestGetModels:
             ],
         }
         with patch("mtdata.core.web_api._get_models_impl", return_value=data) as mock_models:
-            resp = _client.get("/api/models", params={"method": "nhits", "extras": "metadata"})
+            resp = _client.get("/api/models", params={"method": "nhits", "detail": "full"})
         assert resp.status_code == 200
         assert resp.json() == data
         mock_models.assert_called_once_with(method="nhits", detail="full")
 
     def test_returns_empty_payload_on_invalid_models_result(self):
         with patch("mtdata.core.web_api._get_models_impl", return_value=None):
-            resp = _client.get("/api/models", params={"extras": "metadata"})
+            resp = _client.get("/api/models", params={"detail": "full"})
         assert resp.status_code == 200
         assert resp.json() == {"success": True, "detail": "full", "count": 0, "models": []}
 
-    def test_rejects_invalid_extras_query(self):
-        resp = _client.get("/api/models", params={"extras": "not_a_section"})
+    def test_rejects_invalid_detail_query(self):
+        resp = _client.get("/api/models", params={"detail": "not_a_level"})
         assert resp.status_code == 422
 
 
@@ -838,7 +828,7 @@ class TestGetHistory:
             mock_cfg.get_time_offset_seconds.return_value = 0
             resp = _client.get(
                 "/api/v1/history",
-                params={"symbol": "EURUSD", "extras": "metadata"},
+                params={"symbol": "EURUSD", "detail": "full"},
             )
         res = resp.json()
         assert res["data"] == [{"time": 1.0, "close": 1.1}]
@@ -1420,7 +1410,7 @@ class TestPostForecastPrice:
                 "params": {"order": [1, 1, 1]}, "ci_alpha": 0.1,
                 "quantity": "return",
                 "denoise": {"method": "wavelet"}, "features": {"rsi": {}},
-                "dimred_method": "pca", "dimred_params": {"n": 3},
+                "dimred": {"method": "pca", "params": {"n": 3}},
                 "target_spec": {"col": "close"},
                 "async_mode": True,
                 "model_id": "arima/GBPUSD_D1/model-hash",
@@ -1567,8 +1557,8 @@ class TestPostBacktest:
                 "params_per_method": {"theta": {}}, "quantity": "return",
                 "denoise": {"method": "wavelet"},
                 "params": {"extra": True}, "features": {"rsi": {}},
-                "dimred_method": "pca", "dimred_params": {"n": 2},
-                "slippage_bps": 1.5, "trade_threshold": 0.01, "extras": ["metadata"],
+                "dimred": {"method": "pca", "params": {"n": 2}},
+                "slippage_bps": 1.5, "trade_threshold": 0.01, "detail": "full",
             })
         request = mock_bt.call_args.args[0]
         assert request.slippage_bps == 1.5
@@ -1731,7 +1721,7 @@ class TestGetSupportResistance:
             "levels": [{"type": "support", "value": 1.1, "touches": 2}],
         }
         with patch("mtdata.core.web_api_handlers.compute_support_resistance_payload", return_value=payload) as mock_compute:
-            resp = _client.get("/api/support-resistance", params={"symbol": "EURUSD", "extras": "metadata"})
+            resp = _client.get("/api/support-resistance", params={"symbol": "EURUSD", "detail": "full"})
         assert resp.status_code == 200
         kwargs = mock_compute.call_args.kwargs
         assert kwargs["limit"] == 200
@@ -1756,7 +1746,7 @@ class TestGetSupportResistance:
         with patch("mtdata.core.web_api_handlers.compute_support_resistance_payload", return_value=payload) as mock_compute:
             resp = _client.get(
                 "/api/support-resistance",
-                params={"symbol": "EURUSD", "lookback": 250, "extras": "metadata"},
+                params={"symbol": "EURUSD", "lookback": 250, "detail": "full"},
             )
         assert resp.status_code == 200
         assert mock_compute.call_args.kwargs["limit"] == 250
@@ -1929,7 +1919,7 @@ class TestMethodsAvailabilityEdgeCases:
                 ]
             },
         ):
-            res = web_api.get_methods(extras="metadata")
+            res = web_api.get_methods(detail="full")
         assert res["methods"][0]["available"] is True
         assert res["methods"][0]["requires"] == ["chronos"]
         assert res["methods"][0]["namespace"] == "pretrained"

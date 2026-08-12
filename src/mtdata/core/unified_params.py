@@ -9,7 +9,7 @@ from typing import Optional
 
 from ..shared.constants import DEFAULT_TIMEFRAME
 from ..shared.output_precision import PRECISION_CHOICES
-from ..shared.parameter_contracts import OUTPUT_EXTRAS_HELP, PARAMETER_HELP
+from ..shared.parameter_contracts import PARAMETER_HELP
 
 
 def add_global_args_to_parser(
@@ -53,27 +53,16 @@ def add_global_args_to_parser(
             **json_kwargs,
         )
 
-    if 'extras' not in exclude_params:
-        extras_kwargs = {
-            "dest": "extras",
-            "default": None,
-            "metavar": "EXTRA[,EXTRA...]",
-            "help": f"Include richer output sections in TOON. {OUTPUT_EXTRAS_HELP}",
-        }
-        if suppress_defaults:
-            extras_kwargs["default"] = argparse.SUPPRESS
-        parser.add_argument("--extras", **extras_kwargs)
-
-    if 'fields' not in exclude_params:
+    if 'output_fields' not in exclude_params:
         fields_kwargs = {
-            "dest": "fields",
+            "dest": "output_fields",
             "default": None,
             "metavar": "FIELD[,FIELD...]",
             "help": "Return only the selected output fields, plus envelope metadata.",
         }
         if suppress_defaults:
             fields_kwargs["default"] = argparse.SUPPRESS
-        parser.add_argument("--fields", **fields_kwargs)
+        parser.add_argument("--output-fields", **fields_kwargs)
 
     if 'precision' not in exclude_params:
         precision_kwargs = {

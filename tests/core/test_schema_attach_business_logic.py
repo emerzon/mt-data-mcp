@@ -6,9 +6,6 @@ from types import SimpleNamespace
 import pytest
 
 from mtdata.core import schema_attach as schema_attach_mod
-from mtdata.shared.parameter_contracts import (
-    OUTPUT_EXTRAS,
-)
 
 
 def _attach_tool_schema(monkeypatch, tool_name: str, base_schema: dict, *, shared_enums: dict | None = None):
@@ -112,11 +109,11 @@ def test_attach_schemas_to_tools_patches_forecast_generate(monkeypatch) -> None:
 
     schema = tool_obj.schema
     params = schema["parameters"]["properties"]
-    assert params["quantity"] == {"$ref": "#/$defs/QuantitySpec"}
-    assert params["denoise"] == {"$ref": "#/$defs/DenoiseSpec"}
-    assert params["params"] == {"type": "object"}
+    assert params["quantity"]["$ref"] == "#/$defs/QuantitySpec"
+    assert params["denoise"]["$ref"] == "#/$defs/DenoiseSpec"
+    assert params["params"]["type"] == "object"
     assert tool_func.schema == schema
-    assert len(apply_calls) == 1
+    assert len(apply_calls) == 2
 
 
 def test_attach_schemas_to_tools_preserves_tool_params_and_adds_public_output_contract(monkeypatch) -> None:
@@ -140,7 +137,8 @@ def test_attach_schemas_to_tools_preserves_tool_params_and_adds_public_output_co
     assert props["output"]["type"] == "string"
     assert "detail" in params.get("required", [])
     assert props["json"]["type"] == "boolean"
-    assert set(props["extras"]["anyOf"][0]["items"]["enum"]) == set(OUTPUT_EXTRAS)
+    assert "extras" not in props
+    assert "output_fields" in props
 
 
 def test_attach_schemas_to_tools_patches_indicator_and_data_refs(monkeypatch) -> None:
@@ -164,7 +162,7 @@ def test_attach_schemas_to_tools_patches_indicator_and_data_refs(monkeypatch) ->
     assert {"type": "array", "items": {"$ref": "#/$defs/IndicatorSpec"}} in indicator_any_of
     assert any(option.get("type") == "string" for option in indicator_any_of)
     assert {"type": "null"} not in indicator_any_of
-    assert params["denoise"] == {"$ref": "#/$defs/DenoiseSpec"}
+    assert params["denoise"]["$ref"] == "#/$defs/DenoiseSpec"
     simplify_schema = params["simplify"]
     simplify_any_of = simplify_schema["anyOf"]
     assert {"$ref": "#/$defs/SimplifySpec"} in simplify_any_of
@@ -187,7 +185,7 @@ def test_attach_schemas_to_tools_patches_indicator_and_data_refs(monkeypatch) ->
     )
 
     indicator_params = indicator_obj.schema["parameters"]["properties"]
-    assert indicator_params["category"] == {"$ref": "#/$defs/IndicatorCategory"}
+    assert indicator_params["category"]["$ref"] == "#/$defs/IndicatorCategory"
 
 
 def test_attach_schemas_to_tools_patches_barrier_method_enums(monkeypatch) -> None:
@@ -225,8 +223,11 @@ def test_attach_schemas_to_tools_patches_barrier_method_enums(monkeypatch) -> No
     assert "ensemble" in opt_method["enum"]
 
 
-def test_attach_schemas_to_tools_keeps_barrier_inputs_flat(monkeypatch) -> None:
-    for tool_name in ("forecast_barrier_prob", "labels_triple_barrier"):
+def test_attach_schemas_to_tools_keeps_canonical_barrier_objects(monkeypatch) -> None:
+    for tool_name, parameter_name in (
+        ("forecast_barrier_prob", "barrier"),
+        ("labels_triple_barrier", "barriers"),
+    ):
         tool_obj, _tool_func, _apply_calls = _attach_tool_schema(
             monkeypatch,
             tool_name,
@@ -234,20 +235,28 @@ def test_attach_schemas_to_tools_keeps_barrier_inputs_flat(monkeypatch) -> None:
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "tp_abs": {"type": "number"},
-                        "sl_abs": {"type": "number"},
-                        "tp_pct": {"type": "number"},
-                        "sl_pct": {"type": "number"},
-                        "tp_ticks": {"type": "number"},
-                        "sl_ticks": {"type": "number"},
+                        parameter_name: {
+                            "type": "object",
+                            "additionalProperties": False,
+                        },
                     },
-                    "required": [],
+                    "required": [parameter_name],
                 }
             },
         )
 
         params_obj = tool_obj.schema["parameters"]
         assert params_obj["type"] == "object"
+        assert parameter_name in params_obj["required"]
+        assert params_obj["properties"][parameter_name]["type"] == "object"
+        assert not {
+            "tp_abs",
+            "sl_abs",
+            "tp_pct",
+            "sl_pct",
+            "tp_ticks",
+            "sl_ticks",
+        }.intersection(params_obj["properties"])
         for key in ("allOf", "anyOf", "oneOf", "not", "enum"):
             assert key not in params_obj
 

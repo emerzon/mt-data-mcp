@@ -4,8 +4,8 @@ CLI and [MCP](GLOSSARY.md#mcp-model-context-protocol) expose the canonical tool
 payloads described here. The Web API preserves the same domain semantics for
 the endpoints it exposes, but is a focused, UI-oriented subset and may return
 a more compact representation; see [WEB_API.md](WEB_API.md). This page is the
-reference for the canonical model — success/error envelope, `detail`, `extras`,
-field selection, and pagination.
+reference for the canonical model — success/error envelope, `detail`,
+`output_fields`, and pagination.
 
 Presentation flags and exit codes: [CLI.md](CLI.md#output-contract).
 
@@ -46,54 +46,36 @@ Successful tool responses are JSON objects that carry a `success` flag plus the 
 Notes:
 - `detail` changes verbosity **within** the sections a tool already returns; it does **not** add new analysis. (For example, `market_snapshot` uses a separate `sections` parameter to choose analysis modules. Its compact/summary envelope reports `sections_summarized`, while standard/full reports `sections_embedded`.)
 - The shared output layer has two retention modes: `full`, and the compact strip used by `compact`, `standard`, and `summary`. Tools can independently distinguish the accepted values in their own payloads.
-- Requesting any [extras](#richer-sections-extras) automatically shapes the response as `full`.
+- Use `detail=full` when runtime metadata, diagnostics, request context, or raw supporting rows are needed.
 
 ---
 
-## Richer sections (extras)
+## Richer output
 
-Compact output is implicit. To opt into heavier, optional sections, pass `extras`.
-The canonical tokens are listed below. Support is tool-specific: a token preserves
-or enables that section when the selected tool produces it; it does not synthesize
-metadata or diagnostics that the tool cannot provide. Use `tools_list` to inspect a
-tool's parameters and documentation.
-
-| Token | Adds |
-|-------|------|
-| `metadata` | Runtime/context metadata (service, tool, timing, time-normalization notes) |
-| `diagnostics` | Diagnostic detail about how the result was produced |
-| `request` | The echoed, resolved request context (parameters the tool actually used) |
-| `raw` | Raw/unshaped payload values |
-| `raw_rows` | Raw underlying rows behind a summarized table |
-| `method_docs` | Inline documentation for the selected method/indicator |
-| `guidance` | Suggested next steps and related tools |
-
-The alias `all` requests every canonical section; the response includes the sections
-supported by that tool.
+Compact output is implicit. Set `detail=full` to retain the richer metadata and
+diagnostic sections a tool produces. Tools with a meaningful intermediate or
+summary representation expose only those detail values in their schema.
 
 ```bash
-# Just metadata + diagnostics
-mtdata-cli market_status --extras metadata,diagnostics
+# Full market-session diagnostics
+mtdata-cli market_status --detail full
 
-# Everything
-mtdata-cli forecast_generate EURUSD --horizon 12 --extras all --json
+# Full forecast context
+mtdata-cli forecast_generate EURUSD --horizon 12 --detail full --json
 ```
 
-`detail` and `extras` are complementary: `detail` tunes verbosity of the sections a
-tool already returns, while `extras` asks the tool to include supported optional
-sections. Any non-empty `extras` request also preserves the full response shape.
+## Field selection (output_fields)
 
----
-
-## Field selection (fields)
-
-`fields` narrows a response to a specific set of top-level keys (or row columns), which is useful for token-lean scripting. Combine it with `--json` for machine parsing:
+`output_fields` narrows a response to specific top-level keys or dotted paths.
+Combine it with `--json` for token-lean machine parsing:
 
 ```bash
-mtdata-cli symbols_describe EURUSD --fields symbol,digits,point --json
+mtdata-cli symbols_describe EURUSD --output-fields symbol,digits,point --json
 ```
 
-`json`, `extras`, and `fields` are the shared output-shaping parameters available across tools.
+`json` and `output_fields` are the shared output-shaping parameters available
+across tools. A domain-specific parameter named `fields` (currently used by
+Finviz fundamentals) selects source data and is not response projection.
 
 ---
 

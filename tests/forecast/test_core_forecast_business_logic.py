@@ -1661,7 +1661,7 @@ def test_forecast_tune_genetic_logs_finish_event(caplog, monkeypatch):
     monkeypatch.setattr(cf, "run_forecast_tune_genetic", lambda request, genetic_search_impl: {"success": True, "best": {}})
 
     with caplog.at_level(logging.DEBUG, logger=cf.logger.name):
-        out = raw(request=ForecastTuneGeneticRequest(symbol="EURUSD", method="theta"))
+        out = raw(request=ForecastTuneGeneticRequest(symbol="EURUSD", methods=["theta"]))
 
     assert out["success"] is True
     assert any(
@@ -1679,7 +1679,7 @@ def test_forecast_tune_detail_compacts_history_tail():
         }
 
     compact = forecast_use_cases.run_forecast_tune_genetic(
-        ForecastTuneGeneticRequest(symbol="EURUSD", method="theta"),
+        ForecastTuneGeneticRequest(symbol="EURUSD", methods=["theta"]),
         genetic_search_impl=fake_genetic,
     )
     assert compact["detail"] == "compact"
@@ -1688,7 +1688,7 @@ def test_forecast_tune_detail_compacts_history_tail():
     assert compact["history_count"] == 2
 
     full = forecast_use_cases.run_forecast_tune_genetic(
-        ForecastTuneGeneticRequest(symbol="EURUSD", method="theta", detail="full"),
+        ForecastTuneGeneticRequest(symbol="EURUSD", methods=["theta"], detail="full"),
         genetic_search_impl=fake_genetic,
     )
     assert full["detail"] == "full"
@@ -1704,7 +1704,7 @@ def test_forecast_tune_optuna_and_optimize_hints_accept_detail():
         return {"success": True, "history_count": 1, "history_tail": [{"best_score": 0.5}]}
 
     optuna = forecast_use_cases.run_forecast_tune_optuna(
-        ForecastTuneOptunaRequest(symbol="EURUSD", method="theta", detail="standard"),
+        ForecastTuneOptunaRequest(symbol="EURUSD", methods=["theta"], detail="standard"),
         optuna_search_impl=fake_optuna,
     )
     assert optuna["detail"] == "standard"
@@ -1712,7 +1712,7 @@ def test_forecast_tune_optuna_and_optimize_hints_accept_detail():
     assert optuna["history_tail_count"] == 1
 
     hints = forecast_use_cases.run_forecast_optimize_hints(
-        ForecastOptimizeHintsRequest(symbol="EURUSD", timeframe="H1", detail="summary"),
+        ForecastOptimizeHintsRequest(symbol="EURUSD", timeframes=["H1"], detail="summary"),
         optimize_hints_impl=fake_hints,
     )
     assert hints["detail"] == "summary"
@@ -1747,8 +1747,7 @@ def test_forecast_barrier_optimize_request_defaults_to_summary_output():
         "params",
         "objective",
         "top_k",
-        "viable_only",
-        "tradable_only",
+        "candidate_filter",
         "min_ev",
         "min_edge",
         "min_kelly",
@@ -1765,13 +1764,15 @@ def test_forecast_barrier_optimize_request_defaults_to_summary_output():
 
 
 def test_forecast_barrier_requests_normalize_known_direction_aliases_only():
-    assert ForecastBarrierProbRequest(symbol="EURUSD", direction="buy").direction == "long"
+    barrier = {"kind": "tp_sl", "unit": "pct", "take_profit": 0.5, "stop_loss": 0.3}
+    assert ForecastBarrierProbRequest(symbol="EURUSD", barrier=barrier, direction="buy").direction == "long"
     assert ForecastBarrierOptimizeRequest(symbol="EURUSD", direction="DOWN").direction == "short"
-    assert ForecastBarrierProbRequest(symbol="EURUSD", direction="weird").direction == "weird"
+    with pytest.raises(ValidationError, match="direction"):
+        ForecastBarrierProbRequest(symbol="EURUSD", barrier=barrier, direction="weird")
 
 
 def test_forecast_barrier_optimize_request_rejects_removed_output_field():
-    with pytest.raises(ValidationError, match="output was removed; use extras"):
+    with pytest.raises(ValidationError, match="output was removed; use detail"):
         ForecastBarrierOptimizeRequest(symbol="EURUSD", output="summary")
 
 
@@ -2859,19 +2860,19 @@ def test_forecast_tune_genetic_and_barrier_prob_routing(monkeypatch):
         return {"theta": {"window": {"min": 1, "max": 3}}}
 
     monkeypatch.setattr(tune_mod, "default_search_space", fake_default_search_space)
-    out = raw_tune(request=ForecastTuneGeneticRequest(symbol="EURUSD", method="theta", search_space=None))
+    out = raw_tune(request=ForecastTuneGeneticRequest(symbol="EURUSD", methods=["theta"], search_space=None))
     assert out["ok"] is True
     assert out["detail"] == "compact"
     assert out["compute_intensity"] == "high"
-    assert captured["method"] == "theta"
-    assert ss_calls["method"] == "theta"
-    assert ss_calls["methods"] is None
+    assert captured["method"] is None
+    assert captured["methods"] == ["theta"]
+    assert ss_calls["method"] is None
+    assert ss_calls["methods"] == ["theta"]
     assert "theta" in captured["search_space"]
 
     out = raw_tune(
         request=ForecastTuneGeneticRequest(
             symbol="EURUSD",
-            method="theta",
             methods=["theta", "naive"],
             search_space={"x": {"type": "int", "min": 1, "max": 3}},
         )
@@ -2906,6 +2907,7 @@ def test_forecast_tune_genetic_and_barrier_prob_routing(monkeypatch):
             symbol="EURUSD",
             method="auto",
             direction="down",
+            barrier={"kind": "tp_sl", "unit": "price", "take_profit": 1.2, "stop_loss": 1.1},
         )
     )
     assert out["kind"] == "mc"
@@ -2913,86 +2915,41 @@ def test_forecast_tune_genetic_and_barrier_prob_routing(monkeypatch):
     assert out["direction"] == "short"
     assert out["detail"] == "compact"
 
-    out = raw_barrier(
-        request=ForecastBarrierProbRequest(
+    with pytest.raises(ValidationError, match="direction"):
+        ForecastBarrierProbRequest(
             symbol="EURUSD",
             method="closed_form",
             direction="weird",
+            barrier={"kind": "single_price", "level": 1.2},
         )
-    )
-    assert "error" in out
-    assert "Invalid direction" in out["error"]
 
-    out = raw_barrier(request=ForecastBarrierProbRequest(symbol="EURUSD", method="mystery"))
-    assert out["error_code"] == "unsupported_method"
-    assert "Unsupported barrier method: mystery" in out["error"]
-    assert "mc_gbm" in out["error"]
+    with pytest.raises(ValidationError, match="method"):
+        ForecastBarrierProbRequest(
+            symbol="EURUSD",
+            method="mystery",
+            barrier={"kind": "tp_sl", "unit": "price", "take_profit": 1.2, "stop_loss": 1.1},
+        )
 
 
 def test_forecast_barrier_methods_reject_legacy_aliases():
-    out = forecast_use_cases.run_forecast_barrier_prob(
-        ForecastBarrierProbRequest(symbol="EURUSD", method="monte_carlo"),
-        build_barrier_kwargs=lambda _values: {},
-        normalize_trade_direction=lambda _direction: ("long", None),
-        barrier_hit_probabilities_impl=lambda **_kwargs: {"success": True},
-        barrier_closed_form_impl=lambda **_kwargs: {"unused": True},
-    )
-    assert out.get("error_code") == "unsupported_method" or "Unsupported barrier method" in str(
-        out.get("error", "")
-    )
-
-    out_opt = forecast_use_cases.run_forecast_barrier_optimize(
-        ForecastBarrierOptimizeRequest(symbol="EURUSD", method="monte_carlo_bb"),
-        parse_kv_or_json=lambda value: value or {},
-        barrier_optimize_impl=lambda **_kwargs: {"success": True, "best": {}},
-    )
-    assert out_opt.get("error_code") == "unsupported_method" or "Unsupported barrier method" in str(
-        out_opt.get("error", "")
-    )
+    barrier = {"kind": "tp_sl", "unit": "pct", "take_profit": 0.5, "stop_loss": 0.3}
+    with pytest.raises(ValidationError, match="method"):
+        ForecastBarrierProbRequest(symbol="EURUSD", method="monte_carlo", barrier=barrier)
+    with pytest.raises(ValidationError, match="method"):
+        ForecastBarrierOptimizeRequest(symbol="EURUSD", method="monte_carlo_bb")
 
 
 def test_forecast_barrier_prob_requires_explicit_barriers(monkeypatch):
-    called = False
-
-    def fake_barrier_hit(**kwargs):
-        nonlocal called
-        called = True
-        return {"success": True}
-
-    out = forecast_use_cases.run_forecast_barrier_prob(
-        ForecastBarrierProbRequest(symbol="EURUSD"),
-        build_barrier_kwargs=lambda _values: {},
-        normalize_trade_direction=lambda _direction: ("long", None),
-        barrier_hit_probabilities_impl=fake_barrier_hit,
-        barrier_closed_form_impl=lambda **_kwargs: {"unused": True},
-    )
-
-    assert called is False
-    assert out["success"] is False
-    assert out["error_code"] == "barrier_parameters_missing"
-    assert isinstance(out["request_id"], str)
-    assert out["operation"] == "forecast_barrier_prob"
-    assert "forecast_barrier_optimize" in out["remediation"]
+    with pytest.raises(ValidationError, match="barrier"):
+        ForecastBarrierProbRequest(symbol="EURUSD")
 
 
 def test_forecast_barrier_prob_keeps_partial_barrier_inputs_strict():
-    called: dict[str, object] = {}
-
-    def fake_barrier_hit(**kwargs):
-        called.update(kwargs)
-        return {"error": "Missing barriers."}
-
-    out = forecast_use_cases.run_forecast_barrier_prob(
-        ForecastBarrierProbRequest(symbol="EURUSD", tp_pct=0.5),
-        build_barrier_kwargs=lambda _values: {"tp_pct": 0.5},
-        normalize_trade_direction=lambda _direction: ("long", None),
-        barrier_hit_probabilities_impl=fake_barrier_hit,
-        barrier_closed_form_impl=lambda **_kwargs: {"unused": True},
-    )
-
-    assert out == {"error": "Missing barriers."}
-    assert called["tp_pct"] == 0.5
-    assert "sl_pct" not in called
+    with pytest.raises(ValidationError, match="stop_loss"):
+        ForecastBarrierProbRequest(
+            symbol="EURUSD",
+            barrier={"kind": "tp_sl", "unit": "pct", "take_profit": 0.5},
+        )
 
 
 def test_forecast_barrier_optimize_rejects_unknown_method_without_traceback():
@@ -3003,16 +2960,9 @@ def test_forecast_barrier_optimize_rejects_unknown_method_without_traceback():
         called = True
         return {"success": True}
 
-    out = forecast_use_cases.run_forecast_barrier_optimize(
-        ForecastBarrierOptimizeRequest(symbol="EURUSD", method="mystery"),
-        parse_kv_or_json=lambda value: value or {},
-        barrier_optimize_impl=fake_optimize,
-    )
-
+    with pytest.raises(ValidationError, match="method"):
+        ForecastBarrierOptimizeRequest(symbol="EURUSD", method="mystery")
     assert called is False
-    assert out["error_code"] == "unsupported_method"
-    assert "Unsupported barrier method: mystery" in out["error"]
-    assert "traceback_summary" not in out
 
 
 def test_forecast_barrier_optimize_rounds_public_float_artifacts():
@@ -3138,58 +3088,28 @@ def test_forecast_barrier_optimize_compact_trims_blocked_status_noise():
 
 
 def test_forecast_barrier_prob_closed_form_rejects_tp_sl_inputs_before_generic_error():
-    called = False
-
-    def fake_closed_form(**_kwargs):
-        nonlocal called
-        called = True
-        return {"error": "Provide a positive barrier price"}
-
-    out = forecast_use_cases.run_forecast_barrier_prob(
+    with pytest.raises(ValidationError, match="single_price"):
         ForecastBarrierProbRequest(
             symbol="EURUSD",
             method="closed_form",
-            tp_pct=0.5,
-            sl_pct=0.5,
-        ),
-        build_barrier_kwargs=lambda _values: {},
-        normalize_trade_direction=lambda _direction: ("long", None),
-        barrier_hit_probabilities_impl=lambda **_kwargs: {"unused": True},
-        barrier_closed_form_impl=fake_closed_form,
-    )
-
-    assert called is False
-    assert out["error_code"] == "invalid_input"
-    assert "closed_form method uses the absolute barrier parameter" in out["error"]
-    assert "mc_gbm" in out["error"]
+            barrier={
+                "kind": "tp_sl",
+                "unit": "pct",
+                "take_profit": 0.5,
+                "stop_loss": 0.5,
+            },
+        )
 
 
 def test_forecast_barrier_prob_closed_form_rejects_barrier_with_tp_sl_inputs():
-    called = False
-
-    def fake_closed_form(**_kwargs):
-        nonlocal called
-        called = True
-        return {"success": True}
-
-    out = forecast_use_cases.run_forecast_barrier_prob(
+    with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
         ForecastBarrierProbRequest(
             symbol="EURUSD",
             method="closed_form",
-            barrier=1.18,
+            barrier={"kind": "single_price", "level": 1.18},
             tp_pct=0.5,
             sl_pct=0.3,
-        ),
-        build_barrier_kwargs=lambda _values: {},
-        normalize_trade_direction=lambda _direction: ("long", None),
-        barrier_hit_probabilities_impl=lambda **_kwargs: {"unused": True},
-        barrier_closed_form_impl=fake_closed_form,
-    )
-
-    assert called is False
-    assert out["error_code"] == "invalid_input"
-    assert "closed_form method uses the absolute barrier parameter only" in out["error"]
-    assert "tp_pct, sl_pct" in out["error"]
+        )
 
 
 def test_forecast_barrier_prob_wrapper_emits_single_finish_event(caplog, monkeypatch):
@@ -3211,7 +3131,18 @@ def test_forecast_barrier_prob_wrapper_emits_single_finish_event(caplog, monkeyp
     )
 
     with caplog.at_level(logging.DEBUG):
-        out = raw(request=ForecastBarrierProbRequest(symbol="EURUSD", timeframe="H1"))
+        out = raw(
+            request=ForecastBarrierProbRequest(
+                symbol="EURUSD",
+                timeframe="H1",
+                barrier={
+                    "kind": "tp_sl",
+                    "unit": "price",
+                    "take_profit": 1.2,
+                    "stop_loss": 1.1,
+                },
+            )
+        )
 
     assert out["success"] is True
     finish_records = [
@@ -3253,7 +3184,18 @@ def test_forecast_barrier_prob_standard_hides_curves_only(monkeypatch):
     )
     monkeypatch.setattr(barriers_mod, "forecast_barrier_closed_form", lambda **kwargs: {"success": True})
 
-    out = raw(request=ForecastBarrierProbRequest(symbol="EURUSD", detail="standard"))
+    out = raw(
+        request=ForecastBarrierProbRequest(
+            symbol="EURUSD",
+            detail="standard",
+            barrier={
+                "kind": "tp_sl",
+                "unit": "price",
+                "take_profit": 1.2,
+                "stop_loss": 1.1,
+            },
+        )
+    )
 
     assert out["detail"] == "standard"
     assert "tp_hit_prob_by_t" not in out
@@ -3286,7 +3228,16 @@ def test_forecast_barrier_prob_compact_omits_confidence_diagnostics():
 
     out = forecast_use_cases._apply_barrier_prob_detail(
         payload,
-        ForecastBarrierProbRequest(symbol="EURUSD", detail="compact"),
+        ForecastBarrierProbRequest(
+            symbol="EURUSD",
+            detail="compact",
+            barrier={
+                "kind": "tp_sl",
+                "unit": "pct",
+                "take_profit": 0.5,
+                "stop_loss": 0.3,
+            },
+        ),
     )
 
     assert out["n_sims"] == 2000
@@ -3327,8 +3278,12 @@ def test_forecast_barrier_prob_compact_uses_reference_price_context():
         ForecastBarrierProbRequest(
             symbol="EURUSD",
             detail="compact",
-            tp_pct=0.5,
-            sl_pct=0.3,
+            barrier={
+                "kind": "tp_sl",
+                "unit": "pct",
+                "take_profit": 0.5,
+                "stop_loss": 0.3,
+            },
         ),
     )
 
@@ -3356,7 +3311,7 @@ def test_forecast_barrier_prob_closed_form_compact_keeps_reference_source():
         ForecastBarrierProbRequest(
             symbol="EURUSD",
             method="closed_form",
-            barrier=1.18,
+            barrier={"kind": "single_price", "level": 1.18},
             detail="compact",
         ),
     )
@@ -3383,7 +3338,16 @@ def test_forecast_barrier_prob_detail_rounds_display_values():
 
     out = forecast_use_cases._apply_barrier_prob_detail(
         payload,
-        ForecastBarrierProbRequest(symbol="EURUSD", detail="compact"),
+        ForecastBarrierProbRequest(
+            symbol="EURUSD",
+            detail="compact",
+            barrier={
+                "kind": "tp_sl",
+                "unit": "pct",
+                "take_profit": 0.5,
+                "stop_loss": 0.3,
+            },
+        ),
     )
 
     assert out["reference_price"] == 1.17201241
@@ -3409,8 +3373,12 @@ def test_forecast_barrier_prob_marks_stale_reference_verdict_research_only():
         },
         ForecastBarrierProbRequest(
             symbol="EURUSD",
-            tp_ticks=200,
-            sl_ticks=150,
+            barrier={
+                "kind": "tp_sl",
+                "unit": "ticks",
+                "take_profit": 200,
+                "stop_loss": 150,
+            },
         ),
     )
 
@@ -3461,7 +3429,11 @@ def test_forecast_tune_optuna_routing(monkeypatch):
         return {"theta": {"window": {"min": 1, "max": 3}}}
 
     monkeypatch.setattr(tune_mod, "default_search_space", fake_default_search_space)
-    out = raw_tune(request=ForecastTuneOptunaRequest(symbol="EURUSD", method="theta", search_space=None))
+    out = raw_tune(
+        request=ForecastTuneOptunaRequest(
+            symbol="EURUSD", methods=["theta"], search_space=None
+        )
+    )
     assert out["ok"] is True
     assert out["detail"] == "compact"
     assert out["compute_intensity"] == "high"
@@ -3470,15 +3442,15 @@ def test_forecast_tune_optuna_routing(monkeypatch):
         "estimated": 200,
         "drivers": "n_trials*steps*methods",
     }
-    assert captured["method"] == "theta"
-    assert ss_calls["method"] == "theta"
-    assert ss_calls["methods"] is None
+    assert captured["method"] is None
+    assert captured["methods"] == ["theta"]
+    assert ss_calls["method"] is None
+    assert ss_calls["methods"] == ["theta"]
     assert "theta" in captured["search_space"]
 
     out = raw_tune(
         request=ForecastTuneOptunaRequest(
             symbol="EURUSD",
-            method="theta",
             methods=["theta", "naive"],
             search_space={"x": {"type": "int", "min": 1, "max": 3}},
         )

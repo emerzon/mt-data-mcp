@@ -150,16 +150,14 @@ for both anchors and hits.
 
 ```bash
 mtdata-cli labels_triple_barrier EURUSD --timeframe H1 --horizon 12 \
-  --tp-pct 0.5 --sl-pct 0.3 --json
+  --barriers '{"unit":"pct","take_profit":0.5,"stop_loss":0.3}' --json
 ```
 
 **Parameters:**
 | Parameter | Description |
 |-----------|-------------|
 | `--horizon` | Maximum bars to wait |
-| `--tp-pct` | Take-profit distance (% of price) |
-| `--sl-pct` | Stop-loss distance (% of price) |
-| `--tp-ticks` / `--sl-ticks` | Alternative: distance in MT5 `trade_tick_size` units |
+| `--barriers` | JSON object with `unit`, `take_profit`, and `stop_loss` |
 
 A conventional FX pip is not the same unit as an MT5 tick. Convert pips using
 the symbol's quote precision before supplying tick distances (for many
@@ -204,7 +202,7 @@ Use triple-barrier labels to evaluate entry signals:
 
 ```bash
 # Label historical entry points
-mtdata-cli labels_triple_barrier EURUSD --horizon 12 --tp-pct 0.5 --sl-pct 0.3
+mtdata-cli labels_triple_barrier EURUSD --horizon 12 --barriers '{"unit":"pct","take_profit":0.5,"stop_loss":0.3}'
 
 # Check win rate: counts.pos / (counts.pos + counts.neg)
 # If win rate < 50%, signal needs improvement
@@ -232,7 +230,7 @@ mtdata-cli forecast_conformal_intervals EURUSD --method sf_autoarima --horizon 1
 |------|---------|
 | Method CI (90%) | `mtdata-cli forecast_generate EURUSD --method analog --ci-alpha 0.1` |
 | Conformal intervals | `mtdata-cli forecast_conformal_intervals EURUSD --method theta --horizon 12` |
-| Triple-barrier labels | `mtdata-cli labels_triple_barrier EURUSD --horizon 12 --tp-pct 0.5 --sl-pct 0.3` |
+| Triple-barrier labels | `mtdata-cli labels_triple_barrier EURUSD --horizon 12 --barriers '{"unit":"pct","take_profit":0.5,"stop_loss":0.3}'` |
 
 ---
 

@@ -20,7 +20,7 @@ Practical caveats that are easy to miss when you are new. Read this before deep 
 
 | Topic | Doc |
 |-------|-----|
-| Response envelope, `detail` / `extras`, pagination | [OUTPUT.md](OUTPUT.md) |
+| Response envelope, `detail` / `output_fields`, pagination | [OUTPUT.md](OUTPUT.md) |
 | Forecast method defaults and dependencies | [forecast/METHODS.md](forecast/METHODS.md) |
 | Timestamp policy | [TIMESTAMPS.md](TIMESTAMPS.md) |
 | Trading dry-run, guardrails, broker behavior | [TRADING_SAFETY.md](TRADING_SAFETY.md) |

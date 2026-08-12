@@ -3,6 +3,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 import pytest
+from pydantic import ValidationError
 
 import mtdata.patterns.elliott as elliott
 from mtdata.core.patterns_requests import PatternsDetectRequest
@@ -32,11 +33,14 @@ def test_v2_rejects_empty_pattern_types() -> None:
         ElliottWaveConfig(pattern_types=[]).validate()
 
 
-def test_include_confirmed_alias_takes_precedence() -> None:
-    request = PatternsDetectRequest(
-        symbol="EURUSD", mode="elliott", include_completed=False, include_confirmed=True
-    )
-    assert request.include_completed is True
+def test_include_confirmed_alias_is_rejected() -> None:
+    with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+        PatternsDetectRequest(
+            symbol="EURUSD",
+            mode="elliott",
+            include_completed=False,
+            include_confirmed=True,
+        )
 
 
 @pytest.mark.parametrize(

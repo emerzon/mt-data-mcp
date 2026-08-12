@@ -6,7 +6,6 @@ from pydantic import ValidationError
 
 from ....utils.coercion import split_top_level_csv
 from ...error_envelope import build_error_payload
-from ...output_contract import normalize_output_extras
 
 LIVE_TRADE_MUTATION_TOOLS = frozenset({"trade_place", "trade_modify", "trade_close"})
 LIVE_TRADE_MUTATION_WARNING = (
@@ -512,12 +511,9 @@ def create_command_function(  # noqa: C901
                 )
                 return 1
 
-        normalized_extras = normalize_output_extras(getattr(args, "extras", None))
-        if normalized_extras:
-            kwargs["extras"] = normalized_extras
-        fields = getattr(args, "fields", None)
-        if fields:
-            kwargs["fields"] = fields
+        output_fields = getattr(args, "output_fields", None)
+        if output_fields:
+            kwargs["output_fields"] = output_fields
         kwargs["__cli_raw"] = True
         if invoke_tool_function is not None:
             result = invoke_tool_function(

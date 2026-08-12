@@ -847,12 +847,12 @@ def _cost_pip_size(
     digits: Optional[int],
 ) -> Optional[float]:
     """Return the conventional pip size used by spread/slippage inputs."""
-    if tick_size is None or tick_size <= 0 or digits is None:
+    if tick_size is None or tick_size <= 0:
         return None
     return forex_pip_size(
         symbol,
         point=float(tick_size),
-        digits=int(digits),
+        digits=int(digits) if digits is not None else -1,
     )
 
 _BARRIER_CONCISE_CANDIDATE_KEYS = (

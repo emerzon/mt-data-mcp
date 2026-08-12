@@ -7,6 +7,7 @@ import {
   formatToolResult,
   humanizeIdentifier,
   shapeInvokeArguments,
+  schemaToToolFields,
   toolIsRunnable,
   uniqueCategories,
   type ToolCatalogEntry,
@@ -64,18 +65,21 @@ export function ToolsRunnerPanel({
   })
 
   const selected: ToolCatalogEntry | null = detailQuery.data?.tool ?? null
-  const fields = selected?.fields ?? []
+  const fields = useMemo(
+    () => schemaToToolFields(selected?.input_schema),
+    [selected?.input_schema]
+  )
 
   useEffect(() => {
     if (!selected?.name) return
-    const next = defaultParamValues(selected.fields)
+    const next = defaultParamValues(fields)
     if (symbol && 'symbol' in next && !next.symbol) next.symbol = symbol
     if (timeframe && 'timeframe' in next && !next.timeframe) next.timeframe = timeframe
     setValues(next)
     setConfirm(false)
     setRunError(null)
     setResultText(null)
-  }, [selected?.name, selected?.fields, symbol, timeframe])
+  }, [selected?.name, fields, symbol, timeframe])
 
   const onSelect = useCallback((name: string) => {
     setSelectedName(name)

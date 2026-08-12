@@ -28,7 +28,7 @@ interval has elapsed. This is independent of the closed-bars-only input policy.
 For `analog` forecasts, compact output retains concise `component_status` and
 `ensemble_metrics` summaries. Raw analog paths, per-timeframe diagnostics, and
 component diagnostic blobs are available with `--detail standard`, `--detail full`,
-or `--extras diagnostics`.
+or `--detail full`.
 
 ---
 
@@ -80,8 +80,7 @@ minimum effect size of 0.05 percentage points.
 |-----------|-------------|
 | `--denoise` | Denoising method (ema, kalman, etc.) |
 | `--features` | Feature specification |
-| `--dimred-method` | Dimensionality reduction method |
-| `--dimred-params` | Dimred parameters |
+| `--dimred` | Dimensionality-reduction method name or JSON specification |
 
 ---
 
@@ -107,7 +106,7 @@ mtdata-cli forecast_generate EURUSD --timeframe H1 --horizon 12 --quantity volat
 
 ---
 
-## Dimensionality Reduction (`--dimred-method`)
+## Dimensionality Reduction (`--dimred`)
 
 Dimensionality reduction (dimred) compresses the feature matrix when you provide many inputs (for example via `--features`). This is most useful for ML-style methods that consume multiple features.
 
@@ -120,7 +119,7 @@ Examples:
 ```bash
 mtdata-cli forecast_generate EURUSD --horizon 12 --method mlf_lightgbm \
   --features '{"include":["close","volume"]}' \
-  --dimred-method pca --dimred-params "n_components=5"
+  --dimred '{"method":"pca","params":{"n_components":5}}'
 ```
 
 Tip: the Web UI exposes a broader method list via `GET /api/dimred/methods` (for example: `svd` (TruncatedSVD), `umap`, `isomap`), depending on what is installed (see [../WEB_API.md](../WEB_API.md)).

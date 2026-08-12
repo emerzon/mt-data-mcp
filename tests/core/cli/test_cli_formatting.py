@@ -1301,7 +1301,7 @@ class TestFormatResultForCli:
                 "profile_methods_hidden": 64,
                 "profile_hint": "Use profile=all to list all registered methods.",
                 "truncation_reason": "Default compact limit 20; set limit=3 for all filtered methods.",
-                "note": "Use --extras metadata to see all methods.",
+                "note": "Use --detail full to see all methods.",
             },
             fmt="toon",
             verbose=False,

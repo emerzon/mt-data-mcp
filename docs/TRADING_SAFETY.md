@@ -137,7 +137,7 @@ Closes one position, a filtered set, or all — with an extra confirmation for b
 | `--magic` | — | Restrict closes to a magic number |
 | `--close-all` | `false` | Close every matching position |
 | `--confirm-close-all` | `false` | **Required** when `--close-all` is set and not a dry run |
-| `--profit-only` / `--loss-only` | `false` | Only close winners / losers |
+| `--pnl-filter` | `all` | Close all matches, only winners (`profit`), or only losers (`loss`) |
 | `--close-priority` | — | `loss_first`, `profit_first`, or `largest_first` |
 | `--deviation` | `20` | Max slippage in points |
 | `--dry-run` | `true` | Preview by default; set `false` explicitly for a live close |

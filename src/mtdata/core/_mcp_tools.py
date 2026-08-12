@@ -30,7 +30,6 @@ from .output_contract import (
     OutputContractState,
     apply_output_verbosity,
     attach_success_guidance,
-    normalize_output_extras,
     resolve_output_contract,
 )
 from .request_context import ensure_request_id_scope
@@ -614,19 +613,10 @@ def _append_public_output_params(params: List[inspect.Parameter]) -> List[inspec
                 annotation=bool,
             )
         )
-    if "extras" not in names:
+    if "output_fields" not in names:
         out.append(
             inspect.Parameter(
-                "extras",
-                kind=inspect.Parameter.KEYWORD_ONLY,
-                default=None,
-                annotation=Union[str, List[str], None],
-            )
-        )
-    if "fields" not in names:
-        out.append(
-            inspect.Parameter(
-                "fields",
+                "output_fields",
                 kind=inspect.Parameter.KEYWORD_ONLY,
                 default=None,
                 annotation=Union[str, List[str], None],
@@ -869,30 +859,27 @@ def _prepare_public_tool_call(
     kwargs: Dict[str, Any],
     *,
     json_output: Any = False,
-    extras: Any = None,
 ) -> OutputContractState:
     """Apply shared public output arguments before invoking a raw tool callable."""
-    normalized_extras = normalize_output_extras(extras)
-    if normalized_extras and _callable_exposes_kwarg(func, "extras"):
-        # Preserve tool-local section semantics (for example an extras request
-        # that intentionally removes a row cap).
-        if not _update_supplied_request_model_field(
-            func, kwargs, "extras", normalized_extras
-        ):
-            kwargs["extras"] = normalized_extras
+    explicit_detail = kwargs.get("detail", _REGISTRY_UNSET)
     if (
-        normalized_extras
-        and "detail" not in kwargs
+        explicit_detail is not _REGISTRY_UNSET
+        and not _callable_accepts_kwarg(func, "detail")
         and _callable_exposes_kwarg(func, "detail")
     ):
-        if not _update_supplied_request_model_field(func, kwargs, "detail", "full"):
-            kwargs["detail"] = "full"
+        detail_value = kwargs.pop("detail")
+        if not _update_supplied_request_model_field(func, kwargs, "detail", detail_value):
+            kwargs["detail"] = detail_value
     _coerce_kwargs_for_callable(func, kwargs)
-    return resolve_output_contract(
-        kwargs,
-        json=json_output,
-        extras=normalized_extras,
-    )
+    contract_source: Any = kwargs
+    for value in kwargs.values():
+        if isinstance(value, BaseModel) and hasattr(value, "detail"):
+            contract_source = value
+            break
+    contract_kwargs: Dict[str, Any] = {"json": json_output}
+    if explicit_detail is not _REGISTRY_UNSET:
+        contract_kwargs["detail"] = explicit_detail
+    return resolve_output_contract(contract_source, **contract_kwargs)
 
 
 def _shape_public_tool_output(
@@ -900,7 +887,7 @@ def _shape_public_tool_output(
     *,
     tool_name: str,
     contract_state: OutputContractState,
-    fields: Any = None,
+    output_fields: Any = None,
 ) -> Any:
     """Apply shared structured-output shaping used by public transports."""
     if not isinstance(result, dict):
@@ -913,17 +900,14 @@ def _shape_public_tool_output(
             public_out,
             detail=contract_state.detail,
         )
-    if "guidance" in contract_state.extras:
-        public_out = attach_success_guidance(
-            public_out,
-            tool_name=tool_name,
-        )
+    if contract_state.detail == "full":
+        public_out = attach_success_guidance(public_out, tool_name=tool_name)
     public_out = apply_output_verbosity(
         public_out,
         tool_name=tool_name,
         detail=contract_state.shape_detail,
     )
-    return _select_output_fields(public_out, fields)
+    return _select_output_fields(public_out, output_fields)
 
 
 def _recording_tool_decorator(*dargs, **dkwargs):  # type: ignore[override]  # noqa: C901
@@ -972,8 +956,7 @@ def _recording_tool_decorator(*dargs, **dkwargs):  # type: ignore[override]  # n
             raw_output = kw.pop("__cli_raw", False)
             precision = kw.pop("precision", None)
             json_output = kw.pop("json", False)
-            extras = kw.pop("extras", None)
-            fields = kw.pop("fields", None)
+            output_fields = kw.pop("output_fields", None)
             # Resolve the requested representation before any fallible argument
             # normalization so wrapper-generated errors keep the same contract.
             contract_state = resolve_output_contract({}, json=json_output)
@@ -983,7 +966,6 @@ def _recording_tool_decorator(*dargs, **dkwargs):  # type: ignore[override]  # n
                     func,
                     kw,
                     json_output=json_output,
-                    extras=extras,
                 )
                 if "denoise" in kw:
                     from ..utils.denoise import (
@@ -1026,7 +1008,7 @@ def _recording_tool_decorator(*dargs, **dkwargs):  # type: ignore[override]  # n
                     operation=getattr(func, "__name__", "tool"),
                 )
 
-            if raw_output and isinstance(out, dict) and "guidance" in contract_state.extras:
+            if raw_output and isinstance(out, dict) and contract_state.detail == "full":
                 out = attach_success_guidance(
                     out,
                     tool_name=getattr(func, "__name__", ""),
@@ -1039,7 +1021,7 @@ def _recording_tool_decorator(*dargs, **dkwargs):  # type: ignore[override]  # n
                 out,
                 tool_name=fname,
                 contract_state=contract_state,
-                fields=fields,
+                output_fields=output_fields,
             )
 
             if contract_state.json:

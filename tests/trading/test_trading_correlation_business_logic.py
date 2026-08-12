@@ -130,7 +130,7 @@ def test_trade_modify_success_includes_correlation_and_mt5_log(caplog):
 
 
 def test_trade_close_validation_error_uses_correlation_as_request_id(caplog):
-    request = TradeCloseRequest(profit_only=True, loss_only=True)
+    request = TradeCloseRequest()
 
     with caplog.at_level("INFO", logger="mtdata.core.trading.use_cases"):
         result = run_trade_close(

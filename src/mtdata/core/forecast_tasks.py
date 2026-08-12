@@ -13,7 +13,7 @@ Provides tools for:
 
 import logging
 import time
-from typing import Any, Dict, List, Literal, Optional
+from typing import Annotated, Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -82,7 +82,7 @@ class ForecastTaskCancelRequest(BaseModel):
 
 
 class ForecastTaskCancelAllRequest(BaseModel):
-    status_filter: Optional[str] = Field(
+    status_filter: Literal["pending", "running"] = Field(
         "running",
         description="Task status to cancel. Defaults to running; use pending to cancel queued tasks.",
     )
@@ -581,7 +581,7 @@ def forecast_task_status(request: ForecastTaskStatusRequest) -> Dict[str, Any]:
     """Get the current status and progress of a forecast training task.
 
     Returns task status, progress, and completion info.
-    Use ``extras='metadata'`` for expanded task/result metadata.
+    Use ``detail='full'`` for expanded task/result metadata.
     """
     def _execute() -> Dict[str, Any]:
         detail_mode = _detail_mode(request.detail)
@@ -753,19 +753,19 @@ def forecast_task_wait(request: ForecastTaskWaitRequest) -> Dict[str, Any]:
 
 @mcp.tool()
 def forecast_task_list(
-    status_filter: Optional[str] = None,
+    status_filter: Literal["all", "pending", "running", "completed", "failed", "cancelled"] = "all",
     since_minutes: Optional[float] = None,
     method: Optional[str] = None,
     data_scope: Optional[str] = None,
     detail: DetailLevel = "compact",
-    limit: int = 50,
-    offset: int = 0,
+    limit: Annotated[int, Field(ge=1)] = 50,
+    offset: Annotated[int, Field(ge=0)] = 0,
 ) -> Dict[str, Any]:
     """List active and recent forecast training tasks.
 
     Optionally filter by status, method, data_scope, or recent creation window.
     Results are ordered newest first and paged with ``limit``/``offset``.
-    Use ``extras='metadata'`` for expanded progress and result payloads.
+    Use ``detail='full'`` for expanded progress and result payloads.
     """
     def _execute() -> Dict[str, Any]:
         detail_mode = _detail_mode(detail)
@@ -791,7 +791,7 @@ def forecast_task_list(
         runtime = tm.runtime_snapshot()
         matching_tasks = [
             task
-            for task in tm.list_tasks(status=status_filter)
+            for task in tm.list_tasks(status=None if status_filter == "all" else status_filter)
             if _task_matches_filters(
                 task,
                 method=method,
@@ -823,7 +823,7 @@ def forecast_task_list(
         filters = {
             key: value
             for key, value in {
-                "status_filter": status_filter,
+                "status_filter": None if status_filter == "all" else status_filter,
                 "since_minutes": since_minutes,
                 "method": method,
                 "data_scope": data_scope,
@@ -843,7 +843,7 @@ def forecast_task_list(
         if runtime_out:
             out["runtime"] = runtime_out
         if not items:
-            if status_filter:
+            if status_filter != "all":
                 out["message"] = f"No forecast tasks matched status_filter={status_filter!r}."
             else:
                 out["message"] = "No forecast tasks found."
@@ -875,7 +875,7 @@ def forecast_models_list(
     """List all stored trained forecast models.
 
     Optionally filter by method name (e.g. nhits, tft, mlforecast).
-    Use ``extras='metadata'`` to include stored model metadata.
+    Use ``detail='full'`` to include stored model metadata.
     """
     def _execute() -> Dict[str, Any]:
         detail_mode = _detail_mode(detail)

@@ -33,7 +33,7 @@ Friendly guides and references for **mtdata** — the MT5 research and automatio
 | [SETUP.md](SETUP.md) | Installation, MT5 connection, environment variables |
 | [ENV_VARS.md](ENV_VARS.md) | Complete `.env` reference (MT5, MCP, Web API, GPU, etc.) |
 | [CLI.md](CLI.md) | Command conventions, output formats, help system |
-| [OUTPUT.md](OUTPUT.md) | Response envelope, `detail`/`extras`, pagination, and error codes |
+| [OUTPUT.md](OUTPUT.md) | Response envelope, `detail`/`output_fields`, pagination, and error codes |
 | [TIMESTAMPS.md](TIMESTAMPS.md) | Timezone policy: broker time, UTC, client-local, and provider time |
 | [GLOSSARY.md](GLOSSARY.md) | **Dense terms** — BOCPD, Kelly, VaR, Granger, etc. ([quick find](GLOSSARY.md#quick-find)) |
 | [LIMITATIONS.md](LIMITATIONS.md) | Practical caveats, provider limits, and documentation gaps |
@@ -102,7 +102,7 @@ mtdata-cli forecast_generate EURUSD --timeframe H1 --horizon 12 --method theta -
 
 ```bash
 mtdata-cli forecast_barrier_prob EURUSD --timeframe H1 --horizon 12 \
-  --method mc_gbm --direction long --tp-pct 0.4 --sl-pct 0.6 --json
+  --method mc_gbm --direction long --barrier '{"kind":"tp_sl","unit":"pct","take_profit":0.4,"stop_loss":0.6}' --json
 ```
 
 ### 3) Scan a small watchlist (PowerShell)
@@ -123,7 +123,7 @@ $symbols | % { mtdata-cli forecast_volatility_estimate $_ --timeframe H1 --horiz
 Practical caveats: [LIMITATIONS.md](LIMITATIONS.md). Dedicated references for common “how does this work?” questions:
 
 - Forecast methods, defaults, and dependencies → [forecast/METHODS.md](forecast/METHODS.md) (reproducibility notes in [FORECAST.md](FORECAST.md#reproducibility-notes))
-- Response envelope, `detail` / `extras`, pagination, errors → [OUTPUT.md](OUTPUT.md)
+- Response envelope, `detail` / `output_fields`, pagination, errors → [OUTPUT.md](OUTPUT.md)
 - Timezones (broker, UTC, client-local, provider) → [TIMESTAMPS.md](TIMESTAMPS.md)
 - Trading dry-run, guardrails, broker behavior → [TRADING_SAFETY.md](TRADING_SAFETY.md)
 - Long-running MCP / Web API service setup → [DEPLOYMENT.md](DEPLOYMENT.md)

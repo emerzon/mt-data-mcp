@@ -161,8 +161,8 @@ def format_root_help(program: str) -> str:
     names = available_command_names()
     grouped_names: set[str] = set()
     lines = [
-        f"usage: {program} [-h] [-V] [--json] [--extras EXTRA[,EXTRA...]]",
-        "                  [--fields FIELD[,FIELD...]] [--precision MODE]",
+        f"usage: {program} [-h] [-V] [--json] [--output-fields FIELD[,FIELD...]]",
+        "                  [--precision MODE]",
         "                  [--timeframe TIMEFRAME] <command> ...",
         "",
         "MetaTrader 5 research, forecasting, and trading CLI. One-shot commands",
@@ -188,8 +188,7 @@ def format_root_help(program: str) -> str:
             "  -h, --help              Show this help and exit",
             "  -V, --version           Show installed mtdata version and exit",
             "  --json                  Output structured JSON instead of TOON",
-            "  --extras EXTRA,...      Include richer output sections",
-            "  --fields FIELD,...      Select output fields",
+            "  --output-fields FIELD,...  Select output fields",
             "  --precision MODE        TOON numeric display precision",
             "  --timeframe TIMEFRAME   Default MT5 timeframe for commands with a",
             "                          timeframe parameter; command-level",

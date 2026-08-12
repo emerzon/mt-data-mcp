@@ -5,7 +5,12 @@ from typing import Any, Dict, List, Literal, Optional
 import numpy as np
 
 from ..forecast.common import fetch_history as _fetch_history
-from ..shared.schema import DenoiseSpec, DetailLiteral, TimeframeLiteral
+from ..shared.schema import (
+    BarrierPairSpec,
+    DenoiseSpec,
+    DetailLiteral,
+    TimeframeLiteral,
+)
 from ..utils.barriers import (
     barrier_prices_are_valid as _barrier_prices_are_valid,
 )
@@ -15,7 +20,6 @@ from ..utils.barriers import (
 from ..utils.barriers import get_tick_size as _get_tick_size
 from ..utils.barriers import (
     normalize_same_bar_policy,
-    validate_barrier_unit_family_exclusivity,
 )
 from ..utils.barriers import (
     normalize_trade_direction as _normalize_trade_direction,
@@ -319,15 +323,10 @@ def _skipped_entry_warning(
 @mcp.tool()
 def labels_triple_barrier(  # noqa: C901
     symbol: str,
+    barriers: BarrierPairSpec,
     timeframe: TimeframeLiteral = "H1",
     limit: int = _DEFAULT_LABEL_LIMIT,
     horizon: int = _DEFAULT_LABEL_HORIZON,
-    tp_abs: Optional[float] = None,
-    sl_abs: Optional[float] = None,
-    tp_pct: Optional[float] = None,
-    sl_pct: Optional[float] = None,
-    tp_ticks: Optional[float] = None,
-    sl_ticks: Optional[float] = None,
     denoise: Optional[DenoiseSpec] = None,
     direction: Literal["long", "short"] = "long",  # type: ignore
     label_on: Literal["close", "high_low"] = "high_low",  # type: ignore
@@ -337,11 +336,9 @@ def labels_triple_barrier(  # noqa: C901
 ) -> Dict[str, Any]:
     """Label each bar with triple-barrier outcomes using future path up to `horizon` bars.
 
-    Barriers:
-      - Absolute prices: tp_abs/sl_abs
-      - Percent offsets: tp_pct/sl_pct (0.5 => 0.5%)
-      - Ticks: tp_ticks/sl_ticks (trade_tick_size from symbol info)
-      Use exactly one barrier unit family per call; mixed units are rejected.
+    `barriers` contains a take-profit/stop-loss pair in price, percentage-point,
+    or trade-tick units. For example, `{unit: "pct", take_profit: 0.5,
+    stop_loss: 0.5}` uses half-percent distances.
 
     label_on='high_low' considers raw intrabar extremes for barrier hits, even
     when denoise changes the close used to anchor barriers. Real observed price
@@ -352,6 +349,10 @@ def labels_triple_barrier(  # noqa: C901
     direction='long' or 'short' controls which side is treated as TP/SL.
     Outputs label: +1 (TP first), -1 (SL first), 0 (neither by horizon), and holding_bars until decision.
     """
+
+    barrier_values = barriers.as_legacy_kwargs()
+    tp_abs = barrier_values.get("tp_abs")
+    sl_abs = barrier_values.get("sl_abs")
 
     def _run() -> Dict[str, Any]:  # noqa: C901
         try:
@@ -389,18 +390,6 @@ def labels_triple_barrier(  # noqa: C901
                         "Invalid detail level. Use 'compact', 'standard', 'full', or 'summary'."
                     )
                 }
-            barrier_values = {
-                "tp_abs": tp_abs,
-                "sl_abs": sl_abs,
-                "tp_pct": tp_pct,
-                "sl_pct": sl_pct,
-                "tp_ticks": tp_ticks,
-                "sl_ticks": sl_ticks,
-            }
-            try:
-                barrier_values = validate_barrier_unit_family_exclusivity(barrier_values)
-            except ValueError as exc:
-                return {"error": str(exc)}
             for field_name in ("tp_pct", "sl_pct", "tp_ticks", "sl_ticks"):
                 field_value = barrier_values.get(field_name)
                 if field_value is None:
@@ -487,7 +476,7 @@ def labels_triple_barrier(  # noqa: C901
                     ],
                     "examples": [
                         "forecast_volatility_estimate(symbol='EURUSD', timeframe='H1')  # find per-bar sigma first",
-                        "labels_triple_barrier(symbol='EURUSD', tp_ticks=50, sl_ticks=50)",
+                        "labels_triple_barrier(symbol='EURUSD', barriers={'unit':'ticks','take_profit':50,'stop_loss':50})",
                     ],
                 }
             if not _barrier_prices_are_valid(

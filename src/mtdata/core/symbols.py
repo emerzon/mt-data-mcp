@@ -4,7 +4,9 @@ import math
 import re
 import time
 from difflib import SequenceMatcher
-from typing import Any, Dict, List, Literal, Optional
+from typing import Annotated, Any, Dict, List, Literal, Optional
+
+from pydantic import Field
 
 from ..shared.constants import (
     DEFAULT_ROW_LIMIT,
@@ -859,7 +861,7 @@ def _find_symbol_suggestions(
 @mcp.tool()
 def symbols_list(  # noqa: C901
     search_term: Optional[str] = None,
-    limit: Optional[int] = DEFAULT_ROW_LIMIT,
+    limit: Annotated[int, Field(ge=1)] = DEFAULT_ROW_LIMIT,
     offset: int = 0,
     list_mode: Literal["symbols", "groups"] = "symbols",  # type: ignore
     universe: Literal["visible", "all"] = "visible",  # type: ignore
@@ -1202,7 +1204,7 @@ def symbols_list(  # noqa: C901
 
 def _list_symbol_groups(
     search_term: Optional[str] = None,
-    limit: Optional[int] = DEFAULT_ROW_LIMIT,
+    limit: Annotated[int, Field(ge=1)] = DEFAULT_ROW_LIMIT,
     offset: int = 0,
     mt5_gateway: Any = None,
     detail: DetailLiteral = "compact",  # type: ignore
@@ -2947,7 +2949,7 @@ def symbols_top_markets(  # noqa: C901
         "abs_price_change",
         "abs_price_change_pct",
     ] = "abs_price_change_pct",  # type: ignore
-    limit: Optional[int] = 10,
+    limit: Annotated[int, Field(ge=1)] = 10,
     universe: Literal["visible", "all"] = "visible",  # type: ignore
     timeframe: TimeframeLiteral = "H1",
     group: Optional[str] = None,
@@ -3462,7 +3464,7 @@ def market_scan(  # noqa: C901
     symbols: Optional[str] = None,
     group: Optional[str] = None,
     preset: Optional[str] = None,
-    limit: Optional[int] = 10,
+    limit: Annotated[int, Field(ge=1)] = 10,
     offset: int = 0,
     universe: Literal["visible", "all"] = "visible",  # type: ignore
     timeframe: TimeframeLiteral = "H1",

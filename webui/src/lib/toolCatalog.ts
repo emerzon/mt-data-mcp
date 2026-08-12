@@ -12,6 +12,20 @@ export type ToolField = {
   description?: string | null
 }
 
+export type JsonSchema = {
+  type?: string
+  description?: string | null
+  default?: unknown
+  enum?: unknown[]
+  properties?: Record<string, JsonSchema>
+  required?: string[]
+  items?: JsonSchema
+  anyOf?: JsonSchema[]
+  oneOf?: JsonSchema[]
+  $ref?: string
+  $defs?: Record<string, JsonSchema>
+}
+
 export type ToolSafety = {
   requires_confirmation?: boolean
   is_live_trade_mutation?: boolean
@@ -27,13 +41,36 @@ export type ToolCatalogEntry = {
   description?: string
   surface?: ToolSurface
   parameters?: Record<string, string>
-  fields?: ToolField[]
+  input_schema?: JsonSchema
   safety?: ToolSafety
   enabled?: boolean
   enable_env?: string
   status?: string
   why_disabled?: string
   related_tools?: string[]
+}
+
+function schemaType(schema: JsonSchema): string {
+  if (schema.type === 'array') return `list[${schema.items ? schemaType(schema.items) : 'any'}]`
+  if (schema.type === 'object' || schema.properties) return 'json'
+  if (schema.enum?.length) return schema.enum.map(String).join(' | ')
+  const options = schema.anyOf ?? schema.oneOf
+  if (options?.length) {
+    return options.map(schemaType).filter((value, index, all) => value !== 'null' && all.indexOf(value) === index).join(' | ')
+  }
+  return schema.type ?? 'any'
+}
+
+/** Convert the canonical JSON Schema into the flat controls used by the runner. */
+export function schemaToToolFields(schema: JsonSchema | undefined | null): ToolField[] {
+  const required = new Set(schema?.required ?? [])
+  return Object.entries(schema?.properties ?? {}).map(([name, property]) => ({
+    name,
+    required: required.has(name),
+    ...(Object.prototype.hasOwnProperty.call(property, 'default') ? { default: property.default } : {}),
+    type: schemaType(property),
+    description: property.description,
+  }))
 }
 
 export type ToolParamValues = Record<string, string>

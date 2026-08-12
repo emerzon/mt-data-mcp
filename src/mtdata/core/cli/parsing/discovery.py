@@ -30,47 +30,10 @@ _HIDDEN_OPTIONAL_FIRST_POSITIONAL_FLAGS: set[tuple[str, str]] = {
     ("causal_discover_signals", "symbols"),
 }
 
-_COMMAND_PARAM_CHOICE_OVERRIDES: Dict[tuple[str, str], list[str]] = {
-    ("correlation_matrix", "method"): ["pearson", "spearman"],
-    (
-        "correlation_matrix",
-        "transform",
-    ): ["log_return", "pct", "diff", "level", "log_level"],
-    ("cross_correlation", "method"): ["pearson", "spearman"],
-    (
-        "cross_correlation",
-        "transform",
-    ): ["log_return", "pct", "diff", "level", "log_level"],
-    (
-        "trade_var_cvar_calculate",
-        "method",
-    ): ["historical", "hist", "parametric", "gaussian", "normal"],
-    (
-        "forecast_barrier_optimize",
-        "method",
-    ): [
-        "mc_gbm",
-        "mc_gbm_bb",
-        "hmm_mc",
-        "garch",
-        "bootstrap",
-        "heston",
-        "jump_diffusion",
-        "auto",
-    ],
-    (
-        "patterns_detect",
-        "mode",
-    ): [
-        "all",
-        "candlestick",
-        "classic",
-        "harmonic",
-        "fractal",
-        "elliott",
-    ],
-    ("forecast_barrier_optimize", "search_profile"): ["fast", "medium", "long"],
-}
+# Choice discovery comes from the same Literal/Pydantic annotations used to
+# build public MCP schemas. Keep this map only for exceptional transport-only
+# compatibility cases.
+_COMMAND_PARAM_CHOICE_OVERRIDES: Dict[tuple[str, str], list[str]] = {}
 
 _POSITIONAL_ONLY_OPTIONAL_FIRST_PARAMS: set[tuple[str, str]] = {
     ("market_scan", "symbols"),
@@ -85,10 +48,7 @@ _MULTI_VALUE_SYMBOL_POSITIONAL_COMMANDS = frozenset(
     }
 )
 
-_COMMAND_REQUIRED_OPTIONS: set[tuple[str, str]] = {
-    ("trade_place", "volume"),
-    ("trade_place", "order_type"),
-}
+_COMMAND_REQUIRED_OPTIONS: set[tuple[str, str]] = set()
 
 _PRESERVE_OMITTED_DEFAULT_PARAMS: set[tuple[str, str]] = {
     ("data_fetch_candles", "limit"),
@@ -112,7 +72,7 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
         "available in this installation."
     ),
     ("trade_var_cvar_calculate", "method"): (
-        "Tail-risk method: historical (or hist) or parametric (or gaussian/normal)."
+        "Tail-risk method: historical or parametric."
     ),
     ("trade_var_cvar_calculate", "symbol"): (
         "Optional scope: calculate VaR/CVaR for currently open positions in this "
@@ -193,18 +153,6 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
     ("strategy_validate", "barrier"): (
         "JSON triple-barrier labeling config with horizon, tp_pct, sl_pct, and "
         "same_bar_policy; tp_pct/sl_pct are percentage points (0.5 means 0.5%)."
-    ),
-    ("forecast_barrier_prob", "tp_pct"): (
-        "Take-profit distance in percentage points; 0.1 means 0.1%, not 10%."
-    ),
-    ("forecast_barrier_prob", "sl_pct"): (
-        "Stop-loss distance in percentage points; 0.1 means 0.1%, not 10%."
-    ),
-    ("labels_triple_barrier", "tp_pct"): (
-        "Take-profit distance in percentage points; 0.1 means 0.1%, not 10%."
-    ),
-    ("labels_triple_barrier", "sl_pct"): (
-        "Stop-loss distance in percentage points; 0.1 means 0.1%, not 10%."
     ),
     ("options_chain", "symbol"): (
         "Underlying symbol for listed options, e.g. AAPL or SPX."
@@ -339,8 +287,9 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
     ("trade_close", "dry_run"): (
         "Preview the close request without sending it to the broker."
     ),
-    ("trade_close", "profit_only"): "Only close positions currently in profit.",
-    ("trade_close", "loss_only"): "Only close positions currently at a loss.",
+    ("trade_close", "pnl_filter"): (
+        "Position P&L filter: all, profit, or loss."
+    ),
     ("trade_close", "close_priority"): (
         "When multiple positions match, close loss_first, profit_first, or largest_first."
     ),
@@ -367,9 +316,6 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
     ),
     ("trade_place", "require_sl_tp"): (
         "Require both stop_loss and take_profit for market orders."
-    ),
-    ("trade_place", "auto_close_on_sl_tp_fail"): (
-        "If TP/SL attachment fails after a market fill, try to close the unprotected position."
     ),
     ("trade_history", "minutes_back"): (
         "History lookback in minutes. Defaults to 10080 minutes (7 days) when "

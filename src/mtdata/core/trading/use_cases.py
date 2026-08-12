@@ -1130,69 +1130,15 @@ def _normalize_trade_risk_sizing_method(
     return None, "Invalid sizing_method. Valid options: fixed_fraction, kelly"
 
 
-def _metric_value_from_aliases(
-    payload: Dict[str, Any],
-    aliases: tuple[str, ...],
-) -> Any:
-    for alias in aliases:
-        if alias in payload and payload[alias] is not None:
-            return payload[alias]
-    return None
-
-
 def _extract_trade_risk_kelly_inputs(
     request: TradeRiskAnalyzeRequest,
 ) -> tuple[Dict[str, Any], List[str], Optional[str]]:
-    metrics = (
-        request.kelly_metrics
-        if isinstance(getattr(request, "kelly_metrics", None), dict)
-        else {}
-    )
+    sizing = request.sizing
     inputs: Dict[str, Any] = {
-        "win_rate": _metric_value_from_aliases(
-            metrics,
-            (
-                "kelly_win_rate",
-                "win_rate",
-                "win_probability",
-                "probability",
-                "p",
-            ),
-        ),
-        "avg_win": _metric_value_from_aliases(
-            metrics,
-            (
-                "kelly_avg_win",
-                "avg_win_return",
-                "mean_win_return",
-            ),
-        ),
-        "avg_loss": _metric_value_from_aliases(
-            metrics,
-            (
-                "kelly_avg_loss",
-                "avg_loss_return",
-                "mean_loss_return",
-            ),
-        ),
+        "win_rate": getattr(sizing, "win_rate", None),
+        "avg_win": getattr(sizing, "avg_win", None),
+        "avg_loss": getattr(sizing, "avg_loss", None),
     }
-    source = "kelly_metrics" if metrics else None
-    flat_overrides = False
-    if request.kelly_win_rate is not None:
-        inputs["win_rate"] = request.kelly_win_rate
-        flat_overrides = True
-    if request.kelly_avg_win is not None:
-        inputs["avg_win"] = request.kelly_avg_win
-        flat_overrides = True
-    if request.kelly_avg_loss is not None:
-        inputs["avg_loss"] = request.kelly_avg_loss
-        flat_overrides = True
-    if flat_overrides:
-        source = (
-            "flat_fields_overrode_kelly_metrics"
-            if metrics
-            else "flat_fields"
-        )
     missing = [
         field_name
         for field_name, value in (
@@ -1202,7 +1148,7 @@ def _extract_trade_risk_kelly_inputs(
         )
         if value is None
     ]
-    return inputs, missing, source
+    return inputs, missing, "sizing" if sizing is not None else None
 
 
 def _normalize_var_cvar_method(method: Any) -> tuple[Optional[str], Optional[str]]:

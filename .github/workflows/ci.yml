@@ -36,6 +36,9 @@ jobs:
       - name: Lint Python sources and tests
         run: ruff check src tests
 
+      - name: Evaluate public tool schemas
+        run: python scripts/schema_evaluate.py
+
       - name: Run backend tests
         run: python -m pytest tests
 

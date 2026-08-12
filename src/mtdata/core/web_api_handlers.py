@@ -21,8 +21,6 @@ from .mt5_gateway import create_mt5_gateway
 from .output_contract import (
     apply_output_verbosity,
     ensure_common_meta,
-    normalize_output_extras,
-    output_extras_shape_detail,
 )
 from .pivot import compute_support_resistance_payload
 from .tool_calling import resolve_sync_tool_result
@@ -33,18 +31,6 @@ _MAX_DENOISE_PARAMS_CHARS = 4096
 _HISTORY_DENOISE_CONTROL_KEYS = frozenset(
     {"columns", "when", "causality", "keep_original"}
 )
-
-
-def _shape_detail_from_extras(extras: Any) -> str:
-    try:
-        return output_extras_shape_detail(extras)
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-
-
-def _shape_detail(detail: str, extras: Any) -> str:
-    normalized_extras = normalize_output_extras(extras)
-    return _shape_detail_from_extras(normalized_extras) if normalized_extras else detail
 
 
 def _http_status_for_error(payload: Dict[str, Any], *, default: int = 400) -> int:
@@ -311,7 +297,7 @@ def _compact_forecast_method_definition(method_def: Dict[str, Any]) -> Dict[str,
 def get_methods_response(
     *,
     get_methods_impl: Callable[[], Any],
-    extras: Any = None,
+    detail: str = "compact",
 ) -> Dict[str, Any]:
     data = get_methods_impl()
     if not isinstance(data, dict) or data.get("methods") is None:
@@ -323,7 +309,6 @@ def get_methods_response(
         payload = get_forecast_methods_payload(method_data=data)
     except Exception:
         return data
-    detail = _shape_detail_from_extras(extras)
     if detail != "compact":
         return payload
     methods_payload = payload.get("methods")
@@ -343,9 +328,8 @@ def get_models_response(
     *,
     get_models_impl: Callable[..., Any],
     method: Optional[str],
-    extras: Any = None,
+    detail: str = "compact",
 ) -> Dict[str, Any]:
-    detail = _shape_detail_from_extras(extras)
     data = get_models_impl(method=method, detail=detail)
     if not isinstance(data, dict):
         return {"success": True, "detail": detail, "count": 0, "models": []}
@@ -486,7 +470,6 @@ def get_history_response(  # noqa: C901
     indicators: Optional[str],
     timestamp_format: str,
     detail: str,
-    extras: Any,
     denoise_method: Optional[str],
     denoise_params: Optional[str],
     fetch_candles_impl: Callable[..., Any],
@@ -679,7 +662,7 @@ def get_history_response(  # noqa: C901
     payload["timestamp_format"] = timestamp_mode
     if timestamp_mode == "epoch":
         payload["timestamp_unit"] = "unix_seconds_utc"
-    shape_detail = _shape_detail(detail, extras)
+    shape_detail = detail
     if shape_detail != "full":
         meta = payload.get("meta")
         if isinstance(meta, dict):
@@ -813,7 +796,6 @@ def get_support_resistance_response(
     adx_period: int,
     decay_half_life_bars: Optional[int],
     detail: str,
-    extras: Any,
     fetch_history_impl: Callable[..., Any],
 ) -> Dict[str, Any]:
     effective_lookback = int(lookback if lookback is not None else 200)
@@ -850,7 +832,7 @@ def get_support_resistance_response(
             code="support_resistance_levels_missing",
             operation="get_support_resistance",
         )
-    shape_detail = _shape_detail(detail, extras)
+    shape_detail = detail
     payload = compact_support_resistance_payload(result) if shape_detail == "compact" else result
     return apply_output_verbosity(
         payload,

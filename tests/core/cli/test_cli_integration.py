@@ -1457,7 +1457,7 @@ class TestForecastGenerateIntegration:
         assert "invalid choice" in payload["error"]
 
     @patch("mtdata.core.cli.api.discover_tools")
-    def test_forecast_generate_maps_extras_to_internal_detail(self, mock_discover):
+    def test_forecast_generate_maps_full_detail_to_request(self, mock_discover):
         mock_fn = MagicMock(return_value={"forecast": [1.0, 2.0]})
         mock_fn.__module__ = "mtdata.core.server"
         mock_fn.__name__ = "forecast_generate"
@@ -1469,7 +1469,10 @@ class TestForecastGenerateIntegration:
                 "meta": {"description": "Generate forecasts"},
             },
         }
-        with patch("sys.argv", ["cli.py", "forecast_generate", "EURUSD", "--extras", "metadata"]):
+        with patch(
+            "sys.argv",
+            ["cli.py", "forecast_generate", "EURUSD", "--detail", "full"],
+        ):
             result = main()
         assert result == 0
         request = mock_fn.call_args[1]["request"]
@@ -1519,9 +1522,9 @@ class TestForecastGenerateIntegration:
                 "cli.py",
                 "forecast_generate",
                 "EURUSD",
-                "--extras",
-                "metadata",
-                "--fields",
+                "--detail",
+                "full",
+                "--output-fields",
                 "forecast,method",
             ],
         ):
@@ -1529,8 +1532,8 @@ class TestForecastGenerateIntegration:
 
         assert result == 0
         call_kwargs = mock_fn.call_args.kwargs
-        assert call_kwargs["extras"] == "metadata"
-        assert call_kwargs["fields"] == "forecast,method"
+        assert call_kwargs["request"].detail == "full"
+        assert call_kwargs["output_fields"] == "forecast,method"
 
     @patch("mtdata.core.cli.api.discover_tools")
     def test_forecast_generate_accepts_symbol_flag_alias(self, mock_discover):
@@ -1924,7 +1927,7 @@ class TestEdgeCases:
 
         with patch(
             "sys.argv",
-            ["cli.py", "sample_tool", "--fields", "missing", "--json"],
+            ["cli.py", "sample_tool", "--output-fields", "missing", "--json"],
         ):
             status = main()
 
@@ -2329,7 +2332,6 @@ class TestPrintExtendedHelp:
             deviation: int = 20,
             dry_run: bool = True,
             require_sl_tp: bool = True,
-            auto_close_on_sl_tp_fail: bool = True,
         ):
             """Place a market or pending order."""
             pass
@@ -2347,9 +2349,8 @@ class TestPrintExtendedHelp:
         out = capsys.readouterr().out
         assert "dry_run=true" in out
         assert "require_sl_tp=true" in out
-        assert "auto_close_on_sl_tp_fail=true" in out
         assert "market orders default to require_sl_tp=true" in out
-        assert "auto_close_on_sl_tp_fail defaults true" in out
+        assert "unprotected market fill is always closed defensively" in out
         assert (
             "dry_run=true is the default; set --dry-run false explicitly to send an order to MT5"
             in out

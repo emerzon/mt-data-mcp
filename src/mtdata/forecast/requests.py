@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List, Literal, Optional
+from typing import Annotated, Any, Dict, List, Literal, Optional, Union
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from ..shared.schema import (
     DenoiseSpec,
     DetailLiteral,
+    DimensionalityReductionSpec,
     ForecastLibraryLiteral,
     TimeframeLiteral,
     reject_removed_field,
@@ -14,7 +15,6 @@ from ..shared.schema import (
 )
 from ..utils.barriers import (
     normalize_trade_direction_alias,
-    validate_barrier_unit_family_exclusivity,
 )
 
 MAX_FORECAST_HORIZON = 500
@@ -22,7 +22,62 @@ MAX_BACKTEST_STEPS = 200
 MAX_BACKTEST_SPACING = 10_000
 
 
-class ForecastGenerateRequest(BaseModel):
+def _normalize_methods_value(value: Any) -> Any:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return [item.strip() for item in value.split(",") if item.strip()]
+    if isinstance(value, (list, tuple, set)):
+        return [str(item).strip() for item in value if str(item).strip()]
+    return value
+
+
+class _PublicForecastRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    @property
+    def dimred_method(self) -> Optional[str]:
+        dimred = getattr(self, "dimred", None)
+        return dimred.method if isinstance(dimred, DimensionalityReductionSpec) else None
+
+    @property
+    def dimred_params(self) -> Optional[Dict[str, Any]]:
+        dimred = getattr(self, "dimred", None)
+        return dict(dimred.params) if isinstance(dimred, DimensionalityReductionSpec) else None
+
+
+class SinglePriceBarrierSpec(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["single_price"] = "single_price"
+    level: float = Field(gt=0.0, description="Positive absolute barrier price.")
+
+
+class TakeProfitStopLossBarrierSpec(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["tp_sl"] = "tp_sl"
+    unit: Literal["price", "pct", "ticks"] = Field(
+        description="Barrier unit: absolute price, percentage points, or trade ticks."
+    )
+    take_profit: float = Field(gt=0.0, description="Positive take-profit level or distance.")
+    stop_loss: float = Field(gt=0.0, description="Positive stop-loss level or distance.")
+
+    def as_legacy_kwargs(self) -> Dict[str, float]:
+        suffix = {"price": "abs", "pct": "pct", "ticks": "ticks"}[self.unit]
+        return {
+            f"tp_{suffix}": float(self.take_profit),
+            f"sl_{suffix}": float(self.stop_loss),
+        }
+
+
+ForecastBarrierSpec = Annotated[
+    Union[SinglePriceBarrierSpec, TakeProfitStopLossBarrierSpec],
+    Field(discriminator="kind"),
+]
+
+
+class ForecastGenerateRequest(_PublicForecastRequest):
     symbol: str
     timeframe: TimeframeLiteral = "H1"
     library: ForecastLibraryLiteral = "native"
@@ -38,13 +93,13 @@ class ForecastGenerateRequest(BaseModel):
     start: Optional[str] = None
     end: Optional[str] = None
     params: Optional[Dict[str, Any]] = None
-    ci_alpha: Optional[float] = Field(
+    ci_alpha: float = Field(
         0.05,
-        gt=0.0,
+        ge=0.0,
         le=0.5,
         description=(
             "Interval tail probability; confidence is 1 - ci_alpha. Defaults "
-            "to 0.05 (95%); use null to omit intervals."
+            "to 0.05 (95%); use 0 to omit intervals."
         ),
     )
     quantity: Literal["price", "return", "volatility"] = Field(
@@ -54,8 +109,7 @@ class ForecastGenerateRequest(BaseModel):
     proxy: Optional[Literal["squared_return", "abs_return", "log_r2"]] = None
     denoise: Optional[DenoiseSpec] = None
     features: Optional[Dict[str, Any]] = None
-    dimred_method: Optional[str] = None
-    dimred_params: Optional[Dict[str, Any]] = None
+    dimred: Optional[DimensionalityReductionSpec] = None
     target_spec: Optional[Dict[str, Any]] = None
     async_mode: bool = Field(
         False,
@@ -83,15 +137,12 @@ class ForecastGenerateRequest(BaseModel):
         validate_as_of_time_window(self.as_of, self.start, self.end)
         return self
 
-
-def _normalize_methods_value(value: Any) -> Any:
-    if not isinstance(value, str):
-        return value
-    methods = [item.strip() for item in value.replace(",", " ").split() if item.strip()]
-    return methods or None
+    @property
+    def effective_ci_alpha(self) -> Optional[float]:
+        return None if self.ci_alpha == 0.0 else float(self.ci_alpha)
 
 
-class ForecastBacktestRequest(BaseModel):
+class ForecastBacktestRequest(_PublicForecastRequest):
     symbol: str
     timeframe: TimeframeLiteral = "H1"
     horizon: int = Field(
@@ -127,8 +178,7 @@ class ForecastBacktestRequest(BaseModel):
     denoise: Optional[DenoiseSpec] = None
     params: Optional[Dict[str, Any]] = None
     features: Optional[Dict[str, Any]] = None
-    dimred_method: Optional[str] = None
-    dimred_params: Optional[Dict[str, Any]] = None
+    dimred: Optional[DimensionalityReductionSpec] = None
     slippage_bps: float = 0.0
     trade_threshold: float = Field(0.0, ge=0.0)
     detail: DetailLiteral = "compact"
@@ -161,7 +211,7 @@ class ForecastBacktestRequest(BaseModel):
         return self
 
 
-class StrategyBacktestRequest(BaseModel):
+class StrategyBacktestRequest(_PublicForecastRequest):
     symbol: str
     timeframe: TimeframeLiteral = "H1"
     strategy: Literal["sma_cross", "ema_cross", "rsi_reversion"] = "sma_cross"
@@ -191,7 +241,7 @@ class StrategyBacktestRequest(BaseModel):
         return self
 
 
-class ForecastConformalIntervalsRequest(BaseModel):
+class ForecastConformalIntervalsRequest(_PublicForecastRequest):
     symbol: str
     timeframe: TimeframeLiteral = "H1"
     method: str = "theta"
@@ -228,44 +278,61 @@ class ForecastConformalIntervalsRequest(BaseModel):
         return self
 
 
-class ForecastTuneGeneticRequest(BaseModel):
+class ForecastTuneGeneticRequest(_PublicForecastRequest):
     symbol: str
     timeframe: TimeframeLiteral = "H1"
-    method: Optional[str] = "theta"
-    methods: Optional[List[str]] = None
+    methods: List[str] = Field(
+        default_factory=lambda: ["theta"],
+        min_length=1,
+        json_schema_extra={"uniqueItems": True},
+    )
     horizon: int = Field(12, ge=1, le=MAX_FORECAST_HORIZON, description="Bars forecast after each tuning backtest anchor.")
     steps: int = Field(5, ge=1, le=MAX_BACKTEST_STEPS, description="Number of rolling-origin backtest anchors per trial.")
     spacing: int = Field(20, ge=1, le=MAX_BACKTEST_SPACING, description="Bars between consecutive tuning backtest anchors.")
     search_space: Optional[Dict[str, Any]] = None
-    metric: str = "avg_rmse"
-    mode: str = "min"
+    metric: Literal["avg_rmse", "avg_mae", "avg_directional_accuracy", "sharpe_ratio", "win_rate"] = "avg_rmse"
+    mode: Literal["min", "max"] = "min"
     population: int = Field(12, ge=1)
     generations: int = Field(10, ge=1)
-    crossover_rate: float = 0.6
-    mutation_rate: float = 0.3
+    crossover_rate: float = Field(0.6, ge=0.0, le=1.0)
+    mutation_rate: float = Field(0.3, ge=0.0, le=1.0)
     seed: int = 42
     trade_threshold: float = 0.0
     denoise: Optional[DenoiseSpec] = None
     features: Optional[Dict[str, Any]] = None
-    dimred_method: Optional[str] = None
-    dimred_params: Optional[Dict[str, Any]] = None
+    dimred: Optional[DimensionalityReductionSpec] = None
     detail: DetailLiteral = "compact"
 
+    @property
+    def method(self) -> Optional[str]:
+        return self.methods[0] if len(self.methods) == 1 else None
 
-class ForecastTuneOptunaRequest(BaseModel):
+    @field_validator("methods")
+    @classmethod
+    def _unique_methods(cls, value: List[str]) -> List[str]:
+        normalized = [str(item).strip() for item in value if str(item).strip()]
+        if len(normalized) != len(set(normalized)):
+            raise ValueError("methods must contain unique method names")
+        return normalized
+
+
+class ForecastTuneOptunaRequest(_PublicForecastRequest):
     symbol: str
     timeframe: TimeframeLiteral = "H1"
-    method: Optional[str] = "theta"
-    methods: Optional[List[str]] = None
+    methods: List[str] = Field(
+        default_factory=lambda: ["theta"],
+        min_length=1,
+        json_schema_extra={"uniqueItems": True},
+    )
     horizon: int = Field(12, ge=1, le=MAX_FORECAST_HORIZON, description="Bars forecast after each tuning backtest anchor.")
     steps: int = Field(5, ge=1, le=MAX_BACKTEST_STEPS, description="Number of rolling-origin backtest anchors per trial.")
     spacing: int = Field(20, ge=1, le=MAX_BACKTEST_SPACING, description="Bars between consecutive tuning backtest anchors.")
     search_space: Optional[Dict[str, Any]] = None
-    metric: str = "avg_rmse"
-    mode: str = "min"
+    metric: Literal["avg_rmse", "avg_mae", "avg_directional_accuracy", "sharpe_ratio", "win_rate"] = "avg_rmse"
+    mode: Literal["min", "max"] = "min"
     n_trials: int = Field(40, ge=1)
-    timeout: Optional[float] = None
-    n_jobs: int = 1
+    timeout: Optional[float] = Field(None, gt=0.0)
+    n_jobs: int = Field(1, ge=1)
     sampler: Literal["tpe", "random", "cmaes"] = "tpe"
     pruner: Literal["median", "none", "hyperband", "percentile"] = "median"
     study_name: Optional[str] = None
@@ -274,29 +341,37 @@ class ForecastTuneOptunaRequest(BaseModel):
     trade_threshold: float = 0.0
     denoise: Optional[DenoiseSpec] = None
     features: Optional[Dict[str, Any]] = None
-    dimred_method: Optional[str] = None
-    dimred_params: Optional[Dict[str, Any]] = None
+    dimred: Optional[DimensionalityReductionSpec] = None
     detail: DetailLiteral = "compact"
 
+    @property
+    def method(self) -> Optional[str]:
+        return self.methods[0] if len(self.methods) == 1 else None
 
-class ForecastBarrierProbRequest(BaseModel):
+    @field_validator("methods")
+    @classmethod
+    def _unique_methods(cls, value: List[str]) -> List[str]:
+        normalized = [str(item).strip() for item in value if str(item).strip()]
+        if len(normalized) != len(set(normalized)):
+            raise ValueError("methods must contain unique method names")
+        return normalized
+
+
+class ForecastBarrierProbRequest(_PublicForecastRequest):
     model_config = {"populate_by_name": True, "extra": "forbid"}
 
     symbol: str
     timeframe: TimeframeLiteral = "H1"
     horizon: int = Field(12, ge=1, le=MAX_FORECAST_HORIZON)
-    method: str = "mc_gbm_bb"
-    direction: str = "long"
+    method: Literal[
+        "auto", "bootstrap", "garch", "heston", "hmm_mc", "jump_diffusion",
+        "mc_gbm", "mc_gbm_bb", "closed_form"
+    ] = "mc_gbm_bb"
+    direction: Literal["long", "short"] = "long"
     same_bar_policy: Literal["sl_first", "tp_first", "neutral"] = "sl_first"
-    tp_abs: Optional[float] = Field(None, description="Take-profit absolute price. Do not combine with percent or tick barriers.")
-    sl_abs: Optional[float] = Field(None, description="Stop-loss absolute price. Do not combine with percent or tick barriers.")
-    tp_pct: Optional[float] = Field(None, description="Take-profit percent move, e.g. 2.0 for 2%. Do not combine with price or tick barriers.")
-    sl_pct: Optional[float] = Field(None, description="Stop-loss percent move, e.g. 1.0 for 1%. Do not combine with price or tick barriers.")
-    tp_ticks: Optional[float] = Field(None, description="Take-profit distance in trade ticks. Do not combine with price or percent barriers.")
-    sl_ticks: Optional[float] = Field(None, description="Stop-loss distance in trade ticks. Do not combine with price or percent barriers.")
+    barrier: ForecastBarrierSpec
     params: Optional[Dict[str, Any]] = None
     denoise: Optional[DenoiseSpec] = None
-    barrier: float = 0.0
     mu: Optional[float] = None
     sigma: Optional[float] = None
     detail: DetailLiteral = "compact"
@@ -306,10 +381,51 @@ class ForecastBarrierProbRequest(BaseModel):
     def _reject_removed_mc_method(cls, values: Any) -> Any:
         return reject_removed_field(values, field_name="mc_method", replacement="method")
 
-    @model_validator(mode="before")
-    @classmethod
-    def _validate_barrier_unit_families(cls, values: Any) -> Any:
-        return validate_barrier_unit_family_exclusivity(values)
+    @model_validator(mode="after")
+    def _validate_barrier_kind(self) -> "ForecastBarrierProbRequest":
+        if self.method == "closed_form" and not isinstance(self.barrier, SinglePriceBarrierSpec):
+            raise ValueError("closed_form requires barrier.kind='single_price'")
+        if self.method != "closed_form" and not isinstance(
+            self.barrier, TakeProfitStopLossBarrierSpec
+        ):
+            raise ValueError("Monte Carlo methods require barrier.kind='tp_sl'")
+        return self
+
+    def barrier_kwargs(self) -> Dict[str, float]:
+        if isinstance(self.barrier, TakeProfitStopLossBarrierSpec):
+            return self.barrier.as_legacy_kwargs()
+        return {}
+
+    def _barrier_value(self, name: str) -> Optional[float]:
+        return self.barrier_kwargs().get(name)
+
+    @property
+    def tp_abs(self) -> Optional[float]:
+        return self._barrier_value("tp_abs")
+
+    @property
+    def sl_abs(self) -> Optional[float]:
+        return self._barrier_value("sl_abs")
+
+    @property
+    def tp_pct(self) -> Optional[float]:
+        return self._barrier_value("tp_pct")
+
+    @property
+    def sl_pct(self) -> Optional[float]:
+        return self._barrier_value("sl_pct")
+
+    @property
+    def tp_ticks(self) -> Optional[float]:
+        return self._barrier_value("tp_ticks")
+
+    @property
+    def sl_ticks(self) -> Optional[float]:
+        return self._barrier_value("sl_ticks")
+
+    @property
+    def barrier_level(self) -> float:
+        return float(self.barrier.level) if isinstance(self.barrier, SinglePriceBarrierSpec) else 0.0
 
     @field_validator("direction", mode="before")
     @classmethod
@@ -317,10 +433,13 @@ class ForecastBarrierProbRequest(BaseModel):
         return normalize_trade_direction_alias(value)
 
 
-class ForecastOptimizeHintsRequest(BaseModel):
+class ForecastOptimizeHintsRequest(_PublicForecastRequest):
     symbol: str
-    timeframe: Optional[TimeframeLiteral] = None
-    timeframes: Optional[List[TimeframeLiteral]] = None
+    timeframes: List[TimeframeLiteral] = Field(
+        default_factory=lambda: ["H1"],
+        min_length=1,
+        json_schema_extra={"uniqueItems": True},
+    )
     methods: Optional[List[str]] = None
     horizon: int = Field(12, ge=1, le=MAX_FORECAST_HORIZON, description="Bars forecast after each optimization backtest anchor.")
     steps: int = Field(5, ge=1, le=MAX_BACKTEST_STEPS, description="Number of rolling-origin backtest anchors per candidate.")
@@ -343,40 +462,63 @@ class ForecastOptimizeHintsRequest(BaseModel):
     features: Optional[Dict[str, Any]] = None
     include_feature_genes: bool = False
     top_n: int = Field(5, ge=1, le=20)
-    dimred_method: Optional[str] = None
-    dimred_params: Optional[Dict[str, Any]] = None
+    dimred: Optional[DimensionalityReductionSpec] = None
     detail: DetailLiteral = "compact"
 
+    @property
+    def timeframe(self) -> Optional[TimeframeLiteral]:
+        return self.timeframes[0] if len(self.timeframes) == 1 else None
 
-class ForecastBarrierOptimizeRequest(BaseModel):
+    @field_validator("timeframes")
+    @classmethod
+    def _unique_timeframes(cls, value: List[TimeframeLiteral]) -> List[TimeframeLiteral]:
+        if len(value) != len(set(value)):
+            raise ValueError("timeframes must contain unique values")
+        return value
+
+
+class ForecastBarrierOptimizeRequest(_PublicForecastRequest):
     model_config = {"populate_by_name": True, "extra": "forbid"}
 
     symbol: str
     timeframe: TimeframeLiteral = "H1"
     horizon: int = Field(12, ge=1, le=MAX_FORECAST_HORIZON)
-    method: str = "auto"
-    direction: str = "long"
+    method: Literal[
+        "auto", "bootstrap", "garch", "heston", "hmm_mc", "jump_diffusion",
+        "mc_gbm", "mc_gbm_bb", "ensemble"
+    ] = "auto"
+    direction: Literal["long", "short"] = "long"
     same_bar_policy: Literal["sl_first", "tp_first", "neutral"] = "sl_first"
-    mode: str = "pct"
+    mode: Literal["pct", "ticks"] = "pct"
     params: Optional[Dict[str, Any]] = None
     denoise: Optional[DenoiseSpec] = None
-    objective: str = "ev"
-    top_k: Optional[int] = None
-    viable_only: bool = True
-    tradable_only: bool = False
+    objective: Literal[
+        "edge", "prob_tp_first", "prob_resolve", "kelly", "kelly_cond", "ev",
+        "ev_cond", "ev_per_bar", "profit_factor", "min_loss_prob", "utility"
+    ] = "ev"
+    top_k: Optional[int] = Field(None, ge=1)
+    candidate_filter: Literal["all", "viable", "tradable"] = "viable"
     min_ev: Optional[float] = None
     min_edge: Optional[float] = None
     min_kelly: Optional[float] = None
-    grid_style: str = "fixed"
+    grid_style: Literal["fixed", "volatility", "ratio", "preset"] = "fixed"
     preset: Optional[str] = None
-    search_profile: str = "medium"
+    search_profile: Literal["fast", "medium", "long"] = "medium"
     detail: DetailLiteral = "compact"
+
+    @property
+    def viable_only(self) -> bool:
+        return self.candidate_filter != "all"
+
+    @property
+    def tradable_only(self) -> bool:
+        return self.candidate_filter == "tradable"
 
     @model_validator(mode="before")
     @classmethod
     def _reject_removed_output(cls, values: Any) -> Any:
-        values = reject_removed_field(values, field_name="output", replacement="extras")
-        values = reject_removed_field(values, field_name="output_mode", replacement="extras")
+        values = reject_removed_field(values, field_name="output", replacement="detail")
+        values = reject_removed_field(values, field_name="output_mode", replacement="detail")
         return reject_removed_field(values, field_name="format", replacement="json")
 
     @field_validator("direction", mode="before")
@@ -385,7 +527,7 @@ class ForecastBarrierOptimizeRequest(BaseModel):
         return normalize_trade_direction_alias(value)
 
 
-class ForecastVolatilityEstimateRequest(BaseModel):
+class ForecastVolatilityEstimateRequest(_PublicForecastRequest):
     symbol: str
     timeframe: TimeframeLiteral = "H1"
     horizon: int = Field(12, ge=1, le=MAX_FORECAST_HORIZON)

@@ -201,7 +201,7 @@ Phases are sequential by default; work inside a phase can parallelize.
 ## Working agreements
 
 1. **Transport purity:** UI talks only to Web API (`/api/v1`). No special-casing domain logic in React; adapt and present.
-2. **Compact payloads:** Prefer UI-oriented compact responses; request `extras` only when the UI shows that detail.
+2. **Compact payloads:** Prefer UI-oriented compact responses; request `detail=full` only when the UI shows those diagnostics.
 3. **Safety:** No order placement / account mutation from the SPA without an explicit safety design (confirmations, mode gates, env flags)—aligned with trading safety docs.
 4. **Token hygiene:** Auth token stays in memory only (current behavior is correct—do not “improve” it into localStorage).
 5. **Small PRs:** Prefer vertical slices (one capability usable end-to-end) over giant refactors.

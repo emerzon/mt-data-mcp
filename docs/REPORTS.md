@@ -78,8 +78,8 @@ Useful controls:
 - `--denoise` and `--denoise-params` configure optional input smoothing.
 - `--params` supplies template and sub-tool overrides such as context limits,
   backtest settings, barrier grids, or additional timeframes.
-- `--detail` controls canonical response detail; `--extras` requests supported
-  richer envelope sections in TOON output.
+- `--detail` controls canonical response detail; use `--detail full` for richer
+  metadata and diagnostics.
 
 Run `mtdata-cli report_generate --help` for the current parameter list and
 template descriptions.

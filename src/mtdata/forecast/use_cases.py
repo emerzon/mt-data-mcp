@@ -1847,7 +1847,7 @@ def _closed_form_barrier_input_error(request: ForecastBarrierProbRequest) -> Opt
         if getattr(request, field_name, None) is not None
     ]
     try:
-        barrier_value = float(request.barrier)
+        barrier_value = float(request.barrier_level)
     except (TypeError, ValueError):
         barrier_value = 0.0
     if barrier_value > 0.0:
@@ -2366,7 +2366,7 @@ def run_forecast_generate(  # noqa: C901
             start=request.start,
             end=request.end,
             params=params,
-            ci_alpha=request.ci_alpha,
+            ci_alpha=request.effective_ci_alpha,
             quantity=request.quantity,
             proxy=proxy_value,
             denoise=request.denoise,
@@ -3176,7 +3176,7 @@ def run_forecast_barrier_prob(
 
     try:
         if method_val in mc_methods:
-            barrier_kwargs = build_barrier_kwargs(request.model_dump())
+            barrier_kwargs = build_barrier_kwargs(request.barrier_kwargs())
             has_resolved_barriers = any(
                 barrier_kwargs.get(field_name) is not None
                 for field_name in (
@@ -3263,7 +3263,7 @@ def run_forecast_barrier_prob(
                 timeframe=request.timeframe,
                 horizon=request.horizon,
                 direction=direction,
-                barrier=request.barrier,
+                barrier=request.barrier_level,
                 mu=request.mu,
                 sigma=request.sigma,
                 denoise=request.denoise,

@@ -151,8 +151,7 @@ mtdata-cli forecast_backtest_run EURUSD --horizon 12 --methods theta \
 | `--denoise` | Denoising method (e.g., `ema`, `kalman`) |
 | `--denoise-params` | Denoising parameters |
 | `--features` | Feature engineering spec |
-| `--dimred-method` | Dimensionality reduction (e.g., `pca`) |
-| `--dimred-params` | Dim reduction parameters |
+| `--dimred` | Dimensionality-reduction method and parameters as JSON |
 
 Dimred methods supported by the forecasting pipeline: `pca`, `tsne`, `selectkbest` (requires `scikit-learn`).
 
@@ -160,7 +159,7 @@ Tip: for `forecast_backtest_run`, pass dimred params as JSON:
 ```bash
 mtdata-cli forecast_backtest_run EURUSD --horizon 12 --methods mlf_lightgbm \
   --features '{"include":["close","volume"]}' \
-  --dimred-method pca --dimred-params '{"n_components":5}'
+  --dimred '{"method":"pca","params":{"n_components":5}}'
 ```
 
 **Example with denoising:**
@@ -247,7 +246,7 @@ When `slippage-bps` or `trade-threshold` is set:
 
 ### Per-Anchor Details
 
-Use `extras=metadata` to include individual test results:
+Use `detail=full` to include individual test results:
 
 ```json
 {
@@ -315,7 +314,7 @@ mtdata-cli forecast_backtest_run EURUSD --horizon 24 \
 Automatically find optimal parameters for a forecasting method:
 
 ```bash
-mtdata-cli forecast_tune_genetic EURUSD --timeframe H1 --method theta \
+mtdata-cli forecast_tune_genetic EURUSD --timeframe H1 --methods theta \
   --horizon 12 --steps 20 --spacing 12 \
   --metric avg_rmse --mode min \
   --population 20 --generations 10
@@ -350,7 +349,7 @@ mtdata-cli forecast_tune_genetic EURUSD --timeframe H1 --method theta \
 Define which parameters to search:
 
 ```bash
-mtdata-cli forecast_tune_genetic EURUSD --method theta \
+mtdata-cli forecast_tune_genetic EURUSD --methods theta \
   --search-space '{"seasonality": {"type": "int", "min": 12, "max": 48}}'
 ```
 
@@ -402,7 +401,7 @@ mtdata-cli forecast_backtest_run EURUSD --timeframe M5 --horizon 6 \
 
 ```bash
 # Step 1: Find optimal seasonality
-mtdata-cli forecast_tune_genetic EURUSD --timeframe H4 --method theta \
+mtdata-cli forecast_tune_genetic EURUSD --timeframe H4 --methods theta \
   --horizon 48 --steps 30 --spacing 48 \
   --metric sharpe_ratio --mode max \
   --population 20 --generations 15
@@ -445,7 +444,7 @@ Simulate real-world model updates:
 
 ```bash
 # Period 1: Optimize on first 6 months
-mtdata-cli forecast_tune_genetic EURUSD --method theta --horizon 12 \
+mtdata-cli forecast_tune_genetic EURUSD --methods theta --horizon 12 \
   --steps 50 --spacing 24 --metric avg_rmse
 
 # Record best params, then test on next 3 months with those params
@@ -528,7 +527,7 @@ mtdata-cli forecast_backtest_run GBPUSD --methods theta --steps 30
 | With trading costs | `--slippage-bps 2 --trade-threshold 0.0005` |
 | Volatility backtest | `--quantity volatility --methods "ewma garch"` |
 | With denoising | `--denoise ema --denoise-params "alpha=0.2"` |
-| Optimize params | `mtdata-cli forecast_tune_genetic EURUSD --method theta --metric avg_rmse` |
+| Optimize params | `mtdata-cli forecast_tune_genetic EURUSD --methods theta --metric avg_rmse` |
 | JSON output | `--json` |
 
 ---

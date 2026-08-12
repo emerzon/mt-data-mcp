@@ -664,8 +664,13 @@ class TestPatternsDetect:
     def test_classic_invalid_engine(self, mock_fetch, mock_engine):
         df = _make_ohlcv_df(200)
         mock_fetch.return_value = (df, None)
-        result = _call_patterns_detect(symbol="EURUSD", mode="classic", timeframe="H1", engine="totally_fake_engine_xyz")
-        assert "error" in result
+        with pytest.raises(ValueError, match="engine"):
+            _call_patterns_detect(
+                symbol="EURUSD",
+                mode="classic",
+                timeframe="H1",
+                engine="totally_fake_engine_xyz",
+            )
 
     @patch("mtdata.core.patterns._run_classic_engine")
     @patch("mtdata.core.patterns._fetch_pattern_data")

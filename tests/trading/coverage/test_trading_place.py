@@ -15,6 +15,7 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
+from pydantic import ValidationError
 
 # ---------------------------------------------------------------------------
 # Ensure src/ is importable and stub MetaTrader5 before importing the module
@@ -378,29 +379,28 @@ def _bypass_auto_connect(monkeypatch):
 class TestTradePlace:
 
     def test_missing_symbol(self):
-        result = _unwrap_mcp(trade_place(symbol=None, volume=0.01, order_type="BUY"))
-        assert "symbol" in result
+        with pytest.raises(ValidationError, match="symbol"):
+            trade_place(symbol=None, volume=0.01, order_type="BUY")
 
     def test_missing_volume(self):
-        result = _unwrap_mcp(trade_place(symbol="EURUSD", volume=None, order_type="BUY"))
-        assert "volume" in result
+        with pytest.raises(ValidationError, match="volume"):
+            trade_place(symbol="EURUSD", volume=None, order_type="BUY")
 
     def test_missing_order_type(self):
-        result = _unwrap_mcp(trade_place(symbol="EURUSD", volume=0.01, order_type=None))
-        assert "order_type" in result
+        with pytest.raises(ValidationError, match="order_type"):
+            trade_place(symbol="EURUSD", volume=0.01, order_type=None)
 
     def test_all_missing(self):
-        result = _unwrap_mcp(trade_place())
-        for field in ("symbol", "volume", "order_type"):
-            assert field in result
+        with pytest.raises(ValidationError, match="Field required"):
+            trade_place()
 
     def test_empty_order_type_string(self):
-        result = _unwrap_mcp(trade_place(symbol="EURUSD", volume=0.01, order_type="  "))
-        assert "order_type" in result
+        with pytest.raises(ValidationError, match="order_type"):
+            trade_place(symbol="EURUSD", volume=0.01, order_type="  ")
 
     def test_invalid_order_type(self):
-        result = _unwrap_mcp(trade_place(symbol="EURUSD", volume=0.01, order_type="GARBAGE"))
-        assert "Unsupported" in result
+        with pytest.raises(ValidationError, match="order_type"):
+            trade_place(symbol="EURUSD", volume=0.01, order_type="GARBAGE")
 
     def test_pending_without_price_returns_error(self):
         result = _unwrap_mcp(trade_place(symbol="EURUSD", volume=0.01, order_type="BUY_LIMIT", price=None))

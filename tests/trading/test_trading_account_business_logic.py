@@ -8,6 +8,9 @@ from inspect import signature
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+import pytest
+from pydantic import ValidationError
+
 from mtdata.core.trading import account as core_trading_account
 from mtdata.core.trading import positions as core_trading_positions
 from mtdata.core.trading import trade_account_info
@@ -560,7 +563,7 @@ def test_run_trade_get_open_filters_losses_and_orders_by_close_priority() -> Non
     )
 
     out = run_trade_get_open(
-        TradeGetOpenRequest(loss_only=True, close_priority="loss_first"),
+        TradeGetOpenRequest(pnl_filter="loss", close_priority="loss_first"),
         gateway=gateway,
         use_client_tz=lambda: False,
         format_time_minimal=lambda ts: f"t{int(ts)}",
@@ -574,42 +577,9 @@ def test_run_trade_get_open_filters_losses_and_orders_by_close_priority() -> Non
     assert [row["profit"] for row in out] == [-7.0, -1.0]
 
 
-def test_run_trade_get_open_rejects_conflicting_profit_filters() -> None:
-    gateway = SimpleNamespace(
-        ensure_connection=lambda: None,
-        positions_get=lambda ticket=None, symbol=None: [
-            SimpleNamespace(
-                ticket=1,
-                symbol="EURUSD",
-                time_update=1700000000,
-                type=0,
-                volume=0.1,
-                price_open=1.1,
-                sl=1.0,
-                tp=1.2,
-                price_current=1.15,
-                swap=0.0,
-                profit=5.0,
-                comment="note",
-                magic=7,
-            )
-        ],
-        POSITION_TYPE_BUY=0,
-        POSITION_TYPE_SELL=1,
-    )
-
-    out = run_trade_get_open(
-        TradeGetOpenRequest(profit_only=True, loss_only=True),
-        gateway=gateway,
-        use_client_tz=lambda: False,
-        format_time_minimal=lambda ts: f"t{int(ts)}",
-        format_time_minimal_local=lambda ts: f"lt{int(ts)}",
-        mt5_epoch_to_utc=lambda ts: ts,
-        normalize_limit=lambda value: value,
-        comment_row_metadata=lambda comment: {},
-    )
-
-    assert out[0]["error"] == "profit_only and loss_only cannot both be true."
+def test_trade_get_open_rejects_removed_boolean_profit_filters() -> None:
+    with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+        TradeGetOpenRequest(profit_only=True, loss_only=True)
 
 
 def test_run_trade_get_pending_logs_finish_event(caplog) -> None:

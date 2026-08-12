@@ -1,20 +1,41 @@
 from __future__ import annotations
 
 import math
-from typing import Any, Dict, Literal, Optional, Union
+from typing import Annotated, Any, Dict, Literal, Optional, Union
 
-from pydantic import AliasChoices, BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from ...shared.schema import DetailLiteral, TimeframeLiteral
 from ...utils.barriers import normalize_trade_direction_alias
 from . import validation
 from .time import ExpirationValue
-from .validation import OrderTypeInput
+from .validation import OrderTypeLiteral
 
 MAGIC_NUMBER_DESCRIPTION = (
     "MT5 magic number: integer strategy/order identifier used to group EA or "
     "strategy trades. Use as a filter for one strategy; omit for all magic numbers."
 )
+
+
+class FixedFractionSizing(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    method: Literal["fixed_fraction"] = "fixed_fraction"
+    risk_pct: float = Field(gt=0.0, description="Target account risk percentage.")
+
+
+class KellySizing(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    method: Literal["kelly"] = "kelly"
+    win_rate: float = Field(ge=0.0, le=1.0, description="Win probability as a fraction.")
+    avg_win: float = Field(gt=0.0, description="Average stake-normalized winning return.")
+    avg_loss: float = Field(gt=0.0, description="Average stake-normalized losing return magnitude.")
+    fraction_multiplier: float = Field(0.5, ge=0.0, description="Multiplier applied to raw Kelly.")
+    max_risk_pct: float = Field(2.0, gt=0.0, description="Maximum Kelly account risk percentage.")
+
+
+RiskSizing = Annotated[Union[FixedFractionSizing, KellySizing], Field(discriminator="method")]
 
 
 def _normalize_trade_side_alias(value: Optional[str]) -> Optional[str]:
@@ -41,6 +62,8 @@ def _normalize_positive_ticket(value: Union[int, str]) -> int:
 
 
 class _SideNormalizedRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     @field_validator("side", mode="before", check_fields=False)
     @classmethod
     def _normalize_side(cls, value: Optional[str]) -> Optional[str]:
@@ -48,29 +71,23 @@ class _SideNormalizedRequest(BaseModel):
 
 
 class TradePlaceRequest(BaseModel):
-    model_config = {"populate_by_name": True}
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
 
-    symbol: Optional[str] = None
-    volume: Optional[float] = Field(
-        default=None,
+    symbol: str = Field(min_length=1)
+    volume: float = Field(
+        gt=0.0,
+        allow_inf_nan=False,
         description="Order size in lots (e.g. 0.01), not traded/tick volume.",
     )
-    order_type: Optional[OrderTypeInput] = Field(
-        default=None,
+    order_type: OrderTypeLiteral = Field(
         description=(
             "Order type: BUY/SELL for market orders, or "
             "BUY_LIMIT/BUY_STOP/SELL_LIMIT/SELL_STOP for pending orders."
         ),
     )
     price: Optional[Union[int, float]] = None
-    stop_loss: Optional[Union[int, float]] = Field(
-        default=None,
-        validation_alias="sl",
-    )
-    take_profit: Optional[Union[int, float]] = Field(
-        default=None,
-        validation_alias="tp",
-    )
+    stop_loss: Optional[Union[int, float]] = None
+    take_profit: Optional[Union[int, float]] = None
     expiration: Optional[ExpirationValue] = None
     comment: Optional[str] = None
     magic: Optional[int] = Field(
@@ -92,11 +109,11 @@ class TradePlaceRequest(BaseModel):
             "true; set dry_run=false explicitly to place a live order."
         ),
     )
-    detail: DetailLiteral = Field(
+    detail: Literal["compact", "standard", "full"] = Field(
         default="compact",
         description=(
             "Response detail level. Compact returns the lean dry-run preview; "
-            "standard and summary add local validation context; full keeps all "
+            "standard adds local validation context; full keeps all "
             "preview diagnostics."
         ),
     )
@@ -105,15 +122,7 @@ class TradePlaceRequest(BaseModel):
         description=(
             "Require both stop_loss and take_profit for market orders and fail "
             "if protection cannot be attached. Market orders using this guarantee "
-            "must keep auto_close_on_sl_tp_fail enabled."
-        ),
-    )
-    auto_close_on_sl_tp_fail: bool = Field(
-        default=True,
-        description=(
-            "If a filled market order cannot attach TP/SL, immediately try to "
-            "close the unprotected position. Set false only when require_sl_tp is "
-            "also false; contradictory market-order safety settings are rejected."
+            "uses the internal unprotected-position recovery fail-safe."
         ),
     )
     idempotency_key: Optional[str] = Field(
@@ -125,6 +134,15 @@ class TradePlaceRequest(BaseModel):
             "across processes and restarts; this is not broker-side idempotency."
         ),
     )
+
+    @field_validator("order_type", mode="before")
+    @classmethod
+    def _normalize_order_type(cls, value: Any) -> Any:
+        return str(value).strip().upper() if isinstance(value, str) else value
+
+    @property
+    def auto_close_on_sl_tp_fail(self) -> bool:
+        return True
 
 
 class TradeModifyRequest(BaseModel):
@@ -141,14 +159,8 @@ class TradeModifyRequest(BaseModel):
         description="Response detail level for modify previews and result payloads.",
     )
     price: Optional[Union[int, float]] = None
-    stop_loss: Optional[Union[int, float]] = Field(
-        default=None,
-        validation_alias="sl",
-    )
-    take_profit: Optional[Union[int, float]] = Field(
-        default=None,
-        validation_alias="tp",
-    )
+    stop_loss: Optional[Union[int, float]] = None
+    take_profit: Optional[Union[int, float]] = None
     expiration: Optional[ExpirationValue] = None
     comment: Optional[str] = None
     dry_run: bool = Field(
@@ -171,6 +183,8 @@ class TradeModifyRequest(BaseModel):
 
 
 class TradeCloseRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     ticket: Optional[Union[int, str]] = None
     detail: DetailLiteral = Field(
         default="compact",
@@ -202,13 +216,9 @@ class TradeCloseRequest(BaseModel):
             "bulk close."
         ),
     )
-    profit_only: bool = Field(
-        default=False,
-        description="Only close positions that are currently profitable.",
-    )
-    loss_only: bool = Field(
-        default=False,
-        description="Only close positions that are currently losing.",
+    pnl_filter: Literal["all", "profit", "loss"] = Field(
+        default="all",
+        description="Restrict matching positions by current profit-and-loss sign.",
     )
     close_priority: Optional[
         Literal["loss_first", "profit_first", "largest_first"]
@@ -229,6 +239,14 @@ class TradeCloseRequest(BaseModel):
             "close/cancel outcome instead of sending another broker request."
         ),
     )
+
+    @property
+    def profit_only(self) -> bool:
+        return self.pnl_filter == "profit"
+
+    @property
+    def loss_only(self) -> bool:
+        return self.pnl_filter == "loss"
 
 
 class TradeHistoryRequest(_SideNormalizedRequest):
@@ -264,9 +282,9 @@ class TradeHistoryRequest(_SideNormalizedRequest):
             "when start, end, and minutes_back are omitted."
         ),
     )
-    limit: Optional[int] = Field(default=100, ge=1)
-    offset: int = 0
-    page: Optional[int] = None
+    limit: int = Field(default=100, ge=1)
+    offset: int = Field(default=0, ge=0)
+    page: Optional[int] = Field(default=None, ge=1)
     order: Literal["desc", "asc"] = Field(
         default="desc",
         description="History time order. desc returns newest activity first.",
@@ -298,11 +316,12 @@ class TradeJournalAnalyzeRequest(_SideNormalizedRequest):
             "(7 days) when start, end, and minutes_back are omitted."
         ),
     )
-    limit: Optional[int] = Field(
+    limit: int = Field(
         default=50,
+        ge=1,
         description="Maximum raw history rows to inspect. Default 50 keeps post-session review fast; raise for longer-term statistics.",
     )
-    breakdown_limit: int = 10
+    breakdown_limit: int = Field(default=10, ge=1)
     min_sample: int = Field(
         default=30,
         description=(
@@ -326,7 +345,7 @@ class TradeJournalAnalyzeRequest(_SideNormalizedRequest):
 
 
 class TradeRiskAnalyzeRequest(BaseModel):
-    model_config = {"populate_by_name": True}
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
 
     symbol: Optional[str] = None
     detail: DetailLiteral = Field(
@@ -336,57 +355,15 @@ class TradeRiskAnalyzeRequest(BaseModel):
             "includes broker volume diagnostics and incomplete-sizing context."
         ),
     )
-    desired_risk_pct: Optional[float] = None
-    sizing_method: Literal["fixed_fraction", "kelly"] = Field(
-        default="fixed_fraction",
-        description=(
-            "Position sizing method. fixed_fraction uses desired_risk_pct; "
-            "kelly uses win rate and stake-normalized average win/loss returns "
-            "to derive risk."
-        ),
-    )
-    kelly_metrics: Optional[Dict[str, Any]] = Field(
+    sizing: Optional[RiskSizing] = Field(
         default=None,
-        description=(
-            "Optional metrics dict containing win_rate, avg_win_return, and "
-            "avg_loss_return. Returns must be normalized to a consistent stake "
-            "or unit of risk; raw account-currency PnL is not accepted. Explicit "
-            "kelly_* fields override this dict."
-        ),
-    )
-    kelly_win_rate: Optional[float] = Field(
-        default=None,
-        description="Kelly win probability as a fraction in [0, 1].",
-    )
-    kelly_avg_win: Optional[float] = Field(
-        default=None,
-        description=(
-            "Average winning stake-normalized return for Kelly sizing, such as "
-            "an R-multiple; not an account-currency PnL average."
-        ),
-    )
-    kelly_avg_loss: Optional[float] = Field(
-        default=None,
-        description=(
-            "Average losing stake-normalized return magnitude for Kelly sizing, "
-            "such as an R-multiple; not an account-currency PnL average."
-        ),
-    )
-    kelly_fraction_multiplier: float = Field(
-        default=0.5,
-        ge=0.0,
-        description="Multiplier applied to the raw Kelly fraction; half-Kelly is 0.5.",
-    )
-    kelly_max_risk_pct: float = Field(
-        default=2.0,
-        gt=0.0,
-        description="Maximum account risk percentage allowed for Kelly sizing.",
+        description="Optional fixed-fraction or Kelly position-sizing inputs.",
     )
     strict_risk: bool = Field(
         default=True,
         description=(
             "When true, return suggested_volume=0.0 if the broker minimum "
-            "volume would exceed desired_risk_pct."
+            "volume would exceed the requested sizing risk."
         ),
     )
     include_pending: bool = Field(
@@ -396,35 +373,65 @@ class TradeRiskAnalyzeRequest(BaseModel):
             "risk totals when enough order price/SL metadata is available."
         ),
     )
-    direction: Optional[str] = None
+    direction: Optional[Literal["long", "short"]] = None
     entry: Optional[float] = Field(
         default=None,
-        alias="entry",
-        validation_alias=AliasChoices("entry", "proposed_entry"),
         description=(
             "Proposed entry price. When omitted with symbol and stop_loss, "
             "trade_risk_analyze resolves it from the live tick: ask for long, "
             "bid for short, or mid when direction is not specified."
         ),
     )
-    stop_loss: Optional[float] = Field(
-        default=None,
-        alias="sl",
-        validation_alias=AliasChoices("sl", "proposed_sl"),
-    )
-    take_profit: Optional[float] = Field(
-        default=None,
-        alias="tp",
-        validation_alias=AliasChoices("tp", "proposed_tp"),
-    )
+    stop_loss: Optional[float] = None
+    take_profit: Optional[float] = None
 
     @field_validator("direction", mode="before")
     @classmethod
     def _normalize_direction(cls, value: Optional[str]) -> Optional[str]:
         return normalize_trade_direction_alias(value)
 
+    @property
+    def desired_risk_pct(self) -> Optional[float]:
+        return self.sizing.risk_pct if isinstance(self.sizing, FixedFractionSizing) else None
+
+    @property
+    def sizing_method(self) -> str:
+        return self.sizing.method if self.sizing is not None else "fixed_fraction"
+
+    @property
+    def kelly_metrics(self) -> Optional[Dict[str, float]]:
+        if not isinstance(self.sizing, KellySizing):
+            return None
+        return {
+            "win_rate": self.sizing.win_rate,
+            "avg_win_return": self.sizing.avg_win,
+            "avg_loss_return": self.sizing.avg_loss,
+        }
+
+    @property
+    def kelly_win_rate(self) -> Optional[float]:
+        return self.sizing.win_rate if isinstance(self.sizing, KellySizing) else None
+
+    @property
+    def kelly_avg_win(self) -> Optional[float]:
+        return self.sizing.avg_win if isinstance(self.sizing, KellySizing) else None
+
+    @property
+    def kelly_avg_loss(self) -> Optional[float]:
+        return self.sizing.avg_loss if isinstance(self.sizing, KellySizing) else None
+
+    @property
+    def kelly_fraction_multiplier(self) -> float:
+        return self.sizing.fraction_multiplier if isinstance(self.sizing, KellySizing) else 0.5
+
+    @property
+    def kelly_max_risk_pct(self) -> float:
+        return self.sizing.max_risk_pct if isinstance(self.sizing, KellySizing) else 2.0
+
 
 class TradeVarCvarRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     symbol: Optional[str] = Field(
         default=None,
         description=(
@@ -436,7 +443,7 @@ class TradeVarCvarRequest(BaseModel):
         default="H1",
         description="Return interval and one-bar VaR/CVaR holding period.",
     )
-    lookback: int = 500
+    lookback: int = Field(500, ge=2)
     include_incomplete: bool = Field(
         default=False,
         description=(
@@ -446,26 +453,26 @@ class TradeVarCvarRequest(BaseModel):
     )
     confidence: float = Field(
         0.95,
+        gt=0.0,
+        lt=1.0,
         description=(
             "VaR/CVaR confidence level. Use a fraction such as 0.95 or 0.99, "
-            "or a percentage such as 95. Values must resolve to 0 < confidence < 1."
+            "Values must satisfy 0 < confidence < 1."
         ),
     )
-    method: str = Field(
+    method: Literal["historical", "parametric"] = Field(
         default="historical",
         description=(
-            "Tail-risk method: historical (or hist) or parametric "
-            "(or gaussian/normal)."
+            "Tail-risk method: historical or parametric."
         ),
     )
-    transform: str = Field(
+    transform: Literal["log_return", "pct"] = Field(
         default="log_return",
         description=(
-            "Return transform: log_return (aliases log_returns/log) or pct "
-            "(aliases pct_return/percent/simple_return)."
+            "Return transform: log_return or pct."
         ),
     )
-    min_observations: int = 50
+    min_observations: int = Field(50, ge=2)
     detail: DetailLiteral = Field(
         default="compact",
         description=(
@@ -508,17 +515,12 @@ class TradeGetOpenRequest(_SideNormalizedRequest):
     ticket: Optional[Union[int, str]] = None
     side: Optional[str] = Field(
         default=None,
-        validation_alias=AliasChoices("side", "direction"),
         description="Optional direction filter. Accepts buy/sell or long/short.",
     )
     magic: Optional[int] = Field(default=None, description=MAGIC_NUMBER_DESCRIPTION)
-    profit_only: bool = Field(
-        default=False,
-        description="Only return currently profitable open positions.",
-    )
-    loss_only: bool = Field(
-        default=False,
-        description="Only return currently losing open positions.",
+    pnl_filter: Literal["all", "profit", "loss"] = Field(
+        default="all",
+        description="Restrict open positions by current profit-and-loss sign.",
     )
     close_priority: Optional[
         Literal["loss_first", "profit_first", "largest_first"]
@@ -529,7 +531,7 @@ class TradeGetOpenRequest(_SideNormalizedRequest):
             "loss_first, profit_first, or largest_first."
         ),
     )
-    limit: Optional[int] = Field(default=50, ge=1)
+    limit: int = Field(default=50, ge=1)
     detail: DetailLiteral = Field(
         default="compact",
         description=(
@@ -538,25 +540,31 @@ class TradeGetOpenRequest(_SideNormalizedRequest):
         ),
     )
 
+    @property
+    def profit_only(self) -> bool:
+        return self.pnl_filter == "profit"
+
+    @property
+    def loss_only(self) -> bool:
+        return self.pnl_filter == "loss"
+
 
 class TradeGetPendingRequest(_SideNormalizedRequest):
     symbol: Optional[str] = None
     ticket: Optional[Union[int, str]] = None
     side: Optional[str] = Field(
         default=None,
-        validation_alias=AliasChoices("side", "direction"),
         description="Optional order direction filter. Accepts buy/sell or long/short.",
     )
     order_type: Optional[str] = Field(
         default=None,
-        validation_alias=AliasChoices("order_type", "type"),
         description=(
             "Optional pending order type filter: buy_limit, sell_limit, "
             "buy_stop, sell_stop, buy_stop_limit, or sell_stop_limit."
         ),
     )
     magic: Optional[int] = Field(default=None, description=MAGIC_NUMBER_DESCRIPTION)
-    limit: Optional[int] = Field(default=50, ge=1)
+    limit: int = Field(default=50, ge=1)
     detail: DetailLiteral = Field(
         default="compact",
         description=(

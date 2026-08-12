@@ -118,7 +118,7 @@ mtdata-cli forecast_barrier_optimize EURUSD --timeframe H1 --horizon 12 \
 
 ```bash
 mtdata-cli forecast_barrier_prob EURUSD --timeframe H1 --horizon 12 \
-  --method hmm_mc --tp-pct 0.4 --sl-pct 0.8 --params "n_sims=5000 seed=7" --json
+  --method hmm_mc --barrier '{"kind":"tp_sl","unit":"pct","take_profit":0.4,"stop_loss":0.8}' --params "n_sims=5000 seed=7" --json
 ```
 
 5.3 Closed‑form GBM sanity check (fast)
@@ -138,7 +138,7 @@ Use triple‑barrier labels offline for signal evaluation and meta‑models.
 
 ```bash
 mtdata-cli labels_triple_barrier EURUSD --timeframe H1 --lookback 2000 \
-  --horizon 12 --tp-pct 0.4 --sl-pct 0.8 --label-on high_low \
+  --horizon 12 --barriers '{"unit":"pct","take_profit":0.4,"stop_loss":0.8}' --label-on high_low \
   --detail full --json
 ```
 

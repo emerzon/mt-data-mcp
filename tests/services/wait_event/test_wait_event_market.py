@@ -55,7 +55,7 @@ def test_market_stat_event_specs_share_defaults_and_validation(
     assert spec.threshold_mode == "ratio_to_baseline"
     assert spec.threshold_value == expected_threshold
 
-    with pytest.raises(ValidationError, match="threshold_value must be greater than 0"):
+    with pytest.raises(ValidationError, match="Input should be greater than 0"):
         WaitEventRequest(
             max_wait_seconds=5,
             watch_for=[

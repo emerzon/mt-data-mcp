@@ -170,7 +170,7 @@ mtdata-cli forecast_generate EURUSD --json | jq '.forecast'
 
 ### Output is Too Verbose
 
-**Solution:** Omit `--extras` and keep the default compact detail level.
+**Solution:** Keep the default compact detail level, or set `--detail compact` explicitly.
 
 ### Missing Columns in Output
 

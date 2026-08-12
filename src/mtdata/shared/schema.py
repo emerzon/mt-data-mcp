@@ -20,6 +20,7 @@ from typing import (
     is_typeddict,
 )
 
+from pydantic import BaseModel, ConfigDict, Field
 from typing_extensions import TypedDict
 
 from .annotations import get_runtime_annotations, get_runtime_signature
@@ -27,6 +28,43 @@ from .constants import TIMEFRAME_MAP
 from .parameter_contracts import PARAMETER_HELP
 
 _logger = logging.getLogger(__name__)
+
+
+class DimensionalityReductionSpec(BaseModel):
+    """Dimensionality-reduction method and its method-specific parameters."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    method: str = Field(description="Registered dimensionality-reduction method name.")
+    params: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="Method-specific dimensionality-reduction parameters.",
+    )
+
+
+class BarrierPairSpec(BaseModel):
+    """Take-profit and stop-loss pair expressed in one unit family."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    unit: Literal["price", "pct", "ticks"] = Field(
+        description="Barrier unit: absolute price, percentage points, or trade ticks."
+    )
+    take_profit: float = Field(
+        gt=0.0,
+        description="Positive take-profit price level or distance in the selected unit.",
+    )
+    stop_loss: float = Field(
+        gt=0.0,
+        description="Positive stop-loss price level or distance in the selected unit.",
+    )
+
+    def as_legacy_kwargs(self) -> Dict[str, float]:
+        suffix = {"price": "abs", "pct": "pct", "ticks": "ticks"}[self.unit]
+        return {
+            f"tp_{suffix}": float(self.take_profit),
+            f"sl_{suffix}": float(self.stop_loss),
+        }
 
 
 def normalize_required_symbol(value: Any, *, error_message: str = "symbol is required") -> str:
@@ -130,8 +168,7 @@ PARAM_HINTS = {
     "as_of": "Reference time override (dateparser).",
     "ci_alpha": "Confidence interval alpha.",
     "features": "Feature spec as JSON or k=v pairs. Examples: --features lag=3,rolling=5 or --features '{\"lag\":3,\"rolling\":5}'.",
-    "dimred_method": "Dimred method (e.g. pca, tsne).",
-    "dimred_params": "Dimred params (JSON or k=v).",
+    "dimred": "Dimensionality-reduction method and its method-specific parameters.",
     "target_spec": "Target spec (JSON or k=v).",
     "quantity": "Quantity to model (price/return/volatility).",
     "target": "Target series (price/return).",
@@ -178,20 +215,12 @@ PARAM_HINTS = {
     "idempotency_key": "Optional durable SQLite dedupe key for retrying the same request. Completed outcomes persist across processes and restarts for the configured TTL (24 hours by default).",
     "dry_run": "Preview the action without applying changes.",
     "check_only": "Return sample sufficiency/status checks without running the full analysis.",
-    "profit_only": "Close only profitable positions when true.",
-    "loss_only": "Close only losing positions when true.",
+    "pnl_filter": "Filter positions by profit state: all, profit, or loss.",
     "confirm_close_all": "Required confirmation flag when closing all matching positions.",
     "column_style": "Trade-history column set: compact, standard, or full.",
     "breakdown_limit": "Maximum rows per journal breakdown table.",
     "min_sample": "Recommended minimum realized exit deals for journal statistics.",
-    "desired_risk_pct": "Target account risk percentage for fixed-fraction position sizing.",
-    "sizing_method": "Position sizing method: fixed_fraction or kelly.",
-    "kelly_metrics": "Kelly sizing inputs as a JSON map; flat kelly_* fields override matching keys.",
-    "kelly_win_rate": "Kelly win probability as a fraction in [0, 1].",
-    "kelly_avg_win": "Average winning stake-normalized return for Kelly sizing.",
-    "kelly_avg_loss": "Average losing stake-normalized return magnitude for Kelly sizing.",
-    "kelly_fraction_multiplier": "Multiplier applied to raw Kelly fraction; half-Kelly is 0.5.",
-    "kelly_max_risk_pct": "Maximum account risk percentage allowed for Kelly sizing.",
+    "sizing": "Position-sizing specification for fixed-fraction or Kelly sizing.",
     "strict_risk": "Block positive suggested volume when broker minimum volume would exceed requested risk.",
     "include_pending": "Include pending orders in exposure/risk calculations.",
     "entry": "Proposed entry price; when omitted, live quote is used where supported.",
@@ -226,7 +255,8 @@ PARAM_HINTS = {
     "tp_ticks": "Take-profit barrier distance in ticks.",
     "sl_ticks": "Stop-loss barrier distance in ticks.",
     "label_on": "Barrier evaluation basis: close or high_low.",
-    "barrier": "Barrier level for closed-form probability.",
+    "barrier": "Single-price or take-profit/stop-loss barrier specification.",
+    "barriers": "Take-profit and stop-loss values expressed in one unit family.",
     "mu": "Drift override for closed-form barrier method.",
     "sigma": "Volatility override for closed-form barrier method.",
     "search_space": "Genetic search space (JSON or k=v).",
@@ -265,7 +295,7 @@ PARAM_HINTS = {
     "slippage_bps": "Backtest slippage per fill side in basis points (strategy default: 1.0).",
     "objective": "Optimization objective.",
     "return_grid": "Include full grid results in output.",
-    "viable_only": "Only return viable barrier candidates when true.",
+    "candidate_filter": "Barrier candidates to return: all, viable, or tradable.",
     "concise": "Return a shorter barrier-optimization payload when true.",
     "grid_style": "TP/SL grid style.",
     "preset": "TP/SL grid preset. Common examples: volatility, conservative, aggressive.",
@@ -367,6 +397,7 @@ PARAM_HINTS = {
     "limit_per_bucket": "Maximum news items returned per bucket.",
     "poll_interval_seconds": "Seconds between polling attempts while waiting for events.",
     "watch_tick_count_spike": "Watch for abnormal tick-volume spikes while waiting.",
+    "core_only": "Return only methods implemented by the core package.",
 }
 
 
@@ -686,7 +717,11 @@ def _ensure_defs(schema: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def apply_param_hints(schema: Dict[str, Any]) -> Dict[str, Any]:
-    params_obj = _parameters_obj(schema)
+    params_obj = (
+        schema
+        if isinstance(schema.get("properties"), dict)
+        else _parameters_obj(schema)
+    )
     props = params_obj.get("properties", {}) if isinstance(params_obj, dict) else {}
     for name, prop in list(props.items()):
         if not isinstance(prop, dict):

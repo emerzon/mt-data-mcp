@@ -389,7 +389,7 @@ score.
 
 ### Richer Sections
 ```bash
-mtdata-cli regime_detect EURUSD --timeframe H1 --method hmm --extras metadata,diagnostics --json
+mtdata-cli regime_detect EURUSD --timeframe H1 --method hmm --detail full --json
 ```
 Adds supported richer sections such as metadata and diagnostics.
 

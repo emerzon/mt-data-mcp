@@ -112,7 +112,7 @@ def test_denoise_list_methods_full_keeps_complete_catalog(monkeypatch):
     assert "has_more" not in result
 
 
-def test_denoise_list_methods_filters_for_causal_available_no_extras(monkeypatch):
+def test_denoise_list_methods_filters_for_causal_available_core_only(monkeypatch):
     rows = [
         {
             "method": "ema",
@@ -144,11 +144,11 @@ def test_denoise_list_methods_filters_for_causal_available_no_extras(monkeypatch
         else rows,
     )
 
-    result = _raw_list_methods()(available_only=True, causality="causal", no_extras=True)
+    result = _raw_list_methods()(available_only=True, causality="causal", core_only=True)
 
     assert result["count"] == 1
     assert result["pagination"]["total"] == 1
     assert result["available_only"] is True
     assert result["causality"] == "causal"
-    assert result["no_extras"] is True
+    assert result["core_only"] is True
     assert result["methods"][0]["method"] == "ema"

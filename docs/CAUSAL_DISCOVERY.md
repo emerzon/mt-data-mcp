@@ -64,8 +64,8 @@ It accepts either:
 `items` is the canonical compact payload. Each row includes the correlation,
 sample count, and pairwise period window; `context` records the timeframe,
 `window_bars`, transform, and `min_overlap` used. A requested `limit` records
-the output page size, not the analysis sample size. Use `extras=metadata` when you also
-need derived convenience views such as `matrix`; omit `extras` to keep only the
+the output page size, not the analysis sample size. Use `detail=full` when you also
+need derived convenience views such as `matrix`; compact detail keeps only the
 ranked pair rows plus summary highlights.
 
 ### `cointegration_test`

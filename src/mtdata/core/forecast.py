@@ -1169,11 +1169,8 @@ def forecast_optimize_hints(request: ForecastOptimizeHintsRequest) -> Dict[str, 
     features : dict, optional
         Additional feature configurations.
     
-    dimred_method : str, optional
-        Dimensionality reduction method for multivariate forecasts.
-    
-    dimred_params : dict, optional
-        Parameters for dimensionality reduction.
+    dimred : object, optional
+        Dimensionality-reduction method and its method-specific parameters.
 
     Returns:
     --------

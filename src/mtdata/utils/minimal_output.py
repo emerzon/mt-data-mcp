@@ -1575,11 +1575,11 @@ def _normalize_regime_all_payload(  # noqa: C901
     if detail_value != "full" and ("results" in payload or "params_used" in payload):
         if detail_value == "summary":
             out["show_all_hint"] = (
-                "Set extras='metadata' to include per-method details."
+                "Set detail='full' to include per-method details."
             )
         else:
             out["show_all_hint"] = (
-                "Compact output is the default; set extras='metadata' to include per-method details."
+                "Compact output is the default; set detail='full' to include per-method details."
             )
 
     return out

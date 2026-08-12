@@ -1034,7 +1034,7 @@ class TestCorrelationMatrix:
             for key in ("timeframe", "limit", "window_bars", "transform", "min_overlap")
         } == {
             "timeframe": "H1",
-            "limit": None,
+            "limit": 50,
             "window_bars": 60,
             "transform": "log_return",
             "min_overlap": 30,

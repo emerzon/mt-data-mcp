@@ -1150,9 +1150,9 @@ def regime_detect(  # noqa: C901
         Omit for timeframe-based defaults: M1: 30, M5: 12, M15-M30: 6-8, H1-H4: 3-4, D1+: 2
     - max_regimes: Maximum number of regime windows to show in compact mode (default 10).
         Most recent regimes are shown. Full mode shows all available windows.
-    - extras:
-        Compact output is the public default. Use extras such as `metadata`
-        for richer consolidated output. Raw `series` is included only if
+    - detail:
+        Compact output is the public default. Use `detail="full"` for richer
+        consolidated output. Raw `series` is included only if
         include_series=True.
 
     Output Structure (state-based methods: hmm, ms_ar, clustering, garch, wavelet, ensemble):
@@ -1213,7 +1213,7 @@ def regime_detect(  # noqa: C901
           with regime statistics. 'ensemble_info' shows voting method and mean_agreement.
           Explicit n_states overrides auto-detection.
         - 'all': Returns a cross-method 'comparison' dict with semantic agreement metrics.
-          Compact output keeps the comparison view concise; `extras='metadata'`
+          Compact output keeps the comparison view concise; `detail='full'`
           includes richer per-method outputs.
           Best for method comparison.
     """

@@ -10,10 +10,6 @@ import logging
 from typing import Any, Callable, Dict, Iterable
 
 from ..forecast.barrier_constants import BARRIER_MONTE_CARLO_METHODS
-from ..shared.parameter_contracts import (
-    OUTPUT_EXTRA_FULL_ALIASES,
-    OUTPUT_EXTRAS,
-)
 from ..shared.schema import (
     apply_param_hints as _apply_param_hints,
 )
@@ -32,6 +28,7 @@ from ..shared.schema import (
 from ._mcp_tools import get_mcp_registry
 
 logger = logging.getLogger(__name__)
+_PUBLIC_TOOL_SCHEMAS: Dict[str, Dict[str, Any]] = {}
 
 _BARRIER_PROB_METHODS = (
     *BARRIER_MONTE_CARLO_METHODS[:-1],
@@ -108,10 +105,19 @@ def _set_ref(
 ) -> None:
     if param_name not in params:
         return
+    existing = params.get(param_name)
+    metadata = {
+        key: copy.deepcopy(existing[key])
+        for key in ("default", "description", "examples")
+        if isinstance(existing, dict) and key in existing
+    }
     if allow_null and param_name not in required_params:
-        params[param_name] = {"anyOf": [{"$ref": ref}, {"type": "null"}]}
+        params[param_name] = {
+            "anyOf": [{"$ref": ref}, {"type": "null"}],
+            **metadata,
+        }
         return
-    params[param_name] = {"$ref": ref}
+    params[param_name] = {"$ref": ref, **metadata}
 
 
 def _set_simplify_param(params: Dict[str, Any], required_params: set[str]) -> None:
@@ -184,6 +190,7 @@ def _patch_forecast_barrier_prob_schema(schema: Dict[str, Any]) -> None:
     params["method"] = {
         "type": "string",
         "enum": list(_BARRIER_PROB_METHODS),
+        "default": "mc_gbm_bb",
         "description": "Barrier probability algorithm.",
     }
 
@@ -195,6 +202,7 @@ def _patch_forecast_barrier_optimize_schema(schema: Dict[str, Any]) -> None:
     params["method"] = {
         "type": "string",
         "enum": list(_BARRIER_OPTIMIZE_METHODS),
+        "default": "auto",
         "description": "Barrier simulation method.",
     }
 
@@ -354,8 +362,6 @@ def _strip_schema_noise(value: Any, *, drop_descriptions: bool) -> Any:
                 continue
             if key == "default" and item is None:
                 continue
-            if key == "additionalProperties" and item is True:
-                continue
             child = _strip_schema_noise(item, drop_descriptions=drop_descriptions)
             if key in {"anyOf", "oneOf"} and isinstance(child, list):
                 child = _dedupe_union_options(child)
@@ -394,7 +400,10 @@ def _compact_optional_property_schema(schema: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _compact_schema_shape(schema: Dict[str, Any]) -> Dict[str, Any]:
-    compact = _strip_schema_noise(copy.deepcopy(schema), drop_descriptions=True)
+    source = copy.deepcopy(schema)
+    hinted_value = _apply_param_hints(source)
+    hinted = hinted_value if isinstance(hinted_value, dict) else source
+    compact = _strip_schema_noise(hinted, drop_descriptions=False)
     params_obj = _schema_obj(compact)
     props = params_obj.get("properties", {}) if isinstance(params_obj, dict) else {}
     required = set(params_obj.get("required", [])) if isinstance(params_obj, dict) else set()
@@ -402,7 +411,55 @@ def _compact_schema_shape(schema: Dict[str, Any]) -> Dict[str, Any]:
         for name, prop in list(props.items()):
             if isinstance(prop, dict) and name not in required:
                 props[name] = _compact_optional_property_schema(prop)
+    if isinstance(params_obj, dict):
+        params_obj["additionalProperties"] = False
+    _ensure_schema_descriptions(compact)
     return compact
+
+
+def _concise_schema_description(value: Any) -> str:
+    text = " ".join(str(value or "").split())
+    if len(text) <= 180:
+        return text
+    first_sentence = text.split(". ", 1)[0].rstrip(".") + "."
+    if len(first_sentence) <= 180:
+        return first_sentence
+    shortened = text[:177].rsplit(" ", 1)[0].rstrip(" ,;:")
+    return f"{shortened}..."
+
+
+def _ensure_schema_descriptions(value: Any, *, property_name: str = "") -> None:
+    if isinstance(value, dict):
+        if property_name:
+            description = value.get("description")
+            if not description:
+                description = f"Value for {property_name.replace('_', ' ')}."
+            value["description"] = _concise_schema_description(description)
+        properties = value.get("properties")
+        if isinstance(properties, dict):
+            for name, prop in properties.items():
+                _ensure_schema_descriptions(prop, property_name=str(name))
+        for key in ("$defs", "items", "anyOf", "oneOf", "allOf"):
+            child = value.get(key)
+            if isinstance(child, dict):
+                if key == "$defs":
+                    for item in child.values():
+                        _ensure_schema_descriptions(item)
+                else:
+                    _ensure_schema_descriptions(child)
+            elif isinstance(child, list):
+                for item in child:
+                    _ensure_schema_descriptions(item)
+
+
+def get_public_tool_schema(name: str) -> Dict[str, Any]:
+    """Return a copy of the canonical public input schema for one tool."""
+    return copy.deepcopy(_PUBLIC_TOOL_SCHEMAS.get(str(name), {}))
+
+
+def get_public_tool_schemas() -> Dict[str, Dict[str, Any]]:
+    """Return copies of all canonical public input schemas."""
+    return copy.deepcopy(_PUBLIC_TOOL_SCHEMAS)
 
 
 def _enforce_public_output_contract(schema: Dict[str, Any]) -> None:
@@ -418,33 +475,20 @@ def _enforce_public_output_contract(schema: Dict[str, Any]) -> None:
             "description": "Return structured JSON instead of default TOON text.",
         },
     )
+    props.pop("extras", None)
     props.setdefault(
-        "extras",
+        "output_fields",
         {
             "anyOf": [
                 {
                     "type": "array",
-                    "items": {
-                        "type": "string",
-                        "enum": sorted(OUTPUT_EXTRAS),
-                    },
+                    "items": {"type": "string"},
                 },
                 {"type": "string"},
             ],
-            "description": (
-                "Optional richer output sections. Use "
-                f"{'/'.join(sorted(OUTPUT_EXTRA_FULL_ALIASES))} for every supported section."
-            ),
+            "description": "Output fields to keep, expressed as names or dotted paths.",
         },
     )
-    if isinstance(props.get("extras"), dict):
-        props["extras"].setdefault(
-            "description",
-            (
-                "Optional richer output sections. Use "
-                f"{'/'.join(sorted(OUTPUT_EXTRA_FULL_ALIASES))} for every supported section."
-            ),
-        )
 
 
 def _collect_schema_refs(value: Any, refs: set[str], *, skip_defs: bool) -> None:
@@ -543,6 +587,7 @@ def _attach_schema_to_tool(
     _enforce_public_output_contract(public_schema)
     public_schema = _prune_unused_defs(_compact_schema_shape(public_schema))
     _validate_local_def_refs(public_schema)
+    _PUBLIC_TOOL_SCHEMAS[name] = copy.deepcopy(public_schema)
     internal_schema = _build_internal_schema(public_schema)
     concise_description = _summarize_description(
         str(getattr(manager_tool, "description", None) or info.get("doc") or "")

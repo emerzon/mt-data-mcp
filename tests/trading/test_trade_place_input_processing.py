@@ -40,20 +40,24 @@ def trade_modify(**kwargs):
 
 def test_trading_order_requests_expose_canonical_detail_field() -> None:
     fields = TradePlaceRequest.model_fields
+    base = {"symbol": "EURUSD", "volume": 0.01, "order_type": "BUY"}
 
     assert "detail" in fields
     assert "preview_detail" not in fields
-    assert TradePlaceRequest(detail="full").detail == "full"
-    assert TradePlaceRequest(detail="compact").detail == "compact"
-    assert TradePlaceRequest(detail="standard").detail == "standard"
-    assert TradePlaceRequest(detail="summary").detail == "summary"
+    assert TradePlaceRequest(**base, detail="full").detail == "full"
+    assert TradePlaceRequest(**base, detail="compact").detail == "compact"
+    assert TradePlaceRequest(**base, detail="standard").detail == "standard"
+    with pytest.raises(ValidationError, match="detail"):
+        TradePlaceRequest(**base, detail="summary")
     assert TradeModifyRequest(ticket=100, detail="summary").detail == "summary"
     assert TradeCloseRequest(detail="summary").detail == "summary"
 
 
 def test_execution_request_dry_run_defaults() -> None:
     # All trade mutators preview by default; pass dry_run=false to execute live.
-    assert TradePlaceRequest().dry_run is True
+    assert TradePlaceRequest(
+        symbol="EURUSD", volume=0.01, order_type="BUY"
+    ).dry_run is True
     assert TradeModifyRequest(ticket=100).dry_run is True
     assert TradeCloseRequest(ticket=100).dry_run is True
 
@@ -61,7 +65,9 @@ def test_execution_request_dry_run_defaults() -> None:
 @pytest.mark.parametrize(
     "request_factory",
     [
-        lambda: TradePlaceRequest(deviation=-1),
+        lambda: TradePlaceRequest(
+            symbol="EURUSD", volume=0.01, order_type="BUY", deviation=-1
+        ),
         lambda: TradeCloseRequest(ticket=100, deviation=-1),
         lambda: TradeCloseRequest(ticket=100, volume=0),
         lambda: TradeCloseRequest(ticket=100, volume=-0.1),
@@ -98,14 +104,13 @@ def test_trade_place_rejects_numeric_order_type() -> None:
 
 
 def test_trade_place_rejects_prefixed_order_type() -> None:
-    with patch("mtdata.core.trading._place_pending_order", return_value={"ok": True}) as mock_pending:
-        out = trade_place(symbol="BTCUSD", volume=0.03, order_type="ORDER_TYPE_BUY_STOP", price=70650, __cli_raw=True)
-
-    assert "Unsupported order_type" in out["error"]
-    assert out["error_code"] == "invalid_order_type"
-    assert "BUY_STOP" in out["valid_values"]["order_type"]
-    assert out["example"].startswith("mtdata-cli trade_place")
-    mock_pending.assert_not_called()
+    with pytest.raises(ValidationError, match="order_type"):
+        TradePlaceRequest(
+            symbol="BTCUSD",
+            volume=0.03,
+            order_type="ORDER_TYPE_BUY_STOP",
+            price=70650,
+        )
 
 
 def test_trade_place_routes_prefixed_market_order_type() -> None:
@@ -150,14 +155,8 @@ def test_trade_place_logs_finish_event(caplog) -> None:
 
 
 def test_trade_place_missing_required_fields_returns_friendly_error() -> None:
-    out = trade_place(__cli_raw=True)
-    assert isinstance(out, dict)
-    assert "error" in out
-    assert out.get("success") is False
-    assert out.get("error_code") == "trade_place_error"
-    assert out.get("operation") == "trade_place"
-    assert "Missing required field(s): symbol, volume, order_type" in str(out["error"])
-    assert out.get("required") == ["symbol", "volume", "order_type"]
+    with pytest.raises(ValidationError, match="Field required"):
+        TradePlaceRequest()
 
 
 def test_trade_place_blank_expiration_keeps_market_routing() -> None:
@@ -858,7 +857,6 @@ def test_trade_place_auto_close_attempts_recovery_on_sl_tp_fail() -> None:
             order_type="BUY",
             stop_loss=64000,
             take_profit=68000,
-            auto_close_on_sl_tp_fail=True,
             dry_run=False,
             __cli_raw=True,
         )

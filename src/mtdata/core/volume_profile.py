@@ -28,7 +28,6 @@ from ..utils.volume_profile import (
 from ._mcp_instance import mcp
 from .execution_logging import run_logged_operation
 from .mt5_gateway import create_mt5_gateway
-from .output_contract import normalize_output_extras
 
 logger = logging.getLogger(__name__)
 
@@ -702,7 +701,6 @@ def volume_profile_levels(  # noqa: PLR0913
     max_ticks: int = _DEFAULT_MAX_TICKS,
     max_m1_bars: int = _DEFAULT_MAX_M1_BARS,
     detail: DetailLiteral = "compact",
-    extras: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Compute volume-profile POC, VAH, and VAL from ticks or M1-bar approximation.
 
@@ -717,8 +715,6 @@ def volume_profile_levels(  # noqa: PLR0913
     def _run() -> Dict[str, Any]:
         try:
             detail_value = str(detail or "compact").strip().lower()
-            if normalize_output_extras(extras):
-                detail_value = "full"
             return compute_volume_profile_payload(
                 symbol=symbol,
                 start=start,
@@ -764,6 +760,5 @@ def volume_profile_levels(  # noqa: PLR0913
         max_ticks=max_ticks,
         max_m1_bars=max_m1_bars,
         detail=detail,
-        extras=extras,
         func=_run,
     )

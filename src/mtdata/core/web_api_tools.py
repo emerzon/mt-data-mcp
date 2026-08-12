@@ -15,12 +15,12 @@ from ..utils.mt5 import MT5ConnectionError
 from ._mcp_tools import (
     _prepare_public_tool_call,
     _shape_public_tool_output,
-    _tool_catalog_parameters,
     get_tool_functions,
     registered_tool_catalog,
 )
 from .cli.runtime.commands import LIVE_TRADE_MUTATION_TOOLS, LIVE_TRADE_MUTATION_WARNING
 from .error_envelope import build_error_payload
+from .schema_attach import get_public_tool_schema
 from .tool_calling import call_tool_sync_structured, unwrap_tool_callable
 
 logger = logging.getLogger(__name__)
@@ -123,14 +123,7 @@ def _append_output_control_fields(fields: List[Dict[str, Any]]) -> List[Dict[str
     out = list(fields)
     controls = (
         {
-            "name": "extras",
-            "required": False,
-            "default": None,
-            "type": "str | list[str] | None",
-            "description": "Richer output sections such as metadata, diagnostics, or guidance.",
-        },
-        {
-            "name": "fields",
+            "name": "output_fields",
             "required": False,
             "default": None,
             "type": "str | list[str] | None",
@@ -197,19 +190,7 @@ def _enrich_catalog_row(row: Dict[str, Any], *, include_fields: bool = False) ->
     out["surface"] = classify_tool_surface(name)
     out["safety"] = tool_safety_meta(name)
     if include_fields:
-        funcs = get_tool_functions()
-        fn = funcs.get(name)
-        if fn is not None:
-            out["fields"] = build_parameter_fields(fn)
-        elif name == "market_depth_fetch":
-            # Gated tool may appear in catalog without a live function.
-            out["fields"] = [
-                {"name": "symbol", "required": True, "default": None, "type": "str", "description": None},
-                {"name": "spread", "required": False, "default": None, "type": "any", "description": None},
-                {"name": "require_dom", "required": False, "default": None, "type": "bool", "description": None},
-            ]
-        else:
-            out["fields"] = []
+        out["input_schema"] = get_public_tool_schema(name)
     return out
 
 
@@ -280,13 +261,6 @@ def get_tool_for_webapi(tool_name: str) -> Dict[str, Any]:
         raise HTTPException(status_code=404, detail=f"Unknown tool: {name}")
 
     enriched = _enrich_catalog_row(match, include_fields=True)
-    # Prefer full required/optional map when fields empty
-    if not enriched.get("fields"):
-        funcs = get_tool_functions()
-        fn = funcs.get(name)
-        if fn is not None:
-            params = _tool_catalog_parameters(fn)
-            enriched["parameters"] = params
     return {"success": True, "tool": enriched}
 
 
@@ -337,11 +311,19 @@ def invoke_tool_for_webapi(
     # Strip UI-only keys if callers leak them
     args.pop("confirm", None)
     args.pop("__confirm", None)
+    if "extras" in args:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error": "extras was removed; use the tool's detail parameter.",
+                "parameter": "extras",
+                "replacement": "detail",
+            },
+        )
     # The HTTP surface is always structured JSON; consume presentation-only
     # parameters here instead of leaking them into the raw domain callable.
     args.pop("json", None)
-    extras = args.pop("extras", None)
-    fields = args.pop("fields", None)
+    output_fields = args.pop("output_fields", None)
 
     try:
         target = unwrap_tool_callable(fn)
@@ -349,14 +331,13 @@ def invoke_tool_for_webapi(
             target,
             args,
             json_output=True,
-            extras=extras,
         )
         result = call_tool_sync_structured(target, **args)
         result = _shape_public_tool_output(
             result,
             tool_name=name,
             contract_state=contract_state,
-            fields=fields,
+            output_fields=output_fields,
         )
     except DenoiseCausalityError as exc:
         payload = build_error_payload(

@@ -245,7 +245,7 @@ class TestTradeRiskAnalyze:
         mt5.symbol_info.return_value = _sym()
         result = _unwrap_mcp(trade_risk_analyze(
             symbol="EURUSD",
-            desired_risk_pct=2.0,
+            sizing={"method": "fixed_fraction", "risk_pct": 2.0},
             entry=1.1000,
             stop_loss=1.0950,
             take_profit=1.1100,
@@ -259,7 +259,9 @@ class TestTradeRiskAnalyze:
         mt5.account_info.return_value = SimpleNamespace(equity=10000, currency="USD")
         mt5.positions_get.return_value = []
         result = _unwrap_mcp(trade_risk_analyze(
-            desired_risk_pct=2.0, entry=1.1, stop_loss=1.09,
+            sizing={"method": "fixed_fraction", "risk_pct": 2.0},
+            entry=1.1,
+            stop_loss=1.09,
         ))
         assert "error" in result.lower()
 
@@ -271,7 +273,8 @@ class TestTradeRiskAnalyze:
         mt5.positions_get.return_value = []
         mt5.symbol_info.return_value = None
         result = _unwrap_mcp(trade_risk_analyze(
-            symbol="INVALID", desired_risk_pct=2.0,
+            symbol="INVALID",
+            sizing={"method": "fixed_fraction", "risk_pct": 2.0},
             entry=1.1, stop_loss=1.09,
         ))
         assert "error" in result.lower() or "not found" in result.lower()
@@ -298,7 +301,8 @@ class TestTradeRiskAnalyze:
         mt5.positions_get.return_value = []
         mt5.symbol_info.return_value = _sym()
         result = _unwrap_mcp(trade_risk_analyze(
-            symbol="EURUSD", desired_risk_pct=2.0,
+            symbol="EURUSD",
+            sizing={"method": "fixed_fraction", "risk_pct": 2.0},
             entry=1.1, stop_loss=1.1,
         ))
         assert "position_sizing_error" in result or "SL distance" in result

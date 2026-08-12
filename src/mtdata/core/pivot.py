@@ -2,7 +2,9 @@
 import logging
 import math
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Literal, Optional
+from typing import Annotated, Any, Dict, List, Literal, Optional
+
+from pydantic import Field
 
 from ..bootstrap.settings import mt5_config
 from ..forecast.common import fetch_history as _fetch_history
@@ -51,7 +53,6 @@ from ..utils.utils import _positive_float_attr
 from ._mcp_instance import mcp
 from .execution_logging import run_logged_operation
 from .mt5_gateway import create_mt5_gateway
-from .output_contract import normalize_output_extras
 from .runtime_metadata import display_timezone_label
 from .volume_profile import compute_volume_profile_payload
 
@@ -648,15 +649,15 @@ def confluence_levels(  # noqa: C901
     symbol: str,
     pivot_timeframe: TimeframeLiteral = "D1",
     sr_timeframe: AutoTimeframeLiteral = "auto",
-    lookback: int = 200,
+    lookback: Annotated[int, Field(ge=1)] = 200,
     start: Optional[str] = None,
     end: Optional[str] = None,
-    tolerance_pct: float = 0.0015,
-    tolerance_points: Optional[float] = None,
-    min_touches: int = 2,
-    max_levels: int = 5,
-    max_distance_pct: Optional[float] = 5.0,
-    min_source_families: int = 1,
+    tolerance_pct: Annotated[float, Field(ge=0.0)] = 0.0015,
+    tolerance_points: Annotated[Optional[float], Field(ge=0.0)] = None,
+    min_touches: Annotated[int, Field(ge=1)] = 2,
+    max_levels: Annotated[int, Field(ge=1)] = 5,
+    max_distance_pct: Annotated[float, Field(ge=0.0)] = 5.0,
+    min_source_families: Annotated[int, Field(ge=1)] = 1,
     pivot_method: Optional[PivotMethodLiteral] = None,
     volume_weighting: Literal["off", "auto"] = "off",
     reaction_bars: int = 6,
@@ -665,8 +666,7 @@ def confluence_levels(  # noqa: C901
     volume_profile_source: Literal["auto", "ticks", "m1_bars"] = "auto",
     volume_profile_max_tick_window_days: int = 1,
     volume_profile_max_ticks: int = 50_000,
-    detail: DetailLiteral = "compact",
-    extras: Optional[str] = None,
+    detail: Literal["compact", "standard", "full"] = "compact",
 ) -> Dict[str, Any]:
     """Find nearby high-probability price zones where multiple level methods agree.
 
@@ -795,8 +795,6 @@ def confluence_levels(  # noqa: C901
                 reference_price_source = "last_completed_bar_close"
 
             detail_value = str(detail).strip().lower()
-            if normalize_output_extras(extras):
-                detail_value = "full"
             if detail_value in {"summary"}:
                 detail_value = "compact"
             volume_profile_payload: Optional[Dict[str, Any]]
@@ -917,7 +915,6 @@ def confluence_levels(  # noqa: C901
         volume_profile_max_tick_window_days=volume_profile_max_tick_window_days,
         volume_profile_max_ticks=volume_profile_max_ticks,
         detail=detail,
-        extras=extras,
         func=_run,
     )
 
@@ -926,19 +923,18 @@ def confluence_levels(  # noqa: C901
 def support_resistance_levels(
     symbol: str,
     timeframe: AutoTimeframeLiteral = "H1",
-    lookback: int = 200,
+    lookback: Annotated[int, Field(ge=1)] = 200,
     start: Optional[str] = None,
     end: Optional[str] = None,
-    tolerance_pct: float = 0.0015,
-    min_touches: int = 2,
-    max_levels: int = 4,
-    max_distance_pct: Optional[float] = 5.0,
+    tolerance_pct: Annotated[float, Field(ge=0.0)] = 0.0015,
+    min_touches: Annotated[int, Field(ge=1)] = 2,
+    max_levels: Annotated[int, Field(ge=1)] = 4,
+    max_distance_pct: Annotated[float, Field(ge=0.0)] = 5.0,
     volume_weighting: Literal["off", "auto"] = "off",
     reaction_bars: int = 6,
     adx_period: int = 14,
     decay_half_life_bars: Optional[int] = None,
-    detail: DetailLiteral = "compact",
-    extras: Optional[str] = None,
+    detail: Literal["compact", "standard", "full"] = "compact",
 ) -> Dict[str, Any]:
     """Detect support/resistance levels around the current price from historical structure.
 
@@ -948,10 +944,7 @@ def support_resistance_levels(
     Use `detail="compact"` for the nearest-level summary, `detail="standard"`
     for compact actionable supports/resistances/levels plus Fibonacci swing
     levels, and `detail="full"` for the raw diagnostic payload. The default
-    `max_distance_pct=5.0` keeps returned levels near current price; pass
-    `None` for all levels.
-    Set `extras="metadata"` to return the full diagnostic payload without
-    changing every command call site to `detail="full"`.
+    `max_distance_pct=5.0` keeps returned levels near current price.
     Level `type` reflects current price geometry; `dominant_source` reflects
     whether historical tests mostly behaved as support or resistance.
     Use `pivot_compute_points` for complementary formula-based PP/R/S levels
@@ -1041,8 +1034,6 @@ def support_resistance_levels(
                         "and nearest-level ordering use the latest completed bar close."
                     )
             detail_value = str(detail).strip().lower()
-            if normalize_output_extras(extras):
-                detail_value = "full"
             if detail_value in {"summary"}:
                 detail_value = "compact"
             if detail_value == "compact":
@@ -1080,6 +1071,5 @@ def support_resistance_levels(
         adx_period=adx_period,
         decay_half_life_bars=decay_half_life_bars,
         detail=detail,
-        extras=extras,
         func=_run,
     )

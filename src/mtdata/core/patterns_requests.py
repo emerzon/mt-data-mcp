@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, Literal, Optional
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from ..shared.schema import DenoiseSpec, TimeframeLiteral
 
@@ -11,6 +11,8 @@ PatternModeLiteral = Literal["candlestick", "classic", "harmonic", "fractal", "e
 
 
 class PatternsDetectRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     symbol: str
     timeframe: Optional[TimeframeLiteral] = None
     mode: PatternModeLiteral = "candlestick"
@@ -32,6 +34,8 @@ class PatternsDetectRequest(BaseModel):
     )
     min_strength: float = Field(
         0.70,
+        ge=0.0,
+        le=1.0,
         description=(
             "Candlestick strength threshold from 0.0 to 1.0; default 0.70. "
             "Lower values show more exploratory/noisy patterns, while 0.70+ "
@@ -39,30 +43,22 @@ class PatternsDetectRequest(BaseModel):
             "use their own mode-specific confidence rules."
         ),
     )
-    min_gap: int = 3
+    min_gap: int = Field(3, ge=0)
     robust_only: bool = False
     whitelist: Optional[str] = None
     top_k: int = Field(3, ge=1)
-    last_n_bars: Optional[int] = None
+    last_n_bars: Optional[int] = Field(None, ge=1)
     denoise: Optional[DenoiseSpec] = None
     config: Optional[Dict[str, Any]] = None
-    engine: Optional[str] = None
+    engine: Optional[Literal["native", "stock_pattern"]] = None
     ensemble: bool = False
     ensemble_weights: Optional[Dict[str, Any]] = None
     include_series: bool = False
-    series_time: str = "string"
+    series_time: Literal["string", "epoch"] = "string"
     include_completed: bool = False
-    include_confirmed: Optional[bool] = Field(
-        None,
-        description=(
-            "Elliott v2 alias for include_completed; when supplied it takes precedence."
-        ),
-    )
 
     @model_validator(mode="after")
-    def _resolve_include_confirmed(self) -> "PatternsDetectRequest":
-        if self.include_confirmed is not None:
-            self.include_completed = bool(self.include_confirmed)
+    def _validate_request(self) -> "PatternsDetectRequest":
         if self.mode == "all" and self.limit < 150:
             raise ValueError(
                 "mode='all' requires limit >= 150; use a single pattern mode "

@@ -386,8 +386,9 @@ export function useForecast(
           as_of: kind === 'full' ? undefined : anchor ? formatDateTime(anchor) : undefined,
           params: Object.keys(settings.params).length ? settings.params : undefined,
           denoise: settings.denoise,
-          dimred_method: settings.dimredMethod,
-          dimred_params: settings.dimredParams,
+          dimred: settings.dimredMethod
+            ? { method: settings.dimredMethod, params: settings.dimredParams }
+            : undefined,
         }
 
         const res = await forecastPrice(body)

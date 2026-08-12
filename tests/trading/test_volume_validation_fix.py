@@ -7,6 +7,9 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../s
 
 from unittest.mock import MagicMock
 
+import pytest
+from pydantic import ValidationError
+
 from mtdata.core.trading import time, validation
 from mtdata.core.trading.requests import TradePlaceRequest
 from mtdata.core.trading.use_cases import run_trade_place
@@ -27,89 +30,43 @@ def make_mocks():
 
 def test_trade_place_rejects_zero_volume_in_dry_run():
     """Zero volume should be rejected even in dry run mode."""
-    req = TradePlaceRequest(
-        symbol='EURUSD',
-        volume=0,
-        order_type='BUY',
-        dry_run=True,
-        require_sl_tp=False
-    )
-    result = run_trade_place(req, **make_mocks())
-    
-    assert "error" in result
-    assert "volume must be positive" in result.get("error", "").lower()
-    assert result.get("volume_received") == 0.0
+    with pytest.raises(ValidationError, match="greater than 0"):
+        TradePlaceRequest(
+            symbol='EURUSD', volume=0, order_type='BUY', dry_run=True
+        )
 
 
 def test_trade_place_rejects_negative_volume_in_dry_run():
     """Negative volume should be rejected even in dry run mode."""
-    req = TradePlaceRequest(
-        symbol='EURUSD',
-        volume=-0.01,
-        order_type='BUY',
-        dry_run=True,
-        require_sl_tp=False
-    )
-    result = run_trade_place(req, **make_mocks())
-    
-    assert "error" in result
-    assert "volume must be positive" in result.get("error", "").lower()
-    assert result.get("volume_received") == -0.01
+    with pytest.raises(ValidationError, match="greater than 0"):
+        TradePlaceRequest(
+            symbol='EURUSD', volume=-0.01, order_type='BUY', dry_run=True
+        )
 
 
 def test_trade_place_rejects_zero_volume_in_normal_mode():
     """Zero volume should be rejected in normal mode."""
-    req = TradePlaceRequest(
-        symbol='EURUSD',
-        volume=0,
-        order_type='BUY',
-        dry_run=False,
-        require_sl_tp=False
-    )
-    result = run_trade_place(req, **make_mocks())
-    
-    assert "error" in result
-    assert "volume must be positive" in result.get("error", "").lower()
+    with pytest.raises(ValidationError, match="greater than 0"):
+        TradePlaceRequest(
+            symbol='EURUSD', volume=0, order_type='BUY', dry_run=False
+        )
 
 
 def test_trade_place_rejects_negative_volume_in_normal_mode():
     """Negative volume should be rejected in normal mode."""
-    req = TradePlaceRequest(
-        symbol='EURUSD',
-        volume=-0.05,
-        order_type='SELL',
-        dry_run=False,
-        require_sl_tp=False
-    )
-    result = run_trade_place(req, **make_mocks())
-    
-    assert "error" in result
-    assert "volume must be positive" in result.get("error", "").lower()
+    with pytest.raises(ValidationError, match="greater than 0"):
+        TradePlaceRequest(
+            symbol='EURUSD', volume=-0.05, order_type='SELL', dry_run=False
+        )
 
 
 def test_trade_place_rejects_non_finite_volume():
     """Non-finite volumes (NaN, Inf) should be rejected."""
-    import math
-    
-    req_nan = TradePlaceRequest(
-        symbol='EURUSD',
-        volume=float('nan'),
-        order_type='BUY',
-        dry_run=True
-    )
-    result_nan = run_trade_place(req_nan, **make_mocks())
-    assert "error" in result_nan
-    assert "finite" in result_nan.get("error", "").lower()
-    
-    req_inf = TradePlaceRequest(
-        symbol='EURUSD',
-        volume=float('inf'),
-        order_type='BUY',
-        dry_run=True
-    )
-    result_inf = run_trade_place(req_inf, **make_mocks())
-    assert "error" in result_inf
-    assert "finite" in result_inf.get("error", "").lower()
+    for volume in (float('nan'), float('inf')):
+        with pytest.raises(ValidationError, match="finite number"):
+            TradePlaceRequest(
+                symbol='EURUSD', volume=volume, order_type='BUY', dry_run=True
+            )
 
 
 def test_trade_place_accepts_positive_volume_in_dry_run():

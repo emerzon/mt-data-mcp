@@ -303,20 +303,20 @@ def get_instruments(search: Optional[str] = Query(None), limit: Optional[int] = 
 
 @api_router.get("/methods")
 def get_methods(
-    extras: Optional[str] = None,
+    detail: DetailLiteral = "compact",
 ) -> Dict[str, Any]:
-    return _get_methods_response(get_methods_impl=_get_methods_impl, extras=extras)
+    return _get_methods_response(get_methods_impl=_get_methods_impl, detail=detail)
 
 
 @api_router.get("/models")
 def get_models(
     method: Optional[str] = Query(None),
-    extras: Optional[str] = None,
+    detail: DetailLiteral = "compact",
 ) -> Dict[str, Any]:
     return _get_models_response(
         get_models_impl=_get_models_impl,
         method=method,
-        extras=extras,
+        detail=detail,
     )
 
 
@@ -381,7 +381,6 @@ def get_history(
     ] = None,
     timestamp_format: Literal["epoch", "iso"] = "iso",
     detail: DetailLiteral = "compact",
-    extras: Optional[str] = None,
     denoise_method: Annotated[
         Optional[str],
         Query(description="Denoise method name; if set, returns extra *_dn columns."),
@@ -404,7 +403,6 @@ def get_history(
         indicators=indicators,
         timestamp_format=timestamp_format,
         detail=detail,
-        extras=extras,
         denoise_method=denoise_method,
         denoise_params=denoise_params,
         fetch_candles_impl=_fetch_candles_impl,
@@ -446,7 +444,6 @@ def get_support_resistance(
     adx_period: int = Query(14, ge=1),
     decay_half_life_bars: Optional[int] = Query(None, ge=1),
     detail: DetailLiteral = "compact",
-    extras: Optional[str] = None,
 ) -> Dict[str, Any]:
     return _get_support_resistance_response(
         symbol=symbol,
@@ -461,7 +458,6 @@ def get_support_resistance(
         adx_period=adx_period,
         decay_half_life_bars=decay_half_life_bars,
         detail=detail,
-        extras=extras,
         fetch_history_impl=_fetch_history_impl,
     )
 

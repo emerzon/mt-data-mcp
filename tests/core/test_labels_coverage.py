@@ -7,6 +7,9 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 import pandas as pd
 import pytest
+from pydantic import ValidationError
+
+from mtdata.shared.schema import BarrierPairSpec
 
 # ---------------------------------------------------------------------------
 # Helper to build a mock OHLC DataFrame
@@ -54,6 +57,27 @@ def _get_raw_fn():
     raw = labels_triple_barrier.__wrapped__
 
     def _call(*args, **kwargs):
+        families = {
+            "price": ("tp_abs", "sl_abs"),
+            "pct": ("tp_pct", "sl_pct"),
+            "ticks": ("tp_ticks", "sl_ticks"),
+        }
+        supplied = [
+            (unit, tp_name, sl_name)
+            for unit, (tp_name, sl_name) in families.items()
+            if tp_name in kwargs or sl_name in kwargs
+        ]
+        if "barriers" not in kwargs and len(supplied) == 1:
+            unit, tp_name, sl_name = supplied[0]
+            if tp_name in kwargs and sl_name in kwargs:
+                try:
+                    kwargs["barriers"] = BarrierPairSpec(
+                        unit=unit,
+                        take_profit=kwargs.pop(tp_name),
+                        stop_loss=kwargs.pop(sl_name),
+                    )
+                except ValidationError as exc:
+                    return {"error": str(exc)}
         with patch("mtdata.core.labels.ensure_mt5_connection_or_raise", return_value=None):
             return raw(*args, **kwargs)
 
@@ -108,7 +132,7 @@ class TestLabelsTripleBarrier:
 
         result = _get_raw_fn()("EURUSD", horizon=3, **kwargs)
 
-        assert field in result["error"]
+        assert "take_profit" in result["error"] or "stop_loss" in result["error"]
         assert "greater than 0" in result["error"]
 
     def test_triple_barrier_helper_short_history_keeps_return_arity(self):
@@ -223,24 +247,16 @@ class TestLabelsTripleBarrier:
     @patch(f"{_LABELS_MOD}._fetch_history")
     def test_no_barriers_gives_error(self, mock_hist, mock_den, mock_pip):
         mock_hist.return_value = _make_df(60)
-        result = _get_raw_fn()("EURUSD", horizon=12)
-        assert "error" in result
-        assert result["error"] == (
-            "Missing barriers. Provide either tp_pct and sl_pct, "
-            "tp_abs and sl_abs, or tp_ticks and sl_ticks."
-        )
-        assert result["error_code"] == "barrier_parameters_missing"
-        assert "forecast_barrier_optimize" in result["remediation"]
+        with pytest.raises(TypeError, match="barriers"):
+            _get_raw_fn()("EURUSD", horizon=12)
 
     def test_rejects_multiple_tp_unit_families(self):
-        result = _get_raw_fn()("EURUSD", tp_abs=1.11, tp_pct=0.5)
-
-        assert result["error"].startswith("Use one TP/SL barrier unit family")
+        with pytest.raises(TypeError):
+            _get_raw_fn()("EURUSD", tp_abs=1.11, tp_pct=0.5)
 
     def test_rejects_multiple_sl_unit_families(self):
-        result = _get_raw_fn()("EURUSD", sl_abs=1.09, sl_ticks=15.0)
-
-        assert result["error"].startswith("Use one TP/SL barrier unit family")
+        with pytest.raises(TypeError):
+            _get_raw_fn()("EURUSD", sl_abs=1.09, sl_ticks=15.0)
 
     @patch(f"{_LABELS_MOD}._get_tick_size", return_value=0.0001)
     @patch(f"{_LABELS_MOD}.resolve_denoise_base_col", return_value="close")
@@ -248,9 +264,8 @@ class TestLabelsTripleBarrier:
     def test_rejects_mixed_tp_sl_unit_families(self, mock_hist, mock_den, mock_pip):
         mock_hist.return_value = _make_df(60)
 
-        result = _get_raw_fn()("EURUSD", tp_pct=0.5, sl_ticks=15.0, horizon=12)
-
-        assert result["error"].startswith("Use one TP/SL barrier unit family")
+        with pytest.raises(TypeError):
+            _get_raw_fn()("EURUSD", tp_pct=0.5, sl_ticks=15.0, horizon=12)
 
     @patch(f"{_LABELS_MOD}._get_tick_size", return_value=0.0001)
     @patch(f"{_LABELS_MOD}.resolve_denoise_base_col", return_value="close")

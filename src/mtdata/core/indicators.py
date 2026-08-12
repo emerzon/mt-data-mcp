@@ -1,6 +1,8 @@
 import logging
 import re
-from typing import Any, Dict, List, Literal, Optional
+from typing import Annotated, Any, Dict, List, Literal, Optional
+
+from pydantic import Field
 
 from ..shared.constants import DEFAULT_ROW_LIMIT
 from ..shared.schema import (
@@ -493,7 +495,7 @@ def indicators_list(  # noqa: C901
     search_term: Optional[str] = None,
     category: Optional[CategoryLiteral] = None,
     trading_style: Optional[Literal["intraday", "swing", "position"]] = None,
-    limit: Optional[int] = DEFAULT_ROW_LIMIT,
+    limit: Annotated[int, Field(ge=1)] = DEFAULT_ROW_LIMIT,
     offset: int = 0,
     detail: DetailLiteral = "compact",
 ) -> Dict[str, Any]:  # type: ignore

@@ -79,7 +79,7 @@ response without requesting verbose diagnostics. Request the `metadata` extra
 to inspect the full normalization contract:
 
 ```bash
-mtdata-cli data_fetch_candles EURUSD --timeframe H1 --limit 5 --extras metadata --json
+mtdata-cli data_fetch_candles EURUSD --timeframe H1 --limit 5 --detail full --json
 ```
 
 With no configured broker offset, payloads use the upstream native-UTC
@@ -113,7 +113,7 @@ If candles appear shifted:
 2. Set `CLIENT_TZ=UTC` and rerun the same absolute range.
 3. Confirm the input included an explicit offset or `Z` when it was intended as
    an absolute instant.
-4. Request `--extras metadata` and inspect `timestamp_mode`,
+4. Request `--detail full` and inspect `timestamp_mode`,
    `raw_time_basis`, and `time_normalization`.
 5. Configure `MT5_SERVER_TZ` (preferred) or `MT5_TIME_OFFSET_MINUTES` to match
    the broker before relying on a terminal that exposes server-clock epochs.

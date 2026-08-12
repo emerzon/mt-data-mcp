@@ -16,7 +16,7 @@ Find **prices the market may care about** — formula pivots, retested support/r
 | `volume_profile_levels` | Traded volume distribution by price | POC / value area to frame fair-value and acceptance |
 
 All four accept `--detail compact|standard|full`. Compact returns the nearest,
-most actionable levels; `full` (or `--extras metadata`) returns the raw diagnostic
+most actionable levels; `--detail full` returns the raw diagnostic
 payload.
 
 ---
@@ -72,7 +72,7 @@ ATR-filtered Fibonacci retracement/extension levels from the most relevant swing
 **Output:** ranked `levels` with `score`, a `type` reflecting current price geometry
 (support below price, resistance above), and a `dominant_source` showing whether the
 historical tests mostly behaved as support or resistance. `--detail standard` adds
-Fibonacci swing levels; `--detail full` (or `--extras metadata`) returns the raw
+Fibonacci swing levels; `--detail full` returns the raw
 diagnostic payload.
 
 ---
@@ -146,7 +146,7 @@ mtdata-cli volume_profile_levels EURUSD --timeframe H1 --limit 168 \
 
 **Output:** `poc`, `vah`, `val`, and a `value_area` summary. `profile_source` and
 `volume_profile_accuracy` always identify whether `auto` used ticks or the M1
-approximation. `--detail full` (or `--extras metadata`) adds the full `levels`
+approximation. `--detail full` adds the full `levels`
 histogram. To request a week of ticks, explicitly set
 `--max-tick-window-days 7` and an appropriate `--max-ticks` cap.
 

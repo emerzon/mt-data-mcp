@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, Literal, Optional
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from ..forecast.requests import (
     MAX_BACKTEST_SPACING,
@@ -14,18 +14,19 @@ from ..forecast.requests import (
     ForecastGenerateRequest,
     ForecastVolatilityEstimateRequest,
 )
-from ..shared.schema import DetailLiteral, ForecastLibraryLiteral, reject_removed_field
-from .output_contract import normalize_output_extras, output_extras_shape_detail
+from ..shared.schema import (
+    DetailLiteral,
+    DimensionalityReductionSpec,
+    ForecastLibraryLiteral,
+    reject_removed_field,
+)
 
 
-def _request_detail(detail: DetailLiteral, extras: Optional[list[str] | str]) -> DetailLiteral:
-    normalized_extras = normalize_output_extras(extras)
-    if normalized_extras:
-        return output_extras_shape_detail(normalized_extras)  # type: ignore[return-value]
-    return detail
+class _ForecastWebBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
 
 
-class ForecastPriceBody(BaseModel):
+class ForecastPriceBody(_ForecastWebBody):
     symbol: str
     timeframe: str = Field("H1")
     library: ForecastLibraryLiteral = Field("native")
@@ -36,12 +37,11 @@ class ForecastPriceBody(BaseModel):
     start: Optional[str] = None
     end: Optional[str] = None
     params: Optional[Dict[str, Any]] = None
-    ci_alpha: Optional[float] = Field(0.05, ge=0.0, le=0.5)
+    ci_alpha: float = Field(0.05, ge=0.0, le=0.5)
     quantity: Literal["price", "return", "volatility"] = Field("price")
     denoise: Optional[Dict[str, Any]] = None
     features: Optional[Dict[str, Any]] = None
-    dimred_method: Optional[str] = None
-    dimred_params: Optional[Dict[str, Any]] = None
+    dimred: Optional[DimensionalityReductionSpec] = None
     target_spec: Optional[Dict[str, Any]] = None
     async_mode: bool = Field(
         False,
@@ -54,7 +54,6 @@ class ForecastPriceBody(BaseModel):
         None,
         description="Stored model ID to reuse instead of training a new artifact.",
     )
-    extras: Optional[list[str] | str] = Field(None)
     detail: DetailLiteral = Field("compact")
 
     @model_validator(mode="before")
@@ -78,16 +77,15 @@ class ForecastPriceBody(BaseModel):
             quantity=self.quantity,
             denoise=self.denoise,
             features=self.features,
-            dimred_method=self.dimred_method,
-            dimred_params=self.dimred_params,
+            dimred=self.dimred,
             target_spec=self.target_spec,
             async_mode=self.async_mode,
             model_id=self.model_id,
-            detail=_request_detail(self.detail, self.extras),
+            detail=self.detail,
         )
 
 
-class ForecastVolBody(BaseModel):
+class ForecastVolBody(_ForecastWebBody):
     symbol: str
     timeframe: str = Field("H1")
     horizon: int = Field(12, ge=1, le=MAX_FORECAST_HORIZON)
@@ -98,7 +96,6 @@ class ForecastVolBody(BaseModel):
     start: Optional[str] = None
     end: Optional[str] = None
     denoise: Optional[Dict[str, Any]] = None
-    extras: Optional[list[str] | str] = Field(None)
     detail: DetailLiteral = Field("compact")
 
     def to_domain_request(self) -> ForecastVolatilityEstimateRequest:
@@ -113,11 +110,11 @@ class ForecastVolBody(BaseModel):
             start=self.start,
             end=self.end,
             denoise=self.denoise,
-            detail=_request_detail(self.detail, self.extras),
+            detail=self.detail,
         )
 
 
-class BacktestBody(BaseModel):
+class BacktestBody(_ForecastWebBody):
     symbol: str
     timeframe: str = Field("H1")
     horizon: int = Field(12, ge=1, le=MAX_FORECAST_HORIZON)
@@ -129,11 +126,9 @@ class BacktestBody(BaseModel):
     denoise: Optional[Dict[str, Any]] = None
     params: Optional[Dict[str, Any]] = None
     features: Optional[Dict[str, Any]] = None
-    dimred_method: Optional[str] = None
-    dimred_params: Optional[Dict[str, Any]] = None
+    dimred: Optional[DimensionalityReductionSpec] = None
     slippage_bps: float = 0.0
     trade_threshold: float = Field(0.0, ge=0.0)
-    extras: Optional[list[str] | str] = Field(None)
     detail: DetailLiteral = Field("compact")
 
     @model_validator(mode="before")
@@ -154,11 +149,10 @@ class BacktestBody(BaseModel):
             denoise=self.denoise,
             params=self.params,
             features=self.features,
-            dimred_method=self.dimred_method,
-            dimred_params=self.dimred_params,
+            dimred=self.dimred,
             slippage_bps=self.slippage_bps,
             trade_threshold=self.trade_threshold,
-            detail=_request_detail(self.detail, self.extras),
+            detail=self.detail,
         )
 
 

@@ -10,10 +10,11 @@ import time
 import warnings
 from datetime import datetime, timezone
 from statistics import NormalDist
-from typing import Any, Dict, List, Literal, Optional, Tuple
+from typing import Annotated, Any, Dict, List, Literal, Optional, Tuple
 
 import numpy as np
 import pandas as pd
+from pydantic import Field
 
 from ..shared.constants import TIME_DISPLAY_FORMAT, TIMEFRAME_MAP, TIMEFRAME_SECONDS
 from ..shared.schema import DetailLiteral, TimeframeLiteral
@@ -1603,9 +1604,9 @@ def causal_discover_signals(  # noqa: C901
     symbols: Optional[str] = None,
     group: Optional[str] = None,
     timeframe: TimeframeLiteral = "H1",
-    limit: Optional[int] = None,
-    offset: int = 0,
-    window_bars: int = 500,
+    limit: Annotated[int, Field(ge=1)] = 50,
+    offset: Annotated[int, Field(ge=0)] = 0,
+    window_bars: Annotated[int, Field(ge=2)] = 500,
     start: Optional[str] = None,
     end: Optional[str] = None,
     max_lag: int = 5,
@@ -2235,14 +2236,14 @@ def correlation_matrix(  # noqa: C901
     symbols: Optional[str] = None,
     group: Optional[str] = None,
     timeframe: TimeframeLiteral = "H1",
-    limit: Optional[int] = None,
-    offset: int = 0,
-    window_bars: int = 500,
+    limit: Annotated[int, Field(ge=1)] = 50,
+    offset: Annotated[int, Field(ge=0)] = 0,
+    window_bars: Annotated[int, Field(ge=2)] = 500,
     start: Optional[str] = None,
     end: Optional[str] = None,
-    method: str = "pearson",
-    transform: str = "log_return",
-    min_overlap: int = 30,
+    method: Literal["pearson", "spearman"] = "pearson",
+    transform: Literal["log_return", "pct", "diff", "level", "log_level"] = "log_return",
+    min_overlap: Annotated[int, Field(ge=2)] = 30,
     include_incomplete: bool = False,
     detail: DetailLiteral = "compact",
 ) -> Dict[str, Any]:
@@ -2673,14 +2674,14 @@ def correlation_matrix(  # noqa: C901
 def cross_correlation(  # noqa: C901
     symbols: str,
     timeframe: TimeframeLiteral = "H1",
-    window_bars: int = 500,
+    window_bars: Annotated[int, Field(ge=2)] = 500,
     start: Optional[str] = None,
     end: Optional[str] = None,
-    max_lag: int = 20,
-    method: str = "pearson",
-    transform: str = "log_return",
-    min_overlap: int = 50,
-    bootstrap_samples: int = 300,
+    max_lag: Annotated[int, Field(ge=1)] = 20,
+    method: Literal["pearson", "spearman"] = "pearson",
+    transform: Literal["log_return", "pct", "diff", "level", "log_level"] = "log_return",
+    min_overlap: Annotated[int, Field(ge=2)] = 50,
+    bootstrap_samples: Annotated[int, Field(ge=0)] = 300,
     include_incomplete: bool = False,
     detail: DetailLiteral = "compact",
 ) -> Dict[str, Any]:

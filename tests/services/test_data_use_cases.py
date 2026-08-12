@@ -1769,7 +1769,7 @@ def test_data_fetch_ticks_request_uses_detail_control():
 
 
 def test_data_fetch_ticks_request_rejects_removed_output_mode_field():
-    with pytest.raises(ValidationError, match="output_mode was removed; use extras"):
+    with pytest.raises(ValidationError, match="output_mode was removed; use detail"):
         DataFetchTicksRequest(symbol="EURUSD", output_mode="rows")
 
 
@@ -1780,7 +1780,7 @@ def test_data_fetch_ticks_request_defaults_to_compact_detail():
 
 
 def test_data_fetch_ticks_request_rejects_excessive_limit():
-    with pytest.raises(ValidationError, match="limit must be at most 10000"):
+    with pytest.raises(ValidationError, match="less than or equal to 10000"):
         DataFetchTicksRequest(symbol="EURUSD", limit=10_001)
 
 

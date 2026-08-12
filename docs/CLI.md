@@ -76,7 +76,7 @@ mtdata-cli tools_list --category forecast --json
 
 ## Output contract
 
-Every tool returns the **same canonical payload**; CLI, MCP, and Web API only change presentation. For the full envelope (`success` / error, `detail`, `extras`, pagination, error codes), see [OUTPUT.md](OUTPUT.md).
+Every tool returns the **same canonical payload**; CLI, MCP, and Web API only change presentation. For the full envelope (`success` / error, `detail`, `output_fields`, pagination, error codes), see [OUTPUT.md](OUTPUT.md).
 
 ### TOON (Default)
 Human-readable compact TOON output:
@@ -124,15 +124,18 @@ domain-specific decimal control document it in their own help. Precision
 controls only text presentation; internal tool processing and JSON/raw payloads
 keep numeric values.
 
-### Extras
-Compact output is implicit. For richer sections such as runtime metadata,
-diagnostics, echoed request context, raw rows, or method documentation, use
-`--extras`:
+### Detail and field selection
+Compact output is implicit. Use `--detail full` for richer runtime metadata,
+diagnostics, request context, and supporting rows:
 ```bash
-mtdata-cli market_status --extras metadata,diagnostics
+mtdata-cli market_status --detail full
 ```
 
-Use `--extras all` when you need every supported richer section.
+Use `--output-fields` to project the final response without changing domain
+semantics:
+```bash
+mtdata-cli symbols_describe EURUSD --output-fields symbol,digits,point --json
+```
 
 ### Exit Codes
 
@@ -525,7 +528,7 @@ mtdata-cli forecast_volatility_estimate EURUSD --horizon 12 --method ewma
 
 # Barrier probability
 mtdata-cli forecast_barrier_prob EURUSD --horizon 12 \
-  --method hmm_mc --tp-pct 0.5 --sl-pct 0.3
+  --method hmm_mc --barrier '{"kind":"tp_sl","unit":"pct","take_profit":0.5,"stop_loss":0.3}'
 
 # Optimize TP/SL
 mtdata-cli forecast_barrier_optimize EURUSD --horizon 12 \
@@ -586,7 +589,7 @@ mtdata-cli trade_place BTCUSD --volume 0.01 --order-type BUY \
 | `--expiration` | `trade_place`, `trade_modify` | Expiration time for pending orders (`dateparser`, UTC epoch seconds, or `GTC`). |
 | `--idempotency-key` | `trade_place`, `trade_modify` | Durable dedupe key shared by CLI and server processes within the configured retention window. |
 | `--close-all` | `trade_close` | Close all matching positions instead of one ticket. |
-| `--profit-only` / `--loss-only` | `trade_close` | Restrict closes to positions currently in profit or loss. |
+| `--pnl-filter` | `trade_close`, `trade_get_open` | Filter positions by `all`, `profit`, or `loss`. |
 | `--close-priority` | `trade_close` | When multiple positions match, close `loss_first`, `profit_first`, or `largest_first`. |
 
 Every `trade_place`, `trade_modify`, and `trade_close` response includes a
@@ -616,8 +619,8 @@ mtdata-cli trade_journal_analyze --symbol EURUSD --minutes-back 43200 --breakdow
 ```
 
 `trade_history` and `trade_journal_analyze` default to a 7-day lookback (`--minutes-back 10080`) when you do not pass a time window explicitly.
-For Kelly sizing in `trade_risk_analyze`, derive `--kelly-win-rate`,
-`--kelly-avg-win`, and `--kelly-avg-loss` from complete trade lifecycles whose
+For Kelly sizing in `trade_risk_analyze`, provide a `--sizing` JSON object with
+`win_rate`, `avg_win`, and `avg_loss` derived from complete trade lifecycles whose
 returns are normalized consistently (for example, R-multiples). Do not map the
 raw `trade_journal_analyze` PnL averages into those flags.
 
@@ -658,7 +661,7 @@ mtdata-cli correlation_matrix "EURUSD,GBPUSD,USDJPY" --timeframe H1 \
 
 # Use an explicit MT5 group path instead of naming symbols one-by-one
 mtdata-cli correlation_matrix --group "Forex\\Majors" --timeframe H1 \
-  --window-bars 500 --limit 120 --method pearson --transform log_return --extras metadata --json
+  --window-bars 500 --limit 120 --method pearson --transform log_return --detail full --json
 
 # Find candidate mean-reverting pairs inside an MT5 group
 mtdata-cli cointegration_test --group "Forex\\Majors" --timeframe H1 \
@@ -713,7 +716,7 @@ MTDATA_CLI_DEBUG=1 mtdata-cli forecast_generate EURUSD
 ## See Also
 
 - [SETUP.md](SETUP.md) — Installation guide
-- [OUTPUT.md](OUTPUT.md) — Response envelope, `detail`/`extras`, and error codes
+- [OUTPUT.md](OUTPUT.md) — Response envelope, `detail`/`output_fields`, and error codes
 - [TIMESTAMPS.md](TIMESTAMPS.md) — Timezone policy for inputs and output
 - [TRADING_SAFETY.md](TRADING_SAFETY.md) — Dry-run-first trading runbook and guardrails
 - [EXAMPLE.md](EXAMPLE.md) — Complete workflow example

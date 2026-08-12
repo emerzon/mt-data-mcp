@@ -67,7 +67,7 @@ Security checklist for remote access:
 
 ## Response Style
 
-Responses are JSON. Most endpoints return compact, UI-oriented payloads rather than the full CLI/MCP output contract. For richer historical rows or method diagnostics, prefer the CLI with `--json` and `--extras`.
+Responses are JSON. Most endpoints return compact, UI-oriented payloads rather than the full CLI/MCP output contract. Use `detail=full` for richer historical rows or method diagnostics.
 
 Every response includes `X-Request-ID`. Clients may supply a log-safe identifier
 in the same request header (1–128 letters, digits, `.`, `_`, `:`, or `-`); the
@@ -119,12 +119,12 @@ Fetch OHLCV candles for a symbol.
   - `include_spread` (bool): Append the historical candle `spread` field without changing the default row shape.
   - `include_incomplete` (bool): Include the latest forming candle.
   - `timestamp_format` (`epoch` | `iso`): Timestamp encoding for returned rows. Default `iso`; explicit epoch responses identify the unit as `unix_seconds_utc`.
-  - `extras` (`metadata`, optional): Include full diagnostics and runtime metadata. Compact responses omit the diagnostic `meta` tree.
+  - `detail` (`compact` | `standard` | `summary` | `full`): Use `full` for diagnostics and runtime metadata.
   - `denoise_method` (string, optional): Apply denoising (e.g., "ema").
   - `denoise_params` (string, optional): JSON or comma-separated `k=v` denoising settings. Both forms accept `when`, `causality`, `keep_original`, and `columns`; other keys are method parameters. Use JSON for multiple columns.
 - **Response Notes:**
   - Compact responses expose `server_utc_offset_seconds` when available.
-    `extras=metadata` includes the full runtime timezone tree under
+    `detail=full` includes the full runtime timezone tree under
     `meta.runtime.timezone`. The legacy `used` compatibility field is not emitted.
 
 #### `GET /api/tick`
@@ -160,10 +160,10 @@ Identify support and resistance levels, plus Fibonacci retracement/extension lev
   - `reaction_bars` (int): Reaction window used for level qualification (default `6`).
   - `adx_period` (int): ADX period used in scoring (default `14`).
   - `decay_half_life_bars` (int, optional): Half-life for recency decay.
-  - `extras` (string, optional): Request richer sections, for example `metadata`.
+  - `detail` (`compact` | `standard` | `summary` | `full`): Response detail level.
 - **Response Notes:**
   - The default response is compact: it returns actionable support/resistance lists and omits heavier diagnostics.
-  - Pass a non-empty `extras` value for the rich shape described below.
+  - Pass `detail=full` for the rich shape described below.
   - Rich level rows include a price `zone_low`/`zone_high` envelope rather than only a single line.
   - Rich output includes `status` and `breakout_analysis` for broken levels and role-reversal confirmations.
   - In `auto` mode, overlapping same-event confirmations across timeframes are deduped instead of fully double-counted.
@@ -188,10 +188,10 @@ List available forecasting models and their requirements.
 #### `GET /api/models`
 List trained model artifacts currently available in the model store.
 
-- **Query Params:** `method` (optional method-name filter), `extras` (optional
-  comma-separated output extras such as `metadata`, or `all`)
+- **Query Params:** `method` (optional method-name filter), `detail` (response
+  detail level; default `compact`)
 - **Default response:** compact model rows plus `count`, `detail`, and
-  `success`; request metadata extras for storage paths, timestamps, TTL, and
+  `success`; request `detail=full` for storage paths, timestamps, TTL, and
   artifact-size diagnostics.
 
 #### `GET /api/volatility/methods`
@@ -221,8 +221,7 @@ Generate price forecasts.
     "params": {"alpha": 0.2}
   },
   "features": null,
-  "dimred_method": null,
-  "dimred_params": null,
+  "dimred": null,
   "target_spec": null
 }
 ```
@@ -264,7 +263,7 @@ Invoke a registered tool.
   "arguments": {
     "symbol": "EURUSD",
     "timeframe": "H1",
-    "extras": "metadata,guidance",
+    "detail": "full",
     "fields": "symbol,summary"
   },
   "confirm": false
@@ -272,7 +271,7 @@ Invoke a registered tool.
 ```
 
 Generic invocation uses the shared structured-output contract. Output is compact
-by default; `extras` requests richer sections and `guidance` adds related-tool
+by default; `detail=full` requests richer sections and adds related-tool
 suggestions when the tool defines them. `fields` accepts comma-separated names
 or dotted paths and keeps the standard envelope fields alongside each match.
 
@@ -300,15 +299,14 @@ Run a rolling-origin backtest.
   "denoise": null,
   "params": null,
   "features": null,
-  "dimred_method": null,
-  "dimred_params": null,
+  "dimred": null,
   "slippage_bps": 0.0,
   "trade_threshold": 0.0,
-  "extras": null
+  "detail": "compact"
 }
 ```
 
-Compact response shape is the default. Use `extras` (for example
+Compact response shape is the default. Use `detail=full` for
 `["metadata"]` or `"all"`) when you need richer sections such as per-anchor
 detail records.
 

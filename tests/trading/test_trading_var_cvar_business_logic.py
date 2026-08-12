@@ -122,7 +122,7 @@ def test_run_trade_var_cvar_calculate_summarizes_open_position_portfolio() -> No
         TradeVarCvarRequest(
             timeframe="H1",
             lookback=5,
-            confidence=75,
+            confidence=0.75,
             method="historical",
             transform="pct",
             min_observations=4,
@@ -193,7 +193,7 @@ def test_run_trade_var_cvar_excludes_forming_return_by_default(monkeypatch) -> N
     out = run_trade_var_cvar_calculate(
         TradeVarCvarRequest(
             lookback=5,
-            confidence=75,
+            confidence=0.75,
             transform="pct",
             min_observations=4,
             detail="full",
@@ -244,7 +244,7 @@ def test_run_trade_var_cvar_uses_account_currency_tick_sensitivity() -> None:
         TradeVarCvarRequest(
             timeframe="H1",
             lookback=5,
-            confidence=75,
+            confidence=0.75,
             method="historical",
             transform="pct",
             min_observations=4,
@@ -385,7 +385,7 @@ def test_run_trade_var_cvar_calculate_converts_log_returns_to_price_changes() ->
     request_args = {
         "timeframe": "H1",
         "lookback": 5,
-        "confidence": 75,
+        "confidence": 0.75,
         "method": "historical",
         "min_observations": 4,
         "detail": "full",
@@ -438,7 +438,7 @@ def test_run_trade_var_cvar_calculate_compacts_non_empty_portfolio() -> None:
         TradeVarCvarRequest(
             timeframe="H1",
             lookback=5,
-            confidence=75,
+            confidence=0.75,
             method="historical",
             transform="pct",
             min_observations=4,

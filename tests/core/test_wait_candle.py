@@ -19,7 +19,7 @@ def utc_server_clock(monkeypatch):
 
 
 def test_wait_candle_request_rejects_negative_buffer() -> None:
-    with pytest.raises(ValueError, match="buffer_seconds must be greater than or equal to 0"):
+    with pytest.raises(ValueError, match="Input should be greater than or equal to 0"):
         WaitCandleRequest(timeframe="M5", buffer_seconds=-0.1)
 
 
@@ -30,7 +30,7 @@ def test_wait_candle_request_defaults_max_wait_to_one_hour() -> None:
 
 
 def test_wait_candle_request_rejects_negative_max_wait() -> None:
-    with pytest.raises(ValueError, match="max_wait_seconds must be greater than or equal to 0"):
+    with pytest.raises(ValueError, match="Input should be greater than or equal to 0"):
         WaitCandleRequest(timeframe="M5", max_wait_seconds=-0.1)
 
 

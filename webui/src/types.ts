@@ -358,6 +358,11 @@ export type DenoiseSpecUI = {
   keep_original?: boolean
 }
 
+export type DimensionalityReductionSpecUI = {
+  method: string
+  params?: Record<string, unknown>
+}
+
 // ============================================================================
 // API Request Bodies
 // ============================================================================
@@ -375,8 +380,7 @@ export type ForecastPriceBody = {
   quantity?: 'price' | 'return' | 'volatility'
   denoise?: DenoiseSpecUI
   features?: Record<string, unknown>
-  dimred_method?: string
-  dimred_params?: Record<string, unknown>
+  dimred?: DimensionalityReductionSpecUI
   target_spec?: Record<string, unknown>
 }
 
@@ -403,8 +407,7 @@ export type BacktestBody = {
   denoise?: DenoiseSpecUI
   params?: Record<string, unknown>
   features?: Record<string, unknown>
-  dimred_method?: string
-  dimred_params?: Record<string, unknown>
+  dimred?: DimensionalityReductionSpecUI
   slippage_bps?: number
   trade_threshold?: number
   detail?: 'compact' | 'full'

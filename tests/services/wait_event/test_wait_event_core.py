@@ -320,8 +320,7 @@ def test_wait_event_tool_exposes_minimal_public_contract(monkeypatch) -> None:
         "end_on",
         "detail",
         "json",
-        "extras",
-        "fields",
+        "output_fields",
     )
 
     raw = getattr(core_data.wait_event, "__wrapped__", core_data.wait_event)
@@ -765,7 +764,7 @@ def test_wait_event_request_rejects_empty_watchers_in_duration_mode() -> None:
 def test_wait_event_request_rejects_too_small_poll_interval() -> None:
     with pytest.raises(
         ValidationError,
-        match="poll_interval_seconds must be at least 0.1 seconds",
+        match="Input should be greater than or equal to 0.1",
     ):
         WaitEventRequest(symbol="EURUSD", poll_interval_seconds=0.001)
 

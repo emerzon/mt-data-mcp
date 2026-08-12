@@ -45,7 +45,6 @@ from .execution_logging import run_logged_operation
 from .output_contract import (
     build_pagination_meta,
     normalize_output_detail,
-    normalize_output_extras,
     normalize_output_verbosity_detail,
 )
 
@@ -2808,7 +2807,9 @@ def _compact_finviz_ratings_payload(
         "latest": compact_rows[0] if compact_rows else None,
     }
     if omitted:
-        out["show_all_hint"] = f"Set extras='metadata' or limit={len(normalized_rows)} to view all ratings."
+        out["show_all_hint"] = (
+            f"Set detail='full' or limit={len(normalized_rows)} to view all ratings."
+        )
     return out
 
 
@@ -3266,9 +3267,8 @@ def finviz_insider(
 @mcp.tool()
 def finviz_ratings(
     symbol: str,
-    detail: DetailLiteral = "compact",  # type: ignore
+    detail: Literal["compact", "full"] = "compact",
     limit: int = 3,
-    extras: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Get analyst ratings for a US stock.
@@ -3285,9 +3285,6 @@ def finviz_ratings(
         latest limited rows plus a latest-rating summary.
     limit : int
         Maximum rating rows to return (default 3).
-    extras : str, optional
-        Set to "metadata" to return the full available rating history.
-    
     Returns
     -------
     dict
@@ -3300,12 +3297,8 @@ def finviz_ratings(
         )
         if error is not None:
             return error
-        extras_value = normalize_output_extras(extras)
         detail_value = detail
-        limit_value: Optional[int] = int(limit)
-        if extras_value:
-            detail_value = "full"  # type: ignore[assignment]
-            limit_value = None
+        limit_value: Optional[int] = None if detail == "full" else int(limit)
         return _compact_finviz_ratings_payload(
             get_stock_ratings(symbol_norm),
             detail=detail_value,
@@ -3314,7 +3307,7 @@ def finviz_ratings(
 
     return _run_logged_tool(
         "finviz_ratings",
-        {"symbol": symbol, "detail": detail, "limit": limit, "extras": extras},
+        {"symbol": symbol, "detail": detail, "limit": limit},
         _run,
     )
 

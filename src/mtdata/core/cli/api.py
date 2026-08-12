@@ -508,7 +508,7 @@ def _write_cli_text(text: str, *, stream: Any = None) -> None:
 def _render_cli_result(result: Any, *, args: Any, cmd_name: str) -> Any:
     verbose = resolve_output_contract(args).verbose
     result = _attach_cli_meta(result, cmd_name=cmd_name, verbose=verbose)
-    result = _select_output_fields(result, getattr(args, "fields", None))
+    result = _select_output_fields(result, getattr(args, "output_fields", None))
     output = _format_result_for_cli(
         result,
         fmt=_resolve_cli_formatter(args),
@@ -774,15 +774,15 @@ _FORECAST_TYPED_ARG_SPECS: Dict[str, Dict[str, Any]] = {
             "--features --set features.include=open,high",
         ],
     },
-    "dimred_params": {
-        "flag": "--dimred-params",
+    "dimred": {
+        "flag": "--dimred",
         "section": "dimred",
-        "metavar": "JSON|k=v",
-        "help": "Dimred params as JSON or key=value pairs.",
+        "metavar": "METHOD|JSON",
+        "help": "Dimensionality-reduction method name or complete JSON specification.",
         "examples": [
-            '--dimred-params "n_components=4"',
-            "--dimred-params '{\"n_components\":4}'",
-            "--dimred-params --set dimred.n_components=4",
+            "--dimred pca",
+            "--dimred '{\"method\":\"pca\",\"params\":{\"n_components\":4}}'",
+            "--dimred --set dimred.method=pca --set dimred.params.n_components=4",
         ],
     },
     "target_spec": {
@@ -821,7 +821,7 @@ def _add_forecast_typed_arg(
 
 def _forecast_generate_typed_value_epilog() -> str:
     lines = ["Typed Value Formats:"]
-    for key in ("denoise", "params", "features", "dimred_params", "target_spec"):
+    for key in ("denoise", "params", "features", "dimred", "target_spec"):
         spec = _FORECAST_TYPED_ARG_SPECS[key]
         lines.append(f"  {spec['flag']} {spec['metavar']}")
         for example in spec["examples"]:
@@ -1004,19 +1004,12 @@ def _add_forecast_generate_args(cmd_parser: argparse.ArgumentParser) -> None:
         metavar=_FORECAST_TYPED_ARG_SPECS["features"]["metavar"],
         help_text=_FORECAST_TYPED_ARG_SPECS["features"]["help"],
     )
-    group_pipe.add_argument(
-        "--dimred-method",
-        dest="dimred_method",
-        type=str,
-        default=None,
-        help="Dimred method.",
-    )
     _add_forecast_typed_arg(
         group_pipe,
-        "--dimred-params",
-        dest="dimred_params",
-        metavar=_FORECAST_TYPED_ARG_SPECS["dimred_params"]["metavar"],
-        help_text=_FORECAST_TYPED_ARG_SPECS["dimred_params"]["help"],
+        "--dimred",
+        dest="dimred",
+        metavar=_FORECAST_TYPED_ARG_SPECS["dimred"]["metavar"],
+        help_text=_FORECAST_TYPED_ARG_SPECS["dimred"]["help"],
     )
     _add_forecast_typed_arg(
         group_pipe,
@@ -1309,7 +1302,7 @@ _COMMAND_USAGE_EXAMPLES: Dict[str, Tuple[str, Optional[str]]] = {
     ),
     "regime_detect": (
         f"{CLI_PROGRAM} regime_detect BTCUSD --timeframe H1 --method hmm",
-        f"{CLI_PROGRAM} regime_detect BTCUSD --timeframe H1 --method hmm --extras metadata",
+        f"{CLI_PROGRAM} regime_detect BTCUSD --timeframe H1 --method hmm --detail full",
     ),
     "trade_risk_analyze": (
         f"{CLI_PROGRAM} trade_risk_analyze --symbol BTCUSD --direction long --desired-risk-pct 1 --entry 66317 --stop-loss 65000",
@@ -1507,12 +1500,8 @@ _GLOBAL_FLAG_HELP: Dict[str, str] = {
         "(auto compacts most tools but keeps full for forecast/trade analytics; JSON is "
         "always full precision)."
     ),
-    "extras": (
-        "--extras EXTRA[,EXTRA...]: include richer TOON output sections (e.g. diagnostics, "
-        "metadata) that are omitted from compact output by default."
-    ),
-    "fields": (
-        "--fields FIELD[,FIELD...]: return only selected output fields plus envelope metadata."
+    "output_fields": (
+        "--output-fields FIELD[,FIELD...]: return only selected output fields plus envelope metadata."
     ),
     "json": (
         "--json: emit machine-readable JSON instead of TOON (always full precision)."
@@ -1582,9 +1571,7 @@ def _print_extended_help(functions: Dict[str, ToolInfo], query: str) -> None:
             print(
                 "  Safety: market orders default to require_sl_tp=true; add both stop_loss and take_profit or explicitly set --require-sl-tp false."
             )
-            print(
-                "  Recovery: auto_close_on_sl_tp_fail defaults true; set --auto-close-on-sl-tp-fail false only if you will handle unprotected fills manually."
-            )
+            print("  Recovery: an unprotected market fill is always closed defensively.")
             print(
                 "  Preview: dry_run=true is the default; set --dry-run false explicitly to send an order to MT5."
             )
@@ -1818,9 +1805,9 @@ def main():  # noqa: C901
                 overrides=overrides,
                 parser=cmd_parser,
             )
-            dimred_params_raw = _resolve_forecast_typed_cli_value(
-                args.dimred_params,
-                key="dimred_params",
+            dimred_raw = _resolve_forecast_typed_cli_value(
+                args.dimred,
+                key="dimred",
                 overrides=overrides,
                 parser=cmd_parser,
             )
@@ -1842,16 +1829,23 @@ def main():  # noqa: C901
                     denoise = _parse_mapping_value(denoise_raw, option_name="denoise")
 
             features = _parse_mapping_value(features_raw, option_name="features")
-            dimred_params = _parse_mapping_value(
-                dimred_params_raw, option_name="dimred_params"
-            )
+            dimred = None
+            if isinstance(dimred_raw, dict):
+                dimred = dict(dimred_raw)
+            elif dimred_raw:
+                dimred_text = str(dimred_raw).strip()
+                dimred = (
+                    _parse_mapping_value(dimred_text, option_name="dimred")
+                    if dimred_text.startswith("{")
+                    else {"method": dimred_text}
+                )
             target_spec = _parse_mapping_value(target_spec_raw, option_name="target_spec")
 
             # --set overrides (sections: method/denoise/features/dimred/target)
             params = _merge_dict(params, overrides.get("method"))
             denoise = _merge_dict(denoise, overrides.get("denoise"))
             features = _merge_dict(features, overrides.get("features"))
-            dimred_params = _merge_dict(dimred_params, overrides.get("dimred"))
+            dimred = _merge_dict(dimred, overrides.get("dimred"))
             target_spec = _merge_dict(target_spec, overrides.get("target"))
 
             try:
@@ -1871,8 +1865,7 @@ def main():  # noqa: C901
                     proxy=args.proxy,
                     denoise=cast(Any, denoise or None),
                     features=features or None,
-                    dimred_method=args.dimred_method,
-                    dimred_params=dimred_params or None,
+                    dimred=cast(Any, dimred or None),
                     target_spec=target_spec or None,
                     async_mode=bool(args.async_mode),
                     model_id=args.model_id,
@@ -1914,8 +1907,7 @@ def main():  # noqa: C901
                 cmd_name="forecast_generate",
                 kwargs={
                     "request": request,
-                    "extras": getattr(args, "extras", None),
-                    "fields": getattr(args, "fields", None),
+                    "output_fields": getattr(args, "output_fields", None),
                     "__cli_raw": True,
                 },
             )

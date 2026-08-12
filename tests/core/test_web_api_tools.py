@@ -92,7 +92,7 @@ class TestListAndInvoke:
                 arguments={
                     "symbol": "EURUSD",
                     "template": "minimal",
-                    "extras": "metadata",
+                    "detail": "full",
                 },
             )
 
@@ -121,7 +121,7 @@ class TestListAndInvoke:
             compact = invoke_tool_for_webapi("market_ticker")
             guided = invoke_tool_for_webapi(
                 "market_ticker",
-                arguments={"extras": "guidance"},
+                arguments={"detail": "full"},
             )
 
         assert "related_tools" not in compact["result"]
@@ -148,7 +148,7 @@ class TestListAndInvoke:
         ):
             result = invoke_tool_for_webapi(
                 "demo",
-                arguments={"fields": "bid"},
+                arguments={"output_fields": "bid"},
             )
 
         assert result["result"] == {
@@ -171,8 +171,9 @@ class TestListAndInvoke:
                 arguments={"extras": "not-a-real-extra"},
             )
 
-        assert exc.value.status_code == 422
-        assert exc.value.detail["error_code"] == "tool_param_error"
+        assert exc.value.status_code == 400
+        assert exc.value.detail["parameter"] == "extras"
+        assert exc.value.detail["replacement"] == "detail"
 
     def test_mutation_requires_confirm(self):
         with pytest.raises(HTTPException) as exc:
@@ -244,9 +245,10 @@ class TestWebApiRoutes:
         assert res.status_code == 200
         body = res.json()
         assert body["tool"]["name"] == "tools_list"
-        assert isinstance(body["tool"].get("fields"), list)
-        field_names = {field["name"] for field in body["tool"]["fields"]}
-        assert {"extras", "fields"}.issubset(field_names)
+        schema = body["tool"].get("input_schema")
+        assert isinstance(schema, dict)
+        assert {"json", "output_fields"}.issubset(schema["properties"])
+        assert "extras" not in schema["properties"]
 
     def test_invoke_route(self):
         res = self.client.post(

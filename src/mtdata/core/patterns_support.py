@@ -278,7 +278,7 @@ def _elliott_hidden_completed_note(
     note = f"{int(completed_hidden)} confirmed structure(s) hidden; "
     if strongest_text:
         note += f"strongest hidden count: {strongest_text}; "
-    note += "set include_confirmed=true to include them."
+    note += "set include_completed=true to include them."
     return note
 
 

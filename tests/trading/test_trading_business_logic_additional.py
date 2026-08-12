@@ -2,6 +2,9 @@ from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+import pytest
+from pydantic import ValidationError
+
 from mtdata.core.trading.comments import (
     _comment_sanitization_info,
     _normalize_trade_comment,
@@ -157,19 +160,8 @@ def test_protection_validators_accept_mapping_ticks():
 
 
 def test_run_trade_close_rejects_conflicting_profit_and_loss_filters():
-    request = TradeCloseRequest(close_all=True, profit_only=True, loss_only=True)
-    close_positions = MagicMock()
-    cancel_pending = MagicMock()
-
-    result = run_trade_close(
-        request,
-        close_positions=close_positions,
-        cancel_pending=cancel_pending,
-    )
-
-    assert result["error"] == "profit_only and loss_only cannot both be true."
-    close_positions.assert_not_called()
-    cancel_pending.assert_not_called()
+    with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+        TradeCloseRequest(close_all=True, profit_only=True, loss_only=True)
 
 
 def test_run_trade_close_uses_history_lookup_when_ticket_is_already_closed():
@@ -733,34 +725,16 @@ def test_build_trade_place_dry_run_preview_preserves_zero_symbol_digits():
 
 
 def test_run_trade_place_rejects_contradictory_sl_tp_safety_settings():
-    request = TradePlaceRequest(
-        symbol="EURUSD",
-        volume=0.1,
-        order_type="BUY",
-        stop_loss=1.08,
-        take_profit=1.12,
-        auto_close_on_sl_tp_fail=False,
-        dry_run=False,
-    )
-
-    place_market_order = MagicMock()
-    close_positions = MagicMock()
-    result = run_trade_place(
-        request,
-        normalize_order_type_input=lambda value: ("BUY", None),
-        normalize_pending_expiration=lambda value: (value, False),
-        prevalidate_trade_place_market_input=lambda symbol, volume: None,
-        place_market_order=place_market_order,
-        place_pending_order=lambda **kwargs: {"success": True, "path": "pending"},
-        close_positions=close_positions,
-        safe_int_ticket=lambda value: value,
-    )
-
-    assert result["error_code"] == "conflicting_sl_tp_safety_settings"
-    assert result["require_sl_tp"] is True
-    assert result["auto_close_on_sl_tp_fail"] is False
-    place_market_order.assert_not_called()
-    close_positions.assert_not_called()
+    with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+        TradePlaceRequest(
+            symbol="EURUSD",
+            volume=0.1,
+            order_type="BUY",
+            stop_loss=1.08,
+            take_profit=1.12,
+            auto_close_on_sl_tp_fail=False,
+            dry_run=False,
+        )
 
 
 def test_run_trade_place_auto_close_uses_candidate_ticket_when_primary_is_missing():
@@ -770,7 +744,6 @@ def test_run_trade_place_auto_close_uses_candidate_ticket_when_primary_is_missin
         order_type="BUY",
         stop_loss=1.08,
         take_profit=1.12,
-        auto_close_on_sl_tp_fail=True,
         dry_run=False,
     )
     close_calls = []

@@ -382,7 +382,7 @@ When optimizing TP/SL levels, you must choose what to maximize. Each objective a
 
 **When to use:**
 - Compare TP/SL grids on a growth-oriented objective (`objective=kelly`)
-- Cross-check with `trade_risk_analyze --sizing-method kelly` when you have win-rate / avg win / avg loss
+- Cross-check with `trade_risk_analyze --sizing '{"method":"kelly",...}'` when you have win-rate / avg win / avg loss
 
 **Limitation:** Wrong inputs → wrong size. Full Kelly has large drawdowns. Prefer fractional Kelly and hard risk caps (see guardrails).
 
@@ -395,7 +395,7 @@ When optimizing TP/SL levels, you must choose what to maximize. Each objective a
 ### Fixed-fraction sizing
 Risk a **fixed percent of equity** per trade (e.g. 1% from entry to stop). Simpler and more common than full Kelly; often combined with a Kelly *cap*.
 
-**In mtdata:** `trade_risk_analyze` default `sizing_method=fixed_fraction` with `--desired-risk-pct`.
+**In mtdata:** `trade_risk_analyze` accepts a nested fixed-fraction or Kelly `sizing` specification.
 
 ---
 

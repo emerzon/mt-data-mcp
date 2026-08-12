@@ -14,10 +14,10 @@ mtdata simulates many price paths (or uses richer models), scores TP/SL pairs, a
 
 ### 1) Probability for one TP/SL pair
 
-Percent barriers are expressed in percent (e.g., `--tp-pct 0.40` means **0.40%**, not 40%):
+Percent barriers are expressed in percent (for example, `take_profit: 0.40` with `unit: pct` means **0.40%**, not 40%):
 ```bash
 mtdata-cli forecast_barrier_prob EURUSD --timeframe H1 --horizon 12 \
-  --direction long --tp-pct 0.40 --sl-pct 0.60 --json
+  --direction long --barrier '{"kind":"tp_sl","unit":"pct","take_profit":0.40,"stop_loss":0.60}' --json
 ```
 
 Look for `prob_tp_first`, `prob_sl_first`, `prob_no_hit`, and
@@ -110,7 +110,7 @@ where:
 > **Command**:
 > ```bash
 > mtdata-cli forecast_barrier_prob EURUSD --timeframe M5 --horizon 12 \
->   --method mc_gbm --tp-pct 0.2 --sl-pct 0.15
+>   --method mc_gbm --barrier '{"kind":"tp_sl","unit":"pct","take_profit":0.2,"stop_loss":0.15}'
 > ```
 
 ---
@@ -159,7 +159,7 @@ P(hit | S_t, S_T) = exp(-2 * (B - S_t)(B - S_T) / (σ²Δt))
 > **Command**:
 > ```bash
 > mtdata-cli forecast_barrier_prob BTCUSD --timeframe M1 --horizon 6 \
->   --method mc_gbm_bb --tp-pct 0.1 --sl-pct 0.08
+>   --method mc_gbm_bb --barrier '{"kind":"tp_sl","unit":"pct","take_profit":0.1,"stop_loss":0.08}'
 > ```
 
 ---
@@ -213,7 +213,7 @@ simulation batch fits only one state.
 > **Command**:
 > ```bash
 > mtdata-cli forecast_barrier_prob GBPUSD --timeframe H4 --horizon 48 \
->   --method hmm_mc --tp-pct 1.5 --sl-pct 1.0 \
+>   --method hmm_mc --barrier '{"kind":"tp_sl","unit":"pct","take_profit":1.5,"stop_loss":1.0}' \
 >   --params "n_states=2 n_sims=5000"
 > ```
 
@@ -262,7 +262,7 @@ r_t = μ + ε_t
 > **Command**:
 > ```bash
 > mtdata-cli forecast_barrier_prob SPY --timeframe D1 --horizon 20 \
->   --method garch --tp-pct 3.0 --sl-pct 2.0 \
+>   --method garch --barrier '{"kind":"tp_sl","unit":"pct","take_profit":3.0,"stop_loss":2.0}' \
 >   --params "p=1 q=1"
 > ```
 
@@ -303,7 +303,7 @@ r_t = μ + ε_t
 > **Command**:
 > ```bash
 > mtdata-cli forecast_barrier_prob USDTRY --timeframe H1 --horizon 24 \
->   --method bootstrap --tp-pct 2.0 --sl-pct 1.5 \
+>   --method bootstrap --barrier '{"kind":"tp_sl","unit":"pct","take_profit":2.0,"stop_loss":1.5}' \
 >   --params "block_size=5"
 > ```
 
@@ -353,7 +353,7 @@ dW_t^1 dW_t^2 = ρ dt
 > **Command**:
 > ```bash
 > mtdata-cli forecast_barrier_prob AAPL --timeframe D1 --horizon 60 \
->   --method heston --tp-pct 10.0 --sl-pct 5.0 \
+>   --method heston --barrier '{"kind":"tp_sl","unit":"pct","take_profit":10.0,"stop_loss":5.0}' \
 >   --params "kappa=2.0 theta=0.04 xi=0.3 rho=-0.5"
 > ```
 
@@ -401,7 +401,7 @@ J_t: compound Poisson process with log-normal jumps
 > **Command**:
 > ```bash
 > mtdata-cli forecast_barrier_prob EURUSD --timeframe M15 --horizon 16 \
->   --method jump_diffusion --tp-pct 0.5 --sl-pct 0.3 \
+>   --method jump_diffusion --barrier '{"kind":"tp_sl","unit":"pct","take_profit":0.5,"stop_loss":0.3}' \
 >   --params "jump_lambda=0.5 jump_mu=0.001 jump_sigma=0.002"
 > ```
 
@@ -467,7 +467,7 @@ Note: `garch` requires the `arch` package; auto falls back to `heston` if it is 
 > **Command**:
 > ```bash
 > mtdata-cli forecast_barrier_prob EURUSD --timeframe H1 --horizon 12 \
->   --method auto --tp-pct 0.5 --sl-pct 0.3
+>   --method auto --barrier '{"kind":"tp_sl","unit":"pct","take_profit":0.5,"stop_loss":0.3}'
 >
 > # Returns: method_used: "hmm_mc", auto_reason: "auto: regime shift (volatility change)"
 > ```
@@ -1105,7 +1105,7 @@ mtdata-cli data_fetch_candles EURUSD --timeframe H1 --limit 500
 
 # If insufficient, use mc_gbm (or mc_gbm_bb for short horizons)
 mtdata-cli forecast_barrier_prob EURUSD --timeframe H1 --horizon 10 \
-  --method mc_gbm --tp-pct 0.2 --sl-pct 0.15
+  --method mc_gbm --barrier '{"kind":"tp_sl","unit":"pct","take_profit":0.2,"stop_loss":0.15}'
 ```
 
 ---
@@ -1170,7 +1170,7 @@ mtdata-cli regime_detect EURUSD --timeframe H1 --method hmm --params "n_states=3
 # Example: 20/15 tick-size barriers on EURUSD
 mtdata-cli forecast_barrier_prob \
   EURUSD --timeframe M5 --horizon 12 \
-  --method hmm_mc --tp-ticks 20 --sl-ticks 15  # RR = 1.33 after spread
+  --method hmm_mc --barrier '{"kind":"tp_sl","unit":"ticks","take_profit":20,"stop_loss":15}'  # RR = 1.33 after spread
 ```
 
 ---
@@ -1186,7 +1186,7 @@ for H in 6 12 24 48; do
   echo "Horizon $H bars:"
   mtdata-cli forecast_barrier_prob \
     EURUSD --timeframe H1 --horizon $H \
-    --method hmm_mc --tp-pct 0.5 --sl-pct 0.3 \
+    --method hmm_mc --barrier '{"kind":"tp_sl","unit":"pct","take_profit":0.5,"stop_loss":0.3}' \
     --json | jq '{horizon: .horizon, probability_edge: .probability_edge, prob_resolve: (.prob_tp_first + .prob_sl_first)}'
 done
 ```
@@ -1226,7 +1226,7 @@ Test stability of results:
 # Vary n_sims
 for N in 1000 2000 5000 10000; do
   mtdata-cli forecast_barrier_prob EURUSD --timeframe H1 --horizon 12 \
-    --method hmm_mc --tp-pct 0.5 --sl-pct 0.3 --params "n_sims=$N" \
+    --method hmm_mc --barrier '{"kind":"tp_sl","unit":"pct","take_profit":0.5,"stop_loss":0.3}' --params "n_sims=$N" \
     --json | jq '.prob_tp_first'
 done
 ```
@@ -1241,7 +1241,7 @@ Compare methods on same data:
 for METHOD in mc_gbm hmm_mc bootstrap; do
   echo "Method: $METHOD"
   mtdata-cli forecast_barrier_prob EURUSD --timeframe H1 --horizon 12 \
-    --method $METHOD --tp-pct 0.5 --sl-pct 0.3 \
+    --method $METHOD --barrier '{"kind":"tp_sl","unit":"pct","take_profit":0.5,"stop_loss":0.3}' \
     --json | jq '{method: .method, probability_edge: .probability_edge, prob_resolve: (.prob_tp_first + .prob_sl_first)}'
 done
 ```
@@ -1316,7 +1316,7 @@ Validate:
 ```bash
 mtdata-cli forecast_barrier_prob \
   EURUSD --timeframe H1 --horizon 12 \
-  --method auto --tp-pct 0.5 --sl-pct 0.3
+  --method auto --barrier '{"kind":"tp_sl","unit":"pct","take_profit":0.5,"stop_loss":0.3}'
 ```
 
 **Find optimal**:

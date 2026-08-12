@@ -25,7 +25,7 @@ mtdata-cli trade_risk_analyze --json
 
 # Size a new long: risk-based volume from entry + stop
 mtdata-cli trade_risk_analyze EURUSD --direction long \
-  --entry 1.0850 --stop-loss 1.0800 --desired-risk-pct 1.0 --json
+  --entry 1.0850 --stop-loss 1.0800 --sizing '{"method":"fixed_fraction","risk_pct":1.0}' --json
 ```
 
 | Parameter | Default | Description |
@@ -58,9 +58,8 @@ Set `sizing_method=kelly` and supply edge statistics:
 
 ```bash
 mtdata-cli trade_risk_analyze EURUSD --direction long \
-  --entry 1.0850 --stop-loss 1.0800 --sizing-method kelly \
-  --kelly-win-rate 0.55 --kelly-avg-win 0.012 --kelly-avg-loss 0.010 \
-  --kelly-fraction-multiplier 0.5 --kelly-max-risk-pct 2.0 --json
+  --entry 1.0850 --stop-loss 1.0800 \
+  --sizing '{"method":"kelly","win_rate":0.55,"avg_win":0.012,"avg_loss":0.010,"fraction_multiplier":0.5,"max_risk_pct":2.0}' --json
 ```
 
 | Parameter | Default | Description |

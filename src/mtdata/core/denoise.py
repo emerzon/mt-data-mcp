@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Annotated, Any, Dict, List, Literal, Optional
 
-from ..shared.schema import DetailLiteral
+from pydantic import Field
+
 from ..utils.denoise import get_denoise_methods_data
 from ._mcp_instance import mcp
 from .error_envelope import build_error_payload
@@ -46,11 +47,11 @@ def _denoise_methods(*, available_only: bool = False) -> List[Dict[str, Any]]:
 def _filter_denoise_methods(
     methods: List[Dict[str, Any]],
     *,
-    causality: Optional[str] = None,
-    no_extras: bool = False,
+    causality: Optional[Literal["causal", "zero_phase"]] = None,
+    core_only: bool = False,
 ) -> List[Dict[str, Any]]:
     filtered = list(methods)
-    if no_extras:
+    if core_only:
         filtered = [row for row in filtered if not str(row.get("requires") or "").strip()]
     causality_value = str(causality or "").strip().lower()
     if causality_value:
@@ -71,11 +72,11 @@ def _filter_denoise_methods(
 
 @mcp.tool()
 def denoise_list_methods(
-    detail: DetailLiteral = "compact",
+    detail: Literal["compact", "standard", "full"] = "compact",
     available_only: bool = False,
-    causality: Optional[str] = None,
-    no_extras: bool = False,
-    limit: int = _DENOISE_METHOD_DEFAULT_LIMIT,
+    causality: Optional[Literal["causal", "zero_phase"]] = None,
+    core_only: bool = False,
+    limit: Annotated[int, Field(ge=1)] = _DENOISE_METHOD_DEFAULT_LIMIT,
 ) -> Dict[str, Any]:
     """List denoise methods, optional dependencies, causality support, and auto params."""
 
@@ -84,7 +85,7 @@ def denoise_list_methods(
         methods = _filter_denoise_methods(
             _denoise_methods(available_only=available_only),
             causality=causality,
-            no_extras=no_extras,
+            core_only=core_only,
         )
         if detail_mode == "full":
             pagination = build_pagination_meta(
@@ -98,7 +99,7 @@ def denoise_list_methods(
                 "detail": detail_mode,
                 "available_only": bool(available_only),
                 "causality": str(causality).strip().lower() if causality else None,
-                "no_extras": bool(no_extras),
+                "core_only": bool(core_only),
                 "count": len(methods),
                 "pagination": pagination,
                 "methods": methods,
@@ -147,7 +148,7 @@ def denoise_list_methods(
             ),
             "columns": columns,
             "causality": str(causality).strip().lower() if causality else None,
-            "no_extras": bool(no_extras),
+            "core_only": bool(core_only),
             "methods": method_rows,
             "describe_hint": "Use denoise_describe(method) for descriptions and defaults.",
         }
@@ -161,7 +162,7 @@ def denoise_list_methods(
         detail=detail,
         available_only=available_only,
         causality=causality,
-        no_extras=no_extras,
+        core_only=core_only,
         limit=limit,
         func=_run,
     )

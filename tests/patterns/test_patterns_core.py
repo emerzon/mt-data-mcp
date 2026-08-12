@@ -6,6 +6,7 @@ from types import SimpleNamespace
 import numpy as np
 import pandas as pd
 import pytest
+from pydantic import ValidationError
 
 import src.mtdata.core.patterns_support as patterns_support_mod
 import src.mtdata.patterns.candlestick as candlestick_mod
@@ -309,15 +310,14 @@ def test_patterns_support_config_helpers_read_dict_values():
 
 
 def test_patterns_detect_candlestick_rejects_non_positive_last_n_bars():
-    res = patterns_detect(
-        symbol="EURUSD",
-        timeframe="H1",
-        mode="candlestick",
-        detail="full",
-        last_n_bars=0,
-    )
-    assert "error" in res
-    assert "last_n_bars" in str(res["error"])
+    with pytest.raises(ValidationError, match="last_n_bars"):
+        PatternsDetectRequest(
+            symbol="EURUSD",
+            timeframe="H1",
+            mode="candlestick",
+            detail="full",
+            last_n_bars=0,
+        )
 
 
 def test_select_classic_engines_uses_registry(monkeypatch):
@@ -539,7 +539,7 @@ def test_build_pattern_response_elliott_hidden_completed_preview_is_truthful():
     assert res["completed_patterns_preview"][0]["pattern"] == "Impulse"
     assert res["completed_patterns_preview"][0]["timeframe"] == "H4"
     assert "strongest hidden count" in res["note"]
-    assert "include_confirmed=true" in res["note"]
+    assert "include_completed=true" in res["note"]
 
 
 def test_build_pattern_response_elliott_compact_keeps_hidden_completed_preview():
@@ -1403,7 +1403,6 @@ def test_patterns_detect_classic_ensemble_merges_engine_outputs(monkeypatch, cap
             mode="classic",
             detail="full",
             timeframe="H1",
-            engine="native,stock_pattern",
             ensemble=True,
             include_completed=True,
             __cli_raw=True,
@@ -1417,7 +1416,7 @@ def test_patterns_detect_classic_ensemble_merges_engine_outputs(monkeypatch, cap
     assert "event=finish operation=patterns_detect success=True" in caplog.text
 
 
-def test_patterns_detect_all_mode_uses_shared_fetch_floor(monkeypatch):
+def test_patterns_detect_rejects_removed_precise_patterns_engine(monkeypatch):
     captured_fetch_floors = []
     df = pd.DataFrame(
         {
@@ -1478,16 +1477,13 @@ def test_patterns_detect_rejects_hidden_precise_engine(monkeypatch):
         lambda *_args, **_kwargs: (df.copy(), None),
     )
 
-    res = patterns_detect(
-        symbol="EURUSD",
-        mode="classic",
-        timeframe="H1",
-        engine="precise_patterns",
-        __cli_raw=True,
-    )
-
-    assert "error" in res
-    assert "Invalid classic engine" in str(res["error"])
+    with pytest.raises(ValidationError, match="engine"):
+        PatternsDetectRequest(
+            symbol="EURUSD",
+            mode="classic",
+            timeframe="H1",
+            engine="precise_patterns",
+        )
 
 
 def test_patterns_detect_engine_findings_report_hidden_completed(monkeypatch):
@@ -1558,16 +1554,13 @@ def test_patterns_detect_classic_invalid_engine_returns_error(monkeypatch):
         lambda symbol, timeframe, limit, denoise: (df.copy(), None),
     )
 
-    res = patterns_detect(
-        symbol="EURUSD",
-        mode="classic",
-        timeframe="H1",
-        engine="bad_engine",
-        __cli_raw=True,
-    )
-
-    assert "error" in res
-    assert "Invalid classic engine" in str(res["error"])
+    with pytest.raises(ValidationError, match="engine"):
+        PatternsDetectRequest(
+            symbol="EURUSD",
+            mode="classic",
+            timeframe="H1",
+            engine="bad_engine",
+        )
 
 
 def test_patterns_detect_classic_adds_signal_summary_and_levels(monkeypatch):

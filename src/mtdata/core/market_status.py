@@ -11,7 +11,6 @@ from zoneinfo import ZoneInfo
 
 import holidays
 
-from ..shared.schema import DetailLiteral
 from ..shared.symbols import is_probably_crypto_symbol, is_probably_forex_symbol
 from ..utils.freshness import is_standard_weekend_closure
 from ..utils.market_metadata import build_tick_freshness_context
@@ -27,7 +26,7 @@ from ..utils.time import format_datetime_utc
 from ._mcp_instance import mcp
 from .execution_logging import run_logged_operation
 from .mt5_gateway import create_mt5_gateway
-from .output_contract import normalize_output_extras, normalize_output_verbosity_detail
+from .output_contract import normalize_output_verbosity_detail
 from .runtime_metadata import build_runtime_timezone_meta
 
 logger = logging.getLogger(__name__)
@@ -659,13 +658,11 @@ def normalize_market_status_output(
     result: Dict[str, Any],
     *,
     detail: Any = None,
-    extras: Any = None,
 ) -> Dict[str, Any]:
     if not isinstance(result, dict):
         return dict(result)
 
     detail_mode = normalize_output_verbosity_detail(detail)
-    include_metadata = bool(normalize_output_extras(extras))
     out = dict(result)
     if detail_mode == "full":
         return out
@@ -681,10 +678,9 @@ def normalize_market_status_output(
             compact_markets.append(market)
         out["markets"] = compact_markets
     out.pop("message", None)
-    if not include_metadata:
-        out.pop("upcoming_holidays", None)
-        out.pop("upcoming_holidays_count", None)
-        out.pop("upcoming_holidays_summary", None)
+    out.pop("upcoming_holidays", None)
+    out.pop("upcoming_holidays_count", None)
+    out.pop("upcoming_holidays_summary", None)
     return out
 
 
@@ -1287,10 +1283,9 @@ def _market_status_symbol_mode_warnings(
 @mcp.tool()
 def market_status(
     symbol: Optional[str] = None,
-    region: Optional[Literal["us", "europe", "asia", "all"]] = "all",
-    timezone_display: Optional[Literal["local", "utc", "server", "auto"]] = "auto",
-    detail: DetailLiteral = "compact",
-    extras: Optional[str] = None,
+    region: Literal["us", "europe", "asia", "all"] = "all",
+    timezone_display: Literal["local", "utc", "server", "auto"] = "auto",
+    detail: Literal["compact", "full"] = "compact",
 ) -> Dict[str, Any]:
     """Get global exchange status, or MT5 symbol tradability when `symbol` is supplied.
 
@@ -1325,8 +1320,7 @@ def market_status(
         - `markets_pre_market`: Count of markets in pre-market
         - `markets_lunch_break`: Count of markets in lunch break
         - `markets_closed`: Count of markets currently closed
-        - `upcoming_holidays`: Full holiday rows when `extras='metadata'` or
-          `detail='full'`
+        - `upcoming_holidays`: Full holiday rows when `detail='full'`
             - `date`: Holiday date (ISO format)
             - `holiday`: Holiday name
             - `markets_affected`: List of market codes that will be closed
@@ -1351,7 +1345,6 @@ def market_status(
     """
 
     detail_mode = normalize_output_verbosity_detail(detail)
-    extras_value = normalize_output_extras(extras)
     symbol_mode = symbol not in (None, "")
     timezone_display_mode = _normalize_timezone_display(
         timezone_display,
@@ -1504,7 +1497,6 @@ def market_status(
         return normalize_market_status_output(
             payload,
             detail=detail_mode,
-            extras=extras_value,
         )
 
     return run_logged_operation(
@@ -1514,6 +1506,5 @@ def market_status(
             region=region,
             timezone_display=timezone_display_mode,
             detail=detail_mode,
-            extras=extras,
             func=_run,
         )

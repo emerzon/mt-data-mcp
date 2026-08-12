@@ -301,17 +301,17 @@ class TestTradeClose:
 
     @patch("mtdata.core.trading._cancel_pending")
     @patch("mtdata.core.trading._close_positions")
-    def test_profit_only_routes_to_positions_only(self, mock_close, mock_cancel):
+    def test_profit_filter_routes_to_positions_only(self, mock_close, mock_cancel):
         mock_close.return_value = {"closed_count": 1}
-        trade_close(ticket=123, profit_only=True, dry_run=False)
+        trade_close(ticket=123, pnl_filter="profit", dry_run=False)
         mock_close.assert_called_once()
         mock_cancel.assert_not_called()
 
     @patch("mtdata.core.trading._cancel_pending")
     @patch("mtdata.core.trading._close_positions")
-    def test_loss_only_routes_to_positions_only(self, mock_close, mock_cancel):
+    def test_loss_filter_routes_to_positions_only(self, mock_close, mock_cancel):
         mock_close.return_value = {"closed_count": 1}
-        trade_close(ticket=123, loss_only=True, dry_run=False)
+        trade_close(ticket=123, pnl_filter="loss", dry_run=False)
         mock_close.assert_called_once()
         mock_cancel.assert_not_called()
 

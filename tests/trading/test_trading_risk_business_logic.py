@@ -8,6 +8,7 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
+from pydantic import ValidationError
 
 from mtdata.core.trading import risk as core_trading_risk
 from mtdata.core.trading import trade_risk_analyze as _trade_risk_analyze_tool
@@ -25,6 +26,26 @@ def _unwrap(fn):
     while hasattr(fn, "__wrapped__"):
         fn = fn.__wrapped__
     return fn
+
+
+def _fixed_sizing(risk_pct: float) -> dict[str, object]:
+    return {"method": "fixed_fraction", "risk_pct": risk_pct}
+
+
+def _kelly_sizing(
+    win_rate: float,
+    avg_win: float,
+    avg_loss: float,
+    *,
+    max_risk_pct: float = 2.0,
+) -> dict[str, object]:
+    return {
+        "method": "kelly",
+        "win_rate": win_rate,
+        "avg_win": avg_win,
+        "avg_loss": avg_loss,
+        "max_risk_pct": max_risk_pct,
+    }
 
 
 def test_live_risk_entry_uses_reconciled_stream_quote(monkeypatch) -> None:
@@ -128,7 +149,7 @@ def test_trade_risk_analyze_blocks_sizing_and_escalates_critical_margin() -> Non
         out = trade_risk_analyze(
             symbol="EURUSD",
             detail="full",
-            desired_risk_pct=1.0,
+            sizing=_fixed_sizing(1.0),
             entry=100.0,
             stop_loss=90.0,
         )
@@ -149,7 +170,7 @@ def test_trade_risk_analyze_removes_stop_distance_tick_residue() -> None:
         out = trade_risk_analyze(
             symbol="EURUSD",
             detail="full",
-            desired_risk_pct=0.3,
+            sizing=_fixed_sizing(0.3),
             entry=100.0,
             stop_loss=89.99999999999667,
         )
@@ -172,7 +193,7 @@ def test_trade_risk_analyze_rounds_down_to_step_to_avoid_overshoot() -> None:
         out = trade_risk_analyze(
             symbol="EURUSD",
             detail="full",
-            desired_risk_pct=1.0,
+            sizing=_fixed_sizing(1.0),
             entry=100.0,
             stop_loss=92.06,
         )
@@ -196,7 +217,7 @@ def test_trade_risk_analyze_compact_position_sizing_keeps_decision_fields() -> N
     with _patched_mt5_module(mt5):
         out = trade_risk_analyze(
             symbol="EURUSD",
-            desired_risk_pct=1.0,
+            sizing=_fixed_sizing(1.0),
             entry=100.0,
             stop_loss=92.0,
             take_profit=116.0,
@@ -219,7 +240,7 @@ def test_trade_risk_analyze_compact_position_sizing_keeps_decision_fields() -> N
     }
 
 
-def test_trade_risk_analyze_kelly_sizes_from_flat_metrics() -> None:
+def test_trade_risk_analyze_kelly_sizes_from_nested_sizing() -> None:
     mt5 = MagicMock()
     mt5.account_info.return_value = SimpleNamespace(equity=1000.0, currency="USD")
     mt5.positions_get.return_value = []
@@ -228,14 +249,11 @@ def test_trade_risk_analyze_kelly_sizes_from_flat_metrics() -> None:
     with _patched_mt5_module(mt5):
         out = trade_risk_analyze(
             symbol="EURUSD",
-            sizing_method="kelly",
+            sizing=_kelly_sizing(0.55, 0.02, 0.01),
             direction="long",
             entry=100.0,
             stop_loss=92.0,
             take_profit=116.0,
-            kelly_win_rate=0.55,
-            kelly_avg_win=0.02,
-            kelly_avg_loss=0.01,
         )
 
     sizing = out["position_sizing"]
@@ -245,12 +263,12 @@ def test_trade_risk_analyze_kelly_sizes_from_flat_metrics() -> None:
     assert sizing["risk_pct"] == 2.0
     assert sizing["risk_compliance"] == "within_requested_risk"
     assert sizing["rr_ratio"] == 2.0
-    assert sizing["kelly"]["source"] == "flat_fields"
+    assert sizing["kelly"]["source"] == "sizing"
     assert sizing["kelly"]["kelly_fraction"] == pytest.approx(0.325)
     assert sizing["kelly"]["effective_risk_pct"] == 2.0
 
 
-def test_trade_risk_analyze_kelly_honors_desired_risk_cap_from_metrics_dict() -> None:
+def test_trade_risk_analyze_kelly_honors_nested_max_risk_cap() -> None:
     mt5 = MagicMock()
     mt5.account_info.return_value = SimpleNamespace(equity=1000.0, currency="USD")
     mt5.positions_get.return_value = []
@@ -259,22 +277,16 @@ def test_trade_risk_analyze_kelly_honors_desired_risk_cap_from_metrics_dict() ->
     with _patched_mt5_module(mt5):
         out = trade_risk_analyze(
             symbol="EURUSD",
-            sizing_method="kelly",
-            desired_risk_pct=1.0,
+            sizing=_kelly_sizing(0.55, 0.02, 0.01, max_risk_pct=1.0),
             entry=100.0,
             stop_loss=92.0,
-            kelly_metrics={
-                "win_rate": 0.55,
-                "avg_win_return": 0.02,
-                "avg_loss_return": 0.01,
-            },
         )
 
     sizing = out["position_sizing"]
     assert sizing["suggested_volume"] == 1.2
     assert sizing["risk_currency"] == 9.6
     assert sizing["risk_pct"] == 0.96
-    assert sizing["kelly"]["source"] == "kelly_metrics"
+    assert sizing["kelly"]["source"] == "sizing"
     assert sizing["kelly"]["cap_risk_pct"] == 1.0
     assert sizing["kelly"]["effective_risk_pct"] == 1.0
 
@@ -288,12 +300,9 @@ def test_trade_risk_analyze_kelly_no_edge_returns_zero_volume() -> None:
     with _patched_mt5_module(mt5):
         out = trade_risk_analyze(
             symbol="EURUSD",
-            sizing_method="kelly",
+            sizing=_kelly_sizing(0.4, 0.01, 0.01),
             entry=100.0,
             stop_loss=92.0,
-            kelly_win_rate=0.4,
-            kelly_avg_win=0.01,
-            kelly_avg_loss=0.01,
         )
 
     sizing = out["position_sizing"]
@@ -305,50 +314,30 @@ def test_trade_risk_analyze_kelly_no_edge_returns_zero_volume() -> None:
     assert sizing["kelly"]["status"] == "kelly_no_edge"
 
 
-def test_trade_risk_analyze_kelly_missing_inputs_explains_normalization() -> None:
-    mt5 = MagicMock()
-    mt5.account_info.return_value = SimpleNamespace(equity=1000.0, currency="USD")
-    mt5.positions_get.return_value = []
-    mt5.symbol_info.return_value = _make_symbol_info()
-
-    with _patched_mt5_module(mt5):
-        out = trade_risk_analyze(
+def test_trade_risk_analyze_kelly_requires_complete_sizing_inputs() -> None:
+    with pytest.raises(ValidationError, match="win_rate"):
+        TradeRiskAnalyzeRequest(
             symbol="EURUSD",
-            sizing_method="kelly",
+            sizing={"method": "kelly"},
             entry=100.0,
             stop_loss=92.0,
         )
-
-    sizing = out["position_sizing"]
-    assert sizing["status"] == "parameters_missing"
-    assert "related_tools" not in sizing
-    assert "stake-normalized" in sizing["note"]
-    assert "account-currency PnL" in sizing["note"]
 
 
 def test_trade_risk_analyze_kelly_rejects_raw_journal_pnl_aliases() -> None:
-    mt5 = MagicMock()
-    mt5.account_info.return_value = SimpleNamespace(equity=1000.0, currency="USD")
-    mt5.positions_get.return_value = []
-    mt5.symbol_info.return_value = _make_symbol_info()
-
-    with _patched_mt5_module(mt5):
-        out = trade_risk_analyze(
+    with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+        TradeRiskAnalyzeRequest(
             symbol="EURUSD",
-            sizing_method="kelly",
-            entry=100.0,
-            stop_loss=92.0,
-            kelly_metrics={
+            sizing={
+                "method": "kelly",
                 "win_rate": 0.55,
                 "avg_win": 200.0,
                 "avg_loss": 400.0,
+                "avg_win_return": 0.02,
             },
+            entry=100.0,
+            stop_loss=92.0,
         )
-
-    sizing = out["position_sizing"]
-    assert sizing["status"] == "parameters_missing"
-    assert sizing["missing"] == ["kelly_avg_win", "kelly_avg_loss"]
-    assert "account-currency PnL" in sizing["note"]
 
 
 def test_trade_risk_analyze_compact_keeps_blocked_sizing_context() -> None:
@@ -364,7 +353,7 @@ def test_trade_risk_analyze_compact_keeps_blocked_sizing_context() -> None:
     with _patched_mt5_module(mt5):
         out = trade_risk_analyze(
             symbol="EURUSD",
-            desired_risk_pct=0.1,
+            sizing=_fixed_sizing(0.1),
             entry=100.0,
             stop_loss=80.0,
         )
@@ -489,7 +478,7 @@ def test_trade_risk_analyze_resolves_missing_entry_from_live_tick() -> None:
         out = trade_risk_analyze(
             symbol="BTCUSD",
             direction="long",
-            desired_risk_pct=1.0,
+            sizing=_fixed_sizing(1.0),
             stop_loss=95.0,
             take_profit=112.5,
         )
@@ -515,7 +504,7 @@ def test_trade_risk_analyze_reanchors_omitted_entry_after_direction_inference() 
     with _patched_mt5_module(mt5):
         out = trade_risk_analyze(
             symbol="BTCUSD",
-            desired_risk_pct=1.0,
+            sizing=_fixed_sizing(1.0),
             stop_loss=95.0,
             take_profit=112.5,
         )
@@ -540,7 +529,7 @@ def test_trade_risk_analyze_rejects_direction_inference_inside_spread() -> None:
     with _patched_mt5_module(mt5):
         out = trade_risk_analyze(
             symbol="BTCUSD",
-            desired_risk_pct=1.0,
+            sizing=_fixed_sizing(1.0),
             stop_loss=100.08,
         )
 
@@ -572,7 +561,7 @@ def test_trade_risk_analyze_sizes_from_stale_tick_as_reference_only() -> None:
         out = trade_risk_analyze(
             symbol="BTCUSD",
             direction="long",
-            desired_risk_pct=1.0,
+            sizing=_fixed_sizing(1.0),
             stop_loss=95.0,
         )
 
@@ -593,7 +582,7 @@ def test_trade_risk_analyze_keeps_exposure_analysis_with_partial_sizing_params()
     with _patched_mt5_module(mt5):
         out = trade_risk_analyze(
             symbol="EURUSD",
-            desired_risk_pct=2.0,  # Only risk pct provided
+            sizing=_fixed_sizing(2.0),  # Only sizing provided
         )
 
     assert out["success"] is True
@@ -707,7 +696,7 @@ def test_trade_risk_analyze_reports_symbol_scope_when_other_positions_exist() ->
         out = trade_risk_analyze(
             symbol="EURUSD",
             detail="full",
-            desired_risk_pct=1.0,
+            sizing=_fixed_sizing(1.0),
             entry=100.0,
             stop_loss=90.0,
         )
@@ -755,7 +744,7 @@ def test_trade_risk_analyze_blocks_min_volume_risk_overshoot_by_default() -> Non
         out = trade_risk_analyze(
             symbol="EURUSD",
             detail="full",
-            desired_risk_pct=0.1,
+            sizing=_fixed_sizing(0.1),
             entry=100.0,
             stop_loss=80.0,
         )
@@ -791,7 +780,7 @@ def test_trade_risk_analyze_can_allow_min_volume_risk_overshoot() -> None:
         out = trade_risk_analyze(
             symbol="EURUSD",
             detail="full",
-            desired_risk_pct=0.1,
+            sizing=_fixed_sizing(0.1),
             strict_risk=False,
             entry=100.0,
             stop_loss=80.0,
@@ -816,7 +805,7 @@ def test_trade_risk_analyze_accepts_explicit_short_direction() -> None:
             symbol="EURUSD",
             detail="full",
             direction="short",
-            desired_risk_pct=1.0,
+            sizing=_fixed_sizing(1.0),
             entry=100.0,
             stop_loss=108.0,
             take_profit=92.0,
@@ -833,37 +822,30 @@ def test_trade_risk_analyze_accepts_explicit_short_direction() -> None:
 def test_trade_risk_request_normalizes_known_direction_aliases_only() -> None:
     assert TradeRiskAnalyzeRequest(direction="buy").direction == "long"
     assert TradeRiskAnalyzeRequest(direction="DOWN").direction == "short"
-    assert TradeRiskAnalyzeRequest(direction="sideways").direction == "sideways"
+    with pytest.raises(ValidationError, match="direction"):
+        TradeRiskAnalyzeRequest(direction="sideways")
 
 
-def test_trade_risk_request_keeps_legacy_position_sizing_aliases() -> None:
-    request = TradeRiskAnalyzeRequest(
-        proposed_entry=100.0,
-        proposed_sl=90.0,
-        proposed_tp=120.0,
-    )
-
-    assert request.entry == 100.0
-    assert request.stop_loss == 90.0
-    assert request.take_profit == 120.0
+def test_trade_risk_request_rejects_legacy_position_sizing_aliases() -> None:
+    with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+        TradeRiskAnalyzeRequest(
+            proposed_entry=100.0,
+            proposed_sl=90.0,
+            proposed_tp=120.0,
+        )
 
 
-def test_trade_risk_request_accepts_short_stop_and_target_aliases() -> None:
-    request = TradeRiskAnalyzeRequest(
-        entry=100.0,
-        sl=90.0,
-        tp=120.0,
-    )
-
-    assert request.entry == 100.0
-    assert request.stop_loss == 90.0
-    assert request.take_profit == 120.0
+def test_trade_risk_request_rejects_short_stop_and_target_aliases() -> None:
+    with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+        TradeRiskAnalyzeRequest(entry=100.0, sl=90.0, tp=120.0)
 
 
-def test_trade_risk_schema_advertises_order_workflow_aliases() -> None:
+def test_trade_risk_schema_advertises_canonical_level_names() -> None:
     fields = set(TradeRiskAnalyzeRequest.model_json_schema()["properties"])
 
-    assert {"entry", "sl", "tp"}.issubset(fields)
+    assert {"entry", "stop_loss", "take_profit"}.issubset(fields)
+    assert "sl" not in fields
+    assert "tp" not in fields
     assert "proposed_entry" not in fields
     assert "proposed_sl" not in fields
     assert "proposed_tp" not in fields
@@ -885,7 +867,7 @@ def test_trade_risk_analyze_uses_loss_tick_value_for_position_sizing() -> None:
         out = trade_risk_analyze(
             symbol="EURUSD",
             detail="full",
-            desired_risk_pct=1.0,
+            sizing=_fixed_sizing(1.0),
             entry=100.0,
             stop_loss=90.0,
             take_profit=120.0,
@@ -933,7 +915,7 @@ def test_trade_risk_analyze_falls_back_to_take_profit_direction_for_break_even_s
     with _patched_mt5_module(mt5):
         out = trade_risk_analyze(
             symbol="EURUSD",
-            desired_risk_pct=1.0,
+            sizing=_fixed_sizing(1.0),
             entry=100.0,
             stop_loss=100.0,
             take_profit=110.0,
@@ -954,7 +936,7 @@ def test_trade_risk_analyze_returns_structured_direction_error_when_inference_is
     with _patched_mt5_module(mt5):
         out = trade_risk_analyze(
             symbol="EURUSD",
-            desired_risk_pct=1.0,
+            sizing=_fixed_sizing(1.0),
             entry=100.0,
             stop_loss=100.0,
         )
@@ -976,7 +958,7 @@ def test_trade_risk_analyze_rejects_wrong_side_stop_for_short_trade() -> None:
         out = trade_risk_analyze(
             symbol="EURUSD",
             direction="short",
-            desired_risk_pct=1.0,
+            sizing=_fixed_sizing(1.0),
             entry=100.0,
             stop_loss=95.0,
         )
@@ -995,27 +977,13 @@ def test_trade_risk_analyze_rejects_wrong_side_stop_for_short_trade() -> None:
 
 
 def test_trade_risk_analyze_rejects_invalid_explicit_candidate_direction() -> None:
-    mt5 = MagicMock()
-    mt5.account_info.return_value = SimpleNamespace(equity=1000.0, currency="USD")
-    mt5.positions_get.return_value = []
-    mt5.symbol_info.return_value = _make_symbol_info()
-
-    with _patched_mt5_module(mt5):
-        out = trade_risk_analyze(
+    with pytest.raises(ValidationError, match="direction"):
+        TradeRiskAnalyzeRequest(
             symbol="EURUSD",
             direction="sideways",
             entry=100.0,
             stop_loss=95.0,
         )
-
-    assert out["success"] is False
-    assert out["candidate_valid"] is False
-    assert out["candidate_status"] == "invalid"
-    assert out["error_code"] == "invalid_direction"
-    assert out["portfolio_snapshot_status"] == "available"
-    assert out["account"]["equity"] == 1000.0
-    assert out["trade_evaluation"]["status"] == "invalid"
-    assert "position_sizing" not in out
 
 
 def test_trade_risk_analyze_rejects_wrong_side_take_profit_for_long_trade() -> None:
@@ -1028,7 +996,7 @@ def test_trade_risk_analyze_rejects_wrong_side_take_profit_for_long_trade() -> N
         out = trade_risk_analyze(
             symbol="EURUSD",
             direction="long",
-            desired_risk_pct=1.0,
+            sizing=_fixed_sizing(1.0),
             entry=100.0,
             stop_loss=92.0,
             take_profit=95.0,
@@ -1057,7 +1025,7 @@ def test_trade_risk_analyze_rejects_position_sizing_when_tick_size_is_invalid() 
     with _patched_mt5_module(mt5):
         out = trade_risk_analyze(
             symbol="EURUSD",
-            desired_risk_pct=1.0,
+            sizing=_fixed_sizing(1.0),
             entry=100.0,
             stop_loss=95.0,
         )

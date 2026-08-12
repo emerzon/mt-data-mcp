@@ -891,13 +891,14 @@ class TestRecordingToolDecorator:
 
             assert "detail" in sig.parameters
             assert "json" in sig.parameters
-            assert "extras" in sig.parameters
+            assert "output_fields" in sig.parameters
+            assert "extras" not in sig.parameters
             assert "verbose" not in sig.parameters
             assert "precision" not in sig.parameters
 
             raw = wrapped(__cli_raw=True)
             compact = wrapped(json=True)
-            full = wrapped(json=True, extras="metadata,diagnostics")
+            full = wrapped(json=True, detail="full")
 
             assert raw["value"] == 1
             assert raw["meta"]["domain"]["symbol"] == "EURUSD"
@@ -911,7 +912,7 @@ class TestRecordingToolDecorator:
         finally:
             tools._ORIG_TOOL_DECORATOR = original
 
-    def test_wrapped_function_treats_extras_as_verbose(self):
+    def test_wrapped_function_treats_full_detail_as_verbose(self):
         import mtdata.core._mcp_tools as tools
 
         original = tools._ORIG_TOOL_DECORATOR
@@ -932,12 +933,13 @@ class TestRecordingToolDecorator:
 
             assert "detail" in sig.parameters
             assert "json" in sig.parameters
-            assert "extras" in sig.parameters
+            assert "output_fields" in sig.parameters
+            assert "extras" not in sig.parameters
             assert "verbose" not in sig.parameters
             assert "precision" not in sig.parameters
             raw = wrapped(__cli_raw=True)
             compact = wrapped(json=True)
-            full = wrapped(json=True, extras="all")
+            full = wrapped(json=True, detail="full")
 
             assert raw["value"] == 1
             assert raw["meta"]["domain"]["symbol"] == "EURUSD"
@@ -951,7 +953,7 @@ class TestRecordingToolDecorator:
         finally:
             tools._ORIG_TOOL_DECORATOR = original
 
-    def test_wrapped_function_forwards_extras_to_tools_that_declare_them(self):
+    def test_wrapped_function_preserves_domain_fields_parameter(self):
         import mtdata.core._mcp_tools as tools
 
         original = tools._ORIG_TOOL_DECORATOR
@@ -959,15 +961,15 @@ class TestRecordingToolDecorator:
             tools._ORIG_TOOL_DECORATOR = lambda *a, **k: (lambda fn: fn)
             dec = tools._recording_tool_decorator()
 
-            def sample_tool(extras=None):
-                return {"received_extras": extras}
+            def sample_tool(fields=None):
+                return {"received_fields": fields}
 
             dec(sample_tool)
             wrapped = tools._TOOL_REGISTRY["sample_tool"]
 
-            result = wrapped(json=True, extras="metadata,diagnostics")
+            result = wrapped(json=True, fields=["pe", "eps"])
 
-            assert result["received_extras"] == ("metadata", "diagnostics")
+            assert result["received_fields"] == ["pe", "eps"]
         finally:
             tools._ORIG_TOOL_DECORATOR = original
 
@@ -979,24 +981,23 @@ class TestRecordingToolDecorator:
             tools._ORIG_TOOL_DECORATOR = lambda *a, **k: (lambda fn: fn)
             dec = tools._recording_tool_decorator()
 
-            def market_ticker():
+            def market_ticker(detail: str = "compact"):
                 return {"success": True, "value": 1}
 
             wrapped = dec(market_ticker)
-            result = wrapped(__cli_raw=True, extras="guidance")
+            result = wrapped(__cli_raw=True, detail="full")
 
             assert result["success"] is True
             assert result["related_tools"]
         finally:
             tools._ORIG_TOOL_DECORATOR = original
 
-    def test_wrapped_function_injects_extras_into_supplied_request_model(self):
+    def test_wrapped_function_injects_detail_into_supplied_request_model(self):
         import mtdata.core._mcp_tools as tools
 
         class SampleRequest(BaseModel):
             symbol: str
             detail: str = "compact"
-            extras: tuple[str, ...] | None = None
 
         original = tools._ORIG_TOOL_DECORATOR
         try:
@@ -1006,20 +1007,16 @@ class TestRecordingToolDecorator:
             def request_tool(request: SampleRequest):
                 return {
                     "detail_seen": request.detail,
-                    "extras_seen": request.extras,
                 }
 
             wrapped = dec(request_tool)
             result = wrapped(
                 request=SampleRequest(symbol="EURUSD"),
-                extras="metadata,diagnostics",
+                detail="full",
                 __cli_raw=True,
             )
 
-            assert result == {
-                "detail_seen": "full",
-                "extras_seen": ("metadata", "diagnostics"),
-            }
+            assert result == {"detail_seen": "full"}
         finally:
             tools._ORIG_TOOL_DECORATOR = original
 
@@ -1044,8 +1041,6 @@ class TestRecordingToolDecorator:
 
             toon = wrapped()
             compact_structured = wrapped(json=True)
-            structured = wrapped(json=True, extras="metadata")
-            legacy_structured = wrapped(json=True, extras="detail=full")
             detailed = wrapped(detail="full", json=True)
 
             assert isinstance(toon, str)
@@ -1054,13 +1049,6 @@ class TestRecordingToolDecorator:
             assert compact_structured["detail_seen"] == "compact"
             assert "meta" not in compact_structured
             assert "diagnostics" not in compact_structured
-            assert structured["success"] is True
-            assert structured["detail_seen"] == "full"
-            assert structured["meta"]["domain"]["symbol"] == "EURUSD"
-            assert structured["diagnostics"]["source"] == "mt5"
-            assert isinstance(legacy_structured, dict)
-            assert legacy_structured["error_code"] == "tool_execution_error"
-            assert "Invalid extras value" in legacy_structured["error"]
             assert detailed["detail_seen"] == "full"
             assert detailed["meta"]["domain"]["symbol"] == "EURUSD"
         finally:
@@ -1272,7 +1260,8 @@ class TestMcpToolSchemas:
         for name, schema in schemas.items():
             props = schema.get("properties") or {}
             assert props["json"]["type"] == "boolean", name
-            assert "extras" in props, name
+            assert "output_fields" in props, name
+            assert "extras" not in props, name
             schema_attach._validate_local_def_refs(schema)
 
     def test_wait_event_list_tools_schema_omits_legacy_varargs(self):
@@ -1424,7 +1413,8 @@ class TestMcpToolSchemas:
         assert props["detail"]["type"] == "string"
         assert "compact" in props["detail"]["enum"]
         assert props["json"]["type"] == "boolean"
-        assert "extras" in props
+        assert "output_fields" in props
+        assert "extras" not in props
 
         params_schema = props["params"]
         assert (

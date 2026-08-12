@@ -707,7 +707,7 @@ class TestFinvizProgressiveDisclosure:
             "more_available": 2,
         }
         assert result["summary"]["latest"] == expected_rows[0]
-        assert result["show_all_hint"] == "Set extras='metadata' or limit=5 to view all ratings."
+        assert result["show_all_hint"] == "Set detail='full' or limit=5 to view all ratings."
 
     @patch("mtdata.core.finviz.get_stock_ratings")
     def test_ratings_limit_controls_returned_rows(self, mock_get):
@@ -748,11 +748,11 @@ class TestFinvizProgressiveDisclosure:
         assert result["summary"]["latest"] == row
 
     @patch("mtdata.core.finviz.get_stock_ratings")
-    def test_ratings_metadata_extra_returns_full_history(self, mock_get):
+    def test_ratings_full_detail_returns_full_history(self, mock_get):
         rows = [{"Date": f"2026-01-0{i}", "Rating": "Buy"} for i in range(1, 6)]
         mock_get.return_value = {"success": True, "symbol": "AAPL", "ratings": rows}
 
-        result = _unwrap(finviz_ratings)("AAPL", extras="metadata")
+        result = _unwrap(finviz_ratings)("AAPL", detail="full")
 
         assert result["detail"] == "full"
         assert result["count"] == 5
