@@ -1696,6 +1696,40 @@ def test_forecast_tune_detail_compacts_history_tail():
     assert "history_tail_count" not in full
 
 
+def test_forecast_tuning_resolves_direction_costs_and_sample_requirements():
+    captured = {}
+
+    def fake_genetic(**kwargs):
+        captured.update(kwargs)
+        return {"success": True, "best_score": 0.6, "mode": kwargs["mode"]}
+
+    result = forecast_use_cases.run_forecast_tune_genetic(
+        ForecastTuneGeneticRequest(
+            symbol="EURUSD",
+            methods=["drift"],
+            metric="win_rate",
+            slippage_bps=2.0,
+        ),
+        genetic_search_impl=fake_genetic,
+    )
+
+    assert captured["mode"] == "max"
+    assert captured["slippage_bps"] == 2.0
+    assert result["cost_assumptions"]["score_basis"] == "net_of_configured_slippage"
+
+    rejected = forecast_use_cases.run_forecast_tune_genetic(
+        ForecastTuneGeneticRequest(
+            symbol="EURUSD",
+            methods=["drift"],
+            metric="calmar_ratio",
+            steps=5,
+        ),
+        genetic_search_impl=lambda **kwargs: pytest.fail("search must not start"),
+    )
+    assert rejected["error_code"] == "insufficient_tuning_sample"
+    assert rejected["minimum_steps"] == 30
+
+
 def test_forecast_tune_optuna_and_optimize_hints_accept_detail():
     def fake_optuna(**kwargs):
         return {"success": True, "history_count": 1, "history_tail": [{"score": 1.0}]}

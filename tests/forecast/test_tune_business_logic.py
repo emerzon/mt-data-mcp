@@ -12,11 +12,11 @@ from mtdata.forecast import tune
 def test_default_search_space_modes():
     multi = tune.default_search_space(methods=["theta", "fourier_ols"])
     assert "_shared" in multi
-    assert "theta" in multi and "seasonality" in multi["theta"]
+    assert multi["theta"] == {}
     assert "fourier_ols" in multi and "K" in multi["fourier_ols"]
 
     single_known = tune.default_search_space(method="theta")
-    assert "seasonality" in single_known
+    assert single_known == {}
 
     single_unknown = tune.default_search_space(method="unknown")
     assert single_unknown == {"seasonality": {"type": "int", "min": 8, "max": 48}}
@@ -82,7 +82,10 @@ def test_crossover_for_method_blends_and_fills_none():
 
 
 def test_eval_candidate_handles_method_selection_and_failures(monkeypatch):
+    calls = []
+
     def fake_backtest(**kwargs):
+        calls.append(kwargs)
         m = kwargs["methods"][0]
         if m == "bad":
             return {"results": {m: {"success": False}}}
@@ -107,6 +110,8 @@ def test_eval_candidate_handles_method_selection_and_failures(monkeypatch):
     )
     assert score == 1.2
     assert result["_sel_method"] == "theta"
+    assert calls[-1]["detail"] == "full"
+    assert calls[-1]["slippage_bps"] == 0.0
 
     score, _ = tune._eval_candidate(
         symbol="EURUSD",
@@ -175,6 +180,50 @@ def test_eval_candidate_handles_method_selection_and_failures(monkeypatch):
     )
     assert score == float("inf")
     assert result["error"] == "No method provided"
+
+
+def test_auto_mode_uses_metric_direction_for_both_tuners(monkeypatch):
+    observed_modes = []
+
+    def fake_eval_candidate(**kwargs):
+        observed_modes.append(kwargs["mode"])
+        value = float(kwargs["candidate_params"].get("x", 0.5))
+        score = value if kwargs["mode"] == "min" else -value
+        method = kwargs["candidate_params"].get("method") or kwargs["method"]
+        return score, {
+            "_sel_method": method,
+            "results": {method: {"success": True, "avg_directional_accuracy": value}},
+        }
+
+    monkeypatch.setattr(tune, "_eval_candidate", fake_eval_candidate)
+    space = {"x": {"type": "float", "min": 0.1, "max": 0.9}}
+
+    genetic = tune.genetic_search_forecast_params(
+        symbol="EURUSD",
+        timeframe="H1",
+        method="drift",
+        search_space=space,
+        metric="avg_directional_accuracy",
+        population=3,
+        generations=1,
+        seed=2,
+    )
+    assert genetic["mode"] == "max"
+
+    pytest.importorskip("optuna")
+    optuna = tune.optuna_search_forecast_params(
+        symbol="EURUSD",
+        timeframe="H1",
+        method="drift",
+        search_space=space,
+        metric="avg_directional_accuracy",
+        n_trials=2,
+        sampler="random",
+        pruner="none",
+        seed=2,
+    )
+    assert optuna["mode"] == "max"
+    assert set(observed_modes) == {"max"}
 
 
 def test_genetic_search_method_scoped_and_flat_spaces(monkeypatch):

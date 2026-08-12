@@ -16,6 +16,7 @@ from ..shared.schema import (
 from ..utils.barriers import (
     normalize_trade_direction_alias,
 )
+from .tuning_contract import TuningMetricLiteral, TuningModeLiteral
 
 MAX_FORECAST_HORIZON = 500
 MAX_BACKTEST_STEPS = 200
@@ -298,7 +299,7 @@ class ForecastTuneGeneticRequest(_PublicForecastRequest):
     symbol: str
     timeframe: TimeframeLiteral = "H1"
     methods: List[str] = Field(
-        default_factory=lambda: ["theta"],
+        default_factory=lambda: ["fourier_ols"],
         min_length=1,
         json_schema_extra={"uniqueItems": True},
     )
@@ -306,14 +307,22 @@ class ForecastTuneGeneticRequest(_PublicForecastRequest):
     steps: int = Field(5, ge=1, le=MAX_BACKTEST_STEPS, description="Number of rolling-origin backtest anchors per trial.")
     spacing: int = Field(20, ge=1, le=MAX_BACKTEST_SPACING, description="Bars between consecutive tuning backtest anchors.")
     search_space: Optional[Dict[str, Any]] = None
-    metric: Literal["avg_rmse", "avg_mae", "avg_directional_accuracy", "sharpe_ratio", "win_rate"] = "avg_rmse"
-    mode: Literal["min", "max"] = "min"
+    metric: TuningMetricLiteral = "avg_rmse"
+    mode: TuningModeLiteral = Field(
+        "auto",
+        description="Objective direction. auto uses the standard direction for the selected metric.",
+    )
     population: int = Field(12, ge=1)
     generations: int = Field(10, ge=1)
     crossover_rate: float = Field(0.6, ge=0.0, le=1.0)
     mutation_rate: float = Field(0.3, ge=0.0, le=1.0)
     seed: int = 42
-    trade_threshold: float = 0.0
+    slippage_bps: float = Field(
+        0.0,
+        ge=0.0,
+        description="Execution slippage in basis points per side, deducted from every simulated trade.",
+    )
+    trade_threshold: float = Field(0.0, ge=0.0)
     denoise: Optional[DenoiseSpec] = None
     features: Optional[Dict[str, Any]] = None
     dimred: Optional[DimensionalityReductionSpec] = None
@@ -336,7 +345,7 @@ class ForecastTuneOptunaRequest(_PublicForecastRequest):
     symbol: str
     timeframe: TimeframeLiteral = "H1"
     methods: List[str] = Field(
-        default_factory=lambda: ["theta"],
+        default_factory=lambda: ["fourier_ols"],
         min_length=1,
         json_schema_extra={"uniqueItems": True},
     )
@@ -344,8 +353,11 @@ class ForecastTuneOptunaRequest(_PublicForecastRequest):
     steps: int = Field(5, ge=1, le=MAX_BACKTEST_STEPS, description="Number of rolling-origin backtest anchors per trial.")
     spacing: int = Field(20, ge=1, le=MAX_BACKTEST_SPACING, description="Bars between consecutive tuning backtest anchors.")
     search_space: Optional[Dict[str, Any]] = None
-    metric: Literal["avg_rmse", "avg_mae", "avg_directional_accuracy", "sharpe_ratio", "win_rate"] = "avg_rmse"
-    mode: Literal["min", "max"] = "min"
+    metric: TuningMetricLiteral = "avg_rmse"
+    mode: TuningModeLiteral = Field(
+        "auto",
+        description="Objective direction. auto uses the standard direction for the selected metric.",
+    )
     n_trials: int = Field(40, ge=1)
     timeout: Optional[float] = Field(None, gt=0.0)
     n_jobs: int = Field(1, ge=1)
@@ -354,7 +366,12 @@ class ForecastTuneOptunaRequest(_PublicForecastRequest):
     study_name: Optional[str] = None
     storage: Optional[str] = None
     seed: int = 42
-    trade_threshold: float = 0.0
+    slippage_bps: float = Field(
+        0.0,
+        ge=0.0,
+        description="Execution slippage in basis points per side, deducted from every simulated trade.",
+    )
+    trade_threshold: float = Field(0.0, ge=0.0)
     denoise: Optional[DenoiseSpec] = None
     features: Optional[Dict[str, Any]] = None
     dimred: Optional[DimensionalityReductionSpec] = None
@@ -452,7 +469,7 @@ class ForecastBarrierProbRequest(_PublicForecastRequest):
 class ForecastOptimizeHintsRequest(_PublicForecastRequest):
     symbol: str
     timeframes: List[TimeframeLiteral] = Field(
-        default_factory=lambda: ["H1"],
+        default_factory=lambda: ["H1", "H4", "D1", "W1"],
         min_length=1,
         json_schema_extra={"uniqueItems": True},
     )
@@ -472,6 +489,12 @@ class ForecastOptimizeHintsRequest(_PublicForecastRequest):
         ),
     )
     fitness_weights: Optional[Dict[str, float]] = None
+    slippage_bps: float = Field(
+        0.0,
+        ge=0.0,
+        description="Execution slippage in basis points per side, deducted from every simulated trade.",
+    )
+    trade_threshold: float = Field(0.0, ge=0.0)
     seed: int = 42
     max_search_time_seconds: Optional[float] = None
     denoise: Optional[DenoiseSpec] = None

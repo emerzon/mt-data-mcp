@@ -280,8 +280,8 @@ Three tools are available for automated tuning and configuration search:
 Evolutionary search through parameter space. Good for discrete/mixed search spaces.
 
 ```bash
-mtdata-cli forecast_tune_genetic EURUSD --methods theta --horizon 12 \
-  --metric avg_rmse --mode min --population 20 --generations 10
+mtdata-cli forecast_tune_genetic EURUSD --methods fourier_ols --horizon 12 \
+  --metric avg_rmse --mode auto --population 20 --generations 10
 ```
 
 See [BACKTESTING.md](forecast/BACKTESTING.md) for full parameters and examples.
@@ -291,13 +291,13 @@ See [BACKTESTING.md](forecast/BACKTESTING.md) for full parameters and examples.
 Bayesian optimization with TPE, CMA-ES, or random sampling. Supports early stopping (pruning), parallel trials, and persistent study storage.
 
 ```bash
-mtdata-cli forecast_tune_optuna EURUSD --methods theta --horizon 12 \
-  --metric avg_rmse --mode min --n-trials 40 --sampler tpe --json
+mtdata-cli forecast_tune_optuna EURUSD --methods fourier_ols --horizon 12 \
+  --metric avg_rmse --mode auto --n-trials 40 --sampler tpe --json
 ```
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| `--method` | `theta` | Forecast method to optimize |
+| `--methods` | `fourier_ols` | Forecast methods to optimize |
 | `--n-trials` | 40 | Number of optimization trials |
 | `--sampler` | `tpe` | Sampling algorithm: `tpe`, `random`, `cmaes` |
 | `--pruner` | `median` | Early stopping: `median`, `hyperband`, `percentile`, `none` |
@@ -420,8 +420,8 @@ authoritative way to distinguish those causes.
 | Monte Carlo | `mtdata-cli forecast_generate EURUSD --method mc_gbm --params "n_sims=2000"` |
 | Backtest | `mtdata-cli forecast_backtest_run EURUSD --methods "theta analog" --steps 20` |
 | Conformal intervals | `mtdata-cli forecast_conformal_intervals EURUSD --method theta --horizon 12` |
-| Tune (genetic) | `mtdata-cli forecast_tune_genetic EURUSD --methods theta --metric avg_rmse` |
-| Tune (Optuna) | `mtdata-cli forecast_tune_optuna EURUSD --methods theta --metric avg_rmse --n-trials 40` |
+| Tune (genetic) | `mtdata-cli forecast_tune_genetic EURUSD --methods fourier_ols --metric avg_rmse` |
+| Tune (Optuna) | `mtdata-cli forecast_tune_optuna EURUSD --methods fourier_ols --metric avg_rmse --n-trials 40` |
 
 ---
 

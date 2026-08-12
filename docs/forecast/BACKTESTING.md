@@ -86,13 +86,13 @@ mtdata-cli forecast_backtest_run <SYMBOL> [OPTIONS]
 | Parameter | Description |
 |-----------|-------------|
 | `--params` | Parameters applied to all methods (JSON or `k=v`) |
-| `--params-per-method` | Per-method parameters: `{"theta": {"seasonality": 24}}` |
+| `--params-per-method` | Per-method parameters: `{"fourier_ols": {"m": 24, "K": 3}}` |
 
 **Example with per-method params:**
 ```bash
 mtdata-cli forecast_backtest_run EURUSD --horizon 12 \
-  --methods "theta arima" \
-  --params-per-method '{"theta": {"alpha": 0.3}, "arima": {"p": 2, "d": 1, "q": 2}}'
+  --methods "fourier_ols arima" \
+  --params-per-method '{"fourier_ols": {"m": 24, "K": 3}, "arima": {"p": 2, "d": 1, "q": 2}}'
 ```
 
 ### Quantity
@@ -314,9 +314,9 @@ mtdata-cli forecast_backtest_run EURUSD --horizon 24 \
 Automatically find optimal parameters for a forecasting method:
 
 ```bash
-mtdata-cli forecast_tune_genetic EURUSD --timeframe H1 --methods theta \
+mtdata-cli forecast_tune_genetic EURUSD --timeframe H1 --methods fourier_ols \
   --horizon 12 --steps 20 --spacing 12 \
-  --metric avg_rmse --mode min \
+  --metric avg_rmse --mode auto \
   --population 20 --generations 10
 ```
 
@@ -326,7 +326,9 @@ mtdata-cli forecast_tune_genetic EURUSD --timeframe H1 --methods theta \
 |-----------|---------|-------------|
 | `--method` | (required) | Method to optimize |
 | `--metric` | `avg_rmse` | Metric to optimize |
-| `--mode` | `min` | `min` to minimize, `max` to maximize |
+| `--mode` | `auto` | Uses the metric's standard direction; `min` or `max` explicitly overrides it |
+| `--slippage-bps` | `0` | Execution slippage per side; always disclosed in tuning output |
+| `--trade-threshold` | `0` | Minimum expected return required to enter a simulated trade |
 | `--population` | 12 | Population size per generation |
 | `--generations` | 10 | Number of generations |
 | `--crossover-rate` | 0.6 | Probability of crossover |
@@ -349,8 +351,8 @@ mtdata-cli forecast_tune_genetic EURUSD --timeframe H1 --methods theta \
 Define which parameters to search:
 
 ```bash
-mtdata-cli forecast_tune_genetic EURUSD --methods theta \
-  --search-space '{"seasonality": {"type": "int", "min": 12, "max": 48}}'
+mtdata-cli forecast_tune_genetic EURUSD --methods fourier_ols \
+  --search-space '{"m": {"type": "int", "min": 12, "max": 48}}'
 ```
 
 **Search space format:**
@@ -372,7 +374,7 @@ Each method has sensible defaults. Examples:
 
 | Method | Parameters Searched |
 |--------|-------------------|
-| `theta` | seasonality (8-72) |
+| `theta` | none (the canonical native Theta model fits its own smoothing parameters) |
 | `arima` | p (0-3), d (0-2), q (0-3) |
 | `fourier_ols` | m (8-96), K (1-6), trend (true/false) |
 | `sf_autoarima` | seasonality, stepwise, d, D |
@@ -397,18 +399,18 @@ mtdata-cli forecast_backtest_run EURUSD --timeframe M5 --horizon 6 \
 - Low `max_drawdown`
 - `sharpe_ratio` > 1.0
 
-### Example 2: Optimize Theta for Swing Trading
+### Example 2: Optimize Fourier Seasonality for Swing Trading
 
 ```bash
-# Step 1: Find optimal seasonality
-mtdata-cli forecast_tune_genetic EURUSD --timeframe H4 --methods theta \
+# Step 1: Find an optimal Fourier period
+mtdata-cli forecast_tune_genetic EURUSD --timeframe H4 --methods fourier_ols \
   --horizon 48 --steps 30 --spacing 48 \
-  --metric sharpe_ratio --mode max \
+  --metric sharpe_ratio --mode auto --slippage-bps 2 \
   --population 20 --generations 15
 
 # Step 2: Backtest with optimal params
 mtdata-cli forecast_backtest_run EURUSD --timeframe H4 --horizon 48 \
-  --methods theta --params "seasonality=48" \
+  --methods fourier_ols --params "m=48 K=3" \
   --steps 50 --spacing 48 --slippage-bps 2
 ```
 
@@ -444,12 +446,12 @@ Simulate real-world model updates:
 
 ```bash
 # Period 1: Optimize on first 6 months
-mtdata-cli forecast_tune_genetic EURUSD --methods theta --horizon 12 \
+mtdata-cli forecast_tune_genetic EURUSD --methods fourier_ols --horizon 12 \
   --steps 50 --spacing 24 --metric avg_rmse
 
 # Record best params, then test on next 3 months with those params
-mtdata-cli forecast_backtest_run EURUSD --horizon 12 --methods theta \
-  --params "seasonality=24" --steps 30 --spacing 24
+mtdata-cli forecast_backtest_run EURUSD --horizon 12 --methods fourier_ols \
+  --params "m=24 K=3" --steps 30 --spacing 24
 
 # Repeat: re-optimize, test out-of-sample
 ```
@@ -527,7 +529,7 @@ mtdata-cli forecast_backtest_run GBPUSD --methods theta --steps 30
 | With trading costs | `--slippage-bps 2 --trade-threshold 0.0005` |
 | Volatility backtest | `--quantity volatility --methods "ewma garch"` |
 | With denoising | `--denoise ema --denoise-params "alpha=0.2"` |
-| Optimize params | `mtdata-cli forecast_tune_genetic EURUSD --methods theta --metric avg_rmse` |
+| Optimize params | `mtdata-cli forecast_tune_genetic EURUSD --methods fourier_ols --metric avg_rmse` |
 | JSON output | `--json` |
 
 ---

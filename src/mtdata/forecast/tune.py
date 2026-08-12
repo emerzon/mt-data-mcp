@@ -19,6 +19,7 @@ from .optimize import (
 from .optimize import (
     extract_method_params_from_genotype as _extract_params,
 )
+from .tuning_contract import resolve_tuning_mode
 
 _NOISY_FORECAST_TUNE_LOGGERS = (
     "timesfm",
@@ -103,10 +104,8 @@ def _forecast_accuracy_fitness(metrics: Dict[str, Any]) -> float:
 _DEFAULT_SPACES_METHOD_SCOPED: Dict[str, Dict[str, Any]] = {
     "_shared": {},
     # Classical fast methods
-    "theta": {
-        # Seasonality period in bars; intraday typical daily cycles ~ 24, weekly ~ 5 for D1
-        "seasonality": {"type": "int", "min": 8, "max": 72},
-    },
+    # Native Theta fits its own smoothing parameters and accepts no method params.
+    "theta": {},
     "fourier_ols": {
         # Fourier period (bars) and number of harmonics; allow optional trend toggle
         "m": {"type": "int", "min": 8, "max": 96},
@@ -346,6 +345,7 @@ def _eval_candidate(
     features: Optional[Dict[str, Any]] = None,
     dimred_method: Optional[str] = None,
     dimred_params: Optional[Dict[str, Any]] = None,
+    slippage_bps: float = 0.0,
     trade_threshold: float = 0.0,
 ) -> Tuple[float, Dict[str, Any]]:
     """Run a backtest for a single candidate and return (score, result_dict).
@@ -369,7 +369,9 @@ def _eval_candidate(
         features=features,
         dimred_method=dimred_method,
         dimred_params=dimred_params,
+        slippage_bps=float(slippage_bps),
         trade_threshold=float(trade_threshold),
+        detail="full",
     )
     # Pull method aggregate
     r = res.get('results', {}).get(sel_method) if isinstance(res, dict) else None
@@ -558,7 +560,7 @@ def optuna_search_forecast_params(  # noqa: C901
     spacing: int = 20,
     search_space: Optional[Dict[str, Any]] = None,
     metric: Metric = 'avg_rmse',
-    mode: str = 'min',
+    mode: str = 'auto',
     n_trials: int = 40,
     timeout: Optional[float] = None,
     n_jobs: int = 1,
@@ -571,14 +573,13 @@ def optuna_search_forecast_params(  # noqa: C901
     features: Optional[Dict[str, Any]] = None,
     dimred_method: Optional[str] = None,
     dimred_params: Optional[Dict[str, Any]] = None,
+    slippage_bps: float = 0.0,
     trade_threshold: float = 0.0,
 ) -> Dict[str, Any]:
     """Optuna search for best params for a forecast method under backtest."""
     import optuna
 
-    mode_val = str(mode or 'min').strip().lower()
-    if mode_val not in {'min', 'max'}:
-        mode_val = 'min'
+    mode_val = resolve_tuning_mode(str(metric), str(mode or 'auto'))
 
     raw = dict(search_space or {})
     method_scoped = not _is_flat_search_space(raw)
@@ -699,6 +700,7 @@ def optuna_search_forecast_params(  # noqa: C901
             features=features,
             dimred_method=dimred_method,
             dimred_params=dimred_params,
+            slippage_bps=float(slippage_bps),
             trade_threshold=float(trade_threshold),
         )
 
@@ -833,7 +835,7 @@ def genetic_search_forecast_params(  # noqa: C901
     spacing: int = 20,
     search_space: Optional[Dict[str, Any]] = None,
     metric: Metric = 'avg_rmse',
-    mode: str = 'min',
+    mode: str = 'auto',
     population: int = 12,
     generations: int = 10,
     crossover_rate: float = 0.6,
@@ -843,14 +845,16 @@ def genetic_search_forecast_params(  # noqa: C901
     features: Optional[Dict[str, Any]] = None,
     dimred_method: Optional[str] = None,
     dimred_params: Optional[Dict[str, Any]] = None,
+    slippage_bps: float = 0.0,
     trade_threshold: float = 0.0,
 ) -> Dict[str, Any]:
     """Genetic search for best params for a forecast method under backtest.
 
     - search_space: {param: {type: 'int'|'float'|'categorical', min, max, choices?, log?}}
     - metric: one of backtest aggregates (e.g., 'avg_rmse', 'avg_mae', 'avg_directional_accuracy')
-    - mode: 'min' or 'max' (direction)
+    - mode: 'auto' (metric-aware), 'min', or 'max' (direction)
     """
+    mode = resolve_tuning_mode(str(metric), str(mode or 'auto'))
     rng = random.Random(int(seed))
     raw = dict(search_space or {})
 
@@ -920,6 +924,7 @@ def genetic_search_forecast_params(  # noqa: C901
                 features=features,
                 dimred_method=dimred_method,
                 dimred_params=dimred_params,
+                slippage_bps=float(slippage_bps),
                 trade_threshold=float(trade_threshold),
             )
             scored.append((score, cand))
@@ -1050,6 +1055,8 @@ def genetic_search_optimize_hints(  # noqa: C901
     features: Optional[Dict[str, Any]] = None,
     dimred_method: Optional[str] = None,
     dimred_params: Optional[Dict[str, Any]] = None,
+    slippage_bps: float = 0.0,
+    trade_threshold: float = 0.0,
     top_n: int = 5,
     include_feature_genes: bool = False,
 ) -> Dict[str, Any]:
@@ -1111,7 +1118,9 @@ def genetic_search_optimize_hints(  # noqa: C901
             search_space['_method_spaces'] = _default_spaces(methods=methods)
 
     # Extract genetic gene specs
-    tf_choices = search_space.get('timeframe', {}).get('choices', timeframes or ['H1', 'H4', 'D1'])
+    tf_choices = search_space.get('timeframe', {}).get(
+        'choices', timeframes or ['H1', 'H4', 'D1', 'W1']
+    )
     method_choices = search_space.get('method', {}).get('choices', methods or ['theta'])
     method_spaces = search_space.get('_method_spaces', {})
 
@@ -1179,7 +1188,8 @@ def genetic_search_optimize_hints(  # noqa: C901
             features=features,
             dimred_method=dimred_method,
             dimred_params=dimred_params,
-            trade_threshold=0.0,
+            slippage_bps=float(slippage_bps),
+            trade_threshold=float(trade_threshold),
         )
 
         if not math.isfinite(float(score)):

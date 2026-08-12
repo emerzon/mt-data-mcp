@@ -101,6 +101,8 @@ _FIELD_OWNERSHIP: Dict[RequestSurface, Dict[str, ContractOwner]] = {
         "mutation_rate": "evaluation",
         "fitness_metric": "evaluation",
         "fitness_weights": "evaluation",
+        "slippage_bps": "evaluation",
+        "trade_threshold": "strategy",
         "seed": "evaluation",
         "max_search_time_seconds": "evaluation",
         "denoise": "data_preparation",

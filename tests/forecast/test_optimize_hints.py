@@ -146,17 +146,17 @@ class TestExtractMethodParamsFromGenotype:
 
     def test_extract_params_from_genotype(self):
         search_space = build_comprehensive_search_space(
-            methods=['theta', 'naive'],
+            methods=['fourier_ols', 'naive'],
         )
         genotype = {
             'timeframe': 'H4',
-            'method': 'theta',
-            'seasonality': 24,
+            'method': 'fourier_ols',
+            'm': 24,
         }
         tf, method, params = extract_method_params_from_genotype(genotype, search_space)
         assert tf == 'H4'
-        assert method == 'theta'
-        assert params.get('seasonality') == 24
+        assert method == 'fourier_ols'
+        assert params.get('m') == 24
 
     def test_handles_missing_keys(self):
         search_space = build_comprehensive_search_space()
@@ -186,6 +186,8 @@ class TestForecastOptimizeHintsRequest:
         assert req.population == 8
         assert req.generations == 5
         assert req.top_n == 5
+        assert req.timeframes == ["H1", "H4", "D1", "W1"]
+        assert req.slippage_bps == 0.0
 
 
 def test_genetic_search_optimize_hints_uses_nested_backtest_metrics():

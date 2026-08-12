@@ -45,6 +45,12 @@ from .requests import (
     ForecastVolatilityEstimateRequest,
     StrategyBacktestRequest,
 )
+from .tuning_contract import (
+    ANNUALIZED_TUNING_METRICS,
+    MIN_ANNUALIZED_TUNING_TRADES,
+    TUNING_METRIC_DIRECTIONS,
+    resolve_tuning_mode,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -53,22 +59,7 @@ _BACKTEST_METRICS_REASON_NOTES = {
         "No active long/short trades; win_rate and drawdown need at least one trade."
     ),
 }
-_TUNING_METRICS = frozenset(
-    {
-        "avg_rmse",
-        "avg_mae",
-        "avg_directional_accuracy",
-        "win_rate",
-        "max_drawdown",
-        "sharpe_ratio",
-        "calmar_ratio",
-        "annual_return",
-        "avg_return_per_trade",
-        "avg_win_loss_ratio",
-        "kelly_fraction",
-        "half_kelly_fraction",
-    }
-)
+_TUNING_METRICS = frozenset(TUNING_METRIC_DIRECTIONS)
 _VOLATILITY_PROXY_METHODS = {"arima", "sarima", "ets", "theta"}
 _PRETRAINED_FORECAST_METHODS = ("chronos2", "chronos_bolt", "timesfm")
 _DEFAULT_VOLATILITY_PROXY = "squared_return"
@@ -2837,6 +2828,48 @@ def _validate_tuning_metric(metric: Any) -> Optional[Dict[str, Any]]:
     }
 
 
+def _validate_tuning_sample(metric: Any, steps: int) -> Optional[Dict[str, Any]]:
+    metric_key = str(metric or "").strip().lower()
+    if (
+        metric_key not in ANNUALIZED_TUNING_METRICS
+        or int(steps) >= MIN_ANNUALIZED_TUNING_TRADES
+    ):
+        return None
+    return {
+        "success": False,
+        "error": (
+            f"Metric '{metric_key}' requires at least "
+            f"{MIN_ANNUALIZED_TUNING_TRADES} successful trades, but steps={int(steps)} "
+            "cannot produce that sample. Increase --steps before starting the search."
+        ),
+        "error_code": "insufficient_tuning_sample",
+        "metric": metric_key,
+        "steps": int(steps),
+        "minimum_steps": MIN_ANNUALIZED_TUNING_TRADES,
+        "remediation": f"Retry with --steps {MIN_ANNUALIZED_TUNING_TRADES} or greater.",
+    }
+
+
+def _attach_tuning_assumptions(
+    result: Dict[str, Any],
+    *,
+    slippage_bps: float,
+    trade_threshold: float,
+) -> Dict[str, Any]:
+    out = dict(result)
+    out["cost_assumptions"] = {
+        "score_basis": (
+            "net_of_configured_slippage"
+            if float(slippage_bps) > 0.0
+            else "gross_before_execution_costs"
+        ),
+        "slippage_bps_per_side": float(slippage_bps),
+        "trade_threshold": float(trade_threshold),
+        "spread_and_commission": "not_modeled",
+    }
+    return out
+
+
 def _validate_tuning_param_spec(path: str, spec: Any) -> Optional[str]:
     if not isinstance(spec, dict):
         return f"{path} must be an object with type/min/max or choices."
@@ -2981,6 +3014,20 @@ def run_forecast_tune_genetic(
             methods=len(request.methods or []),
         )
         return result
+    invalid_sample = _validate_tuning_sample(request.metric, request.steps)
+    if invalid_sample is not None:
+        result = _apply_tuning_detail(invalid_sample, request.detail)
+        log_operation_finish(
+            logger,
+            operation="forecast_tune_genetic",
+            started_at=started_at,
+            success=False,
+            symbol=request.symbol,
+            timeframe=request.timeframe,
+            method=request.method,
+            methods=len(request.methods or []),
+        )
+        return result
     invalid_search_space = _validate_tuning_search_space(request.search_space)
     if invalid_search_space is not None:
         result = _apply_tuning_detail(invalid_search_space, request.detail)
@@ -3007,12 +3054,13 @@ def run_forecast_tune_genetic(
             spacing=int(request.spacing),
             search_space=search_space,
             metric=str(request.metric),
-            mode=str(request.mode),
+            mode=resolve_tuning_mode(str(request.metric), str(request.mode)),
             population=int(request.population),
             generations=int(request.generations),
             crossover_rate=float(request.crossover_rate),
             mutation_rate=float(request.mutation_rate),
             seed=int(request.seed),
+            slippage_bps=float(request.slippage_bps),
             trade_threshold=float(request.trade_threshold),
             denoise=request.denoise,
             features=request.features,
@@ -3030,6 +3078,11 @@ def run_forecast_tune_genetic(
             method=request.method,
         )
         raise
+    result = _attach_tuning_assumptions(
+        result,
+        slippage_bps=request.slippage_bps,
+        trade_threshold=request.trade_threshold,
+    )
     result = _apply_tuning_detail(result, request.detail)
     log_operation_finish(
         logger,
@@ -3086,6 +3139,20 @@ def run_forecast_tune_optuna(
             methods=len(request.methods or []),
         )
         return result
+    invalid_sample = _validate_tuning_sample(request.metric, request.steps)
+    if invalid_sample is not None:
+        result = _apply_tuning_detail(invalid_sample, request.detail)
+        log_operation_finish(
+            logger,
+            operation="forecast_tune_optuna",
+            started_at=started_at,
+            success=False,
+            symbol=request.symbol,
+            timeframe=request.timeframe,
+            method=request.method,
+            methods=len(request.methods or []),
+        )
+        return result
     invalid_search_space = _validate_tuning_search_space(request.search_space)
     if invalid_search_space is not None:
         result = _apply_tuning_detail(invalid_search_space, request.detail)
@@ -3112,7 +3179,7 @@ def run_forecast_tune_optuna(
             spacing=int(request.spacing),
             search_space=search_space,
             metric=str(request.metric),
-            mode=str(request.mode),
+            mode=resolve_tuning_mode(str(request.metric), str(request.mode)),
             n_trials=int(request.n_trials),
             timeout=float(request.timeout) if request.timeout is not None else None,
             n_jobs=int(request.n_jobs),
@@ -3121,6 +3188,7 @@ def run_forecast_tune_optuna(
             study_name=str(request.study_name) if request.study_name is not None else None,
             storage=str(request.storage) if request.storage is not None else None,
             seed=int(request.seed),
+            slippage_bps=float(request.slippage_bps),
             trade_threshold=float(request.trade_threshold),
             denoise=request.denoise,
             features=request.features,
@@ -3138,6 +3206,11 @@ def run_forecast_tune_optuna(
             method=request.method,
         )
         raise
+    result = _attach_tuning_assumptions(
+        result,
+        slippage_bps=request.slippage_bps,
+        trade_threshold=request.trade_threshold,
+    )
     result = _apply_tuning_detail(result, request.detail)
     log_operation_finish(
         logger,
@@ -3590,7 +3663,11 @@ def run_forecast_optimize_hints(
     if not timeframes_to_search and request.timeframe:
         timeframes_to_search = [request.timeframe]
     if not timeframes_to_search:
-        timeframes_to_search = ['H1', 'H4', 'D1']
+        timeframes_to_search = ['H1', 'H4', 'D1', 'W1']
+
+    invalid_sample = _validate_tuning_sample(request.fitness_metric, request.steps)
+    if invalid_sample is not None:
+        return _apply_tuning_detail(invalid_sample, request.detail)
 
     try:
         result = optimize_hints_impl(
@@ -3610,6 +3687,8 @@ def run_forecast_optimize_hints(
             max_search_time_seconds=float(request.max_search_time_seconds)
             if request.max_search_time_seconds is not None
             else None,
+            slippage_bps=float(request.slippage_bps),
+            trade_threshold=float(request.trade_threshold),
             denoise=request.denoise,
             features=request.features,
             dimred_method=request.dimred_method,
@@ -3627,6 +3706,11 @@ def run_forecast_optimize_hints(
             timeframe=request.timeframe,
         )
         raise
+    result = _attach_tuning_assumptions(
+        result,
+        slippage_bps=request.slippage_bps,
+        trade_threshold=request.trade_threshold,
+    )
     result = _apply_tuning_detail(result, request.detail)
     log_operation_finish(
         logger,

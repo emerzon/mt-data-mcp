@@ -1061,7 +1061,8 @@ def forecast_tune_genetic(request: ForecastTuneGeneticRequest) -> Dict[str, Any]
 
     - search_space: dict or JSON like {param: {type, min, max, choices?, log?}}
     - metric: e.g., 'avg_rmse', 'avg_mae', 'avg_directional_accuracy'
-    - mode: 'min' or 'max'
+    - mode: 'auto' (metric-aware), 'min', or 'max'
+    - slippage_bps: execution slippage per side used by every candidate backtest
     """
     def _execute() -> Dict[str, Any]:
         return run_forecast_tune_genetic(
@@ -1124,8 +1125,8 @@ def forecast_optimize_hints(request: ForecastOptimizeHintsRequest) -> Dict[str, 
     
     methods : list[str], optional
         Forecast methods to search over.
-        If not provided, defaults to fast + pretrained methods
-        (theta, ARIMA, chronos, timesfm, etc.).
+        If not provided, defaults to fast local classical methods. Heavyweight
+        and pretrained methods are opt-in.
     
     horizon : int, optional (default=12)
         Forecast horizon in bars.
