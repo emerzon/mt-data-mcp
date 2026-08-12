@@ -1311,6 +1311,28 @@ def _observed_spread_bps(
 def validate_strategies(  # noqa: C901
     request: StrategyValidateRequest, gateway: Any
 ) -> Dict[str, Any]:
+    try:
+        symbol_info = gateway.symbol_info(request.symbol)
+    except Exception as exc:
+        return {
+            "success": False,
+            "error": f"Could not validate symbol '{request.symbol}': {exc}",
+            "error_code": "symbol_lookup_failed",
+            "symbol": request.symbol,
+            "remediation": "Check the MT5 connection and retry the symbol lookup.",
+            "related_tools": ["symbols_list"],
+        }
+    if symbol_info is None:
+        return {
+            "success": False,
+            "error": f"Symbol '{request.symbol}' was not found by MT5.",
+            "error_code": "symbol_not_found",
+            "symbol": request.symbol,
+            "remediation": (
+                "Use symbols_list to find the broker's exact symbol name and suffix."
+            ),
+            "related_tools": ["symbols_list"],
+        }
     df = _rates(
         gateway,
         request.symbol,

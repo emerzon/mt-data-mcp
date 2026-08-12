@@ -858,6 +858,29 @@ def test_strategy_validation_fails_when_cost_spread_is_unavailable() -> None:
     assert result["cost_model"]["spread_bps"] is None
 
 
+def test_strategy_validation_rejects_unknown_symbol_before_history_fetch() -> None:
+    gateway = FakeGateway()
+    gateway.symbol_info = lambda _symbol: None
+    gateway.copy_rates_from_pos = MagicMock()
+    request = StrategyValidateRequest(
+        symbol="NO_SUCH_SYMBOL",
+        candidates=[
+            {
+                "id": "cross",
+                "type": "builtin_strategy",
+                "strategy": "sma_cross",
+            }
+        ],
+    )
+
+    result = validate_strategies(request, gateway)
+
+    assert result["error_code"] == "symbol_not_found"
+    assert result["symbol"] == "NO_SUCH_SYMBOL"
+    assert result["related_tools"] == ["symbols_list"]
+    gateway.copy_rates_from_pos.assert_not_called()
+
+
 def test_forecast_strategy_folds_cover_computed_signal_window(monkeypatch) -> None:
     gateway = FakeGateway()
 
