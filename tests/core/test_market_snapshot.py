@@ -34,6 +34,22 @@ def test_market_snapshot_rejects_invalid_forecast_horizon_before_preflight():
     preflight.assert_not_called()
 
 
+def test_market_snapshot_rejects_horizon_above_forecast_max_before_preflight():
+    with (
+        patch.object(snapshot_mod, "_preflight_snapshot_symbol") as preflight,
+        patch.object(snapshot_mod, "_call_section") as call_section,
+    ):
+        result = snapshot_mod.market_snapshot.__wrapped__(
+            symbol="EURUSD", sections="forecast", horizon=501
+        )
+
+    assert result["success"] is False
+    assert result["error_code"] == "market_snapshot_invalid_horizon"
+    assert "between 1 and 500" in result["error"]
+    preflight.assert_not_called()
+    call_section.assert_not_called()
+
+
 def test_market_snapshot_quote_compaction_preserves_epoch_as_secondary_field():
     quote = snapshot_mod._compact_quote(
         {

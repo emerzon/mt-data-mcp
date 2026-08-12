@@ -6,6 +6,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
+from ..forecast.requests import MAX_FORECAST_HORIZON
 from ..shared.schema import DetailLiteral, TimeframeLiteral
 from ..utils.coercion import coerce_finite_float as _coerce_float
 from ..utils.market_metadata import build_tick_freshness_context
@@ -783,9 +784,10 @@ def market_snapshot(
     def _run() -> Dict[str, Any]:
         selected = _parse_snapshot_sections(sections)
         detail_mode = str(detail or "compact").strip().lower()
-        if "forecast" in selected and int(horizon) < 1:
+        if "forecast" in selected and not 1 <= int(horizon) <= MAX_FORECAST_HORIZON:
             return build_error_payload(
-                "horizon must be at least 1 when the forecast section is requested.",
+                "horizon must be between 1 and "
+                f"{MAX_FORECAST_HORIZON} when the forecast section is requested.",
                 code="market_snapshot_invalid_horizon",
                 operation="market_snapshot",
                 details={"horizon": horizon, "sections": list(selected)},

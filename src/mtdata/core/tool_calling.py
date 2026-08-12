@@ -5,7 +5,7 @@ import inspect
 import threading
 from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 from ._mcp_tools import _get_pydantic_model_fields
 
@@ -78,6 +78,8 @@ def _coerce_tool_kwargs(target: Any, kwargs: dict[str, Any]) -> dict[str, Any]:
                     coerced[request_param.name] = (
                         model_validate(payload) if callable(model_validate) else request_type.parse_obj(payload)
                     )
+    except ValidationError:
+        raise
     except Exception:
         pass
     try:
