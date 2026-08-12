@@ -3297,6 +3297,21 @@ def test_forecast_barrier_prob_wrapper_emits_single_finish_event(caplog, monkeyp
     assert len(finish_records) == 1
 
 
+def test_forecast_operation_attaches_mt5_source_when_connection_is_required(
+    monkeypatch,
+):
+    monkeypatch.setattr(cf, "_forecast_connection_error", lambda: None)
+
+    result = cf._run_forecast_operation(
+        "forecast_test",
+        func=lambda: {"success": True, "symbol": "EURUSD"},
+        require_connection=True,
+    )
+
+    assert result["source"]["provider"] == "mt5"
+    assert "login" not in result["source"]
+
+
 def test_forecast_barrier_prob_standard_hides_curves_only(monkeypatch):
     raw = _unwrap(cf.forecast_barrier_prob)
     monkeypatch.setattr(cf, "_forecast_connection_error", lambda: None)

@@ -164,7 +164,10 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
         "Comma-separated non-negative ranking weights matching --horizons; normalized "
         "to sum to 1."
     ),
-    ("market_relative_strength", "limit"): "Max ranked symbols to return.",
+    ("market_relative_strength", "limit"): (
+        "Maximum distinct ranked symbols returned across strongest and weakest "
+        "tails; the stronger tail receives the extra row for odd limits."
+    ),
     ("options_chain", "limit"): "Max option contracts to return.",
     ("options_heston_calibrate", "valuation_date"): (
         "Valuation date in YYYY-MM-DD format; omit for today's date."
@@ -288,6 +291,10 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
     ("market_scan", "rank_order"): (
         "Sort direction for ranked rows: auto, asc/ascending, or desc/descending. "
         "Auto keeps tight spreads and oversold RSI ascending; most other ranks descending."
+    ),
+    ("market_scan", "quote_usable_only"): (
+        "Exclude quotes that are stale, future-dated, locked, inverted, or one-sided. "
+        "Defaults to true for spread rankings and the tight-spread preset."
     ),
     ("outliers_detect", "score_fields"): (
         "Comma-separated candle features to score: return, volume, and/or range."

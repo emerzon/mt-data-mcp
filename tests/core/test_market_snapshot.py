@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import mtdata.core.market_snapshot as snapshot_mod
@@ -82,6 +83,78 @@ def test_market_snapshot_quote_compaction_formats_epoch_without_display():
 
     assert quote["time"] == "2023-11-14T22:13:20Z"
     assert quote["time_epoch"] == 1700000000
+
+
+def test_market_snapshot_summary_surfaces_locked_quote_warning() -> None:
+    summary = snapshot_mod._snapshot_summary(
+        "EURUSD",
+        {
+            "quote": {
+                "success": True,
+                "mid": 1.1,
+                "spread_pips": 0.0,
+                "spread_quality": "locked",
+                "usable_for_live_trading": False,
+                "warning": (
+                    "Locked quote (bid equals ask) is not usable for live trading."
+                ),
+            }
+        },
+        [],
+    )
+
+    assert "spread_pips=0.0" in summary
+    assert "WARNING: Locked quote" in summary
+
+
+def test_market_snapshot_summary_explains_non_live_quote_age() -> None:
+    summary = snapshot_mod._snapshot_summary(
+        "EURUSD",
+        {
+            "quote": {
+                "success": True,
+                "mid": 1.1,
+                "spread_pips": 0.2,
+                "spread_quality": "two_sided",
+                "usable_for_live_trading": False,
+                "freshness_reason": "quote_age_exceeds_live_threshold",
+            }
+        },
+        [],
+    )
+
+    assert "WARNING: quote age exceeds the live threshold" in summary
+
+
+def test_market_snapshot_normalizes_and_resolves_symbol_once(monkeypatch) -> None:
+    section_symbols: list[str] = []
+    monkeypatch.setattr(
+        snapshot_mod,
+        "resolve_broker_symbol_name",
+        lambda symbol: "EURUSD" if symbol == "EURUSD" else symbol,
+    )
+    monkeypatch.setattr(
+        snapshot_mod,
+        "_preflight_snapshot_symbol",
+        lambda symbol: None,
+    )
+
+    def fake_call_section(name, symbol, timeframe, horizon, detail):
+        section_symbols.append(symbol)
+        return {"success": True, "symbol": symbol, "mid": 1.1}
+
+    monkeypatch.setattr(snapshot_mod, "_call_section", fake_call_section)
+
+    result = snapshot_mod.market_snapshot.__wrapped__(
+        symbol=" eurusd ",
+        sections="quote",
+    )
+
+    assert result["success"] is True
+    assert result["symbol"] == "EURUSD"
+    assert result["symbol_input"] == " eurusd "
+    assert section_symbols == ["EURUSD"]
+    assert result["source"]["provider"] == "mt5"
 
 
 def test_market_snapshot_full_quote_preserves_ticker_diagnostics(monkeypatch):
@@ -169,13 +242,38 @@ def test_market_snapshot_rejects_invalid_symbol_before_sections(monkeypatch):
 def test_snapshot_symbol_preflight_classifies_missing_symbol() -> None:
     gateway = MagicMock()
     gateway.symbol_info.return_value = None
+    gateway.symbols_get.return_value = []
 
     result = snapshot_mod._preflight_snapshot_symbol("NOTREAL", gateway=gateway)
 
     assert result is not None
     assert result["error_code"] == "symbol_not_found"
     assert result["details"]["symbol"] == "NOTREAL"
+    assert result["details"]["did_you_mean"] == []
     assert result["related_tools"] == ["symbols_list"]
+
+
+def test_snapshot_symbol_preflight_includes_canonical_suffix_suggestions() -> None:
+    gateway = MagicMock()
+    gateway.symbol_info.return_value = None
+    gateway.symbols_get.return_value = [
+        SimpleNamespace(
+            name="AAPL.NAS",
+            description="Apple Inc CFD",
+            path="Stocks\\NASDAQ",
+        )
+    ]
+
+    result = snapshot_mod._preflight_snapshot_symbol("AAPL", gateway=gateway)
+
+    assert result is not None
+    assert result["details"]["did_you_mean"] == [
+        {
+            "symbol": "AAPL.NAS",
+            "description": "Apple Inc CFD",
+            "group": "Stocks\\NASDAQ",
+        }
+    ]
 
 
 def test_market_snapshot_marks_partial_section_failure(monkeypatch):

@@ -7,14 +7,17 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 from ..forecast.requests import MAX_FORECAST_HORIZON
-from ..shared.schema import DetailLiteral, TimeframeLiteral
+from ..shared.schema import DetailLiteral, TimeframeLiteral, normalize_required_symbol
 from ..utils.coercion import coerce_finite_float as _coerce_float
 from ..utils.market_metadata import build_tick_freshness_context
+from ..utils.mt5 import resolve_broker_symbol_name
+from ..utils.symbol import symbol_suggestions_from_gateway
 from ..utils.time import format_datetime_utc
 from ._mcp_instance import mcp
 from .error_envelope import build_error_payload
 from .execution_logging import run_logged_operation
 from .mt5_gateway import create_mt5_gateway
+from .runtime_metadata import attach_mt5_source
 from .tool_calling import call_tool_sync_structured
 
 logger = logging.getLogger(__name__)
@@ -76,12 +79,14 @@ def _preflight_snapshot_symbol(
         )
     if symbol_info is not None:
         return None
+    suggestions = symbol_suggestions_from_gateway(mt5_gateway, symbol_name)
     return build_error_payload(
         f"Symbol '{symbol_name}' not found in MT5 terminal.",
         code="symbol_not_found",
         operation="market_snapshot",
         details={
             "symbol": symbol_name,
+            "did_you_mean": suggestions,
             "search_hint": (
                 f"Use symbols_list(search_term='{symbol_name}') to browse matching "
                 "broker symbols."
@@ -118,6 +123,11 @@ def _compact_quote(quote: Any, *, detail: str = "compact") -> Any:
         "spread_points",
         "spread_pips",
         "spread_pct",
+        "spread_quality",
+        "warning",
+        "timestamp_warning",
+        "timestamp_in_future",
+        "timestamp_skew_seconds",
         "freshness",
         "freshness_state",
         "freshness_reason",
@@ -129,6 +139,7 @@ def _compact_quote(quote: Any, *, detail: str = "compact") -> Any:
         "time",
         "time_epoch",
         "data_stale",
+        "source",
     )
     return {key: normalized_quote[key] for key in keys if key in normalized_quote}
 
@@ -327,6 +338,29 @@ def _snapshot_summary(
         spread_pips = quote.get("spread_pips")
         if spread_pips is not None:
             parts.append(f"spread_pips={spread_pips}")
+        spread_quality = str(quote.get("spread_quality") or "").strip().lower()
+        warning = quote.get("warning") or quote.get("timestamp_warning")
+        snapshot_warning = quote.get("snapshot_warning")
+        if not warning and isinstance(snapshot_warning, dict):
+            warning = snapshot_warning.get("message")
+        if not warning and quote.get("usable_for_live_trading") is False:
+            reason = str(quote.get("freshness_reason") or "").strip()
+            if spread_quality and spread_quality != "two_sided":
+                reason = f"{spread_quality} quote"
+            else:
+                reason = {
+                    "future_timestamp": "quote timestamp is in the future",
+                    "market_closed": "market is closed",
+                    "stale_age": "quote is stale",
+                    "quote_age_exceeds_live_threshold": (
+                        "quote age exceeds the live threshold"
+                    ),
+                }.get(reason, reason.replace("_", " "))
+            warning = reason or "quote is not usable for live trading"
+        elif not warning and spread_quality and spread_quality != "two_sided":
+            warning = f"{spread_quality} quote"
+        if warning:
+            parts.append(f"WARNING: {str(warning).rstrip('.')}")
     forecast = sections.get("forecast")
     direction = _latest_direction(forecast)
     if direction:
@@ -542,6 +576,11 @@ def _snapshot_summary_payload(sections: Dict[str, Any]) -> Dict[str, Any]:  # no
             "spread_points",
             "spread_pips",
             "spread_pct",
+            "spread_quality",
+            "warning",
+            "timestamp_warning",
+            "timestamp_in_future",
+            "timestamp_skew_seconds",
             "freshness",
             "freshness_state",
             "data_age_seconds",
@@ -555,6 +594,7 @@ def _snapshot_summary_payload(sections: Dict[str, Any]) -> Dict[str, Any]:  # no
     if isinstance(quote, dict):
         for key in (
             "usable_for_live_trading",
+            "usable_for_live_trading_basis",
             "live_max_age_seconds",
             "freshness_reason",
             "market_status_reason",
@@ -792,11 +832,21 @@ def market_snapshot(
                 operation="market_snapshot",
                 details={"horizon": horizon, "sections": list(selected)},
             )
-        preflight_error = _preflight_snapshot_symbol(symbol)
+        try:
+            normalized_symbol = normalize_required_symbol(symbol)
+        except ValueError as exc:
+            return build_error_payload(
+                str(exc),
+                code="invalid_symbol",
+                operation="market_snapshot",
+            )
+        resolved_symbol = resolve_broker_symbol_name(normalized_symbol)
+        preflight_error = _preflight_snapshot_symbol(resolved_symbol)
         if preflight_error is not None:
             return {
                 **preflight_error,
-                "symbol": symbol,
+                "symbol": resolved_symbol,
+                "symbol_input": symbol,
                 "timeframe": timeframe,
                 "sections_requested": list(selected),
                 "sections_not_run": list(selected),
@@ -806,21 +856,27 @@ def market_snapshot(
         if "quote" in selected:
             run_order += ("quote",)
         section_payloads = {
-            name: _call_section(name, symbol, str(timeframe), int(horizon), detail_mode)
+            name: _call_section(
+                name,
+                resolved_symbol,
+                str(timeframe),
+                int(horizon),
+                detail_mode,
+            )
             for name in run_order
         }
-        health = _snapshot_health(symbol, selected, section_payloads)
+        health = _snapshot_health(resolved_symbol, selected, section_payloads)
         assembled_at_dt = datetime.now(timezone.utc)
         assembled_at = format_datetime_utc(assembled_at_dt)
         quote_warning = _revalidate_snapshot_quote(
             section_payloads,
-            symbol=symbol,
+            symbol=resolved_symbol,
             assembled_at_epoch=assembled_at_dt.timestamp(),
         )
         quote_as_of = _snapshot_quote_as_of(section_payloads)
         payload: Dict[str, Any] = {
             "success": bool(health.get("success")),
-            "symbol": symbol,
+            "symbol": resolved_symbol,
             "timeframe": timeframe,
             "as_of": assembled_at,
             "assembled_at": assembled_at,
@@ -829,6 +885,13 @@ def market_snapshot(
         }
         if quote_as_of is not None:
             payload["quote_as_of"] = quote_as_of
+        if resolved_symbol != str(symbol or "").strip():
+            payload["symbol_input"] = symbol
+        payload = attach_mt5_source(payload)
+        quote_payload = section_payloads.get("quote")
+        if isinstance(quote_payload, dict):
+            if isinstance(quote_payload.get("source"), dict):
+                payload["source"] = dict(quote_payload["source"])
         if quote_warning is not None:
             payload["warnings"] = [quote_warning]
         if detail_mode in {"summary", "compact"}:
@@ -837,7 +900,7 @@ def market_snapshot(
             if summary_payload:
                 payload["snapshot"] = summary_payload
             payload["summary"] = _snapshot_summary(
-                symbol,
+                resolved_symbol,
                 section_payloads,
                 health.get("failed_sections"),
             )

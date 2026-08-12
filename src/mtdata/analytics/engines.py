@@ -30,7 +30,7 @@ from ..utils.freshness import (
 from ..utils.market_metadata import build_tick_freshness_context
 from ..utils.sessions import market_session_label, session_definition_for_clock
 from ..utils.tick_flags import mt5_trade_event_mask
-from ..utils.time import format_datetime_utc, format_epoch_utc
+from ..utils.time import bar_close_epoch, format_datetime_utc, format_epoch_utc
 
 
 def _mapping(row: Any) -> Dict[str, Any]:
@@ -1983,6 +1983,61 @@ def _robust_z(values: pd.Series) -> pd.Series:
     return (clipped - median) / (1.4826 * mad)
 
 
+def _relative_strength_history_window(
+    symbol: str,
+    bars: pd.DataFrame,
+    *,
+    timeframe: str,
+    now_epoch: float,
+) -> Dict[str, Any]:
+    if bars.empty or "time" not in bars:
+        return {"bars_available": 0, "freshness": "unavailable"}
+    start_epoch = float(bars["time"].iloc[0])
+    latest_open_epoch = float(bars["time"].iloc[-1])
+    latest_close_epoch = bar_close_epoch(latest_open_epoch, timeframe)
+    signed_age_seconds = float(now_epoch) - latest_close_epoch
+    age_seconds = max(0.0, signed_age_seconds)
+    stale_after_seconds = max(1, int(TIMEFRAME_SECONDS[timeframe]) * 2)
+    timestamp_in_future = signed_age_seconds < 0.0
+    stale = timestamp_in_future or age_seconds > stale_after_seconds
+    closed_session = closed_session_context(
+        symbol,
+        now_epoch=now_epoch,
+        item="bar",
+        data_age_seconds=None if timestamp_in_future else age_seconds,
+    )
+    policy_relaxed = bool(
+        closed_session and closed_session.get("freshness_policy_relaxed")
+    )
+    if timestamp_in_future:
+        freshness = "future_timestamp"
+    elif stale and policy_relaxed:
+        freshness = "closed_session_snapshot"
+    elif stale:
+        freshness = "stale"
+    else:
+        freshness = "fresh"
+    context: Dict[str, Any] = {
+        "bars_available": int(len(bars)),
+        "history_start": format_epoch_utc(start_epoch),
+        "latest_bar_open": format_epoch_utc(latest_open_epoch),
+        "latest_bar_close": format_epoch_utc(latest_close_epoch),
+        "latest_bar_age_seconds": round(age_seconds, 3),
+        "stale_after_seconds": stale_after_seconds,
+        "freshness": freshness,
+    }
+    if timestamp_in_future:
+        context["timestamp_in_future"] = True
+        context["timestamp_skew_seconds"] = round(-signed_age_seconds, 3)
+    if closed_session:
+        context["market_status"] = closed_session.get("market_status")
+        context["market_status_reason"] = closed_session.get(
+            "market_status_reason"
+        )
+        context["freshness_policy_relaxed"] = policy_relaxed
+    return context
+
+
 def rank_relative_strength(  # noqa: C901
     request: MarketRelativeStrengthRequest, gateway: Any
 ) -> Dict[str, Any]:
@@ -2047,12 +2102,29 @@ def rank_relative_strength(  # noqa: C901
     if benchmark_symbol and benchmark_symbol not in data_symbols:
         data_symbols.append(benchmark_symbol)
     lookback = max(max(request.horizons) + request.volatility_lookback + 15, 100)
+    analysis_started_at = datetime.now(timezone.utc)
+    analysis_started_epoch = analysis_started_at.timestamp()
     histories: Dict[str, pd.DataFrame] = {}
+    history_windows: Dict[str, Dict[str, Any]] = {}
     skipped = []
     for symbol in data_symbols:
         bars = _rates(gateway, symbol, request.timeframe, lookback)
+        history_window = _relative_strength_history_window(
+            symbol,
+            bars,
+            timeframe=request.timeframe,
+            now_epoch=analysis_started_epoch,
+        )
+        history_window["bars_requested"] = int(lookback)
+        history_windows[symbol] = history_window
         if len(bars) < int(lookback * 0.90):
-            skipped.append({"symbol": symbol, "reason": "history coverage below 90%"})
+            skipped.append(
+                {
+                    "symbol": symbol,
+                    "reason": "history coverage below 90%",
+                    "data_window": history_window,
+                }
+            )
             continue
         histories[symbol] = bars
     candidate_histories = {
@@ -2083,14 +2155,34 @@ def rank_relative_strength(  # noqa: C901
     returns = pd.concat(return_frames, axis=1, join="outer")
     explicit_factor = returns[request.benchmark.upper()] if request.benchmark and request.benchmark.upper() in returns else None
     rows = []
+    aligned_epoch_windows: Dict[str, tuple[float, float]] = {}
     score_parts: Dict[int, Dict[str, float]] = {h: {} for h in request.horizons}
     stability_parts: Dict[int, Dict[int, Dict[str, float]]] = {offset: {h: {} for h in request.horizons} for offset in (0, 5, 10)}
     for symbol, bars in candidate_histories.items():
         own = pd.Series(np.log(bars["close"]).diff().to_numpy(), index=bars["time"].to_numpy()).dropna()
         factor = explicit_factor if explicit_factor is not None else returns.drop(columns=[symbol], errors="ignore").mean(axis=1, skipna=True)
         aligned = pd.concat([own.rename("own"), factor.rename("factor")], axis=1, join="inner").dropna()
+        symbol_window = dict(history_windows[symbol])
+        if not aligned.empty:
+            aligned_epoch_windows[symbol] = (
+                float(aligned.index[0]),
+                float(aligned.index[-1]),
+            )
+            symbol_window.update(
+                {
+                    "aligned_start": format_epoch_utc(float(aligned.index[0])),
+                    "aligned_end": format_epoch_utc(float(aligned.index[-1])),
+                    "aligned_observations": int(len(aligned)),
+                }
+            )
         if len(aligned) < request.volatility_lookback:
-            skipped.append({"symbol": symbol, "reason": "factor alignment below minimum"})
+            skipped.append(
+                {
+                    "symbol": symbol,
+                    "reason": "factor alignment below minimum",
+                    "data_window": symbol_window,
+                }
+            )
             continue
         cov = aligned["own"].tail(request.volatility_lookback).cov(aligned["factor"].tail(request.volatility_lookback))
         variance = aligned["factor"].tail(request.volatility_lookback).var()
@@ -2115,12 +2207,43 @@ def rank_relative_strength(  # noqa: C901
         spread_pct = ((ask - bid) / ((ask + bid) / 2.0) * 100.0) if ask >= bid > 0 else None
         tick_volume = int(latest.get("tick_volume") or 0)
         if request.max_spread_pct is not None and (spread_pct is None or spread_pct > request.max_spread_pct):
-            skipped.append({"symbol": symbol, "reason": "spread filter"})
+            skipped.append(
+                {
+                    "symbol": symbol,
+                    "reason": "spread filter",
+                    "data_window": symbol_window,
+                }
+            )
             continue
         if request.min_tick_volume is not None and tick_volume < request.min_tick_volume:
-            skipped.append({"symbol": symbol, "reason": "tick-volume filter"})
+            skipped.append(
+                {
+                    "symbol": symbol,
+                    "reason": "tick-volume filter",
+                    "data_window": symbol_window,
+                }
+            )
             continue
-        rows.append({"symbol": symbol, "beta": beta, "volatility": vol, "raw_momentum": raw_momentum, "residual_momentum": residual_momentum, "spread_pct": spread_pct, "tick_volume": tick_volume, "above_sma20": bool(float(latest["close"]) > float(bars["close"].tail(20).mean())), "above_sma50": bool(float(latest["close"]) > float(bars["close"].tail(50).mean()))})
+        rows.append(
+            {
+                "symbol": symbol,
+                "beta": beta,
+                "volatility": vol,
+                "raw_momentum": raw_momentum,
+                "residual_momentum": residual_momentum,
+                "spread_pct": spread_pct,
+                "tick_volume": tick_volume,
+                "above_sma20": bool(
+                    float(latest["close"])
+                    > float(bars["close"].tail(20).mean())
+                ),
+                "above_sma50": bool(
+                    float(latest["close"])
+                    > float(bars["close"].tail(50).mean())
+                ),
+                "data_window": symbol_window,
+            }
+        )
     row_by_symbol = {row["symbol"]: row for row in rows}
     composite = pd.Series(0.0, index=list(row_by_symbol), dtype=float)
     for horizon, weight in zip(request.horizons, request.weights):
@@ -2160,13 +2283,103 @@ def rank_relative_strength(  # noqa: C901
     returned_count = min(int(request.limit), len(ordered))
     leader_count = (returned_count + 1) // 2
     laggard_count = returned_count - leader_count
+    leader_rows = ordered[:leader_count]
+    laggard_rows = (
+        list(reversed(ordered[-laggard_count:])) if laggard_count else []
+    )
+    selected_rankings = sorted(
+        [*leader_rows, *laggard_rows],
+        key=lambda row: int(row["rank"]),
+    )
+
+    ranked_symbols = [str(row["symbol"]) for row in ordered]
+    ranked_aligned_windows = [
+        aligned_epoch_windows[symbol]
+        for symbol in ranked_symbols
+        if symbol in aligned_epoch_windows
+    ]
+    effective_common_window: Dict[str, Any] = {
+        "start": None,
+        "end": None,
+        "aligned_symbols": len(ranked_aligned_windows),
+    }
+    if ranked_aligned_windows:
+        common_start = max(start for start, _ in ranked_aligned_windows)
+        common_end = min(end for _, end in ranked_aligned_windows)
+        effective_common_window.update(
+            {
+                "start": format_epoch_utc(common_start),
+                "end": format_epoch_utc(common_end),
+                "has_overlap": common_start <= common_end,
+            }
+        )
+
+    ranked_latest_epochs = {
+        symbol: bar_close_epoch(
+            float(candidate_histories[symbol]["time"].iloc[-1]),
+            request.timeframe,
+        )
+        for symbol in ranked_symbols
+        if symbol in candidate_histories and not candidate_histories[symbol].empty
+    }
+    alignment_tolerance_seconds = int(TIMEFRAME_SECONDS[request.timeframe])
+    endpoint_alignment: Dict[str, Any] = {
+        "tolerance_seconds": alignment_tolerance_seconds,
+        "status": "unavailable",
+        "span_seconds": None,
+        "lagging_symbols": [],
+    }
+    if ranked_latest_epochs:
+        earliest_endpoint = min(ranked_latest_epochs.values())
+        latest_endpoint = max(ranked_latest_epochs.values())
+        endpoint_span = max(0.0, latest_endpoint - earliest_endpoint)
+        endpoint_alignment.update(
+            {
+                "earliest": format_epoch_utc(earliest_endpoint),
+                "latest": format_epoch_utc(latest_endpoint),
+                "span_seconds": round(endpoint_span, 3),
+                "status": (
+                    "aligned"
+                    if endpoint_span == 0.0
+                    else (
+                        "mixed_within_tolerance"
+                        if endpoint_span <= alignment_tolerance_seconds
+                        else "incomparable"
+                    )
+                ),
+                "comparable": endpoint_span <= alignment_tolerance_seconds,
+                "lagging_symbols": sorted(
+                    symbol
+                    for symbol, endpoint in ranked_latest_epochs.items()
+                    if endpoint < latest_endpoint
+                ),
+            }
+        )
+
+    analysis_as_of = format_datetime_utc(datetime.now(timezone.utc), timespec="auto")
     result = {
         "success": True,
         "status": "ranked" if ordered else "no_matches",
         "timeframe": request.timeframe,
+        "analysis_as_of": analysis_as_of,
+        "data_window": {
+            "requested": {
+                "lookback_bars": int(lookback),
+                "horizons_bars": list(request.horizons),
+                "volatility_lookback_bars": int(request.volatility_lookback),
+            },
+            "effective_common": effective_common_window,
+            "endpoint_alignment": endpoint_alignment,
+        },
         "universe_size": len(ordered),
-        "returned_count": returned_count,
+        "returned_count": len(selected_rankings),
         "applied_limit": int(request.limit),
+        "ranking_selection": {
+            "method": "strongest_and_weakest_tails",
+            "leader_count": len(leader_rows),
+            "laggard_count": len(laggard_rows),
+            "rankings_order": "strongest_to_weakest",
+        },
         "rank_quality": (
             "cross_sectional" if len(ordered) >= 10 else "illustrative_small_universe"
         ),
@@ -2176,10 +2389,8 @@ def rank_relative_strength(  # noqa: C901
             "weights": list(request.weights),
             "higher_is_stronger": True,
         },
-        "leaders": ordered[:leader_count],
-        "laggards": (
-            list(reversed(ordered[-laggard_count:])) if laggard_count else []
-        ),
+        "leaders": leader_rows,
+        "laggards": laggard_rows,
         "breadth": breadth,
         "factor": {
             "source": benchmark_symbol or "equal_weight_universe",
@@ -2195,10 +2406,21 @@ def rank_relative_strength(  # noqa: C901
             if benchmark_symbol in selected
             else None,
             "minimum_history_coverage": 0.90,
+            "endpoint_alignment": endpoint_alignment,
+            **(
+                {"symbol_windows": history_windows}
+                if request.detail == "full"
+                else {}
+            ),
         },
         "units": {"raw_momentum": "log_return_fraction", "residual_momentum": "log_return_fraction", "volatility": "per_bar_log_return_stddev", "score": "robust_z_composite", "rank_stability": "fraction_0_to_1", "tick_volume": "broker_tick_count"},
-        **({"all_rankings": ordered} if request.detail == "full" else {}),
+        **({"rankings": selected_rankings} if request.detail == "full" else {}),
     }
+    if endpoint_alignment.get("comparable") is False:
+        result["warnings"] = [
+            "Ranked symbols do not share comparable latest-bar endpoints within "
+            f"the {alignment_tolerance_seconds}s tolerance."
+        ]
     if not ordered:
         result["message"] = "No symbols matched the requested quote/volume filters."
     return result

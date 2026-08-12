@@ -448,7 +448,7 @@ mtdata-cli symbols_list --limit 20
 # Get details for a symbol
 mtdata-cli symbols_describe EURUSD --json
 
-# Rank the current watchlist by spread, volume, and price change
+# Rank the current watchlist by spread, volume, signed change, and absolute change
 mtdata-cli symbols_top_markets --rank-by all --limit 5 --timeframe H1 --json
 
 # Include hidden symbols within a bounded comparable category
@@ -468,7 +468,10 @@ mtdata-cli market_scan EURUSD,GBPUSD,USDJPY --rsi-below 35 --max-spread-pct 0.03
 `market_scan` and `symbols_top_markets` keep completed-bar values such as
 `close` separate from the current executable quote. When a quote is available,
 rows expose `bid`, `ask`, `mid`, and `quote_as_of`; use those fields for a live
-mark and the bar fields for ranking and indicator context.
+mark and the bar fields for ranking and indicator context. Spread-ranked scans
+and the `tight_spread` preset exclude quotes that are not usable for live
+trading before pagination; pass `--quote-usable-only false` only when inspecting
+stale or otherwise non-executable snapshots intentionally.
 
 `symbols_list` rejects non-positive limits. `symbols_top_markets` preserves
 exact ranking semantics and rejects a filtered candidate universe above 250

@@ -93,3 +93,39 @@ def match_symbol_infos(
     else:
         matches.sort(key=sort_key)
     return list(matches[: max(1, int(limit))])
+
+
+def symbol_suggestions_from_gateway(
+    gateway: Any,
+    query: str,
+    *,
+    limit: int = 5,
+) -> list[dict[str, str]]:
+    """Return one canonical ordered broker-symbol suggestion shape."""
+    text = str(query or "").strip()
+    if not text:
+        return []
+    try:
+        symbols = list(gateway.symbols_get() or [])
+    except Exception:
+        return []
+    matches = match_symbol_infos(
+        symbols,
+        text,
+        limit=limit,
+        group_of=_extract_group_path,
+    )
+    suggestions: list[dict[str, str]] = []
+    for info in matches:
+        symbol = str(getattr(info, "name", "") or "").strip()
+        if not symbol:
+            continue
+        suggestion = {"symbol": symbol}
+        description = str(getattr(info, "description", "") or "").strip()
+        group = _extract_group_path(info)
+        if description:
+            suggestion["description"] = description
+        if group and group != "Unknown":
+            suggestion["group"] = group
+        suggestions.append(suggestion)
+    return suggestions

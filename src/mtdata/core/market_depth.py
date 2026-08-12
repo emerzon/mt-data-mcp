@@ -34,7 +34,7 @@ from ..utils.quote import (
     tick_epoch,
     tick_value,
 )
-from ..utils.symbol import match_symbol_infos
+from ..utils.symbol import symbol_suggestions_from_gateway
 from ..utils.time import (
     _format_time_second_explicit,
     _format_time_second_explicit_local,
@@ -47,7 +47,7 @@ from .error_envelope import build_error_payload
 from .execution_logging import run_logged_operation
 from .mt5_gateway import create_mt5_gateway
 from .output_contract import ensure_common_meta, normalize_output_verbosity_detail
-from .runtime_metadata import display_timezone_label
+from .runtime_metadata import attach_mt5_source, display_timezone_label
 
 logger = logging.getLogger(__name__)
 _MARKET_DEPTH_ENABLE_ENV = "MTDATA_ENABLE_MARKET_DEPTH_FETCH"
@@ -276,25 +276,7 @@ def _market_ticker_symbol_suggestions(
     *,
     limit: int = 5,
 ) -> list[Dict[str, str]]:
-    text = str(query or "").strip()
-    if not text:
-        return []
-    try:
-        symbols = list(mt5_gateway.symbols_get() or [])
-    except Exception:
-        return []
-    matches = match_symbol_infos(symbols, text, limit=limit)
-    suggestions: list[Dict[str, str]] = []
-    for info in matches:
-        suggestion = {"symbol": str(getattr(info, "name", "") or "")}
-        description = str(getattr(info, "description", "") or "").strip()
-        path = str(getattr(info, "path", "") or "").strip()
-        if description:
-            suggestion["description"] = description
-        if path:
-            suggestion["group"] = path
-        suggestions.append(suggestion)
-    return suggestions
+    return symbol_suggestions_from_gateway(mt5_gateway, query, limit=limit)
 
 
 def _market_depth_disabled_payload() -> Dict[str, Any]:
@@ -676,9 +658,13 @@ def market_ticker(  # noqa: C901
 
     def _run() -> Dict[str, Any]:  # noqa: C901
         restore_symbol: Optional[str] = None
+        mt5_gateway: Any = None
 
         def _finalize(payload: Dict[str, Any]) -> Dict[str, Any]:
-            return ensure_common_meta(payload, tool_name="market_ticker")
+            return ensure_common_meta(
+                attach_mt5_source(payload, gateway=mt5_gateway),
+                tool_name="market_ticker",
+            )
 
         try:
             mt5_gateway = create_mt5_gateway(
@@ -686,7 +672,7 @@ def market_ticker(  # noqa: C901
                 ensure_connection_impl=ensure_mt5_connection_or_raise,
             )
             mt5_gateway.ensure_connection()
-            resolved_symbol = resolve_broker_symbol_name(symbol)
+            resolved_symbol = resolve_broker_symbol_name(symbol, gateway=mt5_gateway)
             started = time.perf_counter()
             info_before = mt5_gateway.symbol_info(resolved_symbol)
             was_visible = (

@@ -55,7 +55,7 @@ _NORM_LIMIT = "mtdata.core.symbols._normalize_limit"
 
 
 def test_mt5_source_provenance_identifies_broker_without_account_number():
-    from mtdata.core.symbols import _mt5_source_provenance
+    from mtdata.core.runtime_metadata import build_mt5_source_provenance
 
     gateway = SimpleNamespace(
         account_info=lambda: SimpleNamespace(
@@ -65,7 +65,7 @@ def test_mt5_source_provenance_identifies_broker_without_account_number():
         )
     )
 
-    source = _mt5_source_provenance(gateway)
+    source = build_mt5_source_provenance(gateway)
 
     assert source["provider"] == "mt5"
     assert source["broker_company"] == "Broker Co"
@@ -208,6 +208,48 @@ class TestSymbolsListNoSearch:
 
     @patch(_NORM_LIMIT, return_value=25)
     @patch(_TABLE, side_effect=lambda h, r: {"headers": h, "data": r})
+    @patch(f"{_MT5}.symbols_get")
+    def test_list_applies_crypto_currency_diagnostics_and_aggregate_warning(
+        self,
+        mock_get,
+        mock_tbl,
+        mock_lim,
+    ):
+        btc = _make_symbol("BTCUSD", path="Crypto", description="Bitcoin (USD)")
+        btc.currency_base = "USD"
+        btc.currency_profit = "USD"
+        eurusd = _make_symbol("EURUSD", path="Forex\\Majors")
+        eurusd.currency_base = "EUR"
+        eurusd.currency_profit = "USD"
+        mock_get.return_value = [btc, eurusd]
+
+        result = _get_symbols_list()(
+            universe="all",
+            currency="USD",
+            limit=25,
+            detail="full",
+        )
+
+        headers = result["headers"]
+        rows = {
+            row[headers.index("symbol")]: dict(zip(headers, row))
+            for row in result["data"]
+        }
+        assert rows["BTCUSD"]["currency_base"] == "USD"
+        assert rows["BTCUSD"]["currency_base_reported"] == "USD"
+        assert rows["BTCUSD"]["currency_base_inferred"] == "BTC"
+        assert rows["BTCUSD"]["currency_base_source"] == "reported_by_mt5"
+        assert rows["BTCUSD"]["currency_base_inference_source"] == (
+            "inferred_from_symbol_name"
+        )
+        assert "verify broker metadata" in rows["BTCUSD"]["currency_base_warning"]
+        assert rows["EURUSD"].get("currency_base_inferred") is None
+        assert result["currency_metadata_anomaly_count"] == 1
+        assert result["currency_filter_basis"] == "broker_reported_currency"
+        assert result["trust"] == "verify_broker_metadata"
+
+    @patch(_NORM_LIMIT, return_value=25)
+    @patch(_TABLE, side_effect=lambda h, r: {"headers": h, "data": r})
     @patch(_GROUP_PATH, return_value="Forex\\Majors")
     @patch(f"{_MT5}.symbols_get")
     def test_full_detail_is_a_superset_of_compact_fields(
@@ -338,6 +380,11 @@ class TestSymbolsListSearch:
     @patch(f"{_MT5}.symbols_get")
     def test_search_stock_suffixes_include_session_type(self, mock_get, mock_tbl, mock_lim):
         mock_get.return_value = [
+            _make_symbol(
+                "AAPB.NAS",
+                path="Stock CFD's\\Nasdaq",
+                description="2x Long AAPL Daily ETF CFD",
+            ),
             _make_symbol("AAPL.NAS", path="Stock CFD's\\Nasdaq", description="Apple Inc CFD"),
             _make_symbol("AAPL.NAS-24", path="Stock CFD's\\Nasdaq\\24HR NAS", description="Apple Inc 24/5 CFD"),
         ]
@@ -360,6 +407,13 @@ class TestSymbolsListSearch:
                 "Apple Inc 24/5 CFD",
                 "name_prefix",
                 "extended_24h",
+            ],
+            [
+                "AAPB.NAS",
+                "Stock CFD's\\Nasdaq",
+                "2x Long AAPL Daily ETF CFD",
+                "description_contains",
+                "regular",
             ],
         ]
 
@@ -526,7 +580,7 @@ class TestSymbolsListSearch:
         with patch(_GROUP_PATH, side_effect=lambda s: s.path):
             fn = _get_symbols_list()
             res = fn(search_term="Gold", search_mode="all", limit=25)
-        assert [row[0] for row in res["data"]] == ["GOLDMICRO", "SILVER", "XAUUSD"]
+        assert [row[0] for row in res["data"]] == ["GOLDMICRO", "XAUUSD", "SILVER"]
 
     @patch(_NORM_LIMIT, return_value=25)
     @patch(_TABLE, side_effect=lambda h, r: {"headers": h, "data": r})
@@ -813,13 +867,11 @@ class TestSymbolsDescribe:
                 "symbol": "AAPL.NAS",
                 "group": "Stock CFD's\\Nasdaq",
                 "description": "Apple Inc CFD",
-                "session_type": "regular",
             },
             {
                 "symbol": "AAPL.NAS-24",
                 "group": "Stock CFD's\\Nasdaq\\24HR NAS",
                 "description": "Apple Inc 24/5 CFD",
-                "session_type": "extended_24h",
             },
         ]
 

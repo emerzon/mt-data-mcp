@@ -20,10 +20,12 @@ from ...utils.market_metadata import (
     normalize_policy_relaxed,
 )
 from ...utils.quote import canonical_quote_midpoint
+from ...utils.symbol import symbol_suggestions_from_gateway
 from ..error_envelope import build_error_payload
 from ..execution_logging import run_logged_operation
 from ..mt5_gateway import mt5_connection_error
 from ..output_contract import attach_collection_contract
+from ..runtime_metadata import attach_mt5_source
 from ..trading.time import _next_candle_wait_payload, _sleep_until_next_candle
 from .requests import (
     DATA_FETCH_CANDLES_DEFAULT_LIMIT,
@@ -182,7 +184,8 @@ def run_wait_event(
             or (isinstance(r, dict) and "error" not in r)
         ),
     )
-    return to_dict(result) if isinstance(result, (Ok, Err)) else result
+    payload = to_dict(result) if isinstance(result, (Ok, Err)) else result
+    return attach_mt5_source(payload, gateway=gateway)
 
 
 def _run_data_fetch_candles_impl(
@@ -210,7 +213,11 @@ def _run_data_fetch_candles_impl(
         include_incomplete=request.include_incomplete,
         allow_stale=request.allow_stale,
     )
-    result = _normalize_candle_query_error(result, request=request)
+    result = _normalize_candle_query_error(
+        result,
+        request=request,
+        gateway=gateway,
+    )
     detail_mode = str(request.detail or "compact").strip().lower()
     if isinstance(result, dict):
         limit_explicit = "limit" in getattr(request, "model_fields_set", set())
@@ -248,6 +255,7 @@ def _run_data_fetch_candles_impl(
             request=request,
             gateway=gateway,
         )
+        result = attach_mt5_source(result, gateway=gateway)
     if isinstance(result, dict) and isinstance(result.get("data"), list):
         out = attach_collection_contract(
             result,
@@ -313,6 +321,7 @@ def _normalize_candle_query_error(
     result: Any,
     *,
     request: DataFetchCandlesRequest,
+    gateway: Any = None,
 ) -> Any:
     if not isinstance(result, dict) or not result.get("error"):
         return result
@@ -326,6 +335,7 @@ def _normalize_candle_query_error(
 
     if "not found" in normalized and "symbol" in normalized:
         error_code = "symbol_not_found"
+        message = f"Symbol '{request.symbol}' was not found in MT5."
         remediation = (
             "Use the broker's exact MT5 symbol name; call market_ticker for symbol "
             "discovery when the broker uses suffixes or aliases."
@@ -359,6 +369,11 @@ def _normalize_candle_query_error(
         "symbol": request.symbol,
         "timeframe": request.timeframe,
     }
+    if error_code == "symbol_not_found":
+        details["did_you_mean"] = symbol_suggestions_from_gateway(
+            gateway,
+            request.symbol,
+        )
     if request.start is not None:
         details["start"] = str(request.start)
     if request.end is not None:
@@ -1193,18 +1208,23 @@ def _run_data_fetch_ticks_impl(
         time_as_epoch=str(request.timestamp_format).strip().lower() != "iso",
         format=_TICK_DETAIL_FORMATS.get(request.detail, "summary"),
     )
-    result = _normalize_tick_query_error(result, request=request)
+    result = _normalize_tick_query_error(
+        result,
+        request=request,
+        gateway=gateway,
+    )
     if str(request.detail or "compact").strip().lower() == "compact":
         result = _compact_tick_rows_payload(result)
     _attach_tick_freshness_contract(result)
     _attach_tick_pagination(result, requested_limit=request.limit)
-    return result
+    return attach_mt5_source(result, gateway=gateway)
 
 
 def _normalize_tick_query_error(
     result: Any,
     *,
     request: DataFetchTicksRequest,
+    gateway: Any = None,
 ) -> Any:
     if not isinstance(result, dict) or not result.get("error"):
         return result
@@ -1222,6 +1242,7 @@ def _normalize_tick_query_error(
         or "unknown symbol" in normalized
     ):
         error_code = "symbol_not_found"
+        message = f"Symbol '{request.symbol}' was not found in MT5."
         remediation = (
             "Use symbols_list to find the broker's exact symbol name, including "
             "any suffix or alias."
@@ -1247,6 +1268,11 @@ def _normalize_tick_query_error(
         "symbol": request.symbol,
         "timezone": "UTC",
     }
+    if error_code == "symbol_not_found":
+        details["did_you_mean"] = symbol_suggestions_from_gateway(
+            gateway,
+            request.symbol,
+        )
     if request.start is not None:
         details["start"] = str(request.start)
     if request.end is not None:

@@ -1,9 +1,62 @@
 from __future__ import annotations
 
+import hashlib
 import os
+import re
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional
 from zoneinfo import ZoneInfo
+
+
+def _clean_mt5_source_text(value: Any) -> Optional[str]:
+    if not isinstance(value, str):
+        return None
+    text = re.sub(r"[\ud800-\udfff]", "\ufffd", value).strip()
+    return text or None
+
+
+def build_mt5_source_provenance(gateway: Any = None) -> Dict[str, Any]:
+    """Return stable, non-secret identity for the active MT5 price source."""
+    source: Dict[str, Any] = {"provider": "mt5"}
+    adapter = gateway
+    if adapter is None:
+        try:
+            from ..utils.mt5 import mt5 as adapter
+        except Exception:
+            adapter = None
+    try:
+        account = adapter.account_info() if adapter is not None else None
+    except Exception:
+        account = None
+    if account is None:
+        source["context_available"] = False
+        return source
+
+    company = _clean_mt5_source_text(getattr(account, "company", None))
+    server = _clean_mt5_source_text(getattr(account, "server", None))
+    if company:
+        source["broker_company"] = company
+    if server:
+        source["server"] = server
+    if company or server:
+        identity = "|".join(("mt5", company or "", server or ""))
+        source["source_context_id"] = hashlib.sha256(
+            identity.encode("utf-8")
+        ).hexdigest()[:16]
+        source["context_available"] = True
+    else:
+        source["context_available"] = False
+    return source
+
+
+def attach_mt5_source(payload: Any, *, gateway: Any = None) -> Any:
+    """Attach MT5 provenance to a successful canonical payload."""
+    if not isinstance(payload, dict) or payload.get("error"):
+        return payload
+    out = dict(payload)
+    if not isinstance(out.get("source"), dict):
+        out["source"] = build_mt5_source_provenance(gateway)
+    return out
 
 
 def _safe_tz_name(value: Any) -> Optional[str]:

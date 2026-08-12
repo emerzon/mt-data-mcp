@@ -1357,6 +1357,76 @@ def test_relative_strength_limit_caps_total_returned_rankings() -> None:
     assert result["laggards"] == []
 
 
+def test_relative_strength_full_detail_keeps_every_ranking_collection_bounded() -> None:
+    gateway = FakeGateway()
+    gateway.bar_rows = {
+        f"SYM{index:02d}": _bars(drift=(index - 8) * 0.00002)
+        for index in range(17)
+    }
+    symbols = ",".join(gateway.bar_rows)
+
+    result = rank_relative_strength(
+        MarketRelativeStrengthRequest(
+            symbols=symbols,
+            horizons=[5],
+            weights=[1.0],
+            volatility_lookback=30,
+            limit=10,
+            max_symbols=20,
+            detail="full",
+        ),
+        gateway,
+    )
+
+    assert result["success"] is True
+    assert result["universe_size"] == 17
+    assert result["returned_count"] == 10
+    assert len(result["leaders"]) == 5
+    assert len(result["laggards"]) == 5
+    assert len(result["rankings"]) == 10
+    assert "all_rankings" not in result
+    assert len({row["symbol"] for row in result["rankings"]}) == 10
+    assert result["ranking_selection"]["method"] == "strongest_and_weakest_tails"
+
+
+def test_relative_strength_reports_mixed_bar_endpoints_and_alignment_windows() -> None:
+    gateway = FakeGateway()
+    gateway.bar_rows["GBPUSD"] = [
+        {**row, "time": row["time"] - 7200}
+        for row in gateway.bar_rows["GBPUSD"]
+    ]
+
+    result = rank_relative_strength(
+        MarketRelativeStrengthRequest(
+            symbols="EURUSD,GBPUSD,USDJPY",
+            horizons=[5],
+            weights=[1.0],
+            volatility_lookback=30,
+            limit=3,
+            detail="full",
+        ),
+        gateway,
+    )
+
+    assert result["success"] is True
+    assert result["analysis_as_of"].endswith("Z")
+    assert result["data_window"]["effective_common"]["start"]
+    assert result["data_window"]["effective_common"]["end"]
+    alignment = result["data_window"]["endpoint_alignment"]
+    assert alignment["status"] == "incomparable"
+    assert alignment["comparable"] is False
+    assert alignment["lagging_symbols"] == ["GBPUSD"]
+    assert result["warnings"]
+    for row in result["rankings"]:
+        assert row["data_window"]["latest_bar_close"].endswith("Z")
+        assert row["data_window"]["aligned_end"].endswith("Z")
+        assert row["data_window"]["freshness"] in {
+            "fresh",
+            "stale",
+            "closed_session_snapshot",
+        }
+
+
 def test_relative_strength_rejects_one_symbol_before_fetching_history() -> None:
     with pytest.raises(ValueError, match="requires at least two comma-separated symbols"):
         MarketRelativeStrengthRequest(symbols="EURUSD")
@@ -1380,7 +1450,7 @@ def test_relative_strength_fetches_external_benchmark_without_ranking_it() -> No
     assert result["universe_size"] == 2
     assert result["data_quality"]["selected_symbols"] == 2
     assert result["data_quality"]["data_symbols_fetched"] == 3
-    assert "USDJPY" not in {row["symbol"] for row in result["all_rankings"]}
+    assert "USDJPY" not in {row["symbol"] for row in result["rankings"]}
 
 
 def test_relative_strength_does_not_rank_benchmark_from_requested_symbols() -> None:
@@ -1399,7 +1469,7 @@ def test_relative_strength_does_not_rank_benchmark_from_requested_symbols() -> N
 
     assert result["success"] is True
     assert result["universe_size"] == 2
-    assert "USDJPY" not in {row["symbol"] for row in result["all_rankings"]}
+    assert "USDJPY" not in {row["symbol"] for row in result["rankings"]}
     assert result["data_quality"]["benchmark_excluded_from_ranking"] == "USDJPY"
 
 

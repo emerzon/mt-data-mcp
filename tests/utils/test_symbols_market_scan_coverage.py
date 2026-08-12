@@ -44,6 +44,36 @@ def _get_select_market_scan_symbols():
     return _select_market_scan_symbols
 
 
+@pytest.mark.parametrize(
+    ("rank_by", "rank_order", "expected"),
+    [
+        ("abs_price_change_pct", "asc", "smallest_abs_price_change_pct"),
+        ("abs_price_change_pct", "desc", "largest_abs_price_change_pct"),
+        ("price_change_pct", "asc", "lowest_price_change_pct"),
+        ("price_change_pct", "desc", "highest_price_change_pct"),
+        ("gap_pct", "asc", "lowest_gap_pct"),
+        ("gap_pct", "desc", "highest_gap_pct"),
+        ("tick_volume", "asc", "lowest_tick_volume"),
+        ("tick_volume", "desc", "highest_tick_volume"),
+        ("spread_pct", "asc", "lowest_spread_pct"),
+        ("spread_pct", "desc", "highest_spread_pct"),
+        ("rsi", "asc", "lowest_rsi"),
+        ("rsi", "desc", "highest_rsi"),
+    ],
+)
+def test_market_scan_ranking_label_matches_effective_order(
+    rank_by: str,
+    rank_order: str,
+    expected: str,
+) -> None:
+    from mtdata.core.symbols import _market_scan_ranking_label
+
+    assert (
+        _market_scan_ranking_label(rank_by, rank_order=rank_order)
+        == expected
+    )
+
+
 def test_market_scan_spread_cost_uses_account_currency() -> None:
     from mtdata.core.symbols import _build_market_scan_spread_row
 
@@ -190,12 +220,31 @@ def test_market_scan_ranks_locked_quotes_after_valid_spreads(
             limit=2,
         )
 
-    assert [row["symbol"] for row in result["data"]] == ["VALID", "LOCKED"]
-    locked = result["data"][1]
+    assert [row["symbol"] for row in result["data"]] == ["VALID"]
+    assert result["quote_usable_only"] is True
+    assert result["quote_eligibility"] == {
+        "basis": "quote_usable_for_live_trading",
+        "required": True,
+        "excluded_symbols": 1,
+        "excluded_reasons": {"quote_locked": 1},
+        "excluded_examples": [{"symbol": "LOCKED", "reason": "quote_locked"}],
+    }
+
+    with patch("mtdata.core.symbols.time.time", return_value=now):
+        include_unsafe = _get_market_scan()(
+            rank_by="spread",
+            timeframe="H1",
+            lookback=3,
+            limit=2,
+            quote_usable_only=False,
+        )
+
+    assert [row["symbol"] for row in include_unsafe["data"]] == ["VALID", "LOCKED"]
+    locked = include_unsafe["data"][1]
     assert locked["spread_valid"] is False
     assert locked["spread_quality"] == "locked"
     assert locked["quote_usable_for_live_trading"] is False
-    assert result["unsafe_quote_rows"] == 1
+    assert include_unsafe["unsafe_quote_rows"] == 1
 
     with patch("mtdata.core.symbols.time.time", return_value=now):
         tight_only = _get_market_scan()(
@@ -1008,14 +1057,17 @@ class TestSymbolsTopMarkets:
         mock_symbols_get.return_value = [
             _make_symbol("EURUSD", description="Euro"),
             _make_symbol("GBPUSD", description="Pound"),
+            _make_symbol("USDJPY", description="Yen"),
         ]
         mock_tick.side_effect = lambda symbol: {
             "EURUSD": _make_tick(bid=1.1000, ask=1.1001),
             "GBPUSD": _make_tick(bid=1.3000, ask=1.3004),
+            "USDJPY": _make_tick(bid=150.0, ask=150.02),
         }[symbol]
         mock_rates.side_effect = lambda symbol, timeframe, start_pos, count: {
             "EURUSD": _make_bars([1.1000, 1.1010], tick_volume=99),
             "GBPUSD": _make_bars([1.3000, 1.3300], tick_volume=49),
+            "USDJPY": _make_bars([1.0000, 0.9000], tick_volume=9),
         }[symbol]
 
         fn = _get_symbols_top_markets()
@@ -1030,6 +1082,7 @@ class TestSymbolsTopMarkets:
         assert top_by_category["lowest_spread"]["symbol"] == "EURUSD"
         assert top_by_category["highest_tick_volume"]["symbol"] == "EURUSD"
         assert top_by_category["highest_price_change_pct"]["symbol"] == "GBPUSD"
+        assert top_by_category["largest_abs_price_change_pct"]["symbol"] == "USDJPY"
         assert result["collection_kind"] == "table"
         assert result["canonical_source"] == "data"
         assert result["ranking"] == "all"
@@ -1037,15 +1090,26 @@ class TestSymbolsTopMarkets:
             "lowest_spread",
             "highest_tick_volume",
             "highest_price_change_pct",
+            "largest_abs_price_change_pct",
         ]
+        assert set(result["rank_by_categories"]) == {
+            "spread",
+            "spread_pct",
+            "tick_volume",
+            "price_change",
+            "price_change_pct",
+            "abs_price_change",
+            "abs_price_change_pct",
+        }
         assert "groups" not in result
         assert "results" not in result
         assert result["detail"] == "full"
         assert result["timeframe_requested"] == "H1"
         assert result["timeframe_used"] == "H1"
-        assert result["scan_stats"]["spread"]["evaluated_symbols"] == 2
-        assert result["scan_stats"]["volume"]["evaluated_symbols"] == 2
-        assert result["scan_stats"]["price_change"]["evaluated_symbols"] == 2
+        assert result["scan_stats"]["spread"]["evaluated_symbols"] == 3
+        assert result["scan_stats"]["volume"]["evaluated_symbols"] == 3
+        assert result["scan_stats"]["price_change"]["evaluated_symbols"] == 3
+        assert result["scan_stats"]["abs_price_change"]["evaluated_symbols"] == 3
         assert result["ranking_context"]["lowest_spread"]["data_source"] == "live_tick"
         assert result["ranking_context"]["highest_tick_volume"]["data_source"] == "H1_bars"
         assert result["data_as_of_range"]["oldest"] <= result["data_as_of_range"]["newest"]
@@ -1146,6 +1210,7 @@ class TestSymbolsTopMarkets:
             "lowest_spread": 2,
             "highest_tick_volume": 2,
             "highest_price_change_pct": 2,
+            "largest_abs_price_change_pct": 2,
         }
         assert result["available_counts"] == result["returned_counts"]
         assert "notes" not in result
@@ -1700,6 +1765,15 @@ class TestMarketScan:
         assert result["success"] is True
         assert result["meta"]["request"]["rank_by"] == "spread_pct"
         assert result["meta"]["request"]["rank_by_input"] == "spread"
+        assert result["rank_order"] == "asc"
+        assert result["rank_order_requested"] == "auto"
+        assert result["ranking"] == "lowest_spread_pct"
+
+        descending = fn(lookback=4, rank_by="spread", rank_order="descending")
+
+        assert descending["rank_order"] == "desc"
+        assert "rank_order_requested" not in descending
+        assert descending["ranking"] == "highest_spread_pct"
 
     @patch("mtdata.core.symbols._extract_group_path_util", side_effect=lambda s: s.path)
     @patch("mtdata.core.symbols._mt5_copy_rates_from_pos")
@@ -1758,7 +1832,13 @@ class TestMarketScan:
 
         fn = _get_market_scan()
         with patch("mtdata.core.symbols.time.time", return_value=now):
-            result = fn(rank_by="spread_pct", limit=2, timeframe="H1", lookback=2)
+            result = fn(
+                rank_by="spread_pct",
+                limit=2,
+                timeframe="H1",
+                lookback=2,
+                quote_usable_only=False,
+            )
 
         assert result["success"] is True
         assert [row["symbol"] for row in result["data"]] == ["FRESHWIDE", "STALETIGHT"]

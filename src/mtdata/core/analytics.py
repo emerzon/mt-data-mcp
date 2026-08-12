@@ -24,6 +24,7 @@ from .analytics_requests import (
 from .execution_logging import run_logged_operation
 from .mt5_gateway import create_mt5_gateway
 from .output_contract import ensure_common_meta
+from .runtime_metadata import attach_mt5_source
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +36,10 @@ def _run(tool_name: str, request: Any, engine: Callable[[Any, Any], Dict[str, An
             ensure_connection_impl=ensure_mt5_connection_or_raise,
         )
         gateway.ensure_connection()
-        return ensure_common_meta(engine(request, gateway), tool_name=tool_name)
+        return ensure_common_meta(
+            attach_mt5_source(engine(request, gateway), gateway=gateway),
+            tool_name=tool_name,
+        )
 
     return run_logged_operation(
         logger,

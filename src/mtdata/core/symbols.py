@@ -1,5 +1,4 @@
 
-import hashlib
 import logging
 import math
 import re
@@ -51,7 +50,7 @@ from ..utils.symbol import (
 )
 from ..utils.symbol import (
     _normalize_group_path_query,
-    match_symbol_infos,
+    symbol_suggestions_from_gateway,
 )
 from ..utils.time import (
     _format_time_explicit,
@@ -74,6 +73,7 @@ from .output_contract import (
     normalize_output_verbosity_detail,
     resolve_output_contract,
 )
+from .runtime_metadata import build_mt5_source_provenance
 
 logger = logging.getLogger(__name__)
 
@@ -151,37 +151,6 @@ def _client_timezone_label(client_tz: Any) -> str:
         or getattr(client_tz, "zone", None)
         or str(client_tz)
     )
-
-
-def _mt5_source_provenance(mt5_gateway: Any) -> Dict[str, Any]:
-    """Return non-secret broker context for broker-specific symbol payloads."""
-    source: Dict[str, Any] = {"provider": "mt5"}
-    try:
-        account = mt5_gateway.account_info()
-    except Exception:
-        account = None
-    if account is None:
-        source["context_available"] = False
-        return source
-
-    company = getattr(account, "company", None)
-    server = getattr(account, "server", None)
-    if isinstance(company, str) and company.strip():
-        source["broker_company"] = _clean_broker_text(company.strip())
-    if isinstance(server, str) and server.strip():
-        source["server"] = _clean_broker_text(server.strip())
-    identity = "|".join(
-        str(source.get(key) or "")
-        for key in ("provider", "broker_company", "server")
-    )
-    if source.get("broker_company") or source.get("server"):
-        source["source_context_id"] = hashlib.sha256(
-            identity.encode("utf-8")
-        ).hexdigest()[:16]
-        source["context_available"] = True
-    else:
-        source["context_available"] = False
-    return source
 
 
 _SYMBOL_DESCRIBE_PRICE_FIELDS = frozenset(
@@ -513,7 +482,7 @@ def _symbol_search_sort_key(
 def _symbol_search_forex_rank(symbol: Any, search_term: str) -> int:
     query = re.sub(r"[^A-Z]", "", str(search_term or "").upper())
     if len(query) != 3 or query not in _FOREX_CURRENCY_CODES:
-        return 0
+        return 100
     pair = _symbol_forex_pair(symbol)
     if not pair or query not in (pair[:3], pair[3:]):
         return 100
@@ -788,7 +757,10 @@ def _add_symbol_currency_diagnostics(symbol_data: Dict[str, Any]) -> None:
     currency_profit = str(symbol_data.get("currency_profit") or "").strip().upper()
     if not currency_base or not currency_profit or currency_base != currency_profit:
         return
-    inferred_base = _infer_symbol_base_from_name(symbol_data.get("name"), currency_profit)
+    inferred_base = _infer_symbol_base_from_name(
+        symbol_data.get("name") or symbol_data.get("symbol"),
+        currency_profit,
+    )
     if not inferred_base or inferred_base == currency_base:
         return
     symbol_data["currency_base_inferred"] = inferred_base
@@ -839,6 +811,21 @@ def _apply_symbol_currency_diagnostics(payload: Dict[str, Any]) -> None:
         payload["currency_base_reported"] = reported_base
         payload["currency_base_source"] = "reported_by_mt5"
         payload["currency_base_inference_source"] = "inferred_from_symbol_name"
+
+
+def _attach_symbol_currency_anomaly_summary(
+    payload: Dict[str, Any],
+    *,
+    anomaly_count: int,
+) -> None:
+    if anomaly_count <= 0:
+        return
+    payload["currency_metadata_anomaly_count"] = int(anomaly_count)
+    payload["warnings"] = [
+        f"{int(anomaly_count)} symbol(s) report identical base and profit "
+        "currencies; inspect each row's inferred base diagnostics."
+    ]
+    payload["trust"] = "verify_broker_metadata"
 
 
 def _symbol_session_type(
@@ -898,25 +885,11 @@ def _find_symbol_suggestions(
     *,
     limit: int = 5,
 ) -> List[Dict[str, Any]]:
-    text = str(query or "").strip()
-    if not text:
-        return []
-    query_upper = text.upper()
-    try:
-        symbols = list(mt5_gateway.symbols_get() or [])
-    except Exception:
-        return []
-    matches = match_symbol_infos(
-        symbols,
-        text,
+    return symbol_suggestions_from_gateway(
+        mt5_gateway,
+        query,
         limit=limit,
-        group_of=_extract_group_path_util,
-        sort_key=lambda info: (
-            not str(getattr(info, "name", "") or "").upper().startswith(query_upper),
-            *_case_insensitive_sort_key(getattr(info, "name", "")),
-        ),
     )
-    return [_symbol_suggestion_from_info(symbol) for symbol in matches]
 
 
 @mcp.tool()
@@ -974,7 +947,7 @@ def symbols_list(  # noqa: C901
                 ensure_connection_impl=ensure_mt5_connection_or_raise,
             )
             mt5_gateway.ensure_connection()
-            source = _mt5_source_provenance(mt5_gateway)
+            source = build_mt5_source_provenance(mt5_gateway)
             mode = str(list_mode or "symbols").strip().lower()
             if mode not in ("symbols", "groups"):
                 return {"error": "list_mode must be 'symbols' or 'groups'."}
@@ -1096,6 +1069,8 @@ def symbols_list(  # noqa: C901
                 spread_is_floating = _symbol_list_optional_attr(symbol, "spread_float")
                 if spread_is_floating is not None:
                     row["spread_is_floating"] = bool(spread_is_floating)
+                _add_symbol_currency_diagnostics(row)
+                _apply_symbol_currency_diagnostics(row)
                 symbol_list.append(row)
 
             limit_value = _normalize_limit(limit)
@@ -1106,6 +1081,9 @@ def symbols_list(  # noqa: C901
             if offset_value < 0:
                 return {"error": "offset must be >= 0."}
             total_count = len(symbol_list)
+            currency_anomaly_count = sum(
+                1 for row in symbol_list if row.get("currency_base_warning")
+            )
             filters = {}
             if group_filter:
                 filters["group"] = group_filter
@@ -1151,6 +1129,12 @@ def symbols_list(  # noqa: C901
                                 "description",
                                 "category",
                                 "match_reason",
+                                "currency_base",
+                                "currency_base_reported",
+                                "currency_base_inferred",
+                                "currency_base_source",
+                                "currency_base_inference_source",
+                                "currency_base_warning",
                             )
                             if row.get(key) is not None
                         }
@@ -1197,6 +1181,12 @@ def symbols_list(  # noqa: C901
                     offset=offset_value,
                     limit=limit_value,
                 )
+                if currency_filter:
+                    out["currency_filter_basis"] = "broker_reported_currency"
+                _attach_symbol_currency_anomaly_summary(
+                    out,
+                    anomaly_count=currency_anomaly_count,
+                )
                 out["source"] = source
                 return out
             headers = ["symbol", "group", "description"]
@@ -1206,6 +1196,11 @@ def symbols_list(  # noqa: C901
                 headers.append("match_reason")
             for optional_header in (
                 "currency_base",
+                "currency_base_reported",
+                "currency_base_inferred",
+                "currency_base_source",
+                "currency_base_inference_source",
+                "currency_base_warning",
                 "currency_profit",
                 "digits",
                 "spread_is_floating",
@@ -1259,6 +1254,12 @@ def symbols_list(  # noqa: C901
                 returned=len(symbol_list),
                 offset=offset_value,
                 limit=limit_value,
+            )
+            if currency_filter:
+                result["currency_filter_basis"] = "broker_reported_currency"
+            _attach_symbol_currency_anomaly_summary(
+                result,
+                anomaly_count=currency_anomaly_count,
             )
             result["source"] = source
             return attach_collection_contract(
@@ -1419,7 +1420,7 @@ def _list_symbol_groups(
             }
             if filters:
                 out["filters"] = filters
-            out["source"] = source or _mt5_source_provenance(gateway)
+            out["source"] = source or build_mt5_source_provenance(gateway)
             return out
         rows = [
             [
@@ -1448,7 +1449,7 @@ def _list_symbol_groups(
         }
         if filters:
             result["filters"] = filters
-        result["source"] = source or _mt5_source_provenance(gateway)
+        result["source"] = source or build_mt5_source_provenance(gateway)
         result["pagination"] = build_pagination_meta(
             total=total_count,
             returned=len(filtered_items),
@@ -1510,8 +1511,7 @@ def symbols_describe(  # noqa: C901
                     "symbol": symbol,
                     "search_hint": f"Use symbols_list(search_term='{symbol}') to browse matching broker symbols.",
                 }
-                if suggestions:
-                    details["did_you_mean"] = suggestions
+                details["did_you_mean"] = suggestions
                 return build_error_payload(
                     f"Symbol '{symbol}' not found in MT5 terminal.",
                     code="symbol_not_found",
@@ -1688,7 +1688,7 @@ def symbols_describe(  # noqa: C901
                 "symbol": symbol_name or _nonempty_symbol_string(symbol) or symbol,
                 "timezone": _client_timezone_label(client_tz),
                 "details": symbol_data,
-                "source": _mt5_source_provenance(mt5_gateway),
+                "source": build_mt5_source_provenance(mt5_gateway),
             }
             if resolved_symbol != str(symbol or "").strip():
                 payload["symbol_input"] = str(symbol)
@@ -2417,6 +2417,20 @@ def _namespace_market_scan_quote_freshness(row: Dict[str, Any]) -> None:
     row["price_freshness"] = row.get("bar_freshness")
 
 
+def _market_scan_quote_exclusion_reason(row: Dict[str, Any]) -> str:
+    freshness_reason = str(row.get("quote_freshness_reason") or "").strip().lower()
+    if freshness_reason and freshness_reason != "live_quote":
+        return freshness_reason
+    spread_quality = str(row.get("spread_quality") or "").strip().lower()
+    if spread_quality and spread_quality != "two_sided":
+        return f"quote_{spread_quality}"
+    if row.get("quote_stale") is True:
+        return "stale_quote"
+    if freshness_reason:
+        return freshness_reason
+    return "quote_not_usable_for_live_trading"
+
+
 _TOP_MARKETS_COMPACT_BASE_HEADERS = [
     "symbol",
     "group",
@@ -3037,14 +3051,12 @@ def _market_scan_sort_rows(
     rsi_above: Optional[float],
     rsi_below: Optional[float],
 ) -> None:
-    order = str(rank_order or "auto").strip().lower()
-    if order == "auto":
-        if rank_by == "spread_pct":
-            order = "asc"
-        elif rank_by == "rsi" and rsi_below is not None and rsi_above is None:
-            order = "asc"
-        else:
-            order = "desc"
+    order = _market_scan_effective_rank_order(
+        rank_by,
+        rank_order=rank_order,
+        rsi_above=rsi_above,
+        rsi_below=rsi_below,
+    )
 
     if rank_by == "abs_price_change_pct":
         rows.sort(
@@ -3115,26 +3127,52 @@ def _normalize_market_scan_rank_order(value: Any) -> tuple[str, Optional[str]]:
     return aliases.get(raw_value, raw_value), raw_value
 
 
-def _market_scan_ranking_label(
+def _market_scan_effective_rank_order(
     rank_by: str,
     *,
+    rank_order: str,
     rsi_above: Optional[float] = None,
     rsi_below: Optional[float] = None,
 ) -> str:
-    if rank_by == "abs_price_change_pct":
-        return "largest_abs_price_change_pct"
-    if rank_by == "price_change_pct":
-        return "highest_price_change_pct"
-    if rank_by == "gap_pct":
-        return "largest_gap_pct"
-    if rank_by == "tick_volume":
-        return "highest_tick_volume"
+    order = str(rank_order or "auto").strip().lower()
+    if order != "auto":
+        return order
     if rank_by == "spread_pct":
-        return "lowest_spread_pct"
+        return "asc"
     if rank_by == "rsi" and rsi_below is not None and rsi_above is None:
-        return "lowest_rsi"
+        return "asc"
+    return "desc"
+
+
+def _market_scan_ranking_label(
+    rank_by: str,
+    *,
+    rank_order: str,
+    rsi_above: Optional[float] = None,
+    rsi_below: Optional[float] = None,
+) -> str:
+    order = _market_scan_effective_rank_order(
+        rank_by,
+        rank_order=rank_order,
+        rsi_above=rsi_above,
+        rsi_below=rsi_below,
+    )
+    if rank_by == "abs_price_change_pct":
+        return (
+            "smallest_abs_price_change_pct"
+            if order == "asc"
+            else "largest_abs_price_change_pct"
+        )
+    if rank_by == "price_change_pct":
+        return "lowest_price_change_pct" if order == "asc" else "highest_price_change_pct"
+    if rank_by == "gap_pct":
+        return "lowest_gap_pct" if order == "asc" else "highest_gap_pct"
+    if rank_by == "tick_volume":
+        return "lowest_tick_volume" if order == "asc" else "highest_tick_volume"
+    if rank_by == "spread_pct":
+        return "lowest_spread_pct" if order == "asc" else "highest_spread_pct"
     if rank_by == "rsi":
-        return "highest_rsi"
+        return "lowest_rsi" if order == "asc" else "highest_rsi"
     return str(rank_by)
 
 
@@ -3169,9 +3207,9 @@ def symbols_top_markets(  # noqa: C901
     hidden tradable symbols too; that mode is slower because MT5 may need to
     activate quotes for instruments that are not already visible. Defaults to a
     single absolute-price-change leaderboard; set `rank_by="price_change"` for
-    gainers only or `rank_by="all"` for spread, volume, and signed price-change
-    leaderboards. Volume and price-change rankings use the most recent completed
-    bar on `timeframe`. Uses compact leaderboard rows by default. Set
+    gainers only or `rank_by="all"` for spread, volume, signed price-change,
+    and absolute price-change leaderboards. Volume and price-change rankings use
+    the most recent completed bar on `timeframe`. Uses compact leaderboard rows by default. Set
     `detail="full"` for the expanded row shape and collection metadata. Use
     `candidate_limit` and `candidate_offset` to scan a deterministic partition
     of a category/group larger than 250 symbols; merge each partition's top-N
@@ -3251,7 +3289,7 @@ def symbols_top_markets(  # noqa: C901
                 ensure_connection_impl=ensure_mt5_connection_or_raise,
             )
             mt5_gateway.ensure_connection()
-            source = _mt5_source_provenance(mt5_gateway)
+            source = build_mt5_source_provenance(mt5_gateway)
             spread_cost_currency = (
                 account_currency_from_gateway(mt5_gateway)
                 if rank_kind != "volume"
@@ -3479,11 +3517,21 @@ def symbols_top_markets(  # noqa: C901
                     row.get("symbol") or "",
                 )
             )
+            abs_price_change_rows = [dict(row) for row in price_change_rows]
+            abs_price_change_rows.sort(
+                key=lambda row: (
+                    bool(row.get("data_stale")) or bool(row.get("bar_stale")),
+                    row.get("price_change_pct") is None,
+                    -abs(float(row.get("price_change_pct") or 0.0)),
+                    row.get("symbol") or "",
+                )
+            )
 
             evaluated_counts = {
                 "spread": len(spread_rows),
                 "volume": len(volume_rows),
                 "price_change": len(price_change_rows),
+                "abs_price_change": len(abs_price_change_rows),
             }
 
             spread_rows = _top_market_rows_with_data_context(
@@ -3499,6 +3547,11 @@ def symbols_top_markets(  # noqa: C901
             price_change_rows = _top_market_rows_with_data_context(
                 "price_change",
                 price_change_rows[:limit_value],
+                timeframe=timeframe_value,
+            )
+            abs_price_change_rows = _top_market_rows_with_data_context(
+                "price_change",
+                abs_price_change_rows[:limit_value],
                 timeframe=timeframe_value,
             )
 
@@ -3644,6 +3697,10 @@ def symbols_top_markets(  # noqa: C901
                 *_ranked_top_market_rows("lowest_spread", spread_rows),
                 *_ranked_top_market_rows("highest_tick_volume", volume_rows),
                 *_ranked_top_market_rows("highest_price_change_pct", price_change_rows),
+                *_ranked_top_market_rows(
+                    "largest_abs_price_change_pct",
+                    abs_price_change_rows,
+                ),
             ]
             out = _market_scan_table(
                 _top_markets_all_headers(detail_mode=detail_mode),
@@ -3659,18 +3716,32 @@ def symbols_top_markets(  # noqa: C901
                 "lowest_spread",
                 "highest_tick_volume",
                 "highest_price_change_pct",
+                "largest_abs_price_change_pct",
             ]
+            out["rank_by_categories"] = {
+                "spread": "lowest_spread",
+                "spread_pct": "lowest_spread",
+                "tick_volume": "highest_tick_volume",
+                "price_change": "highest_price_change_pct",
+                "price_change_pct": "highest_price_change_pct",
+                "abs_price_change": "largest_abs_price_change_pct",
+                "abs_price_change_pct": "largest_abs_price_change_pct",
+            }
             out["requested_limit"] = int(limit_value)
             out["universe_size"] = int(len(selected_symbols))
             out["returned_counts"] = {
                 "lowest_spread": len(spread_rows),
                 "highest_tick_volume": len(volume_rows),
                 "highest_price_change_pct": len(price_change_rows),
+                "largest_abs_price_change_pct": len(abs_price_change_rows),
             }
             out["available_counts"] = {
                 "lowest_spread": evaluated_counts["spread"],
                 "highest_tick_volume": evaluated_counts["volume"],
                 "highest_price_change_pct": evaluated_counts["price_change"],
+                "largest_abs_price_change_pct": evaluated_counts[
+                    "abs_price_change"
+                ],
             }
             out.update(
                 _market_scan_freshness_summary(
@@ -3682,6 +3753,7 @@ def symbols_top_markets(  # noqa: C901
                 "lowest_spread": spread_rows,
                 "highest_tick_volume": volume_rows,
                 "highest_price_change_pct": price_change_rows,
+                "largest_abs_price_change_pct": abs_price_change_rows,
             }
             ranking_context: Dict[str, Dict[str, Any]] = {}
             ranking_times: List[str] = []
@@ -3730,6 +3802,11 @@ def symbols_top_markets(  # noqa: C901
                     },
                     "price_change": {
                         "evaluated_symbols": evaluated_counts["price_change"],
+                        "skipped_symbols": metric_skips["price_change"],
+                        "skipped_examples": metric_issues["price_change"],
+                    },
+                    "abs_price_change": {
+                        "evaluated_symbols": evaluated_counts["abs_price_change"],
                         "skipped_symbols": metric_skips["price_change"],
                         "skipped_examples": metric_issues["price_change"],
                     },
@@ -3785,6 +3862,7 @@ def market_scan(  # noqa: C901
     price_vs_sma: Optional[Literal["above", "below"]] = None,  # type: ignore
     rank_by: Literal["abs_price_change_pct", "abs_price_change", "price_change_pct", "price_change", "tick_volume", "rsi", "spread_pct", "spread"] = "abs_price_change_pct",  # type: ignore
     rank_order: Literal["auto", "asc", "desc", "ascending", "descending"] = "auto",  # type: ignore
+    quote_usable_only: Optional[bool] = None,
 ) -> Dict[str, Any]:
     """Filtered MT5 market scanner with one flat table and technical filters.
 
@@ -3796,8 +3874,11 @@ def market_scan(  # noqa: C901
     for compatibility. Broad scans use the visible universe; `universe="all"`
     must be combined with `symbols` or `group` to avoid unbounded hidden-symbol
     activation. Use `symbols_top_markets` for a quick all-market overview with
-    separate spread, volume, and mover leaderboards. Locked or invalid quotes
-    are marked unsafe and cannot satisfy a maximum-spread filter.
+    separate spread, volume, and mover leaderboards. `quote_usable_only` defaults
+    to true for spread rankings and the `tight_spread` preset, excluding stale,
+    future, locked, inverted, and one-sided quotes before pagination. Set it
+    explicitly for other rankings. Locked or invalid quotes cannot satisfy a
+    maximum-spread filter.
     """
 
     detail_mode = normalize_output_verbosity_detail(detail, default="compact")
@@ -3830,6 +3911,13 @@ def market_scan(  # noqa: C901
         if rank_by in {None, "abs_price_change_pct"} and "rank_by" in preset_config:
             rank_by = preset_config["rank_by"]
 
+    normalized_rank_by, _ = _normalize_market_scan_rank_by(rank_by)
+    quote_usable_only_value = (
+        normalized_rank_by == "spread_pct" or preset_value == "tight_spread"
+        if quote_usable_only is None
+        else bool(quote_usable_only)
+    )
+
     def _run() -> Dict[str, Any]:  # noqa: C901
         request: Dict[str, Any] = {
             "symbols": symbols,
@@ -3843,6 +3931,7 @@ def market_scan(  # noqa: C901
             "lookback": lookback,
             "rank_by": rank_by,
             "rank_order": rank_order,
+            "quote_usable_only": quote_usable_only_value,
             "filters": {
                 key: value
                 for key, value in {
@@ -4153,6 +4242,9 @@ def market_scan(  # noqa: C901
             skipped_examples: List[Dict[str, str]] = []
             skipped_symbols = 0
             evaluated_symbols = 0
+            quote_eligibility_excluded = 0
+            quote_eligibility_reasons: Dict[str, int] = {}
+            quote_eligibility_examples: List[Dict[str, str]] = []
 
             def _record_issue(symbol_name: str, reason: str) -> None:
                 nonlocal skipped_symbols
@@ -4164,7 +4256,7 @@ def market_scan(  # noqa: C901
                 _record_issue(missing_symbol, "Requested symbol not found.")
 
             def _evaluate_symbol(symbol_obj: Any) -> None:
-                nonlocal evaluated_symbols
+                nonlocal evaluated_symbols, quote_eligibility_excluded
                 symbol_name = str(getattr(symbol_obj, "name", "") or "")
 
                 spread_row, spread_error = _build_market_scan_spread_row(
@@ -4213,6 +4305,20 @@ def market_scan(  # noqa: C901
                     return
 
                 evaluated_symbols += 1
+                if (
+                    quote_usable_only_value
+                    and row.get("quote_usable_for_live_trading") is not True
+                ):
+                    reason = _market_scan_quote_exclusion_reason(row)
+                    quote_eligibility_excluded += 1
+                    quote_eligibility_reasons[reason] = (
+                        quote_eligibility_reasons.get(reason, 0) + 1
+                    )
+                    if len(quote_eligibility_examples) < 10:
+                        quote_eligibility_examples.append(
+                            {"symbol": symbol_name, "reason": reason}
+                        )
+                    return
                 if not _market_scan_row_matches_filters(
                     row,
                     min_price_change_pct=min_price_change_pct,
@@ -4240,10 +4346,16 @@ def market_scan(  # noqa: C901
                     continue
                 _evaluate_symbol(symbol_obj)
 
+            effective_rank_order = _market_scan_effective_rank_order(
+                rank_by_value,
+                rank_order=rank_order_value,
+                rsi_above=rsi_above,
+                rsi_below=rsi_below,
+            )
             _market_scan_sort_rows(
                 matched_rows,
                 rank_by=rank_by_value,
-                rank_order=rank_order_value,
+                rank_order=effective_rank_order,
                 rsi_above=rsi_above,
                 rsi_below=rsi_below,
             )
@@ -4397,6 +4509,7 @@ def market_scan(  # noqa: C901
                 "filtered_out_symbols": max(0, evaluated_symbols - total_matches),
                 "skipped_symbols": skipped_symbols,
                 "skipped_examples": skipped_examples,
+                "quote_eligibility_excluded_symbols": quote_eligibility_excluded,
                 "query_latency_ms": round((time.perf_counter() - started_at) * 1000.0, 3),
             }
             table_payload = _market_scan_contract_table(
@@ -4434,12 +4547,21 @@ def market_scan(  # noqa: C901
                 "data": table_payload["rows"],
                 "count": table_payload["row_count"],
                 "rank_by": rank_by_value,
-                "rank_order": rank_order_value,
+                "rank_order": effective_rank_order,
                 "ranking": _market_scan_ranking_label(
                     rank_by_value,
+                    rank_order=effective_rank_order,
                     rsi_above=rsi_above,
                     rsi_below=rsi_below,
                 ),
+                "quote_usable_only": quote_usable_only_value,
+                "quote_eligibility": {
+                    "basis": "quote_usable_for_live_trading",
+                    "required": quote_usable_only_value,
+                    "excluded_symbols": int(quote_eligibility_excluded),
+                    "excluded_reasons": dict(sorted(quote_eligibility_reasons.items())),
+                    "excluded_examples": quote_eligibility_examples,
+                },
                 "price_change_basis": "previous_completed_close_to_latest_completed_close",
                 "gap_basis": "previous_completed_close_to_latest_completed_open",
                 "pagination": build_pagination_meta(
@@ -4455,10 +4577,15 @@ def market_scan(  # noqa: C901
                         "evaluated_symbols": int(stats["evaluated_symbols"]),
                         "filtered_out_symbols": int(stats["filtered_out_symbols"]),
                         "skipped_symbols": int(stats["skipped_symbols"]),
+                        "quote_eligibility_excluded_symbols": int(
+                            quote_eligibility_excluded
+                        ),
                     }
                 },
                 "meta": _market_scan_contract_meta(request=request, stats=stats),
             }
+            if rank_order_value != effective_rank_order:
+                out["rank_order_requested"] = rank_order_value
             compact_warnings = compact_shared_fields.pop("warnings", None)
             out.update(compact_shared_fields)
             if compact_warnings:

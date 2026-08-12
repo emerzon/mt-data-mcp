@@ -30,6 +30,27 @@ Successful tool responses are JSON objects that carry a `success` flag plus the 
 
 > **Scripting tip:** branch on `success` first, then read the tool-specific fields. On the CLI, also check the [exit code](CLI.md#exit-codes).
 
+### Broker data provenance
+
+Successful MT5 market-data, analytics, and forecast envelopes expose a root
+`source` object:
+
+```json
+{
+  "provider": "mt5",
+  "broker_company": "Broker Co",
+  "server": "Broker-Demo",
+  "source_context_id": "2d86b49c6e6c8b9e",
+  "context_available": true
+}
+```
+
+The context id is a stable digest of the non-secret broker company/server pair,
+so detached results can be compared without exposing an account login or
+credentials. When account context is unavailable, `provider` remains `mt5` and
+`context_available` is false. Method-level lineage such as candle price basis or
+tick retrieval method remains in its tool-specific field.
+
 ---
 
 ## Detail levels (detail)
@@ -160,6 +181,12 @@ Failures return a **structured** payload (not just a string) so callers can reac
 | `details` | | Structured, tool-specific context |
 
 Prefer `error_code` over string-matching `error` when you need to branch on failure type. On the CLI, tool/provider failures share [exit code `1`](CLI.md#exit-codes), so parse `error_code` to distinguish them.
+
+For `symbol_not_found`, market-data tools consistently include
+`details.did_you_mean`, an ordered array of broker catalog candidates with
+`symbol` and optional `description`/`group` fields. The field is present as an
+empty array when no candidate matches, so callers do not need to parse names
+from the human-readable error string.
 
 ---
 

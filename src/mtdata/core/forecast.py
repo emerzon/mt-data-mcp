@@ -42,6 +42,7 @@ from .error_envelope import build_error_payload
 from .execution_logging import run_logged_operation
 from .mt5_gateway import create_mt5_gateway, mt5_connection_error
 from .output_contract import build_pagination_meta
+from .runtime_metadata import attach_mt5_source
 
 logger = logging.getLogger(__name__)
 
@@ -825,6 +826,8 @@ def _run_forecast_operation(
                 operation=operation,
                 payload=process_payload,
             )
+            if require_connection:
+                result = attach_mt5_source(result)
             if isinstance(result, dict) and "error" not in result:
                 result.setdefault("success", True)
             return result

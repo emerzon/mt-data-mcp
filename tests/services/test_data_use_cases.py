@@ -57,6 +57,40 @@ def test_run_data_fetch_candles_passes_allow_stale_to_service():
     assert captured["kwargs"]["allow_stale"] is True
 
 
+def test_candle_and_tick_results_share_broker_source_context() -> None:
+    gateway = SimpleNamespace(
+        ensure_connection=lambda: None,
+        account_info=lambda: SimpleNamespace(
+            company="Broker Co",
+            server="Broker-Demo",
+            login=123456,
+        ),
+    )
+    candles = run_data_fetch_candles(
+        DataFetchCandlesRequest(symbol="EURUSD", limit=2),
+        gateway=gateway,
+        fetch_candles_impl=lambda **_kwargs: {
+            "success": True,
+            "symbol": "EURUSD",
+            "data": [],
+        },
+    )
+    ticks = run_data_fetch_ticks(
+        DataFetchTicksRequest(symbol="EURUSD", limit=2),
+        gateway=gateway,
+        fetch_ticks_impl=lambda **_kwargs: {
+            "success": True,
+            "symbol": "EURUSD",
+            "data": [],
+        },
+    )
+
+    assert candles["source"] == ticks["source"]
+    assert candles["source"]["broker_company"] == "Broker Co"
+    assert candles["source"]["server"] == "Broker-Demo"
+    assert "login" not in candles["source"]
+
+
 @pytest.mark.parametrize(
     ("message", "expected_code"),
     [
@@ -97,6 +131,54 @@ def test_run_data_fetch_candles_classifies_query_errors(message, expected_code):
     assert result["operation"] == "data_fetch_candles"
     assert result["remediation"]
     assert result["details"]["symbol"] == "EURUSD.BAD"
+
+
+def test_data_fetch_symbol_errors_use_canonical_structured_suggestions() -> None:
+    candidates = [
+        SimpleNamespace(
+            name="AAPL.NAS",
+            description="Apple Inc CFD",
+            path="Stocks\\NASDAQ",
+        ),
+        SimpleNamespace(
+            name="AAPL.NAS-24",
+            description="Apple Inc 24/5 CFD",
+            path="Stocks\\NASDAQ\\24HR",
+        ),
+    ]
+    gateway = SimpleNamespace(
+        ensure_connection=lambda: None,
+        symbols_get=lambda: candidates,
+    )
+
+    candles = run_data_fetch_candles(
+        DataFetchCandlesRequest(symbol="AAPL"),
+        gateway=gateway,
+        fetch_candles_impl=lambda **_kwargs: {
+            "error": "Symbol AAPL not found. Closest broker symbols: AAPL.NAS."
+        },
+    )
+    ticks = run_data_fetch_ticks(
+        DataFetchTicksRequest(symbol="AAPL"),
+        gateway=gateway,
+        fetch_ticks_impl=lambda **_kwargs: {"error": "Unknown symbol AAPL"},
+    )
+
+    expected = [
+        {
+            "symbol": "AAPL.NAS",
+            "description": "Apple Inc CFD",
+            "group": "Stocks\\NASDAQ",
+        },
+        {
+            "symbol": "AAPL.NAS-24",
+            "description": "Apple Inc 24/5 CFD",
+            "group": "Stocks\\NASDAQ\\24HR",
+        },
+    ]
+    assert candles["details"]["did_you_mean"] == expected
+    assert ticks["details"]["did_you_mean"] == expected
+    assert "Closest broker symbols" not in candles["error"]
 
 
 def test_run_data_fetch_candles_passes_include_spread_to_service():
@@ -296,6 +378,7 @@ def test_run_data_fetch_candles_compact_omits_default_metadata():
         "count": 5,
         "limit_satisfied": True,
         "data": [],
+        "source": {"provider": "mt5", "context_available": False},
     }
 
 
@@ -1549,6 +1632,7 @@ def test_run_data_fetch_ticks_compact_prunes_row_diagnostics():
         "quality": "partial_quotes=1/2; last=unavailable",
         "requested_limit": 2,
         "limit_reached": True,
+        "source": {"provider": "mt5", "context_available": False},
     }
 
 
