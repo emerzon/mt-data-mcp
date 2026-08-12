@@ -3447,6 +3447,14 @@ def fetch_ticks(  # noqa: C901
                     "budget before reaching the requested start."
                 )
             last_quote = payload.get("last_quote")
+            execution_quote = None
+            if (
+                isinstance(last_quote, dict)
+                and last_quote.get("spread_valid") is not True
+            ):
+                execution_quote = _reconciled_execution_quote(df_ticks)
+                if execution_quote is not None:
+                    payload["execution_quote"] = execution_quote
             if isinstance(last_quote, dict) and price_point is not None:
                 spread_value = _finite_or_none(last_quote.get("spread"))
                 if spread_value is not None:
@@ -3475,9 +3483,14 @@ def fetch_ticks(  # noqa: C901
                 age_rounder=lambda value: round(value, 3),
             )
             payload.update(freshness_context)
-            if (
-                isinstance(last_quote, dict)
-                and last_quote.get("spread_valid") is not True
+            quote_for_gate = execution_quote or last_quote
+            if isinstance(execution_quote, dict):
+                payload["usable_for_live_trading_basis"] = (
+                    "quote_age_market_session_and_reconciled_spread"
+                )
+            elif (
+                isinstance(quote_for_gate, dict)
+                and quote_for_gate.get("spread_valid") is not True
             ):
                 payload["usable_for_live_trading"] = False
                 payload["usable_for_live_trading_basis"] = (
@@ -3537,6 +3550,48 @@ def fetch_ticks(  # noqa: C901
                     if spread_quality == "locked"
                     else "unavailable"
                 ),
+            }
+
+        def _reconciled_execution_quote(
+            frame: pd.DataFrame,
+        ) -> Optional[Dict[str, Any]]:
+            if frame.empty or "quote_update_type" not in frame.columns:
+                return None
+            update_type = str(frame["quote_update_type"].iloc[-1] or "")
+            if update_type not in {"bid_only_update", "ask_only_update"}:
+                return None
+            prior = frame.iloc[:-1]
+            if "spread_sample_eligible" in prior.columns:
+                prior = prior[prior["spread_sample_eligible"].astype(bool)]
+            if prior.empty:
+                return None
+            prior_row = prior.iloc[-1]
+            latest_row = frame.iloc[-1]
+            bid = _finite_or_none(
+                latest_row.get("bid")
+                if update_type == "bid_only_update"
+                else prior_row.get("bid")
+            )
+            ask = _finite_or_none(
+                latest_row.get("ask")
+                if update_type == "ask_only_update"
+                else prior_row.get("ask")
+            )
+            if bid is None or ask is None or ask <= bid:
+                return None
+            spread = canonical_quote_spread(bid, ask)
+            mid = canonical_quote_midpoint(bid, ask)
+            if spread is None or spread <= 0.0 or mid is None:
+                return None
+            return {
+                "bid": bid,
+                "ask": ask,
+                "mid": mid,
+                "spread": spread,
+                "spread_valid": True,
+                "spread_quality": "two_sided",
+                "spread_basis": "reconciled_one_sided_update",
+                "time": latest_row.get("time"),
             }
 
         def _compact_summary_from_ticks() -> Dict[str, Any]:

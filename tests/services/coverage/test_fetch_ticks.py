@@ -453,6 +453,32 @@ class TestFetchTicks(unittest.TestCase):
     @patch(_CACHED_INFO, return_value=SimpleNamespace(digits=5))
     @patch(_RESOLVE_CTZ, return_value=None)
     @patch(_GUARD, _mock_symbol_guard)
+    def test_one_sided_latest_tick_uses_reconciled_execution_quote(
+        self, mock_ctz, mock_info, mock_ticks
+    ):
+        ticks = _make_ticks(2)
+        ticks[0].update({"bid": 1.1000, "ask": 1.1002, "flags": 6})
+        ticks[1].update({"bid": 1.1001, "ask": 1.1001, "flags": 2})
+        mock_ticks.return_value = ticks
+
+        result = fetch_ticks('EURUSD', limit=2, format='full_rows')
+
+        self.assertTrue(result['usable_for_live_trading'])
+        self.assertEqual(
+            result['usable_for_live_trading_basis'],
+            'quote_age_market_session_and_reconciled_spread',
+        )
+        self.assertEqual(result['execution_quote']['bid'], 1.1001)
+        self.assertEqual(result['execution_quote']['ask'], 1.1002)
+        self.assertEqual(
+            result['execution_quote']['spread_basis'],
+            'reconciled_one_sided_update',
+        )
+
+    @patch(_TICKS_RANGE)
+    @patch(_CACHED_INFO, return_value=SimpleNamespace(digits=5))
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_GUARD, _mock_symbol_guard)
     def test_coherent_zero_spread_is_excluded_from_spread_samples(
         self, mock_ctz, mock_info, mock_ticks
     ):

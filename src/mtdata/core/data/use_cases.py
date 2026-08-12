@@ -54,6 +54,7 @@ _COMPACT_TICK_TOP_LEVEL_FIELDS = (
     "quote_update_count",
     "data",
     "last_quote",
+    "execution_quote",
     "timezone",
     "price_precision",
     "price_point",
