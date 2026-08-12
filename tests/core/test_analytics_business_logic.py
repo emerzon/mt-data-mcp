@@ -513,6 +513,66 @@ def test_execution_quality_matches_order_and_computes_markout() -> None:
     )
 
 
+def test_execution_quality_compact_omits_expanded_breakdowns() -> None:
+    gateway = FakeGateway()
+    start = _now() - 100
+    gateway.tick_rows = _ticks(100, start=start)
+    gateway.orders = [
+        {
+            "ticket": 10,
+            "type": 0,
+            "price_open": 1.10005,
+            "volume_initial": 1.0,
+            "time_setup_msc": (start + 9) * 1000,
+        }
+    ]
+    gateway.deals = [
+        {
+            "ticket": 20,
+            "order": 10,
+            "symbol": "EURUSD",
+            "type": 0,
+            "volume": 1.0,
+            "price": 1.10008,
+            "time_msc": (start + 10) * 1000,
+        }
+    ]
+
+    result = analyze_execution_quality(
+        TradeExecutionQualityRequest(minutes_back=60, markout_seconds=[1]),
+        gateway,
+    )
+
+    assert result["summary"]["fills"] == 1
+    assert "breakdowns" not in result
+
+
+def test_execution_quality_excludes_future_dated_fills() -> None:
+    gateway = FakeGateway()
+    future = _now() + 1_000
+    gateway.orders = []
+    gateway.deals = [
+        {
+            "ticket": 20,
+            "order": 10,
+            "symbol": "EURUSD",
+            "type": 0,
+            "volume": 1.0,
+            "price": 1.10008,
+            "time_msc": future * 1000,
+        }
+    ]
+
+    result = analyze_execution_quality(
+        TradeExecutionQualityRequest(minutes_back=60),
+        gateway,
+    )
+
+    assert result["summary"]["fills"] == 0
+    assert result["data_quality"]["skipped"]["future_timestamp"] == 1
+    assert "ahead of the observation clock" in result["warnings"][0]
+
+
 def test_execution_quality_aggregates_partial_fills_by_order() -> None:
     gateway = FakeGateway()
     start = _now() - 100

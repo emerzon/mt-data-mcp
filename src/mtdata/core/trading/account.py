@@ -415,30 +415,87 @@ def _run_trade_journal_request(request: TradeJournalAnalyzeRequest) -> Dict[str,
     minimum_sample = int(max(1, int(request.min_sample)))
     if detail_mode == "compact":
         period_context = {"timezone": "UTC"}
-    history_result = _run_trade_history_request(
-        TradeHistoryRequest(
-            history_kind="deals",
-            start=request.start,
-            end=request.end,
-            symbol=request.symbol,
-            side=request.side,
-            position_ticket=request.position_ticket,
-            deal_ticket=request.deal_ticket,
-            minutes_back=request.minutes_back,
-            limit=request.limit,
+    requested_exit_limit = int(request.limit)
+    page_limit = min(1_000, max(50, requested_exit_limit * 2))
+    raw_rows: List[Dict[str, Any]] = []
+    currency: Optional[str] = None
+    message: Any = None
+    history_has_more = False
+    history_total_count: Optional[int] = None
+    page_offset = 0
+
+    def _usable_exit_count() -> int:
+        return sum(
+            1
+            for row in raw_rows
+            if isinstance(row, dict)
+            and row.get("timestamp_anomaly") is not True
+            and str(row.get("symbol") or "").strip()
+            and _is_exit_deal_row(row)
+            and _trade_journal_net_pnl(row) is not None
         )
-    )
-    if not isinstance(history_result, dict):
-        return {"error": "Unexpected trade_history response shape."}
-    if history_result.get("error"):
-        return history_result
-    currency = str(history_result.get("currency") or "").strip() or None
 
-    raw_rows = history_result.get("items")
-    if not isinstance(raw_rows, list):
-        return {"error": "Unexpected trade_history response shape."}
+    while True:
+        history_result = _run_trade_history_request(
+            TradeHistoryRequest(
+                history_kind="deals",
+                start=request.start,
+                end=request.end,
+                symbol=request.symbol,
+                side=request.side,
+                position_ticket=request.position_ticket,
+                deal_ticket=request.deal_ticket,
+                minutes_back=request.minutes_back,
+                limit=page_limit,
+                offset=page_offset,
+            )
+        )
+        if not isinstance(history_result, dict):
+            return {"error": "Unexpected trade_history response shape."}
+        if history_result.get("error"):
+            return history_result
+        if currency is None:
+            currency = str(history_result.get("currency") or "").strip() or None
+        if message is None:
+            message = history_result.get("message")
+        page_rows = history_result.get("items")
+        if not isinstance(page_rows, list):
+            return {"error": "Unexpected trade_history response shape."}
+        raw_rows.extend(row for row in page_rows if isinstance(row, dict))
 
-    message = history_result.get("message")
+        pagination = history_result.get("pagination")
+        if isinstance(pagination, dict):
+            history_has_more = bool(pagination.get("has_more"))
+            try:
+                history_total_count = int(pagination.get("total"))
+            except (TypeError, ValueError):
+                history_total_count = None
+            next_offset = pagination.get("next_offset")
+        else:
+            history_has_more = False
+            next_offset = None
+        if _usable_exit_count() >= requested_exit_limit or not history_has_more:
+            break
+        try:
+            next_offset_value = int(next_offset)
+        except (TypeError, ValueError):
+            next_offset_value = page_offset + len(page_rows)
+        if next_offset_value <= page_offset or not page_rows:
+            break
+        page_offset = next_offset_value
+
+    def _sample_provenance(exit_deals: int) -> Dict[str, Any]:
+        out = {
+            "requested_exit_limit": requested_exit_limit,
+            "history_rows_scanned": len(raw_rows),
+            "exit_deals_returned": int(exit_deals),
+            "exit_target_satisfied": int(exit_deals) >= requested_exit_limit,
+            "history_has_more": history_has_more,
+        }
+        if history_total_count is not None:
+            out["history_rows_available"] = history_total_count
+        return out
+
     if isinstance(message, str) and message.strip() and not raw_rows:
         breakdown_limit = int(max(1, int(request.breakdown_limit)))
         sample_quality = _trade_journal_sample_quality(0, minimum=minimum_sample)
@@ -450,6 +507,7 @@ def _run_trade_journal_request(request: TradeJournalAnalyzeRequest) -> Dict[str,
                 "check_result": sample_quality,
                 "sample_size": 0,
                 "sample_quality": sample_quality,
+                "sample_provenance": _sample_provenance(0),
                 "message": message,
                 "meta": {
                     "history_rows": 0,
@@ -469,6 +527,7 @@ def _run_trade_journal_request(request: TradeJournalAnalyzeRequest) -> Dict[str,
             "summary": _trade_journal_metrics([]),
             "sample_size": 0,
             "sample_quality": sample_quality,
+            "sample_provenance": _sample_provenance(0),
             "message": message,
             "meta": {
                 "history_rows": 0,
@@ -483,8 +542,11 @@ def _run_trade_journal_request(request: TradeJournalAnalyzeRequest) -> Dict[str,
         return _attach_trade_journal_units(payload, currency=currency)
 
     rows = [row for row in raw_rows if isinstance(row, dict)]
+    anomalous_rows = sum(1 for row in rows if row.get("timestamp_anomaly") is True)
     analyzed_rows: List[Dict[str, Any]] = []
     for row in rows:
+        if row.get("timestamp_anomaly") is True:
+            continue
         symbol = str(row.get("symbol") or "").strip()
         if not symbol or not _is_exit_deal_row(row):
             continue
@@ -509,6 +571,8 @@ def _run_trade_journal_request(request: TradeJournalAnalyzeRequest) -> Dict[str,
                     enriched[money_key] = rounded_value
         enriched["net_pnl"] = net_pnl
         analyzed_rows.append(enriched)
+        if len(analyzed_rows) >= requested_exit_limit:
+            break
 
     breakdown_limit = int(max(1, int(request.breakdown_limit)))
     if not analyzed_rows:
@@ -521,6 +585,7 @@ def _run_trade_journal_request(request: TradeJournalAnalyzeRequest) -> Dict[str,
                 "check_result": sample_quality,
                 "sample_size": 0,
                 "sample_quality": sample_quality,
+                "sample_provenance": _sample_provenance(0),
                 "message": "No realized exit deals found in the requested trade history.",
                 "meta": {
                     "history_rows": int(len(rows)),
@@ -540,6 +605,7 @@ def _run_trade_journal_request(request: TradeJournalAnalyzeRequest) -> Dict[str,
             "summary": _trade_journal_metrics([]),
             "sample_size": 0,
             "sample_quality": sample_quality,
+            "sample_provenance": _sample_provenance(0),
             "message": "No realized exit deals found in the requested trade history.",
             "meta": {
                 "history_rows": int(len(rows)),
@@ -562,6 +628,7 @@ def _run_trade_journal_request(request: TradeJournalAnalyzeRequest) -> Dict[str,
             "check_result": sample_quality,
             "sample_size": int(len(analyzed_rows)),
             "sample_quality": sample_quality,
+            "sample_provenance": _sample_provenance(len(analyzed_rows)),
             "meta": {
                 "history_rows": int(len(rows)),
                 "exit_deals": int(len(analyzed_rows)),
@@ -594,6 +661,7 @@ def _run_trade_journal_request(request: TradeJournalAnalyzeRequest) -> Dict[str,
         "summary": _trade_journal_metrics(analyzed_rows),
         "sample_size": int(len(analyzed_rows)),
         "sample_quality": sample_quality,
+        "sample_provenance": _sample_provenance(len(analyzed_rows)),
         "meta": {
             "history_rows": int(len(rows)),
             "exit_deals": int(len(analyzed_rows)),
@@ -606,6 +674,10 @@ def _run_trade_journal_request(request: TradeJournalAnalyzeRequest) -> Dict[str,
     sample_warning = _trade_journal_sample_warning(len(analyzed_rows), minimum=minimum_sample)
     if sample_warning:
         payload["sample_warning"] = sample_warning
+    if anomalous_rows:
+        payload["warnings"] = [
+            f"Excluded {anomalous_rows} future-dated broker deal(s) from journal statistics."
+        ]
     if detail_mode == "full":
         payload["items"] = [
             _trade_journal_trade_snapshot(row) for row in analyzed_rows
@@ -646,7 +718,7 @@ def _trade_journal_sample_quality(exit_deals: int, *, minimum: int = 30) -> Dict
     }
     if count < recommended:
         quality["suggestions"] = [
-            "Increase limit to fetch more raw deals.",
+            "Increase limit to analyze more realized exit deals.",
             "Increase minutes_back or provide a wider start/end range.",
             "Remove symbol or side filters if you want account-level statistics.",
         ]
@@ -659,7 +731,7 @@ def _trade_journal_sample_warning(exit_deals: int, *, minimum: int = 30) -> Opti
         return None
     return (
         f"Only {int(exit_deals)} realized exit deal(s) were analyzed; "
-        f"{recommended}+ is recommended for basic journal statistics. Increase limit to fetch more raw deals, "
+        f"{recommended}+ is recommended for basic journal statistics. Increase limit to analyze more exit deals, "
         "increase minutes_back, or provide a wider start/end range."
     )
 

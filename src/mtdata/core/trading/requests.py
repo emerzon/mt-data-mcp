@@ -319,7 +319,10 @@ class TradeJournalAnalyzeRequest(_SideNormalizedRequest):
     limit: int = Field(
         default=50,
         ge=1,
-        description="Maximum raw history rows to inspect. Default 50 keeps post-session review fast; raise for longer-term statistics.",
+        description=(
+            "Maximum realized exit deals to analyze. The command pages through "
+            "raw deal history as needed. Default 50 keeps post-session review fast."
+        ),
     )
     breakdown_limit: int = Field(default=10, ge=1)
     min_sample: int = Field(

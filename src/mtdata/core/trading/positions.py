@@ -439,6 +439,9 @@ def _normalize_trade_read_output(
                 "has_more",
                 "truncated",
                 "more_available",
+                "observed_at",
+                "data_quality",
+                "warnings",
             ):
                 if key in rows:
                     out[key] = rows.get(key)
@@ -598,6 +601,9 @@ _TRADE_HISTORY_DEAL_TOP_LEVEL_FIELDS = (
     "exit_trigger",
     "exit_trigger_price",
     "exit_trigger_source",
+    "timestamp_anomaly",
+    "original_fill_time",
+    "fill_time_future_seconds",
 )
 _TRADE_HISTORY_ORDER_TOP_LEVEL_FIELDS = (
     "ticket",
@@ -646,6 +652,9 @@ _TRADE_HISTORY_COMPACT_DEAL_FIELDS = (
     "comment_truncated",
     "exit_trigger",
     "exit_trigger_price",
+    "timestamp_anomaly",
+    "original_fill_time",
+    "fill_time_future_seconds",
 )
 _TRADE_HISTORY_COMPACT_ORDER_FIELDS = (
     "placed_time",
@@ -866,7 +875,8 @@ def _full_trade_history_row(
             "position_ticket", "position_id", "position_by_id", "time", "time_msc",
             "type", "type_label", "symbol", "volume", "price", "profit",
             "commission", "swap", "fee", "comment", "exit_trigger",
-            "exit_trigger_price",
+            "exit_trigger_price", "timestamp_anomaly", "original_fill_time",
+            "fill_time_future_seconds",
         }
     raw = {
         key: value

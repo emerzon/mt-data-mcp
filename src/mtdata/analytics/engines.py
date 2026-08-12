@@ -749,7 +749,13 @@ def analyze_execution_quality(  # noqa: C901
     orders = [_mapping(row) for row in (gateway.history_orders_get(start, end, **kwargs) or [])]
     order_by_ticket = {int(row.get("ticket") or 0): row for row in orders if row.get("ticket")}
     fills = []
-    skipped = {"non_trade": 0, "filter": 0, "unbenchmarked": 0, "missing_markout": 0}
+    skipped = {
+        "non_trade": 0,
+        "filter": 0,
+        "unbenchmarked": 0,
+        "missing_markout": 0,
+        "future_timestamp": 0,
+    }
     eligible_deals = []
     for deal in deals:
         side = _deal_side(deal, gateway)
@@ -775,6 +781,8 @@ def analyze_execution_quality(  # noqa: C901
     )
     benchmark_sources = {"arrival_quote": 0, "order_price": 0, "order_price_fallback": 0}
     processed_candidates = 0
+    observed_epoch = datetime.now(timezone.utc).timestamp()
+    future_tolerance_seconds = 300.0
     for deal in eligible_deals:
         processed_candidates += 1
         side = _deal_side(deal, gateway)
@@ -782,6 +790,9 @@ def analyze_execution_quality(  # noqa: C901
         symbol = str(deal.get("symbol") or "").strip()
         order = order_by_ticket.get(int(deal.get("order") or 0), {})
         fill_epoch = float(deal.get("time_msc") or 0) / 1000.0 or float(deal.get("time") or 0)
+        if fill_epoch > observed_epoch + future_tolerance_seconds:
+            skipped["future_timestamp"] += 1
+            continue
         time_setup_msc = float(order.get("time_setup_msc") or 0.0)
         if not time_setup_msc and order.get("time_setup"):
             time_setup_msc = float(order["time_setup"]) * 1000.0
@@ -1015,11 +1026,16 @@ def analyze_execution_quality(  # noqa: C901
             "pending_time_to_fill_ms measures intentional limit/stop order wait, not "
             "broker execution latency; order_to_fill_duration_ms is a mixed duration."
         )
+    if skipped["future_timestamp"]:
+        warnings.append(
+            f"Skipped {skipped['future_timestamp']} fill(s) whose broker timestamp "
+            "was more than 5 minutes ahead of the observation clock."
+        )
     return {
         "success": True,
         **({"currency": account_currency} if account_currency else {}),
         "summary": summary,
-        "breakdowns": breakdowns,
+        **({"breakdowns": breakdowns} if request.detail != "compact" else {}),
         **({"items": fills} if request.detail == "full" else {}),
         "sample_quality": {"status": "ok" if len(fills) >= request.min_sample else "insufficient", "minimum": request.min_sample, "observed": len(fills)},
         "data_quality": {

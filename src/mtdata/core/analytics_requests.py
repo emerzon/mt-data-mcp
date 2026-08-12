@@ -39,11 +39,20 @@ class MarketMicrostructureRequest(BaseModel):
 class TradeExecutionQualityRequest(BaseModel):
     start: Optional[str] = None
     end: Optional[str] = None
-    minutes_back: int = Field(43_200, gt=0)
+    minutes_back: int = Field(
+        43_200,
+        gt=0,
+        description="Execution-history lookback in minutes (default 43200 = 30 days).",
+    )
     symbol: Optional[str] = None
     side: Optional[Literal["buy", "sell"]] = None
     magic: Optional[int] = None
-    limit: int = Field(200, ge=1, le=1_000)
+    limit: int = Field(
+        200,
+        ge=1,
+        le=1_000,
+        description="Maximum eligible fills to analyze (default 200).",
+    )
     benchmark: Literal["arrival_quote", "order_price"] = "arrival_quote"
     benchmark_fallback: Literal["skip", "order_price"] = "skip"
     quote_window_seconds: int = Field(5, ge=1, le=60)

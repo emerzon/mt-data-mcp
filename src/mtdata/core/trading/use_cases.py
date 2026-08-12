@@ -3377,6 +3377,17 @@ def run_trade_history(  # noqa: C901
                 if len(df) == 0:
                     return _empty_history_message("deals")
                 sort_src = _normalize_time_col(df, "time")
+                observed_history_epoch = time.time()
+                if sort_src is not None:
+                    future_seconds = sort_src - observed_history_epoch
+                    future_mask = future_seconds > 300.0
+                    if bool(future_mask.any()):
+                        df["timestamp_anomaly"] = future_mask.where(future_mask, None)
+                        df["original_fill_time"] = df["time"].where(future_mask, None)
+                        df["fill_time_future_seconds"] = future_seconds.where(
+                            future_mask,
+                            None,
+                        ).round(3)
                 for col, prefix in deal_enum_columns:
                     _decode_enum_column(df, col, prefix)
                 df = _filter_by_side(df)
@@ -3489,6 +3500,11 @@ def run_trade_history(  # noqa: C901
             records = (
                 df.astype(object).where(df.notna(), None).to_dict(orient="records")
             )
+            timestamp_anomaly_count = sum(
+                1
+                for row in records
+                if isinstance(row, dict) and row.get("timestamp_anomaly") is True
+            )
             timezone_label = "UTC"
             if use_client_tz_value:
                 tz_obj, lookup_failed = _resolve_client_timezone()
@@ -3517,7 +3533,12 @@ def run_trade_history(  # noqa: C901
                             row["position_ticket"] = position_value
                     row.update(comment_row_metadata(row.get("comment")))
             has_more = offset_value + len(records) < total_count
-            if page_value is not None or offset_value or (limit_value and total_count > len(records)):
+            if (
+                page_value is not None
+                or offset_value
+                or (limit_value and total_count > len(records))
+                or timestamp_anomaly_count
+            ):
                 pagination = {
                     "items": records,
                     "total_count": total_count,
@@ -3525,6 +3546,25 @@ def run_trade_history(  # noqa: C901
                     "limit": limit_value,
                     "has_more": has_more,
                 }
+                if timestamp_anomaly_count:
+                    max_future_seconds = max(
+                        float(row.get("fill_time_future_seconds") or 0.0)
+                        for row in records
+                        if isinstance(row, dict) and row.get("timestamp_anomaly") is True
+                    )
+                    pagination["observed_at"] = _format_datetime_second_explicit(
+                        datetime.fromtimestamp(time.time(), tz=timezone.utc)
+                    )
+                    pagination["data_quality"] = {
+                        "timestamp_anomaly_count": timestamp_anomaly_count,
+                        "timestamp_anomaly_tolerance_seconds": 300,
+                        "max_fill_time_ahead_seconds": round(max_future_seconds, 3),
+                    }
+                    pagination["warnings"] = [
+                        f"{timestamp_anomaly_count} returned deal(s) have broker fill "
+                        "timestamps more than 5 minutes ahead of the observation clock; "
+                        "downstream journal and execution analytics exclude them."
+                    ]
                 if has_more:
                     pagination["truncated"] = True
                     pagination["more_available"] = int(

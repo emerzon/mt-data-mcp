@@ -106,6 +106,29 @@ def test_trade_history_deals_normalizes_time_to_utc_string() -> None:
     assert out["timezone"] == "UTC"
 
 
+def test_trade_history_flags_future_broker_fill_timestamp() -> None:
+    mt5, prev = _install_mock_mt5()
+    Deal = namedtuple("Deal", ["ticket", "time", "symbol"])
+    mt5.history_deals_get.return_value = [
+        Deal(ticket=1, time=1_700_001_000, symbol="EURUSD")
+    ]
+
+    with (
+        patch("mtdata.core.trading.account._use_client_tz", lambda: False),
+        patch("mtdata.core.trading.use_cases.time.time", return_value=1_700_000_000.0),
+    ):
+        out = trade_history(history_kind="deals", __cli_raw=True)
+    if prev is not None:
+        sys.modules["MetaTrader5"] = prev
+
+    assert out["data_quality"]["timestamp_anomaly_count"] == 1
+    assert out["data_quality"]["max_fill_time_ahead_seconds"] == 1000.0
+    assert "ahead of the observation clock" in out["warnings"][0]
+    assert out["items"][0]["timestamp_anomaly"] is True
+    assert out["items"][0]["original_fill_time"] == out["items"][0]["fill_time"]
+    assert out["items"][0]["fill_time_future_seconds"] == 1000.0
+
+
 def test_trade_history_supports_offset_pagination() -> None:
     mt5, prev = _install_mock_mt5()
     Deal = namedtuple("Deal", ["ticket", "time", "symbol"])
@@ -1449,6 +1472,83 @@ def test_trade_journal_analyze_compact_returns_summary_only() -> None:
     assert "breakdowns" not in out
     assert "best_trades" not in out
     assert "worst_trades" not in out
+    assert out["sample_provenance"] == {
+        "requested_exit_limit": 50,
+        "history_rows_scanned": 2,
+        "exit_deals_returned": 2,
+        "exit_target_satisfied": False,
+        "history_has_more": False,
+    }
+
+
+def test_trade_journal_limit_pages_until_requested_exit_count() -> None:
+    pages = {
+        0: [
+            {"ticket": 1, "symbol": "EURUSD", "entry": "In", "profit": 0.0},
+            {"ticket": 2, "symbol": "GBPUSD", "entry": "In", "profit": 0.0},
+        ],
+        2: [
+            {"ticket": 3, "symbol": "EURUSD", "entry": "Out", "profit": 2.0},
+            {"ticket": 4, "symbol": "GBPUSD", "entry": "Out", "profit": -1.0},
+        ],
+    }
+    observed_offsets = []
+
+    def _fake_history(request):
+        observed_offsets.append(request.offset)
+        rows = pages[request.offset]
+        return {
+            "success": True,
+            "count": len(rows),
+            "items": rows,
+            "pagination": {
+                "total": 4,
+                "returned": len(rows),
+                "offset": request.offset,
+                "limit": request.limit,
+                "has_more": request.offset == 0,
+                "more_available": 2 if request.offset == 0 else 0,
+            },
+        }
+
+    with patch(
+        "mtdata.core.trading.account._run_trade_history_request",
+        side_effect=_fake_history,
+    ):
+        out = trade_journal_analyze(limit=2, __cli_raw=True)
+
+    assert observed_offsets == [0, 2]
+    assert out["sample_size"] == 2
+    assert out["sample_provenance"] == {
+        "requested_exit_limit": 2,
+        "history_rows_scanned": 4,
+        "exit_deals_returned": 2,
+        "exit_target_satisfied": True,
+        "history_has_more": False,
+        "history_rows_available": 4,
+    }
+
+
+def test_trade_journal_excludes_future_timestamp_anomalies() -> None:
+    rows = [
+        {
+            "ticket": 1,
+            "symbol": "EURUSD",
+            "entry": "Out",
+            "profit": 99.0,
+            "timestamp_anomaly": True,
+        },
+        {"ticket": 2, "symbol": "EURUSD", "entry": "Out", "profit": 2.0},
+    ]
+    with patch(
+        "mtdata.core.trading.account._run_trade_history_request",
+        return_value={"success": True, "count": 2, "items": rows},
+    ):
+        out = trade_journal_analyze(limit=2, __cli_raw=True)
+
+    assert out["sample_size"] == 1
+    assert out["summary"]["net_pnl"] == 2.0
+    assert "Excluded 1 future-dated" in out["warnings"][0]
 
 
 def test_trade_journal_analyze_standard_uses_lite_symbol_breakdown() -> None:
@@ -1575,7 +1675,7 @@ def test_trade_journal_analyze_reports_explicit_minutes_back_window() -> None:
     assert out["minutes_back_effective"] == 60
     assert "note" not in out
     assert "Only 0 realized exit deal" in out["sample_warning"]
-    assert "Increase limit to fetch more raw deals" in out["sample_warning"]
+    assert "Increase limit to analyze more exit deals" in out["sample_warning"]
 
 
 def test_trade_journal_analyze_filters_best_worst_by_pnl_sign() -> None:
