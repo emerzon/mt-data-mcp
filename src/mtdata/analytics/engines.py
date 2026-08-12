@@ -259,7 +259,14 @@ def _execution_duration_display(
     for key, value in stats.items():
         if value is None:
             continue
-        display = format_age_seconds(float(value) / 1000.0)
+        milliseconds = max(0.0, float(value))
+        if milliseconds < 1000.0:
+            display = f"{int(round(milliseconds))}ms"
+        elif milliseconds < 60_000.0:
+            seconds = milliseconds / 1000.0
+            display = f"{seconds:.2f}".rstrip("0").rstrip(".") + "s"
+        else:
+            display = format_age_seconds(milliseconds / 1000.0)
         if display is not None:
             out[str(key)] = display
     return out
@@ -935,7 +942,13 @@ def analyze_execution_quality(  # noqa: C901
         ),
         reverse=True,
     )
-    benchmark_sources = {"arrival_quote": 0, "order_price": 0, "order_price_fallback": 0}
+    benchmark_sources = {
+        "arrival_quote": 0,
+        "pending_order_price": 0,
+        "order_price": 0,
+        "order_price_fallback": 0,
+    }
+    arrival_quote_observations = 0
     processed_candidates = 0
     observed_epoch = datetime.now(timezone.utc).timestamp()
     future_tolerance_seconds = 300.0
@@ -961,7 +974,24 @@ def analyze_execution_quality(  # noqa: C901
         if len(before):
             fill_tick = before.iloc[-1]
             fill_time_quote = float(fill_tick["ask"] if side == "buy" else fill_tick["bid"])
-        arrival = None
+        order_type_value = order.get("type")
+        order_type_label = _order_type_label(order_type_value, gateway)
+        market_order_types = {
+            getattr(gateway, "ORDER_TYPE_BUY", 0),
+            getattr(gateway, "ORDER_TYPE_SELL", 1),
+        }
+        # Historical gateways can omit the originating order type. In that
+        # ambiguous case, retain the conservative market-fill benchmark rather
+        # than silently treating the deal as a pending-order fill.
+        is_market_order = (
+            order_type_value is None or order_type_value in market_order_types
+        )
+        order_price = float(
+            order.get("price_open") or order.get("price_current") or 0.0
+        )
+        arrival_quote = None
+        arrival_quote_epoch = None
+        benchmark_price = None
         benchmark_epoch = None
         benchmark_source = None
         if request.benchmark == "arrival_quote" and setup_epoch is not None:
@@ -979,29 +1009,40 @@ def analyze_execution_quality(  # noqa: C901
             ]
             if len(arrival_before):
                 latest = arrival_before.iloc[-1]
-                arrival = float(latest["ask"] if side == "buy" else latest["bid"])
-                benchmark_epoch = float(latest["epoch"])
-                benchmark_source = "arrival_quote"
+                arrival_quote = float(
+                    latest["ask"] if side == "buy" else latest["bid"]
+                )
+                arrival_quote_epoch = float(latest["epoch"])
+                arrival_quote_observations += 1
         if request.benchmark == "order_price":
-            candidate = float(order.get("price_open") or order.get("price_current") or 0.0)
-            if candidate > 0:
-                arrival = candidate
+            if order_price > 0:
+                benchmark_price = order_price
                 benchmark_source = "order_price"
-        elif (
-            (not arrival or arrival <= 0)
-            and request.benchmark_fallback == "order_price"
-        ):
-            candidate = float(order.get("price_open") or order.get("price_current") or 0.0)
-            if candidate > 0:
-                arrival = candidate
-                benchmark_source = "order_price_fallback"
+        elif not is_market_order:
+            if order_price > 0:
+                benchmark_price = order_price
+                benchmark_source = "pending_order_price"
+        elif arrival_quote and arrival_quote > 0:
+            benchmark_price = arrival_quote
+            benchmark_epoch = arrival_quote_epoch
+            benchmark_source = "arrival_quote"
+        elif request.benchmark_fallback == "order_price" and order_price > 0:
+            benchmark_price = order_price
+            benchmark_source = "order_price_fallback"
         fill_price = float(deal.get("price") or 0.0)
-        if not arrival or fill_price <= 0:
+        if not benchmark_price or fill_price <= 0:
             skipped["unbenchmarked"] += 1
             continue
         benchmark_sources[str(benchmark_source)] += 1
         sign = 1.0 if side == "buy" else -1.0
-        slippage_bps = sign * (fill_price - arrival) / arrival * 10_000.0
+        slippage_bps = (
+            sign * (fill_price - benchmark_price) / benchmark_price * 10_000.0
+        )
+        pending_arrival_shortfall_bps = (
+            sign * (fill_price - arrival_quote) / arrival_quote * 10_000.0
+            if not is_market_order and arrival_quote and arrival_quote > 0
+            else None
+        )
         markouts: Dict[str, Optional[float]] = {}
         for horizon in request.markout_seconds:
             candidates = ticks[(ticks["epoch"] >= fill_epoch + horizon) & (ticks["epoch"] <= fill_epoch + horizon + 5) & np.isfinite(ticks["mid"])]
@@ -1011,13 +1052,6 @@ def analyze_execution_quality(  # noqa: C901
                 markouts[str(horizon)] = None
                 skipped["missing_markout"] += 1
         initial_volume = float(order.get("volume_initial") or volume)
-        order_type_value = order.get("type")
-        order_type_label = _order_type_label(order_type_value, gateway)
-        market_order_types = {
-            getattr(gateway, "ORDER_TYPE_BUY", 0),
-            getattr(gateway, "ORDER_TYPE_SELL", 1),
-        }
-        is_market_order = order_type_value in market_order_types
         order_to_fill_duration_ms = (
             max(
                 0.0,
@@ -1035,7 +1069,7 @@ def analyze_execution_quality(  # noqa: C901
             "side": side,
             "volume": volume,
             "fill_price": fill_price,
-            "benchmark_price": arrival,
+            "benchmark_price": benchmark_price,
             "benchmark_source": benchmark_source,
             "benchmark_epoch": benchmark_epoch,
             "benchmark_time": (
@@ -1046,6 +1080,19 @@ def analyze_execution_quality(  # noqa: C901
             "fill_time_quote": fill_time_quote,
             "slippage_bps": slippage_bps,
             "price_improved": slippage_bps < 0,
+            **(
+                {
+                    "arrival_quote_price": arrival_quote,
+                    "arrival_quote_epoch": arrival_quote_epoch,
+                    "arrival_quote_time": format_epoch_utc(arrival_quote_epoch),
+                    "arrival_implementation_shortfall_bps": (
+                        pending_arrival_shortfall_bps
+                    ),
+                }
+                if pending_arrival_shortfall_bps is not None
+                and arrival_quote_epoch is not None
+                else {}
+            ),
             "order_to_fill_duration_ms": order_to_fill_duration_ms,
             "fill_timing_basis": (
                 "market_fill_latency" if is_market_order else "pending_time_to_fill"
@@ -1079,7 +1126,9 @@ def analyze_execution_quality(  # noqa: C901
             item["session"] = "continuous"
         try:
             action = getattr(gateway, "ORDER_TYPE_BUY", 0) if side == "buy" else getattr(gateway, "ORDER_TYPE_SELL", 1)
-            shortfall = gateway.order_calc_profit(action, symbol, volume, arrival, fill_price)
+            shortfall = gateway.order_calc_profit(
+                action, symbol, volume, benchmark_price, fill_price
+            )
             if shortfall is not None:
                 item["execution_shortfall_currency_estimate"] = float(shortfall)
         except Exception:
@@ -1093,9 +1142,38 @@ def analyze_execution_quality(  # noqa: C901
             int(item.get("deal_ticket") or 0),
         )
     )
-    slippages = [float(item["slippage_bps"]) for item in fills]
     market_order_fills = [item for item in fills if item.get("is_market_order")]
     non_market_order_fills = [item for item in fills if not item.get("is_market_order")]
+    market_slippages = [
+        float(item["slippage_bps"]) for item in market_order_fills
+    ]
+    pending_slippages = [
+        float(item["slippage_bps"]) for item in non_market_order_fills
+    ]
+    pending_arrival_shortfalls = [
+        float(item["arrival_implementation_shortfall_bps"])
+        for item in non_market_order_fills
+        if item.get("arrival_implementation_shortfall_bps") is not None
+    ]
+    if request.benchmark == "order_price":
+        headline_fills = fills
+        slippage_basis = "explicit_order_price_all_fills"
+    elif market_order_fills:
+        headline_fills = market_order_fills
+        slippage_basis = (
+            "market_arrival_quote_with_order_price_fallback"
+            if any(
+                item.get("benchmark_source") == "order_price_fallback"
+                for item in market_order_fills
+            )
+            else "market_arrival_quote"
+        )
+    else:
+        headline_fills = non_market_order_fills
+        slippage_basis = "pending_order_price_no_market_fills"
+    headline_slippages = [
+        float(item["slippage_bps"]) for item in headline_fills
+    ]
     order_fill_totals: Dict[Any, Dict[str, float]] = {}
     for item in fills:
         order_ticket = item.get("order_ticket")
@@ -1119,11 +1197,19 @@ def analyze_execution_quality(  # noqa: C901
         "orders": len({item["order_ticket"] for item in fills}),
         "market_order_fills": len(market_order_fills),
         "non_market_order_fills": len(non_market_order_fills),
-        "slippage_bps": _execution_percentiles(slippages),
-        "mean_slippage_ci_95": _execution_bootstrap_mean_ci(slippages, 500),
+        "slippage_basis": slippage_basis,
+        "slippage_bps": _execution_percentiles(headline_slippages),
+        "market_fill_slippage_bps": _execution_percentiles(market_slippages),
+        "pending_fill_vs_order_bps": _execution_percentiles(pending_slippages),
+        "pending_arrival_implementation_shortfall_bps": _execution_percentiles(
+            pending_arrival_shortfalls
+        ),
+        "mean_slippage_ci_95": _execution_bootstrap_mean_ci(
+            headline_slippages, 500
+        ),
         "price_improvement_rate": _round_execution_stat(
-            np.mean([item["price_improved"] for item in fills])
-        ) if fills else None,
+            np.mean([item["price_improved"] for item in headline_fills])
+        ) if headline_fills else None,
         "partial_fill_rate": _round_execution_stat(
             partial_orders / len(order_fill_totals)
         ) if order_fill_totals else None,
@@ -1185,7 +1271,9 @@ def analyze_execution_quality(  # noqa: C901
                 breakdowns[label].append(row)
     sample_start = format_epoch_utc(fills[0]["fill_epoch"]) if fills else None
     sample_end = format_epoch_utc(fills[-1]["fill_epoch"]) if fills else None
-    benchmark_attempts = len(fills) + skipped["unbenchmarked"]
+    benchmark_attempts = max(
+        0, processed_candidates - skipped["future_timestamp"]
+    )
     fallback_count = benchmark_sources["order_price_fallback"]
     warnings = []
     if fallback_count:
@@ -1196,6 +1284,17 @@ def analyze_execution_quality(  # noqa: C901
         warnings.append(
             "pending_time_to_fill_ms measures intentional limit/stop order wait, not "
             "broker execution latency; order_to_fill_duration_ms is a mixed duration."
+        )
+        if request.benchmark == "arrival_quote":
+            warnings.append(
+                "Pending fills use their order price for fill-quality slippage; "
+                "setup-to-fill market movement is reported separately as "
+                "pending_arrival_implementation_shortfall_bps."
+            )
+    if market_order_fills and non_market_order_fills and request.benchmark == "arrival_quote":
+        warnings.append(
+            "Headline slippage_bps and price_improvement_rate use market-order fills "
+            "only; pending fill quality is reported separately."
         )
     if skipped["future_timestamp"]:
         warnings.append(
@@ -1265,8 +1364,10 @@ def analyze_execution_quality(  # noqa: C901
                 "source_counts": benchmark_sources,
                 "fallback_count": fallback_count,
                 "arrival_quote_coverage": (
-                    benchmark_sources["arrival_quote"] / benchmark_attempts
-                    if benchmark_attempts
+                    arrival_quote_observations / benchmark_attempts
+                    if request.benchmark == "arrival_quote" and benchmark_attempts
+                    else 0.0
+                    if request.benchmark == "arrival_quote"
                     else None
                 ),
             },
@@ -1289,8 +1390,21 @@ def analyze_execution_quality(  # noqa: C901
             "pending_time_to_fill_ms": "pending_order_setup_to_fill_wait_duration_not_execution_latency",
             "order_to_fill_duration_ms": "all_order_setup_to_fill_mixed_duration_not_execution_latency",
         },
+        "price_quality_definition": {
+            "slippage_bps": slippage_basis,
+            "market_fill_slippage_bps": "market_fill_vs_arrival_executable_quote",
+            "pending_fill_vs_order_bps": "pending_fill_vs_submitted_order_price",
+            "pending_arrival_implementation_shortfall_bps": (
+                "pending_fill_vs_order_setup_executable_quote_not_broker_slippage"
+            ),
+        },
         "units": {
             "slippage_bps": "basis_points_positive_is_worse",
+            "market_fill_slippage_bps": "basis_points_positive_is_worse",
+            "pending_fill_vs_order_bps": "basis_points_positive_is_worse",
+            "pending_arrival_implementation_shortfall_bps": (
+                "basis_points_positive_is_worse"
+            ),
             "markout_bps": "basis_points_positive_is_favorable",
             "market_fill_latency_ms": "milliseconds",
             "pending_time_to_fill_ms": "milliseconds",

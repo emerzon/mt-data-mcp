@@ -39,8 +39,12 @@ mtdata-cli trade_execution_quality --symbol EURUSD --minutes-back 43200 \
   --markout-seconds 1,5,30 --detail full --json
 ```
 
-Positive slippage is worse for the trader; positive markout is favorable.
-Unmatched or unbenchmarked fills are counted rather than silently discarded.
+Positive slippage is worse for the trader; positive markout is favorable. With
+the default arrival-quote policy, the headline slippage distribution contains
+market-order fills only. Pending fills are compared with their submitted order
+price, while setup-to-fill price movement is reported separately as arrival
+implementation shortfall. Unmatched or unbenchmarked fills are counted rather
+than silently discarded.
 
 ## Fixed-candidate chronological validation
 

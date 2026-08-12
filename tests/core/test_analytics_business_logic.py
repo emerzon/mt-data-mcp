@@ -979,10 +979,84 @@ def test_execution_quality_separates_pending_wait_from_market_latency() -> None:
     duration_display = result["summary"]["duration_display"]
     assert duration_display["pending_time_to_fill"]["mean"] == "10s"
     assert duration_display["pending_time_to_fill"]["p95"] == "10s"
-    assert duration_display["order_to_fill_duration"]["mean"] == "6s"
-    assert duration_display["order_to_fill_duration"]["p95"] == "10s"
+    assert duration_display["order_to_fill_duration"]["mean"] == "5.5s"
+    assert duration_display["order_to_fill_duration"]["p95"] == "9.55s"
     assert result["items"][1]["fill_timing_basis"] == "pending_time_to_fill"
     assert any("not broker execution latency" in item for item in result["warnings"])
+
+
+def test_execution_quality_separates_pending_opportunity_cost_from_slippage() -> None:
+    gateway = FakeGateway()
+    start = _now() - 120
+    gateway.tick_rows = _ticks(100, start=start)
+    gateway.orders = [
+        {
+            "ticket": 10,
+            "type": 0,
+            "price_open": 1.10005,
+            "volume_initial": 1.0,
+            "time_setup_msc": (start + 9) * 1000,
+        },
+        {
+            "ticket": 11,
+            "type": 2,
+            "price_open": 1.10100,
+            "volume_initial": 1.0,
+            "time_setup_msc": start * 1000,
+        },
+    ]
+    gateway.deals = [
+        {
+            "ticket": 20,
+            "order": 10,
+            "symbol": "EURUSD",
+            "type": 0,
+            "volume": 1.0,
+            "price": 1.10008,
+            "time_msc": (start + 10) * 1000,
+        },
+        {
+            "ticket": 21,
+            "order": 11,
+            "symbol": "EURUSD",
+            "type": 0,
+            "volume": 1.0,
+            "price": 1.10110,
+            "time_msc": (start + 50) * 1000,
+        },
+    ]
+
+    result = analyze_execution_quality(
+        TradeExecutionQualityRequest(
+            minutes_back=60,
+            benchmark="arrival_quote",
+            markout_seconds=[1],
+            detail="full",
+        ),
+        gateway,
+    )
+
+    market_fill, pending_fill = result["items"]
+    assert market_fill["benchmark_source"] == "arrival_quote"
+    assert pending_fill["benchmark_source"] == "pending_order_price"
+    assert pending_fill["benchmark_price"] == pytest.approx(1.101)
+    assert pending_fill["arrival_quote_price"] == pytest.approx(1.10005)
+    assert pending_fill["arrival_implementation_shortfall_bps"] > 9.0
+    assert pending_fill["slippage_bps"] < 1.0
+
+    summary = result["summary"]
+    assert summary["slippage_basis"] == "market_arrival_quote"
+    assert summary["slippage_bps"] == summary["market_fill_slippage_bps"]
+    assert summary["slippage_bps"]["mean"] == pytest.approx(
+        market_fill["slippage_bps"]
+    )
+    assert summary["pending_fill_vs_order_bps"]["mean"] == pytest.approx(
+        pending_fill["slippage_bps"]
+    )
+    assert summary["pending_arrival_implementation_shortfall_bps"][
+        "mean"
+    ] == pytest.approx(pending_fill["arrival_implementation_shortfall_bps"])
+    assert any("market-order fills only" in item for item in result["warnings"])
 
 
 def test_execution_quality_statistics_remove_binary_float_tails() -> None:
@@ -1001,6 +1075,19 @@ def test_execution_quality_formats_long_pending_durations() -> None:
     )
 
     assert display == {"mean": "1h 57m", "p95": "11h 36m", "max": "13h 35m"}
+
+
+def test_execution_quality_duration_display_preserves_subsecond_resolution() -> None:
+    display = _execution_duration_display(
+        {"mean": 571.6, "median": 252.0, "p90": 1211.4, "max": 1851.0}
+    )
+
+    assert display == {
+        "mean": "572ms",
+        "median": "252ms",
+        "p90": "1.21s",
+        "max": "1.85s",
+    }
 
 
 def test_execution_quality_handles_empty_tick_history() -> None:
