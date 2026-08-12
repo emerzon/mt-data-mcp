@@ -59,19 +59,18 @@ def test_strategy_backtest_sma_cross_generates_long_trade(monkeypatch):
     assert out["summary"]["num_trades"] == 1
     assert out["summary"]["long_trades"] == 1
     assert out["units"]["returns"] == "return_fraction"
-    assert out["units"]["return_after_known_costs"] == "return_fraction"
-    assert out["units"]["return_after_known_costs_pct"] == "percentage_points"
+    assert "return_after_known_costs" not in out["units"]
+    assert "return_after_known_costs_pct" not in out["units"]
     assert "net_return" not in out["units"]
     assert out["units"]["drawdown"] == "return_fraction"
     assert out["units"]["win_rate"] == "fraction"
     assert out["trades"][0]["direction"] == "long"
     assert out["trades"][0]["spread_cost_status"] == "missing"
     assert "return_net" not in out["trades"][0]
-    assert out["summary"]["return_after_known_costs"] > 0.0
-    assert out["summary"]["return_after_known_costs_pct"] == pytest.approx(
-        out["summary"]["return_after_known_costs"] * 100.0
-    )
-    assert out["summary"]["return_status"] == "partial_transaction_costs"
+    assert "return_after_known_costs" not in out["trades"][0]
+    assert "return_after_known_costs" not in out["summary"]
+    assert "return_after_known_costs_pct" not in out["summary"]
+    assert out["summary"]["return_status"] == "unavailable_transaction_costs"
     assert "net_return" not in out["summary"]
     assert out["metrics"] == {
         "metrics_available": False,
@@ -146,7 +145,7 @@ def test_strategy_backtest_rejects_zero_historical_spread_samples(monkeypatch):
     assert out["cost_model"]["complete"] is False
     assert "zero spread samples are treated as unavailable" in out["warnings"][0]
     assert "net_return" not in out["summary"]
-    assert out["summary"]["return_status"] == "partial_transaction_costs"
+    assert out["summary"]["return_status"] == "unavailable_transaction_costs"
     assert out["summary"]["costs_complete"] is False
     assert out["summary"]["cost_coverage_pct"] == 0.0
     assert out["metrics"]["metrics_available"] is False
@@ -214,8 +213,9 @@ def test_strategy_backtest_compact_mode_excludes_trades(monkeypatch):
         "round_trip_cost_bps": None,
         "complete": False,
         "historical_spread_coverage_pct": 0.0,
+        "historical_bar_spread_coverage_pct": 0.0,
     }
-    assert "costs are incomplete" in out["warnings"][0]
+    assert "costs are unavailable" in out["warnings"][0]
     assert StrategyBacktestRequest(symbol="EURUSD").slippage_bps == 1.0
     assert StrategyBacktestRequest(symbol="EURUSD").cost_model == "historical_bar_spread"
     assert out["signal_status"] == "not_actionable"
@@ -228,7 +228,7 @@ def test_strategy_backtest_compact_mode_excludes_trades(monkeypatch):
         "incomplete_transaction_costs"
     ]
     assert "trades_observed" not in out["summary"]
-    assert out["summary"]["return_status"] == "partial_transaction_costs"
+    assert out["summary"]["return_status"] == "unavailable_transaction_costs"
     assert out["summary"]["costs_complete"] is False
     assert out["summary"]["cost_coverage_pct"] == 0.0
     assert "net_return" not in out["summary"]
@@ -246,15 +246,24 @@ def test_strategy_backtest_compact_mode_excludes_trades(monkeypatch):
 
 
 def test_strategy_backtest_uses_date_range_when_provided(monkeypatch):
-    captured = {}
+    calls = []
+    history = _history_from_closes(
+        [1.0 + value / 10.0 for value in range(15)],
+        spread_points=10.0,
+    )
 
     def fake_fetch_history(symbol, timeframe, need, **kwargs):
-        captured.update(kwargs)
-        return _history_from_closes(
-            [1.0, 1.0, 1.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0]
-        )
+        calls.append((need, kwargs))
+        if kwargs.get("as_of"):
+            return history.iloc[:5].reset_index(drop=True)
+        return history.iloc[5:].reset_index(drop=True)
 
     monkeypatch.setattr(forecast_backtest, "_fetch_history", fake_fetch_history)
+    monkeypatch.setattr(
+        forecast_backtest.mt5,
+        "symbol_info",
+        lambda _symbol: type("Info", (), {"point": 0.0001})(),
+    )
 
     out = forecast_backtest.strategy_backtest(
         symbol="EURUSD",
@@ -264,16 +273,186 @@ def test_strategy_backtest_uses_date_range_when_provided(monkeypatch):
         start="2023-01-01",
         end="2023-12-31",
         fast_period=2,
-        slow_period=3,
+        slow_period=5,
         detail="full",
     )
 
-    assert captured["start"] == "2023-01-01"
-    assert captured["end"] == "2023-12-31"
     assert out["success"] is True
     assert out["summary"]["bars_used"] == 10
+    assert out["summary"]["warmup_history_bars"] == 5
+    assert out["summary"]["signal_bars"] == 10
+    assert out["summary"]["evaluation_start"] == (
+        forecast_backtest._format_time_minimal(float(history["time"].iloc[5]))
+    )
+    assert calls[0][1]["start"] == "2023-01-01"
+    assert calls[0][1]["end"] == "2023-12-31"
+    assert calls[1] == (5, {"as_of": "2023-01-01"})
+    assert all(
+        trade["entry_time"] >= out["summary"]["evaluation_start"]
+        for trade in out.get("trades", [])
+    )
     assert out["parameters"]["start"] == "2023-01-01"
     assert out["parameters"]["end"] == "2023-12-31"
+
+
+def test_strategy_backtest_rejects_range_without_prestart_warmup(monkeypatch):
+    history = _history_from_closes([float(value) for value in range(1, 16)])
+
+    def fake_fetch_history(symbol, timeframe, need, **kwargs):
+        if kwargs.get("as_of"):
+            return history.iloc[:2].reset_index(drop=True)
+        return history.iloc[5:].reset_index(drop=True)
+
+    monkeypatch.setattr(forecast_backtest, "_fetch_history", fake_fetch_history)
+
+    out = forecast_backtest.strategy_backtest(
+        symbol="EURUSD",
+        start="2023-01-01",
+        end="2023-12-31",
+        lookback=5,
+        fast_period=2,
+        slow_period=5,
+        cost_model="fixed",
+        spread_bps=1.0,
+    )
+
+    assert out["success"] is False
+    assert out["error_code"] == "insufficient_warmup_history"
+    assert out["warmup_bars_required"] == 5
+    assert out["warmup_bars_available"] == 2
+
+
+@pytest.mark.parametrize(
+    ("strategy", "strategy_kwargs"),
+    [
+        ("sma_cross", {"fast_period": 2, "slow_period": 5}),
+        ("ema_cross", {"fast_period": 2, "slow_period": 5}),
+        ("rsi_reversion", {"rsi_length": 4, "oversold": 40.0, "overbought": 60.0}),
+    ],
+)
+def test_range_results_match_same_prefetched_history(
+    monkeypatch,
+    strategy,
+    strategy_kwargs,
+):
+    closes = [100.0, 90.0, 80.0, 90.0, 100.0] * 5
+    history = _history_from_closes(closes)
+    warmup_bars = 5
+    evaluation = history.iloc[warmup_bars:].reset_index(drop=True)
+    prehistory = history.iloc[:warmup_bars].reset_index(drop=True)
+
+    def ranged_fetch(symbol, timeframe, need, **kwargs):
+        return prehistory if kwargs.get("as_of") else evaluation
+
+    monkeypatch.setattr(forecast_backtest, "_fetch_history", ranged_fetch)
+    ranged = forecast_backtest.strategy_backtest(
+        symbol="EURUSD",
+        strategy=strategy,
+        lookback=20,
+        start="2023-01-01",
+        end="2023-12-31",
+        cost_model="fixed",
+        spread_bps=1.0,
+        slippage_bps=0.0,
+        detail="full",
+        **strategy_kwargs,
+    )
+
+    monkeypatch.setattr(
+        forecast_backtest,
+        "_fetch_history",
+        lambda *args, **kwargs: history,
+    )
+    prefetched = forecast_backtest.strategy_backtest(
+        symbol="EURUSD",
+        strategy=strategy,
+        lookback=20,
+        cost_model="fixed",
+        spread_bps=1.0,
+        slippage_bps=0.0,
+        detail="full",
+        **strategy_kwargs,
+    )
+
+    trade_fields = ("direction", "entry_time", "exit_time", "exit_reason")
+    assert ranged["summary"]["num_trades"] > 0
+    assert [
+        tuple(trade[field] for field in trade_fields) for trade in ranged["trades"]
+    ] == [
+        tuple(trade[field] for field in trade_fields)
+        for trade in prefetched["trades"]
+    ]
+    assert ranged["summary"]["gross_return"] == pytest.approx(
+        prefetched["summary"]["gross_return"]
+    )
+    assert ranged["summary"]["net_return"] == pytest.approx(
+        prefetched["summary"]["net_return"]
+    )
+
+
+def test_max_hold_waits_for_fresh_signal_before_same_direction_reentry(monkeypatch):
+    history = _history_from_closes([1.0 + value / 100.0 for value in range(15)])
+    persistent = pd.Series([1.0] * len(history))
+    monkeypatch.setattr(
+        forecast_backtest,
+        "_fetch_history",
+        lambda *args, **kwargs: history,
+    )
+    monkeypatch.setattr(
+        forecast_backtest,
+        "_build_strategy_signal_series",
+        lambda *args, **kwargs: (persistent, {}, 1),
+    )
+
+    out = forecast_backtest.strategy_backtest(
+        symbol="EURUSD",
+        lookback=12,
+        fast_period=2,
+        slow_period=3,
+        max_hold_bars=3,
+        cost_model="fixed",
+        spread_bps=1.0,
+        slippage_bps=1.0,
+        detail="full",
+    )
+
+    assert out["summary"]["num_trades"] == 1
+    assert out["trades"][0]["exit_reason"] == "max_hold"
+    assert out["trades"][0]["bars_held"] == 3
+    assert out["summary"]["max_hold_reentry_policy"] == "fresh_signal_required"
+    assert out["summary"]["longest_continuous_exposure_bars"] == 3
+    assert out["cost_model"]["spread_observations"] == 1
+
+
+def test_max_hold_allows_opposite_signal_at_boundary(monkeypatch):
+    history = _history_from_closes([1.0 + value / 100.0 for value in range(12)])
+    signals = pd.Series([1.0, 1.0, 1.0, -1.0] + [-1.0] * 8)
+    monkeypatch.setattr(
+        forecast_backtest,
+        "_fetch_history",
+        lambda *args, **kwargs: history,
+    )
+    monkeypatch.setattr(
+        forecast_backtest,
+        "_build_strategy_signal_series",
+        lambda *args, **kwargs: (signals, {}, 1),
+    )
+
+    out = forecast_backtest.strategy_backtest(
+        symbol="EURUSD",
+        lookback=12,
+        fast_period=2,
+        slow_period=3,
+        max_hold_bars=3,
+        cost_model="fixed",
+        spread_bps=0.0,
+        slippage_bps=0.0,
+        detail="full",
+    )
+
+    assert [trade["direction"] for trade in out["trades"]] == ["long", "short"]
+    assert out["trades"][0]["exit_reason"] == "signal_reversal"
+    assert out["trades"][0]["exit_time"] == out["trades"][1]["entry_time"]
 
 
 def test_strategy_backtest_exposes_request_metadata_blocks(monkeypatch):
@@ -427,3 +606,8 @@ def test_strategy_backtest_request_rejects_invalid_ma_periods():
 def test_strategy_backtest_request_rejects_spread_with_historical_model():
     with pytest.raises(ValueError, match="spread_bps is only valid"):
         StrategyBacktestRequest(symbol="EURUSD", spread_bps=1.0)
+
+
+def test_strategy_backtest_request_requires_spread_with_fixed_model():
+    with pytest.raises(ValueError, match="spread_bps is required"):
+        StrategyBacktestRequest(symbol="EURUSD", cost_model="fixed")

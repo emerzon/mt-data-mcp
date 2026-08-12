@@ -137,8 +137,18 @@ class StrategyValidateRequest(BaseModel):
     barrier: BarrierSpec = Field(default_factory=BarrierSpec)
     purge_bars: Optional[int] = Field(None, ge=0)
     embargo_bars: Optional[int] = Field(None, ge=0)
-    cost_model: Literal["current_spread_proxy", "fixed"] = "current_spread_proxy"
-    spread_bps: Optional[float] = Field(None, ge=0.0)
+    cost_model: Literal["current_spread_proxy", "fixed"] = Field(
+        "current_spread_proxy",
+        description=(
+            "Transaction-cost spread source. Fixed requires an explicit spread_bps "
+            "and is the complete-cost validation path."
+        ),
+    )
+    spread_bps: Optional[float] = Field(
+        None,
+        ge=0.0,
+        description="Required round-trip spread assumption when cost_model is fixed.",
+    )
     commission_bps: float = Field(0.0, ge=0.0)
     slippage_bps: float = Field(0.0, ge=0.0)
     bootstrap_samples: int = Field(500, ge=100, le=5_000)
@@ -154,6 +164,8 @@ class StrategyValidateRequest(BaseModel):
     @model_validator(mode="after")
     def _window(self) -> "StrategyValidateRequest":
         validate_complete_time_window(self.start, self.end)
+        if self.cost_model == "fixed" and self.spread_bps is None:
+            raise ValueError("spread_bps is required with cost_model='fixed'")
         return self
 
 

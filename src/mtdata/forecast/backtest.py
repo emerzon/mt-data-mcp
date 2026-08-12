@@ -3,6 +3,7 @@ from copy import deepcopy
 from typing import Any, Dict, List, Literal, Optional, Tuple
 
 import numpy as np
+import pandas as pd
 
 from ..core.output_contract import normalize_output_verbosity_detail
 from ..shared.constants import TIMEFRAME_MAP
@@ -941,6 +942,7 @@ def _build_strategy_trade(
     slippage_bps: float,
     spread_bps: float,
     spread_cost_available: bool,
+    exit_reason: str,
 ) -> Dict[str, Any]:
     gross_return = float(direction) * ((float(exit_price) - float(entry_price)) / float(entry_price))
     if gross_return <= -0.999:
@@ -962,6 +964,7 @@ def _build_strategy_trade(
         "entry_price": float(entry_price),
         "exit_price": float(exit_price),
         "bars_held": int(max(1, exit_idx - entry_idx)),
+        "exit_reason": exit_reason,
         "spread_cost_bps": float(abs(spread_bps) or 0.0),
         "spread_cost_status": "included" if spread_cost_available else "missing",
         "slippage_cost_bps": 2.0 * float(abs(slippage_bps) or 0.0),
@@ -974,13 +977,38 @@ def _public_strategy_trade(
     trade: Dict[str, Any],
     *,
     cost_model_complete: bool,
+    known_cost_return_available: bool,
 ) -> Dict[str, Any]:
     out = dict(trade)
     out.pop("_entry_idx", None)
     out.pop("_exit_idx", None)
     if cost_model_complete:
         out["return_net"] = out.pop("return_after_known_costs", None)
+    elif not known_cost_return_available:
+        out.pop("return_after_known_costs", None)
     return out
+
+
+def _longest_continuous_exposure_bars(trades: List[Dict[str, Any]]) -> int:
+    """Measure touching/overlapping position intervals as one exposure spell."""
+    if not trades:
+        return 0
+    intervals = sorted(
+        (
+            int(trade["_entry_idx"]),
+            int(trade["_exit_idx"]),
+        )
+        for trade in trades
+    )
+    segment_start, segment_end = intervals[0]
+    longest = max(0, segment_end - segment_start)
+    for entry_idx, exit_idx in intervals[1:]:
+        if entry_idx <= segment_end:
+            segment_end = max(segment_end, exit_idx)
+        else:
+            longest = max(longest, segment_end - segment_start)
+            segment_start, segment_end = entry_idx, exit_idx
+    return int(max(longest, segment_end - segment_start))
 
 
 def _historical_bar_spread_prices(symbol: str, frame: Any) -> Tuple[Optional[np.ndarray], float]:
@@ -1090,6 +1118,10 @@ def strategy_backtest(  # noqa: C901
             return {
                 "error": "spread_bps is only valid with cost_model='fixed'"
             }
+        if cost_model_value == "fixed" and spread_bps is None:
+            return {
+                "error": "spread_bps is required with cost_model='fixed'"
+            }
         fixed_spread_bps = float(spread_bps or 0.0)
 
         if strategy_value in {"sma_cross", "ema_cross"}:
@@ -1097,15 +1129,84 @@ def strategy_backtest(  # noqa: C901
         else:
             warmup_bars = max(int(rsi_length) + 1, 5)
         need = int(lookback) + int(warmup_bars) + 5
+        evaluation_start_idx: Optional[int] = None
+        evaluation_bars: Optional[int] = None
         try:
             history_kwargs: Dict[str, Any] = {"as_of": None}
             if start or end:
                 history_kwargs.update({"start": start, "end": end})
-            df = _fetch_history(symbol, timeframe, int(need), **history_kwargs)
+            evaluation_df = _fetch_history(
+                symbol,
+                timeframe,
+                int(need),
+                **history_kwargs,
+            )
+            if start:
+                warmup_df = _fetch_history(
+                    symbol,
+                    timeframe,
+                    int(warmup_bars),
+                    as_of=start,
+                )
+                if len(warmup_df) < int(warmup_bars):
+                    return {
+                        "success": False,
+                        "error": (
+                            f"Not enough closed pre-start history to initialize {strategy_value}: "
+                            f"required {int(warmup_bars)} bars, received {len(warmup_df)}."
+                        ),
+                        "error_code": "insufficient_warmup_history",
+                        "warmup_bars_required": int(warmup_bars),
+                        "warmup_bars_available": int(len(warmup_df)),
+                    }
+                if evaluation_df.empty or "time" not in evaluation_df.columns:
+                    return {
+                        "success": False,
+                        "error": "No completed bars are available inside the requested evaluation range.",
+                        "error_code": "empty_evaluation_window",
+                    }
+                first_evaluation_epoch = float(evaluation_df["time"].min())
+                warmup_df = warmup_df[
+                    warmup_df["time"].astype(float) < first_evaluation_epoch
+                ]
+                if len(warmup_df) < int(warmup_bars):
+                    return {
+                        "success": False,
+                        "error": (
+                            f"Not enough non-overlapping pre-start history to initialize {strategy_value}: "
+                            f"required {int(warmup_bars)} bars, received {len(warmup_df)}."
+                        ),
+                        "error_code": "insufficient_warmup_history",
+                        "warmup_bars_required": int(warmup_bars),
+                        "warmup_bars_available": int(len(warmup_df)),
+                    }
+                df = (
+                    pd.concat([warmup_df, evaluation_df], ignore_index=True)
+                    .sort_values("time", kind="stable")
+                    .drop_duplicates(subset=["time"], keep="last")
+                    .reset_index(drop=True)
+                )
+                evaluation_mask = (
+                    df["time"].astype(float) >= first_evaluation_epoch
+                )
+                evaluation_indices = np.flatnonzero(evaluation_mask.to_numpy())
+                if not len(evaluation_indices):
+                    return {
+                        "success": False,
+                        "error": "No completed bars are available inside the requested evaluation range.",
+                        "error_code": "empty_evaluation_window",
+                    }
+                evaluation_start_idx = int(evaluation_indices[0])
+                evaluation_bars = int(len(evaluation_indices))
+            else:
+                df = evaluation_df
         except Exception as ex:
             return {"error": str(ex)}
-        range_requested = bool(start or end)
-        min_required = warmup_bars + 5 if range_requested else max(int(lookback), warmup_bars + 5)
+        min_required = (
+            warmup_bars + 5
+            if start
+            else max(int(lookback), warmup_bars + 5)
+        )
         if len(df) < min_required:
             return {"error": "Not enough closed bars for strategy backtest"}
 
@@ -1127,10 +1228,18 @@ def strategy_backtest(  # noqa: C901
             overbought=float(overbought),
         )
 
-        start_signal_idx = max(
-            max(int(signal_warmup) - 1, 0),
-            0 if range_requested else len(df) - int(lookback),
-        )
+        if evaluation_start_idx is not None:
+            # The last pre-range close may trigger an entry at the first in-range
+            # open, but no action is allowed before the requested start.
+            start_signal_idx = max(
+                max(int(signal_warmup) - 1, 0),
+                int(evaluation_start_idx) - 1,
+            )
+        else:
+            start_signal_idx = max(
+                max(int(signal_warmup) - 1, 0),
+                len(df) - int(lookback) - 1,
+            )
         times = df["time"].astype(float).to_numpy()
         opens = df["open"].astype(float).to_numpy()
         closes = df["close"].astype(float).to_numpy()
@@ -1140,6 +1249,7 @@ def strategy_backtest(  # noqa: C901
         observed_spread_costs: List[float] = []
         missing_spread_costs = 0
         current_direction = 0
+        max_hold_reentry_block = 0
         entry_idx = None
         entry_time = None
         entry_price = None
@@ -1164,6 +1274,10 @@ def strategy_backtest(  # noqa: C901
                 continue
 
             if current_direction == 0:
+                if max_hold_reentry_block != 0:
+                    if desired_direction == max_hold_reentry_block:
+                        continue
+                    max_hold_reentry_block = 0
                 if desired_direction != 0:
                     current_direction = desired_direction
                     entry_idx = action_idx
@@ -1177,6 +1291,16 @@ def strategy_backtest(  # noqa: C901
             hit_max_hold = max_hold_bars is not None and bars_held >= int(max_hold_bars)
             if desired_direction == current_direction and not hit_max_hold:
                 continue
+            exit_reason = (
+                "max_hold"
+                if hit_max_hold and desired_direction == current_direction
+                else (
+                    "signal_flat"
+                    if desired_direction == 0
+                    else "signal_reversal"
+                )
+            )
+            exited_direction = current_direction
 
             trade_spread_bps = (
                 fixed_spread_bps
@@ -1208,6 +1332,7 @@ def strategy_backtest(  # noqa: C901
                     slippage_bps=float(slippage_bps),
                     spread_bps=float(trade_spread_bps),
                     spread_cost_available=spread_cost_available,
+                    exit_reason=exit_reason,
                 )
             )
             current_direction = 0
@@ -1215,7 +1340,9 @@ def strategy_backtest(  # noqa: C901
             entry_time = None
             entry_price = None
 
-            if desired_direction != 0:
+            if exit_reason == "max_hold":
+                max_hold_reentry_block = exited_direction
+            elif desired_direction != 0:
                 current_direction = desired_direction
                 entry_idx = action_idx
                 entry_time = float(times[action_idx])
@@ -1256,6 +1383,7 @@ def strategy_backtest(  # noqa: C901
                     slippage_bps=float(slippage_bps),
                     spread_bps=float(trade_spread_bps),
                     spread_cost_available=spread_cost_available,
+                    exit_reason="end_of_data",
                 )
             )
 
@@ -1309,6 +1437,7 @@ def strategy_backtest(  # noqa: C901
 
         _strategy_params: Dict[str, Any] = {
             "max_hold_bars": int(max_hold_bars) if max_hold_bars is not None else None,
+            "max_hold_reentry_policy": "fresh_signal_required",
         }
         if strategy_value in {"sma_cross", "ema_cross"}:
             _strategy_params["fast_period"] = int(fast_period)
@@ -1329,9 +1458,20 @@ def strategy_backtest(  # noqa: C901
             _params["start"] = start
         if end is not None:
             _params["end"] = end
-        bars_used = len(df) if range_requested else int(lookback)
+        bars_used = (
+            int(evaluation_bars)
+            if evaluation_bars is not None
+            else int(lookback)
+        )
         signal_bars = max(0, (len(df) - 1) - int(start_signal_idx))
-        warmup_history_bars = max(0, len(df) - int(bars_used))
+        warmup_history_bars = (
+            int(evaluation_start_idx)
+            if evaluation_start_idx is not None
+            else max(0, len(df) - int(bars_used))
+        )
+        longest_continuous_exposure_bars = _longest_continuous_exposure_bars(
+            trades
+        )
         gross_return = float(gross_equity[-1] - 1.0)
         return_after_known_costs = float(known_cost_equity[-1] - 1.0)
         mean_spread_cost_bps = (
@@ -1367,6 +1507,9 @@ def strategy_backtest(  # noqa: C901
             if costed_trade_count
             else None
         )
+        known_cost_return_available = bool(
+            cost_model_complete or priced_trade_count > 0
+        )
         summary_returns = (
             {
                 "net_return": return_after_known_costs,
@@ -1382,6 +1525,10 @@ def strategy_backtest(  # noqa: C901
                 ),
                 "return_status": "partial_transaction_costs",
             }
+            if known_cost_return_available
+            else {
+                "return_status": "unavailable_transaction_costs",
+            }
         )
         result_units = _backtest_units()
         if cost_model_complete:
@@ -1391,6 +1538,9 @@ def strategy_backtest(  # noqa: C901
         else:
             result_units.pop("net_return", None)
             result_units.pop("net_return_pct", None)
+            if not known_cost_return_available:
+                result_units.pop("return_after_known_costs", None)
+                result_units.pop("return_after_known_costs_pct", None)
             reported_metrics = {
                 "metrics_available": False,
                 "metrics_reason": "incomplete_transaction_costs",
@@ -1408,6 +1558,11 @@ def strategy_backtest(  # noqa: C901
             "detail": detail_mode,
             "position_mode": position_mode_value,
             "price_basis": "mt5_bid_ohlc",
+            "result_status": (
+                "complete"
+                if cost_model_complete
+                else "incomplete_transaction_costs"
+            ),
             "cost_model": {
                 "type": cost_model_value,
                 "spread_bps_round_trip": reported_spread_cost_bps,
@@ -1430,6 +1585,12 @@ def strategy_backtest(  # noqa: C901
                 "warmup_bars": int(signal_warmup),
                 "warmup_history_bars": int(warmup_history_bars),
                 "signal_bars": int(signal_bars),
+                "evaluation_start": (
+                    _format_time_minimal(float(times[evaluation_start_idx]))
+                    if evaluation_start_idx is not None
+                    else _format_time_minimal(float(times[start_signal_idx + 1]))
+                ),
+                "evaluation_end": _format_time_minimal(float(times[-1])),
                 "warmup_reason": (
                     f"{strategy_value} requires {int(signal_warmup)} warmup bar(s) "
                     "before generated signals are eligible for trading; prior "
@@ -1438,6 +1599,10 @@ def strategy_backtest(  # noqa: C901
                 "num_trades": int(len(trades)),
                 "long_trades": long_trades,
                 "short_trades": short_trades,
+                "max_hold_reentry_policy": "fresh_signal_required",
+                "longest_continuous_exposure_bars": int(
+                    longest_continuous_exposure_bars
+                ),
                 "gross_return": gross_return,
                 "gross_return_pct": _return_fraction_to_pct(gross_return),
                 "costs_complete": bool(cost_model_complete),
@@ -1457,8 +1622,10 @@ def strategy_backtest(  # noqa: C901
         }
         if cost_model_value == "historical_bar_spread":
             result["cost_model"]["historical_spread_coverage_pct"] = round(
-                historical_spread_coverage * 100.0,
-                2,
+                float(priced_trade_coverage_pct), 2
+            ) if priced_trade_coverage_pct is not None else None
+            result["cost_model"]["historical_bar_spread_coverage_pct"] = round(
+                historical_spread_coverage * 100.0, 2
             )
             if historical_spread_prices is None and "spread" in df.columns:
                 result["cost_model"]["historical_spread_status"] = (
@@ -1478,6 +1645,14 @@ def strategy_backtest(  # noqa: C901
                 "spread costs and are not comparable to complete net results."
                 + spread_warning
             ]
+            if not known_cost_return_available:
+                result["warnings"] = [
+                    "Transaction costs are unavailable because the selected spread model "
+                    "could not price any simulated trade. No transaction-cost-adjusted "
+                    "return is reported. Retry with cost_model='fixed' and an explicit "
+                    "spread_bps value."
+                    + spread_warning
+                ]
             result["summary"]["metrics_reliability"] = "unavailable"
             result["summary"]["metrics_reliability_reasons"] = [
                 "incomplete_transaction_costs"
@@ -1515,6 +1690,7 @@ def strategy_backtest(  # noqa: C901
                     _public_strategy_trade(
                         trade,
                         cost_model_complete=cost_model_complete,
+                        known_cost_return_available=known_cost_return_available,
                     )
                     for trade in trades
                 ]

@@ -889,6 +889,8 @@ def test_strategy_validation_returns_walk_forward_oos_metrics() -> None:
     assert result["rankings"][0]["evaluation_status"] == "complete"
     candidate = result["rankings"][0]
     assert candidate["signal_definition"] == "cross_event"
+    assert candidate["evidence"]["criteria"]["cost_model_complete"] is True
+    assert candidate["evidence"]["provisional_positive_before_complete_costs"] is False
     assert "calibration" not in candidate
     assert "direction_base_rate_stability" in candidate
     if candidate["sharpe"] is not None:
@@ -901,6 +903,66 @@ def test_strategy_validation_returns_walk_forward_oos_metrics() -> None:
     }
     for fold in result["rankings"][0]["folds"]:
         assert fold["test_end_bar"] + request.barrier.horizon <= fold["test_window_end_bar"]
+
+
+def test_strategy_validation_proxy_cannot_receive_positive_classification(
+    monkeypatch,
+) -> None:
+    gateway = FakeGateway()
+    monkeypatch.setattr(
+        "mtdata.analytics.engines._bootstrap_mean_ci",
+        lambda *_args, **_kwargs: (0.001, 0.002),
+    )
+    monkeypatch.setattr(
+        "mtdata.analytics.engines._block_bootstrap_positive_mean_p_value",
+        lambda *_args, **_kwargs: 0.001,
+    )
+    monkeypatch.setattr(
+        "mtdata.analytics.engines._builtin_signal",
+        lambda close, _candidate: pd.Series(
+            np.where(np.arange(len(close)) % 2 == 0, 1.0, -1.0),
+            index=close.index,
+        ),
+    )
+    request = StrategyValidateRequest(
+        symbol="EURUSD",
+        lookback=400,
+        candidates=[
+            {
+                "id": "cross",
+                "type": "builtin_strategy",
+                "strategy": "sma_cross",
+                "params": {"fast_period": 5, "slow_period": 20},
+            }
+        ],
+        barrier={"horizon": 5, "tp_pct": 0.15, "sl_pct": 0.15},
+        n_splits=3,
+        bootstrap_samples=100,
+        min_positive_fold_share=0.0,
+    )
+
+    result = validate_strategies(request, gateway)
+    evidence = result["rankings"][0]["evidence"]
+
+    assert result["cost_model"]["complete"] is False
+    assert evidence["criteria"]["cost_model_complete"] is False
+    assert evidence["provisional_positive_before_complete_costs"] is True
+    assert evidence["classification"] == "inconclusive"
+
+
+def test_strategy_validation_fixed_model_requires_explicit_spread() -> None:
+    with pytest.raises(ValueError, match="spread_bps is required"):
+        StrategyValidateRequest(
+            symbol="EURUSD",
+            candidates=[
+                {
+                    "id": "cross",
+                    "type": "builtin_strategy",
+                    "strategy": "sma_cross",
+                }
+            ],
+            cost_model="fixed",
+        )
 
 
 def test_strategy_barrier_entry_uses_next_bar_open_after_gap() -> None:

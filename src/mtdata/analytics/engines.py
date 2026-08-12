@@ -1611,6 +1611,7 @@ def validate_strategies(  # noqa: C901
         fold_share = float(item.get("fold_stability") or 0.0)
         adjusted_p = item.get("holm_adjusted_p_value")
         criteria = {
+            "cost_model_complete": bool(complete),
             "all_requested_folds_evaluated": bool(
                 int(item.get("folds_evaluated") or 0) == request.n_splits
             ),
@@ -1632,6 +1633,14 @@ def validate_strategies(  # noqa: C901
         item["evidence"] = {
             "classification": classification,
             "criteria": criteria,
+            "provisional_positive_before_complete_costs": bool(
+                not complete
+                and all(
+                    value
+                    for name, value in criteria.items()
+                    if name != "cost_model_complete"
+                )
+            ),
             "significance_alpha": float(request.significance_alpha),
             "minimum_positive_fold_share": float(request.min_positive_fold_share),
         }
