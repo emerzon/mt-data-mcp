@@ -147,6 +147,8 @@ def test_strategy_backtest_rejects_zero_historical_spread_samples(monkeypatch):
     assert "zero spread samples are treated as unavailable" in out["warnings"][0]
     assert "net_return" not in out["summary"]
     assert out["summary"]["return_status"] == "partial_transaction_costs"
+    assert out["summary"]["costs_complete"] is False
+    assert out["summary"]["cost_coverage_pct"] == 0.0
     assert out["metrics"]["metrics_available"] is False
 
 
@@ -227,6 +229,8 @@ def test_strategy_backtest_compact_mode_excludes_trades(monkeypatch):
     ]
     assert "trades_observed" not in out["summary"]
     assert out["summary"]["return_status"] == "partial_transaction_costs"
+    assert out["summary"]["costs_complete"] is False
+    assert out["summary"]["cost_coverage_pct"] == 0.0
     assert "net_return" not in out["summary"]
     assert out["metrics"]["metrics_available"] is False
     assert out["metrics"]["metrics_reason"] == "incomplete_transaction_costs"

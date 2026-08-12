@@ -1440,6 +1440,8 @@ def strategy_backtest(  # noqa: C901
                 "short_trades": short_trades,
                 "gross_return": gross_return,
                 "gross_return_pct": _return_fraction_to_pct(gross_return),
+                "costs_complete": bool(cost_model_complete),
+                "cost_coverage_pct": priced_trade_coverage_pct,
                 **summary_returns,
             },
             "metrics": reported_metrics,
