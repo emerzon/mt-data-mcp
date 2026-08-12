@@ -486,6 +486,42 @@ class TestCausalDiscoverSignals:
     @patch("statsmodels.tsa.stattools.grangercausalitytests")
     @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})
     @patch("mtdata.core.causal._fetch_series")
+    def test_six_symbol_manifest_includes_every_tested_direction(
+        self,
+        mock_fetch,
+        mock_granger,
+    ):
+        symbols = ["A", "B", "C", "D", "E", "F"]
+        idx = pd.date_range("2024-01-01", periods=80, freq="h")
+        series_map = {
+            symbol: pd.Series(np.linspace(i, i + 1.0, 80), index=idx)
+            for i, symbol in enumerate(symbols, start=1)
+        }
+        mock_fetch.side_effect = lambda symbol, timeframe, count, **_kwargs: (
+            series_map[symbol],
+            None,
+        )
+        mock_granger.return_value = {
+            1: ({"ssr_ftest": (1.0, 0.9, 10, 1)}, None),
+        }
+
+        result = self._unwrapped()(
+            ",".join(symbols),
+            max_lag=1,
+            transform="diff",
+            normalize=False,
+        )
+
+        assert result["success"] is True
+        assert result["pairs_tested"] == 30
+        assert len(result["tested_directions"]) == 30
+        assert len(
+            {(item["cause"], item["effect"]) for item in result["tested_directions"]}
+        ) == 30
+
+    @patch("statsmodels.tsa.stattools.grangercausalitytests")
+    @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})
+    @patch("mtdata.core.causal._fetch_series")
     def test_alignment_detail_includes_pair_bottleneck_when_samples_shrink(self, mock_fetch, mock_granger):
         idx_a = pd.date_range("2024-01-01", periods=100, freq="h")
         idx_b = pd.date_range("2024-01-01", periods=100, freq="h")
@@ -1341,6 +1377,55 @@ class TestCointegrationTest:
         assert result["success"] is False
         assert result["error_code"] == "invalid_input"
         assert "either symbols or group" in result["error"]
+
+    @patch("mtdata.core.causal._causal_connection_error", return_value=None)
+    def test_engle_granger_rejects_degenerate_two_bar_window(self, _mock_connection):
+        result = self._unwrapped()(
+            "A,B",
+            window_bars=2,
+            min_overlap=2,
+        )
+
+        assert result["success"] is False
+        assert result["error_code"] == "invalid_input"
+        assert result["error"] == (
+            "window_bars must be at least 20 for method=engle_granger."
+        )
+
+    @patch(
+        "statsmodels.tsa.stattools.coint",
+        return_value=(float("-inf"), 0.0, [-3.9, -3.3, -3.0]),
+    )
+    @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})
+    @patch("mtdata.core.causal._fetch_series")
+    def test_nonfinite_test_statistic_cannot_emit_positive_signal(
+        self,
+        mock_fetch,
+        _mock_coint,
+    ):
+        idx = pd.date_range("2024-01-01", periods=40, freq="h")
+        series_map = {
+            "A": pd.Series(np.linspace(1.0, 2.0, 40), index=idx),
+            "B": pd.Series(np.linspace(2.0, 4.0, 40), index=idx),
+        }
+        mock_fetch.side_effect = lambda symbol, timeframe, count, **_kwargs: (
+            series_map[symbol],
+            None,
+        )
+
+        result = self._unwrapped()(
+            "A,B",
+            window_bars=40,
+            min_overlap=20,
+            transform="level",
+        )
+
+        assert result["success"] is False
+        assert result["error_code"] == "test_failed"
+        assert not result.get("items")
+        assert result["meta"]["stats"]["pair_failures"][0]["error_type"] == (
+            "NonFiniteTestStatistic"
+        )
 
     @patch("statsmodels.tsa.stattools.coint", return_value=(-4.5, 0.01, [-3.9, -3.3, -3.0]))
     @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})

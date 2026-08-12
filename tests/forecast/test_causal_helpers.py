@@ -8,6 +8,7 @@ from mtdata.core.causal import (
     _build_cointegration_summary,
     _build_correlation_matrix,
     _build_correlation_summary,
+    _cointegration_pair_sort_key,
     _evaluate_cointegration_pair,
     _fit_cointegration_hedge,
     _format_summary,
@@ -49,6 +50,30 @@ def test_cointegration_pair_uses_stable_left_dependent_orientation():
     assert row["dependent"] == "A"
     assert row["hedge"] == "B"
     assert row["orientation_policy"] == "left_dependent"
+
+
+def test_cointegration_pair_rejects_nonfinite_test_statistic():
+    idx = pd.date_range("2024-01-01", periods=40, freq="h")
+    frame = pd.DataFrame(
+        {"A": np.arange(40, dtype=float), "B": np.arange(40, dtype=float) * 2.0},
+        index=idx,
+    )
+
+    row, failures = _evaluate_cointegration_pair(
+        frame,
+        "A",
+        "B",
+        trend="c",
+        significance=0.05,
+        coint_func=lambda *_args, **_kwargs: (
+            float("-inf"),
+            0.0,
+            [-3.9, -3.3, -3.0],
+        ),
+    )
+
+    assert row is None
+    assert failures[0]["error_type"] == "NonFiniteTestStatistic"
 
 
 def test_pair_pagination_uses_canonical_nested_contract():
@@ -406,6 +431,35 @@ class TestCorrelationHelpers:
         ]
 
         assert _build_cointegration_summary(rows, top_n=5) == {}
+
+    def test_cointegration_best_pairs_use_raw_evidence_after_adjusted_tie(self):
+        rows = [
+            {
+                "left": symbol,
+                "right": "Z",
+                "p_value": 1.0,
+                "p_value_raw": raw,
+                "test_stat": stat,
+                "cointegrated": False,
+                "samples": 100,
+            }
+            for symbol, raw, stat in (
+                ("A", 0.8, -1.0),
+                ("B", 0.2, -2.0),
+                ("C", 0.2, -3.0),
+            )
+        ]
+
+        rows.sort(key=_cointegration_pair_sort_key)
+        summary = _build_cointegration_summary(rows, top_n=2)
+
+        assert [item["pair"] for item in summary["best_pairs"]] == ["C-Z", "B-Z"]
+        assert [item["p_value_raw"] for item in summary["best_pairs"]] == [0.2, 0.2]
+        assert all(
+            item["ranking_basis"]
+            == "holm_adjusted_p_value_then_raw_p_value_then_test_statistic"
+            for item in summary["best_pairs"]
+        )
 
 
 class TestFormatSummary:

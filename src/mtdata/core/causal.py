@@ -96,6 +96,8 @@ _COINTEGRATION_TREND_ALIASES: Dict[str, str] = {
     "no_const": "n",
 }
 
+_MIN_ENGLE_GRANGER_SAMPLES = 20
+
 
 # Human-readable legends for output interpretation
 _TRANSFORM_LEGEND: Dict[str, Dict[str, str]] = {
@@ -1197,6 +1199,18 @@ def _evaluate_cointegration_pair(
                 }
             )
             continue
+        if test_stat is None or not math.isfinite(float(test_stat)):
+            failures.append(
+                {
+                    "left": left,
+                    "right": right,
+                    "dependent": dependent,
+                    "hedge": hedge,
+                    "error": "Cointegration test returned a non-finite test statistic.",
+                    "error_type": "NonFiniteTestStatistic",
+                }
+            )
+            continue
 
         hedge_ratio, intercept, spread = _fit_cointegration_hedge(
             subset[dependent],
@@ -1293,13 +1307,17 @@ def _build_cointegration_summary(
     cointegrated = [row for row in rows if bool(row.get("cointegrated"))]
     summary: Dict[str, List[Dict[str, Any]]] = {}
     if len(rows) > limit:
-        summary["best_pairs"] = [
-            _pair_highlight_ref(
+        best_pairs = []
+        for row in rows[:limit]:
+            highlight = _pair_highlight_ref(
                 row,
-                metrics=("p_value", "test_stat", "cointegrated"),
+                metrics=("p_value", "p_value_raw", "test_stat", "cointegrated"),
             )
-            for row in rows[:limit]
-        ]
+            highlight["ranking_basis"] = (
+                "holm_adjusted_p_value_then_raw_p_value_then_test_statistic"
+            )
+            best_pairs.append(highlight)
+        summary["best_pairs"] = best_pairs
     if cointegrated and (len(rows) > limit or len(cointegrated) < len(rows)):
         summary["cointegrated_pairs"] = [
             _pair_highlight_ref(
@@ -1309,6 +1327,18 @@ def _build_cointegration_summary(
             for row in cointegrated[:limit]
         ]
     return summary
+
+
+def _cointegration_pair_sort_key(item: Dict[str, Any]) -> tuple[Any, ...]:
+    """Rank pair evidence without losing discrimination after Holm saturation."""
+    return (
+        float(item["p_value"]),
+        float(item.get("p_value_raw", item["p_value"])),
+        float(item["test_stat"]),
+        -int(item["samples"]),
+        str(item["left"]),
+        str(item["right"]),
+    )
 
 
 def _johansen_rank(statistics: np.ndarray, critical_values: np.ndarray, column: int) -> int:
@@ -2186,7 +2216,7 @@ def causal_discover_signals(  # noqa: C901
             "pairs_tested_basis": "directed_granger_tests",
             "directed_tests": int(pair_success),
             "undirected_pairs": int(undirected_pairs_tested),
-            "tested_directions": tested_directions[:20],
+            "tested_directions": tested_directions,
             **pagination,
             "context": {
                 **_pairwise_analysis_context(rows_sorted, timeframe=timeframe),
@@ -2994,8 +3024,9 @@ def cointegration_test(  # noqa: C901
         significance: Alpha threshold for reporting cointegrated pairs.
             Johansen supports only 0.01, 0.05, or 0.1 because its critical
             value tables contain only those three levels.
-        min_overlap: Minimum overlapping transformed samples required per pair;
-            values above window_bars are capped to window_bars with a warning.
+        min_overlap: Minimum overlapping transformed samples required per pair.
+            Engle-Granger requires at least 20 samples. Values above window_bars
+            are capped to window_bars without crossing that statistical floor.
         include_incomplete: Include the current forming candle. Defaults to false.
         detail: "compact" keeps pair results concise; "full" adds overlap/window
             diagnostics and legends.
@@ -3145,16 +3176,22 @@ def cointegration_test(  # noqa: C901
                 meta=meta,
             )
 
-        if window_bars_value < 2:
+        minimum_window = (
+            _MIN_ENGLE_GRANGER_SAMPLES if method_value == "engle_granger" else 2
+        )
+        if window_bars_value < minimum_window:
             return _causal_error(
-                "window_bars must be at least 2.",
+                f"window_bars must be at least {minimum_window} for method={method_value}.",
                 code="invalid_input",
                 meta=meta,
             )
 
-        if min_overlap_value < 2:
+        minimum_overlap = (
+            _MIN_ENGLE_GRANGER_SAMPLES if method_value == "engle_granger" else 2
+        )
+        if min_overlap_value < minimum_overlap:
             return _causal_error(
-                "min_overlap must be at least 2.",
+                f"min_overlap must be at least {minimum_overlap} for method={method_value}.",
                 code="invalid_input",
                 meta=meta,
             )
@@ -3455,14 +3492,7 @@ def cointegration_test(  # noqa: C901
 
         _apply_holm_pair_correction(rows, significance=float(significance))
 
-        rows.sort(
-            key=lambda item: (
-                float(item["p_value"]),
-                -int(item["samples"]),
-                str(item["left"]),
-                str(item["right"]),
-            )
-        )
+        rows.sort(key=_cointegration_pair_sort_key)
         output_rows_raw, output_truncated, pagination = _limit_pair_rows(
             rows,
             output_limit,
