@@ -169,7 +169,13 @@ class FakeGateway:
         return SimpleNamespace(bid=1.0999, ask=1.1001, time=_now())
 
     def symbol_info(self, symbol):
-        return SimpleNamespace(point=0.00001, digits=5)
+        return SimpleNamespace(
+            point=0.00001,
+            digits=5,
+            volume_min=0.01,
+            volume_max=200.0,
+            volume_step=0.01,
+        )
 
     def order_calc_profit(self, action, symbol, volume, opened, closed):
         sign = 1.0 if action == self.ORDER_TYPE_BUY else -1.0
@@ -1345,6 +1351,73 @@ def test_portfolio_risk_marks_empty_position_book() -> None:
     assert result["timeframe"] == "H1"
     assert result["holding_periods"] == ["1 H1 bar", "5 H1 bars"]
     assert result["model_context"]["random_seed"] == 42
+
+
+@pytest.mark.parametrize(
+    ("volume", "nearest"),
+    [
+        (0.0001, 0.01),
+        (0.015, 0.01),
+        (201.0, 200.0),
+    ],
+)
+def test_portfolio_risk_rejects_invalid_proposed_broker_volume_before_history(
+    volume: float,
+    nearest: float,
+) -> None:
+    gateway = FakeGateway()
+    gateway.copy_rates_from_pos = MagicMock()
+
+    result = decompose_portfolio_risk(
+        PortfolioRiskDecomposeRequest(
+            proposed_trade={
+                "symbol": "EURUSD",
+                "side": "buy",
+                "volume": volume,
+            },
+        ),
+        gateway,
+    )
+
+    assert result["error_code"] == "invalid_proposed_trade_volume"
+    assert result["field"] == "proposed_trade.volume"
+    assert result["requested_volume"] == volume
+    assert result["constraints"] == {
+        "volume_min": 0.01,
+        "volume_max": 200.0,
+        "volume_step": 0.01,
+    }
+    assert result["nearest_valid_volume"] == nearest
+    gateway.copy_rates_from_pos.assert_not_called()
+
+
+def test_portfolio_risk_resolves_and_accepts_valid_proposed_broker_volume() -> None:
+    gateway = FakeGateway()
+
+    result = decompose_portfolio_risk(
+        PortfolioRiskDecomposeRequest(
+            lookback=300,
+            horizon_bars=[1],
+            confidence=[0.95],
+            simulations=500,
+            proposed_trade={
+                "symbol": "eur/usd",
+                "side": "buy",
+                "volume": 0.01,
+            },
+        ),
+        gateway,
+    )
+
+    assert result["success"] is True
+    assert result["summary"]["positions_after_proposed"] == 1
+    assert result["proposed_trade"] == {
+        "symbol": "EURUSD",
+        "side": "buy",
+        "volume": 0.01,
+        "margin_required": 10.0,
+        "symbol_input": "EUR/USD",
+    }
 
 
 def test_portfolio_mark_freshness_is_aggregated_by_symbol() -> None:

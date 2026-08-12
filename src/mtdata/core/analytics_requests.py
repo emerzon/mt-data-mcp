@@ -174,6 +174,11 @@ class ProposedTrade(BaseModel):
     side: Literal["buy", "sell"]
     volume: float = Field(gt=0.0)
 
+    @field_validator("symbol")
+    @classmethod
+    def _symbol(cls, value: str) -> str:
+        return normalize_required_symbol(value)
+
 
 class PortfolioRiskDecomposeRequest(BaseModel):
     timeframe: TimeframeLiteral = "H1"

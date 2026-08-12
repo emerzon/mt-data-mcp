@@ -1919,6 +1919,113 @@ def _position_sensitivity(gateway: Any, row: Dict[str, Any]) -> Tuple[Optional[f
     return float((up_sens + down_sens) / 2.0), None
 
 
+def _nearest_broker_volume(
+    requested: float,
+    *,
+    minimum: Optional[float],
+    maximum: Optional[float],
+    step: Optional[float],
+) -> Optional[float]:
+    """Return the closest positive volume that satisfies known broker bounds."""
+    if step is None:
+        candidate = requested
+        if minimum is not None:
+            candidate = max(candidate, minimum)
+        if maximum is not None:
+            candidate = min(candidate, maximum)
+        return float(f"{candidate:.10f}") if candidate > 0.0 else None
+
+    nearby_steps = {
+        math.floor(requested / step),
+        math.ceil(requested / step),
+        round(requested / step),
+    }
+    if minimum is not None:
+        nearby_steps.add(math.ceil(minimum / step - 1e-12))
+    if maximum is not None:
+        nearby_steps.add(math.floor(maximum / step + 1e-12))
+    candidates = []
+    for count in nearby_steps:
+        candidate = float(f"{float(count) * step:.10f}")
+        if candidate <= 0.0:
+            continue
+        if minimum is not None and candidate < minimum - 1e-12:
+            continue
+        if maximum is not None and candidate > maximum + 1e-12:
+            continue
+        candidates.append(candidate)
+    if not candidates:
+        return None
+    return min(candidates, key=lambda value: (abs(value - requested), value))
+
+
+def _validate_proposed_trade(
+    gateway: Any,
+    proposed: Any,
+) -> Tuple[Optional[Dict[str, Any]], Optional[Dict[str, Any]]]:
+    """Resolve a proposed trade and validate its volume before risk simulation."""
+    from ..core.trading.validation import _validate_volume, coerce_finite_float
+    from ..utils.mt5 import resolve_broker_symbol_name
+
+    input_symbol = str(proposed.symbol)
+    resolved_symbol = resolve_broker_symbol_name(input_symbol, gateway=gateway)
+    try:
+        symbol_info = gateway.symbol_info(resolved_symbol)
+    except Exception:
+        symbol_info = None
+    if symbol_info is None:
+        return None, {
+            "error": f"Symbol {input_symbol!r} was not found by MT5.",
+            "error_code": "symbol_not_found",
+            "field": "proposed_trade.symbol",
+            "symbol": input_symbol,
+            "remediation": "Use symbols_list to discover the exact broker symbol name.",
+        }
+
+    volume, volume_error = _validate_volume(proposed.volume, symbol_info)
+    if volume_error is not None:
+        minimum = coerce_finite_float(getattr(symbol_info, "volume_min", None))
+        maximum = coerce_finite_float(getattr(symbol_info, "volume_max", None))
+        step = coerce_finite_float(getattr(symbol_info, "volume_step", None))
+        minimum = minimum if minimum is not None and minimum > 0.0 else None
+        maximum = maximum if maximum is not None and maximum > 0.0 else None
+        step = step if step is not None and step > 0.0 else None
+        requested = float(proposed.volume)
+        nearest = _nearest_broker_volume(
+            requested,
+            minimum=minimum,
+            maximum=maximum,
+            step=step,
+        )
+        return None, {
+            "error": (
+                f"Invalid proposed_trade.volume for {resolved_symbol}: "
+                f"{volume_error}."
+            ),
+            "error_code": "invalid_proposed_trade_volume",
+            "field": "proposed_trade.volume",
+            "symbol": resolved_symbol,
+            "requested_volume": requested,
+            "constraints": {
+                "volume_min": minimum,
+                "volume_max": maximum,
+                "volume_step": step,
+            },
+            "nearest_valid_volume": nearest,
+            "remediation": (
+                "Choose a lot size within the broker range and aligned to "
+                "volume_step."
+            ),
+        }
+
+    return {
+        "symbol": resolved_symbol,
+        "symbol_input": input_symbol,
+        "side": proposed.side,
+        "volume": float(volume),
+    }, None
+
+
 def decompose_portfolio_risk(  # noqa: C901
     request: PortfolioRiskDecomposeRequest,
     gateway: Any,
@@ -1938,6 +2045,15 @@ def decompose_portfolio_risk(  # noqa: C901
         "random_seed": request.seed,
         "completion_policy": "allow_partial" if request.allow_partial else "fail_closed",
     }
+    proposed = request.proposed_trade
+    proposed_validated: Optional[Dict[str, Any]] = None
+    if proposed is not None:
+        proposed_validated, proposed_error = _validate_proposed_trade(
+            gateway,
+            proposed,
+        )
+        if proposed_error is not None:
+            return proposed_error
     account = None
     try:
         account_info = getattr(gateway, "account_info", None)
@@ -1947,14 +2063,16 @@ def decompose_portfolio_risk(  # noqa: C901
         account = None
     positions = [_mapping(row) for row in (gateway.positions_get() or [])]
     base_position_count = len(positions)
-    if request.proposed_trade:
-        tick = gateway.symbol_info_tick(request.proposed_trade.symbol)
+    if proposed_validated is not None:
+        proposed_symbol = str(proposed_validated["symbol"])
+        proposed_side = str(proposed_validated["side"])
+        tick = gateway.symbol_info_tick(proposed_symbol)
         positions.append({
             "ticket": "proposed",
-            "symbol": request.proposed_trade.symbol,
-            "type": getattr(gateway, "POSITION_TYPE_BUY", 0) if request.proposed_trade.side == "buy" else getattr(gateway, "POSITION_TYPE_SELL", 1),
-            "volume": request.proposed_trade.volume,
-            "price_current": getattr(tick, "ask" if request.proposed_trade.side == "buy" else "bid", None),
+            "symbol": proposed_symbol,
+            "type": getattr(gateway, "POSITION_TYPE_BUY", 0) if proposed_side == "buy" else getattr(gateway, "POSITION_TYPE_SELL", 1),
+            "volume": proposed_validated["volume"],
+            "price_current": getattr(tick, "ask" if proposed_side == "buy" else "bid", None),
             "proposed": True,
         })
     all_positions = list(positions)
@@ -2173,17 +2291,31 @@ def decompose_portfolio_risk(  # noqa: C901
         "perfect_positive_correlation_1sigma": perfect_correlation,
         "worst_historical_bar_pnl": float(worst_historical.min()),
     }
-    proposed = request.proposed_trade
     proposed_context = None
-    if proposed:
+    if proposed_validated is not None:
         try:
-            tick = gateway.symbol_info_tick(proposed.symbol)
-            action = getattr(gateway, "ORDER_TYPE_BUY", 0) if proposed.side == "buy" else getattr(gateway, "ORDER_TYPE_SELL", 1)
-            price = float(getattr(tick, "ask" if proposed.side == "buy" else "bid"))
-            margin = gateway.order_calc_margin(action, proposed.symbol, proposed.volume, price)
-            proposed_context = {"symbol": proposed.symbol, "side": proposed.side, "volume": proposed.volume, "margin_required": float(margin) if margin is not None else None}
+            proposed_symbol = str(proposed_validated["symbol"])
+            proposed_side = str(proposed_validated["side"])
+            proposed_volume = float(proposed_validated["volume"])
+            tick = gateway.symbol_info_tick(proposed_symbol)
+            action = getattr(gateway, "ORDER_TYPE_BUY", 0) if proposed_side == "buy" else getattr(gateway, "ORDER_TYPE_SELL", 1)
+            price = float(getattr(tick, "ask" if proposed_side == "buy" else "bid"))
+            margin = gateway.order_calc_margin(action, proposed_symbol, proposed_volume, price)
+            proposed_context = {
+                "symbol": proposed_symbol,
+                "side": proposed_side,
+                "volume": proposed_volume,
+                "margin_required": float(margin) if margin is not None else None,
+            }
+            if proposed_validated["symbol_input"] != proposed_symbol:
+                proposed_context["symbol_input"] = proposed_validated["symbol_input"]
         except Exception:
-            proposed_context = {"symbol": proposed.symbol, "margin_required": None}
+            proposed_context = {
+                "symbol": proposed_validated["symbol"],
+                "side": proposed_validated["side"],
+                "volume": proposed_validated["volume"],
+                "margin_required": None,
+            }
     account_context = {
         key: value
         for key, value in {

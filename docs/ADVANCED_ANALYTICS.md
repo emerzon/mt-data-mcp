@@ -80,6 +80,11 @@ filtered-historical scenarios. It returns multi-horizon VaR/Expected Shortfall,
 component ES, concentration, prescribed stresses, and optional proposed-trade
 incremental ES and margin.
 
+When `proposed_trade` is supplied, its symbol is resolved against the broker
+catalog and its volume is validated against that symbol's minimum, maximum, and
+lot step before any scenarios run. Invalid requests return the constraints and
+the nearest valid volume instead of modeling a trade the broker would reject.
+
 ```bash
 mtdata-cli portfolio_risk_decompose --timeframe H1 --lookback 1000 \
   --horizon-bars 1,5 --confidence 0.95,0.99 --json
