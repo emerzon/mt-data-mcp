@@ -938,6 +938,8 @@ def _mark_collapsed_state_confidence(payload: Dict[str, Any]) -> Dict[str, Any]:
         if current.get("regime_confidence") is not None:
             current["raw_posterior_mass"] = current["regime_confidence"]
         current["regime_confidence"] = 0.0
+        current["label"] = "unknown"
+        current.pop("direction", None)
         current["label_quality"] = "unidentifiable_state_collapse"
     regimes = payload.get("regimes")
     if isinstance(regimes, list):
@@ -947,7 +949,10 @@ def _mark_collapsed_state_confidence(payload: Dict[str, Any]) -> Dict[str, Any]:
             if segment.get("regime_confidence") is not None:
                 segment["raw_posterior_mass"] = segment["regime_confidence"]
             segment["regime_confidence"] = 0.0
+            segment["label"] = "unknown"
+            segment.pop("direction", None)
             segment["label_quality"] = "unidentifiable_state_collapse"
+    payload["status"] = "unidentifiable"
     payload["signal_status"] = "not_actionable"
     return payload
 
@@ -1281,6 +1286,25 @@ def regime_detect(  # noqa: C901
         return _finish({"error": "lookback must be >= 1 when provided."})
     if min_regime_bars is not None and min_regime_bars < 1:
         return _finish({"error": "min_regime_bars must be >= 1 when provided."})
+    if method == "bocpd":
+        threshold_candidates = (
+            ("params.cp_threshold", (params or {}).get("cp_threshold")),
+            ("params.threshold", (params or {}).get("threshold")),
+            ("threshold", threshold),
+        )
+        for threshold_name, threshold_value in threshold_candidates:
+            if threshold_value is None:
+                continue
+            try:
+                threshold_float = float(threshold_value)
+            except (TypeError, ValueError):
+                return _finish(
+                    {"error": f"{threshold_name} must be a probability between 0 and 1."}
+                )
+            if not math.isfinite(threshold_float) or not 0.0 <= threshold_float <= 1.0:
+                return _finish(
+                    {"error": f"{threshold_name} must be a probability between 0 and 1."}
+                )
     connection_error = _regime_connection_error()
     if connection_error is not None:
         return _finish(connection_error)
@@ -2515,6 +2539,7 @@ def regime_detect(  # noqa: C901
                     )
                 sc = spectral_cls(**sc_kwargs)
                 labels = sc.fit_predict(X_final)
+                valid_probs = None
             else:
                 # Seed centroids from evenly-spaced rows for deterministic
                 # initialization. KMeans still asks joblib for its OpenMP thread
@@ -2528,13 +2553,20 @@ def regime_detect(  # noqa: C901
                     init=X_final[idx],
                 )
                 labels = kmeans.fit_predict(X_final)
+                valid_probs = None
+                try:
+                    distances = np.asarray(kmeans.transform(X_final), dtype=float)
+                    if distances.shape == (len(X_final), n_states_cluster):
+                        inverse_distance = 1.0 / (distances + 1e-8)
+                        valid_probs = inverse_distance / inverse_distance.sum(
+                            axis=1, keepdims=True
+                        )
+                except (AttributeError, TypeError, ValueError):
+                    valid_probs = None
 
             # Smooth short runs and canonicalize on valid slice only
             labels, smoothing_meta = _confirm_state_changes_causally(
                 np.asarray(labels, dtype=int), min_regime_bars_val
-            )
-            valid_probs = _hard_state_probability_matrix(
-                labels, n_states_cluster
             )
             labels, valid_probs, canon_meta = _canonicalize_regime_labels(
                 labels,
@@ -2547,8 +2579,10 @@ def regime_detect(  # noqa: C901
             full_states = np.full(len(x), -1, dtype=int)
             full_states[valid_mask] = labels
 
-            full_probs = np.zeros((len(x), n_states_cluster))
-            full_probs[valid_mask] = valid_probs
+            full_probs = None
+            if valid_probs is not None:
+                full_probs = np.zeros((len(x), n_states_cluster))
+                full_probs[valid_mask] = valid_probs
 
             # Build regime parameters from data
             clustering_regime_params = {"mean_return": [], "volatility": []}
@@ -2574,9 +2608,6 @@ def regime_detect(  # noqa: C901
                 "target": target,
                 "times": t_fmt,
                 "state": [int(s) for s in full_states.tolist()],
-                "state_probabilities": [
-                    [float(v) for v in row] for row in full_probs.tolist()
-                ],
                 "regime_params": clustering_regime_params,
                 "params_used": {
                     "n_states": int(n_states_cluster),
@@ -2597,6 +2628,12 @@ def regime_detect(  # noqa: C901
                     "label_scope": "retrospective_canonical",
                 },
             }
+            if full_probs is not None:
+                payload["state_probabilities"] = [
+                    [float(v) for v in row] for row in full_probs.tolist()
+                ]
+            else:
+                payload["confidence_basis"] = "unavailable_for_clustering_method"
             if clustering_warnings:
                 payload["warnings"] = clustering_warnings
             _append_warnings(payload, state_count_warnings)

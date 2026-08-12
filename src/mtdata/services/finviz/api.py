@@ -87,6 +87,8 @@ def _sanitize_error_message(exc: Exception, *, symbol: str | None = None) -> str
 def _finviz_error_kind(message: str) -> tuple[str, bool]:
     """Map a sanitized Finviz error message to a (error_code, retryable) pair."""
     low = message.lower()
+    if "symbol not found" in low or "ticker symbol" in low and "not found" in low:
+        return "finviz_symbol_not_found", False
     if "access denied" in low or "blocking automated access" in low:
         return "finviz_provider_blocked", True
     if "rate limit" in low:

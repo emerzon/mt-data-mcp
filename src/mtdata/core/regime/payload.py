@@ -845,6 +845,7 @@ def _consolidate_payload(  # noqa: C901
             curr_state = states[0]
             curr_start_index = original_indices[0]
             curr_prob_sum = 0.0
+            curr_prob_count = 0
             curr_count = 0
             curr_transition_conf = None
             if method == "bocpd" and curr_start_index in cps_idx and probs:
@@ -857,57 +858,65 @@ def _consolidate_payload(  # noqa: C901
             while i < len(times):
                 t = times[i]
                 s = states[i]
-                p = probs[i] if i < len(probs) and probs[i] is not None else 0.0
+                p = probs[i] if i < len(probs) and probs[i] is not None else None
 
                 # Check change (state change)
                 # For BOCPD, 's' changes exactly at CP.
                 if s != curr_state and curr_count > 0:
                     # close segment
-                    avg_prob = curr_prob_sum / max(1, curr_count)
-                    segments.append(
-                        {
-                            "start": curr_start,
-                            "end": times[i - 1] if i > 0 else curr_start,
-                            "duration": curr_count,
-                            "start_index": curr_start_index,
-                            "end_index": original_indices[i - 1] if i > 0 else curr_start_index,
-                            "regime": curr_state,  # state ID or regime ID
-                            "regime_confidence": avg_prob,
-                            "transition_conf": curr_transition_conf,
-                        }
-                    )
+                    segment = {
+                        "start": curr_start,
+                        "end": times[i - 1] if i > 0 else curr_start,
+                        "duration": curr_count,
+                        "start_index": curr_start_index,
+                        "end_index": original_indices[i - 1] if i > 0 else curr_start_index,
+                        "regime": curr_state,  # state ID or regime ID
+                        "transition_conf": curr_transition_conf,
+                    }
+                    if curr_prob_count:
+                        segment["regime_confidence"] = (
+                            curr_prob_sum / curr_prob_count
+                        )
+                    segments.append(segment)
                     # New segment
                     curr_start = t
                     curr_state = s
                     curr_start_index = original_indices[i]
                     curr_prob_sum = 0.0
+                    curr_prob_count = 0
                     curr_count = 0
                     curr_transition_conf = None
                     if method == "bocpd":
                         try:
-                            curr_transition_conf = float(p)
+                            curr_transition_conf = None if p is None else float(p)
                         except Exception:
                             curr_transition_conf = None
 
-                curr_prob_sum += p
+                if p is not None:
+                    try:
+                        probability = float(p)
+                    except (TypeError, ValueError):
+                        probability = float("nan")
+                    if np.isfinite(probability):
+                        curr_prob_sum += probability
+                        curr_prob_count += 1
                 curr_count += 1
                 i += 1
 
             # Final segment
             if curr_count > 0:
-                avg_prob = curr_prob_sum / max(1, curr_count)
-                segments.append(
-                    {
-                        "start": curr_start,
-                        "end": times[-1],
-                        "duration": curr_count,
-                        "start_index": curr_start_index,
-                        "end_index": original_indices[-1],
-                        "regime": curr_state,
-                        "regime_confidence": avg_prob,
-                        "transition_conf": curr_transition_conf,
-                    }
-                )
+                segment = {
+                    "start": curr_start,
+                    "end": times[-1],
+                    "duration": curr_count,
+                    "start_index": curr_start_index,
+                    "end_index": original_indices[-1],
+                    "regime": curr_state,
+                    "transition_conf": curr_transition_conf,
+                }
+                if curr_prob_count:
+                    segment["regime_confidence"] = curr_prob_sum / curr_prob_count
+                segments.append(segment)
 
         # Post-process segments for readability.
         # BOCPD: regime_confidence = 1 - mean(cp_prob over segment) = segment
@@ -1000,7 +1009,10 @@ def _consolidate_payload(  # noqa: C901
                     row["label"] = regime_descriptions[regime_id].get(
                         "label", f"regime_{regime_id}"
                     )
-                row["regime_confidence"] = round(seg["regime_confidence"], 4)
+                if seg.get("regime_confidence") is not None:
+                    row["regime_confidence"] = round(
+                        float(seg["regime_confidence"]), 4
+                    )
             _attach_label_fields(row, method=method)
             final_segments.append(row)
 

@@ -311,6 +311,7 @@ def _resolve_history_context(
     prefetched_base_col: Optional[str],
     prefetched_denoise_spec: Optional[Any],
     denoise: Optional[DenoiseSpec],
+    cap_explicit_range: bool = False,
 ) -> Tuple[pd.DataFrame, str, Optional[Any]]:
     """Return the source DataFrame, active base column, and denoise spec used."""
     if prefetched_df is not None:
@@ -334,7 +335,7 @@ def _resolve_history_context(
     if start or end:
         history_kwargs.update({"start": start, "end": end})
     df = _fetch_history(symbol, timeframe, int(need), as_of, **history_kwargs)
-    if (start or end) and len(df) > int(need):
+    if cap_explicit_range and (start or end) and len(df) > int(need):
         df = df.iloc[-int(need):].reset_index(drop=True)
     if len(df) < 3:
         raise ValueError("Not enough closed bars to compute forecast")
@@ -639,6 +640,7 @@ def build_training_context(
         prefetched_base_col=prefetched_base_col,
         prefetched_denoise_spec=prefetched_denoise_spec,
         denoise=denoise,
+        cap_explicit_range=lookback is not None,
     )
     if p.get("seasonality") is None and "time" in df.columns:
         seasonality = default_seasonality(timeframe, df["time"])
@@ -670,6 +672,9 @@ def build_training_context(
             f"{feature_info['error']}"
         )
     training_params = dict(p)
+    # Seasonality is a shared engine argument passed positionally to every
+    # forecaster. Do not also leak it into method-specific parameter mappings.
+    training_params.pop("seasonality", None)
     training_params["_training_context"] = _training_context_fingerprint(
         df=df,
         target_series=target_series,

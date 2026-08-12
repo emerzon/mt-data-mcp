@@ -329,7 +329,8 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
     ("trade_place", "expiration"): "Pending order expiration time (dateparser string, UTC epoch seconds, or GTC token).",
     ("wait_event", "symbol"): (
         "Single trading symbol (e.g. EURUSD). Cannot be combined with symbols. "
-        "Omit both for a pure clock-boundary wait."
+        "Omit both only for timeframe clock-boundary mode; duration mode "
+        "requires symbol or symbols."
     ),
     ("wait_event", "symbols"): (
         "Basket of 1-12 trading symbols. Cannot be combined with symbol; omitted-symbol "
@@ -853,6 +854,11 @@ def add_dynamic_arguments(  # noqa: C901
             positional_kwargs["default"] = argparse.SUPPRESS
             parser.add_argument(param["name"], **positional_kwargs)
             option_kwargs = dict(kwargs)
+            if (
+                str(cmd_name or "") in _MULTI_VALUE_SYMBOL_POSITIONAL_COMMANDS
+                and str(param["name"]) == "symbols"
+            ):
+                option_kwargs["nargs"] = "+"
             if (
                 str(param["name"]) != "symbols"
                 or (str(cmd_name or ""), str(param["name"])) in _HIDDEN_OPTIONAL_FIRST_POSITIONAL_FLAGS

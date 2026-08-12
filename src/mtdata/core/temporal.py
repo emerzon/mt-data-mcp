@@ -487,6 +487,40 @@ def _temporal_group_count(groups: Any) -> int:
     return total
 
 
+def _temporal_best_summary(groups: Any) -> Any:
+    if not isinstance(groups, list):
+        return None
+    best_rows: List[Dict[str, Any]] = []
+    for item in groups:
+        if not isinstance(item, dict):
+            continue
+        breakdown = item.get("breakdown")
+        if not isinstance(breakdown, list):
+            continue
+        best = max(
+            (
+                row
+                for row in breakdown
+                if isinstance(row, dict) and row.get("avg_return_pct") is not None
+            ),
+            key=lambda row: float(row.get("avg_return_pct") or 0.0),
+            default=None,
+        )
+        if best is not None:
+            best_rows.append({"dimension": item.get("dimension"), **best})
+    if best_rows:
+        return best_rows
+    return max(
+        (
+            row
+            for row in groups
+            if isinstance(row, dict) and row.get("avg_return_pct") is not None
+        ),
+        key=lambda row: float(row.get("avg_return_pct") or 0.0),
+        default=None,
+    )
+
+
 def _base_temporal_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     return {
         key: payload[key]
@@ -529,18 +563,25 @@ def _drop_compact_temporal_duplicate_units(out: Dict[str, Any]) -> None:
     out["units"] = compact_units
 
 
-def _compact_temporal_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
+def _compact_temporal_payload(
+    payload: Dict[str, Any], *, summary_groups: Any = None
+) -> Dict[str, Any]:
     out: Dict[str, Any] = _base_temporal_payload(payload)
     _drop_compact_temporal_duplicate_units(out)
     groups = payload.get("groups")
     if isinstance(groups, list) and groups:
         if all(isinstance(row, dict) and "dimension" in row for row in groups):
-            compact_groups, best_rows, pagination = _flatten_temporal_dimension_groups(
+            compact_groups, _page_best_rows, pagination = _flatten_temporal_dimension_groups(
                 groups,
                 formatter=_compact_temporal_stats,
                 best_keys=("group", "group_label", "avg_return_pct", "win_rate", "win_rate_pct"),
             )
             out["groups"] = compact_groups
+            _all_groups, best_rows, _all_pagination = _flatten_temporal_dimension_groups(
+                summary_groups if isinstance(summary_groups, list) else groups,
+                formatter=_compact_temporal_stats,
+                best_keys=("group", "group_label", "avg_return_pct", "win_rate", "win_rate_pct"),
+            )
             if best_rows:
                 out["best"] = best_rows
             if pagination:
@@ -552,10 +593,12 @@ def _compact_temporal_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
             if isinstance(row, dict)
         ]
         out["groups"] = compact_groups
+        best_source = summary_groups if isinstance(summary_groups, list) else groups
         best = max(
             (
-                row
-                for row in compact_groups
+                _compact_temporal_stats(row)
+                for row in best_source
+                if isinstance(row, dict)
                 if row.get("avg_return_pct") is not None
             ),
             key=lambda row: float(row.get("avg_return_pct") or 0.0),
@@ -582,8 +625,10 @@ def _compact_temporal_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     return out
 
 
-def _summary_temporal_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
-    compact = _compact_temporal_payload(payload)
+def _summary_temporal_payload(
+    payload: Dict[str, Any], *, summary_groups: Any = None
+) -> Dict[str, Any]:
+    compact = _compact_temporal_payload(payload, summary_groups=summary_groups)
     out = {
         key: compact[key]
         for key in (
@@ -646,18 +691,25 @@ def _summary_temporal_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     return out
 
 
-def _standard_temporal_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
+def _standard_temporal_payload(
+    payload: Dict[str, Any], *, summary_groups: Any = None
+) -> Dict[str, Any]:
     out: Dict[str, Any] = _base_temporal_payload(payload)
     groups = payload.get("groups")
     if isinstance(groups, list) and groups:
         best = None
         if all(isinstance(row, dict) and "dimension" in row for row in groups):
-            standard_groups, best_rows, pagination = _flatten_temporal_dimension_groups(
+            standard_groups, _page_best_rows, pagination = _flatten_temporal_dimension_groups(
                 groups,
                 formatter=_standard_temporal_stats,
                 best_keys=("group_label", "avg_return_pct", "win_rate", "win_rate_pct"),
             )
             out["groups"] = standard_groups
+            _all_groups, best_rows, _all_pagination = _flatten_temporal_dimension_groups(
+                summary_groups if isinstance(summary_groups, list) else groups,
+                formatter=_standard_temporal_stats,
+                best_keys=("group_label", "avg_return_pct", "win_rate", "win_rate_pct"),
+            )
             if best_rows:
                 out["best"] = best_rows
             if pagination:
@@ -669,10 +721,12 @@ def _standard_temporal_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
                 if isinstance(row, dict)
             ]
             out["groups"] = standard_groups
+            best_source = summary_groups if isinstance(summary_groups, list) else groups
             best = max(
                 (
-                    row
-                    for row in standard_groups
+                    _standard_temporal_stats(row)
+                    for row in best_source
+                    if isinstance(row, dict)
                     if row.get("avg_return_pct") is not None
                 ),
                 key=lambda row: float(row.get("avg_return_pct") or 0.0),
@@ -1256,6 +1310,17 @@ def temporal_analyze(  # noqa: C901
                         }
                         for row in breakdown
                     ]
+            summary_groups = (
+                [
+                    {
+                        "dimension": item.get("dimension"),
+                        "breakdown": list(item.get("breakdown") or []),
+                    }
+                    for item in grouped_dimensions
+                ]
+                if grouped_dimensions
+                else list(groups_out)
+            )
             pagination_meta: Dict[str, Any] = {}
             if grouped_dimensions and (limit_value is not None or offset_value):
                 paged_dimensions = []
@@ -1327,8 +1392,11 @@ def temporal_analyze(  # noqa: C901
                     f"{group_norm} analysis on {timeframe}; pass --lookback for a "
                     "smaller, faster sample."
                 )
-            group_payload_source = grouped_dimensions if grouped_dimensions else groups_out
+            group_payload_source = summary_groups
             payload["groups_analyzed"] = _temporal_group_count(group_payload_source)
+            global_best = _temporal_best_summary(summary_groups)
+            if global_best is not None:
+                payload["best"] = global_best
             payload["groups_excluded"] = len(excluded_groups)
             if min_bars_value is not None:
                 payload["min_bars_applied"] = int(min_bars_value or 0)
@@ -1352,7 +1420,7 @@ def temporal_analyze(  # noqa: C901
                 }
             payload.update(pagination_meta)
             sample_context = _temporal_sample_warnings(
-                grouped_dimensions if grouped_dimensions else groups_out
+                summary_groups
             )
             if sample_context:
                 payload.update(sample_context)
@@ -1374,11 +1442,17 @@ def temporal_analyze(  # noqa: C901
             elif groups_out:
                 payload["groups"] = groups_out
             if detail_mode == "summary":
-                return _summary_temporal_payload(payload)
+                return _summary_temporal_payload(
+                    payload, summary_groups=summary_groups
+                )
             if detail_mode == "compact":
-                return _compact_temporal_payload(payload)
+                return _compact_temporal_payload(
+                    payload, summary_groups=summary_groups
+                )
             if detail_mode == "standard":
-                return _standard_temporal_payload(payload)
+                return _standard_temporal_payload(
+                    payload, summary_groups=summary_groups
+                )
             return payload
         except MT5ConnectionError as exc:
             return {"error": str(exc)}

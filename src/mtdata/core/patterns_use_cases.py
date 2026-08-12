@@ -191,14 +191,19 @@ def _attach_pattern_window_metadata(
     payload.setdefault("applied_limit", applied_limit)
     payload.setdefault("applied_top_k", applied_top_k)
     payload.setdefault("applied_last_n_bars", applied_last_n)
-    payload.setdefault(
-        "effective_window",
-        {
-            "fetched_bars": applied_limit,
-            "pattern_filter_bars": applied_last_n or applied_limit,
-            "returned_cap": applied_top_k,
-        },
-    )
+    try:
+        observed_bars = int(payload.get("candles", applied_limit))
+    except Exception:
+        observed_bars = applied_limit
+    payload["effective_window"] = {
+        "fetched_bars": observed_bars,
+        "pattern_filter_bars": min(observed_bars, applied_last_n)
+        if isinstance(applied_last_n, int)
+        else observed_bars,
+        "requested_limit": applied_limit,
+        "limit_satisfied": observed_bars >= applied_limit,
+        "returned_cap": applied_top_k,
+    }
 
 
 def _attach_signal_bias_summary(resp: Dict[str, Any], deps: "PatternsDetectDeps") -> None:
@@ -225,7 +230,7 @@ def _attach_recommended_min_bars(resp: Dict[str, Any], mode: str, limit: Any) ->
     if recommended is None:
         return
     try:
-        requested = int(limit)
+        requested = int(resp.get("candles", limit))
     except Exception:
         requested = 0
     if requested >= int(recommended):

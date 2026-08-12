@@ -2206,7 +2206,10 @@ def test_forecast_list_library_models_and_list_methods(monkeypatch):
     assert "truncation_reason" not in filtered_uncapped
 
     monkeypatch.setattr(cf, "_get_forecast_methods_data", lambda: {"methods": [1]})
-    assert _unwrap(cf.forecast_list_methods)() == {"methods": [1]}
+    assert _unwrap(cf.forecast_list_methods)() == {
+        "methods": [1],
+        "success": True,
+    }
     monkeypatch.setattr(cf, "_get_forecast_methods_data", lambda: (_ for _ in ()).throw(RuntimeError("boom")))
     assert "Error listing forecast methods" in _unwrap(cf.forecast_list_methods)()["error"]
 
@@ -2311,6 +2314,28 @@ def test_forecast_list_library_models_defaults_to_compact_page(monkeypatch):
     full_page = cf._forecast_list_library_models_impl("native", detail="full")
     assert full_page["models_shown"] == 25
     assert full_page["filters"]["limit"] is None
+
+
+def test_forecast_list_all_library_models_uses_one_global_page(monkeypatch):
+    def capabilities(library, **_kwargs):
+        return [
+            {
+                "method": f"{library}_{index}",
+                "namespace": library,
+                "available": True,
+                "execution": {"library": library},
+            }
+            for index in range(3)
+        ]
+
+    monkeypatch.setattr(cf, "_get_library_forecast_capabilities", capabilities)
+
+    page = cf._forecast_list_library_models_impl("all", limit=4, offset=2)
+
+    shown = [model for section in page["libraries"] for model in section["models"]]
+    assert len(shown) == 4
+    assert page["pagination"]["offset"] == 2
+    assert page["pagination"]["returned"] == 4
 
 
 def test_forecast_list_library_models_compact_deduplicates_model_rows(monkeypatch):

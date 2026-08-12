@@ -400,6 +400,24 @@ def _parse_start_datetime(value: str) -> Optional[datetime]:
     named_timezone_datetime = _parse_iana_timezone_datetime(text)
     if named_timezone_datetime is not None:
         return named_timezone_datetime
+    # ISO-shaped values are an automation contract, not natural language.
+    # Validate their calendar token before dateparser can reinterpret an
+    # impossible month as a day (for example, 2026-13-01 -> 2026-01-13).
+    if re.match(r"^\d{4}-\d{2}-\d{2}(?:$|[T ])", text):
+        try:
+            datetime.fromisoformat(text[:10])
+        except ValueError:
+            return None
+        normalized_iso = re.sub(r"\s+UTC$", "+00:00", text, flags=re.IGNORECASE)
+        if normalized_iso.endswith(("Z", "z")):
+            normalized_iso = normalized_iso[:-1] + "+00:00"
+        try:
+            dt = datetime.fromisoformat(normalized_iso)
+        except ValueError:
+            return None
+        if dt.tzinfo is not None:
+            dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
+        return dt
     dt = dateparser.parse(
         value,
         settings={

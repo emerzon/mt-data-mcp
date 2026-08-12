@@ -23,6 +23,17 @@ def test_market_snapshot_help_discloses_builtin_section_methods():
     assert "quote_as_of" in doc
 
 
+def test_market_snapshot_rejects_invalid_forecast_horizon_before_preflight():
+    with patch.object(snapshot_mod, "_preflight_snapshot_symbol") as preflight:
+        result = snapshot_mod.market_snapshot.__wrapped__(
+            symbol="EURUSD", sections="forecast", horizon=0
+        )
+
+    assert result["success"] is False
+    assert result["error_code"] == "market_snapshot_invalid_horizon"
+    preflight.assert_not_called()
+
+
 def test_market_snapshot_quote_compaction_preserves_epoch_as_secondary_field():
     quote = snapshot_mod._compact_quote(
         {

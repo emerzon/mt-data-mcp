@@ -821,7 +821,7 @@ def market_ticker(  # noqa: C901
                 "price_currency": price_currency,
                 "bid": _round_market_ticker_value(bid, digits=digits),
                 "ask": _round_market_ticker_value(ask, digits=digits),
-                "mid": _round_market_ticker_value(mid, digits=digits),
+                "mid": float(mid),
                 "last": _round_market_ticker_value(last, digits=digits),
                 "spread": spread_abs,
                 "spread_points": spread_points,
@@ -931,7 +931,7 @@ def market_ticker(  # noqa: C901
                 price_values = {
                     "bid": out.get("bid"),
                     "ask": out.get("ask"),
-                    "mid": _round_market_ticker_value((bid + ask) / 2.0, digits=digits)
+                    "mid": float((bid + ask) / 2.0)
                     if bid is not None and ask is not None
                     else None,
                     "last": out.get("last"),

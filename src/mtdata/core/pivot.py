@@ -660,12 +660,12 @@ def confluence_levels(  # noqa: C901
     min_source_families: Annotated[int, Field(ge=1)] = 1,
     pivot_method: Optional[PivotMethodLiteral] = None,
     volume_weighting: Literal["off", "auto"] = "off",
-    reaction_bars: int = 6,
-    adx_period: int = 14,
-    decay_half_life_bars: Optional[int] = None,
+    reaction_bars: Annotated[int, Field(ge=1)] = 6,
+    adx_period: Annotated[int, Field(ge=2)] = 14,
+    decay_half_life_bars: Annotated[Optional[int], Field(gt=0)] = None,
     volume_profile_source: Literal["auto", "ticks", "m1_bars"] = "auto",
-    volume_profile_max_tick_window_days: int = 1,
-    volume_profile_max_ticks: int = 50_000,
+    volume_profile_max_tick_window_days: Annotated[int, Field(ge=1)] = 1,
+    volume_profile_max_ticks: Annotated[int, Field(ge=1)] = 50_000,
     detail: Literal["compact", "standard", "full"] = "compact",
 ) -> Dict[str, Any]:
     """Find nearby high-probability price zones where multiple level methods agree.
@@ -931,9 +931,9 @@ def support_resistance_levels(
     max_levels: Annotated[int, Field(ge=1)] = 4,
     max_distance_pct: Annotated[float, Field(ge=0.0)] = 5.0,
     volume_weighting: Literal["off", "auto"] = "off",
-    reaction_bars: int = 6,
-    adx_period: int = 14,
-    decay_half_life_bars: Optional[int] = None,
+    reaction_bars: Annotated[int, Field(ge=1)] = 6,
+    adx_period: Annotated[int, Field(ge=2)] = 14,
+    decay_half_life_bars: Annotated[Optional[int], Field(gt=0)] = None,
     detail: Literal["compact", "standard", "full"] = "compact",
 ) -> Dict[str, Any]:
     """Detect support/resistance levels around the current price from historical structure.

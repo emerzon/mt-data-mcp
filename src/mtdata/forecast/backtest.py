@@ -1330,6 +1330,8 @@ def strategy_backtest(  # noqa: C901
         if end is not None:
             _params["end"] = end
         bars_used = len(df) if range_requested else int(lookback)
+        signal_bars = max(0, (len(df) - 1) - int(start_signal_idx))
+        warmup_history_bars = max(0, len(df) - int(bars_used))
         gross_return = float(gross_equity[-1] - 1.0)
         return_after_known_costs = float(known_cost_equity[-1] - 1.0)
         mean_spread_cost_bps = (
@@ -1426,10 +1428,12 @@ def strategy_backtest(  # noqa: C901
             "summary": {
                 "bars_used": int(bars_used),
                 "warmup_bars": int(signal_warmup),
-                "signal_bars": int(max(0, int(bars_used) - int(signal_warmup))),
+                "warmup_history_bars": int(warmup_history_bars),
+                "signal_bars": int(signal_bars),
                 "warmup_reason": (
                     f"{strategy_value} requires {int(signal_warmup)} warmup bar(s) "
-                    "before generated signals are eligible for trading."
+                    "before generated signals are eligible for trading; prior "
+                    "history is fetched outside the requested evaluation window."
                 ),
                 "num_trades": int(len(trades)),
                 "long_trades": long_trades,

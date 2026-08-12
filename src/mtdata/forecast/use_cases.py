@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import difflib
 import importlib
+import inspect
 import logging
 import math
 import os
@@ -2145,6 +2146,24 @@ def _discover_sktime_forecasters() -> Dict[str, Tuple[str, str]]:
                 if not issubclass(obj, BaseForecaster):
                     continue
             except Exception:
+                continue
+            if inspect.isabstract(obj):
+                continue
+            try:
+                constructor = inspect.signature(obj)
+            except (TypeError, ValueError):
+                continue
+            required_constructor_params = [
+                parameter
+                for parameter in constructor.parameters.values()
+                if parameter.default is inspect.Parameter.empty
+                and parameter.kind
+                not in {
+                    inspect.Parameter.VAR_POSITIONAL,
+                    inspect.Parameter.VAR_KEYWORD,
+                }
+            ]
+            if required_constructor_params:
                 continue
             key = name.lower()
             if key not in mapping:

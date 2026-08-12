@@ -1897,6 +1897,12 @@ def _robust_z(values: pd.Series) -> pd.Series:
 def rank_relative_strength(request: MarketRelativeStrengthRequest, gateway: Any) -> Dict[str, Any]:
     raw_symbols = list(gateway.symbols_get() or [])
     explicit = {item.strip().upper() for item in str(request.symbols or "").split(",") if item.strip()}
+    available_names = {
+        str(_mapping(item).get("name") or getattr(item, "name", "")).upper()
+        for item in raw_symbols
+        if str(_mapping(item).get("name") or getattr(item, "name", "")).strip()
+    }
+    missing_explicit = sorted(explicit - available_names)
     selected = []
     for item in raw_symbols:
         row = _mapping(item)
@@ -1912,10 +1918,20 @@ def rank_relative_strength(request: MarketRelativeStrengthRequest, gateway: Any)
         selected.append(name)
         if len(selected) >= request.max_symbols:
             break
-    candidate_symbols = list(selected)
+    benchmark_symbol = request.benchmark.upper() if request.benchmark else None
+    candidate_symbols = [
+        symbol for symbol in selected if symbol != benchmark_symbol
+    ]
+    if explicit and not candidate_symbols:
+        return {
+            "error": "None of the requested candidate symbols are available.",
+            "error_code": "symbol_not_found",
+            "missing_symbols": missing_explicit or sorted(explicit),
+            "remediation": "Use symbols_list to discover broker symbol names and suffixes.",
+        }
     data_symbols = list(candidate_symbols)
-    if request.benchmark and request.benchmark.upper() not in data_symbols:
-        data_symbols.append(request.benchmark.upper())
+    if benchmark_symbol and benchmark_symbol not in data_symbols:
+        data_symbols.append(benchmark_symbol)
     lookback = max(max(request.horizons) + request.volatility_lookback + 15, 100)
     histories: Dict[str, pd.DataFrame] = {}
     skipped = []
@@ -2036,6 +2052,10 @@ def rank_relative_strength(request: MarketRelativeStrengthRequest, gateway: Any)
             "data_symbols_fetched": len(histories),
             "ranked_symbols": len(ordered),
             "skipped": skipped,
+            "missing_symbols": missing_explicit,
+            "benchmark_excluded_from_ranking": benchmark_symbol
+            if benchmark_symbol in selected
+            else None,
             "minimum_history_coverage": 0.90,
         },
         "units": {"raw_momentum": "log_return_fraction", "residual_momentum": "log_return_fraction", "volatility": "per_bar_log_return_stddev", "score": "robust_z_composite", "rank_stability": "fraction_0_to_1", "tick_volume": "broker_tick_count"},

@@ -345,13 +345,7 @@ class TestConsolidateOutputModes:
 
 
 class TestConsolidateEdgeCases:
-    def test_exception_in_consolidation(self):
-        """Force an exception to hit lines 175-178.
-
-        When state_probabilities contains dicts (not lists), the fallback
-        branch sets probs = raw_probs.  Then ``curr_prob_sum += p`` where
-        p is a dict raises TypeError, caught by the except block.
-        """
+    def test_malformed_probabilities_do_not_fabricate_confidence(self):
         payload = {
             "times": ["T1", "T2"],
             "state": [0, 0],
@@ -359,11 +353,8 @@ class TestConsolidateEdgeCases:
             "method": "hmm",
         }
         res = _consolidate_payload(payload, "hmm", "full")
-        assert "consolidation_error" in res
-        assert res["error"].startswith("Regime output consolidation failed:")
-        assert res["error_code"] == "regime_consolidation_failed"
-        assert res["partial_failure"] is True
-        assert res["success"] is False
+        assert "consolidation_error" not in res
+        assert "regime_confidence" not in res["regimes"][0]
 
     def test_probs_none_entries(self):
         """Prob list with None entries uses 0.0 fallback."""

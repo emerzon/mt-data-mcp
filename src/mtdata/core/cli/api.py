@@ -13,9 +13,7 @@ import sys
 import types
 import warnings
 from contextlib import redirect_stderr, redirect_stdout
-from importlib import metadata as importlib_metadata
 from io import StringIO
-from pathlib import Path
 from typing import (
     Any,
     Dict,
@@ -231,23 +229,10 @@ _BACKGROUND_COMMAND_REMEDIATION = (
 )
 
 
-def _read_local_project_version() -> Optional[str]:
-    pyproject_path = Path(__file__).resolve().parents[4] / "pyproject.toml"
-    try:
-        for line in pyproject_path.read_text(encoding="utf-8").splitlines():
-            if line.strip().startswith("version"):
-                _, raw_value = line.split("=", 1)
-                return raw_value.strip().strip('"').strip("'") or None
-    except Exception:
-        return None
-    return None
-
-
 def _cli_version() -> str:
-    try:
-        return importlib_metadata.version(PACKAGE_NAME)
-    except importlib_metadata.PackageNotFoundError:
-        return _read_local_project_version() or "unknown"
+    from .version import cli_version
+
+    return cli_version()
 
 
 def _is_pydantic_model_type(value: Any) -> bool:

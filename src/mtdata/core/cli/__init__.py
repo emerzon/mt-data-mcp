@@ -3,25 +3,18 @@
 import json
 import sys
 from difflib import get_close_matches
-from importlib import metadata as importlib_metadata
 from typing import Optional, Sequence
 
 from ..error_envelope import build_error_payload
-from .catalog import available_command_names, format_root_help
-
-
-def _installed_version() -> str:
-    try:
-        return importlib_metadata.version("mtdata")
-    except importlib_metadata.PackageNotFoundError:
-        return "unknown"
+from .catalog import format_root_help, known_command_names
+from .version import cli_version
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
     """Handle cheap entry-point modes before importing the full tool graph."""
     effective_argv = list(sys.argv[1:] if argv is None else argv)
     if effective_argv in (["--version"], ["-V"]):
-        print(f"mtdata-cli {_installed_version()}")
+        print(f"mtdata-cli {cli_version()}")
         return 0
 
     program = str(sys.argv[0] or "mtdata-cli").rsplit("/", 1)[-1].rsplit("\\", 1)[-1]
@@ -34,7 +27,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     raw_command = effective_argv[0]
     normalized_command = raw_command.replace("-", "_")
-    known_commands = {*available_command_names(), "shell"}
+    known_commands = {*known_command_names(), "shell"}
     if not raw_command.startswith("-") and normalized_command not in known_commands:
         message = f"Unknown command: {raw_command}"
         suggestions = get_close_matches(normalized_command, sorted(known_commands), n=3)

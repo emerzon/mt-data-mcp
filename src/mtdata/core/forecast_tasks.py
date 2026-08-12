@@ -872,15 +872,18 @@ def forecast_models_list(
     method: Optional[str] = None,
     detail: DetailLevel = "compact",
 ) -> Dict[str, Any]:
-    """List all stored trained forecast models.
+    """List usable stored trained forecast models.
 
     Optionally filter by method name (e.g. nhits, tft, mlforecast).
-    Use ``detail='full'`` to include stored model metadata.
+    Expired artifacts are intentionally excluded; use a dry-run
+    ``forecast_models_cleanup`` call to inspect them. Use ``detail='full'`` to
+    include stored model metadata.
     """
     def _execute() -> Dict[str, Any]:
         detail_mode = _detail_mode(detail)
         store = _get_model_store()
         handles = store.list_models(method=method)
+        all_handles = store.list_models(method=method, include_expired=True)
         items = [
             _serialize_model_handle(h, detail=detail_mode, store=store)
             for h in handles
@@ -890,7 +893,12 @@ def forecast_models_list(
             "detail": detail_mode,
             "count": len(items),
             "models": items,
+            "expired_models_hidden": max(0, len(all_handles) - len(handles)),
         }
+        if out["expired_models_hidden"]:
+            out["expired_models_hint"] = (
+                "Use forecast_models_cleanup with dry_run=true to inspect expired artifacts."
+            )
         if not items:
             out["model_store"] = {
                 "path": str(getattr(store, "root", "")),

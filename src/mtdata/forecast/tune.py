@@ -388,6 +388,49 @@ def _eval_candidate(
     return (score if mode == 'min' else -score, {'_sel_method': sel_method, **(res or {})})
 
 
+def _candidate_failure(res: Any) -> Dict[str, Any]:
+    """Extract one actionable failure from a failed candidate evaluation."""
+    if not isinstance(res, dict):
+        return {"error": "Candidate evaluation returned no structured result."}
+    for key in ("tuning_error", "error"):
+        if res.get(key):
+            out = {"error": str(res[key])}
+            if res.get("error_code"):
+                out["error_code"] = str(res["error_code"])
+            return out
+    results = res.get("results")
+    if isinstance(results, dict):
+        for method_name, method_result in results.items():
+            if not isinstance(method_result, dict):
+                continue
+            for key in ("tuning_error", "error"):
+                if method_result.get(key):
+                    out = {
+                        "method": str(method_name),
+                        "error": str(method_result[key]),
+                    }
+                    if method_result.get("error_code"):
+                        out["error_code"] = str(method_result["error_code"])
+                    return out
+    return {"error": "Candidate did not produce a finite requested metric."}
+
+
+def _failure_causes(history: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    counts: Dict[tuple[str, str], int] = {}
+    for row in history:
+        error = str(row.get("failure_reason") or "").strip()
+        if not error:
+            continue
+        code = str(row.get("failure_code") or "candidate_failed")
+        counts[(code, error)] = counts.get((code, error), 0) + 1
+    return [
+        {"error_code": code, "error": error, "count": count}
+        for (code, error), count in sorted(
+            counts.items(), key=lambda item: (-item[1], item[0])
+        )[:5]
+    ]
+
+
 def _sample_param(space: Dict[str, Any], rng: random.Random) -> Any:
     t = str(space.get('type', 'float')).lower()
     if t == 'categorical':
@@ -669,6 +712,11 @@ def optuna_search_forecast_params(  # noqa: C901
             hist_row: Dict[str, Any] = {"trial": int(trial.number), "score": float(objective_score), "params": dict(cand)}
             if isinstance(res, dict) and res.get('_sel_method'):
                 hist_row['method'] = res.get('_sel_method')
+            if finite_score is None:
+                failure = _candidate_failure(res)
+                hist_row["failure_reason"] = failure["error"]
+                if failure.get("error_code"):
+                    hist_row["failure_code"] = failure["error_code"]
             history.append(hist_row)
 
             if finite_score is not None:
@@ -705,6 +753,8 @@ def optuna_search_forecast_params(  # noqa: C901
             "optimizer": "optuna",
             "n_trials": int(n_trials_val),
             "history_count": len(history),
+            "failure_causes": _failure_causes(history),
+            "failed_trials": history[:5],
         }
 
     payload: Dict[str, Any] = {
@@ -876,6 +926,11 @@ def genetic_search_forecast_params(  # noqa: C901
             hist_entry = {"generation": gen, "score": float(score), "params": dict(cand)}
             if isinstance(res, dict) and res.get('_sel_method'):
                 hist_entry['method'] = res.get('_sel_method')
+            if not math.isfinite(score):
+                failure = _candidate_failure(res)
+                hist_entry["failure_reason"] = failure["error"]
+                if failure.get("error_code"):
+                    hist_entry["failure_code"] = failure["error_code"]
             history.append(hist_entry)
             # Keep global best in true metric direction
             true_score = score if mode == 'min' else -score
@@ -937,6 +992,8 @@ def genetic_search_forecast_params(  # noqa: C901
             "population": int(population),
             "generations": int(generations),
             "history_count": len(history),
+            "failure_causes": _failure_causes(history),
+            "failed_candidates": history[:5],
         }
 
     payload: Dict[str, Any] = {

@@ -497,12 +497,33 @@ def _symbol_default_list_sort_key(symbol: Any) -> tuple[int, int, str, str]:
     return category_rank, 0, *_case_insensitive_sort_key(getattr(symbol, "name", ""))
 
 
-def _symbol_top_match(row: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
-    if not isinstance(row, dict):
+def _symbol_top_match(
+    rows: List[Dict[str, Any]], search_term: str
+) -> Optional[Dict[str, Any]]:
+    if not rows or not isinstance(rows[0], dict):
         return None
+    row = rows[0]
     reason = row.get("match_reason")
     if reason not in {"exact_name", "name_prefix"}:
         return None
+    if reason == "name_prefix":
+        query = re.sub(r"[^A-Z]", "", str(search_term or "").upper())
+
+        def _semantic_rank(candidate: Dict[str, Any]) -> int:
+            symbol_name = re.sub(
+                r"[^A-Z]", "", str(candidate.get("symbol") or "").upper()
+            )
+            if query in _FOREX_CURRENCY_CODES and len(symbol_name) >= 6:
+                return _FOREX_SEARCH_PAIR_PRIORITY.get(symbol_name[:6], 50)
+            return 0
+
+        first_rank = _semantic_rank(row)
+        if any(
+            candidate.get("match_reason") == reason
+            and _semantic_rank(candidate) == first_rank
+            for candidate in rows[1:]
+        ):
+            return None
     out = {
         "symbol": row.get("symbol"),
         "match_reason": reason,
@@ -1039,9 +1060,16 @@ def symbols_list(  # noqa: C901
             if category_filter:
                 filters["category"] = category_filter
             top_match = (
-                _symbol_top_match(symbol_list[0] if symbol_list else None)
+                _symbol_top_match(symbol_list, normalized_search_term)
                 if normalized_search_term
                 else None
+            )
+            ambiguous_match = bool(
+                normalized_search_term
+                and not top_match
+                and len(symbol_list) > 1
+                and symbol_list[0].get("match_reason") == "name_prefix"
+                and symbol_list[1].get("match_reason") == "name_prefix"
             )
             if offset_value:
                 symbol_list = symbol_list[offset_value:]
@@ -1084,6 +1112,11 @@ def symbols_list(  # noqa: C901
                     )
                     if top_match:
                         out["top_match"] = top_match
+                    elif ambiguous_match:
+                        out["ambiguous_match"] = True
+                        out["match_candidates"] = [
+                            row.get("symbol") for row in symbol_list[:5]
+                        ]
                     out["universe_size"] = len(search_universe)
                     if total_count == 0:
                         out.update(
@@ -1149,6 +1182,11 @@ def symbols_list(  # noqa: C901
                 )
                 if top_match:
                     result["top_match"] = top_match
+                elif ambiguous_match:
+                    result["ambiguous_match"] = True
+                    result["match_candidates"] = [
+                        row.get("symbol") for row in symbol_list[:5]
+                    ]
                 result["universe_size"] = len(search_universe)
                 if total_count == 0:
                     result.update(
@@ -2494,6 +2532,7 @@ def _market_scan_group_matches_query(group_path: str, requested: str) -> bool:
         requested_variant in group_variant
         for requested_variant in requested_variants
         for group_variant in group_variants
+        if len(requested_variant) >= 3
     )
 
 
@@ -3716,6 +3755,8 @@ def market_scan(  # noqa: C901
             request["offset"] = offset_value
 
             for filter_name, filter_value in (
+                ("min_price_change_pct", min_price_change_pct),
+                ("max_price_change_pct", max_price_change_pct),
                 ("max_spread_pct", max_spread_pct),
                 ("rsi_below", rsi_below),
                 ("rsi_above", rsi_above),
@@ -3729,16 +3770,41 @@ def market_scan(  # noqa: C901
                 else:
                     invalid = invalid or not 0.0 <= numeric <= 100.0
                 if invalid:
-                    expected = (
-                        "a non-negative percentage"
-                        if filter_name == "max_spread_pct"
-                        else "between 0 and 100"
-                    )
+                    if filter_name == "max_spread_pct":
+                        expected = "a non-negative percentage"
+                    elif filter_name in {"rsi_below", "rsi_above"}:
+                        expected = "between 0 and 100"
+                    else:
+                        expected = "a finite number"
                     return _market_scan_error(
                         f"{filter_name} must be {expected}.",
                         code="invalid_input",
                         request=request,
                     )
+            min_change = _market_scan_float(min_price_change_pct)
+            max_change = _market_scan_float(max_price_change_pct)
+            if (
+                min_change is not None
+                and max_change is not None
+                and min_change > max_change
+            ):
+                return _market_scan_error(
+                    "min_price_change_pct must be <= max_price_change_pct.",
+                    code="contradictory_filters",
+                    request=request,
+                )
+            rsi_floor = _market_scan_float(rsi_above)
+            rsi_ceiling = _market_scan_float(rsi_below)
+            if (
+                rsi_floor is not None
+                and rsi_ceiling is not None
+                and rsi_floor >= rsi_ceiling
+            ):
+                return _market_scan_error(
+                    "rsi_above must be < rsi_below.",
+                    code="contradictory_filters",
+                    request=request,
+                )
             if min_tick_volume is not None:
                 try:
                     min_tick_volume_value = int(min_tick_volume)

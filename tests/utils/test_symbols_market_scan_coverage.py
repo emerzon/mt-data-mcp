@@ -384,6 +384,24 @@ def test_market_scan_rejects_invalid_constraints_before_mt5(kwargs, message):
     create_gateway.assert_not_called()
 
 
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"min_price_change_pct": 2.0, "max_price_change_pct": 1.0},
+        {"rsi_above": 70.0, "rsi_below": 30.0},
+    ],
+)
+def test_market_scan_rejects_contradictory_ranges_before_mt5(kwargs):
+    from mtdata.core import symbols as symbols_mod
+
+    with patch.object(symbols_mod, "create_mt5_gateway") as create_gateway:
+        result = _unwrap(symbols_mod.market_scan)(**kwargs)
+
+    assert result["success"] is False
+    assert result["error_code"] == "contradictory_filters"
+    create_gateway.assert_not_called()
+
+
 def test_market_scan_spread_row_reconciles_newer_stream_quote() -> None:
     from mtdata.core.symbols import _build_market_scan_spread_row
 

@@ -1133,3 +1133,23 @@ def test_relative_strength_fetches_external_benchmark_without_ranking_it() -> No
     assert result["data_quality"]["selected_symbols"] == 2
     assert result["data_quality"]["data_symbols_fetched"] == 3
     assert "USDJPY" not in {row["symbol"] for row in result["all_rankings"]}
+
+
+def test_relative_strength_does_not_rank_benchmark_from_requested_symbols() -> None:
+    gateway = FakeGateway()
+    request = MarketRelativeStrengthRequest(
+        symbols="EURUSD,GBPUSD,USDJPY",
+        benchmark="USDJPY",
+        horizons=[5],
+        weights=[1.0],
+        volatility_lookback=30,
+        limit=3,
+        detail="full",
+    )
+
+    result = rank_relative_strength(request, gateway)
+
+    assert result["success"] is True
+    assert result["universe_size"] == 2
+    assert "USDJPY" not in {row["symbol"] for row in result["all_rankings"]}
+    assert result["data_quality"]["benchmark_excluded_from_ranking"] == "USDJPY"

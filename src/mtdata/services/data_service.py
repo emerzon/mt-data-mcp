@@ -3248,8 +3248,8 @@ def fetch_ticks(  # noqa: C901
                 "success": True,
                 "symbol": symbol,
                 "count": int(len(df_stats)),
-                "start": str(df_stats["time"].iloc[0]),
-                "end": str(df_stats["time"].iloc[-1]),
+                "start": df_stats["time"].iloc[0],
+                "end": df_stats["time"].iloc[-1],
                 "duration_seconds": duration_seconds,
                 "tick_rate_per_second": tick_rate_per_second,
                 "tick_count": int(len(df_stats)),
@@ -3369,8 +3369,8 @@ def fetch_ticks(  # noqa: C901
                 "symbol": symbol,
                 "output": "stats" if detailed_stats else "summary",
                 "count": int(len(df_stats)),
-                "start": str(df_stats["time"].iloc[0]),
-                "end": str(df_stats["time"].iloc[-1]),
+                "start": df_stats["time"].iloc[0],
+                "end": df_stats["time"].iloc[-1],
                 "duration_seconds": duration_seconds,
                 "tick_rate_per_second": tick_rate_per_second,
                 "timezone": timezone,
@@ -3725,7 +3725,7 @@ def fetch_ticks(  # noqa: C901
                 gap_ms = None if i <= 0 else float((_epochs[i] - _epochs[i - 1]) * 1000.0)
                 values.extend(
                     [
-                        _round_price_value(mid, price_digits),
+                        float(mid) if mid is not None else None,
                         _round_price_value(spread, price_digits),
                     ]
                 )

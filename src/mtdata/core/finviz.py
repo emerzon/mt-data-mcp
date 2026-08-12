@@ -10,8 +10,10 @@ import logging
 import re
 from datetime import datetime, timedelta, timezone
 from datetime import time as datetime_time
-from typing import Any, Callable, Dict, List, Literal, Optional, Union
+from typing import Annotated, Any, Callable, Dict, List, Literal, Optional, Union
 from zoneinfo import ZoneInfo
+
+from pydantic import Field
 
 from ..services.finviz import (
     get_crypto_performance,
@@ -1213,8 +1215,8 @@ def _resolve_finviz_screen_filters(filters: Any) -> tuple[Optional[Dict[str, Any
 def finviz_filters_list(
     search: Optional[str] = None,
     filter_name: Optional[str] = None,
-    limit: int = 20,
-    offset: int = 0,
+    limit: Annotated[int, Field(ge=1)] = 20,
+    offset: Annotated[int, Field(ge=0)] = 0,
     detail: DetailLiteral = "compact",  # type: ignore
 ) -> Dict[str, Any]:
     """List valid Finviz screener filters and accepted values."""
@@ -3159,8 +3161,8 @@ def finviz_description(
 @mcp.tool()
 def finviz_news(
     symbol: str,
-    limit: int = 20,
-    page: int = 1,
+    limit: Annotated[int, Field(ge=1)] = 20,
+    page: Annotated[int, Field(ge=1)] = 1,
     detail: DetailLiteral = "compact",  # type: ignore
 ) -> Dict[str, Any]:
     """
@@ -3216,8 +3218,8 @@ def finviz_news(
 @mcp.tool()
 def finviz_insider(
     symbol: str,
-    limit: int = 20,
-    page: int = 1,
+    limit: Annotated[int, Field(ge=1)] = 20,
+    page: Annotated[int, Field(ge=1)] = 1,
     detail: DetailLiteral = "compact",  # type: ignore
 ) -> Dict[str, Any]:
     """
@@ -3268,7 +3270,7 @@ def finviz_insider(
 def finviz_ratings(
     symbol: str,
     detail: Literal["compact", "full"] = "compact",
-    limit: int = 3,
+    limit: Annotated[int, Field(ge=1)] = 3,
 ) -> Dict[str, Any]:
     """
     Get analyst ratings for a US stock.
@@ -3316,8 +3318,8 @@ def finviz_ratings(
 def finviz_peers(
     symbol: str,
     detail: DetailLiteral = "compact",  # type: ignore
-    limit: int = 5,
-    offset: int = 0,
+    limit: Annotated[int, Field(ge=1)] = 5,
+    offset: Annotated[int, Field(ge=0)] = 0,
 ) -> Dict[str, Any]:
     """
     Get peer companies for a US stock.
@@ -3360,8 +3362,8 @@ def finviz_peers(
 def finviz_screen(
     filters: Optional[Union[str, Dict[str, Any]]] = None,
     order: Optional[str] = None,
-    limit: int = 20,
-    page: int = 1,
+    limit: Annotated[int, Field(ge=1)] = 20,
+    page: Annotated[int, Field(ge=1)] = 1,
     view: Literal["overview", "valuation", "financial", "ownership", "performance", "technical"] = "overview",
     detail: DetailLiteral = "compact",
 ) -> Dict[str, Any]:
@@ -3465,8 +3467,8 @@ def finviz_screen(
 @mcp.tool()
 def finviz_market_news(
     news_type: Literal["news", "blogs"] = "news",
-    limit: int = 20,
-    page: int = 1,
+    limit: Annotated[int, Field(ge=1)] = 20,
+    page: Annotated[int, Field(ge=1)] = 1,
     detail: DetailLiteral = "compact",  # type: ignore
 ) -> Dict[str, Any]:
     """
@@ -3509,8 +3511,8 @@ def finviz_market_news(
 @mcp.tool()
 def finviz_insider_activity(
     option: Literal["latest", "top week", "top owner trade", "insider buy", "insider sale"] = "latest",
-    limit: int = 50,
-    page: int = 1,
+    limit: Annotated[int, Field(ge=1)] = 50,
+    page: Annotated[int, Field(ge=1)] = 1,
     detail: DetailLiteral = "compact",  # type: ignore
 ) -> Dict[str, Any]:
     """
@@ -3559,7 +3561,7 @@ def finviz_insider_activity(
 @mcp.tool()
 def finviz_forex(
     symbol: Optional[str] = None,
-    limit: int = 20,
+    limit: Annotated[int, Field(ge=1)] = 20,
     detail: DetailLiteral = "compact",  # type: ignore
 ) -> Dict[str, Any]:
     """
@@ -3613,7 +3615,7 @@ def finviz_forex(
 
 @mcp.tool()
 def finviz_crypto(
-    limit: int = 20,
+    limit: Annotated[int, Field(ge=1)] = 20,
     detail: DetailLiteral = "compact",  # type: ignore
 ) -> Dict[str, Any]:
     """
@@ -3647,7 +3649,7 @@ def finviz_crypto(
 
 @mcp.tool()
 def finviz_futures(
-    limit: int = 20,
+    limit: Annotated[int, Field(ge=1)] = 20,
     detail: DetailLiteral = "compact",  # type: ignore
 ) -> Dict[str, Any]:
     """
@@ -3689,8 +3691,8 @@ def finviz_calendar(
     currency: Optional[str] = None,
     start: Optional[str] = None,
     end: Optional[str] = None,
-    limit: int = 20,
-    page: int = 1,
+    limit: Annotated[int, Field(ge=1)] = 20,
+    page: Annotated[int, Field(ge=1)] = 1,
     detail: DetailLiteral = "compact",  # type: ignore
 ) -> Dict[str, Any]:
     """
@@ -3804,8 +3806,8 @@ def finviz_calendar(
 @mcp.tool()
 def finviz_earnings(
     period: Literal["this-week", "next-week", "previous-week", "this-month"] = "this-week",
-    limit: int = 10,
-    page: int = 1,
+    limit: Annotated[int, Field(ge=1)] = 10,
+    page: Annotated[int, Field(ge=1)] = 1,
     detail: DetailLiteral = "compact",  # type: ignore
 ) -> Dict[str, Any]:
     """

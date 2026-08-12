@@ -27,7 +27,7 @@ def test_version_path_does_not_import_cli_api(capsys):
     from mtdata.core.cli import main
 
     with (
-        patch("mtdata.core.cli._installed_version", return_value="9.8.7"),
+        patch("mtdata.core.cli.cli_version", return_value="9.8.7"),
         patch.dict("sys.modules", {"mtdata.core.cli.api": None}),
     ):
         status = main(["--version"])

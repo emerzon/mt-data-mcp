@@ -276,6 +276,13 @@ class TestParseStartDatetime:
     def test_iana_timezone_rejects_ambiguous_dst_local_time(self):
         assert _parse_start_datetime("2026-11-01 01:30 America/New_York") is None
 
+    @pytest.mark.parametrize(
+        "value",
+        ["2026-13-01", "2026-02-30", "2025-02-29", "2026-00-10T12:00:00Z"],
+    )
+    def test_iso_shaped_invalid_dates_are_not_reinterpreted(self, value):
+        assert _parse_start_datetime(value) is None
+
     def test_relative_weekdays(self):
         today = datetime.now(timezone.utc).date()
 

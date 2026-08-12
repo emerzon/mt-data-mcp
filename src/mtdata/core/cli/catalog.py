@@ -152,6 +152,11 @@ def available_command_names() -> tuple[str, ...]:
     return tuple(sorted((*CLI_COMMAND_NAMES, *optional)))
 
 
+def known_command_names() -> tuple[str, ...]:
+    """Return enabled commands plus supported commands hidden behind gates."""
+    return tuple(sorted((*CLI_COMMAND_NAMES, *_OPTIONAL_COMMAND_ENV)))
+
+
 def _matches_prefix(name: str, prefixes: Iterable[str]) -> bool:
     return any(name == prefix or name.startswith(prefix) for prefix in prefixes)
 
@@ -201,7 +206,19 @@ def format_root_help(program: str) -> str:
             "Kebab-case command spellings are also accepted.",
         )
     )
+    disabled = [
+        f"{command} (set {env_name}=1)"
+        for command, env_name in _OPTIONAL_COMMAND_ENV.items()
+        if not _env_enabled(env_name)
+    ]
+    if disabled:
+        lines.extend(("", "  DISABLED FEATURES:", f"    {'; '.join(disabled)}"))
     return "\n".join(lines)
 
 
-__all__ = ["CLI_COMMAND_NAMES", "available_command_names", "format_root_help"]
+__all__ = [
+    "CLI_COMMAND_NAMES",
+    "available_command_names",
+    "known_command_names",
+    "format_root_help",
+]

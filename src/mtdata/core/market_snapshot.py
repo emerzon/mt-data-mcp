@@ -759,6 +759,13 @@ def market_snapshot(
     def _run() -> Dict[str, Any]:
         selected = _parse_snapshot_sections(sections)
         detail_mode = str(detail or "compact").strip().lower()
+        if "forecast" in selected and int(horizon) < 1:
+            return build_error_payload(
+                "horizon must be at least 1 when the forecast section is requested.",
+                code="market_snapshot_invalid_horizon",
+                operation="market_snapshot",
+                details={"horizon": horizon, "sections": list(selected)},
+            )
         preflight_error = _preflight_snapshot_symbol(symbol)
         if preflight_error is not None:
             return {

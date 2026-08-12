@@ -7,7 +7,9 @@ import traceback
 from contextlib import contextmanager, redirect_stderr, redirect_stdout
 from functools import lru_cache
 from importlib import import_module
-from typing import Any, Dict, List, Literal, Optional
+from typing import Annotated, Any, Dict, List, Literal, Optional
+
+from pydantic import Field
 
 from ..forecast.barrier_constants import (
     BARRIER_MONTE_CARLO_METHODS,
@@ -800,11 +802,14 @@ def _run_forecast_operation(
             else:
                 result = func()
             result = _attach_timezone(result, operation=operation)
-            return _attach_forecast_compute_hint(
+            result = _attach_forecast_compute_hint(
                 result,
                 operation=operation,
                 payload=process_payload,
             )
+            if isinstance(result, dict) and "error" not in result:
+                result.setdefault("success", True)
+            return result
         except ForecastError as exc:
             if catch_forecast_error:
                 return _forecast_error_payload(exc, operation=operation)
@@ -861,8 +866,8 @@ def forecast_list_library_models(
     library: Literal["native", "statsforecast", "sktime", "pretrained", "mlforecast", "all"] = "all",
     show_unavailable: bool = False,
     detail: DetailLiteral = "compact",  # type: ignore
-    limit: Optional[int] = None,
-    offset: int = 0,
+    limit: Annotated[Optional[int], Field(ge=1)] = None,
+    offset: Annotated[int, Field(ge=0)] = 0,
 ) -> Dict[str, Any]:
     """List available model names within a forecast library.
 
@@ -957,8 +962,8 @@ def forecast_volatility_estimate(
 @mcp.tool()
 def forecast_list_methods(
     detail: DetailLiteral = "compact",
-    limit: Optional[int] = None,
-    offset: int = 0,
+    limit: Annotated[Optional[int], Field(ge=1)] = None,
+    offset: Annotated[int, Field(ge=0)] = 0,
     search_term: Optional[str] = None,
     category: Optional[str] = None,
     library: Optional[
@@ -1394,7 +1399,7 @@ def _forecast_list_library_models_impl(
         limit_value = default_limit
     supported_libraries = ("native", "statsforecast", "sktime", "pretrained", "mlforecast")
     if lib == "all":
-        sections: List[Dict[str, Any]] = []
+        library_results: List[tuple[str, Dict[str, Any]]] = []
         total_catalog_models = 0
         total_models = 0
         total_available = 0
@@ -1404,39 +1409,65 @@ def _forecast_list_library_models_impl(
                 library_name,
                 show_unavailable=show_unavailable,
                 detail=detail_mode,
-                limit=limit_value,
-                offset=offset_value,
+                limit=1_000_000,
+                offset=0,
             )
             if section.get("error"):
-                sections.append(
-                    {
-                        "library": library_name,
-                        "error": section.get("error"),
-                    }
-                )
+                library_results.append((library_name, section))
                 continue
             total_catalog_models += int(section.get("total") or 0)
             total_models += int(section.get("total_filtered") or 0)
             total_available += int(section.get("available") or 0)
             total_unavailable_hidden += int(section.get("unavailable_hidden") or 0)
+            library_results.append((library_name, section))
+
+        global_rows: List[tuple[str, Dict[str, Any], Optional[Dict[str, Any]]]] = []
+        for library_name, section in library_results:
+            rows = section.get("models")
+            capabilities = section.get("capabilities")
+            capability_rows = capabilities if isinstance(capabilities, list) else []
+            for index, row in enumerate(rows if isinstance(rows, list) else []):
+                if not isinstance(row, dict):
+                    continue
+                capability = (
+                    capability_rows[index]
+                    if index < len(capability_rows) and isinstance(capability_rows[index], dict)
+                    else None
+                )
+                global_rows.append((library_name, row, capability))
+        page_end = None if limit_value is None else offset_value + limit_value
+        selected_rows = global_rows[offset_value:page_end]
+
+        sections: List[Dict[str, Any]] = []
+        for library_name, section in library_results:
+            if section.get("error"):
+                sections.append({"library": library_name, "error": section.get("error")})
+                continue
+            selected_for_library = [
+                (row, capability)
+                for row_library, row, capability in selected_rows
+                if row_library == library_name
+            ]
             section_out = {
                 "library": library_name,
-                "models": section.get("models") or [],
+                "models": [row for row, _capability in selected_for_library],
                 "total": section.get("total"),
                 "total_filtered": section.get("total_filtered"),
                 "available": section.get("available"),
-                "has_more": section.get("has_more"),
+                "models_shown": len(selected_for_library),
             }
             if detail_mode == "full":
                 section_out.update(
                     {
                         "unavailable": section.get("unavailable"),
                         "unavailable_hidden": section.get("unavailable_hidden"),
-                        "models_shown": section.get("models_shown"),
                     }
                 )
-            if detail_mode == "full" and isinstance(section.get("capabilities"), list):
-                section_out["capabilities"] = section.get("capabilities")
+                section_out["capabilities"] = [
+                    capability
+                    for _row, capability in selected_for_library
+                    if capability is not None
+                ]
             sections.append(section_out)
         out = {
             "library": "all",
@@ -1450,6 +1481,12 @@ def _forecast_list_library_models_impl(
                 "limit": limit_value,
                 "offset": offset_value,
             },
+            "pagination": build_pagination_meta(
+                total=len(global_rows),
+                returned=len(selected_rows),
+                offset=offset_value,
+                limit=limit_value,
+            ),
         }
         if detail_mode == "full":
             out["unavailable_hidden"] = total_unavailable_hidden
