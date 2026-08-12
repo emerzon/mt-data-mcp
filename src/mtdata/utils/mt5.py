@@ -161,27 +161,23 @@ class MT5Adapter:
     def history_orders_get(self, dt_from, dt_to, **kwargs):
         with _mt5_lock:
             module = self._module()
-            mode = _timestamp_mode_for_history_query(module, kwargs)
-            return _normalize_object_time_rows(
-                module.history_orders_get(
-                    _to_server_query_dt(dt_from, mode=mode),
-                    _to_server_query_dt(dt_to, mode=mode),
-                    **kwargs,
-                ),
-                mode=mode,
+            return _history_get_normalized(
+                module,
+                "history_orders_get",
+                dt_from,
+                dt_to,
+                kwargs,
             )
 
     def history_deals_get(self, dt_from, dt_to, **kwargs):
         with _mt5_lock:
             module = self._module()
-            mode = _timestamp_mode_for_history_query(module, kwargs)
-            return _normalize_object_time_rows(
-                module.history_deals_get(
-                    _to_server_query_dt(dt_from, mode=mode),
-                    _to_server_query_dt(dt_to, mode=mode),
-                    **kwargs,
-                ),
-                mode=mode,
+            return _history_get_normalized(
+                module,
+                "history_deals_get",
+                dt_from,
+                dt_to,
+                kwargs,
             )
 
     def account_info(self):
@@ -586,6 +582,91 @@ def _timestamp_mode_for_history_query(
     if probe_symbol:
         return _timestamp_mode_for_symbol(module, probe_symbol)
     return _cached_timestamp_mode()
+
+
+def _history_query_epoch(value: Any) -> float:
+    normalized = _to_server_query_dt(value, mode=_MT5_TIMESTAMP_MODE_NATIVE)
+    if isinstance(normalized, datetime):
+        return float(normalized.timestamp())
+    return float(normalized)
+
+
+def _history_row_epochs(rows: Any) -> list[float]:
+    epochs: list[float] = []
+    if rows is None:
+        return epochs
+    try:
+        iterator = iter(rows)
+    except TypeError:
+        return epochs
+    for row in iterator:
+        value = row.get("time") if isinstance(row, dict) else getattr(row, "time", None)
+        try:
+            epoch = float(value)
+        except (TypeError, ValueError, OverflowError):
+            continue
+        if math.isfinite(epoch) and epoch > 0.0:
+            epochs.append(epoch)
+    return epochs
+
+
+def _history_rows_timestamp_mode(rows: Any, dt_from: Any, dt_to: Any) -> str:
+    """Infer a history response clock only when its bounds make that unambiguous."""
+    epochs = _history_row_epochs(rows)
+    if not epochs:
+        return _MT5_TIMESTAMP_MODE_NATIVE
+    try:
+        start_epoch = min(_history_query_epoch(dt_from), _history_query_epoch(dt_to))
+        end_epoch = max(_history_query_epoch(dt_from), _history_query_epoch(dt_to))
+    except (TypeError, ValueError, OverflowError, OSError):
+        return _MT5_TIMESTAMP_MODE_NATIVE
+    tolerance = 1.0
+    native_hits = sum(
+        start_epoch - tolerance <= epoch <= end_epoch + tolerance
+        for epoch in epochs
+    )
+    server_hits = sum(
+        start_epoch - tolerance
+        <= _server_epoch_to_utc(epoch)
+        <= end_epoch + tolerance
+        for epoch in epochs
+    )
+    if server_hits > native_hits:
+        return _MT5_TIMESTAMP_MODE_SERVER
+    # MT5 documents history epochs as UTC. Ambiguous broad ranges therefore
+    # stay native instead of inheriting unrelated live-symbol cache state.
+    return _MT5_TIMESTAMP_MODE_NATIVE
+
+
+def _history_get_normalized(
+    module: Any,
+    method_name: str,
+    dt_from: Any,
+    dt_to: Any,
+    kwargs: Dict[str, Any],
+) -> Any:
+    """Query MT5 history on UTC first, with a gated server-clock fallback."""
+    mode_hint = _timestamp_mode_for_history_query(module, kwargs)
+    fetch = getattr(module, method_name)
+    native_from = _to_server_query_dt(dt_from, mode=_MT5_TIMESTAMP_MODE_NATIVE)
+    native_to = _to_server_query_dt(dt_to, mode=_MT5_TIMESTAMP_MODE_NATIVE)
+    rows = fetch(native_from, native_to, **kwargs)
+    try:
+        empty = rows is None or len(rows) == 0
+    except TypeError:
+        empty = False
+    if empty and mode_hint == _MT5_TIMESTAMP_MODE_SERVER:
+        rows = fetch(
+            _to_server_query_dt(dt_from, mode=_MT5_TIMESTAMP_MODE_SERVER),
+            _to_server_query_dt(dt_to, mode=_MT5_TIMESTAMP_MODE_SERVER),
+            **kwargs,
+        )
+        return _normalize_object_time_rows(
+            rows,
+            mode=_MT5_TIMESTAMP_MODE_SERVER,
+        )
+    response_mode = _history_rows_timestamp_mode(rows, dt_from, dt_to)
+    return _normalize_object_time_rows(rows, mode=response_mode)
 
 
 def get_mt5_timestamp_mode(symbol: Optional[str] = None) -> str:
