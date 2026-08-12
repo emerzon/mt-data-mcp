@@ -392,7 +392,10 @@ Configuration (see [ENV_VARS.md](ENV_VARS.md#async-training--model-store)):
 `forecast_generate` auto-trains any trainable method in the background when
 called with `async_mode=true`; the response includes a `task_id` to poll with
 `forecast_task_status`. Without `async_mode`, it performs the same train,
-persist, and predict lifecycle synchronously.
+persist, and predict lifecycle synchronously under the default
+`model_cache=reuse` policy. Set `model_cache=ephemeral` to train and predict
+without reading or writing the persistent model store, or
+`model_cache=require_existing` to fail rather than train on a cache miss.
 
 Unexpected exceptions in an isolated forecast child are logged at `ERROR` with
 a bounded child traceback and captured stdout/stderr tails. These diagnostics

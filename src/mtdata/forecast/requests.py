@@ -125,6 +125,15 @@ class ForecastGenerateRequest(_PublicForecastRequest):
             "forecast_train or forecast_models_list. Skips training when found."
         ),
     )
+    model_cache: Literal["reuse", "ephemeral", "require_existing"] = Field(
+        "reuse",
+        description=(
+            "Trainable-model cache policy. reuse loads a compatible artifact or "
+            "trains and persists one; ephemeral always trains without reading or "
+            "writing the model store; require_existing fails instead of training "
+            "when no compatible artifact exists."
+        ),
+    )
     detail: DetailLiteral = "compact"
 
     @model_validator(mode="before")
@@ -135,6 +144,13 @@ class ForecastGenerateRequest(_PublicForecastRequest):
     @model_validator(mode="after")
     def _validate_time_window(self) -> "ForecastGenerateRequest":
         validate_as_of_time_window(self.as_of, self.start, self.end)
+        if self.model_cache == "ephemeral" and self.model_id is not None:
+            raise ValueError("model_id cannot be used with model_cache='ephemeral'")
+        if self.model_cache != "reuse" and self.async_mode:
+            raise ValueError(
+                "async_mode requires model_cache='reuse' because background "
+                "training persists its artifact"
+            )
         return self
 
     @property

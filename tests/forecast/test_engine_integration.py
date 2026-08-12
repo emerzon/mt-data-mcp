@@ -16,6 +16,7 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 import pandas as pd
 import pytest
+from pydantic import ValidationError
 
 import src.mtdata.forecast.forecast_engine as fe
 from src.mtdata.forecast.interface import (
@@ -564,6 +565,7 @@ def _common_call_kwargs(
     horizon: int = 3,
     async_mode: bool = False,
     model_id: Optional[str] = None,
+    model_cache: str = "reuse",
 ) -> dict:
     """Build kwargs for _run_registered_forecast_method."""
     df = _sample_df(100)
@@ -586,6 +588,7 @@ def _common_call_kwargs(
         future_exog=None,
         async_mode=async_mode,
         model_id=model_id,
+        model_cache=model_cache,
     )
 
 
@@ -663,6 +666,56 @@ class TestRunRegisteredForecastMethodIntegration:
         assert metadata.get("src") == "predict_with_model"
         assert metadata["model_info"]["source"] == "synchronous_training"
         mock_store.save.assert_called_once()
+
+    def test_ephemeral_trainable_forecast_skips_model_store(self):
+        stub = _StubTrainable(category="heavy")
+
+        class FakeReg:
+            @staticmethod
+            def get(name):
+                return stub
+
+        mock_store = MagicMock()
+        with patch.object(fe, "ForecastRegistry", FakeReg), \
+             patch(_PATCH_MODEL_STORE, mock_store):
+            result = fe._run_registered_forecast_method(
+                **_common_call_kwargs(model_cache="ephemeral")
+            )
+
+        _forecast_arr, _ci, metadata = result
+        assert metadata["model_info"] == {
+            "model_id": None,
+            "data_scope": "EURUSD_H1",
+            "source": "ephemeral_training",
+            "reuse_policy": "not_persisted",
+            "training_end_epoch": float(_sample_df(100)["time"].iloc[-1]),
+            "model_staleness_seconds": 0.0,
+            "model_staleness_bars": 0.0,
+        }
+        mock_store.find.assert_not_called()
+        mock_store.save.assert_not_called()
+
+    def test_require_existing_rejects_cache_miss_without_training(self):
+        stub = _StubTrainable(category="heavy")
+
+        class FakeReg:
+            @staticmethod
+            def get(name):
+                return stub
+
+        mock_store = MagicMock()
+        mock_store.find.return_value = None
+        with patch.object(fe, "ForecastRegistry", FakeReg), \
+             patch(_PATCH_MODEL_STORE, mock_store), \
+             patch.object(stub, "train", wraps=stub.train) as train_mock, \
+             pytest.raises(ValueError, match="require_existing.*no compatible"):
+            fe._run_registered_forecast_method(
+                **_common_call_kwargs(model_cache="require_existing")
+            )
+
+        mock_store.find.assert_called_once()
+        mock_store.save.assert_not_called()
+        train_mock.assert_not_called()
 
     def test_explicit_model_id_missing_raises(self):
         stub = _StubTrainable(category="heavy")
@@ -1030,6 +1083,7 @@ class TestForecastGenerateRequestFields:
         req = ForecastGenerateRequest(symbol="EURUSD", timeframe="H1", method="nhits")
         assert req.async_mode is False
         assert req.model_id is None
+        assert req.model_cache == "reuse"
 
     def test_async_mode_can_be_set(self):
         from src.mtdata.forecast.requests import ForecastGenerateRequest
@@ -1039,3 +1093,17 @@ class TestForecastGenerateRequestFields:
         )
         assert req.async_mode is True
         assert req.model_id == "nhits/EURUSD_H1/xyz"
+
+    @pytest.mark.parametrize(
+        "kwargs, message",
+        [
+            ({"model_cache": "ephemeral", "model_id": "x/y/z"}, "model_id"),
+            ({"model_cache": "ephemeral", "async_mode": True}, "async_mode"),
+            ({"model_cache": "require_existing", "async_mode": True}, "async_mode"),
+        ],
+    )
+    def test_incompatible_cache_options_are_rejected(self, kwargs, message):
+        from src.mtdata.forecast.requests import ForecastGenerateRequest
+
+        with pytest.raises(ValidationError, match=message):
+            ForecastGenerateRequest(symbol="EURUSD", **kwargs)

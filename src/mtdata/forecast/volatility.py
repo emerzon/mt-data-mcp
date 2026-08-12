@@ -28,7 +28,7 @@ from ..utils.mt5 import (
     _mt5_copy_rates_range,
     mt5,
 )
-from ..utils.time import _format_time_minimal
+from ..utils.time import _format_time_minimal, bar_close_epoch
 from ..utils.utils import _parse_end_datetime, _parse_start_datetime, parse_kv_or_json
 from .common import (
     annualization_context as _annualization_context,
@@ -784,6 +784,23 @@ def _fetch_mt5_rates_guarded(
             cache[cache_key] = (requested_count, rates)
         return rates
 
+    def _closed_at(rates: Any, cutoff: Optional[datetime]) -> Any:
+        if rates is None or cutoff is None or not timeframe:
+            return rates
+        cutoff_utc = cutoff.replace(tzinfo=timezone.utc) if cutoff.tzinfo is None else cutoff
+        cutoff_epoch = cutoff_utc.timestamp()
+        try:
+            eligible = np.asarray(
+                [bar_close_epoch(row["time"], timeframe) <= cutoff_epoch for row in rates],
+                dtype=bool,
+            )
+            filtered = rates[eligible]
+        except (IndexError, KeyError, TypeError, ValueError):
+            return rates
+        if len(filtered) > requested_count:
+            filtered = filtered[-requested_count:]
+        return filtered
+
     info_before = mt5.symbol_info(symbol)
     was_visible = bool(info_before.visible) if info_before is not None else None
     try:
@@ -802,20 +819,21 @@ def _fetch_mt5_rates_guarded(
             return None, "start must be before or equal to end."
         if start_dt is not None:
             rates = _mt5_copy_rates_range(symbol, mt5_timeframe, start_dt, end_dt)
-            if rates is not None and len(rates) > requested_count:
-                rates = rates[-requested_count:]
+            rates = _closed_at(rates, end_dt)
             return _remember(rates), None
         if end_dt is not None:
-            return _remember(
-                _mt5_copy_rates_from(symbol, mt5_timeframe, end_dt, requested_count)
-            ), None
+            rates = _mt5_copy_rates_from(
+                symbol, mt5_timeframe, end_dt, requested_count + 1
+            )
+            return _remember(_closed_at(rates, end_dt)), None
         if as_of:
             to_dt = _parse_start_datetime(as_of)
             if not to_dt:
                 return None, "Invalid as_of time."
-            return _remember(
-                _mt5_copy_rates_from(symbol, mt5_timeframe, to_dt, requested_count)
-            ), None
+            rates = _mt5_copy_rates_from(
+                symbol, mt5_timeframe, to_dt, requested_count + 1
+            )
+            return _remember(_closed_at(rates, to_dt)), None
 
         tick = mt5.symbol_info_tick(symbol)
         if tick is not None and getattr(tick, "time", None):

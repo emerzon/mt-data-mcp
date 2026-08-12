@@ -37,6 +37,7 @@ def execute_forecast(
     prefetched_denoise_spec: Optional[Any] = None,
     async_mode: bool = False,
     model_id: Optional[str] = None,
+    model_cache: Literal["reuse", "ephemeral", "require_existing"] = "reuse",
 ) -> Dict[str, Any]:
     """Internal forecast entrypoint that raises ForecastError on failure."""
     try:
@@ -89,6 +90,7 @@ def execute_forecast(
             prefetched_denoise_spec=prefetched_denoise_spec,
             async_mode=async_mode,
             model_id=model_id,
+            model_cache=model_cache,
         )
         return raise_if_error_result(result)
     except ForecastError:

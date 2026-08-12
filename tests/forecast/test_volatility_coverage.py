@@ -19,6 +19,7 @@ import pytest
 import mtdata.forecast.volatility as vol_mod
 from mtdata.forecast.common import bars_per_year as _bars_per_year
 from mtdata.forecast.volatility import (
+    _fetch_mt5_rates_guarded,
     _garman_klass_sigma_sq,
     _kernel_weight,
     _parkinson_sigma_sq,
@@ -83,7 +84,7 @@ def _mock_vol_env(n_bars=2000, ensure_err=None, rates_return=_SENTINEL,
         patch(f"{MOD}._mt5_copy_rates_from", **copy_kw) as m_copy,
         patch("mtdata.utils.mt5._mt5_epoch_to_utc", return_value=1704067200.0),
         patch(f"{MOD}._parse_start_datetime",
-              return_value=datetime(2024, 1, 1, tzinfo=timezone.utc)),
+              return_value=datetime(2024, 6, 1, tzinfo=timezone.utc)),
         patch(f"{MOD}.mt5") as m_mt5,
     ):
         m_mt5.symbol_info.return_value = mock_info
@@ -898,6 +899,27 @@ class TestForecastVolatilityParamsParsing:
 # ===================================================================
 
 class TestForecastVolatilityAsOf:
+    def test_as_of_inside_bar_excludes_that_bar(self):
+        base = int(datetime(2024, 6, 1, 10, 0, tzinfo=timezone.utc).timestamp())
+        rates = _make_rates(3)
+        rates["time"] = [base, base + 3600, base + 7200]
+
+        with (
+            patch(f"{MOD}._ensure_symbol_ready", return_value=None),
+            patch(f"{MOD}._mt5_copy_rates_from", return_value=rates),
+            patch(f"{MOD}.mt5.symbol_info", return_value=MagicMock(visible=True)),
+        ):
+            eligible, error = _fetch_mt5_rates_guarded(
+                "EURUSD",
+                60,
+                3,
+                as_of="2024-06-01T12:01:00Z",
+                timeframe="H1",
+            )
+
+        assert error is None
+        assert eligible["time"].tolist() == [base, base + 3600]
+
     def test_as_of_valid(self):
         with _mock_vol_env():
             result = forecast_volatility(
@@ -1122,7 +1144,7 @@ def _mock_env(
     rates_return=_SENTINEL_EXT,
     rates_side_effect=None,
     tick_time=1_704_067_200.0,
-    parse_dt_return=datetime(2024, 1, 1, tzinfo=timezone.utc),
+    parse_dt_return=datetime(2024, 6, 1, tzinfo=timezone.utc),
     info_visible=True,
     bar_secs=3600,
     select_side_effect=None,

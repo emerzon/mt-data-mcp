@@ -2395,6 +2395,7 @@ def run_forecast_generate(  # noqa: C901
             target_spec=request.target_spec,
             async_mode=getattr(request, 'async_mode', False),
             model_id=getattr(request, 'model_id', None),
+            model_cache=getattr(request, 'model_cache', 'reuse'),
         )
         if isinstance(out, dict):
             out = _attach_invalid_method_guidance(out)

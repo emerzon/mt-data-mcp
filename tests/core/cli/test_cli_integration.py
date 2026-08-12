@@ -1355,7 +1355,36 @@ class TestForecastGenerateIntegration:
         assert request.method == "theta"
         assert request.detail == "compact"
         assert request.ci_alpha == 0.05
+        assert request.model_cache == "reuse"
         assert call_kwargs["__cli_raw"] is True
+
+    @patch("mtdata.core.cli.api.discover_tools")
+    def test_forecast_generate_accepts_ephemeral_model_cache(self, mock_discover):
+        mock_fn = MagicMock(return_value={"success": True})
+        mock_fn.__module__ = "mtdata.core.server"
+        mock_fn.__name__ = "forecast_generate"
+        mock_fn.__doc__ = "Generate forecasts."
+        mock_discover.return_value = {
+            "forecast_generate": {
+                "func": mock_fn,
+                "meta": {"description": "Generate forecasts"},
+            },
+        }
+
+        with patch(
+            "sys.argv",
+            [
+                "cli.py",
+                "forecast_generate",
+                "EURUSD",
+                "--model-cache",
+                "ephemeral",
+            ],
+        ):
+            result = main()
+
+        assert result == 0
+        assert mock_fn.call_args.kwargs["request"].model_cache == "ephemeral"
 
     @patch("mtdata.core.cli.api.discover_tools")
     def test_forecast_generate_rejects_async_mode_in_one_shot_process(

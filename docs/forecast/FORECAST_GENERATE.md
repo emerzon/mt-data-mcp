@@ -45,6 +45,7 @@ or `--detail full`.
 | `--library` | `native` | Method library: native, statsforecast, sktime, mlforecast, pretrained |
 | `--method` | `theta` | Method name within the library |
 | `--params` | — | Method-specific parameters (JSON or `key=value`) |
+| `--model-cache` | `reuse` | Trainable-model policy: `reuse` loads or persists an artifact, `ephemeral` trains without model-store reads/writes, and `require_existing` fails on a cache miss |
 
 ### Window
 | Parameter | Default | Description |
@@ -74,6 +75,13 @@ When price intervals are available, `direction` is published only when the
 horizon interval excludes the last observed price. The neutral threshold is
 also scaled from recent absolute bar returns and the forecast horizon, with a
 minimum effect size of 0.05 percentage points.
+
+For trainable library methods, the default `--model-cache reuse` may write a
+new reusable artifact when no compatible model exists. Use `--model-cache
+ephemeral` for a fresh evaluation that leaves the model store unchanged, or
+`--model-cache require_existing` to prevent implicit training. Background
+training (`--async-mode`) always persists its artifact and therefore requires
+the default `reuse` policy.
 
 ### Pipeline
 | Parameter | Description |

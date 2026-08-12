@@ -1096,6 +1096,7 @@ def _run_registered_forecast_method(
     target_spec: Optional[Dict[str, Any]] = None,
     async_mode: bool = False,
     model_id: Optional[str] = None,
+    model_cache: Literal["reuse", "ephemeral", "require_existing"] = "reuse",
 ) -> Tuple[np.ndarray, Optional[np.ndarray], Dict[str, Any]]:
     forecaster = ForecastRegistry.get(method_l)
     method_params = dict(params)
@@ -1107,6 +1108,18 @@ def _run_registered_forecast_method(
     if ci_alpha is not None and accepts_ci_param and 'ci_alpha' not in method_params:
         method_params['ci_alpha'] = ci_alpha
     requested_model_id = str(model_id or "").strip()
+    cache_policy = str(model_cache or "reuse").strip().lower()
+    if cache_policy not in {"reuse", "ephemeral", "require_existing"}:
+        raise ValueError(
+            "model_cache must be one of: reuse, ephemeral, require_existing"
+        )
+    if cache_policy == "ephemeral" and requested_model_id:
+        raise ValueError("model_id cannot be used with model_cache='ephemeral'")
+    if cache_policy != "reuse" and async_mode:
+        raise ValueError(
+            "async_mode requires model_cache='reuse' because background "
+            "training persists its artifact"
+        )
     supports_training = bool(getattr(forecaster, 'supports_training', False))
     if async_mode and not supports_training:
         raise ValueError(
@@ -1195,18 +1208,19 @@ def _run_registered_forecast_method(
             as_of is None
             and bool(getattr(forecaster, "supports_live_model_update", False))
         )
-        stored_result = _try_predict_with_stored_model(
-            forecaster, method_l, data_scope, params_hash,
-            target_series, horizon, seasonality,
-            method_params, future_exog, call_kwargs,
-            float(df["time"].iloc[-1]),
-            require_exact_anchor=not live_model_update,
-            timeframe_seconds=TIMEFRAME_SECONDS.get(str(timeframe)),
-            max_staleness_bars=max(1, int(seasonality)),
-            rejection=model_rejection,
-        )
-        if stored_result is not None:
-            return stored_result
+        if cache_policy != "ephemeral":
+            stored_result = _try_predict_with_stored_model(
+                forecaster, method_l, data_scope, params_hash,
+                target_series, horizon, seasonality,
+                method_params, future_exog, call_kwargs,
+                float(df["time"].iloc[-1]),
+                require_exact_anchor=not live_model_update,
+                timeframe_seconds=TIMEFRAME_SECONDS.get(str(timeframe)),
+                max_staleness_bars=max(1, int(seasonality)),
+                rejection=model_rejection,
+            )
+            if stored_result is not None:
+                return stored_result
         if requested_model_id:
             reason = str(model_rejection.get("reason") or "unloadable")
             if reason != "not_found":
@@ -1228,6 +1242,13 @@ def _run_registered_forecast_method(
             raise ValueError(
                 f"Model with ID '{requested_model_id}' was not found in the model store. "
                 "Use forecast_models_list to see available models."
+            )
+        if cache_policy == "require_existing":
+            reason = str(model_rejection.get("reason") or "not_found")
+            raise ValueError(
+                "model_cache='require_existing' found no compatible stored model "
+                f"for method '{method_l}' and data scope '{data_scope}' "
+                f"(reason: {reason})."
             )
 
         # No stored model — async route for any trainable method when requested
@@ -1252,20 +1273,22 @@ def _run_registered_forecast_method(
             exog=X,
             timeframe=str(timeframe),
         )
-        from .model_store import model_store as _store
+        handle = None
+        if cache_policy != "ephemeral":
+            from .model_store import model_store as _store
 
-        handle = _store.save(
-            method=method_l,
-            data_scope=data_scope,
-            params_hash=params_hash,
-            artifact_bytes=trained.artifact_bytes,
-            metadata={
-                **(trained.metadata or {}),
-                "params_used": trained.params_used,
-                "source_task_id": None,
-                "training_context": training_context,
-            },
-        )
+            handle = _store.save(
+                method=method_l,
+                data_scope=data_scope,
+                params_hash=params_hash,
+                artifact_bytes=trained.artifact_bytes,
+                metadata={
+                    **(trained.metadata or {}),
+                    "params_used": trained.params_used,
+                    "source_task_id": None,
+                    "training_context": training_context,
+                },
+            )
         artifact = forecaster.deserialize_artifact(trained.artifact_bytes)
         res = forecaster.predict_with_model(
             artifact,
@@ -1278,16 +1301,28 @@ def _run_registered_forecast_method(
         )
         metadata = {**(trained.metadata or {}), **(res.metadata or {})}
         metadata["params_used"] = res.params_used
-        metadata["model_info"] = {
-            "model_id": handle.model_id,
-            "trained_at": handle.created_at,
-            "data_scope": handle.data_scope,
-            "source": "synchronous_training",
-            "reuse_policy": "live_latest_artifact",
-            "training_end_epoch": float(df["time"].iloc[-1]),
-            "model_staleness_seconds": 0.0,
-            "model_staleness_bars": 0.0,
-        }
+        if cache_policy == "ephemeral":
+            metadata["model_info"] = {
+                "model_id": None,
+                "data_scope": data_scope,
+                "source": "ephemeral_training",
+                "reuse_policy": "not_persisted",
+                "training_end_epoch": float(df["time"].iloc[-1]),
+                "model_staleness_seconds": 0.0,
+                "model_staleness_bars": 0.0,
+            }
+        else:
+            assert handle is not None
+            metadata["model_info"] = {
+                "model_id": handle.model_id,
+                "trained_at": handle.created_at,
+                "data_scope": handle.data_scope,
+                "source": "synchronous_training",
+                "reuse_policy": "live_latest_artifact",
+                "training_end_epoch": float(df["time"].iloc[-1]),
+                "model_staleness_seconds": 0.0,
+                "model_staleness_bars": 0.0,
+            }
         return res.forecast, res.ci_values, metadata
 
     res = forecaster.forecast(
@@ -1713,6 +1748,7 @@ def forecast_engine(  # noqa: C901
     prefetched_denoise_spec: Optional[Any] = None,
     async_mode: bool = False,
     model_id: Optional[str] = None,
+    model_cache: Literal["reuse", "ephemeral", "require_existing"] = "reuse",
 ) -> Dict[str, Any]:
     """Core forecast engine implementation.
 
@@ -1920,6 +1956,7 @@ def forecast_engine(  # noqa: C901
                 target_spec=target_spec,
                 async_mode=async_mode,
                 model_id=model_id,
+                model_cache=model_cache,
             )
         except _AsyncTrainingStarted as at:
             return at.response

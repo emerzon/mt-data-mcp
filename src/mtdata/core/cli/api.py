@@ -1032,6 +1032,16 @@ def _add_forecast_generate_args(cmd_parser: argparse.ArgumentParser) -> None:
         default=None,
         help="Use a trained-model params_hash from the model store.",
     )
+    group_exec.add_argument(
+        "--model-cache",
+        dest="model_cache",
+        choices=("reuse", "ephemeral", "require_existing"),
+        default="reuse",
+        help=(
+            "Trainable-model policy: reuse may persist a cache miss; ephemeral "
+            "does not read or write the store; require_existing rejects a miss."
+        ),
+    )
 
     group_dbg = cmd_parser.add_argument_group("Debug")
     group_dbg.add_argument(
@@ -1854,6 +1864,7 @@ def main():  # noqa: C901
                     target_spec=target_spec or None,
                     async_mode=bool(args.async_mode),
                     model_id=args.model_id,
+                    model_cache=args.model_cache,
                     detail=resolve_output_contract(args).detail,
                 )
             except ValidationError as exc:

@@ -47,6 +47,7 @@ _FIELD_OWNERSHIP: Dict[RequestSurface, Dict[str, ContractOwner]] = {
         "target_spec": "forecast_model",
         "async_mode": "evaluation",
         "model_id": "forecast_model",
+        "model_cache": "forecast_model",
         "detail": "evaluation",
     },
     "forecast_backtest": {
