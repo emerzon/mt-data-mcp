@@ -1144,12 +1144,12 @@ def _shape_trade_var_cvar_payload(
 
 def _trade_risk_sizing_field_label(field_name: str) -> str:
     return {
-        "desired_risk_pct": "--desired-risk-pct",
+        "desired_risk_pct": "the risk_pct field in --sizing",
         "entry": "--entry",
         "stop_loss": "--stop-loss",
-        "kelly_win_rate": "--kelly-win-rate",
-        "kelly_avg_win": "--kelly-avg-win",
-        "kelly_avg_loss": "--kelly-avg-loss",
+        "kelly_win_rate": "the win_rate field in --sizing",
+        "kelly_avg_win": "the avg_win field in --sizing",
+        "kelly_avg_loss": "the avg_loss field in --sizing",
     }.get(field_name, field_name)
 
 
@@ -2112,13 +2112,13 @@ def run_trade_place(  # noqa: C901
                     if sl_tp_failed and pos_ticket is not None:
                         critical = (
                             "CRITICAL: Order executed without applied TP/SL protection. "
-                            f"Run trade_modify {pos_ticket} now, or close the position."
+                            f"Run trade_modify --ticket {pos_ticket} now, or close the position."
                         )
                     elif sl_tp_failed and candidate_tickets:
                         candidate_list = ", ".join(str(v) for v in candidate_tickets)
                         critical = (
                             "CRITICAL: Order executed without applied TP/SL protection. "
-                            f"Try trade_modify {candidate_tickets[0]} now "
+                            f"Try trade_modify --ticket {candidate_tickets[0]} now "
                             f"(candidate tickets: {candidate_list}). "
                             "If that fails, run trade_get_open to confirm the live position ticket, "
                             "or close the position."
@@ -2126,7 +2126,8 @@ def run_trade_place(  # noqa: C901
                     elif sl_tp_failed:
                         critical = (
                             "CRITICAL: Order executed without applied TP/SL protection. "
-                            "Run trade_get_open to find the live position ticket, then trade_modify it now, "
+                            "Run trade_get_open to find the live position ticket, then use "
+                            "trade_modify --ticket TICKET now, "
                             "or close the position."
                         )
                     else:
@@ -2452,6 +2453,17 @@ def _run_trade_close_once(  # noqa: C901
         scope: Optional[str] = None,
     ) -> Dict[str, Any]:
         if isinstance(result, dict) and str(result.get("error") or "").strip():
+            error_text = str(result.get("error") or "").strip().lower()
+            if request.ticket is not None and (
+                "not found as position or pending order" in error_text
+                or (
+                    request.volume is not None
+                    and error_text.startswith("position ")
+                    and " not found" in error_text
+                )
+            ):
+                result.setdefault("error_code", "ticket_not_found")
+                result.setdefault("ticket", request.ticket)
             result = normalize_error_payload(
                 result,
                 default_code="trade_close_error",
@@ -2795,10 +2807,12 @@ def _run_trade_close_once(  # noqa: C901
         ):
             return _finish(
                 {
+                    "error_code": "ticket_not_found",
                     "error": (
                         f"Position {request.ticket} not found. "
                         "Partial close volume only applies to open positions."
                     ),
+                    "ticket": request.ticket,
                     "checked_scopes": ["positions"],
                 },
                 scope="positions",
@@ -2828,8 +2842,14 @@ def _run_trade_close_once(  # noqa: C901
                     return _finish(history_result, scope="history")
                 return _finish(
                     {
+                        "error_code": "ticket_not_found",
                         "error": f"Ticket {request.ticket} not found as position or pending order.",
+                        "ticket": request.ticket,
                         "checked_scopes": ["positions", "pending_orders"],
+                        "suggestion": (
+                            "Use trade_get_open or trade_get_pending to find an active "
+                            "ticket before retrying trade_close."
+                        ),
                     },
                     scope="ticket",
                 )
@@ -4423,8 +4443,9 @@ def run_trade_risk_analyze(  # noqa: C901
                         "missing": position_sizing_missing,
                         "required_for_sizing": required_for_sizing,
                         "note": (
-                            "Add --desired-risk-pct to specify how much equity to risk "
-                            "on the proposed trade."
+                            "Add --sizing "
+                            "'{\"method\":\"fixed_fraction\",\"risk_pct\":1}' "
+                            "to risk 1% of equity on the proposed trade."
                         )
                         if sizing_method == "fixed_fraction"
                         else (

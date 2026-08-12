@@ -468,18 +468,18 @@ def _attach_post_fill_protection(  # noqa: C901
     # --- Build warnings ---
     if sl_tp_apply_status == "failed":
         if position_ticket is not None:
-            action_text = f"Run trade_modify {position_ticket} immediately"
+            action_text = f"Run trade_modify --ticket {position_ticket} immediately"
         elif position_ticket_candidates:
             candidate_list = ", ".join(str(v) for v in position_ticket_candidates)
             primary_candidate = position_ticket_candidates[0]
             action_text = (
-                f"Try trade_modify {primary_candidate} immediately "
+                f"Try trade_modify --ticket {primary_candidate} immediately "
                 f"(candidate tickets: {candidate_list})"
             )
         else:
             action_text = (
                 "Run trade_get_open immediately to find the live position ticket, "
-                "then trade_modify it"
+                "then use trade_modify --ticket TICKET"
             )
         warnings_out.append(
             "CRITICAL: Order filled but TP/SL could not be applied. "

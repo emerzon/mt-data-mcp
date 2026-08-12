@@ -1446,7 +1446,7 @@ class TestFormatResultMinimal:
             },
             "warnings": [
                 "Comment sanitized for broker compatibility: 'AUTO CLOSE'",
-                "CRITICAL: Order executed without applied TP/SL protection. Run trade_modify 456 now, or close the position.",
+                "CRITICAL: Order executed without applied TP/SL protection. Run trade_modify --ticket 456 now, or close the position.",
                 "Broker rejected the comment field; order was retried with a minimal MT5-safe comment.",
             ],
         }

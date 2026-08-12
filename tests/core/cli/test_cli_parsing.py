@@ -827,7 +827,12 @@ class TestAddDynamicArguments:
                     "standard",
                 ],
             ),
-            ("trade_modify", TradeModifyRequest, "summary", ["123", "--detail", "summary"]),
+            (
+                "trade_modify",
+                TradeModifyRequest,
+                "summary",
+                ["--ticket", "123", "--detail", "summary"],
+            ),
             ("trade_close", TradeCloseRequest, "summary", ["--detail", "summary"]),
         ):
             parser = argparse.ArgumentParser()
@@ -843,6 +848,21 @@ class TestAddDynamicArguments:
             assert not any(action.dest == "preview_detail" for action in parser._actions)
             args = parser.parse_args(argv)
             assert args.detail == detail_value
+
+    def test_trade_modify_requires_named_ticket(self, capsys):
+        parser = argparse.ArgumentParser(allow_abbrev=False)
+
+        def tool(request):
+            pass
+
+        tool.__annotations__ = {"request": TradeModifyRequest}
+        func_info = get_function_info(tool)
+        add_dynamic_arguments(parser, func_info, cmd_name="trade_modify")
+
+        assert parser.parse_args(["--ticket", "123"]).ticket == "123"
+        with pytest.raises(SystemExit):
+            parser.parse_args(["123"])
+        assert "--ticket" in capsys.readouterr().err
 
     def test_partial_flag_prefix_is_rejected_when_abbrev_disabled(self, capsys):
         parser = argparse.ArgumentParser(allow_abbrev=False)
@@ -1342,6 +1362,38 @@ class TestResolveParamKwargs:
 
         assert "Defaults to 10080 minutes" in kwargs["help"]
         assert "7 days" in kwargs["help"]
+
+    @pytest.mark.parametrize(
+        ("cmd_name", "param_name", "expected"),
+        [
+            ("data_fetch_candles", "limit", "default: 20"),
+            ("data_fetch_ticks", "limit", "maximum 50000"),
+            ("market_status", "symbol", "static major-equity-exchange calendar"),
+            ("forecast_task_cancel_all", "status_filter", "pending or running"),
+            ("trade_journal_analyze", "limit", "realized exit deals"),
+            ("trade_execution_quality", "minutes_back", "30 days"),
+            ("trade_execution_quality", "limit", "eligible fills"),
+            ("finviz_insider_activity", "option", "latest buys/sales"),
+        ],
+    )
+    def test_command_specific_help_describes_effective_contract(
+        self,
+        cmd_name,
+        param_name,
+        expected,
+    ):
+        kwargs, _ = _resolve_param_kwargs(
+            {
+                "name": param_name,
+                "type": str,
+                "required": False,
+                "default": None,
+            },
+            None,
+            cmd_name=cmd_name,
+        )
+
+        assert expected in kwargs["help"]
 
     def test_trading_execution_flags_have_actionable_help(self):
         place_dry_run_kwargs, _ = _resolve_param_kwargs(

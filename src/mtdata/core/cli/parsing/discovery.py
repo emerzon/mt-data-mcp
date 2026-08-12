@@ -48,7 +48,13 @@ _MULTI_VALUE_SYMBOL_POSITIONAL_COMMANDS = frozenset(
     }
 )
 
-_COMMAND_REQUIRED_OPTIONS: set[tuple[str, str]] = set()
+_COMMAND_REQUIRED_OPTIONS: set[tuple[str, str]] = {
+    ("trade_modify", "ticket"),
+}
+
+_NAMED_ONLY_REQUIRED_PARAMS: set[tuple[str, str]] = {
+    ("trade_modify", "ticket"),
+}
 
 _PRESERVE_OMITTED_DEFAULT_PARAMS: set[tuple[str, str]] = {
     ("data_fetch_candles", "limit"),
@@ -83,6 +89,23 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
         "(aliases pct_return/percent/simple_return)."
     ),
     ("data_fetch_candles", "indicators"): "Technical indicators. On PowerShell, quote parenthesized specs such as --indicators \"rsi(14)\", or use shell-safe rsi_14 / sma=20 syntax. JSON arrays like '[{\"name\":\"rsi\",\"params\":[14]}]' and named params like rsi(length=14) also work. Use params syntax, not sma,20.",
+    ("data_fetch_candles", "limit"): (
+        "Returned bars for latest-N requests (default: 20). On an explicit "
+        "start/end range, omission uses a 100000-bar safety cap; indicator "
+        "warmup bars are fetched in addition to returned rows."
+    ),
+    ("data_fetch_ticks", "limit"): (
+        "Maximum ticks returned (default 20, maximum 50000). Queries with a "
+        "start bound return the earliest matching ticks; otherwise the latest ticks."
+    ),
+    ("market_status", "symbol"): (
+        "Broker symbol for MT5 session/tradability status. If omitted, the "
+        "command returns a static major-equity-exchange calendar, not the "
+        "connected broker book."
+    ),
+    ("forecast_task_cancel_all", "status_filter"): (
+        "Cancelable task status: pending or running."
+    ),
     ("indicators_list", "trading_style"): "Filter indicators by common trading workflow: intraday, swing, or position.",
     ("trade_place", "magic"): "MT5 magic number: integer strategy/order identifier used to group EA or strategy trades. Defaults to configured order_magic when omitted.",
     ("trade_get_open", "magic"): "MT5 magic number filter for positions from one strategy or EA. Omit for all magic numbers.",
@@ -94,6 +117,10 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
     ("finviz_screen", "order"): "Finviz sort key. Example: -marketcap for descending or price for ascending.",
     ("finviz_news", "limit"): "Max news items to return on this page.",
     ("finviz_insider", "limit"): "Max insider trades to return on this page.",
+    ("finviz_insider_activity", "option"): (
+        "Insider activity view: latest, latest buys/sales, top week "
+        "buys/sales, or top owner trade/buys/sales."
+    ),
     ("finviz_calendar", "start"): "Start date (YYYY-MM-DD).",
     ("finviz_calendar", "end"): "End date (YYYY-MM-DD).",
     ("forecast_barrier_optimize", "method"): "Barrier simulation method: mc_gbm, mc_gbm_bb, hmm_mc, garch, bootstrap, heston, jump_diffusion, or auto.",
@@ -261,7 +288,7 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
         "use native; invalid for other modes."
     ),
     ("report_generate", "template"): (
-        "Report template: minimal fast context+forecast, basic balanced default, "
+        "Report template: minimal fast context+forecast (default), basic balanced research, "
         "advanced regimes/HAR/conformal, scalping M5, intraday H1, swing H4/D1, "
         "or position D1/W1. Runtime cost: minimal is the quick path; "
         "basic, advanced, and specialized templates may invoke multiple MT5 fetches plus "
@@ -337,6 +364,16 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
     ("trade_journal_analyze", "minutes_back"): (
         "Journal history lookback in minutes. Defaults to 10080 minutes (7 days) "
         "when start/end and minutes_back are omitted."
+    ),
+    ("trade_journal_analyze", "limit"): (
+        "Maximum realized exit deals to analyze. The command pages through raw "
+        "history rows as needed (default 50)."
+    ),
+    ("trade_execution_quality", "minutes_back"): (
+        "Execution-history lookback in minutes (default 43200 = 30 days)."
+    ),
+    ("trade_execution_quality", "limit"): (
+        "Maximum eligible fills to analyze (default 200)."
     ),
     ("trade_modify", "expiration"): "Pending order expiration time (dateparser string, UTC epoch seconds, or GTC token).",
     ("trade_place", "expiration"): "Pending order expiration time (dateparser string, UTC epoch seconds, or GTC token).",
@@ -844,7 +881,12 @@ def add_dynamic_arguments(  # noqa: C901
                 hidden_option_kwargs = dict(option_kwargs)
                 hidden_option_kwargs["help"] = argparse.SUPPRESS
                 parser.add_argument(*hidden_option_flags, **hidden_option_kwargs)
-        elif param["required"] and param == param_info["params"][0]:
+        elif (
+            param["required"]
+            and param == param_info["params"][0]
+            and (str(cmd_name or ""), str(param["name"]))
+            not in _NAMED_ONLY_REQUIRED_PARAMS
+        ):
             positional_kwargs = {k: v for k, v in kwargs.items() if k in ("help", "type", "choices", "metavar")}
             if (
                 str(cmd_name or "") in _MULTI_VALUE_SYMBOL_POSITIONAL_COMMANDS

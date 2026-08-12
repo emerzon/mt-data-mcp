@@ -422,11 +422,11 @@ def test_trade_risk_analyze_marks_position_sizing_incomplete_without_required_in
     assert "No open positions or pending orders" in out["message"]
     assert "scoped_risk" not in out
     assert "Risk analysis completed" in out["position_sizing"]["message"]
-    assert "--desired-risk-pct" in out["position_sizing"]["message"]
+    assert "risk_pct field in --sizing" in out["position_sizing"]["message"]
     assert "desired_risk_pct" not in out["position_sizing"]["message"]
     # Compact missing-inputs payload keeps a short note, not the full required_for_sizing list.
     assert "note" in out["position_sizing"]
-    assert "desired-risk-pct" in out["position_sizing"]["note"]
+    assert '"method":"fixed_fraction"' in out["position_sizing"]["note"]
     assert "required_for_sizing" not in out["position_sizing"]
 
 
@@ -449,7 +449,7 @@ def test_trade_risk_analyze_evaluates_trade_levels_without_desired_risk_pct() ->
     assert out["candidate_valid"] is True
     assert out["candidate_status"] == "valid"
     assert out["position_sizing"]["missing"] == ["desired_risk_pct"]
-    assert "--desired-risk-pct" in out["position_sizing"]["message"]
+    assert "risk_pct field in --sizing" in out["position_sizing"]["message"]
     assert out["trade_evaluation"] == {
         "status": "valid",
         "symbol": "EURUSD",

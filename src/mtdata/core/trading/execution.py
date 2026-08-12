@@ -2213,8 +2213,14 @@ def _resolve_close_dry_run_target(
         )
 
     return {
+        "error_code": "ticket_not_found",
         "error": f"Ticket {ticket} not found as position or pending order.",
+        "ticket": requested_ticket,
         "checked_scopes": ["positions", "pending_orders"],
+        "suggestion": (
+            "Use trade_get_open or trade_get_pending to find an active ticket "
+            "before retrying trade_close."
+        ),
     }
 
 

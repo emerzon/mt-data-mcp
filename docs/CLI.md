@@ -606,7 +606,7 @@ set `--dry-run false` explicitly only when you intend a live close:
 
 ```bash
 mtdata-cli trade_get_open --json
-mtdata-cli trade_modify 123456789 --stop-loss 60500 --take-profit 62500
+mtdata-cli trade_modify --ticket 123456789 --stop-loss 60500 --take-profit 62500
 mtdata-cli trade_close --ticket 123456789 --volume 0.05 --dry-run true
 ```
 
@@ -622,12 +622,12 @@ mtdata-cli trade_journal_analyze --symbol EURUSD --minutes-back 43200 --breakdow
 For Kelly sizing in `trade_risk_analyze`, provide a `--sizing` JSON object with
 `win_rate`, `avg_win`, and `avg_loss` derived from complete trade lifecycles whose
 returns are normalized consistently (for example, R-multiples). Do not map the
-raw `trade_journal_analyze` PnL averages into those flags.
+raw `trade_journal_analyze` PnL averages into those JSON fields.
 
 ### Estimate Portfolio Tail Risk
 ```bash
-mtdata-cli trade_var_cvar_calculate --timeframe H1 --lookback 500 --confidence 95 --json
-mtdata-cli trade_var_cvar_calculate --symbol EURUSD --method gaussian --transform pct --lookback 300 --json
+mtdata-cli trade_var_cvar_calculate --timeframe H1 --lookback 500 --confidence 0.95 --json
+mtdata-cli trade_var_cvar_calculate --symbol EURUSD --method parametric --transform pct --lookback 300 --json
 ```
 
 ### Stress Open Positions

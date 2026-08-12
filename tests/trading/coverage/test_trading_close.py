@@ -423,6 +423,8 @@ class TestTradeClose:
         out = trade_close(ticket=999, dry_run=True, __cli_raw=True)
 
         assert out["error"] == "Ticket 999 not found as position or pending order."
+        assert out["error_code"] == "ticket_not_found"
+        assert out["ticket"] == 999
         assert out["checked_scopes"] == ["positions", "pending_orders"]
         mock_resolve.assert_called_once_with(
             ticket=999,

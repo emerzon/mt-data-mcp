@@ -31,16 +31,15 @@ mtdata-cli trade_risk_analyze EURUSD --direction long \
 | Parameter | Default | Description |
 |-----------|---------|-------------|
 | `symbol` | — | Symbol for new-trade sizing; omit for portfolio-only risk. |
-| `desired_risk_pct` | — | Target account risk (%) for `fixed_fraction`, and a cap for `kelly`. |
-| `sizing_method` | `fixed_fraction` | `fixed_fraction` uses `desired_risk_pct`; `kelly` uses win-rate and average win/loss. |
-| `strict_risk` | `true` | Return `suggested_volume=0.0` if the broker minimum lot would exceed `desired_risk_pct`. |
+| `sizing` | — | JSON object selecting `fixed_fraction` with `risk_pct`, or `kelly` with its edge inputs and cap. |
+| `strict_risk` | `true` | Return `suggested_volume=0.0` if the broker minimum lot would exceed the requested sizing risk. |
 | `include_pending` | `true` | Include contingent stop-loss risk from pending orders in portfolio totals. |
 | `direction` | — | `long`/`short` (aliases accepted) for the proposed trade. |
 | `entry` | — | Proposed entry price. With `symbol`+`stop_loss` but no entry, it is resolved from the latest tick (ask for long, bid for short, mid otherwise). A closed/stale quote is labeled `last_available_tick_*` and `sizing_reference_only`; refresh it before submission. |
 | `stop_loss` | — | Proposed stop (alias `sl`). Required to compute risk-based volume. |
 | `take_profit` | — | Optional target (alias `tp`) for reward/risk context. |
 
-New-trade sizing uses an incremental candidate-risk policy: `desired_risk_pct`
+New-trade sizing uses an incremental candidate-risk policy: `sizing.risk_pct`
 limits the proposed trade's stop risk as a percentage of account equity, and
 account-wide margin stress remains a hard safety gate. Existing positions on other
 symbols do not prevent sizing, but the returned `sizing_risk_policy` states that the
@@ -54,7 +53,7 @@ invalid, the response retains the account and portfolio snapshot but returns
 
 ### Kelly sizing
 
-Set `sizing_method=kelly` and supply edge statistics:
+Set `sizing.method=kelly` and supply edge statistics in the same JSON object:
 
 ```bash
 mtdata-cli trade_risk_analyze EURUSD --direction long \
@@ -64,16 +63,14 @@ mtdata-cli trade_risk_analyze EURUSD --direction long \
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| `kelly_win_rate` | — | Win probability as a fraction in `[0, 1]`. |
-| `kelly_avg_win` | — | Average winning return normalized to a consistent stake or unit of risk (for example, an R-multiple). |
-| `kelly_avg_loss` | — | Average losing return magnitude on the same normalized basis. |
-| `kelly_fraction_multiplier` | `0.5` | Multiplier on the raw Kelly fraction (half-Kelly = `0.5`). |
-| `kelly_max_risk_pct` | `2.0` | Hard cap on account risk (%) for Kelly sizing. |
-| `kelly_metrics` | — | Dict alternative carrying `win_rate`, `avg_win_return`, `avg_loss_return`; explicit `kelly_*` fields override it. |
+| `sizing.win_rate` | — | Win probability as a fraction in `[0, 1]`. |
+| `sizing.avg_win` | — | Average winning return normalized to a consistent stake or unit of risk (for example, an R-multiple). |
+| `sizing.avg_loss` | — | Average losing return magnitude on the same normalized basis. |
+| `sizing.fraction_multiplier` | `0.5` | Multiplier on the raw Kelly fraction (half-Kelly = `0.5`). |
+| `sizing.max_risk_pct` | `2.0` | Hard cap on account risk (%) for Kelly sizing. |
 
 The Kelly fraction is `win_rate − (1 − win_rate) / (avg_win / |avg_loss|)`, then scaled
-by `kelly_fraction_multiplier` and capped by `kelly_max_risk_pct` (and
-`desired_risk_pct` when set). On a non-positive edge the tool reports
+by `sizing.fraction_multiplier` and capped by `sizing.max_risk_pct`. On a non-positive edge the tool reports
 `status="kelly_no_edge"` and a suggested volume of `0.0`.
 
 `trade_journal_analyze` reports `avg_win` and `avg_loss` in account currency. Those
@@ -105,10 +102,10 @@ symbol.
 
 ```bash
 # Portfolio VaR/CVaR at 95% over one H1 bar
-mtdata-cli trade_var_cvar_calculate --timeframe H1 --lookback 500 --confidence 95 --json
+mtdata-cli trade_var_cvar_calculate --timeframe H1 --lookback 500 --confidence 0.95 --json
 
 # Symbol-scoped, parametric/Gaussian, percentage returns
-mtdata-cli trade_var_cvar_calculate EURUSD --method gaussian \
+mtdata-cli trade_var_cvar_calculate EURUSD --method parametric \
   --transform pct --lookback 300 --json
 ```
 
@@ -117,8 +114,8 @@ mtdata-cli trade_var_cvar_calculate EURUSD --method gaussian \
 | `symbol` | — | Restrict to one symbol's exposure; omit for the full portfolio. |
 | `timeframe` | `H1` | Return interval and the one-bar holding period. |
 | `lookback` | `500` | Historical bars used to build the return distribution. |
-| `confidence` | `0.95` | Confidence level. Accepts a fraction (`0.95`, `0.99`) or a percentage (`95`); must resolve to `0 < confidence < 1`. |
-| `method` | `historical` | `historical` (empirical tail) or `gaussian` (aliases `normal`/`parametric`). |
+| `confidence` | `0.95` | Confidence fraction (`0.95`, `0.99`); must satisfy `0 < confidence < 1`. |
+| `method` | `historical` | `historical` (empirical tail) or `parametric` (Gaussian model). |
 | `transform` | `log_return` | Return transform: `log_return` or `pct`. |
 | `min_observations` | `50` | Minimum aligned observations before estimating risk. |
 
