@@ -765,6 +765,21 @@ class TestTemporalAnalyze:
         assert "excluded_groups" not in r
 
     @_apply_analyze_patches
+    def test_min_bars_excludes_every_sparse_group(self, mock_fetch, *_):
+        r = self._call(
+            mock_fetch,
+            rates=_make_rates(n=24, start_epoch=1704067200, interval=3600),
+            group_by="dow",
+            min_bars=100,
+        )
+
+        assert r.get("success") is True
+        assert r["groups"] == []
+        assert r["groups_excluded"] == len(r["excluded_groups"])
+        assert r["groups_excluded"] > 0
+        assert all(row["bars"] < 100 for row in r["excluded_groups"])
+
+    @_apply_analyze_patches
     def test_limit_offsets_group_rows_without_changing_overall(self, mock_fetch, *_):
         rates = _make_rates(n=24 * 14, start_epoch=1704067200, interval=3600)
         r = self._call(

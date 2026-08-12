@@ -360,6 +360,12 @@ def seasonality_detect(
             series = _diagnostic_series(frame, target)
         except ValueError as exc:
             return {"error": str(exc)}
+        preprocessing = "none"
+        analyzed_target = target
+        if target in {"close", "log_price"}:
+            series = series.diff().dropna()
+            preprocessing = "first_difference_for_stationarity"
+            analyzed_target = "diff" if target == "close" else "log_return"
         n = int(len(series))
         upper = min(int(max_period) if max_period is not None else max(2, n // int(min_cycles)), n // int(min_cycles))
         if upper < int(min_period) or n < 30:
@@ -432,6 +438,8 @@ def seasonality_detect(
             "symbol": symbol,
             "timeframe": timeframe,
             "target": target,
+            "analyzed_target": analyzed_target,
+            "preprocessing": preprocessing,
             "samples": n,
             "search_range_bars": {"min": int(min_period), "max": upper},
             "items": rows,
@@ -546,6 +554,7 @@ def outliers_detect(
             return {"error": fetch_error}
         close = pd.to_numeric(frame["close"], errors="coerce")
         data: Dict[str, pd.Series] = {"return": close.pct_change(fill_method=None).abs()}
+        volume_col: Optional[str] = None
         if "volume" in requested:
             volume_col = "real_volume" if "real_volume" in frame and float(pd.to_numeric(frame["real_volume"], errors="coerce").fillna(0).sum()) > 0 else "tick_volume"
             if volume_col not in frame:
@@ -600,8 +609,10 @@ def outliers_detect(
                         "close": float(bar.get("close")),
                     }
                 )
+                if volume_col is not None:
+                    item["volume"] = float(bar.get(volume_col))
             rows.append(item)
-        return {
+        result: Dict[str, Any] = {
             "success": True,
             "symbol": symbol,
             "timeframe": timeframe,
@@ -618,6 +629,20 @@ def outliers_detect(
                 frame, include_incomplete=include_incomplete
             ),
         }
+        if volume_col is not None:
+            result["volume_source"] = volume_col
+            result["volume_type"] = (
+                "traded_volume" if volume_col == "real_volume" else "tick_count"
+            )
+            result["units"] = {
+                "volume": (
+                    "broker_reported_real_volume"
+                    if volume_col == "real_volume"
+                    else "broker_tick_count"
+                ),
+                "field_scores.volume": "robust_standardized_deviation",
+            }
+        return result
 
     return run_logged_operation(
         logger,
@@ -688,35 +713,56 @@ def volatility_term_structure(
         if not math.isfinite(factor) or factor <= 0.0:
             factor = 1.0
         rows: List[Dict[str, Any]] = []
+        low_sample_horizons: List[int] = []
         for horizon in horizon_values:
             realized = returns.pow(2).rolling(window=int(horizon), min_periods=int(horizon)).mean().pow(0.5) * factor
             distribution = realized.dropna()
             if distribution.empty:
                 continue
             current = float(distribution.iloc[-1])
-            percentile_rank = float((distribution <= current).mean() * 100.0)
-            cone = {
-                f"p{int(value) if float(value).is_integer() else value:g}": round(
-                    float(np.percentile(distribution.to_numpy(dtype=float), value)),
-                    8,
+            samples = int(len(distribution))
+            sufficient = samples >= 20
+            if sufficient:
+                percentile_rank: Optional[float] = float(
+                    (distribution <= current).mean() * 100.0
                 )
-                for value in percentile_values
-            }
+                cone: Optional[Dict[str, float]] = {
+                    f"p{int(value) if float(value).is_integer() else value:g}": round(
+                        float(np.percentile(distribution.to_numpy(dtype=float), value)),
+                        8,
+                    )
+                    for value in percentile_values
+                }
+            else:
+                percentile_rank = None
+                cone = None
+                low_sample_horizons.append(int(horizon))
             rows.append(
                 {
                     "horizon_bars": int(horizon),
                     "current_volatility": round(current, 8),
                     "per_bar_volatility": round(current / factor, 8),
                     "stability": (
+                        "insufficient_sample"
+                        if not sufficient
+                        else
                         "very_low"
                         if horizon < 5
                         else "low"
                         if horizon < 10
                         else "moderate"
                     ),
-                    "percentile_rank": round(percentile_rank, 2),
+                    "percentile_rank": (
+                        round(percentile_rank, 2)
+                        if percentile_rank is not None
+                        else None
+                    ),
                     "cone": cone,
-                    "samples": int(len(distribution)),
+                    "samples": samples,
+                    "sample_sufficiency": (
+                        "sufficient" if sufficient else "insufficient"
+                    ),
+                    "minimum_samples_for_percentiles": 20,
                 }
             )
         if not rows:
@@ -745,6 +791,12 @@ def volatility_term_structure(
             ),
             "count": len(rows),
         }
+        if low_sample_horizons:
+            out["warnings"] = [
+                "Percentile ranks and cones were suppressed for horizons with "
+                "fewer than 20 rolling observations."
+            ]
+            out["low_sample_horizons"] = low_sample_horizons
         if annualize:
             out["bars_per_year"] = round(float(bpy), 4) if math.isfinite(bpy) else None
             sessions_per_year = (

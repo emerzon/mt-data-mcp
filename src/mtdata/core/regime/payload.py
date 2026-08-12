@@ -924,6 +924,10 @@ def _consolidate_payload(  # noqa: C901
         # Peak boundary evidence is exposed separately as transition_prob_at_start.
         # HMM/GMM/etc.: regime_confidence is average state probability over the segment.
 
+        if method == "garch":
+            for segment in segments:
+                segment.pop("regime_confidence", None)
+
         params_used = payload.get("params_used")
         label_mapping = (
             params_used.get("label_mapping") if isinstance(params_used, dict) else None
@@ -1128,6 +1132,14 @@ def _consolidate_payload(  # noqa: C901
             "method": payload.get("method"),
             "success": True,
         }
+        if method == "garch":
+            new_payload["regime_confidence_status"] = (
+                "not_applicable_hard_volatility_tiers"
+            )
+            new_payload["regime_confidence_note"] = (
+                "GARCH volatility tiers are deterministic assignments; no "
+                "probabilistic regime confidence is reported."
+            )
         if (
             isinstance(params_used, dict)
             and params_used.get("model_fit_scope") == "full_window"

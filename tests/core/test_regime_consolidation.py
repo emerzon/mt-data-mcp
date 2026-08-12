@@ -186,6 +186,26 @@ class TestConsolidatePayload:
         result = _consolidate_payload(payload, "hmm", "full")
         assert result.get("params_used") == {"n_states": 2}
 
+    def test_garch_hard_tiers_do_not_claim_probabilistic_confidence(self):
+        payload = {
+            "symbol": "EURUSD",
+            "timeframe": "H1",
+            "method": "garch",
+            "success": True,
+            "times": [1.0, 2.0, 3.0],
+            "state": [0, 0, 1],
+            "state_probabilities": [[1.0, 0.0], [1.0, 0.0], [0.0, 1.0]],
+            "params_used": {"n_states": 2},
+        }
+
+        result = _consolidate_payload(payload, "garch", "full")
+
+        assert result["regime_confidence_status"] == (
+            "not_applicable_hard_volatility_tiers"
+        )
+        assert "regime_confidence" not in result["current_regime"]
+        assert all("regime_confidence" not in row for row in result["regimes"])
+
     def test_bocpd_regimes_are_canonicalized_by_series_mean(self):
         payload = {
             "symbol": "EURUSD",

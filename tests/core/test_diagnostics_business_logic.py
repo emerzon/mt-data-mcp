@@ -158,6 +158,30 @@ def test_seasonality_detect_does_not_inflate_noise_spectral_score(monkeypatch):
         assert result["detection_status"] == "candidate"
 
 
+def test_seasonality_detect_differences_nonstationary_level_targets(monkeypatch):
+    rng = np.random.default_rng(7)
+    frame = _bars(100.0 + np.cumsum(rng.normal(size=600)))
+    monkeypatch.setattr(diagnostics, "create_mt5_gateway", lambda **kwargs: _Gateway())
+    monkeypatch.setattr(
+        diagnostics,
+        "_fetch_diagnostic_bars",
+        lambda *args, **kwargs: (frame, None),
+    )
+
+    result = _raw(diagnostics.seasonality_detect)(
+        symbol="TEST",
+        target="close",
+        min_period=4,
+        max_period=50,
+    )
+
+    assert result["success"] is True
+    assert result["target"] == "close"
+    assert result["analyzed_target"] == "diff"
+    assert result["preprocessing"] == "first_difference_for_stationarity"
+    assert result["detection_status"] != "detected"
+
+
 def test_outliers_detect_flags_price_and_volume_spike(monkeypatch):
     close = np.linspace(100.0, 101.0, 120)
     close[80] = 130.0
@@ -176,6 +200,10 @@ def test_outliers_detect_flags_price_and_volume_spike(monkeypatch):
     assert result["success"] is True
     assert result["outliers_total"] >= 1
     assert any("volume" in row["fields"] for row in result["items"])
+    assert result["volume_source"] == "tick_volume"
+    assert result["volume_type"] == "tick_count"
+    assert result["units"]["volume"] == "broker_tick_count"
+    assert any(row.get("volume") == 5000.0 for row in result["items"])
 
 
 def test_volatility_term_structure_returns_requested_horizons(monkeypatch):
@@ -229,3 +257,28 @@ def test_volatility_term_structure_uses_observed_session_density(monkeypatch):
     assert result["sessions_per_year"] == 252
     assert result["bars_per_year"] == 1764.0
     assert result["annualization_basis"] == "observed_median_bars_per_utc_session_x_252_sessions"
+
+
+def test_volatility_term_structure_suppresses_tiny_sample_percentiles(monkeypatch):
+    rng = np.random.default_rng(13)
+    close = 100.0 * np.exp(np.cumsum(rng.normal(0.0, 0.01, 30)))
+    frame = _bars(close)
+    monkeypatch.setattr(diagnostics, "create_mt5_gateway", lambda **kwargs: _Gateway())
+    monkeypatch.setattr(
+        diagnostics,
+        "_fetch_diagnostic_bars",
+        lambda *args, **kwargs: (frame, None),
+    )
+
+    result = _raw(diagnostics.volatility_term_structure)(
+        symbol="TEST",
+        lookback=30,
+        horizons="29",
+    )
+
+    item = result["items"][0]
+    assert item["samples"] == 1
+    assert item["sample_sufficiency"] == "insufficient"
+    assert item["percentile_rank"] is None
+    assert item["cone"] is None
+    assert result["low_sample_horizons"] == [29]

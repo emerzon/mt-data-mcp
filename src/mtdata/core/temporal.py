@@ -550,6 +550,8 @@ def _base_temporal_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
             "groups_excluded",
             "min_bars_applied",
             "overall_basis",
+            "analysis_status",
+            "message",
             *_PAGINATION_KEYS,
         )
         if key in payload
@@ -574,6 +576,8 @@ def _compact_temporal_payload(
     out: Dict[str, Any] = _base_temporal_payload(payload)
     _drop_compact_temporal_duplicate_units(out)
     groups = payload.get("groups")
+    if isinstance(groups, list) and not groups:
+        out["groups"] = []
     if isinstance(groups, list) and groups:
         if all(isinstance(row, dict) and "dimension" in row for row in groups):
             compact_groups, _page_best_rows, pagination = _flatten_temporal_dimension_groups(
@@ -1266,7 +1270,7 @@ def temporal_analyze(  # noqa: C901
                     for row in groups_out
                     if int(row.get("bars", 0) or 0) >= min_bars_value
                 ]
-                if excluded and included:
+                if excluded:
                     excluded_keys = {row.get("_group_key") for row in excluded}
                     excluded_groups = [
                         {
@@ -1365,10 +1369,16 @@ def temporal_analyze(  # noqa: C901
                     limit=limit_value,
                     offset=offset_value,
                 )
-            overall = _stats_for_group(analysis_df, volume_col)
+            no_qualifying_groups = analysis_df.empty
+            overall = (
+                {}
+                if no_qualifying_groups
+                else _stats_for_group(analysis_df, volume_col)
+            )
 
-            start_epoch = float(analysis_df["__epoch"].iloc[0])
-            end_epoch = float(analysis_df["__epoch"].iloc[-1])
+            window_df = df if no_qualifying_groups else analysis_df
+            start_epoch = float(window_df["__epoch"].iloc[0])
+            end_epoch = float(window_df["__epoch"].iloc[-1])
             start_str = _format_time_minimal_local(start_epoch) if use_client_tz else _format_time_minimal(start_epoch)
             end_str = _format_time_minimal_local(end_epoch) if use_client_tz else _format_time_minimal(end_epoch)
 
@@ -1404,6 +1414,11 @@ def temporal_analyze(  # noqa: C901
                 ),
                 "volume_source": volume_col,
             }
+            if no_qualifying_groups:
+                payload["analysis_status"] = "insufficient_group_samples"
+                payload["message"] = (
+                    "No temporal group met the requested minimum bar count."
+                )
             if lookback_defaulted:
                 payload["lookback_note"] = (
                     f"Auto lookback selected {int(effective_lookback)} bars for "
@@ -1457,7 +1472,7 @@ def temporal_analyze(  # noqa: C901
                     ]
             if grouped_dimensions:
                 payload["groups"] = grouped_dimensions
-            elif groups_out:
+            else:
                 payload["groups"] = groups_out
             if detail_mode == "summary":
                 return _summary_temporal_payload(
