@@ -18,21 +18,36 @@ MAGIC_NUMBER_DESCRIPTION = (
 
 
 class FixedFractionSizing(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
 
     method: Literal["fixed_fraction"] = "fixed_fraction"
-    risk_pct: float = Field(gt=0.0, description="Target account risk percentage.")
+    risk_pct: float = Field(
+        gt=0.0,
+        le=100.0,
+        description=(
+            "Target account risk in percentage points (1 means 1%); must not "
+            "exceed 100% of equity."
+        ),
+    )
 
 
 class KellySizing(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
 
     method: Literal["kelly"] = "kelly"
     win_rate: float = Field(ge=0.0, le=1.0, description="Win probability as a fraction.")
     avg_win: float = Field(gt=0.0, description="Average stake-normalized winning return.")
     avg_loss: float = Field(gt=0.0, description="Average stake-normalized losing return magnitude.")
     fraction_multiplier: float = Field(0.5, ge=0.0, description="Multiplier applied to raw Kelly.")
-    max_risk_pct: float = Field(2.0, gt=0.0, description="Maximum Kelly account risk percentage.")
+    max_risk_pct: float = Field(
+        2.0,
+        gt=0.0,
+        le=100.0,
+        description=(
+            "Maximum Kelly account risk in percentage points (1 means 1%); "
+            "must not exceed 100% of equity."
+        ),
+    )
 
 
 RiskSizing = Annotated[Union[FixedFractionSizing, KellySizing], Field(discriminator="method")]

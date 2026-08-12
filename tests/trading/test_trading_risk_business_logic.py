@@ -338,6 +338,53 @@ def test_trade_risk_analyze_kelly_requires_complete_sizing_inputs() -> None:
         )
 
 
+@pytest.mark.parametrize("risk_pct", [0.0, -1.0, 100.0001, 101.0, float("inf"), float("nan")])
+def test_trade_risk_analyze_rejects_invalid_fixed_fraction_risk(risk_pct: float) -> None:
+    with pytest.raises(ValidationError, match="risk_pct"):
+        TradeRiskAnalyzeRequest(
+            symbol="EURUSD",
+            sizing=_fixed_sizing(risk_pct),
+            entry=100.0,
+            stop_loss=92.0,
+        )
+
+
+@pytest.mark.parametrize("max_risk_pct", [0.0, -1.0, 100.0001, 101.0, float("inf"), float("nan")])
+def test_trade_risk_analyze_rejects_invalid_kelly_risk_cap(
+    max_risk_pct: float,
+) -> None:
+    with pytest.raises(ValidationError, match="max_risk_pct"):
+        TradeRiskAnalyzeRequest(
+            symbol="EURUSD",
+            sizing=_kelly_sizing(0.55, 0.02, 0.01, max_risk_pct=max_risk_pct),
+            entry=100.0,
+            stop_loss=92.0,
+        )
+
+
+@pytest.mark.parametrize("method", ["fixed_fraction", "kelly"])
+def test_trade_risk_analyze_accepts_full_equity_boundary(method: str) -> None:
+    sizing = (
+        _fixed_sizing(100.0)
+        if method == "fixed_fraction"
+        else _kelly_sizing(0.55, 0.02, 0.01, max_risk_pct=100.0)
+    )
+
+    request = TradeRiskAnalyzeRequest(
+        symbol="EURUSD",
+        sizing=sizing,
+        entry=100.0,
+        stop_loss=92.0,
+    )
+
+    assert request.sizing is not None
+    assert (
+        request.sizing.risk_pct
+        if method == "fixed_fraction"
+        else request.sizing.max_risk_pct
+    ) == 100.0
+
+
 def test_trade_risk_analyze_kelly_rejects_raw_journal_pnl_aliases() -> None:
     with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
         TradeRiskAnalyzeRequest(

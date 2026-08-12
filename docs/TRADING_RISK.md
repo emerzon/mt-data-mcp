@@ -31,7 +31,7 @@ mtdata-cli trade_risk_analyze EURUSD --direction long \
 | Parameter | Default | Description |
 |-----------|---------|-------------|
 | `symbol` | — | Symbol for new-trade sizing; omit for portfolio-only risk. |
-| `sizing` | — | JSON object selecting `fixed_fraction` with `risk_pct`, or `kelly` with its edge inputs and cap. |
+| `sizing` | — | JSON object selecting `fixed_fraction` with `risk_pct`, or `kelly` with its edge inputs and cap. Risk percentages use percentage points (`1` means 1%) and must be in `(0, 100]`. |
 | `strict_risk` | `true` | Return `suggested_volume=0.0` if the broker minimum lot would exceed the requested sizing risk. |
 | `include_pending` | `true` | Include contingent stop-loss risk from pending orders in portfolio totals. |
 | `direction` | — | `long`/`short` (aliases accepted) for the proposed trade. |
@@ -67,7 +67,7 @@ mtdata-cli trade_risk_analyze EURUSD --direction long \
 | `sizing.avg_win` | — | Average winning return normalized to a consistent stake or unit of risk (for example, an R-multiple). |
 | `sizing.avg_loss` | — | Average losing return magnitude on the same normalized basis. |
 | `sizing.fraction_multiplier` | `0.5` | Multiplier on the raw Kelly fraction (half-Kelly = `0.5`). |
-| `sizing.max_risk_pct` | `2.0` | Hard cap on account risk (%) for Kelly sizing. |
+| `sizing.max_risk_pct` | `2.0` | Hard cap on account risk in percentage points (`1` means 1%); must be in `(0, 100]`. |
 
 The Kelly fraction is `win_rate − (1 − win_rate) / (avg_win / |avg_loss|)`, then scaled
 by `sizing.fraction_multiplier` and capped by `sizing.max_risk_pct`. On a non-positive edge the tool reports
