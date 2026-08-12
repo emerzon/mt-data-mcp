@@ -9,6 +9,7 @@ Covers:
 
 import unittest
 from datetime import datetime, timezone
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pandas as pd
@@ -227,15 +228,15 @@ class TestEdgeCases(unittest.TestCase):
         self.assertIn('spike95_share', vol)
 
     @patch(_TICKS_RANGE)
-    @patch(_CACHED_INFO, return_value=MagicMock())
+    @patch(_CACHED_INFO, return_value=SimpleNamespace(digits=5))
     @patch(_RESOLVE_CTZ, return_value=None)
     @patch(_GUARD, _mock_symbol_guard)
     def test_ticks_corr_abs_mid_change(self, mock_ctz, mock_info, mock_ticks):
         ticks = _make_ticks(20, step=2.0)
         for i, t in enumerate(ticks):
             t['volume_real'] = float(100 + i * 10)
-            t['bid'] = 1.1 + i * 0.001
-            t['ask'] = 1.1002 + i * 0.001
+            t['bid'] = 1.1 + (i * i) * 0.00001
+            t['ask'] = t['bid'] + 0.0002
         mock_ticks.return_value = ticks
         result = fetch_ticks('EURUSD', limit=20, format='stats')
         vol = result['stats']['volume_real']

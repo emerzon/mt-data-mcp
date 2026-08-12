@@ -3279,9 +3279,7 @@ def fetch_ticks(  # noqa: C901
             df_ticks["mid"] = (
                 (df_ticks["bid"] + df_ticks["ask"]) / 2.0
             ).round(price_digits + 1)
-            df_ticks["spread"] = (df_ticks["ask"] - df_ticks["bid"]).round(
-                price_digits
-            )
+            df_ticks["spread"] = df_ticks["ask"] - df_ticks["bid"]
             if price_point is not None:
                 df_ticks["spread_points"] = df_ticks["spread"] / price_point
             if price_point is not None and points_per_pip is not None:
@@ -3521,9 +3519,7 @@ def fetch_ticks(  # noqa: C901
             df_stats["mid"] = (
                 (df_stats["bid"] + df_stats["ask"]) / 2.0
             ).round(price_digits + 1)
-            df_stats["spread"] = (df_stats["ask"] - df_stats["bid"]).round(
-                price_digits
-            )
+            df_stats["spread"] = df_stats["ask"] - df_stats["bid"]
             start_epoch = float(df_stats["__epoch"].iloc[0])
             end_epoch = float(df_stats["__epoch"].iloc[-1])
             duration_seconds = float(max(0.0, end_epoch - start_epoch))
@@ -3645,7 +3641,6 @@ def fetch_ticks(  # noqa: C901
             ).round(price_digits + 1)
             df_stats["spread"] = (
                 (df_stats["ask"] - df_stats["bid"])
-                .round(price_digits)
                 .where(df_stats["spread_sample_eligible"])
             )
 
