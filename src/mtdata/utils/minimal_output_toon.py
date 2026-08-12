@@ -21,6 +21,7 @@ _QUOTE_DECIMALS_BY_FIELD = {
     "high": 8,
     "low": 8,
     "close": 8,
+    "previous_close": 8,
     "price": 8,
     "point": 8,
     "spread": 8,

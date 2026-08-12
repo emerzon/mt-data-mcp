@@ -89,6 +89,18 @@ class TestColumnDecimals:
         result = _column_decimals(["Price"], [{"Price": 77000.0}, {"Price": 0.00001234}])
         assert result["Price"] == 8
 
+    def test_previous_close_is_treated_as_a_price_column(self):
+        result = _column_decimals(
+            ["previous_close"],
+            [
+                {"previous_close": 159.493},
+                {"previous_close": 1.39408},
+                {"previous_close": 1.34924},
+            ],
+        )
+
+        assert result["previous_close"] == 8
+
     def test_none_values_skipped(self):
         result = _column_decimals(["x"], [{"x": None}, {"x": 1.0}])
         assert "x" in result
@@ -189,6 +201,21 @@ class TestEncodeTabularNestedCells:
         )
 
         assert "1.14328,1" in result
+
+    def test_heterogeneous_previous_close_values_keep_market_precision(self):
+        result = _encode_tabular(
+            "data",
+            ["symbol", "previous_close"],
+            [
+                {"symbol": "USDJPY", "previous_close": 159.493},
+                {"symbol": "USDCAD", "previous_close": 1.39408},
+                {"symbol": "GBPUSD", "previous_close": 1.34924},
+            ],
+        )
+
+        assert "USDJPY,159.493" in result
+        assert "USDCAD,1.39408" in result
+        assert "GBPUSD,1.34924" in result
 
     def test_full_nested_cells_keep_integers_as_integers(self):
         result = _encode_tabular(
