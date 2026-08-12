@@ -1301,7 +1301,20 @@ class TestMcpToolSchemas:
         assert "args" not in props
         assert "args" not in set(schema.get("required") or [])
         assert props["symbol"]["type"] == "string"
+        symbols_schema = props["symbols"]
+        symbols_array = next(
+            (
+                option
+                for option in symbols_schema.get("anyOf", [])
+                if option.get("type") == "array"
+            ),
+            symbols_schema,
+        )
+        assert symbols_array["minItems"] == 1
+        assert symbols_array["maxItems"] == 12
+        assert symbols_array["uniqueItems"] is True
         assert props["timeframe"]["type"] == "string"
+        assert "wait_next_bar" not in props
         assert watch_for["type"] == "array"
         assert watch_items["discriminator"]["propertyName"] == "type"
         assert "price_break_level" in watch_items["discriminator"]["mapping"]
@@ -1313,9 +1326,10 @@ class TestMcpToolSchemas:
             "not": {"required": ["max_wait_seconds"]}
         }
         assert schema["else"]["required"] == ["max_wait_seconds"]
-        assert schema["dependentSchemas"]["wait_next_bar"]["then"][
-            "required"
-        ] == ["timeframe"]
+        assert schema["dependentSchemas"] == {
+            "symbol": {"not": {"required": ["symbols"]}},
+            "symbols": {"not": {"required": ["symbol"]}},
+        }
 
     def test_prioritized_tools_list_tools_schemas_are_compact_and_aligned(self):
         from mcp import ClientSession

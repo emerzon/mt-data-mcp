@@ -260,8 +260,8 @@ def test_attach_schemas_to_tools_patches_wait_event_with_discriminated_watch_spe
             "parameters": {
                 "properties": {
                     "symbol": {"type": "string"},
+                    "symbols": {"type": "array", "items": {"type": "string"}},
                     "timeframe": {"type": "string"},
-                    "wait_next_bar": {"type": "boolean"},
                     "watch_tick_count_spike": {"type": "boolean"},
                     "max_wait_seconds": {"type": "number"},
                     "poll_interval_seconds": {"type": "number"},
@@ -292,6 +292,18 @@ def test_attach_schemas_to_tools_patches_wait_event_with_discriminated_watch_spe
     assert "level" in price_break_level["required"]
     assert params["max_wait_seconds"]["minimum"] == 0.0
     assert params["poll_interval_seconds"]["minimum"] == 0.1
+    symbols_schema = params["symbols"]
+    symbols_array = next(
+        (
+            option
+            for option in symbols_schema.get("anyOf", [])
+            if option.get("type") == "array"
+        ),
+        symbols_schema,
+    )
+    assert symbols_array["minItems"] == 1
+    assert symbols_array["maxItems"] == 12
+    assert symbols_array["uniqueItems"] is True
     parameters = tool_obj.schema["parameters"]
     assert parameters["if"] == {"required": ["timeframe"]}
     assert parameters["then"] == {
@@ -301,9 +313,10 @@ def test_attach_schemas_to_tools_patches_wait_event_with_discriminated_watch_spe
         "required": ["max_wait_seconds"],
         "not": {"required": ["end_on"]},
     }
-    assert parameters["dependentSchemas"]["wait_next_bar"]["then"][
-        "required"
-    ] == ["timeframe"]
+    assert parameters["dependentSchemas"] == {
+        "symbol": {"not": {"required": ["symbols"]}},
+        "symbols": {"not": {"required": ["symbol"]}},
+    }
 
 
 def test_attach_schemas_to_tools_patches_trade_place(monkeypatch) -> None:

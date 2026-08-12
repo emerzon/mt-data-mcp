@@ -731,6 +731,7 @@ WaitWatchEventSpec = Annotated[
 WaitBoundaryEventSpec = CandleCloseEventSpec
 
 _WAIT_EVENT_MIN_POLL_INTERVAL_SECONDS = 0.1
+WAIT_EVENT_MAX_SYMBOLS = 12
 
 
 class WaitEventRequest(BaseModel):
@@ -751,6 +752,15 @@ class WaitEventRequest(BaseModel):
     )
     end_on: List[WaitBoundaryEventSpec] = Field(default_factory=list)
     symbol: Optional[str] = None
+    symbols: Optional[List[str]] = Field(
+        default=None,
+        min_length=1,
+        max_length=WAIT_EVENT_MAX_SYMBOLS,
+        description=(
+            "Basket symbols to monitor and include in candle-boundary statistics. "
+            "Cannot be combined with symbol."
+        ),
+    )
     timeframe: Optional[TimeframeLiteral] = None
     order_ticket: Optional[int] = None
     position_ticket: Optional[int] = None
@@ -760,6 +770,26 @@ class WaitEventRequest(BaseModel):
     poll_interval_seconds: float = 0.5
     max_wait_seconds: Optional[float] = None
     accept_preexisting: bool = False
+
+    @field_validator("symbols")
+    @classmethod
+    def _validate_symbols(cls, value: Optional[List[str]]) -> Optional[List[str]]:
+        if value is None:
+            return None
+        normalized: List[str] = []
+        seen: set[str] = set()
+        for raw_symbol in value:
+            symbol = str(raw_symbol or "").upper().strip()
+            if not symbol:
+                raise ValueError("symbols entries must be non-empty strings.")
+            if symbol in seen:
+                raise ValueError(
+                    "symbols entries must be unique after normalization; "
+                    f"received duplicate {symbol}."
+                )
+            seen.add(symbol)
+            normalized.append(symbol)
+        return normalized
 
     @field_validator("order_ticket")
     @classmethod
@@ -794,6 +824,23 @@ class WaitEventRequest(BaseModel):
 
     @model_validator(mode="after")
     def _validate_wait_mode(self) -> "WaitEventRequest":
+        if self.symbol is not None and self.symbols is not None:
+            raise ValueError("symbol and symbols cannot be combined.")
+        if self.symbols is not None and self.watch_for:
+            basket = set(self.symbols)
+            outside_basket = sorted(
+                {
+                    str(item.symbol).upper().strip()
+                    for item in self.watch_for
+                    if getattr(item, "symbol", None)
+                    and str(item.symbol).upper().strip() not in basket
+                }
+            )
+            if outside_basket:
+                raise ValueError(
+                    "watch_for symbols must belong to the symbols basket; "
+                    f"received {', '.join(outside_basket)}."
+                )
         has_boundary = self.timeframe is not None
         has_duration = self.max_wait_seconds is not None
         end_on_was_provided = "end_on" in self.model_fields_set
@@ -823,5 +870,14 @@ class WaitEventRequest(BaseModel):
         if self.watch_for == [] and not has_boundary:
             raise ValueError(
                 "watch_for cannot be empty in duration mode because no event could match."
+            )
+        if (
+            has_duration
+            and self.watch_for is None
+            and self.symbol is None
+            and self.symbols is None
+        ):
+            raise ValueError(
+                "symbol or symbols is required when watch_for is omitted in duration mode."
             )
         return self

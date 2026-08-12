@@ -382,7 +382,12 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
     ("trade_modify", "expiration"): "Pending order expiration time (dateparser string, UTC epoch seconds, or GTC token).",
     ("trade_place", "expiration"): "Pending order expiration time (dateparser string, UTC epoch seconds, or GTC token).",
     ("wait_event", "symbol"): (
-        "Trading symbol (e.g. EURUSD). Required when watch_for is omitted."
+        "Single trading symbol (e.g. EURUSD). Cannot be combined with symbols. "
+        "Omit both for a pure clock-boundary wait."
+    ),
+    ("wait_event", "symbols"): (
+        "Basket of 1-12 trading symbols. Cannot be combined with symbol; omitted-symbol "
+        "watchers apply to every basket member."
     ),
     ("wait_event", "timeframe"): (
         "Candle-boundary wait mode. Cannot be combined with max_wait_seconds."
@@ -392,10 +397,6 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
     ),
     ("wait_event", "poll_interval_seconds"): (
         "Seconds between polls; must be at least 0.1. Omit to use 0.5."
-    ),
-    ("wait_event", "wait_next_bar"): (
-        "Boundary-only shortcut. Requires timeframe and cannot be combined with "
-        "watch_for, end_on, or max_wait_seconds."
     ),
     ("wait_event", "watch_tick_count_spike"): (
         "Include the inferred tick-count-spike watcher. Ignored with explicit watch_for."

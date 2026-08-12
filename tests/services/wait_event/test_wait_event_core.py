@@ -311,8 +311,8 @@ def test_wait_event_tool_exposes_minimal_public_contract(monkeypatch) -> None:
     sig = inspect.signature(core_data.wait_event)
     assert tuple(sig.parameters.keys()) == (
         "symbol",
+        "symbols",
         "timeframe",
-        "wait_next_bar",
         "watch_tick_count_spike",
         "max_wait_seconds",
         "poll_interval_seconds",

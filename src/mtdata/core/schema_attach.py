@@ -234,10 +234,20 @@ def _patch_wait_event_schema(schema: Dict[str, Any]) -> None:
     if not isinstance(wait_event_props, dict):
         return
 
-    for field_name in ("watch_for", "end_on"):
+    for field_name in ("symbols", "watch_for", "end_on"):
         field_schema = wait_event_props.get(field_name)
         if isinstance(field_schema, dict):
             params[field_name] = copy.deepcopy(field_schema)
+
+    symbols_schema = params.get("symbols")
+    if isinstance(symbols_schema, dict):
+        symbols_options = symbols_schema.get("anyOf")
+        if isinstance(symbols_options, list):
+            for option in symbols_options:
+                if isinstance(option, dict) and option.get("type") == "array":
+                    option["uniqueItems"] = True
+        elif symbols_schema.get("type") == "array":
+            symbols_schema["uniqueItems"] = True
 
     max_wait_schema = params.get("max_wait_seconds")
     if isinstance(max_wait_schema, dict):
@@ -253,19 +263,8 @@ def _patch_wait_event_schema(schema: Dict[str, Any]) -> None:
         "not": {"required": ["end_on"]},
     }
     params_obj["dependentSchemas"] = {
-        "wait_next_bar": {
-            "if": {"properties": {"wait_next_bar": {"const": True}}},
-            "then": {
-                "required": ["timeframe"],
-                "not": {
-                    "anyOf": [
-                        {"required": ["watch_for"]},
-                        {"required": ["end_on"]},
-                        {"required": ["max_wait_seconds"]},
-                    ]
-                },
-            },
-        }
+        "symbol": {"not": {"required": ["symbols"]}},
+        "symbols": {"not": {"required": ["symbol"]}},
     }
 
     defs = wait_event_schema.get("$defs")

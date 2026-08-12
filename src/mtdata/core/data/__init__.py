@@ -18,6 +18,7 @@ from ..execution_logging import run_logged_operation
 from ..mt5_gateway import create_mt5_gateway
 from ..pivot import pivot_compute_points, support_resistance_levels
 from .requests import (
+    WAIT_EVENT_MAX_SYMBOLS,
     DataFetchCandlesRequest,
     DataFetchTicksRequest,
     WaitEventRequest,
@@ -75,6 +76,35 @@ def _normalize_wait_event_public_specs(
                 out.extend(parsed)
         return out, None
     return None, f"wait_event {field_name} must be event objects or event type strings."
+
+
+def _normalize_wait_event_symbols(
+    value: Any,
+) -> tuple[Optional[List[str]], Optional[str]]:
+    if value is None:
+        return None, None
+    if not isinstance(value, (list, tuple)):
+        return None, "wait_event symbols must be a list of trading symbols."
+    if not value:
+        return None, "wait_event symbols must contain at least one symbol."
+    if len(value) > WAIT_EVENT_MAX_SYMBOLS:
+        return None, (
+            f"wait_event symbols accepts at most {WAIT_EVENT_MAX_SYMBOLS} symbols."
+        )
+    normalized: List[str] = []
+    seen: set[str] = set()
+    for raw_symbol in value:
+        symbol = str(raw_symbol or "").upper().strip()
+        if not symbol:
+            return None, "wait_event symbols entries must be non-empty strings."
+        if symbol in seen:
+            return None, (
+                "wait_event symbols entries must be unique after normalization; "
+                f"received duplicate {symbol}."
+            )
+        seen.add(symbol)
+        normalized.append(symbol)
+    return normalized, None
 
 
 def _move_wait_event_boundary_watchers(
@@ -143,6 +173,24 @@ def _build_default_wait_event_watchers(
         watch_for.append({"type": "tick_count_spike", "symbol": symbol})
     watch_for.extend(_support_resistance_watchers(symbol=symbol))
     watch_for.extend(_pivot_zone_watchers(symbol=symbol, timeframe=timeframe))
+    return _dedupe_wait_event_watchers(watch_for)
+
+
+def _build_default_wait_event_basket_watchers(
+    *,
+    symbols: List[str],
+    timeframe: TimeframeLiteral,
+    watch_tick_count_spike: bool,
+) -> List[Dict[str, Any]]:
+    watch_for: List[Dict[str, Any]] = []
+    for symbol in symbols:
+        watch_for.extend(
+            _build_default_wait_event_watchers(
+                symbol=symbol,
+                timeframe=timeframe,
+                watch_tick_count_spike=watch_tick_count_spike,
+            )
+        )
     return _dedupe_wait_event_watchers(watch_for)
 
 
@@ -415,6 +463,16 @@ def _compact_wait_event_public_result(
         closed_candle = boundary_event.get("closed_candle")
         if isinstance(closed_candle, dict) and closed_candle:
             compact_boundary["closed_candle"] = dict(closed_candle)
+        closed_candles = boundary_event.get("closed_candles")
+        if isinstance(closed_candles, list):
+            compact_boundary["closed_candles"] = [
+                dict(item) for item in closed_candles if isinstance(item, dict)
+            ]
+        candle_failures = boundary_event.get("candle_failures")
+        if isinstance(candle_failures, list) and candle_failures:
+            compact_boundary["candle_failures"] = [
+                dict(item) for item in candle_failures if isinstance(item, dict)
+            ]
         out["boundary_event"] = compact_boundary or None
 
     matched_event = out.get("matched_event")
@@ -634,8 +692,8 @@ def data_fetch_ticks(
 @mcp.tool()
 def wait_event(
     symbol: Optional[str] = None,
+    symbols: Optional[List[str]] = None,
     timeframe: Optional[TimeframeLiteral] = None,
-    wait_next_bar: bool = False,
     watch_tick_count_spike: bool = True,
     max_wait_seconds: Optional[float] = None,
     poll_interval_seconds: Optional[float] = None,
@@ -649,10 +707,6 @@ def wait_event(
     boundary, or set `max_wait_seconds` to stop after a fixed duration. Combining
     both modes, or omitting both, is invalid.
 
-    Set `wait_next_bar=true` for the common shortcut: wait only for the next
-    candle close on `timeframe` and skip inferred market/account watchers. The
-    shortcut cannot be combined with `watch_for`, `end_on`, or duration mode.
-
     If `watch_for` is omitted, the public default watches the full event set:
     order/position lifecycle events, pending/stop proximity, volatility/activity
     events, support/resistance touch and break levels, and pivot-based zone
@@ -661,30 +715,39 @@ def wait_event(
     to adjacent daily pivot bands for intraday waits and same-timeframe pivots
     for daily-or-higher waits.
 
-    `symbol` is required when `watch_for` is omitted and the tool is inferring
-    its default watcher set. For boundary-only waits, pass `watch_for=[]` and
-    set `timeframe`; `end_on` can customize the candle-close boundaries.
+    Supply either `symbol` for a single instrument or `symbols` for a basket of
+    up to 12 instruments; the parameters are mutually exclusive. Basket waits
+    return on the first matching event. Explicit watcher specs without a symbol
+    are broadcast across the basket, while named watcher symbols must belong to
+    it.
+
+    A timeframe wait without `symbol`, `symbols`, or `watch_for` is a pure clock
+    boundary wait and returns no candle data. Pass `watch_for=[]` to request the
+    same boundary-only behavior while still collecting candle statistics for a
+    supplied symbol or basket.
 
     `max_wait_seconds` selects duration mode and must be omitted when
     `timeframe` or `end_on` is set. Explicit `end_on` timeframes must match the
     top-level `timeframe`.
     A timeout is a failed wait (`success=false`, `error_code=wait_event_timeout`)
-    and produces a nonzero CLI exit status. When watchers are active, reaching
-    an `end_on` boundary before a match is also a failed wait
+    and produces a nonzero CLI exit status. For singular waits with active
+    watchers, reaching an `end_on` boundary before a match is also a failed wait
     (`success=false`, `matched=false`,
     `error_code=wait_event_boundary_reached`); `completed=true` distinguishes
-    that terminal boundary from a timeout. A boundary-only wait
-    (`watch_for=[]` or `wait_next_bar=true`) succeeds when its boundary is
-    reached.
+    that terminal boundary from a timeout. Basket boundaries complete
+    successfully so their candle snapshot can drive the next basket cycle. A
+    boundary-only wait
+    (`watch_for=[]`, or a symbol-less timeframe wait) succeeds when its boundary
+    is reached.
     Set `poll_interval_seconds` to tune polling cadence; omit it to use the
     engine default.
 
     Boundary waits belong in `end_on` as `{"type": "candle_close", ...}`.
     `watch_for` is for explicit market/account event objects only; pass
     candle-close boundary objects in `end_on` instead.
-    When a candle boundary is reached and a symbol is known, `boundary_event`
-    includes a best-effort `closed_candle` snapshot with OHLCV and basic
-    range/body/wick stats for the candle that just closed.
+    When a candle boundary is reached, a singular call includes a best-effort
+    `closed_candle` snapshot. Basket calls include `closed_candles` and any
+    per-symbol `candle_failures`; missing basket candles produce partial success.
 
     Example: `timeframe="H1", end_on=[{"type": "candle_close",
     "timeframe": "H1"}]` or `max_wait_seconds=30,
@@ -697,6 +760,7 @@ def wait_event(
     echo in the response.
     """
     symbol_value = str(symbol or "").strip() or None
+    symbols_value, symbols_error = _normalize_wait_event_symbols(symbols)
     normalized_watch_for, watch_for_error = _normalize_wait_event_public_specs(
         watch_for,
         field_name="watch_for",
@@ -705,30 +769,36 @@ def wait_event(
         end_on,
         field_name="end_on",
     )
-    watch_for_provided = watch_for is not None
     end_on_provided = end_on is not None
     moved_boundary_watchers = False
     if watch_for_error is None and end_on_error is None:
         normalized_watch_for, normalized_end_on, moved_boundary_watchers = (
             _move_wait_event_boundary_watchers(normalized_watch_for, normalized_end_on)
         )
-    explicit_watch_for = normalized_watch_for is not None or bool(wait_next_bar)
+    explicit_watch_for = normalized_watch_for is not None
     explicit_end_on = normalized_end_on is not None
     wait_mode_error: Optional[str] = None
     if (timeframe is None) == (max_wait_seconds is None):
         wait_mode_error = (
             "Provide exactly one of timeframe or max_wait_seconds, not both."
         )
-    elif wait_next_bar and timeframe is None:
-        wait_mode_error = "wait_next_bar requires timeframe mode."
-    elif wait_next_bar and (watch_for_provided or end_on_provided):
-        wait_mode_error = "wait_next_bar cannot be combined with watch_for or end_on."
     elif max_wait_seconds is not None and end_on_provided:
         wait_mode_error = "max_wait_seconds cannot be combined with end_on."
     request_error: Optional[str] = None
     spec_error = watch_for_error or end_on_error
-    if symbol_value is None and not explicit_watch_for:
-        request_error = "symbol is required when watch_for is omitted."
+    if symbols_error is not None:
+        request_error = symbols_error
+    elif symbol_value is not None and symbols_value is not None:
+        request_error = "symbol and symbols cannot be combined."
+    elif (
+        max_wait_seconds is not None
+        and symbol_value is None
+        and symbols_value is None
+        and not explicit_watch_for
+    ):
+        request_error = (
+            "symbol or symbols is required when watch_for is omitted in duration mode."
+        )
 
     def _run() -> Dict[str, Any]:
         if spec_error is not None:
@@ -753,28 +823,33 @@ def wait_event(
             request_kwargs["timeframe"] = timeframe
         if symbol_value is not None:
             request_kwargs["symbol"] = symbol_value
+        if symbols_value is not None:
+            request_kwargs["symbols"] = list(symbols_value)
         request_kwargs["max_wait_seconds"] = max_wait_seconds
         if poll_interval_seconds is not None:
             request_kwargs["poll_interval_seconds"] = poll_interval_seconds
         if normalized_end_on is not None:
             request_kwargs["end_on"] = list(normalized_end_on)
-        elif timeframe is not None and (
-            normalized_watch_for is None or wait_next_bar
-        ):
+        elif timeframe is not None and normalized_watch_for is None:
             request_kwargs["end_on"] = [
                 {"type": "candle_close", "timeframe": timeframe},
             ]
-        if wait_next_bar:
-            resolved_watch_for = []
+        if normalized_watch_for is not None:
+            resolved_watch_for = list(normalized_watch_for)
         else:
+            watcher_symbols = (
+                list(symbols_value)
+                if symbols_value is not None
+                else ([] if symbol_value is None else [symbol_value])
+            )
             resolved_watch_for = (
-                list(normalized_watch_for)
-                if normalized_watch_for is not None
-                else _build_default_wait_event_watchers(
-                    symbol=symbol_value,
+                _build_default_wait_event_basket_watchers(
+                    symbols=watcher_symbols,
                     timeframe=timeframe or "M1",
                     watch_tick_count_spike=watch_tick_count_spike,
                 )
+                if watcher_symbols
+                else []
             )
         try:
             request = WaitEventRequest(
@@ -809,8 +884,8 @@ def wait_event(
         logger,
         operation="wait_event",
         symbol=symbol_value,
+        symbols=symbols_value,
         timeframe=timeframe,
-        wait_next_bar=wait_next_bar,
         watch_tick_count_spike=watch_tick_count_spike,
         detail=detail,
         explicit_watch_for=explicit_watch_for,

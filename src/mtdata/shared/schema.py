@@ -366,7 +366,6 @@ PARAM_HINTS = {
     "max_regimes": "Maximum regime summary rows to return in compact output.",
     "limit_per_bucket": "Maximum news items returned per bucket.",
     "poll_interval_seconds": "Seconds between polling attempts while waiting for events.",
-    "wait_next_bar": "Wait for the next candle boundary before returning.",
     "watch_tick_count_spike": "Watch for abnormal tick-volume spikes while waiting.",
 }
 

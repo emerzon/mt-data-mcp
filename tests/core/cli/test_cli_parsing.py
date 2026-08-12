@@ -718,10 +718,10 @@ class TestAddDynamicArguments:
                     "default": None,
                 },
                 {
-                    "name": "wait_next_bar",
-                    "type": bool,
+                    "name": "symbols",
+                    "type": Optional[List[str]],
                     "required": False,
-                    "default": False,
+                    "default": None,
                 },
                 {
                     "name": "poll_interval_seconds",
@@ -738,9 +738,14 @@ class TestAddDynamicArguments:
 
         assert "Cannot be combined with max_wait_seconds" in compact_help
         assert "Cannot be combined with timeframe or end_on" in compact_help
-        assert "Requires timeframe" in compact_help
+        assert "Basket of 1-12 trading symbols" in compact_help
+        assert "Cannot be combined with symbol" in compact_help
         assert "must be at least 0.1" in compact_help
         assert "Defaults to M1" not in compact_help
+        assert parser.parse_args(["--symbols", "EURUSD", "GBPUSD"]).symbols == [
+            "EURUSD",
+            "GBPUSD",
+        ]
 
     def test_finviz_calendar_prefers_start_end_and_hides_legacy_date_flags(self):
         parser = argparse.ArgumentParser()

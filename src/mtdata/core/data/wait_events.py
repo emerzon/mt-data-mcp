@@ -113,6 +113,20 @@ def run_wait_event_loop(
     )
     poll_interval_seconds = float(request.poll_interval_seconds)
 
+    boundary_only = (
+        not watch_for
+        and len(boundaries) == 1
+        and boundaries[0]["type"] == "candle_close"
+    )
+    if boundary_only and request.symbol is None and request.symbols is None:
+        return _run_candle_boundary_only(
+            request=request,
+            boundary=boundaries[0],
+            gateway=None,
+            sleep_impl=sleep_impl,
+            now_utc=started_at_utc,
+        )
+
     connection_error = _wait_event_connection_error(gateway)
     if connection_error is not None:
         return connection_error
@@ -125,7 +139,7 @@ def run_wait_event_loop(
     if symbol_error is not None:
         return symbol_error
 
-    if not watch_for and len(boundaries) == 1 and boundaries[0]["type"] == "candle_close":
+    if boundary_only:
         return _run_candle_boundary_only(
             request=request,
             boundary=boundaries[0],
@@ -324,7 +338,7 @@ def _compile_request(
 ) -> Dict[str, Any]:
     raw_watch_specs = request.watch_for
     watch_for_inferred = raw_watch_specs is None
-    source_watch_specs = _default_watch_specs(request) if raw_watch_specs is None else list(raw_watch_specs)
+    source_watch_specs = _expanded_watch_specs(request, raw_watch_specs)
     source_end_specs: List[Any]
     end_on_inferred = False
     if request.end_on:
@@ -369,6 +383,27 @@ def _compile_request(
         "end_on_payload": [_public_boundary_spec_payload(spec, request=request) for spec in source_end_specs],
         **watcher_requirements,
     }
+
+
+def _expanded_watch_specs(
+    request: WaitEventRequest,
+    raw_watch_specs: Optional[List[Any]],
+) -> List[Any]:
+    if raw_watch_specs is None:
+        return _default_watch_specs(request)
+    if not request.symbols:
+        return list(raw_watch_specs)
+
+    expanded: List[Any] = []
+    for spec in raw_watch_specs:
+        if getattr(spec, "symbol", None):
+            expanded.append(spec)
+            continue
+        expanded.extend(
+            spec.model_copy(update={"symbol": symbol})
+            for symbol in request.symbols
+        )
+    return expanded
 
 
 def _compile_watch_event(spec: Any, *, request: WaitEventRequest) -> Dict[str, Any]:
@@ -584,18 +619,24 @@ def _compile_boundary_event(
 
 
 def _default_watch_specs(request: WaitEventRequest) -> List[Any]:
-    specs: List[Any] = [
-        OrderCreatedEventSpec(),
-        OrderFilledEventSpec(),
-        OrderCancelledEventSpec(),
-        PositionOpenedEventSpec(),
-        PositionClosedEventSpec(),
-        TpHitEventSpec(),
-        SlHitEventSpec(),
-    ]
-    if request.symbol:
-        specs.append(PriceChangeEventSpec(symbol=request.symbol))
-        specs.append(VolumeSpikeEventSpec(symbol=request.symbol))
+    symbols = list(request.symbols or ([] if request.symbol is None else [request.symbol]))
+    if not symbols:
+        return []
+    specs: List[Any] = []
+    for symbol in symbols:
+        specs.extend(
+            [
+                OrderCreatedEventSpec(symbol=symbol),
+                OrderFilledEventSpec(symbol=symbol),
+                OrderCancelledEventSpec(symbol=symbol),
+                PositionOpenedEventSpec(symbol=symbol),
+                PositionClosedEventSpec(symbol=symbol),
+                TpHitEventSpec(symbol=symbol),
+                SlHitEventSpec(symbol=symbol),
+                PriceChangeEventSpec(symbol=symbol),
+                VolumeSpikeEventSpec(symbol=symbol),
+            ]
+        )
     return specs
 
 
@@ -669,6 +710,8 @@ def _run_candle_boundary_only(
         preview["boundary_event"] = None
         if identity_payload:
             preview.update(identity_payload)
+        if request.symbols is not None:
+            preview["symbols"] = list(request.symbols)
         if quote_payload:
             preview.update(quote_payload)
         return preview
@@ -680,19 +723,14 @@ def _run_candle_boundary_only(
         now_utc=now_utc,
     )
     payload["event"] = "candle_close"
-    payload["boundary_event"] = {
-        "type": "candle_close",
-        "timeframe": boundary["timeframe"],
-        "buffer_seconds": boundary["buffer_seconds"],
-    }
-    closed_candle = _boundary_closed_candle_payload(
+    payload["boundary_event"] = _boundary_event_payload(
         boundary=boundary,
         request=request,
         watch_for_payload=[],
         gateway=gateway,
     )
-    if closed_candle is not None:
-        payload["boundary_event"]["closed_candle"] = closed_candle
+    if payload["boundary_event"].get("candle_failures"):
+        payload["partial_failure"] = True
     payload["max_wait_seconds"] = (
         None if request.max_wait_seconds is None else float(request.max_wait_seconds)
     )
@@ -700,6 +738,8 @@ def _run_candle_boundary_only(
     payload["completed"] = True
     if identity_payload:
         payload.update(identity_payload)
+    if request.symbols is not None:
+        payload["symbols"] = list(request.symbols)
     started_at_value = _normalize_optional_utc_datetime(payload.get("started_at_utc"))
     if started_at_value is not None:
         payload["observed_at_utc"] = (
@@ -1489,15 +1529,57 @@ def _boundary_event_payload(
         "server_timezone": boundary["preview"]["server_timezone"],
     }
     if request is not None:
-        closed_candle = _boundary_closed_candle_payload(
+        if request.symbols is not None:
+            closed_candles, candle_failures = _boundary_closed_candle_collection(
+                boundary=boundary,
+                symbols=request.symbols,
+                gateway=gateway,
+            )
+            payload["closed_candles"] = closed_candles
+            if candle_failures:
+                payload["candle_failures"] = candle_failures
+        else:
+            closed_candle = _boundary_closed_candle_payload(
+                boundary=boundary,
+                request=request,
+                watch_for_payload=watch_for_payload or [],
+                gateway=gateway,
+            )
+            if closed_candle is not None:
+                payload["closed_candle"] = closed_candle
+    return payload
+
+
+def _boundary_closed_candle_collection(
+    *,
+    boundary: Dict[str, Any],
+    symbols: List[str],
+    gateway: Any,
+) -> tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+    closed_candles: List[Dict[str, Any]] = []
+    failures: List[Dict[str, Any]] = []
+    timeframe = str(boundary.get("timeframe") or "").upper().strip()
+    for symbol in symbols:
+        closed_candle = _boundary_closed_candle_for_symbol(
             boundary=boundary,
-            request=request,
-            watch_for_payload=watch_for_payload or [],
+            symbol=symbol,
             gateway=gateway,
         )
         if closed_candle is not None:
-            payload["closed_candle"] = closed_candle
-    return payload
+            closed_candles.append(closed_candle)
+            continue
+        failures.append(
+            {
+                "symbol": str(symbol).upper().strip(),
+                "timeframe": timeframe,
+                "error_code": "wait_event_closed_candle_unavailable",
+                "error": (
+                    f"No completed {timeframe} candle was available for "
+                    f"{str(symbol).upper().strip()} at the boundary."
+                ),
+            }
+        )
+    return closed_candles, failures
 
 
 def _boundary_closed_candle_payload(
@@ -1513,6 +1595,19 @@ def _boundary_closed_candle_payload(
     )
     if not symbol:
         return None
+    return _boundary_closed_candle_for_symbol(
+        boundary=boundary,
+        symbol=symbol,
+        gateway=gateway,
+    )
+
+
+def _boundary_closed_candle_for_symbol(
+    *,
+    boundary: Dict[str, Any],
+    symbol: str,
+    gateway: Any,
+) -> Optional[Dict[str, Any]]:
     timeframe = str(boundary.get("timeframe") or "").upper().strip()
     if timeframe not in TIMEFRAME_MAP:
         return None
@@ -2488,6 +2583,7 @@ def _wait_event_symbol_preflight(
         str(symbol).upper().strip()
         for symbol in [
             request.symbol,
+            *(request.symbols or []),
             *(item.get("symbol") for item in watch_for),
             *(item.get("symbol") for item in boundaries),
         ]
@@ -2560,9 +2656,11 @@ def _build_wait_result(
     matched_event = _with_wait_event_identity(matched_event)
     timed_out = status == "timeout"
     matched = status in {"matched", "already_satisfied"}
-    boundary_only = status == "boundary_reached" and not watch_for_payload
+    successful_boundary = status == "boundary_reached" and (
+        not watch_for_payload or request.symbols is not None
+    )
     result = {
-        "success": matched or boundary_only,
+        "success": matched or successful_boundary,
         "completed": not timed_out,
         "status": status,
         "matched": matched,
@@ -2585,6 +2683,10 @@ def _build_wait_result(
             "accept_preexisting": bool(request.accept_preexisting),
         },
     }
+    if request.symbols is not None:
+        result["symbols"] = list(request.symbols)
+    if isinstance(boundary_event, dict) and boundary_event.get("candle_failures"):
+        result["partial_failure"] = True
     if timed_out:
         result.update(
             {
@@ -2595,7 +2697,7 @@ def _build_wait_result(
                 ),
             }
         )
-    elif status == "boundary_reached" and not boundary_only:
+    elif status == "boundary_reached" and not successful_boundary:
         result.update(
             {
                 "error_code": "wait_event_boundary_reached",
@@ -2673,6 +2775,8 @@ def _resolved_wait_result_symbol(
     *,
     watch_for_payload: List[Dict[str, Any]],
 ) -> Optional[str]:
+    if request.symbols is not None:
+        return None
     request_symbol = str(request.symbol or "").upper().strip()
     if request_symbol:
         return request_symbol

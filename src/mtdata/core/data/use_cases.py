@@ -1467,7 +1467,9 @@ def _run_wait_event_impl(
 
 def _wait_event_needs_gateway(request: WaitEventRequest) -> bool:
     if request.watch_for is None:
-        return True
+        return request.symbol is not None or bool(request.symbols)
     if request.watch_for:
+        return True
+    if request.symbol is not None or request.symbols:
         return True
     return any(getattr(item, "type", None) != "candle_close" for item in (request.end_on or ()))

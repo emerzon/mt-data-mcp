@@ -326,19 +326,42 @@ def test_wait_event_prefers_public_symbol_name(mock_run_wait, _mock_compact, _mo
     assert request.symbol == "EURUSD"
 
 
+@patch(
+    "mtdata.core.data._build_default_wait_event_watchers",
+    side_effect=lambda symbol, **_: [{"type": "order_filled", "symbol": symbol}],
+)
 @patch("mtdata.core.data.create_mt5_gateway", return_value=object())
 @patch("mtdata.core.data._compact_wait_event_public_result", side_effect=lambda result, **_: result)
 @patch("mtdata.core.data.run_wait_event", return_value={"success": True})
-def test_wait_event_wait_next_bar_builds_boundary_only_request(
+def test_wait_event_builds_default_watchers_for_normalized_basket(
+    mock_run_wait,
+    _mock_compact,
+    _mock_gateway,
+    _mock_default_watchers,
+) -> None:
+    result = _raw_wait_event()(symbols=["eurusd", " gbpusd "], timeframe="M5")
+
+    assert result == {"success": True}
+    request = mock_run_wait.call_args.args[0]
+    assert request.symbol is None
+    assert request.symbols == ["EURUSD", "GBPUSD"]
+    assert [item.symbol for item in request.watch_for] == ["EURUSD", "GBPUSD"]
+
+
+@patch("mtdata.core.data.create_mt5_gateway", return_value=object())
+@patch("mtdata.core.data._compact_wait_event_public_result", side_effect=lambda result, **_: result)
+@patch("mtdata.core.data.run_wait_event", return_value={"success": True})
+def test_wait_event_symbol_less_timeframe_builds_boundary_only_request(
     mock_run_wait,
     _mock_compact,
     _mock_gateway,
 ) -> None:
-    result = _raw_wait_event()(symbol="EURUSD", timeframe="H1", wait_next_bar=True)
+    result = _raw_wait_event()(timeframe="H1")
 
     assert result == {"success": True}
     request = mock_run_wait.call_args.args[0]
-    assert request.symbol == "EURUSD"
+    assert request.symbol is None
+    assert request.symbols is None
     assert request.timeframe == "H1"
     assert request.max_wait_seconds is None
     assert request.watch_for == []
@@ -445,24 +468,19 @@ def test_wait_event_rejects_duration_mode_with_empty_end_on(
 
 @patch("mtdata.core.data.create_mt5_gateway", return_value=object())
 @patch("mtdata.core.data.run_wait_event", return_value={"success": True})
-def test_wait_event_rejects_wait_next_bar_with_explicit_specs(
+def test_wait_event_rejects_symbol_with_symbols(
     mock_run_wait,
     _mock_gateway,
 ) -> None:
     result = _raw_wait_event()(
         symbol="BTCUSD",
+        symbols=["EURUSD", "GBPUSD"],
         timeframe="M1",
-        wait_next_bar=True,
-        end_on=[{"type": "candle_close", "timeframe": "M1"}],
     )
 
     assert result == {
-        "error": "wait_next_bar cannot be combined with watch_for or end_on.",
+        "error": "symbol and symbols cannot be combined.",
         "error_code": "wait_event_invalid_request",
-        "hint": (
-            "Set timeframe for a candle-boundary wait or max_wait_seconds for a "
-            "duration wait. Do not combine max_wait_seconds with timeframe or end_on."
-        ),
     }
     mock_run_wait.assert_not_called()
 
@@ -485,11 +503,11 @@ def test_wait_event_rejects_conflicting_end_on_timeframe(
     mock_run_wait.assert_not_called()
 
 
-def test_wait_event_missing_symbol_uses_standard_error_code() -> None:
-    result = _raw_wait_event()(timeframe="M1")
+def test_wait_event_duration_without_scope_uses_standard_error_code() -> None:
+    result = _raw_wait_event()(max_wait_seconds=30)
 
     assert result == {
-        "error": "symbol is required when watch_for is omitted.",
+        "error": "symbol or symbols is required when watch_for is omitted in duration mode.",
         "error_code": "wait_event_invalid_request",
     }
 
