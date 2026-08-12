@@ -153,7 +153,7 @@ _INDICATOR_TRADING_CONTEXT: Dict[str, Dict[str, Any]] = {
     },
     "vwap": {
         "common_use": "intraday fair-value reference and institutional participation context",
-        "typical_parameters": "daily VWAP; reset at the UTC day boundary",
+        "typical_parameters": "daily VWAP; reset at the configured broker-server day boundary",
         "pairs_well_with": ["volume", "rsi", "price_action"],
         "trading_styles": ["intraday"],
     },

@@ -216,16 +216,12 @@ def _invoke_cli_tool_function(
             filename = os.path.normcase(str(getattr(record, "filename", "") or ""))
             if "site-packages" in filename or "dist-packages" in filename:
                 continue
-        try:
-            text = warnings.formatwarning(
-                message=record.message,
-                category=category,
-                filename=record.filename,
-                lineno=record.lineno,
-                line=record.line,
-            ).strip()
-        except Exception:
-            text = str(getattr(record, "message", "")).strip()
+        # A Python warning's filename, line number, and source snippet are
+        # developer diagnostics, not part of the public CLI contract.  Apart
+        # from leaking host paths, ``warnings.formatwarning`` produces
+        # multiline values that are needlessly expensive for agents to parse.
+        # Preserve the warning message itself as a compact, path-free string.
+        text = " ".join(str(getattr(record, "message", "")).split())
         if not text or text in seen:
             continue
         seen.add(text)

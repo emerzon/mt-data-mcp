@@ -444,6 +444,50 @@ def _resolve_indicator_series_inputs(
     return resolved
 
 
+def _broker_session_vwap(
+    df: pd.DataFrame,
+    *,
+    volume: pd.Series,
+) -> pd.Series:
+    """Return daily VWAP reset on the configured broker calendar.
+
+    pandas-ta groups VWAP through a timezone-dropping ``PeriodIndex`` and
+    therefore resets at UTC midnight for the UTC-indexed bars used here.  MT5
+    daily sessions instead follow the broker/server calendar.  Grouping a
+    timezone-aware index after converting it to that calendar preserves each
+    instant and also follows DST transitions.
+    """
+    from .time import _broker_calendar_timezone
+
+    if not isinstance(df.index, pd.DatetimeIndex):
+        raise ValueError("VWAP requires a datetime index")
+    utc_index = df.index
+    if utc_index.tz is None:
+        utc_index = utc_index.tz_localize("UTC")
+    else:
+        utc_index = utc_index.tz_convert("UTC")
+    if len(utc_index) == 0:
+        return pd.Series(dtype=float, index=df.index, name="VWAP_D")
+
+    broker_tz = _broker_calendar_timezone(utc_index[0].to_pydatetime())
+    session_dates = pd.Series(
+        utc_index.tz_convert(broker_tz).date,
+        index=df.index,
+        dtype="object",
+    )
+    high = pd.to_numeric(df["high"], errors="coerce")
+    low = pd.to_numeric(df["low"], errors="coerce")
+    close = pd.to_numeric(df["close"], errors="coerce")
+    weights = pd.to_numeric(volume, errors="coerce").fillna(0.0)
+    typical_price = (high + low + close) / 3.0
+    cumulative_value = (typical_price * weights).groupby(session_dates).cumsum()
+    cumulative_volume = weights.groupby(session_dates).cumsum()
+    out = cumulative_value.div(cumulative_volume.where(cumulative_volume > 0))
+    out.name = "VWAP_D"
+    df.attrs["vwap_reset_calendar"] = "broker_server_day"
+    return out
+
+
 def _apply_ta_indicators(df: pd.DataFrame, ti_spec: str) -> List[str]:  # noqa: C901
     """Apply indicators specified by ti_spec to df in-place, return list of added column names."""
     added_cols: List[str] = []
@@ -469,6 +513,30 @@ def _apply_ta_indicators(df: pd.DataFrame, ti_spec: str) -> List[str]:  # noqa: 
         volume_series = _resolve_indicator_volume_series(df)
         for name, args, kwargs in specs:
             lname = _normalize_ta_indicator_name(name)
+            if lname == "vwap":
+                if args or kwargs:
+                    raise ValueError(
+                        "Indicator 'vwap' uses the broker-server daily session and "
+                        "does not accept parameters."
+                    )
+                missing = [
+                    column for column in ("high", "low", "close") if column not in df.columns
+                ]
+                if volume_series is None:
+                    missing.append("volume")
+                if missing:
+                    raise ValueError(
+                        _format_missing_indicator_columns(
+                            "vwap",
+                            required=["high", "low", "close", "volume"],
+                            missing=missing,
+                            available=list(df.columns),
+                        )
+                    )
+                df["VWAP_D"] = _broker_session_vwap(df, volume=volume_series)
+                added_cols.append("VWAP_D")
+                before = set(df.columns)
+                continue
             func = getattr(pta, lname, None)
             if not callable(func):
                 continue

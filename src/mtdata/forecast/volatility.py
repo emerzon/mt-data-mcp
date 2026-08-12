@@ -1710,14 +1710,14 @@ def forecast_volatility(  # noqa: C901
                 p_order = int(p.get('p', 1))
                 q_order = int(p.get('q', 1))
                 if base_method == 'egarch':
-                    am = _arch_model(r_fit, mean=mean_model, vol='EGARCH', p=p_order, q=q_order, dist=dist)
+                    am = _arch_model(r_fit, mean=mean_model, vol='EGARCH', p=p_order, q=q_order, dist=dist, rescale=False)
                 elif base_method == 'gjr_garch':
                     o_order = int(p.get('o', 1))
-                    am = _arch_model(r_fit, mean=mean_model, vol='GARCH', p=p_order, o=o_order, q=q_order, dist=dist)
+                    am = _arch_model(r_fit, mean=mean_model, vol='GARCH', p=p_order, o=o_order, q=q_order, dist=dist, rescale=False)
                 elif base_method == 'figarch':
-                    am = _arch_model(r_fit, mean=mean_model, vol='FIGARCH', p=p_order, q=q_order, dist=dist)
+                    am = _arch_model(r_fit, mean=mean_model, vol='FIGARCH', p=p_order, q=q_order, dist=dist, rescale=False)
                 else:
-                    am = _arch_model(r_fit, mean=mean_model, vol='GARCH', p=p_order, q=q_order, dist=dist)
+                    am = _arch_model(r_fit, mean=mean_model, vol='GARCH', p=p_order, q=q_order, dist=dist, rescale=False)
                 res = am.fit(disp='off')
                 fc = res.forecast(horizon=max(1, int(horizon)), reindex=False)
                 variances = fc.variance.values[-1]

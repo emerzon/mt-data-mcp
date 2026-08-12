@@ -715,6 +715,7 @@ class TestForecastVolatilityGarch:
 
         assert result.get("success") is True
         assert arch_model.call_args.kwargs["mean"] == "Constant"
+        assert arch_model.call_args.kwargs["rescale"] is False
         assert result["params_used"]["mean"] == "Constant"
 
     def test_garch_fit_error(self):

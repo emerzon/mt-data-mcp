@@ -867,6 +867,37 @@ class TestMain:
         assert "pending deprecation path" not in out.out
 
     @patch("mtdata.core.cli.api.discover_tools")
+    def test_cli_runtime_warnings_are_compact_and_path_free(
+        self, mock_discover, capsys
+    ):
+        import warnings
+
+        def noisy_tool(**_kwargs):
+            warnings.warn_explicit(
+                "optimizer input is\npoorly scaled",
+                RuntimeWarning,
+                filename=r"C:\\Users\\secret\\site-packages\\library.py",
+                lineno=42,
+            )
+            return {"ok": True}
+
+        info = get_function_info(noisy_tool)
+        mock_discover.return_value = {
+            "noisy_tool": {
+                "func": noisy_tool,
+                "meta": {"description": "Noisy tool"},
+                "_cli_func_info": info,
+            },
+        }
+
+        with patch("sys.argv", ["cli.py", "--json", "noisy_tool"]):
+            result = main()
+
+        assert result == 0
+        payload = json.loads(capsys.readouterr().out)
+        assert payload["warnings"] == ["optimizer input is poorly scaled"]
+
+    @patch("mtdata.core.cli.api.discover_tools")
     def test_cli_ignores_import_warnings_in_structured_output(
         self, mock_discover, capsys
     ):

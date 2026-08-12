@@ -1,5 +1,6 @@
 import importlib.util
 import sys
+import warnings
 from pathlib import Path
 
 import numpy as np
@@ -163,7 +164,7 @@ def test_apply_ta_indicators_maps_open_column_to_open_Parameter(monkeypatch) -> 
     assert observed["open"].equals(df["open"])
 
 
-def test_indicator_datetime_index_uses_utc_epoch_not_display_time(monkeypatch) -> None:
+def test_vwap_uses_utc_epoch_and_resets_on_broker_day(monkeypatch) -> None:
     epochs = np.array([1_700_000_000 + 3600 * i for i in range(20)], dtype=float)
     close = np.linspace(100.0, 101.0, len(epochs))
     df = pd.DataFrame(
@@ -176,18 +177,41 @@ def test_indicator_datetime_index_uses_utc_epoch_not_display_time(monkeypatch) -
             "volume": np.arange(1, len(epochs) + 1, dtype=float),
         }
     )
-    observed = {}
-
-    def _fake_vwap(high, low, close, volume):
-        observed["index"] = close.index.copy()
-        return pd.Series(close, index=close.index, name="VWAP_D")
-
-    monkeypatch.setattr(indicators.pta, "vwap", _fake_vwap, raising=False)
+    monkeypatch.setattr(
+        "mtdata.bootstrap.settings.mt5_config.get_server_tz",
+        lambda: __import__("pytz").timezone("Europe/Nicosia"),
+    )
 
     _apply_ta_indicators(df, "vwap")
 
-    expected = pd.to_datetime(epochs, unit="s", utc=True)
-    assert observed["index"].equals(expected)
+    assert "VWAP_D" in df
+    assert df.attrs["vwap_reset_calendar"] == "broker_server_day"
+
+
+def test_vwap_resets_at_broker_midnight_not_utc_midnight(monkeypatch) -> None:
+    idx = pd.to_datetime(
+        ["2026-08-05T20:00:00Z", "2026-08-05T21:00:00Z", "2026-08-05T22:00:00Z"]
+    )
+    df = pd.DataFrame(
+        {
+            "high": [1.0, 3.0, 5.0],
+            "low": [1.0, 3.0, 5.0],
+            "close": [1.0, 3.0, 5.0],
+            "volume": [1.0, 1.0, 1.0],
+        },
+        index=idx,
+    )
+    monkeypatch.setattr(
+        "mtdata.bootstrap.settings.mt5_config.get_server_tz",
+        lambda: __import__("pytz").timezone("Europe/Nicosia"),
+    )
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        _apply_ta_indicators(df, "vwap")
+
+    assert not caught
+    assert df["VWAP_D"].tolist() == pytest.approx([1.0, 3.0, 4.0])
 
 
 def test_apply_ta_indicators_raises_actionable_error_without_retries(monkeypatch) -> None:
