@@ -688,7 +688,7 @@ def test_build_pattern_response_compact_keeps_actionable_fields():
             "status": "forming",
             "match_score": 0.85,
             "time": "2026-03-02 00:00",
-            "price": 12.0,
+            "reference_price": 12.0,
         }
     ]
     assert "recent_patterns" not in compact
@@ -915,6 +915,68 @@ def test_build_pattern_response_compact_counts_omitted_rows_when_truncated():
     assert "verdict" not in compact
     assert "hints" not in compact
     assert "show_all_hint" not in compact
+
+
+def test_build_pattern_response_compact_honors_caller_top_k():
+    df = pd.DataFrame({"time": [1, 2, 3], "close": [10.0, 11.0, 12.0]})
+    patterns = [
+        {
+            "name": f"Pattern {index}",
+            "status": "forming",
+            "confidence": 0.8,
+            "end_index": index,
+        }
+        for index in range(3)
+    ]
+
+    compact = _build_pattern_response(
+        "EURUSD",
+        "H1",
+        100,
+        "classic",
+        patterns,
+        include_completed=False,
+        include_series=False,
+        series_time="string",
+        df=df,
+        detail="compact",
+        top_k=1,
+    )
+
+    assert compact["patterns_shown"] == 1
+    assert len(compact["top_patterns"]) == 1
+    assert compact["result_limit"]["requested_top_k"] == 1
+
+
+def test_compact_pattern_level_keeps_level_side_and_reference_distinct():
+    compact = patterns_support_mod._compact_patterns_payload(
+        {
+            "success": True,
+            "symbol": "EURUSD",
+            "timeframe": "H1",
+            "lookback": 300,
+            "mode": "classic",
+            "n_patterns": 1,
+            "patterns": [
+                {
+                    "name": "Horizontal Trend Line",
+                    "status": "forming",
+                    "confidence": 0.95,
+                    "end_index": 2,
+                    "reference_price": 1.15595,
+                    "price_levels": {"line_level_recent": 1.15337711},
+                    "details": {"side": "high"},
+                }
+            ],
+        },
+        preview_limit=1,
+    )
+
+    row = compact["top_patterns"][0]
+    assert row["level_price"] == 1.15337711
+    assert row["reference_price"] == 1.15595
+    assert row["side"] == "high"
+    assert "price" not in row
 
 
 def test_compact_patterns_payload_honors_preview_limit_above_three():

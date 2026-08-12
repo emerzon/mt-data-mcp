@@ -574,6 +574,7 @@ def run_patterns_detect(  # noqa: C901
                 request.series_time,
                 df,
                 detail=detail_value,
+                top_k=request.top_k,
             )
             resp["engine"] = (
                 "ensemble"
@@ -617,6 +618,7 @@ def run_patterns_detect(  # noqa: C901
             request.series_time,
             df,
             detail=detail_value,
+            top_k=request.top_k,
         )
         resp["engine"] = "ensemble" if run_ensemble else next(iter(non_empty.keys()))
         resp["engines_run"] = engines
@@ -678,6 +680,7 @@ def run_patterns_detect(  # noqa: C901
             request.series_time,
             df,
             detail=detail_value,
+            top_k=request.top_k,
         )
         fractal_context = deps.summarize_fractal_context(visible_rows)
         if fractal_context:
@@ -764,6 +767,7 @@ def run_patterns_detect(  # noqa: C901
             request.series_time,
             df,
             detail=detail_value,
+            top_k=request.top_k,
         )
         _attach_recommended_min_bars(resp, mode_value, request.limit)
         _attach_signal_bias_summary(resp, deps)
@@ -815,6 +819,7 @@ def run_patterns_detect(  # noqa: C901
                 request.series_time,
                 df,
                 detail=detail_value,
+                top_k=request.top_k,
             )
             _attach_recommended_min_bars(resp, mode_value, request.limit)
             return resp

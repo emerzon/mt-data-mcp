@@ -362,6 +362,7 @@ def _build_pattern_response(  # noqa: C901
     series_time: str,
     df: pd.DataFrame,
     detail: PatternsDetailLiteral = "compact",
+    top_k: int = 8,
 ) -> Dict[str, Any]:
     """Build the response dict for pattern detection results."""
     # Harmonic candidates have both forming and completed lifecycle states.
@@ -532,7 +533,7 @@ def _build_pattern_response(  # noqa: C901
 
     detail_value = str(detail).lower().strip()
     if detail_value in ("compact", "summary"):
-        compact_resp = _compact_patterns_payload(resp)
+        compact_resp = _compact_patterns_payload(resp, preview_limit=top_k)
         if detail_value == "summary":
             return {
                 key: value

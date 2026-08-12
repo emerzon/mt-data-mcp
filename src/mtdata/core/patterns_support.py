@@ -588,6 +588,48 @@ def _compact_patterns_payload(  # noqa: C901
                 return value
         return None
 
+    def _compact_price_fields(row: Dict[str, Any]) -> Dict[str, Any]:
+        """Keep detected levels distinct from the price used as context."""
+        result: Dict[str, Any] = {}
+        price_levels = row.get("price_levels")
+        if not isinstance(price_levels, dict):
+            price_levels = {}
+        details = row.get("details")
+        if not isinstance(details, dict):
+            details = {}
+
+        level_price = _first_present(
+            row,
+            "level_price",
+        )
+        if level_price in (None, ""):
+            level_price = _first_present(
+                price_levels,
+                "line_level_recent",
+                "level_price",
+            )
+        if level_price not in (None, ""):
+            result["level_price"] = level_price
+
+        reference_price = row.get("reference_price")
+        if reference_price not in (None, ""):
+            result["reference_price"] = reference_price
+
+        side = _first_present(row, "side")
+        if side in (None, ""):
+            side = _first_present(details, "side")
+        if side not in (None, ""):
+            result["side"] = side
+
+        breakout_price = row.get("breakout_price")
+        if breakout_price not in (None, ""):
+            result["breakout_price"] = breakout_price
+
+        raw_price = row.get("price")
+        if raw_price not in (None, "") and level_price in (None, ""):
+            result["price"] = raw_price
+        return result
+
     strongest_row: Optional[Dict[str, Any]] = None
     if preview_rows:
         strongest_row = max(
@@ -643,15 +685,7 @@ def _compact_patterns_payload(  # noqa: C901
         )
         if time_value not in (None, ""):
             strongest_compact["time"] = time_value
-        price_value = _first_present(
-            strongest_row,
-            "price",
-            "reference_price",
-            "level_price",
-            "breakout_price",
-        )
-        if price_value not in (None, ""):
-            strongest_compact["price"] = price_value
+        strongest_compact.update(_compact_price_fields(strongest_row))
         if not strongest_compact:
             strongest_compact = None
 
@@ -696,14 +730,7 @@ def _compact_patterns_payload(  # noqa: C901
         )
         if time_value not in (None, ""):
             item["time"] = time_value
-        price_value = (
-            row.get("price")
-            or row.get("reference_price")
-            or row.get("level_price")
-            or row.get("breakout_price")
-        )
-        if price_value not in (None, ""):
-            item["price"] = price_value
+        item.update(_compact_price_fields(row))
         if item:
             top_patterns.append(item)
 
