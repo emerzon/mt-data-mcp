@@ -1519,7 +1519,7 @@ class TestReportWarnings:
         assert res["sections_status"]["details"]["barriers"]["errors"][0]["path"] == "short"
         assert "usable data" in res["sections_status"]["definitions"]["partial"]
         assert res["section_run_status"] == "partial"
-        assert res["success"] is True
+        assert res["success"] is False
 
     def test_sections_status_filters_placeholder_error_noise(self):
         fn = _get_report_generate()
@@ -1565,7 +1565,7 @@ class TestReportWarnings:
 
         assert res["sections_status"]["sections"]["forecast"] == "error"
         assert res["section_run_status"] == "partial"
-        assert res["success"] is True
+        assert res["success"] is False
         assert res["sections_to_retry"] == ["forecast"]
 
     def test_all_error_sections_mark_report_failed(self):

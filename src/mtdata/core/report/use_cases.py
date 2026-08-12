@@ -1620,7 +1620,7 @@ def run_report_generate(  # noqa: C901
                     if request.include_sections or request.max_sections is not None
                     else "full_sections"
                 )
-                rep["success"] = not hard_failed
+                rep["success"] = rep["section_run_status"] == "complete"
                 if selection_failed:
                     rep["error_code"] = "report_sections_not_found"
                     rep["error"] = (
