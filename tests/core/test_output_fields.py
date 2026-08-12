@@ -17,14 +17,20 @@ def test_output_fields_supports_dotted_nested_paths() -> None:
     }
 
 
-def test_output_fields_rejects_partially_unresolved_projection() -> None:
+def test_output_fields_ignores_partially_unresolved_projection() -> None:
     payload = {"success": True, "symbol": "EURUSD", "details": {"digits": 5}}
 
     result = _select_output_fields(payload, "symbol,details.missing")
 
-    assert result["success"] is False
-    assert result["error_code"] == "invalid_output_fields"
-    assert result["unresolved_fields"] == ["details.missing"]
+    assert result == {"success": True, "symbol": "EURUSD"}
+
+
+def test_output_fields_allows_error_field_on_success() -> None:
+    payload = {"success": True, "symbol": "EURUSD", "data": [1, 2]}
+
+    result = _select_output_fields(payload, "success,data,error")
+
+    assert result == {"success": True, "symbol": "EURUSD", "data": [1, 2]}
 
 
 def test_output_fields_does_not_inject_units_for_selected_values() -> None:

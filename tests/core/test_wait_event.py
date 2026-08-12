@@ -383,7 +383,7 @@ def test_wait_event_rejects_timeframe_with_max_wait_seconds(
     )
 
     assert result == {
-        "error": "Provide exactly one of timeframe or max_wait_seconds, not both.",
+        "error": "Do not combine timeframe with max_wait_seconds.",
         "error_code": "wait_event_invalid_request",
         "hint": (
             "Set timeframe for a candle-boundary wait or "
@@ -402,9 +402,7 @@ def test_wait_event_rejects_missing_wait_mode(
 ) -> None:
     result = _raw_wait_event()(symbol="BTCUSD")
 
-    assert result["error"] == (
-        "Provide exactly one of timeframe or max_wait_seconds, not both."
-    )
+    assert result["error"] == "Provide exactly one of timeframe or max_wait_seconds."
     assert result["error_code"] == "wait_event_invalid_request"
     mock_run_wait.assert_not_called()
 
@@ -428,6 +426,25 @@ def test_wait_event_duration_mode_does_not_add_candle_boundary(
     assert request.timeframe is None
     assert request.max_wait_seconds == 30
     assert request.end_on == []
+
+
+@patch("mtdata.core.data.create_mt5_gateway", return_value=object())
+@patch("mtdata.core.data._compact_wait_event_public_result", side_effect=lambda result, **_: result)
+@patch("mtdata.core.data.run_wait_event", return_value={"success": True})
+def test_wait_event_forwards_accept_preexisting(
+    mock_run_wait,
+    _mock_compact,
+    _mock_gateway,
+) -> None:
+    result = _raw_wait_event()(
+        symbol="BTCUSD",
+        max_wait_seconds=30,
+        accept_preexisting=True,
+        watch_for=[{"type": "price_touch_level", "level": 70000}],
+    )
+
+    assert result == {"success": True}
+    assert mock_run_wait.call_args.args[0].accept_preexisting is True
 
 
 @patch("mtdata.core.data.create_mt5_gateway", return_value=object())

@@ -37,10 +37,21 @@ _COMMAND_PARAM_CHOICE_OVERRIDES: Dict[tuple[str, str], list[str]] = {}
 
 _POSITIONAL_ONLY_OPTIONAL_FIRST_PARAMS: set[tuple[str, str]] = set()
 
+_SEARCH_ALIAS_COMMANDS = frozenset(
+    {
+        "finviz_filters_list",
+        "forecast_list_methods",
+        "indicators_list",
+        "symbols_list",
+        "tools_list",
+    }
+)
+
 _OPTION_ALIAS_DEST_PREFIX = "_cli_option_"
 
 _MULTI_VALUE_SYMBOL_POSITIONAL_COMMANDS = frozenset(
     {
+        "causal_discover_signals",
         "correlation_matrix",
         "cointegration_test",
         "cross_correlation",
@@ -157,8 +168,19 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
         "--min-cycles."
     ),
     ("causal_discover_signals", "symbols"): (
-        "Comma-separated MT5 symbols (e.g. EURUSD,GBPUSD); one symbol auto-expands "
-        "to its MT5 group. Optional with --group."
+        "Comma- or space-separated MT5 symbols (e.g. EURUSD,GBPUSD or "
+        "EURUSD GBPUSD); one symbol auto-expands to its MT5 group. Optional "
+        "with --group."
+    ),
+    ("trade_execution_quality", "side"): "Execution fill side filter: buy or sell.",
+    ("trade_execution_quality", "min_sample"): (
+        "Minimum eligible fills required for sufficient execution-quality evidence."
+    ),
+    ("trade_history", "column_style"): (
+        "Trade-history field naming: snake_case or humanized."
+    ),
+    ("market_microstructure_analyze", "max_ticks"): (
+        "Maximum raw ticks retained for microstructure analysis."
     ),
     ("options_barrier_price", "option_type"): "Option side: call or put.",
     ("options_barrier_price", "calendar"): (
@@ -793,6 +815,15 @@ def resolve_param_kwargs(
         kwargs["choices"] = choices
         kwargs["type"] = _case_insensitive_choice_parser(choices)
 
+    if choice_override_key == ("trade_place", "order_type") and kwargs.get("choices"):
+        parse_choice = _case_insensitive_choice_parser(kwargs["choices"])
+
+        def _parse_order_type(value: Any) -> str:
+            normalized = str(value or "").strip().replace("-", "_").replace(" ", "_")
+            return parse_choice(normalized)
+
+        kwargs["type"] = _parse_order_type
+
     if (str(cmd_name or ""), str(param["name"])) == ("indicators_list", "category"):
         kwargs["type"] = lambda value: str(value or "").strip().lower()
 
@@ -816,6 +847,10 @@ def add_dynamic_arguments(  # noqa: C901
             extras.append("--ticket")
         if cmd_name_value == "forecast_backtest_run" and param_name == "methods":
             extras.append("--method")
+        if cmd_name_value in _SEARCH_ALIAS_COMMANDS and param_name == "search":
+            extras.append("--search-term")
+        elif cmd_name_value in _SEARCH_ALIAS_COMMANDS and param_name == "search_term":
+            extras.append("--search")
         return tuple(extras)
 
     for param in param_info["params"]:
@@ -856,6 +891,11 @@ def add_dynamic_arguments(  # noqa: C901
             and str(param["name"]) in {"symbol", "symbols"}
         )
         if required_symbol_alias:
+            parser.usage = (
+                "%(prog)s (SYMBOL | --symbol SYMBOL) [options]"
+                if str(param["name"]) == "symbol"
+                else "%(prog)s (SYMBOL [SYMBOL ...] | --symbols SYMBOLS) [options]"
+            )
             positional_kwargs = {
                 k: v
                 for k, v in kwargs.items()

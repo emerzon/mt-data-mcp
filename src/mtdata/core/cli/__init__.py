@@ -9,6 +9,27 @@ from ..error_envelope import build_error_payload
 from .catalog import format_root_help, known_command_names
 from .version import cli_version
 
+_GLOBAL_OPTIONS_WITH_VALUES = frozenset(
+    {"--output-fields", "--precision", "--timeframe"}
+)
+_GLOBAL_FLAG_OPTIONS = frozenset({"--json"})
+
+
+def _leading_command_token(argv: Sequence[str]) -> Optional[str]:
+    """Return the command token after any supported leading global options."""
+    index = 0
+    while index < len(argv):
+        token = str(argv[index])
+        option = token.split("=", 1)[0]
+        if option in _GLOBAL_FLAG_OPTIONS:
+            index += 1
+            continue
+        if option in _GLOBAL_OPTIONS_WITH_VALUES:
+            index += 1 if "=" in token else 2
+            continue
+        return token
+    return None
+
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
     """Handle cheap entry-point modes before importing the full tool graph."""
@@ -25,7 +46,18 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         print(format_root_help(program))
         return 1
 
-    raw_command = effective_argv[0]
+    raw_command = _leading_command_token(effective_argv)
+    if raw_command is None:
+        from . import api
+
+        if argv is None:
+            return api.main()
+        original_argv = list(sys.argv)
+        try:
+            sys.argv = [original_argv[0], *effective_argv]
+            return api.main()
+        finally:
+            sys.argv = original_argv
     normalized_command = raw_command.replace("-", "_")
     known_commands = {*known_command_names(), "shell"}
     if not raw_command.startswith("-") and normalized_command not in known_commands:

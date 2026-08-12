@@ -96,7 +96,10 @@ def test_required_symbol_help_shows_positional_and_flag_forms() -> None:
     )
 
     help_text = parser.format_help()
-    assert "usage: mtdata-cli sample_tool [-h] [--symbol SYMBOL] [symbol]" in help_text
+    assert (
+        "usage: mtdata-cli sample_tool (SYMBOL | --symbol SYMBOL) [options]"
+        in help_text
+    )
     assert "Trading symbol (e.g. EURUSD). (required)" in help_text
 
 
@@ -308,6 +311,12 @@ class TestAddDynamicArguments:
         )
         assert args.volume == 0.01
         assert args.order_type == "BUY"
+        assert parser.parse_args(
+            ["EURUSD", "--volume", "0.01", "--order-type", "buy-stop"]
+        ).order_type == "BUY_STOP"
+        assert parser.parse_args(
+            ["EURUSD", "--volume", "0.01", "--order-type", "BUY STOP"]
+        ).order_type == "BUY_STOP"
         help_text = parser.format_help()
         assert "volume" in help_text and "(required)" in help_text
 
@@ -1257,17 +1266,13 @@ class TestResolveParamKwargs:
             cmd_name=cmd_name,
         )
 
-        expected_prefix = (
-            "Comma-separated MT5 symbols"
-            if cmd_name == "causal_discover_signals"
-            else "Comma- or space-separated MT5 symbols"
-        )
-        assert expected_prefix in kwargs["help"]
+        assert "Comma- or space-separated MT5 symbols" in kwargs["help"]
         assert "Optional with --group" in kwargs["help"]
 
     @pytest.mark.parametrize(
         ("cmd_name", "required"),
         [
+            ("causal_discover_signals", False),
             ("correlation_matrix", False),
             ("cointegration_test", False),
             ("cross_correlation", True),
@@ -1295,6 +1300,37 @@ class TestResolveParamKwargs:
         )
 
         assert parser.parse_args(["EURUSD", "GBPUSD"]).symbols == ["EURUSD", "GBPUSD"]
+
+    @pytest.mark.parametrize(
+        ("cmd_name", "param_name", "alias"),
+        [
+            ("finviz_filters_list", "search", "--search-term"),
+            ("forecast_list_methods", "search_term", "--search"),
+        ],
+    )
+    def test_catalog_search_flags_accept_both_spellings(
+        self,
+        cmd_name,
+        param_name,
+        alias,
+    ):
+        parser = argparse.ArgumentParser(allow_abbrev=False)
+        add_dynamic_arguments(
+            parser,
+            {
+                "params": [
+                    {
+                        "name": param_name,
+                        "type": str,
+                        "required": False,
+                        "default": None,
+                    }
+                ]
+            },
+            cmd_name=cmd_name,
+        )
+
+        assert getattr(parser.parse_args([alias, "cap"]), param_name) == "cap"
 
     def test_labels_triple_barrier_limit_and_lookback_help_distinguish_roles(self):
         limit_kwargs, _ = _resolve_param_kwargs(

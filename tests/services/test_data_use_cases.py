@@ -185,6 +185,16 @@ def test_data_fetch_requests_accept_simplify_boolean_and_modes():
     assert ticks_off.simplify is None
 
 
+@pytest.mark.parametrize("value", ["true", "on", "auto", "default"])
+def test_data_fetch_requests_accept_documented_simplify_on_strings(value):
+    assert DataFetchCandlesRequest(symbol="EURUSD", simplify=value).simplify == {}
+
+
+@pytest.mark.parametrize("value", ["false", "off"])
+def test_data_fetch_requests_accept_documented_simplify_off_strings(value):
+    assert DataFetchTicksRequest(symbol="EURUSD", simplify=value).simplify is None
+
+
 def test_data_fetch_requests_explain_invalid_simplify_string():
     with pytest.raises(ValidationError) as exc_info:
         DataFetchCandlesRequest(symbol="EURUSD", simplify="maybe")

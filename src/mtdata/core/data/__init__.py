@@ -708,6 +708,7 @@ def wait_event(
     watch_tick_count_spike: bool = True,
     max_wait_seconds: Optional[float] = None,
     poll_interval_seconds: Optional[float] = None,
+    accept_preexisting: bool = False,
     watch_for: Optional[List[Dict[str, Any]]] = None,
     end_on: Optional[List[Dict[str, Any]]] = None,
     detail: DetailLiteral = "compact",
@@ -751,6 +752,10 @@ def wait_event(
     Set `poll_interval_seconds` to tune polling cadence; omit it to use the
     engine default.
 
+    Set `accept_preexisting=true` to return immediately when a state-style
+    watcher is already satisfied during setup. The default false value keeps
+    edge-triggered semantics and waits for a new transition after startup.
+
     Boundary waits belong in `end_on` as `{"type": "candle_close", ...}`.
     `watch_for` is for explicit market/account event objects only; pass
     candle-close boundary objects in `end_on` instead.
@@ -787,10 +792,10 @@ def wait_event(
     explicit_watch_for = normalized_watch_for is not None
     explicit_end_on = normalized_end_on is not None
     wait_mode_error: Optional[str] = None
-    if (timeframe is None) == (max_wait_seconds is None):
-        wait_mode_error = (
-            "Provide exactly one of timeframe or max_wait_seconds, not both."
-        )
+    if timeframe is None and max_wait_seconds is None:
+        wait_mode_error = "Provide exactly one of timeframe or max_wait_seconds."
+    elif timeframe is not None and max_wait_seconds is not None:
+        wait_mode_error = "Do not combine timeframe with max_wait_seconds."
     elif max_wait_seconds is not None and end_on_provided:
         wait_mode_error = "max_wait_seconds cannot be combined with end_on."
     request_error: Optional[str] = None
@@ -835,6 +840,7 @@ def wait_event(
         if symbols_value is not None:
             request_kwargs["symbols"] = list(symbols_value)
         request_kwargs["max_wait_seconds"] = max_wait_seconds
+        request_kwargs["accept_preexisting"] = bool(accept_preexisting)
         if poll_interval_seconds is not None:
             request_kwargs["poll_interval_seconds"] = poll_interval_seconds
         if normalized_end_on is not None:

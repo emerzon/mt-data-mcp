@@ -138,7 +138,9 @@ class TradePlaceRequest(BaseModel):
     @field_validator("order_type", mode="before")
     @classmethod
     def _normalize_order_type(cls, value: Any) -> Any:
-        return str(value).strip().upper() if isinstance(value, str) else value
+        if not isinstance(value, str):
+            return value
+        return value.strip().upper().replace("-", "_").replace(" ", "_")
 
     @property
     def auto_close_on_sl_tp_fail(self) -> bool:

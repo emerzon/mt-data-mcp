@@ -1568,15 +1568,12 @@ class TestForecastGenerateIntegration:
                 "meta": {"description": "Generate forecasts"},
             },
         }
-        with (
-            patch("sys.argv", ["cli.py", "forecast_generate", "--json"]),
-            pytest.raises(SystemExit) as exc_info,
-        ):
-            main()
+        with patch("sys.argv", ["cli.py", "forecast_generate", "--json"]):
+            status = main()
 
-        assert exc_info.value.code == 2
+        assert status == 1
         payload = json.loads(capsys.readouterr().out)
-        assert payload["error_code"] == "cli_invalid_arguments"
+        assert payload["error_code"] == "cli_missing_required"
         assert payload["operation"] == "forecast_generate"
         assert "symbol" in payload["error"]
 
@@ -2063,8 +2060,8 @@ class TestEdgeCases:
         assert "extras" in payload["error"]
 
     @patch("mtdata.core.cli.api.discover_tools")
-    def test_invalid_output_fields_exit_nonzero(self, mock_discover):
-        def sample_tool():
+    def test_missing_optional_output_fields_do_not_fail(self, mock_discover, capsys):
+        def sample_tool(output_fields=None, **_kwargs):
             return {"success": True, "value": 1}
 
         mock_discover.return_value = {
@@ -2080,8 +2077,9 @@ class TestEdgeCases:
         ):
             status = main()
 
-        assert status == 1
+        assert status == 0
         assert mock_discover.called
+        assert json.loads(capsys.readouterr().out)["success"] is True
 
     @patch("mtdata.core.cli.api.discover_tools")
     def test_json_mode_formats_argparse_failures_as_json(self, mock_discover, capsys):

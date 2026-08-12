@@ -795,18 +795,10 @@ def _select_output_fields(value: Any, fields: Any) -> Any:
             unresolved.append(requested_field)
             continue
         selected = _merge_output_field_selection(selected, filtered)
-    if not unresolved:
-        return selected
-    if value.get("error"):
-        return value
-    return {
-        "success": False,
-        "error_code": "invalid_output_fields",
-        "error": "One or more requested output fields were not present.",
-        "requested_fields": list(requested),
-        "unresolved_fields": unresolved,
-        "available_fields": sorted(str(key) for key in value),
-    }
+    # Projection is a narrowing operation over the concrete response, not a
+    # schema assertion. Optional, mode-specific, and error-only fields may be
+    # absent without turning an otherwise successful tool call into a failure.
+    return selected
 
 
 def _callable_accepts_kwarg(func: Any, name: str) -> bool:

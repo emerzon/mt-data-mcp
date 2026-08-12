@@ -954,6 +954,7 @@ def _add_forecast_generate_args(cmd_parser: argparse.ArgumentParser) -> None:
         "Generate forecasts with an optional preprocessing pipeline."
     )
     cmd_parser.epilog = _forecast_generate_typed_value_epilog()
+    cmd_parser.usage = "%(prog)s (SYMBOL | --symbol SYMBOL) [options]"
 
     cmd_parser.add_argument(
         "symbol",
@@ -1348,9 +1349,9 @@ def _build_epilog(functions: Dict[str, ToolInfo]) -> str:
 _EXTENDED_HELP_EXAMPLE_HINTS: Dict[str, Any] = {
     "symbol": "EURUSD",
     "timeframe": "H1",
-    "method": "nhits",
+    "method": "theta",
     "library": "native",
-    "methods": "theta nhits",
+    "methods": "theta naive",
     "horizon": "8",
     "lookback": "200",
     "steps": "5",
@@ -1366,6 +1367,18 @@ _EXTENDED_HELP_EXAMPLE_HINTS: Dict[str, Any] = {
 }
 
 _COMMAND_USAGE_EXAMPLES: Dict[str, Tuple[str, Optional[str]]] = {
+    "forecast_barrier_prob": (
+        f"{CLI_PROGRAM} forecast_barrier_prob EURUSD --barrier "
+        "'{\"kind\":\"tp_sl\",\"unit\":\"pct\",\"take_profit\":0.2,"
+        "\"stop_loss\":0.1}' --horizon 8 --method bootstrap",
+        f"{CLI_PROGRAM} forecast_barrier_prob EURUSD --barrier "
+        "'{\"kind\":\"single_price\",\"level\":1.1000}' --horizon 8 "
+        "--method closed_form",
+    ),
+    "forecast_barrier_optimize": (
+        f"{CLI_PROGRAM} forecast_barrier_optimize EURUSD --horizon 8 --method auto",
+        f"{CLI_PROGRAM} forecast_barrier_optimize EURUSD --horizon 8 --method mc_gbm_bb",
+    ),
     "patterns_detect": (
         f"{CLI_PROGRAM} patterns_detect BTCUSD --timeframe H1 --mode candlestick",
         f"{CLI_PROGRAM} patterns_detect BTCUSD --timeframe H1 --mode fractal --limit 300",
@@ -1779,31 +1792,26 @@ def main():  # noqa: C901
             continue
 
         # Create subparser
+        summary = (
+            meta.get("description")
+            or (
+                func_info["doc"].split("\n")[0]
+                if func_info["doc"]
+                else f"Execute {cmd_name}"
+            )
+        ).replace("%", "%%")
         cmd_parser = subparsers.add_parser(
             cmd_name,
-            help=(
-                (
-                    meta.get("description")
-                    or (
-                        func_info["doc"].split("\n")[0]
-                        if func_info["doc"]
-                        else f"Execute {cmd_name}"
-                    )
-                ).replace("%", "%%")
-            ),
+            help=summary,
+            description=summary,
             formatter_class=_CLIHelpFormatter,
             allow_abbrev=False,
             suggest_on_error=True,
             color=_argparse_color_enabled(),
         )
         if cmd_name in LIVE_TRADE_MUTATION_TOOLS:
-            summary = meta.get("description") or (
-                func_info["doc"].split("\n")[0]
-                if func_info["doc"]
-                else f"Execute {cmd_name}"
-            )
             cmd_parser.description = (
-                f"{str(summary).replace('%', '%%')}\n\n{LIVE_TRADE_MUTATION_WARNING}"
+                f"{summary}\n\n{LIVE_TRADE_MUTATION_WARNING}"
             )
 
         # Add global parameters to each subparser, excluding any that conflict with function params
@@ -1838,15 +1846,14 @@ def main():  # noqa: C901
         func = forecast_tool["func"]
         func_info = forecast_tool_info or get_function_info(func)
         meta = forecast_tool.get("meta") or {}
+        summary = (
+            meta.get("description")
+            or (func_info["doc"].split("\n")[0] if func_info["doc"] else f"Execute {cmd_name}")
+        ).replace("%", "%%")
         cmd_parser = subparsers.add_parser(
             cmd_name,
-            help=(
-                (
-                    meta.get("description") or func_info["doc"].split("\n")[0]
-                    if func_info["doc"]
-                    else f"Execute {cmd_name}"
-                ).replace("%", "%%")
-            ),
+            help=summary,
+            description=summary,
             formatter_class=_CLIHelpFormatter,
             allow_abbrev=False,
             suggest_on_error=True,
@@ -1861,7 +1868,21 @@ def main():  # noqa: C901
 
         def _forecast_generate_cmd(args):
             if not hasattr(args, "symbol") or not str(args.symbol or "").strip():
-                cmd_parser.error("Missing required argument: symbol.")
+                _render_cli_result(
+                    build_error_payload(
+                        "Missing required argument(s): symbol. Use symbols_list "
+                        "to browse available broker symbols.",
+                        code="cli_missing_required",
+                        operation=cmd_name,
+                        remediation=(
+                            "Provide: symbol. Run 'mtdata-cli forecast_generate "
+                            "--help' for examples."
+                        ),
+                    ),
+                    args=args,
+                    cmd_name=cmd_name,
+                )
+                return 1
             try:
                 overrides = _parse_set_overrides(args.set_overrides)
             except ValueError as exc:
