@@ -750,7 +750,7 @@ def _collect_timeframe_section_entries(section: Any) -> Dict[str, Any]:
     return entries
 
 
-def attach_multi_timeframes(
+def attach_multi_timeframes(  # noqa: C901
     report: Dict[str, Any],
     symbol: str,
     denoise: Optional[Dict[str, Any]],

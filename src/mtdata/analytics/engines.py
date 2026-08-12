@@ -1953,7 +1953,9 @@ def _robust_z(values: pd.Series) -> pd.Series:
     return (clipped - median) / (1.4826 * mad)
 
 
-def rank_relative_strength(request: MarketRelativeStrengthRequest, gateway: Any) -> Dict[str, Any]:
+def rank_relative_strength(  # noqa: C901
+    request: MarketRelativeStrengthRequest, gateway: Any
+) -> Dict[str, Any]:
     raw_symbols = list(gateway.symbols_get() or [])
     explicit = {item.strip().upper() for item in str(request.symbols or "").split(",") if item.strip()}
     available_names = {

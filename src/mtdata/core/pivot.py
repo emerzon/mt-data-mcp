@@ -23,12 +23,6 @@ from ..shared.validators import (
 from ..utils.coercion import round_finite
 from ..utils.level_confluence import build_level_confluence_payload
 from ..utils.market_metadata import build_tick_freshness_context
-from ..utils.quote import (
-    compute_spread_metrics,
-    resolve_quote_tick,
-    tick_epoch as quote_tick_epoch,
-    tick_value,
-)
 from ..utils.mt5 import (
     MT5ConnectionError,
     _mt5_copy_rates_from,
@@ -39,6 +33,14 @@ from ..utils.mt5 import (
     symbol_price_digits_optional,
 )
 from ..utils.pivot_points import compute_pivot_method_levels, compute_pivot_methods
+from ..utils.quote import (
+    compute_spread_metrics,
+    resolve_quote_tick,
+    tick_value,
+)
+from ..utils.quote import (
+    tick_epoch as quote_tick_epoch,
+)
 from ..utils.support_resistance import (
     compact_support_resistance_payload,
     compute_support_resistance_levels,

@@ -409,7 +409,9 @@ def _trade_journal_period_context(
     )
 
 
-def _run_trade_journal_request(request: TradeJournalAnalyzeRequest) -> Dict[str, Any]:
+def _run_trade_journal_request(  # noqa: C901
+    request: TradeJournalAnalyzeRequest,
+) -> Dict[str, Any]:
     period_context = _trade_journal_period_context(request)
     detail_mode = str(request.detail or "compact").strip().lower()
     minimum_sample = int(max(1, int(request.min_sample)))

@@ -11,7 +11,6 @@ import os
 import shlex
 import sys
 import types
-import warnings
 from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
 from typing import (
