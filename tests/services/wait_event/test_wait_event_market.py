@@ -44,6 +44,7 @@ def test_market_stat_event_specs_share_defaults_and_validation(
     event_type: str, expected_threshold: float
 ) -> None:
     request = WaitEventRequest(
+        max_wait_seconds=5,
         watch_for=[{"type": event_type, "symbol": "EURUSD"}]
     )
 
@@ -56,6 +57,7 @@ def test_market_stat_event_specs_share_defaults_and_validation(
 
     with pytest.raises(ValidationError, match="threshold_value must be greater than 0"):
         WaitEventRequest(
+            max_wait_seconds=5,
             watch_for=[
                 {
                     "type": event_type,
@@ -68,6 +70,7 @@ def test_market_stat_event_specs_share_defaults_and_validation(
 
 def test_only_price_change_accepts_fixed_pct_threshold_mode() -> None:
     request = WaitEventRequest(
+        max_wait_seconds=5,
         watch_for=[
             {
                 "type": "price_change",
@@ -80,6 +83,7 @@ def test_only_price_change_accepts_fixed_pct_threshold_mode() -> None:
 
     with pytest.raises(ValidationError):
         WaitEventRequest(
+            max_wait_seconds=5,
             watch_for=[
                 {
                     "type": "volume_spike",

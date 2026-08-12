@@ -381,19 +381,33 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
     ),
     ("trade_modify", "expiration"): "Pending order expiration time (dateparser string, UTC epoch seconds, or GTC token).",
     ("trade_place", "expiration"): "Pending order expiration time (dateparser string, UTC epoch seconds, or GTC token).",
-    ("wait_event", "symbol"): "Trading symbol (e.g. EURUSD).",
+    ("wait_event", "symbol"): (
+        "Trading symbol (e.g. EURUSD). Required when watch_for is omitted."
+    ),
     ("wait_event", "timeframe"): (
-        "Candle/event timeframe. Defaults to M1 for faster event polling; "
-        "set H1 for hourly boundaries."
+        "Candle-boundary wait mode. Cannot be combined with max_wait_seconds."
+    ),
+    ("wait_event", "max_wait_seconds"): (
+        "Duration wait mode in seconds. Cannot be combined with timeframe or end_on."
+    ),
+    ("wait_event", "poll_interval_seconds"): (
+        "Seconds between polls; must be at least 0.1. Omit to use 0.5."
+    ),
+    ("wait_event", "wait_next_bar"): (
+        "Boundary-only shortcut. Requires timeframe and cannot be combined with "
+        "watch_for, end_on, or max_wait_seconds."
+    ),
+    ("wait_event", "watch_tick_count_spike"): (
+        "Include the inferred tick-count-spike watcher. Ignored with explicit watch_for."
     ),
     ("wait_event", "watch_for"): (
         "Event names or event objects. Examples: order_filled, "
         "'{\"type\":\"order_filled\",\"symbol\":\"EURUSD\"}'. "
-        "Use candle_close for a boundary wait."
+        "Put candle_close boundaries in end_on."
     ),
     ("wait_event", "end_on"): (
-        "Boundary event names or objects. Example: candle_close or "
-        "'{\"type\":\"candle_close\",\"timeframe\":\"H1\"}'."
+        "Optional timeframe-mode boundaries. Explicit boundary timeframes must "
+        "match the top-level timeframe."
     ),
 }
 

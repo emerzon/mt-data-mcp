@@ -227,6 +227,7 @@ def _patch_trade_place_schema(schema: Dict[str, Any]) -> None:
 def _patch_wait_event_schema(schema: Dict[str, Any]) -> None:
     from .data.requests import WaitEventRequest
 
+    params_obj = _schema_obj(schema)
     params, _required_params = _schema_params(schema)
     wait_event_schema = WaitEventRequest.model_json_schema()
     wait_event_props = wait_event_schema.get("properties")
@@ -237,6 +238,35 @@ def _patch_wait_event_schema(schema: Dict[str, Any]) -> None:
         field_schema = wait_event_props.get(field_name)
         if isinstance(field_schema, dict):
             params[field_name] = copy.deepcopy(field_schema)
+
+    max_wait_schema = params.get("max_wait_seconds")
+    if isinstance(max_wait_schema, dict):
+        max_wait_schema["minimum"] = 0.0
+    poll_schema = params.get("poll_interval_seconds")
+    if isinstance(poll_schema, dict):
+        poll_schema["minimum"] = 0.1
+
+    params_obj["if"] = {"required": ["timeframe"]}
+    params_obj["then"] = {"not": {"required": ["max_wait_seconds"]}}
+    params_obj["else"] = {
+        "required": ["max_wait_seconds"],
+        "not": {"required": ["end_on"]},
+    }
+    params_obj["dependentSchemas"] = {
+        "wait_next_bar": {
+            "if": {"properties": {"wait_next_bar": {"const": True}}},
+            "then": {
+                "required": ["timeframe"],
+                "not": {
+                    "anyOf": [
+                        {"required": ["watch_for"]},
+                        {"required": ["end_on"]},
+                        {"required": ["max_wait_seconds"]},
+                    ]
+                },
+            },
+        }
+    }
 
     defs = wait_event_schema.get("$defs")
     if isinstance(defs, dict):

@@ -11,11 +11,11 @@ from mtdata.core.data.requests import WaitEventRequest
 
 
 def test_wait_event_request_defaults_watch_for_to_inferred_set() -> None:
-    request = WaitEventRequest()
+    request = WaitEventRequest(timeframe="M1")
 
     assert request.watch_for is None
     assert request.end_on == []
-    assert request.max_wait_seconds == 15.0
+    assert request.max_wait_seconds is None
 
 
 def test_wait_event_request_rejects_non_positive_poll_interval() -> None:
@@ -30,6 +30,7 @@ def test_wait_event_request_parses_market_event_specs() -> None:
     request = WaitEventRequest.model_validate(
         {
             "symbol": "EURUSD",
+            "timeframe": "M5",
             "watch_for": [
                 {
                     "type": "price_change",
@@ -177,6 +178,7 @@ def test_wait_event_request_accepts_canonical_account_side_values() -> None:
         {
             "symbol": "EURUSD",
             "side": "buy",
+            "max_wait_seconds": 5,
             "watch_for": [
                 {"type": "position_opened", "symbol": "EURUSD", "side": "sell"},
             ],
@@ -252,21 +254,14 @@ def test_wait_event_request_rejects_non_boundary_events_in_end_on_with_standard_
     assert error["msg"] == "Input should be 'candle_close'"
 
 
-def test_wait_event_request_preserves_distinct_candle_close_boundaries() -> None:
-    request = WaitEventRequest.model_validate(
-        {
-            "symbol": "EURUSD",
-            "end_on": [
-                {"type": "candle_close", "timeframe": "M15"},
-                {"type": "candle_close", "timeframe": "M5"},
-            ],
-        }
-    )
-
-    assert [(item.type, item.timeframe) for item in request.end_on] == [
-        ("candle_close", "M15"),
-        ("candle_close", "M5"),
-    ]
+def test_wait_event_request_rejects_end_on_without_top_level_timeframe() -> None:
+    with pytest.raises(ValidationError, match="end_on requires a top-level timeframe"):
+        WaitEventRequest.model_validate(
+            {
+                "symbol": "EURUSD",
+                "end_on": [{"type": "candle_close", "timeframe": "M15"}],
+            }
+        )
 
 
 @patch("mtdata.core.data.create_mt5_gateway", return_value=object())
@@ -369,7 +364,8 @@ def test_wait_event_rejects_timeframe_with_max_wait_seconds(
         "error_code": "wait_event_invalid_request",
         "hint": (
             "Set timeframe for a candle-boundary wait or "
-            "max_wait_seconds for a duration wait."
+            "max_wait_seconds for a duration wait. Do not combine "
+            "max_wait_seconds with timeframe or end_on."
         ),
     }
     mock_run_wait.assert_not_called()
@@ -409,6 +405,93 @@ def test_wait_event_duration_mode_does_not_add_candle_boundary(
     assert request.timeframe is None
     assert request.max_wait_seconds == 30
     assert request.end_on == []
+
+
+@patch("mtdata.core.data.create_mt5_gateway", return_value=object())
+@patch("mtdata.core.data.run_wait_event", return_value={"success": True})
+def test_wait_event_rejects_duration_mode_with_end_on(
+    mock_run_wait,
+    _mock_gateway,
+) -> None:
+    result = _raw_wait_event()(
+        symbol="BTCUSD",
+        max_wait_seconds=30,
+        watch_for=[{"type": "order_filled", "symbol": "BTCUSD"}],
+        end_on=[{"type": "candle_close", "timeframe": "M1"}],
+    )
+
+    assert result["error_code"] == "wait_event_invalid_request"
+    assert result["error"] == "max_wait_seconds cannot be combined with end_on."
+    mock_run_wait.assert_not_called()
+
+
+@patch("mtdata.core.data.create_mt5_gateway", return_value=object())
+@patch("mtdata.core.data.run_wait_event", return_value={"success": True})
+def test_wait_event_rejects_duration_mode_with_empty_end_on(
+    mock_run_wait,
+    _mock_gateway,
+) -> None:
+    result = _raw_wait_event()(
+        symbol="BTCUSD",
+        max_wait_seconds=30,
+        watch_for=[{"type": "order_filled", "symbol": "BTCUSD"}],
+        end_on=[],
+    )
+
+    assert result["error"] == "max_wait_seconds cannot be combined with end_on."
+    assert result["error_code"] == "wait_event_invalid_request"
+    mock_run_wait.assert_not_called()
+
+
+@patch("mtdata.core.data.create_mt5_gateway", return_value=object())
+@patch("mtdata.core.data.run_wait_event", return_value={"success": True})
+def test_wait_event_rejects_wait_next_bar_with_explicit_specs(
+    mock_run_wait,
+    _mock_gateway,
+) -> None:
+    result = _raw_wait_event()(
+        symbol="BTCUSD",
+        timeframe="M1",
+        wait_next_bar=True,
+        end_on=[{"type": "candle_close", "timeframe": "M1"}],
+    )
+
+    assert result == {
+        "error": "wait_next_bar cannot be combined with watch_for or end_on.",
+        "error_code": "wait_event_invalid_request",
+        "hint": (
+            "Set timeframe for a candle-boundary wait or max_wait_seconds for a "
+            "duration wait. Do not combine max_wait_seconds with timeframe or end_on."
+        ),
+    }
+    mock_run_wait.assert_not_called()
+
+
+@patch("mtdata.core.data.create_mt5_gateway", return_value=object())
+@patch("mtdata.core.data.run_wait_event", return_value={"success": True})
+def test_wait_event_rejects_conflicting_end_on_timeframe(
+    mock_run_wait,
+    _mock_gateway,
+) -> None:
+    result = _raw_wait_event()(
+        symbol="BTCUSD",
+        timeframe="M1",
+        watch_for=[{"type": "order_filled", "symbol": "BTCUSD"}],
+        end_on=[{"type": "candle_close", "timeframe": "M5"}],
+    )
+
+    assert result["error_code"] == "wait_event_invalid_request"
+    assert "end_on timeframes must match the top-level timeframe" in result["error"]
+    mock_run_wait.assert_not_called()
+
+
+def test_wait_event_missing_symbol_uses_standard_error_code() -> None:
+    result = _raw_wait_event()(timeframe="M1")
+
+    assert result == {
+        "error": "symbol is required when watch_for is omitted.",
+        "error_code": "wait_event_invalid_request",
+    }
 
 
 def test_wait_event_request_rejects_instrument_as_extra_field() -> None:

@@ -497,7 +497,7 @@ class TestCreateCommandFunction:
             "func": mock_fn,
             "params": [
                 {"name": "symbol", "type": str, "required": False, "default": None},
-                {"name": "timeframe", "type": str, "required": False, "default": "M1"},
+                {"name": "timeframe", "type": str, "required": False, "default": None},
                 {
                     "name": "watch_for",
                     "type": Optional[List[Dict[str, Any]]],
@@ -543,7 +543,7 @@ class TestCreateCommandFunction:
             "func": mock_fn,
             "params": [
                 {"name": "symbol", "type": str, "required": False, "default": None},
-                {"name": "timeframe", "type": str, "required": False, "default": "M1"},
+                {"name": "timeframe", "type": str, "required": False, "default": None},
                 {
                     "name": "watch_for",
                     "type": Optional[List[Dict[str, Any]]],
@@ -589,7 +589,7 @@ class TestCreateCommandFunction:
             "func": mock_fn,
             "params": [
                 {"name": "symbol", "type": str, "required": False, "default": None},
-                {"name": "timeframe", "type": str, "required": False, "default": "M1"},
+                {"name": "timeframe", "type": str, "required": False, "default": None},
                 {
                     "name": "watch_for",
                     "type": Optional[List[Dict[str, Any]]],
@@ -635,7 +635,7 @@ class TestCreateCommandFunction:
             "func": mock_fn,
             "params": [
                 {"name": "symbol", "type": str, "required": False, "default": None},
-                {"name": "timeframe", "type": str, "required": False, "default": "M1"},
+                {"name": "timeframe", "type": str, "required": False, "default": None},
                 {
                     "name": "watch_for",
                     "type": Optional[List[Dict[str, Any]]],

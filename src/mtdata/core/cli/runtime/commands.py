@@ -178,8 +178,9 @@ def friendly_validation_error(exc: ValidationError, *, cmd_name: str) -> str:
             return "horizon must be between 1 and 500."
         if cmd_name == "wait_event" and loc.split(".", 1)[0] in {"watch_for", "end_on"}:
             return (
-                "wait_event watch_for/end_on must be arrays of event objects. "
-                "Example: --watch-for '[{\"type\":\"price_change\","
+                "wait_event watch_for/end_on entries must be valid event objects; "
+                "CLI event names are also accepted. Example: --watch-for "
+                "'[{\"type\":\"price_change\","
                 "\"threshold_value\":0.1,\"threshold_mode\":\"fixed_pct\"}]' "
                 "--end-on '[{\"type\":\"candle_close\",\"timeframe\":\"M1\"}]'."
             )

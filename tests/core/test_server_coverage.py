@@ -1306,6 +1306,16 @@ class TestMcpToolSchemas:
         assert watch_items["discriminator"]["propertyName"] == "type"
         assert "price_break_level" in watch_items["discriminator"]["mapping"]
         assert end_on["items"] == {"$ref": "#/$defs/CandleCloseEventSpec"}
+        assert props["max_wait_seconds"]["minimum"] == 0.0
+        assert props["poll_interval_seconds"]["minimum"] == 0.1
+        assert schema["if"] == {"required": ["timeframe"]}
+        assert schema["then"] == {
+            "not": {"required": ["max_wait_seconds"]}
+        }
+        assert schema["else"]["required"] == ["max_wait_seconds"]
+        assert schema["dependentSchemas"]["wait_next_bar"]["then"][
+            "required"
+        ] == ["timeframe"]
 
     def test_prioritized_tools_list_tools_schemas_are_compact_and_aligned(self):
         from mcp import ClientSession

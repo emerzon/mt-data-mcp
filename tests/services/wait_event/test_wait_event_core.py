@@ -359,7 +359,7 @@ def test_wait_event_tool_exposes_minimal_public_contract(monkeypatch) -> None:
         timeframe="M1",
         watch_tick_count_spike=True,
         watch_for=[{"type": "price_touch_level", "symbol": "BTCUSD", "level": 100.0}],
-        end_on=[{"type": "candle_close", "timeframe": "M5"}],
+        end_on=[{"type": "candle_close", "timeframe": "M1"}],
         detail="full",
     )
     assert [item.type for item in explicit["criteria"]["watch_for"]] == ["price_touch_level"]
@@ -754,12 +754,12 @@ def test_wait_event_tool_preserves_shared_account_identity_fields(monkeypatch) -
         },
     }
 
-def test_wait_event_request_rejects_explicit_empty_watchers_without_boundary() -> None:
+def test_wait_event_request_rejects_empty_watchers_in_duration_mode() -> None:
     with pytest.raises(
         ValidationError,
-        match="watch_for cannot be an explicit empty list unless end_on or timeframe is provided",
+        match="watch_for cannot be empty in duration mode because no event could match",
     ):
-        WaitEventRequest(watch_for=[])
+        WaitEventRequest(watch_for=[], max_wait_seconds=5)
 
 
 def test_wait_event_request_rejects_too_small_poll_interval() -> None:
@@ -824,7 +824,6 @@ def test_run_wait_event_infers_candle_boundary_from_request_timeframe(monkeypatc
             symbol="EURUSD",
             timeframe="M1",
             poll_interval_seconds=1.0,
-            max_wait_seconds=10.0,
         ),
         gateway=gateway,
         sleep_impl=clock.sleep,
@@ -840,35 +839,16 @@ def test_run_wait_event_infers_candle_boundary_from_request_timeframe(monkeypatc
     assert result["boundary_event"]["type"] == "candle_close"
     assert result["boundary_event"]["timeframe"] == "M1"
 
-def test_run_wait_event_defers_boundary_only_when_cap_is_short(monkeypatch) -> None:
-    monkeypatch.setattr(
-        "mtdata.core.data.wait_events._next_candle_wait_payload",
-        lambda timeframe, buffer_seconds, now_utc: {
-            "timeframe": timeframe,
-            "buffer_seconds": buffer_seconds,
-            "sleep_seconds": 120.0,
-            "started_at_utc": "2026-03-15T12:00:00+00:00",
-            "next_candle_close_utc": "2026-03-15T12:02:00+00:00",
-            "next_candle_close_server": "2026-03-15T12:02:00",
-            "server_timezone": "UTC",
-        },
-    )
-
-    result = run_wait_event(
+def test_wait_event_request_rejects_boundary_with_duration_cap() -> None:
+    with pytest.raises(
+        ValidationError,
+        match="max_wait_seconds cannot be combined with timeframe or end_on",
+    ):
         WaitEventRequest(
             watch_for=[],
             end_on=[{"type": "candle_close", "timeframe": "M1"}],
             max_wait_seconds=30.0,
-        ),
-        gateway=None,
-    )
-
-    assert result["success"] is False
-    assert result["status"] == "wait_budget_exceeded"
-    assert result["error_code"] == "wait_budget_exceeded"
-    assert result["not_waited"] is True
-    assert result["event"] is None
-    assert result["boundary_event"] is None
+        )
 
 def test_run_wait_event_uses_timeframe_as_boundary_when_watchers_are_inferred(monkeypatch) -> None:
     monkeypatch.setattr(
@@ -907,7 +887,6 @@ def test_run_wait_event_uses_timeframe_as_boundary_when_watchers_are_inferred(mo
             symbol="EURUSD",
             timeframe="M1",
             poll_interval_seconds=1.0,
-            max_wait_seconds=10.0,
         ),
         gateway=gateway,
         sleep_impl=clock.sleep,
@@ -974,10 +953,10 @@ def test_run_wait_event_boundary_only_includes_gateway_quote_when_symbol_is_set(
     result = run_wait_event(
         WaitEventRequest(
             symbol="EURUSD",
+            timeframe="M1",
             watch_for=[],
             end_on=[{"type": "candle_close", "timeframe": "M1"}],
             poll_interval_seconds=1.0,
-            max_wait_seconds=10.0,
         ),
         gateway=gateway,
         sleep_impl=clock.sleep,
@@ -1042,10 +1021,10 @@ def test_run_wait_event_boundary_only_includes_closed_candle_stats(monkeypatch) 
     result = run_wait_event(
         WaitEventRequest(
             symbol="EURUSD",
+            timeframe="M1",
             watch_for=[],
             end_on=[{"type": "candle_close", "timeframe": "M1"}],
             poll_interval_seconds=1.0,
-            max_wait_seconds=120.0,
         ),
         gateway=gateway,
         sleep_impl=clock.sleep,
@@ -1110,6 +1089,7 @@ def test_run_wait_event_still_matches_pre_boundary_market_event_after_oversleep(
 
     result = run_wait_event(
         WaitEventRequest(
+            timeframe="M1",
             watch_for=[
                 {
                     "type": "price_touch_level",
@@ -1122,7 +1102,6 @@ def test_run_wait_event_still_matches_pre_boundary_market_event_after_oversleep(
             ],
             end_on=[{"type": "candle_close", "timeframe": "M1", "buffer_seconds": 0.0}],
             poll_interval_seconds=10.0,
-            max_wait_seconds=30.0,
         ),
         gateway=gateway,
         sleep_impl=clock.sleep,
@@ -1168,10 +1147,10 @@ def test_run_wait_event_stops_on_candle_boundary_when_no_watch_event(monkeypatch
 
     result = run_wait_event(
         WaitEventRequest(
+            timeframe="M1",
             watch_for=[{"type": "order_created", "symbol": "EURUSD"}],
             end_on=[{"type": "candle_close", "timeframe": "M1", "buffer_seconds": 0.0}],
             poll_interval_seconds=1.0,
-            max_wait_seconds=10.0,
         ),
         gateway=gateway,
         sleep_impl=clock.sleep,
@@ -1222,10 +1201,10 @@ def test_run_wait_event_respects_boundary_when_live_state_changes_after_overslee
 
     result = run_wait_event(
         WaitEventRequest(
+            timeframe="M1",
             watch_for=[{"type": "order_created", "symbol": "EURUSD"}],
             end_on=[{"type": "candle_close", "timeframe": "M1", "buffer_seconds": 0.0}],
             poll_interval_seconds=10.0,
-            max_wait_seconds=30.0,
         ),
         gateway=gateway,
         sleep_impl=clock.sleep,
@@ -1254,10 +1233,10 @@ def test_run_wait_event_waits_across_pytz_dst_gap(monkeypatch) -> None:
 
     result = run_wait_event(
         WaitEventRequest(
+            timeframe="M15",
             watch_for=[{"type": "order_created", "symbol": "BTCUSD"}],
             end_on=[{"type": "candle_close", "timeframe": "M15", "buffer_seconds": 1.0}],
             poll_interval_seconds=120.0,
-            max_wait_seconds=600.0,
         ),
         gateway=gateway,
         sleep_impl=clock.sleep,

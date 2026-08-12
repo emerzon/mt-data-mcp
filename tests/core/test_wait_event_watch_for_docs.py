@@ -23,5 +23,9 @@ def test_watch_for_documented_example_is_valid():
             "threshold_value": 0.1,
         }
     ]
-    req = WaitEventRequest(symbol="EURUSD", watch_for=example)
+    req = WaitEventRequest(
+        symbol="EURUSD",
+        max_wait_seconds=5,
+        watch_for=example,
+    )
     assert req.watch_for[0].type == "price_change"

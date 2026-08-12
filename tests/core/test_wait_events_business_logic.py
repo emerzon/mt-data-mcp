@@ -10,6 +10,7 @@ def test_compile_request_precomputes_watcher_requirements() -> None:
     request = WaitEventRequest.model_validate(
         {
             "symbol": "EURUSD",
+            "max_wait_seconds": 5,
             "watch_for": [
                 {"type": "pending_near_fill", "distance": 0.2},
                 {"type": "order_cancelled"},

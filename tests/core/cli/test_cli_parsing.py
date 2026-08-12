@@ -706,6 +706,42 @@ class TestAddDynamicArguments:
             for action in parser._actions
         )
 
+    def test_wait_event_help_explains_exclusive_wait_modes(self):
+        parser = argparse.ArgumentParser()
+        func_info = {
+            "params": [
+                {"name": "timeframe", "type": str, "required": False, "default": None},
+                {
+                    "name": "max_wait_seconds",
+                    "type": float,
+                    "required": False,
+                    "default": None,
+                },
+                {
+                    "name": "wait_next_bar",
+                    "type": bool,
+                    "required": False,
+                    "default": False,
+                },
+                {
+                    "name": "poll_interval_seconds",
+                    "type": float,
+                    "required": False,
+                    "default": None,
+                },
+            ]
+        }
+
+        add_dynamic_arguments(parser, func_info, cmd_name="wait_event")
+        help_text = _strip_ansi(parser.format_help())
+        compact_help = " ".join(help_text.split())
+
+        assert "Cannot be combined with max_wait_seconds" in compact_help
+        assert "Cannot be combined with timeframe or end_on" in compact_help
+        assert "Requires timeframe" in compact_help
+        assert "must be at least 0.1" in compact_help
+        assert "Defaults to M1" not in compact_help
+
     def test_finviz_calendar_prefers_start_end_and_hides_legacy_date_flags(self):
         parser = argparse.ArgumentParser()
         func_info = {

@@ -261,7 +261,10 @@ def test_attach_schemas_to_tools_patches_wait_event_with_discriminated_watch_spe
                 "properties": {
                     "symbol": {"type": "string"},
                     "timeframe": {"type": "string"},
+                    "wait_next_bar": {"type": "boolean"},
                     "watch_tick_count_spike": {"type": "boolean"},
+                    "max_wait_seconds": {"type": "number"},
+                    "poll_interval_seconds": {"type": "number"},
                     "watch_for": {"type": "array", "items": {"type": "object"}},
                     "end_on": {"type": "array", "items": {"type": "object"}},
                     "verbose": {"type": "boolean"},
@@ -287,6 +290,20 @@ def test_attach_schemas_to_tools_patches_wait_event_with_discriminated_watch_spe
     )
     assert end_on["items"] == {"$ref": "#/$defs/CandleCloseEventSpec"}
     assert "level" in price_break_level["required"]
+    assert params["max_wait_seconds"]["minimum"] == 0.0
+    assert params["poll_interval_seconds"]["minimum"] == 0.1
+    parameters = tool_obj.schema["parameters"]
+    assert parameters["if"] == {"required": ["timeframe"]}
+    assert parameters["then"] == {
+        "not": {"required": ["max_wait_seconds"]}
+    }
+    assert parameters["else"] == {
+        "required": ["max_wait_seconds"],
+        "not": {"required": ["end_on"]},
+    }
+    assert parameters["dependentSchemas"]["wait_next_bar"]["then"][
+        "required"
+    ] == ["timeframe"]
 
 
 def test_attach_schemas_to_tools_patches_trade_place(monkeypatch) -> None:

@@ -758,7 +758,7 @@ class WaitEventRequest(BaseModel):
     side: Optional[Literal["buy", "sell"]] = None
     buffer_seconds: float = 1.0
     poll_interval_seconds: float = 0.5
-    max_wait_seconds: Optional[float] = 15.0
+    max_wait_seconds: Optional[float] = None
     accept_preexisting: bool = False
 
     @field_validator("order_ticket")
@@ -793,9 +793,35 @@ class WaitEventRequest(BaseModel):
         return _validate_non_negative(value, "max_wait_seconds")
 
     @model_validator(mode="after")
-    def _validate_explicit_empty_watchers(self) -> "WaitEventRequest":
-        if self.watch_for == [] and not self.end_on and self.timeframe is None:
+    def _validate_wait_mode(self) -> "WaitEventRequest":
+        has_boundary = self.timeframe is not None
+        has_duration = self.max_wait_seconds is not None
+        end_on_was_provided = "end_on" in self.model_fields_set
+        if has_duration and (has_boundary or end_on_was_provided):
             raise ValueError(
-                "watch_for cannot be an explicit empty list unless end_on or timeframe is provided."
+                "max_wait_seconds cannot be combined with timeframe or end_on."
+            )
+        if self.end_on and not has_boundary:
+            raise ValueError("end_on requires a top-level timeframe.")
+        if not has_boundary and not has_duration:
+            raise ValueError(
+                "Provide exactly one of timeframe or max_wait_seconds."
+            )
+        if self.timeframe is not None:
+            conflicting_timeframes = sorted(
+                {
+                    str(item.timeframe)
+                    for item in self.end_on
+                    if item.timeframe is not None and item.timeframe != self.timeframe
+                }
+            )
+            if conflicting_timeframes:
+                raise ValueError(
+                    "end_on timeframes must match the top-level timeframe "
+                    f"({self.timeframe}); received {', '.join(conflicting_timeframes)}."
+                )
+        if self.watch_for == [] and not has_boundary:
+            raise ValueError(
+                "watch_for cannot be empty in duration mode because no event could match."
             )
         return self
