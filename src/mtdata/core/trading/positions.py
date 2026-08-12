@@ -21,6 +21,7 @@ from .gateway import create_trading_gateway
 from .requests import TradeGetOpenRequest, TradeGetPendingRequest
 from .use_cases import (
     _DEFAULT_TRADE_HISTORY_LOOKBACK_DAYS,
+    _linearized_account_currency_notional,
     run_trade_get_open,
     run_trade_get_pending,
 )
@@ -33,6 +34,7 @@ def _attach_open_position_quote_context(
     gateway: Any,
     *,
     now_epoch: Optional[float] = None,
+    account_currency: Optional[str] = None,
 ) -> None:
     items = payload.get("items")
     if not isinstance(items, list):
@@ -40,12 +42,106 @@ def _attach_open_position_quote_context(
     stale_count = 0
     enriched_count = 0
     live_usable_count = 0
+    resolved_account_currency = (
+        str(account_currency).strip()
+        if isinstance(account_currency, str) and account_currency.strip()
+        else account_currency_from_gateway(gateway)
+    )
+    notional_fields_attached = False
     for item in items:
         if not isinstance(item, dict):
             continue
         symbol = str(item.get("symbol") or "").strip()
         if not symbol:
             continue
+        symbol_info_fn = getattr(gateway, "symbol_info", None)
+        if callable(symbol_info_fn):
+            try:
+                symbol_info = symbol_info_fn(symbol)
+            except Exception:
+                symbol_info = None
+            contract_size = getattr(symbol_info, "trade_contract_size", None)
+            try:
+                contract_size_value = float(contract_size)
+                volume_value = float(item.get("volume"))
+                mark_value = float(item.get("price_current"))
+            except (TypeError, ValueError):
+                contract_size_value = volume_value = mark_value = 0.0
+            if (
+                math.isfinite(contract_size_value)
+                and math.isfinite(volume_value)
+                and contract_size_value > 0.0
+                and volume_value > 0.0
+            ):
+                item["contract_size"] = contract_size_value
+                item["contract_units"] = round(
+                    volume_value * contract_size_value,
+                    6,
+                )
+                item["lot_definition"] = (
+                    f"1 broker lot = {contract_size_value:g} contract units"
+                )
+                item["size_interpretation"] = (
+                    f"{volume_value:g} broker lots × {contract_size_value:g} "
+                    f"units/lot = {item['contract_units']:g} contract units"
+                )
+                if math.isfinite(mark_value) and mark_value > 0.0:
+                    notional_quote = (
+                        volume_value * contract_size_value * mark_value
+                    )
+                    notional_quote_currency = str(
+                        getattr(symbol_info, "currency_profit", "") or ""
+                    ).strip()
+                    notional_account = None
+                    notional_account_model = None
+                    unavailable_reason = None
+                    if not resolved_account_currency:
+                        unavailable_reason = "account_currency_unavailable"
+                    elif (
+                        notional_quote_currency
+                        and notional_quote_currency.upper()
+                        == str(resolved_account_currency).upper()
+                    ):
+                        notional_account = notional_quote
+                        notional_account_model = (
+                            "quote_currency_equals_account_currency"
+                        )
+                    else:
+                        notional_account = _linearized_account_currency_notional(
+                            volume=volume_value,
+                            price=mark_value,
+                            symbol_info=symbol_info,
+                        )
+                        if notional_account is None:
+                            unavailable_reason = (
+                                "broker_tick_economics_unavailable"
+                            )
+                        else:
+                            notional_account_model = (
+                                "tick_value_linear_sensitivity"
+                            )
+
+                    # Account-currency exposure comes first so the compact row's
+                    # primary notional is safe to compare with balance/equity.
+                    item["notional_account"] = (
+                        round(notional_account, 2)
+                        if notional_account is not None
+                        else None
+                    )
+                    item["notional_account_currency"] = resolved_account_currency
+                    item["notional_account_model"] = notional_account_model
+                    item["notional_account_available"] = (
+                        notional_account is not None
+                    )
+                    if unavailable_reason:
+                        item["notional_account_unavailable_reason"] = (
+                            unavailable_reason
+                        )
+                    item["notional_quote"] = round(notional_quote, 2)
+                    item["notional_quote_currency"] = (
+                        notional_quote_currency or None
+                    )
+                    notional_fields_attached = True
         try:
             raw_tick = gateway.symbol_info_tick(symbol)
         except Exception:
@@ -82,39 +178,6 @@ def _attach_open_position_quote_context(
         item["price_current_basis"] = "broker_price_current"
         item["quote_time"] = format_epoch_utc(quote_epoch)
         item.update(quote_source)
-        symbol_info_fn = getattr(gateway, "symbol_info", None)
-        if callable(symbol_info_fn):
-            try:
-                symbol_info = symbol_info_fn(symbol)
-            except Exception:
-                symbol_info = None
-            contract_size = getattr(symbol_info, "trade_contract_size", None)
-            try:
-                contract_size_value = float(contract_size)
-                volume_value = float(item.get("volume"))
-                mark_value = float(item.get("price_current"))
-            except (TypeError, ValueError):
-                contract_size_value = volume_value = mark_value = 0.0
-            if contract_size_value > 0.0 and volume_value > 0.0:
-                item["contract_size"] = contract_size_value
-                item["contract_units"] = round(volume_value * contract_size_value, 6)
-                item["lot_definition"] = (
-                    f"1 broker lot = {contract_size_value:g} contract units"
-                )
-                item["size_interpretation"] = (
-                    f"{volume_value:g} broker lots × {contract_size_value:g} "
-                    f"units/lot = {item['contract_units']:g} contract units"
-                )
-                if mark_value > 0.0:
-                    item["notional_estimate"] = round(
-                        volume_value * contract_size_value * mark_value,
-                        2,
-                    )
-                    notional_currency = str(
-                        getattr(symbol_info, "currency_profit", "") or ""
-                    ).strip()
-                    if notional_currency:
-                        item["notional_currency"] = notional_currency
         for key in (
             "data_age_seconds",
             "data_stale",
@@ -141,6 +204,11 @@ def _attach_open_position_quote_context(
             "live_usable_quotes": live_usable_count,
             "recent_or_delayed_quotes": enriched_count - stale_count - live_usable_count,
         }
+    if notional_fields_attached:
+        units = payload.setdefault("units", {})
+        if isinstance(units, dict):
+            units["notional_account"] = "account_currency"
+            units["notional_quote"] = "quote_currency"
 
 _TRADE_VOLUME_UNITS = {
     "volume": BROKER_VOLUME_UNIT,
@@ -1565,6 +1633,7 @@ def trade_get_open(
     """
     def _run() -> Dict[str, Any]:
         gateway = create_trading_gateway()
+        account_currency = account_currency_from_gateway(gateway)
         out = _normalize_trade_read_output(
             run_trade_get_open(
                 request,
@@ -1578,10 +1647,14 @@ def trade_get_open(
             ),
             request=request,
             kind="open_positions",
-            account_currency=account_currency_from_gateway(gateway),
+            account_currency=account_currency,
         )
         _attach_open_position_protection_summary(out)
-        _attach_open_position_quote_context(out, gateway)
+        _attach_open_position_quote_context(
+            out,
+            gateway,
+            account_currency=account_currency,
+        )
         return out
 
     return run_logged_operation(

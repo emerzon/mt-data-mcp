@@ -1212,6 +1212,7 @@ def test_open_position_quote_context_discloses_contract_notional() -> None:
         ]
     }
     gateway = SimpleNamespace(
+        account_info=lambda: SimpleNamespace(currency="USD"),
         symbol_info_tick=lambda symbol: SimpleNamespace(
             time=1_000.0,
             time_msc=0,
@@ -1237,5 +1238,96 @@ def test_open_position_quote_context_discloses_contract_notional() -> None:
     assert row["size_interpretation"] == (
         "0.1 broker lots × 100000 units/lot = 10000 contract units"
     )
-    assert row["notional_estimate"] == 11_000.0
-    assert row["notional_currency"] == "USD"
+    assert row["notional_account"] == 11_000.0
+    assert row["notional_account_currency"] == "USD"
+    assert row["notional_account_model"] == (
+        "quote_currency_equals_account_currency"
+    )
+    assert row["notional_quote"] == 11_000.0
+    assert row["notional_quote_currency"] == "USD"
+    assert "notional_estimate" not in row
+    assert "notional_currency" not in row
+    assert payload["units"]["notional_account"] == "account_currency"
+    assert payload["units"]["notional_quote"] == "quote_currency"
+
+
+def test_open_position_quote_context_converts_cross_currency_notional() -> None:
+    payload = {
+        "items": [
+            {
+                "symbol": "USDJPY",
+                "side": "BUY",
+                "volume": 0.01,
+                "price_current": 159.48,
+            }
+        ]
+    }
+    gateway = SimpleNamespace(
+        account_info=lambda: SimpleNamespace(currency="USD"),
+        symbol_info_tick=lambda symbol: None,
+        symbol_info=lambda symbol: SimpleNamespace(
+            trade_contract_size=100_000.0,
+            currency_profit="JPY",
+            trade_tick_size=0.001,
+            trade_tick_value=0.627,
+            trade_tick_value_profit=0.627,
+            trade_tick_value_loss=0.627,
+        ),
+    )
+
+    core_trading_positions._attach_open_position_quote_context(
+        payload,
+        gateway,
+        now_epoch=1_005.0,
+    )
+
+    row = payload["items"][0]
+    assert row["notional_account"] == 999.94
+    assert row["notional_account_currency"] == "USD"
+    assert row["notional_account_model"] == "tick_value_linear_sensitivity"
+    assert row["notional_account_available"] is True
+    assert row["notional_quote"] == 159_480.0
+    assert row["notional_quote_currency"] == "JPY"
+    assert "quote_freshness_summary" not in payload
+
+
+def test_open_position_quote_context_discloses_missing_conversion_metadata() -> None:
+    payload = {
+        "items": [
+            {
+                "symbol": "USDJPY",
+                "side": "BUY",
+                "volume": 0.01,
+                "price_current": 159.48,
+            }
+        ]
+    }
+    gateway = SimpleNamespace(
+        account_info=lambda: SimpleNamespace(currency="USD"),
+        symbol_info_tick=lambda symbol: SimpleNamespace(
+            time=1_000.0,
+            time_msc=0,
+            bid=159.47,
+            ask=159.49,
+        ),
+        symbol_info=lambda symbol: SimpleNamespace(
+            trade_contract_size=100_000.0,
+            currency_profit="JPY",
+        ),
+    )
+
+    core_trading_positions._attach_open_position_quote_context(
+        payload,
+        gateway,
+        now_epoch=1_005.0,
+    )
+
+    row = payload["items"][0]
+    assert row["notional_account"] is None
+    assert row["notional_account_currency"] == "USD"
+    assert row["notional_account_available"] is False
+    assert row["notional_account_unavailable_reason"] == (
+        "broker_tick_economics_unavailable"
+    )
+    assert row["notional_quote"] == 159_480.0
+    assert row["notional_quote_currency"] == "JPY"

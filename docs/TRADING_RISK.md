@@ -92,6 +92,14 @@ exposures derived from the broker's tick value and tick size. The per-position
 with the explicit unit `contract_size_times_price`; it must not be compared with
 account equity or summed across unlike instruments.
 
+`trade_get_open` uses the same distinction on each position row.
+`notional_account` is comparable with account balance/equity and names its
+currency in `notional_account_currency`; `notional_quote` is the raw contract
+price product in `notional_quote_currency`. If broker tick economics are not
+available for a cross-currency conversion, `notional_account` is `null` and
+`notional_account_unavailable_reason` explains why. Never sum `notional_quote`
+across instruments with different quote currencies.
+
 ---
 
 ## `trade_var_cvar_calculate`
