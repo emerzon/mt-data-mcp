@@ -460,6 +460,30 @@ def test_market_snapshot_revalidates_quote_at_assembly_time() -> None:
     }
 
 
+def test_market_snapshot_revalidation_never_upgrades_locked_quote() -> None:
+    sections = {
+        "quote": {
+            "success": True,
+            "time_epoch": 1_700_000_000.0,
+            "usable_for_live_trading": False,
+            "usable_for_live_trading_basis": "positive_spread_required",
+            "spread_quality": "locked",
+        }
+    }
+
+    warning = snapshot_mod._revalidate_snapshot_quote(
+        sections,
+        symbol="EURUSD",
+        assembled_at_epoch=1_700_000_001.0,
+    )
+
+    assert warning is None
+    assert sections["quote"]["usable_for_live_trading"] is False
+    assert sections["quote"]["usable_for_live_trading_basis"] == (
+        "positive_spread_required"
+    )
+
+
 def test_market_snapshot_standard_strips_nested_request_echoes(monkeypatch):
     def fake_call_section(name, symbol, timeframe, horizon, detail):
         if name == "levels":

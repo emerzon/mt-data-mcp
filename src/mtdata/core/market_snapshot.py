@@ -146,12 +146,21 @@ def _revalidate_snapshot_quote(
         return None
 
     was_usable = quote.get("usable_for_live_trading") is True
+    prior_basis = quote.get("usable_for_live_trading_basis")
     freshness = build_tick_freshness_context(
         symbol,
         tick_epoch=quote_epoch,
         now_epoch=assembled_at_epoch,
     )
     quote.update(freshness)
+    # Revalidation may expire a previously valid quote, but it must never
+    # upgrade a quote that the canonical ticker rejected for a locked,
+    # inverted, one-sided, or conflicted market.
+    if not was_usable:
+        quote["usable_for_live_trading"] = False
+        if prior_basis not in (None, ""):
+            quote["usable_for_live_trading_basis"] = prior_basis
+        return None
     if not was_usable or quote.get("usable_for_live_trading") is True:
         return None
 

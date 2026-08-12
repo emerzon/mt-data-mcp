@@ -23,6 +23,12 @@ from ..shared.validators import (
 from ..utils.coercion import round_finite
 from ..utils.level_confluence import build_level_confluence_payload
 from ..utils.market_metadata import build_tick_freshness_context
+from ..utils.quote import (
+    compute_spread_metrics,
+    resolve_quote_tick,
+    tick_epoch as quote_tick_epoch,
+    tick_value,
+)
 from ..utils.mt5 import (
     MT5ConnectionError,
     _mt5_copy_rates_from,
@@ -163,6 +169,56 @@ def _tick_reference_price(tick: Any) -> Optional[float]:
     if bid is not None and ask is not None:
         return (bid + ask) / 2.0
     return _positive_float_attr(tick, "last", "bid", "ask")
+
+
+def _resolve_reference_quote(
+    gateway: Any,
+    symbol: str,
+    tick: Any,
+    *,
+    now_epoch: float,
+) -> tuple[Any, Optional[float], Dict[str, Any]]:
+    """Resolve one canonical, positive-spread quote for level geometry."""
+    resolved_tick, source = resolve_quote_tick(
+        gateway,
+        symbol,
+        tick,
+        now_epoch=now_epoch,
+    )
+    freshness = build_tick_freshness_context(
+        symbol,
+        tick_epoch=quote_tick_epoch(resolved_tick),
+        now_epoch=now_epoch,
+        item="reference quote",
+    )
+    spread = compute_spread_metrics(
+        tick_value(resolved_tick, "bid"),
+        tick_value(resolved_tick, "ask"),
+    )
+    context: Dict[str, Any] = {**freshness, **source}
+    context.update(
+        {
+            "spread_valid": spread.get("spread_valid"),
+            "spread_quality": spread.get("spread_quality"),
+        }
+    )
+    blockers: List[str] = []
+    if spread.get("spread_valid") is not True:
+        blockers.append("invalid_spread")
+    if isinstance(source.get("quote_source_conflict"), dict):
+        blockers.append("quote_source_conflict")
+    if blockers:
+        context["usable_for_live_trading"] = False
+        context["usable_for_live_trading_basis"] = (
+            "quote_age_market_session_positive_spread_and_source_agreement"
+        )
+        context["execution_blockers"] = blockers
+    reference = (
+        spread.get("mid")
+        if context.get("usable_for_live_trading") is True
+        else None
+    )
+    return resolved_tick, reference, context
 
 
 def _resolve_support_resistance_timeframes(timeframe: Optional[str]) -> tuple[str, List[str]]:
@@ -731,6 +787,14 @@ def confluence_levels(  # noqa: C901
                 server_now_dt = system_now_dt
                 server_now_ts = system_now_ts
                 tick = mt5.symbol_info_tick(symbol)
+                tick, live_reference_price, reference_quote_context = (
+                    _resolve_reference_quote(
+                        gateway,
+                        symbol,
+                        tick,
+                        now_epoch=system_now_ts,
+                    )
+                )
                 if tick is not None and getattr(tick, "time", None):
                     tick_time = float(tick.time)
                     freshness_limit = float(max(tf_secs, 300))
@@ -802,7 +866,7 @@ def confluence_levels(  # noqa: C901
             )
 
             reference_price = (
-                None if historical_cutoff is not None else _tick_reference_price(tick)
+                None if historical_cutoff is not None else live_reference_price
             )
             reference_price_source = (
                 "historical_window_close"
@@ -873,6 +937,19 @@ def confluence_levels(  # noqa: C901
                 volume_profile_payload=volume_profile_payload,
             )
             payload["reference_price_source"] = reference_price_source
+            if historical_cutoff is None:
+                payload["reference_quote_usable_for_live_trading"] = bool(
+                    reference_quote_context.get("usable_for_live_trading")
+                )
+                for key in (
+                    "quote_source",
+                    "quote_source_state",
+                    "spread_quality",
+                    "execution_blockers",
+                    "quote_source_conflict",
+                ):
+                    if reference_quote_context.get(key) not in (None, [], {}):
+                        payload[key] = reference_quote_context[key]
             payload["volume_profile_status"] = {
                 "enabled": str(volume_profile_source).lower() != "off",
                 "requested_source": str(volume_profile_source).lower(),
@@ -1038,23 +1115,16 @@ def support_resistance_levels(
             reference_quote_as_of = None
             reference_quote_context: Dict[str, Any] = {}
             if not start and not end:
-                tick = gateway.symbol_info_tick(symbol)
-                tick_price = _tick_reference_price(tick)
-                tick_epoch = getattr(tick, "time_msc", None)
-                try:
-                    tick_epoch = float(tick_epoch) / 1000.0 if tick_epoch else None
-                except (TypeError, ValueError):
-                    tick_epoch = None
-                if tick_epoch is None:
-                    tick_epoch = getattr(tick, "time", None)
-                if tick_epoch is not None:
-                    reference_quote_as_of = _format_time_minimal(tick_epoch)
-                reference_quote_context = build_tick_freshness_context(
+                raw_tick = gateway.symbol_info_tick(symbol)
+                tick, tick_price, reference_quote_context = _resolve_reference_quote(
+                    gateway,
                     symbol,
-                    tick_epoch=tick_epoch,
+                    raw_tick,
                     now_epoch=datetime.now(timezone.utc).timestamp(),
-                    item="reference quote",
                 )
+                resolved_epoch = quote_tick_epoch(tick)
+                if resolved_epoch is not None:
+                    reference_quote_as_of = _format_time_minimal(resolved_epoch)
                 if (
                     tick_price is not None
                     and reference_quote_context.get("usable_for_live_trading") is True
@@ -1092,6 +1162,15 @@ def support_resistance_levels(
                     value = reference_quote_context.get(source_key)
                     if value is not None:
                         result[target_key] = value
+                for key in (
+                    "quote_source",
+                    "quote_source_state",
+                    "spread_quality",
+                    "execution_blockers",
+                    "quote_source_conflict",
+                ):
+                    if reference_quote_context.get(key) not in (None, [], {}):
+                        result[f"reference_{key}"] = reference_quote_context[key]
                 if (
                     reference_price is None
                     and _tick_reference_price(tick) is not None
@@ -1110,6 +1189,16 @@ def support_resistance_levels(
             else:
                 detail_value = "full"
                 payload = full_support_resistance_payload(result)
+            if reference_quote_context:
+                for key in (
+                    "quote_source",
+                    "quote_source_state",
+                    "spread_quality",
+                    "execution_blockers",
+                    "quote_source_conflict",
+                ):
+                    if reference_quote_context.get(key) not in (None, [], {}):
+                        payload[f"reference_{key}"] = reference_quote_context[key]
             payload["detail"] = detail_value
             payload.setdefault("timezone", "UTC")
             if digits_value is not None:

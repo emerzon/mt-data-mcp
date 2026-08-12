@@ -43,6 +43,8 @@ def _gateway(digits: int = 5, tick=None):
             "ensure_connection": lambda self: None,
             "symbol_info": lambda self, _symbol: SimpleNamespace(digits=digits),
             "symbol_info_tick": lambda self, _symbol: tick,
+            "copy_ticks_range": lambda self, *args, **kwargs: [],
+            "COPY_TICKS_ALL": 0,
         },
     )()
 
@@ -185,6 +187,32 @@ def test_support_resistance_tool_rejects_non_live_tick_as_level_reference():
     assert result["reference_quote_usable_for_live_trading"] is False
     assert result["reference_quote_freshness_reason"] == "stale_age"
     assert "latest completed bar close" in result["warnings"][0]
+
+
+def test_support_resistance_tool_rejects_locked_live_tick_reference():
+    fn = _get_support_resistance_fn()
+    tick = SimpleNamespace(
+        bid=111.0,
+        ask=111.0,
+        last=111.0,
+        time=1_700_100_000,
+        time_msc=1_700_100_000_000,
+    )
+    gateway = _gateway(tick=tick)
+
+    with patch("mtdata.core.pivot.create_mt5_gateway", return_value=gateway), \
+         patch("mtdata.core.pivot._fetch_history", return_value=_frame()), \
+         patch(
+             "mtdata.core.pivot.build_tick_freshness_context",
+             return_value={"usable_for_live_trading": True, "freshness_state": "live"},
+         ):
+        result = fn("EURUSD", timeframe="H1", max_distance_pct=None)
+
+    assert result["current_price"] == 105.0
+    assert result["current_price_source"] == "last_completed_bar_close"
+    assert result["reference_quote_usable_for_live_trading"] is False
+    assert result["reference_spread_quality"] == "locked"
+    assert result["reference_execution_blockers"] == ["invalid_spread"]
 
 
 def test_support_resistance_tool_applies_near_price_distance_default():
