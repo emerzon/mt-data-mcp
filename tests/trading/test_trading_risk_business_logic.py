@@ -17,6 +17,7 @@ from mtdata.core.trading.use_cases import (
     _floor_volume_steps,
     _resolve_live_trade_risk_entry,
     _resolve_trade_risk_direction,
+    _validate_trading_symbol,
     run_trade_risk_analyze,
 )
 from mtdata.utils.mt5 import MT5ConnectionError
@@ -46,6 +47,19 @@ def _kelly_sizing(
         "avg_loss": avg_loss,
         "max_risk_pct": max_risk_pct,
     }
+
+
+def test_trading_symbol_validation_returns_discovery_guidance() -> None:
+    gateway = SimpleNamespace(
+        symbol_info=lambda _symbol: None,
+        symbol_select=lambda _symbol, _enabled: False,
+    )
+
+    result = _validate_trading_symbol(gateway, "NOSUCH")
+
+    assert result["success"] is False
+    assert result["error_code"] == "symbol_not_found"
+    assert result["related_tools"] == ["symbols_list"]
 
 
 def test_live_risk_entry_uses_reconciled_stream_quote(monkeypatch) -> None:

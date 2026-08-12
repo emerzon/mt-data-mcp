@@ -94,10 +94,13 @@ def _invalid_order_type_payload(message: str) -> Dict[str, Any]:
 
 _TRADE_PLACE_PREVIEW_KEYS = (
     "success",
+    "status",
     "error",
     "error_code",
     "dry_run",
+    "no_action",
     "no_action_reason",
+    "would_send_order",
     "symbol",
     "order_type",
     "pending",
@@ -130,6 +133,8 @@ _TRADE_PLACE_PREVIEW_KEYS = (
     "message",
     "dry_run_note",
     "preview_ok",
+    "validation_passed",
+    "validation",
     "validation_scope",
     "require_sl_tp",
     "auto_close_on_sl_tp_fail",
@@ -1066,6 +1071,35 @@ def _apply_trade_candidate_outcome(result: Dict[str, Any]) -> Dict[str, Any]:
     return result
 
 
+def _validate_trading_symbol(gateway: Any, symbol: Optional[str]) -> Optional[Dict[str, Any]]:
+    symbol_value = str(symbol or "").strip()
+    if not symbol_value:
+        return None
+    symbol_info = getattr(gateway, "symbol_info", None)
+    if not callable(symbol_info):
+        return None
+    try:
+        info = symbol_info(symbol_value)
+        if info is None:
+            symbol_select = getattr(gateway, "symbol_select", None)
+            if callable(symbol_select) and symbol_select(symbol_value, True):
+                info = symbol_info(symbol_value)
+    except Exception:
+        return None
+    if info is not None:
+        return None
+    return {
+        "success": False,
+        "error": f"Symbol '{symbol_value}' was not found by MT5.",
+        "error_code": "symbol_not_found",
+        "symbol": symbol_value,
+        "remediation": (
+            "Use symbols_list to find the broker's exact symbol name and suffix."
+        ),
+        "related_tools": ["symbols_list"],
+    }
+
+
 def _shape_trade_var_cvar_payload(
     result: Dict[str, Any],
     *,
@@ -1653,6 +1687,8 @@ def run_trade_place(  # noqa: C901
                 else list(local_blockers)
             )
             if validation_blockers:
+                preview["success"] = False
+                preview["status"] = "preview_blocked"
                 preview["blockers"] = validation_blockers
                 preview["no_action_reason"] = "dry_run_validation_blocked"
             preview_error = str(preview.get("preview_error") or "").strip()
@@ -3009,6 +3045,9 @@ def run_trade_history(  # noqa: C901
         gateway.ensure_connection()
     except MT5ConnectionError as exc:
         return _finish({"error": str(exc)})
+    symbol_error = _validate_trading_symbol(gateway, request.symbol)
+    if symbol_error is not None:
+        return _finish(symbol_error)
 
     def _get_history():  # noqa: C901
         try:
@@ -3541,6 +3580,9 @@ def run_trade_risk_analyze(  # noqa: C901
         gateway.ensure_connection()
     except MT5ConnectionError as exc:
         return _finish({"error": str(exc)})
+    symbol_error = _validate_trading_symbol(gateway, request.symbol)
+    if symbol_error is not None:
+        return _finish(symbol_error)
 
     def _analyze_risk():  # noqa: C901
         try:
@@ -5292,6 +5334,10 @@ def run_trade_var_cvar_calculate(  # noqa: C901
         gateway.ensure_connection()
     except MT5ConnectionError as exc:
         return _finish({"error": str(exc)})
+
+    symbol_error = _validate_trading_symbol(gateway, request.symbol)
+    if symbol_error is not None:
+        return _finish(symbol_error)
 
     timeframe_value = str(request.timeframe or "").strip().upper()
     if timeframe_value not in TIMEFRAME_MAP:

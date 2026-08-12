@@ -577,6 +577,20 @@ def trade_session_context(request: TradeSessionContextRequest) -> Dict[str, Any]
         pending_req = TradeGetPendingRequest(symbol=request.symbol)
         pending_res = pending_func(request=pending_req)
 
+        for section in (quote_res, open_res, pending_res):
+            if isinstance(section, dict) and section.get("error_code") == "symbol_not_found":
+                return ensure_common_meta(
+                    {
+                        "success": False,
+                        "error": section.get("error") or f"Symbol '{request.symbol}' was not found.",
+                        "error_code": "symbol_not_found",
+                        "symbol": request.symbol,
+                        "remediation": section.get("remediation"),
+                        "related_tools": section.get("related_tools", ["symbols_list"]),
+                    },
+                    tool_name="trade_session_context",
+                )
+
         if request.include_account:
             account_res, account_failed = _sanitize_trade_session_section_error(
                 account_res,
