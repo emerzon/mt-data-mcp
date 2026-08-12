@@ -819,43 +819,6 @@ def _round_trade_money_fields(row: Dict[str, Any]) -> Dict[str, Any]:
     return out
 
 
-def _trade_history_action(row: Dict[str, Any], *, history_kind: Optional[str]) -> Any:
-    if history_kind == "orders":
-        return None
-    raw_entry = _first_present(row, "entry_label", "entry")
-    entry_text = str(raw_entry or "").strip().lower().replace("_", " ")
-    if not entry_text:
-        return None
-    if "inout" in entry_text or "in out" in entry_text:
-        return "reverse"
-    if "out by" in entry_text:
-        return "close_by"
-    if "out" in entry_text:
-        return "close"
-    if "in" in entry_text:
-        return "open"
-    return None
-
-
-def _trade_history_position_side(
-    row: Dict[str, Any],
-    *,
-    action: Optional[str],
-    history_kind: Optional[str],
-) -> Optional[str]:
-    if history_kind == "orders":
-        return None
-    raw_type = _first_present(row, "type_label", "type")
-    type_text = str(raw_type or "").strip().lower().replace("_", " ")
-    if not type_text:
-        return None
-    if "buy" in type_text:
-        return "short" if action in {"close", "close_by"} else "long"
-    if "sell" in type_text:
-        return "long" if action in {"close", "close_by"} else "short"
-    return None
-
-
 def _compact_trade_history_row(
     row: Dict[str, Any],
     *,
@@ -902,13 +865,16 @@ def _compact_trade_history_row(
             compact["position_ticket"] = position_ticket
         if "time" in compact:
             compact["fill_time"] = compact["time"]
-        action = _trade_history_action(compact, history_kind=history_kind)
+        action = validation._trade_history_action(
+            compact,
+            history_kind=history_kind,
+        )
         if action is not None:
             compact["deal_effect"] = action
         raw_deal_type = _first_present(compact, "type_label", "type")
         if raw_deal_type is not None:
             compact["fill_side"] = raw_deal_type
-        position_side = _trade_history_position_side(
+        position_side = validation._trade_history_position_side(
             compact,
             action=action,
             history_kind=history_kind,
@@ -1013,11 +979,14 @@ def _normalize_trade_history_row(
         "volume": _first_present(row, "volume", "volume_initial", "volume_current"),
         "price": price,
     }
-    action = _trade_history_action(row, history_kind=history_kind)
+    action = validation._trade_history_action(
+        row,
+        history_kind=history_kind,
+    )
     if action is not None:
         normalized["action"] = action
         normalized["deal_effect"] = action
-    position_side = _trade_history_position_side(
+    position_side = validation._trade_history_position_side(
         row,
         action=action,
         history_kind=history_kind,
@@ -1201,6 +1170,12 @@ def normalize_trade_history_output(
     if out.get("success") is True:
         period_context = _trade_history_period_context(request)
         out = _insert_trade_history_period_context(out, period_context)
+        side_filter = validation._trade_side_filter_metadata(
+            getattr(request, "side", None),
+            history_kind=str(history_kind or "deals"),
+        )
+        if side_filter is not None:
+            out["side_filter"] = side_filter
     timezone_label = "UTC"
     if out.get("success") is True and isinstance(out.get("items"), list):
         out.setdefault("row_key", "items")

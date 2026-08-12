@@ -417,6 +417,12 @@ def _run_trade_journal_request(  # noqa: C901
     minimum_sample = int(max(1, int(request.min_sample)))
     if detail_mode == "compact":
         period_context = {"timezone": "UTC"}
+    side_filter = validation._trade_side_filter_metadata(
+        request.side,
+        history_kind="deals",
+    )
+    if side_filter is not None:
+        period_context["side_filter"] = side_filter
     requested_exit_limit = int(request.limit)
     page_limit = min(1_000, max(50, requested_exit_limit * 2))
     raw_rows: List[Dict[str, Any]] = []
@@ -426,6 +432,21 @@ def _run_trade_journal_request(  # noqa: C901
     history_total_count: Optional[int] = None
     page_offset = 0
 
+    def _matches_requested_side(row: Dict[str, Any]) -> bool:
+        if side_filter is None:
+            return True
+        dimension = side_filter["dimension"]
+        value = side_filter["value"]
+        if dimension == "position_side":
+            actual = str(row.get("position_side") or "").strip().lower()
+            return actual == value
+        actual = str(
+            row.get("fill_side") or row.get("type") or ""
+        ).strip().lower()
+        return actual == value or actual.startswith(f"{value} ") or actual.startswith(
+            f"{value}_"
+        )
+
     def _usable_exit_count() -> int:
         return sum(
             1
@@ -433,6 +454,7 @@ def _run_trade_journal_request(  # noqa: C901
             if isinstance(row, dict)
             and row.get("timestamp_anomaly") is not True
             and str(row.get("symbol") or "").strip()
+            and _matches_requested_side(row)
             and _is_exit_deal_row(row)
             and _trade_journal_net_pnl(row) is not None
         )
@@ -548,6 +570,8 @@ def _run_trade_journal_request(  # noqa: C901
     analyzed_rows: List[Dict[str, Any]] = []
     for row in rows:
         if row.get("timestamp_anomaly") is True:
+            continue
+        if not _matches_requested_side(row):
             continue
         symbol = str(row.get("symbol") or "").strip()
         if not symbol or not _is_exit_deal_row(row):
@@ -1041,7 +1065,9 @@ def trade_history(request: TradeHistoryRequest) -> Dict[str, Any]:
     Deals use `fill_time` and `fill_side`; orders use `placed_time` and
     `done_time` at every detail level. Full rows add native MT5 attributes
     under `raw` without renaming canonical fields. Every response includes the
-    effective period context. Use `detail="full"` for request echo fields.
+    effective period context. For deals, `side=buy|sell` filters `fill_side`
+    while `side=long|short` filters the derived `position_side`; `side_filter`
+    identifies the selected dimension. Use `detail="full"` for request echo fields.
     """
     return run_logged_operation(
         logger,
@@ -1056,7 +1082,7 @@ def trade_history(request: TradeHistoryRequest) -> Dict[str, Any]:
 
 @mcp.tool()
 def trade_journal_analyze(request: TradeJournalAnalyzeRequest) -> Dict[str, Any]:
-    """Analyze realized exit deals from MT5 trade history."""
+    """Analyze realized exits; long/short selects position side, buy/sell fill side."""
     return run_logged_operation(
         logger,
         operation="trade_journal_analyze",

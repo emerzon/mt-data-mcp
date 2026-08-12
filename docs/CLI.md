@@ -626,9 +626,16 @@ response reports the position-close and pending-cancel legs separately.
 ```bash
 mtdata-cli trade_journal_analyze --minutes-back 10080 --json
 mtdata-cli trade_journal_analyze --symbol EURUSD --minutes-back 43200 --breakdown-limit 5 --json
+mtdata-cli trade_journal_analyze --side long --minutes-back 43200 --json
+mtdata-cli trade_history --history-kind deals --side buy --minutes-back 1440 --json
 ```
 
 `trade_history` and `trade_journal_analyze` default to a 7-day lookback (`--minutes-back 10080`) when you do not pass a time window explicitly.
+For deal history and journals, `--side buy|sell` filters the execution
+`fill_side`, while `--side long|short` filters the economic `position_side`
+after open/close direction is derived. Responses echo this choice in
+`side_filter.dimension`. Order-lifecycle history has no derived position side,
+so it accepts only `buy|sell`.
 For Kelly sizing in `trade_risk_analyze`, provide a `--sizing` JSON object with
 `win_rate`, `avg_win`, and `avg_loss` derived from complete trade lifecycles whose
 returns are normalized consistently (for example, R-multiples). Do not map the

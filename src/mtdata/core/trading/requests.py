@@ -70,6 +70,21 @@ class _SideNormalizedRequest(BaseModel):
         return _normalize_trade_side_alias(value)
 
 
+class _DirectionalSideNormalizedRequest(BaseModel):
+    """Normalize long/short aliases for current positions and working orders."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    @field_validator("side", mode="before", check_fields=False)
+    @classmethod
+    def _normalize_side(cls, value: Optional[str]) -> Optional[str]:
+        normalized = _normalize_trade_side_alias(value)
+        return {"LONG": "BUY", "SHORT": "SELL"}.get(
+            normalized,
+            normalized,
+        )
+
+
 class TradePlaceRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True, extra="forbid")
 
@@ -283,7 +298,11 @@ class TradeHistoryRequest(_SideNormalizedRequest):
     symbol: Optional[str] = None
     side: Optional[str] = Field(
         default=None,
-        description="Optional side filter. Accepts buy/sell or long/short.",
+        description=(
+            "For deal history, buy/sell filters execution fill direction while "
+            "long/short filters derived position direction. Order history accepts "
+            "buy/sell only."
+        ),
     )
     position_ticket: Optional[Union[int, str]] = None
     deal_ticket: Optional[Union[int, str]] = None
@@ -318,7 +337,10 @@ class TradeJournalAnalyzeRequest(_SideNormalizedRequest):
     symbol: Optional[str] = None
     side: Optional[str] = Field(
         default=None,
-        description="Optional side filter. Accepts buy/sell or long/short.",
+        description=(
+            "buy/sell filters exit-fill direction; long/short filters the "
+            "economic position direction of realized exits."
+        ),
     )
     position_ticket: Optional[Union[int, str]] = None
     deal_ticket: Optional[Union[int, str]] = None
@@ -526,7 +548,7 @@ class TradeStressTestRequest(BaseModel):
         return normalized
 
 
-class TradeGetOpenRequest(_SideNormalizedRequest):
+class TradeGetOpenRequest(_DirectionalSideNormalizedRequest):
     symbol: Optional[str] = None
     ticket: Optional[Union[int, str]] = None
     side: Optional[str] = Field(
@@ -565,7 +587,7 @@ class TradeGetOpenRequest(_SideNormalizedRequest):
         return self.pnl_filter == "loss"
 
 
-class TradeGetPendingRequest(_SideNormalizedRequest):
+class TradeGetPendingRequest(_DirectionalSideNormalizedRequest):
     symbol: Optional[str] = None
     ticket: Optional[Union[int, str]] = None
     side: Optional[str] = Field(

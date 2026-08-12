@@ -125,11 +125,11 @@ def _normalize_order_type_input(order_type: Any) -> Tuple[Optional[str], Optiona
 
 
 def _normalize_trade_side_filter(side: Any) -> Tuple[Optional[str], Optional[str]]:
-    """Normalize read-only trade side filters into canonical BUY/SELL only."""
+    """Normalize fill-side and position-side filters without conflating them."""
     if side is None:
         return None, None
     if isinstance(side, bool):
-        return None, "side must be BUY or SELL."
+        return None, "side must be BUY, SELL, LONG, or SHORT."
 
     text = str(side).strip()
     if not text:
@@ -138,11 +138,84 @@ def _normalize_trade_side_filter(side: Any) -> Tuple[Optional[str], Optional[str
     normalized = text.upper().replace("-", "_").replace(" ", "_")
     while "__" in normalized:
         normalized = normalized.replace("__", "_")
-    if normalized in {"BUY", "LONG"}:
-        return "BUY", None
-    if normalized in {"SELL", "SHORT"}:
-        return "SELL", None
-    return None, "side must be BUY or SELL."
+    if normalized in {"BUY", "SELL", "LONG", "SHORT"}:
+        return normalized, None
+    return None, "side must be BUY, SELL, LONG, or SHORT."
+
+
+def _trade_history_action(
+    row: Dict[str, Any],
+    *,
+    history_kind: Optional[str],
+) -> Optional[str]:
+    """Derive whether a deal opens, closes, or reverses a position."""
+    if history_kind == "orders":
+        return None
+    raw_entry = next(
+        (
+            row.get(key)
+            for key in ("entry_label", "entry")
+            if row.get(key) is not None
+        ),
+        None,
+    )
+    entry_text = str(raw_entry or "").strip().lower().replace("_", " ")
+    if not entry_text:
+        return None
+    if "inout" in entry_text or "in out" in entry_text:
+        return "reverse"
+    if "out by" in entry_text:
+        return "close_by"
+    if "out" in entry_text:
+        return "close"
+    if "in" in entry_text:
+        return "open"
+    return None
+
+
+def _trade_history_position_side(
+    row: Dict[str, Any],
+    *,
+    action: Optional[str],
+    history_kind: Optional[str],
+) -> Optional[str]:
+    """Derive the economic position side represented by a deal fill."""
+    if history_kind == "orders":
+        return None
+    raw_type = next(
+        (
+            row.get(key)
+            for key in ("type_label", "type")
+            if row.get(key) is not None
+        ),
+        None,
+    )
+    type_text = str(raw_type or "").strip().lower().replace("_", " ")
+    if not type_text:
+        return None
+    if "buy" in type_text:
+        return "short" if action in {"close", "close_by"} else "long"
+    if "sell" in type_text:
+        return "long" if action in {"close", "close_by"} else "short"
+    return None
+
+
+def _trade_side_filter_metadata(
+    side: Any,
+    *,
+    history_kind: str = "deals",
+) -> Optional[Dict[str, str]]:
+    """Describe which row dimension a normalized side filter selects."""
+    normalized, error = _normalize_trade_side_filter(side)
+    if error is not None or normalized is None:
+        return None
+    if normalized in {"LONG", "SHORT"}:
+        dimension = "position_side"
+    elif str(history_kind).lower() == "orders":
+        dimension = "order_side"
+    else:
+        dimension = "fill_side"
+    return {"dimension": dimension, "value": normalized.lower()}
 
 
 def _validate_volume(volume: Union[int, float], symbol_info: Any) -> Tuple[Optional[float], Optional[str]]:

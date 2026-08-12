@@ -78,6 +78,11 @@ raw PnL averages are not Kelly inputs because deal sizes and capital at risk can
 Normalize each historical outcome to a consistent stake or initial risk before
 computing the average return metrics supplied here.
 
+Journal side filters distinguish two directions: `side=long|short` selects the
+economic position side of realized exits, while `side=buy|sell` selects the
+broker fill direction. A sell fill can close a long and a buy fill can close a
+short, so inspect the response's `side_filter.dimension` when automating cohorts.
+
 Portfolio stop risk is the gross sum of each ticket's remaining loss from its
 current MT5 mark to its stop. This measures equity at risk now; it does not reuse
 the original entry-to-stop loss after unrealized P&L has changed. It is a

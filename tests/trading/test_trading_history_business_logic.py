@@ -562,36 +562,108 @@ def test_trade_history_filters_rows_by_symbol_even_if_mt5_returns_mixed_rows() -
     assert out["items"][0]["symbol"] == "BTCUSD"
 
 
-def test_trade_history_filters_deals_by_side_alias() -> None:
+def test_trade_history_distinguishes_fill_and_position_side_filters() -> None:
     mt5, prev = _install_mock_mt5()
     mt5.DEAL_TYPE_BUY = 0
     mt5.DEAL_TYPE_SELL = 1
-    Deal = namedtuple("Deal", ["ticket", "time", "symbol", "type"])
+    mt5.DEAL_ENTRY_IN = 0
+    mt5.DEAL_ENTRY_OUT = 1
+    Deal = namedtuple("Deal", ["ticket", "time", "symbol", "type", "entry"])
     mt5.history_deals_get.return_value = [
-        Deal(ticket=1, time=1700000000, symbol="EURUSD", type=0),
-        Deal(ticket=2, time=1700003600, symbol="EURUSD", type=1),
+        Deal(ticket=1, time=1700000000, symbol="EURUSD", type=0, entry=0),
+        Deal(ticket=2, time=1700000060, symbol="EURUSD", type=1, entry=1),
+        Deal(ticket=3, time=1700000120, symbol="EURUSD", type=1, entry=0),
+        Deal(ticket=4, time=1700000180, symbol="EURUSD", type=0, entry=1),
     ]
 
     with patch("mtdata.core.trading.account._use_client_tz", lambda: False):
-        out = trade_history(history_kind="deals", side="long", detail="full", __cli_raw=True)
+        long_out = trade_history(
+            history_kind="deals",
+            side="long",
+            detail="full",
+            __cli_raw=True,
+        )
+        short_out = trade_history(
+            history_kind="deals",
+            side="short",
+            detail="full",
+            __cli_raw=True,
+        )
+        buy_out = trade_history(
+            history_kind="deals",
+            side="buy",
+            detail="full",
+            __cli_raw=True,
+        )
+        sell_out = trade_history(
+            history_kind="deals",
+            side="sell",
+            detail="full",
+            __cli_raw=True,
+        )
+        long_page = trade_history(
+            history_kind="deals",
+            side="long",
+            detail="full",
+            limit=1,
+            __cli_raw=True,
+        )
     if prev is not None:
         sys.modules["MetaTrader5"] = prev
 
-    assert out["success"] is True
-    assert out["request_echo"]["side"] == "BUY"
-    assert out["count"] == 1
-    assert out["items"][0]["deal_ticket"] == 1
-    assert out["items"][0]["fill_side"] == "Buy"
-    assert "deal_details" not in out["items"][0]
+    assert long_out["request_echo"]["side"] == "LONG"
+    assert long_out["side_filter"] == {
+        "dimension": "position_side",
+        "value": "long",
+    }
+    assert {row["deal_ticket"] for row in long_out["items"]} == {1, 2}
+    assert {row["position_action"] for row in long_out["items"]} == {
+        "open_long",
+        "close_long",
+    }
+    assert {row["position_side"] for row in long_out["items"]} == {"long"}
+
+    assert short_out["side_filter"]["dimension"] == "position_side"
+    assert {row["deal_ticket"] for row in short_out["items"]} == {3, 4}
+    assert {row["position_action"] for row in short_out["items"]} == {
+        "open_short",
+        "close_short",
+    }
+    assert {row["position_side"] for row in short_out["items"]} == {"short"}
+
+    assert buy_out["side_filter"] == {
+        "dimension": "fill_side",
+        "value": "buy",
+    }
+    assert {row["deal_ticket"] for row in buy_out["items"]} == {1, 4}
+    assert {row["fill_side"] for row in buy_out["items"]} == {"Buy"}
+
+    assert sell_out["side_filter"] == {
+        "dimension": "fill_side",
+        "value": "sell",
+    }
+    assert {row["deal_ticket"] for row in sell_out["items"]} == {2, 3}
+    assert {row["fill_side"] for row in sell_out["items"]} == {"Sell"}
+
+    assert long_page["count"] == 1
+    assert long_page["pagination"]["total"] == 2
+    assert long_page["pagination"]["has_more"] is True
+    assert long_page["items"][0]["position_side"] == "long"
 
 
 def test_trade_history_request_normalizes_buy_sell_aliases() -> None:
     assert TradeHistoryRequest(side="buy").side == "BUY"
     assert TradeHistoryRequest(side="sell").side == "SELL"
-    with pytest.raises(ValidationError, match="side must be BUY or SELL"):
+    with pytest.raises(
+        ValidationError,
+        match="side must be BUY, SELL, LONG, or SHORT",
+    ):
         TradeHistoryRequest(side="weird")
-    assert TradeHistoryRequest(side="long").side == "BUY"
-    assert TradeHistoryRequest(side="short").side == "SELL"
+    assert TradeHistoryRequest(side="long").side == "LONG"
+    assert TradeHistoryRequest(side="short").side == "SHORT"
+    assert TradeJournalAnalyzeRequest(side="long").side == "LONG"
+    assert TradeGetOpenRequest(side="long").side == "BUY"
+    assert TradeGetPendingRequest(side="short").side == "SELL"
     assert TradeHistoryRequest().detail == "compact"
     assert TradeJournalAnalyzeRequest().detail == "compact"
     assert TradeGetOpenRequest().detail == "compact"
@@ -629,6 +701,23 @@ def test_trade_history_filters_orders_by_side_prefix() -> None:
     assert out["items"][0]["order_ticket"] == 12
     assert out["items"][0]["order_type"] == "Sell Stop"
     assert out["items"][0]["raw"]["type_code"] == 5
+
+
+def test_trade_history_rejects_position_side_filter_for_orders() -> None:
+    mt5, prev = _install_mock_mt5()
+
+    with patch("mtdata.core.trading.account._use_client_tz", lambda: False):
+        out = trade_history(
+            history_kind="orders",
+            side="long",
+            detail="full",
+            __cli_raw=True,
+        )
+    if prev is not None:
+        sys.modules["MetaTrader5"] = prev
+
+    assert "LONG/SHORT side filters require history_kind='deals'" in out["error"]
+    mt5.history_orders_get.assert_not_called()
 
 
 def test_trade_history_deals_decodes_enum_codes_to_labels() -> None:
@@ -1009,7 +1098,10 @@ def test_trade_history_rejects_start_with_minutes_back() -> None:
 
 
 def test_trade_history_rejects_invalid_side_filter() -> None:
-    with pytest.raises(ValidationError, match="side must be BUY or SELL"):
+    with pytest.raises(
+        ValidationError,
+        match="side must be BUY, SELL, LONG, or SHORT",
+    ):
         TradeHistoryRequest(history_kind="deals", side="flat", detail="full")
 
 
@@ -1859,13 +1951,68 @@ def test_trade_journal_analyze_forwards_side_filter() -> None:
         "mtdata.core.trading.account._run_trade_history_request",
         side_effect=_fake_history,
     ):
-        out = trade_journal_analyze(side="sell", __cli_raw=True)
+        out = trade_journal_analyze(side="long", __cli_raw=True)
 
-    assert captured["request"].side == "SELL"
+    assert captured["request"].side == "LONG"
     assert out["success"] is True
     assert out["summary"]["closed_deals"] == 0
+    assert out["side_filter"] == {
+        "dimension": "position_side",
+        "value": "long",
+    }
+
+
+def test_trade_journal_position_side_filter_never_returns_opposite_exits() -> None:
+    mt5, prev = _install_mock_mt5()
+    mt5.DEAL_TYPE_BUY = 0
+    mt5.DEAL_TYPE_SELL = 1
+    mt5.DEAL_ENTRY_OUT = 1
+    Deal = namedtuple(
+        "Deal",
+        [
+            "ticket",
+            "time",
+            "symbol",
+            "type",
+            "entry",
+            "profit",
+            "commission",
+            "swap",
+            "fee",
+            "volume",
+        ],
+    )
+    mt5.history_deals_get.return_value = [
+        Deal(1, 1700000000, "EURUSD", 1, 1, 10.0, -0.5, 0.0, 0.0, 0.1),
+        Deal(2, 1700000060, "EURUSD", 0, 1, -5.0, -0.5, 0.0, 0.0, 0.1),
+    ]
+
+    with patch("mtdata.core.trading.account._use_client_tz", lambda: False):
+        long_out = trade_journal_analyze(
+            side="long",
+            detail="full",
+            limit=10,
+            __cli_raw=True,
+        )
+        short_out = trade_journal_analyze(
+            side="short",
+            detail="full",
+            limit=10,
+            __cli_raw=True,
+        )
+    if prev is not None:
+        sys.modules["MetaTrader5"] = prev
+
+    assert long_out["side_filter"]["dimension"] == "position_side"
+    assert long_out["sample_size"] == 1
+    assert {row["side"] for row in long_out["items"]} == {"long"}
+    assert short_out["sample_size"] == 1
+    assert {row["side"] for row in short_out["items"]} == {"short"}
 
 
 def test_trade_journal_request_rejects_invalid_side() -> None:
-    with pytest.raises(ValidationError, match="side must be BUY or SELL"):
+    with pytest.raises(
+        ValidationError,
+        match="side must be BUY, SELL, LONG, or SHORT",
+    ):
         TradeJournalAnalyzeRequest(side="sideways")

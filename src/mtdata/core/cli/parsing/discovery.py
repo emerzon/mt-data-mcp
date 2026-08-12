@@ -190,6 +190,14 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
         "with --group."
     ),
     ("trade_execution_quality", "side"): "Execution fill side filter: buy or sell.",
+    ("trade_history", "side"): (
+        "For deals, buy/sell filters fill_side and long/short filters "
+        "position_side. Order history accepts buy/sell only."
+    ),
+    ("trade_journal_analyze", "side"): (
+        "buy/sell filters exit-fill direction; long/short filters realized "
+        "position direction."
+    ),
     ("trade_execution_quality", "min_sample"): (
         "Minimum eligible fills required for sufficient execution-quality evidence."
     ),

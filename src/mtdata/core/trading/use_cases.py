@@ -3319,6 +3319,14 @@ def run_trade_history(  # noqa: C901
                 return {"error": "history_kind must be 'deals' or 'orders'."}
             if kind == "orders" and deal_ticket_value is not None:
                 return {"error": "deal_ticket is only valid when history_kind='deals'."}
+            if kind == "orders" and side_value in {"LONG", "SHORT"}:
+                return {
+                    "error": (
+                        "LONG/SHORT side filters require history_kind='deals' "
+                        "because order history has no derived position side. "
+                        "Use side=buy or side=sell for order direction."
+                    )
+                }
 
             deal_enum_columns = (
                 ("type", "DEAL_TYPE_"),
@@ -3460,10 +3468,19 @@ def run_trade_history(  # noqa: C901
 
             def _empty_history_message(kind_label: str) -> Dict[str, str]:
                 message = f"No {kind_label} found"
+                side_dimension = (
+                    "order side"
+                    if kind_label == "orders"
+                    else "position side"
+                    if side_value in {"LONG", "SHORT"}
+                    else "fill side"
+                )
                 if side_value and request.symbol:
-                    message += f" for {side_value} side on {request.symbol}"
+                    message += (
+                        f" for {side_value} {side_dimension} on {request.symbol}"
+                    )
                 elif side_value:
-                    message += f" for {side_value} side"
+                    message += f" for {side_value} {side_dimension}"
                 elif request.symbol:
                     message += f" for {request.symbol}"
                 if minutes_back_value is not None:
@@ -3476,9 +3493,34 @@ def run_trade_history(  # noqa: C901
                     message += " Note: MT5 history may take up to a few minutes to reflect very recent events."
                 return {"message": message}
 
-            def _filter_by_side(df_in: "pd.DataFrame") -> "pd.DataFrame":
+            def _filter_by_side(
+                df_in: "pd.DataFrame",
+                *,
+                history_kind: str,
+            ) -> "pd.DataFrame":
                 if side_value is None:
                     return df_in
+                if side_value in {"LONG", "SHORT"}:
+                    def _position_side_for_row(series: "pd.Series") -> Optional[str]:
+                        row = series.to_dict()
+                        return validation._trade_history_position_side(
+                            row,
+                            action=validation._trade_history_action(
+                                row,
+                                history_kind=history_kind,
+                            ),
+                            history_kind=history_kind,
+                        )
+
+                    position_sides = df_in.apply(
+                        _position_side_for_row,
+                        axis=1,
+                    )
+                    return df_in.loc[
+                        position_sides.astype(str).str.lower().eq(
+                            side_value.lower()
+                        )
+                    ]
                 if "type" not in df_in.columns:
                     return df_in.iloc[0:0]
                 type_text = (
@@ -3539,7 +3581,7 @@ def run_trade_history(  # noqa: C901
                         ).round(3)
                 for col, prefix in deal_enum_columns:
                     _decode_enum_column(df, col, prefix)
-                df = _filter_by_side(df)
+                df = _filter_by_side(df, history_kind=kind)
                 if len(df) == 0:
                     return _empty_history_message("deals")
                 if len(df) > 0:
@@ -3601,7 +3643,7 @@ def run_trade_history(  # noqa: C901
                 for col, prefix in order_enum_columns:
                     _decode_enum_column(df, col, prefix)
                 _backfill_filled_order_price_open(df)
-                df = _filter_by_side(df)
+                df = _filter_by_side(df, history_kind=kind)
                 if len(df) == 0:
                     return _empty_history_message("orders")
 

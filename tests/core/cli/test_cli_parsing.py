@@ -1409,6 +1409,8 @@ class TestResolveParamKwargs:
             ("trade_journal_analyze", "limit", "realized exit deals"),
             ("trade_execution_quality", "minutes_back", "30 days"),
             ("trade_execution_quality", "limit", "eligible fills"),
+            ("trade_history", "side", "position_side"),
+            ("trade_journal_analyze", "side", "realized position"),
             ("finviz_insider_activity", "option", "latest buys/sales"),
         ],
     )

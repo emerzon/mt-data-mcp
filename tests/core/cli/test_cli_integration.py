@@ -1189,7 +1189,7 @@ class TestMain:
         assert result == 0
         request = mock_fn.call_args[1]["request"]
         assert isinstance(request, TradeHistoryRequest)
-        assert request.side == "SELL"
+        assert request.side == "SHORT"
 
     @patch("mtdata.core.cli.api.discover_tools")
     def test_command_exception_handled(self, mock_discover, capsys):
