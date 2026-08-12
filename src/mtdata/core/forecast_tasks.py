@@ -179,7 +179,7 @@ def _serialize_model_handle(
 ) -> Dict[str, Any]:
     created_at_epoch = getattr(handle, "created_at", None)
     store_info: Dict[str, Any] = {}
-    describe = getattr(store, "describe_model", None)
+    describe = getattr(store, "describe_model", None) if detail == "full" else None
     if callable(describe):
         try:
             raw_info = describe(handle)
@@ -208,7 +208,13 @@ def _serialize_model_handle(
         payload["source_task_id"] = str(source_task_id)
     if last_used_epoch is not None:
         payload["last_used"] = format_epoch_utc(last_used_epoch) or last_used_epoch
-    age_days = _days(store_info.get("age_seconds"))
+    age_seconds = store_info.get("age_seconds")
+    if age_seconds is None and created_at_epoch is not None:
+        try:
+            age_seconds = max(0.0, time.time() - float(created_at_epoch))
+        except (TypeError, ValueError):
+            age_seconds = None
+    age_days = _days(age_seconds)
     idle_days = _days(store_info.get("idle_seconds"))
     expires_in_days = _days(store_info.get("expires_in_seconds"))
     if age_days is not None:
@@ -871,27 +877,37 @@ def forecast_task_list(
 def forecast_models_list(
     method: Optional[str] = None,
     detail: DetailLevel = "compact",
+    limit: Annotated[int, Field(ge=1, le=500)] = 50,
+    offset: Annotated[int, Field(ge=0)] = 0,
 ) -> Dict[str, Any]:
     """List usable stored trained forecast models.
 
     Optionally filter by method name (e.g. nhits, tft, mlforecast).
     Expired artifacts are intentionally excluded; use a dry-run
     ``forecast_models_cleanup`` call to inspect them. Use ``detail='full'`` to
-    include stored model metadata.
+    include stored model metadata. Results use deterministic model-id ordering
+    and are paged with ``limit``/``offset``.
     """
     def _execute() -> Dict[str, Any]:
         detail_mode = _detail_mode(detail)
         store = _get_model_store()
         handles = store.list_models(method=method)
         all_handles = store.list_models(method=method, include_expired=True)
+        handles = sorted(handles, key=lambda handle: str(handle.model_id))
+        total_count = len(handles)
+        page = handles[int(offset) : int(offset) + int(limit)]
         items = [
             _serialize_model_handle(h, detail=detail_mode, store=store)
-            for h in handles
+            for h in page
         ]
         out = {
             "success": True,
             "detail": detail_mode,
             "count": len(items),
+            "total_count": total_count,
+            "limit": int(limit),
+            "offset": int(offset),
+            "has_more": bool(int(offset) + len(items) < total_count),
             "models": items,
             "expired_models_hidden": max(0, len(all_handles) - len(handles)),
         }
@@ -936,6 +952,8 @@ def forecast_models_list(
         func=_execute,
         method=method,
         detail=detail,
+        limit=limit,
+        offset=offset,
     )
 
 

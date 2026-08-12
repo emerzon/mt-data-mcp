@@ -419,7 +419,28 @@ class TestForecastModels:
 
         assert result["success"] is True
         assert result["count"] == 2
+        assert result["total_count"] == 2
+        assert result["has_more"] is False
         assert result["models"][0]["model_id"] == "nhits/EURUSD_H1/a"
+        mock_store.describe_model.assert_not_called()
+
+    def test_lists_models_with_stable_pagination(self):
+        from src.mtdata.core.forecast_tasks import forecast_models_list
+
+        handles = [
+            TrainedModelHandle(f"m/S{i}/h", "m", f"S{i}", "h", float(i))
+            for i in range(4)
+        ]
+        mock_store = MagicMock()
+        mock_store.list_models.return_value = list(reversed(handles))
+
+        with patch(_PATCH_STORE, return_value=mock_store):
+            result = _unwrap(forecast_models_list)(limit=2, offset=1)
+
+        assert result["total_count"] == 4
+        assert result["count"] == 2
+        assert result["has_more"] is True
+        assert [row["model_id"] for row in result["models"]] == ["m/S1/h", "m/S2/h"]
 
     def test_delete_existing(self):
         from src.mtdata.core.forecast_tasks import forecast_models_delete
