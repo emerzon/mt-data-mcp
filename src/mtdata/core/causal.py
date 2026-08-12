@@ -3025,8 +3025,8 @@ def cointegration_test(  # noqa: C901
             Johansen supports only 0.01, 0.05, or 0.1 because its critical
             value tables contain only those three levels.
         min_overlap: Minimum overlapping transformed samples required per pair.
-            Engle-Granger requires at least 20 samples. Values above window_bars
-            are capped to window_bars without crossing that statistical floor.
+            Engle-Granger requires at least 20 samples. It cannot exceed
+            window_bars.
         include_incomplete: Include the current forming candle. Defaults to false.
         detail: "compact" keeps pair results concise; "full" adds overlap/window
             diagnostics and legends.
@@ -3196,13 +3196,13 @@ def cointegration_test(  # noqa: C901
                 meta=meta,
             )
         if window_bars_value < min_overlap_value:
-            requested_min_overlap = min_overlap_value
-            min_overlap_value = window_bars_value
-            meta["min_overlap_requested"] = requested_min_overlap
-            meta["min_overlap"] = min_overlap_value
-            warnings_out.append(
-                f"min_overlap adjusted from {requested_min_overlap} to {min_overlap_value} "
-                "to match window_bars."
+            return _causal_error(
+                _min_overlap_exceeds_window_message(
+                    min_overlap=min_overlap_value,
+                    window_bars=window_bars_value,
+                ),
+                code="invalid_input",
+                meta=meta,
             )
 
         if not (0.0 < float(significance) < 1.0):
