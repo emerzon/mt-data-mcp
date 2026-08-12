@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 from unittest.mock import patch
 
 from mtdata.core import finviz as core_finviz
@@ -120,6 +121,36 @@ def test_finviz_news_repairs_mojibake_titles() -> None:
         out = raw(symbol="HPE", limit=5, page=1)
 
     assert out["items"][0]["title"] == "HPE\u2019s stock soars"
+
+
+def test_finviz_news_corrects_future_naive_meridiem_loss() -> None:
+    item = core_finviz._normalize_finviz_news_item(
+        {
+            "Title": "Morning headline",
+            "Source": "DigiTimes",
+            "Date": datetime(2026, 8, 12, 12, 29),
+        },
+        now=datetime(2026, 8, 12, 14, 0, tzinfo=timezone.utc),
+    )
+
+    assert item["published_at"] == "2026-08-12T04:29:00+00:00"
+    assert item["original_published_at"] == "2026-08-12T16:29:00+00:00"
+    assert item["timestamp_quality"] == "provider_meridiem_corrected"
+    assert item["relative_time"] == "9 hours ago"
+
+
+def test_finviz_news_marks_unresolved_aware_future_time() -> None:
+    item = core_finviz._normalize_finviz_news_item(
+        {
+            "Title": "Future headline",
+            "Date": "2026-08-13T16:29:00Z",
+        },
+        now=datetime(2026, 8, 12, 14, 0, tzinfo=timezone.utc),
+    )
+
+    assert item["timestamp_quality"] == "future_provider_time"
+    assert item["timestamp_anomaly"] is True
+    assert item["relative_time"] == "in 26 hours"
 
 
 def test_finviz_news_full_detail_keeps_urls() -> None:

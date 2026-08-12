@@ -105,7 +105,7 @@ def test_news_tool_limits_globally_without_changing_default(monkeypatch) -> None
     assert limited["has_more"] is True
 
 
-def test_news_tool_symbol_limit_caps_related_bucket_only(monkeypatch) -> None:
+def test_news_tool_symbol_limit_is_a_global_row_cap(monkeypatch) -> None:
     raw = _unwrap(news)
 
     payload = {
@@ -127,10 +127,10 @@ def test_news_tool_symbol_limit_caps_related_bucket_only(monkeypatch) -> None:
     assert "impact_news" not in limited
     assert "upcoming_events" not in limited
     assert "recent_events" not in limited
-    assert limited["total_candidates"] == 3
+    assert limited["total_candidates"] == 8
     assert limited["returned"] == 2
-    assert limited["limit_scope"] == "symbol"
-    assert limited["bucket_truncation"] == {"related_news": True}
+    assert limited["limit_scope"] == "global"
+    assert limited["bucket_truncation"]["related_news"] is True
     assert limited["truncated"] is True
     assert limited["has_more"] is True
 
@@ -161,7 +161,7 @@ def test_compact_symbol_news_caps_each_bucket_by_default(monkeypatch) -> None:
     assert "compact_bucket_limit" not in full
 
 
-def test_news_tool_fx_symbol_limit_does_not_fill_from_general_buckets(monkeypatch) -> None:
+def test_news_tool_fx_symbol_limit_keeps_useful_general_buckets(monkeypatch) -> None:
     raw = _unwrap(news)
 
     payload = {
@@ -180,17 +180,17 @@ def test_news_tool_fx_symbol_limit_does_not_fill_from_general_buckets(monkeypatc
     limited = raw(symbol="EURUSD", limit=3)
 
     assert limited["related_news"] == [{"title": "r1"}]
-    assert limited["row_keys"] == ["related_news"]
-    assert "general_news" not in limited
+    assert limited["general_news"] == [{"title": "g1"}, {"title": "g2"}]
+    assert limited["row_keys"] == ["related_news", "general_news"]
     assert "impact_news" not in limited
     assert "upcoming_events" not in limited
     assert "recent_events" not in limited
     assert "market_context" not in limited
-    assert limited["total_candidates"] == 1
-    assert limited["returned"] == 1
-    assert limited["limit_scope"] == "symbol"
+    assert limited["total_candidates"] == 6
+    assert limited["returned"] == 3
+    assert limited["limit_scope"] == "global"
     assert "macro_fallback" not in limited
-    assert limited["has_more"] is False
+    assert limited["has_more"] is True
 
 
 def test_news_tool_supports_global_offset(monkeypatch) -> None:

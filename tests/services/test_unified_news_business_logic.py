@@ -641,6 +641,29 @@ def test_finviz_naive_datetimes_use_new_york_dst_offsets() -> None:
     )
 
 
+def test_finviz_economic_candidates_normalize_new_york_wall_time(monkeypatch) -> None:
+    monkeypatch.setattr(
+        svc,
+        "get_economic_calendar",
+        lambda **_kwargs: {
+            "success": True,
+            "items": [
+                {
+                    "date": "2026-08-13T08:30:00",
+                    "event": "PPI",
+                    "ticker": "USD",
+                    "importance": 3,
+                }
+            ],
+        },
+    )
+
+    item = svc.FinvizNewsSource()._fetch_economic_candidates(limit=1)[0]
+
+    assert item.published_at == datetime(2026, 8, 13, 12, 30, tzinfo=timezone.utc)
+    assert item.metadata["provider_timezone"] == "America/New_York"
+
+
 def test_mt5_future_headline_is_clamped_and_flagged(monkeypatch) -> None:
     future = datetime.now(timezone.utc) + timedelta(minutes=20)
     monkeypatch.setattr(

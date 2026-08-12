@@ -38,7 +38,6 @@ _NEWS_BUCKET_KEYS = (
     "recent_events",
     "market_context",
 )
-_NEWS_SYMBOL_LIMIT_BUCKET_KEYS = ("related_news",)
 _NEWS_BUCKET_COUNT_KEYS = {
     "general_news": "general_count",
     "related_news": "related_count",
@@ -322,24 +321,16 @@ def _apply_news_limit(
     truncated = False
     remaining = int(limit) if limit is not None else None
     remaining_offset = max(0, int(offset or 0))
-    if symbol_mode and limit is not None and limit_per_bucket is None:
-        bucket_keys = _NEWS_SYMBOL_LIMIT_BUCKET_KEYS
-        limit_scope = "symbol"
-        drop_bucket_keys = set(_NEWS_BUCKET_KEYS) - set(bucket_keys)
-    else:
-        bucket_keys = _NEWS_BUCKET_KEYS
-        drop_bucket_keys = set()
-        limit_scope = (
-            "global" if limit is not None else "per_bucket" if limit_per_bucket is not None else "offset"
-        )
+    bucket_keys = _NEWS_BUCKET_KEYS
+    limit_scope = (
+        "global"
+        if limit is not None
+        else "per_bucket"
+        if limit_per_bucket is not None
+        else "offset"
+    )
 
     bucket_truncation: Dict[str, bool] = {}
-    for key in drop_bucket_keys:
-        out.pop(key, None)
-        count_key = _NEWS_BUCKET_COUNT_KEYS.get(key)
-        if count_key:
-            out.pop(count_key, None)
-
     for key in bucket_keys:
         value = out.get(key)
         if isinstance(value, list):

@@ -1617,7 +1617,7 @@ class FinvizNewsSource:
                         provider=self.name,
                         source="Finviz Economic Calendar",
                         kind="economic_event",
-                        published_at=_maybe_parse_datetime(item.get("date")),
+                        published_at=_maybe_parse_finviz_datetime(item.get("date")),
                         summary=" | ".join(summary_parts) or None,
                         category="economic_calendar",
                         priority=priority,
@@ -1625,6 +1625,7 @@ class FinvizNewsSource:
                             "event_for": event_for,
                             "raw_event_for": raw_event_for or None,
                             "impact": impact,
+                            "provider_timezone": "America/New_York",
                             "source_rank": rank,
                             "search_text": " ".join(
                                 _safe_text(item.get(key))
@@ -2007,11 +2008,18 @@ class NewsAggregator:
             "recent_count": len(recent_events),
         }
         if context is not None and not related_news and general_news:
-            payload["symbol_news_note"] = (
-                f"No {context.symbol}-specific related news passed relevance gates; "
-                "general_news remains market-wide. Try finviz_news for raw "
-                "Finviz-only per-ticker headlines."
-            )
+            if context.asset_class == "equity":
+                payload["symbol_news_note"] = (
+                    f"No {context.symbol}-specific related news passed relevance gates; "
+                    "general_news remains market-wide. finviz_news can provide raw "
+                    "Finviz-only per-ticker headlines for supported equities."
+                )
+            else:
+                payload["symbol_news_note"] = (
+                    f"No {context.symbol}-specific related news passed relevance gates; "
+                    "general, impact, and economic-calendar buckets retain relevant "
+                    "market context. Use limit_per_bucket to bound each family."
+                )
         if context is None:
             general_news_rows = payload.pop("general_news")
             related_news_rows = payload.pop("related_news")

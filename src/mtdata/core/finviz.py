@@ -1360,7 +1360,11 @@ def _normalize_finviz_published_at(value: Any, *, now: Optional[datetime] = None
     return text
 
 
-def _finviz_relative_time_from_text(value: Any) -> Optional[str]:
+def _finviz_relative_time_from_text(
+    value: Any,
+    *,
+    now: Optional[datetime] = None,
+) -> Optional[str]:
     if not isinstance(value, str):
         return None
     text = value.strip()
@@ -1374,8 +1378,19 @@ def _finviz_relative_time_from_text(value: Any) -> Optional[str]:
         return None
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)
-    delta = datetime.now(timezone.utc) - dt.astimezone(timezone.utc)
-    seconds = max(0, int(delta.total_seconds()))
+    reference = now or datetime.now(timezone.utc)
+    if reference.tzinfo is None:
+        reference = reference.replace(tzinfo=timezone.utc)
+    delta = reference.astimezone(timezone.utc) - dt.astimezone(timezone.utc)
+    signed_seconds = int(delta.total_seconds())
+    if signed_seconds < 0:
+        future_seconds = abs(signed_seconds)
+        future_minutes = max(1, future_seconds // 60)
+        if future_minutes < 90:
+            return f"in {future_minutes} minutes"
+        future_hours = future_minutes // 60
+        return f"in {future_hours} hours"
+    seconds = signed_seconds
     if seconds < 90:
         return "just now"
     minutes = seconds // 60
@@ -1391,7 +1406,12 @@ def _finviz_relative_time_from_text(value: Any) -> Optional[str]:
     return f"{weeks} weeks ago"
 
 
-def _normalize_finviz_news_item(item: Any, *, kind: str = "headline") -> Any:
+def _normalize_finviz_news_item(
+    item: Any,
+    *,
+    kind: str = "headline",
+    now: Optional[datetime] = None,
+) -> Any:
     if not isinstance(item, dict):
         return item
 
@@ -1416,12 +1436,48 @@ def _normalize_finviz_news_item(item: Any, *, kind: str = "headline") -> Any:
             continue
         if target_key == "published_at":
             raw_published_at = value
-            value = _normalize_finviz_published_at(value)
+            value = _normalize_finviz_published_at(value, now=now)
         out[target_key] = value
+    reference = now or datetime.now(timezone.utc)
+    if reference.tzinfo is None:
+        reference = reference.replace(tzinfo=timezone.utc)
+    raw_was_naive = isinstance(raw_published_at, datetime) and (
+        raw_published_at.tzinfo is None
+    )
+    if isinstance(raw_published_at, str):
+        try:
+            raw_dt = datetime.fromisoformat(raw_published_at.replace("Z", "+00:00"))
+            raw_was_naive = raw_dt.tzinfo is None
+        except ValueError:
+            raw_was_naive = False
+    published_text = out.get("published_at")
+    try:
+        published_dt = datetime.fromisoformat(
+            str(published_text).replace("Z", "+00:00")
+        )
+    except (TypeError, ValueError):
+        published_dt = None
+    if published_dt is not None:
+        if published_dt.tzinfo is None:
+            published_dt = published_dt.replace(tzinfo=timezone.utc)
+        future_by = published_dt.astimezone(timezone.utc) - reference.astimezone(
+            timezone.utc
+        )
+        if future_by > timedelta(minutes=5):
+            corrected = published_dt - timedelta(hours=12)
+            if raw_was_naive and corrected <= reference + timedelta(minutes=5):
+                out["original_published_at"] = published_text
+                out["published_at"] = corrected.astimezone(timezone.utc).isoformat()
+                out["timestamp_quality"] = "provider_meridiem_corrected"
+                out["timestamp_correction"] = "subtracted_12_hours_from_future_naive_provider_time"
+            else:
+                out["timestamp_quality"] = "future_provider_time"
+                out["timestamp_anomaly"] = True
+                out["future_by_seconds"] = int(future_by.total_seconds())
     if "relative_time" not in out:
         relative_time = (
-            _finviz_relative_time_from_text(raw_published_at)
-            or _finviz_relative_time_from_text(out.get("published_at"))
+            _finviz_relative_time_from_text(out.get("published_at"), now=reference)
+            or _finviz_relative_time_from_text(raw_published_at, now=reference)
         )
         if relative_time:
             out["relative_time"] = relative_time
@@ -1458,8 +1514,9 @@ def _normalize_finviz_news_payload(
         return out
 
     source_rows = news_rows if isinstance(news_rows, list) else items_rows
+    normalized_at = datetime.now(timezone.utc)
     normalized_items = [
-        _normalize_finviz_news_item(item, kind=kind)
+        _normalize_finviz_news_item(item, kind=kind, now=normalized_at)
         for item in source_rows
     ]
     out.pop("news", None)
@@ -1492,6 +1549,11 @@ def _normalize_finviz_news_payload(
             "url",
             "kind",
             "content_type",
+            "timestamp_quality",
+            "timestamp_anomaly",
+            "timestamp_correction",
+            "original_published_at",
+            "future_by_seconds",
         }
         out["items"] = [
             {
