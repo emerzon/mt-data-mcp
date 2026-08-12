@@ -122,12 +122,13 @@ class ForecastGenerateRequest(_PublicForecastRequest):
     end: Optional[str] = None
     params: Optional[Dict[str, Any]] = None
     ci_alpha: float = Field(
-        0.05,
+        0.0,
         ge=0.0,
         le=0.5,
         description=(
             "Interval tail probability; confidence is 1 - ci_alpha. Defaults "
-            "to 0.05 (95%); use 0 to omit intervals."
+            "to 0 (point forecast); pass 0.05 to request a 95% interval from "
+            "methods that support native intervals."
         ),
     )
     quantity: Literal["price", "return", "volatility"] = Field(

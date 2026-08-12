@@ -961,31 +961,46 @@ def forecast_models_list(
             out["model_store"] = {
                 "path": str(getattr(store, "root", "")),
                 "ttl_days": _days(getattr(store, "ttl_seconds", 0.0)),
-                "models_cached": 0,
+                "models_cached": total_count,
             }
-            if method:
+            if total_count > 0:
+                last_offset = ((total_count - 1) // int(limit)) * int(limit)
+                out["message"] = (
+                    f"No models are present on the requested page at offset={int(offset)}; "
+                    f"{total_count} model(s) match the current filters."
+                )
+                out["hint"] = (
+                    f"Use offset={last_offset} for the last populated page, or offset=0 "
+                    "to restart pagination."
+                )
+                out["suggested_offsets"] = {
+                    "first": 0,
+                    "last": last_offset,
+                }
+            elif method:
                 out["message"] = f"No stored forecast models matched method={method!r}."
             else:
                 out["message"] = (
                     "No stored forecast models found. Trainable methods persist "
                     "artifacts here after forecast_train or async forecast_generate."
                 )
-            out["hint"] = (
-                "Use forecast_train to create a model, or run forecast_list_methods "
-                "with profile=all and supports_training=true to inspect trainable methods."
-            )
-            out["actions"] = [
-                "mtdata-cli forecast_list_methods --profile all --supports_training true",
-                "mtdata-cli forecast_train --help",
-            ]
-            out["related_tools"] = [
-                "forecast_train",
-                "forecast_list_methods",
-                "forecast_models_cleanup",
-            ]
-            recent_tasks = _recent_completed_model_tasks(method=method)
-            if recent_tasks:
-                out["recent_completed_tasks"] = recent_tasks
+            if total_count == 0:
+                out["hint"] = (
+                    "Use forecast_train to create a model, or run forecast_list_methods "
+                    "with profile=all and supports_training=true to inspect trainable methods."
+                )
+                out["actions"] = [
+                    "mtdata-cli forecast_list_methods --profile all --supports_training true",
+                    "mtdata-cli forecast_train --help",
+                ]
+                out["related_tools"] = [
+                    "forecast_train",
+                    "forecast_list_methods",
+                    "forecast_models_cleanup",
+                ]
+                recent_tasks = _recent_completed_model_tasks(method=method)
+                if recent_tasks:
+                    out["recent_completed_tasks"] = recent_tasks
         return out
 
     return run_logged_operation(

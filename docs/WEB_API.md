@@ -214,7 +214,7 @@ Generate price forecasts.
   "lookback": null,
   "as_of": null,
   "params": {},
-  "ci_alpha": 0.05,
+  "ci_alpha": 0,
   "quantity": "price",
   "denoise": {
     "method": "ema",

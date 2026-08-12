@@ -184,6 +184,16 @@ def test_forecast_generate_routes_by_library_and_validates_inputs(monkeypatch):
     assert out["method"] == "autoarima"
     assert out["library"] == "statsforecast"
 
+    out = raw(
+        request=ForecastGenerateRequest(
+            symbol="EURUSD",
+            library="native",
+            method="sf_theta",
+        )
+    )
+    assert out["success"] is False
+    assert "not available in library 'native'" in out["error"]
+
     out = raw(request=ForecastGenerateRequest(symbol="EURUSD", library="sktime", method="theta", params={}))
     assert out["ok"] is True
     assert captured["method"] == "sktime"
@@ -352,6 +362,8 @@ def test_forecast_generate_defaults_to_compact_payload(monkeypatch):
         "reason": "ci_alpha was not requested; direction is based on the point estimate only.",
         "recommended_tool": "forecast_conformal_intervals",
     }
+    assert out["trust_level"] == "adequate"
+    assert "trust_blockers" not in out
     assert out["units"]["forecast_vs_last_price.*_delta_pct"] == (
         "percentage_points (1.0 = 1%)"
     )
@@ -2699,7 +2711,10 @@ def test_forecast_conformal_intervals_success_and_errors(monkeypatch):
     )
 
     assert out["ci_alpha"] == 0.1
-    assert out["confidence_level"] == 0.9
+    assert out["nominal_confidence_level"] == 0.9
+    assert out["empirical_coverage"] == 1.0
+    assert out["coverage_status"] == "at_or_above_nominal_target"
+    assert "confidence_level" not in out
     assert out["ci_status"] == "available"
     assert out["ci_available"] is True
     assert out["detail"] == "compact"
@@ -2817,6 +2832,11 @@ def test_run_forecast_conformal_intervals_uses_finite_sample_quantile():
         pytest.approx(2.0 / 3.0)
     ]
     assert result["conformal"]["calibration_points_per_step"] == [3]
+    assert result["nominal_confidence_level"] == 0.75
+    assert result["empirical_coverage"] == pytest.approx(2.0 / 3.0)
+    assert result["coverage_status"] == "below_nominal_target"
+    assert result["coverage_gap"] == pytest.approx(-0.083333)
+    assert "confidence_level" not in result
     assert result["lower_price"] == [97.0]
     assert result["upper_price"] == [103.0]
     assert result["ci_status"] == "available"

@@ -1536,7 +1536,7 @@ class TestForecastGenerateIntegration:
         assert request.library == "native"
         assert request.method == "theta"
         assert request.detail == "compact"
-        assert request.ci_alpha == 0.05
+        assert request.ci_alpha == 0.0
         assert request.model_cache == "reuse"
         assert call_kwargs["__cli_raw"] is True
 

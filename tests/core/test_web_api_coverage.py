@@ -123,7 +123,7 @@ class TestPydanticModels:
         assert body.timeframe == "H1"
         assert body.method == "theta"
         assert body.horizon == 12
-        assert body.ci_alpha == 0.05
+        assert body.ci_alpha == 0.0
         assert body.quantity == "price"
         assert body.to_domain_request().method == "theta"
 

@@ -263,8 +263,14 @@ def _normalize_forecast_payload(  # noqa: C901
         if not times:
             return None
 
+        quantity = str(payload.get("quantity") or "").strip().lower()
         main_key = None
-        for k in ("forecast_price", "forecast_return", "forecast_series", "forecast"):
+        candidate_keys = (
+            ("forecast_return", "forecast_price", "forecast_series", "forecast")
+            if quantity == "return"
+            else ("forecast_price", "forecast_return", "forecast_series", "forecast")
+        )
+        for k in candidate_keys:
             if isinstance(payload.get(k), list):
                 main_key = k
                 break
@@ -283,6 +289,19 @@ def _normalize_forecast_payload(  # noqa: C901
                 digits = None
         price_digits = digits if "price" in main_key else None
         is_return_col = "return" in main_key
+        return_with_price = bool(
+            quantity == "return"
+            and main_key == "forecast_return"
+            and isinstance(payload.get("forecast_price"), list)
+        )
+        companion_prices = (
+            list(payload.get("forecast_price") or []) if return_with_price else []
+        )
+        bar_states = (
+            list(payload.get("forecast_bar_states") or [])
+            if isinstance(payload.get("forecast_bar_states"), list)
+            else []
+        )
 
         def _fmt_forecast_value(value: Any) -> Any:
             if not (format_digits and isinstance(value, (int, float))):
@@ -378,29 +397,40 @@ def _normalize_forecast_payload(  # noqa: C901
             if isinstance(qarr, list) and qarr:
                 usable_qcols.append(q)
 
-        headers = ["time", "forecast"]
         include_market_status = bool(market_status)
-        if include_market_status:
-            headers.append("market_status")
-        if include_interval_columns:
-            headers += ["lower", "upper"]
-        for q in usable_qcols:
-            headers.append(f"q{q}")
+        value_field = "return" if quantity == "return" and is_return_col else "forecast"
+        lower_field = "lower_return" if value_field == "return" else "lower"
+        upper_field = "upper_return" if value_field == "return" else "upper"
         rows: List[Dict[str, Any]] = []
         for i in range(n):
             val = _fmt_forecast_value(fvals[i])
 
             row: Dict[str, Any] = {
                 "time": times[i],
-                "forecast": val,
+                value_field: val,
             }
+            if i < len(bar_states):
+                row["bar_state"] = bar_states[i]
+            if return_with_price and i < len(companion_prices):
+                price_value = companion_prices[i]
+                if (
+                    format_digits
+                    and digits is not None
+                    and isinstance(price_value, (int, float))
+                    and not isinstance(price_value, bool)
+                ):
+                    try:
+                        price_value = f"{float(price_value):.{digits}f}"
+                    except Exception:
+                        pass
+                row["price"] = price_value
             if include_market_status:
                 row["market_status"] = market_status[i] if i < len(market_status) else None
             if include_interval_columns:
                 low_val = _fmt_forecast_value(lower[i] if i < len(lower) else None)
                 up_val = _fmt_forecast_value(upper[i] if i < len(upper) else None)
-                row["lower"] = low_val
-                row["upper"] = up_val
+                row[lower_field] = low_val
+                row[upper_field] = up_val
             for q in usable_qcols:
                 qarr = qmap.get(q) if isinstance(qmap, dict) else None  # type: ignore[assignment]
                 if not isinstance(qarr, list):
@@ -418,37 +448,68 @@ def _normalize_forecast_payload(  # noqa: C901
             meta_block = _build_forecast_meta(payload)
             if meta_block:
                 out["meta"] = meta_block
-        else:
-            for key in (
-                "symbol",
-                "timeframe",
-                "method",
-                "quantity",
-                "detail",
-                "horizon",
-                "timezone",
-                "last_price",
-                "last_price_source",
-                "forecast_start_gap_bars",
-                "forecast_vs_last_price",
-                "path_flat",
-                "path_range",
-                "units",
+
+        for key in (
+            "symbol",
+            "timeframe",
+            "library",
+            "method",
+            "quantity",
+            "detail",
+            "horizon",
+            "timezone",
+            "last_observation_time",
+            "last_price",
+            "last_price_source",
+            "last_price_age_seconds",
+            "last_price_stale",
+            "history_policy_ok",
+            "freshness_basis",
+            "freshness_age_metric",
+            "market_status",
+            "forecast_start_gap_bars",
+            "forecast_time_semantics",
+            "forecast_value_semantics",
+            "forecast_vs_last_price",
+            "path_flat",
+            "path_range",
+            "forecast_status",
+            "signal_status",
+            "trust_level",
+            "trust_level_basis",
+            "trust_blockers",
+            "units",
+            "data_window",
+            "training_period",
+            "return_unit",
+            "quantity_note",
+            "nominal_confidence_level",
+            "empirical_coverage",
+            "coverage_status",
+            "coverage_gap",
+        ):
+            value = payload.get(key)
+            if (
+                key == "last_price"
+                and format_digits
+                and digits is not None
+                and isinstance(value, (int, float))
+                and not isinstance(value, bool)
             ):
-                value = payload.get(key)
-                if (
-                    key == "last_price"
-                    and format_digits
-                    and digits is not None
-                    and isinstance(value, (int, float))
-                    and not isinstance(value, bool)
-                ):
-                    try:
-                        value = f"{float(value):.{digits}f}"
-                    except Exception:
-                        pass
-                if not _is_empty_value(value):
-                    out[key] = value
+                try:
+                    value = f"{float(value):.{digits}f}"
+                except Exception:
+                    pass
+            if not _is_empty_value(value):
+                out[key] = value
+
+        if quantity == "return":
+            out.setdefault("return_unit", "return_fraction")
+            if return_with_price:
+                out.setdefault(
+                    "quantity_note",
+                    "forecast rows show return; price is the reconstructed price path.",
+                )
 
         ci_diag = _compact_forecast_ci(payload, lower=lower, upper=upper)
         if ci_diag:
@@ -1271,6 +1332,7 @@ def _normalize_barrier_prob_payload(
         "tp_price",
         "sl_price",
         "probability_unit",
+        "prob_hit",
         "prob_tp_first",
         "prob_sl_first",
         "prob_no_hit",
@@ -2037,6 +2099,7 @@ def _compact_forecast_ci(
         return {}
 
     out: Dict[str, Any] = {}
+    nominal_confidence_level = payload.get("nominal_confidence_level")
     confidence_level = payload.get("confidence_level")
     if _is_empty_value(confidence_level) and alpha is not None:
         try:
@@ -2044,7 +2107,12 @@ def _compact_forecast_ci(
         except Exception:
             confidence_level = None
     if ci_status == "available" and has_interval_columns:
-        if not _is_empty_value(confidence_level):
+        if not _is_empty_value(nominal_confidence_level):
+            out["nominal_confidence_level"] = nominal_confidence_level
+            empirical_coverage = payload.get("empirical_coverage")
+            if not _is_empty_value(empirical_coverage):
+                out["empirical_coverage"] = empirical_coverage
+        elif not _is_empty_value(confidence_level):
             out["confidence_level"] = confidence_level
         elif alpha is not None:
             out["ci_alpha"] = alpha

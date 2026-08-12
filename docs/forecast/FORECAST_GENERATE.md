@@ -63,9 +63,11 @@ or `--detail full`.
 ### Uncertainty
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| `--ci-alpha` | 0.05 | Confidence interval alpha (0.05 = 95% CI); use `null` in API payloads to omit intervals |
+| `--ci-alpha` | 0 | Point forecast by default; pass 0.05 for a 95% interval when the selected method supports native intervals |
 
-Not every method can produce a native interval. When the requested interval is
+Not every method can produce a native interval. The default native Theta call is
+a point forecast; request an interval explicitly only when the selected method
+supports it. When a requested interval is
 unavailable, the result is explicitly `signal_status: not_actionable` and keeps
 any model drift under `point_estimate_direction` instead of publishing a
 directional claim. Use `forecast_conformal_intervals` to calibrate empirical

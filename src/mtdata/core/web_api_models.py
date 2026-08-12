@@ -37,7 +37,7 @@ class ForecastPriceBody(_ForecastWebBody):
     start: Optional[str] = None
     end: Optional[str] = None
     params: Optional[Dict[str, Any]] = None
-    ci_alpha: float = Field(0.05, ge=0.0, le=0.5)
+    ci_alpha: float = Field(0.0, ge=0.0, le=0.5)
     quantity: Literal["price", "return", "volatility"] = Field("price")
     denoise: Optional[Dict[str, Any]] = None
     features: Optional[Dict[str, Any]] = None

@@ -461,7 +461,13 @@ def resolve_capability_request(
         return library_norm, method_norm, params_out
 
     if ":" not in method_norm:
-        if library_norm in {"statsforecast", "sktime", "mlforecast", "pretrained"}:
+        if library_norm in {
+            "native",
+            "statsforecast",
+            "sktime",
+            "mlforecast",
+            "pretrained",
+        }:
             capabilities = [
                 row
                 for row in get_registered_capabilities()
@@ -488,6 +494,27 @@ def resolve_capability_request(
                 merged_params = dict(params_out)
                 merged_params.update(selector_params)
                 return resolved_library, resolved_method, merged_params
+            if library_norm == "native":
+                cross_library_match = next(
+                    (
+                        row
+                        for row in get_registered_capabilities()
+                        if str(row.get("method") or "").strip().lower()
+                        == requested_method
+                    ),
+                    None,
+                )
+                if not isinstance(cross_library_match, dict):
+                    return library_norm, method_norm, params_out
+                available = sorted(
+                    str(row.get("method"))
+                    for row in capabilities
+                    if row.get("method") and row.get("available") is not False
+                )
+                raise ForecastError(
+                    f"method '{method_norm}' is not available in library 'native'. "
+                    f"Valid methods: {', '.join(available)}."
+                )
         return library_norm, method_norm, params_out
 
     namespace = method_norm.split(":", 1)[0].strip().lower()
@@ -496,7 +523,7 @@ def resolve_capability_request(
 
     capabilities: List[Dict[str, Any]] = []
     if namespace == "native":
-        capabilities = get_registered_capabilities()
+        capabilities = _native_capabilities()
     else:
         capabilities = get_library_capabilities(
             namespace,

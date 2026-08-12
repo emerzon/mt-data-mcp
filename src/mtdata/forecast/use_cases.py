@@ -734,7 +734,7 @@ def _annotate_forecast_generate_quality(payload: Dict[str, Any]) -> Dict[str, An
     if out.get("history_policy_ok") is False:
         trust_blockers.append("history_freshness_policy_not_met")
     ci_status = str(out.get("ci_status") or "").strip().lower()
-    if ci_status in {"not_requested", "unavailable"}:
+    if ci_status == "unavailable":
         trust_blockers.append("forecast_uncertainty_not_available")
     if path_flatness:
         trust_blockers.append("non_informative_forecast_path")
@@ -1460,7 +1460,10 @@ def _apply_conformal_intervals_detail(
         "upper_return",
         "interval_method",
         "ci_alpha",
-        "confidence_level",
+        "nominal_confidence_level",
+        "empirical_coverage",
+        "coverage_status",
+        "coverage_gap",
         "ci_status",
         "ci_available",
         "ci_warning",
@@ -2810,7 +2813,19 @@ def run_forecast_conformal_intervals(
         result["lower_price"] = [float(v) for v in lo.tolist()]
         result["upper_price"] = [float(v) for v in hi.tolist()]
         result["ci_alpha"] = float(request.ci_alpha)
-        result["confidence_level"] = round(1.0 - float(request.ci_alpha), 6)
+        nominal_confidence = round(1.0 - float(request.ci_alpha), 6)
+        result["nominal_confidence_level"] = nominal_confidence
+        result["empirical_coverage"] = empirical_coverage
+        if empirical_coverage is None:
+            result["coverage_status"] = "not_evaluated"
+        elif empirical_coverage + 1e-12 < nominal_confidence:
+            result["coverage_status"] = "below_nominal_target"
+            result["coverage_gap"] = round(
+                float(empirical_coverage) - nominal_confidence,
+                6,
+            )
+        else:
+            result["coverage_status"] = "at_or_above_nominal_target"
         result["ci_status"] = "available"
         result["ci_available"] = True
         result = _attach_analysis_time_window(result, request)
@@ -2844,6 +2859,18 @@ def run_forecast_conformal_intervals(
                 warnings_list = []
             if sample_warning not in warnings_list:
                 warnings_list.append(sample_warning)
+            result["warnings"] = warnings_list
+        if result.get("coverage_status") == "below_nominal_target":
+            coverage_warning = (
+                f"Empirical coverage {float(empirical_coverage):.3f} is below the "
+                f"nominal target {nominal_confidence:.3f}; use empirical_coverage "
+                "when assessing historical calibration quality."
+            )
+            warnings_list = result.get("warnings")
+            if not isinstance(warnings_list, list):
+                warnings_list = []
+            if coverage_warning not in warnings_list:
+                warnings_list.append(coverage_warning)
             result["warnings"] = warnings_list
         result = _apply_conformal_intervals_detail(result, request)
     except Exception as exc:

@@ -230,6 +230,36 @@ class TestNormalizeForecastPayload:
         assert result["meta"]["domain"]["last_price_close"] == 101.0
         assert result["meta"]["domain"]["last_price_source"] == "live_tick_mid"
 
+    def test_verbose_return_forecast_keeps_target_and_reconstructed_price(self):
+        payload = {
+            "forecast_time": ["2026-08-12T21:00Z"],
+            "forecast_return": [0.000200830949],
+            "forecast_price": [1.1527],
+            "forecast_bar_states": ["forming"],
+            "quantity": "return",
+            "detail": "full",
+            "digits": 5,
+            "trust_level": "degraded",
+            "trust_blockers": ["history_freshness_policy_not_met"],
+            "history_policy_ok": False,
+        }
+
+        result = _normalize_forecast_payload(payload, verbose=True)
+
+        assert result["quantity"] == "return"
+        assert result["return_unit"] == "return_fraction"
+        assert result["history_policy_ok"] is False
+        assert result["trust_level"] == "degraded"
+        assert result["trust_blockers"] == ["history_freshness_policy_not_met"]
+        assert result["forecast"] == [
+            {
+                "time": "2026-08-12T21:00Z",
+                "return": 0.000200831,
+                "bar_state": "forming",
+                "price": "1.15270",
+            }
+        ]
+
     def test_non_verbose_no_meta(self):
         payload = {
             "times": ["t1"],
@@ -1250,6 +1280,26 @@ class TestFormatResultMinimal:
         assert "ci95" not in compact
         assert "seed: 42" in compact
         assert "seed_source: request" in compact
+
+    def test_compact_closed_form_barrier_probability_keeps_primary_result(self):
+        compact = format_result_minimal(
+            {
+                "success": True,
+                "symbol": "EURUSD",
+                "method": "closed_form",
+                "barrier": 1.155,
+                "probability_unit": "fraction",
+                "prob_hit": 0.23147,
+                "mu_annual": -0.08,
+            },
+            verbose=False,
+            tool_name="forecast_barrier_prob",
+        )
+
+        assert "method: closed_form" in compact
+        assert "probability_unit: fraction" in compact
+        assert "prob_hit: 0.23147" in compact
+        assert "mu_annual" not in compact
 
     def test_compact_barrier_optimize_output_keeps_best_only(self):
         payload = {

@@ -111,7 +111,10 @@ mtdata-cli forecast_conformal_intervals EURUSD --timeframe H1 \
 **Interpretation:**
 - Each `forecast[]` row has its point `value` and empirically calibrated
   `lower` / `upper` price bounds.
-- With the default alpha, the empirical target coverage is 95%. This is a calibration target, not a finite-sample guarantee.
+- With the default alpha, `nominal_confidence_level` is 95%. This is a
+  calibration target, not a finite-sample guarantee. Compare it with the
+  top-level `empirical_coverage` and `coverage_status` fields before using the
+  interval as evidence of historical calibration quality.
 
 Use `--detail full` when you need the raw `lower_price` / `upper_price` arrays
 or calibration diagnostics such as `conformal.per_step_q` and per-step coverage.

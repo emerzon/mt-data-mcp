@@ -502,6 +502,26 @@ class TestForecastModels:
         assert result["pagination"]["has_more"] is True
         assert [row["model_id"] for row in result["models"]] == ["m/S1/h", "m/S2/h"]
 
+    def test_lists_models_distinguishes_empty_page_from_empty_store(self):
+        from src.mtdata.core.forecast_tasks import forecast_models_list
+
+        handles = [
+            TrainedModelHandle(f"m/S{i}/h", "m", f"S{i}", "h", float(i))
+            for i in range(3)
+        ]
+        mock_store = MagicMock()
+        mock_store.list_models.return_value = handles
+
+        with patch(_PATCH_STORE, return_value=mock_store):
+            result = _unwrap(forecast_models_list)(limit=2, offset=3)
+
+        assert result["count"] == 0
+        assert result["pagination"]["total"] == 3
+        assert result["model_store"]["models_cached"] == 3
+        assert "requested page" in result["message"]
+        assert result["suggested_offsets"] == {"first": 0, "last": 2}
+        assert "forecast_train" not in result.get("hint", "")
+
     def test_delete_existing(self):
         from src.mtdata.core.forecast_tasks import forecast_models_delete
 
