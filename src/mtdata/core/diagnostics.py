@@ -234,7 +234,7 @@ def stationarity_test(
                 {
                     "test": "adf",
                     "statistic": round(float(result[0]), 6),
-                    "p_value": round(float(result[1]), 6),
+                    "p_value": float(result[1]),
                     "lags": int(result[2]),
                     "samples": int(result[3]),
                     "stationary": bool(float(result[1]) < alpha),
@@ -252,7 +252,7 @@ def stationarity_test(
                 {
                     "test": "kpss",
                     "statistic": round(float(result[0]), 6),
-                    "p_value": round(float(result[1]), 6),
+                    "p_value": float(result[1]),
                     "lags": int(result[2]),
                     "samples": int(len(series)),
                     "stationary": bool(float(result[1]) >= alpha),
@@ -272,7 +272,7 @@ def stationarity_test(
                     {
                         "test": "pp",
                         "statistic": round(float(result.stat), 6),
-                        "p_value": round(float(result.pvalue), 6),
+                        "p_value": float(result.pvalue),
                         "lags": int(result.lags),
                         "samples": int(result.nobs),
                         "stationary": bool(float(result.pvalue) < alpha),

@@ -60,6 +60,18 @@ _SYMBOL_PRICE_PRECISION_FIELDS = {
     for key, value in _QUOTE_DECIMALS_BY_FIELD.items()
     if int(value) == 8
 }
+_PROBABILITY_FIELDS = frozenset(
+    {"p_value", "p_value_raw", "q_value", "adjusted_p_value"}
+)
+
+
+def _format_small_probability(value: float, field: Any) -> Optional[str]:
+    if str(field or "").lower() not in _PROBABILITY_FIELDS:
+        return None
+    numeric = float(value)
+    if numeric == 0.0 or abs(numeric) >= 1e-6:
+        return None
+    return f"{numeric:.6g}"
 
 
 def _quote_decimals_for_field(field: Any) -> Optional[int]:
@@ -219,6 +231,9 @@ def _stringify_cell(
             num = _coerce_float(value)
             if num is not None and math.isfinite(num):
                 field = str(key or "").lower()
+                probability = _format_small_probability(num, field)
+                if probability is not None:
+                    return probability
                 price_decimals = (
                     _coerce_precision(price_precision)
                     if local_price_context
@@ -458,6 +473,9 @@ def _stringify_for_toon_value(
             return _quote_if_needed(str(value), delimiter)
         if not math.isfinite(num):
             return _stringify_nonfinite_number(num)
+        probability = _format_small_probability(num, field)
+        if probability is not None:
+            return probability
         if decimals is not None:
             return _format_float(num, int(decimals))
         return format_number(num) if simplify_numbers else _format_number_full(num)
@@ -638,6 +656,17 @@ def _format_to_toon(
         local_price_precision = price_precision
 
     if _is_scalar_value(value):
+        if isinstance(value, Number) and not isinstance(value, bool):
+            numeric = _coerce_float(value)
+            probability = (
+                _format_small_probability(numeric, key)
+                if numeric is not None and math.isfinite(numeric)
+                else None
+            )
+            if probability is not None:
+                if key is None:
+                    return f"{ind}{probability}".rstrip()
+                return f"{ind}{_quote_key(key, delimiter)}: {probability}".rstrip()
         symbol_decimals = _symbol_precision_for_field(key, local_price_precision)
         forced_decimals = (
             int(decimals)

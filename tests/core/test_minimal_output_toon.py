@@ -157,6 +157,16 @@ class TestStringifyForToonValue:
         result = _stringify_for_toon_value([1, 2, 3], None, ",")
         assert result == '"1|2|3"'
 
+    def test_small_p_value_uses_scientific_notation(self):
+        result = _stringify_for_toon_value(
+            4.2e-12,
+            6,
+            ",",
+            field="p_value",
+        )
+
+        assert result == "4.2e-12"
+
 
 class TestEncodeTabularNestedCells:
     def test_nested_cells_do_not_render_python_repr(self):

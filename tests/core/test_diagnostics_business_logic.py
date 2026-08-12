@@ -86,6 +86,32 @@ def test_stationarity_test_combines_adf_and_kpss(monkeypatch):
     assert {row["test"] for row in result["items"]} == {"adf", "kpss"}
 
 
+def test_stationarity_test_preserves_small_p_value(monkeypatch):
+    from statsmodels.tsa import stattools
+
+    frame = _bars(np.linspace(100.0, 120.0, 100))
+    monkeypatch.setattr(diagnostics, "create_mt5_gateway", lambda **kwargs: _Gateway())
+    monkeypatch.setattr(
+        diagnostics,
+        "_fetch_diagnostic_bars",
+        lambda *args, **kwargs: (frame, None),
+    )
+    monkeypatch.setattr(
+        stattools,
+        "adfuller",
+        lambda *args, **kwargs: (-12.0, 4.2e-12, 1, 98, {"5%": -2.9}),
+    )
+
+    result = _raw(diagnostics.stationarity_test)(
+        symbol="TEST",
+        target="close",
+        tests="adf",
+    )
+
+    assert result["items"][0]["p_value"] == 4.2e-12
+    assert result["items"][0]["p_value"] > 0.0
+
+
 def test_clean_stationarity_warning_translates_kpss_lookup_warning():
     raw = (
         "The test statistic is outside of the range of p-values available in the "
