@@ -455,9 +455,13 @@ def _profile_detail_payload(profile: Dict[str, Any], detail: str) -> Dict[str, A
         "coverage_note",
         "warnings",
         "as_of",
+        "data_as_of",
+        "fetched_at",
         "timezone",
         "data_age_seconds",
         "data_stale",
+        "freshness_applicability",
+        "query_type",
         "units",
     ]
     out = {key: profile[key] for key in keys if key in profile}
@@ -495,13 +499,45 @@ def _profile_detail_payload(profile: Dict[str, Any], detail: str) -> Dict[str, A
     return out
 
 
-def _profile_freshness_meta(fetch_payload: Any) -> Dict[str, Any]:
+def _profile_freshness_meta(
+    fetch_payload: Any,
+    *,
+    data_as_of: Optional[str],
+    historical_query: bool,
+) -> Dict[str, Any]:
     if not isinstance(fetch_payload, dict):
-        return {}
+        fetch_payload = {}
     out: Dict[str, Any] = {}
+    fetched_at = fetch_payload.get("data_fetched_at") or fetch_payload.get("as_of")
+    if fetched_at not in (None, ""):
+        out["fetched_at"] = fetched_at
+    if data_as_of not in (None, ""):
+        out["data_as_of"] = data_as_of
+    for target, source_names in (("timezone", ("timezone",)),):
+        for name in source_names:
+            value = fetch_payload.get(name)
+            if value not in (None, "", [], {}):
+                out[target] = value
+                break
+    if historical_query and data_as_of:
+        observed_at = _parse_start_datetime(data_as_of)
+        if observed_at is not None:
+            age_seconds = max(
+                0.0,
+                (_utc_now_naive() - observed_at).total_seconds(),
+            )
+            out.update(
+                {
+                    "as_of": data_as_of,
+                    "data_age_seconds": round(age_seconds, 3),
+                    "data_stale": age_seconds > 300.0,
+                    "freshness_applicability": "historical_query",
+                    "query_type": "historical",
+                }
+            )
+        return out
     for target, source_names in (
         ("as_of", ("as_of", "data_fetched_at")),
-        ("timezone", ("timezone",)),
         ("data_age_seconds", ("data_age_seconds", "data_freshness_seconds")),
         ("data_stale", ("data_stale",)),
     ):
@@ -673,7 +709,13 @@ def compute_volume_profile_payload(
             f"{max_ticks_value} was reached; it does not represent the full requested window."
         )
     fetch_payload = selected.get("fetch_payload")
-    profile.update(_profile_freshness_meta(fetch_payload))
+    profile.update(
+        _profile_freshness_meta(
+            fetch_payload,
+            data_as_of=profile["window"].get("end"),
+            historical_query=start is not None or end is not None,
+        )
+    )
     profile["units"] = _profile_units(profile)
     if selected.get("warnings"):
         profile["warnings"] = list(selected.get("warnings") or [])

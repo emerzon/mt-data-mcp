@@ -193,6 +193,54 @@ def test_compute_volume_profile_payload_exposes_fetch_freshness_and_standard_uni
     assert result["units"]["volume"] == "volume"
 
 
+def test_historical_profile_anchors_freshness_to_observed_data(monkeypatch):
+    monkeypatch.setattr(
+        vp,
+        "create_mt5_gateway",
+        lambda **_: SimpleNamespace(ensure_connection=lambda: None),
+    )
+    monkeypatch.setattr(
+        vp,
+        "_symbol_ready_guard",
+        lambda symbol: _Guard(None, SimpleNamespace(point=0.0001, digits=5)),
+    )
+    monkeypatch.setattr(
+        vp,
+        "fetch_ticks",
+        lambda **_: {
+            "as_of": "2026-08-12T02:02:43Z",
+            "data_freshness_seconds": 60.0,
+            "data_stale": False,
+            "data": [
+                {
+                    "time": "2026-07-01 23:59:00.000",
+                    "bid": 1.1,
+                    "ask": 1.1002,
+                    "mid": 1.1001,
+                    "volume": 2,
+                    "flags": 24,
+                }
+            ],
+        },
+    )
+
+    result = vp.compute_volume_profile_payload(
+        symbol="EURUSD",
+        start="2026-07-01",
+        end="2026-07-01",
+        source="ticks",
+        bucket_size=0.0001,
+        detail="standard",
+    )
+
+    assert result["data_as_of"] == "2026-07-01T23:59:00.000Z"
+    assert result["fetched_at"] == "2026-08-12T02:02:43Z"
+    assert result["as_of"] == result["data_as_of"]
+    assert result["data_age_seconds"] > 86400.0
+    assert result["data_stale"] is True
+    assert result["freshness_applicability"] == "historical_query"
+
+
 def test_compute_volume_profile_payload_rejects_limit_without_timeframe():
     result = vp.compute_volume_profile_payload(
         symbol="EURUSD",

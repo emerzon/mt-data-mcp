@@ -49,7 +49,11 @@ from ..utils.time import (
     bar_close_epoch,
     format_datetime_utc,
 )
-from ..utils.utils import _positive_float_attr
+from ..utils.utils import (
+    _parse_end_datetime,
+    _positive_float_attr,
+    validate_historical_range,
+)
 from ._mcp_instance import mcp
 from .execution_logging import run_logged_operation
 from .mt5_gateway import create_mt5_gateway
@@ -678,6 +682,9 @@ def confluence_levels(  # noqa: C901
 
     def _run() -> Dict[str, Any]:  # noqa: C901
         try:
+            range_error = validate_historical_range(start, end)
+            if range_error is not None:
+                return range_error
             gateway = create_mt5_gateway(ensure_connection_impl=ensure_mt5_connection_or_raise)
             gateway.ensure_connection()
 
@@ -701,6 +708,9 @@ def confluence_levels(  # noqa: C901
                 return {"error": "tolerance_points must be non-negative"}
             if float(tolerance_pct) < 0.0:
                 return {"error": "tolerance_pct must be non-negative"}
+            historical_cutoff = _parse_end_datetime(end) if end else None
+            if end and historical_cutoff is None:
+                return {"error": "Invalid end time."}
 
             def _has_field(row, name: str) -> bool:
                 try:
@@ -726,17 +736,26 @@ def confluence_levels(  # noqa: C901
                     if abs(system_now_ts - tick_time) <= freshness_limit:
                         server_now_ts = tick_time
                         server_now_dt = datetime.fromtimestamp(server_now_ts, tz=timezone.utc)
-                rates = _mt5_copy_rates_from(symbol, mt5_tf, server_now_dt, 5)
+                pivot_cutoff_dt = historical_cutoff or server_now_dt
+                rates = _mt5_copy_rates_from(symbol, mt5_tf, pivot_cutoff_dt, 5)
 
             if rates is None or len(rates) == 0:
                 return {"error": f"Failed to get rates for {symbol}: {mt5.last_error()}"}
 
-            latest = rates[-1]
-            if bar_close_epoch(latest["time"], pivot_tf) <= server_now_ts:
-                source_bar = latest
-            elif len(rates) >= 2:
-                source_bar = rates[-2]
-            else:
+            pivot_cutoff_ts = (
+                historical_cutoff.replace(tzinfo=timezone.utc).timestamp()
+                if historical_cutoff is not None
+                else server_now_ts
+            )
+            source_bar = next(
+                (
+                    row
+                    for row in reversed(rates)
+                    if bar_close_epoch(row["time"], pivot_tf) <= pivot_cutoff_ts
+                ),
+                None,
+            )
+            if source_bar is None:
                 return {"error": "No completed bars available to compute pivot points"}
 
             high = float(source_bar["high"]) if _has_field(source_bar, "high") else float("nan")
@@ -781,10 +800,17 @@ def confluence_levels(  # noqa: C901
                 decay_half_life_bars=None if decay_half_life_bars is None else int(decay_half_life_bars),
             )
 
-            reference_price = _tick_reference_price(tick)
-            reference_price_source = "live_tick"
+            reference_price = (
+                None if historical_cutoff is not None else _tick_reference_price(tick)
+            )
+            reference_price_source = (
+                "historical_window_close"
+                if historical_cutoff is not None
+                else "live_tick"
+            )
             if reference_price is None:
-                reference_price_source = "last_completed_bar_close"
+                if historical_cutoff is None:
+                    reference_price_source = "last_completed_bar_close"
                 try:
                     sr_current = sr_payload.get("current_price")
                     reference_price = float(sr_current) if sr_current is not None else None
@@ -843,6 +869,16 @@ def confluence_levels(  # noqa: C901
                 payload["reference_quote_as_of"] = (
                     format_datetime_utc(datetime.now(timezone.utc))
                 )
+            elif historical_cutoff is not None:
+                reference_as_of = sr_payload.get("structure_as_of")
+                if reference_as_of is None:
+                    scan_window = sr_payload.get("scan_window")
+                    if isinstance(scan_window, dict):
+                        reference_as_of = scan_window.get("end")
+                payload["reference_price_as_of"] = reference_as_of
+                payload["analysis_as_of"] = reference_as_of or format_datetime_utc(
+                    historical_cutoff.replace(tzinfo=timezone.utc)
+                )
             else:
                 payload.setdefault("warnings", []).append(
                     "reference_price is the latest completed bar close (no live tick available); "
@@ -871,7 +907,11 @@ def confluence_levels(  # noqa: C901
                 payload["calculation_basis"] = {
                     "pivot_source_bar": f"last completed {pivot_tf} bar",
                     "support_resistance_timeframe": str(sr_payload.get("timeframe") or sr_tf),
-                    "reference_price": "latest tick midpoint/last when available, else S/R current price or pivot close",
+                    "reference_price": (
+                        "historical S/R window close"
+                        if historical_cutoff is not None
+                        else "latest tick midpoint/last when available, else S/R current price or pivot close"
+                    ),
                     "volume_profile": (
                         f"{volume_profile_payload.get('source')} source"
                         if isinstance(volume_profile_payload, dict) and volume_profile_payload.get("success")
@@ -960,6 +1000,9 @@ def support_resistance_levels(
 
     def _run() -> Dict[str, Any]:
         try:
+            range_error = validate_historical_range(start, end)
+            if range_error is not None:
+                return range_error
             gateway = create_mt5_gateway(
                 ensure_connection_impl=ensure_mt5_connection_or_raise,
             )
