@@ -245,8 +245,43 @@ class TestSymbolsListNoSearch:
         assert "verify broker metadata" in rows["BTCUSD"]["currency_base_warning"]
         assert rows["EURUSD"].get("currency_base_inferred") is None
         assert result["currency_metadata_anomaly_count"] == 1
+        assert result["currency_metadata_anomalies"] == [
+            {
+                "symbol": "BTCUSD",
+                "field": "currency_base",
+                "issue": (
+                    "reported_base_matches_profit_but_name_implies_different_base"
+                ),
+                "reported": "USD",
+                "inferred": "BTC",
+                "currency_profit": "USD",
+            }
+        ]
+        assert "BTCUSD" in result["warnings"][0]
         assert result["currency_filter_basis"] == "broker_reported_currency"
         assert result["trust"] == "verify_broker_metadata"
+
+    @patch(_NORM_LIMIT, return_value=25)
+    @patch(_TABLE, side_effect=lambda h, r: {"headers": h, "data": r})
+    @patch(f"{_MT5}.symbols_get")
+    def test_same_currency_index_metadata_is_not_an_anomaly(
+        self, mock_get, mock_tbl, mock_lim
+    ):
+        index = _make_symbol(
+            "US500",
+            path="Indices\\Major Spot Indices",
+            description="S&P 500 Index CFD",
+        )
+        index.currency_base = "USD"
+        index.currency_profit = "USD"
+        mock_get.return_value = [index]
+
+        with patch(_GROUP_PATH, side_effect=lambda symbol: symbol.path):
+            result = _get_symbols_list()(limit=25)
+
+        assert "currency_metadata_anomaly_count" not in result
+        assert "currency_metadata_anomalies" not in result
+        assert "trust" not in result
 
     @patch(_NORM_LIMIT, return_value=25)
     @patch(_TABLE, side_effect=lambda h, r: {"headers": h, "data": r})
@@ -616,6 +651,26 @@ class TestSymbolsListSearch:
             res = fn(search_term="EUR", limit=25)
         # When searching, only_visible is False → hidden included
         assert "data" in res
+
+    @patch(_NORM_LIMIT, return_value=25)
+    @patch(_TABLE, side_effect=lambda h, r: {"headers": h, "data": r})
+    @patch(f"{_MT5}.symbols_get")
+    def test_search_honors_explicit_visible_universe(
+        self, mock_get, mock_tbl, mock_lim
+    ):
+        mock_get.return_value = [
+            _make_symbol("AAPL.NAS", visible=True),
+            _make_symbol("AAPL.NAS-24", visible=False),
+        ]
+        with patch(_GROUP_PATH, side_effect=lambda s: s.path):
+            result = _get_symbols_list()(
+                search_term="AAPL",
+                universe="visible",
+                limit=25,
+            )
+
+        assert result["universe"] == "visible"
+        assert [row[0] for row in result["data"]] == ["AAPL.NAS"]
 
     @patch(_NORM_LIMIT, return_value=25)
     @patch(_TABLE, side_effect=lambda h, r: {"headers": h, "data": r})

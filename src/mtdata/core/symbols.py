@@ -833,14 +833,23 @@ def _apply_symbol_currency_diagnostics(payload: Dict[str, Any]) -> None:
 def _attach_symbol_currency_anomaly_summary(
     payload: Dict[str, Any],
     *,
-    anomaly_count: int,
+    anomalies: List[Dict[str, Any]],
 ) -> None:
+    anomaly_count = len(anomalies)
     if anomaly_count <= 0:
         return
     payload["currency_metadata_anomaly_count"] = int(anomaly_count)
+    payload["currency_metadata_anomalies"] = anomalies[:20]
+    if anomaly_count > 20:
+        payload["currency_metadata_anomalies_truncated"] = True
+    named_symbols = ", ".join(
+        str(item.get("symbol"))
+        for item in anomalies[:5]
+        if item.get("symbol")
+    )
     payload["warnings"] = [
-        f"{int(anomaly_count)} symbol(s) report identical base and profit "
-        "currencies; inspect each row's inferred base diagnostics."
+        f"{int(anomaly_count)} symbol(s) have broker currency metadata that "
+        f"conflicts with the symbol name: {named_symbols}."
     ]
     payload["trust"] = "verify_broker_metadata"
 
@@ -915,7 +924,7 @@ def symbols_list(  # noqa: C901
     limit: Annotated[int, Field(ge=1)] = DEFAULT_ROW_LIMIT,
     offset: int = 0,
     list_mode: Literal["symbols", "groups"] = "symbols",  # type: ignore
-    universe: Literal["visible", "all"] = "visible",  # type: ignore
+    universe: Optional[Literal["visible", "all"]] = None,  # type: ignore
     group: Optional[str] = None,
     currency: Optional[str] = None,
     category: Optional[str] = None,
@@ -936,11 +945,12 @@ def symbols_list(  # noqa: C901
     description, and group fields, then ranks exact/prefix/name matches before
     description and group matches.
 
-    Without a search term, universe="visible" lists Market Watch symbols and
-    universe="all" lists the broker catalog. The unfiltered overview ranks FX
-    majors, other FX pairs, then broad asset categories before symbol name.
-    Searches use the broker catalog. Use group, currency, and category to
-    filter the resulting symbol set.
+    Without a search term, omitting universe lists Market Watch symbols. When a
+    search term is present, omitting universe searches the broker catalog. An
+    explicit universe="visible" or universe="all" is always honored. The
+    unfiltered overview ranks FX majors, other FX pairs, then broad asset
+    categories before symbol name. Use group, currency, and category to filter
+    the resulting symbol set.
     """
     raw_search_term = str(search_term or "").strip() or None
     normalized_search_term = _normalize_symbol_search_term(search_term)
@@ -949,7 +959,12 @@ def symbols_list(  # noqa: C901
     category_filter = _normalize_symbol_category_filter(category)
     detail_mode = normalize_output_detail(detail, default="compact")
     search_mode_value = str(search_mode or "auto").strip().lower()
-    universe_value = str(universe or "visible").strip().lower()
+    universe_value = (
+        str(universe).strip().lower() if universe is not None else None
+    )
+    effective_universe = universe_value or (
+        "all" if normalized_search_term else "visible"
+    )
 
     def _run() -> Dict[str, Any]:  # noqa: C901
         try:
@@ -968,7 +983,7 @@ def symbols_list(  # noqa: C901
             mode = str(list_mode or "symbols").strip().lower()
             if mode not in ("symbols", "groups"):
                 return {"error": "list_mode must be 'symbols' or 'groups'."}
-            if universe_value not in {"visible", "all"}:
+            if universe_value is not None and universe_value not in {"visible", "all"}:
                 return {"error": "universe must be 'visible' or 'all'."}
             if category and not category_filter:
                 return {
@@ -998,7 +1013,7 @@ def symbols_list(  # noqa: C901
                     offset=offset,
                     mt5_gateway=mt5_gateway,
                     detail=detail_mode,
-                    universe=universe_value,
+                    universe=effective_universe,
                     group=group_filter,
                     currency=currency_filter,
                     category=category_filter,
@@ -1018,8 +1033,6 @@ def symbols_list(  # noqa: C901
                 for symbol in all_symbols_list
                 if bool(getattr(symbol, "visible", False))
             )
-            effective_universe = "all" if normalized_search_term else universe_value
-
             if normalized_search_term:
                 search_universe = all_symbols_list
                 matched_symbols = _match_symbols_for_search(
@@ -1098,9 +1111,19 @@ def symbols_list(  # noqa: C901
             if offset_value < 0:
                 return {"error": "offset must be >= 0."}
             total_count = len(symbol_list)
-            currency_anomaly_count = sum(
-                1 for row in symbol_list if row.get("currency_base_warning")
-            )
+            currency_anomalies = [
+                {
+                    "symbol": row.get("symbol"),
+                    "field": "currency_base",
+                    "issue": "reported_base_matches_profit_but_name_implies_different_base",
+                    "reported": row.get("currency_base_reported")
+                    or row.get("currency_base"),
+                    "inferred": row.get("currency_base_inferred"),
+                    "currency_profit": row.get("currency_profit"),
+                }
+                for row in symbol_list
+                if row.get("currency_base_warning")
+            ]
             filters = {}
             if group_filter:
                 filters["group"] = group_filter
@@ -1202,7 +1225,7 @@ def symbols_list(  # noqa: C901
                     out["currency_filter_basis"] = "broker_reported_currency"
                 _attach_symbol_currency_anomaly_summary(
                     out,
-                    anomaly_count=currency_anomaly_count,
+                    anomalies=currency_anomalies,
                 )
                 out["source"] = source
                 return out
@@ -1276,7 +1299,7 @@ def symbols_list(  # noqa: C901
                 result["currency_filter_basis"] = "broker_reported_currency"
             _attach_symbol_currency_anomaly_summary(
                 result,
-                anomaly_count=currency_anomaly_count,
+                anomalies=currency_anomalies,
             )
             result["source"] = source
             return attach_collection_contract(
@@ -1297,7 +1320,7 @@ def symbols_list(  # noqa: C901
         limit=limit,
         offset=offset,
         list_mode=list_mode,
-        universe=universe_value,
+        universe=effective_universe,
         group=group_filter,
         currency=currency_filter,
         category=category_filter,
