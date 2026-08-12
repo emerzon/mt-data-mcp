@@ -1145,7 +1145,7 @@ class TestResolveParamKwargs:
         ]
         assert "Report template" in kwargs["help"]
         assert "scalping" in kwargs["help"]
-        assert "Runtime cost" in kwargs["help"]
+        assert "Typical warm runtimes" in kwargs["help"]
 
     def test_list_type(self):
         param = {"name": "items", "type": List[str], "required": False, "default": None}

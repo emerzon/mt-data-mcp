@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import math
+import sys
 import time
 import warnings
 from contextlib import nullcontext
@@ -12,7 +13,11 @@ from ...utils.time import format_datetime_utc
 from ..execution_logging import log_operation_exception, run_logged_operation
 from ..output_contract import normalize_output_detail
 from .requests import ReportGenerateRequest
-from .utils import extract_report_forecast_values, normalize_report_methods
+from .utils import (
+    extract_report_forecast_values,
+    normalize_report_methods,
+    report_execution_scope,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +55,22 @@ _REPORT_SECTION_DEPENDENCIES = {
     "forecast": ("backtest",),
     "forecast_conformal": ("backtest",),
     "execution_gates": ("market",),
+}
+_REPORT_SECTION_RUNTIME_ESTIMATES = {
+    "context": 4.0,
+    "pivot": 3.0,
+    "contexts_multi": 10.0,
+    "pivot_multi": 5.0,
+    "volatility": 10.0,
+    "backtest": 25.0,
+    "forecast": 5.0,
+    "barriers": 20.0,
+    "patterns": 4.0,
+    "market": 4.0,
+    "execution_gates": 1.0,
+    "regime": 20.0,
+    "volatility_har_rv": 15.0,
+    "forecast_conformal": 25.0,
 }
 
 
@@ -673,7 +694,7 @@ def _compact_report_payload(  # noqa: C901
                     if key in executive_summary
                 }
             )
-    for key in ("section_controls",):
+    for key in ("section_controls", "runtime_plan", "execution_progress"):
         value = report.get(key)
         if value not in (None, "", [], {}):
             compact[key] = value
@@ -766,7 +787,8 @@ def _resolve_report_section_plan(
     *,
     include_sections: Any = None,
     max_sections: Optional[int] = None,
-) -> Dict[str, List[str]]:
+    max_runtime: Optional[float] = None,
+) -> Dict[str, Any]:
     available = list(_REPORT_TEMPLATE_SECTIONS.get(template, ()))
     requested = _split_report_section_names(include_sections)
     missing: List[str] = []
@@ -784,21 +806,50 @@ def _resolve_report_section_plan(
     if max_sections is not None:
         selected = selected[: max(0, int(max_sections))]
 
-    execution = list(selected)
-    dependency_index = 0
-    while dependency_index < len(execution):
-        section = execution[dependency_index]
-        for dependency in _REPORT_SECTION_DEPENDENCIES.get(section, ()):
-            if dependency in available and dependency not in execution:
-                execution.append(dependency)
-        dependency_index += 1
-    if template == "scalping" and "barriers" in execution and "market" not in execution:
-        execution.append("market")
+    execution: List[str] = []
+    runtime_omitted: List[str] = []
+    estimated_runtime = 0.0
+    for section in selected:
+        required = [
+            dependency
+            for dependency in _REPORT_SECTION_DEPENDENCIES.get(section, ())
+            if dependency in available and dependency not in execution
+        ]
+        if (
+            template == "scalping"
+            and section == "barriers"
+            and "market" not in execution
+            and "market" not in required
+        ):
+            required.append("market")
+        additions = [*required, section]
+        additions = list(dict.fromkeys(additions))
+        additional_cost = sum(
+            _REPORT_SECTION_RUNTIME_ESTIMATES.get(item, 5.0)
+            for item in additions
+            if item not in execution
+        )
+        if (
+            max_runtime is not None
+            and estimated_runtime + additional_cost > float(max_runtime)
+        ):
+            runtime_omitted.append(section)
+            continue
+        for item in additions:
+            if item not in execution:
+                execution.append(item)
+        estimated_runtime += additional_cost
     return {
         "available": available,
         "selected": selected,
         "execution": execution,
         "missing": missing,
+        "runtime_omitted": runtime_omitted,
+        "estimated_runtime_seconds": round(estimated_runtime, 3),
+        "selected_runtime_estimate_seconds": round(
+            sum(_REPORT_SECTION_RUNTIME_ESTIMATES.get(item, 5.0) for item in selected),
+            3,
+        ),
     }
 
 
@@ -1086,6 +1137,7 @@ def run_report_generate(  # noqa: C901
                 name,
                 include_sections=request.include_sections,
                 max_sections=request.max_sections,
+                max_runtime=request.max_runtime,
             )
             params["_report_execution_sections"] = section_plan["execution"]
             params["_report_selected_sections"] = section_plan["selected"]
@@ -1135,12 +1187,33 @@ def run_report_generate(  # noqa: C901
                 eff_horizon = default_horizon.get(name, 12)
 
             captured_warnings: List[str] = []
+            deadline = (
+                started_at + float(request.max_runtime)
+                if request.max_runtime is not None
+                else None
+            )
+
+            def _progress(operation: str, state: str) -> None:
+                if not request.progress:
+                    return
+                elapsed = time.perf_counter() - started_at
+                print(
+                    "report_generate progress "
+                    f"operation={operation} state={state} elapsed={elapsed:.1f}s",
+                    file=sys.__stderr__,
+                    flush=True,
+                )
+
             volatility_context: Any = nullcontext()
             if "volatility" in section_plan["execution"]:
                 from ...forecast.volatility import volatility_rates_cache
 
                 volatility_context = volatility_rates_cache()
             with (
+                report_execution_scope(
+                    progress_callback=_progress if request.progress else None,
+                    deadline=deadline,
+                ),
                 volatility_context,
                 warnings.catch_warnings(record=True) as warning_records,
             ):
@@ -1182,6 +1255,32 @@ def run_report_generate(  # noqa: C901
             if rep.get("error"):
                 msg = rep.get("error")
                 return report_error_payload(msg)
+            sections_payload = rep.get("sections")
+            if isinstance(sections_payload, dict):
+                for section_name in section_plan["runtime_omitted"]:
+                    sections_payload.setdefault(
+                        section_name,
+                        {
+                            "status": "omitted",
+                            "reason": (
+                                "Section was not scheduled because its estimated "
+                                "cost exceeded max_runtime."
+                            ),
+                            "reason_code": "report_runtime_budget_limited",
+                        },
+                    )
+            rep["runtime_plan"] = {
+                "max_runtime_seconds": request.max_runtime,
+                "estimated_runtime_seconds": section_plan[
+                    "estimated_runtime_seconds"
+                ],
+                "selected_runtime_estimate_seconds": section_plan[
+                    "selected_runtime_estimate_seconds"
+                ],
+                "scheduled_sections": list(section_plan["execution"]),
+                "runtime_omitted_sections": list(section_plan["runtime_omitted"]),
+                "deadline_policy": "cooperative_between_subtools",
+            }
             if captured_warnings:
                 for warning_text in captured_warnings:
                     append_diagnostic_warning(rep, warning_text)
@@ -1194,7 +1293,7 @@ def run_report_generate(  # noqa: C901
             if isinstance(rep.get("sections"), dict):
                 source_sections_status = _build_sections_status(
                     rep["sections"],
-                    expected_sections=section_plan["execution"],
+                    expected_sections=section_plan["selected"],
                 )
             if not summary_mode:
                 _apply_report_section_controls(
@@ -1614,7 +1713,7 @@ def run_report_generate(  # noqa: C901
                 usable_section_count = ok_count + partial_count
                 hard_failed = bool(
                     selection_failed
-                    or (error_count > 0 and usable_section_count == 0)
+                    or usable_section_count == 0
                 )
                 rep["section_run_status"] = (
                     "failed"
@@ -1630,7 +1729,13 @@ def run_report_generate(  # noqa: C901
                     if request.include_sections or request.max_sections is not None
                     else "full_sections"
                 )
-                rep["success"] = rep["section_run_status"] == "complete"
+                rep["success"] = bool(
+                    not hard_failed
+                    and (
+                        request.allow_partial
+                        or rep["section_run_status"] == "complete"
+                    )
+                )
                 if selection_failed:
                     rep["error_code"] = "report_sections_not_found"
                     rep["error"] = (
@@ -1651,6 +1756,17 @@ def run_report_generate(  # noqa: C901
                     sections_with_issues["omitted"] = omitted_section_names
                 if sections_with_issues:
                     rep["sections_with_issues"] = sections_with_issues
+                rep["execution_progress"] = {
+                    "selected_sections": list(section_plan["selected"]),
+                    "scheduled_sections": list(section_plan["execution"]),
+                    "completed_sections": [
+                        name
+                        for name, status in sections_status.get("sections", {}).items()
+                        if status in {"ok", "partial", "error"}
+                    ],
+                    "omitted_sections": omitted_section_names,
+                    "complete": rep["section_run_status"] == "complete",
+                }
                 if partial_section_names or error_section_names:
                     error_summaries: List[str] = []
                     status_details = sections_status.get("details")
@@ -1691,8 +1807,19 @@ def run_report_generate(  # noqa: C901
             diagnostics = rep.get("diagnostics")
             if not isinstance(diagnostics, dict):
                 diagnostics = {}
-            diagnostics["execution_time_ms"] = round((time.perf_counter() - started_at) * 1000.0, 3)
+            elapsed_seconds = time.perf_counter() - started_at
+            diagnostics["execution_time_ms"] = round(elapsed_seconds * 1000.0, 3)
             rep["diagnostics"] = diagnostics
+            runtime_plan = rep.get("runtime_plan")
+            if isinstance(runtime_plan, dict):
+                runtime_plan["actual_runtime_seconds"] = round(elapsed_seconds, 3)
+                runtime_plan["runtime_budget_exhausted"] = bool(
+                    request.max_runtime is not None
+                    and (
+                        elapsed_seconds >= float(request.max_runtime)
+                        or bool(runtime_plan.get("runtime_omitted_sections"))
+                    )
+                )
             rep["symbol"] = request.symbol
             rep["template"] = template_name
             rep["detail"] = detail_value

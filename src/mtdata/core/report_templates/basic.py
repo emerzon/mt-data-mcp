@@ -7,10 +7,13 @@ from ..report.utils import (
     adapt_forecast_payload_for_report,
     attach_candle_freshness_diagnostics,
     attach_multi_timeframes,
+    emit_report_progress,
     extract_report_forecast_values,
     now_utc_iso,
     parse_table_tail,
     pick_best_forecast_method,
+    report_runtime_error,
+    report_runtime_expired,
     report_section_enabled,
     resolve_report_context_indicators,
     summarize_barrier_grid,
@@ -42,6 +45,11 @@ def _get_raw_result(
     **kwargs: Any,
 ) -> Dict[str, Any]:
     """Call a tool and require a structured payload."""
+    operation = getattr(func, "__name__", type(func).__name__)
+    if report_runtime_expired():
+        emit_report_progress(operation, "skipped_runtime_budget")
+        return report_runtime_error(operation)
+    emit_report_progress(operation, "started")
     try:
         result = call_tool_sync_structured(func, *args, raw_tool_output=True, **kwargs)
         
@@ -59,6 +67,8 @@ def _get_raw_result(
         
     except Exception as e:
         return {'error': f'Function call failed: {str(e)}'}
+    finally:
+        emit_report_progress(operation, "finished")
 
 
 def _first_volatility_value(payload: Dict[str, Any], keys: tuple[str, ...]) -> Any:

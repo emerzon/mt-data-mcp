@@ -88,6 +88,9 @@ def report_generate(
               extra_timeframes/pivot_timeframes, and advanced regime/conformal keys
               (regime_limit, regime_lookback, cp_threshold, hmm_states, conformal_*).
     - denoise: pass-through to candle fetching (e.g., {method:'ema', params:{alpha:0.2}, columns:['close']}).  
+    - max_runtime: cooperative seconds budget; expensive sections that do not fit are omitted.
+    - allow_partial: defaults true so usable sections survive nested failures; set false for strict runs.
+    - progress: emit sub-tool start/finish lines to stderr.
     """
     def _run() -> Union[str, Dict[str, Any]]:
         connection_error = _report_connection_error()

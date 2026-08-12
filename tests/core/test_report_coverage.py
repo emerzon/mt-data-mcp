@@ -135,6 +135,17 @@ def test_report_generate_request_defaults_to_compact_detail():
 
     assert request.detail == "compact"
     assert request.template == "minimal"
+    assert request.max_runtime is None
+    assert request.allow_partial is True
+    assert request.progress is False
+
+
+def test_report_generate_request_validates_runtime_budget():
+    from mtdata.core.report.requests import ReportGenerateRequest
+
+    assert ReportGenerateRequest(symbol="EURUSD", max_runtime=10).max_runtime == 10
+    with pytest.raises(ValidationError, match="greater than or equal to 1"):
+        ReportGenerateRequest(symbol="EURUSD", max_runtime=0.5)
 
 
 def test_report_generate_request_rejects_removed_summary_only_field():
@@ -184,7 +195,25 @@ def test_report_section_plan_only_runs_dependencies_available_to_template() -> N
     )
 
     assert minimal["execution"] == ["forecast"]
-    assert basic["execution"] == ["forecast", "backtest"]
+    assert basic["execution"] == ["backtest", "forecast"]
+
+
+def test_report_section_plan_uses_runtime_budget_before_execution() -> None:
+    from mtdata.core.report.use_cases import _resolve_report_section_plan
+
+    plan = _resolve_report_section_plan("basic", max_runtime=10.0)
+
+    assert plan["execution"] == ["context", "pivot"]
+    assert plan["estimated_runtime_seconds"] == 7.0
+    assert plan["runtime_omitted"] == [
+        "contexts_multi",
+        "pivot_multi",
+        "volatility",
+        "backtest",
+        "forecast",
+        "barriers",
+        "patterns",
+    ]
 
 
 def test_report_generate_request_template_choices_are_validated():
@@ -335,6 +364,63 @@ def test_run_report_generate_scopes_volatility_rate_cache():
 
     assert cache_states == [True]
     assert volatility._RATES_CACHE.get() is None
+
+
+def test_run_report_generate_returns_budgeted_partial_sections():
+    from mtdata.core.report.requests import ReportGenerateRequest
+    from mtdata.core.report.use_cases import run_report_generate
+
+    captured_execution = []
+
+    def basic_template(_symbol, _horizon, _denoise, params):
+        captured_execution.extend(params["_report_execution_sections"])
+        return {
+            "sections": {
+                "context": {"last_snapshot": {"close": 1.1}},
+                "pivot": {"levels": [{"level": "PP", "classic": 1.1}]},
+            },
+        }
+
+    with patch(
+        "mtdata.core.report_templates.template_basic",
+        basic_template,
+        create=True,
+    ):
+        result = run_report_generate(
+            ReportGenerateRequest(
+                symbol="EURUSD",
+                template="basic",
+                max_runtime=10,
+                detail="full",
+            ),
+            format_number=lambda value: str(value),
+            get_indicator_value=lambda payload, key: payload.get(key),
+            report_error_payload=lambda message: {"error": str(message)},
+            append_diagnostic_warning=lambda report, message: None,
+        )
+
+    assert captured_execution == ["context", "pivot"]
+    assert result["success"] is True
+    assert result["section_run_status"] == "partial"
+    assert result["sections_status"]["summary"] == {
+        "ok": 2,
+        "partial": 0,
+        "error": 0,
+        "omitted": 7,
+        "total": 9,
+    }
+    assert result["runtime_plan"]["max_runtime_seconds"] == 10.0
+    assert result["runtime_plan"]["estimated_runtime_seconds"] == 7.0
+    assert result["runtime_plan"]["runtime_budget_exhausted"] is True
+    assert result["execution_progress"]["omitted_sections"] == [
+        "contexts_multi",
+        "pivot_multi",
+        "volatility",
+        "backtest",
+        "forecast",
+        "barriers",
+        "patterns",
+    ]
 
 
 def test_run_report_generate_warns_once_for_degraded_sections(caplog):
@@ -1465,7 +1551,7 @@ class TestReportWarnings:
                 format="toon",
             )
 
-        assert captured_params["_report_execution_sections"] == ["forecast", "backtest"]
+        assert captured_params["_report_execution_sections"] == ["backtest", "forecast"]
         assert list(res["sections"]) == ["forecast"]
         assert list(res["summary_structured"]) == ["forecast"]
         assert res["section_controls"]["included_sections"] == ["forecast"]
@@ -1520,7 +1606,7 @@ class TestReportWarnings:
         assert res["sections_status"]["details"]["barriers"]["errors"][0]["path"] == "short"
         assert "usable data" in res["sections_status"]["definitions"]["partial"]
         assert res["section_run_status"] == "partial"
-        assert res["success"] is False
+        assert res["success"] is True
 
     def test_sections_status_filters_placeholder_error_noise(self):
         fn = _get_report_generate()
@@ -1566,8 +1652,28 @@ class TestReportWarnings:
 
         assert res["sections_status"]["sections"]["forecast"] == "error"
         assert res["section_run_status"] == "partial"
-        assert res["success"] is False
+        assert res["success"] is True
         assert res["sections_to_retry"] == ["forecast"]
+
+    def test_allow_partial_false_preserves_strict_success_gate(self):
+        fn = _get_report_generate()
+        sec = _make_full_sections()
+        sec["forecast"] = {"error": "forecast failed"}
+        mock_basic = MagicMock(return_value=_make_report(sections=sec))
+        with patch(
+            "mtdata.core.report_templates.template_basic",
+            mock_basic,
+            create=True,
+        ), patch(_FMT_NUM, side_effect=str):
+            res = fn(
+                "EURUSD",
+                template="basic",
+                allow_partial=False,
+                format="toon",
+            )
+
+        assert res["section_run_status"] == "partial"
+        assert res["success"] is False
 
     def test_all_error_sections_mark_report_failed(self):
         fn = _get_report_generate()

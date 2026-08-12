@@ -25,9 +25,10 @@ _REPORT_TEMPLATE_HELP = (
     "Report template: minimal fast context+forecast (default), basic balanced research, "
     "advanced adds regimes/HAR/conformal, scalping M5 short-term setup, "
     "intraday H1 setup, swing H4/D1 setup, position D1/W1 setup. "
-    "Runtime cost: minimal is the quick path; basic/advanced and style "
-    "templates may invoke multiple MT5 fetches plus pivots, patterns, "
-    "backtests, barriers, and regime checks."
+    "Typical warm-runtime tiers: minimal about 3-10 seconds; scalping about "
+    "15-60 seconds; basic/intraday/swing/position about 30-120 seconds; "
+    "advanced about 60-180 seconds. Broker history and enabled methods can "
+    "increase these ranges; use max_runtime or section controls to bound work."
 )
 
 
@@ -57,6 +58,27 @@ class ReportGenerateRequest(BaseModel):
             "Maximum number of report sections to execute and return, after "
             "include_sections filtering."
         ),
+    )
+    max_runtime: Optional[float] = Field(
+        None,
+        ge=1.0,
+        le=3_600.0,
+        description=(
+            "Cooperative wall-clock budget in seconds. The runner plans a section "
+            "subset to fit and stops scheduling sub-tools after the deadline; an "
+            "already-running native/MT5 call cannot be preempted safely."
+        ),
+    )
+    allow_partial: bool = Field(
+        True,
+        description=(
+            "Treat a report with at least one usable section as successful while "
+            "retaining section_run_status='partial' and per-section errors."
+        ),
+    )
+    progress: bool = Field(
+        False,
+        description="Emit report sub-tool progress lines to stderr while the request runs.",
     )
     denoise: Optional[DenoiseSpec] = None
     params: Optional[Dict[str, Any]] = Field(

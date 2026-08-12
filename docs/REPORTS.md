@@ -25,15 +25,15 @@ changes its final presentation.
 
 ## Choose a template
 
-| Template | Design and intended use |
-|----------|-------------------------|
-| `minimal` | Default fast path: context and direct forecast only |
-| `basic` | Shared general-purpose research pipeline; opt in explicitly |
-| `advanced` | Extends `basic` with regime, HAR-RV, and conformal sections |
-| `scalping` | Specialized short-horizon M5 path with tick-aware barrier logic |
-| `intraday` | `basic` preset with H1-oriented defaults |
-| `swing` | `basic` preset with H4/D1-oriented defaults |
-| `position` | `basic` preset with D1/W1-oriented defaults |
+| Template | Typical warm runtime | Design and intended use |
+|----------|----------------------|-------------------------|
+| `minimal` | 3-10 seconds | Default fast path: context and direct forecast only |
+| `basic` | 30-120 seconds | Shared general-purpose research pipeline; opt in explicitly |
+| `advanced` | 60-180 seconds | Extends `basic` with regime, HAR-RV, and conformal sections |
+| `scalping` | 15-60 seconds | Specialized short-horizon M5 path with tick-aware barrier logic |
+| `intraday` | 30-120 seconds | `basic` preset with H1-oriented defaults |
+| `swing` | 30-120 seconds | `basic` preset with H4/D1-oriented defaults |
+| `position` | 30-120 seconds | `basic` preset with D1/W1-oriented defaults |
 
 `intraday`, `swing`, and `position` select different default timeframes,
 lookbacks, backtest sampling, barrier ranges, and multi-timeframe inputs. They
@@ -45,6 +45,8 @@ fetches and invoke pivots, patterns, backtests, barriers, or regime checks.
 Runtime and dependency requirements therefore vary by template. Section
 controls select the sections to execute and return, while internal
 dependencies may still run when a requested section requires them.
+The ranges above are guidance, not deadlines: broker history synchronization,
+explicit model choices, and cold model initialization can take longer.
 
 ## Control template, scope, and output
 
@@ -58,6 +60,10 @@ mtdata-cli report_generate EURUSD --template swing --timeframe H4 --horizon 12
 # Keep only selected computed sections
 mtdata-cli report_generate EURUSD --template basic \
   --include-sections context,forecast,barriers --max-sections 3 --json
+
+# Return the useful subset planned for a 10-second budget and show progress
+mtdata-cli report_generate EURUSD --template basic \
+  --max-runtime 10 --progress true --json
 
 # Restrict candidate forecast methods and apply denoising
 mtdata-cli report_generate EURUSD --template basic \
@@ -75,6 +81,17 @@ Useful controls:
 - `--methods` supplies comma- or space-separated forecast methods.
 - `--include-sections` filters the sections returned after computation;
   `--max-sections` caps their count.
+- `--max-runtime` supplies a cooperative wall-clock budget. The runner first
+  schedules a section subset whose estimated cost fits, then stops starting
+  report sub-tools once the deadline passes. An already-running native or MT5
+  call cannot be safely preempted, so a single call can finish just beyond the
+  requested budget. `runtime_plan` records estimates, omissions, elapsed time,
+  and whether the budget was exhausted.
+- `--progress true` writes sub-tool start/finish events to stderr while stdout
+  remains the final structured report.
+- `--allow-partial` defaults to `true`: a report with at least one usable
+  section returns `success:true` and `section_run_status:partial`. Set it to
+  `false` when a caller requires every selected section to complete cleanly.
 - `--denoise` and `--denoise-params` configure optional input smoothing.
 - `--params` supplies template and sub-tool overrides such as context limits,
   backtest settings, barrier grids, or additional timeframes.

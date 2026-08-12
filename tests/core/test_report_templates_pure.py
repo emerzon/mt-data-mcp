@@ -10,11 +10,13 @@ Every test is deterministic – no MT5, no network, no side effects.
 """
 
 import math
+import time
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from mtdata.core.report import _report_error_payload
+from mtdata.core.report.utils import report_execution_scope
 from mtdata.core.report_templates.basic import (
     _bars_since_latest_pivot,
     _compute_compact_trend,
@@ -406,6 +408,30 @@ class TestComputeCompactTrend:
 # ===== _get_raw_result =======================================================
 
 class TestGetRawResult:
+    def test_runtime_deadline_skips_new_subtool(self):
+        fn = MagicMock(return_value={"ok": True})
+
+        with report_execution_scope(deadline=time.perf_counter() - 1.0):
+            result = _get_raw_result(fn, symbol="X")
+
+        assert result["error_code"] == "report_runtime_budget_exhausted"
+        assert result["runtime_budget_exhausted"] is True
+        fn.assert_not_called()
+
+    def test_progress_scope_reports_subtool_transition(self):
+        events = []
+        fn = MagicMock(return_value={"ok": True})
+
+        with report_execution_scope(
+            progress_callback=lambda operation, state: events.append(
+                (operation, state)
+            ),
+        ):
+            result = _get_raw_result(fn, symbol="X")
+
+        assert result == {"ok": True}
+        assert events == [("MagicMock", "started"), ("MagicMock", "finished")]
+
     def test_dict_passthrough(self):
         fn = MagicMock(return_value={"data": [1, 2, 3]})
         result = _get_raw_result(fn, symbol="X")

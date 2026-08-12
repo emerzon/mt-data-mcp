@@ -1,6 +1,9 @@
 import math
+import time
+from contextlib import contextmanager
+from contextvars import ContextVar
 from datetime import datetime, timezone
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, Iterator, List, Optional, Tuple
 
 from ...shared.constants import TIME_DISPLAY_FORMAT
 from ...shared.market_units import forex_pip_size
@@ -19,6 +22,56 @@ from .shared import (
     _indicator_key_variants,
     format_number,
 )
+
+_REPORT_PROGRESS_CALLBACK: ContextVar[
+    Optional[Callable[[str, str], None]]
+] = ContextVar("mtdata_report_progress_callback", default=None)
+_REPORT_RUNTIME_DEADLINE: ContextVar[Optional[float]] = ContextVar(
+    "mtdata_report_runtime_deadline",
+    default=None,
+)
+
+
+@contextmanager
+def report_execution_scope(
+    *,
+    progress_callback: Optional[Callable[[str, str], None]] = None,
+    deadline: Optional[float] = None,
+) -> Iterator[None]:
+    """Bind report progress and cooperative deadline state to one request."""
+    progress_token = _REPORT_PROGRESS_CALLBACK.set(progress_callback)
+    deadline_token = _REPORT_RUNTIME_DEADLINE.set(deadline)
+    try:
+        yield
+    finally:
+        _REPORT_RUNTIME_DEADLINE.reset(deadline_token)
+        _REPORT_PROGRESS_CALLBACK.reset(progress_token)
+
+
+def emit_report_progress(operation: str, state: str) -> None:
+    callback = _REPORT_PROGRESS_CALLBACK.get()
+    if callback is None:
+        return
+    try:
+        callback(str(operation), str(state))
+    except Exception:
+        pass
+
+
+def report_runtime_expired() -> bool:
+    deadline = _REPORT_RUNTIME_DEADLINE.get()
+    return deadline is not None and time.perf_counter() >= deadline
+
+
+def report_runtime_error(operation: str) -> Dict[str, Any]:
+    return {
+        "error": (
+            "Report max_runtime budget was exhausted before "
+            f"{operation} could start."
+        ),
+        "error_code": "report_runtime_budget_exhausted",
+        "runtime_budget_exhausted": True,
+    }
 
 
 def now_utc_iso() -> str:
@@ -466,6 +519,11 @@ def merge_params(base: Optional[Dict[str, Any]], extra: Dict[str, Any], override
 def market_snapshot(  # noqa: C901
     symbol: str, timezone: str = 'UTC'
 ) -> Dict[str, Any]:
+    operation = "market_depth_fetch"
+    if report_runtime_expired():
+        emit_report_progress(operation, "skipped_runtime_budget")
+        return report_runtime_error(operation)
+    emit_report_progress(operation, "started")
     try:
         from ..market_depth import market_depth_fetch as _fetch_market_depth
         dom = call_tool_sync_structured(
@@ -576,6 +634,8 @@ def market_snapshot(  # noqa: C901
         }
     except Exception as e:
         return {'error': str(e)}
+    finally:
+        emit_report_progress(operation, "finished")
 
 
 def apply_market_gates(section: Dict[str, Any], params: Dict[str, Any]) -> Dict[str, Any]:
@@ -641,6 +701,11 @@ def context_for_tf(
     )
     if _fetch_cache is not None and cache_key in _fetch_cache:
         return _fetch_cache[cache_key]
+    operation = f"data_fetch_candles[{str(timeframe).upper()}]"
+    if report_runtime_expired():
+        emit_report_progress(operation, "skipped_runtime_budget")
+        return report_runtime_error(operation)
+    emit_report_progress(operation, "started")
     try:
         from ..data import data_fetch_candles as _fetch_candles
         res = call_tool_sync_structured(
@@ -716,6 +781,8 @@ def context_for_tf(
         if _fetch_cache is not None:
             _fetch_cache[cache_key] = None
         return None
+    finally:
+        emit_report_progress(operation, "finished")
 
 
 def _extract_base_timeframe(report: Dict[str, Any]) -> Optional[str]:
@@ -851,7 +918,14 @@ def attach_multi_timeframes(  # noqa: C901
                     if isinstance(existing_pivot, dict):
                         pivs[str(tfp)] = dict(existing_pivot)
                         continue
+                    operation = f"pivot_compute_points[{tfp_key}]"
+                    if report_runtime_expired():
+                        emit_report_progress(operation, "skipped_runtime_budget")
+                        pivot_errors[str(tfp)] = report_runtime_error(operation)
+                        continue
+                    emit_report_progress(operation, "started")
                     res = _compute_pivot_points(symbol=symbol, timeframe=tfp)
+                    emit_report_progress(operation, "finished")
                     if isinstance(res, dict) and not res.get('error'):
                         pivs[str(tfp)] = {
                             'levels': res.get('levels'),

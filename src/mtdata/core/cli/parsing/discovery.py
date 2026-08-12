@@ -337,9 +337,22 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
     ("report_generate", "template"): (
         "Report template: minimal fast context+forecast (default), basic balanced research, "
         "advanced regimes/HAR/conformal, scalping M5, intraday H1, swing H4/D1, "
-        "or position D1/W1. Runtime cost: minimal is the quick path; "
-        "basic, advanced, and specialized templates may invoke multiple MT5 fetches plus "
-        "pivots, patterns, backtests, barriers, and regime checks."
+        "or position D1/W1. Typical warm runtimes: minimal 3-10s, scalping "
+        "15-60s, basic/style templates 30-120s, advanced 60-180s; broker "
+        "history and enabled methods can increase them. Use --max-runtime, "
+        "--include-sections, or --max-sections to bound work."
+    ),
+    ("report_generate", "max_runtime"): (
+        "Cooperative runtime budget in seconds (1-3600). Sections whose "
+        "estimated cost does not fit are omitted, and new sub-tools stop after "
+        "the deadline; an active native/MT5 call is allowed to finish safely."
+    ),
+    ("report_generate", "allow_partial"): (
+        "Return success=true when at least one report section is usable while "
+        "retaining section_run_status=partial; set false for strict completion."
+    ),
+    ("report_generate", "progress"): (
+        "Write report sub-tool start/finish progress lines to stderr."
     ),
     ("temporal_analyze", "lookback"): (
         "Historical bars used when start/end are omitted. Defaults to a "
