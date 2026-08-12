@@ -70,3 +70,11 @@ def test_compact_ticker_preserves_future_timestamp_cause() -> None:
     assert result["timestamp_skew_seconds"] == 6.913
     assert result["timestamp_warning"] == "Correct MT5 clock alignment before trading."
     assert "warning" not in result
+
+
+def test_symbol_selection_does_not_report_success_as_an_error_detail() -> None:
+    from mtdata.core.market_depth import _describe_symbol_select_error
+
+    assert _describe_symbol_select_error("NOTREAL", (1, "Success")) == (
+        "Symbol 'NOTREAL' was not found or is not available in MT5."
+    )

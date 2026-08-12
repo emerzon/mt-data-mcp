@@ -43,11 +43,16 @@ _mt5_stub.POSITION_TYPE_BUY = 0
 _mt5_stub.POSITION_TYPE_SELL = 1
 sys.modules["MetaTrader5"] = _mt5_stub
 
+from pydantic import ValidationError
+
+from mtdata.core.trading import time, validation
 from mtdata.core.trading.orders import _evaluate_requested_protection
+from mtdata.core.trading.requests import TradePlaceRequest
 from mtdata.core.trading.time import (
     _server_time_naive_to_mt5_timestamp,
     _to_server_time_naive,
 )
+from mtdata.core.trading.use_cases import run_trade_place
 from mtdata.core.trading.validation import (
     _candidate_fill_modes,
     _normalize_order_type_input,
@@ -481,3 +486,48 @@ class TestValidateDeviation:
     def test_none(self):
         dev, err = _validate_deviation(None)
         assert dev is None
+
+
+@pytest.mark.parametrize(
+    ("volume", "order_type", "dry_run", "match"),
+    [
+        (0, "BUY", True, "greater than 0"),
+        (-0.01, "BUY", True, "greater than 0"),
+        (0, "BUY", False, "greater than 0"),
+        (-0.05, "SELL", False, "greater than 0"),
+        (float("nan"), "BUY", True, "finite number"),
+        (float("inf"), "BUY", True, "finite number"),
+    ],
+)
+def test_trade_place_request_rejects_invalid_volume(volume, order_type, dry_run, match):
+    with pytest.raises(ValidationError, match=match):
+        TradePlaceRequest(
+            symbol="EURUSD",
+            volume=volume,
+            order_type=order_type,
+            dry_run=dry_run,
+        )
+
+
+def test_trade_place_accepts_positive_volume_in_dry_run():
+    request = TradePlaceRequest(
+        symbol="EURUSD",
+        volume=0.01,
+        order_type="BUY",
+        dry_run=True,
+        require_sl_tp=False,
+    )
+    result = run_trade_place(
+        request,
+        normalize_order_type_input=validation._normalize_order_type_input,
+        normalize_pending_expiration=time._normalize_pending_expiration,
+        prevalidate_trade_place_market_input=validation._prevalidate_trade_place_market_input,
+        place_market_order=MagicMock(),
+        place_pending_order=MagicMock(),
+        close_positions=MagicMock(),
+        safe_int_ticket=validation._safe_int_ticket,
+    )
+
+    assert result.get("success") is True
+    assert result.get("dry_run") is True
+    assert result.get("volume") == 0.01

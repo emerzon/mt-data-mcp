@@ -404,6 +404,32 @@ class TestCreateCommandFunction:
         assert call_kwargs["symbol"] == "EURUSD"
         assert call_kwargs["__cli_raw"] is True
 
+    def test_normalizes_list_args(self, capsys):
+        captured = {}
+
+        def fake_tool(**kwargs):
+            captured.update(kwargs)
+            return {"ok": True}
+
+        func_info = {
+            "func": fake_tool,
+            "params": [
+                {
+                    "name": "methods",
+                    "required": False,
+                    "default": None,
+                    "type": Optional[List[str]],
+                }
+            ],
+        }
+        cmd_fn = create_command_function(func_info, cmd_name="dummy")
+        args = argparse.Namespace(methods="arima,theta,mc_gbm", json=True, verbose=False)
+
+        cmd_fn(args)
+
+        assert captured["methods"] == ["arima", "theta", "mc_gbm"]
+        assert captured["__cli_raw"] is True
+
     def test_request_model_reconstructed(self, capsys):
         mock_fn = MagicMock(return_value={"ok": True})
         func_info = {

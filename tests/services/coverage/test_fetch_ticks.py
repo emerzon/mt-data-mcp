@@ -848,6 +848,37 @@ class TestFetchTicks(unittest.TestCase):
                              simplify={'mode': 'select'})
         self.assertTrue(result.get('success'))
 
+    @patch(_TICKS_RANGE)
+    @patch(_CACHED_INFO, return_value=SimpleNamespace(digits=2))
+    @patch(_RESOLVE_CTZ, return_value=None)
+    @patch(_GUARD, _mock_symbol_guard)
+    def test_summary_includes_price_precision_from_symbol_digits(
+        self, mock_ctz, mock_info, mock_ticks
+    ):
+        now = datetime.now(timezone.utc)
+        ticks = []
+        for i in range(5):
+            t = now - timedelta(seconds=5 - i)
+            ticks.append(
+                {
+                    "time": t.timestamp(),
+                    "bid": 65601.0 + i,
+                    "ask": 65601.5 + i,
+                    "last": 65601.0 + i,
+                    "volume": 1.0,
+                    "flags": 1,
+                    "volume_real": 0.0,
+                }
+            )
+        mock_ticks.return_value = ticks
+
+        result = fetch_ticks(symbol="BTCUSD", limit=5, format="summary")
+
+        self.assertTrue(result.get("success"))
+        self.assertEqual(result.get("price_precision"), 2)
+        self.assertEqual(result["stats"]["spread"]["mean"], 0.5)
+        self.assertNotIn("stats_display", result)
+
 
 if __name__ == '__main__':
     unittest.main()

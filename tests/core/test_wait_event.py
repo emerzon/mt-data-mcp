@@ -541,3 +541,27 @@ def test_wait_event_request_rejects_instrument_as_extra_field() -> None:
     error = exc_info.value.errors()[0]
     assert error["type"] == "extra_forbidden"
     assert error["loc"] == ("instrument",)
+
+
+def test_watch_for_description_enumerates_event_types():
+    desc = WaitEventRequest.model_fields["watch_for"].description or ""
+    for event_type in ("price_change", "volume_spike", "tp_hit", "sl_hit", "stop_threat"):
+        assert event_type in desc
+    assert "Example" in desc
+
+
+def test_watch_for_documented_example_is_valid():
+    example = [
+        {
+            "type": "price_change",
+            "direction": "up",
+            "threshold_mode": "fixed_pct",
+            "threshold_value": 0.1,
+        }
+    ]
+    req = WaitEventRequest(
+        symbol="EURUSD",
+        max_wait_seconds=5,
+        watch_for=example,
+    )
+    assert req.watch_for[0].type == "price_change"

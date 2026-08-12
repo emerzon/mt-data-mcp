@@ -1,30 +1,34 @@
 #!/usr/bin/env python3
-"""Lightweight forecast test runner.
+"""Lightweight live forecast runner.
 
 Usage:
-  python tests/test_forecast_methods.py EURUSD H1 12 [method ...]
-  python tests/test_forecast_methods.py EURUSD H1 12 statsforecast:AutoARIMA
+  python scripts/run_forecast_methods.py EURUSD H1 12 [method ...]
+  python scripts/run_forecast_methods.py EURUSD H1 12 statsforecast:AutoARIMA
 
 Writes JSON output into tests/test_results/.
+This is not a pytest module; keep it out of tests/ so collection does not
+import forecast_generate.
 """
 from __future__ import annotations
 
 import json
-import os
 import sys
 from datetime import datetime, timezone
-from typing import Any, Dict, List
+from pathlib import Path
+from typing import Any
 
 from mtdata.core.forecast import forecast_generate
 from mtdata.forecast.common import default_seasonality
 from mtdata.forecast.requests import ForecastGenerateRequest
 
+_ROOT = Path(__file__).resolve().parents[1]
+
 
 def _usage() -> str:
-    return "Usage: python tests/test_forecast_methods.py SYMBOL TIMEFRAME HORIZON [method ...]"
+    return "Usage: python scripts/run_forecast_methods.py SYMBOL TIMEFRAME HORIZON [method ...]"
 
 
-def _resolve_methods(args: List[str]) -> List[str]:
+def _resolve_methods(args: list[str]) -> list[str]:
     if args:
         return [m.strip() for m in args if m.strip()]
     # Keep defaults lightweight and dependency-free.
@@ -38,8 +42,8 @@ def _parse_method_spec(spec: str) -> tuple[str, str]:
     return "native", spec.strip()
 
 
-def _run(symbol: str, timeframe: str, horizon: int, methods: List[str]) -> Dict[str, Any]:
-    out: Dict[str, Any] = {
+def _run(symbol: str, timeframe: str, horizon: int, methods: list[str]) -> dict[str, Any]:
+    out: dict[str, Any] = {
         "symbol": symbol,
         "timeframe": timeframe,
         "horizon": int(horizon),
@@ -86,12 +90,12 @@ def main() -> int:
     methods = _resolve_methods(sys.argv[4:])
 
     result = _run(symbol, timeframe, horizon, methods)
-    out_dir = os.path.join(os.path.dirname(__file__), "test_results")
-    os.makedirs(out_dir, exist_ok=True)
+    out_dir = _ROOT / "tests" / "test_results"
+    out_dir.mkdir(parents=True, exist_ok=True)
     ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     fname = f"{symbol}_{timeframe}_{horizon}_{ts}.json"
-    out_path = os.path.join(out_dir, fname)
-    with open(out_path, "w", encoding="utf-8") as f:
+    out_path = out_dir / fname
+    with out_path.open("w", encoding="utf-8") as f:
         json.dump(result, f, ensure_ascii=True, indent=2)
 
     print(f"Wrote results to {out_path}")

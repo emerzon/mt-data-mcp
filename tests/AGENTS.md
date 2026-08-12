@@ -1,6 +1,6 @@
 # tests/ — Test Suite
 
-265 test files, hybrid pytest/unittest.TestCase. No CI — manual runs only. No pytest.ini — all config in `conftest.py`.
+~269 `test_*.py` files, hybrid pytest/unittest.TestCase. GitHub Actions runs `python -m pytest tests` on Windows (plus a separate foundation-smoke job). No pytest.ini — all config in `conftest.py`.
 
 ## NAMING CONVENTIONS
 
@@ -36,7 +36,7 @@ Files mirror `src/mtdata/` module structure with suffix indicating scope:
 | `test_indicators_*` | Indicators | 3 |
 | `test_denoise_*` | Denoising | 3 |
 | `test_web_api_*` | Web API | 3 |
-| `test_cli_*` | CLI | 5+ |
+| `test_cli_*` | CLI | 6+ (`tests/core/cli/`) |
 | `test_server_*` | MCP server | 2 |
 
 ## SUBDIRECTORIES
@@ -104,3 +104,10 @@ Large modules use subdirectories for organization:
   - `test_edge_cases.py` (237 lines): edge cases from TestEdgeCases
 - 157 tests preserved with identical assertions; 2 pre-existing failures carried forward unchanged
 - Total: 242 test files (+7 new, 1 removed = net +6)
+
+2026-08-12: Satellite fold (no coverage cut)
+- Deleted `test_forecast_helpers_coverage.py` (strict subset of `test_forecast_common_coverage.py` / `test_forecast_common_business_logic.py`)
+- Moved live runner `tests/forecast/test_forecast_methods.py` to `scripts/run_forecast_methods.py` so pytest no longer imports `forecast_generate` at collection time
+- Folded leftover satellite files into domain homes (wait-event, wait-candle, market_status, ticker, job_store, minimal_output, finviz symbols, CLI help/list/typed-args, remaining_logic_fixes, volume_validation_fix)
+- Kept every unique assertion; dropped only literal duplicates (select-simplify ticks, selectkbest wrapper without y)
+- Total: 269 test files (was 285)

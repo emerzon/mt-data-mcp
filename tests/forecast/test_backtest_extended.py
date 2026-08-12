@@ -615,3 +615,30 @@ def test_performance_metrics_sortino_uses_full_sample_downside_deviation():
     )
 
     assert metrics["sortino_ratio"] == pytest.approx(expected)
+
+
+def test_backtest_vol_proxy_not_mutated_across_anchors() -> None:
+    times = np.arange(1700000000, 1700000000 + 80 * 3600, 3600, dtype=float)
+    close = np.linspace(100.0, 120.0, 80, dtype=float)
+    df = pd.DataFrame({"time": times, "close": close})
+    anchors = [_format_time_minimal(float(times[60])), _format_time_minimal(float(times[65]))]
+    params_per_method = {"ewma": {"proxy": "abs_return"}}
+
+    with patch("mtdata.forecast.backtest._fetch_history", return_value=df), patch(
+        "mtdata.forecast.backtest.forecast_volatility",
+        return_value={"volatility_horizon": 0.1},
+    ) as mock_vol:
+        res = forecast_backtest(
+            symbol="EURUSD",
+            timeframe="H1",
+            horizon=2,
+            methods=["ewma"],
+            anchors=anchors,
+            quantity="volatility",
+            params_per_method=params_per_method,
+        )
+
+    assert res.get("success") is True
+    proxies = [c.kwargs.get("proxy") for c in mock_vol.call_args_list]
+    assert proxies == ["abs_return", "abs_return"]
+    assert params_per_method["ewma"]["proxy"] == "abs_return"

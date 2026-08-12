@@ -1415,3 +1415,142 @@ def test_run_wait_event_distinguishes_unselectable_known_symbol() -> None:
     assert result["success"] is False
     assert result["error_code"] == "wait_event_symbol_unavailable"
     assert result["symbol"] == "EURUSD"
+
+
+def test_window_ticks_uses_time_window_cutoff() -> None:
+    ticks = [
+        {"epoch": 10.0},
+        {"epoch": 40.0},
+        {"epoch": 80.0},
+        {"epoch": 100.0},
+    ]
+
+    out = wait_events_mod._window_ticks(ticks, {"kind": "minutes", "value": 0.5})
+
+    assert [tick["epoch"] for tick in out] == [80.0, 100.0]
+
+
+def test_window_prices_uses_time_window_cutoff() -> None:
+    prices = [
+        (10.0, 100.0),
+        (40.0, 101.0),
+        (80.0, 102.0),
+        (100.0, 103.0),
+    ]
+
+    out = wait_events_mod._window_prices(prices, {"kind": "minutes", "value": 0.5})
+
+    assert out == [(80.0, 102.0), (100.0, 103.0)]
+
+
+def test_slice_prices_from_epoch_accepts_explicit_epochs_for_duplicate_timestamps() -> None:
+    prices = [
+        (10.0, 101.0),
+        (10.0, 99.0),
+        (40.0, 102.0),
+    ]
+    epochs = [10.0, 10.0, 40.0]
+
+    out = wait_events_mod._slice_prices_from_epoch(
+        prices,
+        start_epoch=10.0,
+        end_epoch=10.0,
+        epochs=epochs,
+    )
+
+    assert out == prices[:2]
+
+
+def test_duration_price_change_baseline_samples_preserve_time_window_boundaries() -> None:
+    spec = {
+        "window": {"kind": "minutes", "value": 1.0},
+        "baseline_window": {"kind": "minutes", "value": 2.0},
+    }
+    prices = [
+        (0.0, 100.0),
+        (30.0, 101.0),
+        (60.0, 102.0),
+        (90.0, 103.0),
+        (120.0, 104.0),
+        (150.0, 105.0),
+        (180.0, 106.0),
+    ]
+
+    out = wait_events_mod._duration_price_change_baseline_samples(spec, prices)
+
+    assert out[0] == pytest.approx(2.0)
+    assert out[1] == pytest.approx(((104.0 - 102.0) / 102.0) * 100.0)
+
+
+def test_compile_request_precomputes_watcher_requirements() -> None:
+    request = WaitEventRequest.model_validate(
+        {
+            "symbol": "EURUSD",
+            "max_wait_seconds": 5,
+            "watch_for": [
+                {"type": "pending_near_fill", "distance": 0.2},
+                {"type": "order_cancelled"},
+                {"type": "position_closed"},
+                {
+                    "type": "price_change",
+                    "window": {"kind": "ticks", "value": 5},
+                    "baseline_window": {"kind": "ticks", "value": 20},
+                    "threshold_mode": "ratio_to_baseline",
+                    "threshold_value": 3.0,
+                },
+            ],
+        }
+    )
+
+    compiled = wait_events_mod._compile_request(
+        request,
+        started_at_utc=datetime(2026, 4, 5, tzinfo=timezone.utc),
+    )
+
+    assert compiled["needs_orders"] is True
+    assert compiled["needs_positions"] is True
+    assert compiled["needs_current_state"] is True
+    assert compiled["needs_history_deals"] is True
+    assert compiled["needs_history_orders"] is True
+    assert [item["type"] for item in compiled["market_specs"]] == [
+        "pending_near_fill",
+        "price_change",
+    ]
+
+
+def test_collect_snapshot_uses_precomputed_market_specs(monkeypatch) -> None:
+    captured = {}
+
+    class Gateway:
+        def orders_get(self):  # pragma: no cover - should not be called
+            raise AssertionError("orders_get should not be called")
+
+        def positions_get(self):  # pragma: no cover - should not be called
+            raise AssertionError("positions_get should not be called")
+
+    def fake_refresh_market_state(*, market_state, gateway, market_specs, observed_at_utc):
+        captured["market_specs"] = market_specs
+        return {"EURUSD": {"last_epoch": observed_at_utc.timestamp(), "ticks": []}}
+
+    monkeypatch.setattr(wait_events_mod, "_refresh_market_state", fake_refresh_market_state)
+
+    market_specs = [{"type": "price_change", "symbol": "EURUSD"}]
+    observed_at_utc = datetime(2026, 4, 5, 13, 0, tzinfo=timezone.utc)
+    snapshot = wait_events_mod._collect_snapshot(
+        gateway=Gateway(),
+        baseline={},
+        history_state={},
+        market_state={"EURUSD": {"last_epoch": observed_at_utc.timestamp(), "ticks": []}},
+        started_at_utc=observed_at_utc,
+        observed_at_utc=observed_at_utc,
+        needs_orders=False,
+        needs_positions=False,
+        needs_history_deals=False,
+        needs_history_orders=False,
+        market_specs=market_specs,
+    )
+
+    assert snapshot["market_data"] == {
+        "EURUSD": {"last_epoch": observed_at_utc.timestamp(), "ticks": []}
+    }
+    assert captured["market_specs"] == market_specs

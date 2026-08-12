@@ -105,6 +105,19 @@ class TestCreateDimredReducerSelectKBest:
         assert np.array_equal(reducer.fit_transform(X), X)
 
 
+class TestApplyDimensionalityReduction:
+    def test_selectkbest_reduces_without_target_y(self):
+        X = pd.DataFrame(
+            {
+                "a": [1.0, 1.0, 1.0, 1.0],
+                "b": [1.0, 2.0, 3.0, 4.0],
+                "c": [10.0, 20.0, 30.0, 40.0],
+            }
+        )
+        out = _apply_dimensionality_reduction(X, "selectkbest", {"k": 2})
+        assert out.shape[1] == 2
+
+
 # ===== _coerce_feature_config (lines 134-138) =============================
 
 class TestCoerceFeatureConfig:
