@@ -1759,15 +1759,20 @@ def decompose_portfolio_risk(request: PortfolioRiskDecomposeRequest, gateway: An
             "error_code": "insufficient_data",
             "failures": history_failures,
         }
-    returns = pd.concat(series.values(), axis=1, join="inner").dropna()
-    if len(returns) < 100:
-        return {"error": "At least 100 aligned returns are required.", "error_code": "insufficient_data", "aligned_rows": len(returns)}
-    returns.columns = list(series)
+    returns_available = pd.concat(series.values(), axis=1, join="inner").dropna()
+    if len(returns_available) < 100:
+        return {"error": "At least 100 aligned returns are required.", "error_code": "insufficient_data", "aligned_rows": len(returns_available)}
+    returns_available.columns = list(series)
+    # Extra leading observations are fetched only to warm up volatility and
+    # multi-bar calculations. The requested lookback is the stable calibration
+    # window and must not change when another horizon is added.
+    returns = returns_available.tail(int(request.lookback)).copy()
     alpha = 1.0 - math.exp(math.log(0.5) / request.ewma_half_life)
     standardized, current_vol = _filtered_historical_returns(
-        returns,
+        returns_available,
         alpha=alpha,
     )
+    standardized = standardized.tail(int(request.lookback)).copy()
     ewma_vol = current_vol.copy()
     if request.method == "historical":
         standardized = returns.copy()
@@ -1805,6 +1810,8 @@ def decompose_portfolio_risk(request: PortfolioRiskDecomposeRequest, gateway: An
                     f"bar{'s' if horizon != 1 else ''}"
                 ),
                 "confidence": confidence,
+                "calibration_observations": int(len(standardized)),
+                "horizon_windows_available": int(max_start + 1),
                 "var": float(max(0.0, -cutoff)),
                 "expected_shortfall": after_es,
                 **({"before_expected_shortfall": base_es, "incremental_expected_shortfall": (after_es - base_es) if after_es is not None and base_es is not None else None} if proposed_sensitivity else {}),
@@ -1881,6 +1888,8 @@ def decompose_portfolio_risk(request: PortfolioRiskDecomposeRequest, gateway: An
     model_context.update(
         {
             "aligned_returns": len(returns),
+            "aligned_returns_available": len(returns_available),
+            "warmup_returns_discarded": int(len(returns_available) - len(returns)),
             "data_start": data_start,
             "data_end": data_end,
         }

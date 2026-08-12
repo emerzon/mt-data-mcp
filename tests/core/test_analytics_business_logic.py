@@ -1015,6 +1015,8 @@ def test_portfolio_risk_reconciles_component_expected_shortfall() -> None:
         "usable_for_live_trading": False,
         "mark_freshness": result["model_context"]["mark_freshness"],
         "aligned_returns": result["summary"]["aligned_rows"],
+        "aligned_returns_available": result["model_context"]["aligned_returns_available"],
+        "warmup_returns_discarded": result["model_context"]["warmup_returns_discarded"],
         "data_start": result["model_context"]["data_start"],
         "data_end": result["model_context"]["data_end"],
     }
@@ -1029,6 +1031,38 @@ def test_portfolio_risk_reconciles_component_expected_shortfall() -> None:
         for mark in result["model_context"]["mark_freshness"]
     )
     assert "as_of" not in result["model_context"]
+
+
+def test_portfolio_risk_horizons_share_one_stable_calibration_window() -> None:
+    gateway = FakeGateway()
+    gateway.positions = [
+        {"ticket": 1, "symbol": "EURUSD", "type": 0, "volume": 1.0, "price_current": 1.1},
+        {"ticket": 2, "symbol": "GBPUSD", "type": 1, "volume": 0.5, "price_current": 1.1},
+    ]
+
+    common = dict(
+        lookback=300,
+        confidence=[0.95],
+        method="historical",
+        simulations=500,
+        seed=7,
+    )
+    short = decompose_portfolio_risk(
+        PortfolioRiskDecomposeRequest(horizon_bars=[1, 5], **common),
+        gateway,
+    )
+    long = decompose_portfolio_risk(
+        PortfolioRiskDecomposeRequest(horizon_bars=[1, 50], **common),
+        gateway,
+    )
+
+    assert short["model_context"]["aligned_returns"] == 300
+    assert long["model_context"]["aligned_returns"] == 300
+    short_one = next(row for row in short["risk"] if row["horizon_bars"] == 1)
+    long_one = next(row for row in long["risk"] if row["horizon_bars"] == 1)
+    assert short_one == long_one
+    assert short_one["calibration_observations"] == 300
+    assert short_one["horizon_windows_available"] == 300
 
 
 def test_filtered_historical_shock_uses_pre_shock_volatility() -> None:
