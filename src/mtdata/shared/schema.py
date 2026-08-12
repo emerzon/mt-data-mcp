@@ -304,7 +304,7 @@ PARAM_HINTS = {
     "slippage_bps": "Backtest slippage per fill side in basis points; see the command-specific default.",
     "objective": "Optimization objective.",
     "return_grid": "Include full grid results in output.",
-    "candidate_filter": "Barrier candidates to return: all, viable, or tradable.",
+    "candidate_filter": "Barrier candidates to return: all or mathematically viable.",
     "concise": "Return a shorter barrier-optimization payload when true.",
     "grid_style": "TP/SL grid style.",
     "preset": "TP/SL grid preset. Common examples: volatility, conservative, aggressive.",

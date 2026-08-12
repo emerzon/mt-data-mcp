@@ -375,6 +375,8 @@ class TestBarrierHitProbabilities(_BarrierTestBase):
         self.assertTrue(result["success"])
         self.assertIn("prob_hit", result)
         self.assertEqual(result["last_price_source"], "candle_close")
+        self.assertEqual(result["bars_per_year"], 6240.0)
+        self.assertEqual(result["annualization_basis"], "260_fx_weekdays_24h")
 
     def test_closed_form_discloses_denoise_failure(self):
         with patch(

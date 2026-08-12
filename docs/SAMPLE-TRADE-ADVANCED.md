@@ -125,7 +125,7 @@ mtdata-cli forecast_barrier_prob EURUSD --timeframe H1 --horizon 12 \
 
 ```bash
 mtdata-cli forecast_barrier_prob EURUSD --timeframe H1 --horizon 12 \
-  --method closed_form --direction long --barrier 1.1795 --json
+  --method closed_form --direction long --barrier '{"kind":"single_price","level":1.1795}' --json
 ```
 
 - Flag discrepancies (e.g., MC>>GBM) to reduce size or re‑check calibration.

@@ -27,7 +27,11 @@ from ..utils.coercion import round_finite
 from ..utils.freshness import format_age_seconds as _format_age_seconds
 from ..utils.freshness import format_freshness_label
 from .backtest import execute_forecast_backtest as _forecast_backtest_impl
-from .barriers_shared import barrier_method_error, normalize_barrier_method
+from .barriers_shared import (
+    BARRIER_EDGE_DEFINITION,
+    barrier_method_error,
+    normalize_barrier_method,
+)
 from .capabilities import resolve_capability_request
 from .exceptions import ForecastError, raise_if_error_result
 from .forecast import execute_forecast as _forecast_impl
@@ -1597,6 +1601,12 @@ def _apply_barrier_prob_detail(
             "reference_price",
             "reference_price_source",
             "prob_hit",
+            "mu_annual",
+            "log_drift_annual",
+            "sigma_annual",
+            "bars_per_year",
+            "annualization_basis",
+            "override_units",
         ):
             _set_if_present(closed_form, key, payload.get(key))
         if detail_value == "standard":
@@ -3600,7 +3610,7 @@ def run_forecast_barrier_optimize(
             result.setdefault("probability_unit", "fraction")
             result.setdefault(
                 "edge_definition",
-                "Expected reward/risk edge for the candidate TP/SL barrier pair.",
+                BARRIER_EDGE_DEFINITION,
             )
             result.setdefault(
                 "ev_definition",

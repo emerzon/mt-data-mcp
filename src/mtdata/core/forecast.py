@@ -1265,34 +1265,21 @@ def forecast_barrier_prob(
     direction : str, optional (default="long")
         Trade direction: "long" / "short"
     
-    tp_abs : float, optional
-        Absolute take profit price level
-    
-    sl_abs : float, optional
-        Absolute stop loss price level
-    
-    tp_pct : float, optional
-        Take profit as percentage (e.g., 2.0 for 2%)
-    
-    sl_pct : float, optional
-        Stop loss as percentage
-    
-    tp_ticks : float, optional
-        Take profit in ticks (trade_tick_size)
-    
-    sl_ticks : float, optional
-        Stop loss in ticks (trade_tick_size)
+    barrier : object (REQUIRED)
+        For simulation methods, pass a TP/SL object such as
+        {"kind":"tp_sl","unit":"pct","take_profit":0.5,"stop_loss":0.25}.
+        A complete TP/SL object may omit kind. For closed_form, pass
+        {"kind":"single_price","level":1.2700}.
     
     Closed Form Parameters (method="closed_form"):
     ----------------------------------------------
-    barrier : float, optional (default=0.0)
-        Target barrier level
-    
     mu : float, optional
-        Drift parameter (calculated if not provided)
+        Annual log-return drift as a decimal fraction on the shared
+        symbol/timeframe annualization basis (calculated if omitted).
     
     sigma : float, optional
-        Volatility parameter (calculated if not provided)
+        Annual return volatility as a decimal fraction on the same basis
+        (calculated if omitted).
 
     params : dict, optional
         Monte Carlo controls such as seed and n_sims. If seed is omitted, a
@@ -1314,16 +1301,15 @@ def forecast_barrier_prob(
         symbol="EURUSD",
         method="mc_gbm_bb",
         direction="long",
-        tp_abs=1.1100,
-        sl_abs=1.0950
+        barrier={"kind":"tp_sl","unit":"price",
+                 "take_profit":1.1100,"stop_loss":1.0950}
     )
     
     # Use percentage-based barriers
     forecast_barrier_prob(
         symbol="EURUSD",
         direction="long",
-        tp_pct=2.0,
-        sl_pct=1.0
+        barrier={"unit":"pct","take_profit":2.0,"stop_loss":1.0}
     )
     
     # Closed form calculation (faster)
@@ -1331,7 +1317,7 @@ def forecast_barrier_prob(
         symbol="GBPUSD",
         method="closed_form",
         direction="long",
-        barrier=1.2700
+        barrier={"kind":"single_price","level":1.2700}
     )
     """
     def _execute() -> Dict[str, Any]:

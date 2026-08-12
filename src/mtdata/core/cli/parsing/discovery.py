@@ -135,6 +135,20 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
     ("finviz_calendar", "start"): "Start date (YYYY-MM-DD).",
     ("finviz_calendar", "end"): "End date (YYYY-MM-DD).",
     ("forecast_barrier_optimize", "method"): "Barrier simulation method: mc_gbm, mc_gbm_bb, hmm_mc, garch, bootstrap, heston, jump_diffusion, or auto.",
+    ("forecast_barrier_prob", "barrier"): (
+        "Barrier object. Use {'kind':'single_price','level':1.1000} for "
+        "closed_form, or {'kind':'tp_sl','unit':'pct','take_profit':0.2,"
+        "'stop_loss':0.1} for simulation methods. The kind may be omitted "
+        "from a complete TP/SL object."
+    ),
+    ("forecast_barrier_prob", "mu"): (
+        "Annual log-return drift override (decimal fraction) on the shared "
+        "symbol/timeframe annualization basis."
+    ),
+    ("forecast_barrier_prob", "sigma"): (
+        "Annual return-volatility override (decimal fraction) on the shared "
+        "symbol/timeframe annualization basis."
+    ),
     ("forecast_volatility_estimate", "method"): (
         "Volatility estimator, such as ewma, rolling_std, har_rv, garch, "
         "arima, theta, or ensemble. Run forecast_list_methods with "

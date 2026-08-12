@@ -32,6 +32,19 @@ def test_forecast_barrier_prob_request_allows_single_shared_unit_family():
     assert request.sl_pct == 0.25
 
 
+def test_forecast_barrier_prob_request_infers_complete_tp_sl_kind():
+    barrier = {"unit": "pct", "take_profit": 0.5, "stop_loss": 0.25}
+
+    request = ForecastBarrierProbRequest(symbol="EURUSD", barrier=barrier)
+
+    assert request.model_dump()["barrier"]["kind"] == "tp_sl"
+
+
+def test_forecast_barrier_prob_request_names_allowed_kinds():
+    with pytest.raises(ValidationError, match="single_price and tp_sl"):
+        ForecastBarrierProbRequest(symbol="EURUSD", barrier={})
+
+
 def test_forecast_barrier_prob_request_defaults_to_touch_aware_method():
     request = ForecastBarrierProbRequest(symbol="EURUSD", barrier=_tp_sl_barrier())
 
@@ -62,3 +75,28 @@ def test_forecast_barrier_optimize_request_keeps_ticks_mode_canonical():
     request = ForecastBarrierOptimizeRequest(symbol="EURUSD", mode="ticks")
 
     assert request.mode == "ticks"
+
+
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")])
+@pytest.mark.parametrize("field", ["mu", "sigma"])
+def test_forecast_barrier_prob_request_rejects_nonfinite_controls(field, value):
+    kwargs = {field: value}
+    with pytest.raises(ValidationError, match=field):
+        ForecastBarrierProbRequest(
+            symbol="EURUSD",
+            method="closed_form",
+            barrier={"kind": "single_price", "level": 1.1},
+            **kwargs,
+        )
+
+
+@pytest.mark.parametrize("field", ["min_ev", "min_edge", "min_kelly"])
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")])
+def test_forecast_barrier_optimize_request_rejects_nonfinite_thresholds(field, value):
+    with pytest.raises(ValidationError, match=field):
+        ForecastBarrierOptimizeRequest(symbol="EURUSD", **{field: value})
+
+
+def test_forecast_barrier_optimize_rejects_unsupported_tradable_filter():
+    with pytest.raises(ValidationError, match="candidate_filter"):
+        ForecastBarrierOptimizeRequest(symbol="EURUSD", candidate_filter="tradable")

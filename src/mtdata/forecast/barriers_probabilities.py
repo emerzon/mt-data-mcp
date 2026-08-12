@@ -39,6 +39,7 @@ from .barriers_shared import (
     normalize_barrier_seed,
     offset_barrier_seed,
 )
+from .common import annualization_context as _annualization_context
 from .common import fetch_history as _fetch_history
 from .common import log_returns_from_prices as _log_returns_from_prices
 from .monte_carlo import gbm_single_barrier_upcross_prob as _gbm_upcross_prob
@@ -648,15 +649,21 @@ def forecast_barrier_closed_form(
         tf_secs = TIMEFRAME_SECONDS.get(timeframe, 0)
         if not tf_secs:
             return {"error": unsupported_timeframe_seconds_error(timeframe)}
-        T = float(tf_secs * int(horizon)) / (365.0 * 24.0 * 3600.0)
+        bars_per_year_value, annualization_basis = _annualization_context(
+            timeframe,
+            symbol,
+        )
+        if not np.isfinite(bars_per_year_value) or bars_per_year_value <= 0:
+            return {"error": unsupported_timeframe_seconds_error(timeframe)}
+        T = float(int(horizon)) / float(bars_per_year_value)
         if mu is None or sigma is None:
             with np.errstate(divide='ignore', invalid='ignore'):
                 r = _log_returns_from_prices(prices)
             r = r[np.isfinite(r)]
             if r.size < 5:
                 return {"error": "Insufficient returns for calibration"}
-            mu_hat = float(np.mean(r)) * (365.0 * 24.0 * 3600.0 / tf_secs)
-            sigma_hat = float(np.std(r, ddof=1)) * (365.0 * 24.0 * 3600.0 / tf_secs) ** 0.5
+            mu_hat = float(np.mean(r)) * float(bars_per_year_value)
+            sigma_hat = float(np.std(r, ddof=1)) * float(bars_per_year_value) ** 0.5
             if mu is None:
                 mu = mu_hat
             if sigma is None:
@@ -691,6 +698,9 @@ def forecast_barrier_closed_form(
             "mu_annual": float(gbm_drift),
             "log_drift_annual": float(log_drift),
             "sigma_annual": sigma_val,
+            "bars_per_year": float(bars_per_year_value),
+            "annualization_basis": annualization_basis,
+            "override_units": "annual_decimal_return_fraction",
             "prob_hit": float(prob),
         }
         result.update(freshness_context)

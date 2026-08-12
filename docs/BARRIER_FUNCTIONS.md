@@ -1331,7 +1331,7 @@ mtdata-cli forecast_barrier_optimize \
 ```bash
 mtdata-cli forecast_barrier_prob \
   EURUSD --timeframe H1 --horizon 12 \
-  --method closed_form --direction long --barrier 1.1000
+  --method closed_form --direction long --barrier '{"kind":"single_price","level":1.1000}'
 ```
 
 ---

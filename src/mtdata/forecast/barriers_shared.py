@@ -75,6 +75,7 @@ BARRIER_METRIC_BASIS_NOTE = (
     "prob_win_resolved-breakeven_win_rate; "
     "profit_factor=resolved reward/loss; higher is better, positive ev/edge is favorable."
 )
+BARRIER_EDGE_DEFINITION = "prob_win - prob_loss (probability fraction)."
 BROWNIAN_BRIDGE_DUAL_BARRIER_MODEL = "independent_single_barrier_approximation"
 BROWNIAN_BRIDGE_DUAL_BARRIER_WARNING = (
     "Brownian-bridge TP and SL hits are sampled independently within each "

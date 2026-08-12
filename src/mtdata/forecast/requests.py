@@ -2,7 +2,15 @@ from __future__ import annotations
 
 from typing import Annotated, Any, Dict, List, Literal, Optional, Union
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    BeforeValidator,
+    ConfigDict,
+    Field,
+    FiniteFloat,
+    field_validator,
+    model_validator,
+)
 
 from ..shared.schema import (
     DenoiseSpec,
@@ -72,8 +80,27 @@ class TakeProfitStopLossBarrierSpec(BaseModel):
         }
 
 
+def _normalize_forecast_barrier_spec(value: Any) -> Any:
+    if not isinstance(value, dict):
+        raise ValueError(
+            "barrier must be an object with kind='single_price' or kind='tp_sl'"
+        )
+    out = dict(value)
+    if out.get("kind") in (None, ""):
+        if "level" in out:
+            out["kind"] = "single_price"
+        elif any(key in out for key in ("unit", "take_profit", "stop_loss")):
+            out["kind"] = "tp_sl"
+        else:
+            raise ValueError(
+                "barrier.kind is required; allowed kinds are single_price and tp_sl"
+            )
+    return out
+
+
 ForecastBarrierSpec = Annotated[
     Union[SinglePriceBarrierSpec, TakeProfitStopLossBarrierSpec],
+    BeforeValidator(_normalize_forecast_barrier_spec),
     Field(discriminator="kind"),
 ]
 
@@ -196,7 +223,7 @@ class ForecastBacktestRequest(_PublicForecastRequest):
     params: Optional[Dict[str, Any]] = None
     features: Optional[Dict[str, Any]] = None
     dimred: Optional[DimensionalityReductionSpec] = None
-    slippage_bps: float = 0.0
+    slippage_bps: FiniteFloat = Field(0.0, ge=0.0)
     trade_threshold: float = Field(0.0, ge=0.0)
     detail: DetailLiteral = "compact"
 
@@ -245,7 +272,7 @@ class StrategyBacktestRequest(_PublicForecastRequest):
     max_hold_bars: Optional[int] = Field(None, ge=1)
     cost_model: Literal["historical_bar_spread", "fixed"] = "historical_bar_spread"
     spread_bps: Optional[float] = Field(None, ge=0.0)
-    slippage_bps: float = 1.0
+    slippage_bps: FiniteFloat = Field(1.0, ge=0.0)
 
     @model_validator(mode="after")
     def _validate_strategy_thresholds(self) -> "StrategyBacktestRequest":
@@ -405,8 +432,21 @@ class ForecastBarrierProbRequest(_PublicForecastRequest):
     barrier: ForecastBarrierSpec
     params: Optional[Dict[str, Any]] = None
     denoise: Optional[DenoiseSpec] = None
-    mu: Optional[float] = None
-    sigma: Optional[float] = None
+    mu: Optional[FiniteFloat] = Field(
+        None,
+        description=(
+            "Annual log-return drift as a decimal fraction on the shared "
+            "symbol/timeframe annualization basis."
+        ),
+    )
+    sigma: Optional[FiniteFloat] = Field(
+        None,
+        gt=0.0,
+        description=(
+            "Annual return volatility as a decimal fraction on the shared "
+            "symbol/timeframe annualization basis."
+        ),
+    )
     detail: DetailLiteral = "compact"
 
     @model_validator(mode="before")
@@ -536,10 +576,10 @@ class ForecastBarrierOptimizeRequest(_PublicForecastRequest):
         "ev_cond", "ev_per_bar", "profit_factor", "min_loss_prob", "utility"
     ] = "ev"
     top_k: Optional[int] = Field(None, ge=1)
-    candidate_filter: Literal["all", "viable", "tradable"] = "viable"
-    min_ev: Optional[float] = None
-    min_edge: Optional[float] = None
-    min_kelly: Optional[float] = None
+    candidate_filter: Literal["all", "viable"] = "viable"
+    min_ev: Optional[FiniteFloat] = None
+    min_edge: Optional[FiniteFloat] = None
+    min_kelly: Optional[FiniteFloat] = None
     grid_style: Literal["fixed", "volatility", "ratio", "preset"] = "fixed"
     preset: Optional[str] = None
     search_profile: Literal["fast", "medium", "long"] = "medium"
@@ -548,10 +588,6 @@ class ForecastBarrierOptimizeRequest(_PublicForecastRequest):
     @property
     def viable_only(self) -> bool:
         return self.candidate_filter != "all"
-
-    @property
-    def tradable_only(self) -> bool:
-        return self.candidate_filter == "tradable"
 
     @model_validator(mode="before")
     @classmethod

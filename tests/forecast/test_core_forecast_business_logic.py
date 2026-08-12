@@ -3125,7 +3125,7 @@ def test_forecast_barrier_optimize_rounds_public_float_artifacts():
     assert out["results"][0]["edge_vs_breakeven"] == -0.223441
     assert out["barrier_unit"] == "percent"
     assert out["probability_unit"] == "fraction"
-    assert "Expected reward/risk edge" in out["edge_definition"]
+    assert out["edge_definition"] == "prob_win - prob_loss (probability fraction)."
 
 
 def test_forecast_barrier_optimize_uses_tick_unit_context():
@@ -3427,6 +3427,11 @@ def test_forecast_barrier_prob_closed_form_compact_keeps_reference_source():
         "last_price_source": "candle_close",
         "barrier": 1.18,
         "prob_hit": 0.15,
+        "log_drift_annual": 0.01,
+        "sigma_annual": 0.2,
+        "bars_per_year": 6240.0,
+        "annualization_basis": "260_fx_weekdays_24h",
+        "override_units": "annual_decimal_return_fraction",
     }
 
     out = forecast_use_cases._apply_barrier_prob_detail(
@@ -3442,6 +3447,9 @@ def test_forecast_barrier_prob_closed_form_compact_keeps_reference_source():
     assert out["reference_price"] == 1.16594
     assert out["reference_price_source"] == "candle_close"
     assert out["prob_hit"] == 0.15
+    assert out["sigma_annual"] == 0.2
+    assert out["bars_per_year"] == 6240.0
+    assert out["annualization_basis"] == "260_fx_weekdays_24h"
     assert "last_price" not in out
     assert "last_price_source" not in out
 
