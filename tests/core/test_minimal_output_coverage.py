@@ -524,6 +524,52 @@ class TestNormalizeTripleBarrierPayload:
             "sample_note": "entries, labels, and timing arrays show the most recent 2 observations.",
         }
 
+    def test_full_payload_preserves_same_bar_policy_and_labeling_provenance(self):
+        payload = {
+            "success": True,
+            "symbol": "BTCUSD",
+            "timeframe": "M15",
+            "horizon": 5,
+            "direction": "long",
+            "entries": ["2026-08-12T19:00Z", "2026-08-12T19:15Z"],
+            "labels": [-1, 1],
+            "outcomes": ["sl", "tp"],
+            "holding_bars": [1, 1],
+            "tp_time": ["2026-08-12T19:15Z", "2026-08-12T19:30Z"],
+            "sl_time": ["2026-08-12T19:15Z", "2026-08-12T19:30Z"],
+            "same_bar": [True, True],
+            "same_bar_policy": "sl_first",
+            "lookahead_bias": False,
+            "suitable_for_backtest": True,
+            "price_precision": 2,
+            "trade_tick_size": 0.01,
+            "labeling_spec": {
+                "barrier_unit": "ticks",
+                "requested_barriers": {"tp_ticks": 100.0, "sl_ticks": 50.0},
+                "same_bar_policy": "sl_first",
+                "trade_tick_size": 0.01,
+            },
+            "preprocessing": {"denoise_applied": False},
+            "rows_before_labeling": 7,
+            "rows_after_labeling": 2,
+            "horizon_trimmed": 5,
+            "labeling_coverage": 2 / 7,
+            "history_bars_requested": 12,
+            "history_bars_fetched": 12,
+            "history_bars_used": 7,
+        }
+
+        result = _normalize_triple_barrier_payload(payload, verbose=True)
+
+        assert result["labels"][0]["same_bar"] is True
+        assert result["same_bar_count"] == 2
+        assert result["same_bar_policy"] == "sl_first"
+        assert result["lookahead_bias"] is False
+        assert result["suitable_for_backtest"] is True
+        assert result["labeling_spec"] == payload["labeling_spec"]
+        assert result["labeling_coverage"] == 2 / 7
+        assert result["history_bars_used"] == 7
+
 
 class TestNormalizeTradePayload:
     def test_results_branch_does_not_fallback_to_raw_rows(self):
@@ -562,6 +608,58 @@ class TestNormalizeTradePayload:
         result = _normalize_trade_payload(payload, verbose=False, tool_name="trade_place")
         assert result["ticket"] == 4392901844
         assert "order" not in result
+
+    @pytest.mark.parametrize(
+        "blockers",
+        [
+            ["missing_stop_loss", "missing_take_profit"],
+            ["insufficient_margin"],
+            ["stale_quote", "account_trade_disabled"],
+        ],
+    )
+    def test_trade_place_blocked_preview_preserves_reasons_and_remediation(
+        self, blockers
+    ):
+        payload = {
+            "success": False,
+            "dry_run": True,
+            "preview_ok": False,
+            "validation_passed": False,
+            "symbol": "EURUSD",
+            "blockers": blockers,
+            "dry_run_note": "Correct the blockers and retry the dry run.",
+            "message": "Dry run only. No order was sent to MT5.",
+        }
+
+        result = _normalize_trade_payload(
+            payload, verbose=False, tool_name="trade_place"
+        )
+
+        assert result["blockers"] == blockers
+        assert result["dry_run_note"] == "Correct the blockers and retry the dry run."
+
+    def test_trade_place_full_preview_preserves_nested_validation(self):
+        validation = {
+            "passed": False,
+            "blockers": ["invalid_stop_loss"],
+            "checks": {"stop_loss": "must be below entry for BUY"},
+        }
+        payload = {
+            "success": False,
+            "dry_run": True,
+            "preview_ok": False,
+            "validation_passed": False,
+            "validation": validation,
+            "remediation": "Move stop_loss below the entry price.",
+        }
+
+        result = _normalize_trade_payload(
+            payload, verbose=True, tool_name="trade_place"
+        )
+
+        assert result["blockers"] == ["invalid_stop_loss"]
+        assert result["remediation"] == "Move stop_loss below the entry price."
+        assert result["validation"] == validation
 
 
 class TestNormalizeTradeTablePayload:

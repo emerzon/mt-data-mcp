@@ -529,6 +529,8 @@ def _normalize_forecast_payload(  # noqa: C901
 
 def _normalize_triple_barrier_payload(
     payload: Dict[str, Any],
+    *,
+    verbose: bool = False,
 ) -> Optional[Dict[str, Any]]:
     """Convert triple-barrier column arrays into a single tabular block."""
     entries = payload.get("entries")
@@ -550,9 +552,11 @@ def _normalize_triple_barrier_payload(
     tp_times_raw = payload.get("tp_time")
     sl_times_raw = payload.get("sl_time")
     outcomes_raw = payload.get("outcomes")
+    same_bar_raw = payload.get("same_bar")
     tp_times = list(tp_times_raw) if isinstance(tp_times_raw, list) else []
     sl_times = list(sl_times_raw) if isinstance(sl_times_raw, list) else []
     outcomes = list(outcomes_raw) if isinstance(outcomes_raw, list) else []
+    same_bar = list(same_bar_raw) if isinstance(same_bar_raw, list) else []
 
     rows: List[Dict[str, Any]] = []
     for idx in range(n):
@@ -567,6 +571,8 @@ def _normalize_triple_barrier_payload(
             row["tp_time"] = tp_times[idx] if idx < len(tp_times) else None
         if "sl_time" in payload:
             row["sl_time"] = sl_times[idx] if idx < len(sl_times) else None
+        if "same_bar" in payload:
+            row["same_bar"] = same_bar[idx] if idx < len(same_bar) else None
         rows.append(row)
 
     out: Dict[str, Any] = {}
@@ -576,6 +582,8 @@ def _normalize_triple_barrier_payload(
             out[key] = value
 
     out["labels"] = rows
+    if isinstance(same_bar_raw, list):
+        out["same_bar_count"] = sum(value is True for value in same_bar)
 
     summary = payload.get("summary")
     if isinstance(summary, dict) and summary:
@@ -583,6 +591,11 @@ def _normalize_triple_barrier_payload(
 
     for key in (
         "direction",
+        "same_bar_policy",
+        "lookahead_bias",
+        "suitable_for_backtest",
+        "price_precision",
+        "trade_tick_size",
         "label_legend",
         "label_key",
         "sample_size",
@@ -595,6 +608,24 @@ def _normalize_triple_barrier_payload(
         value = payload.get(key)
         if not _is_empty_value(value):
             out[key] = value
+
+    if verbose:
+        for key in (
+            "labeling_spec",
+            "preprocessing",
+            "rows_before_labeling",
+            "rows_after_labeling",
+            "horizon_trimmed",
+            "labeling_coverage",
+            "history_bars_requested",
+            "history_bars_fetched",
+            "history_bars_used",
+            "sample_limit",
+            "skipped_entry_reasons",
+        ):
+            value = payload.get(key)
+            if not _is_empty_value(value):
+                out[key] = value
 
     return out
 
@@ -864,6 +895,15 @@ def _normalize_trade_payload(  # noqa: C901
     if not is_successful_dry_run_preview:
         _maybe_add_trade_key(out, "validation_passed", payload.get("validation_passed"))
         _maybe_add_trade_key(out, "trade_gate_passed", payload.get("trade_gate_passed"))
+        validation_payload = payload.get("validation")
+        blockers = payload.get("blockers")
+        if _is_empty_value(blockers) and isinstance(validation_payload, dict):
+            blockers = validation_payload.get("blockers")
+        _maybe_add_trade_key(out, "blockers", blockers)
+        _maybe_add_trade_key(out, "dry_run_note", payload.get("dry_run_note"))
+        _maybe_add_trade_key(out, "remediation", payload.get("remediation"))
+        if verbose and isinstance(validation_payload, dict) and validation_payload:
+            out["validation"] = validation_payload
     if not (
         is_successful_dry_run_preview
         and payload.get("actionability") == "preview_only"
@@ -2425,7 +2465,10 @@ def format_result_minimal(  # noqa: C901
                     if barrier_optimize_norm is not None:
                         normalized = barrier_optimize_norm
                     else:
-                        triple_barrier_norm = _normalize_triple_barrier_payload(result)
+                        triple_barrier_norm = _normalize_triple_barrier_payload(
+                            result,
+                            verbose=verbose,
+                        )
                         if triple_barrier_norm is not None:
                             normalized = triple_barrier_norm
                         else:
