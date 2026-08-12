@@ -471,10 +471,51 @@ def create_command_function(  # noqa: C901
                     extra = parse_kv_string(extra_val)
                     if extra:
                         if param_name == "denoise" and isinstance(arg_value, dict):
+                            pipeline_keys = {
+                                "columns",
+                                "when",
+                                "causality",
+                                "keep_original",
+                                "suffix",
+                            }
+                            pipeline_values = {
+                                key: value
+                                for key, value in extra.items()
+                                if key in pipeline_keys
+                            }
+                            method_values = {
+                                key: value
+                                for key, value in extra.items()
+                                if key not in pipeline_keys
+                            }
+                            if "keep_original" in pipeline_values:
+                                keep_original = coerce_cli_scalar(
+                                    str(pipeline_values["keep_original"])
+                                )
+                                if not isinstance(keep_original, bool):
+                                    render_cli_result(
+                                        _build_cli_error(
+                                            "denoise keep_original must be true or false."
+                                        ),
+                                        args=args,
+                                        cmd_name=cmd_name,
+                                    )
+                                    return 1
+                                pipeline_values["keep_original"] = keep_original
+                            if "columns" in pipeline_values and isinstance(
+                                pipeline_values["columns"], str
+                            ):
+                                pipeline_values["columns"] = normalize_cli_list_value(
+                                    pipeline_values["columns"]
+                                )
+                            arg_value.update(pipeline_values)
                             method_params = arg_value.get("params")
                             if not isinstance(method_params, dict):
                                 method_params = {}
-                            arg_value["params"] = merge_dict(method_params, extra)
+                            if method_values:
+                                arg_value["params"] = merge_dict(
+                                    method_params, method_values
+                                )
                         elif arg_value is None or arg_value == {}:
                             arg_value = extra
                         elif isinstance(arg_value, dict):

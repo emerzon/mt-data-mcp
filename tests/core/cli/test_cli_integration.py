@@ -2335,6 +2335,35 @@ class TestEdgeCases:
             "params": {"window": "7"},
         }
 
+    def test_denoise_companion_promotes_pipeline_controls(self):
+        mock_fn = MagicMock(return_value="ok")
+        func_info = {
+            "func": mock_fn,
+            "params": [
+                {
+                    "name": "denoise",
+                    "type": Dict[str, Any],
+                    "required": False,
+                    "default": None,
+                },
+            ],
+        }
+        cmd_fn = create_command_function(func_info, cmd_name="test_cmd")
+        args = argparse.Namespace(
+            denoise='{"method":"kalman"}',
+            denoise_params="keep_original=true,suffix=_filtered,process_var=0.1",
+            json=False,
+            verbose=False,
+        )
+
+        assert cmd_fn(args) == 0
+        assert mock_fn.call_args.kwargs["denoise"] == {
+            "method": "kalman",
+            "keep_original": True,
+            "suffix": "_filtered",
+            "params": {"process_var": "0.1"},
+        }
+
     def test_ranged_candle_command_preserves_omitted_limit(self):
         mock_fn = MagicMock(return_value={"success": True})
         func_info = {
