@@ -339,6 +339,7 @@ _FINVIZ_SCREEN_COMPACT_FIELDS_BY_VIEW = {
         "rsi_14",
         "sma20_distance_pct",
         "sma50_distance_pct",
+        "sma200_distance_pct",
         "atr_14",
         "beta",
     ),
@@ -360,6 +361,9 @@ _FINVIZ_SCREEN_FRACTION_PERCENT_FIELDS = frozenset(
         "performance_half_year",
         "performance_year",
         "performance_ytd",
+        "sma20_distance_pct",
+        "sma50_distance_pct",
+        "sma200_distance_pct",
     }
 )
 _FINVIZ_SCREEN_PERCENT_FIELDS = _FINVIZ_SCREEN_FRACTION_PERCENT_FIELDS | frozenset(
@@ -375,6 +379,7 @@ _FINVIZ_SCREEN_PERCENT_FIELDS = _FINVIZ_SCREEN_FRACTION_PERCENT_FIELDS | frozens
         "rsi_14",
         "sma20_distance_pct",
         "sma50_distance_pct",
+        "sma200_distance_pct",
     }
 )
 _FINVIZ_DETAIL_ERROR = (
@@ -2424,6 +2429,21 @@ def _normalize_finviz_dividend_item(item: Any) -> Any:
     return normalized
 
 
+def _normalize_finviz_earnings_amounts(item: Any) -> Any:
+    """Convert provider million-scaled earnings amounts to base currency units."""
+    if not isinstance(item, dict):
+        return item
+    normalized = dict(item)
+    for field in ("market_cap", "sales_estimate", "sales_actual"):
+        value = normalized.get(field)
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            continue
+        numeric = float(value)
+        if numeric == numeric and numeric not in (float("inf"), float("-inf")):
+            normalized[field] = numeric * 1_000_000.0
+    return normalized
+
+
 def _enrich_finviz_calendar_country(item: Dict[str, Any]) -> Dict[str, Any]:
     normalized = dict(item)
     had_country = normalized.get("country") not in (None, "")
@@ -2487,6 +2507,10 @@ def _normalize_finviz_calendar_payload(
                 else item
                 for item in normalized_items
             ]
+            normalized_items = [
+                _normalize_finviz_earnings_amounts(item)
+                for item in normalized_items
+            ]
         if country_code_filter:
             normalized_items = [
                 item
@@ -2532,6 +2556,16 @@ def _normalize_finviz_calendar_payload(
             "ordinary_amount": "listing_currency_per_share",
             "special_amount": "listing_currency_per_share",
             "yield_pct": "percentage_points (1.0 = 1%)",
+        }
+    if str(calendar_type or "economic").strip().lower() == "earnings":
+        out["currency_basis"] = "listing_currency"
+        out["amount_source_scale"] = "provider_millions_normalized_to_base_units"
+        out["units"] = {
+            "market_cap": "listing_currency_base_units",
+            "sales_estimate": "listing_currency_base_units",
+            "sales_actual": "listing_currency_base_units",
+            "eps_estimate": "listing_currency_per_share",
+            "eps_actual": "listing_currency_per_share",
         }
     page_value = int(result.get("page") or page or 1)
     pages = result.get("pages")
@@ -3519,7 +3553,17 @@ def finviz_market_news(
 
 @mcp.tool()
 def finviz_insider_activity(
-    option: Literal["latest", "top week", "top owner trade", "insider buy", "insider sale"] = "latest",
+    option: Literal[
+        "latest",
+        "latest buys",
+        "latest sales",
+        "top week",
+        "top week buys",
+        "top week sales",
+        "top owner trade",
+        "top owner buys",
+        "top owner sales",
+    ] = "latest",
     limit: Annotated[int, Field(ge=1)] = 50,
     page: Annotated[int, Field(ge=1)] = 1,
     detail: DetailLiteral = "compact",  # type: ignore
@@ -3532,10 +3576,9 @@ def finviz_insider_activity(
     option : str
         Activity type:
         - "latest": Most recent insider trades
-        - "top week": Top trades this week
-        - "top owner trade": Largest owner trades
-        - "insider buy": Recent insider buys
-        - "insider sale": Recent insider sales
+        - "latest", "latest buys", "latest sales"
+        - "top week", "top week buys", "top week sales"
+        - "top owner trade", "top owner buys", "top owner sales"
     limit : int
         Max items per page (default 50)
     page : int

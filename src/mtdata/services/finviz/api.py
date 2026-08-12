@@ -723,7 +723,8 @@ def get_insider_activity(option: str = "latest", limit: int = 50, page: int = 1)
     Parameters
     ----------
     option : str
-        Type: "latest", "top week", "top owner trade", "insider buy", "insider sale"
+        Type: "latest"/"latest buys"/"latest sales", "top week" variants,
+        or "top owner" variants supported by finvizfinance.
     limit : int
         Max items per page
     page : int

@@ -2120,6 +2120,41 @@ class TestFinvizTools:
         ]
 
     @patch('mtdata.core.finviz.screen_stocks')
+    def test_finviz_screen_numeric_sma_fractions_become_percentage_points(
+        self, mock_screen
+    ):
+        from mtdata.core.finviz import finviz_screen
+
+        mock_screen.return_value = {
+            "success": True,
+            "count": 1,
+            "stocks": [
+                {
+                    "Ticker": "AAPL",
+                    "SMA20": -0.0558,
+                    "SMA50": -0.0199,
+                    "SMA200": 0.1025,
+                }
+            ],
+        }
+
+        with patch(
+            "mtdata.core.finviz.run_logged_operation",
+            side_effect=lambda _logger, operation, func, **fields: func(),
+        ):
+            result = finviz_screen.__wrapped__(
+                filters={"Exchange": "NASDAQ"},
+                view="technical",
+            )
+
+        assert result["items"][0]["sma20_distance_pct"] == -5.58
+        assert result["items"][0]["sma50_distance_pct"] == -1.99
+        assert result["items"][0]["sma200_distance_pct"] == 10.25
+        assert result["units"]["sma200_distance_pct"] == (
+            "percentage_points (1.0 = 1%)"
+        )
+
+    @patch('mtdata.core.finviz.screen_stocks')
     def test_finviz_screen_compact_uses_valuation_fields(self, mock_screen):
         from mtdata.core.finviz import finviz_screen
 

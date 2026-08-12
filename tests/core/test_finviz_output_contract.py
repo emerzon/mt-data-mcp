@@ -384,10 +384,17 @@ class TestFinvizCalendarOutputContract:
                 "eps_estimate": 2.59,
                 "eps_actual": 2.65,
                 "eps_surprise": 2.23,
-                "sales_estimate": 12900,
-                "sales_actual": 13100,
+                "sales_estimate": 12_900_000_000.0,
+                "sales_actual": 13_100_000_000.0,
             }
         ]
+        assert result["currency_basis"] == "listing_currency"
+        assert result["amount_source_scale"] == (
+            "provider_millions_normalized_to_base_units"
+        )
+        assert result["units"]["sales_estimate"] == (
+            "listing_currency_base_units"
+        )
 
     @patch("mtdata.core.finviz.get_economic_calendar")
     def test_calendar_compact_drops_internal_fields(self, mock_get):
