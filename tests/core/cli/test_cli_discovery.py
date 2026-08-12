@@ -1032,6 +1032,65 @@ class TestCreateCommandFunction:
         assert "unit" in output and "pct" in output
         mock_fn.assert_not_called()
 
+    @pytest.mark.parametrize("barriers", ["{}", "[]", "null"])
+    def test_labels_incomplete_barrier_structures_fail_before_invocation(
+        self, barriers, capsys
+    ):
+        mock_fn = MagicMock(return_value={"ok": True})
+        func_info = {
+            "func": mock_fn,
+            "params": [
+                {
+                    "name": "barriers",
+                    "type": BarrierPairSpec,
+                    "required": True,
+                    "default": None,
+                },
+            ],
+        }
+        cmd_fn = create_command_function(func_info, cmd_name="labels_triple_barrier")
+        args = argparse.Namespace(
+            barriers=barriers,
+            barriers_params=None,
+            set_overrides=None,
+            json=False,
+            verbose=False,
+        )
+
+        assert cmd_fn(args) == 1
+        output = capsys.readouterr().out
+        assert "barriers must be a JSON object" in output
+        assert "unit" in output and "take_profit" in output and "stop_loss" in output
+        mock_fn.assert_not_called()
+
+    def test_labels_malformed_barrier_json_reports_parse_error(self, capsys):
+        mock_fn = MagicMock(return_value={"ok": True})
+        func_info = {
+            "func": mock_fn,
+            "params": [
+                {
+                    "name": "barriers",
+                    "type": BarrierPairSpec,
+                    "required": True,
+                    "default": None,
+                },
+            ],
+        }
+        cmd_fn = create_command_function(func_info, cmd_name="labels_triple_barrier")
+        args = argparse.Namespace(
+            barriers="{bad}",
+            barriers_params=None,
+            set_overrides=None,
+            json=False,
+            verbose=False,
+        )
+
+        assert cmd_fn(args) == 1
+        output = capsys.readouterr().out
+        assert "barriers must be valid JSON structured input" in output
+        assert "as_legacy_kwargs" not in output
+        mock_fn.assert_not_called()
+
     def test_invalid_simplify_method_returns_descriptive_validation_error(self, capsys):
         mock_fn = MagicMock(return_value={"ok": True})
         func_info = {

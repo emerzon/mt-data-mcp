@@ -5,7 +5,7 @@ from typing import Any, Callable, Dict, Optional, Sequence, Tuple
 ToolInfo = Dict[str, Any]
 
 
-_OPTIONAL_FIRST_POSITIONAL_PARAMS: set[tuple[str, str]] = {
+_OPTIONAL_POSITIONAL_PARAMS: set[tuple[str, str]] = {
     ("finviz_forex", "symbol"),
     ("finviz_news", "symbol"),
     ("news", "symbol"),
@@ -15,6 +15,8 @@ _OPTIONAL_FIRST_POSITIONAL_PARAMS: set[tuple[str, str]] = {
     ("market_scan", "symbols"),
     ("causal_discover_signals", "symbols"),
     ("market_status", "symbol"),
+    ("trade_close", "symbol"),
+    ("trade_execution_quality", "symbol"),
     ("trade_get_open", "symbol"),
     ("trade_get_pending", "symbol"),
     ("trade_place", "symbol"),
@@ -24,7 +26,7 @@ _OPTIONAL_FIRST_POSITIONAL_PARAMS: set[tuple[str, str]] = {
     ("wait_event", "symbol"),
 }
 
-_HIDDEN_OPTIONAL_FIRST_POSITIONAL_FLAGS: set[tuple[str, str]] = {
+_HIDDEN_OPTIONAL_POSITIONAL_FLAGS: set[tuple[str, str]] = {
     ("correlation_matrix", "symbols"),
     ("cointegration_test", "symbols"),
     ("causal_discover_signals", "symbols"),
@@ -35,7 +37,7 @@ _HIDDEN_OPTIONAL_FIRST_POSITIONAL_FLAGS: set[tuple[str, str]] = {
 # compatibility cases.
 _COMMAND_PARAM_CHOICE_OVERRIDES: Dict[tuple[str, str], list[str]] = {}
 
-_POSITIONAL_ONLY_OPTIONAL_FIRST_PARAMS: set[tuple[str, str]] = set()
+_POSITIONAL_ONLY_OPTIONAL_PARAMS: set[tuple[str, str]] = set()
 
 _SEARCH_ALIAS_COMMANDS = frozenset(
     {
@@ -929,10 +931,10 @@ def add_dynamic_arguments(  # noqa: C901
             kwargs["help"] = f"{kwargs.get('help') or param['name']} (required)"
 
         is_optional_bool = param.get("type") is bool and not param.get("required", False)
-        allow_optional_first_positional = (
-            param == param_info["params"][0]
-            and (str(cmd_name or ""), str(param["name"])) in _OPTIONAL_FIRST_POSITIONAL_PARAMS
-        )
+        allow_optional_positional = (
+            str(cmd_name or ""),
+            str(param["name"]),
+        ) in _OPTIONAL_POSITIONAL_PARAMS
 
         required_symbol_alias = (
             param["required"]
@@ -988,7 +990,7 @@ def add_dynamic_arguments(  # noqa: C901
                 positional_kwargs["nargs"] = "+"
             positional_kwargs["help"] = f"{positional_kwargs.get('help') or param['name']} (required)"
             parser.add_argument(param["name"], **positional_kwargs)
-        elif allow_optional_first_positional:
+        elif allow_optional_positional:
             positional_kwargs = {k: v for k, v in kwargs.items() if k in ("help", "type", "choices", "metavar")}
             positional_kwargs["nargs"] = (
                 "*"
@@ -1011,13 +1013,13 @@ def add_dynamic_arguments(  # noqa: C901
                 option_kwargs["nargs"] = "+"
             if (
                 str(param["name"]) != "symbols"
-                or (str(cmd_name or ""), str(param["name"])) in _HIDDEN_OPTIONAL_FIRST_POSITIONAL_FLAGS
+                or (str(cmd_name or ""), str(param["name"])) in _HIDDEN_OPTIONAL_POSITIONAL_FLAGS
             ):
                 option_kwargs["help"] = argparse.SUPPRESS
             positional_key = (str(cmd_name or ""), str(param["name"]))
-            if option_flags and positional_key not in _POSITIONAL_ONLY_OPTIONAL_FIRST_PARAMS:
+            if option_flags and positional_key not in _POSITIONAL_ONLY_OPTIONAL_PARAMS:
                 parser.add_argument(*option_flags, **option_kwargs)
-            if hidden_option_flags and positional_key not in _POSITIONAL_ONLY_OPTIONAL_FIRST_PARAMS:
+            if hidden_option_flags and positional_key not in _POSITIONAL_ONLY_OPTIONAL_PARAMS:
                 hidden_option_kwargs = dict(option_kwargs)
                 hidden_option_kwargs["help"] = argparse.SUPPRESS
                 parser.add_argument(*hidden_option_flags, **hidden_option_kwargs)

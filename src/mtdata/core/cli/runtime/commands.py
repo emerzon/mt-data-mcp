@@ -195,13 +195,12 @@ def friendly_validation_error(exc: ValidationError, *, cmd_name: str) -> str:
                 "\"strategy\":\"ema_cross\"}]'. Use type=forecast_threshold "
                 "with a method field for forecast candidates."
             )
-        if cmd_name == "labels_triple_barrier" and loc.split(".", 1)[0] in {
-            "barriers",
-            "unit",
-            "take_profit",
-            "stop_loss",
-            "method",
-        }:
+        if cmd_name == "labels_triple_barrier" and (
+            loc.split(".", 1)[0]
+            in {"barriers", "unit", "take_profit", "stop_loss", "method"}
+            or "valid dictionary" in msg.lower()
+            or "barrierpairspec" in msg.lower()
+        ):
             return (
                 "barriers must be a JSON object with unit, take_profit, and "
                 "stop_loss. Example: "
@@ -447,11 +446,29 @@ def create_command_function(  # noqa: C901
                     arg_value = normalize_cli_list_value(arg_value)
             if is_mapping:
                 if isinstance(arg_value, str) and arg_value.strip():
-                    if arg_value.strip().startswith("{"):
-                        parsed = parse_kv_string(arg_value)
-                        if parsed is not None:
-                            arg_value = parsed
-                    else:
+                    structured_text = arg_value.strip()
+                    if structured_text.startswith(("{", "[")):
+                        parsed_structured: Any = None
+                        parse_error: Optional[Exception] = None
+                        for parser in (json.loads, ast.literal_eval):
+                            try:
+                                parsed_structured = parser(structured_text)
+                                parse_error = None
+                                break
+                            except Exception as exc:
+                                parse_error = exc
+                        if parse_error is not None:
+                            render_cli_result(
+                                _build_cli_error(
+                                    f"{param_name} must be valid JSON structured input; "
+                                    "use double-quoted object keys and string values."
+                                ),
+                                args=args,
+                                cmd_name=cmd_name,
+                            )
+                            return 1
+                        arg_value = parsed_structured
+                    if isinstance(arg_value, str):
                         parsed = parse_kv_string(arg_value)
                         if parsed is not None:
                             arg_value = parsed
@@ -532,7 +549,7 @@ def create_command_function(  # noqa: C901
                     else:
                         arg_value = set_overrides.get(param_name)
 
-                if _is_model_type(base_type) and isinstance(arg_value, dict):
+                if _is_model_type(base_type) and arg_value is not None:
                     try:
                         validator = getattr(base_type, "model_validate", None)
                         arg_value = (

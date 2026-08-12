@@ -16,8 +16,10 @@ from unittest.mock import MagicMock, call, patch
 
 import pytest
 
+from mtdata.core.analytics_requests import TradeExecutionQualityRequest
 from mtdata.core.data.requests import DataFetchCandlesRequest
 from mtdata.core.trading.requests import (
+    TradeCloseRequest,
     TradeGetOpenRequest,
     TradeHistoryRequest,
     TradeRiskAnalyzeRequest,
@@ -448,6 +450,47 @@ class TestMain:
         assert result == 0
         request = mock_fn.call_args.kwargs["request"]
         assert isinstance(request, TradeRiskAnalyzeRequest)
+        assert request.symbol == "EURUSD"
+
+    @pytest.mark.parametrize(
+        ("command_name", "request_model"),
+        [
+            ("trade_close", TradeCloseRequest),
+            ("trade_execution_quality", TradeExecutionQualityRequest),
+        ],
+    )
+    @patch("mtdata.core.cli.api.discover_tools")
+    def test_trade_commands_accept_nonfirst_optional_positional_symbol(
+        self,
+        mock_discover,
+        command_name,
+        request_model,
+    ):
+        mock_fn = MagicMock(return_value={"success": True})
+        mock_fn.__module__ = "mtdata.core.server"
+        mock_fn.__name__ = command_name
+        mock_fn.__doc__ = "Trade command."
+
+        def command(request):
+            pass
+
+        command.__annotations__ = {"request": request_model}
+        info = get_function_info(command)
+        info["func"] = mock_fn
+        mock_discover.return_value = {
+            command_name: {
+                "func": mock_fn,
+                "meta": {"description": "Trade command"},
+                "_cli_func_info": info,
+            },
+        }
+
+        with patch("sys.argv", ["cli.py", command_name, "EURUSD"]):
+            result = main()
+
+        assert result == 0
+        request = mock_fn.call_args.kwargs["request"]
+        assert isinstance(request, request_model)
         assert request.symbol == "EURUSD"
 
     @patch("mtdata.core.cli.api.discover_tools")

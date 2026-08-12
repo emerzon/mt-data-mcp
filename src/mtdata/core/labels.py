@@ -373,12 +373,28 @@ def labels_triple_barrier(  # noqa: C901
     Outputs label: +1 (TP first), -1 (SL first), 0 (neither by horizon), and holding_bars until decision.
     """
 
-    barrier_values = barriers.as_legacy_kwargs()
-    tp_abs = barrier_values.get("tp_abs")
-    sl_abs = barrier_values.get("sl_abs")
-
     def _run() -> Dict[str, Any]:  # noqa: C901
         try:
+            try:
+                normalized_barriers = (
+                    barriers
+                    if isinstance(barriers, BarrierPairSpec)
+                    else BarrierPairSpec.model_validate(barriers)
+                )
+            except Exception as exc:
+                return {
+                    "success": False,
+                    "error": f"Invalid barriers specification: {exc}",
+                    "error_code": "barriers_invalid",
+                    "remediation": (
+                        "Provide a JSON object with unit, take_profit, and stop_loss; "
+                        "for example {\"unit\":\"pct\",\"take_profit\":0.5,"
+                        "\"stop_loss\":0.5}."
+                    ),
+                }
+            barrier_values = normalized_barriers.as_legacy_kwargs()
+            tp_abs = barrier_values.get("tp_abs")
+            sl_abs = barrier_values.get("sl_abs")
             try:
                 normalized_denoise = normalize_denoise_spec(
                     denoise, default_when="pre_ti"
