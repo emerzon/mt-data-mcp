@@ -111,6 +111,9 @@ rank stability, live spread, per-symbol bar/alignment windows, and data-coverage
 exclusions. `limit` is a global output cap split between the strongest and
 weakest tails; odd limits assign the extra row to leaders. Full detail exposes
 the same bounded selection as `rankings`, not an unbounded universe dump.
+Ranking membership is based on completed-bar history; a stale or closed-session
+quote is retained as quality metadata unless an explicit spread filter cannot
+be evaluated.
 
 ```bash
 mtdata-cli market_relative_strength --group "Forex\\Majors" --timeframe H1 \
@@ -120,7 +123,8 @@ mtdata-cli market_relative_strength --group "Forex\\Majors" --timeframe H1 \
 Use homogeneous symbol groups when possible. Instruments with substantially
 different trading sessions can produce less comparable cross-sectional ranks.
 Inspect `data_window.endpoint_alignment` and each row's `data_window` before
-comparing mixed-session instruments.
+comparing mixed-session instruments. Those nested diagnostics are available in
+full detail; compact and summary rows expose concise quote/history status fields.
 
 ## Data caveats
 

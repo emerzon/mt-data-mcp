@@ -2563,6 +2563,60 @@ def _relative_strength_history_window(
     return context
 
 
+def _relative_strength_quote_status(quote_quality: Dict[str, Any]) -> str:
+    if quote_quality.get("usable_for_live_trading") is True:
+        return "live_ready"
+    return str(
+        quote_quality.get("freshness_state")
+        or quote_quality.get("freshness_reason")
+        or "not_live_ready"
+    )
+
+
+def _project_relative_strength_row(
+    row: Dict[str, Any],
+    *,
+    detail: str,
+) -> Dict[str, Any]:
+    if detail == "full":
+        return row
+
+    quote_quality = row.get("quote_quality")
+    data_window = row.get("data_window")
+    out = {
+        key: row[key]
+        for key in ("symbol", "rank", "score", "rank_percentile")
+        if key in row
+    }
+    out["quote_status"] = _relative_strength_quote_status(
+        quote_quality if isinstance(quote_quality, dict) else {}
+    )
+    if isinstance(data_window, dict) and data_window.get("freshness") is not None:
+        out["history_status"] = data_window["freshness"]
+    if detail == "summary":
+        return out
+
+    for key in (
+        "rank_stability",
+        "raw_momentum",
+        "residual_momentum",
+        "spread_pct",
+    ):
+        if key in row:
+            out[key] = row[key]
+    if detail == "standard":
+        for key in (
+            "beta",
+            "volatility",
+            "tick_volume",
+            "above_sma20",
+            "above_sma50",
+        ):
+            if key in row:
+                out[key] = row[key]
+    return out
+
+
 def rank_relative_strength(  # noqa: C901
     request: MarketRelativeStrengthRequest, gateway: Any
 ) -> Dict[str, Any]:
@@ -2761,21 +2815,15 @@ def rank_relative_strength(  # noqa: C901
                 "locked_quote" if ask == bid and bid > 0.0 else "invalid_quote"
             )
         tick_volume = int(latest.get("tick_volume") or 0)
-        if quote_quality.get("usable_for_live_trading") is not True:
+        if request.max_spread_pct is not None and (
+            spread_pct is None or spread_pct > request.max_spread_pct
+        ):
             skipped.append(
                 {
                     "symbol": symbol,
-                    "reason": "quote not live-ready",
-                    "quote_quality": quote_quality,
-                    "data_window": symbol_window,
-                }
-            )
-            continue
-        if request.max_spread_pct is not None and spread_pct > request.max_spread_pct:
-            skipped.append(
-                {
-                    "symbol": symbol,
-                    "reason": "spread filter",
+                    "reason": (
+                        "spread unavailable" if spread_pct is None else "spread filter"
+                    ),
                     "quote_quality": quote_quality,
                     "data_window": symbol_window,
                 }
@@ -2858,6 +2906,14 @@ def rank_relative_strength(  # noqa: C901
         [*leader_rows, *laggard_rows],
         key=lambda row: int(row["rank"]),
     )
+    output_leaders = [
+        _project_relative_strength_row(row, detail=request.detail)
+        for row in leader_rows
+    ]
+    output_laggards = [
+        _project_relative_strength_row(row, detail=request.detail)
+        for row in laggard_rows
+    ]
 
     ranked_symbols = [str(row["symbol"]) for row in ordered]
     ranked_aligned_windows = [
@@ -2956,8 +3012,8 @@ def rank_relative_strength(  # noqa: C901
             "weights": list(request.weights),
             "higher_is_stronger": True,
         },
-        "leaders": leader_rows,
-        "laggards": laggard_rows,
+        "leaders": output_leaders,
+        "laggards": output_laggards,
         "breadth": breadth,
         "factor": {
             "source": benchmark_symbol or "equal_weight_universe",
@@ -2974,6 +3030,12 @@ def rank_relative_strength(  # noqa: C901
             else None,
             "minimum_history_coverage": 0.90,
             "endpoint_alignment": endpoint_alignment,
+            "quote_not_live_ready_symbols": sorted(
+                row["symbol"]
+                for row in ordered
+                if isinstance(row.get("quote_quality"), dict)
+                and row["quote_quality"].get("usable_for_live_trading") is not True
+            ),
             **(
                 {"symbol_windows": history_windows}
                 if request.detail == "full"
@@ -2983,11 +3045,20 @@ def rank_relative_strength(  # noqa: C901
         "units": {"raw_momentum": "log_return_fraction", "residual_momentum": "log_return_fraction", "volatility": "per_bar_log_return_stddev", "score": "robust_z_composite", "rank_stability": "fraction_0_to_1", "tick_volume": "broker_tick_count"},
         **({"rankings": selected_rankings} if request.detail == "full" else {}),
     }
+    result_warnings: List[str] = []
     if endpoint_alignment.get("comparable") is False:
-        result["warnings"] = [
+        result_warnings.append(
             "Ranked symbols do not share comparable latest-bar endpoints within "
             f"the {alignment_tolerance_seconds}s tolerance."
-        ]
+        )
+    quote_not_live = result["data_quality"]["quote_not_live_ready_symbols"]
+    if quote_not_live:
+        result_warnings.append(
+            "Historical ranking includes symbols whose current quotes are not "
+            "live-ready: " + ", ".join(quote_not_live) + "."
+        )
+    if result_warnings:
+        result["warnings"] = result_warnings
     if not ordered:
         result["message"] = "No symbols matched the requested quote/volume filters."
     return result
