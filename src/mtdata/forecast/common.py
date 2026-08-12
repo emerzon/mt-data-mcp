@@ -1035,6 +1035,9 @@ def fetch_history(
         raise RuntimeError(f"Invalid timeframe: {timeframe}")
     if as_of and (start or end):
         raise RuntimeError("as_of cannot be combined with start/end.")
+    future_error = future_as_of_error(as_of)
+    if future_error:
+        raise RuntimeError(future_error)
     mt5_tf = TIMEFRAME_MAP[timeframe]
     # Ensure symbol visibility and restore later
     info_before = get_symbol_info_cached(symbol)
@@ -1110,4 +1113,27 @@ def fetch_history(
         if not start and len(df) > need:
             df = df.iloc[-int(need):]
     return df.reset_index(drop=True)
+
+
+def future_as_of_error(
+    as_of: Optional[str],
+    *,
+    now_epoch: Optional[float] = None,
+) -> Optional[str]:
+    """Validate that a point-in-time cutoff is not in the future."""
+    if not as_of:
+        return None
+    parsed = _parse_start_datetime(as_of)
+    if parsed is None:
+        return "Invalid as_of time."
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    current_epoch = (
+        datetime.now(timezone.utc).timestamp()
+        if now_epoch is None
+        else float(now_epoch)
+    )
+    if parsed.timestamp() > current_epoch + 1.0:
+        return "as_of must not be in the future."
+    return None
 

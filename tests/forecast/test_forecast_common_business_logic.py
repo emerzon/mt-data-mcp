@@ -10,6 +10,15 @@ import pytest
 from mtdata.forecast import common as fc
 
 
+def test_future_as_of_is_rejected_against_wall_clock():
+    now = datetime(2026, 8, 12, 14, 0).timestamp()
+
+    assert fc.future_as_of_error("2030-01-01T00:00:00Z", now_epoch=now) == (
+        "as_of must not be in the future."
+    )
+    assert fc.future_as_of_error("2024-01-01T00:00:00Z", now_epoch=now) is None
+
+
 def test_extract_forecast_values_requires_exact_horizon():
     yf_standard = pd.DataFrame({"pred": [1.0, 2.0]})
     out = fc._extract_forecast_values(yf_standard, fh=2, method_name="m")

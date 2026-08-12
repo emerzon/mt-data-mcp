@@ -288,10 +288,12 @@ def test_last_price_freshness_fields_mark_stale_anchor():
         tf_secs=60,
         now_epoch=1_120.0,
     )
-    assert fresh["last_price_age_seconds"] == 120
-    assert fresh["last_price_age"] == "2m 0s"
+    assert fresh["last_price_age_seconds"] == 60
+    assert fresh["last_price_age"] == "1m 0s"
     assert fresh["last_price_stale"] is False
-    assert fresh["freshness_basis"] == "bar_policy"
+    assert fresh["freshness_basis"] == "last_completed_bar_close"
+    assert fresh["freshness_age_metric"] == "latest_completed_bar_close_age_seconds"
+    assert fresh["last_observation_close_epoch"] == 1_060.0
     assert fresh["stale_after_seconds"] == 60 * fe.SANITY_BARS_TOLERANCE
 
     stale = fe._last_price_freshness_fields(

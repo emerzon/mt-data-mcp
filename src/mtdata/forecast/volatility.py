@@ -37,9 +37,13 @@ from .common import (
     default_seasonality as _default_seasonality_period,
 )
 from .common import (
+    future_as_of_error,
+    next_times_from_last,
+    uses_standard_weekend_projection,
+)
+from .common import (
     log_returns_from_prices as _log_returns_from_prices,
 )
-from .common import next_times_from_last, uses_standard_weekend_projection
 from .common import (
     pd_freq_from_timeframe as _pd_freq_from_timeframe,
 )
@@ -559,7 +563,8 @@ def _volatility_input_context(
 
     if now_epoch is None:
         now_epoch = datetime.now(timezone.utc).timestamp()
-    age_seconds = max(0, int(round(float(now_epoch) - last_epoch)))
+    completed_at = bar_close_epoch(last_epoch, timeframe)
+    age_seconds = max(0, int(round(float(now_epoch) - completed_at)))
     stale_after = int(
         max(1, int(TIMEFRAME_SECONDS.get(timeframe, 0) or 0))
         * max(1, int(SANITY_BARS_TOLERANCE))
@@ -569,7 +574,9 @@ def _volatility_input_context(
             "data_age_seconds": age_seconds,
             "data_stale": age_seconds > stale_after,
             "stale_after_seconds": stale_after,
-            "freshness_basis": "bar_policy",
+            "freshness_basis": "last_completed_bar_close",
+            "freshness_age_metric": "latest_completed_bar_close_age_seconds",
+            "last_observation_close_time": _format_time_minimal(completed_at),
         }
     )
     closed_session = closed_session_context(
@@ -761,6 +768,9 @@ def _fetch_mt5_rates_guarded(
 ) -> tuple[Optional[Any], Optional[str]]:
     if as_of and (start or end):
         return None, "as_of cannot be combined with start/end."
+    future_error = future_as_of_error(as_of)
+    if future_error:
+        return None, future_error
     requested_count = int(count)
     cache = _RATES_CACHE.get()
     cache_key = (
@@ -1085,6 +1095,8 @@ def forecast_volatility(  # noqa: C901
                             "data_stale",
                             "stale_after_seconds",
                             "freshness_basis",
+                            "freshness_age_metric",
+                            "last_observation_close_time",
                             "freshness",
                             "market_status",
                             "market_status_reason",

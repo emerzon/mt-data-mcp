@@ -98,6 +98,13 @@ include `broker_session_date`; D1 rows include `broker_trading_day`. These
 labels use the configured broker timezone and disambiguate sessions whose UTC
 open falls on the preceding calendar date.
 
+For completed-bar analytics, freshness ages are measured from bar close, even
+though `data_as_of` and row timestamps remain bar-open anchors. Forecast and
+volatility payloads identify this as
+`latest_completed_bar_close_age_seconds`. Point-in-time `as_of` cutoffs must
+not be in the future; an unfulfillable future cutoff is rejected instead of
+falling back to current data.
+
 ---
 
 ## External providers

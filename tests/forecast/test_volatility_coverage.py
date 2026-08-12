@@ -899,6 +899,20 @@ class TestForecastVolatilityParamsParsing:
 # ===================================================================
 
 class TestForecastVolatilityAsOf:
+    def test_future_as_of_is_rejected_before_provider_call(self):
+        with patch(f"{MOD}._mt5_copy_rates_from") as fetch:
+            eligible, error = _fetch_mt5_rates_guarded(
+                "EURUSD",
+                60,
+                3,
+                as_of="2030-01-01T00:00:00Z",
+                timeframe="H1",
+            )
+
+        assert eligible is None
+        assert error == "as_of must not be in the future."
+        fetch.assert_not_called()
+
     def test_as_of_inside_bar_excludes_that_bar(self):
         base = int(datetime(2024, 6, 1, 10, 0, tzinfo=timezone.utc).timestamp())
         rates = _make_rates(3)
@@ -1431,7 +1445,7 @@ class TestFetchMt5RatesGuarded:
         assert rates is None
         assert err == "Invalid as_of time."
         env["copy_rates"].assert_not_called()
-        env["mt5"].symbol_select.assert_called_once_with("EURUSD", False)
+        env["mt5"].symbol_select.assert_not_called()
 
     def test_ensure_error_short_circuits_before_copy(self):
         with _mock_env(ensure_err="Symbol not available") as env:

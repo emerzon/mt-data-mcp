@@ -1379,7 +1379,8 @@ def _last_price_freshness_fields(
     if now_epoch is None:
         now_epoch = datetime.now(timezone.utc).timestamp()
     try:
-        age_seconds = max(0.0, float(now_epoch) - last_value)
+        completed_at = last_value + float(step_seconds)
+        age_seconds = max(0.0, float(now_epoch) - completed_at)
     except Exception:
         return {}
     stale_after = int(step_seconds * max(1, int(SANITY_BARS_TOLERANCE)))
@@ -1387,7 +1388,9 @@ def _last_price_freshness_fields(
     out: Dict[str, Any] = {
         "last_price_age_seconds": rounded_age,
         "last_price_stale": age_seconds > float(stale_after),
-        "freshness_basis": "bar_policy",
+        "freshness_basis": "last_completed_bar_close",
+        "freshness_age_metric": "latest_completed_bar_close_age_seconds",
+        "last_observation_close_epoch": completed_at,
         "stale_after_seconds": stale_after,
     }
     age_text = format_age_seconds(rounded_age)

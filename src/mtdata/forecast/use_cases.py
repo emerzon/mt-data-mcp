@@ -845,6 +845,9 @@ def _forecast_generate_data_window(payload: Dict[str, Any]) -> Optional[Dict[str
     age_seconds = payload.get("last_price_age_seconds")
     if age_seconds not in (None, "", [], {}):
         out["last_observation_age_seconds"] = age_seconds
+    age_metric = payload.get("freshness_age_metric")
+    if age_metric not in (None, "", [], {}):
+        out["last_observation_age_metric"] = age_metric
     stale = payload.get("last_price_stale")
     if isinstance(stale, bool):
         out["last_observation_stale"] = stale
@@ -1257,6 +1260,8 @@ def _apply_forecast_generate_detail(  # noqa: C901
             "last_price_age_seconds",
             "last_price_age",
             "freshness_basis",
+            "freshness_age_metric",
+            "last_observation_close_epoch",
             "stale_after_seconds",
             "stale_warning",
             "lower_price",
@@ -1470,6 +1475,8 @@ def _apply_conformal_intervals_detail(
         "last_price_stale",
         "history_policy_ok",
         "freshness_basis",
+        "freshness_age_metric",
+        "last_observation_close_epoch",
         "stale_after_seconds",
         "market_status",
         "market_status_reason",

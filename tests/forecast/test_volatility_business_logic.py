@@ -347,7 +347,8 @@ def test_forecast_volatility_direct_methods_and_short_data(monkeypatch):
     assert out["data_window"]["returns_used"] == 239
     assert out["data_window"]["input_bar_policy"] == "closed_bars_only"
     assert out["data_as_of"] == out["data_window"]["end"]
-    assert out["freshness_basis"] == "bar_policy"
+    assert out["freshness_basis"] == "last_completed_bar_close"
+    assert out["freshness_age_metric"] == "latest_completed_bar_close_age_seconds"
 
     out = vol.forecast_volatility(
         symbol="BTCUSD",
