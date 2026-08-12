@@ -276,6 +276,10 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
         "'{\"unit\":\"pct\",\"take_profit\":0.5,\"stop_loss\":0.5}'. "
         "pct/ticks are distances from entry; price values are absolute levels."
     ),
+    ("labels_triple_barrier", "allow_noncausal_denoise"): (
+        "Allow explicitly requested zero-phase denoising. This uses future bars, "
+        "sets lookahead_bias=true, and makes labels unsuitable for backtests or training."
+    ),
     ("market_scan", "limit"): "Max matching symbols to return.",
     ("market_depth_fetch", "require_dom"): "Fail if DOM is unavailable instead of falling back to a quote snapshot.",
     ("patterns_detect", "limit"): (

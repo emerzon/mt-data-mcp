@@ -146,6 +146,12 @@ is not smoothed away; `labeling_spec.hit_price_source` reports this as
 `raw_high_low`. Choose `label_on=close` to use only the resolved close series
 for both anchors and hits.
 
+Label preprocessing is causal by default. `zero_phase` filters use future bars
+and are rejected unless `--allow-noncausal-denoise` is supplied. That override
+is for exploratory offline analysis only: the response sets
+`lookahead_bias=true`, `suitable_for_backtest=false`, and records the effective
+method, causality, parameters, and entry column under `preprocessing.denoise`.
+
 ### Usage
 
 ```bash
@@ -158,6 +164,7 @@ mtdata-cli labels_triple_barrier EURUSD --timeframe H1 --horizon 12 \
 |-----------|-------------|
 | `--horizon` | Maximum bars to wait |
 | `--barriers` | JSON object with `unit`, `take_profit`, and `stop_loss` |
+| `--allow-noncausal-denoise` | Explicitly permit look-ahead-contaminated zero-phase labels for offline exploration |
 
 A conventional FX pip is not the same unit as an MT5 tick. Convert pips using
 the symbol's quote precision before supplying tick distances (for many

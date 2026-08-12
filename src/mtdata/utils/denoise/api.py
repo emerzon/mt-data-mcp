@@ -525,8 +525,10 @@ def resolve_denoise_base_col(
         return base_col
     try:
         added = apply_denoise(df, denoise, default_when=default_when)
-        if f"{base_col}_dn" in added:
-            return f"{base_col}_dn"
+        suffix = str(denoise.get("suffix") or "_dn")
+        denoised_col = f"{base_col}{suffix}"
+        if denoised_col in added:
+            return denoised_col
     except Exception as ex:
         _append_denoise_warning(
             df,

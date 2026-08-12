@@ -28,7 +28,11 @@ from ..utils.barriers import (
     resolve_barrier_prices as _resolve_barrier_prices,
 )
 from ..utils.coercion import coerce_finite_float, round_finite
-from ..utils.denoise import resolve_denoise_base_col
+from ..utils.denoise import (
+    consume_denoise_warnings,
+    normalize_denoise_spec,
+    resolve_denoise_base_col,
+)
 from ..utils.mt5 import (
     MT5ConnectionError,
     ensure_mt5_connection_or_raise,
@@ -320,6 +324,20 @@ def _skipped_entry_warning(
     return "Skipped entries: " + "; ".join(reasons) + "."
 
 
+def _denoise_targets_close(spec: Dict[str, Any]) -> bool:
+    columns = spec.get("columns", ["close"])
+    if isinstance(columns, str):
+        values = [part.strip().lower() for part in columns.replace(",", " ").split()]
+    elif isinstance(columns, (list, tuple, set)):
+        values = [str(part).strip().lower() for part in columns]
+    else:
+        return False
+    return bool(
+        "close" in values
+        or {"ohlcv", "ohlc", "price", "all", "*", "numeric"}.intersection(values)
+    )
+
+
 @mcp.tool()
 def labels_triple_barrier(  # noqa: C901
     symbol: str,
@@ -328,6 +346,7 @@ def labels_triple_barrier(  # noqa: C901
     limit: int = _DEFAULT_LABEL_LIMIT,
     horizon: int = _DEFAULT_LABEL_HORIZON,
     denoise: Optional[DenoiseSpec] = None,
+    allow_noncausal_denoise: bool = False,
     direction: Literal["long", "short"] = "long",  # type: ignore
     label_on: Literal["close", "high_low"] = "high_low",  # type: ignore
     same_bar_policy: Literal["sl_first", "tp_first", "neutral"] = "sl_first",  # type: ignore
@@ -345,6 +364,9 @@ def labels_triple_barrier(  # noqa: C901
     when denoise changes the close used to anchor barriers. Real observed price
     touches are not smoothed away. Use label_on='close' for close-series-only
     labeling on the resolved (and potentially denoised) base series.
+    Denoising is causal by default. A zero-phase filter uses future observations
+    and is rejected unless allow_noncausal_denoise is explicitly true. Opted-in
+    results are marked unsuitable for backtests and include preprocessing provenance.
     same_bar_policy explicitly resolves bars that touch both barriers; the default
     is conservative SL-first because the intrabar ordering is unknowable.
     direction='long' or 'short' controls which side is treated as TP/SL.
@@ -357,6 +379,67 @@ def labels_triple_barrier(  # noqa: C901
 
     def _run() -> Dict[str, Any]:  # noqa: C901
         try:
+            try:
+                normalized_denoise = normalize_denoise_spec(
+                    denoise, default_when="pre_ti"
+                )
+            except (TypeError, ValueError) as exc:
+                return {
+                    "error": f"Invalid denoise specification: {exc}",
+                    "error_code": "denoise_invalid",
+                    "remediation": (
+                        "Run denoise_describe for the method, then provide a supported "
+                        "causality and parameters."
+                    ),
+                }
+            if normalized_denoise and isinstance(denoise, dict):
+                raw_columns = denoise.get("columns")
+                if isinstance(raw_columns, str) and raw_columns.strip().lower() in {
+                    "ohlcv",
+                    "ohlc",
+                    "price",
+                    "all",
+                    "*",
+                    "numeric",
+                }:
+                    normalized_denoise["columns"] = raw_columns.strip().lower()
+            denoise_method = str(
+                (normalized_denoise or {}).get("method") or "none"
+            ).strip().lower()
+            denoise_causality = str(
+                (normalized_denoise or {}).get("causality") or "causal"
+            ).strip().lower()
+            denoise_active = bool(
+                normalized_denoise and denoise_method not in {"", "none"}
+            )
+            if denoise_active and not _denoise_targets_close(normalized_denoise):
+                return {
+                    "error": (
+                        "labels_triple_barrier denoise must include the 'close' column "
+                        "because close anchors each entry barrier."
+                    ),
+                    "error_code": "denoise_close_required",
+                    "remediation": "Include close in denoise.columns or omit denoise.",
+                }
+            if (
+                denoise_active
+                and denoise_causality == "zero_phase"
+                and not allow_noncausal_denoise
+            ):
+                return {
+                    "error": (
+                        "zero_phase denoising is non-causal and would leak future bars "
+                        "into triple-barrier labels."
+                    ),
+                    "error_code": "noncausal_denoise_blocked",
+                    "remediation": (
+                        "Use causality='causal' for backtest or training labels. Set "
+                        "allow_noncausal_denoise=true only for explicitly exploratory "
+                        "offline analysis; such output is marked unsuitable for backtests."
+                    ),
+                    "lookahead_bias": True,
+                    "suitable_for_backtest": False,
+                }
             mt5_gateway = create_mt5_gateway(
                 ensure_connection_impl=ensure_mt5_connection_or_raise
             )
@@ -414,14 +497,78 @@ def labels_triple_barrier(  # noqa: C901
             history_bars_used = int(len(df))
             if len(df) < horizon_bars + 2:
                 return {"error": "Insufficient history for labeling"}
+            raw_highs = (
+                df["high"].astype(float).to_numpy(copy=True)
+                if "high" in df.columns
+                else None
+            )
+            raw_lows = (
+                df["low"].astype(float).to_numpy(copy=True)
+                if "low" in df.columns
+                else None
+            )
             base_col = resolve_denoise_base_col(
-                df, denoise, base_col="close", default_when="pre_ti"
+                df, normalized_denoise, base_col="close", default_when="pre_ti"
             )
+            denoise_application = df.attrs.get("denoise_last_application")
+            if not isinstance(denoise_application, dict):
+                denoise_application = {}
+            added_columns = [
+                str(value)
+                for value in denoise_application.get("added_columns", [])
+            ]
+            overwritten_columns = [
+                str(value)
+                for value in denoise_application.get("overwrote_columns", [])
+            ]
+            denoise_applied = bool(
+                denoise_active
+                and (base_col in added_columns or "close" in overwritten_columns)
+            )
+            denoise_warnings = consume_denoise_warnings(df)
+            if denoise_active and not denoise_applied:
+                reason = denoise_warnings[-1] if denoise_warnings else "no close output was produced"
+                return {
+                    "error": f"Denoise preprocessing failed: {reason}",
+                    "error_code": "denoise_failed",
+                    "remediation": (
+                        "Check the method, parameters, dependency availability, and required "
+                        "history with denoise_describe."
+                    ),
+                }
+            lookahead_bias = bool(
+                denoise_applied and denoise_causality == "zero_phase"
+            )
+            suitable_for_backtest = not lookahead_bias
+            preprocessing = {
+                "denoise": {
+                    "applied": denoise_applied,
+                    "method": denoise_method if denoise_active else None,
+                    "causality": denoise_causality if denoise_active else None,
+                    "params": (
+                        dict(normalized_denoise.get("params") or {})
+                        if denoise_active and normalized_denoise
+                        else {}
+                    ),
+                    "requested_columns": (
+                        normalized_denoise.get("columns")
+                        if denoise_active and normalized_denoise
+                        else []
+                    ),
+                    "effective_entry_column": str(base_col),
+                    "source_column_overwritten": "close" in overwritten_columns,
+                }
+            }
+            if lookahead_bias:
+                warnings_out.append(
+                    "LOOK-AHEAD BIAS: zero_phase denoising used future observations to "
+                    "construct entry prices. These labels are unsuitable for backtests, "
+                    "forward tests, or model training."
+                )
+            warnings_out.extend(denoise_warnings)
             closes = df[base_col].astype(float).to_numpy()
-            highs = (
-                df["high"].astype(float).to_numpy() if "high" in df.columns else None
-            )
-            lows = df["low"].astype(float).to_numpy() if "low" in df.columns else None
+            highs = raw_highs
+            lows = raw_lows
             times = df["time"].astype(float).to_numpy()
 
             tick_size = _get_tick_size(symbol)
@@ -583,13 +730,23 @@ def labels_triple_barrier(  # noqa: C901
                 "direction": direction_value,
                 "horizon": horizon_bars,
                 "same_bar_policy": same_bar_policy_value,
+                "lookahead_bias": lookahead_bias,
+                "suitable_for_backtest": suitable_for_backtest,
+                "preprocessing": preprocessing,
                 "labeling_spec": {
                     "direction": direction_value,
                     "label_on": str(label_on),
-                    "entry_price_source": str(base_col),
-                    "hit_price_source": (
-                        "raw_high_low" if label_on == "high_low" else str(base_col)
+                    "entry_price_source": (
+                        "denoised_close" if denoise_applied else "close"
                     ),
+                    "entry_price_column": str(base_col),
+                    "hit_price_source": (
+                        "raw_high_low"
+                        if label_on == "high_low"
+                        else ("denoised_close" if denoise_applied else "close")
+                    ),
+                    "lookahead_bias": lookahead_bias,
+                    "suitable_for_backtest": suitable_for_backtest,
                     "same_bar_policy": same_bar_policy_value,
                     "horizon_bars": horizon_bars,
                     "barrier_unit": next(
@@ -773,6 +930,9 @@ def labels_triple_barrier(  # noqa: C901
                         "history_bars_fetched": history_bars_fetched,
                         "history_bars_used": history_bars_used,
                         "sample_limit": sample_limit,
+                        "lookahead_bias": lookahead_bias,
+                        "suitable_for_backtest": suitable_for_backtest,
+                        "preprocessing": preprocessing,
                         "sample_quality_status": sample_quality["status"],
                         "summary": summary,
                     }
