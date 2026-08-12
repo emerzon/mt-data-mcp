@@ -26,6 +26,7 @@ from ...utils.mt5 import (
 )
 from ...utils.quote import resolve_quote_tick, tick_value
 from ...utils.time import _format_datetime_second_explicit
+from ...utils.utils import validate_historical_range
 from ..error_envelope import normalize_error_payload
 from ..execution_logging import (
     infer_result_success,
@@ -3251,8 +3252,32 @@ def run_trade_history(  # noqa: C901
                 df[col] = text
                 return utc
 
+            def _millisecond_sort_series(
+                df: "pd.DataFrame",
+                *,
+                millisecond_columns: tuple[str, ...],
+                fallback_seconds: Optional["pd.Series"],
+            ) -> "pd.Series":
+                resolved = pd.Series(float("nan"), index=df.index, dtype=float)
+                for column in millisecond_columns:
+                    if column not in df.columns:
+                        continue
+                    candidate = pd.to_numeric(df[column], errors="coerce")
+                    candidate = candidate.where(candidate > 0.0)
+                    resolved = resolved.fillna(candidate)
+                if fallback_seconds is not None:
+                    fallback_milliseconds = (
+                        pd.to_numeric(fallback_seconds, errors="coerce") * 1000.0
+                    )
+                    resolved = resolved.fillna(fallback_milliseconds)
+                return resolved
+
             if request.start and request.minutes_back not in (None, ""):
                 return {"error": "Use either start or minutes_back, not both."}
+
+            range_error = validate_historical_range(request.start, request.end)
+            if range_error is not None:
+                return range_error
 
             position_ticket_value, position_ticket_error = normalize_ticket_filter(
                 request.position_ticket,
@@ -3304,6 +3329,23 @@ def run_trade_history(  # noqa: C901
 
             if from_dt > to_dt:
                 return {"error": "start must be before end."}
+            current_utc = datetime.now(timezone.utc)
+            current_naive = current_utc.replace(tzinfo=None)
+            if from_dt > current_naive:
+                return {
+                    "success": False,
+                    "error": (
+                        f"Resolved history start {from_dt.isoformat()}Z is in the future; "
+                        "no trade history is available for a future-only range."
+                    ),
+                    "error_code": "future_date_range",
+                    "details": {
+                        "resolved_start": f"{from_dt.isoformat()}Z",
+                        "resolved_end": f"{to_dt.isoformat()}Z",
+                        "current_time": current_utc.isoformat(),
+                    },
+                    "remediation": "Choose a start datetime at or before the current time.",
+                }
 
             history_from_dt = _to_mt5_history_epoch_seconds(
                 from_dt,
@@ -3535,6 +3577,7 @@ def run_trade_history(  # noqa: C901
                 )
                 return df_in.loc[mask]
 
+            sort_milliseconds: Optional["pd.Series"] = None
             if kind == "deals":
                 try:
                     rows = gateway.history_deals_get(history_from_dt, history_to_dt)
@@ -3568,6 +3611,11 @@ def run_trade_history(  # noqa: C901
                 if len(df) == 0:
                     return _empty_history_message("deals")
                 sort_src = _normalize_time_col(df, "time")
+                sort_milliseconds = _millisecond_sort_series(
+                    df,
+                    millisecond_columns=("time_msc",),
+                    fallback_seconds=sort_src,
+                )
                 observed_history_epoch = time.time()
                 if sort_src is not None:
                     future_seconds = sort_src - observed_history_epoch
@@ -3639,6 +3687,11 @@ def run_trade_history(  # noqa: C901
                 sort_src = _normalize_time_col(df, "time_setup")
                 if sort_src is None:
                     sort_src = _normalize_time_col(df, "time")
+                sort_milliseconds = _millisecond_sort_series(
+                    df,
+                    millisecond_columns=("time_setup_msc", "time_msc"),
+                    fallback_seconds=sort_src,
+                )
                 _normalize_time_col(df, "time_done")
                 for col, prefix in order_enum_columns:
                     _decode_enum_column(df, col, prefix)
@@ -3647,11 +3700,18 @@ def run_trade_history(  # noqa: C901
                 if len(df) == 0:
                     return _empty_history_message("orders")
 
-            df["__sort_utc"] = (
-                sort_src
-                if sort_src is not None
-                else pd.Series([float("nan")] * len(df))
+            df["__sort_milliseconds"] = (
+                sort_milliseconds
+                if sort_milliseconds is not None
+                else pd.Series(float("nan"), index=df.index, dtype=float)
             )
+            ticket_source = (
+                pd.to_numeric(df["ticket"], errors="coerce")
+                if "ticket" in df.columns
+                else pd.Series(float("nan"), index=df.index, dtype=float)
+            )
+            df["__sort_ticket"] = ticket_source.fillna(0.0)
+            df["__sort_sequence"] = list(range(len(df)))
 
             limit_value = normalize_limit(request.limit)
             try:
@@ -3675,17 +3735,23 @@ def run_trade_history(  # noqa: C901
                 if not limit_value:
                     return {"error": "page requires a positive limit."}
                 offset_value = int((page_value - 1) * int(limit_value))
-            if (limit_value or offset_value) and "__sort_utc" in df.columns:
-                df = df.sort_values(
-                    "__sort_utc",
-                    ascending=str(request.order).lower() == "asc",
-                )
+            ascending = str(request.order).lower() == "asc"
+            df = df.sort_values(
+                ["__sort_milliseconds", "__sort_ticket", "__sort_sequence"],
+                ascending=ascending,
+                na_position="last",
+            )
             if offset_value:
                 df = df.iloc[offset_value:]
             if limit_value and len(df) > limit_value:
                 df = df.head(limit_value)
-            if "__sort_utc" in df.columns:
-                df = df.drop(columns=["__sort_utc"])
+            df = df.drop(
+                columns=[
+                    "__sort_milliseconds",
+                    "__sort_ticket",
+                    "__sort_sequence",
+                ]
+            )
 
             df = df.replace([float("inf"), float("-inf")], pd.NA)
             records = (

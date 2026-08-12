@@ -166,6 +166,93 @@ def test_trade_history_supports_offset_pagination() -> None:
     assert [item["deal_ticket"] for item in ascending["items"]] == [1, 2]
 
 
+def test_trade_history_sorts_same_second_deals_by_millisecond_time() -> None:
+    mt5, prev = _install_mock_mt5()
+    Deal = namedtuple("Deal", ["ticket", "time", "time_msc", "symbol"])
+    mt5.history_deals_get.return_value = [
+        Deal(ticket=11, time=1_700_000_000, time_msc=1_700_000_000_052, symbol="EURUSD"),
+        Deal(ticket=13, time=1_700_000_000, time_msc=1_700_000_000_682, symbol="EURUSD"),
+        Deal(ticket=12, time=1_700_000_000, time_msc=1_700_000_000_367, symbol="EURUSD"),
+    ]
+
+    with patch("mtdata.core.trading.account._use_client_tz", lambda: False):
+        descending = trade_history(
+            history_kind="deals", limit=3, order="desc", detail="full", __cli_raw=True
+        )
+        latest = trade_history(
+            history_kind="deals", limit=1, order="desc", detail="full", __cli_raw=True
+        )
+        ascending = trade_history(
+            history_kind="deals", limit=3, order="asc", detail="full", __cli_raw=True
+        )
+    if prev is not None:
+        sys.modules["MetaTrader5"] = prev
+
+    assert [item["deal_ticket"] for item in descending["items"]] == [13, 12, 11]
+    assert latest["items"][0]["deal_ticket"] == 13
+    assert [item["deal_ticket"] for item in ascending["items"]] == [11, 12, 13]
+
+
+def test_trade_history_sorts_same_second_orders_by_setup_milliseconds() -> None:
+    mt5, prev = _install_mock_mt5()
+    Order = namedtuple(
+        "Order", ["ticket", "time_setup", "time_setup_msc", "time_done", "symbol"]
+    )
+    mt5.history_orders_get.return_value = [
+        Order(21, 1_700_000_000, 1_700_000_000_050, 1_700_000_001, "EURUSD"),
+        Order(23, 1_700_000_000, 1_700_000_000_850, 1_700_000_001, "EURUSD"),
+        Order(22, 1_700_000_000, 1_700_000_000_400, 1_700_000_001, "EURUSD"),
+    ]
+
+    with patch("mtdata.core.trading.account._use_client_tz", lambda: False):
+        descending = trade_history(
+            history_kind="orders", limit=3, order="desc", detail="full", __cli_raw=True
+        )
+        ascending = trade_history(
+            history_kind="orders", limit=3, order="asc", detail="full", __cli_raw=True
+        )
+    if prev is not None:
+        sys.modules["MetaTrader5"] = prev
+
+    assert [item["order_ticket"] for item in descending["items"]] == [23, 22, 21]
+    assert [item["order_ticket"] for item in ascending["items"]] == [21, 22, 23]
+
+
+def test_trade_history_rejects_future_only_explicit_range() -> None:
+    mt5, prev = _install_mock_mt5()
+
+    out = trade_history(
+        history_kind="deals",
+        start="2999-01-01T00:00:00Z",
+        end="2999-01-02T00:00:00Z",
+        __cli_raw=True,
+    )
+    if prev is not None:
+        sys.modules["MetaTrader5"] = prev
+
+    assert out["success"] is False
+    assert out["error_code"] == "future_date_range"
+    assert "future" in out["error"].lower()
+    assert out["details"]["resolved_start"].startswith("2999-01-01")
+    mt5.history_deals_get.assert_not_called()
+
+
+def test_trade_journal_propagates_future_only_range_error() -> None:
+    mt5, prev = _install_mock_mt5()
+
+    out = trade_journal_analyze(
+        start="2999-01-01T00:00:00Z",
+        end="2999-01-02T00:00:00Z",
+        __cli_raw=True,
+    )
+    if prev is not None:
+        sys.modules["MetaTrader5"] = prev
+
+    assert out["success"] is False
+    assert out["error_code"] == "future_date_range"
+    mt5.history_deals_get.assert_not_called()
+
+
 def test_trade_history_warns_when_default_window_misses_open_event() -> None:
     mt5, prev = _install_mock_mt5()
     mt5.history_deals_get.return_value = []
