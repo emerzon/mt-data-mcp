@@ -966,7 +966,21 @@ def forecast_list_methods(
     limit: Annotated[Optional[int], Field(ge=1)] = None,
     offset: Annotated[int, Field(ge=0)] = 0,
     search_term: Optional[str] = None,
-    category: Optional[str] = None,
+    category: Optional[
+        Literal[
+            "analog",
+            "arima",
+            "classical",
+            "ensemble",
+            "ets_arima",
+            "machine_learning",
+            "monte_carlo",
+            "neural",
+            "pretrained",
+            "sktime",
+            "statsforecast",
+        ]
+    ] = None,
     library: Optional[
         Literal["native", "statsforecast", "sktime", "pretrained", "mlforecast"]
     ] = None,
@@ -1475,6 +1489,7 @@ def _forecast_list_library_models_impl(
             "library": "all",
             "detail": detail_mode,
             "libraries": sections,
+            "row_key": "libraries",
             "total": total_catalog_models,
             "total_filtered": total_models,
             "available": total_available,
@@ -1545,6 +1560,7 @@ def _forecast_list_library_models_impl(
         )
 
     def _maybe_add_capabilities(payload: Dict[str, Any]) -> Dict[str, Any]:
+        payload["row_key"] = "models"
         if detail_mode == "full":
             payload["capabilities"] = capabilities_page
         return payload
@@ -1906,6 +1922,22 @@ def _forecast_list_methods_impl(  # noqa: C901
                 item.get("category") or method_to_category.get(method_name) or "other"
             ).strip().lower()
 
+        known_categories = sorted(
+            {
+                _item_category(item)
+                for item in snapshot.get("methods", [])
+                if isinstance(item, dict)
+            }
+        )
+        if category_filter_value and category_filter_value not in known_categories:
+            return {
+                "error": (
+                    f"Invalid category filter: {category}. Use one of: "
+                    + ", ".join(known_categories)
+                    + "."
+                )
+            }
+
         def _item_supports_ci(item: Dict[str, Any]) -> Optional[bool]:
             supports = item.get("supports")
             if isinstance(supports, dict) and isinstance(supports.get("ci"), bool):
@@ -2006,6 +2038,7 @@ def _forecast_list_methods_impl(  # noqa: C901
             out_full = dict(data)
             out_full["detail"] = "full"
             out_full["methods"] = filtered_full
+            out_full["row_key"] = "methods"
             out_full["catalog_total"] = int(data.get("total") or len(methods_full))
             out_full.pop("total", None)
             out_full["available"] = available_count
@@ -2166,6 +2199,7 @@ def _forecast_list_methods_impl(  # noqa: C901
             "available": available_count,
             "unavailable": unavailable_count,
             "methods": selected_methods,
+            "row_key": "methods",
             "pagination": build_pagination_meta(
                 total=len(compact_methods),
                 returned=len(selected_methods),

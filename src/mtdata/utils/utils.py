@@ -110,6 +110,7 @@ def _table_from_rows(headers: List[str], rows: List[List[Any]]) -> Dict[str, Any
         items.append(item)
     return {
         "data": items,
+        "row_key": "data",
         "success": True,
         "count": len(items),
     }

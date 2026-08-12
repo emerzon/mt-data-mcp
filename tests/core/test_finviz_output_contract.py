@@ -56,6 +56,7 @@ def test_filters_list_defaults_to_index_and_supports_exact_lookup():
         searched = _unwrap(finviz_filters_list)(search="exchange")
 
     assert index["count"] == 1
+    assert index["row_key"] == "items"
     assert index["pagination"] == {
         "total": 2,
         "returned": 1,

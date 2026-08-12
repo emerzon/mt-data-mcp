@@ -238,6 +238,7 @@ def test_tools_list_filters_and_paginates_rows():
     out = raw_tools_list(category="forecast", limit=3, offset=1)
 
     assert out["success"] is True
+    assert out["row_key"] == "tools"
     assert out["filters"] == {"category": "forecast", "search": None}
     assert out["count"] == 3
     assert out["pagination"]["total"] > out["count"]

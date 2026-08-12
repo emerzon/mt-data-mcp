@@ -825,6 +825,7 @@ def forecast_task_list(
             "has_more": bool(int(offset) + len(items) < total_count),
             "summary": summary,
             "tasks": items,
+            "row_key": "tasks",
         }
         filters = {
             key: value
@@ -909,6 +910,7 @@ def forecast_models_list(
             "offset": int(offset),
             "has_more": bool(int(offset) + len(items) < total_count),
             "models": items,
+            "row_key": "models",
             "expired_models_hidden": max(0, len(all_handles) - len(handles)),
         }
         if out["expired_models_hidden"]:

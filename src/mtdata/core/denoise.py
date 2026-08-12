@@ -143,6 +143,7 @@ def denoise_list_methods(
             "causality": str(causality).strip().lower() if causality else None,
             "core_only": bool(core_only),
             "methods": method_rows,
+            "row_key": "methods",
             "describe_hint": "Use denoise_describe(method) for descriptions and defaults.",
         }
         if hidden > 0:

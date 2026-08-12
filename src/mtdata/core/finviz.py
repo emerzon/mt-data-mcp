@@ -683,6 +683,7 @@ def _normalize_finviz_market_payload(  # noqa: C901
         output_rows = limited_rows
     out = {key: value for key, value in result.items() if key != rows_key}
     out["items"] = output_rows
+    out["row_key"] = "items"
     out["count"] = len(output_rows)
     if symbol_filter_norm is not None:
         out["symbol"] = symbol_filter_norm
@@ -1266,6 +1267,7 @@ def finviz_filters_list(
     out: Dict[str, Any] = {
         "success": True,
         "items": limited_rows,
+        "row_key": "items",
         "count": len(limited_rows),
         "pagination": build_pagination_meta(
             total=len(rows),
@@ -2504,6 +2506,7 @@ def _normalize_finviz_calendar_payload(
                 for item in normalized_items
             ]
         out["count"] = len(out["items"])
+        out["row_key"] = "items"
         if out["count"] == 0:
             cal_type = str(calendar_type or "economic").strip().lower()
             if cal_type == "earnings":
@@ -2665,6 +2668,7 @@ def _compact_finviz_insider_payload(
     )
     if detail_mode == "full":
         out["items"] = normalized_rows
+        out["row_key"] = "items"
         out["count"] = len(normalized_rows)
         _apply_finviz_pagination_contract(
             out,
@@ -2684,6 +2688,7 @@ def _compact_finviz_insider_payload(
     buys = sum(1 for text in transaction_texts if "buy" in text or "purchase" in text)
     sells = sum(1 for text in transaction_texts if "sell" in text or "sale" in text)
     out["items"] = compact_rows
+    out["row_key"] = "items"
     out["count"] = len(compact_rows)
     out["summary"] = {
         "buy_transactions": buys,
@@ -2731,6 +2736,7 @@ def _compact_finviz_insider_activity_payload(
     )
     if detail_mode == "full":
         out["items"] = normalized_rows
+        out["row_key"] = "items"
         out["count"] = len(normalized_rows)
         _apply_finviz_pagination_contract(
             out,
@@ -2756,6 +2762,7 @@ def _compact_finviz_insider_activity_payload(
     buys = sum(1 for text in transaction_texts if "buy" in text or "purchase" in text)
     sells = sum(1 for text in transaction_texts if "sell" in text or "sale" in text)
     out["items"] = compact_rows
+    out["row_key"] = "items"
     out["count"] = len(compact_rows)
     out["summary"] = {
         "buy_transactions": buys,
@@ -2791,6 +2798,7 @@ def _compact_finviz_ratings_payload(
     limited_rows = normalized_rows[:limit_value]
     omitted = max(0, len(normalized_rows) - len(limited_rows))
     out["ratings"] = limited_rows
+    out["row_key"] = "ratings"
     out["count"] = len(limited_rows)
     out["pagination"] = build_pagination_meta(
         total=len(normalized_rows),
@@ -2827,6 +2835,7 @@ def _compact_finviz_peers_payload(
         return result
     out = dict(result)
     limit_value = _coerce_finviz_limit(limit, default=len(peers))
+    out["row_key"] = "peers"
     offset_value = _coerce_finviz_offset(offset)
     limited_peers = peers[offset_value: offset_value + limit_value]
     omitted = max(0, len(peers) - offset_value - len(limited_peers))

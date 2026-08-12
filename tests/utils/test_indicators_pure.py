@@ -707,6 +707,7 @@ Values above 70 often indicate overbought conditions.
         out = raw_list(category="momentum", limit=3, offset=4)
 
         assert out["success"] is True
+        assert out["row_key"] == "data"
         assert out["count"] == 3
         assert [row["name"] for row in out["data"]] == ["ind_04", "ind_05", "ind_06"]
         assert out["pagination"] == {

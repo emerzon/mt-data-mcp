@@ -306,6 +306,7 @@ class TestForecastTaskList:
             return_value=1015.0,
         ):
             result = _unwrap(forecast_task_list)()
+            assert result["row_key"] == "tasks"
 
         assert result["success"] is True
         assert result["count"] == 2
@@ -418,6 +419,7 @@ class TestForecastModels:
             result = _unwrap(forecast_models_list)()
 
         assert result["success"] is True
+        assert result["row_key"] == "models"
         assert result["count"] == 2
         assert result["total_count"] == 2
         assert result["has_more"] is False

@@ -2204,8 +2204,14 @@ def test_forecast_list_library_models_and_list_methods(monkeypatch):
         row.get("category") == "statsforecast" for row in sf_only["methods"]
     )
     category_only = _unwrap(cf.forecast_list_methods)(category="statsforecast", profile="all")
+    assert category_only["row_key"] == "methods"
     assert "filters" not in category_only
     assert all(row.get("category") == "statsforecast" for row in category_only["methods"])
+    invalid_category = _unwrap(cf.forecast_list_methods)(
+        category="statsforecast_typo", profile="all"
+    )
+    assert "Invalid category filter" in invalid_category["error"]
+    assert "statsforecast" in invalid_category["error"]
     ci_only = _unwrap(cf.forecast_list_methods)(supports_ci=True, profile="all")
     assert "filters" not in ci_only
     assert ci_only["methods"]

@@ -27,6 +27,7 @@ def test_denoise_list_methods_compact_lists_small_catalog_by_default(monkeypatch
     result = _raw_list_methods()()
 
     assert result["count"] == 12
+    assert result["row_key"] == "methods"
     assert not {"total", "limit", "has_more", "methods_hidden"} & result.keys()
     assert result["pagination"] == {
         "total": 12,

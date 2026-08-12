@@ -105,6 +105,7 @@ def tools_list(
             categories.setdefault(row_category, []).append(str(row.get("name") or ""))
         catalog = dict(catalog)
         catalog["tools"] = slimmed
+        catalog["row_key"] = "tools"
         if compact_mode:
             catalog.pop("categories", None)
             catalog.pop("output_extras", None)
