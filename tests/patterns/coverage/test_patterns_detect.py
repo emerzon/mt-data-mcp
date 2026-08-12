@@ -1453,6 +1453,70 @@ class TestRelevanceScoring:
         sections = [h["section"] for h in highlights]
         assert "classic" in sections
 
+    def test_build_highlights_deduplicates_before_diversity_cap(self):
+        from mtdata.core.patterns_support import _build_highlights
+
+        duplicate = {
+            "pattern": "Hammer",
+            "direction": "bullish",
+            "confidence": 0.95,
+            "relevance": 0.95,
+            "timeframe": "H1",
+            "time": "2026-01-01 10:00",
+            "bar_index": 118,
+        }
+        payload = {
+            "candlestick": {
+                "patterns": [
+                    duplicate,
+                    dict(duplicate),
+                    {
+                        "pattern": "Engulfing",
+                        "direction": "bullish",
+                        "confidence": 0.8,
+                        "relevance": 0.8,
+                        "timeframe": "H1",
+                        "time": "2026-01-01 09:00",
+                        "bar_index": 117,
+                    },
+                ],
+            },
+            "classic": {
+                "patterns": [
+                    {
+                        "name": "Triangle",
+                        "bias": "bullish",
+                        "status": "forming",
+                        "confidence": 0.7,
+                        "relevance": 0.7,
+                        "timeframe": "D1",
+                        "end_date": "2026-01-01",
+                        "end_index": 42,
+                    },
+                ],
+            },
+        }
+
+        highlights = _build_highlights(payload, limit=3)
+
+        identities = [
+            (
+                row.get("section"),
+                row.get("timeframe"),
+                row.get("name"),
+                row.get("time"),
+                row.get("bar_index"),
+            )
+            for row in highlights
+        ]
+        assert len(highlights) == 3
+        assert len(identities) == len(set(identities))
+        assert {row["name"] for row in highlights} == {
+            "Hammer",
+            "Engulfing",
+            "Triangle",
+        }
+
     def test_summarize_candlestick_by_tf(self):
         """Candlestick summary groups by timeframe with net direction."""
         from mtdata.core.patterns_support import _summarize_candlestick_by_tf

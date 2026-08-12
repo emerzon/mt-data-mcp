@@ -1256,13 +1256,23 @@ def _build_highlights(
 
     candidates.sort(key=lambda r: r.get("_relevance", 0), reverse=True)
 
-    # Diversity: max 2 per (section, timeframe) combo
+    # Exact detections can reach this merged view through more than one upstream
+    # path.  Remove them before applying the diversity cap so a duplicate cannot
+    # consume one of the two slots for a section/timeframe pair.
     from collections import defaultdict
     seen: Dict[str, int] = defaultdict(int)
+    seen_identities: set[Tuple[Any, ...]] = set()
     highlights: List[Dict[str, Any]] = []
     for c in candidates:
         if len(highlights) >= limit:
             break
+        identity = tuple(
+            c.get(field)
+            for field in ("section", "timeframe", "name", "time", "bar_index")
+        )
+        if identity in seen_identities:
+            continue
+        seen_identities.add(identity)
         key = f"{c.get('section')}:{c.get('timeframe')}"
         if seen[key] >= 2:
             continue
