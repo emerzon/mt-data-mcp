@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import warnings
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import MagicMock
@@ -1191,3 +1192,49 @@ def test_relative_strength_does_not_rank_benchmark_from_requested_symbols() -> N
     assert result["universe_size"] == 2
     assert "USDJPY" not in {row["symbol"] for row in result["all_rankings"]}
     assert result["data_quality"]["benchmark_excluded_from_ranking"] == "USDJPY"
+
+
+def test_relative_strength_rejects_unavailable_explicit_benchmark() -> None:
+    result = rank_relative_strength(
+        MarketRelativeStrengthRequest(
+            symbols="EURUSD,GBPUSD",
+            benchmark="NOTREAL",
+            horizons=[5],
+            weights=[1.0],
+        ),
+        FakeGateway(),
+    )
+
+    assert result["error_code"] == "benchmark_not_found"
+    assert result["benchmark"] == "NOTREAL"
+
+
+def test_relative_strength_rejects_unavailable_explicit_candidate() -> None:
+    result = rank_relative_strength(
+        MarketRelativeStrengthRequest(
+            symbols="EURUSD,NOTREAL",
+            horizons=[5],
+            weights=[1.0],
+        ),
+        FakeGateway(),
+    )
+
+    assert result["error_code"] == "symbol_not_found"
+    assert result["missing_symbols"] == ["NOTREAL"]
+
+
+def test_relative_strength_reports_empty_filtered_result_without_warnings() -> None:
+    request = MarketRelativeStrengthRequest(
+        horizons=[5],
+        weights=[1.0],
+        min_tick_volume=1_000_000_000,
+    )
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", RuntimeWarning)
+        result = rank_relative_strength(request, FakeGateway())
+
+    assert result["success"] is True
+    assert result["status"] == "no_matches"
+    assert result["returned_count"] == 0
+    assert result["breadth"]["positive_by_horizon"] == {"5": None}

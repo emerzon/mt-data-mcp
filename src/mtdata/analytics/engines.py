@@ -1917,6 +1917,8 @@ def decompose_portfolio_risk(request: PortfolioRiskDecomposeRequest, gateway: An
 
 
 def _robust_z(values: pd.Series) -> pd.Series:
+    if values.empty:
+        return values.astype(float)
     clipped = values.clip(values.quantile(0.05), values.quantile(0.95))
     median = clipped.median()
     mad = float(np.median(np.abs(clipped - median)))
@@ -1935,6 +1937,13 @@ def rank_relative_strength(request: MarketRelativeStrengthRequest, gateway: Any)
         if str(_mapping(item).get("name") or getattr(item, "name", "")).strip()
     }
     missing_explicit = sorted(explicit - available_names)
+    if missing_explicit:
+        return {
+            "error": "One or more requested candidate symbols are unavailable.",
+            "error_code": "symbol_not_found",
+            "missing_symbols": missing_explicit,
+            "remediation": "Use symbols_list to discover broker symbol names and suffixes.",
+        }
     selected = []
     for item in raw_symbols:
         row = _mapping(item)
@@ -1951,9 +1960,25 @@ def rank_relative_strength(request: MarketRelativeStrengthRequest, gateway: Any)
         if len(selected) >= request.max_symbols:
             break
     benchmark_symbol = request.benchmark.upper() if request.benchmark else None
+    if benchmark_symbol and benchmark_symbol not in available_names:
+        return {
+            "error": f"Requested benchmark {benchmark_symbol!r} is unavailable.",
+            "error_code": "benchmark_not_found",
+            "benchmark": benchmark_symbol,
+            "remediation": "Use symbols_list to verify the benchmark's broker symbol name.",
+        }
     candidate_symbols = [
         symbol for symbol in selected if symbol != benchmark_symbol
     ]
+    requested_candidates = explicit - ({benchmark_symbol} if benchmark_symbol else set())
+    omitted_explicit = sorted(requested_candidates - set(candidate_symbols))
+    if omitted_explicit:
+        return {
+            "error": "The explicit candidate basket exceeds the selected symbol limit.",
+            "error_code": "candidate_limit_exceeded",
+            "missing_symbols": omitted_explicit,
+            "remediation": "Increase max_symbols or submit a smaller explicit basket.",
+        }
     if explicit and not candidate_symbols:
         return {
             "error": "None of the requested candidate symbols are available.",
@@ -1978,6 +2003,21 @@ def rank_relative_strength(request: MarketRelativeStrengthRequest, gateway: Any)
         for symbol in candidate_symbols
         if symbol in histories
     }
+    missing_candidate_history = sorted(set(candidate_symbols) - set(candidate_histories))
+    if missing_candidate_history:
+        return {
+            "error": "Requested candidate history is unavailable or incomplete.",
+            "error_code": "candidate_history_unavailable",
+            "missing_symbols": missing_candidate_history,
+            "skipped": skipped,
+        }
+    if benchmark_symbol and benchmark_symbol not in histories:
+        return {
+            "error": f"Requested benchmark {benchmark_symbol!r} lacks sufficient history.",
+            "error_code": "benchmark_history_unavailable",
+            "benchmark": benchmark_symbol,
+            "skipped": skipped,
+        }
     if len(candidate_histories) < 2:
         return {"error": "At least two symbols with sufficient history are required.", "error_code": "insufficient_data", "skipped": skipped}
     return_frames = []
@@ -2049,7 +2089,12 @@ def rank_relative_strength(request: MarketRelativeStrengthRequest, gateway: Any)
     ordered = [row_by_symbol[symbol] for symbol in ranked.index]
     latest_returns = {h: [row["raw_momentum"][str(h)] for row in ordered] for h in request.horizons}
     breadth = {
-        "positive_by_horizon": {str(h): float(np.mean(np.asarray(values) > 0)) for h, values in latest_returns.items()},
+        "positive_by_horizon": {
+            str(h): (
+                float(np.mean(np.asarray(values) > 0)) if values else None
+            )
+            for h, values in latest_returns.items()
+        },
         "advance_decline_balance": float(np.mean(np.sign(np.asarray(latest_returns[request.horizons[0]])))) if ordered else None,
         "dispersion": float(np.std(list(composite.values), ddof=1)) if len(composite) > 1 else 0.0,
         "above_sma20": float(np.mean([row["above_sma20"] for row in ordered])) if ordered else None,
@@ -2058,8 +2103,9 @@ def rank_relative_strength(request: MarketRelativeStrengthRequest, gateway: Any)
     returned_count = min(int(request.limit), len(ordered))
     leader_count = (returned_count + 1) // 2
     laggard_count = returned_count - leader_count
-    return {
+    result = {
         "success": True,
+        "status": "ranked" if ordered else "no_matches",
         "timeframe": request.timeframe,
         "universe_size": len(ordered),
         "returned_count": returned_count,
@@ -2078,7 +2124,10 @@ def rank_relative_strength(request: MarketRelativeStrengthRequest, gateway: Any)
             list(reversed(ordered[-laggard_count:])) if laggard_count else []
         ),
         "breadth": breadth,
-        "factor": {"source": request.benchmark.upper() if request.benchmark else "equal_weight_universe"},
+        "factor": {
+            "source": benchmark_symbol or "equal_weight_universe",
+            "requested_source": benchmark_symbol,
+        },
         "data_quality": {
             "selected_symbols": len(candidate_symbols),
             "data_symbols_fetched": len(histories),
@@ -2093,3 +2142,6 @@ def rank_relative_strength(request: MarketRelativeStrengthRequest, gateway: Any)
         "units": {"raw_momentum": "log_return_fraction", "residual_momentum": "log_return_fraction", "volatility": "per_bar_log_return_stddev", "score": "robust_z_composite", "rank_stability": "fraction_0_to_1", "tick_volume": "broker_tick_count"},
         **({"all_rankings": ordered} if request.detail == "full" else {}),
     }
+    if not ordered:
+        result["message"] = "No symbols matched the requested quote/volume filters."
+    return result

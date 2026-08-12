@@ -511,6 +511,42 @@ def test_market_scan_signal_price_change_uses_previous_close(monkeypatch):
     )
 
 
+def test_market_scan_rsi_is_independent_of_generic_lookback(monkeypatch):
+    from mtdata.core import symbols as symbols_mod
+
+    bars = _make_bars(
+        100.0 + index * 0.1 + ((index % 7) - 3) * 0.4
+        for index in range(500)
+    )
+    requested_counts = []
+
+    def completed_rates(*args, count, **kwargs):
+        requested_counts.append(count)
+        return bars[-count:]
+
+    monkeypatch.setattr(symbols_mod, "_market_scan_completed_rates", completed_rates)
+    kwargs = {
+        "timeframe": "H1",
+        "mt5_timeframe": 16385,
+        "rsi_length": 14,
+        "sma_period": 20,
+        "include_rsi": True,
+        "include_sma": False,
+    }
+
+    short_row, short_error = symbols_mod._build_market_scan_signal_row(
+        _make_symbol("TEST", digits=2), lookback=30, **kwargs
+    )
+    long_row, long_error = symbols_mod._build_market_scan_signal_row(
+        _make_symbol("TEST", digits=2), lookback=100, **kwargs
+    )
+
+    assert short_error is None
+    assert long_error is None
+    assert requested_counts == [350, 350]
+    assert short_row["rsi"] == long_row["rsi"]
+
+
 def _make_symbol(
     name: str,
     *,

@@ -2838,11 +2838,15 @@ def _build_market_scan_signal_row(
     include_rsi: bool,
     include_sma: bool,
 ) -> tuple[Optional[Dict[str, Any]], Optional[str]]:
+    rsi_warmup_bars = (
+        max(50, int(rsi_length) * 25) if include_rsi else 0
+    )
+    fetch_count = max(int(lookback), rsi_warmup_bars)
     rates = _market_scan_completed_rates(
         symbol.name,
         timeframe=timeframe,
         mt5_timeframe=mt5_timeframe,
-        count=lookback,
+        count=fetch_count,
     )
     if rates is None or len(rates) < 2:
         return None, f"At least two completed {timeframe} bars are required."
@@ -2873,7 +2877,16 @@ def _build_market_scan_signal_row(
     if include_sma and len(close_values) >= max(1, int(sma_period)):
         sma_window = close_values[-int(sma_period):]
         sma_value = float(sum(sma_window) / len(sma_window))
-    rsi_value = _market_scan_compute_rsi(close_values, int(rsi_length)) if include_rsi else None
+    rsi_values = (
+        close_values[-rsi_warmup_bars:]
+        if include_rsi and rsi_warmup_bars
+        else close_values
+    )
+    rsi_value = (
+        _market_scan_compute_rsi(rsi_values, int(rsi_length))
+        if include_rsi
+        else None
+    )
     sma_distance_pct = None
     if sma_value is not None and sma_value != 0:
         sma_distance_pct = ((close_price - sma_value) / sma_value) * 100.0
@@ -2905,6 +2918,7 @@ def _build_market_scan_signal_row(
                 digits=6,
             ),
             "price_change_basis": "previous_completed_close_to_latest_completed_close",
+            "rsi_warmup_bars": rsi_warmup_bars if include_rsi else None,
             "gap_pct": _market_scan_round(
                 ((open_price - previous_close) / previous_close) * 100.0,
                 digits=6,
