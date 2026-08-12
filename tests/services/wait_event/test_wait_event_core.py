@@ -349,9 +349,17 @@ def test_wait_event_tool_exposes_minimal_public_contract(monkeypatch) -> None:
     assert "watched_for" not in result
     assert "ending_on" not in result
     assert "reason" not in result
+    assert result["watch_for_inferred"] is True
+    assert result["watcher_count"] == 3
+    assert result["watcher_types"] == [
+        "position_opened",
+        "price_touch_level",
+        "tick_count_spike",
+    ]
 
     without_tick_count = raw(symbol="BTCUSD", timeframe="M1", watch_tick_count_spike=False)
     assert "criteria" not in without_tick_count
+    assert without_tick_count["watcher_count"] == 2
 
     explicit = raw(
         symbol="BTCUSD",

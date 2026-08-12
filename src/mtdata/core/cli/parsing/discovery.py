@@ -364,7 +364,9 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
     ("wait_event", "watch_for"): (
         "Event names or event objects. Examples: order_filled, "
         "'{\"type\":\"order_filled\",\"symbol\":\"EURUSD\"}'. "
-        "Put candle_close boundaries in end_on."
+        "Put candle_close boundaries in end_on. Omit for the lightweight core "
+        "order/position and market-activity watcher set; generated S/R and pivot "
+        "zones are not inferred."
     ),
     ("wait_event", "end_on"): (
         "Optional timeframe-mode boundaries. Explicit boundary timeframes must "

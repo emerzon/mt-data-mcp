@@ -1383,3 +1383,28 @@ def test_market_tick_retention_error_reports_clear_cap_failure(monkeypatch) -> N
         "last_retained_epoch": 4.0,
     }
 
+
+def test_default_wait_watchers_do_not_fetch_generated_price_levels(monkeypatch) -> None:
+    monkeypatch.setattr(
+        core_data,
+        "_support_resistance_watchers",
+        lambda **_: pytest.fail("default wait must not fetch support/resistance"),
+    )
+    monkeypatch.setattr(
+        core_data,
+        "_pivot_zone_watchers",
+        lambda **_: pytest.fail("default wait must not fetch pivot zones"),
+    )
+
+    watchers = core_data._build_default_wait_event_watchers(
+        symbol="EURUSD",
+        timeframe="M15",
+        watch_tick_count_spike=True,
+    )
+
+    types = {item["type"] for item in watchers}
+    assert "price_touch_level" not in types
+    assert "price_break_level" not in types
+    assert "price_enter_zone" not in types
+    assert "tick_count_spike" in types
+

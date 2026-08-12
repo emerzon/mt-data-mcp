@@ -171,8 +171,6 @@ def _build_default_wait_event_watchers(
     ]
     if watch_tick_count_spike:
         watch_for.append({"type": "tick_count_spike", "symbol": symbol})
-    watch_for.extend(_support_resistance_watchers(symbol=symbol))
-    watch_for.extend(_pivot_zone_watchers(symbol=symbol, timeframe=timeframe))
     return _dedupe_wait_event_watchers(watch_for)
 
 
@@ -399,9 +397,14 @@ def _wait_event_monitored_types(criteria: Optional[Dict[str, Any]]) -> List[str]
         if not isinstance(specs, list):
             continue
         for spec in specs:
-            if not isinstance(spec, dict):
-                continue
-            event_type = str(spec.get("type") or "").strip()
+            event_type = str(
+                (
+                    spec.get("type")
+                    if isinstance(spec, dict)
+                    else getattr(spec, "type", "")
+                )
+                or ""
+            ).strip()
             if event_type:
                 event_types.add(event_type)
     return sorted(event_types)
@@ -432,6 +435,14 @@ def _compact_wait_event_public_result(
     if criteria is not None:
         criteria["watch_for_inferred"] = not explicit_watch_for
         criteria["end_on_inferred"] = not explicit_end_on
+        watch_specs = criteria.get("watch_for")
+        watcher_count = len(watch_specs) if isinstance(watch_specs, list) else 0
+        watcher_types = _wait_event_monitored_types(
+            {"watch_for": watch_specs if isinstance(watch_specs, list) else []}
+        )
+        out["watch_for_inferred"] = not explicit_watch_for
+        out["watcher_count"] = watcher_count
+        out["watcher_types"] = watcher_types
 
     if str(detail or "compact").strip().lower() == "full":
         if criteria is not None:
@@ -707,13 +718,11 @@ def wait_event(
     boundary, or set `max_wait_seconds` to stop after a fixed duration. Combining
     both modes, or omitting both, is invalid.
 
-    If `watch_for` is omitted, the public default watches the full event set:
+    If `watch_for` is omitted, the public default watches the lightweight core set:
     order/position lifecycle events, pending/stop proximity, volatility/activity
-    events, support/resistance touch and break levels, and pivot-based zone
-    entry events. Support/resistance defaults come from
-    `support_resistance_levels(symbol, timeframe="auto")`; pivot zones default
-    to adjacent daily pivot bands for intraday waits and same-timeframe pivots
-    for daily-or-higher waits.
+    events, and tick-count changes. It does not fetch support/resistance or pivot
+    zones during setup. Pass explicit price_touch_level, price_break_level, or
+    price_enter_zone objects when those levels are part of the intended wait.
 
     Supply either `symbol` for a single instrument or `symbols` for a basket of
     up to 12 instruments; the parameters are mutually exclusive. Basket waits
