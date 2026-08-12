@@ -133,6 +133,31 @@ def test_get_options_chain_filters_and_selects_expiration(monkeypatch):
     assert out["options"][0]["contract"] == "AAPL260417C00100000"
 
 
+@pytest.mark.parametrize(
+    ("kwargs", "message"),
+    [
+        ({"min_open_interest": -1}, "min_open_interest"),
+        ({"min_volume": -1}, "min_volume"),
+        ({"limit": 0}, "limit"),
+    ],
+)
+def test_get_options_chain_rejects_out_of_range_controls_before_provider(
+    monkeypatch,
+    kwargs,
+    message,
+):
+    def fail_provider(**_kwargs):
+        raise AssertionError("provider should not be queried")
+
+    monkeypatch.setattr(osvc, "_run_options_provider_query", fail_provider)
+
+    result = osvc.get_options_chain(symbol="AAPL", **kwargs)
+
+    assert "error" in result
+    assert message in result["error"]
+    assert "greater than or equal" in result["error"]
+
+
 def test_both_option_sides_share_the_global_limit():
     items = [
         {"side": side, "strike": strike, "contract": f"{side}-{strike}"}

@@ -463,6 +463,33 @@ def test_calibrate_heston_rejects_invalid_valuation_date(monkeypatch):
     }
 
 
+@pytest.mark.parametrize(
+    ("kwargs", "parameter"),
+    [
+        ({"min_open_interest": -1}, "min_open_interest"),
+        ({"min_volume": -1}, "min_volume"),
+        ({"max_contracts": 4}, "max_contracts"),
+    ],
+)
+def test_calibrate_heston_rejects_out_of_range_controls_before_chain_fetch(
+    monkeypatch,
+    kwargs,
+    parameter,
+):
+    def fail_chain(**_kwargs):
+        raise AssertionError("option chain should not be queried")
+
+    monkeypatch.setattr(qtools, "get_options_chain", fail_chain)
+
+    result = qtools.calibrate_heston_quantlib_from_options(
+        symbol="AAPL",
+        **kwargs,
+    )
+
+    assert parameter in result["error"]
+    assert "greater than or equal" in result["error"]
+
+
 @pytest.mark.parametrize("valuation_date", ["2026-12-19", "2026-12-20"])
 def test_calibrate_heston_rejects_nonpositive_contract_maturity(
     monkeypatch, valuation_date

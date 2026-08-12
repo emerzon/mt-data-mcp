@@ -429,6 +429,21 @@ def calibrate_heston_quantlib_from_options(  # noqa: C901
     maturity_basis: str = _DEFAULT_MATURITY_BASIS,
 ) -> Dict[str, Any]:
     """Calibrate a Heston model from option-chain implied vols using QuantLib."""
+    if int(min_open_interest) < 0:
+        return {"error": "min_open_interest must be greater than or equal to 0."}
+    if int(min_volume) < 0:
+        return {"error": "min_volume must be greater than or equal to 0."}
+    if int(max_contracts) < 5:
+        return {"error": "max_contracts must be greater than or equal to 5."}
+    if valuation_date is not None:
+        try:
+            _dt.datetime.strptime(str(valuation_date).strip(), "%Y-%m-%d")
+        except (TypeError, ValueError):
+            return {
+                "error": (
+                    f"Invalid valuation_date: {valuation_date}. Use YYYY-MM-DD."
+                )
+            }
     try:
         import QuantLib as ql
     except Exception as ex:
@@ -481,7 +496,7 @@ def calibrate_heston_quantlib_from_options(  # noqa: C901
         return {"error": "Need at least 5 contracts with valid implied volatility for Heston calibration."}
 
     rows.sort(key=lambda x: abs(float(x["strike"]) - spot_val))
-    contract_limit = max(5, int(max_contracts))
+    contract_limit = int(max_contracts)
     if side == "both":
         calls = [row for row in rows if row.get("side") == "call"]
         puts = [row for row in rows if row.get("side") == "put"]

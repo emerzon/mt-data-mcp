@@ -64,9 +64,9 @@ mtdata-cli options_chain TSLA --min-open-interest 100 --min-volume 50 --json
 | `symbol` | (required) | Stock ticker |
 | `--expiration` | (nearest) | Specific expiration date `YYYY-MM-DD` |
 | `--option-type` | `both` | `call`, `put`, or `both` |
-| `--min-open-interest` | 0 | Minimum open interest filter |
-| `--min-volume` | 0 | Minimum volume filter |
-| `--limit` | 200 | Maximum contracts to return |
+| `--min-open-interest` | 0 | Minimum open interest filter; must be at least 0 |
+| `--min-volume` | 0 | Minimum volume filter; must be at least 0 |
+| `--limit` | 200 | Maximum contracts to return; must be at least 1 |
 
 ---
 
@@ -143,9 +143,10 @@ mtdata-cli options_heston_calibrate TSLA \
 | `--option-type` | `call` | `call`, `put`, or `both` |
 | `--risk-free-rate` | 0.02 | Risk-free rate (decimal) |
 | `--dividend-yield` | 0.0 | Dividend yield (decimal) |
-| `--min-open-interest` | 0 | Min open interest for contract selection |
-| `--min-volume` | 0 | Min volume for contract selection |
-| `--max-contracts` | 25 | Max contracts used in calibration |
+| `--valuation-date` | today | Valuation date in `YYYY-MM-DD` format |
+| `--min-open-interest` | 0 | Min open interest for contract selection; must be at least 0 |
+| `--min-volume` | 0 | Min volume for contract selection; must be at least 0 |
+| `--max-contracts` | 25 | Max contracts used in calibration; must be at least 5 |
 | `--calendar` | `UnitedStates.NYSE` | QuantLib calendar name used for maturity assumptions |
 | `--maturity-basis` | `calendar_days` | Basis for the reported `days_to_expiry` diagnostic. The Heston helper maturity is always anchored to the contract's calendar expiry date. |
 

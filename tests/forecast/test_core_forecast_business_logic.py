@@ -3743,6 +3743,48 @@ def test_options_tools_validate_expiration_before_provider_calls(monkeypatch):
             assert out["expected_format"] == "YYYY-MM-DD"
 
 
+@pytest.mark.parametrize(
+    ("tool_name", "kwargs", "parameter", "error_code"),
+    [
+        ("chain", {"min_open_interest": -1}, "min_open_interest", "invalid_input"),
+        ("chain", {"min_volume": -1}, "min_volume", "invalid_input"),
+        ("chain", {"limit": 0}, "limit", "invalid_input"),
+        ("calibrate", {"min_open_interest": -1}, "min_open_interest", "invalid_input"),
+        ("calibrate", {"min_volume": -1}, "min_volume", "invalid_input"),
+        ("calibrate", {"max_contracts": 4}, "max_contracts", "invalid_input"),
+        (
+            "calibrate",
+            {"valuation_date": "2026/07/17"},
+            "valuation_date",
+            "invalid_valuation_date",
+        ),
+    ],
+)
+def test_options_tools_validate_controls_before_provider_gate(
+    monkeypatch,
+    tool_name,
+    kwargs,
+    parameter,
+    error_code,
+):
+    raw = _unwrap(
+        opt.options_chain
+        if tool_name == "chain"
+        else opt.options_heston_calibrate
+    )
+
+    def fail_readiness():
+        raise AssertionError("provider readiness should not be checked")
+
+    monkeypatch.setattr(opt, "_options_provider_readiness", fail_readiness)
+
+    result = raw(symbol="AAPL", **kwargs)
+
+    assert result["success"] is False
+    assert result["error_code"] == error_code
+    assert result["parameter"] == parameter
+
+
 def test_options_chain_tools_short_circuit_when_provider_not_ready(monkeypatch):
     raw_exp = _unwrap(opt.options_expirations)
     raw_chain = _unwrap(opt.options_chain)

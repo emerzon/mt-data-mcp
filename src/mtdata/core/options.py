@@ -5,7 +5,9 @@ from __future__ import annotations
 import logging
 import re
 from datetime import date
-from typing import Any, Dict, Literal, Optional
+from typing import Annotated, Any, Dict, Literal, Optional
+
+from pydantic import Field
 
 from ..shared.schema import DetailLiteral
 from ._mcp_instance import mcp
@@ -73,6 +75,48 @@ def _normalize_option_expiration(
             "expected_format": "YYYY-MM-DD",
         }
     return normalized, None
+
+
+def _validate_options_integer(
+    parameter: str,
+    value: Any,
+    *,
+    minimum: int,
+) -> Optional[Dict[str, Any]]:
+    try:
+        numeric = int(value)
+    except (TypeError, ValueError):
+        numeric = minimum - 1
+    if not isinstance(value, bool) and numeric >= minimum:
+        return None
+    return {
+        "success": False,
+        "error": f"{parameter} must be greater than or equal to {minimum}.",
+        "error_code": "invalid_input",
+        "parameter": parameter,
+        "value": value,
+        "minimum": minimum,
+    }
+
+
+def _validate_options_valuation_date(value: Any) -> Optional[Dict[str, Any]]:
+    if value in (None, ""):
+        return None
+    text = str(value).strip()
+    try:
+        if _OPTIONS_EXPIRATION_PATTERN.fullmatch(text) is None:
+            raise ValueError
+        date.fromisoformat(text)
+    except ValueError:
+        return {
+            "success": False,
+            "error": f"Invalid valuation_date: {value}. Use YYYY-MM-DD.",
+            "error_code": "invalid_valuation_date",
+            "parameter": "valuation_date",
+            "value": value,
+            "expected_format": "YYYY-MM-DD",
+        }
+    return None
 
 
 def _run_options_operation(
@@ -420,9 +464,9 @@ def options_chain(
     symbol: str,
     expiration: Optional[str] = None,
     option_type: Literal["call", "put", "both"] = "both",  # type: ignore
-    min_open_interest: int = 0,
-    min_volume: int = 0,
-    limit: int = 200,
+    min_open_interest: Annotated[int, Field(ge=0)] = 0,
+    min_volume: Annotated[int, Field(ge=0)] = 0,
+    limit: Annotated[int, Field(ge=1)] = 200,
     detail: DetailLiteral = "compact",  # type: ignore
 ) -> Dict[str, Any]:
     """Fetch option-chain snapshots using the configured chain provider.
@@ -452,6 +496,28 @@ def options_chain(
             expiration=expiration,
             detail=detail,
             func=lambda: expiration_error,
+        )
+    input_error = next(
+        (
+            error
+            for error in (
+                _validate_options_integer(
+                    "min_open_interest", min_open_interest, minimum=0
+                ),
+                _validate_options_integer("min_volume", min_volume, minimum=0),
+                _validate_options_integer("limit", limit, minimum=1),
+            )
+            if error is not None
+        ),
+        None,
+    )
+    if input_error is not None:
+        return _run_options_operation(
+            "options_chain",
+            symbol=symbol_value,
+            expiration=expiration_value,
+            detail=detail,
+            func=lambda: input_error,
         )
     gate = _options_chain_provider_gate("options_chain")
     if gate is not None:
@@ -569,9 +635,9 @@ def options_heston_calibrate(
     option_type: Literal["call", "put", "both"] = "call",  # type: ignore
     risk_free_rate: float = 0.02,
     dividend_yield: float = 0.0,
-    min_open_interest: int = 0,
-    min_volume: int = 0,
-    max_contracts: int = 25,
+    min_open_interest: Annotated[int, Field(ge=0)] = 0,
+    min_volume: Annotated[int, Field(ge=0)] = 0,
+    max_contracts: Annotated[int, Field(ge=5)] = 25,
     calendar: str = "UnitedStates.NYSE",
     maturity_basis: Literal["calendar_days", "business_days"] = "calendar_days",  # type: ignore
     detail: DetailLiteral = "compact",  # type: ignore
@@ -607,6 +673,32 @@ def options_heston_calibrate(
             expiration=expiration,
             detail=detail,
             func=lambda: expiration_error,
+        )
+    input_error = next(
+        (
+            error
+            for error in (
+                _validate_options_integer(
+                    "min_open_interest", min_open_interest, minimum=0
+                ),
+                _validate_options_integer("min_volume", min_volume, minimum=0),
+                _validate_options_integer(
+                    "max_contracts", max_contracts, minimum=5
+                ),
+                _validate_options_valuation_date(valuation_date),
+            )
+            if error is not None
+        ),
+        None,
+    )
+    if input_error is not None:
+        return _run_options_operation(
+            "options_heston_calibrate",
+            symbol=symbol_value,
+            expiration=expiration_value,
+            valuation_date=valuation_date,
+            detail=detail,
+            func=lambda: input_error,
         )
     gate = _options_chain_provider_gate("options_heston_calibrate")
     if gate is not None:

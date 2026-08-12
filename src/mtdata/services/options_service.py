@@ -961,9 +961,17 @@ def get_options_chain(
         option_type_norm = str(option_type or "both").lower().strip()
         if option_type_norm not in {"call", "put", "both"}:
             return {"error": f"Invalid option_type: {option_type}. Use call|put|both."}
-        min_oi = max(0, _to_numeric(min_open_interest, int, 0, field_name="min_open_interest"))
-        min_vol = max(0, _to_numeric(min_volume, int, 0, field_name="min_volume"))
-        max_rows = max(1, _to_numeric(limit, int, 200, field_name="limit"))
+        min_oi = _to_numeric(
+            min_open_interest, int, 0, field_name="min_open_interest"
+        )
+        min_vol = _to_numeric(min_volume, int, 0, field_name="min_volume")
+        max_rows = _to_numeric(limit, int, 200, field_name="limit")
+        if min_oi < 0:
+            raise ValueError("min_open_interest must be greater than or equal to 0.")
+        if min_vol < 0:
+            raise ValueError("min_volume must be greater than or equal to 0.")
+        if max_rows < 1:
+            raise ValueError("limit must be greater than or equal to 1.")
 
         return _run_options_provider_query(
             operation="options chain",
