@@ -225,6 +225,7 @@ def create_command_function(  # noqa: C901
     parse_kv_string: Callable[[str], Optional[Dict[str, Any]]],
     unwrap_optional_type: Callable[[Any], Tuple[Any, Any]],
     is_typed_dict_type: Callable[[Any], bool],
+    is_mapping_annotation: Callable[[Any], bool],
     invoke_tool_function: Optional[Callable[..., Any]] = None,
 ) -> Callable[[Any], int]:
     """Build a CLI command callable for a tool function."""
@@ -333,13 +334,7 @@ def create_command_function(  # noqa: C901
         mapping_param_names: set[str] = set()
         for param in func_info["params"]:
             try:
-                base_type, origin = unwrap_optional_type(param.get("type"))
-                if (
-                    base_type in (dict, Dict)
-                    or origin in (dict, Dict)
-                    or is_typed_dict_type(base_type)
-                    or _is_model_type(base_type)
-                ):
+                if is_mapping_annotation(param.get("type")):
                     mapping_param_names.add(param["name"])
             except Exception:
                 continue
@@ -365,6 +360,19 @@ def create_command_function(  # noqa: C901
             return 1
         for param in func_info["params"]:
             param_name = param["name"]
+            option_alias_name = f"_cli_option_{param_name}"
+            positional_supplied = hasattr(args, param_name)
+            option_supplied = hasattr(args, option_alias_name)
+            if positional_supplied and option_supplied:
+                render_cli_result(
+                    _build_cli_error(
+                        f"Provide {param_name} either positionally or with "
+                        f"--{param_name.replace('_', '-')}, not both."
+                    ),
+                    args=args,
+                    cmd_name=cmd_name,
+                )
+                return 1
             if (
                 cmd_name == "data_fetch_candles"
                 and param_name == "limit"
@@ -373,7 +381,11 @@ def create_command_function(  # noqa: C901
                 # Preserve omission so the request model can distinguish a ranged
                 # query from a count-based query and select its ranged default.
                 continue
-            arg_value = getattr(args, param_name, param["default"])
+            arg_value = (
+                getattr(args, option_alias_name)
+                if option_supplied
+                else getattr(args, param_name, param["default"])
+            )
 
             if (
                 param_name == "symbols"
@@ -399,13 +411,7 @@ def create_command_function(  # noqa: C901
                 ptype = param.get("type")
                 base_type, origin = unwrap_optional_type(ptype)
 
-                is_typed_dict = is_typed_dict_type(base_type)
-                is_mapping = (
-                    (base_type in (dict, Dict))
-                    or (origin in (dict, Dict))
-                    or is_typed_dict
-                    or _is_model_type(base_type)
-                )
+                is_mapping = is_mapping_annotation(ptype)
                 is_list_like = origin in (list, tuple)
             except Exception:
                 is_mapping = False
@@ -449,7 +455,12 @@ def create_command_function(  # noqa: C901
                 if isinstance(extra_val, str) and extra_val.strip():
                     extra = parse_kv_string(extra_val)
                     if extra:
-                        if arg_value is None or arg_value == {}:
+                        if param_name == "denoise" and isinstance(arg_value, dict):
+                            method_params = arg_value.get("params")
+                            if not isinstance(method_params, dict):
+                                method_params = {}
+                            arg_value["params"] = merge_dict(method_params, extra)
+                        elif arg_value is None or arg_value == {}:
                             arg_value = extra
                         elif isinstance(arg_value, dict):
                             for key, value in extra.items():

@@ -46,7 +46,10 @@ def get_runtime_annotations(obj: Any) -> Dict[str, Any]:
         except Exception:
             pass
     try:
-        resolved = get_type_hints(obj)
+        # ``Annotated`` metadata carries public validation constraints used by
+        # dynamic transports (for example ``Field(ge=1)``).  The default
+        # behavior strips that metadata.
+        resolved = get_type_hints(obj, include_extras=True)
         if isinstance(resolved, dict):
             return resolved
     except Exception:

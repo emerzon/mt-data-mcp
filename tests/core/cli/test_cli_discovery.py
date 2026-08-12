@@ -366,6 +366,27 @@ class TestTypeName:
 
 
 class TestCreateCommandFunction:
+    def test_rejects_conflicting_positional_and_named_symbol(self, capsys):
+        mock_fn = MagicMock(return_value={"ok": True})
+        func_info = {
+            "func": mock_fn,
+            "params": [
+                {"name": "symbol", "type": str, "required": True, "default": None},
+            ],
+        }
+        cmd_fn = create_command_function(func_info, cmd_name="market_ticker")
+        args = argparse.Namespace(
+            symbol="EURUSD",
+            _cli_option_symbol="GBPUSD",
+            json=True,
+            verbose=False,
+        )
+
+        assert cmd_fn(args) == 1
+        payload = json.loads(capsys.readouterr().out)
+        assert "not both" in payload["error"]
+        mock_fn.assert_not_called()
+
     def test_basic_call(self, capsys):
         mock_fn = MagicMock(return_value={"data": [1, 2, 3]})
         func_info = {

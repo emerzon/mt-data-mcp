@@ -419,9 +419,13 @@ class TestAddDynamicArguments:
 
         help_text = _strip_ansi(parser.format_help())
 
-        assert "--symbols" not in help_text
+        assert "--symbols SYMBOLS" in help_text
         assert "Comma-separated MT5 symbols" in help_text
         assert parser.parse_args(["EURUSD,GBPUSD"]).symbols == "EURUSD,GBPUSD"
+        assert (
+            parser.parse_args(["--symbols", "EURUSD,GBPUSD"])._cli_option_symbols
+            == "EURUSD,GBPUSD"
+        )
 
     def test_non_positional_required_parameters_are_required_options(self):
         parser = argparse.ArgumentParser()
@@ -525,7 +529,7 @@ class TestAddDynamicArguments:
         }
         add_dynamic_arguments(parser, func_info)
         args = parser.parse_args(["--symbol", "EURUSD", "--count", "20"])
-        assert args.symbol == "EURUSD"
+        assert args._cli_option_symbol == "EURUSD"
         assert args.count == 20
 
     def test_first_required_param_has_positional_and_flag_actions(self):
@@ -537,7 +541,9 @@ class TestAddDynamicArguments:
         }
         add_dynamic_arguments(parser, func_info)
         symbol_actions = [
-            action for action in parser._actions if action.dest == "symbol"
+            action
+            for action in parser._actions
+            if action.dest in {"symbol", "_cli_option_symbol"}
         ]
         assert len(symbol_actions) == 2
         assert any(action.option_strings == [] for action in symbol_actions)

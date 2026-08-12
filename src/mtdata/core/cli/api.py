@@ -15,11 +15,13 @@ import warnings
 from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
 from typing import (
+    Annotated,
     Any,
     Dict,
     List,
     Literal,
     Optional,
+    Sequence,
     Tuple,
     Union,
     cast,
@@ -28,7 +30,7 @@ from typing import (
     is_typeddict,
 )
 
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, TypeAdapter, ValidationError
 
 from ...bootstrap.settings import load_environment
 from ...bootstrap.tools import bootstrap_tools, cli_tool_module_names
@@ -49,6 +51,7 @@ from .formatting import (
 )
 from .parsing.discovery import (
     _COMMAND_PARAM_CHOICE_OVERRIDES,
+    _COMMAND_PARAM_HELP_OVERRIDES,
 )
 from .parsing.discovery import (
     add_dynamic_arguments as _add_dynamic_arguments_impl,
@@ -131,6 +134,47 @@ def _is_typed_dict_type(value: Any) -> bool:
         getattr(value, "__required_keys__", None) is not None
         or getattr(value, "__optional_keys__", None) is not None
     )
+
+
+def _annotation_is_mapping_type(ptype: Any) -> bool:
+    """Return whether an annotation accepts an object-shaped CLI value."""
+    base_type, origin = _unwrap_optional_type(ptype)
+    if (
+        base_type in (dict, Dict)
+        or origin in (dict, Dict)
+        or _is_typed_dict_type(base_type)
+        or _is_pydantic_model_type(base_type)
+    ):
+        return True
+    if _is_union_origin(origin):
+        members = [member for member in get_args(base_type) if member is not type(None)]
+        return bool(members) and all(_annotation_is_mapping_type(member) for member in members)
+    return False
+
+
+def _annotation_has_metadata(ptype: Any) -> bool:
+    origin = get_origin(ptype)
+    if origin is Annotated:
+        return True
+    if _is_union_origin(origin):
+        return any(_annotation_has_metadata(member) for member in get_args(ptype))
+    return False
+
+
+def _validated_cli_scalar(ptype: Any, base_type: type):
+    """Build an argparse scalar converter that preserves Annotated bounds."""
+    adapter = TypeAdapter(ptype)
+
+    def _parse(value: str) -> Any:
+        try:
+            return adapter.validate_python(value)
+        except ValidationError as exc:
+            errors = exc.errors()
+            message = str(errors[0].get("msg") or exc) if errors else str(exc)
+            raise argparse.ArgumentTypeError(message) from exc
+
+    _parse.__name__ = getattr(base_type, "__name__", "value")
+    return _parse
 
 
 def _invoke_cli_tool_function(
@@ -370,7 +414,12 @@ def _normalize_cli_argv_aliases(
     return normalized
 
 
-def _apply_global_cli_overrides(args: Any, argv: List[str]) -> Any:
+def _apply_global_cli_overrides(
+    args: Any,
+    argv: List[str],
+    *,
+    functions: Optional[Dict[str, ToolInfo]] = None,
+) -> Any:
     command = getattr(args, "command", None)
     if not isinstance(command, str) or not command:
         return args
@@ -378,6 +427,21 @@ def _apply_global_cli_overrides(args: Any, argv: List[str]) -> Any:
     args.command = command
     global_timeframe = getattr(args, "_global_timeframe", None)
     if global_timeframe is not None:
+        if functions is not None and command not in {
+            "confluence_levels",
+            "forecast_generate",
+        }:
+            tool = functions.get(command) or {}
+            func_info = tool.get("_cli_func_info") or {}
+            param_names = {
+                str(param.get("name") or "")
+                for param in (func_info.get("params") or [])
+                if isinstance(param, dict)
+            }
+            if "timeframe" not in param_names:
+                raise ValueError(
+                    f"--timeframe is not supported by command '{command}'."
+                )
         if command == "confluence_levels":
             pivot_timeframe_present = (
                 _argv_option_present_after_command(
@@ -659,7 +723,7 @@ def _resolve_param_kwargs(
     param_names: Optional[set] = None,
 ) -> Tuple[Dict[str, Any], bool]:
     """Resolve CLI argument kwargs and determine if parameter is a mapping type."""
-    return _resolve_param_kwargs_impl(
+    kwargs, is_mapping = _resolve_param_kwargs_impl(
         param,
         param_docs,
         cmd_name=cmd_name,
@@ -671,7 +735,20 @@ def _resolve_param_kwargs(
         is_typed_dict_type=_is_typed_dict_type,
         get_origin=get_origin,
         get_args=get_args,
+        is_mapping_annotation=_annotation_is_mapping_type,
     )
+    ptype = param.get("type")
+    try:
+        base_type, _origin = _unwrap_optional_type(ptype)
+        if (
+            not is_mapping
+            and base_type in (int, float, str)
+            and _annotation_has_metadata(ptype)
+        ):
+            kwargs["type"] = _validated_cli_scalar(ptype, base_type)
+    except Exception:
+        pass
+    return kwargs, is_mapping
 
 
 def add_dynamic_arguments(
@@ -701,13 +778,22 @@ def _parse_kv_string(s: str) -> Optional[Dict[str, Any]]:
 
 
 def _unwrap_optional_type(ptype: Any) -> Tuple[Any, Any]:
-    """Unwrap Optional[T] to (T, origin(T))."""
-    origin = get_origin(ptype)
-    if _is_union_origin(origin):
-        args_t = [a for a in get_args(ptype) if a is not type(None)]
-        if len(args_t) == 1:
+    """Unwrap Annotated/Optional wrappers to ``(base, origin(base))``."""
+    while True:
+        origin = get_origin(ptype)
+        if origin is Annotated:
+            args_t = get_args(ptype)
+            if not args_t:
+                break
             ptype = args_t[0]
-            origin = get_origin(ptype)
+            continue
+        if _is_union_origin(origin):
+            args_t = [a for a in get_args(ptype) if a is not type(None)]
+            if len(args_t) == 1:
+                ptype = args_t[0]
+                continue
+        break
+    origin = get_origin(ptype)
     return ptype, origin
 
 
@@ -1065,6 +1151,7 @@ def create_command_function(
         parse_kv_string=_parse_kv_string,
         unwrap_optional_type=_unwrap_optional_type,
         is_typed_dict_type=_is_typed_dict_type,
+        is_mapping_annotation=_annotation_is_mapping_type,
         invoke_tool_function=_invoke_cli_tool_function,
     )
     if cmd_name != "forecast_train":
@@ -1445,10 +1532,27 @@ def _match_commands(
         func_info = tool.setdefault("_cli_func_info", get_function_info(func))
         _apply_schema_overrides(tool, func_info)
         meta = tool.get("meta") or {}
+        param_docs = meta.get("param_docs") or {}
+        param_terms: List[str] = []
+        for param in func_info.get("params") or []:
+            param_name = str(param.get("name") or "")
+            param_terms.extend(
+                [
+                    param_name,
+                    param_name.replace("_", " "),
+                    str(param_docs.get(param_name) or ""),
+                    str(_PARAM_HINTS.get(param_name) or ""),
+                    str(
+                        _COMMAND_PARAM_HELP_OVERRIDES.get((name, param_name))
+                        or ""
+                    ),
+                ]
+            )
         haystack = " ".join(
             [
                 name.lower(),
                 str(meta.get("description") or func_info.get("doc") or "").lower(),
+                " ".join(param_terms).lower(),
             ]
         )
         if all(tok in haystack for tok in tokens):
@@ -1658,7 +1762,12 @@ def main():  # noqa: C901
         formatter_class=_CLIHelpFormatter,
         allow_abbrev=False,
     )
-    shell_parser.set_defaults(func=lambda _args: run_shell(interactive=sys.stdin.isatty()))
+    shell_parser.set_defaults(
+        func=lambda shell_args: run_shell(
+            interactive=sys.stdin.isatty(),
+            inherited_argv=_shell_inherited_argv(shell_args),
+        )
+    )
 
     # Dynamically create subparsers for each function, except forecast_generate
     forecast_tool = None
@@ -1921,10 +2030,28 @@ def main():  # noqa: C901
 
     # Parse arguments
     args = parser.parse_args(argv)
-    args = _apply_global_cli_overrides(args, argv)
+    try:
+        args = _apply_global_cli_overrides(args, argv, functions=functions)
+    except ValueError as exc:
+        parser.error(str(exc))
 
     if not args.command:
-        parser.print_help()
+        if _resolve_cli_formatter(args) == "json":
+            _write_cli_text(
+                json.dumps(
+                    build_error_payload(
+                        "A command is required.",
+                        code="cli_missing_command",
+                        operation="cli",
+                        remediation=f"Run '{parser_prog} --help' to list commands.",
+                        documentation="docs/CLI.md",
+                    ),
+                    ensure_ascii=False,
+                    indent=2,
+                )
+            )
+        else:
+            parser.print_help()
         return 1
 
     output_contract = _resolve_cli_output_contract_or_error(parser, args)
@@ -2008,13 +2135,35 @@ def _write_shell_batch_record(record: Dict[str, Any]) -> None:
     )
 
 
-def run_shell(*, interactive: bool = True) -> int:
+def _shell_inherited_argv(args: Any) -> List[str]:
+    """Serialize shell-level output/session options for child commands."""
+    inherited: List[str] = []
+    if bool(getattr(args, "json", False)):
+        inherited.append("--json")
+    precision = getattr(args, "precision", None)
+    if precision not in (None, "auto"):
+        inherited.extend(["--precision", str(precision)])
+    output_fields = getattr(args, "output_fields", None)
+    if output_fields:
+        if isinstance(output_fields, (list, tuple)):
+            output_fields = ",".join(str(item) for item in output_fields)
+        inherited.extend(["--output-fields", str(output_fields)])
+    timeframe = getattr(args, "_global_timeframe", None)
+    if timeframe:
+        inherited.extend(["--timeframe", str(timeframe)])
+    return inherited
+
+
+def run_shell(
+    *, interactive: bool = True, inherited_argv: Optional[Sequence[str]] = None
+) -> int:
     """Run repeated CLI commands while reusing the initialized Python process."""
     global _SHELL_SESSION_DEPTH
 
     if interactive:
         print("mtdata-cli shell (type 'exit' or 'quit' to stop)")
     original_argv = list(sys.argv)
+    inherited = list(inherited_argv or ())
     overall_status = 0
     line_number = 0
     _SHELL_SESSION_DEPTH += 1
@@ -2057,6 +2206,7 @@ def run_shell(*, interactive: bool = True) -> int:
                         }
                     )
                 continue
+            effective_command_argv = [*inherited, *command_argv]
             if command_argv and command_argv[0].lower() == "shell":
                 message = "A shell session is already active."
                 if interactive:
@@ -2077,14 +2227,14 @@ def run_shell(*, interactive: bool = True) -> int:
                 record, status = _shell_batch_record(
                     line_number=line_number,
                     command=stripped,
-                    command_argv=command_argv,
+                    command_argv=effective_command_argv,
                     program=original_argv[0],
                 )
                 _write_shell_batch_record(record)
                 if status != 0:
                     overall_status = status
                 continue
-            sys.argv = [original_argv[0], *command_argv]
+            sys.argv = [original_argv[0], *effective_command_argv]
             try:
                 main()
             except SystemExit:

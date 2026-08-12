@@ -1,7 +1,10 @@
 from __future__ import annotations
 
-from typing import get_args, get_origin
+import argparse
+from typing import Annotated, Union, get_args, get_origin
 
+import pytest
+from pydantic import BaseModel, Field
 from typing_extensions import TypedDict
 
 from mtdata.core.cli import api as cli
@@ -11,6 +14,17 @@ from mtdata.shared.schema import get_function_info
 class ExampleSpec(TypedDict, total=False):
     method: str
     points: int
+
+
+class PriceBarrier(BaseModel):
+    kind: str
+    price: float
+
+
+class RangeBarrier(BaseModel):
+    kind: str
+    lower: float
+    upper: float
 
 
 def annotated_tool(
@@ -45,5 +59,29 @@ def test_get_function_info_resolves_future_annotations():
     kwargs, is_mapping = cli._resolve_param_kwargs(params["spec"], None)
 
     assert base_type is ExampleSpec
+    assert is_mapping is True
+    assert kwargs["type"] is str
+
+
+def test_annotated_scalar_constraints_survive_cli_resolution():
+    def constrained(limit: Annotated[int, Field(ge=1)] = 10) -> None:
+        return None
+
+    param = get_function_info(constrained)["params"][0]
+    kwargs, is_mapping = cli._resolve_param_kwargs(param, None)
+
+    assert is_mapping is False
+    assert kwargs["type"]("2") == 2
+    with pytest.raises(argparse.ArgumentTypeError, match="greater than or equal to 1"):
+        kwargs["type"]("0")
+
+
+def test_union_of_models_is_parsed_as_mapping_input():
+    annotation = Union[PriceBarrier, RangeBarrier]
+    kwargs, is_mapping = cli._resolve_param_kwargs(
+        {"name": "barrier", "type": annotation, "required": True, "default": None},
+        None,
+    )
+
     assert is_mapping is True
     assert kwargs["type"] is str

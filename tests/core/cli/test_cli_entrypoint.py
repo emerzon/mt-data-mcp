@@ -75,6 +75,30 @@ def test_unknown_command_json_uses_standard_error_envelope(capsys):
     assert payload["documentation"] == "docs/CLI.md"
 
 
+def test_json_without_command_returns_compact_error_envelope(monkeypatch, capsys):
+    from mtdata.core.cli import api
+    from mtdata.core.cli import main as entry_main
+
+    def sample() -> dict:
+        return {"success": True}
+
+    monkeypatch.setattr(api, "load_environment", lambda: None)
+    monkeypatch.setattr(
+        api,
+        "discover_tools",
+        lambda *_args: {
+            "sample": {"func": sample, "meta": {"description": "Sample tool"}}
+        },
+    )
+
+    status = entry_main(["--json"])
+
+    payload = json.loads(capsys.readouterr().out)
+    assert status == 1
+    assert payload["error_code"] == "cli_missing_command"
+    assert payload["operation"] == "cli"
+
+
 def test_shell_reuses_process_and_runs_entered_commands(monkeypatch):
     from mtdata.core.cli import api
 
@@ -87,6 +111,22 @@ def test_shell_reuses_process_and_runs_entered_commands(monkeypatch):
 
     assert status == 0
     assert observed == [[api.sys.argv[0], "symbols_list", "--limit", "2", "--json"]]
+
+
+def test_shell_inherits_json_for_child_commands(monkeypatch):
+    from mtdata.core.cli import api
+
+    commands = iter(["symbols_list --limit 2", "quit"])
+    observed = []
+    monkeypatch.setattr("builtins.input", lambda _prompt: next(commands))
+    monkeypatch.setattr(api, "main", lambda: observed.append(list(api.sys.argv)) or 0)
+
+    status = api.run_shell(inherited_argv=["--json"])
+
+    assert status == 0
+    assert observed == [
+        [api.sys.argv[0], "--json", "symbols_list", "--limit", "2"]
+    ]
 
 
 def test_shell_removes_syntactic_quotes_and_preserves_windows_paths(monkeypatch):

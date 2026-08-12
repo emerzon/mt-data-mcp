@@ -586,6 +586,34 @@ class TestMain:
         assert mock_fn.call_args[1]["timeframe"] == "H1"
 
     @patch("mtdata.core.cli.api.discover_tools")
+    def test_global_timeframe_rejects_command_without_timeframe(
+        self, mock_discover, capsys
+    ):
+        mock_fn = MagicMock(return_value="output text")
+
+        def catalog(limit: int = 10):
+            return {"limit": limit}
+
+        info = get_function_info(catalog)
+        info["func"] = mock_fn
+        mock_discover.return_value = {
+            "catalog": {
+                "func": mock_fn,
+                "meta": {"description": "Catalog"},
+                "_cli_func_info": info,
+            }
+        }
+
+        with (
+            patch("sys.argv", ["cli.py", "--timeframe", "D1", "catalog"]),
+            pytest.raises(SystemExit, match="2"),
+        ):
+            main()
+
+        assert "--timeframe is not supported" in capsys.readouterr().err
+        mock_fn.assert_not_called()
+
+    @patch("mtdata.core.cli.api.discover_tools")
     def test_global_timeframe_defaults_confluence_pivot_timeframe(
         self,
         mock_discover,
@@ -2126,6 +2154,33 @@ class TestEdgeCases:
         cmd_fn(args)
         call_kwargs = mock_fn.call_args[1]
         assert call_kwargs["simplify"]["method"] == "lttb"
+
+    def test_denoise_companion_merges_into_method_params(self, capsys):
+        mock_fn = MagicMock(return_value="ok")
+        func_info = {
+            "func": mock_fn,
+            "params": [
+                {
+                    "name": "denoise",
+                    "type": Dict[str, Any],
+                    "required": False,
+                    "default": None,
+                },
+            ],
+        }
+        cmd_fn = create_command_function(func_info, cmd_name="test_cmd")
+        args = argparse.Namespace(
+            denoise='{"method":"sma"}',
+            denoise_params="window=7",
+            json=False,
+            verbose=False,
+        )
+
+        assert cmd_fn(args) == 0
+        assert mock_fn.call_args.kwargs["denoise"] == {
+            "method": "sma",
+            "params": {"window": "7"},
+        }
 
     def test_ranged_candle_command_preserves_omitted_limit(self):
         mock_fn = MagicMock(return_value={"success": True})

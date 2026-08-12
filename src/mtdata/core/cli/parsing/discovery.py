@@ -35,9 +35,9 @@ _HIDDEN_OPTIONAL_FIRST_POSITIONAL_FLAGS: set[tuple[str, str]] = {
 # compatibility cases.
 _COMMAND_PARAM_CHOICE_OVERRIDES: Dict[tuple[str, str], list[str]] = {}
 
-_POSITIONAL_ONLY_OPTIONAL_FIRST_PARAMS: set[tuple[str, str]] = {
-    ("market_scan", "symbols"),
-}
+_POSITIONAL_ONLY_OPTIONAL_FIRST_PARAMS: set[tuple[str, str]] = set()
+
+_OPTION_ALIAS_DEST_PREFIX = "_cli_option_"
 
 _MULTI_VALUE_SYMBOL_POSITIONAL_COMMANDS = frozenset(
     {
@@ -646,6 +646,7 @@ def resolve_param_kwargs(
     is_typed_dict_type: Callable[[Any], bool],
     get_origin: Callable[[Any], Any],
     get_args: Callable[[Any], Tuple[Any, ...]],
+    is_mapping_annotation: Callable[[Any], bool],
 ) -> Tuple[Dict[str, Any], bool]:
     """Resolve argparse kwargs for a single CLI parameter."""
 
@@ -688,13 +689,7 @@ def resolve_param_kwargs(
             ptype = param.get("type")
             base_type, origin = unwrap_optional_type(ptype)
 
-            is_typed_dict = is_typed_dict_type(base_type)
-            is_mapping_type = (
-                (base_type in (dict, Dict))
-                or (origin in (dict, Dict))
-                or is_typed_dict
-                or _is_model_type(base_type)
-            )
+            is_mapping_type = is_mapping_annotation(ptype)
 
             kwargs["type"] = str
 
@@ -824,6 +819,8 @@ def add_dynamic_arguments(  # noqa: C901
             )
             parser.add_argument(param["name"], **positional_kwargs)
             option_kwargs = dict(kwargs)
+            option_kwargs["dest"] = f"{_OPTION_ALIAS_DEST_PREFIX}{param['name']}"
+            option_kwargs.setdefault("metavar", str(param["name"]).upper())
             option_kwargs["default"] = argparse.SUPPRESS
             option_kwargs["required"] = False
             if option_flags:
@@ -854,6 +851,9 @@ def add_dynamic_arguments(  # noqa: C901
             positional_kwargs["default"] = argparse.SUPPRESS
             parser.add_argument(param["name"], **positional_kwargs)
             option_kwargs = dict(kwargs)
+            option_kwargs["dest"] = f"{_OPTION_ALIAS_DEST_PREFIX}{param['name']}"
+            option_kwargs.setdefault("metavar", str(param["name"]).upper())
+            option_kwargs["default"] = argparse.SUPPRESS
             if (
                 str(cmd_name or "") in _MULTI_VALUE_SYMBOL_POSITIONAL_COMMANDS
                 and str(param["name"]) == "symbols"
@@ -868,7 +868,7 @@ def add_dynamic_arguments(  # noqa: C901
             if option_flags and positional_key not in _POSITIONAL_ONLY_OPTIONAL_FIRST_PARAMS:
                 parser.add_argument(*option_flags, **option_kwargs)
             if hidden_option_flags and positional_key not in _POSITIONAL_ONLY_OPTIONAL_FIRST_PARAMS:
-                hidden_option_kwargs = dict(kwargs)
+                hidden_option_kwargs = dict(option_kwargs)
                 hidden_option_kwargs["help"] = argparse.SUPPRESS
                 parser.add_argument(*hidden_option_flags, **hidden_option_kwargs)
         else:
