@@ -19,6 +19,7 @@ from ...utils.market_metadata import (
     attach_candle_volume_semantics,
     normalize_policy_relaxed,
 )
+from ...utils.quote import canonical_quote_midpoint
 from ..error_envelope import build_error_payload
 from ..execution_logging import run_logged_operation
 from ..mt5_gateway import mt5_connection_error
@@ -1426,8 +1427,10 @@ def _compact_tick_row(
     )
     if spread_valid:
         compact["spread"] = numeric_spread
-    if bid is not None and ask is not None:
-        compact["mid"] = round((bid + ask) / 2.0, 10)
+    if spread_valid:
+        midpoint = canonical_quote_midpoint(bid, ask)
+        if midpoint is not None:
+            compact["mid"] = midpoint
     elif last_spread is not None and bid is not None:
         compact["mid"] = round(bid + (last_spread / 2.0), 10)
         compact["mid_inferred"] = True
@@ -1532,13 +1535,6 @@ def _run_wait_event_impl(
     now_utc_impl: Any,
 ) -> Result[Dict[str, Any]]:
     try:
-        if _wait_event_needs_gateway(request):
-            connection_error = _ensure_gateway_connection(gateway)
-            if connection_error is not None:
-                return Err(
-                    str(connection_error.get("error", "MT5 connection failed")),
-                    code="MT5_CONNECTION",
-                )
         return Ok(run_wait_event_loop(
             request,
             gateway=gateway,

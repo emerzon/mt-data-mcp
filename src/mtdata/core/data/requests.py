@@ -37,6 +37,7 @@ _MAGIC_NUMBER_DESCRIPTION = (
     "strategy trades. Use as a filter for one strategy; omit for all magic numbers."
 )
 DATA_FETCH_CANDLES_DEFAULT_LIMIT = 20
+DATA_FETCH_CANDLES_MAX_LIMIT = 100_000
 DATA_FETCH_TICKS_DEFAULT_LIMIT = 20
 DATA_FETCH_TICKS_MAX_LIMIT = 50_000
 
@@ -369,13 +370,15 @@ class DataFetchCandlesRequest(_DetailNormalizedRequest):
     limit: int = Field(
         DATA_FETCH_CANDLES_DEFAULT_LIMIT,
         ge=1,
+        le=DATA_FETCH_CANDLES_MAX_LIMIT,
         description=(
             "Maximum bars to return. Unbounded and end-only queries select the "
             "latest bars; any query with start selects the earliest bars at or "
             "after start (default "
             f"{DATA_FETCH_CANDLES_DEFAULT_LIMIT}, kept small for compact output). "
             "For start/end range queries, an omitted limit uses a 100,000-bar "
-            "safety cap; set limit explicitly to request a smaller range page. "
+            f"safety cap. Explicit limits are capped at {DATA_FETCH_CANDLES_MAX_LIMIT:,}; "
+            "use bounded start/end ranges to retrieve longer histories in pages. "
             "Requested indicators automatically fetch extra warmup bars, so the "
             "returned window has valid indicator values without raising the limit."
         ),
@@ -383,16 +386,18 @@ class DataFetchCandlesRequest(_DetailNormalizedRequest):
     start: Optional[str] = Field(
         None,
         description=(
-            "Inclusive UTC range start parsed by dateparser. An ISO date-only "
-            "value such as 2026-08-05 resolves to 00:00:00 UTC that day."
+            "Inclusive range start parsed by dateparser. An ISO date-only value "
+            "selects broker-session calendar periods for D1/W1/MN1 and resolves "
+            "to 00:00:00 UTC for intraday timeframes."
         ),
     )
     end: Optional[str] = Field(
         None,
         description=(
-            "Inclusive UTC range end parsed by dateparser. An ISO date-only "
-            "value such as 2026-08-06 resolves to 23:59:59.999999 UTC; a value "
-            "with a time is treated as that exact instant."
+            "Inclusive range end parsed by dateparser. An ISO date-only value "
+            "selects broker-session calendar periods for D1/W1/MN1 and resolves "
+            "to 23:59:59.999999 UTC for intraday timeframes; a value with a time "
+            "is treated as that exact instant."
         ),
     )
     timestamp_format: Literal["epoch", "iso"] = Field(

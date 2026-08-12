@@ -99,6 +99,27 @@ class OversleepClock(FakeClock):
         super().sleep(float(seconds) + self.extra_sleep_seconds)
 
 
+def test_zero_wait_budget_returns_before_gateway_bootstrap() -> None:
+    started = datetime(2026, 8, 12, 17, 39, tzinfo=timezone.utc)
+    clock = FakeClock(started)
+
+    class UnexpectedGateway:
+        def ensure_connection(self):
+            raise AssertionError("zero wait budget must not bootstrap MT5")
+
+    result = run_wait_event(
+        WaitEventRequest(symbol="EURUSD", max_wait_seconds=0.0),
+        gateway=UnexpectedGateway(),
+        sleep_impl=clock.sleep,
+        monotonic_impl=clock.monotonic,
+        now_utc_impl=clock.now_utc,
+    )
+
+    assert result["status"] == "timeout"
+    assert result["elapsed_seconds"] == 0.0
+    assert result["polls"] == 0
+
+
 class SequenceGateway:
     COPY_TICKS_ALL = 0
     POSITION_TYPE_BUY = 0
@@ -314,9 +335,10 @@ def test_wait_event_tool_exposes_minimal_public_contract(monkeypatch) -> None:
         "symbols",
         "timeframe",
         "watch_tick_count_spike",
-        "max_wait_seconds",
-        "poll_interval_seconds",
-        "watch_for",
+            "max_wait_seconds",
+            "poll_interval_seconds",
+            "accept_preexisting",
+            "watch_for",
         "end_on",
         "detail",
         "json",

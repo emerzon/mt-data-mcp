@@ -179,6 +179,16 @@ def _observed_profile_window(
     return {"start": times[0], "end": times[-1]}
 
 
+def _profile_datetime_epoch(value: Optional[datetime]) -> Optional[float]:
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    else:
+        value = value.astimezone(timezone.utc)
+    return value.timestamp()
+
+
 def _fetch_tick_rows(
     *,
     symbol: str,
@@ -186,17 +196,53 @@ def _fetch_tick_rows(
     end: Optional[str],
     max_ticks: int,
 ) -> Dict[str, Any]:
+    # ``fetch_ticks`` is start-anchored when both bounds are supplied.  A
+    # capped profile must retain the most recent flow, so make the provider
+    # query end-anchored and then discard any rows preceding the requested
+    # start locally.
     payload = fetch_ticks(
         symbol=symbol,
         limit=max(1, int(max_ticks)),
-        start=start,
+        start=None,
         end=end,
         format="full_rows",
     )
     if payload.get("error"):
         return payload
-    rows = _table_rows(payload)
-    limit_reached = bool(payload.get("limit_reached")) or len(rows) >= int(max_ticks)
+    provider_rows = _table_rows(payload)
+    parsed_start = _parse_start_datetime(start) if start else None
+    start_epoch = _profile_datetime_epoch(parsed_start)
+    rows = provider_rows
+    if start_epoch is not None:
+        rows = [
+            row
+            for row in provider_rows
+            if (
+                (row_epoch := _profile_datetime_epoch(
+                    _parse_start_datetime(str(row.get("time") or ""))
+                ))
+                is None
+                or row_epoch >= start_epoch
+            )
+        ]
+    provider_limit_reached = bool(payload.get("limit_reached")) or len(
+        provider_rows
+    ) >= int(max_ticks)
+    earliest_provider_epoch = (
+        _profile_datetime_epoch(
+            _parse_start_datetime(str(provider_rows[0].get("time") or ""))
+        )
+        if provider_rows
+        else None
+    )
+    limit_reached = bool(
+        provider_limit_reached
+        and (
+            start_epoch is None
+            or earliest_provider_epoch is None
+            or earliest_provider_epoch >= start_epoch
+        )
+    )
     return {
         "success": True,
         "source": "ticks",
@@ -204,8 +250,10 @@ def _fetch_tick_rows(
         "fetch_payload": payload,
         "diagnostics": {
             "tick_rows": int(len(rows)),
+            "provider_tick_rows": int(len(provider_rows)),
             "requested_max_ticks": int(max_ticks),
             "tick_limit_reached": limit_reached,
+            "retained": "latest",
         },
     }
 

@@ -451,6 +451,12 @@ def analyze_microstructure(  # noqa: C901
     revision_pressure = float(np.nanmean((q["bid_revision"] + q["ask_revision"]) / 2.0)) if len(q) > 1 else 0.0
     start_epoch = float(df["epoch"].iloc[0])
     duration = max(0.001, float(df["epoch"].iloc[-1] - start_epoch))
+    requested_duration = max(0.0, float((end - start).total_seconds()))
+    temporal_coverage_pct = (
+        min(100.0, (duration / requested_duration) * 100.0)
+        if truncated and requested_duration > 0.0
+        else 100.0
+    )
     bucket = ((df["epoch"] - start_epoch) // int(request.bucket_seconds)).astype(int)
     windows: List[Dict[str, Any]] = []
     for bucket_id, part in df.groupby(bucket):
@@ -529,6 +535,11 @@ def analyze_microstructure(  # noqa: C901
         )
     if tier != "trade_volume":
         warnings.append("Real trade volume is insufficient; volume-impact metrics were omitted.")
+    if truncated:
+        warnings.append(
+            "max_ticks truncated the requested window; every metric covers only "
+            "the retained latest-tick tail described by data_quality."
+        )
     warnings.append(
         "Metrics describe the connected broker's tick feed and do not establish centralized market-wide order flow or liquidity."
     )
@@ -543,8 +554,12 @@ def analyze_microstructure(  # noqa: C901
         "locked_quote_ticks": int((df["spread_quality"] == "locked").sum()),
         "latest_spread_quality": str(df["spread_quality"].iloc[-1]),
         "truncated": truncated,
+        "retained": "latest" if truncated else "complete_window",
         "requested_start": start.isoformat(),
         "requested_end": end.isoformat(),
+        "requested_duration_seconds": requested_duration,
+        "observed_duration_seconds": duration,
+        "temporal_coverage_pct": temporal_coverage_pct,
         "observed_start_epoch": float(df["epoch"].iloc[0]),
         "observed_end_epoch": float(df["epoch"].iloc[-1]),
     }
@@ -664,6 +679,12 @@ def analyze_microstructure(  # noqa: C901
                     "locked_quote_ticks",
                     "latest_spread_quality",
                     "truncated",
+                    "retained",
+                    "requested_start",
+                    "requested_end",
+                    "requested_duration_seconds",
+                    "observed_duration_seconds",
+                    "temporal_coverage_pct",
                 )
             },
             "warnings": warnings,

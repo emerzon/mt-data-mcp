@@ -83,7 +83,7 @@ def _wait_event_connection_error(gateway: Any) -> Optional[Dict[str, Any]]:
     return None
 
 
-def run_wait_event_loop(
+def run_wait_event_loop(  # noqa: C901
     request: WaitEventRequest,
     *,
     gateway: Any,
@@ -92,6 +92,7 @@ def run_wait_event_loop(
     now_utc_impl: Callable[[], datetime],
 ) -> Dict[str, Any]:
     started_at_utc = _normalize_utc_datetime(now_utc_impl())
+    started_at_monotonic = float(monotonic_impl())
     compiled = _compile_request(request, started_at_utc=started_at_utc)
     if "error" in compiled:
         return compiled
@@ -113,6 +114,26 @@ def run_wait_event_loop(
     )
     poll_interval_seconds = float(request.poll_interval_seconds)
 
+    def _timeout_if_expired(*, polls: int = 0) -> Optional[Dict[str, Any]]:
+        if max_wait_seconds is None:
+            return None
+        elapsed = max(0.0, float(monotonic_impl()) - started_at_monotonic)
+        if elapsed < max_wait_seconds:
+            return None
+        return _build_wait_result(
+            request=request,
+            status="timeout",
+            started_at_utc=started_at_utc,
+            observed_at_utc=_normalize_utc_datetime(now_utc_impl()),
+            polls=polls,
+            matched_event=None,
+            boundary_event=None,
+            watch_for_payload=watch_for_payload,
+            end_on_payload=end_on_payload,
+            watch_for_inferred=watch_for_inferred,
+            end_on_inferred=end_on_inferred,
+        )
+
     boundary_only = (
         not watch_for
         and len(boundaries) == 1
@@ -127,9 +148,14 @@ def run_wait_event_loop(
             now_utc=started_at_utc,
         )
 
+    if (timeout_result := _timeout_if_expired()) is not None:
+        return timeout_result
+
     connection_error = _wait_event_connection_error(gateway)
     if connection_error is not None:
         return connection_error
+    if (timeout_result := _timeout_if_expired()) is not None:
+        return timeout_result
     symbol_error = _wait_event_symbol_preflight(
         gateway,
         request=request,
@@ -138,6 +164,8 @@ def run_wait_event_loop(
     )
     if symbol_error is not None:
         return symbol_error
+    if (timeout_result := _timeout_if_expired()) is not None:
+        return timeout_result
 
     if boundary_only:
         return _run_candle_boundary_only(
@@ -156,6 +184,8 @@ def run_wait_event_loop(
     )
     if isinstance(history_state, dict) and "error" in history_state:
         return history_state
+    if (timeout_result := _timeout_if_expired()) is not None:
+        return timeout_result
 
     baseline = (
         _build_baseline(
@@ -166,6 +196,8 @@ def run_wait_event_loop(
         if needs_current_state
         else {}
     )
+    if (timeout_result := _timeout_if_expired()) is not None:
+        return timeout_result
     market_state = _build_market_state(
         gateway=gateway,
         market_specs=market_specs,
@@ -174,6 +206,8 @@ def run_wait_event_loop(
     )
     if isinstance(market_state, dict) and "error" in market_state:
         return market_state
+    if (timeout_result := _timeout_if_expired()) is not None:
+        return timeout_result
     if not request.accept_preexisting:
         _prime_market_metric_latches(
             watch_for=watch_for,
@@ -203,9 +237,10 @@ def run_wait_event_loop(
                 end_on_inferred=end_on_inferred,
             )
 
-    started_at_monotonic = float(monotonic_impl())
     polls = 0
     while True:
+        if (timeout_result := _timeout_if_expired(polls=polls)) is not None:
+            return timeout_result
         polls += 1
         observed_at_utc = _normalize_utc_datetime(now_utc_impl())
         crossed_boundary = _first_crossed_boundary(boundaries, observed_at_utc=observed_at_utc)
@@ -298,26 +333,9 @@ def run_wait_event_loop(
 
         elapsed_seconds = max(0.0, float(monotonic_impl()) - started_at_monotonic)
         if max_wait_seconds is not None and elapsed_seconds >= max_wait_seconds:
-            return _build_wait_result(
-                request=request,
-                status="timeout",
-                started_at_utc=started_at_utc,
-                observed_at_utc=observed_at_utc,
-                polls=polls,
-                matched_event=None,
-                boundary_event=None,
-                watch_for_payload=watch_for_payload,
-                end_on_payload=end_on_payload,
-                watch_for_inferred=watch_for_inferred,
-                end_on_inferred=end_on_inferred,
-                quote_payload=_wait_result_quote_payload(
-                    request=request,
-                    watch_for_payload=watch_for_payload,
-                    market_state=snapshot.get("market_data"),
-                    gateway=gateway,
-                    observed_at_utc=observed_at_utc,
-                ),
-            )
+            timeout_result = _timeout_if_expired(polls=polls)
+            if timeout_result is not None:
+                return timeout_result
 
         sleep_seconds = _next_poll_sleep_seconds(
             poll_interval_seconds=poll_interval_seconds,

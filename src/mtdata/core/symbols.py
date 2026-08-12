@@ -2001,7 +2001,7 @@ def _build_market_scan_spread_row(
         {
             "bid": _market_scan_round(bid, digits=digits),
             "ask": _market_scan_round(ask, digits=digits),
-            "mid": _market_scan_round(mid, digits=digits),
+            "mid": _market_scan_round(mid, digits=digits + 1),
             "quote_as_of": (
                 _format_time_explicit(tick_time) if tick_time is not None else None
             ),

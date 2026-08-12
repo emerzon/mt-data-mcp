@@ -4,7 +4,11 @@ import pytest
 from pydantic import ValidationError
 
 from mtdata.core import data as core_data
-from mtdata.core.data.requests import DataFetchCandlesRequest, DataFetchTicksRequest
+from mtdata.core.data.requests import (
+    DATA_FETCH_CANDLES_MAX_LIMIT,
+    DataFetchCandlesRequest,
+    DataFetchTicksRequest,
+)
 from mtdata.core.data.use_cases import (
     _compact_tick_row,
     run_data_fetch_candles,
@@ -210,6 +214,16 @@ def test_data_fetch_candles_accepts_standard_detail_alias():
 
 def test_data_fetch_candles_accepts_summary_detail():
     assert DataFetchCandlesRequest(symbol="EURUSD", detail="summary").detail == "summary"
+
+
+def test_data_fetch_candles_rejects_limit_above_transport_cap():
+    assert DataFetchCandlesRequest(
+        symbol="EURUSD", limit=DATA_FETCH_CANDLES_MAX_LIMIT
+    ).limit == DATA_FETCH_CANDLES_MAX_LIMIT
+    with pytest.raises(ValidationError, match="less than or equal"):
+        DataFetchCandlesRequest(
+            symbol="EURUSD", limit=DATA_FETCH_CANDLES_MAX_LIMIT + 1
+        )
 
 
 @pytest.mark.parametrize("request_cls", [DataFetchCandlesRequest, DataFetchTicksRequest])
@@ -1418,6 +1432,7 @@ def test_compact_tick_row_marks_locked_quote_spread_unavailable():
     assert "spread" not in row
     assert "spread_valid" not in row
     assert "spread_basis" not in row
+    assert "mid" not in row
     assert spread_sample is None
 
 

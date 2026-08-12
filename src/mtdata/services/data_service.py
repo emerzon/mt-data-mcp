@@ -88,7 +88,11 @@ from ..utils.mt5 import (
     symbol_price_point as _symbol_price_point,
 )
 from ..utils.ohlcv import validate_and_clean_ohlcv_frame
-from ..utils.quote import tick_epoch
+from ..utils.quote import (
+    canonical_quote_midpoint,
+    canonical_quote_spread,
+    tick_epoch,
+)
 from ..utils.quote import tick_value as _tick_field_value
 
 # Simplify entrypoint and helpers.
@@ -618,9 +622,17 @@ def _fetch_rates_with_warmup(  # noqa: C901
             seconds_per_bar * requested_rows * 2,
             seconds_per_bar * requested_rows + 7 * 24 * 60 * 60,
         )
-        provider_from_date = max(
-            from_date_internal,
-            to_date - timedelta(seconds=bounded_span_seconds),
+        # Avoid constructing a timedelta that would move ``to_date`` before
+        # datetime.min.  This is reachable for the 100,000-row range safety
+        # budget on W1/MN1 even when the requested range itself is tiny.
+        available_span_seconds = max(
+            0.0,
+            float((to_date - from_date_internal).total_seconds()),
+        )
+        provider_from_date = (
+            from_date_internal
+            if bounded_span_seconds >= available_span_seconds
+            else to_date - timedelta(seconds=bounded_span_seconds)
         )
         if diagnostics is not None:
             diagnostics["range_fetch"] = {
@@ -1092,6 +1104,20 @@ def _trim_df_to_target(
     copy_rows: bool = True,
     timeframe: Optional[str] = None,
 ) -> pd.DataFrame:
+    if timeframe in {"D1", "W1", "MN1"} and (
+        _is_iso_date_only(start_datetime) or _is_iso_date_only(end_datetime)
+    ):
+        out = _trim_calendar_bars_to_session_dates(
+            df,
+            start_datetime=start_datetime,
+            end_datetime=end_datetime,
+            timeframe=str(timeframe),
+        )
+        if start_datetime and not end_datetime and len(out) > candles:
+            out = out.iloc[:candles]
+        elif end_datetime and not start_datetime and len(out) > candles:
+            out = out.iloc[-candles:]
+        return out.copy() if copy_rows else out
     if start_datetime and end_datetime:
         from_dt = _parse_start_datetime(start_datetime)
         to_dt = _parse_end_datetime(end_datetime)
@@ -1124,6 +1150,77 @@ def _trim_df_to_target(
     else:
         out = df.iloc[-candles:] if len(df) > candles else df
     return out.copy() if copy_rows else out
+
+
+def _is_iso_date_only(value: Optional[str]) -> bool:
+    return bool(
+        value is not None
+        and re.fullmatch(r"\d{4}-\d{2}-\d{2}", str(value).strip())
+    )
+
+
+def _next_calendar_period_date(value: Any, timeframe: str):
+    if timeframe == "D1":
+        return value + timedelta(days=1)
+    if timeframe == "W1":
+        return value + timedelta(days=7)
+    if value.month == 12:
+        return value.replace(year=value.year + 1, month=1, day=1)
+    return value.replace(month=value.month + 1, day=1)
+
+
+def _trim_calendar_bars_to_session_dates(
+    df: pd.DataFrame,
+    *,
+    start_datetime: Optional[str],
+    end_datetime: Optional[str],
+    timeframe: str,
+) -> pd.DataFrame:
+    """Match date-only D1/W1/MN1 bounds to broker calendar periods.
+
+    MT5 stamps these bars at the broker session open, which commonly falls on
+    the previous UTC date.  Instant-bearing bounds retain their UTC semantics;
+    only ISO date-only bounds use this calendar-period overlap rule.
+    """
+    try:
+        broker_tz = mt5_config.get_server_tz()
+    except Exception:
+        broker_tz = dt_timezone.utc
+    broker_tz = broker_tz or dt_timezone.utc
+
+    mask = pd.Series(True, index=df.index, dtype=bool)
+    session_dates = df["__epoch"].map(
+        lambda epoch: datetime.fromtimestamp(
+            float(epoch), tz=dt_timezone.utc
+        ).astimezone(broker_tz).date()
+    )
+    period_end_dates = session_dates.map(
+        lambda value: _next_calendar_period_date(value, timeframe)
+    )
+
+    if start_datetime:
+        if _is_iso_date_only(start_datetime):
+            requested_start = datetime.strptime(
+                str(start_datetime).strip(), "%Y-%m-%d"
+            ).date()
+            mask &= period_end_dates > requested_start
+        else:
+            parsed_start = _parse_start_datetime(start_datetime)
+            if parsed_start is None:
+                return df.iloc[0:0]
+            mask &= df["__epoch"] >= _utc_epoch_seconds(parsed_start)
+    if end_datetime:
+        if _is_iso_date_only(end_datetime):
+            requested_end = datetime.strptime(
+                str(end_datetime).strip(), "%Y-%m-%d"
+            ).date()
+            mask &= session_dates <= requested_end
+        else:
+            parsed_end = _parse_end_datetime(end_datetime)
+            if parsed_end is None:
+                return df.iloc[0:0]
+            mask &= df["__epoch"] <= _utc_epoch_seconds(parsed_end)
+    return df.loc[mask]
 
 
 def _normalize_indicator_spec(indicators: Optional[List[IndicatorSpec]]) -> Optional[str]:
@@ -2358,6 +2455,11 @@ def fetch_candles(  # noqa: C901
                 "timeframe": timeframe,
                 "limit": candles_requested,
             }
+            calendar_session_bounds = timeframe in {"D1", "W1", "MN1"} and (
+                _is_iso_date_only(start_datetime) or _is_iso_date_only(end_datetime)
+            )
+            if calendar_session_bounds:
+                query_applied["bound_basis"] = "broker_session_calendar"
             if start_datetime not in (None, ""):
                 query_applied["start"] = start_datetime
                 resolved_start, _ = _parse_fetch_datetime_arg(start_datetime)
@@ -2366,10 +2468,11 @@ def fetch_candles(  # noqa: C901
                         resolved_start
                     )
                     query_applied["start_bound"] = (
-                        "inclusive_day_start"
-                        if re.fullmatch(
-                            r"\d{4}-\d{2}-\d{2}", str(start_datetime).strip()
-                        )
+                        "inclusive_broker_session_period"
+                        if calendar_session_bounds
+                        and _is_iso_date_only(start_datetime)
+                        else "inclusive_day_start"
+                        if _is_iso_date_only(start_datetime)
                         else "inclusive_instant"
                     )
             if end_datetime not in (None, ""):
@@ -2383,10 +2486,11 @@ def fetch_candles(  # noqa: C901
                         resolved_end
                     )
                     query_applied["end_bound"] = (
-                        "inclusive_day_end"
-                        if re.fullmatch(
-                            r"\d{4}-\d{2}-\d{2}", str(end_datetime).strip()
-                        )
+                        "inclusive_broker_session_period"
+                        if calendar_session_bounds
+                        and _is_iso_date_only(end_datetime)
+                        else "inclusive_day_end"
+                        if _is_iso_date_only(end_datetime)
                         else "inclusive_instant"
                     )
             payload["query_applied"] = query_applied
@@ -3153,8 +3257,12 @@ def fetch_ticks(  # noqa: C901
                 int(epoch) if float(epoch).is_integer() else float(epoch)
                 for epoch in _epochs
             ]
-            df_ticks["mid"] = (df_ticks["bid"] + df_ticks["ask"]) / 2.0
-            df_ticks["spread"] = df_ticks["ask"] - df_ticks["bid"]
+            df_ticks["mid"] = (
+                (df_ticks["bid"] + df_ticks["ask"]) / 2.0
+            ).round(price_digits + 1)
+            df_ticks["spread"] = (df_ticks["ask"] - df_ticks["bid"]).round(
+                price_digits
+            )
             if price_point is not None:
                 df_ticks["spread_points"] = df_ticks["spread"] / price_point
             if price_point is not None and points_per_pip is not None:
@@ -3355,12 +3463,12 @@ def fetch_ticks(  # noqa: C901
             )
             two_sided = bid is not None and ask is not None
             spread = (
-                float(ask) - float(bid)
+                canonical_quote_spread(bid, ask)
                 if two_sided and float(ask) >= float(bid)
                 else None
             )
             mid = (
-                (float(bid) + float(ask)) / 2.0
+                canonical_quote_midpoint(bid, ask)
                 if two_sided and float(ask) >= float(bid)
                 else None
             )
@@ -3391,8 +3499,12 @@ def fetch_ticks(  # noqa: C901
 
         def _compact_summary_from_ticks() -> Dict[str, Any]:
             df_stats = df_ticks.copy()
-            df_stats["mid"] = (df_stats["bid"] + df_stats["ask"]) / 2.0
-            df_stats["spread"] = df_stats["ask"] - df_stats["bid"]
+            df_stats["mid"] = (
+                (df_stats["bid"] + df_stats["ask"]) / 2.0
+            ).round(price_digits + 1)
+            df_stats["spread"] = (df_stats["ask"] - df_stats["bid"]).round(
+                price_digits
+            )
             start_epoch = float(df_stats["__epoch"].iloc[0])
             end_epoch = float(df_stats["__epoch"].iloc[-1])
             duration_seconds = float(max(0.0, end_epoch - start_epoch))
@@ -3509,9 +3621,13 @@ def fetch_ticks(  # noqa: C901
                 return _json_safe_payload(out)
 
             df_stats = df_ticks.copy()
-            df_stats["mid"] = (df_stats["bid"] + df_stats["ask"]) / 2.0
-            df_stats["spread"] = (df_stats["ask"] - df_stats["bid"]).where(
-                df_stats["spread_sample_eligible"]
+            df_stats["mid"] = (
+                (df_stats["bid"] + df_stats["ask"]) / 2.0
+            ).round(price_digits + 1)
+            df_stats["spread"] = (
+                (df_stats["ask"] - df_stats["bid"])
+                .round(price_digits)
+                .where(df_stats["spread_sample_eligible"])
             )
 
             start_epoch = float(df_stats["__epoch"].iloc[0])
@@ -3870,12 +3986,12 @@ def fetch_ticks(  # noqa: C901
                     ]
                 )
                 mid = (
-                    (bid_value + ask_value) / 2.0
+                    canonical_quote_midpoint(bid_value, ask_value)
                     if snapshot_spread_valid
                     else None
                 )
                 spread = (
-                    ask_value - bid_value
+                    canonical_quote_spread(bid_value, ask_value)
                     if snapshot_spread_valid
                     else None
                 )

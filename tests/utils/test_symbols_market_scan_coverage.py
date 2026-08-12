@@ -80,6 +80,31 @@ def test_market_scan_spread_cost_uses_account_currency() -> None:
     assert row["spread_cost_currency"] == "USD"
 
 
+def test_market_scan_midpoint_retains_half_tick_precision() -> None:
+    from mtdata.core.symbols import _build_market_scan_spread_row
+
+    symbol = SimpleNamespace(
+        name="XAUUSD",
+        path="Metals",
+        digits=2,
+        point=0.01,
+        trade_tick_size=0.01,
+        trade_tick_value=1.0,
+        currency_profit="USD",
+    )
+    gateway = SimpleNamespace(
+        symbol_info_tick=lambda _symbol: SimpleNamespace(
+            bid=4404.21, ask=4404.32, time=0
+        ),
+        last_error=lambda: None,
+    )
+
+    row, error = _build_market_scan_spread_row(symbol, gateway)
+
+    assert error is None
+    assert row["mid"] == 4404.265
+
+
 def test_market_scan_locked_quote_is_explicitly_unsafe() -> None:
     from mtdata.core.symbols import _build_market_scan_spread_row
 

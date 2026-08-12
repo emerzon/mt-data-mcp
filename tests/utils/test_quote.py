@@ -4,7 +4,12 @@ from unittest.mock import MagicMock
 import pytest
 
 from mtdata.utils.mt5 import account_currency_from_gateway
-from mtdata.utils.quote import compute_spread_metrics, tick_epoch, tick_value
+from mtdata.utils.quote import (
+    canonical_quote_midpoint,
+    compute_spread_metrics,
+    tick_epoch,
+    tick_value,
+)
 
 
 class _IndexedTick:
@@ -51,6 +56,20 @@ def test_compute_spread_metrics_returns_raw_measurements() -> None:
     assert result["spread_pips"] == pytest.approx(2.0)
     assert result["spread_cost_per_lot"] == pytest.approx(20.0)
     assert result["pricing_basis"] == "per_1_lot_estimate"
+
+
+@pytest.mark.parametrize(
+    ("bid", "ask", "expected"),
+    [
+        (1.15267, 1.15276, 1.152715),
+        (4404.21, 4404.32, 4404.265),
+    ],
+)
+def test_canonical_quote_midpoint_preserves_half_tick_without_float_artifacts(
+    bid, ask, expected
+) -> None:
+    assert canonical_quote_midpoint(bid, ask) == expected
+    assert compute_spread_metrics(bid, ask)["mid"] == expected
 
 
 @pytest.mark.parametrize(

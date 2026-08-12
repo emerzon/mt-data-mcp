@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal, InvalidOperation
 from numbers import Real
 from typing import Any, Dict, Optional
 
@@ -37,6 +38,32 @@ def tick_epoch(tick: Any) -> Optional[float]:
     if time_msc is not None:
         return time_msc / 1000.0
     return _number(tick_value(tick, "time"))
+
+
+def canonical_quote_midpoint(bid: Any, ask: Any) -> Optional[float]:
+    """Return the exact decimal midpoint represented by broker quote strings.
+
+    Converting each quote through ``str`` first removes binary-float addition
+    artifacts while retaining legitimate half-tick precision.
+    """
+    try:
+        bid_decimal = Decimal(str(bid))
+        ask_decimal = Decimal(str(ask))
+        midpoint = (bid_decimal + ask_decimal) / Decimal(2)
+    except (InvalidOperation, TypeError, ValueError):
+        return None
+    if not midpoint.is_finite() or midpoint <= 0:
+        return None
+    return float(midpoint)
+
+
+def canonical_quote_spread(bid: Any, ask: Any) -> Optional[float]:
+    """Return ask minus bid without leaking binary subtraction artifacts."""
+    try:
+        spread = Decimal(str(ask)) - Decimal(str(bid))
+    except (InvalidOperation, TypeError, ValueError):
+        return None
+    return float(spread) if spread.is_finite() else None
 
 
 def compute_spread_metrics(
@@ -83,8 +110,10 @@ def compute_spread_metrics(
     if quality not in {"two_sided", "locked"}:
         return out
 
-    spread = float(ask_value - bid_value)
-    mid = float((ask_value + bid_value) / 2.0)
+    spread = canonical_quote_spread(bid_value, ask_value)
+    mid = canonical_quote_midpoint(bid_value, ask_value)
+    if spread is None or mid is None:
+        return out
     point_value = _positive(point)
     pip_points = _positive(points_per_pip)
     tick_size_value = _positive(tick_size)

@@ -14,13 +14,32 @@ from ..shared.schema import (
     normalize_required_symbol,
     validate_complete_time_window,
 )
+from ..utils.utils import _parse_end_datetime, _parse_start_datetime
+
+
+def _validate_ordered_utc_window(start: Optional[str], end: Optional[str]) -> None:
+    validate_complete_time_window(start, end)
+    if not start or not end:
+        return
+    parsed_start = _parse_start_datetime(start)
+    parsed_end = _parse_end_datetime(end)
+    if parsed_start is None or parsed_end is None:
+        raise ValueError(
+            "start and end must be parseable UTC datetimes, for example "
+            "2026-08-12T10:00:00Z and 2026-08-12T11:00:00Z"
+        )
+    if parsed_start >= parsed_end:
+        raise ValueError(
+            "start must be earlier than end (UTC), for example "
+            "start=2026-08-12T10:00:00Z end=2026-08-12T11:00:00Z"
+        )
 
 
 class MarketMicrostructureRequest(BaseModel):
     symbol: str
     start: Optional[str] = None
     end: Optional[str] = None
-    minutes_back: int = 60
+    minutes_back: int = Field(60, gt=0)
     max_ticks: int = Field(10_000, ge=20, le=50_000)
     bucket_seconds: int = Field(60, ge=1, le=86_400)
     detail: DetailLiteral = "compact"
@@ -32,7 +51,7 @@ class MarketMicrostructureRequest(BaseModel):
 
     @model_validator(mode="after")
     def _window(self) -> "MarketMicrostructureRequest":
-        validate_complete_time_window(self.start, self.end)
+        _validate_ordered_utc_window(self.start, self.end)
         return self
 
 
@@ -75,7 +94,7 @@ class TradeExecutionQualityRequest(BaseModel):
 
     @model_validator(mode="after")
     def _window(self) -> "TradeExecutionQualityRequest":
-        validate_complete_time_window(self.start, self.end)
+        _validate_ordered_utc_window(self.start, self.end)
         return self
 
 

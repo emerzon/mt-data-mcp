@@ -834,7 +834,7 @@ def market_ticker(  # noqa: C901
                 "price_currency": price_currency,
                 "bid": _round_market_ticker_value(bid, digits=digits),
                 "ask": _round_market_ticker_value(ask, digits=digits),
-                "mid": float(mid),
+                "mid": _round_market_ticker_value(mid, digits=digits + 1),
                 "last": _round_market_ticker_value(last, digits=digits),
                 "spread": spread_abs,
                 "spread_points": spread_points,

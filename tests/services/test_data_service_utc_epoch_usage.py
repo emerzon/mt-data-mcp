@@ -3,6 +3,7 @@ from __future__ import annotations
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 
@@ -80,6 +81,72 @@ def test_trim_df_to_target_includes_bar_opening_at_equal_bounds() -> None:
     assert out["__epoch"].tolist() == [epoch]
 
 
+def test_trim_daily_date_only_range_uses_broker_session_date() -> None:
+    df = pd.DataFrame(
+        {
+            "__epoch": [
+                pd.Timestamp("2026-08-09 21:00", tz="UTC").timestamp(),
+                pd.Timestamp("2026-08-10 21:00", tz="UTC").timestamp(),
+                pd.Timestamp("2026-08-11 21:00", tz="UTC").timestamp(),
+            ],
+            "close": [1.0, 2.0, 3.0],
+        }
+    )
+
+    with patch.object(
+        data_service.mt5_config,
+        "get_server_tz",
+        return_value=ZoneInfo("Europe/Nicosia"),
+    ):
+        out = data_service._trim_df_to_target(
+            df,
+            "2026-08-11",
+            "2026-08-11",
+            candles=100,
+            timeframe="D1",
+        )
+
+    assert out["close"].tolist() == [2.0]
+
+
+def test_trim_weekly_and_monthly_date_only_ranges_match_containing_period() -> None:
+    broker_tz = ZoneInfo("Europe/Nicosia")
+    cases = [
+        (
+            "W1",
+            ["2026-06-27 21:00", "2026-07-04 21:00"],
+            "2026-07-01",
+            1.0,
+        ),
+        (
+            "MN1",
+            ["2026-06-30 21:00", "2026-07-31 21:00"],
+            "2026-07-15",
+            1.0,
+        ),
+    ]
+    for timeframe, timestamps, requested_date, expected_close in cases:
+        df = pd.DataFrame(
+            {
+                "__epoch": [
+                    pd.Timestamp(value, tz="UTC").timestamp() for value in timestamps
+                ],
+                "close": [1.0, 2.0],
+            }
+        )
+        with patch.object(
+            data_service.mt5_config, "get_server_tz", return_value=broker_tz
+        ):
+            out = data_service._trim_df_to_target(
+                df,
+                requested_date,
+                requested_date,
+                candles=100,
+                timeframe=timeframe,
+            )
+        assert out["close"].tolist() == [expected_close]
+
+
 def test_fetch_rates_with_warmup_uses_utc_epoch_seconds_for_end_ts() -> None:
     rates = [{"time": 1000.0}]
     with patch("mtdata.services.data_service._parse_start_datetime") as mock_parse, patch(
@@ -101,6 +168,37 @@ def test_fetch_rates_with_warmup_uses_utc_epoch_seconds_for_end_ts() -> None:
     assert out_err is None
     assert out_rates == rates
     assert mock_epoch.called
+
+
+def test_weekly_range_safety_budget_does_not_overflow_datetime() -> None:
+    rates = [{"time": 1_700_000_000.0}]
+    captured = {}
+
+    def _copy_rates(_symbol, _timeframe, start, end):
+        captured.update(start=start, end=end)
+        return rates
+
+    with patch(
+        "mtdata.services.data_service._mt5_copy_rates_range",
+        side_effect=_copy_rates,
+    ):
+        out_rates, out_err = data_service._fetch_rates_with_warmup(
+            symbol="EURUSD",
+            mt5_timeframe=1,
+            timeframe="W1",
+            candles=100_000,
+            warmup_bars=0,
+            start_datetime="2026-07-01",
+            end_datetime="2026-08-16",
+            include_incomplete=True,
+            retry=False,
+            sanity_check=False,
+        )
+
+    assert out_err is None
+    assert out_rates == rates
+    assert captured["start"].year == 2026
+    assert captured["start"] < captured["end"]
 
 
 def test_fetch_candles_exposes_time_normalization_metadata() -> None:

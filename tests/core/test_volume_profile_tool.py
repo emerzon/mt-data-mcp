@@ -153,6 +153,9 @@ def test_compute_volume_profile_payload_auto_ticks_records_reason(monkeypatch):
 
 
 def test_compute_volume_profile_payload_exposes_fetch_freshness_and_standard_units(monkeypatch):
+    monkeypatch.setattr(
+        vp, "_utc_now_naive", lambda: vp.datetime(2026, 6, 2, 12, 1)
+    )
     monkeypatch.setattr(vp, "create_mt5_gateway", lambda **_: SimpleNamespace(ensure_connection=lambda: None))
     monkeypatch.setattr(
         vp,
@@ -289,6 +292,8 @@ def test_compute_volume_profile_payload_uses_explicit_max_ticks(monkeypatch):
 
     result = vp.compute_volume_profile_payload(
         symbol="EURUSD",
+        start="2026-01-01",
+        end="2026-01-01",
         source="ticks",
         max_ticks=5000,
         bucket_size=0.0001,
@@ -300,6 +305,37 @@ def test_compute_volume_profile_payload_uses_explicit_max_ticks(monkeypatch):
         "end": "2026-01-01T00:00:00.000Z",
     }
     assert captured["limit"] == 5000
+    assert captured["start"] is None
+
+
+def test_fetch_tick_rows_retains_latest_rows_in_bounded_window(monkeypatch):
+    captured = {}
+
+    def fake_fetch_ticks(**kwargs):
+        captured.update(kwargs)
+        return {
+            "limit_reached": True,
+            "data": [
+                {"time": "2026-01-01T18:00:00Z", "bid": 1.0, "ask": 1.1},
+                {"time": "2026-01-01T20:00:00Z", "bid": 1.1, "ask": 1.2},
+                {"time": "2026-01-01T23:59:00Z", "bid": 1.2, "ask": 1.3},
+            ],
+        }
+
+    monkeypatch.setattr(vp, "fetch_ticks", fake_fetch_ticks)
+
+    result = vp._fetch_tick_rows(
+        symbol="EURUSD",
+        start="2026-01-01T00:00:00Z",
+        end="2026-01-01T23:59:59Z",
+        max_ticks=3,
+    )
+
+    assert captured["start"] is None
+    assert captured["end"] == "2026-01-01T23:59:59Z"
+    assert result["rows"][-1]["time"] == "2026-01-01T23:59:00Z"
+    assert result["diagnostics"]["retained"] == "latest"
+    assert result["diagnostics"]["tick_limit_reached"] is True
 
 
 def test_default_profile_window_is_bounded_to_24_hours(monkeypatch):
@@ -344,6 +380,8 @@ def test_tick_cap_is_disclosed_as_truncation(monkeypatch):
 
     result = vp.compute_volume_profile_payload(
         symbol="EURUSD",
+        start="2026-01-01",
+        end="2026-01-01",
         source="ticks",
         bucket_size=0.1,
         detail="compact",
@@ -499,7 +537,8 @@ def test_compute_volume_profile_payload_derives_window_from_timeframe_limit(monk
         "start": "2026-01-01T00:00:00Z",
         "end": "2026-01-02T00:00:00Z",
     }
-    assert captured["start"] == "2026-01-01 00:00:00"
+    assert captured["start"] is None
+    assert captured["end"] == "2026-01-02 00:00:00"
     assert captured["end"] == "2026-01-02 00:00:00"
 
 
@@ -545,7 +584,8 @@ def test_compute_volume_profile_payload_defaults_timeframe_limit(monkeypatch):
         "start": "2025-12-24T16:00:00Z",
         "end": "2026-01-02T00:00:00Z",
     }
-    assert captured["start"] == "2025-12-24 16:00:00"
+    assert captured["start"] is None
+    assert captured["end"] == "2026-01-02 00:00:00"
     assert captured["end"] == "2026-01-02 00:00:00"
 
 

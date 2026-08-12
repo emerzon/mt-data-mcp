@@ -215,6 +215,33 @@ def test_microstructure_rejects_unknown_symbol_before_tick_fetch() -> None:
     gateway.copy_ticks_range.assert_not_called()
 
 
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"minutes_back": 0},
+        {
+            "start": "2026-08-12T10:00:00Z",
+            "end": "2026-08-12T10:00:00Z",
+        },
+        {
+            "start": "2026-08-12T11:00:00Z",
+            "end": "2026-08-12T10:00:00Z",
+        },
+    ],
+)
+def test_microstructure_request_rejects_invalid_windows(kwargs) -> None:
+    with pytest.raises(ValueError):
+        MarketMicrostructureRequest(symbol="EURUSD", **kwargs)
+
+
+def test_execution_quality_request_rejects_unordered_window() -> None:
+    with pytest.raises(ValueError, match="start must be earlier"):
+        TradeExecutionQualityRequest(
+            start="2026-08-12T10:00:00Z",
+            end="2026-08-12T10:00:00Z",
+        )
+
+
 def test_microstructure_compact_output_omits_research_events() -> None:
     gateway = FakeGateway()
     gateway.tick_rows = _ticks(real_volume=True)
@@ -243,8 +270,34 @@ def test_microstructure_compact_output_omits_research_events() -> None:
         "locked_quote_ticks",
         "latest_spread_quality",
         "truncated",
+        "retained",
+        "requested_start",
+        "requested_end",
+        "requested_duration_seconds",
+        "observed_duration_seconds",
+        "temporal_coverage_pct",
     }
     assert any("broker's tick feed" in warning for warning in result["warnings"])
+
+
+def test_microstructure_compact_discloses_latest_tail_coverage() -> None:
+    gateway = FakeGateway()
+    gateway.tick_rows = _ticks(count=60, real_volume=True)
+
+    result = analyze_microstructure(
+        MarketMicrostructureRequest(
+            symbol="EURUSD", minutes_back=5, max_ticks=20
+        ),
+        gateway,
+    )
+
+    quality = result["data_quality"]
+    assert quality["truncated"] is True
+    assert quality["retained"] == "latest"
+    assert quality["requested_duration_seconds"] == 300.0
+    assert quality["observed_duration_seconds"] == pytest.approx(19.0)
+    assert quality["temporal_coverage_pct"] == pytest.approx(19.0 / 3.0)
+    assert any("retained latest-tick tail" in item for item in result["warnings"])
 
 
 def test_microstructure_compact_distinguishes_latest_from_window_spread() -> None:
