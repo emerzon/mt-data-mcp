@@ -978,6 +978,12 @@ class TestCorrelationMatrix:
         assert result["success"] is True
         assert result["meta"]["request"]["symbols_input"] == ["BTCUSD"]
         assert result["meta"]["request"]["symbols_expanded"] == ["BTCUSD", "ETHUSD"]
+        assert result["context"]["requested_symbols"] == ["BTCUSD"]
+        assert result["context"]["resolved_symbols"] == ["BTCUSD", "ETHUSD"]
+        assert result["context"]["symbol_expansion"] == {
+            "mode": "mt5_group",
+            "group": "Crypto",
+        }
 
     @patch("mtdata.core.causal.TIMEFRAME_MAP", {"H1": 1})
     @patch("mtdata.core.causal._fetch_series")
@@ -1083,6 +1089,9 @@ class TestCorrelationMatrix:
         )
 
         assert result["success"] is True
+        assert result["context"]["requested_symbols"] == ["A", "B", "C"]
+        assert result["context"]["resolved_symbols"] == ["A", "B", "C"]
+        assert result["context"]["symbol_expansion"] == {"mode": "none"}
         assert "matrix" not in result
         assert "legends" not in result["meta"]
         assert result["meta"]["request"]["detail"] == "compact"

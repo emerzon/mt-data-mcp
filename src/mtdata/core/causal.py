@@ -2632,6 +2632,16 @@ def correlation_matrix(  # noqa: C901
         )
         context = {
             **_pairwise_analysis_context(rows, timeframe=timeframe),
+            "requested_symbols": list(meta.get("symbols_input") or []),
+            "resolved_symbols": list(symbols_used),
+            "symbol_expansion": (
+                {
+                    "mode": "explicit_group" if group is not None else "mt5_group",
+                    "group": group_hint,
+                }
+                if meta.get("symbols_expanded")
+                else {"mode": "none"}
+            ),
             "limit": output_limit,
             "window_bars": int(window_bars),
             "start": start,
