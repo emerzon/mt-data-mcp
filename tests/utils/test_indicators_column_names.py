@@ -74,6 +74,25 @@ def test_apply_ta_indicators_rejects_unknown_indicators_before_partial_apply() -
     assert list(df.columns) == ["close"]
 
 
+@pytest.mark.parametrize("ti_spec", ["rsi(0)", "sma(-1)"])
+def test_apply_ta_indicators_rejects_nonpositive_periods(ti_spec: str) -> None:
+    df = _sample_df()
+
+    with pytest.raises(ValueError, match="must be greater than 0"):
+        _apply_ta_indicators(df, ti_spec)
+
+    assert list(df.columns) == ["close"]
+
+
+def test_apply_ta_indicators_rejects_period_beyond_available_history() -> None:
+    df = _sample_df(rows=20)
+
+    with pytest.raises(ValueError, match="only 20 input rows are available"):
+        _apply_ta_indicators(df, "rsi(100000)")
+
+    assert list(df.columns) == ["close"]
+
+
 def test_apply_ta_indicators_restores_original_index_on_value_error() -> None:
     df = pd.DataFrame(
         {

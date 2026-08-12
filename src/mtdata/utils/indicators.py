@@ -2,6 +2,7 @@ import copy
 import importlib
 import inspect
 import logging
+import math
 import pydoc
 import re
 from functools import lru_cache
@@ -34,6 +35,23 @@ _TA_INDICATOR_CATEGORIES = (
 logger = logging.getLogger(__name__)
 _DEFAULT_TOKEN_RE = r"(?:'[^']*'|\"[^\"]*\"|True|False|None|null|[+-]?\d+(?:\.\d+)?|[A-Za-z_][A-Za-z0-9_]*)"
 _DEFAULT_MISSING = object()
+_TA_PERIOD_PARAMETER_NAMES = frozenset(
+    {
+        "d",
+        "drift",
+        "fast",
+        "k",
+        "length",
+        "lookback",
+        "period",
+        "signal",
+        "slow",
+        "smooth",
+        "smooth_k",
+        "timeperiod",
+        "window",
+    }
+)
 
 
 def _normalize_ta_indicator_name(name: str) -> str:
@@ -488,6 +506,33 @@ def _broker_session_vwap(
     return out
 
 
+def _validate_ta_indicator_parameters(
+    indicator: str,
+    values: Dict[str, Any],
+    *,
+    available_rows: int,
+) -> None:
+    """Reject invalid or impossible explicit rolling-window parameters."""
+    for name, raw_value in values.items():
+        if str(name).lower() not in _TA_PERIOD_PARAMETER_NAMES:
+            continue
+        try:
+            numeric = float(raw_value)
+        except (TypeError, ValueError, OverflowError):
+            continue
+        if not math.isfinite(numeric) or numeric <= 0:
+            raise ValueError(
+                f"Indicator '{indicator}' parameter '{name}' must be greater than 0; "
+                f"received {raw_value!r}."
+            )
+        if numeric > available_rows:
+            raise ValueError(
+                f"Indicator '{indicator}' parameter '{name}' requests {raw_value} bars, "
+                f"but only {available_rows} input rows are available. Request more history "
+                "or use a shorter period."
+            )
+
+
 def _apply_ta_indicators(df: pd.DataFrame, ti_spec: str) -> List[str]:  # noqa: C901
     """Apply indicators specified by ti_spec to df in-place, return list of added column names."""
     added_cols: List[str] = []
@@ -577,6 +622,16 @@ def _apply_ta_indicators(df: pd.DataFrame, ti_spec: str) -> List[str]:  # noqa: 
                     # Use provided arg in order
                     call_kwargs[pname] = args[ai]
                     ai += 1
+
+                _validate_ta_indicator_parameters(
+                    lname,
+                    {
+                        key: value
+                        for key, value in call_kwargs.items()
+                        if key not in series_inputs
+                    },
+                    available_rows=len(df),
+                )
 
                 # Call once with the signature-derived argument mapping. Retrying with
                 # different bindings can silently change indicator semantics.
