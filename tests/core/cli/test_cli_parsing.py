@@ -1293,6 +1293,16 @@ class TestResolveParamKwargs:
         assert "labeled entries to calculate" in lookback_kwargs["help"]
         assert "lookback plus horizon" in lookback_kwargs["help"]
 
+    def test_labels_triple_barrier_barriers_help_documents_json_and_units(self):
+        barriers_kwargs, _ = _resolve_param_kwargs(
+            {"name": "barriers", "type": dict, "required": True, "default": None},
+            None,
+            cmd_name="labels_triple_barrier",
+        )
+
+        assert '"unit":"pct"' in barriers_kwargs["help"]
+        assert "price values are absolute levels" in barriers_kwargs["help"]
+
     def test_patterns_engine_help_names_mode_scope(self):
         kwargs, _ = _resolve_param_kwargs(
             {"name": "engine", "type": str, "required": False, "default": None},

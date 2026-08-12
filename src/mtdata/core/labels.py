@@ -336,9 +336,10 @@ def labels_triple_barrier(  # noqa: C901
 ) -> Dict[str, Any]:
     """Label each bar with triple-barrier outcomes using future path up to `horizon` bars.
 
-    `barriers` contains a take-profit/stop-loss pair in price, percentage-point,
-    or trade-tick units. For example, `{unit: "pct", take_profit: 0.5,
-    stop_loss: 0.5}` uses half-percent distances.
+    `barriers` contains a take-profit/stop-loss pair. Pass JSON such as
+    `{"unit":"pct","take_profit":0.5,"stop_loss":0.5}` for half-percent
+    distances. `pct` and `ticks` are distances from entry; `price` values are
+    absolute instrument price levels (for example TP 1.10 and SL 1.08).
 
     label_on='high_low' considers raw intrabar extremes for barrier hits, even
     when denoise changes the close used to anchor barriers. Real observed price

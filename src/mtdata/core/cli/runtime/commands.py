@@ -195,6 +195,20 @@ def friendly_validation_error(exc: ValidationError, *, cmd_name: str) -> str:
                 "\"strategy\":\"ema_cross\"}]'. Use type=forecast_threshold "
                 "with a method field for forecast candidates."
             )
+        if cmd_name == "labels_triple_barrier" and loc.split(".", 1)[0] in {
+            "barriers",
+            "unit",
+            "take_profit",
+            "stop_loss",
+            "method",
+        }:
+            return (
+                "barriers must be a JSON object with unit, take_profit, and "
+                "stop_loss. Example: "
+                "'{\"unit\":\"pct\",\"take_profit\":0.5,"
+                "\"stop_loss\":0.5}'. unit must be price, pct, or ticks; "
+                "price values are absolute levels and pct/ticks are distances."
+            )
         if "indicators" in loc and "params" in loc and any(
             marker in msg.lower()
             for marker in ("list", "dict", "dictionary", "mapping", "valid")
@@ -475,6 +489,22 @@ def create_command_function(  # noqa: C901
                         arg_value = merge_dict(arg_value, set_overrides.get(param_name))
                     else:
                         arg_value = set_overrides.get(param_name)
+
+                if _is_model_type(base_type) and isinstance(arg_value, dict):
+                    try:
+                        validator = getattr(base_type, "model_validate", None)
+                        arg_value = (
+                            validator(arg_value)
+                            if callable(validator)
+                            else base_type.parse_obj(arg_value)
+                        )
+                    except ValidationError as exc:
+                        render_cli_result(
+                            _build_cli_error(_friendly_validation_error(exc)),
+                            args=args,
+                            cmd_name=cmd_name,
+                        )
+                        return 1
 
             if param["required"] and arg_value in (None, ""):
                 missing_required.append(param_name)

@@ -244,6 +244,11 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
         "Number of labeled entries to calculate; the tool fetches lookback plus "
         "horizon bars."
     ),
+    ("labels_triple_barrier", "barriers"): (
+        "Required JSON barrier pair. Example: "
+        "'{\"unit\":\"pct\",\"take_profit\":0.5,\"stop_loss\":0.5}'. "
+        "pct/ticks are distances from entry; price values are absolute levels."
+    ),
     ("market_scan", "limit"): "Max matching symbols to return.",
     ("market_depth_fetch", "require_dom"): "Fail if DOM is unavailable instead of falling back to a quote snapshot.",
     ("patterns_detect", "limit"): (

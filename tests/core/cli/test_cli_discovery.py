@@ -25,6 +25,7 @@ from mtdata.core.trading.requests import (
     TradeStressTestRequest,
 )
 from mtdata.forecast.requests import ForecastGenerateRequest
+from mtdata.shared.schema import BarrierPairSpec
 
 # ---------------------------------------------------------------------------
 # Fixture: ensure the cli module is importable with heavy deps mocked
@@ -975,6 +976,34 @@ class TestCreateCommandFunction:
 
         assert cmd_fn(args) == 1
         assert "shocks must be a JSON object mapping symbols" in capsys.readouterr().out
+        mock_fn.assert_not_called()
+
+    def test_labels_invalid_barrier_has_json_remediation(self, capsys):
+        mock_fn = MagicMock(return_value={"ok": True})
+        func_info = {
+            "func": mock_fn,
+            "params": [
+                {
+                    "name": "barriers",
+                    "type": BarrierPairSpec,
+                    "required": True,
+                    "default": None,
+                },
+            ],
+        }
+        cmd_fn = create_command_function(func_info, cmd_name="labels_triple_barrier")
+        args = argparse.Namespace(
+            barriers="0.1,0.1",
+            barriers_params=None,
+            set_overrides=None,
+            json=False,
+            verbose=False,
+        )
+
+        assert cmd_fn(args) == 1
+        output = capsys.readouterr().out
+        assert "barriers must be a JSON object" in output
+        assert "unit" in output and "pct" in output
         mock_fn.assert_not_called()
 
     def test_invalid_simplify_method_returns_descriptive_validation_error(self, capsys):

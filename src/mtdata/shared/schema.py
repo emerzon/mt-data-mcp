@@ -48,15 +48,24 @@ class BarrierPairSpec(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     unit: Literal["price", "pct", "ticks"] = Field(
-        description="Barrier unit: absolute price, percentage points, or trade ticks."
+        description=(
+            "Barrier unit: price means absolute instrument price levels; pct and "
+            "ticks mean positive distances from the entry price."
+        )
     )
     take_profit: float = Field(
         gt=0.0,
-        description="Positive take-profit price level or distance in the selected unit.",
+        description=(
+            "Positive absolute take-profit level when unit=price, otherwise a "
+            "positive distance from entry in percentage points or trade ticks."
+        ),
     )
     stop_loss: float = Field(
         gt=0.0,
-        description="Positive stop-loss price level or distance in the selected unit.",
+        description=(
+            "Positive absolute stop-loss level when unit=price, otherwise a "
+            "positive distance from entry in percentage points or trade ticks."
+        ),
     )
 
     def as_legacy_kwargs(self) -> Dict[str, float]:
