@@ -233,6 +233,10 @@ def _apply_options_detail(
             {
                 "price": "premium_per_underlying_unit",
                 "delta": "premium_change_per_underlying_price_unit",
+                "gamma": (
+                    "premium_change_per_squared_underlying_price_unit"
+                ),
+                "vega": "premium_change_per_1.0_decimal_volatility",
             },
         )
         pricing_inputs = _barrier_pricing_inputs(out)

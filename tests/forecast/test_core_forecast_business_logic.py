@@ -3953,6 +3953,8 @@ def test_options_tools_support_compact_and_full_detail(monkeypatch):
     assert compact_price["units"] == {
         "price": "premium_per_underlying_unit",
         "delta": "premium_change_per_underlying_price_unit",
+        "gamma": "premium_change_per_squared_underlying_price_unit",
+        "vega": "premium_change_per_1.0_decimal_volatility",
     }
     assert compact_price["pricing_inputs"] == {
         "risk_free_rate": 0.02,
@@ -3965,6 +3967,12 @@ def test_options_tools_support_compact_and_full_detail(monkeypatch):
     full_price = raw_price(100, 105, 120, 30, detail="full")
     assert full_price["delta"] == 0.4
     assert full_price["units"]["price"] == "premium_per_underlying_unit"
+    assert full_price["units"]["gamma"] == (
+        "premium_change_per_squared_underlying_price_unit"
+    )
+    assert full_price["units"]["vega"] == (
+        "premium_change_per_1.0_decimal_volatility"
+    )
     assert full_price["params_used"]["spot"] == 100
 
     compact_cal = raw_cal("AAPL", detail="compact")

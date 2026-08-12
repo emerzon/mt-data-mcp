@@ -114,7 +114,9 @@ mtdata-cli options_barrier_price \
 | `down_in` | Option activates when price falls through barrier |
 | `down_out` | Option deactivates when price falls through barrier |
 
-**Returns:** Option price and Greeks (delta, gamma, vega).
+**Returns:** Option price and Greeks (delta, gamma, vega). Gamma is quoted per
+squared underlying-price unit. Vega is quoted per `1.0` change in decimal
+volatility, so a one-volatility-point (`0.01`) scenario uses `vega * 0.01`.
 
 ---
 
