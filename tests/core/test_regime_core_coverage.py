@@ -433,6 +433,19 @@ _DENOISE = "mtdata.core.regime.api.resolve_denoise_base_col"
 _FMT = "mtdata.core.regime.api._format_time_minimal"
 
 
+def test_regime_rejects_future_range_before_connection() -> None:
+    with patch.object(regime_mod, "_regime_connection_error") as connection:
+        result = _get_regime_detect()(
+            "EURUSD",
+            start="2100-01-01",
+            end="2100-01-02",
+        )
+
+    assert result["success"] is False
+    assert result["error_code"] == "future_date_range"
+    connection.assert_not_called()
+
+
 class TestRegimeDetectBOCPD:
     @patch(_FMT, side_effect=_time_fmt_stub)
     @patch(_DENOISE, return_value="close")

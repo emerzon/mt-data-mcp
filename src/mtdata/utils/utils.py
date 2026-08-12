@@ -444,6 +444,53 @@ def _parse_end_datetime(value: str) -> Optional[datetime]:
     return parsed
 
 
+def validate_historical_range(
+    start: Optional[str],
+    end: Optional[str],
+    *,
+    now: Optional[datetime] = None,
+) -> Optional[Dict[str, Any]]:
+    """Return a stable validation error for invalid or future-only history bounds."""
+    start_dt = _parse_start_datetime(start) if start else None
+    end_dt = _parse_end_datetime(end) if end else None
+    if start and start_dt is None:
+        return {
+            "success": False,
+            "error": "Invalid start time.",
+            "error_code": "invalid_date_range",
+        }
+    if end and end_dt is None:
+        return {
+            "success": False,
+            "error": "Invalid end time.",
+            "error_code": "invalid_date_range",
+        }
+    if start_dt is not None and end_dt is not None and start_dt > end_dt:
+        return {
+            "success": False,
+            "error": "start must be before or equal to end.",
+            "error_code": "invalid_date_range",
+        }
+    now_utc = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
+    now_naive = now_utc.replace(tzinfo=None)
+    if start_dt is not None and start_dt > now_naive:
+        return {
+            "success": False,
+            "error": (
+                f"start datetime {start_dt.isoformat()}Z is in the future; "
+                "no historical data is available for future dates."
+            ),
+            "error_code": "future_date_range",
+            "details": {
+                "resolved_start": f"{start_dt.isoformat()}Z",
+                "resolved_end": f"{end_dt.isoformat()}Z" if end_dt else None,
+                "current_time": now_utc.isoformat(),
+            },
+            "remediation": "Choose a start datetime at or before the current time.",
+        }
+    return None
+
+
 def _utc_epoch_seconds(dt: datetime) -> float:
     """Convert a datetime to UTC epoch seconds, treating naive values as UTC.
 

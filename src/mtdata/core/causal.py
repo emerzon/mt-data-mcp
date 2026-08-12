@@ -32,7 +32,11 @@ from ..utils.symbol import (
     _normalize_group_path_query,
 )
 from ..utils.time import bar_close_epoch
-from ..utils.utils import _parse_end_datetime, _parse_start_datetime
+from ..utils.utils import (
+    _parse_end_datetime,
+    _parse_start_datetime,
+    validate_historical_range,
+)
 from ._mcp_instance import mcp
 from .execution_logging import run_logged_operation
 from .mt5_gateway import create_mt5_gateway, mt5_connection_error
@@ -377,6 +381,10 @@ def _resolve_history_window(
     start: Optional[str],
     end: Optional[str],
 ) -> Tuple[Optional[datetime], Optional[datetime], Optional[str]]:
+    range_error = validate_historical_range(start, end)
+    if range_error is not None:
+        code = str(range_error.get("error_code") or "invalid_date_range")
+        return None, None, f"{code}: {range_error['error']}"
     start_dt = _parse_start_datetime(start) if start else None
     if start and start_dt is None:
         return None, None, "Invalid start time."
@@ -388,6 +396,14 @@ def _resolve_history_window(
     if start_dt is not None and end_dt is not None and start_dt > end_dt:
         return None, None, "start must be before or equal to end."
     return start_dt, end_dt, None
+
+
+def _history_fetch_error_code(errors: List[str]) -> str:
+    return (
+        "future_date_range"
+        if any(str(error).startswith("future_date_range:") for error in errors)
+        else "data_fetch_failed"
+    )
 
 
 def _fetch_series(
@@ -1455,6 +1471,27 @@ def _causal_error(
     return out
 
 
+def _causal_history_range_error(
+    start: Optional[str],
+    end: Optional[str],
+    *,
+    meta: Dict[str, Any],
+) -> Optional[Dict[str, Any]]:
+    range_error = validate_historical_range(start, end)
+    if range_error is None:
+        return None
+    out = _causal_error(
+        str(range_error["error"]),
+        code=str(range_error["error_code"]),
+        meta=meta,
+    )
+    if range_error.get("details") is not None:
+        out["details"] = range_error["details"]
+    if range_error.get("remediation"):
+        out["remediation"] = range_error["remediation"]
+    return out
+
+
 def _causal_contract_meta(
     meta: Dict[str, Any],
     *,
@@ -1685,6 +1722,9 @@ def causal_discover_signals(  # noqa: C901
                 code="invalid_input",
                 meta=meta,
             )
+        range_error = _causal_history_range_error(start, end, meta=meta)
+        if range_error is not None:
+            return range_error
         connection_error = _causal_connection_error()
         if connection_error is not None:
             return _causal_error(
@@ -1822,7 +1862,7 @@ def causal_discover_signals(  # noqa: C901
         if errors and not series_map:
             return _causal_error(
                 errors[0],
-                code="data_fetch_failed",
+                code=_history_fetch_error_code(errors),
                 meta=meta,
                 details=errors,
             )
@@ -2291,6 +2331,9 @@ def correlation_matrix(  # noqa: C901
             "include_incomplete": bool(include_incomplete),
             "detail": str(detail or "compact"),
         }
+        range_error = _causal_history_range_error(start, end, meta=meta)
+        if range_error is not None:
+            return range_error
         connection_error = _causal_connection_error()
         if connection_error is not None:
             return _causal_error(
@@ -2457,7 +2500,7 @@ def correlation_matrix(  # noqa: C901
         if errors and not series_map:
             return _causal_error(
                 errors[0],
-                code="data_fetch_failed",
+                code=_history_fetch_error_code(errors),
                 meta=meta,
                 details=errors,
             )
@@ -2708,6 +2751,9 @@ def cross_correlation(  # noqa: C901
             "include_incomplete": bool(include_incomplete),
             "detail": detail,
         }
+        range_error = _causal_history_range_error(start, end, meta=meta)
+        if range_error is not None:
+            return range_error
         connection_error = _causal_connection_error()
         if connection_error is not None:
             return _causal_error(
@@ -2782,7 +2828,7 @@ def cross_correlation(  # noqa: C901
         if errors:
             return _causal_error(
                 errors[0],
-                code="data_fetch_failed",
+                code=_history_fetch_error_code(errors),
                 meta=meta,
                 details=errors,
             )
@@ -2967,6 +3013,9 @@ def cointegration_test(  # noqa: C901
             "include_incomplete": bool(include_incomplete),
             "detail": str(detail or "compact"),
         }
+        range_error = _causal_history_range_error(start, end, meta=meta)
+        if range_error is not None:
+            return range_error
         connection_error = _causal_connection_error()
         if connection_error is not None:
             return _causal_error(
@@ -3178,7 +3227,7 @@ def cointegration_test(  # noqa: C901
         if errors and not series_map:
             return _causal_error(
                 errors[0],
-                code="data_fetch_failed",
+                code=_history_fetch_error_code(errors),
                 meta=meta,
                 warnings=warnings_out,
                 details=errors,

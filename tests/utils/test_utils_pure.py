@@ -23,6 +23,7 @@ from mtdata.utils.utils import (
     _utc_epoch_seconds,
     align_finite,
     to_float_np,
+    validate_historical_range,
 )
 
 
@@ -307,6 +308,17 @@ class TestParseEndDatetime:
         assert _parse_end_datetime("2023-01-15 12:34:56") == datetime(
             2023, 1, 15, 12, 34, 56
         )
+
+
+def test_validate_historical_range_rejects_future_start() -> None:
+    error = validate_historical_range(
+        "2030-01-01",
+        "2030-01-02",
+        now=datetime(2026, 8, 11, tzinfo=timezone.utc),
+    )
+
+    assert error["error_code"] == "future_date_range"
+    assert "no historical data" in error["error"]
 
 
 class TestFormatNumericRowsFromDf:

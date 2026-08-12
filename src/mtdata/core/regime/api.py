@@ -16,6 +16,7 @@ from ...utils.denoise import resolve_denoise_base_col
 from ...utils.mt5 import MT5ConnectionError, ensure_mt5_connection_or_raise
 from ...utils.regime_heuristics import infer_market_regime
 from ...utils.time import _format_time_minimal
+from ...utils.utils import validate_historical_range
 from .. import features as _features_module
 from .._mcp_instance import mcp
 from ..execution_logging import (
@@ -1305,6 +1306,9 @@ def regime_detect(  # noqa: C901
                 return _finish(
                     {"error": f"{threshold_name} must be a probability between 0 and 1."}
                 )
+    range_error = validate_historical_range(start, end)
+    if range_error is not None:
+        return _finish(range_error)
     connection_error = _regime_connection_error()
     if connection_error is not None:
         return _finish(connection_error)

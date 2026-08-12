@@ -1,10 +1,27 @@
 from __future__ import annotations
 
+from unittest.mock import patch
+
+import mtdata.core.temporal as temporal_mod
 from mtdata.core.temporal import (
     _compact_temporal_payload,
     _compact_temporal_stats,
     _parse_weekday,
 )
+
+
+def test_temporal_rejects_future_range_before_gateway_creation() -> None:
+    raw = temporal_mod.temporal_analyze
+    while hasattr(raw, "__wrapped__"):
+        raw = raw.__wrapped__
+
+    with patch.object(temporal_mod, "create_mt5_gateway") as gateway:
+        result = raw("EURUSD", start="2100-01-01", end="2100-01-02")
+
+    assert result["success"] is False
+    assert result["error_code"] == "future_date_range"
+    assert result["stage"] == "validate"
+    gateway.assert_not_called()
 
 
 def test_parse_weekday_numeric_modes_and_aliases() -> None:

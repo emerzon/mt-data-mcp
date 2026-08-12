@@ -6,6 +6,7 @@ from inspect import signature
 from unittest.mock import MagicMock, patch
 
 import numpy as np
+import pytest
 
 
 def _make_rate(open_=1.08, high=1.09, low=1.08, close=1.085, time_=1_700_000_000.0):
@@ -47,6 +48,15 @@ def _get_confluence_fn():
     return raw
 
 
+def _get_support_resistance_fn():
+    from mtdata.core.pivot import support_resistance_levels
+
+    raw = support_resistance_levels
+    while hasattr(raw, "__wrapped__"):
+        raw = raw.__wrapped__
+    return raw
+
+
 def _get_pivot_fn():
     from mtdata.core.pivot import pivot_compute_points
 
@@ -54,6 +64,16 @@ def _get_pivot_fn():
     while hasattr(raw, "__wrapped__"):
         raw = raw.__wrapped__
     return raw
+
+
+@pytest.mark.parametrize("tool", [_get_confluence_fn, _get_support_resistance_fn])
+def test_level_tools_reject_future_ranges_before_gateway(tool):
+    with patch("mtdata.core.pivot.create_mt5_gateway") as gateway:
+        result = tool()("EURUSD", start="2100-01-01", end="2100-01-02")
+
+    assert result["success"] is False
+    assert result["error_code"] == "future_date_range"
+    gateway.assert_not_called()
 
 
 @contextmanager

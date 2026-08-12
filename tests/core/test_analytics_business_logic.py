@@ -3,6 +3,7 @@ from __future__ import annotations
 import math
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 import numpy as np
 import pandas as pd
@@ -197,6 +198,20 @@ def test_microstructure_distinguishes_trade_volume_from_quote_proxy() -> None:
     assert result["units"]["spread_points"] == "broker_points"
     assert all("start" in item and "end" in item for item in result["liquidity_events"])
     assert all("start_epoch" not in item for item in result["liquidity_events"])
+
+
+def test_microstructure_rejects_unknown_symbol_before_tick_fetch() -> None:
+    gateway = FakeGateway()
+    gateway.symbol_info = lambda _symbol: None
+    gateway.copy_ticks_range = MagicMock()
+
+    result = analyze_microstructure(
+        MarketMicrostructureRequest(symbol="NOTREAL", minutes_back=5), gateway
+    )
+
+    assert result["error_code"] == "symbol_not_found"
+    assert result["related_tools"] == ["symbols_list"]
+    gateway.copy_ticks_range.assert_not_called()
 
 
 def test_microstructure_compact_output_omits_research_events() -> None:

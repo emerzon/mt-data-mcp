@@ -37,6 +37,7 @@ from ..utils.time import (
 from ..utils.utils import (
     _parse_end_datetime,
     _parse_start_datetime,
+    validate_historical_range,
 )
 from ._mcp_instance import mcp
 from .execution_logging import run_logged_operation
@@ -91,7 +92,11 @@ def _error_response(
     bars: Optional[int] = None,
     filters: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
-    payload: Dict[str, Any] = {"error": message, "stage": stage}
+    payload: Dict[str, Any] = {
+        "success": False,
+        "error": message,
+        "stage": stage,
+    }
     if context:
         payload["context"] = context
     if details is not None:
@@ -870,6 +875,19 @@ def temporal_analyze(  # noqa: C901
             context["min_bars"] = min_bars
         if limit is not None:
             context["limit"] = limit
+        range_error = validate_historical_range(start, end)
+        if range_error is not None:
+            context["error_code"] = range_error["error_code"]
+            if range_error.get("remediation"):
+                context["remediation"] = range_error["remediation"]
+            error_payload = _error_response(
+                str(range_error["error"]),
+                stage="validate",
+                context=context,
+                details=range_error.get("details"),
+            )
+            error_payload["error_code"] = range_error["error_code"]
+            return error_payload
         try:
             mt5_gateway = create_mt5_gateway(
                 adapter=mt5,

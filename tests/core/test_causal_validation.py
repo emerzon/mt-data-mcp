@@ -7,6 +7,30 @@ import pytest
 from mtdata.core import causal
 
 
+@pytest.mark.parametrize(
+    ("tool", "kwargs"),
+    [
+        (causal.causal_discover_signals, {"symbols": "EURUSD,GBPUSD"}),
+        (causal.correlation_matrix, {"symbols": "EURUSD,GBPUSD"}),
+        (causal.cross_correlation, {"symbols": "EURUSD,GBPUSD"}),
+        (causal.cointegration_test, {"symbols": "EURUSD,GBPUSD"}),
+    ],
+)
+def test_causal_tools_reject_future_ranges_before_connecting(tool, kwargs):
+    raw = tool
+    while hasattr(raw, "__wrapped__"):
+        raw = raw.__wrapped__
+
+    with patch.object(causal, "_causal_connection_error") as connect:
+        result = raw(start="2100-01-01", end="2100-01-02", **kwargs)
+
+    assert result["success"] is False
+    assert result["error_code"] == "future_date_range"
+    assert result["details"]["resolved_start"].startswith("2100-01-01")
+    assert "Choose a start datetime" in result["remediation"]
+    connect.assert_not_called()
+
+
 @pytest.mark.parametrize("significance", [0.0, 1.0, -0.1, 2.0, float("nan"), float("inf")])
 def test_causal_discovery_rejects_invalid_significance_before_connecting(significance):
     with patch.object(causal, "_causal_connection_error") as connect:

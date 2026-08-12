@@ -343,6 +343,20 @@ def _tick_frame(gateway: Any, symbol: str, start: datetime, end: datetime, max_t
 def analyze_microstructure(  # noqa: C901
     request: MarketMicrostructureRequest, gateway: Any
 ) -> Dict[str, Any]:
+    try:
+        symbol_info = gateway.symbol_info(request.symbol)
+    except Exception:
+        symbol_info = None
+    if symbol_info is None:
+        return {
+            "error": f"Symbol '{request.symbol}' was not found by MT5.",
+            "error_code": "symbol_not_found",
+            "symbol": request.symbol,
+            "remediation": (
+                "Use symbols_list to find the broker's exact symbol name and suffix."
+            ),
+            "related_tools": ["symbols_list"],
+        }
     start, end = _window(request.start, request.end, request.minutes_back)
     df, truncated = _tick_frame(gateway, request.symbol, start, end, request.max_ticks)
     completed_session_context = None
@@ -426,10 +440,6 @@ def analyze_microstructure(  # noqa: C901
     q["mid_return"] = np.log(q["mid"]).diff()
     q["bid_revision"] = np.sign(q["bid"].diff())
     q["ask_revision"] = np.sign(q["ask"].diff())
-    try:
-        symbol_info = gateway.symbol_info(request.symbol)
-    except Exception:
-        symbol_info = None
     point = float(getattr(symbol_info, "point", 0.0) or 0.0)
     digits = int(getattr(symbol_info, "digits", 0) or 0)
     points_per_pip = forex_points_per_pip(
