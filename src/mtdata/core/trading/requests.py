@@ -5,7 +5,7 @@ from typing import Annotated, Any, Dict, Literal, Optional, Union
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from ...shared.schema import DetailLiteral, TimeframeLiteral
+from ...shared.schema import DetailLiteral, TimeframeLiteral, normalize_required_symbol
 from ...utils.barriers import normalize_trade_direction_alias
 from . import validation
 from .time import ExpirationValue
@@ -605,3 +605,8 @@ class TradeSessionContextRequest(BaseModel):
     symbol: str
     detail: DetailLiteral = "compact"
     include_account: bool = True
+
+    @field_validator("symbol", mode="before")
+    @classmethod
+    def _normalize_symbol(cls, value: Any) -> str:
+        return normalize_required_symbol(value)

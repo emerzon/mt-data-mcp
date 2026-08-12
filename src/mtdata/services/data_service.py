@@ -91,6 +91,7 @@ from ..utils.ohlcv import validate_and_clean_ohlcv_frame
 from ..utils.quote import (
     canonical_quote_midpoint,
     canonical_quote_spread,
+    resolve_quote_tick,
     tick_epoch,
 )
 from ..utils.quote import tick_value as _tick_field_value
@@ -2711,12 +2712,19 @@ def fetch_candles(  # noqa: C901
 def _live_tick_spread_reference(
     symbol: str,
 ) -> Tuple[Optional[float], Dict[str, Any]]:
+    now_epoch = time.time()
     try:
-        tick = mt5.symbol_info_tick(symbol)
+        raw_tick = mt5.symbol_info_tick(symbol)
     except Exception:
-        tick = None
-    bid = getattr(tick, "bid", None) if tick is not None else None
-    ask = getattr(tick, "ask", None) if tick is not None else None
+        raw_tick = None
+    tick, quote_source = resolve_quote_tick(
+        mt5,
+        symbol,
+        raw_tick,
+        now_epoch=now_epoch,
+    )
+    bid = _tick_field_value(tick, "bid") if tick is not None else None
+    ask = _tick_field_value(tick, "ask") if tick is not None else None
     try:
         bid_f = float(bid)
         ask_f = float(ask)
@@ -2736,12 +2744,23 @@ def _live_tick_spread_reference(
         item="spread reference",
         age_rounder=lambda value: round(value, 3),
     )
+    live_usable = (
+        context.get("usable_for_live_trading") is True
+        and spread is not None
+        and spread > 0.0
+    )
+    if not live_usable:
+        spread = None
+        if context.get("usable_for_live_trading") is True:
+            context["freshness_reason"] = "locked_or_invalid_quote"
     freshness = {
         "reference_time": _format_time_explicit(epoch) if epoch is not None else None,
         "reference_time_epoch": epoch,
         "data_age_seconds": context.get("data_age_seconds"),
         "freshness_state": context.get("freshness_state") or "unknown",
-        "usable_for_live_trading": context.get("usable_for_live_trading") is True,
+        "freshness_reason": context.get("freshness_reason"),
+        "usable_for_live_trading": live_usable,
+        **quote_source,
     }
     return spread, freshness
 

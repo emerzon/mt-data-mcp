@@ -1167,6 +1167,39 @@ def test_open_position_quote_context_accepts_mapping_ticks_and_prefers_milliseco
     assert row["usable_for_live_trading"] is True
 
 
+def test_open_position_quote_context_reconciles_cached_and_stream_ticks() -> None:
+    now_epoch = 1_700_000_100.0
+    payload = {"items": [{"symbol": "EURUSD", "side": "BUY"}]}
+    gateway = SimpleNamespace(
+        COPY_TICKS_ALL=0,
+        symbol_info_tick=lambda _symbol: SimpleNamespace(
+            time=now_epoch + 8.0,
+            bid=1.1,
+            ask=1.10009,
+        ),
+        copy_ticks_range=lambda *_args: [
+            {
+                "time": now_epoch - 1.0,
+                "time_msc": (now_epoch - 1.0) * 1000,
+                "bid": 1.10004,
+                "ask": 1.10005,
+            }
+        ],
+    )
+
+    core_trading_positions._attach_open_position_quote_context(
+        payload,
+        gateway,
+        now_epoch=now_epoch,
+    )
+
+    row = payload["items"][0]
+    assert row["quote_source"] == "mt5.copy_ticks_range"
+    assert row["quote_source_state"] == "refreshed_from_tick_stream"
+    assert row["data_age_seconds"] == 1.0
+    assert row["usable_for_live_trading"] is True
+
+
 def test_open_position_quote_context_discloses_contract_notional() -> None:
     payload = {
         "items": [

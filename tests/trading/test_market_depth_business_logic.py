@@ -861,7 +861,9 @@ def test_market_ticker_compact_explains_unrefreshable_future_tick() -> None:
     assert out["freshness"] == "clock skew, tick timestamp 10s ahead of wall clock"
     assert out["freshness_state"] == "clock_skew"
     assert out["freshness_reason"] == "future_timestamp"
-    assert out.get("data_age_seconds") is None
+    assert out["data_age_seconds"] == -10.0
+    assert out["timestamp_ahead_of_wall_clock"] is True
+    assert out["timestamp_skew_tolerance_seconds"] == 10
     assert out["timestamp_in_future"] is True
     assert out["timestamp_skew_seconds"] == 10.0
     assert "MT5 time alignment" in out["timestamp_warning"]

@@ -10,7 +10,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from ...shared.constants import BROKER_VOLUME_UNIT
 from ...utils.market_metadata import build_tick_freshness_context
 from ...utils.mt5 import account_currency_from_gateway
-from ...utils.quote import tick_epoch
+from ...utils.quote import resolve_quote_tick, tick_epoch
 from ...utils.time import format_datetime_utc, format_epoch_utc
 from ...utils.utils import _normalize_limit
 from .._mcp_instance import mcp
@@ -37,11 +37,6 @@ def _attach_open_position_quote_context(
     items = payload.get("items")
     if not isinstance(items, list):
         return
-    current_epoch = (
-        float(now_epoch)
-        if now_epoch is not None
-        else datetime.now(timezone.utc).timestamp()
-    )
     stale_count = 0
     enriched_count = 0
     live_usable_count = 0
@@ -52,11 +47,27 @@ def _attach_open_position_quote_context(
         if not symbol:
             continue
         try:
-            tick = gateway.symbol_info_tick(symbol)
+            raw_tick = gateway.symbol_info_tick(symbol)
         except Exception:
             continue
+        query_epoch = (
+            float(now_epoch)
+            if now_epoch is not None
+            else datetime.now(timezone.utc).timestamp()
+        )
+        tick, quote_source = resolve_quote_tick(
+            gateway,
+            symbol,
+            raw_tick,
+            now_epoch=query_epoch,
+        )
         if tick is None:
             continue
+        current_epoch = (
+            float(now_epoch)
+            if now_epoch is not None
+            else datetime.now(timezone.utc).timestamp()
+        )
         quote_epoch = tick_epoch(tick)
         freshness = build_tick_freshness_context(
             symbol,
@@ -70,6 +81,7 @@ def _attach_open_position_quote_context(
         # broker mark.  Do not label the unchanged value as bid or ask.
         item["price_current_basis"] = "broker_price_current"
         item["quote_time"] = format_epoch_utc(quote_epoch)
+        item.update(quote_source)
         symbol_info_fn = getattr(gateway, "symbol_info", None)
         if callable(symbol_info_fn):
             try:
@@ -107,6 +119,12 @@ def _attach_open_position_quote_context(
             "data_age_seconds",
             "data_stale",
             "usable_for_live_trading",
+            "freshness_state",
+            "freshness_reason",
+            "timestamp_ahead_of_wall_clock",
+            "timestamp_in_future",
+            "timestamp_skew_seconds",
+            "timestamp_skew_tolerance_seconds",
             "market_status",
             "market_status_reason",
             "freshness",

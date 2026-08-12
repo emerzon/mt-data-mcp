@@ -219,7 +219,13 @@ def resolve_quote_tick(
     stale_after_seconds: int = QUOTE_STALE_SECONDS,
 ) -> tuple[Any, Dict[str, Any]]:
     """Reconcile MT5's cached symbol tick with its authoritative tick stream."""
-    raw_tick = tick if tick is not None else gateway.symbol_info_tick(symbol)
+    if tick is not None:
+        raw_tick = tick
+    else:
+        try:
+            raw_tick = gateway.symbol_info_tick(symbol)
+        except Exception:
+            raw_tick = None
     raw_epoch = tick_epoch(raw_tick)
     stream_tick = _latest_stream_tick(gateway, symbol, now_epoch=now_epoch)
     stream_epoch = tick_epoch(stream_tick)
@@ -256,9 +262,18 @@ def resolve_quote_tick(
     use_stream_for_conflict = quote_conflict and (
         _quote_pair_quality_rank(stream_tick) >= _quote_pair_quality_rank(raw_tick)
     )
+    raw_ahead_of_observation = (
+        raw_epoch is not None and raw_epoch > float(now_epoch)
+    )
+    stream_not_ahead_of_observation = stream_epoch <= float(now_epoch)
     use_stream = (
         raw_tick is None
         or use_stream_for_conflict
+        or (
+            raw_ahead_of_observation
+            and stream_not_ahead_of_observation
+            and stream_live_ready
+        )
         or (raw_epoch is not None and stream_epoch > raw_epoch + 0.001)
         or (not raw_live_ready and stream_live_ready)
     )

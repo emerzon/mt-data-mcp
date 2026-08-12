@@ -772,6 +772,61 @@ def test_run_data_fetch_candles_compact_keeps_spread_estimate_without_meta():
     }
 
 
+def test_live_spread_reference_uses_reconciled_tick_stream(monkeypatch) -> None:
+    from mtdata.services import data_service
+
+    now = 1_700_000_100.0
+    monkeypatch.setattr(data_service.time, "time", lambda: now)
+    monkeypatch.setattr(
+        data_service.mt5,
+        "symbol_info_tick",
+        lambda _symbol: SimpleNamespace(
+            time=now + 8.0,
+            bid=1.10000,
+            ask=1.10009,
+        ),
+    )
+    monkeypatch.setattr(
+        data_service.mt5,
+        "copy_ticks_range",
+        lambda *_args: [
+            {
+                "time": now - 1.0,
+                "time_msc": (now - 1.0) * 1000,
+                "bid": 1.10004,
+                "ask": 1.10005,
+            }
+        ],
+    )
+
+    spread, freshness = data_service._live_tick_spread_reference("EURUSD")
+
+    assert spread == pytest.approx(0.00001)
+    assert freshness["quote_source"] == "mt5.copy_ticks_range"
+    assert freshness["freshness_state"] == "live"
+    assert freshness["usable_for_live_trading"] is True
+
+
+def test_live_spread_reference_omits_locked_quote(monkeypatch) -> None:
+    from mtdata.services import data_service
+
+    now = 1_700_000_100.0
+    locked = SimpleNamespace(time=now - 1.0, bid=1.1, ask=1.1)
+    monkeypatch.setattr(data_service.time, "time", lambda: now)
+    monkeypatch.setattr(
+        data_service.mt5,
+        "symbol_info_tick",
+        lambda _symbol: locked,
+    )
+    monkeypatch.setattr(data_service.mt5, "copy_ticks_range", lambda *_args: [])
+
+    spread, freshness = data_service._live_tick_spread_reference("EURUSD")
+
+    assert spread is None
+    assert freshness["freshness_reason"] == "locked_or_invalid_quote"
+    assert freshness["usable_for_live_trading"] is False
+
+
 def test_run_data_fetch_candles_does_not_duplicate_structured_spread_warning():
     request = DataFetchCandlesRequest(
         symbol="EURUSD",

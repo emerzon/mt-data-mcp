@@ -1153,12 +1153,6 @@ def test_portfolio_risk_reconciles_component_expected_shortfall() -> None:
         {"ticket": 1, "symbol": "EURUSD", "type": 0, "volume": 1.0, "price_current": 1.1},
         {"ticket": 2, "symbol": "GBPUSD", "type": 1, "volume": 0.5, "price_current": 1.1},
     ]
-    stale_mark_time = _now() - 3600
-    gateway.symbol_info_tick = lambda symbol: SimpleNamespace(
-        bid=1.0999,
-        ask=1.1001,
-        time=stale_mark_time,
-    )
     result = decompose_portfolio_risk(
         PortfolioRiskDecomposeRequest(lookback=300, horizon_bars=[1], confidence=[0.95], simulations=500),
         gateway,
@@ -1185,9 +1179,9 @@ def test_portfolio_risk_reconciles_component_expected_shortfall() -> None:
         "random_seed": 42,
         "completion_policy": "fail_closed",
         "valuation_time": result["model_context"]["valuation_time"],
-        "valuation_basis": "stale_or_unverified_position_marks_with_completed_bar_return_history",
-        "data_stale": True,
-        "usable_for_live_trading": False,
+        "valuation_basis": "live_position_marks_with_completed_bar_return_history",
+        "data_stale": False,
+        "usable_for_live_trading": True,
         "mark_freshness": result["model_context"]["mark_freshness"],
         "aligned_returns": result["summary"]["aligned_rows"],
         "aligned_returns_available": result["model_context"]["aligned_returns_available"],
@@ -1198,14 +1192,106 @@ def test_portfolio_risk_reconciles_component_expected_shortfall() -> None:
     assert datetime.fromisoformat(
         result["model_context"]["valuation_time"].replace("Z", "+00:00")
     ).tzinfo == timezone.utc
-    assert result["model_context"]["valuation_time"] == datetime.fromtimestamp(
-        stale_mark_time, tz=timezone.utc
-    ).isoformat().replace("+00:00", "Z")
     assert all(
-        mark["usable_for_live_trading"] is False
+        mark["usable_for_live_trading"] is True
         for mark in result["model_context"]["mark_freshness"]
     )
     assert "as_of" not in result["model_context"]
+
+
+def test_portfolio_risk_fails_closed_on_unusable_material_mark() -> None:
+    gateway = FakeGateway()
+    gateway.positions = [
+        {
+            "ticket": 1,
+            "symbol": "EURUSD",
+            "type": 0,
+            "volume": 1.0,
+            "price_current": 1.1,
+        }
+    ]
+    stale_mark_time = _now() - 3_600
+    gateway.symbol_info_tick = lambda symbol: SimpleNamespace(
+        bid=1.0999,
+        ask=1.1001,
+        time=stale_mark_time,
+    )
+    gateway.tick_rows = _ticks(10, start=stale_mark_time - 10)
+
+    result = decompose_portfolio_risk(
+        PortfolioRiskDecomposeRequest(
+            lookback=300,
+            horizon_bars=[1],
+            confidence=[0.95],
+            simulations=500,
+        ),
+        gateway,
+    )
+
+    assert result["error_code"] == "portfolio_mark_unusable"
+    assert result["failures"][0]["stage"] == "mark_freshness"
+    assert result["model_context"]["usable_for_live_trading"] is False
+    assert "risk" not in result
+
+
+def test_portfolio_risk_partial_mode_omits_unusable_mark() -> None:
+    gateway = FakeGateway()
+    gateway.positions = [
+        {
+            "ticket": 1,
+            "symbol": "EURUSD",
+            "type": 0,
+            "volume": 1.0,
+            "price_current": 1.1,
+        },
+        {
+            "ticket": 2,
+            "symbol": "GBPUSD",
+            "type": 1,
+            "volume": 0.5,
+            "price_current": 1.1,
+        },
+    ]
+    now = _now()
+    stale = now - 3_600
+
+    def _tick(symbol: str):
+        return SimpleNamespace(
+            bid=1.0999,
+            ask=1.1001,
+            time=now if symbol == "EURUSD" else stale,
+        )
+
+    def _copy_ticks(symbol, start, end, flags):
+        timestamp = now if symbol == "EURUSD" else stale
+        return [
+            {
+                "time": timestamp,
+                "time_msc": timestamp * 1000,
+                "bid": 1.0999,
+                "ask": 1.1001,
+            }
+        ]
+
+    gateway.symbol_info_tick = _tick
+    gateway.copy_ticks_range = _copy_ticks
+
+    result = decompose_portfolio_risk(
+        PortfolioRiskDecomposeRequest(
+            lookback=300,
+            horizon_bars=[1],
+            confidence=[0.95],
+            simulations=500,
+            allow_partial=True,
+        ),
+        gateway,
+    )
+
+    assert result["success"] is True
+    assert result["data_quality"]["symbols_modeled"] == ["EURUSD"]
+    assert result["data_quality"]["symbols_omitted"] == ["GBPUSD"]
+    assert result["data_quality"]["mark_omissions"][0]["symbol"] == "GBPUSD"
+    assert "non-live marks" in result["warnings"][0]
 
 
 def test_portfolio_risk_horizons_share_one_stable_calibration_window() -> None:
@@ -1335,6 +1421,72 @@ def test_relative_strength_ranks_and_reports_breadth() -> None:
     assert result["rank_quality"] == "illustrative_small_universe"
     assert result["score_definition"]["weights"] == [0.4, 0.6]
     assert all("rank_percentile" not in row for row in result["leaders"])
+
+
+def test_relative_strength_uses_reconciled_quote_for_spread_filter() -> None:
+    gateway = FakeGateway()
+    now = _now()
+    gateway.symbol_info_tick = lambda _symbol: SimpleNamespace(
+        bid=1.10000,
+        ask=1.10009,
+        time=now + 8,
+    )
+    gateway.copy_ticks_range = lambda *_args: [
+        {
+            "time": now - 1,
+            "time_msc": (now - 1) * 1000,
+            "bid": 1.10004,
+            "ask": 1.10005,
+        }
+    ]
+
+    result = rank_relative_strength(
+        MarketRelativeStrengthRequest(
+            symbols="EURUSD,GBPUSD,USDJPY",
+            horizons=[5],
+            weights=[1.0],
+            volatility_lookback=30,
+            max_spread_pct=0.005,
+            limit=3,
+            detail="full",
+        ),
+        gateway,
+    )
+
+    assert result["universe_size"] == 3
+    assert all(
+        row["quote_quality"]["quote_source"] == "mt5.copy_ticks_range"
+        for row in result["rankings"]
+    )
+    assert all(row["spread_pct"] < 0.005 for row in result["rankings"])
+
+
+def test_relative_strength_rejects_locked_quotes() -> None:
+    gateway = FakeGateway()
+    now = _now()
+    gateway.symbol_info_tick = lambda _symbol: SimpleNamespace(
+        bid=1.1,
+        ask=1.1,
+        time=now,
+    )
+    gateway.copy_ticks_range = lambda *_args: []
+
+    result = rank_relative_strength(
+        MarketRelativeStrengthRequest(
+            symbols="EURUSD,GBPUSD,USDJPY",
+            horizons=[5],
+            weights=[1.0],
+            volatility_lookback=30,
+            limit=3,
+        ),
+        gateway,
+    )
+
+    assert result["status"] == "no_matches"
+    assert result["returned_count"] == 0
+    assert {item["reason"] for item in result["data_quality"]["skipped"]} == {
+        "quote not live-ready"
+    }
 
 
 def test_relative_strength_limit_caps_total_returned_rankings() -> None:

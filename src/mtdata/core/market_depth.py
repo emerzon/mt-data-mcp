@@ -80,7 +80,13 @@ def _market_ticker_age_seconds(value: Any) -> Optional[float]:
 
 
 def _market_ticker_age_display(seconds: Any) -> Optional[str]:
-    return format_age_seconds(seconds)
+    try:
+        numeric = float(seconds)
+    except Exception:
+        return None
+    if numeric < 0.0:
+        return f"{format_age_seconds(-numeric)} ahead of wall clock"
+    return format_age_seconds(numeric)
 
 
 def _market_ticker_stale_warning(payload: Dict[str, Any], tick_time: Any) -> str:
@@ -151,8 +157,10 @@ def _compact_market_ticker_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
         "usable_for_live_trading_basis",
         "live_max_age_seconds",
         "stale_after_seconds",
+        "timestamp_ahead_of_wall_clock",
         "timestamp_in_future",
         "timestamp_skew_seconds",
+        "timestamp_skew_tolerance_seconds",
         "timestamp_warning",
         "warning",
         "quote_source",
@@ -1019,8 +1027,10 @@ def market_ticker(  # noqa: C901
                     "usable_for_live_trading",
                     "usable_for_live_trading_basis",
                     "live_max_age_seconds",
+                    "timestamp_ahead_of_wall_clock",
                     "timestamp_in_future",
                     "timestamp_skew_seconds",
+                    "timestamp_skew_tolerance_seconds",
                     "timestamp_warning",
                     "market_status",
                     "market_status_reason",

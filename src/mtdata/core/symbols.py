@@ -220,10 +220,22 @@ _SYMBOL_DESCRIBE_COMPACT_DIRECT_FIELDS: tuple[str, ...] = (
     "currency_profit",
     "time",
     "quote_status",
+    "quote_source",
+    "quote_source_state",
+    "quote_source_conflict",
     "data_stale",
     "data_age_seconds",
     "stale_after_seconds",
     "freshness",
+    "freshness_state",
+    "freshness_reason",
+    "usable_for_live_trading",
+    "usable_for_live_trading_basis",
+    "timestamp_ahead_of_wall_clock",
+    "timestamp_in_future",
+    "timestamp_skew_seconds",
+    "timestamp_skew_tolerance_seconds",
+    "timestamp_warning",
     "market_status",
     "market_status_reason",
     "note",
@@ -262,6 +274,11 @@ _SYMBOL_DESCRIBE_SUMMARY_DIRECT_FIELDS: tuple[str, ...] = (
     "currency_profit",
     "time",
     "freshness",
+    "freshness_state",
+    "freshness_reason",
+    "usable_for_live_trading",
+    "quote_source",
+    "quote_source_state",
     "market_status",
     "market_status_reason",
     "note",
@@ -1647,6 +1664,58 @@ def symbols_describe(  # noqa: C901
                 )
                 symbol_data.pop("price_change", None)
 
+            # ``symbol_info.time`` is a cached terminal metadata field and can
+            # disagree with the executable tick stream. Reconcile the quote in
+            # the same way as market_ticker before publishing freshness.
+            try:
+                raw_tick = mt5_gateway.symbol_info_tick(resolved_symbol)
+            except Exception:
+                raw_tick = None
+            tick_query_epoch = float(time.time())
+            resolved_tick, quote_source = resolve_quote_tick(
+                mt5_gateway,
+                resolved_symbol,
+                raw_tick,
+                now_epoch=tick_query_epoch,
+                stale_after_seconds=_MARKET_SCAN_STALE_QUOTE_SECONDS,
+            )
+            resolved_tick_epoch = tick_epoch(resolved_tick)
+            if resolved_tick_epoch is not None:
+                quote_timestamp_available = True
+                for key in (
+                    "data_age_seconds",
+                    "data_age",
+                    "data_stale",
+                    "freshness",
+                    "freshness_state",
+                    "freshness_reason",
+                    "usable_for_live_trading",
+                    "usable_for_live_trading_basis",
+                    "stale_after_seconds",
+                    "market_status",
+                    "market_status_reason",
+                    "market_status_source",
+                    "note",
+                    "warning",
+                    "timestamp_ahead_of_wall_clock",
+                    "timestamp_in_future",
+                    "timestamp_skew_seconds",
+                    "timestamp_skew_tolerance_seconds",
+                    "timestamp_warning",
+                ):
+                    symbol_data.pop(key, None)
+                symbol_data["quote_status"] = "available"
+                if contract.shape_detail == "full":
+                    symbol_data["time_epoch"] = resolved_tick_epoch
+                symbol_data["time"] = time_formatter(resolved_tick_epoch)
+                symbol_data.update(
+                    _quote_staleness_fields(
+                        resolved_tick_epoch,
+                        symbol=resolved_symbol,
+                    )
+                )
+                symbol_data.update(quote_source)
+
             price_change_value = (
                 _market_scan_float(symbol_data.get("price_change"))
                 if quote_timestamp_available is not False
@@ -1848,7 +1917,7 @@ def _quote_staleness_fields(
         return {}
     try:
         now_epoch = float(time.time())
-        age_seconds = max(0.0, now_epoch - float(tick_time))
+        signed_age_seconds = now_epoch - float(tick_time)
     except Exception:
         return {}
     fields = build_tick_freshness_context(
@@ -1859,8 +1928,11 @@ def _quote_staleness_fields(
         stale_after_seconds=_MARKET_SCAN_STALE_QUOTE_SECONDS,
         age_rounder=lambda value: _market_scan_round(value, digits=3),
     )
-    fields.pop("freshness_state", None)
-    fields["data_age"] = format_age_seconds(age_seconds)
+    fields["data_age"] = (
+        f"{format_age_seconds(-signed_age_seconds)} ahead of wall clock"
+        if signed_age_seconds < 0.0
+        else format_age_seconds(signed_age_seconds)
+    )
     if fields.get("timestamp_in_future"):
         fields["warning"] = fields.get("timestamp_warning")
     elif fields["data_stale"]:
@@ -2402,8 +2474,10 @@ def _namespace_market_scan_quote_freshness(row: Dict[str, Any]) -> None:
         "stale_after_seconds": "quote_stale_after_seconds",
         "data_stale": "quote_stale",
         "freshness_reason": "quote_freshness_reason",
+        "timestamp_ahead_of_wall_clock": "quote_timestamp_ahead_of_wall_clock",
         "timestamp_in_future": "quote_timestamp_in_future",
         "timestamp_skew_seconds": "quote_timestamp_skew_seconds",
+        "timestamp_skew_tolerance_seconds": "quote_timestamp_skew_tolerance_seconds",
         "timestamp_warning": "quote_timestamp_warning",
         "warning": "quote_warning",
         "freshness": "quote_freshness",
@@ -2496,8 +2570,10 @@ _TOP_MARKETS_FULL_BASE_HEADERS = [
     "stale_after_seconds",
     "data_stale",
     "freshness_reason",
+    "timestamp_ahead_of_wall_clock",
     "timestamp_in_future",
     "timestamp_skew_seconds",
+    "timestamp_skew_tolerance_seconds",
     "timestamp_warning",
     "freshness",
     "warning",

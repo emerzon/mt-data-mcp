@@ -40,6 +40,14 @@ UTC request instant ──▶ MT5 adapter ──▶ terminal clock axis ──�
 Every timestamped payload includes a `timezone` field for displayed values.
 Internal filtering and range comparisons stay on the UTC epoch axis.
 
+Live quote freshness is anchored to the wall clock after quote acquisition.
+Broker ticks less than 10 seconds ahead are retained as live but disclose a
+negative `data_age_seconds`, `timestamp_ahead_of_wall_clock=true`, and the
+measured skew. A lead of 10 seconds or more is unsafe and sets
+`timestamp_in_future=true`. Quote-reading tools reconcile the cached
+`symbol_info_tick` snapshot with the latest tick stream before applying this
+single policy.
+
 ---
 
 ## Broker session configuration

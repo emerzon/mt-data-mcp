@@ -135,13 +135,30 @@ def test_future_tick_is_not_accepted_as_fresh() -> None:
         stale_after_seconds=300,
     )
 
-    assert result["data_age_seconds"] is None
+    assert result["data_age_seconds"] == -10_800.0
     assert result["data_stale"] is True
     assert result["usable_for_live_trading"] is False
     assert result["timestamp_in_future"] is True
     assert result["timestamp_skew_seconds"] == 10_800.0
     assert result["freshness_state"] == "clock_skew"
     assert result["freshness"] == "clock skew, tick timestamp 3h 0m ahead of wall clock"
+
+
+def test_small_future_clock_skew_is_disclosed_without_zero_age() -> None:
+    result = build_tick_freshness_context(
+        "EURUSD",
+        tick_epoch=1_008.0,
+        now_epoch=1_000.0,
+    )
+
+    assert result["data_age_seconds"] == -8.0
+    assert result["data_stale"] is False
+    assert result["usable_for_live_trading"] is True
+    assert result["timestamp_ahead_of_wall_clock"] is True
+    assert result.get("timestamp_in_future") is not True
+    assert result["timestamp_skew_seconds"] == 8.0
+    assert result["timestamp_skew_tolerance_seconds"] == 10
+    assert result["freshness_reason"] == "clock_skew_within_tolerance"
 
 
 def test_quote_at_shared_execution_threshold_is_live() -> None:

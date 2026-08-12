@@ -22,7 +22,7 @@ from ..utils.mt5 import (
 )
 from ..utils.mt5_enums import decode_mt5_enum_label
 from ..utils.quote import resolve_quote_tick, tick_epoch, tick_value
-from ..utils.time import format_datetime_utc
+from ..utils.time import format_datetime_utc, format_epoch_utc
 from ._mcp_instance import mcp
 from .execution_logging import run_logged_operation
 from .mt5_gateway import create_mt5_gateway
@@ -809,8 +809,10 @@ def _symbol_tick_snapshot(
                     "usable_for_live_trading",
                     "usable_for_live_trading_basis",
                     "freshness_reason",
+                    "timestamp_ahead_of_wall_clock",
                     "timestamp_in_future",
                     "timestamp_skew_seconds",
+                    "timestamp_skew_tolerance_seconds",
                     "timestamp_warning",
                     "market_status",
                     "market_status_reason",
@@ -1022,7 +1024,7 @@ def _check_symbol_market_status(
     if info is None:
         return {"error": f"Symbol {symbol_name} not found"}
 
-    now_utc = datetime.now(timezone.utc)
+    query_started_utc = datetime.now(timezone.utc)
     trade_mode = getattr(info, "trade_mode", None)
     mode_status = _symbol_trade_mode_status(mt5_gateway, trade_mode)
     raw_tick = mt5_gateway.symbol_info_tick(symbol_name)
@@ -1030,8 +1032,9 @@ def _check_symbol_market_status(
         mt5_gateway,
         symbol_name,
         raw_tick,
-        now_epoch=now_utc.timestamp(),
+        now_epoch=query_started_utc.timestamp(),
     )
+    now_utc = datetime.now(timezone.utc)
     tick_status = _symbol_tick_snapshot(
         symbol_name,
         tick,
@@ -1089,6 +1092,12 @@ def _check_symbol_market_status(
             "(heuristic from MT5 trade_mode and tick freshness)."
         )
 
+    quote_epoch = tick_epoch(tick)
+    observed_epoch = now_utc.timestamp()
+    fetched_epoch = max(
+        observed_epoch,
+        quote_epoch if quote_epoch is not None else observed_epoch,
+    )
     result: Dict[str, Any] = {
         "success": True,
         "mode": "symbol",
@@ -1118,7 +1127,13 @@ def _check_symbol_market_status(
             "inferred_24_7": schedule_status.get("inferred_24_7"),
         },
         "message": message,
-        "data_fetched_at": format_datetime_utc(now_utc),
+        "data_fetched_at": format_epoch_utc(fetched_epoch),
+        "wall_clock_observed_at": format_datetime_utc(now_utc),
+        "data_fetched_at_basis": (
+            "wall_clock_adjusted_to_quote_timestamp"
+            if fetched_epoch > observed_epoch
+            else "wall_clock"
+        ),
         "timezone": "UTC",
         "timezone_context": _symbol_market_status_timezone_context(
             timezone_display,
@@ -1168,8 +1183,10 @@ def _check_symbol_market_status(
             "data_stale",
             "usable_for_live_trading",
             "freshness_reason",
+            "timestamp_ahead_of_wall_clock",
             "timestamp_in_future",
             "timestamp_skew_seconds",
+            "timestamp_skew_tolerance_seconds",
             "timestamp_warning",
             "quote_source",
             "quote_source_state",

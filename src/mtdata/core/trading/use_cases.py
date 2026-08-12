@@ -5291,10 +5291,22 @@ def _position_mark_freshness(
             fallback_counts[symbol] = fallback_counts.get(symbol, 0) + 1
     for symbol, position_count in symbol_counts.items():
         try:
-            tick = gateway.symbol_info_tick(symbol)
+            raw_tick = gateway.symbol_info_tick(symbol)
         except Exception:
-            tick = None
-        context = build_trade_quote_context(symbol, tick)
+            raw_tick = None
+        query_epoch = time.time()
+        tick, quote_source = resolve_quote_tick(
+            gateway,
+            symbol,
+            raw_tick,
+            now_epoch=query_epoch,
+        )
+        context = build_trade_quote_context(
+            symbol,
+            tick,
+            now_epoch=time.time(),
+        )
+        context.update(quote_source)
         context["symbol"] = symbol
         context["positions"] = int(position_count)
         if fallback_counts.get(symbol):

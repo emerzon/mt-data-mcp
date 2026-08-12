@@ -20,7 +20,7 @@ FRESHNESS_ANCHOR_WALL_CLOCK = "wall_clock"
 FRESHNESS_METRIC_LAST_COMPLETED_BAR_AGE = "last_completed_bar_age_seconds"
 FRESHNESS_METRIC_LAST_TICK_AGE = "last_tick_age_seconds"
 FRESHNESS_METRIC_REQUESTED_RANGE_END_GAP = "requested_range_end_gap_seconds"
-TICK_FUTURE_TOLERANCE_SECONDS = 5.0
+TICK_FUTURE_TOLERANCE_SECONDS = 10.0
 
 
 def attach_candle_volume_semantics(payload: Dict[str, Any]) -> None:
@@ -89,7 +89,10 @@ def build_tick_freshness_context(
     signed_age_seconds = current_epoch - latest_tick_epoch
     age_seconds = max(0.0, signed_age_seconds)
     future_skew_seconds = max(0.0, -signed_age_seconds)
-    timestamp_in_future = future_skew_seconds > TICK_FUTURE_TOLERANCE_SECONDS
+    timestamp_ahead_of_wall_clock = future_skew_seconds > 0.0
+    timestamp_in_future = (
+        future_skew_seconds >= TICK_FUTURE_TOLERANCE_SECONDS
+    )
     try:
         threshold = max(0.0, float(stale_after_seconds))
     except Exception:
@@ -103,8 +106,14 @@ def build_tick_freshness_context(
     )
     data_stale = age_seconds > threshold or timestamp_in_future
 
-    rounded_age = None
-    if not timestamp_in_future:
+    if timestamp_ahead_of_wall_clock:
+        rounded_magnitude = (
+            age_rounder(future_skew_seconds)
+            if age_rounder is not None
+            else round(future_skew_seconds, 3)
+        )
+        rounded_age = -abs(float(rounded_magnitude))
+    else:
         rounded_age = (
             age_rounder(age_seconds)
             if age_rounder is not None
@@ -124,9 +133,14 @@ def build_tick_freshness_context(
         "data_stale": data_stale,
         "live_max_age_seconds": QUOTE_LIVE_SECONDS,
     }
+    if timestamp_ahead_of_wall_clock:
+        out["timestamp_ahead_of_wall_clock"] = True
+        out["timestamp_skew_seconds"] = round(future_skew_seconds, 3)
+        out["timestamp_skew_tolerance_seconds"] = int(
+            TICK_FUTURE_TOLERANCE_SECONDS
+        )
     if timestamp_in_future:
         out["timestamp_in_future"] = True
-        out["timestamp_skew_seconds"] = round(future_skew_seconds, 3)
         out["timestamp_warning"] = (
             "Latest tick timestamp is ahead of the wall clock; the quote is not "
             "safe for live decisions until MT5 time alignment is corrected."
@@ -143,6 +157,8 @@ def build_tick_freshness_context(
     out["usable_for_live_trading_basis"] = "quote_age_and_market_session"
     if timestamp_in_future:
         out["freshness_reason"] = "future_timestamp"
+    elif timestamp_ahead_of_wall_clock:
+        out["freshness_reason"] = "clock_skew_within_tolerance"
     elif closed_session:
         out["freshness_reason"] = "market_closed"
     elif data_stale:
@@ -157,6 +173,11 @@ def build_tick_freshness_context(
         freshness = (
             f"clock skew, {item} timestamp {format_age_seconds(future_skew_seconds)} "
             "ahead of wall clock"
+        )
+    elif timestamp_ahead_of_wall_clock:
+        freshness = (
+            f"live with tolerated clock skew, {item} timestamp "
+            f"{format_age_seconds(future_skew_seconds)} ahead of wall clock"
         )
     else:
         freshness = format_freshness_label(

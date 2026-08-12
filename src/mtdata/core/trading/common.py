@@ -57,8 +57,10 @@ def build_trade_quote_context(
         "usable_for_live_trading_basis",
         "market_status",
         "market_status_reason",
+        "timestamp_ahead_of_wall_clock",
         "timestamp_in_future",
         "timestamp_skew_seconds",
+        "timestamp_skew_tolerance_seconds",
         "timestamp_warning",
     ):
         if freshness.get(key) is not None:

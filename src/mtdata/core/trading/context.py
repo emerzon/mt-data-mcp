@@ -147,8 +147,15 @@ def _build_trade_ready(
     account: Any,
     quote: Any,
     tradability: Any = None,
+    *,
+    open_positions_available: bool = True,
+    pending_orders_available: bool = True,
 ) -> Dict[str, Any]:
     blockers: list[str] = []
+    if not open_positions_available:
+        blockers.append("open_positions_unavailable")
+    if not pending_orders_available:
+        blockers.append("pending_orders_unavailable")
     margin_free = None
     margin_level = None
     margin_utilization_pct = None
@@ -293,6 +300,11 @@ def _build_quote_quality(quote: Any) -> Dict[str, Any]:
         "freshness_state",
         "usable_for_live_trading",
         "live_max_age_seconds",
+        "timestamp_ahead_of_wall_clock",
+        "timestamp_in_future",
+        "timestamp_skew_seconds",
+        "timestamp_skew_tolerance_seconds",
+        "timestamp_warning",
         "market_status",
         "timezone",
         "time",
@@ -426,6 +438,11 @@ def _compact_trade_session_context_payload(payload: Dict[str, Any]) -> Dict[str,
                     "usable_for_live_trading",
                     "usable_for_live_trading_basis",
                     "live_max_age_seconds",
+                    "timestamp_ahead_of_wall_clock",
+                    "timestamp_in_future",
+                    "timestamp_skew_seconds",
+                    "timestamp_skew_tolerance_seconds",
+                    "timestamp_warning",
                     "stale_warning",
                     "warning",
                 )
@@ -674,6 +691,8 @@ def trade_session_context(request: TradeSessionContextRequest) -> Dict[str, Any]
                 account_res,
                 quote_res,
                 tradability,
+                open_positions_available=not open_failed,
+                pending_orders_available=not pending_failed,
             )
             if payload["trade_ready"].get("can_open_new_positions") is not None:
                 payload["can_open_new_positions"] = payload["trade_ready"][

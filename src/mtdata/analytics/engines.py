@@ -28,6 +28,7 @@ from ..utils.freshness import (
     standard_weekend_window,
 )
 from ..utils.market_metadata import build_tick_freshness_context
+from ..utils.quote import resolve_quote_tick, tick_epoch, tick_value
 from ..utils.sessions import market_session_label, session_definition_for_clock
 from ..utils.tick_flags import mt5_trade_event_mask
 from ..utils.time import bar_close_epoch, format_datetime_utc, format_epoch_utc
@@ -59,7 +60,6 @@ def _classify_trade_sides(
 
 
 def _portfolio_mark_context(gateway: Any, positions: List[Dict[str, Any]]) -> Dict[str, Any]:
-    now_epoch = datetime.now(timezone.utc).timestamp()
     contexts: List[Dict[str, Any]] = []
     valid_times: List[float] = []
     symbol_counts: Dict[str, int] = {}
@@ -70,24 +70,26 @@ def _portfolio_mark_context(gateway: Any, positions: List[Dict[str, Any]]) -> Di
         symbol_counts[symbol] = symbol_counts.get(symbol, 0) + 1
     for symbol, position_count in symbol_counts.items():
         try:
-            tick = gateway.symbol_info_tick(symbol)
+            raw_tick = gateway.symbol_info_tick(symbol)
         except Exception:
-            tick = None
-        tick_epoch = getattr(tick, "time_msc", None) if tick is not None else None
-        try:
-            tick_epoch = float(tick_epoch) / 1000.0 if tick_epoch else None
-        except (TypeError, ValueError):
-            tick_epoch = None
-        if tick_epoch is None and tick is not None:
-            tick_epoch = getattr(tick, "time", None)
+            raw_tick = None
+        query_epoch = datetime.now(timezone.utc).timestamp()
+        tick, quote_source = resolve_quote_tick(
+            gateway,
+            symbol,
+            raw_tick,
+            now_epoch=query_epoch,
+        )
+        quote_epoch = tick_epoch(tick)
+        observed_epoch = datetime.now(timezone.utc).timestamp()
         freshness = build_tick_freshness_context(
             symbol,
-            tick_epoch=tick_epoch,
-            now_epoch=now_epoch,
+            tick_epoch=quote_epoch,
+            now_epoch=observed_epoch,
         )
-        if tick_epoch is not None:
+        if quote_epoch is not None:
             try:
-                valid_times.append(float(tick_epoch))
+                valid_times.append(float(quote_epoch))
             except (TypeError, ValueError):
                 pass
         if not freshness:
@@ -99,7 +101,22 @@ def _portfolio_mark_context(gateway: Any, positions: List[Dict[str, Any]]) -> Di
             }
         freshness["symbol"] = symbol
         freshness["positions"] = position_count
-        freshness["quote_time"] = format_epoch_utc(tick_epoch)
+        freshness["quote_time"] = format_epoch_utc(quote_epoch)
+        freshness.update(quote_source)
+        try:
+            bid = float(tick_value(tick, "bid") or 0.0)
+            ask = float(tick_value(tick, "ask") or 0.0)
+        except (TypeError, ValueError):
+            bid = ask = 0.0
+        if not (ask > bid > 0.0):
+            freshness["usable_for_live_trading"] = False
+            freshness["freshness_state"] = "unusable_quote"
+            freshness["freshness_reason"] = (
+                "locked_quote" if ask == bid and bid > 0.0 else "invalid_quote"
+            )
+            freshness["quote_warning"] = (
+                "A positive bid/ask spread is required for a live portfolio mark."
+            )
         contexts.append(freshness)
     if not contexts:
         return {
@@ -1699,7 +1716,13 @@ def _position_sensitivity(gateway: Any, row: Dict[str, Any]) -> Tuple[Optional[f
     symbol = str(row.get("symbol") or "")
     volume = float(row.get("volume") or 0.0)
     side = _position_side(row, gateway)
-    tick = gateway.symbol_info_tick(symbol)
+    raw_tick = gateway.symbol_info_tick(symbol)
+    tick, _ = resolve_quote_tick(
+        gateway,
+        symbol,
+        raw_tick,
+        now_epoch=datetime.now(timezone.utc).timestamp(),
+    )
     price = float(getattr(tick, "bid" if side == "sell" else "ask", 0.0) or row.get("price_current") or 0.0)
     if not symbol or volume <= 0 or price <= 0:
         return None, "missing symbol, volume, or mark price"
@@ -1716,7 +1739,10 @@ def _position_sensitivity(gateway: Any, row: Dict[str, Any]) -> Tuple[Optional[f
     return float((up_sens + down_sens) / 2.0), None
 
 
-def decompose_portfolio_risk(request: PortfolioRiskDecomposeRequest, gateway: Any) -> Dict[str, Any]:
+def decompose_portfolio_risk(  # noqa: C901
+    request: PortfolioRiskDecomposeRequest,
+    gateway: Any,
+) -> Dict[str, Any]:
     holding_periods = [
         f"{horizon} {request.timeframe} bar{'s' if horizon != 1 else ''}"
         for horizon in request.horizon_bars
@@ -1751,7 +1777,78 @@ def decompose_portfolio_risk(request: PortfolioRiskDecomposeRequest, gateway: An
             "price_current": getattr(tick, "ask" if request.proposed_trade.side == "buy" else "bid", None),
             "proposed": True,
         })
-    model_context.update(_portfolio_mark_context(gateway, positions))
+    all_positions = list(positions)
+    total_position_count = len(all_positions)
+    requested_symbols = sorted(
+        {
+            str(row.get("symbol") or "")
+            for row in all_positions
+            if row.get("symbol")
+        }
+    )
+    mark_context = _portfolio_mark_context(gateway, all_positions)
+    model_context.update(mark_context)
+    unusable_mark_symbols = {
+        str(item.get("symbol") or "")
+        for item in mark_context.get("mark_freshness", [])
+        if item.get("usable_for_live_trading") is not True
+    }
+    mark_omissions = [
+        {
+            "symbol": str(item.get("symbol") or ""),
+            "stage": "mark_freshness",
+            "reason": item.get("freshness_reason") or "mark_not_live_ready",
+            "freshness_state": item.get("freshness_state"),
+            "data_age_seconds": item.get("data_age_seconds"),
+            "quote_source": item.get("quote_source"),
+        }
+        for item in mark_context.get("mark_freshness", [])
+        if item.get("usable_for_live_trading") is not True
+    ]
+    if mark_omissions and not request.allow_partial:
+        return {
+            "error": "One or more material position marks are not live-ready.",
+            "error_code": "portfolio_mark_unusable",
+            "failures": mark_omissions,
+            "model_context": model_context,
+            "remediation": (
+                "Refresh MT5 quotes or set allow_partial=true to omit unsafe marks."
+            ),
+        }
+    if mark_omissions:
+        positions = [
+            row
+            for row in all_positions
+            if str(row.get("symbol") or "") not in unusable_mark_symbols
+        ]
+        if not positions:
+            return {
+                "success": True,
+                "empty": True,
+                "partial_failure": True,
+                "positions": base_position_count,
+                "message": "No positions had a live-ready mark.",
+                "summary": {
+                    "positions": base_position_count,
+                    "positions_after_proposed": total_position_count,
+                    "symbols": 0,
+                    "symbols_requested": len(requested_symbols),
+                },
+                "risk": [],
+                "timeframe": request.timeframe,
+                "holding_periods": holding_periods,
+                "model_context": model_context,
+                "data_quality": {
+                    "allow_partial": True,
+                    "mark_omissions": mark_omissions,
+                    "symbols_requested": requested_symbols,
+                    "symbols_modeled": [],
+                    "symbols_omitted": requested_symbols,
+                },
+                "warnings": [
+                    "All material positions were omitted because their marks were not live-ready."
+                ],
+            }
     if not positions:
         return {
             "success": True,
@@ -1915,12 +2012,13 @@ def decompose_portfolio_risk(request: PortfolioRiskDecomposeRequest, gateway: An
         }.items()
         if value is not None
     }
-    requested_symbols = sorted(
-        {str(row.get("symbol") or "") for row in positions if row.get("symbol")}
-    )
     modeled_symbols = [str(column) for column in standardized.columns]
     omitted_symbols = sorted(set(requested_symbols) - set(modeled_symbols))
     warnings_out: List[str] = []
+    if mark_omissions:
+        warnings_out.append(
+            "Some positions had non-live marks and were omitted because allow_partial=true."
+        )
     if failures:
         warnings_out.append(
             "Some positions could not be priced and were omitted because allow_partial=true."
@@ -1947,13 +2045,14 @@ def decompose_portfolio_risk(request: PortfolioRiskDecomposeRequest, gateway: An
         "holding_periods": holding_periods,
         "model_context": model_context,
         **account_context,
-        "summary": {"positions": base_position_count, "positions_after_proposed": len(positions), "symbols": len(modeled_symbols), "symbols_requested": len(requested_symbols), "aligned_rows": len(returns), "concentration_hhi": float(np.sum(weights**2))},
+        "summary": {"positions": base_position_count, "positions_after_proposed": total_position_count, "symbols": len(modeled_symbols), "symbols_requested": len(requested_symbols), "aligned_rows": len(returns), "concentration_hhi": float(np.sum(weights**2))},
         "risk": risk_rows,
         "stresses": stresses,
         "proposed_trade": proposed_context,
         "data_quality": {
             "pricing_failures": failures,
             "history_failures": history_failures,
+            "mark_omissions": mark_omissions,
             "allow_partial": request.allow_partial,
             "symbols_requested": requested_symbols,
             "symbols_modeled": modeled_symbols,
@@ -2201,16 +2300,57 @@ def rank_relative_strength(  # noqa: C901
                 if len(residual) >= horizon + offset:
                     stability_parts[offset][horizon][symbol] = float(residual.iloc[: len(residual) - offset].tail(horizon).sum()) / max(vol * math.sqrt(horizon), 1e-12)
         latest = bars.iloc[-1]
-        tick = gateway.symbol_info_tick(symbol)
-        bid = float(getattr(tick, "bid", 0.0) or 0.0)
-        ask = float(getattr(tick, "ask", 0.0) or 0.0)
-        spread_pct = ((ask - bid) / ((ask + bid) / 2.0) * 100.0) if ask >= bid > 0 else None
+        try:
+            raw_tick = gateway.symbol_info_tick(symbol)
+        except Exception:
+            raw_tick = None
+        quote_query_epoch = datetime.now(timezone.utc).timestamp()
+        tick, quote_source = resolve_quote_tick(
+            gateway,
+            symbol,
+            raw_tick,
+            now_epoch=quote_query_epoch,
+        )
+        quote_epoch = tick_epoch(tick)
+        quote_quality = build_tick_freshness_context(
+            symbol,
+            tick_epoch=quote_epoch,
+            now_epoch=datetime.now(timezone.utc).timestamp(),
+        )
+        quote_quality.update(quote_source)
+        try:
+            bid = float(tick_value(tick, "bid") or 0.0)
+            ask = float(tick_value(tick, "ask") or 0.0)
+        except (TypeError, ValueError):
+            bid = ask = 0.0
+        spread_pct = (
+            (ask - bid) / ((ask + bid) / 2.0) * 100.0
+            if ask > bid > 0.0
+            else None
+        )
+        if spread_pct is None:
+            quote_quality["usable_for_live_trading"] = False
+            quote_quality["freshness_state"] = "unusable_quote"
+            quote_quality["freshness_reason"] = (
+                "locked_quote" if ask == bid and bid > 0.0 else "invalid_quote"
+            )
         tick_volume = int(latest.get("tick_volume") or 0)
-        if request.max_spread_pct is not None and (spread_pct is None or spread_pct > request.max_spread_pct):
+        if quote_quality.get("usable_for_live_trading") is not True:
+            skipped.append(
+                {
+                    "symbol": symbol,
+                    "reason": "quote not live-ready",
+                    "quote_quality": quote_quality,
+                    "data_window": symbol_window,
+                }
+            )
+            continue
+        if request.max_spread_pct is not None and spread_pct > request.max_spread_pct:
             skipped.append(
                 {
                     "symbol": symbol,
                     "reason": "spread filter",
+                    "quote_quality": quote_quality,
                     "data_window": symbol_window,
                 }
             )
@@ -2232,6 +2372,7 @@ def rank_relative_strength(  # noqa: C901
                 "raw_momentum": raw_momentum,
                 "residual_momentum": residual_momentum,
                 "spread_pct": spread_pct,
+                "quote_quality": quote_quality,
                 "tick_volume": tick_volume,
                 "above_sma20": bool(
                     float(latest["close"])

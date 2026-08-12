@@ -1058,6 +1058,50 @@ class TestSymbolsDescribe:
         assert "quote_age_seconds" not in sd
         assert "time_epoch" not in sd
 
+    @patch("mtdata.core.symbols._resolve_client_tz", return_value=None)
+    @patch("mtdata.core.symbols.time.time", return_value=1_700_000_100.0)
+    @patch(f"{_MT5}.copy_ticks_range")
+    @patch(f"{_MT5}.symbol_info_tick")
+    @patch(f"{_MT5}.symbol_info")
+    def test_describe_reconciles_cached_quote_with_tick_stream(
+        self,
+        mock_info,
+        mock_tick,
+        mock_copy_ticks,
+        mock_time,
+        mock_tz,
+    ):
+        del mock_time, mock_tz
+        info = MagicMock()
+        info.__dir__ = lambda self: ["name", "time", "digits", "point"]
+        info.name = "EURUSD"
+        info.time = 1_700_000_108.0
+        info.digits = 5
+        info.point = 0.00001
+        mock_info.return_value = info
+        mock_tick.return_value = SimpleNamespace(
+            time=1_700_000_108.0,
+            bid=1.1,
+            ask=1.10009,
+        )
+        mock_copy_ticks.return_value = [
+            {
+                "time": 1_700_000_099.0,
+                "time_msc": 1_700_000_099_000,
+                "bid": 1.10004,
+                "ask": 1.10005,
+            }
+        ]
+
+        result = _get_symbols_describe()("EURUSD")
+
+        details = result["details"]
+        assert details["quote_source"] == "mt5.copy_ticks_range"
+        assert details["quote_source_state"] == "refreshed_from_tick_stream"
+        assert details["data_age_seconds"] == 1.0
+        assert details["freshness_state"] == "live"
+        assert details["usable_for_live_trading"] is True
+
     # Sunday 20:00 UTC is still within standard weekend closure; 21:00 is market open.
     @patch("mtdata.core.symbols.time.time", return_value=1779652800.0)
     @patch(f"{_MT5}.symbol_info")

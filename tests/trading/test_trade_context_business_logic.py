@@ -1,5 +1,7 @@
 from unittest.mock import patch
 
+import pytest
+
 from mtdata.core.trading.context import _build_trade_ready, trade_session_context
 from mtdata.core.trading.requests import TradeSessionContextRequest
 
@@ -77,6 +79,94 @@ def test_trade_ready_fails_closed_when_quote_or_market_status_is_unknown() -> No
     assert readiness["readiness_status"] == "unknown"
     assert "quote_readiness_unknown" in readiness["blockers"]
     assert "market_opening_status_unknown" in readiness["blockers"]
+
+
+@pytest.mark.parametrize(
+    ("open_available", "pending_available", "expected_blockers"),
+    [
+        (False, True, ["open_positions_unavailable"]),
+        (True, False, ["pending_orders_unavailable"]),
+        (
+            False,
+            False,
+            ["open_positions_unavailable", "pending_orders_unavailable"],
+        ),
+    ],
+)
+def test_trade_ready_fails_closed_when_book_snapshot_is_unavailable(
+    open_available,
+    pending_available,
+    expected_blockers,
+) -> None:
+    readiness = _build_trade_ready(
+        {
+            "execution_ready": True,
+            "equity": 1_000.0,
+            "margin": 0.0,
+            "margin_free": 1_000.0,
+        },
+        {"usable_for_live_trading": True, "data_stale": False},
+        {"can_open_new_positions": True},
+        open_positions_available=open_available,
+        pending_orders_available=pending_available,
+    )
+
+    assert readiness["execution_preconditions_met"] is False
+    assert readiness["readiness_status"] == "unknown"
+    assert readiness["can_open_new_positions"] is False
+    assert readiness["blockers"] == expected_blockers
+
+
+def test_trade_session_request_normalizes_symbol_once_for_nested_reads() -> None:
+    seen = {"ticker": [], "open": [], "pending": []}
+
+    def _ticker(symbol, detail="compact"):
+        seen["ticker"].append(symbol)
+        return {
+            "success": True,
+            "symbol": symbol,
+            "usable_for_live_trading": True,
+            "data_stale": False,
+        }
+
+    def _open(request):
+        seen["open"].append(request.symbol)
+        return {"success": True, "count": 0, "items": []}
+
+    def _pending(request):
+        seen["pending"].append(request.symbol)
+        return {"success": True, "count": 0, "items": []}
+
+    with patch(
+        "mtdata.core.trading.context.trade_account_info",
+        new=lambda: {
+            "success": True,
+            "execution_ready": True,
+            "equity": 1_000.0,
+            "margin": 0.0,
+            "margin_free": 1_000.0,
+        },
+    ), patch(
+        "mtdata.core.trading.context.market_ticker",
+        new=_ticker,
+    ), patch(
+        "mtdata.core.trading.context.trade_get_open",
+        new=_open,
+    ), patch(
+        "mtdata.core.trading.context.trade_get_pending",
+        new=_pending,
+    ), patch(
+        "mtdata.core.trading.context._trade_session_tradability",
+        return_value={"can_open_new_positions": True},
+    ):
+        result = _raw_trade_session_context("  eurusd  ", detail="full")
+
+    assert result["symbol"] == "EURUSD"
+    assert seen["ticker"] == ["EURUSD"]
+    assert seen["open"] == ["EURUSD", None]
+    assert seen["pending"] == ["EURUSD"]
+    assert result["state"] == "flat"
+    assert result["trade_ready"]["readiness_status"] == "ready"
 
 
 def test_trade_session_context_compacts_nested_sections_by_default() -> None:
@@ -476,6 +566,9 @@ def test_trade_session_context_compact_sanitizes_nested_tool_errors() -> None:
         "error": "Unable to fetch open positions.",
     }
     assert "SimpleNamespace" not in str(out["open_positions"])
+    assert out["trade_ready"]["execution_preconditions_met"] is False
+    assert out["trade_ready"]["readiness_status"] == "unknown"
+    assert "open_positions_unavailable" in out["trade_ready"]["blockers"]
 
 
 def test_trade_session_context_compact_keeps_order_attribution_fields() -> None:
