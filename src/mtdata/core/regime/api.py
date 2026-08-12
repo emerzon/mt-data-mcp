@@ -1122,6 +1122,8 @@ def regime_detect(  # noqa: C901
 
     - limit: Optional bars to fetch/analyze. If omitted, the fetch window tracks
       the effective lookback plus warmup bars.
+      For rule_based, an explicit limit also becomes params.window_bars when
+      that parameter and lookback are omitted; at least 20 bars are required.
     - start/end: Optional UTC-compatible analysis window. If provided, `limit`
       caps bars analysed after the window is fetched; omitted limit uses the
       effective lookback cap.
@@ -1325,11 +1327,15 @@ def regime_detect(  # noqa: C901
             if min_regime_bars is not None
             else tf_defaults["min_regime_bars"]
         )
-        lookback_mapped_to_window = (
-            method == "rule_based" and lookback is not None and "window_bars" not in p
-        )
-        if lookback_mapped_to_window:
-            p["window_bars"] = int(effective_lookback)
+        lookback_mapped_to_window = False
+        limit_mapped_to_window = False
+        if method == "rule_based" and "window_bars" not in p:
+            if lookback is not None:
+                p["window_bars"] = int(effective_lookback)
+                lookback_mapped_to_window = True
+            elif limit is not None:
+                p["window_bars"] = int(limit)
+                limit_mapped_to_window = True
 
         min_regime_bars_val, min_regime_bars_error = _coerce_param(
             p,
@@ -1397,14 +1403,33 @@ def regime_detect(  # noqa: C901
             if window_error is not None:
                 return _finish({"error": window_error})
             if int(requested_window_bars) < 20:
+                if limit_mapped_to_window:
+                    return _finish({
+                        "error": (
+                            "limit must be >= 20 for method='rule_based'; "
+                            "increase the requested history window or choose another method."
+                        )
+                    })
                 return _finish({"error": "params.window_bars must be >= 20."})
+            if limit is not None and int(limit) < int(requested_window_bars):
+                return _finish({
+                    "error": (
+                        f"limit ({int(limit)}) must be greater than or equal to "
+                        f"params.window_bars ({int(requested_window_bars)}) for "
+                        "method='rule_based'."
+                    )
+                })
 
             rule_based_config = {
                 "efficiency_threshold": float(efficiency_threshold),
                 "trend_strength_threshold": float(trend_strength_threshold),
                 "window_bars": int(requested_window_bars),
             }
-            fetch_limit = int(max(fetch_limit, int(requested_window_bars)))
+            fetch_limit = (
+                int(limit)
+                if limit is not None
+                else int(max(fetch_limit, int(requested_window_bars)))
+            )
 
         history_kwargs: Dict[str, Any] = {"as_of": None}
         if start or end:

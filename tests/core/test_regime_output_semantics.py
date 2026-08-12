@@ -493,13 +493,31 @@ def test_rule_based_full_series_uses_price_window_timestamps_for_return_target()
     assert len(series["times"]) == len(series["state"]) == 100
 
 
-def test_rule_based_window_bars_expands_fetch_limit() -> None:
+def test_rule_based_rejects_limit_below_explicit_window() -> None:
+    raw = _unwrap(regime_detect)
+    out = raw(
+        symbol="TEST",
+        timeframe="H1",
+        limit=100,
+        method="rule_based",
+        params={"window_bars": 160},
+        detail="full",
+    )
+
+    assert out["error"] == (
+        "limit (100) must be greater than or equal to params.window_bars (160) "
+        "for method='rule_based'."
+    )
+
+
+@pytest.mark.parametrize("limit", [20, 160, 200])
+def test_rule_based_explicit_limit_controls_default_window(limit: int) -> None:
     raw = _unwrap(regime_detect)
     captured: dict[str, int] = {}
 
-    def fake_fetch_history(_symbol: str, _timeframe: str, limit: int, *, as_of=None):
-        captured["limit"] = limit
-        return _downtrend_df(limit)
+    def fake_fetch_history(_symbol: str, _timeframe: str, fetch_limit: int, *, as_of=None):
+        captured["limit"] = fetch_limit
+        return _downtrend_df(fetch_limit)
 
     with (
         patch("mtdata.core.regime.api._fetch_history", side_effect=fake_fetch_history),
@@ -509,15 +527,21 @@ def test_rule_based_window_bars_expands_fetch_limit() -> None:
         out = raw(
             symbol="TEST",
             timeframe="H1",
-            limit=100,
+            limit=limit,
             method="rule_based",
-            params={"window_bars": 160},
             detail="full",
         )
 
-    assert captured["limit"] == 160
-    assert out["regime"]["window_bars"] == 160
-    assert out["params_used"]["window_bars"] == 160
+    assert captured["limit"] == limit
+    assert out["regime"]["window_bars"] == limit
+    assert out["params_used"]["window_bars"] == limit
+
+
+def test_rule_based_rejects_limit_below_minimum_window() -> None:
+    raw = _unwrap(regime_detect)
+    out = raw(symbol="TEST", timeframe="H1", limit=1, method="rule_based")
+
+    assert out["error"].startswith("limit must be >= 20")
 
 
 @pytest.mark.parametrize(
