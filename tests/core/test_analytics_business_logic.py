@@ -566,6 +566,232 @@ def test_execution_quality_matches_order_and_computes_markout() -> None:
     )
 
 
+def test_execution_quality_rejects_substring_as_missing_exact_symbol() -> None:
+    result = analyze_execution_quality(
+        TradeExecutionQualityRequest(
+            symbol="USD",
+            minutes_back=60,
+            benchmark="order_price",
+        ),
+        FakeGateway(),
+    )
+
+    assert result["error_code"] == "symbol_not_found"
+    assert result["symbol"] == "USD"
+
+
+def test_execution_quality_exact_symbol_postfilters_gateway_results() -> None:
+    gateway = FakeGateway()
+    fill_epoch = _now() - 10
+    gateway.orders = [
+        {"ticket": 10, "price_open": 1.1, "volume_initial": 1.0},
+        {"ticket": 11, "price_open": 1.2, "volume_initial": 1.0},
+    ]
+    gateway.deals = [
+        {
+            "ticket": 20,
+            "order": 10,
+            "symbol": "EURUSD",
+            "type": 0,
+            "volume": 1.0,
+            "price": 1.1001,
+            "time_msc": fill_epoch * 1000,
+        },
+        {
+            "ticket": 21,
+            "order": 11,
+            "symbol": "GBPUSD",
+            "type": 0,
+            "volume": 1.0,
+            "price": 1.2001,
+            "time_msc": fill_epoch * 1000,
+        },
+    ]
+    query_groups = []
+
+    def _deals(start, end, **kwargs):
+        query_groups.append(kwargs.get("group"))
+        return gateway.deals
+
+    def _orders(start, end, **kwargs):
+        query_groups.append(kwargs.get("group"))
+        return gateway.orders
+
+    gateway.history_deals_get = _deals
+    gateway.history_orders_get = _orders
+
+    result = analyze_execution_quality(
+        TradeExecutionQualityRequest(
+            symbol="EURUSD",
+            minutes_back=60,
+            benchmark="order_price",
+            detail="full",
+        ),
+        gateway,
+    )
+
+    assert query_groups == ["EURUSD", "EURUSD"]
+    assert result["symbol_filter"] == {
+        "requested": "EURUSD",
+        "resolved": "EURUSD",
+        "match_mode": "exact",
+    }
+    assert {item["symbol"] for item in result["items"]} == {"EURUSD"}
+    assert result["data_quality"]["matched_symbols"] == ["EURUSD"]
+
+
+def test_execution_quality_uses_continuous_calendar_for_crypto() -> None:
+    gateway = FakeGateway()
+    gateway.symbols_get = lambda: [
+        SimpleNamespace(name="BTCUSD", path="Cryptocurrencies", visible=True)
+    ]
+    fill_epoch = _now() - 10
+    gateway.orders = [
+        {"ticket": 10, "price_open": 60_000.0, "volume_initial": 0.1}
+    ]
+    gateway.deals = [
+        {
+            "ticket": 20,
+            "order": 10,
+            "symbol": "BTCUSD",
+            "type": 0,
+            "volume": 0.1,
+            "price": 60_010.0,
+            "time_msc": fill_epoch * 1000,
+        }
+    ]
+
+    result = analyze_execution_quality(
+        TradeExecutionQualityRequest(
+            symbol="BTCUSD",
+            minutes_back=60,
+            benchmark="order_price",
+            detail="full",
+        ),
+        gateway,
+    )
+
+    assert result["items"][0]["session"] == "continuous"
+    assert result["items"][0]["session_calendar"] == "continuous_24_7"
+    assert result["data_quality"]["session_definition"]["calendar"] == (
+        "continuous_24_7"
+    )
+    assert result["breakdowns"]["by_session"] == [
+        {
+            "session_calendar": "continuous_24_7",
+            "session": "continuous",
+            "fills": 1,
+            "slippage_bps": result["breakdowns"]["by_session"][0][
+                "slippage_bps"
+            ],
+        }
+    ]
+
+
+def test_execution_quality_uses_utc_hours_when_calendar_is_unknown() -> None:
+    gateway = FakeGateway()
+    gateway.symbols_get = lambda: [
+        SimpleNamespace(
+            name="AAPL.NAS",
+            path="Stock CFD's\\Nasdaq",
+            visible=True,
+        )
+    ]
+    fill_epoch = _now() - 10
+    gateway.orders = [
+        {"ticket": 10, "price_open": 210.0, "volume_initial": 1.0}
+    ]
+    gateway.deals = [
+        {
+            "ticket": 20,
+            "order": 10,
+            "symbol": "AAPL.NAS",
+            "type": 0,
+            "volume": 1.0,
+            "price": 210.1,
+            "time_msc": fill_epoch * 1000,
+        }
+    ]
+
+    result = analyze_execution_quality(
+        TradeExecutionQualityRequest(
+            symbol="AAPL.NAS",
+            minutes_back=60,
+            benchmark="order_price",
+            detail="full",
+        ),
+        gateway,
+    )
+
+    assert result["items"][0]["session_calendar"] == "utc_hour_only"
+    assert result["items"][0]["session"] is None
+    assert result["breakdowns"]["by_session"] == []
+    assert result["data_quality"]["session_definition"]["calendar"] == (
+        "utc_hour_only"
+    )
+    assert any("by_hour_utc" in warning for warning in result["warnings"])
+
+
+def test_execution_quality_qualifies_mixed_session_breakdowns_by_calendar() -> None:
+    gateway = FakeGateway()
+    gateway.symbols_get = lambda: [
+        SimpleNamespace(name="EURUSD", path="Forex\\Majors", visible=True),
+        SimpleNamespace(name="BTCUSD", path="Cryptocurrencies", visible=True),
+    ]
+    fill_epoch = _now() - 10
+    gateway.orders = [
+        {"ticket": 10, "price_open": 1.1, "volume_initial": 1.0},
+        {"ticket": 11, "price_open": 60_000.0, "volume_initial": 0.1},
+    ]
+    gateway.deals = [
+        {
+            "ticket": 20,
+            "order": 10,
+            "symbol": "EURUSD",
+            "type": 0,
+            "volume": 1.0,
+            "price": 1.1001,
+            "time_msc": fill_epoch * 1000,
+        },
+        {
+            "ticket": 21,
+            "order": 11,
+            "symbol": "BTCUSD",
+            "type": 0,
+            "volume": 0.1,
+            "price": 60_010.0,
+            "time_msc": fill_epoch * 1000,
+        },
+    ]
+
+    result = analyze_execution_quality(
+        TradeExecutionQualityRequest(
+            minutes_back=60,
+            benchmark="order_price",
+            detail="standard",
+        ),
+        gateway,
+    )
+
+    assert set(result["data_quality"]["session_definitions"]) == {
+        "continuous_24_7",
+        "fx",
+    }
+    assert {
+        (row["session_calendar"], row["session"])
+        for row in result["breakdowns"]["by_session"]
+    } == {
+        ("continuous_24_7", "continuous"),
+        (
+            "fx",
+            market_session_label(
+                datetime.fromtimestamp(fill_epoch, tz=timezone.utc),
+                session_calendar="fx",
+            ),
+        ),
+    }
+
+
 def test_execution_quality_compact_omits_expanded_breakdowns() -> None:
     gateway = FakeGateway()
     start = _now() - 100

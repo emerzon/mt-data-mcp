@@ -21,6 +21,10 @@ from ..core.analytics_requests import (
 )
 from ..shared.constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
 from ..shared.market_units import forex_points_per_pip
+from ..shared.symbols import (
+    is_probably_crypto_symbol,
+    is_probably_fx_session_symbol,
+)
 from ..utils.barriers import normalize_same_bar_policy
 from ..utils.freshness import (
     closed_session_context,
@@ -769,6 +773,65 @@ def _order_type_label(value: Any, gateway: Any) -> str:
     return "UNKNOWN"
 
 
+def _execution_symbol_catalog(gateway: Any) -> Dict[str, Dict[str, Any]]:
+    try:
+        raw_symbols = list(gateway.symbols_get() or [])
+    except Exception:
+        return {}
+    catalog: Dict[str, Dict[str, Any]] = {}
+    for item in raw_symbols:
+        row = _mapping(item)
+        name = str(row.get("name") or getattr(item, "name", "") or "").strip()
+        if name:
+            catalog[name.casefold()] = {
+                "name": name,
+                "path": str(row.get("path") or getattr(item, "path", "") or ""),
+            }
+    return catalog
+
+
+def _execution_session_calendar(
+    symbol: str,
+    *,
+    gateway: Any,
+    catalog: Dict[str, Dict[str, Any]],
+) -> tuple[str, Optional[str]]:
+    metadata = catalog.get(str(symbol).casefold(), {})
+    path = str(metadata.get("path") or "")
+    if not path:
+        try:
+            info = gateway.symbol_info(symbol)
+        except Exception:
+            info = None
+        path = str(getattr(info, "path", "") or "")
+    if is_probably_crypto_symbol(symbol):
+        return "continuous_24_7", path or None
+    if is_probably_fx_session_symbol(symbol, path=path):
+        return "fx", path or None
+    return "utc_hour_only", path or None
+
+
+def _execution_session_definition(calendar: str) -> Dict[str, Any]:
+    if calendar == "fx":
+        return session_definition_for_clock("UTC", "fx")
+    if calendar == "continuous_24_7":
+        return {
+            "basis": "continuous_market",
+            "calendar": "continuous_24_7",
+            "clock": "UTC",
+            "continuous": "All UTC hours; no off-session bucket is applied.",
+        }
+    return {
+        "basis": "utc_hour_only",
+        "calendar": "utc_hour_only",
+        "clock": "UTC",
+        "note": (
+            "No reliable venue calendar was available; use by_hour_utc and do "
+            "not interpret named geographic sessions."
+        ),
+    }
+
+
 def analyze_execution_quality(  # noqa: C901
     request: TradeExecutionQualityRequest, gateway: Any
 ) -> Dict[str, Any]:
@@ -782,9 +845,64 @@ def analyze_execution_quality(  # noqa: C901
             ).strip() or None
         except Exception:
             account_currency = None
-    kwargs = {"group": f"*{request.symbol}*"} if request.symbol else {}
-    deals = [_mapping(row) for row in (gateway.history_deals_get(start, end, **kwargs) or [])]
-    orders = [_mapping(row) for row in (gateway.history_orders_get(start, end, **kwargs) or [])]
+    symbol_catalog = _execution_symbol_catalog(gateway)
+    resolved_symbol = None
+    if request.symbol:
+        from ..utils.mt5 import resolve_broker_symbol_name
+
+        resolved_symbol = resolve_broker_symbol_name(request.symbol, gateway=gateway)
+        exact = symbol_catalog.get(str(resolved_symbol).casefold())
+        if symbol_catalog and exact is None:
+            return {
+                "error": f"Symbol {request.symbol!r} was not found by MT5.",
+                "error_code": "symbol_not_found",
+                "symbol": request.symbol,
+                "remediation": (
+                    "Use symbols_list to discover the exact broker symbol name."
+                ),
+            }
+        if exact is not None:
+            resolved_symbol = str(exact["name"])
+        elif not symbol_catalog:
+            try:
+                symbol_info = gateway.symbol_info(resolved_symbol)
+            except Exception:
+                symbol_info = None
+            if symbol_info is None:
+                return {
+                    "error": f"Symbol {request.symbol!r} was not found by MT5.",
+                    "error_code": "symbol_not_found",
+                    "symbol": request.symbol,
+                    "remediation": (
+                        "Use symbols_list to discover the exact broker symbol name."
+                    ),
+                }
+    kwargs = {"group": resolved_symbol} if resolved_symbol else {}
+    raw_deals = [
+        _mapping(row)
+        for row in (gateway.history_deals_get(start, end, **kwargs) or [])
+    ]
+    raw_orders = [
+        _mapping(row)
+        for row in (gateway.history_orders_get(start, end, **kwargs) or [])
+    ]
+    if resolved_symbol:
+        deals = [
+            row
+            for row in raw_deals
+            if str(row.get("symbol") or "").casefold()
+            == resolved_symbol.casefold()
+        ]
+        orders = [
+            row
+            for row in raw_orders
+            if not str(row.get("symbol") or "").strip()
+            or str(row.get("symbol") or "").casefold()
+            == resolved_symbol.casefold()
+        ]
+    else:
+        deals = raw_deals
+        orders = raw_orders
     order_by_ticket = {int(row.get("ticket") or 0): row for row in orders if row.get("ticket")}
     fills = []
     skipped = {
@@ -943,10 +1061,22 @@ def analyze_execution_quality(  # noqa: C901
             "order_type_code": order_type_value,
             "hour_utc": datetime.fromtimestamp(fill_epoch, tz=timezone.utc).hour,
         }
-        item["session"] = market_session_label(
-            datetime.fromtimestamp(fill_epoch, tz=timezone.utc),
-            session_calendar="fx",
+        session_calendar, symbol_path = _execution_session_calendar(
+            symbol,
+            gateway=gateway,
+            catalog=symbol_catalog,
         )
+        item["session_calendar"] = session_calendar
+        item["session"] = None
+        if symbol_path:
+            item["symbol_path"] = symbol_path
+        if session_calendar == "fx":
+            item["session"] = market_session_label(
+                datetime.fromtimestamp(fill_epoch, tz=timezone.utc),
+                session_calendar="fx",
+            )
+        elif session_calendar == "continuous_24_7":
+            item["session"] = "continuous"
         try:
             action = getattr(gateway, "ORDER_TYPE_BUY", 0) if side == "buy" else getattr(gateway, "ORDER_TYPE_SELL", 1)
             shortfall = gateway.order_calc_profit(action, symbol, volume, arrival, fill_price)
@@ -1033,9 +1163,12 @@ def analyze_execution_quality(  # noqa: C901
     breakdowns: Dict[str, List[Dict[str, Any]]] = {}
     if fills:
         fill_frame = pd.DataFrame(fills)
-        for keys, label in ((["symbol", "side"], "by_symbol_side"), (["order_type"], "by_order_type"), (["session"], "by_session"), (["hour_utc"], "by_hour_utc")):
+        for keys, label in ((["symbol", "side"], "by_symbol_side"), (["order_type"], "by_order_type"), (["session_calendar", "session"], "by_session"), (["hour_utc"], "by_hour_utc")):
             breakdowns[label] = []
-            for group_key, items in fill_frame.groupby(keys):
+            source_frame = fill_frame
+            if label == "by_session":
+                source_frame = fill_frame[fill_frame["session"].notna()]
+            for group_key, items in source_frame.groupby(keys):
                 labels = group_key if isinstance(group_key, tuple) else (group_key,)
                 row = {name: value for name, value in zip(keys, labels)}
                 row.update({"fills": len(items), "slippage_bps": _execution_percentiles(items["slippage_bps"])})
@@ -1069,8 +1202,48 @@ def analyze_execution_quality(  # noqa: C901
             f"Skipped {skipped['future_timestamp']} fill(s) whose broker timestamp "
             "was more than 5 minutes ahead of the observation clock."
         )
+    session_calendars = sorted(
+        {
+            str(item.get("session_calendar"))
+            for item in fills
+            if item.get("session_calendar")
+        }
+    )
+    if not session_calendars and resolved_symbol:
+        fallback_calendar, _ = _execution_session_calendar(
+            resolved_symbol,
+            gateway=gateway,
+            catalog=symbol_catalog,
+        )
+        session_calendars = [fallback_calendar]
+    session_definitions = {
+        calendar: _execution_session_definition(calendar)
+        for calendar in session_calendars
+    }
+    if "utc_hour_only" in session_calendars:
+        warnings.append(
+            "One or more symbols have no reliable venue calendar; use by_hour_utc for those fills."
+        )
+    matched_symbols = sorted(
+        {
+            str(item.get("symbol"))
+            for item in eligible_deals
+            if item.get("symbol")
+        }
+    )
     return {
         "success": True,
+        **(
+            {
+                "symbol_filter": {
+                    "requested": request.symbol,
+                    "resolved": resolved_symbol,
+                    "match_mode": "exact",
+                }
+            }
+            if request.symbol
+            else {}
+        ),
         **({"currency": account_currency} if account_currency else {}),
         "summary": summary,
         **({"breakdowns": breakdowns} if request.detail != "compact" else {}),
@@ -1079,6 +1252,9 @@ def analyze_execution_quality(  # noqa: C901
         "data_quality": {
             "history_deals": len(deals),
             "history_orders": len(orders),
+            "history_deals_before_exact_filter": len(raw_deals),
+            "history_orders_before_exact_filter": len(raw_orders),
+            "matched_symbols": matched_symbols,
             "eligible_trade_deals": len(eligible_deals),
             "processed_candidates": processed_candidates,
             "matched_fills": len(fills),
@@ -1094,7 +1270,11 @@ def analyze_execution_quality(  # noqa: C901
                     else None
                 ),
             },
-            "session_definition": session_definition_for_clock("UTC", "fx"),
+            **(
+                {"session_definition": next(iter(session_definitions.values()))}
+                if len(session_definitions) == 1
+                else {"session_definitions": session_definitions}
+            ),
         },
         "sample": {
             "selection_order": "latest_first",
