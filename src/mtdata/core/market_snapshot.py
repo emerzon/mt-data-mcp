@@ -670,6 +670,19 @@ def _snapshot_summary_payload(sections: Dict[str, Any]) -> Dict[str, Any]:  # no
             for key in ("current_regime", "regime", "label", "probabilities", "confidence")
             if key in regime
         }
+        regime_summary = regime.get("summary")
+        if isinstance(regime_summary, dict):
+            for source_key, output_key in (
+                ("last_state", "state"),
+                ("state_shares", "state_shares"),
+            ):
+                if regime_summary.get(source_key) is not None:
+                    compact_regime[output_key] = regime_summary[source_key]
+        reliability = regime.get("reliability")
+        if isinstance(reliability, dict):
+            for key in ("reliability_label", "confidence"):
+                if reliability.get(key) is not None:
+                    compact_regime[key] = reliability[key]
         if compact_regime:
             out["regime"] = compact_regime
     if isinstance(forecast, dict):

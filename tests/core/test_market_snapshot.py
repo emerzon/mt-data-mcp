@@ -465,6 +465,37 @@ def test_market_snapshot_compact_keeps_requested_regime_and_forecast(monkeypatch
     }
 
 
+def test_market_snapshot_compact_projects_hmm_regime_fields(monkeypatch):
+    def fake_call_section(name, symbol, timeframe, horizon, detail):
+        assert name == "regime"
+        return {
+            "success": True,
+            "method": "hmm",
+            "summary": {
+                "last_state": 2,
+                "state_shares": {"0": 0.25, "2": 0.75},
+            },
+            "reliability": {
+                "reliability_label": "medium",
+                "confidence": 0.72,
+            },
+        }
+
+    monkeypatch.setattr(snapshot_mod, "_call_section", fake_call_section)
+
+    result = _raw_market_snapshot(
+        symbol="EURUSD", sections="regime", detail="compact"
+    )
+
+    assert result["sections_summarized"] == ["regime"]
+    assert result["snapshot"]["regime"] == {
+        "state": 2,
+        "state_shares": {"0": 0.25, "2": 0.75},
+        "reliability_label": "medium",
+        "confidence": 0.72,
+    }
+
+
 def test_market_snapshot_nearest_levels_respect_quote_side(monkeypatch):
     def fake_call_section(name, symbol, timeframe, horizon, detail):
         if name == "quote":
