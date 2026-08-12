@@ -324,6 +324,37 @@ class TestMain:
         mock_fn.assert_called_once_with(group="Forex\\Majors", __cli_raw=True)
 
     @patch("mtdata.core.cli.api.discover_tools")
+    def test_causal_discover_signals_joins_space_separated_symbols(
+        self,
+        mock_discover,
+    ):
+        mock_fn = MagicMock(return_value="output text")
+        mock_fn.__module__ = "mtdata.core.server"
+        mock_fn.__name__ = "causal_discover_signals"
+
+        def causal_discover_signals(symbols: Optional[str] = None):
+            pass
+
+        info = get_function_info(causal_discover_signals)
+        info["func"] = mock_fn
+        mock_discover.return_value = {
+            "causal_discover_signals": {
+                "func": mock_fn,
+                "meta": {"description": "Causal discovery"},
+                "_cli_func_info": info,
+            },
+        }
+
+        with patch(
+            "sys.argv",
+            ["cli.py", "causal_discover_signals", "EURUSD", "GBPUSD"],
+        ):
+            status = main()
+
+        assert status == 0
+        mock_fn.assert_called_once_with(symbols="EURUSD,GBPUSD", __cli_raw=True)
+
+    @patch("mtdata.core.cli.api.discover_tools")
     def test_cointegration_test_keeps_optional_first_positional_symbols(
         self, mock_discover
     ):
@@ -1220,6 +1251,36 @@ class TestMain:
         assert "Error" in capsys.readouterr().err
 
     @patch("mtdata.core.cli.api.discover_tools")
+    def test_command_exception_is_structured_in_json_mode(self, mock_discover, capsys):
+        mock_fn = MagicMock(side_effect=RuntimeError("fail!"))
+        mock_fn.__module__ = "mtdata.core.server"
+        mock_fn.__name__ = "bad_tool"
+
+        def bad_tool(symbol: str):
+            pass
+
+        info = get_function_info(bad_tool)
+        info["func"] = mock_fn
+        mock_discover.return_value = {
+            "bad_tool": {
+                "func": mock_fn,
+                "meta": {"description": "Bad tool"},
+                "_cli_func_info": info,
+            },
+        }
+
+        with patch("sys.argv", ["cli.py", "bad_tool", "X", "--json"]):
+            status = main()
+
+        captured = capsys.readouterr()
+        payload = json.loads(captured.out)
+        assert status == 1
+        assert captured.err == ""
+        assert payload["success"] is False
+        assert payload["error_code"] == "unexpected_error"
+        assert payload["operation"] == "bad_tool"
+
+    @patch("mtdata.core.cli.api.discover_tools")
     def test_command_tool_error_result_returns_nonzero(self, mock_discover, capsys):
         mock_fn = MagicMock(return_value={"error": "bad input"})
         mock_fn.__module__ = "mtdata.core.server"
@@ -1573,7 +1634,7 @@ class TestForecastGenerateIntegration:
         with patch("sys.argv", ["cli.py", "forecast_generate", "--json"]):
             status = main()
 
-        assert status == 1
+        assert status == 2
         payload = json.loads(capsys.readouterr().out)
         assert payload["error_code"] == "cli_missing_required"
         assert payload["operation"] == "forecast_generate"
@@ -2516,7 +2577,7 @@ class TestBuildEpilog:
 
         epilog = _build_epilog(functions)
 
-        assert "Commands and Arguments by Category:" in epilog
+        assert "Commands and Arguments by Section:" in epilog
         assert "DATA ACCESS:" in epilog
         assert "FORECASTING:" in epilog
         assert "TRADING:" in epilog
@@ -2729,6 +2790,67 @@ def test_extended_help_surfaces_global_flags(capsys):
     out = capsys.readouterr().out
     assert 'Global options' in out
     assert '--precision' in out
+
+
+def test_extended_help_exact_global_flag_precedes_command_matches(capsys):
+    from mtdata.core.cli.api import _print_extended_help
+
+    def sample(json: bool = False):
+        """A command whose documentation mentions json."""
+
+    info = get_function_info(sample)
+    functions = {
+        "sample": {
+            "func": sample,
+            "meta": {"description": "Return json output"},
+            "_cli_func_info": info,
+        }
+    }
+
+    _print_extended_help(functions, "json")
+
+    out = capsys.readouterr().out
+    assert "Global options matching 'json'" in out
+    assert "Extended help for query" not in out
+
+
+def test_help_search_indexes_reviewed_examples():
+    def trade_place(symbol: str):
+        pass
+
+    info = get_function_info(trade_place)
+    functions = {
+        "trade_place": {
+            "func": trade_place,
+            "meta": {"description": "Place an order"},
+            "_cli_func_info": info,
+        }
+    }
+
+    assert [row[0] for row in _match_commands(functions, "swing")] == ["trade_place"]
+
+
+@pytest.mark.parametrize(
+    ("command", "required_text", "forbidden_text"),
+    [
+        ("outliers_detect", "--method mad", "theta"),
+        ("forecast_volatility_estimate", "--method ewma", "theta"),
+        ("portfolio_risk_decompose", "--method historical", "theta"),
+        ("options_barrier_price", "150 --strike 155", "<"),
+        ("wait_event", "--max-wait-seconds 1", "mtdata-cli wait_event\n"),
+        ("trade_stress_test", "EURUSD=-1", "<shocks>"),
+        ("cross_correlation", "EURUSD GBPUSD", "<symbols>"),
+        ("strategy_validate", "ema_cross", "<candidates>"),
+    ],
+)
+def test_reviewed_usage_examples_are_concrete(command, required_text, forbidden_text):
+    from mtdata.core.cli.api import _COMMAND_USAGE_EXAMPLES
+
+    rendered = "\n".join(
+        example for example in _COMMAND_USAGE_EXAMPLES[command] if example
+    )
+    assert required_text in rendered
+    assert forbidden_text not in rendered
 
 
 def test_match_global_flags_matches_prefix():

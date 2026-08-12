@@ -1077,7 +1077,7 @@ class TestCreateCommandFunction:
         cmd_fn = create_command_function(func_info, cmd_name="test_cmd")
         args = argparse.Namespace(symbol=None, json=False, verbose=False)
         status = cmd_fn(args)
-        assert status == 1
+        assert status == 2
         output = capsys.readouterr().out
         assert "Missing required argument(s): symbol." in output
         assert "Use symbols_list to browse available broker symbols." in output
@@ -1107,7 +1107,7 @@ class TestCreateCommandFunction:
             verbose=False,
         )
         status = cmd_fn(args)
-        assert status == 1
+        assert status == 2
         output = capsys.readouterr().out
         assert "Missing required argument(s): symbol, volume, order_type." in output
         assert "LIVE ORDER WARNING" in output
@@ -1165,7 +1165,7 @@ class TestCreateCommandFunction:
         )
         args = argparse.Namespace(library=None, json=False, verbose=False)
         status = cmd_fn(args)
-        assert status == 1
+        assert status == 2
         out = capsys.readouterr().out
         assert "Missing required argument 'library'." in out
         assert "native, statsforecast, sktime, pretrained, mlforecast" in out

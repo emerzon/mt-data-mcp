@@ -1287,7 +1287,7 @@ def _sort_subparser_help_choices(subparsers: argparse._SubParsersAction) -> None
 
 def _build_epilog(functions: Dict[str, ToolInfo]) -> str:
     lines = []
-    lines.append("Commands and Arguments by Category:")
+    lines.append("Commands and Arguments by Section:")
     grouped: Dict[str, List[Tuple[str, ToolInfo]]] = {
         category: [] for category in _COMMAND_HELP_CATEGORY_ORDER
     }
@@ -1349,7 +1349,6 @@ def _build_epilog(functions: Dict[str, ToolInfo]) -> str:
 _EXTENDED_HELP_EXAMPLE_HINTS: Dict[str, Any] = {
     "symbol": "EURUSD",
     "timeframe": "H1",
-    "method": "theta",
     "library": "native",
     "methods": "theta naive",
     "horizon": "8",
@@ -1367,6 +1366,74 @@ _EXTENDED_HELP_EXAMPLE_HINTS: Dict[str, Any] = {
 }
 
 _COMMAND_USAGE_EXAMPLES: Dict[str, Tuple[str, Optional[str]]] = {
+    "causal_discover_signals": (
+        f"{CLI_PROGRAM} causal_discover_signals EURUSD GBPUSD",
+        f"{CLI_PROGRAM} causal_discover_signals --group \"Forex\\Majors\"",
+    ),
+    "cointegration_test": (
+        f"{CLI_PROGRAM} cointegration_test EURUSD GBPUSD",
+        None,
+    ),
+    "correlation_matrix": (
+        f"{CLI_PROGRAM} correlation_matrix EURUSD GBPUSD USDJPY",
+        None,
+    ),
+    "outliers_detect": (
+        f"{CLI_PROGRAM} outliers_detect EURUSD --method mad",
+        f"{CLI_PROGRAM} outliers_detect EURUSD --method zscore --threshold 3",
+    ),
+    "forecast_volatility_estimate": (
+        f"{CLI_PROGRAM} forecast_volatility_estimate EURUSD --method ewma",
+        f"{CLI_PROGRAM} forecast_volatility_estimate EURUSD --method rolling_std --horizon 8",
+    ),
+    "portfolio_risk_decompose": (
+        f"{CLI_PROGRAM} portfolio_risk_decompose --method historical",
+        f"{CLI_PROGRAM} portfolio_risk_decompose --method filtered_historical --lookback 1000",
+    ),
+    "options_barrier_price": (
+        f"{CLI_PROGRAM} options_barrier_price 150 --strike 155 --barrier 140 "
+        "--maturity-days 30 --barrier-type down_out",
+        None,
+    ),
+    "wait_event": (
+        f"{CLI_PROGRAM} wait_event EURUSD --max-wait-seconds 1",
+        f"{CLI_PROGRAM} wait_event --timeframe M1",
+    ),
+    "trade_stress_test": (
+        f'{CLI_PROGRAM} trade_stress_test "EURUSD=-1"',
+        f'{CLI_PROGRAM} trade_stress_test "EURUSD=-1 XAUUSD=-3"',
+    ),
+    "cross_correlation": (
+        f"{CLI_PROGRAM} cross_correlation EURUSD GBPUSD --max-lag 12",
+        None,
+    ),
+    "strategy_validate": (
+        f"{CLI_PROGRAM} strategy_validate EURUSD --candidates "
+        "'[{\"id\":\"cross\",\"type\":\"builtin_strategy\","
+        "\"strategy\":\"ema_cross\"}]'",
+        None,
+    ),
+    "labels_triple_barrier": (
+        f'{CLI_PROGRAM} labels_triple_barrier EURUSD --barriers '
+        '"unit=pct take_profit=0.5 stop_loss=0.5"',
+        None,
+    ),
+    "forecast_train": (
+        f"{CLI_PROGRAM} forecast_train EURUSD --method theta",
+        None,
+    ),
+    "denoise_describe": (
+        f"{CLI_PROGRAM} denoise_describe kalman",
+        None,
+    ),
+    "indicators_describe": (
+        f"{CLI_PROGRAM} indicators_describe rsi",
+        None,
+    ),
+    "market_relative_strength": (
+        f"{CLI_PROGRAM} market_relative_strength EURUSD GBPUSD USDJPY",
+        None,
+    ),
     "forecast_barrier_prob": (
         f"{CLI_PROGRAM} forecast_barrier_prob EURUSD --barrier "
         "'{\"kind\":\"tp_sl\",\"unit\":\"pct\",\"take_profit\":0.2,"
@@ -1469,19 +1536,21 @@ def _quote_cli_value(text: str) -> str:
 def _example_value(param: Dict[str, Any], *, prefer_default: bool) -> str:
     name = param["name"]
     default_text = _format_cli_literal(param.get("default"))
-    if not prefer_default:
-        hint = _EXTENDED_HELP_EXAMPLE_HINTS.get(name)
-        if callable(hint):
-            try:
-                return str(hint(param))
-            except Exception:
-                pass
-        if isinstance(hint, str):
-            return hint
     if prefer_default and default_text is not None:
         return default_text
+    hint = _EXTENDED_HELP_EXAMPLE_HINTS.get(name)
+    if callable(hint):
+        try:
+            return str(hint(param))
+        except Exception:
+            pass
+    if isinstance(hint, str):
+        return hint
     if not prefer_default and default_text is not None:
         return default_text
+    choices = _literal_choices_for_cli_param(param)
+    if choices:
+        return choices[0]
     ptype = param.get("type")
     if ptype is int:
         return "10"
@@ -1526,6 +1595,8 @@ def _build_usage_examples(
     if optional_tokens:
         adv_parts = base_parts + optional_tokens[:2]
         advanced = CLI_PROGRAM + " " + " ".join(adv_parts)
+        if "<" in advanced or ">" in advanced:
+            advanced = None
     return base, advanced
 
 
@@ -1562,6 +1633,10 @@ def _match_commands(
                 name.lower(),
                 str(meta.get("description") or func_info.get("doc") or "").lower(),
                 " ".join(param_terms).lower(),
+                " ".join(
+                    (example or "").replace(CLI_PROGRAM, "")
+                    for example in _build_usage_examples(name, func_info)
+                ).lower(),
             ]
         )
         if all(tok in haystack for tok in tokens):
@@ -1622,7 +1697,7 @@ _GLOBAL_FLAG_HELP: Dict[str, str] = {
 
 
 def _match_global_flags(query: str) -> List[tuple[str, str]]:
-    token = str(query or "").strip().lower().lstrip("-")
+    token = str(query or "").strip().lower().lstrip("-").replace("-", "_")
     if not token:
         return []
     return [
@@ -1642,6 +1717,16 @@ def _print_extended_help(functions: Dict[str, ToolInfo], query: str) -> None:
 
     matches = _match_commands(functions, query)
     global_matches = _match_global_flags(query)
+    normalized_query = str(query or "").strip().lower().lstrip("-").replace("-", "_")
+    exact_global_matches = [
+        (name, doc) for name, doc in global_matches if name == normalized_query
+    ]
+    if exact_global_matches:
+        print(f"Global options matching '{query}':")
+        for _name, doc in exact_global_matches:
+            print(f"  {doc}")
+        print(f"\nRun `{CLI_PROGRAM} --help` for the full command list.")
+        return
     if not matches:
         if global_matches:
             print(f"Global options matching '{query}':")
@@ -1882,7 +1967,7 @@ def main():  # noqa: C901
                     args=args,
                     cmd_name=cmd_name,
                 )
-                return 1
+                return 2
             try:
                 overrides = _parse_set_overrides(args.set_overrides)
             except ValueError as exc:
@@ -2087,7 +2172,25 @@ def main():  # noqa: C901
             import traceback
 
             traceback.print_exc()
-        print(f"Error: {e}", file=sys.stderr)
+        if _json_parse_errors_requested():
+            command = str(getattr(args, "command", None) or "cli")
+            _write_cli_text(
+                json.dumps(
+                    build_error_payload(
+                        f"Unexpected {type(e).__name__}: {e}",
+                        code="unexpected_error",
+                        operation=command,
+                        remediation=(
+                            "Retry with MTDATA_DEBUG=1 for a traceback; if the "
+                            "problem persists, report the request ID."
+                        ),
+                    ),
+                    ensure_ascii=False,
+                    indent=2,
+                )
+            )
+        else:
+            print(f"Error: {e}", file=sys.stderr)
         return 1
 
 

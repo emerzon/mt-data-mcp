@@ -94,6 +94,11 @@ Combine it with `--json` for token-lean machine parsing:
 mtdata-cli symbols_describe EURUSD --output-fields symbol,digits,point --json
 ```
 
+Bare names select top-level keys only. Use a dotted path such as
+`general_news.title` to select nested values. Any requested path that is not
+present is returned in `unresolved_output_fields`; projection never silently
+searches unrelated nested objects for a matching key.
+
 `json` and `output_fields` are the shared output-shaping parameters available
 across tools. A domain-specific parameter named `fields` (currently used by
 Finviz fundamentals) selects source data and is not response projection.

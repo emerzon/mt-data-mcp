@@ -73,6 +73,12 @@ mtdata-cli regime_detect --help
 mtdata-cli tools_list --category forecast --json
 ```
 
+The broad headings in root help are navigation sections. The machine-readable
+catalog uses the narrower category identifiers accepted by `tools_list`:
+`analysis`, `data`, `forecast`, `market`, `methods`, `options`,
+`pattern_regime`, `report`, `research`, `symbols`, and `trading`. Command help
+lists these as choices and rejects unknown categories.
+
 ---
 
 ## Output contract
@@ -138,13 +144,16 @@ semantics:
 mtdata-cli symbols_describe EURUSD --output-fields symbol,digits,point --json
 ```
 
+Bare field names address top-level keys; dotted paths address nested keys.
+Misspelled or unavailable paths are reported in `unresolved_output_fields`.
+
 ### Exit Codes
 
 | Code | Meaning |
 |------|---------|
 | `0` | Command completed without a tool error |
 | `1` | Tool/provider failure, invalid tool payload, interrupted command, internal CLI error, or no command selected |
-| `2` | Argument parsing or command-line usage error reported by `argparse` |
+| `2` | Argument parsing or command-line usage error, including a missing required symbol |
 
 Scripts should parse JSON error fields when they need to distinguish provider,
 validation, and internal failures that share exit code `1`.

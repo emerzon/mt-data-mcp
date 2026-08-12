@@ -17,12 +17,16 @@ def test_output_fields_supports_dotted_nested_paths() -> None:
     }
 
 
-def test_output_fields_ignores_partially_unresolved_projection() -> None:
+def test_output_fields_reports_partially_unresolved_projection() -> None:
     payload = {"success": True, "symbol": "EURUSD", "details": {"digits": 5}}
 
     result = _select_output_fields(payload, "symbol,details.missing")
 
-    assert result == {"success": True, "symbol": "EURUSD"}
+    assert result == {
+        "success": True,
+        "symbol": "EURUSD",
+        "unresolved_output_fields": ["details.missing"],
+    }
 
 
 def test_output_fields_allows_error_field_on_success() -> None:
@@ -69,7 +73,7 @@ def test_output_fields_prefers_top_level_quote_values_over_nested_diagnostics() 
     }
 
 
-def test_output_fields_still_projects_bare_fields_from_row_collections() -> None:
+def test_output_fields_does_not_deep_match_bare_fields_from_row_collections() -> None:
     payload = {
         "success": True,
         "symbol": "EURUSD",
@@ -77,6 +81,22 @@ def test_output_fields_still_projects_bare_fields_from_row_collections() -> None
     }
 
     result = _select_output_fields(payload, "close")
+
+    assert result == {
+        "success": True,
+        "symbol": "EURUSD",
+        "unresolved_output_fields": ["close"],
+    }
+
+
+def test_output_fields_uses_dotted_paths_for_row_collections() -> None:
+    payload = {
+        "success": True,
+        "symbol": "EURUSD",
+        "data": [{"time": 1, "close": 1.1}, {"time": 2, "close": 1.2}],
+    }
+
+    result = _select_output_fields(payload, "data.close")
 
     assert result == {
         "success": True,
@@ -92,7 +112,7 @@ def test_output_fields_preserves_pagination_metadata() -> None:
         "pagination": {"offset": 0, "limit": 1, "returned": 1, "total": 8},
     }
 
-    result = _select_output_fields(payload, "name")
+    result = _select_output_fields(payload, "tools.name")
 
     assert result == {
         "success": True,

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Literal, Optional
 
 from ..shared.schema import DetailLiteral
 from ._mcp_instance import mcp
@@ -13,10 +13,24 @@ from .output_contract import build_pagination_meta
 
 logger = logging.getLogger(__name__)
 
+ToolCategory = Literal[
+    "analysis",
+    "data",
+    "forecast",
+    "market",
+    "methods",
+    "options",
+    "pattern_regime",
+    "report",
+    "research",
+    "symbols",
+    "trading",
+]
+
 
 @mcp.tool()
 def tools_list(
-    category: Optional[str] = None,
+    category: Optional[ToolCategory] = None,
     search: Optional[str] = None,
     limit: Optional[int] = None,
     offset: int = 0,
@@ -123,11 +137,17 @@ def tools_list(
             "search": search_filter or None,
         }
         if category_filter and category_filter not in known_categories:
-            catalog["warning"] = (
-                f"Unknown category '{category}'. Valid categories: "
-                + ", ".join(sorted(known_categories))
-                + "."
-            )
+            return {
+                "success": False,
+                "error": (
+                    f"Unknown category '{category}'. Valid categories: "
+                    + ", ".join(sorted(known_categories))
+                    + "."
+                ),
+                "error_code": "invalid_category",
+                "operation": "tools_list",
+                "valid_categories": sorted(known_categories),
+            }
         if compact_mode and gated_tools:
             catalog["gated_tools"] = gated_tools
         return catalog

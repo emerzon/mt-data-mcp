@@ -75,6 +75,20 @@ def test_unknown_command_json_uses_standard_error_envelope(capsys):
     assert payload["documentation"] == "docs/CLI.md"
 
 
+def test_unknown_command_honors_json_output_environment(monkeypatch, capsys):
+    from mtdata.core.cli import main
+
+    monkeypatch.setenv("MTDATA_OUTPUT_FORMAT", "json")
+    with patch.dict("sys.modules", {"mtdata.core.cli.api": None}):
+        status = main(["no-such-command"])
+
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out)
+    assert status == 2
+    assert captured.err == ""
+    assert payload["error_code"] == "cli_unknown_command"
+
+
 @pytest.mark.parametrize(
     "argv",
     [

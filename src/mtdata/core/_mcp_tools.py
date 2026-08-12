@@ -786,18 +786,20 @@ def _select_output_fields(value: Any, fields: Any) -> Any:
         elif requested_field in value:
             filtered, matched = {requested_field: value[requested_field]}, True
         else:
-            filtered, matched = _filter_output_fields(
-                value,
-                {requested_field},
-                preserve_meta=False,
-            )
+            filtered, matched = {}, requested_field in {
+                "error",
+                "error_code",
+                "remediation",
+                "documentation",
+            }
         if not matched:
             unresolved.append(requested_field)
             continue
         selected = _merge_output_field_selection(selected, filtered)
-    # Projection is a narrowing operation over the concrete response, not a
-    # schema assertion. Optional, mode-specific, and error-only fields may be
-    # absent without turning an otherwise successful tool call into a failure.
+    # Optional error-envelope fields may be absent on success. Other missing
+    # paths are surfaced so projection typos cannot silently discard data.
+    if unresolved:
+        selected["unresolved_output_fields"] = unresolved
     return selected
 
 

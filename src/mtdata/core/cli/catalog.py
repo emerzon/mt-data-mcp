@@ -174,7 +174,7 @@ def format_root_help(program: str) -> str:
         "load only their tool family; use shell for repeated commands in one warm",
         "process. TOON is the default output format; pass --json for JSON.",
         "",
-        "Commands:",
+        "Command sections (tools_list uses narrower catalog categories):",
         "  shell  Run interactive commands or a stdin batch in one warm process",
     ]
     for category, prefixes in _CATEGORY_PREFIXES:

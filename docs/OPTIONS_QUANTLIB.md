@@ -81,18 +81,18 @@ By default, QuantLib pricing assumes the `UnitedStates.NYSE` calendar and interp
 ```bash
 # Down-and-out call (knock-out if price falls to barrier)
 mtdata-cli options_barrier_price \
-  --spot 150 --strike 155 --barrier 140 --maturity-days 30 \
+  150 --strike 155 --barrier 140 --maturity-days 30 \
   --option-type call --barrier-type down_out --volatility 0.25 --json
 
 # Up-and-in put (activates if price rises to barrier)
 mtdata-cli options_barrier_price \
-  --spot 150 --strike 145 --barrier 160 --maturity-days 60 \
+  150 --strike 145 --barrier 160 --maturity-days 60 \
   --option-type put --barrier-type up_in --volatility 0.3 --json
 ```
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| `--spot` | (required) | Current spot price |
+| `spot` (positional) | (required) | Current spot price |
 | `--strike` | (required) | Strike price |
 | `--barrier` | (required) | Barrier level |
 | `--maturity-days` | (required) | Time to maturity in calendar days |
@@ -173,7 +173,7 @@ mtdata-cli options_heston_calibrate TSLA \
 |------|---------|
 | List expirations | `mtdata-cli options_expirations AAPL` |
 | Options chain | `mtdata-cli options_chain AAPL --option-type call` |
-| Barrier option price | `mtdata-cli options_barrier_price --spot 150 --strike 155 --barrier 140 --maturity-days 30` |
+| Barrier option price | `mtdata-cli options_barrier_price 150 --strike 155 --barrier 140 --maturity-days 30` |
 | Heston calibration | `mtdata-cli options_heston_calibrate AAPL` |
 
 ---

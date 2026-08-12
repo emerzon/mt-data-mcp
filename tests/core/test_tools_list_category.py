@@ -12,11 +12,12 @@ def _call(**kwargs):
     return fn(**kwargs)
 
 
-def test_tools_list_unknown_category_warns():
+def test_tools_list_unknown_category_fails():
     out = _call(category="definitely_not_a_category", detail="compact")
-    assert out.get("count") == 0
-    assert out.get("warning")
-    assert "Unknown category" in out["warning"]
+    assert out["success"] is False
+    assert out["error_code"] == "invalid_category"
+    assert "Unknown category" in out["error"]
+    assert "forecast" in out["valid_categories"]
 
 
 def test_tools_list_known_category_has_no_warning():

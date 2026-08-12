@@ -1,6 +1,7 @@
 """Lightweight command-line entry point."""
 
 import json
+import os
 import sys
 from difflib import get_close_matches
 from typing import Optional, Sequence
@@ -13,6 +14,13 @@ _GLOBAL_OPTIONS_WITH_VALUES = frozenset(
     {"--output-fields", "--precision", "--timeframe"}
 )
 _GLOBAL_FLAG_OPTIONS = frozenset({"--json"})
+
+
+def _json_output_requested(argv: Sequence[str]) -> bool:
+    """Resolve the lightweight entry point's output mode without loading tools."""
+    if "--json" in argv:
+        return True
+    return str(os.getenv("MTDATA_OUTPUT_FORMAT") or "").strip().lower() == "json"
 
 
 def _leading_command_token(argv: Sequence[str]) -> Optional[str]:
@@ -65,7 +73,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         suggestions = get_close_matches(normalized_command, sorted(known_commands), n=3)
         if suggestions:
             message += f". Did you mean: {', '.join(suggestions)}?"
-        if "--json" in effective_argv:
+        if _json_output_requested(effective_argv):
             print(
                 json.dumps(
                     build_error_payload(

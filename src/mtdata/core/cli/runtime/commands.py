@@ -405,6 +405,7 @@ def create_command_function(  # noqa: C901
                 param_name == "symbols"
                 and cmd_name
                 in {
+                    "causal_discover_signals",
                     "correlation_matrix",
                     "cointegration_test",
                     "cross_correlation",
@@ -537,7 +538,7 @@ def create_command_function(  # noqa: C901
                 args=args,
                 cmd_name=cmd_name,
             )
-            return 1
+            return 2
 
         request_model = func_info.get("request_model")
         request_param_name = func_info.get("request_param_name")
