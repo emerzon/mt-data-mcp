@@ -54,6 +54,26 @@ _TABLE = "mtdata.core.symbols._table_from_rows"
 _NORM_LIMIT = "mtdata.core.symbols._normalize_limit"
 
 
+def test_mt5_source_provenance_identifies_broker_without_account_number():
+    from mtdata.core.symbols import _mt5_source_provenance
+
+    gateway = SimpleNamespace(
+        account_info=lambda: SimpleNamespace(
+            company="Broker Co",
+            server="Broker-Demo",
+            login=123456,
+        )
+    )
+
+    source = _mt5_source_provenance(gateway)
+
+    assert source["provider"] == "mt5"
+    assert source["broker_company"] == "Broker Co"
+    assert source["server"] == "Broker-Demo"
+    assert len(source["source_context_id"]) == 16
+    assert "login" not in source
+
+
 # ---------------------------------------------------------------------------
 # symbols_list — no search
 # ---------------------------------------------------------------------------
@@ -79,7 +99,11 @@ class TestSymbolsListNoSearch:
         fn = _get_symbols_list()
         res = fn(search_term=None, limit=25)
         assert "data" in res
-        assert res["headers"] == ["symbol", "group", "description"]
+        assert res["headers"] == [
+            "symbol",
+            "group",
+            "description",
+        ]
         assert len(res["data"]) == 2
         assert "rows" not in res
         assert "collection_kind" not in res
@@ -119,8 +143,15 @@ class TestSymbolsListNoSearch:
 
         res = fn(search_term=None, limit=25, detail="standard")
 
-        assert res["headers"] == ["symbol", "group", "description"]
-        assert res["data"] == [["EURUSD", "Forex\\Majors", "Euro vs US Dollar"]]
+        assert res["headers"] == [
+            "symbol",
+            "group",
+            "description",
+            "in_marketwatch",
+        ]
+        assert res["data"] == [
+            ["EURUSD", "Forex\\Majors", "Euro vs US Dollar", True]
+        ]
 
     @patch(_NORM_LIMIT, return_value=25)
     @patch(_TABLE, side_effect=lambda h, r: {"headers": h, "data": r})
@@ -174,6 +205,27 @@ class TestSymbolsListNoSearch:
         assert res["data"] == [
             ["EURUSD", "Forex\\Majors", "Euro vs US Dollar", "EUR", "USD", 5, True]
         ]
+
+    @patch(_NORM_LIMIT, return_value=25)
+    @patch(_TABLE, side_effect=lambda h, r: {"headers": h, "data": r})
+    @patch(_GROUP_PATH, return_value="Forex\\Majors")
+    @patch(f"{_MT5}.symbols_get")
+    def test_full_detail_is_a_superset_of_compact_fields(
+        self, mock_get, mock_gp, mock_tbl, mock_lim
+    ):
+        symbol = _make_symbol("EURUSD")
+        symbol.currency_base = "EUR"
+        symbol.currency_profit = "USD"
+        symbol.digits = 5
+        symbol.spread_float = True
+        mock_get.return_value = [symbol]
+        fn = _get_symbols_list()
+
+        compact = fn(search_term="EURUSD", search_mode="exact", detail="compact")
+        full = fn(search_term="EURUSD", search_mode="exact", detail="full")
+
+        assert set(compact["headers"]).issubset(full["headers"])
+        assert "in_marketwatch" in full["headers"]
 
     @patch(_NORM_LIMIT, return_value=2)
     @patch(_TABLE, side_effect=lambda h, r: {"headers": h, "data": r})
@@ -458,6 +510,7 @@ class TestSymbolsListSearch:
             fn = _get_symbols_list()
             res = fn(search_term="EURUSD", search_mode="exact", limit=25)
         assert [row[0] for row in res["data"]] == ["EURUSD"]
+        assert res["search"]["match"] == "case_insensitive_equality"
 
     @patch(_NORM_LIMIT, return_value=25)
     @patch(_TABLE, side_effect=lambda h, r: {"headers": h, "data": r})
@@ -599,6 +652,42 @@ class TestListSymbolGroups:
         assert "data" in res
         assert len(res["data"]) == 1
 
+    @patch(_TABLE, side_effect=lambda h, r: {"headers": h, "data": r})
+    @patch(_NORM_LIMIT, return_value=25)
+    @patch(_GROUP_PATH, side_effect=lambda s: s.path)
+    @patch(f"{_MT5}.symbols_get")
+    def test_applies_universe_category_currency_group_and_exact_search(
+        self, mock_get, mock_gp, mock_lim, mock_tbl
+    ):
+        eurusd = _make_symbol("EURUSD", path="Forex\\Majors", visible=True)
+        eurusd.currency_base = "EUR"
+        eurusd.currency_profit = "USD"
+        hidden = _make_symbol("GBPUSD", path="Forex\\Majors", visible=False)
+        hidden.currency_base = "GBP"
+        hidden.currency_profit = "USD"
+        stock = _make_symbol("AAPL", path="Stocks\\Nasdaq", visible=True)
+        stock.currency_base = "USD"
+        stock.currency_profit = "USD"
+        mock_get.return_value = [eurusd, hidden, stock]
+
+        res = _list_symbol_groups(
+            search_term="Forex\\Majors",
+            search_mode="exact",
+            universe="visible",
+            group="Forex",
+            currency="EUR",
+            category="forex",
+        )
+
+        assert res["data"] == [["Forex\\Majors", 1, 1, ["EURUSD"]]]
+        assert res["universe"] == "visible"
+        assert res["search_mode"] == "exact"
+        assert res["filters"] == {
+            "group": "Forex",
+            "currency": "EUR",
+            "category": "forex",
+        }
+
     @patch(f"{_MT5}.symbols_get")
     def test_none_symbols(self, mock_get):
         mock_get.return_value = None
@@ -674,6 +763,25 @@ class TestListSymbolGroups:
 
 
 class TestSymbolsDescribe:
+
+    @patch(f"{_MT5}.symbol_info")
+    def test_uninitialized_quote_omits_false_zero_market_change(self, mock_info):
+        info = MagicMock()
+        info.__dir__ = lambda self: ["name", "time", "price_change", "digits"]
+        info.name = "HIDDEN"
+        info.time = 0
+        info.price_change = 0.0
+        info.digits = 2
+        mock_info.return_value = info
+
+        result = _get_symbols_describe()("HIDDEN")
+
+        details = result["details"]
+        assert details["quote_status"] == "unavailable"
+        assert details["data_stale"] is True
+        assert "time" not in details
+        assert "price_change_pct" not in details
+
 
     @patch(f"{_MT5}.symbol_info")
     def test_symbol_not_found(self, mock_info):
@@ -891,9 +999,9 @@ class TestSymbolsDescribe:
         assert sd["digits"] == 5
         assert sd["point"] == 0.00001
         assert sd["freshness"] == "stale, tick 5m 1s ago"
-        assert "data_age_seconds" not in sd
-        assert "data_stale" not in sd
-        assert "stale_after_seconds" not in sd
+        assert sd["data_age_seconds"] == 301.0
+        assert sd["data_stale"] is True
+        assert sd["stale_after_seconds"] == 300
         assert "Live quote timestamp" in sd["warning"]
         assert "quote_age_seconds" not in sd
         assert "time_epoch" not in sd
@@ -916,8 +1024,8 @@ class TestSymbolsDescribe:
         sd = res["details"]
 
         assert sd["freshness"].startswith("closed weekend, tick ")
-        assert "data_stale" not in sd
-        assert "stale_after_seconds" not in sd
+        assert sd["data_stale"] is True
+        assert sd["stale_after_seconds"] == 300
         assert sd["market_status"] == "closed"
         assert sd["market_status_reason"] == "weekend"
         assert "latest completed session tick" in sd["note"]

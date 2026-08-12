@@ -1,4 +1,5 @@
 
+import hashlib
 import logging
 import math
 import re
@@ -152,6 +153,37 @@ def _client_timezone_label(client_tz: Any) -> str:
     )
 
 
+def _mt5_source_provenance(mt5_gateway: Any) -> Dict[str, Any]:
+    """Return non-secret broker context for broker-specific symbol payloads."""
+    source: Dict[str, Any] = {"provider": "mt5"}
+    try:
+        account = mt5_gateway.account_info()
+    except Exception:
+        account = None
+    if account is None:
+        source["context_available"] = False
+        return source
+
+    company = getattr(account, "company", None)
+    server = getattr(account, "server", None)
+    if isinstance(company, str) and company.strip():
+        source["broker_company"] = _clean_broker_text(company.strip())
+    if isinstance(server, str) and server.strip():
+        source["server"] = _clean_broker_text(server.strip())
+    identity = "|".join(
+        str(source.get(key) or "")
+        for key in ("provider", "broker_company", "server")
+    )
+    if source.get("broker_company") or source.get("server"):
+        source["source_context_id"] = hashlib.sha256(
+            identity.encode("utf-8")
+        ).hexdigest()[:16]
+        source["context_available"] = True
+    else:
+        source["context_available"] = False
+    return source
+
+
 _SYMBOL_DESCRIBE_PRICE_FIELDS = frozenset(
     {
         "bidlow",
@@ -218,6 +250,10 @@ _SYMBOL_DESCRIBE_COMPACT_DIRECT_FIELDS: tuple[str, ...] = (
     "currency_base_warning",
     "currency_profit",
     "time",
+    "quote_status",
+    "data_stale",
+    "data_age_seconds",
+    "stale_after_seconds",
     "freshness",
     "market_status",
     "market_status_reason",
@@ -542,7 +578,11 @@ def _symbol_search_context(search_term: str, search_mode: str) -> Dict[str, Any]
             search_mode,
             ["symbol", "description", "group"],
         ),
-        "match": "case_insensitive_substring",
+        "match": (
+            "case_insensitive_equality"
+            if search_mode == "exact"
+            else "case_insensitive_substring"
+        ),
     }
     if search_mode in {"auto", "all"}:
         context["ranking"] = [
@@ -934,6 +974,7 @@ def symbols_list(  # noqa: C901
                 ensure_connection_impl=ensure_mt5_connection_or_raise,
             )
             mt5_gateway.ensure_connection()
+            source = _mt5_source_provenance(mt5_gateway)
             mode = str(list_mode or "symbols").strip().lower()
             if mode not in ("symbols", "groups"):
                 return {"error": "list_mode must be 'symbols' or 'groups'."}
@@ -954,12 +995,25 @@ def symbols_list(  # noqa: C901
                     )
                 }
             if mode == "groups":
+                if search_mode_value in {"name", "description"}:
+                    return {
+                        "error": (
+                            "list_mode='groups' searches group paths only; use "
+                            "search_mode=auto, group, exact, or all."
+                        )
+                    }
                 return _list_symbol_groups(
                     search_term=normalized_search_term,
                     limit=limit,
                     offset=offset,
                     mt5_gateway=mt5_gateway,
                     detail=detail_mode,
+                    universe=universe_value,
+                    group=group_filter,
+                    currency=currency_filter,
+                    category=category_filter,
+                    search_mode=search_mode_value,
+                    source=source,
                 )
 
             matched_symbols = []
@@ -1143,33 +1197,26 @@ def symbols_list(  # noqa: C901
                     offset=offset_value,
                     limit=limit_value,
                 )
+                out["source"] = source
                 return out
-            if detail_mode == "compact":
-                headers = ["symbol", "group", "description"]
-                if category_filter:
-                    headers.append("category")
-                if normalized_search_term:
-                    headers.append("match_reason")
-                for optional_header in (
-                    "currency_base",
-                    "currency_profit",
-                    "digits",
-                    "spread_is_floating",
-                ):
-                    if any(s.get(optional_header) is not None for s in symbol_list):
-                        headers.append(optional_header)
-                if any(s.get("session_type") for s in symbol_list):
-                    headers.append("session_type")
-                rows = [[s.get(header) for header in headers] for s in symbol_list]
-            elif detail_mode == "full":
-                headers = ["symbol", "group", "description", "in_marketwatch"]
-                rows = [
-                    [s["symbol"], s["group"], s["description"], s["in_marketwatch"]]
-                    for s in symbol_list
-                ]
-            else:
-                headers = ["symbol", "group", "description"]
-                rows = [[s["symbol"], s["group"], s["description"]] for s in symbol_list]
+            headers = ["symbol", "group", "description"]
+            if category_filter:
+                headers.append("category")
+            if normalized_search_term:
+                headers.append("match_reason")
+            for optional_header in (
+                "currency_base",
+                "currency_profit",
+                "digits",
+                "spread_is_floating",
+            ):
+                if any(s.get(optional_header) is not None for s in symbol_list):
+                    headers.append(optional_header)
+            if any(s.get("session_type") for s in symbol_list):
+                headers.append("session_type")
+            if detail_mode in {"standard", "full"}:
+                headers.append("in_marketwatch")
+            rows = [[s.get(header) for header in headers] for s in symbol_list]
             result = _table_from_rows(headers, rows)
             result["universe"] = effective_universe
             if filters:
@@ -1213,6 +1260,7 @@ def symbols_list(  # noqa: C901
                 offset=offset_value,
                 limit=limit_value,
             )
+            result["source"] = source
             return attach_collection_contract(
                 result,
                 collection_kind="table",
@@ -1246,6 +1294,12 @@ def _list_symbol_groups(
     offset: int = 0,
     mt5_gateway: Any = None,
     detail: DetailLiteral = "compact",  # type: ignore
+    universe: str = "visible",
+    group: Optional[str] = None,
+    currency: Optional[str] = None,
+    category: Optional[str] = None,
+    search_mode: str = "auto",
+    source: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """List group paths as a tabular result with a single column: group."""
     try:
@@ -1258,9 +1312,23 @@ def _list_symbol_groups(
         if all_symbols is None:
             return {"error": f"Failed to get symbols: {gateway.last_error()}"}
         
+        universe_value = str(universe or "visible").strip().lower()
+        group_filter = _normalize_group_path_query(group) if group else None
+        currency_filter = str(currency or "").strip().upper() or None
+        category_filter = _normalize_symbol_category_filter(category)
+        search_mode_value = str(search_mode or "auto").strip().lower()
+        filtered_symbols = [
+            symbol
+            for symbol in list(all_symbols)
+            if (universe_value == "all" or bool(getattr(symbol, "visible", False)))
+            and _symbol_group_matches(symbol, group_filter)
+            and _symbol_currency_matches(symbol, currency_filter)
+            and (not category_filter or _symbol_category(symbol) == category_filter)
+        ]
+
         # Collect unique groups and compact discovery metadata.
         groups = {}
-        for symbol in all_symbols:
+        for symbol in filtered_symbols:
             group_path = _extract_group_path_util(symbol)
             if group_path not in groups:
                 groups[group_path] = {
@@ -1280,7 +1348,18 @@ def _list_symbol_groups(
         filtered_items = list(groups.items())
         if search_term:
             q = search_term.strip().lower()
-            filtered_items = [(k, v) for (k, v) in filtered_items if q in (k or '').lower()]
+            if search_mode_value == "exact":
+                filtered_items = [
+                    (key, value)
+                    for key, value in filtered_items
+                    if q == str(key or "").lower()
+                ]
+            else:
+                filtered_items = [
+                    (key, value)
+                    for key, value in filtered_items
+                    if q in str(key or "").lower()
+                ]
 
         group_search_note = (
             f"No group path matches '{search_term}'. Group listing filters by group "
@@ -1318,6 +1397,8 @@ def _list_symbol_groups(
                 "list_mode": "groups",
                 "count": len(filtered_items),
                 "search_term": search_term,
+                "search_mode": search_mode_value,
+                "universe": universe_value,
                 "pagination": build_pagination_meta(
                     total=total_count,
                     returned=len(filtered_items),
@@ -1327,27 +1408,47 @@ def _list_symbol_groups(
             }
             if group_search_note:
                 out["note"] = group_search_note
+            filters = {
+                key: value
+                for key, value in {
+                    "group": group_filter,
+                    "currency": currency_filter,
+                    "category": category_filter,
+                }.items()
+                if value
+            }
+            if filters:
+                out["filters"] = filters
+            out["source"] = source or _mt5_source_provenance(gateway)
             return out
-        if detail_mode in {"standard", "full"}:
-            rows = [
-                [name, meta["symbol_count"], meta["visible_count"]]
-                for name, meta in filtered_items
+        rows = [
+            [
+                name,
+                meta["symbol_count"],
+                meta["visible_count"],
+                meta["sample_symbols"],
             ]
-            result = _table_from_rows(["group", "symbol_count", "visible_count"], rows)
-        else:
-            rows = [
-                [
-                    name,
-                    meta["symbol_count"],
-                    meta["visible_count"],
-                    meta["sample_symbols"],
-                ]
-                for name, meta in filtered_items
-            ]
-            result = _table_from_rows(
-                ["group", "symbol_count", "visible_count", "sample_symbols"],
-                rows,
-            )
+            for name, meta in filtered_items
+        ]
+        result = _table_from_rows(
+            ["group", "symbol_count", "visible_count", "sample_symbols"],
+            rows,
+        )
+        result["list_mode"] = "groups"
+        result["universe"] = universe_value
+        result["search_mode"] = search_mode_value
+        filters = {
+            key: value
+            for key, value in {
+                "group": group_filter,
+                "currency": currency_filter,
+                "category": category_filter,
+            }.items()
+            if value
+        }
+        if filters:
+            result["filters"] = filters
+        result["source"] = source or _mt5_source_provenance(gateway)
         result["pagination"] = build_pagination_meta(
             total=total_count,
             returned=len(filtered_items),
@@ -1435,6 +1536,7 @@ def symbols_describe(  # noqa: C901
                 time_formatter = _format_time_explicit_local
 
             symbol_data = {}
+            quote_timestamp_available: Optional[bool] = None
             available_attrs = set(dir(symbol_info))
             for attr in _SYMBOL_DESCRIBE_FIELDS:
                 if attr not in available_attrs:
@@ -1456,7 +1558,22 @@ def symbols_describe(  # noqa: C901
                         from ..utils.mt5 import _mt5_epoch_to_utc
 
                         epoch = float(value)
+                        if not math.isfinite(epoch) or epoch <= 0.0:
+                            quote_timestamp_available = False
+                            symbol_data.update(
+                                {
+                                    "quote_status": "unavailable",
+                                    "data_stale": True,
+                                    "freshness": "unavailable, no quote timestamp",
+                                    "warning": (
+                                        "MT5 has not initialized quote data for this symbol."
+                                    ),
+                                }
+                            )
+                            continue
                         utc_epoch = _mt5_epoch_to_utc(epoch)
+                        quote_timestamp_available = True
+                        symbol_data["quote_status"] = "available"
                         if contract.shape_detail == "full":
                             symbol_data["time_epoch"] = utc_epoch
                         symbol_data["time"] = time_formatter(utc_epoch)
@@ -1520,7 +1637,21 @@ def symbols_describe(  # noqa: C901
                     if label:
                         symbol_data[f"{attr}_label"] = label
 
-            price_change_value = _market_scan_float(symbol_data.get("price_change"))
+            if quote_timestamp_available is False:
+                symbol_data.setdefault("quote_status", "unavailable")
+                symbol_data.setdefault("data_stale", True)
+                symbol_data.setdefault("freshness", "unavailable, no quote timestamp")
+                symbol_data.setdefault(
+                    "warning",
+                    "MT5 has not initialized quote data for this symbol.",
+                )
+                symbol_data.pop("price_change", None)
+
+            price_change_value = (
+                _market_scan_float(symbol_data.get("price_change"))
+                if quote_timestamp_available is not False
+                else None
+            )
             if price_change_value is not None:
                 symbol_data["price_change_pct"] = _market_scan_round(
                     price_change_value,
@@ -1528,7 +1659,7 @@ def symbols_describe(  # noqa: C901
                 )
                 symbol_data["price_change_pct_unit"] = "percentage_points (1.0 = 1%)"
                 symbol_data["price_change_basis"] = "broker_symbol_info_price_change"
-            else:
+            elif quote_timestamp_available is not False:
                 session_open = _market_scan_float(symbol_data.get("session_open"))
                 session_close = _market_scan_float(symbol_data.get("session_close"))
                 if (
@@ -1557,6 +1688,7 @@ def symbols_describe(  # noqa: C901
                 "symbol": symbol_name or _nonempty_symbol_string(symbol) or symbol,
                 "timezone": _client_timezone_label(client_tz),
                 "details": symbol_data,
+                "source": _mt5_source_provenance(mt5_gateway),
             }
             if resolved_symbol != str(symbol or "").strip():
                 payload["symbol_input"] = str(symbol)
@@ -2360,6 +2492,20 @@ _TOP_MARKETS_FULL_BASE_HEADERS = [
     "usable_for_live_trading",
 ]
 
+_TOP_MARKETS_COMPACT_VOLUME_HEADERS = [
+    "symbol",
+    "group",
+    "asset_class",
+    "timeframe",
+    "data_source",
+    "time",
+    "bar_stale",
+    "bar_freshness",
+    "close",
+    "tick_volume",
+    "price_change_pct",
+]
+
 _TOP_MARKETS_FULL_SPREAD_HEADERS = [
     "quote_as_of",
     "bid",
@@ -2415,6 +2561,8 @@ def _top_markets_headers(metric: str, *, detail_mode: str) -> List[str]:
             *_TOP_MARKETS_FULL_BASE_HEADERS,
             *_TOP_MARKETS_FULL_SPREAD_HEADERS,
         ]
+    if metric == "volume" and detail_mode == "compact":
+        return list(_TOP_MARKETS_COMPACT_VOLUME_HEADERS)
     if detail_mode == "compact":
         return [
             *_TOP_MARKETS_COMPACT_BASE_HEADERS,
@@ -2993,6 +3141,10 @@ def symbols_top_markets(  # noqa: C901
     timeframe: TimeframeLiteral = "H1",
     group: Optional[str] = None,
     category: Optional[str] = None,
+    candidate_offset: Annotated[int, Field(ge=0)] = 0,
+    candidate_limit: Annotated[
+        Optional[int], Field(ge=1, le=_TOP_MARKETS_MAX_CANDIDATES)
+    ] = None,
     detail: DetailLiteral = "compact",
 ) -> Dict[str, Any]:
     """Quick MT5 market overview ranked by spread, tick volume, or price change.
@@ -3007,6 +3159,9 @@ def symbols_top_markets(  # noqa: C901
     leaderboards. Volume and price-change rankings use the most recent completed
     bar on `timeframe`. Uses compact leaderboard rows by default. Set
     `detail="full"` for the expanded row shape and collection metadata. Use
+    `candidate_limit` and `candidate_offset` to scan a deterministic partition
+    of a category/group larger than 250 symbols; merge each partition's top-N
+    rows by the selected ranking value to obtain the global top-N. Use
     `market_scan` instead when you need explicit symbol inputs, RSI/SMA filters,
     or a single flat scanner table. Locked or invalid quotes are marked unsafe
     and rank after valid two-sided quotes in spread leaderboards.
@@ -3082,6 +3237,7 @@ def symbols_top_markets(  # noqa: C901
                 ensure_connection_impl=ensure_mt5_connection_or_raise,
             )
             mt5_gateway.ensure_connection()
+            source = _mt5_source_provenance(mt5_gateway)
             spread_cost_currency = (
                 account_currency_from_gateway(mt5_gateway)
                 if rank_kind != "volume"
@@ -3138,18 +3294,60 @@ def symbols_top_markets(  # noqa: C901
                 key=lambda symbol: _case_insensitive_sort_key(getattr(symbol, "name", "")),
             )
 
-            if len(selected_symbols) > _TOP_MARKETS_MAX_CANDIDATES:
+            try:
+                candidate_offset_value = int(candidate_offset or 0)
+            except (TypeError, ValueError):
+                return {"error": "candidate_offset must be a non-negative integer."}
+            if candidate_offset_value < 0:
+                return {"error": "candidate_offset must be >= 0."}
+            candidate_limit_value: Optional[int] = None
+            if candidate_limit is not None:
+                try:
+                    candidate_limit_value = int(candidate_limit)
+                except (TypeError, ValueError):
+                    return {
+                        "error": (
+                            "candidate_limit must be an integer between 1 and "
+                            f"{_TOP_MARKETS_MAX_CANDIDATES}."
+                        )
+                    }
+                if not 1 <= candidate_limit_value <= _TOP_MARKETS_MAX_CANDIDATES:
+                    return {
+                        "error": (
+                            "candidate_limit must be between 1 and "
+                            f"{_TOP_MARKETS_MAX_CANDIDATES}."
+                        )
+                    }
+
+            candidate_total = len(selected_symbols)
+            partition_requested = bool(
+                candidate_limit_value is not None or candidate_offset_value
+            )
+            if candidate_total > _TOP_MARKETS_MAX_CANDIDATES and not partition_requested:
                 return {
                     "error": (
-                        f"The filtered universe contains {len(selected_symbols)} candidates, "
+                        f"The filtered universe contains {candidate_total} candidates, "
                         f"above the safe synchronous cap of {_TOP_MARKETS_MAX_CANDIDATES}. "
-                        "Narrow the exact ranking with group or category."
+                        f"Scan it deterministically with candidate_limit="
+                        f"{_TOP_MARKETS_MAX_CANDIDATES} and candidate_offset=0, then "
+                        "increment candidate_offset until candidate_page.has_more is false. "
+                        "Merge the partition top-N rows by the requested ranking value."
                     ),
                     "error_code": "candidate_universe_too_large",
-                    "candidate_count": len(selected_symbols),
+                    "candidate_count": candidate_total,
                     "candidate_cap": _TOP_MARKETS_MAX_CANDIDATES,
                     "filters": filters,
+                    "retry": {
+                        "candidate_limit": _TOP_MARKETS_MAX_CANDIDATES,
+                        "candidate_offset": 0,
+                    },
                 }
+
+            if partition_requested:
+                page_size = candidate_limit_value or _TOP_MARKETS_MAX_CANDIDATES
+                selected_symbols = selected_symbols[
+                    candidate_offset_value : candidate_offset_value + page_size
+                ]
 
             limit_value = _normalize_limit(limit) or 10
             started_at = time.perf_counter()
@@ -3311,9 +3509,24 @@ def symbols_top_markets(  # noqa: C901
                     )
                 return fields
 
-            scan_meta = {"success": True}
+            scan_meta = {"success": True, "source": source}
             if filters:
                 scan_meta["filters"] = filters
+            if partition_requested:
+                scan_meta["ranking_scope"] = "candidate_partition"
+                scan_meta["candidate_page"] = build_pagination_meta(
+                    total=candidate_total,
+                    returned=len(selected_symbols),
+                    offset=candidate_offset_value,
+                    limit=candidate_limit_value or _TOP_MARKETS_MAX_CANDIDATES,
+                )
+                scan_meta["candidate_page"]["aggregation_required"] = bool(
+                    candidate_total > len(selected_symbols)
+                )
+                scan_meta["candidate_page"]["aggregation_note"] = (
+                    "Merge top-N rows from every candidate partition by the selected "
+                    "ranking value to compute the global leaderboard."
+                )
             if detail_mode == "full":
                 scan_meta.update(
                     {
@@ -3451,6 +3664,44 @@ def symbols_top_markets(  # noqa: C901
                     include_stale_symbols=detail_mode == "full",
                 )
             )
+            ranking_rows = {
+                "lowest_spread": spread_rows,
+                "highest_tick_volume": volume_rows,
+                "highest_price_change_pct": price_change_rows,
+            }
+            ranking_context: Dict[str, Dict[str, Any]] = {}
+            ranking_times: List[str] = []
+            for ranking_name, rows_for_ranking in ranking_rows.items():
+                freshness_context = _market_scan_freshness_summary(
+                    rows_for_ranking,
+                    include_stale_symbols=False,
+                )
+                context = {
+                    key: freshness_context[key]
+                    for key in (
+                        "data_as_of",
+                        "freshness",
+                        "stale_rows",
+                        "stale_bar_rows",
+                        "unsafe_quote_rows",
+                    )
+                    if key in freshness_context
+                }
+                if rows_for_ranking:
+                    context["data_source"] = rows_for_ranking[0].get("data_source")
+                    context["timeframe"] = rows_for_ranking[0].get("timeframe")
+                ranking_time = str(context.get("data_as_of") or "").strip()
+                if ranking_time:
+                    ranking_times.append(ranking_time)
+                ranking_context[ranking_name] = context
+            out["ranking_context"] = ranking_context
+            if ranking_times:
+                out["data_as_of_range"] = {
+                    "oldest": min(ranking_times),
+                    "newest": max(ranking_times),
+                }
+                out["data_as_of"] = max(ranking_times)
+                out["data_as_of_basis"] = "latest_source_timestamp_across_rankings"
             if detail_mode == "full":
                 out["scan_stats"] = {
                     "spread": {

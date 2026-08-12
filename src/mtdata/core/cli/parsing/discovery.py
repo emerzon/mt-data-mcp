@@ -286,6 +286,14 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
     ("symbols_top_markets", "limit"): (
         "Max symbols for the selected ranking; per leaderboard when rank_by=all."
     ),
+    ("symbols_top_markets", "candidate_limit"): (
+        "Candidate partition size (1-250) for a large sorted group/category universe. "
+        "Merge each partition's top-N rows to obtain the global leaderboard."
+    ),
+    ("symbols_top_markets", "candidate_offset"): (
+        "Zero-based offset into the deterministic sorted candidate universe. Increment "
+        "by candidate_limit until candidate_page.has_more is false."
+    ),
     ("trade_close", "close_all"): (
         "Close all matching open positions instead of a single ticket."
     ),

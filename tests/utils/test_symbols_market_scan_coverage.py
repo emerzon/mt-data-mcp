@@ -679,7 +679,14 @@ class TestSymbolsTopMarkets:
         compact_spread_headers = _top_markets_headers("spread", detail_mode="compact")
         compact_bar_headers = _top_markets_headers("volume", detail_mode="compact")
 
-        assert compact_bar_headers == _top_markets_headers("price_change", detail_mode="compact")
+        compact_price_headers = _top_markets_headers(
+            "price_change", detail_mode="compact"
+        )
+        assert compact_bar_headers != compact_price_headers
+        assert "tick_volume" in compact_bar_headers
+        assert "quote_as_of" not in compact_bar_headers
+        assert "bid" not in compact_bar_headers
+        assert "spread_valid" not in compact_bar_headers
         assert "spread_points" in compact_spread_headers
         assert "close" not in compact_spread_headers
         assert "close" in compact_bar_headers
@@ -978,6 +985,10 @@ class TestSymbolsTopMarkets:
         assert result["scan_stats"]["spread"]["evaluated_symbols"] == 2
         assert result["scan_stats"]["volume"]["evaluated_symbols"] == 2
         assert result["scan_stats"]["price_change"]["evaluated_symbols"] == 2
+        assert result["ranking_context"]["lowest_spread"]["data_source"] == "live_tick"
+        assert result["ranking_context"]["highest_tick_volume"]["data_source"] == "H1_bars"
+        assert result["data_as_of_range"]["oldest"] <= result["data_as_of_range"]["newest"]
+        assert result["data_as_of_basis"] == "latest_source_timestamp_across_rankings"
 
     @patch("mtdata.core.symbols._extract_group_path_util", side_effect=lambda s: s.path)
     @patch("mtdata.core.symbols.mt5.symbol_info_tick")
@@ -1178,7 +1189,42 @@ class TestSymbolsTopMarkets:
         assert result["error_code"] == "candidate_universe_too_large"
         assert result["candidate_count"] == 251
         assert result["candidate_cap"] == 250
+        assert result["retry"] == {"candidate_limit": 250, "candidate_offset": 0}
         mock_ready_guard.assert_not_called()
+
+    @patch("mtdata.core.symbols._extract_group_path_util", side_effect=lambda s: s.path)
+    @patch("mtdata.core.symbols._symbol_ready_guard", side_effect=_ready_guard_ok)
+    @patch("mtdata.core.symbols.mt5.symbol_info_tick")
+    @patch("mtdata.core.symbols.mt5.symbols_get")
+    def test_oversized_universe_supports_deterministic_candidate_partitions(
+        self,
+        mock_symbols_get,
+        mock_tick,
+        mock_ready_guard,
+        mock_group,
+    ):
+        mock_symbols_get.return_value = [
+            _make_symbol(f"SYM{index:04d}", visible=False)
+            for index in range(251)
+        ]
+        mock_tick.return_value = _make_tick(bid=1.0, ask=1.1)
+
+        result = _get_symbols_top_markets()(
+            rank_by="spread",
+            universe="all",
+            limit=1,
+            candidate_limit=1,
+            candidate_offset=250,
+        )
+
+        assert result["success"] is True
+        assert result["ranking_scope"] == "candidate_partition"
+        assert result["candidate_page"]["total"] == 251
+        assert result["candidate_page"]["offset"] == 250
+        assert result["candidate_page"]["returned"] == 1
+        assert result["candidate_page"]["has_more"] is False
+        assert result["data"][0]["symbol"] == "SYM0250"
+        mock_ready_guard.assert_called_once()
 
     @patch("mtdata.core.symbols._extract_group_path_util", side_effect=lambda s: s.path)
     @patch("mtdata.core.symbols._mt5_copy_rates_from_pos")
