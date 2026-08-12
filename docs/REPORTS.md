@@ -79,8 +79,9 @@ Useful controls:
   `current_only_section_omitted`, and the report is marked partial rather than mixing
   current data into the bounded analysis.
 - `--methods` supplies comma- or space-separated forecast methods.
-- `--include-sections` filters the sections returned after computation;
-  `--max-sections` caps their count.
+- `--include-sections` selects the sections to execute and return; required
+  internal dependencies may run but cannot independently make the request
+  successful. `--max-sections` caps the selected count.
 - `--max-runtime` supplies a cooperative wall-clock budget. The runner first
   schedules a section subset whose estimated cost fits, then stops starting
   report sub-tools once the deadline passes. An already-running native or MT5
@@ -95,6 +96,13 @@ Useful controls:
 - `--denoise` and `--denoise-params` configure optional input smoothing.
 - `--params` supplies template and sub-tool overrides such as context limits,
   backtest settings, barrier grids, or additional timeframes.
+- Scalping and intraday `market` sections always obtain Level 1 bid/ask/spread
+  from `market_ticker`; broker DOM is optional and reports `depth_status` as
+  `available`, `quote_only`, `disabled`, or `unavailable`. The
+  `execution_gates` section always returns a gate decision. Configure an
+  additional spread cap with `params.spread_max_ticks` or
+  `params.spread_max_pips`; without one, the gate checks quote readiness and a
+  valid positive spread.
 - `--detail` controls canonical response detail; use `--detail full` for richer
   metadata and diagnostics.
 

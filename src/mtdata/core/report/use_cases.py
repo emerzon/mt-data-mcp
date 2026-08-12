@@ -1472,35 +1472,48 @@ def run_report_generate(  # noqa: C901
                     method_name = str(fc.get("method"))
                     forecast_line = f"forecast={method_name}"
                     forecast_summary: Dict[str, Any] = {"method": method_name}
-                    values = None
-                    for key in ("forecast_price", "forecast_return", "forecast_series", "forecast"):
-                        candidate = fc.get(key)
-                        if isinstance(candidate, list) and candidate:
-                            values = candidate
-                            break
-                    if isinstance(values, list) and len(values) >= 3:
-                        nums: List[float] = []
-                        for value in values:
-                            try:
-                                nums.append(float(value))
-                            except Exception:
-                                nums = []
-                                break
-                        if nums and len(nums) >= 3:
-                            first = nums[0]
-                            span = max(nums) - min(nums)
-                            tol = max(1e-9, abs(first) * 1e-6)
-                            if span <= tol:
-                                forecast_line += " (flat)"
-                                forecast_summary["flat"] = True
-                                append_diagnostic_warning(
-                                    rep,
-                                    "Selected forecast appears degenerate (near-constant values across horizon).",
-                                )
-                            forecast_summary["first"] = nums[0]
-                            forecast_summary["last"] = nums[-1]
-                            forecast_summary["min"] = min(nums)
-                            forecast_summary["max"] = max(nums)
+                    nums = extract_report_forecast_values(fc)
+                    if nums:
+                        first = nums[0]
+                        span = max(nums) - min(nums)
+                        tol = max(1e-9, abs(first) * 1e-6)
+                        if len(nums) >= 3 and span <= tol:
+                            forecast_line += " (flat)"
+                            forecast_summary["flat"] = True
+                            append_diagnostic_warning(
+                                rep,
+                                "Selected forecast appears degenerate (near-constant values across horizon).",
+                            )
+                        forecast_summary.update(
+                            {
+                                "horizon": int(fc.get("horizon") or len(nums)),
+                                "first": nums[0],
+                                "last": nums[-1],
+                                "terminal_value": nums[-1],
+                                "min": min(nums),
+                                "max": max(nums),
+                            }
+                        )
+                    direction_context = fc.get("forecast_vs_last_price")
+                    if isinstance(direction_context, dict):
+                        for key in (
+                            "direction",
+                            "direction_basis",
+                            "horizon_delta",
+                            "horizon_delta_pct",
+                            "direction_actionable",
+                        ):
+                            if direction_context.get(key) is not None:
+                                forecast_summary[key] = direction_context[key]
+                    uncertainty = fc.get("uncertainty")
+                    if isinstance(uncertainty, dict):
+                        uncertainty_summary = {
+                            key: uncertainty[key]
+                            for key in ("status", "mode", "reason_code")
+                            if uncertainty.get(key) is not None
+                        }
+                        if uncertainty_summary:
+                            forecast_summary["uncertainty"] = uncertainty_summary
                     summ.append(forecast_line)
                     timing_parts: List[str] = []
                     last_obs = _report_time_label(
@@ -1691,7 +1704,14 @@ def run_report_generate(  # noqa: C901
                 _apply_report_section_controls(rep, summary_mode=True)
             sections = rep.get("sections")
             if isinstance(sections, dict):
-                sections_status = source_sections_status or _build_sections_status(sections)
+                sections_status = (
+                    source_sections_status
+                    if summary_mode and source_sections_status is not None
+                    else _build_sections_status(
+                        sections,
+                        expected_sections=list(section_plan["selected"]),
+                    )
+                )
                 rep["sections_status"] = sections_status
                 summary_counts = sections_status.get("summary", {})
                 error_count = int(summary_counts.get("error", 0))
@@ -1743,6 +1763,9 @@ def run_report_generate(  # noqa: C901
                         + ", ".join(str(name) for name in missing_requested)
                         + "."
                     )
+                elif hard_failed:
+                    rep["error_code"] = "report_sections_failed"
+                    rep["error"] = "Every selected report section failed or was omitted."
                 sections_with_issues: Dict[str, List[str]] = {}
                 partial_section_names = _report_section_names_by_status(sections_status, "partial")
                 error_section_names = _report_section_names_by_status(sections_status, "error")
@@ -1826,7 +1849,11 @@ def run_report_generate(  # noqa: C901
             generated_at = None
             meta = rep.get("meta")
             if isinstance(meta, dict):
+                meta["template"] = template_name
                 generated_at = meta.get("generated_at")
+            else:
+                meta = {"template": template_name}
+                rep["meta"] = meta
             generated_at_text = generated_at if isinstance(generated_at, str) and generated_at.strip() else None
             if generated_at_text is None:
                 generated_at_text = _format_report_timestamp(datetime.now(timezone.utc))

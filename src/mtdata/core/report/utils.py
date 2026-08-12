@@ -519,31 +519,71 @@ def merge_params(base: Optional[Dict[str, Any]], extra: Dict[str, Any], override
 def market_snapshot(  # noqa: C901
     symbol: str, timezone: str = 'UTC'
 ) -> Dict[str, Any]:
-    operation = "market_depth_fetch"
+    operation = "market_snapshot"
     if report_runtime_expired():
         emit_report_progress(operation, "skipped_runtime_budget")
         return report_runtime_error(operation)
     emit_report_progress(operation, "started")
     try:
-        from ..market_depth import market_depth_fetch as _fetch_market_depth
+        from ..market_depth import (
+            market_depth_fetch as _fetch_market_depth,
+        )
+        from ..market_depth import (
+            market_ticker as _market_ticker,
+        )
+
+        ticker = call_tool_sync_structured(
+            _market_ticker,
+            symbol=symbol,
+            detail="full",
+            raw_tool_output=True,
+        )
+        if not isinstance(ticker, dict) or ticker.get("success") is not True:
+            error = (
+                ticker.get("error")
+                if isinstance(ticker, dict)
+                else "Market ticker returned an unexpected payload."
+            )
+            return {
+                "status": "error",
+                "error": str(error or "Live Level 1 quote is unavailable."),
+                "error_code": (
+                    ticker.get("error_code")
+                    if isinstance(ticker, dict)
+                    else "report_market_quote_unavailable"
+                ),
+                "quote_source": "market_ticker",
+                "depth_status": "not_fetched",
+            }
+
+        bid = ticker.get("bid")
+        ask = ticker.get("ask")
+        spread = ticker.get("spread")
+        if spread is None and bid is not None and ask is not None:
+            try:
+                spread = float(ask) - float(bid)
+            except (TypeError, ValueError):
+                spread = None
+
+        depth_status = "unavailable"
+        depth_reason = None
+        top_buy_vol = None
+        top_sell_vol = None
+        total_buy_vol = None
+        total_sell_vol = None
         dom = call_tool_sync_structured(
             _fetch_market_depth,
             symbol=symbol,
             raw_tool_output=True,
         )
-        bid = None; ask = None; spread = None
-        top_buy_vol = None; top_sell_vol = None; total_buy_vol = None; total_sell_vol = None
         if isinstance(dom, dict) and dom.get('success'):
             t = dom.get('type')
             data = dom.get('data') or {}
             if t == 'tick_data':
-                bid = data.get('bid'); ask = data.get('ask')
-                if bid is not None and ask is not None:
-                    try:
-                        spread = float(ask) - float(bid)
-                    except Exception:
-                        spread = None
+                depth_status = "quote_only"
+                depth_reason = "Broker returned Level 1 data without an order book."
             elif t == 'full_depth':
+                depth_status = "available"
                 buys = data.get('buy_orders') or []
                 sells = data.get('sell_orders') or []
                 if buys:
@@ -564,6 +604,16 @@ def market_snapshot(  # noqa: C901
                     total_sell_vol = float(sum(float(s.get('volume') or 0.0) for s in sells)) if sells else None
                 except Exception:
                     total_sell_vol = None
+            else:
+                depth_reason = "Market depth returned no recognized DOM payload."
+        elif isinstance(dom, dict) and dom.get("error_code") == "feature_disabled":
+            depth_status = "disabled"
+            depth_reason = str(
+                dom.get("why_disabled")
+                or "Market depth is disabled; Level 1 quote data remains available."
+            )
+        elif isinstance(dom, dict):
+            depth_reason = str(dom.get("error") or "Market depth is unavailable.")
         info = get_symbol_info_cached(symbol)
         tick_size = _get_tick_size(symbol, symbol_info=info)
         point_size = None
@@ -605,19 +655,19 @@ def market_snapshot(  # noqa: C901
                 spread_ticks = float(spread) / float(tick_size) if tick_size > 0 else None
             except Exception:
                 spread_ticks = None
-        spread_points = None
-        if point_size and spread is not None:
+        spread_points = ticker.get("spread_points")
+        if spread_points is None and point_size and spread is not None:
             try:
                 spread_points = float(spread) / float(point_size) if point_size > 0 else None
             except Exception:
                 spread_points = None
-        spread_pips = None
-        if pip_size and spread is not None:
+        spread_pips = ticker.get("spread_pips")
+        if spread_pips is None and pip_size and spread is not None:
             try:
                 spread_pips = float(spread) / float(pip_size) if pip_size > 0 else None
             except Exception:
                 spread_pips = None
-        return {
+        snapshot = {
             'bid': bid,
             'ask': ask,
             'spread': spread,
@@ -631,7 +681,48 @@ def market_snapshot(  # noqa: C901
             'dom_top_sell_vol': top_sell_vol,
             'dom_total_buy_vol': total_buy_vol,
             'dom_total_sell_vol': total_sell_vol,
+            'quote_source': ticker.get('quote_source') or 'market_ticker',
+            'quote_time': ticker.get('time'),
+            'quote_time_epoch': ticker.get('time_epoch'),
+            'freshness_state': ticker.get('freshness_state'),
+            'data_age_seconds': ticker.get('data_age_seconds'),
+            'spread_valid': ticker.get('spread_valid'),
+            'spread_quality': ticker.get('spread_quality'),
+            'usable_for_live_trading': ticker.get('usable_for_live_trading'),
+            'usable_for_live_trading_basis': ticker.get(
+                'usable_for_live_trading_basis'
+            ),
+            'depth_status': depth_status,
         }
+        if depth_reason:
+            snapshot['depth_reason'] = depth_reason
+
+        valid_pair = False
+        try:
+            valid_pair = (
+                bid is not None
+                and ask is not None
+                and float(ask) > float(bid)
+            )
+        except (TypeError, ValueError):
+            valid_pair = False
+        if not valid_pair:
+            snapshot.update(
+                {
+                    'status': 'error',
+                    'error': 'Market ticker did not provide a valid two-sided Level 1 quote.',
+                    'error_code': 'report_market_quote_unavailable',
+                }
+            )
+        elif ticker.get('usable_for_live_trading') is False:
+            snapshot['quote_health'] = {
+                'status': 'degraded',
+                'error': str(
+                    ticker.get('warning')
+                    or 'The Level 1 quote is not currently execution-ready.'
+                ),
+            }
+        return snapshot
     except Exception as e:
         return {'error': str(e)}
     finally:
@@ -639,24 +730,89 @@ def market_snapshot(  # noqa: C901
 
 
 def apply_market_gates(section: Dict[str, Any], params: Dict[str, Any]) -> Dict[str, Any]:
-    gate = {}
+    if not isinstance(section, dict) or section.get('error'):
+        return {
+            'status': 'error',
+            'execution_ready': False,
+            'error': str(
+                section.get('error')
+                if isinstance(section, dict)
+                else 'Market quote is unavailable.'
+            ),
+            'error_code': 'report_execution_gate_quote_unavailable',
+        }
+
+    gate: Dict[str, Any] = {
+        'quote_usable_for_live_trading': section.get('usable_for_live_trading'),
+        'quote_usability_basis': section.get('usable_for_live_trading_basis'),
+        'spread_valid': section.get('spread_valid'),
+    }
+    if gate['spread_valid'] is None:
+        try:
+            gate['spread_valid'] = (
+                section.get('bid') is not None
+                and section.get('ask') is not None
+                and float(section['ask']) > float(section['bid'])
+            )
+        except (KeyError, TypeError, ValueError):
+            gate['spread_valid'] = False
+    if gate['quote_usable_for_live_trading'] is None:
+        gate['quote_usable_for_live_trading'] = bool(gate['spread_valid'])
+
+    spread_limit_configured = False
+    spread_ok: Optional[bool] = None
     try:
         max_ticks = params.get('spread_max_ticks')
         max_pips = params.get('spread_max_pips')
         if max_ticks is not None and isinstance(section, dict):
+            spread_limit_configured = True
             sp = section.get('spread_ticks')
             if sp is not None:
-                gate['spread_ok'] = bool(float(sp) <= float(max_ticks))
+                spread_ok = bool(float(sp) <= float(max_ticks))
                 gate['spread_ticks'] = float(sp)
                 gate['spread_max_ticks'] = float(max_ticks)
         elif max_pips is not None and isinstance(section, dict):
+            spread_limit_configured = True
             sp = section.get('spread_pips')
             if sp is not None:
-                gate['spread_ok'] = bool(float(sp) <= float(max_pips))
+                spread_ok = bool(float(sp) <= float(max_pips))
                 gate['spread_pips'] = float(sp)
                 gate['spread_max_pips'] = float(max_pips)
-    except Exception:
-        pass
+    except (TypeError, ValueError):
+        return {
+            **gate,
+            'status': 'error',
+            'execution_ready': False,
+            'error': 'Configured spread threshold must be a finite number.',
+            'error_code': 'report_execution_gate_invalid_threshold',
+        }
+
+    gate['spread_limit_status'] = (
+        'not_configured'
+        if not spread_limit_configured
+        else 'unavailable'
+        if spread_ok is None
+        else 'pass'
+        if spread_ok
+        else 'fail'
+    )
+    if spread_ok is not None:
+        gate['spread_ok'] = spread_ok
+    execution_ready = bool(
+        gate['quote_usable_for_live_trading'] is True
+        and gate['spread_valid'] is True
+        and spread_ok is not False
+        and (not spread_limit_configured or spread_ok is not None)
+    )
+    gate['execution_ready'] = execution_ready
+    gate['status'] = 'pass' if execution_ready else 'fail'
+    if not spread_limit_configured:
+        gate['note'] = (
+            'No maximum spread threshold is configured; this gate verifies only '
+            'quote execution readiness and a positive spread.'
+        )
+    elif spread_ok is None:
+        gate['reason'] = 'Configured spread threshold could not be evaluated.'
     return gate
 
 

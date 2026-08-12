@@ -566,43 +566,95 @@ class TestMergeParams:
 # ---------------------------------------------------------------------------
 class TestApplyMarketGates:
     def test_spread_ok(self):
-        section = {"spread_ticks": 2.0}
+        section = {
+            "bid": 1.1,
+            "ask": 1.1002,
+            "spread_ticks": 2.0,
+            "spread_valid": True,
+            "usable_for_live_trading": True,
+        }
         params = {"spread_max_ticks": 5.0}
         result = apply_market_gates(section, params)
         assert result["spread_ok"] is True
 
     def test_spread_not_ok(self):
-        section = {"spread_ticks": 10.0}
+        section = {
+            "bid": 1.1,
+            "ask": 1.101,
+            "spread_ticks": 10.0,
+            "spread_valid": True,
+            "usable_for_live_trading": True,
+        }
         params = {"spread_max_ticks": 5.0}
         result = apply_market_gates(section, params)
         assert result["spread_ok"] is False
 
     def test_pips_fallback(self):
-        section = {"spread_pips": 3.0}
+        section = {
+            "bid": 1.1,
+            "ask": 1.1003,
+            "spread_pips": 3.0,
+            "spread_valid": True,
+            "usable_for_live_trading": True,
+        }
         params = {"spread_max_pips": 5.0}
         result = apply_market_gates(section, params)
         assert result["spread_ok"] is True
 
     def test_no_params(self):
-        result = apply_market_gates({"spread_ticks": 1.0}, {})
-        assert result == {}
+        result = apply_market_gates(
+            {
+                "bid": 1.1,
+                "ask": 1.1001,
+                "spread_ticks": 1.0,
+                "spread_valid": True,
+                "usable_for_live_trading": True,
+            },
+            {},
+        )
+        assert result["status"] == "pass"
+        assert result["execution_ready"] is True
+        assert result["spread_limit_status"] == "not_configured"
 
     def test_no_spread_data(self):
-        result = apply_market_gates({}, {"spread_max_ticks": 5.0})
-        assert result == {}
+        result = apply_market_gates(
+            {
+                "bid": 1.1,
+                "ask": 1.1001,
+                "spread_valid": True,
+                "usable_for_live_trading": True,
+            },
+            {"spread_max_ticks": 5.0},
+        )
+        assert result["status"] == "fail"
+        assert result["execution_ready"] is False
+        assert result["spread_limit_status"] == "unavailable"
 
 
 class TestMarketSnapshot:
     @patch("mtdata.core.report.utils.get_symbol_info_cached", return_value=SimpleNamespace(point=0.00001, digits=5))
     @patch("mtdata.core.report.utils._get_tick_size", return_value=0.00001)
     def test_spread_pips_uses_true_pip_units(self, mock_pip, mock_symbol_info):
-        with patch(
-            "mtdata.core.market_depth.market_depth_fetch",
-            new=lambda *args, **kwargs: {
-                "success": True,
-                "type": "tick_data",
-                "data": {"bid": 1.23450, "ask": 1.23465},
-            },
+        with (
+            patch(
+                "mtdata.core.market_depth.market_ticker",
+                new=lambda *args, **kwargs: {
+                    "success": True,
+                    "bid": 1.23450,
+                    "ask": 1.23465,
+                    "spread": 0.00015,
+                    "spread_valid": True,
+                    "usable_for_live_trading": True,
+                },
+            ),
+            patch(
+                "mtdata.core.market_depth.market_depth_fetch",
+                new=lambda *args, **kwargs: {
+                    "success": False,
+                    "error_code": "feature_disabled",
+                    "why_disabled": "disabled by default",
+                },
+            ),
         ):
             snap = market_snapshot("EURUSD")
 
@@ -611,17 +663,31 @@ class TestMarketSnapshot:
         assert snap["spread_pips"] == pytest.approx(1.5)
         assert snap["point_size"] == pytest.approx(0.00001)
         assert snap["pip_size"] == pytest.approx(0.0001)
+        assert snap["depth_status"] == "disabled"
 
     @patch("mtdata.core.report.utils.get_symbol_info_cached", return_value=SimpleNamespace(point=0.1, digits=1))
     @patch("mtdata.core.report.utils._get_tick_size", return_value=0.5)
     def test_spread_pips_are_omitted_for_non_forex_symbols(self, mock_pip, mock_symbol_info):
-        with patch(
-            "mtdata.core.market_depth.market_depth_fetch",
-            new=lambda *args, **kwargs: {
-                "success": True,
-                "type": "tick_data",
-                "data": {"bid": 100.0, "ask": 101.0},
-            },
+        with (
+            patch(
+                "mtdata.core.market_depth.market_ticker",
+                new=lambda *args, **kwargs: {
+                    "success": True,
+                    "bid": 100.0,
+                    "ask": 101.0,
+                    "spread": 1.0,
+                    "spread_valid": True,
+                    "usable_for_live_trading": True,
+                },
+            ),
+            patch(
+                "mtdata.core.market_depth.market_depth_fetch",
+                new=lambda *args, **kwargs: {
+                    "success": True,
+                    "type": "tick_data",
+                    "data": {"bid": 100.0, "ask": 101.0},
+                },
+            ),
         ):
             snap = market_snapshot("US30")
 

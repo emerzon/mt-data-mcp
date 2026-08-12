@@ -1558,6 +1558,121 @@ class TestReportWarnings:
         assert "backtest" in res["section_controls"]["omitted_sections"]
         assert "barriers" in res["section_controls"]["omitted_sections"]
 
+    def test_forecast_record_summary_promotes_decision_context(self):
+        fn = _get_report_generate()
+
+        def mock_template(_symbol, _horizon, _denoise, _params):
+            return {
+                "meta": {"template": "minimal"},
+                "sections": {
+                    "context": {"last_snapshot": {"close": 1.1}},
+                    "forecast": {
+                        "method": "theta",
+                        "horizon": 3,
+                        "forecast": [
+                            {"time": "2026-01-01T01:00Z", "value": 1.101},
+                            {"time": "2026-01-01T02:00Z", "value": 1.102},
+                            {"time": "2026-01-01T03:00Z", "value": 1.103},
+                        ],
+                        "forecast_vs_last_price": {
+                            "direction": "up",
+                            "direction_basis": "horizon_end",
+                            "horizon_delta": 0.003,
+                            "horizon_delta_pct": 0.2727,
+                            "direction_actionable": True,
+                        },
+                        "uncertainty": {
+                            "status": "unavailable",
+                            "mode": "point_only",
+                        },
+                    },
+                },
+            }
+
+        with (
+            patch(
+                "mtdata.core.report_templates.template_minimal",
+                mock_template,
+                create=True,
+            ),
+            patch(_FMT_NUM, side_effect=str),
+        ):
+            res = fn("EURUSD", template="minimal", detail="compact")
+
+        forecast = res["summary_structured"]["forecast"]
+        assert forecast["horizon"] == 3
+        assert forecast["terminal_value"] == 1.103
+        assert forecast["direction"] == "up"
+        assert forecast["direction_actionable"] is True
+        assert forecast["horizon_delta_pct"] == pytest.approx(0.2727)
+        assert forecast["uncertainty"] == {
+            "status": "unavailable",
+            "mode": "point_only",
+        }
+        assert "forecast" not in res.get("sections", {})
+
+    def test_failed_sole_requested_section_cannot_use_dependency_for_success(self):
+        fn = _get_report_generate()
+
+        def mock_template(_symbol, _horizon, _denoise, _params):
+            return {
+                "meta": {"template": "basic"},
+                "sections": {
+                    "market": {
+                        "bid": 1.1,
+                        "ask": 1.1002,
+                        "spread": 0.0002,
+                    }
+                },
+            }
+
+        with (
+            patch(
+                "mtdata.core.report_templates.template_intraday",
+                mock_template,
+                create=True,
+            ),
+            patch(_FMT_NUM, side_effect=str),
+        ):
+            res = fn(
+                "EURUSD",
+                template="intraday",
+                include_sections=["execution_gates"],
+            )
+
+        assert res["sections"] == {}
+        assert res["success"] is False
+        assert res["section_run_status"] == "failed"
+        assert res["error_code"] == "report_sections_failed"
+        assert res["sections_status"]["sections"] == {"execution_gates": "error"}
+
+    @pytest.mark.parametrize(
+        "template_name",
+        ["basic", "advanced", "scalping", "intraday", "swing", "position"],
+    )
+    def test_effective_template_replaces_base_template_metadata(self, template_name):
+        fn = _get_report_generate()
+        mock_template = MagicMock(
+            return_value={
+                "meta": {"template": "basic"},
+                "sections": {"context": {"last_snapshot": {"close": 1.1}}},
+            }
+        )
+        template_path = f"mtdata.core.report_templates.template_{template_name}"
+        with (
+            patch(template_path, mock_template, create=True),
+            patch(_FMT_NUM, side_effect=str),
+        ):
+            res = fn(
+                "EURUSD",
+                template=template_name,
+                include_sections=["context"],
+            )
+
+        assert res["template"] == template_name
+        assert res["meta"]["template"] == template_name
+        assert res["executive_summary"]["template"] == template_name
+
 
     def test_report_generate_uses_data_timestamp_for_as_of(self):
         fn = _get_report_generate()

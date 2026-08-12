@@ -88,7 +88,8 @@ class ReportGenerateRequest(BaseModel):
             "methods, backtest_steps, backtest_spacing, backtest_rmse_tolerance, "
             "backtest_min_directional_accuracy, patterns_limit, top_k, barrier_method, "
             "search_profile, grid_style, tp_min/tp_max/tp_steps, sl_min/sl_max/sl_steps, "
-            "extra_timeframes, pivot_timeframes. Advanced keys: regime_limit, regime_lookback, "
+            "extra_timeframes, pivot_timeframes, spread_max_ticks, spread_max_pips. "
+            "Advanced keys: regime_limit, regime_lookback, "
             "cp_threshold, hmm_states, conformal_steps, conformal_spacing, conformal_alpha."
         ),
     )
