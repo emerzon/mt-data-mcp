@@ -21,6 +21,7 @@ from typing import (
     Protocol,
     runtime_checkable,
 )
+from zoneinfo import ZoneInfo
 
 from ..shared.symbols import FIAT_CURRENCY_CODES as _CURRENCY_CODES
 from ..utils.mt5 import get_symbol_info_cached
@@ -499,6 +500,28 @@ def _maybe_parse_datetime(value: Any) -> Optional[datetime]:
         return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
     except Exception:
         return None
+
+
+def _maybe_parse_finviz_datetime(value: Any) -> Optional[datetime]:
+    """Parse Finviz's naive wall-clock timestamps as America/New_York."""
+    if isinstance(value, datetime):
+        parsed = value
+    else:
+        text = _safe_text(value)
+        if not text or re.fullmatch(r"[+-]?\d+(?:\.\d+)?", text):
+            return None
+        try:
+            parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+        except ValueError:
+            try:
+                from dateutil import parser as date_parser
+
+                parsed = date_parser.parse(text)
+            except Exception:
+                return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=ZoneInfo("America/New_York"))
+    return parsed.astimezone(timezone.utc)
 
 
 def _normalize_event_for(value: Any) -> str:
@@ -1384,7 +1407,7 @@ class FinvizNewsSource:
                         provider=self.name,
                         source=_safe_text(item.get("Source")) or "Finviz",
                         kind="headline",
-                        published_at=_maybe_parse_datetime(item.get("Date")),
+                        published_at=_maybe_parse_finviz_datetime(item.get("Date")),
                         url=_safe_text(item.get("Link")) or None,
                         category="market_news",
                         priority=NewsPriority.MEDIUM,
@@ -1446,7 +1469,7 @@ class FinvizNewsSource:
                         provider=self.name,
                         source=_safe_text(item.get("Source")) or "Finviz",
                         kind="direct_symbol",
-                        published_at=_maybe_parse_datetime(item.get("Date")),
+                        published_at=_maybe_parse_finviz_datetime(item.get("Date")),
                         url=_safe_text(item.get("Link")) or None,
                         category="symbol_news",
                         priority=NewsPriority.HIGH,
@@ -1649,27 +1672,41 @@ class MT5NewsSource:
             if not result.get("success"):
                 return []
             out: List[NewsItem] = []
+            observed_at = datetime.now(timezone.utc)
             for rank, item in enumerate(result.get("news", [])):
                 raw_priority = item.get("priority")
                 priority = NewsPriority.HIGH if isinstance(raw_priority, int) and raw_priority > 0 else NewsPriority.MEDIUM
+                published_at = _maybe_parse_datetime(item.get("published_at"))
+                metadata: Dict[str, Any] = {
+                    "relative_time": _safe_text(item.get("relative_time")) or None,
+                    "mt5_priority": raw_priority,
+                    "flags": item.get("flags"),
+                    "source_rank": rank,
+                    "search_text": " ".join(
+                        _safe_text(item.get(key))
+                        for key in ("subject", "category", "source")
+                    ),
+                }
+                if published_at is not None and published_at > observed_at:
+                    metadata.update(
+                        {
+                            "timestamp_anomaly": "future_headline_timestamp",
+                            "original_published_at": published_at.isoformat(),
+                            "timestamp_adjustment": "clamped_to_observation_time",
+                            "relative_time": "just now (source timestamp was ahead)",
+                        }
+                    )
+                    published_at = observed_at
                 out.append(
                     NewsItem(
                         title=_safe_text(item.get("subject")),
                         provider=self.name,
                         source=_safe_text(item.get("source") or item.get("category")) or "MT5",
                         kind="headline",
-                        published_at=_maybe_parse_datetime(item.get("published_at")),
+                        published_at=published_at,
                         category=_safe_text(item.get("category")) or None,
                         priority=priority,
-                        metadata={
-                            "relative_time": _safe_text(item.get("relative_time")) or None,
-                            "mt5_priority": raw_priority,
-                            "flags": item.get("flags"),
-                            "source_rank": rank,
-                            "search_text": " ".join(
-                                _safe_text(item.get(key)) for key in ("subject", "category", "source")
-                            ),
-                        },
+                        metadata=metadata,
                     )
                 )
             return out

@@ -632,6 +632,42 @@ def test_maybe_parse_datetime_rejects_numeric_values() -> None:
     assert svc._maybe_parse_datetime("42") is None
 
 
+def test_finviz_naive_datetimes_use_new_york_dst_offsets() -> None:
+    assert svc._maybe_parse_finviz_datetime("2026-08-11 20:07:00") == datetime(
+        2026, 8, 12, 0, 7, tzinfo=timezone.utc
+    )
+    assert svc._maybe_parse_finviz_datetime("2026-01-11 20:07:00") == datetime(
+        2026, 1, 12, 1, 7, tzinfo=timezone.utc
+    )
+
+
+def test_mt5_future_headline_is_clamped_and_flagged(monkeypatch) -> None:
+    future = datetime.now(timezone.utc) + timedelta(minutes=20)
+    monkeypatch.setattr(
+        svc,
+        "get_mt5_news",
+        lambda **_kwargs: {
+            "success": True,
+            "news": [
+                {
+                    "subject": "Future-stamped headline",
+                    "source": "Broker",
+                    "published_at": future.isoformat(),
+                    "relative_time": "in 20 minutes",
+                }
+            ],
+        },
+    )
+    source = svc.MT5NewsSource()
+    source._available = True
+
+    item = source.fetch_general_candidates(limit=1)[0]
+
+    assert item.published_at <= datetime.now(timezone.utc)
+    assert item.metadata["timestamp_anomaly"] == "future_headline_timestamp"
+    assert item.metadata["original_published_at"] == future.isoformat()
+
+
 def test_unknown_equity_classification_does_not_infer_description(monkeypatch) -> None:
     monkeypatch.setattr(svc, "get_symbol_info_cached", lambda symbol: None)
 

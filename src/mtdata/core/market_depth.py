@@ -157,6 +157,7 @@ def _compact_market_ticker_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
         "warning",
         "quote_source",
         "quote_source_state",
+        "quote_source_conflict",
         "quote_refresh_attempted",
         "spread_valid",
         "spread_quality",
@@ -844,6 +845,28 @@ def market_ticker(  # noqa: C901
                 },
             }
             out.update(quote_source_metadata)
+            quote_conflict = out.get("quote_source_conflict")
+            if isinstance(quote_conflict, dict) and point > 0:
+                cached_pair = quote_conflict.get("symbol_info_tick")
+                stream_pair = quote_conflict.get("stream_tick")
+                if isinstance(cached_pair, dict) and isinstance(stream_pair, dict):
+                    disagreements = []
+                    for side in ("bid", "ask"):
+                        try:
+                            disagreements.append(
+                                abs(float(cached_pair[side]) - float(stream_pair[side]))
+                            )
+                        except (KeyError, TypeError, ValueError):
+                            continue
+                    if disagreements:
+                        max_disagreement_points = max(disagreements) / point
+                        quote_conflict["max_disagreement_points"] = round(
+                            max_disagreement_points, 4
+                        )
+                        if points_per_pip:
+                            quote_conflict["max_disagreement_pips"] = round(
+                                max_disagreement_points / points_per_pip, 4
+                            )
             time_normalization = describe_mt5_time_normalization(
                 symbol=resolved_symbol
             )
@@ -906,6 +929,21 @@ def market_ticker(  # noqa: C901
                     f"{existing_warning} {quality_warning}"
                     if existing_warning
                     else quality_warning
+                )
+            if isinstance(out.get("quote_source_conflict"), dict):
+                out["usable_for_live_trading"] = False
+                out["usable_for_live_trading_basis"] = (
+                    "quote_age_market_session_spread_and_source_agreement"
+                )
+                conflict_warning = (
+                    "Cached and streamed quotes disagree at the same timestamp; "
+                    "review quote_source_conflict before trading."
+                )
+                existing_warning = out.get("warning")
+                out["warning"] = (
+                    f"{existing_warning} {conflict_warning}"
+                    if existing_warning
+                    else conflict_warning
                 )
             diagnostics = {
                 "source": out.get("quote_source", "mt5.symbol_info_tick"),

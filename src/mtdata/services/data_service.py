@@ -231,7 +231,7 @@ def _round_tick_price_payload(out: Dict[str, Any], digits: int) -> None:
         return
     stats = out.get("stats")
     if isinstance(stats, dict):
-        for name in ("bid", "ask", "mid", "spread", "last"):
+        for name in ("bid", "ask", "spread", "last"):
             values = stats.get(name)
             if not isinstance(values, dict):
                 continue
@@ -241,7 +241,7 @@ def _round_tick_price_payload(out: Dict[str, Any], digits: int) -> None:
                     values[key] = _round_price_value(values[key], stat_digits)
     last_quote = out.get("last_quote")
     if isinstance(last_quote, dict):
-        for key in ("bid", "ask", "mid", "spread"):
+        for key in ("bid", "ask", "spread"):
             if key in last_quote:
                 last_quote[key] = _round_price_value(last_quote[key], digits)
     if isinstance(stats, dict):

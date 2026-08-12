@@ -229,9 +229,7 @@ def _normalize_timezone_display(
     normalized = str(value or "auto").strip().lower()
     if normalized in {"", "auto"}:
         return "server" if symbol_mode else "local"
-    if normalized in {"local", "utc"}:
-        return normalized
-    if normalized == "server" and symbol_mode:
+    if normalized in {"local", "utc", "server"}:
         return normalized
     return None
 
@@ -255,14 +253,37 @@ def _apply_market_timezone_display(
     *,
     now_local: datetime,
     display: str,
+    server_tzinfo: Any = None,
+    server_label: Optional[str] = None,
 ) -> Dict[str, Any]:
-    if display != "utc":
+    if display == "local":
         return status
+    target_tz = timezone.utc if display == "utc" else server_tzinfo
+    if target_tz is None:
+        target_tz = timezone.utc
     out = dict(status)
-    out["display_time"] = format_datetime_utc(now_local)
+    out["display_time"] = (
+        format_datetime_utc(now_local)
+        if display == "utc"
+        else now_local.astimezone(target_tz).replace(microsecond=0).isoformat()
+    )
+    out["display_timezone"] = (
+        "UTC" if display == "utc" else server_label or "UTC"
+    )
     for key in ("next_open", "next_close"):
-        if key in out:
-            out[key] = _format_market_time(out[key], display)
+        value = out.get(key)
+        if not isinstance(value, str) or not value:
+            continue
+        try:
+            parsed = datetime.fromisoformat(value)
+        except ValueError:
+            continue
+        if parsed.tzinfo is not None:
+            out[key] = (
+                format_datetime_utc(parsed)
+                if display == "utc"
+                else parsed.astimezone(target_tz).replace(microsecond=0).isoformat()
+            )
     return out
 
 
@@ -1393,6 +1414,12 @@ def market_status(
         errors: List[Dict[str, Any]] = []
         
         now_utc = datetime.now(timezone.utc)
+        runtime_timezone = build_runtime_timezone_meta({}, include_now=False)
+        server_timezone_meta = runtime_timezone.get("server", {})
+        server_tzinfo, server_tz_label = _runtime_meta_tzinfo(
+            server_timezone_meta,
+            allow_offset=True,
+        )
 
         for market_id in markets_to_check:
             if market_id not in _MARKETS:
@@ -1407,6 +1434,8 @@ def market_status(
                     status,
                     now_local=local_now,
                     display=timezone_display_mode,
+                    server_tzinfo=server_tzinfo,
+                    server_label=server_tz_label,
                 )
                 results.append(status)
             except Exception as exc:
@@ -1479,6 +1508,14 @@ def market_status(
             ),
             "data_fetched_at": format_datetime_utc(now_utc),
             "timezone": "UTC",
+            "timezone_display": timezone_display_mode,
+            "display_timezone": (
+                server_tz_label
+                if timezone_display_mode == "server" and server_tz_label
+                else "UTC"
+                if timezone_display_mode in {"utc", "server"}
+                else "market_local"
+            ),
             "day_of_week": now_utc.strftime("%A"),
             "region": region or "all",
             "summary": "; ".join(summary_messages) if summary_messages else "No market data available",

@@ -742,7 +742,10 @@ def test_market_ticker_keeps_positive_cached_quote_over_locked_stream_conflict()
     assert out["ask"] == 1.15326
     assert out["quote_source"] == "mt5.symbol_info_tick"
     assert out["quote_source_state"] == "reconciled_equal_timestamp_conflict"
-    assert "quote_source_conflict" not in out
+    assert out["quote_source_conflict"]["selected_source"] == "mt5.symbol_info_tick"
+    assert out["quote_source_conflict"]["max_disagreement_points"] == 16.0
+    assert out["usable_for_live_trading"] is False
+    assert "quote_source_conflict" in out["warning"]
     assert out["spread_valid"] is True
     assert out["spread_quality"] == "two_sided"
 
@@ -770,6 +773,35 @@ def test_market_ticker_marks_locked_quote_unusable() -> None:
     assert out["spread_quality"] == "locked"
     assert out["usable_for_live_trading"] is False
     assert "Locked quote" in out["warning"]
+
+
+def test_market_ticker_mid_preserves_half_point_precision() -> None:
+    now = 1_700_000_100.0
+    tick = SimpleNamespace(
+        bid=1.15398,
+        ask=1.15399,
+        last=1.15398,
+        time=now - 1.0,
+        time_msc=(now - 1.0) * 1000.0,
+    )
+    with patch("mtdata.core.market_depth.mt5") as mt5, patch(
+        "mtdata.core.market_depth.time.time", return_value=now
+    ), patch("mtdata.core.market_depth._use_client_tz", return_value=False):
+        mt5.COPY_TICKS_ALL = 0
+        mt5.symbol_select.return_value = True
+        mt5.symbol_info.return_value = SimpleNamespace(
+            digits=5,
+            point=0.00001,
+            trade_tick_size=0.00001,
+            trade_tick_value=1.0,
+        )
+        mt5.symbol_info_tick.return_value = tick
+        mt5.copy_ticks_range.return_value = []
+
+        out = _raw_market_ticker("EURUSD", detail="full")
+
+    assert out["mid"] == pytest.approx((out["bid"] + out["ask"]) / 2.0)
+    assert out["mid"] == pytest.approx(1.153985)
 
 
 def test_market_ticker_compact_explains_unrefreshable_future_tick() -> None:

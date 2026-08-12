@@ -51,6 +51,30 @@ def test_market_status_timezone_display_utc_converts_market_times(monkeypatch) -
         assert market["next_close"] == "2024-01-02T21:00:00Z"
 
 
+def test_market_status_global_server_timezone_converts_market_times(monkeypatch) -> None:
+    raw = _unwrap(market_status_mod.market_status)
+    fixed_now = datetime(2024, 1, 2, 10, 0, tzinfo=ZoneInfo("America/New_York"))
+
+    monkeypatch.setattr(market_status_mod, "_get_local_time", lambda _tz: fixed_now)
+    monkeypatch.setattr(market_status_mod, "_get_upcoming_holidays", lambda _markets: [])
+    monkeypatch.setattr(
+        market_status_mod,
+        "build_runtime_timezone_meta",
+        lambda *_args, **_kwargs: {
+            "server": {"tz": "Europe/Nicosia", "offset_seconds": None}
+        },
+    )
+
+    result = raw(region="us", timezone_display="server", detail="full")
+
+    assert result["success"] is True
+    assert result["timezone_display"] == "server"
+    assert result["display_timezone"] == "Europe/Nicosia"
+    for market in result["markets"]:
+        assert market["display_time"] == "2024-01-02T17:00:00+02:00"
+        assert market["next_close"] == "2024-01-02T23:00:00+02:00"
+
+
 def test_market_status_uses_utc_weekend_for_closed_reason(monkeypatch) -> None:
     raw = _unwrap(market_status_mod.market_status)
     fixed_utc = datetime(2026, 4, 25, 3, 18, tzinfo=timezone.utc)
