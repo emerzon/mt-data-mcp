@@ -52,7 +52,7 @@ def _append_diagnostic_warning(report: Dict[str, Any], message: str) -> None:
 def _attach_report_compute_hint(report: Any, request: ReportGenerateRequest) -> Any:
     if not isinstance(report, dict) or report.get("error"):
         return report
-    template = str(request.template or "basic").strip().lower()
+    template = str(request.template or "minimal").strip().lower()
     if template == "minimal" or request.detail != "full":
         return report
     diagnostics = report.get("diagnostics")
@@ -76,8 +76,8 @@ def report_generate(
 ) -> Union[str, Dict[str, Any]]:
     """Generate a consolidated, information-dense analysis report.
 
-    - template: 'basic' (context, pivot, EWMA vol, backtest->best forecast, MC barrier grid, patterns),
-                'minimal' (fast path: context + direct forecast; skips pivot/backtest/barrier optimization/patterns),
+    - template: 'minimal' (default fast path: context + direct forecast; skips pivot/backtest/barrier optimization/patterns),
+                'basic' (context, pivot, EWMA vol, backtest->best forecast, MC barrier grid, patterns),
                 'advanced' (adds regimes, HAR-RV, conformal),
                 'scalping' (specialized short-horizon barrier logic), or a basic-pipeline preset:
                 'intraday' | 'swing' | 'position' (different timeframe, lookback, backtest, and barrier defaults;

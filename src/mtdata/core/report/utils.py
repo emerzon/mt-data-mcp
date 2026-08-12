@@ -840,11 +840,12 @@ def attach_multi_timeframes(
                 continue
             filtered_tfs.append(str(tfp))
         pivs: Dict[str, Any] = {}
+        pivot_errors: Dict[str, Dict[str, str]] = {}
         existing_pivots = _collect_timeframe_section_entries(sections.get('pivot_multi'))
         if filtered_tfs:
-            try:
-                from ..pivot import pivot_compute_points as _compute_pivot_points
-                for tfp in filtered_tfs:
+            from ..pivot import pivot_compute_points as _compute_pivot_points
+            for tfp in filtered_tfs:
+                try:
                     tfp_key = str(tfp).upper()
                     existing_pivot = existing_pivots.get(tfp_key)
                     if isinstance(existing_pivot, dict):
@@ -860,12 +861,33 @@ def attach_multi_timeframes(
                             'calculation_basis': res.get('calculation_basis'),
                             'timezone': res.get('timezone'),
                         }
-            except Exception:
-                pivs = {}
+                    else:
+                        pivot_errors[str(tfp)] = {
+                            'error': str(
+                                res.get('error')
+                                if isinstance(res, dict)
+                                else 'pivot tool returned no structured payload'
+                            )
+                        }
+                except Exception as exc:
+                    pivot_errors[str(tfp)] = {'error': str(exc)}
         if pivs:
             if base_pivot_tf:
                 pivs['__base_timeframe__'] = base_pivot_tf
+            if pivot_errors:
+                pivs['timeframe_errors'] = pivot_errors
             sections['pivot_multi'] = pivs
+        elif pivot_errors:
+            sections['pivot_multi'] = {
+                'status': 'error',
+                'error': 'All requested pivot timeframes failed.',
+                'timeframe_errors': pivot_errors,
+            }
+        else:
+            sections['pivot_multi'] = {
+                'status': 'omitted',
+                'reason': 'No requested pivot timeframe differed from the base pivot timeframe.',
+            }
 
 
 def attach_report_timeframes(

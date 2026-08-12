@@ -162,7 +162,7 @@ PARAM_HINTS = {
     "library": "Forecast library/group (e.g. native, statsforecast, sktime).",
     "model": "Model identifier for this tool.",
     "template": (
-        "Report template: minimal fast context+forecast, basic balanced default, "
+        "Report template: minimal fast context+forecast (default), basic balanced research, "
         "advanced regimes/HAR/conformal, scalping M5, intraday H1, swing H4/D1, "
         "or position D1/W1."
     ),

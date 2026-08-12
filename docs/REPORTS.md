@@ -15,7 +15,7 @@ inspect its section statuses and diagnostics before relying on it.
 ## Quick start
 
 ```bash
-mtdata-cli report_generate EURUSD --timeframe H1 --template basic
+mtdata-cli report_generate EURUSD --timeframe H1
 ```
 
 The CLI defaults to compact TOON text. Use `--json` for a machine-readable
@@ -27,8 +27,8 @@ changes its final presentation.
 
 | Template | Design and intended use |
 |----------|-------------------------|
-| `minimal` | Distinct fast path: context and direct forecast only |
-| `basic` | Shared general-purpose analysis pipeline (default) |
+| `minimal` | Default fast path: context and direct forecast only |
+| `basic` | Shared general-purpose research pipeline; opt in explicitly |
 | `advanced` | Extends `basic` with regime, HAR-RV, and conformal sections |
 | `scalping` | Specialized short-horizon M5 path with tick-aware barrier logic |
 | `intraday` | `basic` preset with H1-oriented defaults |
@@ -40,7 +40,7 @@ lookbacks, backtest sampling, barrier ranges, and multi-timeframe inputs. They
 do not define different analytics or section schemas: each runs the `basic`
 pipeline with its preset parameters.
 
-`minimal` is the quick path. The other templates may perform several MT5
+`minimal` is the bounded interactive default. The other templates may perform several MT5
 fetches and invoke pivots, patterns, backtests, barriers, or regime checks.
 Runtime and dependency requirements therefore vary by template. Section
 controls select the sections to execute and return, while internal

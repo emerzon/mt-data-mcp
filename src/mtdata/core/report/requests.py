@@ -22,7 +22,7 @@ ReportTemplateLiteral = Literal[
 ]
 
 _REPORT_TEMPLATE_HELP = (
-    "Report template: minimal fast context+forecast, basic balanced default, "
+    "Report template: minimal fast context+forecast (default), basic balanced research, "
     "advanced adds regimes/HAR/conformal, scalping M5 short-term setup, "
     "intraday H1 setup, swing H4/D1 setup, position D1/W1 setup. "
     "Runtime cost: minimal is the quick path; basic/advanced and style "
@@ -38,7 +38,7 @@ class ReportGenerateRequest(BaseModel):
         ge=1,
         description="Forecast/report horizon in bars; must be at least 1 when supplied.",
     )
-    template: ReportTemplateLiteral = Field("basic", description=_REPORT_TEMPLATE_HELP)
+    template: ReportTemplateLiteral = Field("minimal", description=_REPORT_TEMPLATE_HELP)
     timeframe: Optional[TimeframeLiteral] = None
     start: Optional[str] = None
     end: Optional[str] = None

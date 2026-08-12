@@ -255,6 +255,43 @@ class TestAttachMultiTimeframesCacheThreading:
 
         assert requested_indicators == ["ema(20),rsi(14)", "ema(20),rsi(14)"]
 
+    def test_all_pivot_failures_keep_underlying_timeframe_errors(self, monkeypatch):
+        from mtdata.core.report.use_cases import _build_sections_status
+
+        monkeypatch.setattr(
+            "mtdata.core.pivot.pivot_compute_points",
+            lambda *, symbol, timeframe: {"error": f"{timeframe} history unavailable"},
+        )
+        report = {
+            "meta": {"timeframe": "H1"},
+            "sections": {
+                "context": {"timeframe": "H1"},
+                "pivot": {"timeframe": "D1"},
+            },
+        }
+
+        attach_multi_timeframes(
+            report,
+            "EURUSD",
+            None,
+            extra_timeframes=[],
+            pivot_timeframes=["H4", "W1"],
+        )
+
+        pivot_multi = report["sections"]["pivot_multi"]
+        assert pivot_multi["error"] == "All requested pivot timeframes failed."
+        assert pivot_multi["timeframe_errors"] == {
+            "H4": {"error": "H4 history unavailable"},
+            "W1": {"error": "W1 history unavailable"},
+        }
+        status = _build_sections_status(
+            report["sections"], expected_sections=["pivot_multi"]
+        )
+        assert status["sections"]["pivot_multi"] == "error"
+        assert status["details"]["pivot_multi"]["reason"] != (
+            "scheduled section returned no payload"
+        )
+
     def test_reuses_existing_timeframes_and_pivots(self, monkeypatch):
         fetched_tfs = []
         fetched_pivots = []

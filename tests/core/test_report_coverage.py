@@ -134,6 +134,7 @@ def test_report_generate_request_defaults_to_compact_detail():
     request = ReportGenerateRequest(symbol="EURUSD")
 
     assert request.detail == "compact"
+    assert request.template == "minimal"
 
 
 def test_report_generate_request_rejects_removed_summary_only_field():
@@ -325,7 +326,7 @@ def test_run_report_generate_scopes_volatility_rate_cache():
         patch("mtdata.core.report_templates.template_position", basic_template, create=True),
     ):
         run_report_generate(
-            ReportGenerateRequest(symbol="EURUSD"),
+            ReportGenerateRequest(symbol="EURUSD", template="basic"),
             format_number=lambda value: str(value),
             get_indicator_value=lambda payload, key: payload.get(key),
             report_error_payload=lambda message: {"error": str(message)},

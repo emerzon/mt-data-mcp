@@ -256,6 +256,16 @@ def _build_sections_status(
                 "reason": payload.get("reason") or "section omitted",
             }
             continue
+        if declared_status == "error":
+            statuses[str(name)] = "error"
+            summary["error"] += 1
+            errors = _collect_payload_errors(payload)
+            details[str(name)] = {
+                "status": "error",
+                "reason": payload.get("reason") or payload.get("error") or "section failed",
+                "errors": errors,
+            }
+            continue
         has_error = _has_payload_error(payload)
         has_content = _has_payload_content(payload)
         errors = _collect_payload_errors(payload)
@@ -1055,7 +1065,7 @@ def run_report_generate(  # noqa: C901
     report_error_payload: Any,
     append_diagnostic_warning: Any,
 ) -> str | Dict[str, Any]:
-    template_name = (request.template or "basic").lower().strip()
+    template_name = (request.template or "minimal").lower().strip()
     detail_value = normalize_output_detail(getattr(request, "detail", "compact"))
 
     def _run() -> str | Dict[str, Any]:  # noqa: C901
