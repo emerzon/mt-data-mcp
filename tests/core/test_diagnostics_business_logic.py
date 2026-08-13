@@ -86,6 +86,34 @@ def test_stationarity_test_combines_adf_and_kpss(monkeypatch):
     assert {row["test"] for row in result["items"]} == {"adf", "kpss"}
 
 
+def test_stationarity_default_target_has_usable_minimum_lookback(monkeypatch):
+    from statsmodels.tsa import stattools
+
+    frame = _bars(np.linspace(100.0, 102.0, 21))
+    monkeypatch.setattr(diagnostics, "create_mt5_gateway", lambda **kwargs: _Gateway())
+    monkeypatch.setattr(
+        diagnostics,
+        "_fetch_diagnostic_bars",
+        lambda *args, **kwargs: (frame, None),
+    )
+    monkeypatch.setattr(
+        stattools,
+        "adfuller",
+        lambda *args, **kwargs: (-4.0, 0.01, 1, 18, {"5%": -2.9}),
+    )
+
+    rejected = _raw(diagnostics.stationarity_test)(
+        symbol="TEST", lookback=20, tests="adf"
+    )
+    accepted = _raw(diagnostics.stationarity_test)(
+        symbol="TEST", lookback=21, tests="adf"
+    )
+
+    assert "at least 21" in rejected["error"]
+    assert accepted["success"] is True
+    assert accepted["items"][0]["samples"] == 18
+
+
 def test_stationarity_test_preserves_small_p_value(monkeypatch):
     from statsmodels.tsa import stattools
 
@@ -149,6 +177,28 @@ def test_seasonality_detect_finds_known_period(monkeypatch):
     assert "signal_quality" in result["items"][0]
     assert result["items"][0]["period_duration"] == "12 hours"
     assert result["items"][0]["period_duration_seconds"] == 43_200
+
+
+def test_seasonality_minimum_lookback_survives_preprocessing(monkeypatch):
+    x = np.arange(31, dtype=float)
+    frame = _bars(100.0 + np.sin(2.0 * np.pi * x / 6.0))
+    monkeypatch.setattr(diagnostics, "create_mt5_gateway", lambda **kwargs: _Gateway())
+    monkeypatch.setattr(
+        diagnostics,
+        "_fetch_diagnostic_bars",
+        lambda *args, **kwargs: (frame, None),
+    )
+
+    rejected = _raw(diagnostics.seasonality_detect)(
+        symbol="TEST", lookback=30
+    )
+    accepted = _raw(diagnostics.seasonality_detect)(
+        symbol="TEST", lookback=31
+    )
+
+    assert "at least 31" in rejected["error"]
+    assert accepted["success"] is True
+    assert accepted["samples"] == 30
 
 
 def test_seasonality_detect_does_not_inflate_noise_spectral_score(monkeypatch):
@@ -287,6 +337,29 @@ def test_volatility_term_structure_returns_requested_horizons(monkeypatch):
     assert result["bars_per_year"] == 6048.0
     assert result["bars_per_session"] == 24.0
     assert result["annualization_basis"] == "observed_median_bars_per_utc_session_x_252_sessions"
+
+
+def test_volatility_term_structure_reports_usable_horizon_minimum(monkeypatch):
+    close = 100.0 * np.exp(np.linspace(0.0, 0.05, 61))
+    frame = _bars(close)
+    monkeypatch.setattr(diagnostics, "create_mt5_gateway", lambda **kwargs: _Gateway())
+    monkeypatch.setattr(
+        diagnostics,
+        "_fetch_diagnostic_bars",
+        lambda *args, **kwargs: (frame, None),
+    )
+
+    rejected = _raw(diagnostics.volatility_term_structure)(
+        symbol="TEST", lookback=60
+    )
+    accepted = _raw(diagnostics.volatility_term_structure)(
+        symbol="TEST", lookback=61
+    )
+
+    assert "at least 61" in rejected["error"]
+    assert "largest horizon (60)" in rejected["error"]
+    assert accepted["success"] is True
+    assert [row["horizon_bars"] for row in accepted["items"]] == [1, 5, 10, 20, 60]
 
 
 def test_volatility_term_structure_uses_observed_session_density(monkeypatch):

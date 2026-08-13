@@ -16,6 +16,8 @@ mtdata-cli stationarity_test EURUSD --timeframe H1 --lookback 500 \
 ```
 
 ADF and PP use a unit-root null hypothesis, while KPSS uses a stationarity null. The combined `conclusion` is `stationary`, `non_stationary`, `mixed`, or `inconclusive`.
+The minimum lookback is 20 observations after preprocessing: return and
+difference targets therefore require at least 21 input bars.
 
 ## Automatic Seasonality
 
@@ -27,6 +29,8 @@ mtdata-cli seasonality_detect EURUSD --timeframe H1 --lookback 1000 \
 ```
 
 The dominant period is exploratory evidence, not proof of a stable calendar effect. Confirm it on separate history.
+Seasonality requires at least 31 input bars so its default preprocessing leaves
+30 analyzed observations.
 
 ## Bar Outliers
 
@@ -49,6 +53,8 @@ mtdata-cli volatility_term_structure EURUSD --timeframe H1 --lookback 1000 \
 ```
 
 By default values are annualized decimal volatility. Set `--annualize false` for per-bar decimal volatility.
+Lookback must be at least 30 and strictly greater than the largest requested
+horizon; the default 60-bar horizon therefore requires lookback of at least 61.
 For intraday data, annualization uses the median observed bars per complete UTC
 session multiplied by the symbol-class calendar (365 crypto, 260 FX, or 252
 other sessions). The response reports both inputs and the resulting basis.

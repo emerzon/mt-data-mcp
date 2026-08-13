@@ -195,8 +195,16 @@ def stationarity_test(
     """Test an MT5 time series for stationarity using ADF, KPSS, and optional PP."""
 
     def _run() -> Dict[str, Any]:
-        if int(lookback) < 20:
-            return {"error": "lookback must be at least 20."}
+        minimum_lookback = (
+            21 if target in {"return", "log_return", "diff"} else 20
+        )
+        if int(lookback) < minimum_lookback:
+            return {
+                "error": (
+                    f"lookback must be at least {minimum_lookback} for "
+                    f"target={target}; this leaves 20 observations after preprocessing."
+                )
+            }
         if not 0.0 < float(significance) < 1.0:
             return {"error": "significance must be between 0 and 1."}
         requested = [part.strip().lower() for part in str(tests or "").split(",") if part.strip()]
@@ -342,8 +350,13 @@ def seasonality_detect(
     """Detect dominant seasonal periods using autocorrelation and spectral power."""
 
     def _run() -> Dict[str, Any]:
-        if int(lookback) < 30:
-            return {"error": "lookback must be at least 30."}
+        if int(lookback) < 31:
+            return {
+                "error": (
+                    "lookback must be at least 31; seasonality preprocessing "
+                    "requires 30 analyzed observations."
+                )
+            }
         if int(min_period) < 2 or int(min_cycles) < 2 or int(top_n) < 1:
             return {"error": "min_period >= 2, min_cycles >= 2, and top_n >= 1 are required."}
         gateway = create_mt5_gateway(adapter=mt5, ensure_connection_impl=ensure_mt5_connection_or_raise)
@@ -669,8 +682,6 @@ def volatility_term_structure(
     """Compute current realized volatility and historical cones at multiple horizons."""
 
     def _run() -> Dict[str, Any]:
-        if int(lookback) < 30:
-            return {"error": "lookback must be at least 30."}
         try:
             horizon_values = sorted(
                 set(int(part.strip()) for part in str(horizons).split(",") if part.strip())
@@ -684,8 +695,16 @@ def volatility_term_structure(
             return {"error": "horizons must contain positive integers."}
         if any(value <= 0.0 or value >= 100.0 for value in percentile_values):
             return {"error": "percentiles must be strictly between 0 and 100."}
-        if max(horizon_values) >= int(lookback):
-            return {"error": "Each horizon must be smaller than lookback."}
+        maximum_horizon = max(horizon_values)
+        minimum_lookback = max(30, maximum_horizon + 1)
+        if int(lookback) < minimum_lookback:
+            return {
+                "error": (
+                    f"lookback must be at least {minimum_lookback} for the requested "
+                    f"horizons; the largest horizon ({maximum_horizon}) must be "
+                    "smaller than lookback."
+                )
+            }
         gateway = create_mt5_gateway(adapter=mt5, ensure_connection_impl=ensure_mt5_connection_or_raise)
         gateway.ensure_connection()
         frame, fetch_error = _fetch_diagnostic_bars(
