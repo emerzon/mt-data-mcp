@@ -12,9 +12,6 @@ from ...utils.minimal_output import (
 from ..output_contract import apply_output_verbosity
 from ..output_serialization import json_default as _json_default
 from ..output_serialization import sanitize_json as _sanitize_json
-from ..trading.context import (
-    _compact_trade_session_items as _shared_compact_trade_session_items,
-)
 from .output_format import (
     CLI_FORMAT_JSON,
     CLI_FORMAT_TOON,
@@ -213,6 +210,12 @@ def _compact_trade_session_items(
     *,
     field_map: tuple[tuple[str, ...], ...],
 ) -> Optional[list[Dict[str, Any]]]:
+    # Trading imports a large analytics graph. Keep it off unrelated CLI startup
+    # paths and pay that cost only when this specialized formatter is used.
+    from ..trading.context import (
+        _compact_trade_session_items as _shared_compact_trade_session_items,
+    )
+
     return _shared_compact_trade_session_items(
         section,
         field_map=field_map,

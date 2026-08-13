@@ -198,7 +198,7 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
     ("wait_event", "magic"): "MT5 magic number filter for account events from one strategy or EA. Omit for all magic numbers.",
     ("finviz_screen", "filters"): "Filter key=value pairs, operator aliases like beta_under=1, Finviz shorthand, or JSON object. Examples: 'country=USA,marketcap=mega', 'pe_under=15,beta_under=1', 'cap_largeover,exch_nyse', '{\"Exchange\":\"NASDAQ\",\"Sector\":\"Technology\"}'. Common keys include Exchange, Index, Sector, Industry, Country, Market Cap., P/E, Dividend Yield, RSI (14), Average Volume, and Price.",
     ("finviz_screen", "limit"): "Max screener results to return on this page.",
-    ("finviz_screen", "order"): "Finviz sort key. Example: -marketcap for descending or price for ascending.",
+    ("finviz_screen", "order"): "Finviz sort key. Use --order=-marketcap for descending or --order=price for ascending.",
     ("finviz_news", "limit"): "Max news items to return on this page.",
     ("finviz_insider", "limit"): "Max insider trades to return on this page.",
     ("finviz_insider_activity", "option"): (
@@ -485,6 +485,13 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
     ),
     ("trade_modify", "dry_run"): (
         "Preview the modification without sending it to the broker."
+    ),
+    ("trade_modify", "price"): (
+        "New pending-order price. Omit when only stop_loss/take_profit change."
+    ),
+    ("trade_get_pending", "order_type"): (
+        "Pending-order filter: BUY_LIMIT, BUY_STOP, BUY_STOP_LIMIT, SELL_LIMIT, "
+        "SELL_STOP, or SELL_STOP_LIMIT."
     ),
     ("trade_modify", "idempotency_key"): (
         "Durable dedupe key shared by CLI and server processes. Reusing the same "

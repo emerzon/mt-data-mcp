@@ -84,6 +84,17 @@ def _suppress_noisy_third_party_logs() -> None:
         except Exception:
             pass
     try:
+        from pydantic_settings.sources.utils import IncompleteFieldDefinitionWarning
+
+        warnings.filterwarnings(
+            "ignore",
+            message=(
+                r"Field 'lifespan' has an incomplete definition: its annotation "
+                r"contains an unresolved forward reference.*"
+            ),
+            category=IncompleteFieldDefinitionWarning,
+            module=r"pydantic_settings\.sources\.utils",
+        )
         warnings.filterwarnings(
             "ignore",
             message=r".*Redirects are currently not supported in Windows or MacOs.*",

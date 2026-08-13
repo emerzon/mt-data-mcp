@@ -26,6 +26,7 @@ def test_output_fields_reports_partially_unresolved_projection() -> None:
         "success": True,
         "symbol": "EURUSD",
         "unresolved_output_fields": ["details.missing"],
+        "valid_output_fields": ["details"],
     }
 
 
@@ -107,6 +108,7 @@ def test_output_fields_does_not_deep_match_bare_fields_from_row_collections() ->
         "success": True,
         "symbol": "EURUSD",
         "unresolved_output_fields": ["close"],
+        "valid_output_fields": ["data"],
     }
 
 

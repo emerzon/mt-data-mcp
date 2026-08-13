@@ -800,6 +800,11 @@ def _select_output_fields(value: Any, fields: Any) -> Any:
     # paths are surfaced so projection typos cannot silently discard data.
     if unresolved:
         selected["unresolved_output_fields"] = unresolved
+        selected["valid_output_fields"] = sorted(
+            str(key)
+            for key in value
+            if key not in _FIELD_SELECTION_META_KEYS
+        )
     return selected
 
 

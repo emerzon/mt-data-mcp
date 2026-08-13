@@ -188,13 +188,13 @@ mtdata-cli finviz_screen --filters '{"Market Cap.": "Large ($10bln to $200bln)",
 mtdata-cli finviz_screen --filters '{"Dividend Yield": "Over 5%"}' --view valuation --json
 
 # Sort by market cap descending
-mtdata-cli finviz_screen --filters '{"Sector": "Healthcare"}' --order "-marketcap" --json
+mtdata-cli finviz_screen --filters '{"Sector": "Healthcare"}' --order=-marketcap --json
 ```
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
 | `--filters` | (optional) | JSON object, `key=value` pairs, or Finviz shorthand tokens |
-| `--order` | (optional) | Sort: e.g., `-marketcap` (desc), `price` (asc) |
+| `--order` | (optional) | Sort: e.g., `--order=-marketcap` (desc), `--order=price` (asc) |
 | `--limit` | 20 | Max results per page |
 | `--page` | 1 | Pagination page |
 | `--view` | `overview` | `overview`, `valuation`, `financial`, `ownership`, `performance`, `technical` |

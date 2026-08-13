@@ -23,6 +23,42 @@ def test_cli_runtime_import_does_not_register_data_tool_family():
     assert completed.returncode == 0, completed.stderr
 
 
+def test_cli_formatting_import_does_not_load_trading_graph():
+    probe = (
+        "import sys; import mtdata.core.cli.formatting; "
+        "assert 'mtdata.core.trading' not in sys.modules; "
+        "assert 'mtdata.services.data_service' not in sys.modules; "
+        "assert 'mtdata.utils.denoise' not in sys.modules"
+    )
+
+    completed = subprocess.run(
+        [sys.executable, "-c", probe],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+
+
+def test_dynamic_tools_list_subprocess_has_clean_stderr():
+    probe = (
+        "from mtdata.core.cli import main; "
+        "raise SystemExit(main(['tools_list', '--limit', '1', '--json']))"
+    )
+
+    completed = subprocess.run(
+        [sys.executable, "-c", probe],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert json.loads(completed.stdout)["success"] is True
+    assert completed.stderr == ""
+
+
 def test_version_path_does_not_import_cli_api(capsys):
     from mtdata.core.cli import main
 

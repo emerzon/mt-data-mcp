@@ -1673,8 +1673,39 @@ class TestResolveParamKwargs:
         kwargs, _ = _resolve_param_kwargs(param, None, cmd_name="finviz_screen")
         assert (
             kwargs["help"]
-            == "Finviz sort key. Example: -marketcap for descending or price for ascending."
+            == "Finviz sort key. Use --order=-marketcap for descending or --order=price for ascending."
         )
+
+    def test_finviz_screen_descending_order_uses_parser_safe_equals_form(self):
+        parser = argparse.ArgumentParser(allow_abbrev=False)
+
+        def tool(order: Optional[str] = None) -> None:
+            pass
+
+        add_dynamic_arguments(
+            parser,
+            get_function_info(tool),
+            cmd_name="finviz_screen",
+        )
+
+        assert parser.parse_args(["--order=-marketcap"]).order == "-marketcap"
+
+    @pytest.mark.parametrize("cmd_name", ["trade_modify", "trade_get_pending"])
+    def test_trading_parameter_help_matches_command_contract(self, cmd_name):
+        name = "price" if cmd_name == "trade_modify" else "order_type"
+        kwargs, _ = _resolve_param_kwargs(
+            {"name": name, "type": Optional[str], "required": False, "default": None},
+            None,
+            cmd_name=cmd_name,
+        )
+
+        if cmd_name == "trade_modify":
+            assert "Omit when only stop_loss/take_profit change" in kwargs["help"]
+            assert "required" not in kwargs["help"]
+        else:
+            assert "BUY_STOP_LIMIT" in kwargs["help"]
+            assert "SELL_STOP_LIMIT" in kwargs["help"]
+            assert "market" not in kwargs["help"].lower()
 
     def test_market_scan_limit_help_is_command_specific(self):
         param = {
