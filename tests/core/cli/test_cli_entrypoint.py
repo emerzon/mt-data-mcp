@@ -47,6 +47,8 @@ def test_root_help_path_does_not_import_cli_api(capsys):
     assert "forecast_generate" in output
     assert "command-level" in output
     assert "--timeframe overrides it" in output
+    assert "bare command = major-equity exchange calendar" in output
+    assert "pass a broker symbol for MT5 tradability" in output
 
 
 def test_unknown_command_path_does_not_import_cli_api(capsys):

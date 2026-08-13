@@ -189,6 +189,13 @@ def format_root_help(program: str) -> str:
     lines.extend(
         (
             "",
+            "  market_status scope: bare command = major-equity exchange calendar;",
+            "                       pass a broker symbol for MT5 tradability.",
+        )
+    )
+    lines.extend(
+        (
+            "",
             "Global options:",
             "  -h, --help              Show this help and exit",
             "  -V, --version           Show installed mtdata version and exit",

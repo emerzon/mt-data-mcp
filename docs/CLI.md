@@ -275,7 +275,7 @@ order from the start bound (first-N). Omit `--start` for latest-N retrieval.
 | `market_depth_fetch` | Get order book (DOM) — requires `MTDATA_ENABLE_MARKET_DEPTH_FETCH=1` |
 | `market_ticker` | Get current bid/ask/spread snapshot |
 | `market_snapshot` | Unified pre-trade snapshot (quote, levels, patterns; optional regime/forecast sections) |
-| `market_status` | Get market trading hours and session status |
+| `market_status` | Show the major-equity exchange calendar without a symbol, or MT5 tradability for a broker symbol |
 | `wait_event` | **Blocking:** wait for a clock, single-symbol, or basket event using exactly one stopping mode: the next `timeframe` boundary or `max_wait_seconds` duration |
 
 ### Forecasting
