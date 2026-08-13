@@ -594,13 +594,17 @@ def _render_cli_result_status(result: Any, *, args: Any, cmd_name: str) -> int:
     return int(_result_has_tool_error(rendered_result))
 
 
-def _json_parse_errors_requested() -> bool:
+def _parse_error_output_format() -> str:
     if "--json" in sys.argv[1:]:
-        return True
+        return CLI_FORMAT_JSON
     try:
-        return resolve_cli_output_format_env() == CLI_FORMAT_JSON
+        return resolve_cli_output_format_env()
     except ValueError:
-        return True
+        return CLI_FORMAT_JSON
+
+
+def _json_parse_errors_requested() -> bool:
+    return _parse_error_output_format() == CLI_FORMAT_JSON
 
 
 def _invalid_output_format_status() -> Optional[int]:
@@ -665,41 +669,50 @@ class _CLIArgumentParser(argparse.ArgumentParser):
                 "MTDATA_ENABLE_MARKET_DEPTH_FETCH=1 before starting the CLI. "
                 "The broker must also provide Level 2/DOM data."
             )
-        if _json_parse_errors_requested():
-            program_parts = str(self.prog or "").split()
-            operation = program_parts[-1] if len(program_parts) > 1 else "cli"
-            payload = build_error_payload(
-                message_text,
-                code=(
-                    "feature_disabled"
-                    if market_depth_disabled
-                    else "cli_missing_required"
-                    if missing_required
-                    else "cli_invalid_arguments"
-                ),
-                operation=operation,
-                remediation=(
-                    "Set MTDATA_ENABLE_MARKET_DEPTH_FETCH=1 and restart the process."
-                    if market_depth_disabled
-                    else "Provide: " + ", ".join(missing_arguments) + "."
-                    if missing_required and missing_arguments
-                    else f"Run '{self.prog} --help' to inspect valid arguments."
-                ),
-                details=(
-                    {"missing_arguments": missing_arguments}
-                    if missing_required and missing_arguments
-                    else None
-                ),
+        program_parts = str(self.prog or "").split()
+        operation = program_parts[-1] if len(program_parts) > 1 else "cli"
+        payload = build_error_payload(
+            message_text,
+            code=(
+                "feature_disabled"
+                if market_depth_disabled
+                else "cli_missing_required"
+                if missing_required
+                else "cli_invalid_arguments"
+            ),
+            operation=operation,
+            remediation=(
+                "Set MTDATA_ENABLE_MARKET_DEPTH_FETCH=1 and restart the process."
+                if market_depth_disabled
+                else "Provide: " + ", ".join(missing_arguments) + "."
+                if missing_required and missing_arguments
+                else f"Run '{self.prog} --help' to inspect valid arguments."
+            ),
+            details=(
+                {"missing_arguments": missing_arguments}
+                if missing_required and missing_arguments
+                else None
+            ),
+        )
+        if market_depth_disabled:
+            payload["details"] = {
+                "feature": "market_depth_fetch",
+                "enable_env": "MTDATA_ENABLE_MARKET_DEPTH_FETCH",
+                "broker_prerequisite": "Level 2/DOM market data",
+            }
+        output_format = _parse_error_output_format()
+        rendered = (
+            json.dumps(payload, ensure_ascii=False, indent=2)
+            if output_format == CLI_FORMAT_JSON
+            else _format_result_for_cli(
+                payload,
+                fmt=output_format,
+                verbose="--verbose" in sys.argv[1:],
+                cmd_name=operation,
             )
-            if market_depth_disabled:
-                payload["details"] = {
-                    "feature": "market_depth_fetch",
-                    "enable_env": "MTDATA_ENABLE_MARKET_DEPTH_FETCH",
-                    "broker_prerequisite": "Level 2/DOM market data",
-                }
-            _write_cli_text(json.dumps(payload, ensure_ascii=False, indent=2))
-            self.exit(2)
-        super().error(message_text)
+        )
+        _write_cli_text(rendered)
+        self.exit(2)
 
 
 def _resolve_cli_output_contract_or_error(parser: argparse.ArgumentParser, args: Any):

@@ -138,6 +138,50 @@ def test_disabled_market_depth_parse_error_explains_gate(monkeypatch, capsys):
     assert "Level 2/DOM" in payload["error"]
 
 
+@pytest.mark.parametrize(
+    ("message", "error_code", "error_fragment"),
+    [
+        (
+            "argument --timeframe: invalid choice: 'H7'",
+            "cli_invalid_arguments",
+            "invalid choice",
+        ),
+        (
+            "the following arguments are required: symbol",
+            "cli_missing_required",
+            "Missing required argument(s): symbol.",
+        ),
+        (
+            "unrecognized arguments: --bogus 1",
+            "cli_invalid_arguments",
+            "unrecognized arguments",
+        ),
+    ],
+)
+def test_default_toon_parse_errors_use_structured_stdout_envelope(
+    monkeypatch,
+    capsys,
+    message,
+    error_code,
+    error_fragment,
+):
+    from mtdata.core.cli import api as cli_api
+
+    monkeypatch.setattr(sys, "argv", ["mtdata-cli", "sample_tool"])
+    parser = cli_api._CLIArgumentParser(prog="mtdata-cli sample_tool")
+
+    with pytest.raises(SystemExit, match="2"):
+        parser.error(message)
+
+    captured = capsys.readouterr()
+    assert captured.err == ""
+    assert "success: false" in captured.out
+    assert f"error_code: {error_code}" in captured.out
+    assert "operation: sample_tool" in captured.out
+    assert "remediation:" in captured.out
+    assert error_fragment in captured.out
+
+
 def test_dynamic_cli_help_has_no_placeholder_param_text():
     from mtdata.bootstrap.settings import load_environment
     from mtdata.core.cli import api as cli_api
@@ -335,9 +379,12 @@ class TestAddForecastGenerateArgs:
         with patch("sys.argv", ["cli.py", "forecast_generate", "BTCUSD", "--denoise"]), pytest.raises(SystemExit):
             main()
 
-        err = capsys.readouterr().err
-        assert "--denoise expects a value." in err
-        assert "--denoise ema" in err
+        captured = capsys.readouterr()
+        assert captured.err == ""
+        assert "success: false" in captured.out
+        assert "error_code: cli_invalid_arguments" in captured.out
+        assert "--denoise expects a value." in captured.out
+        assert "--denoise ema" in captured.out
         mock_fn.assert_not_called()
 
     @patch("mtdata.core.cli.api.discover_tools")
