@@ -197,6 +197,7 @@ def _run_screener_view(
     ascend: bool = True,
     limit: int = 20,
     page: int = 1,
+    fetch_limit_override: Optional[int] = None,
 ) -> Any:
     """Run screener_view with bounded rows and no inter-page sleep."""
     from .pagination import run_screener_view
@@ -209,6 +210,7 @@ def _run_screener_view(
         page=page,
         screener_max_rows=_FINVIZ_SCREENER_MAX_ROWS,
         page_limit_max=_FINVIZ_PAGE_LIMIT_MAX,
+        fetch_limit_override=fetch_limit_override,
     )
 
 
@@ -971,6 +973,9 @@ def get_earnings_calendar(
             order="Earnings Date",
             limit=fetch_limit_arg,
             page=fetch_page,
+            fetch_limit_override=(
+                _FINVIZ_SCREENER_MAX_ROWS if filter_elapsed else None
+            ),
         )
 
         if df is None or df.empty:
@@ -1023,7 +1028,7 @@ def get_earnings_calendar(
                 limit=safe_limit,
                 page=safe_page,
             )
-        return {
+        out = {
             "success": True,
             "period": period,
             "include_elapsed": bool(include_elapsed),
@@ -1036,6 +1041,16 @@ def get_earnings_calendar(
             **pagination_meta,
             "earnings": items_list,
         }
+        if elapsed_filter_applied and not source_complete:
+            out["source_incomplete"] = True
+            out["warnings"] = [
+                "The provider earnings screen reached FINVIZ_SCREENER_MAX_ROWS "
+                "before the period was exhausted; results are a bounded prefix. "
+                "Use finviz_calendar(calendar='earnings') for the detailed "
+                "date-range feed."
+            ]
+            out["related_tools"] = ["finviz_calendar"]
+        return out
     except ValueError as e:
         return {"error": str(e)}
     except Exception as e:

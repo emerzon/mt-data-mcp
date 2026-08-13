@@ -385,9 +385,10 @@ def test_news_output_hides_debug_fields_when_not_verbose() -> None:
             "kind": "headline",
             "published_at": "2026-03-29T08:00:00Z",
             "relative_time": "9 days ago",
+            "url": "https://example.com/fed-preview",
         }
     ]
-    assert "url" not in result["general_news"][0]
+    assert result["general_news"][0]["url"].startswith("https://")
     assert "related_news" not in result
     assert "market_context" not in result
     assert "category" not in result["general_news"][0]

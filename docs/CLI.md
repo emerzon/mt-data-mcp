@@ -438,10 +438,12 @@ See [ADVANCED_ANALYTICS.md](ADVANCED_ANALYTICS.md) for data requirements, exampl
 
 Finviz commands use exchange tickers such as `AAPL`; MT5 commands use the
 connected broker's symbol identifiers, which may be suffixed (for example
-`AAPL.NAS` or `AAPL.NAS-24`). These namespaces are intentionally not
-auto-resolved because multiple broker contracts can match one ticker. Pass the
-Finviz ticker to `market_ticker` or another MT5 tool and use the structured
-`details.did_you_mean` candidates if the broker requires disambiguation.
+`AAPL.NAS` or `AAPL.NAS-24`). Stock-specific Finviz commands accept recognized
+broker suffixes and expose both `requested_symbol` and the normalized
+`finviz_ticker`. The reverse mapping remains explicit because several broker
+contracts can match one ticker: pass a bare Finviz ticker to an MT5 tool and use
+its structured `details.did_you_mean` candidates to choose the intended
+contract.
 
 | Command | Description |
 |---------|-------------|

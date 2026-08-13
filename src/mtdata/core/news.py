@@ -53,7 +53,6 @@ _NEWS_COMPACT_ITEM_DROP_KEYS = frozenset(
         "relevance_score",
         "importance_score",
         "metadata",
-        "url",
         "category",
     }
 )
@@ -486,9 +485,8 @@ def news(
         `BTCUSD`.
     detail : {"compact", "full"}, optional
         Response detail level. `compact` (default) keeps concise buckets with
-        relative-time labels plus absolute timestamps and omits redundant URLs
-        when possible, while `full` preserves the richer source, matching, and
-        item metadata payloads.
+        article URLs, relative-time labels, and absolute timestamps, while
+        `full` preserves the richer source, matching, and item metadata payloads.
     limit : int, optional
         Global maximum across buckets. When available, one upcoming scheduled
         event is reserved before the established symbol-related, general,

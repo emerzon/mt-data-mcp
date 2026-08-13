@@ -1254,6 +1254,8 @@ class TestFinvizTools:
             "symbol": "BTCUSD",
             "tool": "finviz_fundamentals",
         }
+        assert "US equity ticker" in result["remediation"]
+        assert "news" in result["related_tools"]
         assert isinstance(result.get("request_id"), str)
 
     def test_finviz_equity_symbol_normalization_strips_mt5_suffixes(self):
@@ -1303,10 +1305,12 @@ class TestFinvizTools:
 
         mock_get_description.return_value = {"success": True, "symbol": "AAPL"}
         raw = getattr(finviz_description, "__wrapped__", finviz_description)
-        result = raw("aapl")
+        result = raw("AAPL.NAS")
 
         mock_get_description.assert_called_once_with("AAPL")
         assert result["success"] is True
+        assert result["requested_symbol"] == "AAPL.NAS"
+        assert result["finviz_ticker"] == "AAPL"
 
     @patch("mtdata.core.finviz.get_stock_news")
     def test_finviz_news_rejects_non_equity_symbols_upfront(self, mock_get_news):
@@ -2206,7 +2210,7 @@ class TestFinvizTools:
                 "price": 298.21,
                 "change_pct": 0.87,
                 "volume": 123456,
-                "pe_ratio": "28.5",
+                "pe_ratio": 28.5,
                 "price_source": "finviz_delayed",
                 "data_delayed": True,
                 "delay_minutes_min": 15,
@@ -2266,8 +2270,8 @@ class TestFinvizTools:
                 "rsi_14": 45.1,
                 "sma20_distance_pct": 2.0,
                 "sma50_distance_pct": -1.2,
-                "atr_14": "3.4",
-                "beta": "1.2",
+                "atr_14": 3.4,
+                "beta": 1.2,
                 "price_source": "finviz_delayed",
                 "data_delayed": True,
                 "delay_minutes_min": 15,
@@ -2372,18 +2376,47 @@ class TestFinvizTools:
             {
                 "symbol": "AAPL",
                 "price": 298.21,
-                "market_cap": "3.0T",
-                "pe_ratio": "28.5",
-                "forward_pe": "26.1",
-                "peg": "2.3",
-                "price_to_sales": "8.1",
-                "price_to_book": "36.2",
+                "market_cap": 3_000_000_000_000,
+                "pe_ratio": 28.5,
+                "forward_pe": 26.1,
+                "peg": 2.3,
+                "price_to_sales": 8.1,
+                "price_to_book": 36.2,
                 "price_source": "finviz_delayed",
                 "data_delayed": True,
                 "delay_minutes_min": 15,
                 "delay_minutes_max": 20,
             }
         ]
+
+    def test_finviz_screen_valuation_numeric_contract_handles_nulls(self):
+        from mtdata.core.finviz import (
+            _canonicalize_finviz_market_row,
+            _compact_finviz_screen_row,
+            _normalize_finviz_screen_numeric_fields,
+        )
+
+        row = _normalize_finviz_screen_numeric_fields(
+            _canonicalize_finviz_market_row(
+                {
+                    "symbol": "TEST",
+                    "pe_ratio": "N/A",
+                    "forward_pe": 23.1,
+                    "peg": "2.5",
+                    "price_to_sales": "-",
+                    "price_to_book": 1.46,
+                }
+            )
+        )
+
+        assert _compact_finviz_screen_row(row, view="valuation") == {
+            "symbol": "TEST",
+            "pe_ratio": None,
+            "forward_pe": 23.1,
+            "peg": 2.5,
+            "price_to_sales": None,
+            "price_to_book": 1.46,
+        }
 
     @patch('mtdata.core.finviz.screen_stocks')
     def test_finviz_screen_tool_defaults_to_20_rows(self, mock_screen):
@@ -2483,7 +2516,9 @@ class TestFinvizTools:
                 detail="full",
             )
 
-        assert result["items"] == [{"symbol": "AAPL", "market_cap": "3.0T"}]
+        assert result["items"] == [
+            {"symbol": "AAPL", "market_cap": 3_000_000_000_000}
+        ]
         assert "available_count" not in result
         assert result["pagination"]["total"] is None
         assert result["pagination"]["total_lower_bound"] == 2

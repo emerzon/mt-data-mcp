@@ -159,9 +159,48 @@ def test_fetch_unified_news_rejects_unknown_equity_symbol(monkeypatch) -> None:
     result = svc.fetch_unified_news("ZZZZZ")
 
     assert result["success"] is False
-    assert result["error_code"] == "symbol_not_found"
+    assert result["error_code"] == "news_symbol_unavailable"
     assert result["symbol"] == "ZZZZZ"
-    assert result["remediation"]
+    assert "MT5" not in result["remediation"]
+    assert "finviz_screen" in result["related_tools"]
+
+
+def test_fetch_unified_news_discloses_broker_symbol_rewrite(monkeypatch) -> None:
+    monkeypatch.setattr(svc, "get_symbol_info_cached", lambda symbol: None)
+    monkeypatch.setattr(
+        svc,
+        "get_general_news",
+        lambda **_kwargs: {"success": True, "items": []},
+    )
+    monkeypatch.setattr(
+        svc,
+        "get_stock_news",
+        lambda symbol, **_kwargs: {
+            "success": True,
+            "news": [
+                {
+                    "Title": f"{symbol} earnings preview",
+                    "Source": "Example",
+                    "Date": "2026-08-13T12:00:00Z",
+                    "Link": "https://example.test/story",
+                }
+            ],
+        },
+    )
+    monkeypatch.setattr(
+        svc,
+        "get_mt5_news",
+        lambda **_kwargs: {"success": True, "news": []},
+    )
+    _disable_ycnbc(monkeypatch)
+    _disable_embeddings(monkeypatch)
+    _reset_aggregator(monkeypatch)
+
+    result = svc.fetch_unified_news("AAPL.NAS")
+
+    assert result["symbol"] == "AAPL.NAS"
+    assert result["requested_symbol"] == "AAPL.NAS"
+    assert result["finviz_ticker"] == "AAPL"
 
 
 def test_fetch_unified_news_repairs_provider_mojibake(monkeypatch) -> None:

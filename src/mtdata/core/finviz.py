@@ -221,6 +221,21 @@ def _require_equity_symbol(
     return symbol_norm, None
 
 
+def _attach_finviz_symbol_identity(
+    payload: Dict[str, Any],
+    *,
+    requested_symbol: Any,
+    finviz_ticker: str,
+) -> Dict[str, Any]:
+    """Expose the provider rewrite without replacing the broker identifier."""
+    if not isinstance(payload, dict):
+        return payload
+    out = dict(payload)
+    out["requested_symbol"] = str(requested_symbol)
+    out["finviz_ticker"] = finviz_ticker
+    return out
+
+
 def _finviz_data_fetched_at() -> str:
     return format_datetime_utc(datetime.now(timezone.utc))
 
@@ -614,7 +629,11 @@ def _compact_finviz_screen_row(
     out = {
         field: row[field]
         for field in _finviz_screen_compact_fields(view)
-        if field in row and row[field] not in (None, "")
+        if field in row
+        and (
+            row[field] not in (None, "")
+            or field in _FINVIZ_FUNDAMENTAL_NUMERIC_KEYS
+        )
     }
     for field in (
         "price_source",
@@ -696,6 +715,10 @@ def _normalize_finviz_market_payload(  # noqa: C901
         normalized_row = _canonicalize_finviz_market_row(
             {key_normalizer(key): value for key, value in row.items()}
         )
+        if rows_key == "stocks":
+            normalized_row = _normalize_finviz_screen_numeric_fields(
+                normalized_row
+            )
         if rows_key in {"pairs", "coins", "futures"}:
             normalized_row = _normalize_finviz_market_performance_fields(
                 normalized_row,
@@ -1569,6 +1592,19 @@ def _normalize_finviz_news_item(
     return out
 
 
+def _normalize_finviz_screen_numeric_fields(
+    row: Dict[str, Any],
+) -> Dict[str, Any]:
+    out = dict(row)
+    for field in _FINVIZ_FUNDAMENTAL_NUMERIC_KEYS:
+        if field in out:
+            out[field] = _normalize_finviz_fundamental_value(
+                field,
+                out.get(field),
+            )
+    return out
+
+
 def _finviz_news_item_has_symbol_evidence(item: Any, symbol: str) -> bool:
     if not isinstance(item, dict):
         return False
@@ -2290,6 +2326,35 @@ def _normalize_finviz_economic_calendar_time(item: Dict[str, Any]) -> Dict[str, 
     return normalized
 
 
+def _normalize_finviz_reference_date(item: Dict[str, Any]) -> Dict[str, Any]:
+    """Resolve an MM/DD provider label as a calendar date, not a UTC instant."""
+    normalized = dict(item)
+    match = re.fullmatch(
+        r"\s*(\d{1,2})/(\d{1,2})\s*",
+        str(normalized.get("reference") or ""),
+    )
+    if match is None:
+        return normalized
+    try:
+        month, day = (int(match.group(1)), int(match.group(2)))
+        event_time = _parse_finviz_calendar_time(normalized.get("date"))
+        if event_time is None:
+            return normalized
+        event_date = event_time.astimezone(_FINVIZ_CALENDAR_LOCAL_TZ).date()
+        candidates = [
+            datetime(year, month, day).date()
+            for year in (event_date.year - 1, event_date.year, event_date.year + 1)
+        ]
+    except ValueError:
+        return normalized
+    reference_date = min(
+        candidates,
+        key=lambda candidate: abs((candidate - event_date).days),
+    )
+    normalized["reference_date"] = reference_date.isoformat()
+    return normalized
+
+
 def _normalize_finviz_earnings_calendar_time(item: Dict[str, Any]) -> Dict[str, Any]:
     normalized = dict(item)
     raw_value = normalized.get("earnings_date")
@@ -2667,6 +2732,12 @@ def _normalize_finviz_calendar_payload(
             ]
             normalized_items = [
                 _add_finviz_calendar_impact_label(item)
+                if isinstance(item, dict)
+                else item
+                for item in normalized_items
+            ]
+            normalized_items = [
+                _normalize_finviz_reference_date(item)
                 if isinstance(item, dict)
                 else item
                 for item in normalized_items
@@ -3358,10 +3429,11 @@ def finviz_fundamentals(
             category=category,
             fields=fields,
         )
-        if isinstance(result, dict):
-            result["requested_symbol"] = str(symbol)
-            result["finviz_ticker"] = symbol_norm
-        return result
+        return _attach_finviz_symbol_identity(
+            result,
+            requested_symbol=symbol,
+            finviz_ticker=symbol_norm,
+        )
 
     return _run_logged_tool(
         "finviz_fundamentals",
@@ -3430,8 +3502,12 @@ def finviz_description(
         )
         if error is not None:
             return error
-        return _apply_finviz_description_detail(
-            get_stock_description(symbol_norm), detail=detail
+        return _attach_finviz_symbol_identity(
+            _apply_finviz_description_detail(
+                get_stock_description(symbol_norm), detail=detail
+            ),
+            requested_symbol=symbol,
+            finviz_ticker=symbol_norm,
         )
 
     return _run_logged_tool(
@@ -3510,7 +3586,11 @@ def finviz_news(
                 item["relevance_basis"] = (
                     "finviz_ticker_page_association_unverified"
                 )
-        return payload
+        return _attach_finviz_symbol_identity(
+            payload,
+            requested_symbol=symbol,
+            finviz_ticker=symbol_norm,
+        )
 
     return _run_logged_tool("finviz_news", fields, _run)
 
@@ -3552,11 +3632,15 @@ def finviz_insider(
         )
         if error is not None:
             return error
-        return _compact_finviz_insider_payload(
-            get_stock_insider_trades(symbol_norm, limit=limit, page=page),
-            detail=detail,
-            limit=limit,
-            page=page,
+        return _attach_finviz_symbol_identity(
+            _compact_finviz_insider_payload(
+                get_stock_insider_trades(symbol_norm, limit=limit, page=page),
+                detail=detail,
+                limit=limit,
+                page=page,
+            ),
+            requested_symbol=symbol,
+            finviz_ticker=symbol_norm,
         )
 
     return _run_logged_tool(
@@ -3599,10 +3683,14 @@ def finviz_ratings(
         )
         if error is not None:
             return error
-        return _compact_finviz_ratings_payload(
-            get_stock_ratings(symbol_norm),
-            detail=detail,
-            limit=int(limit),
+        return _attach_finviz_symbol_identity(
+            _compact_finviz_ratings_payload(
+                get_stock_ratings(symbol_norm),
+                detail=detail,
+                limit=int(limit),
+            ),
+            requested_symbol=symbol,
+            finviz_ticker=symbol_norm,
         )
 
     return _run_logged_tool(
@@ -3642,11 +3730,15 @@ def finviz_peers(
         )
         if error is not None:
             return error
-        return _compact_finviz_peers_payload(
-            get_stock_peers(symbol_norm),
-            detail=detail,
-            limit=limit,
-            offset=offset,
+        return _attach_finviz_symbol_identity(
+            _compact_finviz_peers_payload(
+                get_stock_peers(symbol_norm),
+                detail=detail,
+                limit=limit,
+                offset=offset,
+            ),
+            requested_symbol=symbol,
+            finviz_ticker=symbol_norm,
         )
 
     return _run_logged_tool(
@@ -4290,6 +4382,9 @@ def finviz_earnings(
                 request=request,
                 stats=stats,
             )
+        for key in ("source_incomplete", "warnings", "related_tools"):
+            if result.get(key) not in (None, "", [], {}):
+                out[key] = result[key]
         page_value = int(result.get("page") or page or 1)
         pages = result.get("pages")
         has_more = bool(

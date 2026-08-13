@@ -409,6 +409,27 @@ class TestFinvizCalendarOutputContract:
             "listing_currency_base_units"
         )
 
+    def test_calendar_reference_label_is_not_shifted_as_a_utc_instant(self):
+        from mtdata.core.finviz import _normalize_finviz_calendar_payload
+
+        result = _normalize_finviz_calendar_payload(
+            {
+                "success": True,
+                "items": [
+                    {
+                        "date": "2026-08-13T12:00:00Z",
+                        "event": "Mortgage rate",
+                        "reference": "08/14",
+                        "referenceDate": "2026-08-13",
+                    }
+                ],
+            },
+            calendar_type="economic",
+        )
+
+        assert result["items"][0]["reference"] == "08/14"
+        assert result["items"][0]["reference_date"] == "2026-08-14"
+
     @patch("mtdata.core.finviz.get_economic_calendar")
     def test_calendar_maps_known_us_indicator_ids_before_country_filter(self, mock_get):
         mock_get.return_value = {

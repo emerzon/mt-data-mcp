@@ -346,6 +346,44 @@ def test_earnings_empty_filtered_prefix_does_not_claim_another_page(monkeypatch)
     assert result["earnings"] == []
     assert result["has_more"] is False
     assert result["total_lower_bound"] == 0
+    assert result["source_incomplete"] is True
+    assert "bounded prefix" in result["warnings"][0]
+    assert result["related_tools"] == ["finviz_calendar"]
+
+
+def test_earnings_elapsed_filter_scans_beyond_public_page_limit(monkeypatch):
+    class FakeFinancial:
+        last_kwargs = None
+
+        def set_filter(self, filters_dict=None, **kwargs):
+            return None
+
+        def screener_view(self, **kwargs):
+            FakeFinancial.last_kwargs = kwargs
+            elapsed = [
+                {"Ticker": f"OLD{i}", "Earnings": "Aug 10/b"}
+                for i in range(600)
+            ]
+            upcoming = [
+                {"Ticker": f"NEW{i}", "Earnings": "Aug 14/a"}
+                for i in range(3)
+            ]
+            return pd.DataFrame((elapsed + upcoming)[: kwargs["limit"]])
+
+    financial_mod = types.ModuleType("finvizfinance.screener.financial")
+    financial_mod.Financial = FakeFinancial
+    monkeypatch.setitem(sys.modules, "finvizfinance.screener.financial", financial_mod)
+    monkeypatch.setattr(svc, "_apply_finvizfinance_timeout_patch", lambda: None)
+    monkeypatch.setattr(svc, "_FINVIZ_SCREENER_MAX_ROWS", 1200)
+    monkeypatch.setattr(svc, "_FINVIZ_PAGE_LIMIT_MAX", 500)
+    monkeypatch.setattr(svc, "_finviz_market_date", lambda: date(2026, 8, 13))
+
+    result = svc.get_earnings_calendar(period="This Week", limit=2, page=1)
+
+    assert FakeFinancial.last_kwargs["limit"] == 1200
+    assert [row["Ticker"] for row in result["earnings"]] == ["NEW0", "NEW1"]
+    assert result["has_more"] is True
+    assert "source_incomplete" not in result
 
 
 # ---------------------------------------------------------------------------

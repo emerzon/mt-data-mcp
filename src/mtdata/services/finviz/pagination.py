@@ -167,18 +167,25 @@ def run_screener_view(
     page: int = 1,
     screener_max_rows: Optional[int] = None,
     page_limit_max: Optional[int] = None,
+    fetch_limit_override: Optional[int] = None,
 ) -> Tuple[Any, int]:
     """Run screener_view with bounded rows and no inter-page sleep."""
     max_rows = _coerce_positive_int(
         get_finviz_screener_max_rows() if screener_max_rows is None else screener_max_rows,
         default=get_finviz_screener_max_rows(),
     )
-    fetch_limit = compute_screener_fetch_limit(
-        limit=limit,
-        page=page,
-        max_rows=max_rows,
-        page_limit_max=page_limit_max,
-    )
+    if fetch_limit_override is None:
+        fetch_limit = compute_screener_fetch_limit(
+            limit=limit,
+            page=page,
+            max_rows=max_rows,
+            page_limit_max=page_limit_max,
+        )
+    else:
+        fetch_limit = min(
+            max_rows,
+            _coerce_positive_int(fetch_limit_override, default=max_rows),
+        )
     original_get_table = getattr(screener, "_get_table", None)
 
     def _canonical_ticker_get_table(

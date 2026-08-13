@@ -33,6 +33,7 @@ from .finviz import (
     get_general_news,
     get_stock_news,
 )
+from .finviz.symbols import normalize_finviz_equity_symbol
 from .news_embeddings import get_news_embedding_service
 from .news_service import get_mt5_news
 from .news_text import normalize_news_text
@@ -1206,12 +1207,12 @@ def _build_equity_symbol_candidates(context: InstrumentContext) -> List[str]:
         return []
 
     candidates: List[str] = []
-    symbol_root = _symbol_root(context.symbol)
-    if symbol_root:
-        candidates.append(symbol_root)
-        compact_root = _compact_token(symbol_root)
-        if compact_root and compact_root != symbol_root:
-            candidates.append(compact_root)
+    provider_symbol = normalize_finviz_equity_symbol(context.symbol)
+    if provider_symbol:
+        candidates.append(provider_symbol)
+        compact_provider = _compact_token(provider_symbol)
+        if compact_provider and compact_provider != provider_symbol:
+            candidates.append(compact_provider)
 
     for alias in context.aliases:
         alias_text = _safe_text(alias).upper()
@@ -1788,12 +1789,13 @@ class NewsAggregator:
                 return {
                     "success": False,
                     "error": str(exc),
-                    "error_code": "symbol_not_found",
+                    "error_code": "news_symbol_unavailable",
                     "symbol": context.symbol if context is not None else symbol_norm,
                     "remediation": (
-                        "Check the ticker spelling or use the broker's exact MT5 "
-                        "symbol name when querying a broker-listed instrument."
+                        "Verify the standard US equity ticker used by the news "
+                        "provider, or use finviz_screen to discover supported tickers."
                     ),
+                    "related_tools": ["finviz_screen", "finviz_news"],
                 }
             except Exception as exc:
                 logger.exception("Error collecting news from %s", name)
@@ -2007,6 +2009,11 @@ class NewsAggregator:
             "upcoming_count": len(upcoming_events),
             "recent_count": len(recent_events),
         }
+        if context is not None and context.asset_class == "equity":
+            provider_symbol = normalize_finviz_equity_symbol(context.symbol)
+            if provider_symbol and provider_symbol != context.symbol:
+                payload["requested_symbol"] = context.symbol
+                payload["finviz_ticker"] = provider_symbol
         if context is not None and not related_news and general_news:
             if context.asset_class == "equity":
                 payload["symbol_news_note"] = (

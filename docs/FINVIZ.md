@@ -5,9 +5,11 @@ Pull **US equity fundamentals**, screens, news, insider activity, and macro snap
 These tools complement MT5; they do not replace the terminal for live FX/CFD quotes.
 
 Finviz `symbol` values are exchange tickers such as `AAPL`, not necessarily the
-connected broker's MT5 identifiers. A broker may expose several contracts for
-one ticker (for example a cash-session and a 24-hour CFD), so mtdata does not
-guess between them. If an MT5 tool rejects the bare ticker, inspect its
+connected broker's MT5 identifiers. Stock-specific Finviz tools accept
+recognized broker suffixes and report the conversion through
+`requested_symbol` and `finviz_ticker`. A broker may expose several contracts
+for one ticker (for example a cash-session and a 24-hour CFD), so the reverse
+mapping is not guessed. If an MT5 tool rejects the bare ticker, inspect its
 structured `details.did_you_mean` candidates and choose the intended contract;
 use `symbols_list --search AAPL` when a wider catalog view is needed.
 

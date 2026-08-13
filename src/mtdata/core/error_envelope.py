@@ -20,6 +20,26 @@ _ERROR_GUIDANCE: Dict[str, Dict[str, Any]] = {
         ),
         "related_tools": ["symbols_list"],
     },
+    "finviz_unsupported_symbol": {
+        "remediation": (
+            "Finviz equity tools require a US equity ticker. Use news or MT5 "
+            "market-data tools for broker, FX, and crypto symbols; use "
+            "finviz_crypto or finviz_forex for Finviz market snapshots."
+        ),
+        "related_tools": [
+            "news",
+            "data_fetch_candles",
+            "finviz_crypto",
+            "finviz_forex",
+        ],
+    },
+    "news_symbol_unavailable": {
+        "remediation": (
+            "Verify the standard US equity ticker used by the news provider. "
+            "Use finviz_screen to discover supported tickers."
+        ),
+        "related_tools": ["finviz_screen", "finviz_news"],
+    },
     "dependency_missing": {
         "remediation": (
             "Install the optional dependency group required by this method, then retry."
