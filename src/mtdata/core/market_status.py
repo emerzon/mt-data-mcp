@@ -484,17 +484,13 @@ def _check_market_status(market_id: str, now_local: datetime) -> Dict[str, Any]:
                 second=0,
                 microsecond=0,
             )
-            if now_norm < pre_open_time:
+            if now_norm >= pre_open_time:
                 return {
                     "venue": market_id,
                     "name": market["name"],
-                    "status": "closed",
-                    "reason": "before_open",
+                    "status": "pre_market",
                     "local_time": _format_local_iso(now_local),
-                    "message": (
-                        f"{market_id}: Closed "
-                        f"(opening in {_format_duration(minutes_until_open)})"
-                    ),
+                    "message": f"{market_id}: Pre-market (opening in {_format_duration(minutes_until_open)})",
                     "next_open": open_time.isoformat(),
                     "minutes_until_open": minutes_until_open,
                     **session_fields,
@@ -502,9 +498,13 @@ def _check_market_status(market_id: str, now_local: datetime) -> Dict[str, Any]:
         return {
             "venue": market_id,
             "name": market["name"],
-            "status": "pre_market",
+            "status": "closed",
+            "reason": "before_open",
             "local_time": _format_local_iso(now_local),
-            "message": f"{market_id}: Pre-market (opening in {_format_duration(minutes_until_open)})",
+            "message": (
+                f"{market_id}: Closed "
+                f"(opening in {_format_duration(minutes_until_open)})"
+            ),
             "next_open": open_time.isoformat(),
             "minutes_until_open": minutes_until_open,
             **session_fields,

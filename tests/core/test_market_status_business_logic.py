@@ -189,6 +189,22 @@ def test_asx_overnight_is_closed_before_configured_pre_open(monkeypatch) -> None
     assert pre_open["status"] == "pre_market"
 
 
+def test_market_without_pre_open_stays_closed_overnight(monkeypatch) -> None:
+    monkeypatch.setattr(
+        market_status_mod,
+        "_is_holiday",
+        lambda _country, _dt, _exchange=None: (False, None),
+    )
+
+    result = market_status_mod._check_market_status(
+        "EURONEXT",
+        datetime(2026, 8, 14, 0, 0, tzinfo=ZoneInfo("Europe/Paris")),
+    )
+
+    assert result["status"] == "closed"
+    assert result["reason"] == "before_open"
+
+
 def test_market_status_symbol_mode_reports_heuristic_status(monkeypatch) -> None:
     raw = _unwrap(market_status_mod.market_status)
     fixed_now = datetime(2024, 1, 2, 12, 0, tzinfo=timezone.utc)
