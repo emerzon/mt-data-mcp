@@ -1405,7 +1405,9 @@ def _forecast_list_library_models_impl(
     offset: int = 0,
 ) -> Dict[str, Any]:
     lib = str(library).strip().lower()
-    detail_mode = "full" if str(detail or "compact").strip().lower() == "full" else "compact"
+    detail_mode = str(detail or "compact").strip().lower()
+    if detail_mode not in {"compact", "standard", "summary", "full"}:
+        detail_mode = "compact"
     try:
         offset_value = max(0, int(offset or 0))
     except Exception:
@@ -1529,7 +1531,7 @@ def _forecast_list_library_models_impl(
     else:
         capabilities_page = capabilities[offset_value: offset_value + limit_value]
     model_rows = _forecast_library_model_rows(capabilities_page)
-    if detail_mode != "full":
+    if detail_mode in {"compact", "summary"}:
         model_rows = _compact_forecast_library_model_rows(model_rows, library=lib)
     available_selected = int(
         sum(1 for row in capabilities if not _is_explicit_false(row.get("available")))

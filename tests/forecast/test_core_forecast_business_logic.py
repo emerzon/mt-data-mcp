@@ -2529,6 +2529,47 @@ def test_forecast_list_library_models_compact_deduplicates_model_rows(monkeypatc
     assert "models_shown" not in compact
 
 
+def test_forecast_list_library_models_standard_keeps_requirements(monkeypatch):
+    rows = [
+        {
+            "method": "ARIMA",
+            "display_name": "ARIMA",
+            "available": True,
+            "selector": {"key": "model_name", "value": "ARIMA"},
+            "execution": {"library": "statsforecast"},
+            "requires": ["statsforecast"],
+            "notes": "Supports seasonal configuration.",
+        }
+    ]
+    monkeypatch.setattr(
+        cf,
+        "_get_library_forecast_capabilities",
+        lambda *_args, **_kwargs: rows,
+    )
+
+    standard = cf._forecast_list_library_models_impl(
+        "statsforecast",
+        detail="standard",
+        limit=5,
+        offset=0,
+    )
+
+    assert standard["detail"] == "standard"
+    assert standard["models"] == [
+        {
+            "method": "ARIMA",
+            "available": True,
+            "model": "ARIMA",
+            "selector_value": "ARIMA",
+            "selector_key": "model_name",
+            "library": "statsforecast",
+            "requires": ["statsforecast"],
+            "notes": "Supports seasonal configuration.",
+        }
+    ]
+    assert "capabilities" not in standard
+
+
 def test_forecast_list_library_models_reports_missing_statsforecast(monkeypatch):
     raw_list_models = _unwrap(cf.forecast_list_library_models)
 
