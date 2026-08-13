@@ -112,6 +112,18 @@ def _default_error_guidance(
                 "Use this operation's --help and choose one of the listed method values."
             )
         }
+    if code_text == "cli_missing_required" and operation_text in {
+        "forecast_task_cancel",
+        "forecast_task_status",
+        "forecast_task_wait",
+    }:
+        return {
+            "remediation": (
+                "Use forecast_task_list to find a task_id, then retry the task "
+                "operation with that identifier."
+            ),
+            "related_tools": ["forecast_task_list"],
+        }
     if operation_text == "forecast_train":
         return {
             "remediation": (

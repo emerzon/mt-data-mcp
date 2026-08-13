@@ -74,6 +74,17 @@ def test_forecast_train_errors_point_to_trainable_method_discovery():
     assert out["related_tools"] == ["forecast_list_methods"]
 
 
+def test_missing_forecast_task_id_points_to_task_discovery():
+    out = build_error_payload(
+        "Missing required argument: task_id",
+        code="cli_missing_required",
+        operation="forecast_task_cancel",
+    )
+
+    assert "Use forecast_task_list to find a task_id" in out["remediation"]
+    assert out["related_tools"] == ["forecast_task_list"]
+
+
 def test_generic_method_errors_use_the_failing_operation_help():
     out = build_error_payload(
         "Invalid method. Valid options: pearson, spearman",

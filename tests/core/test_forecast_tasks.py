@@ -218,6 +218,10 @@ class TestForecastTaskStatus:
                 ForecastTaskStatusRequest(task_id="task-abc")
             )
 
+        assert result["success"] is True
+        assert result["status"] == "failed"
+        assert result["task_error"].endswith("was orphaned.")
+        assert "error" not in result
         assert result["error_code"] == "forecast_task_orphaned"
         assert result["failure_reason"] == "submitting_process_terminated"
         assert "interactive mtdata-cli shell" in result["remediation"]

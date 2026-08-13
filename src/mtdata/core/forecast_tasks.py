@@ -503,7 +503,7 @@ def _task_status_payload(
             payload["result"] = _serialize_model_handle(task.result, detail="full")
 
     if task.status == "failed" and task.error:
-        payload["error"] = task.error
+        payload["task_error"] = task.error
         _attach_task_failure_guidance(payload, task.error)
 
     if detail == "full":
