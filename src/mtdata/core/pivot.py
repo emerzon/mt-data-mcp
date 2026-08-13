@@ -65,6 +65,7 @@ from ..utils.utils import (
 from ._mcp_instance import mcp
 from .execution_logging import run_logged_operation
 from .mt5_gateway import create_mt5_gateway
+from .output_contract import attach_completed_bar_input_policy
 from .runtime_metadata import display_timezone_label
 from .volume_profile import compute_volume_profile_payload
 
@@ -1039,7 +1040,7 @@ def confluence_levels(  # noqa: C901
             if digits_value is not None:
                 payload["price_precision"] = digits_value
                 payload = _round_level_payload_prices(payload, digits=digits_value)
-            return payload
+            return attach_completed_bar_input_policy(payload)
         except MT5ConnectionError as exc:
             return {"error": str(exc)}
         except Exception as exc:
@@ -1218,7 +1219,7 @@ def support_resistance_levels(
             if digits_value is not None:
                 payload["price_precision"] = digits_value
                 payload = _round_level_payload_prices(payload, digits=digits_value)
-            return payload
+            return attach_completed_bar_input_policy(payload)
         except MT5ConnectionError as exc:
             return {"error": str(exc)}
         except Exception as exc:

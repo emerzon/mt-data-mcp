@@ -146,6 +146,9 @@ def test_confluence_levels_tool_combines_pivot_sr_and_fibonacci():
 
     assert result["success"] is True
     assert result["detail"] == "standard"
+    assert result["input_bar_policy"] == "closed_bars_only"
+    assert result["latest_bar_complete"] is True
+    assert result["forming_candle_status"] == "excluded"
     assert result["price_precision"] == 5
     assert result["pivot_timeframe"] == "D1"
     assert result["sr_timeframe"] == "auto"

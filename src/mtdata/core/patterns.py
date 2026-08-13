@@ -47,6 +47,7 @@ from ..utils.volume_profile import annotate_level_confluence
 from ._mcp_instance import mcp
 from .execution_logging import run_logged_operation
 from .mt5_gateway import create_mt5_gateway, mt5_connection_error
+from .output_contract import attach_completed_bar_input_policy
 from .patterns_requests import PatternsDetailLiteral, PatternsDetectRequest
 from .patterns_support import (
     _STOCK_PATTERN_UTILS_CACHE,  # noqa: F401
@@ -1471,6 +1472,7 @@ def patterns_detect(
         if isinstance(result, dict) and "error" not in result:
             result.setdefault("timezone", "UTC")
             _attach_pattern_usage_notice(result)
+            result = attach_completed_bar_input_policy(result)
         return result
 
     return run_logged_operation(

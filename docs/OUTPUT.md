@@ -236,6 +236,14 @@ outputs and is accompanied by `usable_for_live_trading_basis`:
 - Combined forecast outputs may require both model-history and reference-quote
   readiness and expose `execution_blockers` when either input fails.
 
+Historical detection outputs from `patterns_detect`, `regime_detect`,
+`support_resistance_levels`, and `confluence_levels` disclose their repaint
+boundary with `input_bar_policy: closed_bars_only`,
+`latest_bar_complete: true`, and `forming_candle_status: excluded`. Level tools
+may still use a live quote as their distance reference; check
+`current_price_source` or `reference_price_source` separately from the
+closed-bar structure policy.
+
 ---
 
 ## TOON vs JSON

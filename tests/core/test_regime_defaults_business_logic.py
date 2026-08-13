@@ -69,6 +69,9 @@ def test_regime_detect_defaults_to_compact_output() -> None:
     assert "regimes" in out
     assert "current_regime" in out
     assert "current_segment" not in out
+    assert out["input_bar_policy"] == "closed_bars_only"
+    assert out["latest_bar_complete"] is True
+    assert out["forming_candle_status"] == "excluded"
 
 
 def test_regime_detect_accepts_standard_detail_as_compact() -> None:

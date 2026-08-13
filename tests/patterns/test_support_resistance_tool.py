@@ -95,6 +95,9 @@ def test_support_resistance_tool_returns_weighted_levels():
     assert result["timeframe"] == "H1"
     assert result["source"] == "mt5_history"
     assert result["timezone"] == "UTC"
+    assert result["input_bar_policy"] == "closed_bars_only"
+    assert result["latest_bar_complete"] is True
+    assert result["forming_candle_status"] == "excluded"
     assert result["structure_as_of"].endswith("Z")
     assert result["level_counts"] == {"support": 1, "resistance": 1, "total": 2}
     assert len(result["supports"]) == 1

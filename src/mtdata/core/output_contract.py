@@ -369,6 +369,17 @@ def related_tools_for(tool_name: Optional[str]) -> list[str]:
     return list(related or [])
 
 
+def attach_completed_bar_input_policy(result: Any) -> Any:
+    """Disclose the closed-bar contract used by historical detection tools."""
+    if not isinstance(result, dict) or result.get("error"):
+        return result
+    out = dict(result)
+    out.setdefault("input_bar_policy", "closed_bars_only")
+    out.setdefault("latest_bar_complete", True)
+    out.setdefault("forming_candle_status", "excluded")
+    return out
+
+
 def attach_collection_contract(
     result: Any,
     *,

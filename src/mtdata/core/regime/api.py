@@ -26,7 +26,11 @@ from ..execution_logging import (
 )
 from ..features import extract_rolling_features
 from ..mt5_gateway import create_mt5_gateway, mt5_connection_error
-from ..output_contract import normalize_output_detail, normalize_output_verbosity_detail
+from ..output_contract import (
+    attach_completed_bar_input_policy,
+    normalize_output_detail,
+    normalize_output_verbosity_detail,
+)
 from ..tool_calling import call_tool_sync_structured
 from .methods.bocpd import (
     _auto_calibrate_bocpd_params,
@@ -1258,6 +1262,7 @@ def regime_detect(  # noqa: C901
 
     def _finish(result: Dict[str, Any]) -> Dict[str, Any]:
         if isinstance(result, dict) and "error" not in result:
+            result = attach_completed_bar_input_policy(result)
             if requested_method != method:
                 result.setdefault("requested_method", requested_method)
                 result.setdefault("method_effective", method)

@@ -189,6 +189,9 @@ def test_patterns_detect_public_default_is_compact_for_classic_mode(monkeypatch)
     assert out["pattern_confidence"] == pytest.approx(0.81)
     assert out["is_signal"] is False
     assert out["usage"] == "information_only"
+    assert out["input_bar_policy"] == "closed_bars_only"
+    assert out["latest_bar_complete"] is True
+    assert out["forming_candle_status"] == "excluded"
     assert out["top_patterns"][0]["name"] == "Ascending Triangle"
     assert "recent_patterns" not in out
     assert "patterns" not in out
