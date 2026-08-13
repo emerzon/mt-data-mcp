@@ -934,25 +934,38 @@ def _apply_state_output_mode(
 
 def _mark_collapsed_state_confidence(payload: Dict[str, Any]) -> Dict[str, Any]:
     """Prevent a one-state posterior from masquerading as model certainty."""
+
+    def _mark_segment(row: Dict[str, Any]) -> None:
+        if row.get("regime_confidence") is not None:
+            row["raw_posterior_mass"] = row["regime_confidence"]
+        row["regime_confidence"] = 0.0
+        row["label"] = "unidentifiable"
+        for key in (
+            "direction",
+            "state_label_native",
+            "state_label_canonical",
+        ):
+            row.pop(key, None)
+        row["label_quality"] = "unidentifiable_state_collapse"
+
     current = payload.get("current_regime")
     if isinstance(current, dict):
-        if current.get("regime_confidence") is not None:
-            current["raw_posterior_mass"] = current["regime_confidence"]
-        current["regime_confidence"] = 0.0
-        current["label"] = "unknown"
-        current.pop("direction", None)
-        current["label_quality"] = "unidentifiable_state_collapse"
+        _mark_segment(current)
     regimes = payload.get("regimes")
     if isinstance(regimes, list):
         for segment in regimes:
             if not isinstance(segment, dict):
                 continue
-            if segment.get("regime_confidence") is not None:
-                segment["raw_posterior_mass"] = segment["regime_confidence"]
-            segment["regime_confidence"] = 0.0
-            segment["label"] = "unknown"
-            segment.pop("direction", None)
-            segment["label_quality"] = "unidentifiable_state_collapse"
+            _mark_segment(segment)
+    regime_info = payload.get("regime_info")
+    if isinstance(regime_info, dict):
+        for description in regime_info.values():
+            if not isinstance(description, dict):
+                continue
+            description["label"] = "unidentifiable"
+            for key in ("direction", "stat_label", "trading_interpretation"):
+                description.pop(key, None)
+            description["label_quality"] = "unidentifiable_state_collapse"
     payload["status"] = "unidentifiable"
     payload["signal_status"] = "not_actionable"
     return payload

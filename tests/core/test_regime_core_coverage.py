@@ -1138,13 +1138,21 @@ class TestRegimeDetectHMM:
         assert res["reliability"]["reliability_label"] == "low"
         assert res["current_regime"]["regime_confidence"] == 0.0
         assert res["current_regime"]["raw_posterior_mass"] == 1.0
+        assert res["current_regime"]["label"] == "unidentifiable"
+        assert "state_label_native" not in res["current_regime"]
+        assert "state_label_canonical" not in res["current_regime"]
         assert (
             res["current_regime"]["label_quality"]
             == "unidentifiable_state_collapse"
         )
         assert res["regimes"][0]["regime_confidence"] == 0.0
         assert res["regimes"][0]["raw_posterior_mass"] == 1.0
+        assert res["regimes"][0]["label"] == "unidentifiable"
         assert res["regimes"][0]["label_quality"] == "unidentifiable_state_collapse"
+        assert {
+            description["label"]
+            for description in res["regime_info"].values()
+        } == {"unidentifiable"}
         assert res["signal_status"] == "not_actionable"
         assert any("state collapse" in warning for warning in res["warnings"])
 
