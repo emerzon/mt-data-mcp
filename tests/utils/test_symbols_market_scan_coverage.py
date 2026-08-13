@@ -218,6 +218,7 @@ def test_market_scan_ranks_locked_quotes_after_valid_spreads(
             timeframe="H1",
             lookback=3,
             limit=2,
+            detail="full",
         )
 
     assert [row["symbol"] for row in result["data"]] == ["VALID"]
@@ -237,6 +238,7 @@ def test_market_scan_ranks_locked_quotes_after_valid_spreads(
             lookback=3,
             limit=2,
             quote_usable_only=False,
+            detail="full",
         )
 
     assert [row["symbol"] for row in include_unsafe["data"]] == ["VALID", "LOCKED"]
@@ -1527,33 +1529,21 @@ class TestMarketScan:
         assert result["data_as_of"]
         assert "only 1 symbols were available" in result["note"]
         assert result["units"]["price_change_pct"] == "percent (1.0 = 1%)"
-        assert result["units"]["tick_volume"] == "broker_tick_count"
-        assert result["units"]["spread_points"] == "broker_points"
         assert result["units"]["spread_pips"] == "pips"
-        assert result["volume_type"] == "tick_volume"
-        assert result["volume_semantics"] == "tick_volume_is_broker_tick_count_not_lots"
+        assert "volume_type" not in result
+        assert "volume_semantics" not in result
         row = result["data"][0]
         assert row["symbol"] == "EURUSD"
         assert {
             "symbol",
-            "group",
             "asset_class",
-            "timeframe",
-            "data_source",
-            "time",
-            "bar_stale",
-            "bar_freshness",
             "close",
+            "bid",
+            "ask",
             "price_change_pct",
-            "tick_volume",
             "spread_pct",
-            "spread_points",
             "spread_pips",
-        }.issubset(row)
-        assert "bar_market_status" not in row
-        assert "bar_market_status_reason" not in row
-        assert "bar_freshness_policy_relaxed" not in row
-        assert row["time"].endswith("Z")
+        } == set(row)
         assert row["spread_pips"] == 1.0
         assert mock_rates.call_args.args[2:] == (0, 3)
         assert "real_volume" not in row
@@ -1593,8 +1583,7 @@ class TestMarketScan:
 
         assert result["success"] is True
         row = result["data"][0]
-        assert row["spread_points"] == 50
-        assert isinstance(row["spread_points"], int)
+        assert row["spread_pct"] > 0
         assert "spread_pips" not in row
         assert "spread_pips" not in result["units"]
 
@@ -1657,7 +1646,9 @@ class TestMarketScan:
         mock_rates.return_value = _make_bars([1.0, 1.01, 1.02], tick_volume=100)
 
         with patch("mtdata.core.symbols.time.time", return_value=now):
-            scan = _get_market_scan()(timeframe="H1", lookback=3, limit=1)
+            scan = _get_market_scan()(
+                timeframe="H1", lookback=3, limit=1, detail="full"
+            )
             top = _get_symbols_top_markets()(
                 rank_by="abs_price_change",
                 timeframe="H1",
@@ -1715,6 +1706,8 @@ class TestMarketScan:
         assert result["success"] is True
         assert result["count"] == 1
         assert result["data"][0]["symbol"] == "GBPUSD"
+        assert result["data"][0]["tick_volume"] == 203
+        assert result["volume_type"] == "tick_volume"
         assert "returned_count" not in result
         assert result["pagination"] == {
             "total": 3,
@@ -1853,6 +1846,7 @@ class TestMarketScan:
                 timeframe="H1",
                 lookback=2,
                 quote_usable_only=False,
+                detail="full",
             )
 
         assert result["success"] is True
@@ -1861,7 +1855,7 @@ class TestMarketScan:
         assert result["data"][1]["bar_stale"] is True
         assert result["freshness"] == "mixed, 1/2 stale"
         assert result["stale_rows"] == 1
-        assert "stale_symbols" not in result
+        assert result["stale_symbols"] == ["STALETIGHT"]
         assert "Returned rows: 1/2 stale." in result["message"]
 
     @patch("mtdata.core.symbols._extract_group_path_util", side_effect=lambda s: s.path)
@@ -1965,7 +1959,7 @@ class TestMarketScan:
         mock_rates.return_value = _make_bars([1.0, 1.01, 1.02, 1.03], tick_volume=50)
 
         fn = _get_market_scan()
-        result = fn(symbols="EURUSD", lookback=4)
+        result = fn(symbols="EURUSD", lookback=4, detail="full")
 
         assert result["success"] is True
         assert result["meta"]["request"]["symbols_input"] == ["EURUSD"]
@@ -1989,7 +1983,7 @@ class TestMarketScan:
         mock_rates.return_value = _make_bars([1.0, 1.01, 1.02, 1.03], tick_volume=50)
 
         fn = _get_market_scan()
-        result = fn(symbols="EURUSD", lookback=4)
+        result = fn(symbols="EURUSD", lookback=4, detail="full")
 
         assert result["success"] is True
         assert result["meta"]["request"]["symbols_input"] == ["EURUSD"]

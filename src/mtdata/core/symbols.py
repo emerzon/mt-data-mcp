@@ -4615,58 +4615,22 @@ def market_scan(  # noqa: C901
             ]
             compact_headers = [
                 "symbol",
-                "group",
                 "asset_class",
-                "timeframe",
-                "data_source",
-                "time",
-                "price_as_of",
-                "price_freshness",
-                "quote_time",
-                "quote_as_of",
+                "close",
                 "bid",
                 "ask",
-                "mid",
-                "quote_stale",
-                "quote_freshness_reason",
-                "quote_timestamp_in_future",
-                "quote_timestamp_warning",
-                "quote_usable_for_live_trading",
-                "spread_valid",
-                "spread_quality",
-                "bar_stale",
-                "bar_market_status",
-                "bar_market_status_reason",
-                "bar_freshness_policy_relaxed",
-                "bar_freshness",
-                "close",
-                "price_currency",
-                "price_basis",
-                "price_point",
                 "price_change_pct",
-                "gap_pct",
-                "tick_volume",
-                "spread_pct",
-                "spread_points",
                 "spread_pips",
+                "spread_pct",
             ]
+            if rank_by_value == "tick_volume" or min_tick_volume is not None:
+                compact_headers.append("tick_volume")
+            if rank_by_value == "gap_pct" or min_gap_pct is not None or max_gap_pct is not None:
+                compact_headers.append("gap_pct")
             if include_rsi:
                 compact_headers.append("rsi")
             if include_sma:
                 compact_headers.append("sma_distance_pct")
-            optional_compact_headers = {
-                "quote_timestamp_in_future",
-                "quote_timestamp_warning",
-                "bar_market_status",
-                "bar_market_status_reason",
-                "bar_freshness_policy_relaxed",
-            }
-            compact_headers = [
-                header
-                for header in compact_headers
-                if header not in optional_compact_headers
-                or any(row.get(header) is not None for row in limited_rows)
-            ]
             compact_shared_fields: Dict[str, Any] = {}
             if detail_mode == "compact":
                 compact_headers, compact_shared_fields = (
