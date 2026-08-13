@@ -3,6 +3,7 @@
 import inspect
 import math
 from contextlib import contextmanager
+from datetime import datetime, timezone
 from typing import get_args
 from unittest.mock import MagicMock, patch
 
@@ -624,6 +625,20 @@ class TestTemporalAnalyze:
         defaults = dict(symbol="EURUSD", timeframe="H1", lookback=1000, group_by="dow", detail="full")
         defaults.update(kwargs)
         return _raw_temporal_analyze(**defaults)
+
+    @_apply_analyze_patches
+    def test_explicit_end_still_drops_current_forming_bar(self, mock_fetch, *_):
+        current_open = int(datetime.now(timezone.utc).timestamp() // 3600 * 3600)
+        rates = _make_rates(
+            n=200,
+            start_epoch=current_open - 199 * 3600,
+            interval=3600,
+        )
+
+        out = self._call(mock_fetch, rates=rates, end="today")
+
+        assert out["success"] is True
+        assert out["bars"] == 199
 
     @_apply_analyze_patches
     def test_basic_dow(self, mock_fetch, *_):

@@ -375,6 +375,25 @@ def test_forecast_volatility_direct_methods_and_short_data(monkeypatch):
     assert out["volatility_horizon"] == out["volatility_per_bar"]
 
 
+def test_forecast_volatility_explicit_end_drops_forming_tail(monkeypatch):
+    rates = _rates(240)
+    monkeypatch.setattr(vol, "_ensure_symbol_ready", lambda _symbol: None)
+    monkeypatch.setattr(vol.mt5, "symbol_info", lambda _symbol: SimpleNamespace(visible=True))
+    monkeypatch.setattr(vol.mt5, "last_error", lambda: (0, "ok"))
+    monkeypatch.setattr(vol, "_mt5_copy_rates_from", lambda *_args, **_kwargs: rates)
+    monkeypatch.setattr(vol, "_is_last_bar_forming", lambda *_args, **_kwargs: True)
+
+    out = vol.forecast_volatility(
+        symbol="EURUSD",
+        timeframe="H1",
+        method="ewma",
+        end="today",
+    )
+
+    assert out["success"] is True
+    assert out["data_window"]["bars_used"] == 239
+
+
 def test_forecast_volatility_uses_observed_session_density(monkeypatch):
     rates = _session_rates()
     monkeypatch.setattr(vol, "_ensure_symbol_ready", lambda _symbol: None)

@@ -2197,7 +2197,13 @@ def test_relative_strength_reports_mixed_bar_endpoints_and_alignment_windows() -
     assert result["analysis_as_of"].endswith("Z")
     assert result["data_window"]["effective_common"]["start"]
     assert result["data_window"]["effective_common"]["end"]
+    assert result["data_window"]["effective_common"]["timestamp_basis"] == "bar_open"
     alignment = result["data_window"]["endpoint_alignment"]
+    assert alignment["timestamp_basis"] == "bar_close"
+    assert alignment["earliest_bar_close"]
+    assert alignment["latest_bar_close"]
+    assert "earliest" not in alignment
+    assert "latest" not in alignment
     assert alignment["status"] == "incomparable"
     assert alignment["comparable"] is False
     assert alignment["lagging_symbols"] == ["GBPUSD"]

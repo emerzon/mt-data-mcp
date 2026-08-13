@@ -275,7 +275,7 @@ order from the start bound (first-N). Omit `--start` for latest-N retrieval.
 | `market_depth_fetch` | Get order book (DOM) — requires `MTDATA_ENABLE_MARKET_DEPTH_FETCH=1` |
 | `market_ticker` | Get current bid/ask/spread snapshot |
 | `market_snapshot` | Unified pre-trade snapshot (quote, levels, patterns; optional regime/forecast sections) |
-| `market_status` | Show the major-equity exchange calendar without a symbol, or MT5 tradability for a broker symbol |
+| `market_status` | Show the major-equity exchange calendar without a symbol or by emitted venue id, or MT5 tradability for a broker symbol |
 | `wait_event` | **Blocking:** wait for a clock, single-symbol, or basket event using exactly one stopping mode: the next `timeframe` boundary or `max_wait_seconds` duration |
 
 ### Forecasting
@@ -603,6 +603,7 @@ mtdata-cli market_snapshot EURUSD --timeframe H1 --sections all --horizon 8 --js
 
 # Global exchange status (NYSE, LSE, Tokyo, ...) or one broker symbol's tradability
 mtdata-cli market_status --region all --json
+mtdata-cli market_status ASX --json
 mtdata-cli market_status --symbol EURUSD --json
 
 # Consolidated broker/session context (account, open/pending, quote, computed state)

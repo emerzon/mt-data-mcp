@@ -375,6 +375,22 @@ def test_default_profile_window_is_bounded_to_24_hours(monkeypatch):
     }
 
 
+def test_latest_bar_window_uses_source_freshness_instead_of_historical_clock():
+    out = vp._profile_freshness_meta(
+        {
+            "data_fetched_at": "2026-08-13T14:36:21Z",
+            "data_age_seconds": 1800.0,
+            "data_stale": False,
+        },
+        data_as_of="2026-08-13T14:00:00Z",
+        historical_query=False,
+    )
+
+    assert out["query_type"] == "latest"
+    assert out["data_stale"] is False
+    assert "freshness_applicability" not in out
+
+
 def test_natural_one_day_window_stays_inside_tick_budget() -> None:
     days = vp._window_days("1 day ago", "now")
 

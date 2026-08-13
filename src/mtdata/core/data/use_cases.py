@@ -732,6 +732,7 @@ def _compact_candles_payload(
     include_forming_booleans: bool = False,
 ) -> Dict[str, Any]:
     compact = dict(result)
+    compact_time_normalization = result.get("time_normalization")
     public_diagnostics = _public_candle_diagnostics(result)
     try:
         requested_count = int(result["candles_requested"])
@@ -787,6 +788,11 @@ def _compact_candles_payload(
     if result.get("forming_candle_status") == "skipped" and result.get("hint"):
         compact["hint"] = result["hint"]
     _attach_candle_timestamp_metadata(compact)
+    if (
+        compact.get("timestamp_mode") == "server_clock"
+        and compact_time_normalization not in (None, "")
+    ):
+        compact["time_normalization"] = compact_time_normalization
     for key in (
         "query_type",
         "freshness",

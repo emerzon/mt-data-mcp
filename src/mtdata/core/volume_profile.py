@@ -725,6 +725,7 @@ def _profile_freshness_meta(
             within_policy = freshness.get("last_bar_within_policy_window")
             if within_policy is not None:
                 out["data_stale"] = not bool(within_policy)
+    out.setdefault("query_type", "latest")
     return out
 
 
@@ -966,7 +967,7 @@ def compute_volume_profile_payload(
             fetch_payload,
             data_as_of=profile["window"].get("end"),
             historical_query=(
-                start is not None or end is not None or bar_window is not None
+                start is not None or end is not None
             ),
         )
     )

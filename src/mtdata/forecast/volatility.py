@@ -1203,7 +1203,7 @@ def forecast_volatility(  # noqa: C901
                 df,
                 rates,
                 timeframe=timeframe,
-                live_window=as_of is None and end is None,
+                live_window=True,
             )
             if len(df) < 5:
                 return {"error": "Not enough closed bars"}
@@ -1438,7 +1438,7 @@ def forecast_volatility(  # noqa: C901
                     dfrv,
                     rates_rv,
                     timeframe=rv_tf,
-                    live_window=as_of is None and end is None,
+                    live_window=True,
                 )
                 if dn_spec_used:
                     try:
@@ -1543,7 +1543,7 @@ def forecast_volatility(  # noqa: C901
             df,
             rates,
             timeframe=timeframe,
-            live_window=as_of is None and end is None,
+            live_window=True,
         )
         if len(df) < 3:
             return {"error": "Not enough closed bars"}

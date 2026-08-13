@@ -99,6 +99,9 @@ contract and report `raw_time_basis=mt5_utc_epoch`,
 `timestamp_mode=native_utc`. A detected server-clock terminal instead reports
 `raw_time_basis=mt5_server_clock_epoch`,
 `time_normalization=server_clock_to_utc`, and `timestamp_mode=server_clock`.
+Compact candle payloads retain `time_normalization=server_clock_to_utc` in this
+mode so their public `Z` timestamps cannot be mistaken for raw broker-clock
+values.
 The public timestamp values are UTC in both cases.
 
 MT5 stamps candles at bar open. Daily, weekly, and monthly candle rows also

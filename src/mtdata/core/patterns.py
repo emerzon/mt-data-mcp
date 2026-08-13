@@ -199,7 +199,7 @@ def _fetch_pattern_data(  # noqa: C901
     from ..services.data_service import _resolve_live_bar_reference_epoch
 
     live_bar_reference_epoch = _resolve_live_bar_reference_epoch(symbol, timeframe)
-    if end_dt is None and _should_drop_last_pattern_bar(
+    if _should_drop_last_pattern_bar(
         df,
         timeframe,
         now_utc=utc_now,

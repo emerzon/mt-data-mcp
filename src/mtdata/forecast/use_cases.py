@@ -810,10 +810,15 @@ def _forecast_generate_data_window(payload: Dict[str, Any]) -> Optional[Dict[str
     last_observation = payload.get("last_observation_time")
     if last_observation in (None, "", [], {}):
         return None
+    last_bar_complete = bool(payload.get("last_bar_complete", True))
     out: Dict[str, Any] = {
         "last_observation": last_observation,
-        "last_bar_complete": True,
-        "input_bar_policy": "closed_bars_only",
+        "last_bar_complete": last_bar_complete,
+        "input_bar_policy": (
+            "closed_bars_only"
+            if last_bar_complete
+            else "includes_forming_bar"
+        ),
     }
     diagnostics = payload.get("diagnostics")
     if isinstance(diagnostics, dict):

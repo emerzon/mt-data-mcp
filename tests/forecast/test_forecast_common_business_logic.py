@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from types import SimpleNamespace
 
 import numpy as np
@@ -274,6 +274,57 @@ def test_fetch_history_end_bound_excludes_bar_not_closed_by_cutoff(monkeypatch):
 
     assert closed["time"].tolist() == [100.0, 3700.0]
     assert including_live["time"].tolist() == [100.0, 3700.0, 7300.0]
+
+
+def test_fetch_history_daily_dates_use_broker_sessions_and_wall_clock(monkeypatch):
+    fixed_now = datetime(2026, 8, 13, 14, 0, tzinfo=timezone.utc)
+
+    class FixedDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return fixed_now.replace(tzinfo=None) if tz is None else fixed_now.astimezone(tz)
+
+    rates = [
+        {
+            "time": pd.Timestamp(value, tz="UTC").timestamp(),
+            "close": close,
+        }
+        for value, close in (
+            ("2026-08-09 21:00", 1.10),
+            ("2026-08-10 21:00", 1.11),
+            ("2026-08-11 21:00", 1.12),
+            ("2026-08-12 21:00", 1.13),
+        )
+    ]
+    captured = {}
+
+    def fake_range(_symbol, _tf, start_dt, end_dt):
+        captured.update(start=start_dt, end=end_dt)
+        return rates
+
+    monkeypatch.setattr(fc, "datetime", FixedDateTime)
+    monkeypatch.setattr(fc, "_ensure_symbol_ready", lambda _symbol: None)
+    monkeypatch.setattr(fc, "get_symbol_info_cached", lambda _symbol: SimpleNamespace(visible=True))
+    monkeypatch.setattr(fc, "_mt5_copy_rates_range", fake_range)
+    monkeypatch.setattr(fc.mt5, "last_error", lambda: (0, "ok"))
+    monkeypatch.setattr(
+        "mtdata.services.data_service.mt5_config.get_server_tz",
+        lambda: __import__("zoneinfo").ZoneInfo("Europe/Nicosia"),
+    )
+
+    out = fc.fetch_history(
+        "EURUSD",
+        "D1",
+        need=10,
+        start="2026-08-10",
+        end="2026-08-13",
+    )
+
+    assert captured["start"] == datetime(2026, 8, 9, 21, tzinfo=timezone.utc)
+    assert captured["end"] == datetime(
+        2026, 8, 13, 20, 59, 59, 999999, tzinfo=timezone.utc
+    )
+    assert out["close"].tolist() == [1.10, 1.11, 1.12]
 
 
 def test_fetch_history_preserves_live_native_utc_epochs(monkeypatch):

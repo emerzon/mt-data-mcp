@@ -32,6 +32,7 @@ from ..utils.time import (
     _format_time_minimal_local,
     _resolve_client_tz,
     _use_client_tz,
+    bar_close_epoch,
 )
 from ..utils.utils import (
     parse_kv_or_json as _parse_kv_or_json,
@@ -1543,6 +1544,16 @@ def _format_forecast_output(
         if forecast_start_epoch is not None and tf_secs
         else None
     )
+    current_epoch = (
+        datetime.now(timezone.utc).timestamp()
+        if now_epoch is None
+        else float(now_epoch)
+    )
+    observation_close_epoch = (
+        bar_close_epoch(float(last_epoch), timeframe)
+        if timeframe
+        else float(last_epoch) + float(tf_secs)
+    )
     result: Dict[str, Any] = {
         "success": True,
         "method": method,
@@ -1550,6 +1561,7 @@ def _format_forecast_output(
         "base_col": base_col,
         "last_observation_epoch": float(last_epoch),
         "last_observation_time": last_observation_time,
+        "last_bar_complete": observation_close_epoch <= current_epoch,
         "timezone": timezone_label,
         "forecast_from": {
             "time": last_observation_time,

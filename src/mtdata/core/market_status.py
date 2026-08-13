@@ -147,6 +147,7 @@ _MARKETS = {
         "country": "AU",
         "timezone": "Australia/Sydney",
         "open": (10, 0),  # 10:00 AM
+        "pre_open": (7, 0),  # 7:00 AM
         "close": (16, 0),  # 4:00 PM
         "early_close": (14, 0),  # 2:00 PM
         "early_close_holidays": [],
@@ -419,7 +420,7 @@ def _check_market_status(market_id: str, now_local: datetime) -> Dict[str, Any]:
         next_open = _next_market_open_datetime(market, country, now_local)
         minutes_until = int((next_open - _normalize_time(now_local)).total_seconds() // 60)
         return {
-            "symbol": market_id,
+            "venue": market_id,
             "name": market["name"],
             "status": "closed",
             "reason": "weekend",
@@ -443,7 +444,7 @@ def _check_market_status(market_id: str, now_local: datetime) -> Dict[str, Any]:
         next_open = _next_market_open_datetime(market, country, now_local)
         minutes_until = int((next_open - _normalize_time(now_local)).total_seconds() // 60)
         return {
-            "symbol": market_id,
+            "venue": market_id,
             "name": market["name"],
             "status": "closed",
             "reason": "holiday",
@@ -475,8 +476,31 @@ def _check_market_status(market_id: str, now_local: datetime) -> Dict[str, Any]:
     now_norm = _normalize_time(now_local)
     if now_norm < open_time:
         minutes_until_open = int((open_time - now_norm).total_seconds() // 60)
+        pre_open = market.get("pre_open")
+        if pre_open:
+            pre_open_time = now_local.replace(
+                hour=pre_open[0],
+                minute=pre_open[1],
+                second=0,
+                microsecond=0,
+            )
+            if now_norm < pre_open_time:
+                return {
+                    "venue": market_id,
+                    "name": market["name"],
+                    "status": "closed",
+                    "reason": "before_open",
+                    "local_time": _format_local_iso(now_local),
+                    "message": (
+                        f"{market_id}: Closed "
+                        f"(opening in {_format_duration(minutes_until_open)})"
+                    ),
+                    "next_open": open_time.isoformat(),
+                    "minutes_until_open": minutes_until_open,
+                    **session_fields,
+                }
         return {
-            "symbol": market_id,
+            "venue": market_id,
             "name": market["name"],
             "status": "pre_market",
             "local_time": _format_local_iso(now_local),
@@ -494,7 +518,7 @@ def _check_market_status(market_id: str, now_local: datetime) -> Dict[str, Any]:
         if lunch_start <= now_norm < lunch_end:
             minutes_until_resume = int((lunch_end - now_norm).total_seconds() // 60)
             return {
-                "symbol": market_id,
+                "venue": market_id,
                 "name": market["name"],
                 "status": "lunch_break",
                 "local_time": _format_local_iso(now_local),
@@ -508,7 +532,7 @@ def _check_market_status(market_id: str, now_local: datetime) -> Dict[str, Any]:
     if now_norm < close_time:
         minutes_until_close = int((close_time - now_norm).total_seconds() // 60)
         return {
-            "symbol": market_id,
+            "venue": market_id,
             "name": market["name"],
             "status": "open",
             "local_time": _format_local_iso(now_local),
@@ -523,7 +547,7 @@ def _check_market_status(market_id: str, now_local: datetime) -> Dict[str, Any]:
     minutes_until = int((next_open - now_norm).total_seconds() // 60)
     
     return {
-        "symbol": market_id,
+        "venue": market_id,
         "name": market["name"],
         "status": "closed",
         "reason": "after_hours",
@@ -1387,7 +1411,7 @@ def market_status(
             - `early_close_time`: If early close, the close time (HH:MM)
             - `days_away`: Days from now
         - `markets`: List of market status objects with:
-            - `symbol`: Market code (e.g., "NYSE")
+            - `venue`: Market code (e.g., "NYSE")
             - `name`: Full market name
             - `status`: "open", "closed", "pre_market", "lunch_break"
             - `reason`: Reason if closed ("weekend", "holiday", "after_hours")
@@ -1405,7 +1429,9 @@ def market_status(
     """
 
     detail_mode = normalize_output_verbosity_detail(detail)
-    symbol_mode = symbol not in (None, "")
+    venue_id = str(symbol or "").strip().upper()
+    venue_mode = venue_id in _MARKETS
+    symbol_mode = symbol not in (None, "") and not venue_mode
     timezone_display_mode = _normalize_timezone_display(
         timezone_display,
         symbol_mode=symbol_mode,
@@ -1444,7 +1470,9 @@ def market_status(
             "asia": ["TSE", "HKEX", "SSE", "ASX"],
         }
         
-        if region == "all" or region is None:
+        if venue_mode:
+            markets_to_check = [venue_id]
+        elif region == "all" or region is None:
             markets_to_check = list(_MARKETS.keys())
         else:
             markets_to_check = region_map.get(region, list(_MARKETS.keys()))
@@ -1480,14 +1508,14 @@ def market_status(
             except Exception as exc:
                 logger.warning(f"Failed to check status for {market_id}: {exc}")
                 errors.append({
-                    "symbol": market_id,
+                    "venue": market_id,
                     "error": str(exc),
                 })
         
         # Sort results: open first, then by region
         def _sort_key(item: Dict[str, Any]) -> Tuple[int, str]:
             status_priority = {"open": 0, "lunch_break": 1, "pre_market": 2, "closed": 3}
-            return (status_priority.get(item["status"], 4), item["symbol"])
+            return (status_priority.get(item["status"], 4), item["venue"])
         
         results.sort(key=_sort_key)
         
@@ -1503,22 +1531,22 @@ def market_status(
         
         # Add open markets (always list them if any)
         if status_counts["open"] > 0:
-            open_markets = [m["symbol"] for m in results if m["status"] == "open"]
+            open_markets = [m["venue"] for m in results if m["status"] == "open"]
             summary_messages.append(f"{status_counts['open']} market{'s' if status_counts['open'] != 1 else ''} open: {', '.join(open_markets)}")
         
         # Add pre-market markets (always list if any)
         if status_counts["pre_market"] > 0:
-            pre_markets = [m["symbol"] for m in results if m["status"] == "pre_market"]
+            pre_markets = [m["venue"] for m in results if m["status"] == "pre_market"]
             summary_messages.append(f"{status_counts['pre_market']} pre-market: {', '.join(pre_markets)}")
         
         # Add lunch break markets (always list if any)
         if status_counts["lunch_break"] > 0:
-            lunch_markets = [m["symbol"] for m in results if m["status"] == "lunch_break"]
+            lunch_markets = [m["venue"] for m in results if m["status"] == "lunch_break"]
             summary_messages.append(f"{status_counts['lunch_break']} lunch break: {', '.join(lunch_markets)}")
         
         # Add closed markets (list if <= 3, otherwise just count)
         if status_counts["closed"] > 0:
-            closed_markets = [m["symbol"] for m in results if m["status"] == "closed"]
+            closed_markets = [m["venue"] for m in results if m["status"] == "closed"]
             if status_counts["closed"] <= 3:
                 summary_messages.append(f"{status_counts['closed']} closed: {', '.join(closed_markets)}")
             else:

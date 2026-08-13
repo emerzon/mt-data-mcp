@@ -161,6 +161,25 @@ def test_higher_timeframe_query_metadata_echoes_broker_session_bounds() -> None:
     assert query["resolved_end"] == "2026-08-13T20:59:59.999999Z"
 
 
+def test_daily_date_bounds_localize_real_pytz_zone_without_lmt_shift() -> None:
+    import pytz
+
+    with patch.object(
+        data_service.mt5_config,
+        "get_server_tz",
+        return_value=pytz.timezone("Europe/Nicosia"),
+    ):
+        query = data_service._candle_query_applied(
+            timeframe="D1",
+            start="2026-08-10",
+            end="2026-08-13",
+            limit=10,
+        )
+
+    assert query["resolved_start"] == "2026-08-09T21:00:00Z"
+    assert query["resolved_end"] == "2026-08-13T20:59:59.999999Z"
+
+
 def test_natural_week_and_month_bounds_use_broker_calendar() -> None:
     broker_tz = ZoneInfo("Europe/Nicosia")
     fixed_now = datetime(2026, 8, 13, 12, tzinfo=timezone.utc)

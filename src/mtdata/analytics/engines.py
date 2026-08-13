@@ -3004,6 +3004,7 @@ def rank_relative_strength(  # noqa: C901
     effective_common_window: Dict[str, Any] = {
         "start": None,
         "end": None,
+        "timestamp_basis": "bar_open",
         "aligned_symbols": len(ranked_aligned_windows),
     }
     if ranked_aligned_windows:
@@ -3027,6 +3028,7 @@ def rank_relative_strength(  # noqa: C901
     }
     alignment_tolerance_seconds = int(TIMEFRAME_SECONDS[request.timeframe])
     endpoint_alignment: Dict[str, Any] = {
+        "timestamp_basis": "bar_close",
         "tolerance_seconds": alignment_tolerance_seconds,
         "status": "unavailable",
         "span_seconds": None,
@@ -3038,8 +3040,8 @@ def rank_relative_strength(  # noqa: C901
         endpoint_span = max(0.0, latest_endpoint - earliest_endpoint)
         endpoint_alignment.update(
             {
-                "earliest": format_epoch_utc(earliest_endpoint),
-                "latest": format_epoch_utc(latest_endpoint),
+                "earliest_bar_close": format_epoch_utc(earliest_endpoint),
+                "latest_bar_close": format_epoch_utc(latest_endpoint),
                 "span_seconds": round(endpoint_span, 3),
                 "status": (
                     "aligned"

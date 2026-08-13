@@ -1076,15 +1076,14 @@ def temporal_analyze(  # noqa: C901
             except Exception:
                 return _error_response("Failed to normalize bar times.", stage="process", context=context)
 
-            if not end:
-                if timeframe in TIMEFRAME_SECONDS:
-                    now_ts = datetime.now(timezone.utc).timestamp()
-                    last_epoch = float(df["__epoch"].iloc[-1])
-                    if (
-                        last_epoch <= now_ts < bar_close_epoch(last_epoch, timeframe)
-                        and len(df) > 1
-                    ):
-                        df = df.iloc[:-1]
+            if timeframe in TIMEFRAME_SECONDS:
+                now_ts = datetime.now(timezone.utc).timestamp()
+                last_epoch = float(df["__epoch"].iloc[-1])
+                if (
+                    last_epoch <= now_ts < bar_close_epoch(last_epoch, timeframe)
+                    and len(df) > 1
+                ):
+                    df = df.iloc[:-1]
 
             if len(df) < 2:
                 return _error_response(

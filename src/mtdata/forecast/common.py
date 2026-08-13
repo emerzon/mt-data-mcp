@@ -10,7 +10,11 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 
-from ..services.data_service import _is_last_bar_forming
+from ..services.data_service import (
+    _is_last_bar_forming,
+    _parse_candle_calendar_bound,
+    _trim_calendar_bars_to_session_dates,
+)
 from ..shared.constants import TIMEFRAME_MAP, TIMEFRAME_SECONDS
 from ..shared.symbols import (
     FOREX_CURRENCY_CODES,
@@ -1049,20 +1053,37 @@ def fetch_history(
         raise RuntimeError(err)
     try:
         if start:
-            from_dt = _parse_start_datetime(start)
+            calendar_from = _parse_candle_calendar_bound(
+                start,
+                timeframe=timeframe,
+                end_bound=False,
+            )
+            from_dt = calendar_from or _parse_start_datetime(start)
             if not from_dt:
                 raise RuntimeError("Invalid start time.")
-            to_dt = _parse_end_datetime(end) if end else datetime.now(timezone.utc).replace(tzinfo=None)
+            calendar_to = _parse_candle_calendar_bound(
+                end,
+                timeframe=timeframe,
+                end_bound=True,
+            )
+            to_dt = (
+                calendar_to
+                or (_parse_end_datetime(end) if end else None)
+                or datetime.now(timezone.utc).replace(tzinfo=None)
+            )
             if not to_dt:
                 raise RuntimeError("Invalid end time.")
-            if from_dt > to_dt:
+            if _utc_epoch_seconds(from_dt) > _utc_epoch_seconds(to_dt):
                 raise RuntimeError("start must be before or equal to end.")
             rates = _mt5_copy_rates_range(symbol, mt5_tf, from_dt, to_dt)
         elif as_of or end:
-            to_dt = (
-                _parse_start_datetime(as_of)
-                if as_of
-                else _parse_end_datetime(end or "")
+            to_dt = _parse_start_datetime(as_of) if as_of else (
+                _parse_candle_calendar_bound(
+                    end,
+                    timeframe=timeframe,
+                    end_bound=True,
+                )
+                or _parse_end_datetime(end or "")
             )
             if not to_dt:
                 raise RuntimeError("Invalid as_of time." if as_of else "Invalid end time.")
@@ -1088,10 +1109,13 @@ def fetch_history(
 
     # Manual truncation if an upper bound was provided.
     if (as_of or end) and not df.empty and 'time' in df.columns:
-        to_dt = (
-            _parse_start_datetime(as_of)
-            if as_of
-            else _parse_end_datetime(end or "")
+        to_dt = _parse_start_datetime(as_of) if as_of else (
+            _parse_candle_calendar_bound(
+                end,
+                timeframe=timeframe,
+                end_bound=True,
+            )
+            or _parse_end_datetime(end or "")
         )
         if to_dt:
             cutoff = _utc_epoch_seconds(to_dt)
@@ -1099,8 +1123,10 @@ def fetch_history(
                 # Analysis defaults to closed bars. An as-of anchor is always
                 # information-available-at-instant; bounded ranges apply the
                 # same rule unless the caller explicitly requests live bars.
+                wall_clock_cutoff = datetime.now(timezone.utc).timestamp()
                 completed = df['time'].map(
-                    lambda value: bar_close_epoch(value, timeframe) <= cutoff
+                    lambda value: bar_close_epoch(value, timeframe)
+                    <= min(cutoff, wall_clock_cutoff)
                 )
                 df = df[completed]
             else:
@@ -1108,6 +1134,14 @@ def fetch_history(
             # Bounded ranges keep the full requested window; end-only mirrors as_of.
             if not start and len(df) > need:
                 df = df.iloc[-int(need):]
+
+    if timeframe in {"D1", "W1", "MN1"} and (start or end):
+        df = _trim_calendar_bars_to_session_dates(
+            df,
+            start_datetime=start,
+            end_datetime=end,
+            timeframe=timeframe,
+        )
 
     if as_of is None and end is None and drop_last_live and len(df) >= 2:
         if _is_last_bar_forming(rates, timeframe):

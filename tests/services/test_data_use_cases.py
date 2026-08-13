@@ -1391,6 +1391,30 @@ def test_run_data_fetch_candles_compact_keeps_anomaly_metadata():
     assert result["timestamp_mode"] == "native_utc"
 
 
+def test_compact_server_clock_candles_keep_utc_normalization_disclosure():
+    request = DataFetchCandlesRequest(symbol="EURUSD", timeframe="H1", limit=1)
+
+    result = run_data_fetch_candles(
+        request,
+        gateway=SimpleNamespace(ensure_connection=lambda: None),
+        fetch_candles_impl=lambda **_kwargs: {
+            "success": True,
+            "symbol": "EURUSD",
+            "timeframe": "H1",
+            "candles": 1,
+            "candles_requested": 1,
+            "time_basis": "utc",
+            "timestamp_mode": "server_clock",
+            "time_normalization": "server_clock_to_utc",
+            "data": [{"time": "2026-08-13T13:00:00Z", "close": 1.15}],
+        },
+    )
+
+    assert result["timestamp_mode"] == "server_clock"
+    assert result["time_basis"] == "utc"
+    assert result["time_normalization"] == "server_clock_to_utc"
+
+
 def test_compact_indicator_candles_disclose_warmup_history() -> None:
     request = DataFetchCandlesRequest(
         symbol="EURUSD",

@@ -69,7 +69,7 @@ def test_market_status_timezone_display_utc_converts_market_times(monkeypatch) -
     assert result["market_scope"] == "major_equity_exchanges"
     assert "pass a broker symbol" in result["scope_note"].lower()
     assert result["timezone"] == "UTC"
-    assert {market["symbol"] for market in result["markets"]} == {"NYSE", "NASDAQ"}
+    assert {market["venue"] for market in result["markets"]} == {"NYSE", "NASDAQ"}
     for market in result["markets"]:
         assert market["exchange_local_time"] == "2024-01-02T10:00:00-05:00"
         assert market["local_time"] == "2024-01-02T15:00:00Z"
@@ -131,7 +131,7 @@ def test_market_status_uses_utc_weekend_for_closed_reason(monkeypatch) -> None:
     assert result["global_status"] == "weekend"
     assert result["closed_reason_counts"] == {"weekend": 9}
     reasons_by_symbol = {
-        market["symbol"]: market.get("reason") for market in result["markets"]
+        market["venue"]: market.get("reason") for market in result["markets"]
     }
     assert reasons_by_symbol["NYSE"] == "weekend"
     assert reasons_by_symbol["NASDAQ"] == "weekend"
@@ -145,6 +145,48 @@ def test_market_status_rejects_invalid_timezone_display() -> None:
     assert result == {
         "error": "Invalid timezone_display. Use 'local', 'utc', 'server', or 'auto'."
     }
+
+
+def test_market_status_accepts_emitted_venue_identifier(monkeypatch) -> None:
+    raw = _unwrap(market_status_mod.market_status)
+    local_now = datetime(2026, 8, 14, 8, 0, tzinfo=ZoneInfo("Australia/Sydney"))
+    monkeypatch.setattr(market_status_mod, "_get_local_time", lambda _tz: local_now)
+    monkeypatch.setattr(market_status_mod, "_get_upcoming_holidays", lambda _markets: [])
+    monkeypatch.setattr(
+        market_status_mod,
+        "_is_holiday",
+        lambda _country, _dt, _exchange=None: (False, None),
+    )
+
+    result = raw(symbol="ASX", detail="full")
+
+    assert result["success"] is True
+    assert result["mode"] == "equity_exchanges"
+    assert len(result["markets"]) == 1
+    assert result["markets"][0]["venue"] == "ASX"
+    assert result["markets"][0]["status"] == "pre_market"
+    assert "symbol" not in result["markets"][0]
+
+
+def test_asx_overnight_is_closed_before_configured_pre_open(monkeypatch) -> None:
+    monkeypatch.setattr(
+        market_status_mod,
+        "_is_holiday",
+        lambda _country, _dt, _exchange=None: (False, None),
+    )
+
+    overnight = market_status_mod._check_market_status(
+        "ASX",
+        datetime(2026, 8, 14, 0, 50, tzinfo=ZoneInfo("Australia/Sydney")),
+    )
+    pre_open = market_status_mod._check_market_status(
+        "ASX",
+        datetime(2026, 8, 14, 8, 0, tzinfo=ZoneInfo("Australia/Sydney")),
+    )
+
+    assert overnight["status"] == "closed"
+    assert overnight["reason"] == "before_open"
+    assert pre_open["status"] == "pre_market"
 
 
 def test_market_status_symbol_mode_reports_heuristic_status(monkeypatch) -> None:
@@ -1089,7 +1131,7 @@ def test_market_status_summary_includes_all_statuses(monkeypatch):
             return fixed_now.astimezone(tz)
 
     def mock_check(market_id, _now_local):
-        return {"symbol": market_id, "status": statuses[market_id]}
+        return {"venue": market_id, "status": statuses[market_id]}
 
     monkeypatch.setattr(market_status_mod, "datetime", FixedDateTime)
     monkeypatch.setattr(market_status_mod, "_get_local_time", lambda _tz: fixed_now)

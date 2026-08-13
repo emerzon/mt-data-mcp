@@ -108,6 +108,7 @@ from ..utils.time import (
     _format_datetime_minute_explicit,
     _format_time_explicit,
     _format_time_explicit_local,
+    _localize_broker_calendar_time,
     _resolve_client_tz,
     bar_close_epoch,
     format_datetime_utc,
@@ -915,7 +916,10 @@ def _parse_candle_calendar_bound(
         if period is None:
             return None
         local_bound = period[1] if end_bound else period[0]
-    return local_bound.replace(tzinfo=broker_tz).astimezone(dt_timezone.utc)
+    return _localize_broker_calendar_time(
+        broker_tz,
+        local_bound,
+    ).astimezone(dt_timezone.utc)
 
 
 def _format_resolved_query_bound(value: datetime) -> str:
@@ -1335,7 +1339,8 @@ def _trim_calendar_bars_to_session_dates(
     broker_tz = _broker_calendar_timezone()
 
     mask = pd.Series(True, index=df.index, dtype=bool)
-    session_dates = df["__epoch"].map(
+    epoch_column = "__epoch" if "__epoch" in df.columns else "time"
+    session_dates = df[epoch_column].map(
         lambda epoch: datetime.fromtimestamp(
             float(epoch), tz=dt_timezone.utc
         ).astimezone(broker_tz).date()
@@ -1359,7 +1364,7 @@ def _trim_calendar_bars_to_session_dates(
             parsed_start = _parse_start_datetime(start_datetime)
             if parsed_start is None:
                 return df.iloc[0:0]
-            mask &= df["__epoch"] >= _utc_epoch_seconds(parsed_start)
+            mask &= df[epoch_column] >= _utc_epoch_seconds(parsed_start)
     if end_datetime:
         if _is_calendar_query_bound(end_datetime):
             requested_end_bound = _parse_candle_calendar_bound(
@@ -1375,7 +1380,7 @@ def _trim_calendar_bars_to_session_dates(
             parsed_end = _parse_end_datetime(end_datetime)
             if parsed_end is None:
                 return df.iloc[0:0]
-            mask &= df["__epoch"] <= _utc_epoch_seconds(parsed_end)
+            mask &= df[epoch_column] <= _utc_epoch_seconds(parsed_end)
     return df.loc[mask]
 
 
