@@ -1208,8 +1208,11 @@ def test_strategy_validation_returns_walk_forward_oos_metrics() -> None:
     assert result["validation"]["execution_timing"] == "next_bar_open"
     assert result["rankings"][0]["id"] == "cross"
     assert result["rankings"][0]["trades"] > 0
-    assert result["rankings"][0]["evaluation_status"] == "complete"
+    assert result["rankings"][0]["evaluation_status"] == "partial"
     candidate = result["rankings"][0]
+    assert candidate["folds_evaluated"] == 2
+    assert candidate["folds_requested"] == 3
+    assert candidate["skipped_folds"][0]["reason"] == "insufficient_training_trades"
     assert candidate["signal_definition"] == "cross_event"
     assert candidate["evidence"]["criteria"]["cost_model_complete"] is True
     assert candidate["evidence"]["provisional_positive_before_complete_costs"] is False
@@ -1225,6 +1228,75 @@ def test_strategy_validation_returns_walk_forward_oos_metrics() -> None:
     }
     for fold in result["rankings"][0]["folds"]:
         assert fold["test_end_bar"] + request.barrier.horizon <= fold["test_window_end_bar"]
+
+
+@pytest.mark.parametrize(
+    ("fold_windows", "indices", "skipped_reason"),
+    [
+        (
+            [(101, 110), (120, 140)],
+            [10, 20, 30, 40, 50, 121, 122, 123, 124, 125],
+            "no_test_trades",
+        ),
+        (
+            [(30, 40), (100, 110)],
+            [10, 20, 31, 32, 33, 34, 35, 101, 102, 103, 104, 105],
+            "insufficient_training_trades",
+        ),
+    ],
+)
+def test_strategy_validation_marks_skipped_requested_folds_partial(
+    monkeypatch,
+    fold_windows,
+    indices,
+    skipped_reason,
+) -> None:
+    gateway = FakeGateway()
+    monkeypatch.setattr(
+        "mtdata.analytics.engines._walk_forward_windows",
+        lambda *args, **kwargs: (fold_windows, []),
+    )
+    monkeypatch.setattr(
+        "mtdata.analytics.engines._builtin_signal",
+        lambda close, candidate: pd.Series(1.0, index=close.index),
+    )
+    monkeypatch.setattr(
+        "mtdata.analytics.engines._barrier_returns",
+        lambda *args, **kwargs: (
+            np.asarray(indices, dtype=int),
+            np.full(len(indices), 0.01, dtype=float),
+        ),
+    )
+    request = StrategyValidateRequest(
+        symbol="EURUSD",
+        lookback=400,
+        candidates=[
+            {
+                "id": "partial-cross",
+                "type": "builtin_strategy",
+                "strategy": "sma_cross",
+                "params": {"fast_period": 5, "slow_period": 20},
+            }
+        ],
+        barrier={"horizon": 1, "tp_pct": 0.15, "sl_pct": 0.15},
+        n_splits=2,
+        cost_model="fixed",
+        spread_bps=1.0,
+        bootstrap_samples=100,
+        detail="full",
+    )
+
+    result = validate_strategies(request, gateway)
+    candidate = result["rankings"][0]
+
+    assert candidate["evaluation_status"] == "partial"
+    assert candidate["folds_requested"] == 2
+    assert candidate["folds_evaluated"] == 1
+    assert candidate["fold_coverage"] == 0.5
+    assert candidate["skipped_folds"][0]["reason"] == skipped_reason
+    assert candidate["evidence"]["classification"] != "positive"
+    assert candidate["evidence"]["criteria"]["all_requested_folds_evaluated"] is False
+    assert any("evaluated 1 of 2 requested folds" in item for item in result["warnings"])
 
 
 def test_strategy_validation_priced_proxy_can_receive_positive_classification(

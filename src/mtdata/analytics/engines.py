@@ -1931,7 +1931,9 @@ def validate_strategies(  # noqa: C901
         results.append({
             "id": candidate.id,
             "type": candidate.type,
-            "evaluation_status": "complete",
+            "evaluation_status": (
+                "complete" if folds_evaluated == request.n_splits else "partial"
+            ),
             "signal_definition": signal_definition,
             "trades": int(len(arr)),
             "net_expectancy": float(np.mean(arr)),
@@ -1964,7 +1966,7 @@ def validate_strategies(  # noqa: C901
         running = max(running, adjusted)
         results[idx]["holm_adjusted_p_value"] = running
     for item in results:
-        if item.get("evaluation_status") != "complete":
+        if item.get("evaluation_status") not in {"complete", "partial"}:
             continue
         ci = item.get("expectancy_ci_95")
         fold_share = float(item.get("fold_stability") or 0.0)
@@ -2014,7 +2016,7 @@ def validate_strategies(  # noqa: C901
     )
     for item in results:
         folds_evaluated = int(item.get("folds_evaluated") or 0)
-        if item.get("evaluation_status") == "complete" and folds_evaluated < request.n_splits:
+        if item.get("evaluation_status") == "partial":
             warnings_out.append(
                 f"Candidate {item.get('id')} evaluated {folds_evaluated} of "
                 f"{request.n_splits} requested folds; positive classification is disabled."

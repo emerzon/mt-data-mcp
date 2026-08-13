@@ -73,7 +73,9 @@ Forecast-threshold candidates execute at most the latest 200 eligible forecast
 anchors to keep validation bounded. Their folds partition that computed signal
 window rather than empty earlier history. Each candidate reports signal range,
 requested/evaluated folds, skipped-fold reasons, and fold coverage; incomplete
-coverage cannot receive a positive evidence classification.
+coverage uses `evaluation_status=partial` and cannot receive a positive evidence
+classification. `evaluation_status=complete` is reserved for candidates that
+evaluate every requested fold.
 
 The default `current_spread_proxy` is complete when its tick window contains a
 valid priced spread; `cost_model.complete` describes cost availability, not
