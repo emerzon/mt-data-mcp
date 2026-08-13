@@ -707,7 +707,11 @@ class TestMain:
         ):
             main()
 
-        assert "--timeframe is not supported" in capsys.readouterr().err
+        captured = capsys.readouterr()
+        assert captured.err == ""
+        assert "success: false" in captured.out
+        assert "error_code: cli_invalid_arguments" in captured.out
+        assert "--timeframe is not supported" in captured.out
         mock_fn.assert_not_called()
 
     @patch("mtdata.core.cli.api.discover_tools")
