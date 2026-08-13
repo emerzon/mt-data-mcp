@@ -635,6 +635,11 @@ def calibrate_heston_quantlib_from_options(  # noqa: C901
         "calls_used": sum(1 for row in rows if row.get("side") == "call"),
         "puts_used": sum(1 for row in rows if row.get("side") == "put"),
         "spot": float(spot_val),
+        "spot_as_of": chain.get("as_of"),
+        "spot_data_age_seconds": chain.get("data_age_seconds"),
+        "spot_freshness": chain.get("freshness"),
+        "spot_source": chain.get("underlying_price_source"),
+        "spot_session": chain.get("underlying_price_session"),
         "calibration_error_rmse": float(rmse) if np.isfinite(rmse) else None,
         "params": {
             "kappa": float(model.kappa()),

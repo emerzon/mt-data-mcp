@@ -24,16 +24,45 @@ def test_to_numeric_logs_non_empty_conversion_failures(caplog):
     assert "Failed to coerce Yahoo options 'strike' value 'bad-data' to float" in caplog.text
 
 
+def test_options_quote_metadata_uses_provider_quote_time(monkeypatch):
+    monkeypatch.setattr(osvc._time, "time", lambda: 1_700_000_120.0)
+
+    metadata = osvc._options_quote_metadata(
+        "yahoo",
+        {"regularMarketTime": 1_700_000_000},
+    )
+
+    assert metadata["data_age_seconds"] == 120.0
+    assert metadata["as_of"] == "2023-11-14T22:13:20Z"
+    assert metadata["freshness"] == "provider_timestamped"
+    assert metadata["underlying_price_source"] == "yahoo_regular_market_price"
+    assert metadata["underlying_price_session"] == "regular_market"
+
+
+def test_options_quote_metadata_marks_missing_timestamp_unknown():
+    metadata = osvc._options_quote_metadata("yahoo", {"regularMarketPrice": 100.0})
+
+    assert metadata["data_age_seconds"] is None
+    assert metadata["as_of"] is None
+    assert metadata["freshness"] == "unknown"
+    assert metadata["freshness_reason"] == "provider_quote_timestamp_unavailable"
+
+
 def test_get_options_expirations_parses_payload(monkeypatch):
     expiry_a = osvc._ymd_to_epoch("2026-04-17")
     expiry_b = osvc._ymd_to_epoch("2026-05-15")
+    monkeypatch.setattr(osvc._time, "time", lambda: 1_700_000_120.0)
 
     monkeypatch.setattr(
         osvc,
         "_fetch_yahoo_options_payload",
         lambda symbol, expiry_epoch=None: {
             "expirationDates": [expiry_b, expiry_a],
-            "quote": {"regularMarketPrice": 212.34, "currency": "USD"},
+            "quote": {
+                "regularMarketPrice": 212.34,
+                "regularMarketTime": 1_700_000_000,
+                "currency": "USD",
+            },
         },
     )
 
@@ -43,6 +72,9 @@ def test_get_options_expirations_parses_payload(monkeypatch):
     assert out["underlying_price"] == 212.34
     assert out["expirations"] == ["2026-04-17", "2026-05-15"]
     assert out["expiration_count"] == 2
+    assert out["data_age_seconds"] == 120.0
+    assert out["as_of"] == "2023-11-14T22:13:20Z"
+    assert out["underlying_price_session"] == "regular_market"
 
 
 def test_get_options_chain_filters_and_selects_expiration(monkeypatch):

@@ -61,12 +61,53 @@ class _OptionsRateLimitError(ValueError):
         super().__init__(f"{provider} options provider rate limit exceeded.{retry_text}")
 
 
-def _live_options_metadata(provider: str) -> Dict[str, Any]:
-    return {
+def _options_quote_metadata(
+    provider: str,
+    quote: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    quote = quote if isinstance(quote, dict) else {}
+    if provider == "yahoo":
+        timestamp_value = quote.get("regularMarketTime")
+        price_source = "yahoo_regular_market_price"
+        price_session = "regular_market"
+    else:
+        timestamp_value = quote.get("trade_date") or quote.get("last_trade_date")
+        price_source = "tradier_last"
+        price_session = "provider_reported_last"
+    timestamp_epoch = _parse_tradier_epoch(timestamp_value)
+    metadata: Dict[str, Any] = {
         "provider": provider,
         "cached": False,
-        "data_age_seconds": 0,
+        "underlying_price_source": price_source,
+        "underlying_price_session": price_session,
     }
+    if timestamp_epoch is None or timestamp_epoch <= 0:
+        metadata.update(
+            {
+                "as_of": None,
+                "data_age_seconds": None,
+                "freshness": "unknown",
+                "freshness_reason": "provider_quote_timestamp_unavailable",
+            }
+        )
+        return metadata
+
+    now_epoch = float(_time.time())
+    raw_age = now_epoch - float(timestamp_epoch)
+    metadata.update(
+        {
+            "as_of": _dt.datetime.fromtimestamp(
+                float(timestamp_epoch), tz=_dt.timezone.utc
+            ).isoformat().replace("+00:00", "Z"),
+            "data_age_seconds": round(max(0.0, raw_age), 3),
+            "freshness": (
+                "clock_skew" if raw_age < -1.0 else "provider_timestamped"
+            ),
+        }
+    )
+    if raw_age < -1.0:
+        metadata["freshness_reason"] = "provider_quote_timestamp_in_future"
+    return metadata
 
 
 def _parse_retry_after_seconds(value: Any) -> Optional[float]:
@@ -782,7 +823,7 @@ def _get_tradier_options_expirations(symbol: str) -> Dict[str, Any]:
         quote = {}
     return {
         "success": True,
-        **_live_options_metadata("tradier"),
+        **_options_quote_metadata("tradier", quote),
         "symbol": symbol_norm,
         "underlying_price": _to_numeric(
             quote.get("last") or quote.get("close"),
@@ -841,7 +882,7 @@ def _get_tradier_options_chain(
     )
     return {
         "success": True,
-        **_live_options_metadata("tradier"),
+        **_options_quote_metadata("tradier", quote),
         "symbol": symbol_norm,
         "expiration": chosen_expiry,
         "underlying_price": underlying_price,
@@ -866,7 +907,7 @@ def _get_yahoo_options_expirations(symbol: str) -> Dict[str, Any]:
     quote = payload.get("quote", {}) if isinstance(payload.get("quote"), dict) else {}
     return {
         "success": True,
-        **_live_options_metadata("yahoo"),
+        **_options_quote_metadata("yahoo", quote),
         "symbol": str(symbol).upper().strip(),
         "underlying_price": _to_numeric(
             quote.get("regularMarketPrice"),
@@ -980,7 +1021,7 @@ def _get_yahoo_options_chain(
 
     return {
         "success": True,
-        **_live_options_metadata("yahoo"),
+        **_options_quote_metadata("yahoo", quote),
         "symbol": symbol_norm,
         "expiration": chosen_expiry_ymd,
         "underlying_price": underlying_price,

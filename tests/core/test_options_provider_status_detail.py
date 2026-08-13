@@ -47,33 +47,39 @@ def test_provider_status_marks_tradier_without_key_as_yahoo_fallback(monkeypatch
     assert out["configured_provider"] == "tradier"
     assert out["effective_provider"] == "yahoo"
     assert out["configured_provider_ready"] is False
+    assert out["configured_provider_status"] == "misconfigured_using_fallback"
     assert out["local_tools_ready"] is True
-    assert out["chain_provider_ready"] is False
-    assert out["chain_data_ready"] is False
+    assert out["chain_provider_ready"] is True
+    assert out["chain_data_ready"] is True
     assert out["chain_request_supported"] is True
+    assert out["usable_now"] is True
     assert out["live_chain_requests_expected_to_work"] is True
     assert out["live_chain_expectation_basis"] == "best_effort_anonymous_provider"
     assert out["degraded"] is True
-    assert out["provider_mode"] == "best_effort"
-    assert out["action_required"] == "configure_options_provider"
-    assert "retry anonymous Yahoo cookie/crumb access" in out["remediation"]
+    assert out["provider_mode"] == "anonymous_fallback"
+    assert out["action_required"] is None
+    assert out["recommended_action"] == "configure_tradier_credentials"
+    assert "retry anonymous Yahoo cookie/crumb access" in out["recommendation"]
     assert out["warnings"] == [
         "Options chain access is using anonymous Yahoo cookie/crumb fallback; "
         "it is best-effort and may return 401/429."
     ]
 
 
-def test_provider_status_does_not_mark_yahoo_chain_configuration_ready(monkeypatch):
+def test_provider_status_marks_anonymous_yahoo_as_degraded_but_usable(monkeypatch):
     monkeypatch.setattr(options_data_config, "provider", "yahoo")
     monkeypatch.setattr(options_data_config, "api_key", None)
 
     out = _call("full")
 
-    assert out["configured_provider_ready"] is False
-    assert out["chain_provider_ready"] is False
-    assert out["chain_data_ready"] is False
+    assert out["configured_provider_ready"] is True
+    assert out["chain_provider_ready"] is True
+    assert out["chain_data_ready"] is True
+    assert out["usable_now"] is True
     assert out["live_chain_requests_expected_to_work"] is True
-    assert out["action_required"] == "configure_options_provider"
+    assert out["action_required"] is None
+    assert out["degraded"] is True
+    assert out["provider_mode"] == "anonymous_fallback"
 
 
 def test_options_expirations_compact_keeps_fallback_warning(monkeypatch):
@@ -90,7 +96,12 @@ def test_options_expirations_compact_keeps_fallback_warning(monkeypatch):
             "configured_provider": "tradier",
             "provider_effective": "yahoo",
             "cached": False,
-            "data_age_seconds": 0,
+            "data_age_seconds": None,
+            "as_of": None,
+            "freshness": "unknown",
+            "freshness_reason": "provider_quote_timestamp_unavailable",
+            "underlying_price_source": "yahoo_regular_market_price",
+            "underlying_price_session": "regular_market",
             "symbol": "AAPL",
             "expirations": ["2026-04-17"],
             "expiration_count": 1,
@@ -106,6 +117,10 @@ def test_options_expirations_compact_keeps_fallback_warning(monkeypatch):
     assert out["provider"] == "yahoo"
     assert out["configured_provider"] == "tradier"
     assert out["provider_effective"] == "yahoo"
+    assert out["data_age_seconds"] is None
+    assert out["freshness"] == "unknown"
+    assert out["underlying_price_source"] == "yahoo_regular_market_price"
+    assert out["underlying_price_session"] == "regular_market"
     assert out["warnings"] == [
         "Yahoo fallback returned data after Tradier options provider failed: boom"
     ]

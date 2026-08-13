@@ -145,8 +145,8 @@ def _options_provider_readiness() -> Dict[str, Any]:
     if provider == "tradier" and not api_key_configured:
         effective_provider = "yahoo"
         configured_provider_ready = False
-        action_required = "configure_options_provider"
-        remediation = (
+        configured_provider_status = "misconfigured_using_fallback"
+        recommendation = (
             "Configured Tradier mode is missing MTDATA_OPTIONS_API_KEY. mtdata will "
             "retry anonymous Yahoo cookie/crumb access as a best-effort fallback, but reliable "
             "options chains still require Tradier credentials."
@@ -157,21 +157,32 @@ def _options_provider_readiness() -> Dict[str, Any]:
             else "yahoo" if provider == "auto"
             else provider
         )
-        configured_provider_ready = effective_provider == "tradier" and api_key_configured
-        action_required = (
-            None if configured_provider_ready else "configure_options_provider"
+        configured_provider_ready = effective_provider == "yahoo" or (
+            effective_provider == "tradier" and api_key_configured
         )
-        remediation = (
+        configured_provider_status = (
+            "ready" if configured_provider_ready else "unsupported"
+        )
+        recommendation = (
             "Yahoo options data uses anonymous cookie/crumb access and may still return "
             "401/429. For reliable chains, set MTDATA_OPTIONS_PROVIDER=tradier and "
             "MTDATA_OPTIONS_API_KEY."
         ) if effective_provider == "yahoo" else None
     chain_request_supported = effective_provider in {"yahoo", "tradier"}
-    chain_provider_ready = effective_provider == "tradier" and api_key_configured
-    chain_data_ready = chain_provider_ready
-    provider_mode = "best_effort" if effective_provider == "yahoo" else "authenticated"
+    usable_now = chain_request_supported
+    chain_provider_ready = usable_now
+    chain_data_ready = usable_now
+    provider_mode = (
+        "anonymous_fallback" if effective_provider == "yahoo" else "credentialed"
+    )
+    action_required = None if usable_now else "configure_options_provider"
+    remediation = (
+        None
+        if usable_now
+        else "Set MTDATA_OPTIONS_PROVIDER to yahoo or configure Tradier credentials."
+    )
     warnings = []
-    if provider_mode == "best_effort":
+    if provider_mode == "anonymous_fallback":
         warnings.append(
             "Options chain access is using anonymous Yahoo cookie/crumb fallback; "
             "it is best-effort and may return 401/429."
@@ -181,19 +192,21 @@ def _options_provider_readiness() -> Dict[str, Any]:
         "effective_provider": effective_provider,
         "api_key_configured": api_key_configured,
         "configured_provider_ready": configured_provider_ready,
+        "configured_provider_status": configured_provider_status,
         "local_tools_ready": True,
         "chain_provider_ready": chain_provider_ready,
         "chain_data_ready": chain_data_ready,
         "chain_request_supported": chain_request_supported,
+        "usable_now": usable_now,
         "live_chain_requests_expected_to_work": chain_request_supported,
         "live_chain_expectation_basis": (
             "authenticated_provider"
-            if chain_provider_ready
+            if effective_provider == "tradier" and api_key_configured
             else "best_effort_anonymous_provider"
             if chain_request_supported
             else "unsupported_provider"
         ),
-        "degraded": bool(provider_mode == "best_effort"),
+        "degraded": bool(provider_mode == "anonymous_fallback"),
         "provider_mode": provider_mode,
         "supported_providers": ["tradier", "yahoo"],
         "chain_dependent_tools": [
@@ -203,6 +216,12 @@ def _options_provider_readiness() -> Dict[str, Any]:
         ],
         "local_tools": ["options_barrier_price"],
         "action_required": action_required,
+        "recommended_action": (
+            "configure_tradier_credentials"
+            if provider_mode == "anonymous_fallback"
+            else None
+        ),
+        "recommendation": recommendation,
         "remediation": remediation,
     }
     if warnings:
@@ -306,6 +325,11 @@ def _apply_options_detail(
                 "provider_effective",
                 "cached",
                 "data_age_seconds",
+                "as_of",
+                "freshness",
+                "freshness_reason",
+                "underlying_price_source",
+                "underlying_price_session",
                 "symbol",
                 "expirations",
                 "expiration_count",
@@ -324,6 +348,11 @@ def _apply_options_detail(
                 "provider_effective",
                 "cached",
                 "data_age_seconds",
+                "as_of",
+                "freshness",
+                "freshness_reason",
+                "underlying_price_source",
+                "underlying_price_session",
                 "symbol",
                 "expiration",
                 "underlying_price",
@@ -351,6 +380,11 @@ def _apply_options_detail(
                 "option_type",
                 "barrier_type",
                 "spot",
+                "spot_as_of",
+                "spot_data_age_seconds",
+                "spot_freshness",
+                "spot_source",
+                "spot_session",
                 "strike",
                 "barrier",
                 "maturity_days",
@@ -410,7 +444,7 @@ def options_provider_status(
 
         payload["tradier_docs"] = "https://documentation.tradier.com/"
         payload["base_url"] = getattr(options_data_config, "base_url", None)
-    elif payload.get("remediation"):
+    elif payload.get("action_required") and payload.get("remediation"):
         payload["remediation_hint"] = (
             "Reliable options-chain access requires Tradier credentials."
         )
@@ -420,6 +454,10 @@ def options_provider_status(
             "Yahoo cookie/crumb fallback is best-effort and may still return 401/429.",
         ]
         payload.pop("remediation", None)
+    elif payload.get("recommendation"):
+        payload["recommendation_hint"] = (
+            "Anonymous Yahoo is usable now but remains best-effort."
+        )
     return _run_options_operation(
         "options_provider_status",
         detail=detail,
