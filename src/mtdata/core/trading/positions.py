@@ -1192,6 +1192,8 @@ def normalize_trade_history_output(
     if out.get("success") is True:
         period_context = _trade_history_period_context(request)
         out = _insert_trade_history_period_context(out, period_context)
+        out["order"] = str(getattr(request, "order", "desc") or "desc")
+        out["order_basis"] = "history_time"
         side_filter = validation._trade_side_filter_metadata(
             getattr(request, "side", None),
             history_kind=str(history_kind or "deals"),

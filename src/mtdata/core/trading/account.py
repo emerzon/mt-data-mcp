@@ -417,8 +417,6 @@ def _run_trade_journal_request(  # noqa: C901
     period_context = _trade_journal_period_context(request)
     detail_mode = str(request.detail or "compact").strip().lower()
     minimum_sample = int(max(1, int(request.min_sample)))
-    if detail_mode == "compact":
-        period_context = {"timezone": "UTC"}
     side_filter = validation._trade_side_filter_metadata(
         request.side,
         history_kind="deals",

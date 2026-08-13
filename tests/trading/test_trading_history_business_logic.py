@@ -1402,6 +1402,8 @@ def test_trade_history_compact_includes_period_context() -> None:
     assert out["period_start"]
     assert out["period_end"]
     assert out["defaults_applied"] == {"lookback_minutes": 10_080}
+    assert out["order"] == "desc"
+    assert out["order_basis"] == "history_time"
     assert "note" in out
     keys = list(out)
     assert keys.index("items") < len(keys)
@@ -1642,9 +1644,11 @@ def test_trade_journal_analyze_compact_returns_summary_only() -> None:
         out = trade_journal_analyze(__cli_raw=True)
 
     assert out["success"] is True
-    assert "period_source" not in out
-    assert "minutes_back_effective" not in out
-    assert "note" not in out
+    assert out["period_source"] == "default_lookback"
+    assert out["minutes_back_effective"] == 10_080
+    assert out["period_start"]
+    assert out["period_end"]
+    assert "7-day" in out["note"]
     assert out["timezone"] == "UTC"
     assert out["summary"]["closed_deals"] == 2
     assert out["units"]["win_rate"] == "fraction"
