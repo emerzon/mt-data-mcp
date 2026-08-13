@@ -669,8 +669,8 @@ mtdata-cli trade_var_cvar_calculate --symbol EURUSD --method parametric --transf
 
 ### Stress Open Positions
 ```bash
-mtdata-cli trade_stress_test '{"EURUSD":-2.0,"GBPUSD":-1.5}' --json
-mtdata-cli trade_stress_test '{"*":-3.0}' --detail full --json
+mtdata-cli trade_stress_test --shocks '{"EURUSD":-2.0,"GBPUSD":-1.5}' --json
+mtdata-cli trade_stress_test --shocks '{"*":-3.0}' --detail full --json
 ```
 
 Shock values are percentage price moves. `*` is a fallback for any open-position symbol without an explicit shock. The tool is read-only and reports estimated P&L and equity impact.

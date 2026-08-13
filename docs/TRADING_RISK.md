@@ -155,10 +155,10 @@ impact. Useful for "what if EURUSD drops 2% and everything else 3%?" scenarios.
 
 ```bash
 # Per-symbol shocks
-mtdata-cli trade_stress_test '{"EURUSD":-2.0,"GBPUSD":-1.5}' --json
+mtdata-cli trade_stress_test --shocks '{"EURUSD":-2.0,"GBPUSD":-1.5}' --json
 
 # Wildcard shock applied to every position without an explicit entry
-mtdata-cli trade_stress_test '{"*":-3.0}' --detail full --json
+mtdata-cli trade_stress_test --shocks '{"*":-3.0}' --detail full --json
 ```
 
 | Parameter | Default | Description |

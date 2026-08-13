@@ -65,10 +65,12 @@ _MULTI_VALUE_SYMBOL_POSITIONAL_COMMANDS = frozenset(
 
 _COMMAND_REQUIRED_OPTIONS: set[tuple[str, str]] = {
     ("trade_modify", "ticket"),
+    ("trade_stress_test", "shocks"),
 }
 
 _NAMED_ONLY_REQUIRED_PARAMS: set[tuple[str, str]] = {
     ("trade_modify", "ticket"),
+    ("trade_stress_test", "shocks"),
 }
 
 _PRESERVE_OMITTED_DEFAULT_PARAMS: set[tuple[str, str]] = {

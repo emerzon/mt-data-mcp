@@ -1743,6 +1743,26 @@ class TestResolveParamKwargs:
             "'{\"*\":-2}' or '{\"EURUSD\":-1,\"XAUUSD\":-3}'."
         )
 
+    def test_trade_stress_test_requires_named_shocks_option(self):
+        parser = argparse.ArgumentParser()
+        func_info = {
+            "params": [
+                {
+                    "name": "shocks",
+                    "type": Dict[str, float],
+                    "required": True,
+                    "default": None,
+                },
+            ]
+        }
+
+        add_dynamic_arguments(parser, func_info, cmd_name="trade_stress_test")
+
+        parsed = parser.parse_args(["--shocks", '{"*":-2}'])
+        assert parsed.shocks == '{"*":-2}'
+        with pytest.raises(SystemExit):
+            parser.parse_args(['{"*":-2}'])
+
     def test_finviz_calendar_start_help_is_command_specific(self):
         param = {
             "name": "start",
