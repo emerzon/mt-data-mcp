@@ -283,7 +283,7 @@ def test_trade_place_dry_run_market_preview_rejects_missing_sl_tp() -> None:
             __cli_raw=True,
         )
 
-    assert out.get("success") is False
+    assert out.get("success") is True
     assert "error_code" not in out
     assert "error" not in out
     assert out.get("blockers") == ["missing_stop_loss", "missing_take_profit"]
@@ -411,7 +411,7 @@ def test_trade_place_dry_run_rejects_invalid_live_protection_preview() -> None:
             __cli_raw=True,
         )
 
-    assert out.get("success") is False
+    assert out.get("success") is True
     assert out.get("preview_ok") is False
     assert out.get("dry_run") is True
     assert out.get("validation_code") == "invalid_protection_levels"
@@ -509,7 +509,7 @@ def test_trade_place_dry_run_rejects_identical_protection_before_mt5() -> None:
             __cli_raw=True,
         )
 
-    assert out["success"] is False
+    assert out["success"] is True
     assert out["validation_code"] == "invalid_protection_levels"
     assert out["validation_error"] == "stop_loss and take_profit must be different prices."
     assert out["validation"]["local_requirements_passed"] is False
@@ -547,7 +547,7 @@ def test_trade_place_dry_run_rejects_reversed_protection_before_mt5(
             __cli_raw=True,
         )
 
-    assert out["success"] is False
+    assert out["success"] is True
     assert out["validation_code"] == "invalid_protection_levels"
     assert out["validation_error"] == expected_error
     assert out["validation"]["local_requirements_passed"] is False
@@ -605,7 +605,7 @@ def test_trade_place_dry_run_rejects_bool_like_invalid_protection_preview() -> N
             __cli_raw=True,
         )
 
-    assert out.get("success") is False
+    assert out.get("success") is True
     assert out.get("preview_ok") is False
     assert out.get("dry_run") is True
     assert out.get("validation_code") == "invalid_protection_levels"

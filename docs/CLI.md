@@ -166,6 +166,8 @@ Misspelled or unavailable paths are reported in `unresolved_output_fields`.
 
 Scripts should parse JSON error fields when they need to distinguish provider,
 validation, and internal failures that share exit code `1`.
+Completed trading dry-runs exit `0` even when `preview_ok=false`; inspect
+`preview_ok` and `blockers` before deciding whether a live request is eligible.
 
 ---
 

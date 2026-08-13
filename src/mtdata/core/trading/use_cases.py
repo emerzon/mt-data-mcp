@@ -1695,7 +1695,6 @@ def run_trade_place(  # noqa: C901
                 else list(local_blockers)
             )
             if validation_blockers:
-                preview["success"] = False
                 preview["status"] = "preview_blocked"
                 preview["blockers"] = validation_blockers
                 preview["no_action_reason"] = "dry_run_validation_blocked"
