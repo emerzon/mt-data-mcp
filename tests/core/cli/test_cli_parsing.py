@@ -485,6 +485,16 @@ class TestAddDynamicArguments:
         assert (
             parser.parse_args(["--no_include_incomplete"]).include_incomplete == "false"
         )
+        for token in ("1", "yes", "on"):
+            assert (
+                parser.parse_args(["--include-incomplete", token]).include_incomplete
+                == "true"
+            )
+        for token in ("0", "no", "off"):
+            assert (
+                parser.parse_args(["--include-incomplete", token]).include_incomplete
+                == "false"
+            )
 
     def test_market_scan_help_uses_plural_symbols_parameter(self):
         parser = argparse.ArgumentParser()

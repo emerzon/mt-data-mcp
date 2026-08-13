@@ -2,6 +2,8 @@ import argparse
 import inspect
 from typing import Any, Callable, Dict, Optional, Sequence, Tuple
 
+from ....utils.coercion import UNPARSED_BOOL, parse_bool_like
+
 ToolInfo = Dict[str, Any]
 
 
@@ -560,8 +562,14 @@ _FORECAST_METHOD_LITERAL_MARKERS = {
 }
 
 
-def _normalize_cli_choice_value(value: Any) -> str:
-    return str(value or "").strip().lower()
+def _parse_cli_bool_value(value: Any) -> str:
+    """Accept the shared bool vocabulary and return argparse's canonical token."""
+    parsed = parse_bool_like(value)
+    if parsed is UNPARSED_BOOL:
+        raise argparse.ArgumentTypeError(
+            "expected true/false, 1/0, yes/no, or on/off"
+        )
+    return "true" if bool(parsed) else "false"
 
 
 def _case_insensitive_choice_parser(choices: Sequence[str]) -> Callable[[Any], str]:
@@ -873,7 +881,7 @@ def resolve_param_kwargs(
             if base_type in (int, float, str):
                 kwargs["type"] = base_type
             elif base_type is bool:
-                kwargs["type"] = _normalize_cli_choice_value
+                kwargs["type"] = _parse_cli_bool_value
                 kwargs["choices"] = ["true", "false"]
 
             if origin in (list, tuple):
