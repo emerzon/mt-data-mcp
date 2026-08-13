@@ -28,6 +28,7 @@ from ..utils.volume_profile import (
 from ._mcp_instance import mcp
 from .execution_logging import run_logged_operation
 from .mt5_gateway import create_mt5_gateway
+from .runtime_metadata import attach_mt5_source
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +39,7 @@ _DEFAULT_MAX_TICKS = 50_000
 _DEFAULT_MAX_M1_BARS = 20_000
 _DEFAULT_PROFILE_LIMIT = 200
 _MIN_TICK_PRICE_COVERAGE_RATIO = 0.5
+_TICK_WINDOW_TOLERANCE_SECONDS = 1.0
 
 
 def _utc_now_naive() -> datetime:
@@ -66,6 +68,15 @@ def _window_days(start: Optional[str], end: Optional[str]) -> Optional[float]:
         return None
     seconds = max(0.0, float((end_dt - start_dt).total_seconds()))
     return seconds / 86400.0
+
+
+def _exceeds_tick_window(days: Optional[float], max_days: int) -> bool:
+    if days is None:
+        return False
+    return (
+        float(days) * 86400.0
+        > float(max_days) * 86400.0 + _TICK_WINDOW_TOLERANCE_SECONDS
+    )
 
 
 def _resolve_profile_window(
@@ -479,7 +490,8 @@ def _select_profile_rows(
         return {"error": "source must be one of: auto, ticks, m1_bars"}
     days = _window_days(start, end)
     use_m1 = source_value == "m1_bars"
-    if source_value == "auto" and days is not None and days > float(max_tick_window_days):
+    window_exceeds_tick_budget = _exceeds_tick_window(days, max_tick_window_days)
+    if source_value == "auto" and window_exceeds_tick_budget:
         use_m1 = True
 
     if use_m1:
@@ -489,7 +501,7 @@ def _select_profile_rows(
             end=end,
             max_m1_bars=max_m1_bars,
         )
-        if days is not None and days > float(max_tick_window_days):
+        if window_exceeds_tick_budget:
             diagnostics = selected.setdefault("diagnostics", {})
             if isinstance(diagnostics, dict):
                 diagnostics["tick_window_days"] = round(days, 4)
@@ -559,6 +571,7 @@ def _profile_detail_payload(profile: Dict[str, Any], detail: str) -> Dict[str, A
         "symbol",
         "profile_source",
         "source",
+        "source_decision",
         "volume_profile_accuracy",
         "volume_source_quality",
         "is_synthetic",
@@ -766,7 +779,10 @@ def compute_volume_profile_payload(
     resolved_start = window.get("start")
     resolved_end = window.get("end")
     bar_window: Optional[Dict[str, Any]] = None
-    create_mt5_gateway(ensure_connection_impl=ensure_mt5_connection_or_raise).ensure_connection()
+    mt5_gateway = create_mt5_gateway(
+        ensure_connection_impl=ensure_mt5_connection_or_raise
+    )
+    mt5_gateway.ensure_connection()
     with _symbol_ready_guard(symbol) as (err, info):
         if err:
             return {"error": err}
@@ -813,7 +829,6 @@ def compute_volume_profile_payload(
     profile = compute_volume_profile(selected.get("rows", []), config)
     if profile.get("error"):
         profile["symbol"] = symbol
-        profile["source"] = selected.get("source")
         profile.update(_profile_source_quality(selected.get("source")))
         profile["price_point"] = price_point
         profile["price_digits"] = price_digits
@@ -823,8 +838,18 @@ def compute_volume_profile_payload(
         }
         return profile
     profile["symbol"] = symbol
-    profile["source"] = selected.get("source")
     profile.update(_profile_source_quality(selected.get("source")))
+    selected_diagnostics = selected.get("diagnostics")
+    selected_reason = None
+    if isinstance(selected_diagnostics, dict):
+        selected_reason = selected_diagnostics.get(
+            "auto_fallback_reason"
+        ) or selected_diagnostics.get("auto_source_reason")
+    profile["source_decision"] = {
+        "requested": str(source),
+        "selected": selected.get("source"),
+        "reason": selected_reason or "explicit_source",
+    }
     profile["window"] = _observed_profile_window(
         selected.get("rows", []),
         fallback_start=resolved_start,
@@ -921,7 +946,10 @@ def compute_volume_profile_payload(
     if selected.get("warnings"):
         profile["warnings"] = list(selected.get("warnings") or [])
     profile["fetch_payload"] = fetch_payload
-    return _profile_detail_payload(profile, detail)
+    return attach_mt5_source(
+        _profile_detail_payload(profile, detail),
+        gateway=mt5_gateway,
+    )
 
 
 @mcp.tool()

@@ -251,7 +251,7 @@ def _normalize_volume_profile_records(
             {
                 "source_family": "volume_profile",
                 "source": "volume_profile",
-                "method": str(payload.get("source") or "auto"),
+                "method": str(payload.get("profile_source") or "auto"),
                 "label": f"Volume Profile {label}",
                 "level": label,
                 "price": price,
@@ -595,8 +595,7 @@ def build_level_confluence_payload(
         volume_profile_quality = {
             key: value
             for key, value in {
-                "source": volume_profile_payload.get("profile_source")
-                or volume_profile_payload.get("source"),
+                "source": volume_profile_payload.get("profile_source"),
                 "volume_kind": volume_profile_payload.get("volume_kind"),
                 "is_synthetic": volume_profile_payload.get("is_synthetic"),
                 "accuracy": volume_profile_payload.get("volume_profile_accuracy"),
@@ -648,7 +647,9 @@ def build_level_confluence_payload(
             ),
         }
         if isinstance(volume_profile_payload, dict):
-            out["source_payload_meta"]["volume_profile_source"] = volume_profile_payload.get("source")
+            out["source_payload_meta"]["volume_profile_source"] = (
+                volume_profile_payload.get("profile_source")
+            )
             out["source_payload_meta"]["volume_profile_volume_kind"] = volume_profile_payload.get("volume_kind")
     if detail_value == "full" and isinstance(volume_profile_payload, dict):
         vp_diag = volume_profile_payload.get("diagnostics")

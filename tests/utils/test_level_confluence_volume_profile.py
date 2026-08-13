@@ -21,7 +21,7 @@ def test_build_level_confluence_payload_includes_volume_profile_levels():
         detail="full",
         volume_profile_payload={
             "success": True,
-            "source": "ticks",
+            "profile_source": "ticks",
             "volume_kind": "tick_count",
             "levels": [
                 {
@@ -56,7 +56,6 @@ def test_build_level_confluence_payload_compact_keeps_contributing_source_qualit
         detail="compact",
         volume_profile_payload={
             "success": True,
-            "source": "ticks",
             "profile_source": "ticks",
             "volume_kind": "tick_count",
             "volume_profile_accuracy": "tick_precise",
@@ -104,7 +103,6 @@ def test_compact_confluence_discloses_synthetic_volume_profile_fallback():
         detail="compact",
         volume_profile_payload={
             "success": True,
-            "source": "m1_bars",
             "profile_source": "m1_bars",
             "volume_kind": "tick_volume",
             "volume_profile_accuracy": "approximated_from_m1_bars",

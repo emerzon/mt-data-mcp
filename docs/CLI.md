@@ -353,8 +353,11 @@ mtdata-cli volume_profile_levels EURUSD --timeframe H1 --lookback 168 \
   --source auto --bucket-points 10 --json
 ```
 
-The default tick window is one day and 50,000 ticks. Longer `auto` windows use
-the labeled M1-bar approximation unless those caps are raised explicitly.
+The default tick window is one day and 50,000 ticks. Natural one-day relative
+windows are treated as inside that budget despite sub-second parser skew. Longer
+`auto` windows use the labeled M1-bar approximation unless those caps are raised
+explicitly. `profile_source` and `source_decision` disclose the construction
+method; `source` retains structured MT5 broker provenance.
 
 For fractal + volume-structure confluence, opt in through pattern config:
 

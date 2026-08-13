@@ -143,15 +143,16 @@ mtdata-cli volume_profile_levels EURUSD --timeframe H1 --lookback 168 \
 | `max_buckets` | `120` | Upper bound on buckets. |
 | `value_area_pct` | `0.70` | Fraction of volume that defines the value area (70% is standard). |
 | `reference_price` | — | Anchor for distance calculations (defaults to current price). |
-| `max_tick_window_days` | `1` | Cap the tick window pulled. Larger `auto` windows use M1 bars. |
+| `max_tick_window_days` | `1` | Cap the tick window pulled. Natural relative windows within one second of the boundary count as in-budget; larger `auto` windows use M1 bars. |
 | `max_ticks` | `50000` | Cap the number of ticks pulled. |
 | `max_m1_bars` | `20000` | Cap the M1 bars pulled in approximation mode. |
 
 **Output:** `poc`, `vah`, `val`, and a `value_area` summary. Timeframe-derived
 queries also include `bar_window` with the resolved first open and last close.
-`profile_source` and
-`volume_profile_accuracy` always identify whether `auto` used ticks or the M1
-approximation. `--detail full` adds the full `levels`
+`profile_source`, `source_decision`, and `volume_profile_accuracy` identify
+whether `auto` used ticks or the M1 approximation and why. The top-level
+`source` remains the standard structured MT5 broker-provenance object.
+`--detail full` adds the full `levels`
 histogram. To request a week of ticks, explicitly set
 `--max-tick-window-days 7` and an appropriate `--max-ticks` cap.
 

@@ -76,7 +76,12 @@ def test_compute_volume_profile_payload_uses_m1_fallback_for_large_auto_window(m
 
     assert result["success"] is True
     assert result["profile_source"] == "m1_bars"
-    assert result["source"] == "m1_bars"
+    assert result["source"] == {"provider": "mt5", "context_available": False}
+    assert result["source_decision"] == {
+        "requested": "auto",
+        "selected": "m1_bars",
+        "reason": "requested window exceeds bounded tick window",
+    }
     assert result["volume_profile_accuracy"] == "approximated_from_m1_bars"
     assert result["volume_source_quality"] == "estimated_m1_bar_proxy"
     assert result["is_synthetic"] is True
@@ -120,7 +125,7 @@ def test_compute_volume_profile_payload_uses_tick_rows(monkeypatch):
 
     assert result["success"] is True
     assert result["profile_source"] == "ticks"
-    assert result["source"] == "ticks"
+    assert result["source"] == {"provider": "mt5", "context_available": False}
     assert result["volume_profile_accuracy"] == "tick_precise"
     assert result["volume_source_quality"] == "raw_ticks"
     assert result["is_synthetic"] is False
@@ -159,7 +164,8 @@ def test_compute_volume_profile_payload_auto_ticks_records_reason(monkeypatch):
     )
 
     assert result["success"] is True
-    assert result["source"] == "ticks"
+    assert result["profile_source"] == "ticks"
+    assert result["source_decision"]["selected"] == "ticks"
     assert (
         result["diagnostics"]["auto_source_reason"]
         == "tick data within bounded window with adequate price coverage"
@@ -369,6 +375,14 @@ def test_default_profile_window_is_bounded_to_24_hours(monkeypatch):
     }
 
 
+def test_natural_one_day_window_stays_inside_tick_budget() -> None:
+    days = vp._window_days("1 day ago", "now")
+
+    assert days is not None
+    assert days >= 1.0
+    assert vp._exceeds_tick_window(days, 1) is False
+
+
 def test_tick_cap_is_disclosed_as_truncation(monkeypatch):
     monkeypatch.setattr(
         vp,
@@ -501,7 +515,7 @@ def test_compute_volume_profile_payload_auto_falls_back_on_low_tick_mid_coverage
     )
 
     assert result["success"] is True
-    assert result["source"] == "m1_bars"
+    assert result["profile_source"] == "m1_bars"
     assert result["diagnostics"]["auto_fallback_reason"] == "tick price coverage below threshold"
     assert result["diagnostics"]["tick_price_quality"] == {
         "price_source": "mid",
