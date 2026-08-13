@@ -358,7 +358,7 @@ def create_command_function(  # noqa: C901
             )
         except ValueError as exc:
             render_cli_result(_build_cli_error(str(exc)), args=args, cmd_name=cmd_name)
-            return 1
+            return 2
         unknown_sections = sorted(set(set_overrides) - mapping_param_names)
         if unknown_sections:
             allowed = ", ".join(sorted(mapping_param_names)) or "none"
@@ -370,7 +370,7 @@ def create_command_function(  # noqa: C901
                 args=args,
                 cmd_name=cmd_name,
             )
-            return 1
+            return 2
         for param in func_info["params"]:
             param_name = param["name"]
             option_alias_name = f"_cli_option_{param_name}"
@@ -385,7 +385,7 @@ def create_command_function(  # noqa: C901
                     args=args,
                     cmd_name=cmd_name,
                 )
-                return 1
+                return 2
             if (
                 cmd_name == "data_fetch_candles"
                 and param_name == "limit"
@@ -439,7 +439,7 @@ def create_command_function(  # noqa: C901
                         arg_value = _normalize_indicator_specs(arg_value)
                     except ValueError as exc:
                         render_cli_result(_build_cli_error(str(exc)), args=args, cmd_name=cmd_name)
-                        return 1
+                        return 2
                 elif cmd_name == "wait_event" and param_name in {"watch_for", "end_on"}:
                     arg_value = _normalize_wait_event_specs(arg_value)
                 else:
@@ -466,7 +466,7 @@ def create_command_function(  # noqa: C901
                                 args=args,
                                 cmd_name=cmd_name,
                             )
-                            return 1
+                            return 2
                         arg_value = parsed_structured
                     if isinstance(arg_value, str):
                         parsed = parse_kv_string(arg_value)
@@ -517,7 +517,7 @@ def create_command_function(  # noqa: C901
                                         args=args,
                                         cmd_name=cmd_name,
                                     )
-                                    return 1
+                                    return 2
                                 pipeline_values["keep_original"] = keep_original
                             if "columns" in pipeline_values and isinstance(
                                 pipeline_values["columns"], str
@@ -563,7 +563,7 @@ def create_command_function(  # noqa: C901
                             args=args,
                             cmd_name=cmd_name,
                         )
-                        return 1
+                        return 2
 
             if param["required"] and arg_value in (None, ""):
                 missing_required.append(param_name)
@@ -609,7 +609,7 @@ def create_command_function(  # noqa: C901
                     args=args,
                     cmd_name=cmd_name,
                 )
-                return 1
+                return 2
 
         output_fields = getattr(args, "output_fields", None)
         if output_fields:

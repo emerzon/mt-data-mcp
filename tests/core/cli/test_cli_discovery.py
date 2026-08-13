@@ -402,7 +402,7 @@ class TestCreateCommandFunction:
             verbose=False,
         )
 
-        assert cmd_fn(args) == 1
+        assert cmd_fn(args) == 2
         payload = json.loads(capsys.readouterr().out)
         assert "not both" in payload["error"]
         mock_fn.assert_not_called()
@@ -551,7 +551,7 @@ class TestCreateCommandFunction:
             verbose=False,
         )
 
-        assert cmd_fn(args) == 1
+        assert cmd_fn(args) == 2
         output = capsys.readouterr().out
         assert "candidates must be a JSON list of strategy objects" in output
         assert "ema_cross" in output
@@ -979,7 +979,7 @@ class TestCreateCommandFunction:
             verbose=False,
         )
         status = cmd_fn(args)
-        assert status == 1
+        assert status == 2
         assert "sma(20), not sma,20" in capsys.readouterr().out
         mock_fn.assert_not_called()
 
@@ -997,7 +997,7 @@ class TestCreateCommandFunction:
         cmd_fn = create_command_function(func_info, cmd_name="data_fetch_candles")
         args = argparse.Namespace(symbol="EURUSD", limit=-5, json=False, verbose=False)
         status = cmd_fn(args)
-        assert status == 1
+        assert status == 2
         assert "limit: Input should be greater than or equal to 1" in capsys.readouterr().out
         mock_fn.assert_not_called()
 
@@ -1019,7 +1019,7 @@ class TestCreateCommandFunction:
         cmd_fn = create_command_function(func_info, cmd_name="trade_stress_test")
         args = argparse.Namespace(shocks="-1,-2", json=False, verbose=False)
 
-        assert cmd_fn(args) == 1
+        assert cmd_fn(args) == 2
         assert "shocks must be a JSON object mapping symbols" in capsys.readouterr().out
         mock_fn.assert_not_called()
 
@@ -1045,7 +1045,7 @@ class TestCreateCommandFunction:
             verbose=False,
         )
 
-        assert cmd_fn(args) == 1
+        assert cmd_fn(args) == 2
         output = capsys.readouterr().out
         assert "barriers must be a JSON object" in output
         assert "unit" in output and "pct" in output
@@ -1076,7 +1076,7 @@ class TestCreateCommandFunction:
             verbose=False,
         )
 
-        assert cmd_fn(args) == 1
+        assert cmd_fn(args) == 2
         output = capsys.readouterr().out
         assert "barriers must be a JSON object" in output
         assert "unit" in output and "take_profit" in output and "stop_loss" in output
@@ -1104,7 +1104,7 @@ class TestCreateCommandFunction:
             verbose=False,
         )
 
-        assert cmd_fn(args) == 1
+        assert cmd_fn(args) == 2
         output = capsys.readouterr().out
         assert "barriers must be valid JSON structured input" in output
         assert "as_legacy_kwargs" not in output
@@ -1136,7 +1136,7 @@ class TestCreateCommandFunction:
         )
         status = cmd_fn(args)
         output = capsys.readouterr().out
-        assert status == 1
+        assert status == 2
         assert "simplify.method must be one of:" in output
         assert "lttb (fast bucket-based selection)" in output
         assert "rdp (Douglas-Peucker line simplification)" in output
