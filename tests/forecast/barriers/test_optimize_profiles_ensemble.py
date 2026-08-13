@@ -379,6 +379,9 @@ class TestBarrierOptimizeProfilesEnsemble(_BarrierTestBase):
         self.assertFalse(result["trade_gate_passed"])
         self.assertFalse(result["tradable"])
         self.assertTrue(result["no_action"])
+        self.assertNotEqual(result["actionability"], "actionable")
+        self.assertEqual(result["recommendation"], "avoid")
+        self.assertIn("reference_quote_not_live", result["recommendation_reason"])
         self.assertIn("reference_quote_not_live", result["execution_blockers"])
 
     def test_forecast_barrier_optimize_default_seed_is_stable_across_live_ticks(self):

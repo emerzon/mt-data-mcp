@@ -978,6 +978,18 @@ def _apply_barrier_freshness_contract(
     if warning not in warnings_out:
         warnings_out.append(warning)
     out["warnings"] = warnings_out
+    blocker_reason = f"{warning} Blockers: {', '.join(blockers)}."
+    if out.get("actionability") == "actionable":
+        out["actionability"] = "blocked"
+    out["recommendation"] = "avoid"
+    out["recommendation_reason"] = blocker_reason
+    out["actionability_reason"] = blocker_reason
+    if out.get("status") == "ok":
+        out["status_reason"] = blocker_reason
+    actionability_flags = list(out.get("actionability_flags") or [])
+    if "freshness_gate_failed" not in actionability_flags:
+        actionability_flags.append("freshness_gate_failed")
+    out["actionability_flags"] = actionability_flags
 
 
 def _get_live_reference_price(symbol: str, direction: str) -> Tuple[Optional[float], Optional[str]]:
