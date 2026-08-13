@@ -4,6 +4,7 @@ import pytest
 from pydantic import ValidationError
 
 from mtdata.core import data as core_data
+from mtdata.core.data import use_cases as data_use_cases
 from mtdata.core.data.requests import (
     DATA_FETCH_CANDLES_MAX_LIMIT,
     DataFetchCandlesRequest,
@@ -179,6 +180,102 @@ def test_data_fetch_symbol_errors_use_canonical_structured_suggestions() -> None
     assert candles["details"]["did_you_mean"] == expected
     assert ticks["details"]["did_you_mean"] == expected
     assert "Closest broker symbols" not in candles["error"]
+
+
+def test_stale_candle_error_names_live_extended_session_sibling(monkeypatch) -> None:
+    now_epoch = data_use_cases.time.time()
+    candidates = [
+        SimpleNamespace(
+            name="AAPL.NAS",
+            description="Apple Inc CFD",
+            path="Stocks\\NASDAQ",
+            visible=True,
+        ),
+        SimpleNamespace(
+            name="AAPL.NAS-24",
+            description="Apple Inc 24/5 CFD",
+            path="Stocks\\NASDAQ\\24HR",
+            visible=True,
+        ),
+    ]
+    gateway = SimpleNamespace(
+        ensure_connection=lambda: None,
+        symbols_get=lambda: candidates,
+    )
+    monkeypatch.setattr(
+        data_use_cases,
+        "resolve_quote_tick",
+        lambda *_args, **_kwargs: (
+            SimpleNamespace(
+                bid=303.41,
+                ask=303.46,
+                time=now_epoch,
+                time_msc=int(now_epoch * 1000),
+            ),
+            {},
+        ),
+    )
+
+    result = run_data_fetch_candles(
+        DataFetchCandlesRequest(symbol="AAPL.NAS", timeframe="H1"),
+        gateway=gateway,
+        fetch_candles_impl=lambda **_kwargs: {
+            "error": (
+                "Data appears stale for AAPL.NAS H1: latest completed bar is "
+                "from 2026-08-12T22:00:00Z."
+            )
+        },
+    )
+
+    assert result["error_code"] == "data_fetch_candles_stale_data"
+    assert result["details"]["related_live_symbols"] == [
+        {
+            "symbol": "AAPL.NAS-24",
+            "session_type": "extended_24h",
+            "quote_tool": "market_ticker",
+        }
+    ]
+    assert "market_ticker for AAPL.NAS-24" in result["remediation"]
+    assert "allow_stale=true" in result["remediation"]
+
+
+def test_stale_candle_error_omits_stale_extended_session_sibling(monkeypatch) -> None:
+    old_epoch = data_use_cases.time.time() - 3600
+    gateway = SimpleNamespace(
+        ensure_connection=lambda: None,
+        symbols_get=lambda: [
+            SimpleNamespace(
+                name="AAPL.NAS-24",
+                description="Apple Inc 24/5 CFD",
+                path="Stocks\\NASDAQ\\24HR",
+                visible=True,
+            )
+        ],
+    )
+    monkeypatch.setattr(
+        data_use_cases,
+        "resolve_quote_tick",
+        lambda *_args, **_kwargs: (
+            SimpleNamespace(
+                bid=301.35,
+                ask=301.40,
+                time=old_epoch,
+                time_msc=int(old_epoch * 1000),
+            ),
+            {},
+        ),
+    )
+
+    result = run_data_fetch_candles(
+        DataFetchCandlesRequest(symbol="AAPL.NAS", timeframe="H1"),
+        gateway=gateway,
+        fetch_candles_impl=lambda **_kwargs: {
+            "error": "Data appears stale for AAPL.NAS H1."
+        },
+    )
+
+    assert "related_live_symbols" not in result["details"]
+    assert result["remediation"].startswith("Confirm the market session")
 
 
 def test_run_data_fetch_candles_passes_include_spread_to_service():

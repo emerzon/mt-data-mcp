@@ -17,9 +17,16 @@ from ...utils.market_metadata import (
     FRESHNESS_METRIC_LAST_TICK_AGE,
     FRESHNESS_METRIC_REQUESTED_RANGE_END_GAP,
     attach_candle_volume_semantics,
+    build_tick_freshness_context,
     normalize_policy_relaxed,
 )
-from ...utils.quote import canonical_quote_midpoint
+from ...utils.quote import (
+    canonical_quote_midpoint,
+    enforce_quote_execution_readiness,
+    resolve_quote_tick,
+    tick_epoch,
+    tick_value,
+)
 from ...utils.symbol import symbol_suggestions_from_gateway
 from ..error_envelope import build_error_payload
 from ..execution_logging import run_logged_operation
@@ -381,6 +388,20 @@ def _normalize_candle_query_error(
             gateway,
             request.symbol,
         )
+    elif error_code == "data_fetch_candles_stale_data":
+        related_live_symbols = _find_live_extended_session_symbols(
+            gateway,
+            request.symbol,
+        )
+        if related_live_symbols:
+            details["related_live_symbols"] = related_live_symbols
+            live_symbol = related_live_symbols[0]["symbol"]
+            remediation = (
+                f"A live extended-session contract is available: call market_ticker "
+                f"for {live_symbol}, then use that exact symbol for current data. "
+                "Set allow_stale=true only when the regular-session history is "
+                "intentionally acceptable."
+            )
     if request.start is not None:
         details["start"] = str(request.start)
     if request.end is not None:
@@ -397,6 +418,75 @@ def _normalize_candle_query_error(
         if key in result:
             payload[key] = result[key]
     return payload
+
+
+def _find_live_extended_session_symbols(
+    gateway: Any,
+    requested_symbol: str,
+    *,
+    limit: int = 3,
+) -> List[Dict[str, str]]:
+    """Find visible, executable extended-session siblings for a stale symbol."""
+    requested = str(requested_symbol or "").strip()
+    if not requested or gateway is None:
+        return []
+    try:
+        symbol_infos = list(gateway.symbols_get() or [])
+    except Exception:
+        return []
+
+    requested_upper = requested.upper()
+    now_epoch = time.time()
+    matches: List[Dict[str, str]] = []
+    for info in symbol_infos:
+        name = str(getattr(info, "name", "") or "").strip()
+        if not name or name.casefold() == requested.casefold():
+            continue
+        name_upper = name.upper()
+        descriptor = " ".join(
+            str(getattr(info, field, "") or "").upper()
+            for field in ("name", "description", "path")
+        )
+        is_related = name_upper.startswith(requested_upper)
+        is_extended = any(
+            marker in descriptor for marker in ("-24", "24HR", "24/5", "24H")
+        )
+        if not is_related or not is_extended:
+            continue
+        if getattr(info, "visible", True) is False:
+            continue
+        try:
+            resolved_tick, quote_meta = resolve_quote_tick(
+                gateway,
+                name,
+                now_epoch=now_epoch,
+            )
+            freshness = build_tick_freshness_context(
+                name,
+                tick_epoch=tick_epoch(resolved_tick),
+                now_epoch=now_epoch,
+                item="tick",
+            )
+            enforce_quote_execution_readiness(
+                freshness,
+                bid=tick_value(resolved_tick, "bid"),
+                ask=tick_value(resolved_tick, "ask"),
+                quote_source_conflict=quote_meta.get("quote_source_conflict"),
+            )
+        except Exception:
+            continue
+        if freshness.get("usable_for_live_trading") is not True:
+            continue
+        matches.append(
+            {
+                "symbol": name,
+                "session_type": "extended_24h",
+                "quote_tool": "market_ticker",
+            }
+        )
+        if len(matches) >= max(1, int(limit)):
+            break
+    return matches
 
 
 def _effective_candle_limit(request: DataFetchCandlesRequest) -> int:
