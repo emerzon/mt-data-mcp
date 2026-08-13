@@ -98,6 +98,8 @@ _TRADE_PLACE_PREVIEW_KEYS = (
     "status",
     "error",
     "error_code",
+    "remediation",
+    "related_tools",
     "dry_run",
     "no_action",
     "no_action_reason",
@@ -124,8 +126,10 @@ _TRADE_PLACE_PREVIEW_KEYS = (
     "account_state",
     "account_blockers",
     "sl_distance_points",
+    "sl_distance_pips",
     "sl_distance_pct",
     "tp_distance_points",
+    "tp_distance_pips",
     "tp_distance_pct",
     "min_distance_points",
     "sl_tp_valid",
@@ -134,6 +138,8 @@ _TRADE_PLACE_PREVIEW_KEYS = (
     "validation_code",
     "blockers",
     "preview_error",
+    "preview_error_code",
+    "units",
     "message",
     "dry_run_note",
     "preview_ok",
@@ -1718,6 +1724,16 @@ def run_trade_place(  # noqa: C901
                 preview["actionability"] = "preview_failed"
                 preview["no_action"] = True
                 preview["no_action_reason"] = "dry_run_preview_error"
+                if preview.get("error_code") == "symbol_not_found":
+                    preview["blockers"] = ["symbol_not_found"]
+                    preview.pop("dry_run_note", None)
+                    preview["actionability_reason"] = preview.get(
+                        "remediation",
+                        "Use symbols_list to find the broker's exact symbol name.",
+                    )
+                    if isinstance(validation_payload, dict):
+                        validation_payload["local_requirements_passed"] = False
+                        validation_payload["blockers"] = ["symbol_not_found"]
             if pending:
                 preview["requested_price"] = request.price
             if request.magic is not None:
@@ -5547,8 +5563,7 @@ def _position_mark_freshness(
         contexts.append(context)
     if not contexts:
         return {
-            "mark_freshness_status": "unknown",
-            "usable_for_live_trading": False,
+            "mark_freshness_status": "not_applicable",
             "data_stale": None,
         }
     def _age(context: Dict[str, Any]) -> float:

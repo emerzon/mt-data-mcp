@@ -522,6 +522,7 @@ def test_run_trade_var_cvar_calculate_returns_empty_when_no_open_positions() -> 
     assert out["currency"] == "USD"
     assert "symbol_exposures" not in out
     assert "worst_observations" not in out
+    assert "usable_for_live_trading" not in out
 
 
 def test_run_trade_var_cvar_rejects_failed_position_snapshot() -> None:

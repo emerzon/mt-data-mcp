@@ -105,6 +105,21 @@ def test_trade_stress_test_rejects_failed_position_snapshot():
     assert result["error_code"] == "positions_snapshot_unavailable"
 
 
+def test_trade_stress_test_flat_account_has_no_live_quote_gate():
+    gateway = _Gateway()
+    gateway.positions_get = lambda: []
+
+    result = run_trade_stress_test(
+        TradeStressTestRequest(shocks={"*": -2.0}),
+        gateway=gateway,
+    )
+
+    assert result["success"] is True
+    assert result["empty"] is True
+    assert result["mark_freshness_status"] == "not_applicable"
+    assert "usable_for_live_trading" not in result
+
+
 def test_trade_stress_test_fails_when_no_position_matches_shocks():
     result = run_trade_stress_test(
         TradeStressTestRequest(shocks={"USDJPY": -1.0}),

@@ -132,7 +132,7 @@ def _portfolio_mark_context(gateway: Any, positions: List[Dict[str, Any]]) -> Di
             "valuation_time": None,
             "valuation_basis": "no_position_marks",
             "data_stale": None,
-            "usable_for_live_trading": False,
+            "mark_freshness_status": "not_applicable",
             "mark_freshness": [],
         }
     live_ready = bool(contexts) and all(
@@ -354,12 +354,25 @@ def _tick_frame(gateway: Any, symbol: str, start: datetime, end: datetime, max_t
         if column not in df:
             df[column] = 0.0
         df[column] = _finite(df[column]).fillna(0.0)
+    try:
+        bid_flag = int(getattr(gateway, "TICK_FLAG_BID", 2) or 2)
+    except (TypeError, ValueError):
+        bid_flag = 2
+    try:
+        ask_flag = int(getattr(gateway, "TICK_FLAG_ASK", 4) or 4)
+    except (TypeError, ValueError):
+        ask_flag = 4
+    flag_values = df["flags"].astype(np.int64)
+    one_sided_update = ((flag_values & bid_flag) != 0) != (
+        (flag_values & ask_flag) != 0
+    )
     two_sided_quote = (df["bid"] > 0) & (df["ask"] > df["bid"])
+    incomplete_one_sided_update = one_sided_update & ~two_sided_quote
     locked_quote = (df["bid"] > 0) & (df["ask"] == df["bid"])
     inverted_quote = (df["bid"] > 0) & (df["ask"] > 0) & (df["ask"] < df["bid"])
     df["spread_quality"] = np.select(
-        [locked_quote, inverted_quote],
-        ["locked", "inverted"],
+        [incomplete_one_sided_update, locked_quote, inverted_quote],
+        ["one_sided_update", "locked", "inverted"],
         default="two_sided",
     )
     df.loc[(df["bid"] <= 0) | (df["ask"] <= 0), "spread_quality"] = "one_sided"
@@ -582,7 +595,9 @@ def analyze_microstructure(  # noqa: C901
         "trade_tick_coverage": float(trade_mask.mean()),
         "real_volume_trade_coverage": real_share,
         "invalid_partial_quote_ticks": int(
-            df["spread_quality"].isin({"one_sided", "inverted"}).sum()
+            df["spread_quality"].isin(
+                {"one_sided", "one_sided_update", "inverted"}
+            ).sum()
         ),
         "locked_quote_ticks": int((df["spread_quality"] == "locked").sum()),
         "latest_spread_quality": str(df["spread_quality"].iloc[-1]),

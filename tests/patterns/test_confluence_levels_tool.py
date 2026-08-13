@@ -170,6 +170,52 @@ def test_confluence_levels_tool_combines_pivot_sr_and_fibonacci():
     assert mock_sr.call_args.kwargs["max_levels"] == 5
 
 
+def test_confluence_locked_quote_warning_does_not_claim_tick_is_missing():
+    fn = _get_confluence_fn()
+    gateway = type("Gateway", (), {"ensure_connection": lambda self: None})()
+    rates = np.array([_make_rate(time_=100.0), _make_rate(time_=200.0)])
+    sr_payload = {
+        "success": True,
+        "symbol": "EURUSD",
+        "timeframe": "H1",
+        "current_price": 1.085,
+        "levels": [],
+        "fibonacci": {"levels": []},
+    }
+    quote_context = {
+        "quote_source": "mt5.copy_ticks_range",
+        "spread_quality": "locked",
+        "execution_blockers": ["invalid_spread"],
+        "usable_for_live_trading": False,
+    }
+
+    with (
+        patch("mtdata.core.pivot.create_mt5_gateway", return_value=gateway),
+        patch("mtdata.core.pivot.TIMEFRAME_MAP", {"D1": 1}),
+        patch("mtdata.core.pivot.TIMEFRAME_SECONDS", {"D1": 86400}),
+        _mock_symbol_guard(),
+        patch("mtdata.core.pivot.mt5.symbol_info_tick", return_value=_make_tick()),
+        patch(
+            "mtdata.core.pivot._resolve_reference_quote",
+            return_value=(_make_tick(), None, quote_context),
+        ),
+        patch("mtdata.core.pivot._mt5_copy_rates_from", return_value=rates),
+        patch(
+            "mtdata.core.pivot.compute_volume_profile_payload",
+            return_value={"success": False},
+        ),
+        patch(
+            "mtdata.core.pivot.compute_support_resistance_payload",
+            return_value=sr_payload,
+        ),
+    ):
+        result = fn("EURUSD", pivot_timeframe="D1", sr_timeframe="H1")
+
+    warning = " ".join(result["warnings"])
+    assert "live quote not executable (locked)" in warning
+    assert "no live tick" not in warning
+
+
 def test_confluence_historical_window_uses_one_as_of_anchor():
     fn = _get_confluence_fn()
     gateway = type("Gateway", (), {"ensure_connection": lambda self: None})()

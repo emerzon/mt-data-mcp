@@ -435,7 +435,7 @@ def test_trade_history_compact_omits_parallel_normalized_rows() -> None:
         "order_ticket": 22,
         "position_ticket": 33,
         "symbol": "EURUSD",
-        "fill_side": "Buy",
+        "fill_side": "buy",
         "deal_effect": "close",
         "position_side": "short",
         "position_action": "close_short",
@@ -698,7 +698,7 @@ def test_trade_history_distinguishes_fill_and_position_side_filters() -> None:
     if prev is not None:
         sys.modules["MetaTrader5"] = prev
 
-    assert long_out["request_echo"]["side"] == "LONG"
+    assert long_out["request_echo"]["side"] == "long"
     assert long_out["side_filter"] == {
         "dimension": "position_side",
         "value": "long",
@@ -723,14 +723,16 @@ def test_trade_history_distinguishes_fill_and_position_side_filters() -> None:
         "value": "buy",
     }
     assert {row["deal_ticket"] for row in buy_out["items"]} == {1, 4}
-    assert {row["fill_side"] for row in buy_out["items"]} == {"Buy"}
+    assert {row["fill_side"] for row in buy_out["items"]} == {"buy"}
 
     assert sell_out["side_filter"] == {
         "dimension": "fill_side",
         "value": "sell",
     }
+    assert sell_out["filters_applied"]["side"] == "sell"
+    assert sell_out["request_echo"]["side"] == "sell"
     assert {row["deal_ticket"] for row in sell_out["items"]} == {2, 3}
-    assert {row["fill_side"] for row in sell_out["items"]} == {"Sell"}
+    assert {row["fill_side"] for row in sell_out["items"]} == {"sell"}
 
     assert long_page["count"] == 1
     assert long_page["pagination"]["total"] == 2
@@ -783,7 +785,7 @@ def test_trade_history_filters_orders_by_side_prefix() -> None:
         sys.modules["MetaTrader5"] = prev
 
     assert out["success"] is True
-    assert out["request_echo"]["side"] == "SELL"
+    assert out["request_echo"]["side"] == "sell"
     assert out["count"] == 1
     assert out["items"][0]["order_ticket"] == 12
     assert out["items"][0]["order_type"] == "Sell Stop"
@@ -823,7 +825,7 @@ def test_trade_history_deals_decodes_enum_codes_to_labels() -> None:
         sys.modules["MetaTrader5"] = prev
 
     row = out["items"][0]
-    assert row["fill_side"] == "Buy"
+    assert row["fill_side"] == "buy"
     assert "type" not in row
     assert "action" not in row
     assert row["deal_effect"] == "open"
@@ -851,7 +853,7 @@ def test_trade_history_deals_reports_closed_position_side() -> None:
         sys.modules["MetaTrader5"] = prev
 
     row = out["items"][0]
-    assert row["fill_side"] == "Sell"
+    assert row["fill_side"] == "sell"
     assert "type" not in row
     assert "action" not in row
     assert row["deal_effect"] == "close"

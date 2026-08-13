@@ -554,7 +554,7 @@ def build_level_confluence_payload(
             or [str(sr_timeframe)],
         },
         "tolerance": {
-            "price": _round_price(tolerance_abs),
+            "price": float(tolerance_abs),
             "pct_points": _round_metric((tolerance_abs / abs(reference)) * 100.0) if abs(reference) > 1e-12 else None,
             "fraction": tolerance_pct,
             "points": tolerance_points,

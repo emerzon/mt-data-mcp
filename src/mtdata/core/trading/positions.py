@@ -348,7 +348,11 @@ def _trade_history_filters_applied(request: Any) -> Dict[str, Any]:
     ):
         value = getattr(request, field, None)
         if value is not None:
-            filters[field] = value
+            if field == "side":
+                normalized, _ = validation._normalize_trade_side_filter(value)
+                filters[field] = str(normalized or value).lower()
+            else:
+                filters[field] = value
     return filters
 
 
@@ -891,7 +895,7 @@ def _compact_trade_history_row(
             compact["deal_effect"] = action
         raw_deal_type = _first_present(compact, "type_label", "type")
         if raw_deal_type is not None:
-            compact["fill_side"] = raw_deal_type
+            compact["fill_side"] = str(raw_deal_type).strip().lower()
         position_side = validation._trade_history_position_side(
             compact,
             action=action,
@@ -1068,7 +1072,7 @@ def _trade_history_request_echo(request: Any, *, history_kind: Any) -> Dict[str,
             continue
         if field == "side":
             normalized_side, _ = validation._normalize_trade_side_filter(value)
-            echo[field] = normalized_side or value
+            echo[field] = str(normalized_side or value).lower()
         else:
             echo[field] = value
     return echo

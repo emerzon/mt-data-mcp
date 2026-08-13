@@ -486,6 +486,7 @@ def test_tick_frame_marks_locked_quotes_as_unusable() -> None:
     gateway.tick_rows = [
         {"time": 1, "bid": 1.1, "ask": 1.1, "flags": 2},
         {"time": 2, "bid": 1.1, "ask": 1.1002, "flags": 6},
+        {"time": 3, "bid": 1.2, "ask": 1.2, "flags": 6},
     ]
 
     frame, _ = _tick_frame(
@@ -497,12 +498,13 @@ def test_tick_frame_marks_locked_quotes_as_unusable() -> None:
     )
 
     assert bool(frame.iloc[0]["spread_valid"]) is False
-    assert frame.iloc[0]["spread_quality"] == "locked"
+    assert frame.iloc[0]["spread_quality"] == "one_sided_update"
     assert math.isnan(frame.iloc[0]["mid"])
     assert math.isnan(frame.iloc[0]["spread"])
     assert bool(frame.iloc[1]["spread_valid"]) is True
     assert frame.iloc[1]["spread_quality"] == "two_sided"
     assert frame.iloc[1]["spread"] == pytest.approx(0.0002)
+    assert frame.iloc[2]["spread_quality"] == "locked"
 
 
 def test_microstructure_marks_latest_locked_quote_unsafe() -> None:
@@ -1642,6 +1644,14 @@ def test_portfolio_mark_freshness_is_aggregated_by_symbol() -> None:
         (row["symbol"], row["positions"])
         for row in context["mark_freshness"]
     ] == [("EURUSD", 2), ("GBPUSD", 1)]
+
+
+def test_empty_portfolio_marks_are_not_subject_to_live_quote_gate() -> None:
+    context = _portfolio_mark_context(FakeGateway(), [])
+
+    assert context["mark_freshness_status"] == "not_applicable"
+    assert context["valuation_basis"] == "no_position_marks"
+    assert "usable_for_live_trading" not in context
 
 
 def test_portfolio_risk_reconciles_component_expected_shortfall() -> None:

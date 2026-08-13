@@ -1,6 +1,29 @@
 from mtdata.utils.level_confluence import build_level_confluence_payload
 
 
+def test_tolerance_points_contract_preserves_effective_price_width() -> None:
+    for symbol, points, increment, expected in (
+        ("EURUSD", 10.0, 0.00001, 0.0001),
+        ("XAUUSD", 25.0, 0.01, 0.25),
+        ("EURUSD", 0.0001, 0.00001, 0.000000001),
+    ):
+        payload = build_level_confluence_payload(
+            symbol=symbol,
+            pivot_timeframe="D1",
+            sr_timeframe="H1",
+            pivot_methods=[{"method": "classic", "levels": {"PP": 1.1}}],
+            support_resistance_payload={"levels": []},
+            reference_price=1.1,
+            tolerance_points=points,
+            price_increment=increment,
+            detail="full",
+        )
+
+        assert payload["tolerance"]["points"] == points
+        assert payload["tolerance"]["price"] == expected
+        assert payload["units"]["tolerance.points"] == "broker_points"
+
+
 def test_build_level_confluence_payload_includes_volume_profile_levels():
     payload = build_level_confluence_payload(
         symbol="EURUSD",

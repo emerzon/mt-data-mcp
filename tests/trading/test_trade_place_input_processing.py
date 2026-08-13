@@ -390,6 +390,32 @@ def test_trade_place_dry_run_preview_error_uses_standard_error_shape() -> None:
     mock_market.assert_not_called()
 
 
+def test_trade_place_unknown_symbol_replaces_protection_blockers() -> None:
+    with patch("mtdata.core.trading._place_market_order") as mock_market, patch(
+        "mtdata.core.trading.build_trade_place_dry_run_preview",
+        return_value={
+            "preview_error": "Symbol NOTAREALXYZ not found",
+            "preview_error_code": "symbol_not_found",
+            "remediation": "Use symbols_list to find the broker's exact symbol name.",
+            "related_tools": ["symbols_list"],
+        },
+    ):
+        out = trade_place(
+            symbol="NOTAREALXYZ",
+            volume=0.01,
+            order_type="BUY",
+            dry_run=True,
+            __cli_raw=True,
+        )
+
+    assert out["success"] is False
+    assert out["error_code"] == "symbol_not_found"
+    assert out["blockers"] == ["symbol_not_found"]
+    assert "dry_run_note" not in out
+    assert out["related_tools"] == ["symbols_list"]
+    mock_market.assert_not_called()
+
+
 def test_trade_place_dry_run_rejects_invalid_live_protection_preview() -> None:
     with patch("mtdata.core.trading._place_market_order") as mock_market, patch(
         "mtdata.core.trading.build_trade_place_dry_run_preview",

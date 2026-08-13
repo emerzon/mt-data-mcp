@@ -527,6 +527,10 @@ def test_build_trade_place_dry_run_preview_uses_live_quote_and_margin():
     assert result["estimated_fill_price"] == 1.1001
     assert result["spread_points"] == 20.0
     assert result["spread_pips"] == 2.0
+    assert result["sl_distance_points"] == 2010.0
+    assert result["sl_distance_pips"] == 201.0
+    assert result["tp_distance_points"] == 1990.0
+    assert result["tp_distance_pips"] == 199.0
     assert result["sl_distance_pct"] > 0
     assert result["tp_distance_pct"] > 0
     assert result["sl_tp_valid"] is True
@@ -538,6 +542,8 @@ def test_build_trade_place_dry_run_preview_uses_live_quote_and_margin():
     assert result["quote_context"]["usable_for_live_trading"] is True
     assert result["quote_context"]["freshness_state"] == "live"
     assert result["quote_context"]["quote_timezone"] == "UTC"
+    assert result["units"]["sl_distance_points"] == "broker_point_count"
+    assert result["units"]["sl_distance_pips"] == "pip_count"
     adapter.order_calc_margin.assert_called_once_with(0, "EURUSD", 0.1, 1.1001)
 
 

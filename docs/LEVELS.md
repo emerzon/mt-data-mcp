@@ -94,7 +94,7 @@ mtdata-cli confluence_levels EURUSD --min-source-families 2 --max-levels 5 --jso
 | `sr_timeframe` | `auto` | Timeframe for support/resistance inputs (`auto` merges M15–D1). |
 | `lookback` | `200` | Bars of history for the S/R component. |
 | `tolerance_pct` | `0.0015` | Clustering tolerance (0.15%) for merging levels into a zone. |
-| `tolerance_points` | — | Absolute price tolerance; overrides `tolerance_pct` when set. |
+| `tolerance_points` | — | Broker-point count; overrides `tolerance_pct`. On five-digit EURUSD, `10 × point(0.00001) = 0.0001` price width. |
 | `min_touches` | `2` | Minimum touches for the S/R component. |
 | `max_levels` | `5` | Maximum confluence zones to return. |
 | `max_distance_pct` | `5.0` | Keep zones within this % of current price; pass `None` for all. |

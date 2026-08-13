@@ -982,8 +982,20 @@ def confluence_levels(  # noqa: C901
                     historical_cutoff.replace(tzinfo=timezone.utc)
                 )
             else:
+                quote_source = str(
+                    reference_quote_context.get("quote_source") or ""
+                ).strip()
+                spread_quality = str(
+                    reference_quote_context.get("spread_quality") or "unusable"
+                ).strip()
+                fallback_reason = (
+                    f"live quote not executable ({spread_quality})"
+                    if quote_source
+                    else "no live quote available"
+                )
                 payload.setdefault("warnings", []).append(
-                    "reference_price is the latest completed bar close (no live tick available); "
+                    "reference_price is the latest completed bar close because the "
+                    f"{fallback_reason}; "
                     "the proximity of price to support/resistance reflects the analysis window, "
                     "not a live quote."
                 )

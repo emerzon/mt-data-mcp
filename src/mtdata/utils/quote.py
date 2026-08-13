@@ -365,16 +365,15 @@ def resolve_quote_tick(
     same_epoch = raw_epoch is not None and abs(stream_epoch - raw_epoch) <= 0.001
     pairs_differ = _quote_pair(raw_tick) != _quote_pair(stream_tick)
     point = _symbol_point(gateway, symbol)
-    one_sided_stream_update = same_epoch and _is_one_sided_quote_update(
-        gateway, stream_tick
-    )
+    one_sided_stream_update = _is_one_sided_quote_update(gateway, stream_tick)
+    equal_timestamp_one_sided_update = same_epoch and one_sided_stream_update
     within_point = same_epoch and _quote_pairs_agree(
         raw_tick,
         stream_tick,
         point=point,
     )
     benign_reconciliation = pairs_differ and (
-        one_sided_stream_update or within_point
+        equal_timestamp_one_sided_update or within_point
     )
     quote_conflict = same_epoch and pairs_differ and not benign_reconciliation
     use_stream_for_conflict = quote_conflict and (
@@ -384,6 +383,13 @@ def resolve_quote_tick(
         raw_epoch is not None and raw_epoch > float(now_epoch)
     )
     stream_not_ahead_of_observation = stream_epoch <= float(now_epoch)
+    reject_newer_one_sided_stream = (
+        raw_tick is not None
+        and raw_epoch is not None
+        and stream_epoch > raw_epoch + 0.001
+        and one_sided_stream_update
+        and _quote_pair_quality_rank(raw_tick) > _quote_pair_quality_rank(stream_tick)
+    )
     use_stream = (
         raw_tick is None
         or use_stream_for_conflict
@@ -392,13 +398,23 @@ def resolve_quote_tick(
             and stream_not_ahead_of_observation
             and stream_live_ready
         )
-        or (raw_epoch is not None and stream_epoch > raw_epoch + 0.001)
-        or (not raw_live_ready and stream_live_ready)
+        or (
+            raw_epoch is not None
+            and stream_epoch > raw_epoch + 0.001
+            and not reject_newer_one_sided_stream
+        )
+        or (
+            not raw_live_ready
+            and stream_live_ready
+            and not reject_newer_one_sided_stream
+        )
     )
     if not use_stream:
         metadata["quote_source_state"] = (
             "reconciled_equal_timestamp_conflict"
             if quote_conflict
+            else "reconciled_newer_one_sided_update"
+            if reject_newer_one_sided_stream
             else "reconciled_one_sided_update"
             if one_sided_stream_update and pairs_differ
             else "reconciled_within_point"

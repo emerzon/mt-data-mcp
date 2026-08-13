@@ -174,3 +174,36 @@ def test_resolve_quote_tick_ignores_sub_point_equal_timestamp_noise() -> None:
     assert selected is cached
     assert metadata["quote_source_state"] == "reconciled_within_point"
     assert "quote_source_conflict" not in metadata
+
+
+def test_resolve_quote_tick_keeps_two_sided_cache_over_newer_bid_only_lock() -> None:
+    now = 1_700_000_100.0
+    cached = SimpleNamespace(
+        bid=1.15304,
+        ask=1.15310,
+        time_msc=(now - 1.0) * 1000,
+    )
+    streamed = {
+        "bid": 1.15310,
+        "ask": 1.15310,
+        "flags": 2,
+        "time_msc": (now - 0.5) * 1000,
+    }
+    gateway = SimpleNamespace(
+        COPY_TICKS_ALL=0,
+        TICK_FLAG_BID=2,
+        TICK_FLAG_ASK=4,
+        symbol_info=lambda _symbol: SimpleNamespace(point=0.00001),
+        copy_ticks_range=lambda *_args: [streamed],
+    )
+
+    selected, metadata = resolve_quote_tick(
+        gateway,
+        "EURUSD",
+        cached,
+        now_epoch=now,
+    )
+
+    assert selected is cached
+    assert metadata["quote_source_state"] == "reconciled_newer_one_sided_update"
+    assert "quote_source_conflict" not in metadata

@@ -375,7 +375,7 @@ PARAM_HINTS = {
     "page": PARAMETER_HELP["page"],
     "name": "Name of the item to describe.",
     "tolerance_pct": "Level-clustering tolerance as a price fraction; 0.0015 means 0.15%.",
-    "tolerance_points": "Absolute price-distance tolerance in symbol price units.",
+    "tolerance_points": "Tolerance as a broker-point count; for five-digit EURUSD, 10 points at point=0.00001 gives a 0.0001 price width.",
     "min_touches": "Minimum historical tests/touches required for a level.",
     "max_levels": "Maximum support/resistance levels to return per side or method.",
     "max_distance_pct": "Maximum distance from current price as percent; pass none/null where supported for all levels.",

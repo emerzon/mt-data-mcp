@@ -979,6 +979,7 @@ def _level_preview_fields(
     *,
     entry_price: float,
     point: float,
+    points_per_pip: Optional[float],
 ) -> Dict[str, Any]:
     try:
         level_value = float(level) if level not in (None, 0) else None
@@ -989,7 +990,13 @@ def _level_preview_fields(
 
     out: Dict[str, Any] = {}
     if point > 0:
-        out[f"{prefix}_distance_points"] = round(abs(level_value - entry_price) / point, 2)
+        distance_points = abs(level_value - entry_price) / point
+        out[f"{prefix}_distance_points"] = round(distance_points, 2)
+        if points_per_pip is not None and points_per_pip > 0:
+            out[f"{prefix}_distance_pips"] = round(
+                distance_points / points_per_pip,
+                2,
+            )
     if entry_price:
         out[f"{prefix}_distance_pct"] = round(
             (abs(level_value - entry_price) / abs(entry_price)) * 100.0,
@@ -1054,7 +1061,14 @@ def build_trade_place_dry_run_preview(
 
     symbol_info = mt5.symbol_info(symbol)
     if symbol_info is None:
-        return {"preview_error": f"Symbol {symbol} not found"}
+        return {
+            "preview_error": f"Symbol {symbol} not found",
+            "preview_error_code": "symbol_not_found",
+            "remediation": (
+                "Use symbols_list to find the broker's exact symbol name and suffix."
+            ),
+            "related_tools": ["symbols_list"],
+        }
     if not getattr(symbol_info, "visible", True) and not mt5.symbol_select(symbol, True):
         return {"preview_error": f"Failed to select symbol {symbol}"}
 
@@ -1136,6 +1150,7 @@ def build_trade_place_dry_run_preview(
             stop_loss,
             entry_price=entry_price,
             point=point,
+            points_per_pip=points_per_pip,
         )
     )
     out.update(
@@ -1144,8 +1159,20 @@ def build_trade_place_dry_run_preview(
             take_profit,
             entry_price=entry_price,
             point=point,
+            points_per_pip=points_per_pip,
         )
     )
+
+    out["units"] = {
+        "spread_points": "broker_point_count",
+        "spread_pips": "pip_count",
+        "sl_distance_points": "broker_point_count",
+        "sl_distance_pips": "pip_count",
+        "sl_distance_pct": "percent",
+        "tp_distance_points": "broker_point_count",
+        "tp_distance_pips": "pip_count",
+        "tp_distance_pct": "percent",
+    }
 
     validation_error: Optional[Dict[str, Any]] = None
     if pending:

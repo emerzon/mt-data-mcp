@@ -609,6 +609,45 @@ class TestNormalizeTradePayload:
         assert result["ticket"] == 4392901844
         assert "order" not in result
 
+    def test_successful_trade_place_preview_keeps_decision_prices(self):
+        payload = {
+            "success": True,
+            "dry_run": True,
+            "preview_ok": True,
+            "symbol": "EURUSD",
+            "bid": 1.0999,
+            "ask": 1.1001,
+            "estimated_fill_price": 1.1001,
+            "spread_pips": 2.0,
+            "sl_distance_points": 2010.0,
+            "sl_distance_pips": 201.0,
+            "tp_distance_points": 1990.0,
+            "tp_distance_pips": 199.0,
+            "margin_required": 123.45,
+            "margin_sufficient": True,
+            "units": {"sl_distance_pips": "pip_count"},
+        }
+
+        result = _normalize_trade_payload(
+            payload,
+            verbose=False,
+            tool_name="trade_place",
+        )
+
+        for key in (
+            "bid",
+            "ask",
+            "estimated_fill_price",
+            "sl_distance_points",
+            "sl_distance_pips",
+            "tp_distance_points",
+            "tp_distance_pips",
+            "margin_required",
+            "margin_sufficient",
+            "units",
+        ):
+            assert result[key] == payload[key]
+
     @pytest.mark.parametrize(
         "blockers",
         [

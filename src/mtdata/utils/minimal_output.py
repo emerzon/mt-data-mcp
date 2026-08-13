@@ -925,6 +925,28 @@ def _normalize_trade_payload(  # noqa: C901
         _maybe_add_trade_key(out, "price", payload.get("close_price"))
     if "price" not in out:
         _maybe_add_trade_key(out, "price", payload.get("price"), skip_zero=True)
+    if is_successful_dry_run_preview:
+        for key in (
+            "bid",
+            "ask",
+            "estimated_fill_price",
+            "entry_price",
+            "spread_points",
+            "spread_pips",
+            "spread_pct",
+            "sl_distance_points",
+            "sl_distance_pips",
+            "sl_distance_pct",
+            "tp_distance_points",
+            "tp_distance_pips",
+            "tp_distance_pct",
+            "margin_required",
+            "margin_required_when_filled",
+            "margin_free",
+            "margin_sufficient",
+            "units",
+        ):
+            _maybe_add_trade_key(out, key, payload.get(key))
 
     requested_sl = payload.get("requested_sl")
     requested_tp = payload.get("requested_tp")
