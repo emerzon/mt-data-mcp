@@ -837,6 +837,7 @@ def _forecast_generate_data_window(payload: Dict[str, Any]) -> Optional[Dict[str
     bar_states = payload.get("forecast_bar_states")
     if isinstance(bar_states, list) and bar_states:
         out["first_forecast_bar_state"] = bar_states[0]
+        out["horizon_includes_forming_bar"] = "forming" in bar_states
     age_seconds = payload.get("last_price_age_seconds")
     if age_seconds not in (None, "", [], {}):
         out["last_observation_age_seconds"] = age_seconds

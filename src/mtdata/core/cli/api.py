@@ -1074,8 +1074,9 @@ def _add_forecast_generate_args(cmd_parser: argparse.ArgumentParser) -> None:
         type=int,
         default=12,
         help=(
-            "Number of future bars. forecast_time identifies each target bar's "
-            "open; price forecast values represent that target bar's close."
+            "Number of target bar closes. With closed-bar inputs, step 1 is the "
+            "currently forming bar when one is open. forecast_time identifies each "
+            "target bar's open; bar_state distinguishes forming from future targets."
         ),
     )
     group_window.add_argument(

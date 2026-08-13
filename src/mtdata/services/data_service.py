@@ -114,6 +114,7 @@ from ..utils.time import (
     format_epoch_utc,
 )
 from ..utils.utils import (
+    _calendar_period_bounds,
     _format_numeric_rows_from_df,
     _is_calendar_period_expression,
     _normalize_ohlcv_arg,
@@ -404,7 +405,10 @@ def _build_no_data_error_with_context(
             # Provide a suggestion based on the mismatch
             if start_datetime:
                 try:
-                    req_start, _ = _parse_fetch_datetime_arg(start_datetime)
+                    req_start, _ = _parse_fetch_datetime_arg(
+                        start_datetime,
+                        timeframe=timeframe,
+                    )
                     if req_start is not None and req_start.tzinfo is None:
                         req_start = req_start.replace(tzinfo=dt_timezone.utc)
                     elif req_start is not None:
@@ -614,8 +618,15 @@ def _fetch_rates_with_warmup(  # noqa: C901
         seconds_per_bar, timeframe_error = _resolve_fetch_timeframe_seconds(timeframe)
         if timeframe_error:
             return None, timeframe_error
-        from_date, from_date_error = _parse_fetch_datetime_arg(start_datetime)
-        to_date, to_date_error = _parse_fetch_datetime_arg(end_datetime, end_bound=True)
+        from_date, from_date_error = _parse_fetch_datetime_arg(
+            start_datetime,
+            timeframe=timeframe,
+        )
+        to_date, to_date_error = _parse_fetch_datetime_arg(
+            end_datetime,
+            end_bound=True,
+            timeframe=timeframe,
+        )
         if from_date_error or to_date_error:
             return None, from_date_error or to_date_error
         if from_date > to_date:
@@ -690,7 +701,10 @@ def _fetch_rates_with_warmup(  # noqa: C901
             return result
 
     elif start_datetime:
-        from_date, from_date_error = _parse_fetch_datetime_arg(start_datetime)
+        from_date, from_date_error = _parse_fetch_datetime_arg(
+            start_datetime,
+            timeframe=timeframe,
+        )
         if from_date_error:
             return None, from_date_error
         seconds_per_bar, timeframe_error = _resolve_fetch_timeframe_seconds(timeframe)
@@ -741,7 +755,11 @@ def _fetch_rates_with_warmup(  # noqa: C901
             return result
 
     elif end_datetime:
-        to_date, to_date_error = _parse_fetch_datetime_arg(end_datetime, end_bound=True)
+        to_date, to_date_error = _parse_fetch_datetime_arg(
+            end_datetime,
+            end_bound=True,
+            timeframe=timeframe,
+        )
         if to_date_error:
             return None, to_date_error
         seconds_per_bar, timeframe_error = _resolve_fetch_timeframe_seconds(timeframe)
@@ -845,8 +863,15 @@ def _parse_fetch_datetime_arg(
     value: str,
     *,
     end_bound: bool = False,
+    timeframe: Optional[str] = None,
 ) -> tuple[Optional[datetime], Optional[str]]:
-    parsed = _parse_end_datetime(value) if end_bound else _parse_start_datetime(value)
+    parsed = _parse_candle_calendar_bound(
+        value,
+        timeframe=timeframe,
+        end_bound=end_bound,
+    )
+    if parsed is None:
+        parsed = _parse_end_datetime(value) if end_bound else _parse_start_datetime(value)
     if parsed is None:
         return None, f"Could not parse date {value!r}. {_DATE_FORMAT_HINT}"
     if parsed.tzinfo is None:
@@ -854,6 +879,43 @@ def _parse_fetch_datetime_arg(
     else:
         parsed = parsed.astimezone(dt_timezone.utc)
     return parsed, None
+
+
+def _broker_calendar_timezone() -> Any:
+    try:
+        broker_tz = mt5_config.get_server_tz()
+    except Exception:
+        broker_tz = None
+    return broker_tz or dt_timezone.utc
+
+
+def _parse_candle_calendar_bound(
+    value: Optional[str],
+    *,
+    timeframe: Optional[str],
+    end_bound: bool,
+) -> Optional[datetime]:
+    """Resolve D1/W1/MN1 calendar labels at broker-local midnight."""
+    if timeframe not in {"D1", "W1", "MN1"} or not _is_calendar_query_bound(value):
+        return None
+    text = str(value or "").strip()
+    broker_tz = _broker_calendar_timezone()
+    if _is_iso_date_only(text):
+        local_date = datetime.strptime(text, "%Y-%m-%d").date()
+        local_bound = datetime.combine(
+            local_date,
+            datetime.max.time() if end_bound else datetime.min.time(),
+        )
+    else:
+        period = _calendar_period_bounds(
+            text,
+            now=datetime.now(dt_timezone.utc),
+            calendar_timezone=broker_tz,
+        )
+        if period is None:
+            return None
+        local_bound = period[1] if end_bound else period[0]
+    return local_bound.replace(tzinfo=broker_tz).astimezone(dt_timezone.utc)
 
 
 def _format_resolved_query_bound(value: datetime) -> str:
@@ -894,7 +956,11 @@ def _candle_query_applied(
         if raw_value in (None, ""):
             continue
         query[name] = raw_value
-        resolved, _ = _parse_fetch_datetime_arg(raw_value, end_bound=end_bound)
+        resolved, _ = _parse_fetch_datetime_arg(
+            raw_value,
+            end_bound=end_bound,
+            timeframe=timeframe,
+        )
         if resolved is None:
             continue
         query[f"resolved_{name}"] = _format_resolved_query_bound(resolved)
@@ -1188,7 +1254,8 @@ def _trim_df_to_target(
     timeframe: Optional[str] = None,
 ) -> pd.DataFrame:
     if timeframe in {"D1", "W1", "MN1"} and (
-        _is_iso_date_only(start_datetime) or _is_iso_date_only(end_datetime)
+        _is_calendar_query_bound(start_datetime)
+        or _is_calendar_query_bound(end_datetime)
     ):
         out = _trim_calendar_bars_to_session_dates(
             df,
@@ -1262,14 +1329,10 @@ def _trim_calendar_bars_to_session_dates(
     """Match date-only D1/W1/MN1 bounds to broker calendar periods.
 
     MT5 stamps these bars at the broker session open, which commonly falls on
-    the previous UTC date.  Instant-bearing bounds retain their UTC semantics;
-    only ISO date-only bounds use this calendar-period overlap rule.
+    the previous UTC date. Instant-bearing bounds retain their UTC semantics;
+    ISO date-only and natural calendar-period bounds use this overlap rule.
     """
-    try:
-        broker_tz = mt5_config.get_server_tz()
-    except Exception:
-        broker_tz = dt_timezone.utc
-    broker_tz = broker_tz or dt_timezone.utc
+    broker_tz = _broker_calendar_timezone()
 
     mask = pd.Series(True, index=df.index, dtype=bool)
     session_dates = df["__epoch"].map(
@@ -1282,10 +1345,15 @@ def _trim_calendar_bars_to_session_dates(
     )
 
     if start_datetime:
-        if _is_iso_date_only(start_datetime):
-            requested_start = datetime.strptime(
-                str(start_datetime).strip(), "%Y-%m-%d"
-            ).date()
+        if _is_calendar_query_bound(start_datetime):
+            requested_start_bound = _parse_candle_calendar_bound(
+                start_datetime,
+                timeframe=timeframe,
+                end_bound=False,
+            )
+            if requested_start_bound is None:
+                return df.iloc[0:0]
+            requested_start = requested_start_bound.astimezone(broker_tz).date()
             mask &= period_end_dates > requested_start
         else:
             parsed_start = _parse_start_datetime(start_datetime)
@@ -1293,10 +1361,15 @@ def _trim_calendar_bars_to_session_dates(
                 return df.iloc[0:0]
             mask &= df["__epoch"] >= _utc_epoch_seconds(parsed_start)
     if end_datetime:
-        if _is_iso_date_only(end_datetime):
-            requested_end = datetime.strptime(
-                str(end_datetime).strip(), "%Y-%m-%d"
-            ).date()
+        if _is_calendar_query_bound(end_datetime):
+            requested_end_bound = _parse_candle_calendar_bound(
+                end_datetime,
+                timeframe=timeframe,
+                end_bound=True,
+            )
+            if requested_end_bound is None:
+                return df.iloc[0:0]
+            requested_end = requested_end_bound.astimezone(broker_tz).date()
             mask &= session_dates <= requested_end
         else:
             parsed_end = _parse_end_datetime(end_datetime)

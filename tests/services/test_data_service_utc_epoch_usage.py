@@ -109,6 +109,86 @@ def test_trim_daily_date_only_range_uses_broker_session_date() -> None:
     assert out["close"].tolist() == [2.0]
 
 
+def test_daily_date_only_provider_range_starts_at_broker_session_open() -> None:
+    broker_tz = ZoneInfo("Europe/Nicosia")
+    captured: dict[str, datetime] = {}
+    expected_open = datetime(2026, 8, 12, 21, tzinfo=timezone.utc)
+
+    def copy_rates(_symbol, _timeframe, start, end):
+        captured.update(start=start, end=end)
+        return [{"time": expected_open.timestamp()}]
+
+    with (
+        patch.object(data_service.mt5_config, "get_server_tz", return_value=broker_tz),
+        patch.object(data_service, "_mt5_copy_rates_range", side_effect=copy_rates),
+    ):
+        rates, error = data_service._fetch_rates_with_warmup(
+            symbol="EURUSD",
+            mt5_timeframe=1,
+            timeframe="D1",
+            candles=10,
+            warmup_bars=0,
+            start_datetime="2026-08-13",
+            end_datetime="2026-08-13",
+            include_incomplete=True,
+            retry=False,
+            sanity_check=False,
+        )
+
+    assert error is None
+    assert rates == [{"time": expected_open.timestamp()}]
+    assert captured["start"] == expected_open
+    assert captured["end"] == datetime(
+        2026, 8, 13, 20, 59, 59, 999999, tzinfo=timezone.utc
+    )
+
+
+def test_higher_timeframe_query_metadata_echoes_broker_session_bounds() -> None:
+    with patch.object(
+        data_service.mt5_config,
+        "get_server_tz",
+        return_value=ZoneInfo("Europe/Nicosia"),
+    ):
+        query = data_service._candle_query_applied(
+            timeframe="D1",
+            start="2026-08-13",
+            end="2026-08-13",
+            limit=10,
+        )
+
+    assert query["bound_basis"] == "broker_session_calendar"
+    assert query["resolved_start"] == "2026-08-12T21:00:00Z"
+    assert query["resolved_end"] == "2026-08-13T20:59:59.999999Z"
+
+
+def test_natural_week_and_month_bounds_use_broker_calendar() -> None:
+    broker_tz = ZoneInfo("Europe/Nicosia")
+    fixed_now = datetime(2026, 8, 13, 12, tzinfo=timezone.utc)
+
+    class FixedDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return fixed_now.replace(tzinfo=None) if tz is None else fixed_now.astimezone(tz)
+
+    with (
+        patch.object(data_service, "datetime", FixedDateTime),
+        patch.object(data_service.mt5_config, "get_server_tz", return_value=broker_tz),
+    ):
+        week_start, week_error = data_service._parse_fetch_datetime_arg(
+            "this week",
+            timeframe="W1",
+        )
+        month_start, month_error = data_service._parse_fetch_datetime_arg(
+            "2026-08-01",
+            timeframe="MN1",
+        )
+
+    assert week_error is None
+    assert week_start == datetime(2026, 8, 9, 21, tzinfo=timezone.utc)
+    assert month_error is None
+    assert month_start == datetime(2026, 7, 31, 21, tzinfo=timezone.utc)
+
+
 def test_trim_weekly_and_monthly_date_only_ranges_match_containing_period() -> None:
     broker_tz = ZoneInfo("Europe/Nicosia")
     cases = [

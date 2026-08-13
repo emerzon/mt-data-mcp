@@ -114,7 +114,11 @@ class ForecastGenerateRequest(_PublicForecastRequest):
         12,
         ge=1,
         le=MAX_FORECAST_HORIZON,
-        description="Number of future bars to forecast at the requested timeframe.",
+        description=(
+            "Number of target bar closes to forecast. With closed-bar inputs, "
+            "the first target is the currently forming bar when one is open; "
+            "each row's bar_state identifies forming versus future targets."
+        ),
     )
     lookback: Optional[int] = Field(None, ge=1)
     as_of: Optional[str] = None

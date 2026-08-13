@@ -513,9 +513,10 @@ def test_forecast_generate_compact_normalizes_utc_times_and_neutral_delta(monkey
         "forecast_start": "2026-06-02T20:00Z",
         "forecast_start_gap_bars": 1.0,
         "forecast_time_semantics": "target_bar_open_time",
-        "forecast_value_semantics": "target_bar_close",
-        "first_forecast_bar_state": "forming",
-        "last_observation_age_seconds": 3600,
+            "forecast_value_semantics": "target_bar_close",
+            "first_forecast_bar_state": "forming",
+            "horizon_includes_forming_bar": True,
+            "last_observation_age_seconds": 3600,
         "last_observation_stale": False,
     }
     assert "forecast_start_gap_bars" not in out

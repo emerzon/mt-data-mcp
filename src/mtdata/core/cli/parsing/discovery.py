@@ -156,9 +156,24 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
     ),
     ("data_fetch_candles", "indicators"): "Technical indicators. On PowerShell, quote parenthesized specs such as --indicators \"rsi(14)\", or use shell-safe rsi_14 / sma=20 syntax. JSON arrays like '[{\"name\":\"rsi\",\"params\":[14]}]' and named params like rsi(length=14) also work. Use params syntax, not sma,20.",
     ("data_fetch_candles", "limit"): (
-        "Returned bars for latest-N requests (default: 20). On an explicit "
-        "start/end range, omission uses a 100000-bar safety cap; indicator "
+        "Maximum returned bars (default: 20). Queries with --start retain the "
+        "earliest matching bars (first-N); otherwise the latest bars are retained. "
+        "On an explicit range, omission uses a 100000-bar safety cap. Indicator "
         "warmup bars are fetched in addition to returned rows."
+    ),
+    ("data_fetch_candles", "start"): (
+        "Inclusive range start. Intraday date-only and calendar phrases use UTC. "
+        "For D1/W1/MN1 they select broker-session calendar periods and resolve "
+        "from broker-local midnight. Adding --limit retains the first N bars."
+    ),
+    ("data_fetch_candles", "end"): (
+        "Inclusive range end. Intraday date-only and calendar phrases end in UTC; "
+        "for D1/W1/MN1 they end at the broker-local calendar-period boundary."
+    ),
+    ("data_fetch_candles", "include_incomplete"): (
+        "Include the latest forming candle; defaults to false. Compact responses "
+        "expose forming_candle_status=skipped and an inclusion hint when a forming "
+        "bar is omitted; full detail also includes counts and booleans."
     ),
     ("data_fetch_ticks", "limit"): (
         "Maximum ticks returned (default 20, maximum 50000). Queries with a "

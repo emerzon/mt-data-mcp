@@ -1567,6 +1567,7 @@ def _format_forecast_output(
         "forecast_epoch": future_epochs,
         "forecast_time": forecast_times,
         "forecast_bar_states": forecast_bar_states,
+        "horizon_includes_forming_bar": "forming" in forecast_bar_states,
         "forecast_time_semantics": "target_bar_open_time",
         "forecast_value_semantics": (
             "target_bar_log_return_and_reconstructed_close"

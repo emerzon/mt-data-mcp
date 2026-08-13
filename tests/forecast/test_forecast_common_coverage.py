@@ -724,6 +724,7 @@ class TestFormatForecastOutput:
         )
 
         assert result["forecast_bar_states"] == ["forming", "future", "future"]
+        assert result["horizon_includes_forming_bar"] is True
         assert result["forecast_time_semantics"] == "target_bar_open_time"
         assert result["forecast_value_semantics"] == "target_bar_close"
 
@@ -744,6 +745,7 @@ class TestFormatForecastOutput:
         )
 
         assert result["forecast_bar_states"] == ["closed", "forming"]
+        assert result["horizon_includes_forming_bar"] is True
 
     def test_direction_threshold_scales_with_observed_bar_noise(self):
         df = pd.DataFrame(

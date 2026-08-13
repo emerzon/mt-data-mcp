@@ -317,7 +317,8 @@ class TestAddForecastGenerateArgs:
             action.help for action in parser._actions if action.dest == "horizon"
         )
         assert "forecast_time identifies each target bar's open" in help_text
-        assert "target bar's close" in help_text
+        assert "currently forming bar" in help_text
+        assert "bar_state distinguishes forming from future" in help_text
 
     @patch("mtdata.core.cli.api.discover_tools")
     def test_main_shows_targeted_error_for_bare_denoise(self, mock_discover, capsys):
@@ -1815,6 +1816,52 @@ class TestResolveParamKwargs:
         assert "rsi(length=14)" in kwargs["help"]
         assert "On PowerShell" in kwargs["help"]
         assert '--indicators "rsi(14)"' in kwargs["help"]
+
+    @pytest.mark.parametrize(
+        ("name", "expected"),
+        [
+            ("start", "broker-session calendar periods"),
+            ("end", "broker-local calendar-period boundary"),
+            ("limit", "first-N"),
+        ],
+    )
+    def test_data_fetch_candles_range_help_states_bound_contract(
+        self,
+        name: str,
+        expected: str,
+    ):
+        param = {
+            "name": name,
+            "type": Optional[str] if name != "limit" else int,
+            "required": False,
+            "default": None if name != "limit" else 20,
+        }
+
+        kwargs, _ = _resolve_param_kwargs(
+            param,
+            None,
+            cmd_name="data_fetch_candles",
+        )
+
+        assert expected in kwargs["help"]
+
+    def test_include_incomplete_help_names_compact_forming_status(self):
+        param = {
+            "name": "include_incomplete",
+            "type": bool,
+            "required": False,
+            "default": False,
+        }
+
+        kwargs, _ = _resolve_param_kwargs(
+            param,
+            None,
+            cmd_name="data_fetch_candles",
+        )
+        help_text = kwargs["help"]
+
+        assert "forming_candle_status=skipped" in help_text
+        assert "full detail" in help_text
 
     def test_denoise_help_mentions_json_example(self):
         param = {

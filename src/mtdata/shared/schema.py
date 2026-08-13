@@ -147,7 +147,7 @@ PARAM_HINTS = {
         "Request MT5 historical per-bar spread values; when unavailable, the result "
         "reports a single non-historical reference or spread_mode=unavailable."
     ),
-    "include_incomplete": "Include the latest forming candle; defaults to false, so responses expose has_forming_candle/incomplete_candles_skipped while returned rows stay on closed bars.",
+    "include_incomplete": "Include the latest forming candle; defaults to false. Compact candle responses expose forming_candle_status=skipped and an inclusion hint when a forming bar is omitted; full detail also includes forming-candle counts and booleans.",
     "allow_stale": "Return the latest available closed bars when freshness checks would otherwise fail; defaults to false.",
     "explain_indicators": "Add compact latest-value interpretation notes for requested indicators; defaults to false.",
     "method": "Method/algorithm for this tool.",

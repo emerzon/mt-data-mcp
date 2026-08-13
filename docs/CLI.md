@@ -241,17 +241,21 @@ mtdata-cli data_fetch_candles EURUSD --start "1 week ago"
 mtdata-cli data_fetch_candles EURUSD --start "2025-12-01" --end "2025-12-31"
 ```
 
-For candle ranges, bounds are inclusive and resolved in UTC. An ISO date-only
-value and natural calendar days such as `today`, `yesterday`, or
-`last Friday` span the full day: `--start` resolves to 00:00:00 and `--end` to
-23:59:59.999999. `this week`, `last week`, and `next week` similarly span
-Monday through Sunday. Relative durations such as `2 days ago` remain exact
-instants. Include an explicit time
+For intraday candle ranges, bounds are inclusive and resolved in UTC. An ISO
+date-only value and natural calendar days such as `today`, `yesterday`, or
+`last Friday` span the full UTC day: `--start` resolves to 00:00:00 and `--end`
+to 23:59:59.999999. `this week`, `last week`, and `next week` similarly span
+Monday through Sunday. For D1/W1/MN1, those same calendar labels select broker
+session periods instead: their resolved bounds use broker-local midnight and
+may therefore fall on the previous UTC date. Relative durations such as
+`2 days ago` remain exact instants. Include an explicit time
 and timezone when automation needs an exact instant, using either an ISO offset
 (`2026-08-03T09:30-04:00`) or an IANA name
 (`2026-08-03 09:30 America/New_York`). Ambiguous or nonexistent daylight-saving
 local times are rejected; use an ISO offset to choose a specific instant.
 Candle responses echo the resolved instants and bound modes in `query_applied`.
+When `--start` and `--limit` are combined, candles are returned in ascending
+order from the start bound (first-N). Omit `--start` for latest-N retrieval.
 
 ---
 

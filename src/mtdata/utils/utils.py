@@ -379,13 +379,14 @@ def _calendar_period_bounds(
     value: str,
     *,
     now: Optional[datetime] = None,
+    calendar_timezone: Any = timezone.utc,
 ) -> Optional[tuple[datetime, datetime, str]]:
-    """Resolve day/week-valued natural language to inclusive UTC bounds."""
+    """Resolve day/week-valued natural language to inclusive calendar bounds."""
     text = " ".join(str(value or "").strip().lower().split())
     if not text:
         return None
     current = now or datetime.now(timezone.utc)
-    current_date = current.astimezone(timezone.utc).date()
+    current_date = current.astimezone(calendar_timezone or timezone.utc).date()
     period_start = None
     kind = "day"
     if text in {"today", "yesterday", "tomorrow"}:
