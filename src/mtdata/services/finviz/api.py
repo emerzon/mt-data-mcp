@@ -4,6 +4,7 @@ import importlib
 import json
 import logging
 from typing import Any, Dict, List, Literal, Optional
+from urllib.parse import parse_qs, urlparse
 
 from ..news_text import normalize_news_text
 from .client import (
@@ -742,6 +743,19 @@ def get_insider_activity(option: str = "latest", limit: int = 50, page: int = 1)
         if df is None or df.empty:
             return {"error": f"No insider activity found for option '{option}'"}
 
+        symbols_by_form_link, ordered_symbols = _extract_insider_activity_symbols(
+            getattr(finsider, "soup", None)
+        )
+        if symbols_by_form_link or len(ordered_symbols) == len(df.index):
+            df = df.copy()
+            if "SEC Form 4 Link" in df.columns and symbols_by_form_link:
+                for index, form_link in df["SEC Form 4 Link"].items():
+                    canonical = symbols_by_form_link.get(str(form_link))
+                    if canonical:
+                        df.at[index, "Ticker"] = canonical
+            elif len(ordered_symbols) == len(df.index):
+                df["Ticker"] = ordered_symbols
+
         items_list, total, safe_limit, safe_page, pages = _paginate_finviz_records(
             df,
             limit=limit,
@@ -767,6 +781,59 @@ def get_insider_activity(option: str = "latest", limit: int = 50, page: int = 1)
             "retryable": retryable,
             "option": option,
         }
+
+
+def _extract_insider_activity_symbols(
+    soup: Any,
+) -> tuple[Dict[str, str], List[str]]:
+    """Extract canonical tickers from the market-wide insider table markup."""
+    if soup is None or not callable(getattr(soup, "find_all", None)):
+        return {}, []
+
+    for table in soup.find_all("table"):
+        rows = table.find_all("tr")
+        if not rows:
+            continue
+        headers = [cell.get_text(strip=True) for cell in rows[0].find_all("th")]
+        if "Ticker" not in headers:
+            continue
+        ticker_index = headers.index("Ticker")
+        symbols_by_form_link: Dict[str, str] = {}
+        ordered_symbols: List[str] = []
+        for row in rows[1:]:
+            cells = row.find_all("td")
+            if len(cells) < 5 or ticker_index >= len(cells):
+                continue
+            ticker_cell = cells[ticker_index]
+            symbol = _extract_insider_activity_symbol(ticker_cell)
+            if not symbol:
+                continue
+            ordered_symbols.append(symbol)
+            form_anchor = cells[-1].find("a", href=True)
+            if form_anchor is not None:
+                symbols_by_form_link[str(form_anchor.get("href"))] = symbol
+        return symbols_by_form_link, ordered_symbols
+    return {}, []
+
+
+def _extract_insider_activity_symbol(ticker_cell: Any) -> Optional[str]:
+    value = ticker_cell.get("data-boxover-ticker")
+    if not value:
+        canonical_node = ticker_cell.find(attrs={"data-boxover-ticker": True})
+        value = (
+            canonical_node.get("data-boxover-ticker")
+            if canonical_node is not None
+            else None
+        )
+    if value:
+        return normalize_finviz_equity_symbol(str(value))
+
+    for anchor in ticker_cell.find_all("a", href=True):
+        query = parse_qs(urlparse(str(anchor.get("href"))).query)
+        ticker_values = query.get("t")
+        if ticker_values and ticker_values[0]:
+            return normalize_finviz_equity_symbol(ticker_values[0])
+    return None
 
 
 def get_forex_performance() -> Dict[str, Any]:

@@ -254,6 +254,51 @@ class TestFinvizService:
         assert result["retryable"] is True
         assert result["option"] == "latest"
 
+    @patch("finvizfinance.insider.Insider")
+    def test_get_insider_activity_uses_canonical_ticker_markup(self, mock_insider):
+        from bs4 import BeautifulSoup
+
+        from mtdata.services.finviz import get_insider_activity
+
+        instance = mock_insider.return_value
+        instance.get_insider.return_value = pd.DataFrame(
+            [
+                {
+                    "Ticker": "TTAK",
+                    "Transaction": "Sale",
+                    "SEC Form 4 Link": "https://sec.example/tak-form",
+                },
+                {
+                    "Ticker": "NNMM",
+                    "Transaction": "Buy",
+                    "SEC Form 4 Link": "https://sec.example/nmm-form",
+                },
+            ]
+        )
+        instance.soup = BeautifulSoup(
+            """
+            <table><tr><th>Unrelated</th></tr></table>
+            <table>
+              <tr><th>Ticker</th><th>Owner</th><th>Relationship</th>
+                  <th>Date</th><th>Transaction</th><th>Form</th></tr>
+              <tr><td data-boxover-ticker="TAK"><span>T</span><a href="quote.ashx?t=TAK">TAK</a></td>
+                  <td>A</td><td>B</td><td>C</td><td>Sale</td>
+                  <td><a href="https://sec.example/tak-form">Form 4</a></td></tr>
+              <tr><td><span>N</span><a href="quote.ashx?t=NMM">NMM</a></td>
+                  <td>A</td><td>B</td><td>C</td><td>Buy</td>
+                  <td><a href="https://sec.example/nmm-form">Form 4</a></td></tr>
+            </table>
+            """,
+            "html.parser",
+        )
+
+        result = get_insider_activity(option="latest", limit=10)
+
+        assert [row["Ticker"] for row in result["insider_trades"]] == [
+            "TAK",
+            "NMM",
+        ]
+
     @patch('finvizfinance.quote.finvizfinance')
     def test_get_stock_ratings_success(self, mock_finviz):
         """Test successful ratings fetch."""
