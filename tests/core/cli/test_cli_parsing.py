@@ -1507,8 +1507,8 @@ class TestResolveParamKwargs:
             cmd_name="labels_triple_barrier",
         )
 
-        assert "most-recent labeled rows" in limit_kwargs["help"]
-        assert "includes neutral outcomes" in limit_kwargs["help"]
+        assert "recent resolved TP/SL examples" in limit_kwargs["help"]
+        assert "tail is entirely neutral" in limit_kwargs["help"]
         assert "full returns the complete labeled series" in limit_kwargs["help"]
         assert "labeled entries to calculate" in lookback_kwargs["help"]
         assert "lookback plus horizon" in lookback_kwargs["help"]

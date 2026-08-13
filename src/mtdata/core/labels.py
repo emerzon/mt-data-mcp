@@ -59,6 +59,41 @@ def _label_outcome(label: int) -> str:
     return "neutral"
 
 
+def _compact_label_sample_indices(
+    labels: Any,
+    *,
+    sample_size: int,
+) -> tuple[List[int], str, int]:
+    """Keep a recent compact sample informative when its tail is all neutral."""
+    count = len(labels)
+    sample_n = max(0, min(int(sample_size), count))
+    recent = list(range(max(0, count - sample_n), count))
+    if sample_n == 0 or any(int(labels[idx]) != 0 for idx in recent):
+        return recent, "recent", 0
+
+    resolved = [idx for idx in range(count) if int(labels[idx]) != 0]
+    if not resolved:
+        return recent, "recent", 0
+
+    representatives: List[int] = []
+    for outcome in (1, -1):
+        matches = [idx for idx in resolved if int(labels[idx]) == outcome]
+        if matches:
+            representatives.append(matches[-1])
+        if len(representatives) >= sample_n:
+            break
+    for idx in reversed(resolved):
+        if len(representatives) >= min(2, sample_n):
+            break
+        if idx not in representatives:
+            representatives.append(idx)
+
+    recent_slots = max(0, sample_n - len(representatives))
+    recent_selection = recent[-recent_slots:] if recent_slots else []
+    selected = sorted([*representatives, *recent_selection])
+    return selected, "recent_with_resolved_outcomes", len(representatives)
+
+
 def _neutral_barrier_pct_range(max_move_pct: Any) -> Optional[List[float]]:
     try:
         max_move = float(max_move_pct)
@@ -1002,16 +1037,28 @@ def labels_triple_barrier(  # noqa: C901
 
                 if output_mode == "compact":
                     sample_n = min(n, sample_limit, _COMPACT_LABEL_SAMPLE_SIZE)
-                    sample_indices = list(
-                        range(max(0, len(labels) - sample_n), len(labels))
+                    (
+                        sample_indices,
+                        sample_basis,
+                        resolved_representatives,
+                    ) = _compact_label_sample_indices(
+                        labels,
+                        sample_size=sample_n,
                     )
-                    payload["sample_basis"] = "recent"
+                    payload["sample_basis"] = sample_basis
                     payload["sample_size"] = int(len(sample_indices))
                     if len(sample_indices) < n:
-                        payload["data_note"] = (
-                            f"data rows cover the most recent {len(sample_indices)} "
-                            "labels, including neutral outcomes."
-                        )
+                        if resolved_representatives:
+                            payload["data_note"] = (
+                                f"data rows include {resolved_representatives} recent "
+                                "resolved outcome example(s) plus the newest neutral "
+                                "labels; summary counts cover the full lookback."
+                            )
+                        else:
+                            payload["data_note"] = (
+                                f"data rows cover the most recent {len(sample_indices)} "
+                                "labels, including neutral outcomes."
+                            )
                     payload["data"] = _sample_rows(sample_indices)
                     for key in (
                         "rows_before_labeling",

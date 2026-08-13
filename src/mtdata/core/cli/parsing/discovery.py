@@ -392,9 +392,10 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
         "summary, or full."
     ),
     ("labels_triple_barrier", "limit"): (
-        "Maximum most-recent labeled rows for compact/standard output; compact "
-        "is capped at 10, includes neutral outcomes, and full returns the complete "
-        "labeled series."
+        "Maximum labeled rows for compact/standard output. Compact is capped at "
+        "10 and normally shows the recent tail; when that tail is entirely neutral, "
+        "it reserves up to two rows for recent resolved TP/SL examples; full returns "
+        "the complete labeled series."
     ),
     ("labels_triple_barrier", "lookback"): (
         "Number of labeled entries to calculate; the tool fetches lookback plus "

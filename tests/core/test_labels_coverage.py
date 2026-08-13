@@ -11,6 +11,19 @@ from pydantic import ValidationError
 
 from mtdata.shared.schema import BarrierPairSpec
 
+
+def test_compact_label_sample_includes_resolved_examples_for_neutral_tail() -> None:
+    from mtdata.core.labels import _compact_label_sample_indices
+
+    indices, basis, resolved_count = _compact_label_sample_indices(
+        [1, -1, *([0] * 12)],
+        sample_size=10,
+    )
+
+    assert basis == "recent_with_resolved_outcomes"
+    assert resolved_count == 2
+    assert indices == [0, 1, *range(6, 14)]
+
 # ---------------------------------------------------------------------------
 # Helper to build a mock OHLC DataFrame
 # ---------------------------------------------------------------------------
