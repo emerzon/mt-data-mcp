@@ -290,6 +290,16 @@ class TestAddForecastGenerateArgs:
         args = parser.parse_args(["BTCUSD", "--detail", "full"])
         assert args.detail == "full"
 
+    def test_horizon_help_explains_forecast_time_and_value_semantics(self):
+        parser = argparse.ArgumentParser()
+        _add_forecast_generate_args(parser)
+
+        help_text = next(
+            action.help for action in parser._actions if action.dest == "horizon"
+        )
+        assert "forecast_time identifies each target bar's open" in help_text
+        assert "target bar's close" in help_text
+
     @patch("mtdata.core.cli.api.discover_tools")
     def test_main_shows_targeted_error_for_bare_denoise(self, mock_discover, capsys):
         from mtdata.core.cli.api import main
@@ -1293,6 +1303,36 @@ class TestResolveParamKwargs:
             },
             None,
             cmd_name="forecast_train",
+        )
+
+        assert expected in kwargs["help"]
+
+    @pytest.mark.parametrize(
+        ("cmd_name", "param_name", "expected"),
+        [
+            ("data_fetch_candles", "timestamp_format", "UTC bar-open timestamp"),
+            ("data_fetch_ticks", "timestamp_format", "MT5 tick event"),
+            ("market_ticker", "price_field", "default bid/ask/spread quote snapshot"),
+            ("patterns_detect", "timeframe", "elliott scans H1/H4/D1"),
+            ("symbols_list", "universe", "searches use the full broker catalog"),
+            ("volume_profile_levels", "source", "labeled M1-bar approximation"),
+        ],
+    )
+    def test_command_specific_help_explains_conditional_semantics(
+        self,
+        cmd_name,
+        param_name,
+        expected,
+    ):
+        kwargs, _ = _resolve_param_kwargs(
+            {
+                "name": param_name,
+                "type": str,
+                "required": False,
+                "default": None,
+            },
+            None,
+            cmd_name=cmd_name,
         )
 
         assert expected in kwargs["help"]

@@ -873,6 +873,13 @@ class TestListSymbolGroups:
 
 class TestSymbolsDescribe:
 
+    def test_docstring_does_not_claim_a_fixed_transport_format(self):
+        from mtdata.core.symbols import symbols_describe
+
+        first_line = (symbols_describe.__doc__ or "").strip().splitlines()[0]
+        assert first_line == "Return symbol information for `symbol`."
+        assert "JSON" not in first_line
+
     @patch(f"{_MT5}.symbol_info")
     def test_uninitialized_quote_omits_false_zero_market_change(self, mock_info):
         info = MagicMock()

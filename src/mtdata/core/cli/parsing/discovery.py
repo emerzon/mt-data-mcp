@@ -94,6 +94,31 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
         "Train a price-level or return target. Volatility uses "
         "forecast_volatility_estimate and is not separately trainable."
     ),
+    ("data_fetch_candles", "timestamp_format"): (
+        "Format each candle's `time` value: iso for the UTC bar-open timestamp "
+        "or epoch for UTC epoch seconds."
+    ),
+    ("data_fetch_ticks", "timestamp_format"): (
+        "Format each MT5 tick event's `time` value as an ISO UTC timestamp or "
+        "UTC epoch seconds."
+    ),
+    ("market_ticker", "price_field"): (
+        "Omit for the default bid/ask/spread quote snapshot; set bid, ask, mid, "
+        "last, or spread for a single-price response."
+    ),
+    ("patterns_detect", "timeframe"): (
+        "Chart timeframe. When omitted, candlestick/classic/harmonic/fractal use "
+        "H1, elliott scans H1/H4/D1, and all scans M30/H1/H4/D1/W1."
+    ),
+    ("symbols_list", "universe"): (
+        "Symbol scan universe. When omitted, unfiltered listings use visible "
+        "Market Watch symbols while searches use the full broker catalog."
+    ),
+    ("volume_profile_levels", "source"): (
+        "Profile input. auto uses bounded raw ticks when coverage is adequate, "
+        "then falls back to the labeled M1-bar approximation for oversized "
+        "windows, failed tick fetches, or poor tick-price coverage."
+    ),
     ("forecast_list_library_models", "limit"): (
         "Maximum models to return on this page. Omitted compact output uses "
         "20; omitted full output is unbounded."

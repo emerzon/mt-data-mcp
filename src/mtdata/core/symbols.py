@@ -1515,7 +1515,7 @@ def symbols_describe(  # noqa: C901
     symbol: str,
     detail: DetailLiteral = "compact",
 ) -> Dict[str, Any]:
-    """Return symbol information as JSON for `symbol`.
+    """Return symbol information for `symbol`.
     
     Parameters:
     -----------

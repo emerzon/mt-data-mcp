@@ -1032,7 +1032,13 @@ def _add_forecast_generate_args(cmd_parser: argparse.ArgumentParser) -> None:
         help=_PARAM_HINTS["timeframe"],
     )
     group_window.add_argument(
-        "--horizon", type=int, default=12, help="Forecast horizon in bars."
+        "--horizon",
+        type=int,
+        default=12,
+        help=(
+            "Number of future bars. forecast_time identifies each target bar's "
+            "open; price forecast values represent that target bar's close."
+        ),
     )
     group_window.add_argument(
         "--lookback", type=int, default=None, help="Historical bars to use."
