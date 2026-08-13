@@ -67,6 +67,7 @@ def tools_list(
         }
         detail_mode = str(catalog.get("detail") or detail or "compact").strip().lower()
         filtered = []
+        filtered_gated = []
         for row in tools:
             if not isinstance(row, dict):
                 continue
@@ -79,7 +80,10 @@ def tools_list(
                 continue
             if search_filter and search_filter not in haystack:
                 continue
-            filtered.append(row)
+            if row.get("enabled") is False or row.get("status") == "disabled":
+                filtered_gated.append(row)
+            else:
+                filtered.append(row)
 
         start = min(offset_value, len(filtered))
         if limit_value is None:
@@ -101,17 +105,19 @@ def tools_list(
             if not include_related:
                 out_row.pop("related_tools", None)
             if compact_mode:
-                gated = {
-                    key: out_row.get(key)
-                    for key in row_optional_keys
-                    if key in out_row
-                }
-                if gated:
-                    gated["name"] = str(out_row.get("name") or "")
-                    gated_tools.append(gated)
-                    for key in row_optional_keys:
-                        out_row.pop(key, None)
+                for key in row_optional_keys:
+                    out_row.pop(key, None)
             slimmed.append(out_row)
+
+        for row in filtered_gated:
+            gated = {
+                key: row.get(key)
+                for key in row_optional_keys
+                if key in row
+            }
+            gated["name"] = str(row.get("name") or "")
+            gated["category"] = str(row.get("category") or "other")
+            gated_tools.append(gated)
 
         categories: Dict[str, list[str]] = {}
         for row in filtered:
@@ -148,7 +154,7 @@ def tools_list(
                 "operation": "tools_list",
                 "valid_categories": sorted(known_categories),
             }
-        if compact_mode and gated_tools:
+        if gated_tools:
             catalog["gated_tools"] = gated_tools
         return catalog
 

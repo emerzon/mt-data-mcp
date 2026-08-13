@@ -5,6 +5,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from pydantic import ValidationError
 
+from mtdata.core._mcp_tools import _select_output_fields
 from mtdata.core.trading.comments import (
     _comment_sanitization_info,
     _normalize_trade_comment,
@@ -378,8 +379,16 @@ def test_run_trade_place_dry_run_returns_preview_without_execution():
     assert "margin_estimate" not in result["preview_checks_performed"]
     assert "margin_estimate" in result["checks_not_performed"]
     assert "broker_acceptance" in result["broker_validation_not_performed"]
-    assert result["requested_sl"] == 1.08
-    assert result["requested_tp"] == 1.12
+    assert result["stop_loss"] == 1.08
+    assert result["take_profit"] == 1.12
+    assert result["blockers"] == []
+    assert "requested_sl" not in result
+    assert "requested_tp" not in result
+    selected = _select_output_fields(result, "stop_loss,take_profit,blockers")
+    assert selected["stop_loss"] == 1.08
+    assert selected["take_profit"] == 1.12
+    assert selected["blockers"] == []
+    assert "unresolved_output_fields" not in selected
     place_market_order.assert_not_called()
     place_pending_order.assert_not_called()
 

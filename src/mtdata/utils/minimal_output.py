@@ -892,14 +892,17 @@ def _normalize_trade_payload(  # noqa: C901
     if not is_successful_dry_run_preview:
         _maybe_add_trade_key(out, "dry_run_simulated", payload.get("dry_run_simulated"))
     _maybe_add_trade_key(out, "preview_ok", payload.get("preview_ok"))
+    validation_payload = payload.get("validation")
+    blockers = payload.get("blockers")
+    if _is_empty_value(blockers) and isinstance(validation_payload, dict):
+        blockers = validation_payload.get("blockers")
+    if is_successful_dry_run_preview and blockers is None:
+        blockers = []
+    if isinstance(blockers, list):
+        out["blockers"] = blockers
     if not is_successful_dry_run_preview:
         _maybe_add_trade_key(out, "validation_passed", payload.get("validation_passed"))
         _maybe_add_trade_key(out, "trade_gate_passed", payload.get("trade_gate_passed"))
-        validation_payload = payload.get("validation")
-        blockers = payload.get("blockers")
-        if _is_empty_value(blockers) and isinstance(validation_payload, dict):
-            blockers = validation_payload.get("blockers")
-        _maybe_add_trade_key(out, "blockers", blockers)
         _maybe_add_trade_key(out, "dry_run_note", payload.get("dry_run_note"))
         _maybe_add_trade_key(out, "remediation", payload.get("remediation"))
         if verbose and isinstance(validation_payload, dict) and validation_payload:
@@ -948,8 +951,8 @@ def _normalize_trade_payload(  # noqa: C901
         ):
             _maybe_add_trade_key(out, key, payload.get(key))
 
-    requested_sl = payload.get("requested_sl")
-    requested_tp = payload.get("requested_tp")
+    requested_sl = payload.get("stop_loss", payload.get("requested_sl"))
+    requested_tp = payload.get("take_profit", payload.get("requested_tp"))
     applied_sl = payload.get("applied_sl")
     applied_tp = payload.get("applied_tp")
     protection_error = None
@@ -963,8 +966,8 @@ def _normalize_trade_payload(  # noqa: C901
         applied_tp = applied_tp if applied_tp is not None else tp_applied
         if str(sl_tp_result.get("status") or "").strip().lower() == "failed":
             protection_error = sl_tp_result.get("error")
-    _maybe_add_trade_key(out, "requested_sl", requested_sl)
-    _maybe_add_trade_key(out, "requested_tp", requested_tp)
+    _maybe_add_trade_key(out, "stop_loss", requested_sl)
+    _maybe_add_trade_key(out, "take_profit", requested_tp)
     _maybe_add_trade_key(out, "applied_sl", applied_sl)
     _maybe_add_trade_key(out, "applied_tp", applied_tp)
     _maybe_add_trade_key(out, "expiration", payload.get("expiration"))
@@ -2055,8 +2058,7 @@ def _normalize_support_resistance_payload(  # noqa: C901
                 )
                 if compact
             ]
-            if side_levels:
-                out[side_key] = side_levels
+            out[side_key] = side_levels
 
     levels_in = payload.get("levels")
     if isinstance(levels_in, list):

@@ -647,6 +647,25 @@ class TestNormalizeTradePayload:
             "units",
         ):
             assert result[key] == payload[key]
+        assert result["blockers"] == []
+
+    def test_trade_place_preview_uses_public_protection_names(self):
+        result = _normalize_trade_payload(
+            {
+                "success": True,
+                "dry_run": True,
+                "preview_ok": True,
+                "requested_sl": 1.09,
+                "requested_tp": 1.12,
+            },
+            verbose=False,
+            tool_name="trade_place",
+        )
+
+        assert result["stop_loss"] == 1.09
+        assert result["take_profit"] == 1.12
+        assert "requested_sl" not in result
+        assert "requested_tp" not in result
 
     @pytest.mark.parametrize(
         "blockers",
@@ -1608,8 +1627,8 @@ class TestFormatResultMinimal:
         assert "retcode_name: TRADE_RETCODE_DONE" in lines
         assert "order: 4384151941" in lines
         assert "price: 0.8634" in lines
-        assert "requested_sl: 0.8652" in lines
-        assert "requested_tp: 0.8615" in lines
+        assert "stop_loss: 0.8652" in lines
+        assert "take_profit: 0.8615" in lines
         assert not any("comment_sanitization" in line for line in lines)
         assert not any("comment_truncation" in line for line in lines)
         assert not any("comment_fallback" in line for line in lines)
@@ -1676,6 +1695,8 @@ class TestFormatResultMinimal:
         assert "pending: true" in result
         assert "action: place_pending_order" in result
         assert "price: 64500" in result
+        assert "stop_loss: 64000" in result
+        assert "take_profit: 67200" in result
         assert "validation_scope: request_routing_only" in result
         assert "message: Dry run only. No order was sent to MT5." in result
         assert "preview_scope_summary" not in result

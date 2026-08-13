@@ -152,8 +152,8 @@ _TRADE_PLACE_PREVIEW_KEYS = (
     "magic",
     "comment",
     "requested_price",
-    "requested_sl",
-    "requested_tp",
+    "stop_loss",
+    "take_profit",
     "expiration",
     "expiration_normalized",
     "quote_context",
@@ -1700,9 +1700,9 @@ def run_trade_place(  # noqa: C901
                 if isinstance(validation_payload, dict)
                 else list(local_blockers)
             )
+            preview["blockers"] = validation_blockers
             if validation_blockers:
                 preview["status"] = "preview_blocked"
-                preview["blockers"] = validation_blockers
                 preview["no_action_reason"] = "dry_run_validation_blocked"
             preview_error = str(preview.get("preview_error") or "").strip()
             if preview_error:
@@ -1741,9 +1741,9 @@ def run_trade_place(  # noqa: C901
             if request.comment:
                 preview["comment"] = request.comment
             if request.stop_loss not in (None, 0):
-                preview["requested_sl"] = request.stop_loss
+                preview["stop_loss"] = request.stop_loss
             if request.take_profit not in (None, 0):
-                preview["requested_tp"] = request.take_profit
+                preview["take_profit"] = request.take_profit
             if expiration_provided:
                 preview["expiration"] = request.expiration
                 if normalized_expiration is not None:

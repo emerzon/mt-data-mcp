@@ -266,7 +266,7 @@ def test_tools_list_standard_includes_catalog_metadata():
     assert out["output_extras"]
 
 
-def test_tools_list_compact_keeps_rows_slim_by_default(monkeypatch):
+def test_tools_list_keeps_disabled_tools_out_of_callable_rows(monkeypatch):
     monkeypatch.delenv("MTDATA_ENABLE_MARKET_DEPTH_FETCH", raising=False)
     bootstrap_tools()
     raw_tools_list = getattr(tools_list, "__wrapped__", tools_list)
@@ -274,8 +274,9 @@ def test_tools_list_compact_keeps_rows_slim_by_default(monkeypatch):
     out = raw_tools_list(category="market", search="depth")
 
     assert out["success"] is True
-    row = next(row for row in out["tools"] if row["name"] == "market_depth_fetch")
-    assert set(row) == {"name", "category", "description"}
+    assert out["tools"] == []
+    assert out["count"] == 0
+    assert out["pagination"]["total"] == 0
     assert out["gated_tools"] == [
         {
             "enabled": False,
@@ -284,6 +285,7 @@ def test_tools_list_compact_keeps_rows_slim_by_default(monkeypatch):
             "why_disabled": "Requires broker Level 2/DOM support and is off by default.",
             "recommended_alternative": "market_ticker",
             "name": "market_depth_fetch",
+            "category": "market",
         }
     ]
 
