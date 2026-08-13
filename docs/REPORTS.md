@@ -18,10 +18,12 @@ inspect its section statuses and diagnostics before relying on it.
 mtdata-cli report_generate EURUSD --timeframe H1
 ```
 
-The CLI defaults to compact TOON text. Use `--json` for a machine-readable
-payload or `--detail full` when you need the complete supported report content.
-CLI and MCP preserve the same canonical report payload; output format only
-changes its final presentation.
+The command defaults to the fast `minimal` template (context and forecast only)
+and compact TOON text. Use `--template basic` for levels, patterns, barriers,
+and broader risk context; use `--json` for a machine-readable payload or
+`--detail full` for all content supported by the selected template. CLI and MCP
+preserve the same canonical report payload; output format only changes its final
+presentation.
 
 ## Choose a template
 

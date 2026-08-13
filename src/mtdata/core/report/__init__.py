@@ -74,7 +74,7 @@ def _attach_report_compute_hint(report: Any, request: ReportGenerateRequest) -> 
 def report_generate(
     request: ReportGenerateRequest,
 ) -> Union[str, Dict[str, Any]]:
-    """Generate a consolidated, information-dense analysis report.
+    """Generate fast context+forecast; use template=basic for broader analysis.
 
     - template: 'minimal' (default fast path: context + direct forecast; skips pivot/backtest/barrier optimization/patterns),
                 'basic' (context, pivot, EWMA vol, backtest->best forecast, MC barrier grid, patterns),

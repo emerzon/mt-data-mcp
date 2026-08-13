@@ -1015,6 +1015,9 @@ def _report_section_names_by_status(
 
 
 def _build_overall_report_assessment(report: Dict[str, Any]) -> Dict[str, Any]:
+    meta = report.get("meta")
+    meta = meta if isinstance(meta, dict) else {}
+    template = str(report.get("template") or meta.get("template") or "").lower()
     sections_status = report.get("sections_status")
     summary = sections_status.get("summary", {}) if isinstance(sections_status, dict) else {}
     total = int(summary.get("total", 0) or 0)
@@ -1045,8 +1048,15 @@ def _build_overall_report_assessment(report: Dict[str, Any]) -> Dict[str, Any]:
         summary_text = "Report is temporally coherent, but some current-only sections were omitted."
     else:
         confidence = "high" if ok >= 3 else "medium"
-        recommended_action = "review_key_levels_and_risk"
-        summary_text = "Report sections completed successfully; review levels, forecast, and risk context before acting."
+        if template == "minimal":
+            recommended_action = "run_basic_template_for_levels_and_risk"
+            summary_text = (
+                "Minimal context and forecast sections completed successfully; "
+                "use template=basic when levels and risk context are required."
+            )
+        else:
+            recommended_action = "review_key_levels_and_risk"
+            summary_text = "Report sections completed successfully; review levels, forecast, and risk context before acting."
 
     stale_sections: List[str] = []
     closed_session = False
@@ -1081,7 +1091,10 @@ def _build_overall_report_assessment(report: Dict[str, Any]) -> Dict[str, Any]:
         summary_text += (
             f" Market inputs include {trust_reason} data; verify freshness before acting."
         )
-        if recommended_action == "review_key_levels_and_risk":
+        if recommended_action in {
+            "review_key_levels_and_risk",
+            "run_basic_template_for_levels_and_risk",
+        }:
             recommended_action = "review_stale_or_closed_session_data"
 
     assessment: Dict[str, Any] = {

@@ -427,7 +427,7 @@ See [ADVANCED_ANALYTICS.md](ADVANCED_ANALYTICS.md) for data requirements, exampl
 ### Reports
 | Command | Description |
 |---------|-------------|
-| `report_generate` | Generate consolidated analysis report |
+| `report_generate` | Generate fast context+forecast; use `--template basic` for broader analysis |
 
 ### Temporal Analysis
 | Command | Description |

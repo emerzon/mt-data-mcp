@@ -2064,6 +2064,24 @@ def test_report_assessment_names_section_health_confidence_explicitly():
     assert assessment["is_trade_signal"] is False
 
 
+def test_minimal_report_assessment_recommends_broader_template():
+    from mtdata.core.report.use_cases import _build_overall_report_assessment
+
+    assessment = _build_overall_report_assessment(
+        {
+            "meta": {"template": "minimal"},
+            "sections_status": {
+                "summary": {"total": 2, "ok": 2, "partial": 0, "error": 0}
+            },
+        }
+    )
+
+    assert assessment["recommended_action"] == (
+        "run_basic_template_for_levels_and_risk"
+    )
+    assert "use template=basic" in assessment["summary"]
+
+
 def test_report_assessment_elevates_closed_session_freshness():
     from mtdata.core.report.use_cases import _build_overall_report_assessment
 

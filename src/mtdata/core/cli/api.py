@@ -1472,6 +1472,10 @@ _COMMAND_USAGE_EXAMPLES: Dict[str, Tuple[str, Optional[str]]] = {
         f"{CLI_PROGRAM} options_heston_calibrate AAPL",
         None,
     ),
+    "report_generate": (
+        f"{CLI_PROGRAM} report_generate EURUSD --template minimal",
+        f"{CLI_PROGRAM} report_generate EURUSD --template basic --detail standard",
+    ),
     "portfolio_risk_decompose": (
         f"{CLI_PROGRAM} portfolio_risk_decompose --method historical",
         f"{CLI_PROGRAM} portfolio_risk_decompose --method filtered_historical --lookback 1000",
