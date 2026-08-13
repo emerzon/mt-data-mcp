@@ -49,6 +49,9 @@ Thumbs.db
 .antigravitycli/
 .commandcode/
 .grok/
+.codex/
+.repowise/
+
 
 
 .mtdata_cache/*
@@ -70,3 +73,6 @@ prompts/*
 !prompts/agent_risk_supervisor.md
 code-reports/*
 .soulforge
+
+.mcp.json
+AGENTS.md
