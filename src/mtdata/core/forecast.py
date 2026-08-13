@@ -830,8 +830,19 @@ def _forecast_connection_error() -> Optional[Dict[str, Any]]:
 
 
 def _forecast_error_payload(message: Any, *, operation: str) -> Dict[str, Any]:
+    message_text = str(message)
+    if "as_of must not be in the future" in message_text.lower():
+        return build_error_payload(
+            message_text,
+            code="forecast_as_of_in_future",
+            operation=operation,
+            remediation=(
+                "Set as_of to an ISO 8601 timestamp at or before the current "
+                "wall-clock time."
+            ),
+        )
     return build_error_payload(
-        message,
+        message_text,
         code=f"{operation}_error",
         operation=operation,
     )

@@ -506,15 +506,29 @@ def resolve_capability_request(
                 )
                 if not isinstance(cross_library_match, dict):
                     return library_norm, method_norm, params_out
-                available = sorted(
-                    str(row.get("method"))
-                    for row in capabilities
-                    if row.get("method") and row.get("available") is not False
+                execution = (
+                    cross_library_match.get("execution")
+                    if isinstance(cross_library_match.get("execution"), dict)
+                    else {}
                 )
-                raise ForecastError(
-                    f"method '{method_norm}' is not available in library 'native'. "
-                    f"Valid methods: {', '.join(available)}."
+                resolved_library = str(
+                    execution.get("library")
+                    or cross_library_match.get("namespace")
+                    or library_norm
                 )
+                resolved_method = str(
+                    execution.get("method")
+                    or cross_library_match.get("adapter_method")
+                    or method_norm
+                )
+                selector_params = (
+                    execution.get("params")
+                    if isinstance(execution.get("params"), dict)
+                    else {}
+                )
+                merged_params = dict(params_out)
+                merged_params.update(selector_params)
+                return resolved_library, resolved_method, merged_params
         return library_norm, method_norm, params_out
 
     namespace = method_norm.split(":", 1)[0].strip().lower()

@@ -412,7 +412,8 @@ _COMMAND_PARAM_HELP_OVERRIDES: Dict[tuple[str, str], str] = {
     ),
     ("labels_triple_barrier", "barriers"): (
         "Required JSON barrier pair. Example: "
-        "'{\"unit\":\"pct\",\"take_profit\":0.5,\"stop_loss\":0.5}'. "
+        "'{\"kind\":\"tp_sl\",\"unit\":\"pct\",\"take_profit\":0.5,\"stop_loss\":0.5}'. "
+        "kind='tp_sl' is optional, so forecast_barrier_prob TP/SL objects can be reused. "
         "pct/ticks are distances from entry; price values are absolute levels."
     ),
     ("labels_triple_barrier", "allow_noncausal_denoise"): (

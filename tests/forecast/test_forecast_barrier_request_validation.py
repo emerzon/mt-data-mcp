@@ -5,6 +5,7 @@ from mtdata.forecast.requests import (
     ForecastBarrierOptimizeRequest,
     ForecastBarrierProbRequest,
 )
+from mtdata.shared.schema import BarrierPairSpec
 
 
 def _tp_sl_barrier(unit: str = "pct", take_profit: float = 0.5, stop_loss: float = 0.25):
@@ -38,6 +39,13 @@ def test_forecast_barrier_prob_request_infers_complete_tp_sl_kind():
     request = ForecastBarrierProbRequest(symbol="EURUSD", barrier=barrier)
 
     assert request.model_dump()["barrier"]["kind"] == "tp_sl"
+
+
+def test_labels_barrier_pair_accepts_forecast_tp_sl_shape():
+    barrier = BarrierPairSpec.model_validate(_tp_sl_barrier())
+
+    assert barrier.kind == "tp_sl"
+    assert barrier.as_legacy_kwargs() == {"tp_pct": 0.5, "sl_pct": 0.25}
 
 
 def test_forecast_barrier_prob_request_names_allowed_kinds():

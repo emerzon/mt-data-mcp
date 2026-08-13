@@ -47,6 +47,13 @@ class BarrierPairSpec(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
+    kind: Literal["tp_sl"] = Field(
+        "tp_sl",
+        description=(
+            "Optional barrier-family discriminator. Accepted so the same TP/SL "
+            "object can be reused by forecast_barrier_prob and labels_triple_barrier."
+        ),
+    )
     unit: Literal["price", "pct", "ticks"] = Field(
         description=(
             "Barrier unit: price means absolute instrument price levels; pct and "

@@ -202,9 +202,10 @@ def friendly_validation_error(exc: ValidationError, *, cmd_name: str) -> str:
             or "barrierpairspec" in msg.lower()
         ):
             return (
-                "barriers must be a JSON object with unit, take_profit, and "
+                "barriers must be a TP/SL JSON object with optional kind='tp_sl', "
+                "plus unit, take_profit, and "
                 "stop_loss. Example: "
-                "'{\"unit\":\"pct\",\"take_profit\":0.5,"
+                "'{\"kind\":\"tp_sl\",\"unit\":\"pct\",\"take_profit\":0.5,"
                 "\"stop_loss\":0.5}'. unit must be price, pct, or ticks; "
                 "price values are absolute levels and pct/ticks are distances."
             )

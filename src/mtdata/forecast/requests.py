@@ -171,8 +171,26 @@ class ForecastGenerateRequest(_PublicForecastRequest):
 
     @model_validator(mode="before")
     @classmethod
-    def _reject_removed_target(cls, values: Any) -> Any:
-        return reject_removed_field(values, field_name="target", replacement="quantity")
+    def _normalize_request_identity(cls, values: Any) -> Any:
+        values = reject_removed_field(
+            values,
+            field_name="target",
+            replacement="quantity",
+        )
+        if not isinstance(values, dict):
+            return values
+        out = dict(values)
+        model_id = str(out.get("model_id") or "").strip()
+        if not model_id:
+            return out
+        parts = model_id.split("/")
+        if len(parts) != 3 or not all(parts):
+            return out
+        stored_method = parts[0]
+        # The stored artifact is authoritative. This also maps library selector
+        # names such as AutoARIMA back to their registered trainable wrapper.
+        out["method"] = stored_method
+        return out
 
     @model_validator(mode="after")
     def _validate_time_window(self) -> "ForecastGenerateRequest":

@@ -53,6 +53,17 @@ def test_attach_timezone_removes_legacy_timestamp_timezone() -> None:
     assert "timestamp_timezone" not in result
 
 
+def test_forecast_future_as_of_error_has_date_specific_guidance() -> None:
+    result = cf._forecast_error_payload(
+        "as_of must not be in the future.",
+        operation="forecast_generate",
+    )
+
+    assert result["error_code"] == "forecast_as_of_in_future"
+    assert "forecast_list_methods" not in result["remediation"]
+    assert "ISO 8601" in result["remediation"]
+
+
 def test_normalize_forecaster_name_and_resolve_variants(monkeypatch):
     monkeypatch.setattr(
         forecast_use_cases,
@@ -220,8 +231,20 @@ def test_forecast_generate_routes_by_library_and_validates_inputs(monkeypatch):
             method="sf_theta",
         )
     )
-    assert out["success"] is False
-    assert "not available in library 'native'" in out["error"]
+    assert out["ok"] is True
+    assert captured["method"] == "statsforecast"
+    assert captured["params"]["model_name"] == "Theta"
+
+    out = raw(
+        request=ForecastGenerateRequest(
+            symbol="EURUSD",
+            model_id=stored_model_id,
+            model_cache="require_existing",
+        )
+    )
+    assert out["ok"] is True
+    assert captured["method"] == "sf_autoarima"
+    assert captured["model_id"] == stored_model_id
 
     out = raw(request=ForecastGenerateRequest(symbol="EURUSD", library="sktime", method="theta", params={}))
     assert out["ok"] is True
