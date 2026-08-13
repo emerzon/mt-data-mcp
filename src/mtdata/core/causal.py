@@ -97,6 +97,7 @@ _COINTEGRATION_TREND_ALIASES: Dict[str, str] = {
 }
 
 _MIN_ENGLE_GRANGER_SAMPLES = 20
+_MIN_PAIR_ALIGNMENT_FRACTION = 0.90
 
 
 # Human-readable legends for output interpretation
@@ -1656,7 +1657,10 @@ def _build_alignment_detail(
     if min_symbol_rows <= 0:
         return None
     shrinkage_ratio = float(aligned_rows) / float(min_symbol_rows)
-    if aligned_rows >= minimum_required and shrinkage_ratio >= 0.90:
+    if (
+        aligned_rows >= minimum_required
+        and shrinkage_ratio >= _MIN_PAIR_ALIGNMENT_FRACTION
+    ):
         return None
     bottleneck_pair = min(pair_overlaps.items(), key=lambda kv: kv[1])
     return {
@@ -2916,6 +2920,26 @@ def cross_correlation(  # noqa: C901
                 details=errors,
             )
         frame = _build_pairwise_frame(series_map, symbol_list)
+        samples_available_by_symbol = {
+            symbol_name: int(series_map[symbol_name].dropna().shape[0])
+            for symbol_name in symbol_list
+        }
+        raw_aligned = frame[symbol_list].dropna(how="any")
+        minimum_available = min(samples_available_by_symbol.values())
+        aligned_fraction = (
+            float(len(raw_aligned)) / float(minimum_available)
+            if minimum_available > 0
+            else 0.0
+        )
+        alignment_ok = aligned_fraction >= _MIN_PAIR_ALIGNMENT_FRACTION
+        alignment_warning = None
+        if not alignment_ok:
+            alignment_warning = (
+                f"Only {aligned_fraction:.1%} of the smaller input series shares "
+                "timestamps across both symbols. Session-calendar gaps can distort "
+                "lead/lag estimates; compare instruments with compatible sessions or "
+                "use an explicit analysis window."
+            )
         aligned = _transform_aligned_pair(
             frame,
             symbol_list[0],
@@ -2988,6 +3012,11 @@ def cross_correlation(  # noqa: C901
             "context": {
                 "window_bars": int(window_bars),
                 "samples_aligned": int(len(aligned)),
+                "samples_raw_aligned": int(len(raw_aligned)),
+                "samples_available_by_symbol": samples_available_by_symbol,
+                "aligned_fraction": round(aligned_fraction, 6),
+                "alignment_threshold": _MIN_PAIR_ALIGNMENT_FRACTION,
+                "alignment_ok": alignment_ok,
                 "max_lag": int(max_lag),
                 "bootstrap_samples": int(bootstrap_samples),
                 "bootstrap_block_size": int(block_size),
@@ -3001,6 +3030,8 @@ def cross_correlation(  # noqa: C901
             },
             "meta": _causal_contract_meta(meta),
         }
+        if alignment_warning is not None:
+            out["warnings"] = [alignment_warning]
         if detail_mode == "full":
             out["items"] = rows
             out["count"] = len(rows)
