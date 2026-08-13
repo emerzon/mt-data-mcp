@@ -81,6 +81,8 @@ def test_market_depth_tick_fallback_includes_price_display() -> None:
     assert out["units"] == {"volume": "mt5_tick_volume"}
     assert out["freshness_state"] == "stale"
     assert out["usable_for_live_trading"] is False
+    assert out["source"]["provider"] == "mt5"
+    assert out["meta"]["tool"] == "market_depth_fetch"
     assert out["observed_at_epoch"] > 0
     assert isinstance(out.get("query_latency_ms"), float)
 
@@ -152,6 +154,8 @@ def test_market_depth_full_depth_includes_price_display() -> None:
     assert out["data"]["buy_orders"][0]["price_display"] == "65601.00"
     assert out["data"]["sell_orders"][0]["price_display"] == "65602.50"
     assert out["units"]["volume"] == "book_volume"
+    assert out["source"]["provider"] == "mt5"
+    assert out["meta"]["tool"] == "market_depth_fetch"
 
 
 def test_market_depth_full_depth_accepts_mt5_bookinfo_volume_dbl() -> None:

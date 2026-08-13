@@ -309,6 +309,14 @@ def _market_depth_fetch_impl(symbol: str, spread: bool = False, require_dom: boo
     Parameters: symbol
     """
     def _run() -> Dict[str, Any]:  # noqa: C901
+        mt5_gateway: Any = None
+
+        def _finalize(payload: Dict[str, Any]) -> Dict[str, Any]:
+            return ensure_common_meta(
+                attach_mt5_source(payload, gateway=mt5_gateway),
+                tool_name="market_depth_fetch",
+            )
+
         try:
             mt5_gateway = create_mt5_gateway(
                 adapter=mt5,
@@ -541,7 +549,7 @@ def _market_depth_fetch_impl(symbol: str, spread: bool = False, require_dom: boo
                 _attach_tick_freshness(out, depth_tick, quote_metadata)
                 out["freshness_basis"] = "depth_snapshot_and_reference_tick"
                 out["query_latency_ms"] = round((time.perf_counter() - started) * 1000.0, 3)
-                return out
+                return _finalize(out)
 
             tick = mt5_gateway.symbol_info_tick(symbol)
             if tick is None:
@@ -608,7 +616,7 @@ def _market_depth_fetch_impl(symbol: str, spread: bool = False, require_dom: boo
                 resolve_client_tz=_resolve_client_tz,
             )
             out["query_latency_ms"] = round((time.perf_counter() - started) * 1000.0, 3)
-            return out
+            return _finalize(out)
         except MT5ConnectionError as exc:
             return {"error": str(exc)}
         except Exception as exc:
